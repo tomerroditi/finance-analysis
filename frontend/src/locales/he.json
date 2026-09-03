@@ -598,11 +598,8 @@
     "viewAllProjects": "הצג את כל הפרויקטים",
     "trend": {
       "title": "תקציב מול ביצוע",
-      "subtitle": "{{count}} חודשים אחרונים",
       "budget": "תקציב",
       "actual": "ביצוע",
-      "show": "הצג מגמה",
-      "hide": "הסתר מגמה",
       "empty": "אין מספיק היסטוריה עדיין"
     },
     "yearly": {
@@ -629,12 +626,28 @@
       "amountPlaceholder": "לדוגמה: 20000",
       "tagsLabel": "תגיות",
       "tagsPlaceholder": "בחר תגיות",
-      "saveFailed": "לא ניתן היה לשמור את הכלל."
+      "saveFailed": "לא ניתן היה לשמור את הכלל.",
+      "pace": "קצב שנתי",
+      "monthsElapsed": "{{elapsed}} מתוך {{total}} חודשים",
+      "overPace": "מעל הקצב",
+      "allOnPace": "הכול בקצב.",
+      "ofPace": "{{pct}}% מהקצב",
+      "spentOfAllocation": "{{spent}} מתוך {{total}} שהוקצו"
     },
     "categoryConflict": {
       "banner": "הקטגוריות הבאות נמצאות גם בתקציב פרויקט וגם בתקציב חודשי/שנתי: {{names}}. יש לתקן כדי להימנע מספירה כפולה.",
-      "saveFailed": "לא ניתן לשמור — הקטגוריה מתנגשת עם תקציב אחר."
-    }
+      "saveFailed": "לא ניתן לשמור — הקטגוריה מתנגשת עם תקציב אחר.",
+      "chip": "{{names}} — התנגשות קטגוריות"
+    },
+    "notices": {
+      "copiedChip": "הכללים הועתקו מ{{month}}"
+    },
+    "editTotalBudget": "עריכת התקציב הכולל",
+    "projectTags": "תגיות",
+    "projectTagEnvelopes": "מעטפות",
+    "projectAvgPerMonth": "ממוצע לחודש",
+    "projectBurn": "קצב שריפה",
+    "projectActiveMonths": "חודשים פעילים"
   },
   "budgetAlerts": {
     "title": "התראות תקציב",

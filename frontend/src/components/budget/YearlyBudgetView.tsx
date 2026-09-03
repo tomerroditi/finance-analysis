@@ -1,16 +1,32 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, X, PenSquare, Trash2 } from "lucide-react";
+import { AlertTriangle, X, PenSquare, Trash2, Plus } from "lucide-react";
 import { budgetApi, type YearlyAnalysis } from "../../services/api";
-import { BudgetProgressBar } from "../BudgetProgressBar";
-import { YearHeader } from "./YearHeader";
-import { YearlySummaryStrip } from "./YearlySummaryStrip";
 import { YearlyRuleModal } from "../modals/YearlyRuleModal";
 import { useConfirm } from "../../context/DialogContext";
 import { useQueryKeys } from "../../hooks/useQueryKeys";
+import { BudgetCommandBar, PeriodNav } from "./BudgetCommandBar";
+import { BudgetStatusBand, type BandStat } from "./BudgetStatusBand";
+import { BudgetNoticeLine } from "./BudgetNoticeLine";
+import { BudgetLedgerRow } from "./BudgetLedgerRow";
+import { BudgetRail, RailCard } from "./BudgetRail";
+import { RuleSparkline } from "./RuleSparkline";
+import { formatCurrency } from "../../utils/numberFormatting";
+import { formatMonthCompact } from "../../utils/dateFormatting";
+import {
+  bucketByMonth,
+  monthKeysOfYear,
+  type TrendTransaction,
+} from "../../utils/budgetTrends";
 
-export const YearlyBudgetView: React.FC = () => {
+const MONTHS_IN_YEAR = 12;
+
+interface YearlyBudgetViewProps {
+  tabs: React.ReactNode;
+}
+
+export const YearlyBudgetView: React.FC<YearlyBudgetViewProps> = ({ tabs }) => {
   const { t } = useTranslation();
   const confirm = useConfirm();
   const queryClient = useQueryClient();
@@ -20,6 +36,7 @@ export const YearlyBudgetView: React.FC = () => {
   const [modalOpen, setModalOpen] = useState(false);
   const [editRule, setEditRule] = useState<YearlyAnalysis["rules"][number]["rule"] | null>(null);
   const [alertDismissed, setAlertDismissed] = useState(false);
+  const [expandedRuleId, setExpandedRuleId] = useState<number | null>(null);
 
   useEffect(() => {
     // Reset the dismissed-alert flag when the selected year changes so a
@@ -41,21 +58,147 @@ export const YearlyBudgetView: React.FC = () => {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: qk.budget.yearly(year) }),
   });
 
-  const rules = data?.rules ?? [];
+  // Memoised because `?? []` mints a new array on every render, which would
+  // re-bucket every rule's burn series for nothing.
+  const rules = useMemo(() => data?.rules ?? [], [data?.rules]);
+  const summary = data?.summary;
+
+  // Months elapsed in the viewed year — the whole year once it is in the past.
+  const now = new Date();
+  const elapsedMonths =
+    year < currentYear
+      ? MONTHS_IN_YEAR
+      : year > currentYear
+        ? 0
+        : now.getMonth() + 1;
+  const paceRatio = elapsedMonths / MONTHS_IN_YEAR;
+
+  const monthKeys = useMemo(() => monthKeysOfYear(year), [year]);
+  const monthLabels = useMemo(
+    () => monthKeys.map((key) => formatMonthCompact(`${key}-01`)),
+    [monthKeys],
+  );
+
+  // A yearly envelope has no per-period endpoint, so its burn series is
+  // bucketed from the transactions the analysis already returns per rule.
+  const seriesByRule = useMemo(() => {
+    const map = new Map<number, number[]>();
+    for (const entry of rules) {
+      map.set(
+        entry.rule.id,
+        bucketByMonth(
+          entry.data as TrendTransaction[],
+          monthKeys,
+          -entry.current_amount,
+        ),
+      );
+    }
+    return map;
+  }, [rules, monthKeys]);
+
+  // "Over pace" is not the same question as "over budget": at month 7 of 12
+  // an envelope should be ~58% spent, so a row can sit far below its ceiling
+  // and still be spending too fast for the year to hold.
+  const overPace = rules
+    .filter((entry) => {
+      const spent = -entry.current_amount;
+      return (
+        entry.rule.amount > 0 &&
+        paceRatio > 0 &&
+        spent > entry.rule.amount * paceRatio
+      );
+    })
+    .sort(
+      (a, b) =>
+        -b.current_amount / b.rule.amount - -a.current_amount / a.rule.amount,
+    );
+
+  const stats: BandStat[] = summary
+    ? [
+        {
+          key: "spent",
+          label: t("budget.yearly.spentYtd"),
+          value: (
+            <span className="text-lg md:text-xl font-bold" dir="ltr">
+              {formatCurrency(summary.total_spent)}
+            </span>
+          ),
+        },
+        {
+          key: "health",
+          label: t("budget.yearly.health"),
+          value: (
+            <span className="flex items-baseline gap-1 flex-wrap">
+              <span className="text-lg md:text-xl font-bold text-emerald-400">
+                {summary.on_track}
+              </span>
+              <span className="text-[10px] sm:text-xs text-[var(--text-muted)]">
+                {t("budget.onTrackLabel")}
+              </span>
+              {summary.over > 0 && (
+                <>
+                  <span className="text-[10px] sm:text-xs text-[var(--text-muted)]">·</span>
+                  <span className="text-lg md:text-xl font-bold text-rose-400">
+                    {summary.over}
+                  </span>
+                  <span className="text-[10px] sm:text-xs text-[var(--text-muted)]">
+                    {t("budget.overBudgetLabel")}
+                  </span>
+                </>
+              )}
+            </span>
+          ),
+        },
+        {
+          key: "pace",
+          label: t("budget.yearly.pace"),
+          value: (
+            <span className="block">
+              <span className="text-lg md:text-xl font-bold" dir="ltr">
+                {Math.round(paceRatio * 100)}%
+              </span>
+              <span className="block text-[10px] sm:text-xs text-[var(--text-muted)] truncate">
+                {t("budget.yearly.monthsElapsed", {
+                  elapsed: elapsedMonths,
+                  total: MONTHS_IN_YEAR,
+                })}
+              </span>
+            </span>
+          ),
+        },
+      ]
+    : [];
 
   return (
-    <div className="space-y-4">
-      <YearHeader
-        year={year}
-        isCurrentYear={year === currentYear}
-        onPrev={() => setYear((y) => y - 1)}
-        onNext={() => setYear((y) => y + 1)}
-        onToday={() => setYear(currentYear)}
-        onAddRule={() => {
-          setEditRule(null);
-          setModalOpen(true);
-        }}
-      />
+    <div className="space-y-3 md:space-y-4">
+      <BudgetCommandBar
+        tabs={tabs}
+        actions={
+          <button
+            onClick={() => {
+              setEditRule(null);
+              setModalOpen(true);
+            }}
+            className="inline-flex items-center justify-center gap-2 px-3 md:px-4 py-2 text-xs md:text-sm bg-[var(--primary)] text-white rounded-lg hover:bg-[var(--primary-dark)] transition-colors shadow-sm font-medium whitespace-nowrap"
+          >
+            <Plus size={18} className="shrink-0" />
+            {t("budget.yearly.addRule")}
+          </button>
+        }
+      >
+        <PeriodNav
+          label={year}
+          isCurrent={year === currentYear}
+          onPrev={() => setYear((y) => y - 1)}
+          onNext={() => setYear((y) => y + 1)}
+          onToday={() => setYear(currentYear)}
+          todayTitle={t("budget.yearly.currentYear")}
+          ltr
+          widthClass="w-20 md:w-24"
+        />
+      </BudgetCommandBar>
+
+      <BudgetNoticeLine />
 
       {!alertDismissed && data?.carried_from != null && (
         <div className="flex gap-2.5 items-start bg-amber-500/10 border border-amber-500/40 rounded-xl px-3.5 py-3 text-sm">
@@ -78,64 +221,145 @@ export const YearlyBudgetView: React.FC = () => {
         </div>
       )}
 
-      {data?.summary && <YearlySummaryStrip summary={data.summary} />}
+      {/* No rules means nothing is allocated — an empty 0 / 0 gauge is noise,
+          the empty-state line below says it better. */}
+      {summary && rules.length > 0 && (
+        <BudgetStatusBand
+          label={t("budget.yearly.allocated")}
+          spent={summary.total_spent}
+          total={summary.total_allocated}
+          stats={stats}
+        />
+      )}
 
       {isLoading ? (
         <p className="text-[var(--text-muted)] text-sm py-8 text-center">{t("common.loading")}</p>
       ) : rules.length === 0 ? (
         <p className="text-[var(--text-muted)] text-sm py-8 text-center">{t("budget.yearly.empty")}</p>
       ) : (
-        <div>
-          {rules.map((entry) => {
-            const r = entry.rule;
-            const tagList = Array.isArray(r.tags) ? r.tags : [];
-            const isAllTags = tagList.length === 1 && tagList[0].toLowerCase() === "all_tags";
-            const subLabel = `${r.category} · ${isAllTags ? t("budget.yearly.allTags") : tagList.join("; ")}`;
-            return (
-              <BudgetProgressBar
-                key={r.id}
-                current={-entry.current_amount}
-                total={r.amount}
-                label={r.name}
-                subLabel={subLabel}
-                actions={
-                  <>
-                    {entry.allow_edit && (
-                      <button
-                        onClick={() => {
-                          setEditRule(r);
-                          setModalOpen(true);
-                        }}
-                        className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50/50 rounded-lg transition-all"
-                        title={t("budget.editRule")}
-                        aria-label={t("budget.editRule")}
-                      >
-                        <PenSquare size={16} />
-                      </button>
-                    )}
-                    {entry.allow_delete && (
-                      <button
-                        onClick={async () => {
-                          const ok = await confirm({
-                            title: t("budget.deleteRule"),
-                            message: t("budget.yearly.confirmDelete", { name: r.name }),
-                            confirmLabel: t("common.delete"),
-                            isDestructive: true,
-                          });
-                          if (ok) deleteMutation.mutate(r.id);
-                        }}
-                        className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50/50 rounded-lg transition-all"
-                        title={t("budget.deleteRule")}
-                        aria-label={t("budget.deleteRule")}
-                      >
-                        <Trash2 size={16} />
-                      </button>
-                    )}
-                  </>
+        <div className="flex flex-col lg:flex-row items-start gap-3 md:gap-4">
+          <div className="flex-1 min-w-0 w-full space-y-2">
+            {rules.map((entry) => {
+              const rule = entry.rule;
+              const tagList = Array.isArray(rule.tags) ? rule.tags : [];
+              const isAllTags =
+                tagList.length === 1 && tagList[0].toLowerCase() === "all_tags";
+              const subLabel = `${rule.category} · ${isAllTags ? t("budget.yearly.allTags") : tagList.join("; ")}`;
+              return (
+                <BudgetLedgerRow
+                  key={rule.id}
+                  label={rule.name}
+                  subLabel={subLabel}
+                  current={-entry.current_amount}
+                  total={rule.amount}
+                  isExpanded={expandedRuleId === rule.id}
+                  onToggleExpand={() =>
+                    setExpandedRuleId((prev) => (prev === rule.id ? null : rule.id))
+                  }
+                  trend={
+                    <RuleSparkline
+                      variant="burn"
+                      series={seriesByRule.get(rule.id) ?? []}
+                      labels={monthLabels}
+                      budget={rule.amount}
+                      totalPeriods={MONTHS_IN_YEAR}
+                      showPace
+                    />
+                  }
+                  actions={
+                    <>
+                      {entry.allow_edit && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setEditRule(rule);
+                            setModalOpen(true);
+                          }}
+                          className="p-1.5 text-[var(--text-muted)] hover:text-blue-500 hover:bg-blue-500/10 rounded-lg transition-all"
+                          title={t("budget.editRule")}
+                          aria-label={t("budget.editRule")}
+                        >
+                          <PenSquare size={16} />
+                        </button>
+                      )}
+                      {entry.allow_delete && (
+                        <button
+                          onClick={async (e) => {
+                            e.stopPropagation();
+                            const ok = await confirm({
+                              title: t("budget.deleteRule"),
+                              message: t("budget.yearly.confirmDelete", { name: rule.name }),
+                              confirmLabel: t("common.delete"),
+                              isDestructive: true,
+                            });
+                            if (ok) deleteMutation.mutate(rule.id);
+                          }}
+                          className="p-1.5 text-[var(--text-muted)] hover:text-red-500 hover:bg-red-500/10 rounded-lg transition-all"
+                          title={t("budget.deleteRule")}
+                          aria-label={t("budget.deleteRule")}
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      )}
+                    </>
+                  }
+                >
+                  <div className="px-3 pb-3 text-xs text-[var(--text-muted)]" dir="auto">
+                    {t("budget.yearly.spentOfAllocation", {
+                      spent: formatCurrency(-entry.current_amount),
+                      total: formatCurrency(rule.amount),
+                    })}
+                  </div>
+                </BudgetLedgerRow>
+              );
+            })}
+          </div>
+
+          <BudgetRail>
+            <RailCard
+              title={t("budget.yearly.overPace")}
+              value={
+                <span
+                  className={`text-xs font-bold px-2 py-0.5 rounded-full ${
+                    overPace.length
+                      ? "bg-amber-500/10 text-amber-400"
+                      : "bg-emerald-500/10 text-emerald-400"
+                  }`}
+                >
+                  {overPace.length}
+                </span>
+              }
+              items={overPace.map((entry) => ({
+                key: String(entry.rule.id),
+                label: entry.rule.name,
+                value: t("budget.yearly.ofPace", {
+                  pct: Math.round(
+                    (-entry.current_amount / (entry.rule.amount * paceRatio)) * 100,
+                  ),
+                }),
+              }))}
+            >
+              {overPace.length === 0 && (
+                <p className="mt-2 text-xs text-[var(--text-muted)]">
+                  {t("budget.yearly.allOnPace")}
+                </p>
+              )}
+            </RailCard>
+
+            {summary && (
+              <RailCard
+                title={t("budget.yearly.remaining")}
+                value={
+                  <span
+                    className={`font-mono text-sm font-bold ${summary.remaining < 0 ? "text-rose-400" : "text-emerald-400"}`}
+                    dir="ltr"
+                  >
+                    {formatCurrency(summary.remaining)}
+                  </span>
                 }
               />
-            );
-          })}
+            )}
+          </BudgetRail>
         </div>
       )}
 

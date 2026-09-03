@@ -16,6 +16,9 @@ interface TrendRuleItem {
   current_amount: number;
 }
 
+/** Per-rule spend series, aligned index-for-index with the returned `data`. */
+export type RuleTrendMap = Record<string, number[]>;
+
 /**
  * Build a budget-vs-actual series for the trailing `months` calendar months
  * ending at (and including) the given year/month.
@@ -76,5 +79,22 @@ export function useBudgetTrend(
 
   const hasData = data.some((d) => d.budget > 0 || d.actual > 0);
 
-  return { data, isLoading, hasData };
+  // Per-rule series, assembled from the same responses the total series is
+  // built from — no extra requests. Rules are keyed by NAME, not id: a month
+  // with no rules of its own is auto-filled by copying the previous month's,
+  // which creates fresh rows, so the same envelope has a different
+  // `rule.id` in every month.
+  const byRule: RuleTrendMap = {};
+  periods.forEach((_, i) => {
+    const rules: TrendRuleItem[] = results[i].data?.rules ?? [];
+    for (const item of rules) {
+      const name = item.rule.name;
+      if (!byRule[name]) byRule[name] = periods.map(() => 0);
+      // Clamp net refunds to 0: a period where refunds exceeded spend is not
+      // negative spending, and a negative bar would read as an overspend.
+      byRule[name][i] = Math.max(item.current_amount || 0, 0);
+    }
+  });
+
+  return { data, isLoading, hasData, byRule };
 }
