@@ -1,3 +1,10 @@
+## v1.51.2 (2026-09-03)
+
+### Fix
+
+- **deps**: Bump the backend-minor-patch group across 1 directory with 14 updates (#227)
+- **deps**: Bump the frontend-minor-patch group across 1 directory with 20 updates (#228)
+
 ## v1.51.1 (2026-09-03)
 
 ### Fix
