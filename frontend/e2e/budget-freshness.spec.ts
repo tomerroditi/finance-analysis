@@ -167,7 +167,12 @@ test.describe("Budget data freshness", () => {
     ]);
     await navigateTo(page, "/budget");
 
-    await expect(page.getByText(/Total Budget/i).first()).toBeVisible({ timeout: 30_000 });
+    // Anchor on the command bar, not the budget band: these specs run with
+    // Demo Mode OFF, so a CI database has no rules and therefore no band —
+    // the tab strip is the only thing guaranteed to render.
+    await expect(
+      page.getByRole("button", { name: /Monthly Budget/i }).first(),
+    ).toBeVisible({ timeout: 30_000 });
     await expect(badgeOf(page)).toHaveCount(0);
     await expect(page.getByText(/Up to date/i)).toHaveCount(0);
   });
