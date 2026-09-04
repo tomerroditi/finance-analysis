@@ -1,3 +1,9 @@
+## v1.52.2 (2026-09-04)
+
+### Fix
+
+- **deps**: update all Dependabot bumps and close every security alert
+
 ## v1.52.1 (2026-09-04)
 
 ### Fix
