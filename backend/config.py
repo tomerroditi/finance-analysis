@@ -53,16 +53,6 @@ class AppConfig:
             return self._forced_mode
         return _demo_mode_ctx.get()
 
-    @property
-    def _demo_mode(self) -> bool:
-        """Backward-compatible access to the demo mode flag (read-only)."""
-        return self.is_demo_mode
-
-    @_demo_mode.setter
-    def _demo_mode(self, value: bool) -> None:
-        """Backward-compatible setter for demo mode (for old tests)."""
-        self.set_demo_mode(value)
-
     def set_demo_mode(self, enabled: bool) -> Token[bool]:
         """Set demo mode for the current context.
 
