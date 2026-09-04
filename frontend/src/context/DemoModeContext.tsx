@@ -3,6 +3,7 @@ import {
   useContext,
   useState,
   useEffect,
+  useRef,
   type ReactNode,
 } from "react";
 import { testingApi } from "../services/api";
@@ -51,6 +52,15 @@ export function DemoModeProvider({
     initialDemoMode ?? readStoredDemoMode(),
   );
   const queryClient = useQueryClient();
+  // Tracks the current flag for the status-check effect below, which only
+  // runs once on mount ([queryClient] deps) — a closed-over `isDemoMode`
+  // would go stale if the user toggles Demo Mode before the response
+  // arrives. Synced after every render (never mutated during render itself,
+  // which the react-hooks lint rule forbids).
+  const isDemoModeRef = useRef(isDemoMode);
+  useEffect(() => {
+    isDemoModeRef.current = isDemoMode;
+  });
 
   useEffect(() => {
     // The only reason to ask the server: a deployment (the shared Vercel
@@ -60,11 +70,13 @@ export function DemoModeProvider({
       .getDemoModeStatus()
       .then((res) => {
         if (!res.data.forced) return;
-        setIsDemoMode((current) => {
-          if (current === res.data.demo_mode) return current;
+        // Side effects live outside the updater on purpose: React
+        // double-invokes functional `setState` updaters under StrictMode
+        // in dev, which would otherwise fire `resetQueries()` twice.
+        if (isDemoModeRef.current !== res.data.demo_mode) {
+          setIsDemoMode(res.data.demo_mode);
           void queryClient.resetQueries();
-          return res.data.demo_mode;
-        });
+        }
       })
       .catch((err) => {
         console.error("Failed to fetch demo mode status:", err);
