@@ -205,6 +205,40 @@ _MAX_REQUEST_BYTES = int(os.getenv("MAX_REQUEST_BYTES", str(10 * 1024 * 1024)))
 _BODY_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
 
 
+# Values of X-FAD-Demo that select the demo database. Anything else — an
+# absent header, "0", or a malformed value — resolves to real mode.
+_DEMO_HEADER_TRUTHY = frozenset({"1", "true"})
+
+
+# Declared FIRST so it is registered first and therefore runs INNERMOST:
+# Starlette makes the last-registered middleware outermost, so this executes
+# after the host allowlist, bearer token, and same-origin checks have all
+# passed. Requests that those middlewares reject never resolve a mode.
+@app.middleware("http")
+async def resolve_demo_mode(request: Request, call_next):
+    """Bind the request's demo-mode flag from the ``X-FAD-Demo`` header.
+
+    Demo Mode is per-client: the flag lives in a context variable rather
+    than on a process-global singleton, so two clients on one backend can
+    read different databases concurrently. The header is the client's whole
+    declaration — the backend stores nothing per client.
+    """
+    if AppConfig._forced_mode is not None:
+        return await call_next(request)
+
+    header = request.headers.get("x-fad-demo", "")
+    enabled = header.strip().lower() in _DEMO_HEADER_TRUTHY
+
+    config = AppConfig()
+    token = config.set_demo_mode(enabled)
+    try:
+        return await call_next(request)
+    finally:
+        # Requests are served from a shared threadpool; without the reset a
+        # worker would carry this mode into the next request it picks up.
+        config.reset_demo_mode(token)
+
+
 @app.middleware("http")
 async def limit_request_size(request: Request, call_next):
     """Reject requests whose body exceeds ``MAX_REQUEST_BYTES``.
