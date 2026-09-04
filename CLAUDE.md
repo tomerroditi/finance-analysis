@@ -67,7 +67,8 @@ Routes (FastAPI) -> Services (Business Logic) -> Repositories (Data Access) -> S
 - **Scraper:** `scraper/` — Pure-Python scraper framework (Playwright + httpx), replaces Node.js
 - **Frontend:** `frontend/src/` — React 19, Vite, TanStack Query, Zustand, Tailwind CSS 4
 - **Tests:** `tests/backend/unit/` — pytest with test classes, docstrings required
-- **Rules:** `.claude/rules/` — detailed architecture docs covering services, repos, scraper, frontend (i18n, responsive, PWA/offline cache), testing, retirement/FIRE math (`retirement_calculations.md`), savings-goal allocation (`savings_goals.md`)
+- **Rules:** `.claude/rules/` — detailed architecture docs covering services, repos, scraper, frontend (i18n, responsive, PWA/offline cache), testing, retirement/FIRE math (`retirement_calculations.md`), savings-goal allocation (`savings_goals.md`). Each has `paths:` frontmatter and loads automatically when you open a file it covers; `general.md` is always on and indexes the rest
+- **Skills:** `.claude/skills/` — `scraper-development` (build a new provider), `demo-data-generation` (regenerate the demo DB), `israeli-salary-knowledge` (payroll/pension/KH reference), `sync-upstream-scraper` (port upstream scraper changes; user-invoked only)
 - **Data Flow:** `frontend/src/components/dataflow/dataFlowData.ts` — comprehensive map of all features and how data flows through the system (sources → ingestion → processing → storage → management → analytics → frontend). Read this for a quick overview of the entire application.
 
 ## Key Conventions
@@ -201,10 +202,10 @@ install` can't fetch a browser).
 The `scraper/` package at the project root is a pure-Python scraper framework using Playwright and httpx, replacing the old Node.js integration. It provides:
 
 - **19 provider scrapers** (12 banks + 6 credit cards + 1 insurance) in `scraper/providers/`
-- **Base classes:** `BrowserScraper` (Playwright lifecycle + login), `ApiScraper` (API-via-browser)
+- **Base classes:** `BrowserScraper` (Playwright lifecycle + form login; its `fetch_get`/`fetch_post` run inside the page context so they carry session cookies), `ApiScraper` (httpx only, no browser)
 - **Backend integration:** `backend/scraper/adapter.py` bridges async scrapers to the sync pipeline
 - **Demo mode:** Automatically redirects to dummy scrapers that generate fake data
-- **Adding a new provider:** Create a class in `scraper/providers/banks/` or `credit_cards/`, register in `scraper/models/credentials.py` PROVIDER_CONFIGS, and export in the `__init__.py`
+- **Adding a new provider:** use the `scraper-development` skill (read-only live-site exploration, then codegen). Manually: create a class in `scraper/providers/banks/` or `credit_cards/`, register in `scraper/models/credentials.py` PROVIDER_CONFIGS, and export in the `__init__.py`
 - **Import caveat:** `backend/scraper/` and root `scraper/` share a name. Backend code uses `_import_scraper_module()` helper (in `adapter.py`) to resolve root package. Test dirs use `test_scraper/` prefix to avoid pytest collision.
 
 ## PWA / Offline Cache

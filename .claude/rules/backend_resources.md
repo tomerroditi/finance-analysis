@@ -3,55 +3,39 @@ paths:
   - "backend/resources/**/*"
 ---
 
-# Resources Directory - Configuration & Static Data
+# Resources Directory — Bundled Seed Data
 
-YAML configuration files for defaults, credentials, and UI customization.
+Read-only data shipped **in git** and seeded into the DB on first run. Nothing
+here is user state: user data lives in `~/.finance-analysis/` (SQLite at
+`data.db`), and credentials live in the DB + OS Keyring, never in a file here.
 
-## Files Overview
+| File | Purpose | Read by |
+|------|---------|---------|
+| `default_categories.yaml` | Default category → tags hierarchy, seeded on first run | `repositories/tagging_repository.py` |
+| `categories_icons.yaml` | Emoji per category, for UI rendering | `config.py`, `tagging_repository.py`, `routes/tagging.py`, `services/tagging_service.py` |
+| `boi_rates.yaml` | Bank of Israel rate history, seeded into `interest_rates` (series `boi_rate`) | `services/rates_service.py` |
+| `demo_data.db` | Frozen SQLite snapshot backing Demo Mode | `demo_setup.py`, `config.py`, `routes/testing.py` |
+| `test_credentials.yaml` | Fake creds for the dummy 2FA scrapers — no real accounts | `tests/.../test_scraper_base.py` |
 
-| File | Location | Purpose | Modifiable |
-|------|----------|---------|------------|
-| `default_credentials.yaml` | `backend/resources/` | Empty template for credentials | No (in git) |
-| `credentials.yaml` | `~/.finance-analysis/` | User's actual credentials | Yes (via UI) |
-| `default_categories.yaml` | `backend/resources/` | Default category/tag hierarchy | No (in git) |
-| `categories.yaml` | `~/.finance-analysis/` | User's categories | Yes (via UI) |
-| `categories_icons.yaml` | `backend/resources/` | Emoji icons for categories | Yes (via UI) |
-| `test_credentials.yaml` | `backend/resources/` | Test account creds | No (gitignored) |
+## Things that will trip you up
 
-## Security
+- **Categories are DB-backed now.** `default_categories.yaml` is a *seed*, not
+  the live source. Editing it changes what a **fresh install** gets; existing
+  users are unaffected. There is no `~/.finance-analysis/categories.yaml`.
+- **There is no credentials YAML.** The legacy `credentials.yaml` is deleted on
+  startup after migration into the DB. Non-sensitive fields are Fernet-encrypted
+  (`utils/crypto.py`); passwords are in the Keyring.
+- **`boi_rates.yaml` entries are step points** — a rate holds from its `date`
+  until the next entry. Prime is derived at read time as BoI + 1.5 and never
+  stored. Pre-2020 points are year-end approximations (±0.25pp); 2020 onward is
+  decision-level. `POST /api/rates/refresh` pulls live values.
+- **`demo_data.db` is a frozen snapshot.** Toggling Demo Mode re-copies it, so
+  anything hand-added inside Demo Mode is lost. Regenerating it has its own
+  rules — see the `demo-data-generation` skill.
+- **`test_credentials.yaml` is committed on purpose** and holds only dummy
+  values for `dummy_tfa`. Never put a real credential in it.
 
-| Stored in YAML | NOT in YAML |
-|-------------------|----------------|
-| Provider names, usernames | Passwords (-> OS Keyring) |
-| Account numbers, user codes | 2FA codes (ephemeral) |
-| Email addresses, phone numbers | Session tokens |
+## Adding a default category
 
-## Data Flow
-
-### First-Time Setup
-1. App checks for `~/.finance-analysis/credentials.yaml`
-2. If missing, creates from `default_credentials.yaml` structure
-3. Same for `categories.yaml` from `default_categories.yaml`
-4. User fills credentials via UI -> saved to YAML + Keyring
-
-### Regular Usage
-1. Load `~/.finance-analysis/credentials.yaml` + passwords from Keyring
-2. Load `~/.finance-analysis/categories.yaml`
-3. Load `categories_icons.yaml` for UI rendering
-
-## Common Tasks
-
-### Adding New Default Category
-1. Edit `backend/resources/default_categories.yaml`
-2. Add icon to `categories_icons.yaml`
-3. Users see new category on fresh install
-
-### Adding Support for New Provider
-1. Add to `backend/constants/providers.py` enums
-2. Add login fields to `LoginFields.providers_fields` in `backend/constants/providers.py`
-3. Users add credentials via UI
-
-## Notes
-- `~/.finance-analysis/` is user data directory (auto-created on first run)
-- Icons are optional - categories work without them
-- Always validate YAML structure after manual edits
+Add it to `default_categories.yaml`, add an icon to `categories_icons.yaml`
+(optional — categories render without one), and it lands on fresh installs only.

@@ -7,7 +7,11 @@ paths:
 
 # Testing Standards
 
-**523 tests, 80% backend coverage.** Run with `poetry run pytest --cov=backend`.
+**~2,080 backend tests across 128 files; the gate is 40% coverage**
+(`fail_under = 40` in `pyproject.toml`). Run with `poetry run pytest`.
+A targeted run needs `--no-cov` or the gate fails it (see `CLAUDE.md` → Commands).
+Frontend adds ~46 vitest files (colocated in `frontend/src`) and 45 Playwright
+specs in `frontend/e2e/` — different layers, all three required before a PR.
 
 ```
 tests/
@@ -15,18 +19,24 @@ tests/
 ├── backend/
 │   ├── conftest.py                # Seed fixtures (transactions, budgets, tagging rules, etc.)
 │   ├── unit/
-│   │   ├── test_config.py         # AppConfig singleton tests
 │   │   ├── models/                # Per-model ORM tests (one file per model)
 │   │   ├── services/              # Service tests (real DB, mock external deps)
-│   │   ├── repositories/          # Repository tests (real DB, YAML uses tmp_path)
+│   │   ├── repositories/          # Repository tests (real DB)
 │   │   ├── utils/                 # Utility function tests
-│   │   └── scraper/               # Scraper base class + 2FA tests
+│   │   ├── migrations/            # Alembic revision tests
+│   │   ├── test_scraper/          # Scraper base + 2FA — prefixed to avoid the
+│   │   │                          #   pytest name collision with root `scraper/`
+│   │   └── test_config.py, test_vercel_lifespan.py, ...
 │   ├── integration/               # Cross-layer pipelines (tagging, budget, splits)
+│   ├── migrations/                # Migration-on-real-DB tests
 │   └── routes/
 │       ├── conftest.py            # Route-specific: db_engine (StaticPool) + test_client
 │       └── test_*_routes.py       # API endpoint tests (happy paths + error paths)
-└── frontend/                      # (Planned) Vitest for components
+└── build/                         # Packaging / installer tests
 ```
+
+Frontend tests do NOT live here — vitest files sit next to their components
+in `frontend/src/**/*.test.tsx`, e2e specs in `frontend/e2e/*.spec.ts`.
 
 ## Principles
 
@@ -68,7 +78,7 @@ Composable, function-scoped seed data — tests pick only what they need:
 | `seed_tagging_rules` | Auto-tagging rules (Supermarket, Uber, Netflix) |
 | `seed_investments` | Investment records + manual investment transactions |
 | `sample_categories_yaml` | Categories-to-tags mapping dict (no DB) |
-| `sample_credentials_yaml` | Fake credentials dict (no DB) |
+| `sample_credentials_yaml` | Fake credentials dict (no DB — name is legacy; credentials are DB+Keyring now) |
 
 ### Route conftest (`tests/backend/routes/conftest.py`)
 Overrides `db_engine` with **StaticPool** (required for TestClient sharing the same in-memory DB) and provides `test_client` fixture with dependency overrides.
