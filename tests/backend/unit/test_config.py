@@ -9,18 +9,22 @@ import os
 
 import pytest
 
-from backend.config import AppConfig
+from backend.config import AppConfig, _demo_mode_ctx
 
 
 @pytest.fixture(autouse=True)
 def reset_config():
     """Reset AppConfig singleton state between tests."""
     config = AppConfig()
-    original_demo_mode = config._demo_mode
+    # For the new contextvar-based system, capture the current value
+    # and reset it after the test
+    token = _demo_mode_ctx.set(_demo_mode_ctx.get())
     original_base_dir = config._base_user_dir
+    original_forced_mode = AppConfig._forced_mode
     yield
-    config._demo_mode = original_demo_mode
+    _demo_mode_ctx.reset(token)
     config._base_user_dir = original_base_dir
+    AppConfig._forced_mode = original_forced_mode
 
 
 class TestAppConfig:
@@ -187,3 +191,69 @@ class TestAppConfig:
         assert not os.path.exists(demo_env_dir)
         config.set_demo_mode(True)
         assert os.path.isdir(demo_env_dir)
+
+
+class TestDemoModeContextIsolation:
+    """Tests that the demo flag is context-local, not process-global."""
+
+    def test_flag_defaults_to_false(self):
+        """Verify a fresh context reads real mode."""
+        from backend.config import AppConfig
+
+        assert AppConfig().is_demo_mode is False
+
+    def test_set_returns_token_and_reset_restores(self):
+        """Verify set_demo_mode returns a token that reset_demo_mode honours."""
+        from backend.config import AppConfig
+
+        config = AppConfig()
+        token = config.set_demo_mode(True)
+        assert config.is_demo_mode is True
+        config.reset_demo_mode(token)
+        assert config.is_demo_mode is False
+
+    def test_separate_contexts_do_not_leak(self):
+        """Verify demo mode set in one context is invisible in another."""
+        import contextvars
+
+        from backend.config import AppConfig
+
+        def read_flag() -> bool:
+            return AppConfig().is_demo_mode
+
+        config = AppConfig()
+        token = config.set_demo_mode(True)
+        try:
+            # A fresh Context() holds no values, so the var falls back to
+            # its default rather than seeing what this context just set.
+            fresh = contextvars.Context()
+            assert fresh.run(read_flag) is False
+        finally:
+            # Without this reset the flag leaks into every later test in
+            # this module — pytest runs them all in one context.
+            config.reset_demo_mode(token)
+
+    def test_forced_mode_overrides_contextvar(self):
+        """Verify _forced_mode wins over whatever the context holds."""
+        from backend.config import AppConfig
+
+        config = AppConfig()
+        token = config.set_demo_mode(False)
+        AppConfig._forced_mode = True
+        try:
+            assert config.is_demo_mode is True
+        finally:
+            AppConfig._forced_mode = None
+            config.reset_demo_mode(token)
+
+    def test_forced_mode_none_defers_to_contextvar(self):
+        """Verify clearing _forced_mode restores context-driven behaviour."""
+        from backend.config import AppConfig
+
+        config = AppConfig()
+        AppConfig._forced_mode = None
+        token = config.set_demo_mode(True)
+        try:
+            assert config.is_demo_mode is True
+        finally:
+            config.reset_demo_mode(token)
