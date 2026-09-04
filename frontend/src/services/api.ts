@@ -1034,13 +1034,13 @@ export const backupApi = {
 };
 
 export const testingApi = {
-  toggleDemoMode: (enabled: boolean) =>
-    api.post<{ status: string; demo_mode: boolean }>(
-      "/testing/toggle_demo_mode",
-      { enabled },
-    ),
+  prepareDemo: () =>
+    api.post<{ status: string; created: boolean }>("/testing/demo/prepare"),
+  resetDemo: () => api.post<{ status: string }>("/testing/demo/reset"),
   getDemoModeStatus: () =>
-    api.get<{ demo_mode: boolean }>("/testing/demo_mode_status"),
+    api.get<{ demo_mode: boolean; forced: boolean }>(
+      "/testing/demo_mode_status",
+    ),
 };
 
 export interface OnboardingStatus {

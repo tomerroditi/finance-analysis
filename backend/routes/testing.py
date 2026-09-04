@@ -1,18 +1,18 @@
 """
 Testing / development utility routes.
 
-Provides endpoints for toggling demo mode, which switches the application
-to an isolated environment (separate DB, credentials, and categories) to
-allow safe testing without affecting production data.
+Demo Mode is per-client: a client declares it with the ``X-FAD-Demo``
+request header and the backend keeps no per-client state. These routes
+therefore do not *switch* anything — they only manage the demo database's
+lifecycle and report whether the deployment pins the mode.
 """
 
 import os
 
 from fastapi import APIRouter
-from pydantic import BaseModel
 
-from backend.config import AppConfig
 from backend import database
+from backend.config import AppConfig
 from backend.database import get_db_context
 from backend.demo_setup import DEMO_REFERENCE_DATE, prepare_demo_database
 from backend.services.credentials_service import CredentialsService
@@ -25,62 +25,99 @@ router = APIRouter()
 __all__ = ["DEMO_REFERENCE_DATE", "router"]
 
 
-class DemoModeRequest(BaseModel):
-    enabled: bool
+def _demo_db_exists() -> bool:
+    """Return ``True`` when the demo database file is already on disk.
+
+    Returns
+    -------
+    bool
+        Whether the demo-mode database path exists.
+    """
+    config = AppConfig()
+    token = config.set_demo_mode(True)
+    try:
+        return os.path.exists(config.get_db_path())
+    finally:
+        config.reset_demo_mode(token)
 
 
-@router.post("/toggle_demo_mode")
-def toggle_demo_mode(
-    request: DemoModeRequest,
-) -> dict[str, str | bool]:
-    """Toggle the application's demo mode on or off.
+def _build_demo_database() -> None:
+    """Copy the frozen snapshot into place and seed demo credentials.
 
-    When enabled, the app switches to an isolated demo environment with a
-    separate SQLite database, demo credentials, and demo categories. The
-    database engine and credentials cache are reset so all subsequent
-    requests use the demo environment. When disabling, the engine resets
-    back to the production database.
+    Forces demo context for its own duration rather than trusting the
+    caller's header, so the snapshot can never be copied over the real
+    database.
+    """
+    config = AppConfig()
+    token = config.set_demo_mode(True)
+    try:
+        database.reset_engines()
+        CredentialsService.clear_cache()
+        CategoriesTagsService.clear_cache()
 
-    Parameters
-    ----------
-    request : DemoModeRequest
-        ``enabled`` flag indicating the desired demo mode state.
+        prepare_demo_database()
+
+        with get_db_context() as demo_db:
+            CredentialsService(demo_db).seed_demo_credentials()
+    finally:
+        config.reset_demo_mode(token)
+
+
+@router.post("/demo/prepare")
+def prepare_demo() -> dict[str, str | bool]:
+    """Build the demo database if it is not already present.
+
+    Idempotent. A client switching Demo Mode on calls this; it deliberately
+    does **not** rebuild an existing demo database, because another client
+    may be browsing it. Use ``/demo/reset`` for a deliberate rebuild.
 
     Returns
     -------
     dict
-        ``{"status": "success", "demo_mode": bool}`` reflecting the new state.
+        ``{"status": "success", "created": bool}`` — ``created`` reports
+        whether this call actually built the database.
     """
-    config = AppConfig()
+    if AppConfig._forced_mode is not None:
+        return {"status": "success", "created": False}
 
-    # On the shared Vercel deployment demo mode is forced on at cold start and
-    # must never be toggled — the instance is shared by every visitor. Report
-    # the current (forced) state so the demo UI keeps working.
-    if os.environ.get("VERCEL"):
-        return {"status": "success", "demo_mode": config.is_demo_mode}
+    if _demo_db_exists():
+        return {"status": "success", "created": False}
 
-    # Only perform actions if the mode is actually changing
-    if config.is_demo_mode != request.enabled:
-        config.set_demo_mode(request.enabled)
+    _build_demo_database()
+    return {"status": "success", "created": True}
 
-        # Reset database engine to pick up new path
-        database.reset_engines()
 
-        CredentialsService.clear_cache()
-        CategoriesTagsService.clear_cache()
+@router.post("/demo/reset")
+def reset_demo() -> dict[str, str]:
+    """Rebuild the demo database from the frozen snapshot, unconditionally.
 
-        # If enabling demo mode, copy source DB then ensure schema is up-to-date
-        if request.enabled:
-            prepare_demo_database()
+    Discards every change made in Demo Mode by every client and re-anchors
+    all dates to today.
 
-            with get_db_context() as demo_db:
-                creds_service = CredentialsService(demo_db)
-                creds_service.seed_demo_credentials()
+    Returns
+    -------
+    dict
+        ``{"status": "success"}``.
+    """
+    if AppConfig._forced_mode is not None:
+        return {"status": "success"}
 
-    return {"status": "success", "demo_mode": config.is_demo_mode}
+    _build_demo_database()
+    return {"status": "success"}
 
 
 @router.get("/demo_mode_status")
-def get_demo_mode_status():
-    """Get the current demo mode status."""
-    return {"demo_mode": AppConfig().is_demo_mode}
+def get_demo_mode_status() -> dict[str, bool]:
+    """Report this request's demo mode and whether the deployment pins it.
+
+    Returns
+    -------
+    dict
+        ``{"demo_mode": bool, "forced": bool}``. When ``forced`` is true the
+        deployment ignores ``X-FAD-Demo`` and the client cannot opt out —
+        this is how the shared Vercel instance advertises itself.
+    """
+    return {
+        "demo_mode": AppConfig().is_demo_mode,
+        "forced": AppConfig._forced_mode is not None,
+    }
