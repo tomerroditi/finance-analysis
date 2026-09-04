@@ -21,16 +21,23 @@ import { BudgetLedgerRow } from "./BudgetLedgerRow";
 import { BudgetRail } from "./BudgetRail";
 import { RuleSparkline } from "./RuleSparkline";
 import { DataFreshnessBadge } from "./DataFreshnessBadge";
-import { BudgetFreshnessBanner } from "./BudgetFreshnessBanner";
 import { useBudgetFreshness } from "../../hooks/useBudgetFreshness";
 import { useScraping } from "../../hooks/useScraping";
-import { BudgetTrendChart } from "./BudgetTrendChart";
 import { useBudgetTrend } from "../../hooks/useBudgetTrend";
 import { ProjectsThisMonthSummary } from "./ProjectsThisMonthSummary";
 import { useQueryKeys } from "../../hooks/useQueryKeys";
 import { qkPrefix } from "../../services/queryKeys";
 
-const TREND_MONTHS = 6;
+/**
+ * Months in the summary band's budget-vs-actual figure. It spans the stats
+ * row now (~330px), so six bars read as fat blocks rather than a trend.
+ * Costs one `budget/analysis` request per month — the trailing few are warm
+ * from the ±2 prefetch, the rest are cold on first load.
+ */
+const TREND_MONTHS = 12;
+
+/** Per-rule sparklines live in a 78px column; 12 bars there is a smear. */
+const ROW_TREND_MONTHS = 6;
 
 interface BudgetRule {
   id: number;
@@ -97,6 +104,10 @@ export const MonthlyBudgetView: React.FC<MonthlyBudgetViewProps> = ({
   const trendLabels = useMemo(
     () => trend.data.map((point) => formatMonthCompact(`${point.key}-01`)),
     [trend.data],
+  );
+  const rowTrendLabels = useMemo(
+    () => trendLabels.slice(-ROW_TREND_MONTHS),
+    [trendLabels],
   );
 
   // Prefetch adjacent months (prev 2 + next 2) for instant navigation
@@ -238,9 +249,6 @@ export const MonthlyBudgetView: React.FC<MonthlyBudgetViewProps> = ({
   const monthLabel = new Date(year, month - 1).toLocaleString(locale, {
     month: "long",
     year: "numeric",
-  });
-  const monthShortLabel = new Date(year, month - 1).toLocaleString(locale, {
-    month: "long",
   });
   const isCurrentMonth =
     year === today.getFullYear() && month === today.getMonth() + 1;
@@ -402,26 +410,21 @@ export const MonthlyBudgetView: React.FC<MonthlyBudgetViewProps> = ({
     {
       key: "daysLeft",
       label: t("budget.daysLeft"),
-      value: (
-        <span className="block">
-          <span className="text-lg md:text-xl font-bold">{daysLeft}</span>
-          <span className="block text-[10px] sm:text-xs text-[var(--text-muted)] truncate">
-            {t("budget.inMonth", { month: monthShortLabel })}
-          </span>
-        </span>
-      ),
+      value: <span className="text-lg md:text-xl font-bold">{daysLeft}</span>,
     },
     {
       key: "trend",
       label: t("budget.trend.title"),
+      grow: true,
       trend: trend.hasData ? (
         <RuleSparkline
           variant="bars"
           series={trend.data.map((point) => point.actual)}
           labels={trendLabels}
           budget={trend.data[trend.data.length - 1]?.budget ?? 0}
-          width={84}
-          height={26}
+          width={220}
+          height={44}
+          fluid
         />
       ) : (
         <span className="text-[10px] text-[var(--text-muted)]">—</span>
@@ -480,8 +483,8 @@ export const MonthlyBudgetView: React.FC<MonthlyBudgetViewProps> = ({
       trend={
         <RuleSparkline
           variant="bars"
-          series={trend.byRule[item.rule.name] ?? []}
-          labels={trendLabels}
+          series={(trend.byRule[item.rule.name] ?? []).slice(-ROW_TREND_MONTHS)}
+          labels={rowTrendLabels}
           budget={item.rule.amount}
         />
       }
@@ -507,17 +510,7 @@ export const MonthlyBudgetView: React.FC<MonthlyBudgetViewProps> = ({
     <div className="space-y-3 md:space-y-4">
       {commandBar}
 
-      <BudgetFreshnessBanner
-        freshness={freshness}
-        isSyncing={isAnyScraping}
-        show={showFreshness}
-        year={year}
-        month={month}
-      />
-
       <BudgetNoticeLine
-        year={year}
-        month={month}
         copiedFrom={copiedFromForThisMonth}
         onDismissCopied={() =>
           setDismissedCopyMonths((prev) => new Set(prev).add(currentMonthKey))
@@ -581,24 +574,18 @@ export const MonthlyBudgetView: React.FC<MonthlyBudgetViewProps> = ({
       )}
 
       {rules.length > 0 && (
-        <div className="flex flex-col lg:flex-row items-start gap-3 md:gap-4">
+        <div className="flex flex-col xl:flex-row items-start gap-3 md:gap-4">
           <div className="flex-1 min-w-0 w-full space-y-2">
             {!rulesCollapsed && childItems.map(renderRow)}
           </div>
-          <BudgetRail>
-            {project_spending?.projects?.length > 0 && (
+          {project_spending?.projects?.length > 0 && (
+            <BudgetRail>
               <ProjectsThisMonthSummary
                 projects={project_spending.projects as ProjectSpendingItem[]}
                 onViewAll={onViewProjects}
               />
-            )}
-            <BudgetTrendChart
-              year={year}
-              month={month}
-              includeSplitParents={includeSplitParents}
-              months={TREND_MONTHS}
-            />
-          </BudgetRail>
+            </BudgetRail>
+          )}
         </div>
       )}
 

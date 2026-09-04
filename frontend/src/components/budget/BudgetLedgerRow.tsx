@@ -46,18 +46,15 @@ export const BudgetLedgerRow: React.FC<BudgetLedgerRowProps> = ({
 
   const isNetRefund = current < 0;
   const spent = Math.max(current, 0);
-  const percent =
-    total > 0 ? Math.min((spent / total) * 100, 100) : spent > 0 ? 100 : 0;
+  // No budget means no proportion to draw: a 0-ceiling envelope used to
+  // render a full amber bar, which read as "spent out" rather than "no
+  // budget set" — and every other cell on the row already shows an em dash.
+  const percent = total > 0 ? Math.min((spent / total) * 100, 100) : 0;
   const over = spent > total && total > 0;
   const near = !over && total > 0 && spent > total * 0.9;
-  const unbudgeted = total === 0 && spent > 0;
   const remaining = total - spent;
 
-  const barColor = over
-    ? "bg-rose-500"
-    : near || unbudgeted
-      ? "bg-amber-500"
-      : "bg-emerald-500";
+  const barColor = over ? "bg-rose-500" : near ? "bg-amber-500" : "bg-emerald-500";
   const pctColor = over
     ? "text-rose-400"
     : near
@@ -99,8 +96,15 @@ export const BudgetLedgerRow: React.FC<BudgetLedgerRowProps> = ({
           aria-expanded={isExpanded}
           className="flex-1 min-w-0 py-2 text-start"
         >
-          {/* Desktop: one line, eight columns */}
-          <span className="hidden md:grid items-center gap-3 grid-cols-[10px_minmax(0,1.4fr)_minmax(0,1.15fr)_112px_58px_44px_78px]">
+          {/* Desktop: one line, eight columns.
+              Every row is its own grid, so the numeric tracks are fixed and
+              must fit their widest realistic value — a `whitespace-nowrap`
+              figure that outgrows its track doesn't shrink, it spills into
+              the next column and knocks that row out of line with the rest
+              (the old 112px figures track already spilled at "1,770 ₪ /
+              3,000 ₪"). Sized measured: 152px holds "123,456 ₪ / 100,000 ₪"
+              and 76px holds "-123,456 ₪". */}
+          <span className="hidden md:grid items-center gap-3 grid-cols-[10px_minmax(0,1.3fr)_minmax(0,1fr)_152px_76px_44px_78px]">
             <span
               className={`w-2.5 h-2.5 rounded-full shrink-0 ${total > 0 ? barColor : "bg-[var(--surface-light)]"}`}
             />

@@ -7,11 +7,13 @@ import React from "react";
  * rows were ~1200px of mostly empty space while the trend chart and the
  * per-project summary sat far below the fold. Those move here instead.
  *
- * Below `lg:` the rail is just the bottom of the stack — a phone has no
- * horizontal room to give it.
+ * Below `xl:` the rail is just the bottom of the stack. It used to split off
+ * at `lg:`, but 272px + gap out of a 1024px window left the ledger row's
+ * flexible tracks at zero — rule names disappeared entirely and the fixed
+ * numeric tracks overflowed under the rail.
  */
 export const BudgetRail: React.FC<{ children: React.ReactNode }> = ({ children }) => (
-  <aside className="w-full lg:w-[272px] lg:shrink-0 flex flex-col gap-3">{children}</aside>
+  <aside className="w-full xl:w-[272px] xl:shrink-0 flex flex-col gap-3">{children}</aside>
 );
 
 interface RailCardProps {

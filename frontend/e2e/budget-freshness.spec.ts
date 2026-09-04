@@ -2,15 +2,15 @@ import { test, expect, type Page } from "@playwright/test";
 import { disableDemoMode, navigateTo } from "./helpers";
 
 /**
- * The budget data-freshness UX: an in-header "last synced" chip for mildly
- * aging data, a stale-KPI treatment, and a banner (listing every behind
- * account) for very-stale / never-synced data. Driven by the *oldest*
- * successful scrape across accounts (the weakest link).
+ * The budget data-freshness UX: a single "last synced" chip in the command
+ * bar, driven by the *oldest* successful scrape across accounts (the weakest
+ * link). Mild ages get a labelled chip ("Missing 1–5 Sep"); severe ages
+ * (very stale / never synced) collapse to a bare warning triangle. Either way
+ * the account detail lives in one hover/tap popover — there is no banner: it
+ * repeated what the popover says and cost a full row above the budget.
  *
  * Freshness is suppressed in Demo Mode, so these run with Demo Mode OFF and
- * stub `/scraping/last-scrapes` to place the data at a chosen age. The chip
- * and the banner are mutually exclusive — mild ages get the chip, severe ages
- * get the banner, never both.
+ * stub `/scraping/last-scrapes` to place the data at a chosen age.
  */
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -41,13 +41,15 @@ async function mockLastScrapes(
   });
 }
 
+const badgeOf = (page: Page) => page.getByRole("button", { name: /Show sync details/i });
+
 test.describe("Budget data freshness", () => {
   test.beforeAll(async () => {
     // Freshness only renders outside Demo Mode.
     await disableDemoMode();
   });
 
-  test("very-stale shows the banner with every behind account and no chip", async ({
+  test("very-stale collapses to a warning icon whose popover names every behind account", async ({
     page,
   }) => {
     await mockLastScrapes(page, [
@@ -56,52 +58,52 @@ test.describe("Budget data freshness", () => {
     ]);
     await navigateTo(page, "/budget");
 
-    // Banner lists ALL out-of-sync accounts and offers a single Sync now CTA.
-    await expect(page.getByText(/Budget may be incomplete/i)).toBeVisible({
-      timeout: 30_000,
-    });
-    await expect(page.getByText(/Checking/i)).toBeVisible();
-    await expect(page.getByText(/Savings/i)).toBeVisible();
-    await expect(page.getByRole("link", { name: /Sync now/i }).first()).toBeVisible();
+    // Icon only — the severe tier carries no inline label of its own.
+    const badge = badgeOf(page);
+    await expect(badge).toBeVisible({ timeout: 30_000 });
+    await expect(badge).toHaveText("");
 
-    // No redundant chip alongside the banner.
-    await expect(page.getByRole("button", { name: /Show sync details/i })).toHaveCount(0);
+    // Nothing is spelled out until the user asks for it. (The panel is in the
+    // DOM — CSS `group-hover` needs it there — so this is a visibility check.)
+    await expect(page.getByText(/Out-of-date sources/i)).not.toBeVisible();
+
+    await badge.hover();
+    await expect(page.getByText(/Out-of-date sources/i)).toBeVisible();
+    await expect(page.getByText(/Checking/i).first()).toBeVisible();
+    await expect(page.getByText(/Savings/i).first()).toBeVisible();
+    await expect(page.getByRole("link", { name: /Sync now/i }).first()).toBeVisible();
   });
 
-  test("mildly-stale shows an in-header chip with a details popover, no banner", async ({
-    page,
-  }) => {
+  test("mildly-stale shows a labelled chip with the same popover", async ({ page }) => {
     await mockLastScrapes(page, [
       { provider: "hapoalim", account_name: "Checking", last_scrape_date: daysAgoIso(5) },
     ]);
     await navigateTo(page, "/budget");
 
-    // The chip is the only freshness element for mild staleness, and it names
-    // the un-scraped window rather than a vague "N ago".
-    const badge = page.getByRole("button", { name: /Show sync details/i });
+    // The chip names the un-scraped window rather than a vague "N ago".
+    const badge = badgeOf(page);
     await expect(badge).toBeVisible({ timeout: 30_000 });
     await expect(badge).toContainText(/Missing/i);
-    await expect(page.getByText(/Budget may be incomplete/i)).toHaveCount(0);
 
-    // Popover names the account and links to Data Sources.
-    await badge.click();
+    await badge.hover();
     await expect(page.getByText(/Out-of-date sources/i)).toBeVisible();
     await expect(page.getByText(/Checking/i).first()).toBeVisible();
     const syncLink = page.getByRole("link", { name: /Sync now/i }).first();
     await expect(syncLink).toHaveAttribute("href", "/data-sources");
   });
 
-  test("fresh sync shows an up-to-date chip and no banner", async ({ page }) => {
+  test("fresh sync shows an up-to-date chip", async ({ page }) => {
     await mockLastScrapes(page, [
       { provider: "hapoalim", account_name: "Checking", last_scrape_date: daysAgoIso(0) },
     ]);
     await navigateTo(page, "/budget");
 
     await expect(page.getByText(/Up to date/i)).toBeVisible({ timeout: 30_000 });
-    await expect(page.getByText(/Budget may be incomplete/i)).toHaveCount(0);
+    await expect(page.getByText(/Out-of-date sources/i)).toHaveCount(0);
+
   });
 
-  test("accounts sharing a window collapse into one row", async ({ page }) => {
+  test("accounts sharing a window collapse into one popover row", async ({ page }) => {
     // Three accounts with the same last scrape → identical missing window →
     // a single grouped row listing all three, not three repeated ranges.
     const sameDay = daysAgoIso(10);
@@ -112,27 +114,44 @@ test.describe("Budget data freshness", () => {
     ]);
     await navigateTo(page, "/budget");
 
-    const banner = page.locator("div", { hasText: /Budget may be incomplete/i }).last();
-    await expect(banner).toBeVisible({ timeout: 30_000 });
+    const badge = badgeOf(page);
+    await expect(badge).toBeVisible({ timeout: 30_000 });
+    await badge.hover();
 
-    // One window row, all three accounts named within it.
-    await expect(banner.locator("li")).toHaveCount(1);
-    await expect(banner.locator("li")).toContainText(/Shir/);
-    await expect(banner.locator("li")).toContainText(/Tomer/);
-    await expect(banner.locator("li")).toContainText(/Joint/);
+    const popover = page.locator("li").filter({ hasText: /Shir/ });
+    await expect(popover).toHaveCount(1);
+    await expect(popover).toContainText(/Tomer/);
+    await expect(popover).toContainText(/Joint/);
   });
 
-  test("the banner can be dismissed", async ({ page }) => {
+  test("the popover opens on hover and closes when the pointer leaves", async ({
+    page,
+  }) => {
     await mockLastScrapes(page, [
       { provider: "hapoalim", account_name: "Checking", last_scrape_date: null },
     ]);
     await navigateTo(page, "/budget");
 
-    const banner = page.getByText(/Budget may be incomplete/i);
-    await expect(banner).toBeVisible({ timeout: 30_000 });
+    const badge = badgeOf(page);
+    await expect(badge).toBeVisible({ timeout: 30_000 });
 
-    await page.getByRole("button", { name: /Dismiss/i }).first().click();
-    await expect(banner).toHaveCount(0);
+    const details = page.getByText(/Out-of-date sources/i);
+    await badge.hover();
+    await expect(details).toBeVisible();
+
+    // Hover is the whole interaction on a mouse — no click, no dismiss button.
+    await page.mouse.move(0, 0);
+    await expect(details).not.toBeVisible();
+
+    // A tap (no hover precedes it on touch) pins it open until the backdrop
+    // is dismissed.
+    await badge.click();
+    await expect(details).toBeVisible();
+    // Click into the page body, not the corner: the sidebar sits above the
+    // backdrop, so a top-left click never reaches it.
+    await page.mouse.click(700, 400);
+    await page.mouse.move(0, 0);
+    await expect(details).not.toBeVisible();
   });
 
   test("a stale insurance sync does not flag the budget", async ({ page }) => {
@@ -148,8 +167,8 @@ test.describe("Budget data freshness", () => {
     ]);
     await navigateTo(page, "/budget");
 
-    await expect(page.getByText(/Budget may be incomplete/i)).toHaveCount(0);
-    await expect(page.getByRole("button", { name: /Show sync details/i })).toHaveCount(0);
+    await expect(page.getByText(/Total Budget/i).first()).toBeVisible({ timeout: 30_000 });
+    await expect(badgeOf(page)).toHaveCount(0);
     await expect(page.getByText(/Up to date/i)).toHaveCount(0);
   });
 
@@ -170,22 +189,25 @@ test.describe("Budget data freshness", () => {
     ]);
     await navigateTo(page, "/budget");
 
-    const banner = page.locator("div", { hasText: /Budget may be incomplete/i }).last();
-    await expect(banner).toBeVisible({ timeout: 30_000 }); // current month
-    // Current-month view clamps to the current month only.
-    await expect(banner).toContainText(curMonthShort);
+    const badge = badgeOf(page);
+    await expect(badge).toBeVisible({ timeout: 30_000 }); // current month
+    await badge.hover();
+    const window = page.locator("li").filter({ hasText: /Checking/ });
+    // Current-month view clamps the missing window to the current month only.
+    await expect(window).toContainText(curMonthShort);
 
     const prev = page.getByRole("button", { name: /Previous/i }).first();
     await prev.click();
-    await expect(banner).toBeVisible(); // previous month — still affected
+    await expect(badge).toBeVisible(); // previous month — still affected
+    await badge.hover();
     // The range is clamped to the previous month — it must not bleed into the
     // current month.
-    await expect(banner).toContainText(prevMonthShort);
+    await expect(window).toContainText(prevMonthShort);
     if (prevMonthShort !== curMonthShort) {
-      await expect(banner).not.toContainText(curMonthShort);
+      await expect(window).not.toContainText(curMonthShort);
     }
 
     await prev.click();
-    await expect(page.getByText(/Budget may be incomplete/i)).toHaveCount(0); // settled
+    await expect(badgeOf(page)).toHaveCount(0); // settled
   });
 });

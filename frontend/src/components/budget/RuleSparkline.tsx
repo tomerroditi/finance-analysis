@@ -18,6 +18,14 @@ interface BaseProps {
   budget: number;
   width?: number;
   height?: number;
+  /**
+   * Stretch to the container's width while keeping `height` exactly. The
+   * summary band's figure takes whatever width the stats row has left; letting
+   * it scale uniformly instead would make it ~66px tall at that width and grow
+   * the whole band. Ledger rows keep the fixed intrinsic size so their trend
+   * column stays aligned row to row.
+   */
+  fluid?: boolean;
   className?: string;
 }
 
@@ -67,6 +75,7 @@ export const RuleSparkline: React.FC<RuleSparklineProps> = (props) => {
     budget,
     width = 74,
     height = 22,
+    fluid = false,
     className = "",
   } = props;
 
@@ -199,8 +208,22 @@ export const RuleSparkline: React.FC<RuleSparklineProps> = (props) => {
   }
 
   return (
-    <span className={`inline-block leading-none ${className}`} data-testid="rule-sparkline">
-      <svg width={width} height={height} role="img" aria-label={summary}>
+    <span
+      className={`${fluid ? "block w-full" : "inline-block"} leading-none ${className}`}
+      data-testid="rule-sparkline"
+    >
+      <svg
+        {...(fluid
+          ? {
+              viewBox: `0 0 ${width} ${height}`,
+              preserveAspectRatio: "none",
+              className: "w-full",
+              height,
+            }
+          : { width, height })}
+        role="img"
+        aria-label={summary}
+      >
         <title>{summary}</title>
         {body}
       </svg>

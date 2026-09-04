@@ -10,7 +10,6 @@ import { BudgetCommandBar, PeriodNav } from "./BudgetCommandBar";
 import { BudgetStatusBand, type BandStat } from "./BudgetStatusBand";
 import { BudgetNoticeLine } from "./BudgetNoticeLine";
 import { BudgetLedgerRow } from "./BudgetLedgerRow";
-import { BudgetRail, RailCard } from "./BudgetRail";
 import { RuleSparkline } from "./RuleSparkline";
 import { isAllTagsRule } from "../../utils/budgetRules";
 import { formatCurrency } from "../../utils/numberFormatting";
@@ -98,23 +97,6 @@ export const YearlyBudgetView: React.FC<YearlyBudgetViewProps> = ({ tabs }) => {
     }
     return map;
   }, [rules, monthKeys]);
-
-  // "Over pace" is not the same question as "over budget": at month 7 of 12
-  // an envelope should be ~58% spent, so a row can sit far below its ceiling
-  // and still be spending too fast for the year to hold.
-  const overPace = rules
-    .filter((entry) => {
-      const spent = entry.current_amount;
-      return (
-        entry.rule.amount > 0 &&
-        paceRatio > 0 &&
-        spent > entry.rule.amount * paceRatio
-      );
-    })
-    .sort(
-      (a, b) =>
-        b.current_amount / b.rule.amount - a.current_amount / a.rule.amount,
-    );
 
   const stats: BandStat[] = summary
     ? [
@@ -240,8 +222,7 @@ export const YearlyBudgetView: React.FC<YearlyBudgetViewProps> = ({ tabs }) => {
       ) : rules.length === 0 ? (
         <p className="text-[var(--text-muted)] text-sm py-8 text-center">{t("budget.yearly.empty")}</p>
       ) : (
-        <div className="flex flex-col lg:flex-row items-start gap-3 md:gap-4">
-          <div className="flex-1 min-w-0 w-full space-y-2">
+        <div className="w-full space-y-2">
             {rules.map((entry) => {
               const rule = entry.rule;
               const tagList = Array.isArray(rule.tags) ? rule.tags : [];
@@ -314,53 +295,6 @@ export const YearlyBudgetView: React.FC<YearlyBudgetViewProps> = ({ tabs }) => {
                 </BudgetLedgerRow>
               );
             })}
-          </div>
-
-          <BudgetRail>
-            <RailCard
-              title={t("budget.yearly.overPace")}
-              value={
-                <span
-                  className={`text-xs font-bold px-2 py-0.5 rounded-full ${
-                    overPace.length
-                      ? "bg-amber-500/10 text-amber-400"
-                      : "bg-emerald-500/10 text-emerald-400"
-                  }`}
-                >
-                  {overPace.length}
-                </span>
-              }
-              items={overPace.map((entry) => ({
-                key: String(entry.rule.id),
-                label: entry.rule.name,
-                value: t("budget.yearly.ofPace", {
-                  pct: Math.round(
-                    (entry.current_amount / (entry.rule.amount * paceRatio)) * 100,
-                  ),
-                }),
-              }))}
-            >
-              {overPace.length === 0 && (
-                <p className="mt-2 text-xs text-[var(--text-muted)]">
-                  {t("budget.yearly.allOnPace")}
-                </p>
-              )}
-            </RailCard>
-
-            {summary && (
-              <RailCard
-                title={t("budget.yearly.remaining")}
-                value={
-                  <span
-                    className={`font-mono text-sm font-bold ${summary.remaining < 0 ? "text-rose-400" : "text-emerald-400"}`}
-                    dir="ltr"
-                  >
-                    {formatCurrency(summary.remaining)}
-                  </span>
-                }
-              />
-            )}
-          </BudgetRail>
         </div>
       )}
 

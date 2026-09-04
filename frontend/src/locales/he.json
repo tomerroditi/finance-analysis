@@ -550,7 +550,6 @@
     "projectBudgets": "תקציבי פרויקטים",
     "addBudget": "הוסף תקציב",
     "addProject": "הוסף פרויקט",
-    "spent": "הוצא",
     "remaining": "נותר",
     "overBudget": "חריגה מהתקציב",
     "onTrack": "בתקציב",
@@ -572,7 +571,6 @@
     "biggestOverspend": "החריגה הגדולה ביותר",
     "allGood": "הכל בסדר!",
     "daysLeft": "ימים נותרו",
-    "inMonth": "ב{{month}}",
     "freshness": {
       "upToDate": "מעודכן",
       "missingLabel": "חסר",
@@ -594,7 +592,6 @@
     "noProjects": "אין פרויקטים",
     "newProject": "פרויקט חדש",
     "confirmDeleteProject": "האם אתה בטוח שברצונך למחוק פרויקט זה וכל כללי התקציב שלו?",
-    "totalProjectBudget": "תקציב פרויקט כולל",
     "overallAllocation": "הקצאה כוללת",
     "otherProjectTransactions": "תנועות פרויקט אחרות",
     "uncategorizedSpending": "הוצאות ללא קטגוריה",
@@ -625,9 +622,7 @@
     "viewAllProjects": "הצג את כל הפרויקטים",
     "trend": {
       "title": "תקציב מול ביצוע",
-      "budget": "תקציב",
-      "actual": "ביצוע",
-      "empty": "אין מספיק היסטוריה עדיין"
+      "budget": "תקציב"
     },
     "yearly": {
       "tab": "שנתי",
@@ -635,7 +630,6 @@
       "currentYear": "השנה הנוכחית",
       "allocated": "הוקצה",
       "spentYtd": "הוצאו השנה",
-      "remaining": "נותר",
       "health": "מצב התקציב",
       "biggest": "החריגה הגדולה: {{name}} {{pct}}%",
       "allTags": "כל התגיות",
@@ -656,9 +650,6 @@
       "saveFailed": "לא ניתן היה לשמור את הכלל.",
       "pace": "קצב שנתי",
       "monthsElapsed": "{{elapsed}} מתוך {{total}} חודשים",
-      "overPace": "מעל הקצב",
-      "allOnPace": "הכול בקצב.",
-      "ofPace": "{{pct}}% מהקצב",
       "spentOfAllocation": "{{spent}} מתוך {{total}} שהוקצו"
     },
     "categoryConflict": {
@@ -674,7 +665,6 @@
     "projectTagEnvelopes": "מעטפות",
     "projectAvgPerMonth": "ממוצע לחודש",
     "projectBurn": "קצב שריפה",
-    "projectActiveMonths": "חודשים פעילים",
     "goals": {
       "title": "ליעדי חיסכון",
       "provisional": "זמני",
@@ -692,8 +682,7 @@
     "severityCritical": "חריגה",
     "dismiss": "הסר",
     "dismissAll": "הסר הכל",
-    "openBudget": "פתח תקציב",
-    "summary": "{{count}} תקציבים דורשים תשומת לב"
+    "openBudget": "פתח תקציב"
   },
   "categories": {
     "title": "קטגוריות",
