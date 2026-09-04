@@ -12,6 +12,7 @@ import { BudgetNoticeLine } from "./BudgetNoticeLine";
 import { BudgetLedgerRow } from "./BudgetLedgerRow";
 import { BudgetRail, RailCard } from "./BudgetRail";
 import { RuleSparkline } from "./RuleSparkline";
+import { isAllTagsRule } from "../../utils/budgetRules";
 import { formatCurrency } from "../../utils/numberFormatting";
 import { formatMonthCompact } from "../../utils/dateFormatting";
 import {
@@ -81,6 +82,8 @@ export const YearlyBudgetView: React.FC<YearlyBudgetViewProps> = ({ tabs }) => {
 
   // A yearly envelope has no per-period endpoint, so its burn series is
   // bucketed from the transactions the analysis already returns per rule.
+  // `current_amount` arrives spend-positive (the service already negates the
+  // transaction sum), so it is passed through as the series' reference total.
   const seriesByRule = useMemo(() => {
     const map = new Map<number, number[]>();
     for (const entry of rules) {
@@ -89,7 +92,7 @@ export const YearlyBudgetView: React.FC<YearlyBudgetViewProps> = ({ tabs }) => {
         bucketByMonth(
           entry.data as TrendTransaction[],
           monthKeys,
-          -entry.current_amount,
+          entry.current_amount,
         ),
       );
     }
@@ -101,7 +104,7 @@ export const YearlyBudgetView: React.FC<YearlyBudgetViewProps> = ({ tabs }) => {
   // and still be spending too fast for the year to hold.
   const overPace = rules
     .filter((entry) => {
-      const spent = -entry.current_amount;
+      const spent = entry.current_amount;
       return (
         entry.rule.amount > 0 &&
         paceRatio > 0 &&
@@ -110,7 +113,7 @@ export const YearlyBudgetView: React.FC<YearlyBudgetViewProps> = ({ tabs }) => {
     })
     .sort(
       (a, b) =>
-        -b.current_amount / b.rule.amount - -a.current_amount / a.rule.amount,
+        b.current_amount / b.rule.amount - a.current_amount / a.rule.amount,
     );
 
   const stats: BandStat[] = summary
@@ -242,15 +245,13 @@ export const YearlyBudgetView: React.FC<YearlyBudgetViewProps> = ({ tabs }) => {
             {rules.map((entry) => {
               const rule = entry.rule;
               const tagList = Array.isArray(rule.tags) ? rule.tags : [];
-              const isAllTags =
-                tagList.length === 1 && tagList[0].toLowerCase() === "all_tags";
-              const subLabel = `${rule.category} · ${isAllTags ? t("budget.yearly.allTags") : tagList.join("; ")}`;
+              const subLabel = `${rule.category} · ${isAllTagsRule(rule) ? t("budget.yearly.allTags") : tagList.join("; ")}`;
               return (
                 <BudgetLedgerRow
                   key={rule.id}
                   label={rule.name}
                   subLabel={subLabel}
-                  current={-entry.current_amount}
+                  current={entry.current_amount}
                   total={rule.amount}
                   isExpanded={expandedRuleId === rule.id}
                   onToggleExpand={() =>
@@ -306,7 +307,7 @@ export const YearlyBudgetView: React.FC<YearlyBudgetViewProps> = ({ tabs }) => {
                 >
                   <div className="px-3 pb-3 text-xs text-[var(--text-muted)]" dir="auto">
                     {t("budget.yearly.spentOfAllocation", {
-                      spent: formatCurrency(-entry.current_amount),
+                      spent: formatCurrency(entry.current_amount),
                       total: formatCurrency(rule.amount),
                     })}
                   </div>
@@ -334,7 +335,7 @@ export const YearlyBudgetView: React.FC<YearlyBudgetViewProps> = ({ tabs }) => {
                 label: entry.rule.name,
                 value: t("budget.yearly.ofPace", {
                   pct: Math.round(
-                    (-entry.current_amount / (entry.rule.amount * paceRatio)) * 100,
+                    (entry.current_amount / (entry.rule.amount * paceRatio)) * 100,
                   ),
                 }),
               }))}
