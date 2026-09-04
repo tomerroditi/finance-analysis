@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from "@tanstack/react-query";
-import { PenSquare, Trash2, Plus } from "lucide-react";
+import { Plus } from "lucide-react";
 import i18n from "../../i18n";
 import { budgetApi, pendingRefundsApi, budgetMonthOverridesApi, type PendingRefund, type RefundLink, type BudgetMonthOverride } from "../../services/api";
 import { formatMonthCompact } from "../../utils/dateFormatting";
@@ -14,23 +14,32 @@ import type { Transaction } from "../../types/transaction";
 import { PendingRefundsSection } from "./PendingRefundsSection";
 import { SavingsGoalsBudgetSection } from "./SavingsGoalsBudgetSection";
 import { useConfirm } from "../../context/DialogContext";
-import { BudgetCommandBar, PeriodNav } from "./BudgetCommandBar";
+import { BAR_CONTROL, BudgetCommandBar, PeriodNav } from "./BudgetCommandBar";
 import { BudgetStatusBand, type BandStat } from "./BudgetStatusBand";
 import { BudgetNoticeLine } from "./BudgetNoticeLine";
-import { BudgetLedgerRow } from "./BudgetLedgerRow";
-import { BudgetRail } from "./BudgetRail";
+import { BudgetLedgerRow, LedgerRowAction } from "./BudgetLedgerRow";
 import { RuleSparkline } from "./RuleSparkline";
 import { DataFreshnessBadge } from "./DataFreshnessBadge";
-import { BudgetFreshnessBanner } from "./BudgetFreshnessBanner";
 import { useBudgetFreshness } from "../../hooks/useBudgetFreshness";
 import { useScraping } from "../../hooks/useScraping";
-import { BudgetTrendChart } from "./BudgetTrendChart";
 import { useBudgetTrend } from "../../hooks/useBudgetTrend";
-import { ProjectsThisMonthSummary } from "./ProjectsThisMonthSummary";
+import {
+  ProjectsThisMonthSummary,
+  type ProjectSpendingItem,
+} from "./ProjectsThisMonthSummary";
 import { useQueryKeys } from "../../hooks/useQueryKeys";
 import { qkPrefix } from "../../services/queryKeys";
 
-const TREND_MONTHS = 6;
+/**
+ * Months in the summary band's budget-vs-actual figure. It spans the stats
+ * row now (~330px), so six bars read as fat blocks rather than a trend.
+ * Costs one `budget/analysis` request per month — the trailing few are warm
+ * from the ±2 prefetch, the rest are cold on first load.
+ */
+const TREND_MONTHS = 12;
+
+/** Per-rule sparklines live in a 78px column; 12 bars there is a smear. */
+const ROW_TREND_MONTHS = 6;
 
 interface BudgetRule {
   id: number;
@@ -45,12 +54,6 @@ interface BudgetAnalysisItem {
   data: Transaction[];
   allow_edit: boolean;
   allow_delete: boolean;
-}
-
-interface ProjectSpendingItem {
-  category: string;
-  spent: number;
-  transactions: Transaction[];
 }
 
 interface MonthlyBudgetViewProps {
@@ -97,6 +100,10 @@ export const MonthlyBudgetView: React.FC<MonthlyBudgetViewProps> = ({
   const trendLabels = useMemo(
     () => trend.data.map((point) => formatMonthCompact(`${point.key}-01`)),
     [trend.data],
+  );
+  const rowTrendLabels = useMemo(
+    () => trendLabels.slice(-ROW_TREND_MONTHS),
+    [trendLabels],
   );
 
   // Prefetch adjacent months (prev 2 + next 2) for instant navigation
@@ -239,9 +246,6 @@ export const MonthlyBudgetView: React.FC<MonthlyBudgetViewProps> = ({
     month: "long",
     year: "numeric",
   });
-  const monthShortLabel = new Date(year, month - 1).toLocaleString(locale, {
-    month: "long",
-  });
   const isCurrentMonth =
     year === today.getFullYear() && month === today.getMonth() + 1;
 
@@ -284,7 +288,7 @@ export const MonthlyBudgetView: React.FC<MonthlyBudgetViewProps> = ({
       actions={
         <button
           onClick={openAddModal}
-          className="inline-flex items-center justify-center gap-2 px-3 md:px-4 py-2 text-xs md:text-sm bg-[var(--primary)] text-white rounded-lg hover:bg-[var(--primary-dark)] transition-colors shadow-sm font-medium whitespace-nowrap"
+          className={`inline-flex items-center justify-center gap-2 px-3 md:px-4 text-xs md:text-sm bg-[var(--primary)] text-white rounded-lg hover:bg-[var(--primary-dark)] transition-colors shadow-sm font-medium whitespace-nowrap ${BAR_CONTROL}`}
         >
           <Plus size={18} className="shrink-0" />
           {t("budget.addRule")}
@@ -347,6 +351,11 @@ export const MonthlyBudgetView: React.FC<MonthlyBudgetViewProps> = ({
       ? analysis.copied_from
       : null;
 
+  // SavingsGoalsBudgetSection self-hides when there is nothing to show, so the
+  // row needs the same test to decide whether the goals half exists at all.
+  const hasGoalAllocations = (analysis?.savings_goals?.goals?.length ?? 0) > 0;
+  const monthProjects = (project_spending?.projects ?? []) as ProjectSpendingItem[];
+
   const totalItem = rules.find(
     (i: BudgetAnalysisItem) => i.rule.name === "Total Budget",
   );
@@ -402,26 +411,21 @@ export const MonthlyBudgetView: React.FC<MonthlyBudgetViewProps> = ({
     {
       key: "daysLeft",
       label: t("budget.daysLeft"),
-      value: (
-        <span className="block">
-          <span className="text-lg md:text-xl font-bold">{daysLeft}</span>
-          <span className="block text-[10px] sm:text-xs text-[var(--text-muted)] truncate">
-            {t("budget.inMonth", { month: monthShortLabel })}
-          </span>
-        </span>
-      ),
+      value: <span className="text-lg md:text-xl font-bold">{daysLeft}</span>,
     },
     {
       key: "trend",
       label: t("budget.trend.title"),
+      grow: true,
       trend: trend.hasData ? (
         <RuleSparkline
           variant="bars"
           series={trend.data.map((point) => point.actual)}
           labels={trendLabels}
           budget={trend.data[trend.data.length - 1]?.budget ?? 0}
-          width={84}
-          height={26}
+          width={220}
+          height={44}
+          fluid
         />
       ) : (
         <span className="text-[10px] text-[var(--text-muted)]">—</span>
@@ -429,44 +433,41 @@ export const MonthlyBudgetView: React.FC<MonthlyBudgetViewProps> = ({
     },
   ];
 
-  const buildActions = (item: BudgetAnalysisItem) =>
-    item.allow_edit || item.allow_delete ? (
-      <>
-        {item.allow_edit && (
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              setEditingRule(item.rule);
-              setIsRuleModalOpen(true);
-            }}
-            className="p-1.5 text-[var(--text-muted)] hover:text-blue-500 hover:bg-blue-500/10 rounded-lg transition-all"
-            title={t("budget.editRule")}
-            aria-label={t("budget.editRule")}
-          >
-            <PenSquare size={16} />
-          </button>
-        )}
-        {item.allow_delete && (
-          <button
-            onClick={async (e) => {
-              e.stopPropagation();
-              const ok = await confirm({
-                title: t("budget.deleteRule"),
-                message: t("budget.confirmDeleteRule"),
-                confirmLabel: t("common.delete"),
-                isDestructive: true,
-              });
-              if (ok) deleteMutation.mutate(item.rule.id);
-            }}
-            className="p-1.5 text-[var(--text-muted)] hover:text-red-500 hover:bg-red-500/10 rounded-lg transition-all"
-            title={t("budget.deleteRule")}
-            aria-label={t("budget.deleteRule")}
-          >
-            <Trash2 size={16} />
-          </button>
-        )}
-      </>
-    ) : undefined;
+  // Both slots always render — a row that omitted them got a wider grid and
+  // fell out of line with its neighbours (see LedgerRowAction).
+  const buildActions = (item: BudgetAnalysisItem) => (
+    <>
+      <LedgerRowAction
+        kind="edit"
+        label={t("budget.editRule")}
+        onClick={
+          item.allow_edit
+            ? () => {
+                setEditingRule(item.rule);
+                setIsRuleModalOpen(true);
+              }
+            : undefined
+        }
+      />
+      <LedgerRowAction
+        kind="delete"
+        label={t("budget.deleteRule")}
+        onClick={
+          item.allow_delete
+            ? async () => {
+                const ok = await confirm({
+                  title: t("budget.deleteRule"),
+                  message: t("budget.confirmDeleteRule"),
+                  confirmLabel: t("common.delete"),
+                  isDestructive: true,
+                });
+                if (ok) deleteMutation.mutate(item.rule.id);
+              }
+            : undefined
+        }
+      />
+    </>
+  );
 
   const renderRow = (item: BudgetAnalysisItem) => (
     <BudgetLedgerRow
@@ -480,8 +481,8 @@ export const MonthlyBudgetView: React.FC<MonthlyBudgetViewProps> = ({
       trend={
         <RuleSparkline
           variant="bars"
-          series={trend.byRule[item.rule.name] ?? []}
-          labels={trendLabels}
+          series={(trend.byRule[item.rule.name] ?? []).slice(-ROW_TREND_MONTHS)}
+          labels={rowTrendLabels}
           budget={item.rule.amount}
         />
       }
@@ -507,17 +508,7 @@ export const MonthlyBudgetView: React.FC<MonthlyBudgetViewProps> = ({
     <div className="space-y-3 md:space-y-4">
       {commandBar}
 
-      <BudgetFreshnessBanner
-        freshness={freshness}
-        isSyncing={isAnyScraping}
-        show={showFreshness}
-        year={year}
-        month={month}
-      />
-
       <BudgetNoticeLine
-        year={year}
-        month={month}
         copiedFrom={copiedFromForThisMonth}
         onDismissCopied={() =>
           setDismissedCopyMonths((prev) => new Set(prev).add(currentMonthKey))
@@ -580,29 +571,34 @@ export const MonthlyBudgetView: React.FC<MonthlyBudgetViewProps> = ({
         />
       )}
 
-      {rules.length > 0 && (
-        <div className="flex flex-col lg:flex-row items-start gap-3 md:gap-4">
-          <div className="flex-1 min-w-0 w-full space-y-2">
-            {!rulesCollapsed && childItems.map(renderRow)}
-          </div>
-          <BudgetRail>
-            {project_spending?.projects?.length > 0 && (
-              <ProjectsThisMonthSummary
-                projects={project_spending.projects as ProjectSpendingItem[]}
-                onViewAll={onViewProjects}
-              />
-            )}
-            <BudgetTrendChart
-              year={year}
-              month={month}
-              includeSplitParents={includeSplitParents}
-              months={TREND_MONTHS}
-            />
-          </BudgetRail>
-        </div>
+      {rules.length > 0 && !rulesCollapsed && (
+        <div className="w-full space-y-2">{childItems.map(renderRow)}</div>
       )}
 
-      <SavingsGoalsBudgetSection allocations={analysis?.savings_goals} />
+      {/* Goals and projects share one row, half each. Both are month summaries
+          that sit beside the ledger rather than in it, and neither earns a full
+          row alone — projects used to ride in the 272px rail beside the ledger,
+          which left a tall column of empty space under it and was too narrow
+          for the transaction lists it now expands to. Either half takes the
+          whole row when the other has nothing to show. */}
+      {(hasGoalAllocations || monthProjects.length > 0) && (
+        <div className="flex flex-col xl:flex-row items-start gap-3 md:gap-4">
+          {hasGoalAllocations && (
+            <div className="w-full min-w-0 xl:flex-1">
+              <SavingsGoalsBudgetSection allocations={analysis?.savings_goals} />
+            </div>
+          )}
+          {monthProjects.length > 0 && (
+            <div className="w-full min-w-0 xl:flex-1">
+              <ProjectsThisMonthSummary
+                projects={monthProjects}
+                onViewAll={onViewProjects}
+                onTransactionUpdated={invalidateBudget}
+              />
+            </div>
+          )}
+        </div>
+      )}
 
       {analysis?.pending_refunds && (
         <PendingRefundsSection pendingRefunds={analysis.pending_refunds} />

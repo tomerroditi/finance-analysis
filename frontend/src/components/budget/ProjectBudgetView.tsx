@@ -8,10 +8,9 @@ import { BudgetRuleModal } from "../modals/BudgetRuleModal";
 import { useConfirm, useNotify } from "../../context/DialogContext";
 import { ProjectBudgetList } from "./ProjectBudgetList";
 import { isAllTagsRule } from "../../utils/budgetRules";
-import { BudgetCommandBar } from "./BudgetCommandBar";
+import { BAR_CONTROL, BudgetCommandBar } from "./BudgetCommandBar";
 import { BudgetStatusBand, type BandStat } from "./BudgetStatusBand";
 import { BudgetNoticeLine } from "./BudgetNoticeLine";
-import { BudgetRail, RailCard } from "./BudgetRail";
 import { RuleSparkline } from "./RuleSparkline";
 import { SelectDropdown } from "../common/SelectDropdown";
 import { useQueryKeys } from "../../hooks/useQueryKeys";
@@ -265,7 +264,7 @@ export const ProjectBudgetView: React.FC<ProjectBudgetViewProps> = ({ tabs }) =>
                 setIsEditMode(false);
                 setIsProjectModalOpen(true);
               }}
-              className="inline-flex items-center gap-2 px-3 md:px-4 py-2 text-xs md:text-sm bg-[var(--primary)] text-white rounded-lg hover:bg-[var(--primary-dark)] transition-colors shadow-sm font-medium whitespace-nowrap"
+              className={`inline-flex items-center gap-2 px-3 md:px-4 text-xs md:text-sm bg-[var(--primary)] text-white rounded-lg hover:bg-[var(--primary-dark)] transition-colors shadow-sm font-medium whitespace-nowrap ${BAR_CONTROL}`}
             >
               <Plus size={18} className="shrink-0" />
               {t("budget.newProject")}
@@ -273,7 +272,7 @@ export const ProjectBudgetView: React.FC<ProjectBudgetViewProps> = ({ tabs }) =>
             {selectedProject && (
               <button
                 onClick={handleDeleteProject}
-                className="inline-flex items-center gap-2 px-3 md:px-4 py-2 text-xs md:text-sm bg-red-500/10 border border-red-500/20 text-red-500 rounded-lg hover:bg-red-500/20 transition-colors shadow-sm font-medium whitespace-nowrap"
+                className={`inline-flex items-center gap-2 px-3 md:px-4 text-xs md:text-sm bg-red-500/10 border border-red-500/20 text-red-500 rounded-lg hover:bg-red-500/20 transition-colors shadow-sm font-medium whitespace-nowrap ${BAR_CONTROL}`}
               >
                 <Trash2 size={18} className="shrink-0" />
                 {t("common.delete")}
@@ -296,6 +295,7 @@ export const ProjectBudgetView: React.FC<ProjectBudgetViewProps> = ({ tabs }) =>
               }
               disabled={projects.length === 0}
               size="sm"
+              triggerClassName={`${BAR_CONTROL} py-0`}
             />
           </div>
         </div>
@@ -332,59 +332,22 @@ export const ProjectBudgetView: React.FC<ProjectBudgetViewProps> = ({ tabs }) =>
             />
           )}
 
-          <div className="flex flex-col lg:flex-row items-start gap-3 md:gap-4">
-            <div className="flex-1 min-w-0 w-full">
-              <ProjectBudgetList
-                projectDetails={projectDetails}
-                monthKeys={monthKeys}
-                expandedRuleId={expandedRuleId}
-                toggleExpand={toggleExpand}
-                pendingRefundsMap={pendingRefundsMap}
-                includeSplitParents={includeSplitParents}
-                onIncludeSplitParentsChange={setIncludeSplitParents}
-                onEditTagRule={(rule) => {
-                  setEditingRule(rule);
-                  setIsRuleModalOpen(true);
-                }}
-                onTransactionUpdated={() =>
-                  queryClient.invalidateQueries({ queryKey: qkPrefix.budget })
-                }
-              />
-            </div>
-
-            <BudgetRail>
-              {/* Every figure in this card comes from the anchor rule, so
-                  without one they are all zero — which reads as "nothing
-                  spent" beside a ledger showing real spend. */}
-              {projectTotalRule && (
-                <RailCard
-                  title={t("budget.totalProjectBudget")}
-                  items={[
-                    {
-                      key: "allocated",
-                      label: t("budget.yearly.allocated"),
-                      value: formatCurrency(total),
-                    },
-                    {
-                      key: "spent",
-                      label: t("budget.spent"),
-                      value: formatCurrency(Math.max(spent, 0)),
-                    },
-                    {
-                      key: "left",
-                      label: t("budget.remaining"),
-                      value: formatCurrency(total - Math.max(spent, 0)),
-                    },
-                    {
-                      key: "months",
-                      label: t("budget.projectActiveMonths"),
-                      value: String(activeMonths),
-                    },
-                  ]}
-                />
-              )}
-            </BudgetRail>
-          </div>
+          <ProjectBudgetList
+            projectDetails={projectDetails}
+            monthKeys={monthKeys}
+            expandedRuleId={expandedRuleId}
+            toggleExpand={toggleExpand}
+            pendingRefundsMap={pendingRefundsMap}
+            includeSplitParents={includeSplitParents}
+            onIncludeSplitParentsChange={setIncludeSplitParents}
+            onEditTagRule={(rule) => {
+              setEditingRule(rule);
+              setIsRuleModalOpen(true);
+            }}
+            onTransactionUpdated={() =>
+              queryClient.invalidateQueries({ queryKey: qkPrefix.budget })
+            }
+          />
         </>
       )}
 

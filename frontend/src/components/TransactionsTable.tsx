@@ -816,7 +816,7 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
 
       {/* Table */}
       <div className="overflow-x-auto rounded-lg border border-[var(--surface-light)]">
-        <table className="w-full min-w-[930px] text-sm text-start table-fixed">
+        <table className="w-full min-w-[1030px] text-sm text-start table-fixed">
           <thead className="bg-[var(--surface-light)] text-[var(--text-muted)] font-medium">
             <tr>
               {showSelection && (
@@ -864,9 +864,21 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
                 <SortableHeader compact={compact} sortConfig={sortConfig} onSort={handleSort} label={t("transactions.table.account")} sortKey="account" align="center" width="180px" />
               )}
               {showActions && (
+                // The table is `table-fixed`, so this width IS the column, not
+                // a hint — wider content paints past the cell and gets clipped
+                // by the scroll container (the 130px this used to be cut the
+                // last icon off mid-glyph). Seven actions can coexist on one
+                // row: edit, clear and split always, plus up to two
+                // refund-state buttons, the budget-page month move, and delete
+                // on a manual row. Each is 26px (p-1.5 around a 14px icon —
+                // already the minimum touch target, so they must not shrink to
+                // fit): 7 × 26 + 6 × 4 gap = 206, + the cell's px-2 = 222.
+                // Measure the BUTTONS, not the flex row: it is `justify-center`
+                // and so always reports the full cell width, which makes an
+                // overflowing cell look like a perfectly full one.
                 <th
-                  className={`px-4 ${compact ? "py-2" : "py-3"} text-center text-sm font-medium text-[var(--text-muted)]`}
-                  style={{ width: "130px" }}
+                  className={`px-2 ${compact ? "py-2" : "py-3"} text-center text-sm font-medium text-[var(--text-muted)]`}
+                  style={{ width: "224px" }}
                 >
                   {t("common.actions")}
                 </th>
@@ -967,7 +979,7 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
                     </td>
                   )}
                   {showActions && (
-                    <td className={`px-4 ${compact ? "py-2" : "py-3"}`}>
+                    <td className={`px-2 ${compact ? "py-2" : "py-3"}`}>
                       <div className="flex items-center justify-center gap-1">
                         <button
                           className="p-1.5 rounded-md hover:bg-[var(--surface-light)] text-[var(--text-muted)] hover:text-white transition-colors"

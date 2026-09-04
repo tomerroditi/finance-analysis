@@ -18,7 +18,7 @@ test.describe("Budget", () => {
   // navigation, collapse/expand toggles), so they run as one journey on a
   // single navigation — the /budget cold load is the expensive step and it
   // used to be paid once per assertion group (8×).
-  test("tabs, month navigation, trend chart, card toggles, and projects jump on one load", async ({
+  test("tabs, month navigation, trend figure, card toggles, and projects jump on one load", async ({
     page,
   }) => {
     await navigateTo(page, "/budget");
@@ -52,38 +52,23 @@ test.describe("Budget", () => {
     await nextMonth.click();
     await expect(monthLabel).toHaveText(initialMonth ?? "");
 
-    // --- Budget-vs-actual trend chart plots the Total Budget cap ---
-    await page.waitForLoadState("networkidle");
-    const trend = page.getByRole("button", { name: /Budget vs Actual/i });
-    await expect(trend).toBeVisible();
+    // --- Budget-vs-actual lives in the summary band, not a card of its own ---
+    // The dedicated rail chart was removed: it restated the band's trend
+    // figure, so the band is now the only place this appears.
+    const band = page.getByTestId("budget-status-band");
+    await expect(band).toBeVisible();
+    await expect(band.getByText(/Budget vs Actual/i)).toBeVisible();
+    await expect(page.locator(".recharts-wrapper")).toHaveCount(0);
 
-    // Make sure the chart is expanded (collapsed by default on narrow viewports).
-    const plot = page.locator(".recharts-wrapper").last();
-    if (!(await plot.isVisible().catch(() => false))) {
-      await trend.click();
-    }
-    await expect(plot).toBeVisible({ timeout: 15_000 });
-
-    // Read the rendered bar series off the SVG. The budget series comes
-    // from each month's "Total Budget" row; if the old per-category-rule sum
-    // had crept back, the budget bars would be smaller than the gauge's cap.
-    const barSeries = plot.locator(".recharts-bar");
-    await expect(barSeries).toHaveCount(2);
-    // The first series is the budget bars and the demo data defines a
-    // Total Budget, so at least one month must plot a positive budget cap
-    // (a bar with non-zero rendered height).
-    const heights = await barSeries
-      .first()
-      .locator(".recharts-rectangle")
-      .evaluateAll((els) => els.map((el) => el.getBoundingClientRect().height));
-    expect(heights.some((h) => h > 0)).toBe(true);
-
-    // Collapse/expand the trend chart — should not throw and stays on the page.
-    await trend.click();
-    await page.waitForTimeout(300);
-    await trend.click();
-    await page.waitForTimeout(300);
-    await expect(trend).toBeVisible();
+    // The figure carries the trailing months and the Total Budget cap in its
+    // accessible label — if the old per-category-rule sum had crept back, the
+    // budget it names would be smaller than the gauge's cap.
+    const bandTrend = band.getByTestId("rule-sparkline");
+    await expect(bandTrend).toBeVisible();
+    await expect(bandTrend.locator("svg")).toHaveAttribute(
+      "aria-label",
+      /Budget\s/,
+    );
 
     // --- Total Budget card collapses the rule list and shows month transactions ---
     const totalBudget = page.getByRole("button", { name: /^\s*Total Budget\s*$/ });
@@ -116,11 +101,12 @@ test.describe("Budget", () => {
     }
 
     // --- Per-rule trend column ---
-    // Every budgeted envelope carries its own sparkline, and the summary in
-    // its aria-label names each month plus the reference figure, so the
-    // status is never conveyed by colour alone.
+    // Every budgeted envelope carries its own sparkline on top of the band's
+    // figure, and the summary in its aria-label names each month plus the
+    // reference figure, so the status is never conveyed by colour alone.
     const sparklines = page.getByTestId("rule-sparkline");
     await expect(sparklines.first()).toBeVisible();
+    expect(await sparklines.count()).toBeGreaterThan(1);
     const monthlyLabel = await sparklines.first().locator("svg").getAttribute("aria-label");
     expect(monthlyLabel).toBeTruthy();
     expect(monthlyLabel).toMatch(/Budget/i);
@@ -128,7 +114,10 @@ test.describe("Budget", () => {
     // Monthly rules plot discrete bars against a dashed budget line; the
     // yearly tab plots a cumulative burn line instead (different question,
     // different mark), so the two must not render the same element type.
-    await expect(sparklines.first().locator("rect").first()).toBeVisible();
+    // Counted, not `toBeVisible`: a month with no spend draws a zero-height
+    // bar, and the leading month of a 12-month series is often exactly that.
+    expect(await sparklines.first().locator("rect").count()).toBeGreaterThan(0);
+    await expect(sparklines.first().locator("polyline")).toHaveCount(0);
 
     await page.getByRole("button", { name: /^Yearly$/i }).click();
     const yearlySpark = page.getByTestId("rule-sparkline").first();
@@ -170,27 +159,33 @@ test.describe("Budget", () => {
     expect(scrollWidth).toBeLessThanOrEqual(clientWidth + 1);
   });
 
-  test("alerts banner can be dismissed and alerts disabled from settings", async ({ page }) => {
+  test("over-budget rules are flagged inline; the alerts toggle gates the bell", async ({
+    page,
+  }) => {
     await navigateTo(page, "/budget");
-    await page.waitForLoadState("networkidle");
 
-    const dismissAll = page.getByRole("button", { name: /Dismiss all/i });
-    if (await dismissAll.isVisible().catch(() => false)) {
-      await dismissAll.click();
-      await page.waitForTimeout(300);
-      await expect(dismissAll).toHaveCount(0);
-    }
+    // The budget page no longer carries an alerts banner: every rule row
+    // already shows a rose dot, an over-by figure and a >100% percentage, so
+    // a strip restating "N budgets need attention" only pushed those rows down.
+    await expect(page.getByTestId("budget-status-band")).toBeVisible({
+      timeout: 30_000,
+    });
+    await expect(page.getByText(/budgets need attention/i)).toHaveCount(0);
+    await expect(page.getByRole("button", { name: /Dismiss all/i })).toHaveCount(0);
 
-    // Open Settings and toggle Budget Alerts off (the settings control is a
-    // <label>; the mobile drawer tile uses a <span>, so scope to the label).
+    // The bell in the app shell is the surviving alerts surface, and the
+    // Settings toggle still gates it.
+    const bell = page.getByRole("button", { name: /Budget Alerts/i }).first();
+    await expect(bell).toBeVisible();
+
+    // The settings control is a <label>; the mobile drawer tile uses a
+    // <span>, so scope to the label.
     await page.getByRole("button", { name: "Settings" }).first().click();
     const toggleRow = page.locator("label", { hasText: "Budget Alerts" }).first();
     await expect(toggleRow).toBeVisible();
     await toggleRow.click();
     await page.keyboard.press("Escape");
-    await page.waitForTimeout(500);
 
-    // The in-page alerts banner must be gone once alerts are disabled.
-    await expect(page.getByText(/budgets need attention/i)).toHaveCount(0);
+    await expect(page.getByRole("button", { name: /Budget Alerts/i })).toHaveCount(0);
   });
 });

@@ -20,7 +20,7 @@ export const Budget: React.FC = () => {
   // width and the bar scrolls, instead of the widest tab forcing the page
   // past the viewport. See frontend_responsive.md → "Tab Bars & Button Groups".
   const tabClass = (tab: BudgetTab) =>
-    `shrink-0 whitespace-nowrap flex items-center justify-center gap-1.5 px-2.5 md:px-3.5 py-2 rounded-lg font-bold text-xs md:text-sm transition-all ${
+    `shrink-0 whitespace-nowrap flex items-center justify-center gap-1.5 px-2.5 md:px-3.5 rounded-lg font-bold text-xs md:text-sm transition-all ${
       activeTab === tab
         ? "bg-[var(--surface)] text-[var(--primary)] shadow-sm"
         : "text-[var(--text-muted)] hover:text-[var(--text-default)]"

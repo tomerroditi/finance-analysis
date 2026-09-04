@@ -112,9 +112,12 @@ poetry run pytest
 # 2. Frontend lint + type-check/build + unit tests (matches CI)
 cd frontend && npm run lint && npm run build && npm test && cd ..
 
-# 3. Frontend e2e (Playwright) — needs BOTH servers up, so run via the orchestrator.
-#    `npm run test:e2e` runs the suite serially (safe everywhere). See
-#    "e2e projects & parallelism" below before reaching for the parallel variant.
+# 3. Frontend e2e (Playwright). Prefer the isolated runner on a multi-core box:
+#    it starts its own servers, so no with_server.py wrapper.
+cd frontend && npm run test:e2e:isolated && cd ..
+
+# Serial fallback (single core, or debugging a cross-spec ordering problem).
+# Needs BOTH servers up, hence the orchestrator.
 python .claude/scripts/with_server.py -- bash -c \
   "cd frontend && npm run test:e2e"
 ```
@@ -130,7 +133,13 @@ Demo Mode at the end. read-only and mutating are both plain, shardable
 projects (CI runs `playwright test --shard=X/4`); each spec self-heals Demo
 Mode in its own `beforeAll`, so any order or per-shard interleaving is safe.
 
-**Default is serial (`npm run test:e2e`).** The `read-only` project *can* fan
+**`playwright.config.ts` is serial (`workers: 1`, `fullyParallel: false`)** —
+that is a correctness constraint (the shared demo DB), not a tuning choice, and
+it is why a plain `npm run test:e2e` takes **~4 min for ~99 tests on a 12-core
+Mac**: the average test is only ~2.4 s, but nothing overlaps. Reach for
+`npm run test:e2e:isolated` (below) rather than raising `workers`.
+
+The `read-only` project *can* fan
 out across workers (`npm run test:e2e:parallel`), but profiling (in the Plotly
 era — charts are now lightweight Recharts SVG, so re-profile before relying on
 these numbers) showed the suite is **CPU-bound on browser-side chart
@@ -149,8 +158,26 @@ change.
 (`.claude/scripts/e2e_parallel_isolated.py`). It starts N isolated
 (backend + frontend) pairs — each its own port + `FAD_USER_DIR` demo DB — and
 runs `--shard=i/N` once per pair, pinned via `BASE_URL` + `E2E_API_BASE`. No
-shared DB → no cross-shard races → every shard runs concurrently. Opt-in local
-only; CI keeps its single-backend `--shard=X/4` matrix. Every direct-to-backend
+shared DB → no cross-shard races → every shard runs concurrently.
+
+**Measured 2026-09-05 on a 12-core M-series Mac (8P+4E): 72 s for 4 shards vs
+~240 s serial — 3.3×.** This is the local default in the checklist above; CI
+keeps its single-backend `--shard=X/4` matrix.
+
+The runner does **not** use Playwright's `--shard`, which splits by test count
+and left one shard at 31 s beside another at 1.5 m — the slowest sets the wall
+clock, so a third of the parallelism was idle. It packs spec files by recorded
+duration instead (longest-first greedy), passing each shard an explicit file
+list; every shard now lands within a few seconds of the others. Each run
+rewrites `.claude/scripts/e2e_shard_timings.json`, which is **committed on
+purpose**: absolute times are machine-specific but the ratios are not, so a
+fresh clone gets balanced shards on its first run. A new spec with no recorded
+time is assumed to take the median. The timings are only rewritten when a run
+measured ≥80 % of the suite, so a `--grep` cannot shrink the table; forwarding
+a positional filter falls back to `--shard`. Because each shard is given
+explicit files, `demo.setup.ts` and `demo.teardown.ts` must be in every
+shard's list — their projects match nothing otherwise and Demo Mode is never
+enabled. Every direct-to-backend
 API call in a spec must go through the env-driven `API_BASE` exported from
 `frontend/e2e/helpers.ts` (never hardcode `http://localhost:8000`) or that call
 will hit the wrong shard's backend.

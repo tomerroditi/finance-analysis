@@ -9,6 +9,12 @@ export interface BandStat {
   value?: React.ReactNode;
   /** Trend cell — rendered under the label instead of a value. */
   trend?: React.ReactNode;
+  /**
+   * Give this stat the row's leftover width (and the full row on mobile).
+   * Used by the budget-vs-actual figure, which is the only stat whose value
+   * is a drawing rather than a number and therefore reads better wide.
+   */
+  grow?: boolean;
 }
 
 interface BudgetStatusBandProps {
@@ -82,8 +88,14 @@ export const BudgetStatusBand: React.FC<BudgetStatusBandProps> = ({
       data-testid="budget-status-band"
       className="bg-[var(--surface)] rounded-2xl border border-[var(--surface-light)] shadow-sm p-3 md:p-4"
     >
-      <div className="flex flex-col lg:flex-row lg:items-center gap-3 lg:gap-5">
-        <div className="flex-1 min-w-0">
+      {/* Side by side only from `xl:`. At 1024 the gauge plus four stats left
+          the trend figure a ~50px sliver and truncated its label to "BUDG…";
+          stacked, the stats row gets the card's full width instead. */}
+      <div className="flex flex-col xl:flex-row xl:items-center gap-3 xl:gap-5">
+        {/* The gauge is capped rather than greedy: a full-width bar spent the
+            row's whole width restating a number already spelled out above it,
+            leaving the stats — and the trend figure in particular — squeezed. */}
+        <div className="w-full xl:w-[32%] xl:shrink-0 min-w-0">
           {onToggleRules ? (
             <button
               type="button"
@@ -128,9 +140,12 @@ export const BudgetStatusBand: React.FC<BudgetStatusBandProps> = ({
           </div>
         </div>
 
-        <div className="grid grid-cols-3 lg:flex gap-2 lg:gap-5 lg:border-s lg:border-[var(--surface-light)] lg:ps-5">
+        <div className="grid grid-cols-3 xl:flex xl:flex-1 xl:items-center gap-2 xl:gap-5 min-w-0 xl:border-s xl:border-[var(--surface-light)] xl:ps-5">
           {stats.map((stat) => (
-            <div key={stat.key} className="min-w-0">
+            <div
+              key={stat.key}
+              className={`min-w-0 ${stat.grow ? "col-span-3 xl:flex-1 xl:min-w-[180px]" : ""}`}
+            >
               <p className="text-[10px] sm:text-xs text-[var(--text-muted)] uppercase tracking-wide truncate">
                 {stat.label}
               </p>
