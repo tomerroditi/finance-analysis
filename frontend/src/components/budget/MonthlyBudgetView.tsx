@@ -18,13 +18,15 @@ import { BAR_CONTROL, BudgetCommandBar, PeriodNav } from "./BudgetCommandBar";
 import { BudgetStatusBand, type BandStat } from "./BudgetStatusBand";
 import { BudgetNoticeLine } from "./BudgetNoticeLine";
 import { BudgetLedgerRow, LedgerRowAction } from "./BudgetLedgerRow";
-import { BudgetRail } from "./BudgetRail";
 import { RuleSparkline } from "./RuleSparkline";
 import { DataFreshnessBadge } from "./DataFreshnessBadge";
 import { useBudgetFreshness } from "../../hooks/useBudgetFreshness";
 import { useScraping } from "../../hooks/useScraping";
 import { useBudgetTrend } from "../../hooks/useBudgetTrend";
-import { ProjectsThisMonthSummary } from "./ProjectsThisMonthSummary";
+import {
+  ProjectsThisMonthSummary,
+  type ProjectSpendingItem,
+} from "./ProjectsThisMonthSummary";
 import { useQueryKeys } from "../../hooks/useQueryKeys";
 import { qkPrefix } from "../../services/queryKeys";
 
@@ -52,12 +54,6 @@ interface BudgetAnalysisItem {
   data: Transaction[];
   allow_edit: boolean;
   allow_delete: boolean;
-}
-
-interface ProjectSpendingItem {
-  category: string;
-  spent: number;
-  transactions: Transaction[];
 }
 
 interface MonthlyBudgetViewProps {
@@ -579,24 +575,27 @@ export const MonthlyBudgetView: React.FC<MonthlyBudgetViewProps> = ({
         <div className="w-full space-y-2">{childItems.map(renderRow)}</div>
       )}
 
-      {/* Goals and projects share one row. Both are month summaries that sit
-          beside the ledger rather than in it, and the projects card is far too
-          short to earn a full row of its own — it used to ride in the rail
-          next to the ledger, leaving a tall column of empty space under it. */}
+      {/* Goals and projects share one row, half each. Both are month summaries
+          that sit beside the ledger rather than in it, and neither earns a full
+          row alone — projects used to ride in the 272px rail beside the ledger,
+          which left a tall column of empty space under it and was too narrow
+          for the transaction lists it now expands to. Either half takes the
+          whole row when the other has nothing to show. */}
       {(hasGoalAllocations || monthProjects.length > 0) && (
         <div className="flex flex-col xl:flex-row items-start gap-3 md:gap-4">
           {hasGoalAllocations && (
-            <div className="flex-1 min-w-0 w-full">
+            <div className="w-full min-w-0 xl:flex-1">
               <SavingsGoalsBudgetSection allocations={analysis?.savings_goals} />
             </div>
           )}
           {monthProjects.length > 0 && (
-            <BudgetRail>
+            <div className="w-full min-w-0 xl:flex-1">
               <ProjectsThisMonthSummary
                 projects={monthProjects}
                 onViewAll={onViewProjects}
+                onTransactionUpdated={invalidateBudget}
               />
-            </BudgetRail>
+            </div>
           )}
         </div>
       )}
