@@ -24,6 +24,15 @@ updates:
     commit-message:
       prefix: "fix(deps)"
       prefix-development: "chore(deps-dev)"
+    ignore:
+      # TypeScript 7 is unmergeable until the linter catches up: the newest
+      # typescript-eslint (8.69.0) still declares
+      # `peer typescript ">=4.8.4 <6.1.0"`, so a TS 7 lockfile fails `npm ci`
+      # with ERESOLVE before a single file is type-checked. Dependabot reopened
+      # the same red PR every week (#207). Drop this ignore once
+      # typescript-eslint ships a TS 7 peer range, and bump both together.
+      - dependency-name: typescript
+        update-types: [version-update:semver-major]
 
   - package-ecosystem: pip
     directory: /
