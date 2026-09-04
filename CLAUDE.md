@@ -66,7 +66,7 @@ Routes (FastAPI) -> Services (Business Logic) -> Repositories (Data Access) -> S
 - **Scraper:** `scraper/` — Pure-Python scraper framework (Playwright + httpx), replaces Node.js
 - **Frontend:** `frontend/src/` — React 19, Vite, TanStack Query, Zustand, Tailwind CSS 4
 - **Tests:** `tests/backend/unit/` — pytest with test classes, docstrings required
-- **Rules:** `.claude/rules/` — detailed architecture docs covering services, repos, scraper, frontend (i18n, responsive, PWA/offline cache), testing, retirement/FIRE math (`retirement_calculations.md`)
+- **Rules:** `.claude/rules/` — detailed architecture docs covering services, repos, scraper, frontend (i18n, responsive, PWA/offline cache), testing, retirement/FIRE math (`retirement_calculations.md`), savings-goal allocation (`savings_goals.md`)
 - **Data Flow:** `frontend/src/components/dataflow/dataFlowData.ts` — comprehensive map of all features and how data flows through the system (sources → ingestion → processing → storage → management → analytics → frontend). Read this for a quick overview of the entire application.
 
 ## Key Conventions
@@ -79,6 +79,7 @@ Routes (FastAPI) -> Services (Business Logic) -> Repositories (Data Access) -> S
 - **Project ↔ monthly/yearly category exclusion:** a category can't be both project-owned and used by a monthly/yearly rule — the new-project category picker (`GET /budget/projects/available`) filters out any category already claimed by a monthly/yearly rule, and monthly/yearly rule creation blocks categories already claimed by a project. Existing overlaps (e.g. from data predating this rule) surface via `GET /budget/category-conflicts` as a chip in the Budget page's `BudgetNoticeLine` — non-blocking, dismissible.
 - **Tagging rules:** priority DESC, first match wins
 - **Split transactions:** original stays in main table, splits in `split_transactions`, merged in service layer
+- **Savings goals:** a goal is a **virtual earmark** over money already in tracked accounts — never added to net worth. Progress is derived, not typed: each month's realized surplus (`income - expenses - investments`, CC-deduped) flows down goals by `priority`, each taking up to `min(remaining need, monthly_cap)`. Linked transactions are pulled out of the surplus and reintroduced explicitly (a *contribution* consumes the pool; a *utilization* draws the goal down without ever reducing its target), so no shekel counts twice. Allocations persist per `(goal, month)`; priority changes apply forward and rewriting history is an explicit previewed `rebuild`. Closed goals are frozen — their allocations can never be reclaimed. Full rules: `.claude/rules/savings_goals.md`
 - **Retirement calculator:** all-real-terms model (today's shekels; nominal return converted via inflation). Scraped Keren Hishtalmut policies are auto-synced into `type='hishtalmut'` investments (with scraped snapshots) and are therefore **already inside tracked net worth** — retirement math swaps them out via `status["tracked_kh_value"]` before adding the goal's KH bucket, so KH counts exactly once for both scraped and typed-only users. Full rules: `.claude/rules/retirement_calculations.md`
 
 ## Code Style

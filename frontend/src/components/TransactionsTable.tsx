@@ -40,6 +40,7 @@ import { useTransactionFilters } from "../hooks/useTransactionFilters";
 import { FilterPanel } from "./transactions/FilterPanel";
 import { Pagination } from "./transactions/Pagination";
 import { BulkActionsBar, type BulkEditData } from "./transactions/BulkActionsBar";
+import { GoalLinkAction } from "./transactions/GoalLinkAction";
 import { useCategoryTagCreate } from "../hooks/useCategoryTagCreate";
 import { useCategories } from "../hooks/useCategories";
 import { useCashBalances } from "../hooks/useCashBalances";
@@ -1003,6 +1004,7 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
                         >
                           <Split size={14} />
                         </button>
+                        <GoalLinkAction transaction={tx} />
                         {/* Pending refund actions */}
                         {tx.amount < 0 &&
                           (() => {

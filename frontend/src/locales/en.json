@@ -264,11 +264,29 @@
       "nameLabel": "Goal name",
       "namePlaceholder": "e.g. Vacation, Emergency fund",
       "targetLabel": "Target amount",
-      "savedLabel": "Saved so far",
+      "openingLabel": "Already saved",
+      "openingHint": "Money set aside before tracking started",
+      "capLabel": "Monthly cap",
+      "capPlaceholder": "No limit",
+      "capHint": "Most this goal can take in one month",
+      "startMonthLabel": "Start from",
+      "startMonthHint": "First month this goal receives surplus",
       "dateLabel": "Target date (optional)",
       "achieved": "Achieved 🎉",
+      "closed": "Closed",
       "remaining": "{{amount}} to go",
       "monthlyNeeded": "{{amount}}/mo for {{count}} mo",
+      "thisMonth": "{{amount}} this month",
+      "utilized": "{{spent}} used · {{available}} left",
+      "priorityHint": "Funding order — the top goal fills first",
+      "moveUp": "Move up in funding order",
+      "moveDown": "Move down in funding order",
+      "redistribute": "Redistribute",
+      "redistributeHint": "Restate past months under the current order",
+      "redistributeTitle": "Redistribute history",
+      "redistributeExplainer": "Reordering goals applies to future months. This restates past months under the current order. Closed goals keep what they were given.",
+      "redistributeNoChange": "Nothing would change — history already matches the current order.",
+      "redistributeConfirm": "Redistribute",
       "confirmDelete": "Delete the goal \"{{name}}\"?"
     },
     "heatmap": {
@@ -509,6 +527,15 @@
       "sourcesCount": "{{count}} txns",
       "panelHint": "refunded / expected · remaining",
       "crossHint": "Hover a source to highlight the requests it funds — and vice-versa."
+    },
+    "goalLink": {
+      "action": "Link to a savings goal",
+      "title": "Link to a savings goal",
+      "explainer": "A contribution sets this money aside for the goal. A utilization spends money back out of it — the goal's target never changes.",
+      "asContribution": "Contribution",
+      "asUtilization": "Utilization",
+      "linkedTo": "Linked to {{name}}",
+      "unlink": "Remove link"
     }
   },
   "budget": {
@@ -647,7 +674,15 @@
     "projectTagEnvelopes": "envelopes",
     "projectAvgPerMonth": "Avg per month",
     "projectBurn": "Burn-down",
-    "projectActiveMonths": "Active months"
+    "projectActiveMonths": "Active months",
+    "goals": {
+      "title": "Into savings goals",
+      "provisional": "Provisional",
+      "provisionalHint": "This month is still open — the figure moves as transactions land",
+      "contributed": "{{amount}} linked",
+      "surplus": "Month's surplus: {{amount}}",
+      "unallocated": "Unallocated: {{amount}}"
+    }
   },
   "budgetAlerts": {
     "title": "Budget Alerts",

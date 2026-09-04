@@ -258,17 +258,35 @@
     "goals": {
       "title": "יעדי חיסכון",
       "add": "הוספת יעד",
-      "empty": "אין יעדי חיסכון עדיין — הוסיפו אחד כדי לעקוב אחר ההתקדמות",
+      "empty": "אין עדיין יעדי חיסכון — הוסיפו אחד כדי לעקוב אחר ההתקדמות",
       "addTitle": "יעד חיסכון חדש",
       "editTitle": "עריכת יעד חיסכון",
       "nameLabel": "שם היעד",
       "namePlaceholder": "לדוגמה: חופשה, קרן חירום",
-      "targetLabel": "סכום יעד",
-      "savedLabel": "נחסך עד כה",
-      "dateLabel": "תאריך יעד (לא חובה)",
+      "targetLabel": "סכום היעד",
+      "openingLabel": "כבר נחסך",
+      "openingHint": "כסף שהופרש עוד לפני תחילת המעקב",
+      "capLabel": "תקרה חודשית",
+      "capPlaceholder": "ללא הגבלה",
+      "capHint": "הסכום המרבי שהיעד יקבל בחודש אחד",
+      "startMonthLabel": "התחלה מחודש",
+      "startMonthHint": "החודש הראשון שבו היעד מקבל עודף",
+      "dateLabel": "תאריך יעד (אופציונלי)",
       "achieved": "הושג 🎉",
+      "closed": "נסגר",
       "remaining": "נותרו {{amount}}",
-      "monthlyNeeded": "{{amount}} לחודש למשך {{count}} חודשים",
+      "monthlyNeeded": "{{amount}} לחודש במשך {{count}} ח׳",
+      "thisMonth": "{{amount}} החודש",
+      "utilized": "{{spent}} נוצלו · {{available}} נותרו",
+      "priorityHint": "סדר המימון — היעד העליון מתמלא ראשון",
+      "moveUp": "העלאה בסדר המימון",
+      "moveDown": "הורדה בסדר המימון",
+      "redistribute": "חלוקה מחדש",
+      "redistributeHint": "חישוב מחדש של חודשים קודמים לפי הסדר הנוכחי",
+      "redistributeTitle": "חלוקה מחדש של ההיסטוריה",
+      "redistributeExplainer": "שינוי סדר היעדים חל על חודשים עתידיים. פעולה זו מחשבת מחדש חודשים קודמים לפי הסדר הנוכחי. יעדים סגורים שומרים על מה שכבר הוקצה להם.",
+      "redistributeNoChange": "שום דבר לא ישתנה — ההיסטוריה כבר תואמת את הסדר הנוכחי.",
+      "redistributeConfirm": "חלוקה מחדש",
       "confirmDelete": "למחוק את היעד \"{{name}}\"?"
     },
     "heatmap": {
@@ -509,6 +527,15 @@
       "sourcesCount": "{{count}} תנועות",
       "panelHint": "הוחזר / צפוי · נותר",
       "crossHint": "רחפו מעל מקור כדי להאיר את הבקשות שהוא מממן — ולהפך."
+    },
+    "goalLink": {
+      "action": "קישור ליעד חיסכון",
+      "title": "קישור ליעד חיסכון",
+      "explainer": "הפקדה מפרישה את הכסף לטובת היעד. ניצול מוציא כסף מהיעד — סכום היעד עצמו לעולם לא משתנה.",
+      "asContribution": "הפקדה",
+      "asUtilization": "ניצול",
+      "linkedTo": "מקושר ל{{name}}",
+      "unlink": "הסרת הקישור"
     }
   },
   "budget": {
@@ -647,7 +674,15 @@
     "projectTagEnvelopes": "מעטפות",
     "projectAvgPerMonth": "ממוצע לחודש",
     "projectBurn": "קצב שריפה",
-    "projectActiveMonths": "חודשים פעילים"
+    "projectActiveMonths": "חודשים פעילים",
+    "goals": {
+      "title": "ליעדי חיסכון",
+      "provisional": "זמני",
+      "provisionalHint": "החודש עדיין פתוח — הסכום משתנה ככל שנקלטות תנועות",
+      "contributed": "{{amount}} מקושרים",
+      "surplus": "עודף החודש: {{amount}}",
+      "unallocated": "לא הוקצה: {{amount}}"
+    }
   },
   "budgetAlerts": {
     "title": "התראות תקציב",

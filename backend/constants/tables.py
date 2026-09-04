@@ -46,6 +46,10 @@ class Tables(Enum):
         Name of the table storing provider account credentials.
     LIABILITY_TRANSACTIONS : str
         Name of the table storing auto-generated liability payment transactions.
+    SAVINGS_GOAL_ALLOCATIONS : str
+        Name of the table storing per-month surplus allocations to savings goals.
+    SAVINGS_GOAL_LINKS : str
+        Name of the table storing transaction-to-savings-goal links.
     """
 
     CREDIT_CARD = "credit_card_transactions"
@@ -73,6 +77,8 @@ class Tables(Enum):
     INTEREST_RATES = "interest_rates"
     RETIREMENT_GOAL = "retirement_goals"
     SAVINGS_GOALS = "savings_goals"
+    SAVINGS_GOAL_ALLOCATIONS = "savings_goal_allocations"
+    SAVINGS_GOAL_LINKS = "savings_goal_links"
 
 
 def _create_enum(name: str, fields: list[tuple[str, str]]) -> Type[Enum]:

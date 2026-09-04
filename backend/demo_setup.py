@@ -38,6 +38,12 @@ def _source_db_path() -> str:
     )
 
 
+#: Columns removed from a model that the frozen demo snapshot may still carry.
+RETIRED_COLUMNS: dict[str, tuple[str, ...]] = {
+    "savings_goals": ("current_amount",),
+}
+
+
 def sync_missing_columns(engine: Engine) -> None:
     """Add ORM-defined columns that are missing from the physical DB.
 
@@ -60,6 +66,32 @@ def sync_missing_columns(engine: Engine) -> None:
                         f"ALTER TABLE {table_name} ADD COLUMN {column.name} {col_type}"
                     )
                 )
+                conn.commit()
+
+
+def _drop_retired_columns(engine: Engine) -> None:
+    """Remove columns the ORM has dropped but the frozen demo file still has.
+
+    :func:`sync_missing_columns` only ever adds columns, so a column retired
+    from a model lingers in the demo snapshot. That is harmless until the
+    retired column was ``NOT NULL`` without a default — then every ORM insert
+    into that table fails, because SQLAlchemy no longer supplies a value for a
+    column it does not know about. ``savings_goals.current_amount`` (replaced
+    by the allocation ledger) is exactly that case.
+
+    Mirrors the drop in alembic revision ``a3e5c7b9d1f4``, which only runs
+    against the production DB at app startup.
+    """
+    inspector = inspect(engine)
+    for table_name, retired in RETIRED_COLUMNS.items():
+        if not inspector.has_table(table_name):
+            continue
+        existing = {col["name"] for col in inspector.get_columns(table_name)}
+        for column in retired:
+            if column not in existing:
+                continue
+            with engine.connect() as conn:
+                conn.execute(text(f"ALTER TABLE {table_name} DROP COLUMN {column}"))
                 conn.commit()
 
 
@@ -345,6 +377,7 @@ def prepare_demo_database() -> None:
     engine = database.get_engine()
     Base.metadata.create_all(bind=engine)
     sync_missing_columns(engine)
+    _drop_retired_columns(engine)
     _backfill_budget_rule_period_type(engine)
     _backfill_liability_loan_type(engine)
 

@@ -1,10 +1,16 @@
-"""Unit tests for SavingsGoalService — CRUD and derived progress metrics."""
+"""Unit tests for SavingsGoalService — CRUD, lifecycle, and derived metrics.
+
+The waterfall itself is covered in ``test_savings_goal_allocation.py``; these
+tests use goals with an ``opening_balance`` and no transactions, so the
+allocation engine contributes nothing and the enrichment maths is isolated.
+"""
+
+from datetime import date
 
 import pandas as pd
 import pytest
 
-from backend.errors import EntityNotFoundException
-from backend.models.savings_goal import SavingsGoal
+from backend.errors import EntityNotFoundException, ValidationException
 from backend.services.savings_goal_service import DAYS_PER_MONTH, SavingsGoalService
 
 
@@ -31,182 +37,230 @@ def _runway_months_until(target_date: str) -> float:
     return max(0, (target - today).days) / DAYS_PER_MONTH
 
 
+@pytest.fixture
+def service(db_session):
+    """A service bound to the in-memory test database."""
+    return SavingsGoalService(db_session)
+
+
+def _only(goals: list[dict]) -> dict:
+    """Return the single goal in a service response."""
+    assert len(goals) == 1
+    return goals[0]
+
+
 class TestSavingsGoalServiceCrud:
     """Tests for create/update/delete/get_all behaviour."""
 
-    def test_get_all_empty_returns_empty_list(self, db_session):
+    def test_get_all_empty_returns_empty_list(self, service):
         """A fresh DB yields an empty list, not an empty DataFrame."""
-        service = SavingsGoalService(db_session)
         assert service.get_all() == []
 
-    def test_create_persists_and_returns_enriched_goal(self, db_session):
-        """create stores the goal and returns it with progress metrics."""
-        service = SavingsGoalService(db_session)
-
-        goal = service.create(
-            name="Vacation", target_amount=10000.0, current_amount=2500.0
-        )
+    def test_create_persists_and_returns_enriched_goal(self, service):
+        """A created goal comes back with its derived progress fields."""
+        goal = _only(service.create(name="Vacation", target_amount=1000, opening_balance=250))
 
         assert goal["name"] == "Vacation"
+        assert goal["funded"] == 250
+        assert goal["remaining"] == 750
         assert goal["progress_pct"] == 25.0
-        assert goal["remaining"] == 7500.0
         assert goal["is_achieved"] is False
-        stored = db_session.get(SavingsGoal, goal["id"])
-        assert stored is not None and stored.target_amount == 10000.0
 
-    def test_update_changes_fields(self, db_session):
-        """update mutates the stored goal and re-enriches the response."""
-        service = SavingsGoalService(db_session)
-        goal = service.create(name="Fund", target_amount=5000.0, current_amount=0.0)
+    def test_create_defaults_priority_to_the_bottom(self, service):
+        """Each new goal is appended to the end of the waterfall."""
+        service.create(name="First", target_amount=1000)
+        goals = service.create(name="Second", target_amount=1000)
 
-        updated = service.update(goal["id"], current_amount=5000.0)
+        by_name = {g["name"]: g for g in goals}
+        assert by_name["First"]["priority"] < by_name["Second"]["priority"]
 
-        assert updated["is_achieved"] is True
-        assert updated["progress_pct"] == 100.0
-        assert updated["remaining"] == 0.0
-        stored = db_session.get(SavingsGoal, goal["id"])
-        assert stored.current_amount == 5000.0
+    def test_create_defaults_start_month_to_this_month(self, service):
+        """A new goal never claims surpluses from months that predate it."""
+        goal = _only(service.create(name="Vacation", target_amount=1000))
+        today = date.today()
+        assert goal["start_month"] == f"{today.year:04d}-{today.month:02d}"
 
-    def test_update_missing_raises_not_found(self, db_session):
-        """Updating a nonexistent goal raises EntityNotFoundException."""
-        service = SavingsGoalService(db_session)
-        with pytest.raises(EntityNotFoundException, match="not found"):
-            service.update(9999, current_amount=1.0)
+    def test_create_rejects_an_unparseable_start_month(self, service):
+        """A malformed start month is refused rather than silently ignored."""
+        with pytest.raises(ValidationException):
+            service.create(name="Vacation", target_amount=1000, start_month="nope")
 
-    def test_delete_removes_goal(self, db_session):
-        """delete removes the goal row from the DB."""
-        service = SavingsGoalService(db_session)
-        goal = service.create(name="Temp", target_amount=100.0)
+    def test_update_changes_fields(self, service):
+        """Updating a goal restates its derived metrics."""
+        created = _only(service.create(name="Vacation", target_amount=1000))
 
-        service.delete(goal["id"])
+        updated = _only(service.update(created["id"], target_amount=2000, name="Trip"))
+
+        assert updated["name"] == "Trip"
+        assert updated["target_amount"] == 2000
+
+    def test_update_missing_raises_not_found(self, service):
+        """Updating an unknown goal surfaces a 404-mapped exception."""
+        with pytest.raises(EntityNotFoundException):
+            service.update(9999, name="nope")
+
+    def test_delete_removes_goal(self, service):
+        """A deleted goal disappears from the list."""
+        created = _only(service.create(name="Vacation", target_amount=1000))
+
+        service.delete(created["id"])
 
         assert service.get_all() == []
-        assert db_session.get(SavingsGoal, goal["id"]) is None
 
-    def test_delete_missing_raises_not_found(self, db_session):
-        """Deleting a nonexistent goal raises EntityNotFoundException."""
-        service = SavingsGoalService(db_session)
-        with pytest.raises(EntityNotFoundException, match="not found"):
+    def test_delete_missing_raises_not_found(self, service):
+        """Deleting an unknown goal surfaces a 404-mapped exception."""
+        with pytest.raises(EntityNotFoundException):
             service.delete(9999)
 
-    def test_get_all_orders_by_target_date_with_none_last(self, db_session):
-        """Goals sort by target date ascending; undated goals come last."""
-        service = SavingsGoalService(db_session)
-        service.create(name="No Date", target_amount=100.0)
-        service.create(name="Later", target_amount=100.0, target_date="2099-06-01")
-        service.create(name="Sooner", target_amount=100.0, target_date="2098-01-01")
+    def test_get_all_orders_by_priority(self, service):
+        """Goals come back in waterfall order, not insertion order."""
+        service.create(name="A", target_amount=100)
+        service.create(name="B", target_amount=100)
+        ids = {g["name"]: g["id"] for g in service.get_all()}
 
-        names = [g["name"] for g in service.get_all()]
+        service.reorder([ids["B"], ids["A"]])
 
-        assert names == ["Sooner", "Later", "No Date"]
+        assert [g["name"] for g in service.get_all()] == ["B", "A"]
+
+    def test_reorder_rejects_unknown_ids(self, service):
+        """Reordering with an id that does not exist is refused."""
+        created = _only(service.create(name="A", target_amount=100))
+        with pytest.raises(EntityNotFoundException):
+            service.reorder([created["id"], 9999])
+
+
+class TestGoalLifecycle:
+    """Tests for closing and reopening a goal by hand."""
+
+    def test_close_marks_the_goal_and_stamps_the_month(self, service):
+        """Closing freezes a goal and records when it happened."""
+        created = _only(service.create(name="Vacation", target_amount=1000))
+
+        closed = _only(service.close(created["id"]))
+
+        today = date.today()
+        assert closed["is_closed"] is True
+        assert closed["closed_month"] == f"{today.year:04d}-{today.month:02d}"
+
+    def test_reopen_clears_the_closed_state(self, service):
+        """A reopened goal absorbs surplus again."""
+        created = _only(service.create(name="Vacation", target_amount=1000))
+        service.close(created["id"])
+
+        reopened = _only(service.reopen(created["id"]))
+
+        assert reopened["is_closed"] is False
+        assert reopened["closed_month"] is None
+
+    def test_close_missing_raises_not_found(self, service):
+        """Closing an unknown goal surfaces a 404-mapped exception."""
+        with pytest.raises(EntityNotFoundException):
+            service.close(9999)
 
 
 class TestSavingsGoalEnrichment:
     """Tests for the derived progress metrics attached to each goal."""
 
-    def test_zero_target_yields_zero_progress(self, db_session):
-        """A zero target cannot divide — progress is 0 and never achieved."""
-        service = SavingsGoalService(db_session)
-        goal = service.create(name="Empty", target_amount=0.0, current_amount=50.0)
+    def test_zero_target_yields_zero_progress(self, db_session, service):
+        """A zero target can't divide, so progress stays at 0 rather than NaN."""
+        from backend.models.savings_goal import SavingsGoal
 
+        db_session.add(SavingsGoal(name="Zero", target_amount=0, opening_balance=100))
+        db_session.commit()
+
+        goal = _only(service.get_all())
         assert goal["progress_pct"] == 0.0
         assert goal["is_achieved"] is False
-        assert goal["remaining"] == 0.0
 
-    def test_overshoot_caps_progress_at_100(self, db_session):
-        """Saving beyond the target caps progress_pct at 100."""
-        service = SavingsGoalService(db_session)
-        goal = service.create(
-            name="Over", target_amount=1000.0, current_amount=1500.0
-        )
+    def test_overshoot_caps_progress_at_100(self, service):
+        """Saving past the target caps the bar without capping the amount."""
+        goal = _only(service.create(name="Over", target_amount=1000, opening_balance=1500))
 
         assert goal["progress_pct"] == 100.0
+        assert goal["funded"] == 1500
+        assert goal["remaining"] == 0
         assert goal["is_achieved"] is True
-        assert goal["remaining"] == 0.0
 
-    def test_future_target_date_sets_monthly_needed(self, db_session):
-        """A future target date yields months_remaining and a monthly figure."""
-        service = SavingsGoalService(db_session)
-        target_date = "2099-12-31"
-        goal = service.create(
-            name="Car",
-            target_amount=12000.0,
-            current_amount=0.0,
-            target_date=target_date,
+    def test_future_target_date_sets_monthly_needed(self, service):
+        """A dated goal reports the contribution needed over its real runway."""
+        target_date = (pd.Timestamp.today().normalize() + pd.DateOffset(months=5)).strftime(
+            "%Y-%m-%d"
+        )
+        goal = _only(
+            service.create(
+                name="Trip", target_amount=1000, opening_balance=0, target_date=target_date
+            )
         )
 
         assert goal["months_remaining"] == _months_until(target_date)
-        assert goal["monthly_needed"] == round(
-            12000.0 / _runway_months_until(target_date), 2
+        assert goal["monthly_needed"] == pytest.approx(
+            round(1000 / _runway_months_until(target_date), 2)
         )
 
-    def test_past_target_date_needs_full_remaining_now(self, db_session):
-        """A past target date leaves 0 months and the full remaining amount."""
-        service = SavingsGoalService(db_session)
-        goal = service.create(
-            name="Late",
-            target_amount=800.0,
-            current_amount=300.0,
-            target_date="2020-01-01",
+    def test_past_target_date_needs_full_remaining_now(self, service):
+        """An overdue goal asks for everything that is left, immediately."""
+        past = (pd.Timestamp.today().normalize() - pd.DateOffset(months=2)).strftime(
+            "%Y-%m-%d"
+        )
+        goal = _only(
+            service.create(
+                name="Late", target_amount=1000, opening_balance=200, target_date=past
+            )
         )
 
         assert goal["months_remaining"] == 0
-        assert goal["monthly_needed"] == 500.0
+        assert goal["monthly_needed"] == 800
 
-    def test_achieved_goal_has_no_monthly_needed(self, db_session):
-        """An achieved goal has no contribution requirement, even with a date."""
-        service = SavingsGoalService(db_session)
-        goal = service.create(
-            name="Done",
-            target_amount=1000.0,
-            current_amount=1000.0,
-            target_date="2099-12-31",
+    def test_achieved_goal_has_no_monthly_needed(self, service):
+        """Nothing more is needed once the target is met."""
+        future = (pd.Timestamp.today().normalize() + pd.DateOffset(months=3)).strftime(
+            "%Y-%m-%d"
+        )
+        goal = _only(
+            service.create(
+                name="Done", target_amount=1000, opening_balance=1000, target_date=future
+            )
         )
 
         assert goal["is_achieved"] is True
         assert goal["monthly_needed"] is None
-        assert goal["months_remaining"] == _months_until("2099-12-31")
 
-    def test_no_target_date_has_no_time_metrics(self, db_session):
-        """Without a target date both time-based metrics stay None."""
-        service = SavingsGoalService(db_session)
-        goal = service.create(name="Open", target_amount=1000.0)
+    def test_no_target_date_has_no_time_metrics(self, service):
+        """A dateless goal reports progress but no schedule."""
+        goal = _only(service.create(name="Someday", target_amount=1000, opening_balance=100))
 
         assert goal["months_remaining"] is None
         assert goal["monthly_needed"] is None
 
 
 class TestRunwayUsesRealDays:
-    """monthly_needed reflects the days actually remaining, not whole months."""
+    """`monthly_needed` is sized off days remaining, not whole calendar months."""
 
-    def test_monthly_needed_accounts_for_partial_first_month(self, db_session):
-        """A goal due on the 1st two calendar months out is not 2 full months.
-
-        A pure calendar-month difference treated ~39 days of runway as two
-        months, advising roughly two-thirds of the contribution required.
-        """
-        import pandas as pd
-
-        today = pd.Timestamp.today().normalize()
-        target = (today + pd.DateOffset(months=2)).replace(day=1)
-        days_remaining = (target - today).days
-
-        goal = SavingsGoalService(db_session).create(
-            name="Trip", target_amount=12000.0, current_amount=0.0,
-            target_date=target.strftime("%Y-%m-%d"),
+    def test_monthly_needed_accounts_for_partial_first_month(self, service):
+        """A goal due early next month asks for more than a naive month split."""
+        target_ts = (pd.Timestamp.today().normalize() + pd.DateOffset(months=2)).replace(day=1)
+        target_date = target_ts.strftime("%Y-%m-%d")
+        goal = _only(
+            service.create(
+                name="Soon", target_amount=1000, opening_balance=0, target_date=target_date
+            )
         )
 
-        required = 12000.0 / (days_remaining / 30.44)
-        assert goal["monthly_needed"] == pytest.approx(required, abs=0.01)
+        runway = _runway_months_until(target_date)
+        assert goal["monthly_needed"] == pytest.approx(round(1000 / runway, 2))
+        # The calendar-month count would understate the required contribution.
+        assert goal["monthly_needed"] > 1000 / max(1, _months_until(target_date))
 
-    def test_achieved_goal_has_no_monthly_needed(self, db_session):
-        """A goal already met reports no required contribution."""
-        import pandas as pd
-
-        target = (pd.Timestamp.today().normalize() + pd.DateOffset(months=2))
-        goal = SavingsGoalService(db_session).create(
-            name="Done", target_amount=100.0, current_amount=100.0,
-            target_date=target.strftime("%Y-%m-%d"),
+    def test_achieved_goal_has_no_monthly_needed(self, service):
+        """An achieved goal skips the runway maths entirely."""
+        target_ts = (pd.Timestamp.today().normalize() + pd.DateOffset(months=2)).replace(day=1)
+        goal = _only(
+            service.create(
+                name="Soon",
+                target_amount=1000,
+                opening_balance=1200,
+                target_date=target_ts.strftime("%Y-%m-%d"),
+            )
         )
-        assert goal["is_achieved"] is True
+
         assert goal["monthly_needed"] is None

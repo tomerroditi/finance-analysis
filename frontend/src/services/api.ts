@@ -889,34 +889,133 @@ export const retirementApi = {
     api.post<RetirementSuggestions>("/retirement/suggestions", data),
 };
 
+export interface SavingsGoalAllocationEntry {
+  month: string;
+  amount: number;
+}
+
 export interface SavingsGoal {
   id: number;
   name: string;
   target_amount: number;
-  current_amount: number;
+  opening_balance: number;
+  priority: number;
+  monthly_cap: number | null;
+  start_month: string | null;
   target_date: string | null;
+  contribution_category: string | null;
+  contribution_tags: string | null;
+  status: string;
+  closed_month: string | null;
   notes: string | null;
+  /** Surplus the waterfall directed here across every month. */
+  allocated: number;
+  /** Money attached to the goal by an explicit transaction link or category rule. */
+  contributed: number;
+  /** Money spent back out of the goal. Never reduces `target_amount`. */
+  utilized: number;
+  /** opening_balance + allocated + contributed. */
+  funded: number;
+  /** funded - utilized: what is still earmarked and unspent. */
+  available: number;
   remaining: number;
   progress_pct: number;
   is_achieved: boolean;
+  is_closed: boolean;
+  /** This month's allocation, still provisional until the month closes. */
+  this_month_allocation: number;
   months_remaining: number | null;
   monthly_needed: number | null;
+  history: SavingsGoalAllocationEntry[];
 }
 
 export interface SavingsGoalInput {
   name: string;
   target_amount: number;
-  current_amount?: number;
+  opening_balance?: number;
+  monthly_cap?: number | null;
+  start_month?: string | null;
   target_date?: string | null;
+  contribution_category?: string | null;
+  contribution_tags?: string | null;
   notes?: string | null;
+}
+
+export interface SavingsGoalMonthRow {
+  goal_id: number;
+  name: string;
+  priority: number;
+  status: string;
+  allocated: number;
+  contributed: number;
+  total: number;
+}
+
+export interface SavingsGoalMonthAllocations {
+  year: number;
+  month: number;
+  goals: SavingsGoalMonthRow[];
+  total_allocated: number;
+  surplus: number;
+  unallocated: number;
+  is_provisional: boolean;
+}
+
+export interface SavingsGoalRebuildChange {
+  goal_id: number;
+  name: string;
+  before: number;
+  after: number;
+  delta: number;
+}
+
+export interface SavingsGoalRebuildResult {
+  from_month: string | null;
+  dry_run: boolean;
+  changes: SavingsGoalRebuildChange[];
+  goals: SavingsGoal[];
+}
+
+export type SavingsGoalLinkType = "contribution" | "utilization";
+
+export interface SavingsGoalLink {
+  id: number;
+  goal_id: number;
+  source_type: string;
+  source_id: number;
+  source_table: string;
+  link_type: SavingsGoalLinkType;
 }
 
 export const savingsGoalsApi = {
   getAll: () => api.get<SavingsGoal[]>("/savings-goals/"),
-  create: (data: SavingsGoalInput) => api.post<SavingsGoal>("/savings-goals/", data),
+  create: (data: SavingsGoalInput) => api.post<SavingsGoal[]>("/savings-goals/", data),
   update: (id: number, data: Partial<SavingsGoalInput>) =>
-    api.put<SavingsGoal>(`/savings-goals/${id}`, data),
+    api.put<SavingsGoal[]>(`/savings-goals/${id}`, data),
   delete: (id: number) => api.delete(`/savings-goals/${id}`),
+  reorder: (goalIds: number[]) =>
+    api.post<SavingsGoal[]>("/savings-goals/reorder", { goal_ids: goalIds }),
+  close: (id: number) => api.post<SavingsGoal[]>(`/savings-goals/${id}/close`),
+  reopen: (id: number) => api.post<SavingsGoal[]>(`/savings-goals/${id}/reopen`),
+  rebuild: (fromMonth: string | null, dryRun: boolean) =>
+    api.post<SavingsGoalRebuildResult>("/savings-goals/rebuild", {
+      from_month: fromMonth,
+      dry_run: dryRun,
+    }),
+  getLinks: (goalId?: number) =>
+    api.get<SavingsGoalLink[]>("/savings-goals/links", {
+      params: goalId ? { goal_id: goalId } : undefined,
+    }),
+  link: (
+    goalId: number,
+    payload: {
+      source_type: string;
+      source_id: number;
+      source_table: string;
+      link_type: SavingsGoalLinkType;
+    },
+  ) => api.post<SavingsGoal[]>(`/savings-goals/${goalId}/links`, payload),
+  unlink: (linkId: number) => api.delete(`/savings-goals/links/${linkId}`),
 };
 
 export const backupApi = {
