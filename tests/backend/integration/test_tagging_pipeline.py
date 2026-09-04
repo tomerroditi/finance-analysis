@@ -41,7 +41,7 @@ def _patch_categories_cache(sample_categories_yaml, monkeypatch):
     """Inject the sample categories dict into the module-level cache."""
     monkeypatch.setattr(
         "backend.services.tagging_service._categories_cache",
-        sample_categories_yaml,
+        {False: sample_categories_yaml},
     )
 
 

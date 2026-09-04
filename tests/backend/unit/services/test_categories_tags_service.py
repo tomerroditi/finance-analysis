@@ -20,9 +20,9 @@ from backend.services.tagging_service import CategoriesTagsService
 @pytest.fixture(autouse=True)
 def reset_categories_cache():
     """Reset categories cache before each test."""
-    ts._categories_cache = None
+    ts._categories_cache = {}
     yield
-    ts._categories_cache = None
+    ts._categories_cache = {}
 
 
 @pytest.fixture
@@ -73,7 +73,7 @@ class TestCategoriesTagsServiceRead:
         food.icon = "fork-and-knife"
         db_session.commit()
 
-        ts._categories_cache = None
+        ts._categories_cache = {}
         service = CategoriesTagsService(db_session)
         icons = service.get_categories_icons()
 

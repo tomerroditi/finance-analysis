@@ -151,7 +151,7 @@ class TestMonthlyEditYearlyConflictRoute:
         """
         monkeypatch.setattr(
             "backend.services.tagging_service._categories_cache",
-            {"Wedding": ["Venue", "Catering"]},
+            {False: {"Wedding": ["Venue", "Catering"]}},
         )
         test_client.post(
             "/api/budget/projects", json={"category": "Wedding", "total_budget": 10000.0}

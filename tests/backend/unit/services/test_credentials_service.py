@@ -38,9 +38,9 @@ SAMPLE_CREDENTIALS = {
 @pytest.fixture(autouse=True)
 def reset_credentials_cache(monkeypatch):
     """Reset credentials cache between tests."""
-    monkeypatch.setattr(cs, "_credentials_cache", None)
+    monkeypatch.setattr(cs, "_credentials_cache", {})
     yield
-    monkeypatch.setattr(cs, "_credentials_cache", None)
+    monkeypatch.setattr(cs, "_credentials_cache", {})
 
 
 @pytest.fixture
@@ -343,12 +343,12 @@ class TestClearCache:
     """Tests for static cache clearing."""
 
     def test_clear_cache_sets_none(self, mock_repo, monkeypatch):
-        """Verify clear_cache sets module-level cache to None."""
+        """Verify clear_cache empties every mode's cache partition."""
         CredentialsService(MagicMock())
-        assert cs._credentials_cache is not None
+        assert cs._credentials_cache != {}
 
         CredentialsService.clear_cache()
-        assert cs._credentials_cache is None
+        assert cs._credentials_cache == {}
 
     def test_clear_cache_forces_db_reload(self, mock_repo):
         """Verify next load_credentials hits DB after cache clear."""

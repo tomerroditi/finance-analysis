@@ -26,9 +26,9 @@ def mock_categories_cache(sample_categories_yaml, monkeypatch):
     """Mock the categories cache to avoid filesystem dependency."""
     import backend.services.tagging_service as ts
 
-    monkeypatch.setattr(ts, "_categories_cache", sample_categories_yaml)
+    monkeypatch.setattr(ts, "_categories_cache", {False: sample_categories_yaml})
     yield
-    monkeypatch.setattr(ts, "_categories_cache", None)
+    monkeypatch.setattr(ts, "_categories_cache", {})
 
 
 class TestBudgetServiceBase:

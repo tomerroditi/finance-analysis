@@ -4,16 +4,20 @@ This module provides business logic for credential management.
 """
 
 from copy import deepcopy
-from typing import Dict, List, Optional
+from typing import Dict, List
 
 from sqlalchemy.orm import Session
 
+from backend.config import AppConfig
 from backend.constants.providers import Fields, Services, bank_providers, cc_providers, insurance_providers
 from backend.repositories.credentials_repository import _SENSITIVE_FIELDS, CredentialsRepository
 from backend.repositories.scraping_history_repository import ScrapingHistoryRepository
 
-# In-memory cache for credentials
-_credentials_cache: Optional[Dict] = None
+# In-memory credentials cache, partitioned by demo mode. Demo and real
+# credentials are different datasets backed by different databases and
+# different keyring namespaces, so one process must be able to hold both
+# without either evicting the other.
+_credentials_cache: Dict[bool, Dict] = {}
 
 # Sentinel returned by the API in place of stored secret values. Clients send
 # it back unchanged on save to mean "keep the stored value".
@@ -58,11 +62,13 @@ class CredentialsService:
         """
         global _credentials_cache
 
-        if _credentials_cache is not None:
-            return deepcopy(_credentials_cache)
+        mode = AppConfig().is_demo_mode
+        cached = _credentials_cache.get(mode)
+        if cached is not None:
+            return deepcopy(cached)
 
         credentials = self.repository.get_all_credentials()
-        _credentials_cache = credentials
+        _credentials_cache[mode] = credentials
         return deepcopy(credentials)
 
     def save_credentials(self, credentials: Dict) -> None:
@@ -105,7 +111,7 @@ class CredentialsService:
                         service, provider, account_name, cleaned
                     )
 
-        _credentials_cache = None
+        _credentials_cache.pop(AppConfig().is_demo_mode, None)
         self.credentials = self.load_credentials()
 
     def get_available_data_sources(self) -> List[str]:
@@ -421,13 +427,13 @@ class CredentialsService:
         )
 
     def _invalidate_cache(self) -> None:
-        """Clear cache and reload."""
+        """Clear the current mode's cache entry and reload."""
         global _credentials_cache
-        _credentials_cache = None
+        _credentials_cache.pop(AppConfig().is_demo_mode, None)
         self.credentials = self.load_credentials()
 
     @staticmethod
     def clear_cache() -> None:
-        """Clear the in-memory credentials cache."""
+        """Clear the in-memory credentials cache for every mode."""
         global _credentials_cache
-        _credentials_cache = None
+        _credentials_cache.clear()

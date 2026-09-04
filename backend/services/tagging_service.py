@@ -4,10 +4,10 @@ This module provides business logic for category and tag management.
 """
 
 from copy import deepcopy
-from typing import Optional
 
 from sqlalchemy.orm import Session
 
+from backend.config import AppConfig
 from backend.constants.categories import PROTECTED_CATEGORIES, PROTECTED_TAGS
 from backend.repositories.split_transactions_repository import (
     SplitTransactionsRepository,
@@ -22,8 +22,9 @@ from backend.repositories.transactions_repository import (
 from backend.utils.text_utils import to_title_case
 
 
-# In-memory cache for categories
-_categories_cache: Optional[dict] = None
+# In-memory categories cache, partitioned by demo mode — demo and real
+# categories live in different databases and must not evict each other.
+_categories_cache: dict[bool, dict] = {}
 
 
 class CategoriesTagsService:
@@ -71,24 +72,25 @@ class CategoriesTagsService:
         """
         global _categories_cache
 
-        if _categories_cache is None:
-            _categories_cache = self.tagging_repo.get_categories()
+        mode = AppConfig().is_demo_mode
+        if mode not in _categories_cache:
+            _categories_cache[mode] = self.tagging_repo.get_categories()
 
         if copy:
-            return deepcopy(_categories_cache)
-        return _categories_cache
+            return deepcopy(_categories_cache[mode])
+        return _categories_cache[mode]
 
     def _invalidate_cache(self) -> None:
-        """Clear the in-memory cache and reload from the YAML file."""
+        """Clear the current mode's cache entry and reload from the DB."""
         global _categories_cache
-        _categories_cache = None
+        _categories_cache.pop(AppConfig().is_demo_mode, None)
         self.categories_and_tags = self.get_categories_and_tags()
 
     @staticmethod
     def clear_cache() -> None:
-        """Clear the in-memory categories cache."""
+        """Clear the in-memory categories cache for every mode."""
         global _categories_cache
-        _categories_cache = None
+        _categories_cache.clear()
 
     def get_categories_icons(self) -> dict[str, str]:
         """
