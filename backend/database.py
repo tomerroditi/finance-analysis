@@ -6,10 +6,12 @@ replacing the Streamlit-specific database connection used in the original app.
 """
 
 import os
+import threading
 from contextlib import contextmanager
 from typing import Generator
 
 from sqlalchemy import create_engine
+from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import NullPool
 
@@ -86,50 +88,66 @@ def create_db_engine(db_path: str = None, echo: bool = False):
     )
 
 
-# Default engine and session factory
-_engine = None
-_SessionLocal = None
+# Engines and session factories, keyed by resolved database path. Keying on
+# path rather than on the demo flag is more honest: it also covers the
+# FAD_DB_PATH override without a special case, and two contexts that happen
+# to resolve to the same file correctly share one engine.
+_engines: dict[str, "Engine"] = {}
+_session_factories: dict[str, sessionmaker] = {}
+
+# Guards lazy creation. Requests are served from a threadpool, so two threads
+# can miss the cache for the same path at once; without the lock they would
+# each build an engine and one would be silently discarded.
+_registry_lock = threading.Lock()
 
 
 def get_engine(db_path: str = None):
     """
-    Get or create the default database engine.
+    Get or create the engine for a database path.
 
     Parameters
     ----------
-    db_path : str
-        Path to the SQLite database file.
+    db_path : str, optional
+        Path to the SQLite database file. When ``None``, resolves from
+        ``AppConfig`` — which is demo-mode aware and therefore context-local.
 
     Returns
     -------
     Engine
-        SQLAlchemy engine instance.
+        SQLAlchemy engine instance for that path.
     """
-    global _engine
-    if _engine is None:
-        _engine = create_db_engine(db_path)
-    return _engine
+    if db_path is None:
+        db_path = AppConfig().get_db_path()
+    with _registry_lock:
+        if db_path not in _engines:
+            _engines[db_path] = create_db_engine(db_path)
+        return _engines[db_path]
 
 
 def get_session_factory(db_path: str = None):
     """
-    Get or create the session factory.
+    Get or create the session factory for a database path.
 
     Parameters
     ----------
-    db_path : str
-        Path to the SQLite database file.
+    db_path : str, optional
+        Path to the SQLite database file. When ``None``, resolves from
+        ``AppConfig``.
 
     Returns
     -------
     sessionmaker
-        SQLAlchemy session factory.
+        Session factory bound to that path's engine.
     """
-    global _SessionLocal
-    if _SessionLocal is None:
-        engine = get_engine(db_path)
-        _SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-    return _SessionLocal
+    if db_path is None:
+        db_path = AppConfig().get_db_path()
+    engine = get_engine(db_path)
+    with _registry_lock:
+        if db_path not in _session_factories:
+            _session_factories[db_path] = sessionmaker(
+                autocommit=False, autoflush=False, bind=engine
+            )
+        return _session_factories[db_path]
 
 
 def get_db() -> Generator[Session, None, None]:
@@ -188,14 +206,32 @@ def get_db_context() -> Generator[Session, None, None]:
         db.close()
 
 
-def reset_engine():
+def reset_engine_for(db_path: str) -> None:
     """
-    Reset the global engine and session factory.
+    Dispose and drop the engine and factory for one database path.
 
-    Useful for testing or when switching databases.
+    Parameters
+    ----------
+    db_path : str
+        Path whose registry entries should be discarded.
     """
-    global _engine, _SessionLocal
-    if _engine is not None:
-        _engine.dispose()
-    _engine = None
-    _SessionLocal = None
+    with _registry_lock:
+        engine = _engines.pop(db_path, None)
+        _session_factories.pop(db_path, None)
+    if engine is not None:
+        engine.dispose()
+
+
+def reset_engines() -> None:
+    """
+    Dispose and drop every cached engine and session factory.
+
+    Used when a database file is replaced underneath the process (backup
+    restore, demo-database rebuild) and in test teardown.
+    """
+    with _registry_lock:
+        engines = list(_engines.values())
+        _engines.clear()
+        _session_factories.clear()
+    for engine in engines:
+        engine.dispose()

@@ -64,7 +64,7 @@ def toggle_demo_mode(
         config.set_demo_mode(request.enabled)
 
         # Reset database engine to pick up new path
-        database.reset_engine()
+        database.reset_engines()
 
         CredentialsService.clear_cache()
         CategoriesTagsService.clear_cache()

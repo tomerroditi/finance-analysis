@@ -373,7 +373,7 @@ def prepare_demo_database() -> None:
         os.makedirs(os.path.dirname(demo_db_path), exist_ok=True)
         shutil.copy2(source, demo_db_path)
 
-    database.reset_engine()
+    database.reset_engines()
     engine = database.get_engine()
     Base.metadata.create_all(bind=engine)
     sync_missing_columns(engine)
