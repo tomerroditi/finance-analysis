@@ -92,6 +92,11 @@ export default defineConfig(({ mode }) => {
               //                      process state; a stale cached
               //                      demo_mode:true resurrects demo mode in
               //                      the UI when the backend is slow to boot
+              //   any request carrying X-FAD-Demo — the runtime cache is
+              //     keyed by URL, and a header does not vary that key, so
+              //     caching demo responses would let one be served to a
+              //     real-mode request. Demo Mode is a testing affordance
+              //     and has no use for offline support.
               urlPattern: ({ url, request }) =>
                 request.method === "GET" &&
                 url.pathname.startsWith("/api/") &&
@@ -102,7 +107,8 @@ export default defineConfig(({ mode }) => {
                 !url.pathname.startsWith("/api/updates/") &&
                 !url.pathname.startsWith("/api/version") &&
                 !url.pathname.startsWith("/api/uninstall") &&
-                !url.pathname.startsWith("/api/testing/"),
+                !url.pathname.startsWith("/api/testing/") &&
+                !request.headers.get("X-FAD-Demo"),
               handler: "NetworkFirst",
               options: {
                 cacheName: "finance-api-get",
