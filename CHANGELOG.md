@@ -1,3 +1,9 @@
+## v1.52.1 (2026-09-04)
+
+### Fix
+
+- **budget**: stop double-negating yearly spend and match all_tags case-insensitively
+
 ## v1.52.0 (2026-09-04)
 
 ### Feat
