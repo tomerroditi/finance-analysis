@@ -128,7 +128,13 @@ export const BudgetCommandBar: React.FC<BudgetCommandBarProps> = ({
         alone the strip is content-sized, so at a width where the labels don't
         fit (including mid-transition, while the sidebar margin animates) it
         grows past its parent and scrolls the page instead of itself. */}
-    <div className="flex w-full md:w-auto max-w-full min-w-0 gap-1 bg-[var(--surface-light)]/40 p-1 rounded-xl overflow-x-auto scrollbar-auto-hide">
+    {/* The strip carries the shared control height, not the tabs: its own
+        padding used to sit outside them, so the segmented control stood 44px
+        tall against every other control's 36. `p-0.5` keeps the active pill
+        visibly inset; the tabs stretch to fill what's left. */}
+    <div
+      className={`${BAR_CONTROL} flex w-full md:w-auto max-w-full min-w-0 gap-1 bg-[var(--surface-light)]/40 p-0.5 rounded-xl overflow-x-auto scrollbar-auto-hide`}
+    >
       {tabs}
     </div>
 
