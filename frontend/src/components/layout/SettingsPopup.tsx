@@ -189,8 +189,8 @@ export function SettingsPopup({
               <div
                 className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all shadow-sm ${
                   isDemoMode
-                    ? "inset-inline-start-[calc(100%-18px)]"
-                    : "inset-inline-start-0.5"
+                    ? "start-[calc(100%-18px)]"
+                    : "start-0.5"
                 }`}
               />
             </div>
@@ -214,8 +214,8 @@ export function SettingsPopup({
               <div
                 className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all shadow-sm ${
                   alertsEnabled
-                    ? "inset-inline-start-[calc(100%-18px)]"
-                    : "inset-inline-start-0.5"
+                    ? "start-[calc(100%-18px)]"
+                    : "start-0.5"
                 }`}
               />
             </div>

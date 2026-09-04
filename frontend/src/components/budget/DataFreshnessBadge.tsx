@@ -159,7 +159,7 @@ export const DataFreshnessBadge: React.FC<DataFreshnessBadgeProps> = ({
             onClick={() => setShowDetails(false)}
           />
           <div
-            className="absolute top-full mt-2 inset-inline-start-0 z-20 w-full max-w-[calc(100vw-2rem)] sm:w-72 rounded-xl border border-[var(--surface-light)] bg-[var(--surface)] p-3 shadow-xl"
+            className="absolute top-full mt-2 start-0 z-20 w-full max-w-[calc(100vw-2rem)] sm:w-72 rounded-xl border border-[var(--surface-light)] bg-[var(--surface)] p-3 shadow-xl"
             onClick={(e) => e.stopPropagation()}
           >
             <p className="text-xs font-semibold text-[var(--text-default)] mb-2">
