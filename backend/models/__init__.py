@@ -18,7 +18,11 @@ from backend.models.liability import Liability, LiabilityTransaction
 from backend.models.investment_balance_snapshot import InvestmentBalanceSnapshot
 from backend.models.pending_refund import PendingRefund, RefundLink
 from backend.models.retirement_goal import RetirementGoal
-from backend.models.savings_goal import SavingsGoal
+from backend.models.savings_goal import (
+    SavingsGoal,
+    SavingsGoalAllocation,
+    SavingsGoalLink,
+)
 from backend.models.scraping import ScrapingHistory
 from backend.models.tagging_rules import TaggingRule
 from backend.models.transaction import (
@@ -60,5 +64,8 @@ __all__ = [
     # Budget month override
     "BudgetMonthOverride",
     "RetirementGoal",
+    # Savings goals
     "SavingsGoal",
+    "SavingsGoalAllocation",
+    "SavingsGoalLink",
 ]
