@@ -1,106 +1,99 @@
 ---
 paths:
+  - "scraper/**/*.py"
   - "backend/scraper/**/*.py"
   - "backend/services/scraping_service.py"
 ---
 
-# Scraper Module - Web Scraping for Israeli Financial Providers
+# Scraper Framework — Pure-Python Provider Scrapers
 
-Automates data collection from Israeli banks/credit cards using Playwright-based Node.js scrapers wrapped in Python.
+Two packages, one name. Keep them straight:
 
-## Architecture
+| Package | Role |
+|---------|------|
+| `scraper/` (repo root) | The framework: base classes, 19 providers, models, exceptions. No backend imports. |
+| `backend/scraper/` | Just `adapter.py` — bridges the async framework into the sync FastAPI pipeline. |
 
 ```
-User -> Python Scraper class -> subprocess -> Node.js (Playwright) -> Bank website
-                                              |
-Python parses stdout -> DataFrame -> TransactionsRepository -> SQLite
+ScrapingService -> ScraperAdapter (async->sync, OTP) -> BaseScraper subclass
+                                                        |
+                                       Playwright / httpx -> provider site
+                        AccountResult[] -> DataFrame -> TransactionsRepository -> SQLite
 ```
 
-- **Python Layer (`scrapers.py`)**: Orchestration, DB ops, error handling, 2FA coordination
-- **Node.js Layer (`node/`)**: Actual scraping via `israeli-bank-scrapers` npm package
+**Building a new provider?** Use the `scraper-development` skill — it drives
+read-only browser exploration of the live site, then generates the class. This
+file is the framework reference, not the authoring guide.
 
-## Core Components
+## Import caveat (bites every time)
 
-### Scraper Base Class
-Abstract class defining the interface. Key abstract properties:
-- `service_name` - 'credit_cards', 'banks', or 'insurance'
-- `provider_name` - e.g., 'isracard', 'hapoalim'
-- `script_path` - Path to Node.js script
-- `table_name` - Target database table
-- `requires_2fa` - Whether provider needs OTP
+`backend/scraper/` shadows the root `scraper/` package. Backend code must
+resolve the root package through `_import_scraper_module()` in `adapter.py` —
+never a bare `import scraper`. Test dirs use a `test_scraper/` prefix so pytest
+doesn't collide on the name.
 
-### Concrete Scrapers
-- **Credit Cards:** `IsracardScraper`, `MaxScraper`, `VisaCalScraper`, `AmexScraper`
-- **Banks:** `HapoalimScraper`, `LeumiScraper`, `DiscountScraper`, `OneZeroScraper`
-- **Test:** `DummyTFAScraper`, `DummyTFAScraperNoOTP`
+## Base classes (`scraper/base/`)
 
-### Error Hierarchy (`exceptions.py`)
+- **`BaseScraper`** — abstract lifecycle. `scrape()` runs
+  `initialize -> login -> fetch_data -> terminate`, emitting progress
+  (`"initializing"`, `"logging in"`, `"fetching data"`, `"done"`) and converting
+  every phase failure into a `ScrapingResult` via `_phase_failure`. Subclasses
+  implement the four phase methods, never `scrape()` itself.
+- **`BrowserScraper`** — Playwright lifecycle + form login. Provides
+  `get_login_options()`, `navigate_to()`, and `fetch_get`/`fetch_post` that run
+  inside the page context (so they carry the session cookies).
+- **`ApiScraper`** — httpx client, no browser. Use when login and data both
+  work over plain HTTP.
 
-| Error Type | When |
-|------------|------|
-| `CredentialsError` | Invalid username/password |
-| `ConnectionError` | Network issues |
-| `TimeoutError` | Operation took too long |
-| `PasswordChangeError` | Password reset required |
-| `AccountError` | Account blocked/suspended |
-| `RateLimitError` | Too many requests |
+**Phase failures name the exception class.** `_phase_failure` formats
+`"<phase> failed: <detail>"` with the exception type included — a bare `str(e)`
+on an argument-less exception recorded an empty message and hid the phase.
+Don't "simplify" that back.
 
-## Two-Factor Authentication (2FA) Flow
+## Models (`scraper/models/`)
 
-1. Scraping runs in **separate thread** (non-blocking)
-2. Node.js triggers 2FA (SMS/email sent to user)
-3. Python scraper waits on `otp_event` (threading.Event)
-4. UI prompts user -> user calls `scraper.set_otp_code(code)`
-5. OTP sent to Node.js via stdin -> scraping continues
+`Transaction`, `InstallmentInfo`, `AccountResult`, `ScrapingResult`,
+`LoginResult`, `ProviderConfig`. `PROVIDER_CONFIGS` in `credentials.py` is the
+registry — 19 entries, and a provider that isn't there doesn't exist as far as
+the app is concerned.
 
-**Cancellation:** User enters "cancel" -> `scraper.otp_code == scraper.CANCEL` -> logged as `CANCELED`
+## Errors (`scraper/exceptions.py`)
 
-## Scraping History
+All inherit `ScraperError` and carry an `ErrorType` matching the upstream
+`israeli-bank-scrapers` vocabulary (`INVALID_PASSWORD`, `CHANGE_PASSWORD`,
+`ACCOUNT_BLOCKED`, `TWO_FACTOR_RETRIEVER_MISSING`, `TIMEOUT`,
+`AUTOMATION_BLOCKED`, `GENERIC`, `GENERAL_ERROR`): `CredentialsError`,
+`PasswordChangeError`, `AccountBlockedError`, `TwoFactorError`, `TimeoutError`,
+`AutomationBlockedError`, `ConnectionError`.
 
-Tracked in `scraping_history` table for audit and rate limiting:
-- **Daily limits enforced** - one scrape per account per day
-- **Status values:** `SUCCESS`, `FAILED`, `CANCELED`
+## 2FA / OTP
 
-## Adding a New Provider
+`ScraperAdapter` owns the whole dance. The scraper parks in
+`on_otp_request`; the adapter awaits an `asyncio.Event` that a **synchronous**
+route sets from a threadpool via `set_otp_code()` — hence the captured event
+loop and `call_soon_threadsafe`. Cancel by passing the `OTP_CANCEL_SENTINEL`,
+which must stay in sync with `scraper.base.base_scraper`.
 
-1. **Add to enums** in `backend/constants/providers.py` (CreditCards/Banks enum, LoginFields)
-2. **Check Node.js support** - verify `israeli-bank-scrapers` supports provider
-3. **Create scraper class:**
-```python
-class NewCardScraper(Scraper):
-    requires_2fa = False
+Two things that look redundant and aren't:
+- **Live-adapter registry** — keyed so a second launch for a 2FA provider
+  doesn't fire a second `/otp/prepare` and a duplicate SMS.
+- **`_persist_refreshed_otp_token`** — providers issuing a rotated long-term
+  token need it written back after a successful run; the credential form has no
+  field for it, so nothing else can.
 
-    @property
-    def service_name(self): return 'credit_cards'
+## Demo mode
 
-    @property
-    def provider_name(self): return 'new_card'
+`adapter.py` redirects to dummy scrapers when `AppConfig().is_demo_mode` and the
+provider name lacks `test_`. Demo mode never touches a real site.
 
-    @property
-    def script_path(self): return os.path.join(NODE_JS_SCRIPTS_DIR, 'credit_cards', 'new_card.js')
+## Limits
+
+5-minute timeout, one scrape per account per day, no automatic retry.
+History in `scraping_history` (`SUCCESS` / `FAILED` / `CANCELED`).
+
+## CLI
+
+```bash
+python -m scraper --list                      # all providers
+python -m scraper <provider> --show-browser   # run one with a visible browser
 ```
-4. **Add to factory** in `get_scraper()`
-5. **Create/verify Node.js script** in `node/credit_cards/`
-
-## Security
-
-| Safe | Never |
-|---------|----------|
-| Passwords from Keyring (service layer) | Passwords in YAML/code |
-| Credentials via subprocess stdin | Log credentials |
-| OTP codes ephemeral (memory only) | Persist OTP codes |
-
-**Note:** Scraper receives credentials dict with password already retrieved by service layer.
-
-## Timeouts & Limits
-
-- **Fixed timeout:** 300 seconds (5 minutes) for all providers
-- **Daily limit:** One scrape per account per day
-- **No automatic retry** - manual retry via UI
-
-## Notes
-
-- All Israeli providers use Hebrew websites (RTL text handled)
-- Date format normalized to 'YYYY-MM-DD'
-- Transaction amounts: Negative = expense, Positive = income
-- Error mapping from Node.js stderr -> Python exceptions in `_handle_error()`
