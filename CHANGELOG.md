@@ -1,3 +1,9 @@
+## v1.53.0 (2026-09-04)
+
+### Feat
+
+- **budget**: fold budget-vs-actual into the summary band and trim the page chrome (#238)
+
 ## v1.52.3 (2026-09-04)
 
 ### Fix
