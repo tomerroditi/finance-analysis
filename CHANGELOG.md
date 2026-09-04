@@ -1,3 +1,9 @@
+## v1.52.3 (2026-09-04)
+
+### Fix
+
+- **ui**: replace dead inset-inline-* classes with real Tailwind utilities (#237)
+
 ## v1.52.2 (2026-09-04)
 
 ### Fix

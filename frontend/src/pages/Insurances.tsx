@@ -226,7 +226,7 @@ function AccountCardFull({
   return (
     <div className="bg-[var(--surface)] rounded-2xl border border-[var(--surface-light)] overflow-hidden relative">
       {/* Policy-type accent stripe */}
-      <div className={`absolute inset-y-0 inset-inline-start-0 w-1 ${stripeColor}`} />
+      <div className={`absolute inset-y-0 start-0 w-1 ${stripeColor}`} />
 
       {/* Header */}
       <div className="ps-5 pe-4 sm:ps-7 sm:pe-6 py-5 flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">

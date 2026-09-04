@@ -121,7 +121,7 @@ it came from a DB column or user input, add `dir="auto"`.
 ### Prefer Tailwind CSS 4 logical properties over physical ones:
 | Physical (avoid) | Logical (use instead) |
 |---|---|
-| `left-*` / `right-*` | `inset-inline-start-*` / `inset-inline-end-*` |
+| `left-*` / `right-*` | `start-*` / `end-*` |
 | `pl-*` / `pr-*` | `ps-*` / `pe-*` |
 | `ml-*` / `mr-*` | `ms-*` / `me-*` |
 | `border-l` / `border-r` | `border-s` / `border-e` |
@@ -129,6 +129,22 @@ it came from a DB column or user input, add `dir="auto"`.
 | `rounded-l-*` / `rounded-r-*` | `rounded-s-*` / `rounded-e-*` |
 
 Logical properties auto-flip in RTL — no conditional classes needed.
+
+**Name the utility, not the CSS property.** Tailwind's class is `start-0`,
+not `inset-inline-start-0`; `inset-x-0` / `inset-y-0`, not `inset-inline-0` /
+`inset-block-0`. A property-spelled class matches no utility, so Tailwind
+emits **no CSS at all** and the browser ignores it silently — an absolutely
+positioned element then falls back to its *static* position instead of
+erroring. This table used to recommend the property spelling, and five
+elements shipped with dead classes before anyone noticed: a settings toggle
+whose knob never moved, and a sidebar footer that shrink-wrapped instead of
+spanning the sidebar. The other three only looked right because the static
+position happened to match.
+
+Two guards now enforce this: `src/tailwindLogicalProperties.test.ts` (vitest,
+scans source for property-spelled classes) and `e2e/rtl-logical-insets.spec.ts`
+(asserts computed geometry — a className assertion would pass against the bug,
+since the dead class is still present in the DOM).
 
 ### When to use `isRtl` conditionals
 Only when logical properties aren't sufficient:
