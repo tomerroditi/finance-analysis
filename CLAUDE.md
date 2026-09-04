@@ -156,11 +156,24 @@ change.
 runs `--shard=i/N` once per pair, pinned via `BASE_URL` + `E2E_API_BASE`. No
 shared DB → no cross-shard races → every shard runs concurrently.
 
-**Measured 2026-09-05 on a 12-core M-series Mac (8P+4E): 95 s for 4 shards vs
-~240 s serial — 2.5×.** Shards are split by file count, not duration, so they
-finish unevenly (31 s to 1.5 m); the slowest shard sets the wall clock. This is
-the local default in the checklist above; CI keeps its single-backend
-`--shard=X/4` matrix. Every direct-to-backend
+**Measured 2026-09-05 on a 12-core M-series Mac (8P+4E): 72 s for 4 shards vs
+~240 s serial — 3.3×.** This is the local default in the checklist above; CI
+keeps its single-backend `--shard=X/4` matrix.
+
+The runner does **not** use Playwright's `--shard`, which splits by test count
+and left one shard at 31 s beside another at 1.5 m — the slowest sets the wall
+clock, so a third of the parallelism was idle. It packs spec files by recorded
+duration instead (longest-first greedy), passing each shard an explicit file
+list; every shard now lands within a few seconds of the others. Each run
+rewrites `.claude/scripts/e2e_shard_timings.json`, which is **committed on
+purpose**: absolute times are machine-specific but the ratios are not, so a
+fresh clone gets balanced shards on its first run. A new spec with no recorded
+time is assumed to take the median. The timings are only rewritten when a run
+measured ≥80 % of the suite, so a `--grep` cannot shrink the table; forwarding
+a positional filter falls back to `--shard`. Because each shard is given
+explicit files, `demo.setup.ts` and `demo.teardown.ts` must be in every
+shard's list — their projects match nothing otherwise and Demo Mode is never
+enabled. Every direct-to-backend
 API call in a spec must go through the env-driven `API_BASE` exported from
 `frontend/e2e/helpers.ts` (never hardcode `http://localhost:8000`) or that call
 will hit the wrong shard's backend.

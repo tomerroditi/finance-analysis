@@ -33,6 +33,7 @@ Anything after ``--`` is forwarded verbatim to every ``playwright test`` shard.
 """
 
 import argparse
+import json
 import os
 import shutil
 import socket
@@ -49,6 +50,84 @@ FRONTEND_DIR = REPO_ROOT / "frontend"
 # ports, so this can run alongside a normal dev session without clashing.
 BACKEND_PORT_BASE = 8100
 FRONTEND_PORT_BASE = 5273
+
+# Per-spec wall times from the last successful run, used to pack shards evenly.
+# Committed on purpose: absolute times are machine-specific but the *ratios*
+# are stable, and that is all the packer needs — so a fresh clone gets balanced
+# shards on its first run instead of paying for a calibration run.
+TIMINGS_PATH = Path(__file__).resolve().parent / "e2e_shard_timings.json"
+
+# Their projects (`demo-setup` / `demo-teardown`) match only these files, so
+# every shard must list them or Demo Mode is never enabled for that shard.
+LIFECYCLE_SPECS = ["e2e/demo.setup.ts", "e2e/demo.teardown.ts"]
+
+
+def spec_files() -> list[str]:
+    """Every `.spec.ts` under `frontend/e2e`, as paths relative to `frontend/`."""
+    return sorted(
+        str(path.relative_to(FRONTEND_DIR))
+        for path in (FRONTEND_DIR / "e2e").rglob("*.spec.ts")
+    )
+
+
+def load_timings() -> dict[str, float]:
+    try:
+        return json.loads(TIMINGS_PATH.read_text())
+    except (OSError, ValueError):
+        return {}
+
+
+def pack_shards(files: list[str], timings: dict[str, float], n: int) -> list[list[str]]:
+    """
+    Split `files` into `n` groups of roughly equal duration.
+
+    Playwright's own `--shard` splits by test *count*, which on this suite left
+    one shard at 31 s and another at 1.5 m — the slowest sets the wall clock, so
+    a third of the parallelism was wasted. This is longest-processing-time-first
+    greedy bin packing: place the slowest spec into whichever shard is currently
+    lightest. It is within 4/3 of optimal, which is far inside the noise here.
+
+    Unknown files (new specs, or no timings file yet) are assumed to take the
+    median of what we do know, so one new spec cannot swamp a shard.
+    """
+    known = sorted(timings.values())
+    fallback = known[len(known) // 2] if known else 1.0
+    cost = lambda f: timings.get(f, fallback)  # noqa: E731
+
+    shards: list[list[str]] = [[] for _ in range(n)]
+    loads = [0.0] * n
+    for spec in sorted(files, key=cost, reverse=True):
+        lightest = loads.index(min(loads))
+        shards[lightest].append(spec)
+        loads[lightest] += cost(spec)
+    return shards
+
+
+def collect_timings(report_paths: list[Path]) -> dict[str, float]:
+    """Sum each spec file's test durations across the shards' JSON reports."""
+    totals: dict[str, float] = {}
+
+    def walk(suite: dict, file_hint: str | None = None) -> None:
+        current = suite.get("file") or file_hint
+        for spec in suite.get("specs", []):
+            path = spec.get("file") or current
+            if not path:
+                continue
+            key = path if path.startswith("e2e/") else f"e2e/{path}"
+            for test in spec.get("tests", []):
+                for result in test.get("results", []):
+                    totals[key] = totals.get(key, 0.0) + result.get("duration", 0) / 1000
+        for child in suite.get("suites", []):
+            walk(child, current)
+
+    for path in report_paths:
+        try:
+            report = json.loads(path.read_text())
+        except (OSError, ValueError):
+            continue
+        for suite in report.get("suites", []):
+            walk(suite)
+    return totals
 
 
 def wait_for_port(port: int, timeout: float) -> bool:
@@ -152,11 +231,30 @@ def main() -> int:
         extra = extra[1:]
 
     n = args.shards
-    print(f"Isolated parallel e2e: {n} shards on {os.cpu_count()} cores\n")
+
+    # A forwarded positional (a file/grep filter) would fight our own file
+    # lists, so hand those runs back to Playwright's count-based sharding.
+    forwards_paths = any(not a.startswith("-") for a in extra)
+    timings = {} if forwards_paths else load_timings()
+    buckets = None if forwards_paths else pack_shards(spec_files(), timings, n)
+
+    print(f"Isolated parallel e2e: {n} shards on {os.cpu_count()} cores")
+    if buckets is None:
+        print("  splitting with Playwright --shard (positional filter forwarded)\n")
+    elif timings:
+        est = [sum(timings.get(f, 0.0) for f in b) for b in buckets]
+        print(
+            "  packed by recorded duration — estimated "
+            + ", ".join(f"{e:.0f}s" for e in est)
+            + "\n"
+        )
+    else:
+        print("  no timings recorded yet; this run will write them\n")
 
     pairs: list[Pair] = [Pair(i) for i in range(n)]
     shard_procs: list[subprocess.Popen] = []
     logs: list[Path] = []
+    reports: list[Path] = []
     started = time.time()
 
     try:
@@ -168,10 +266,15 @@ def main() -> int:
         for pair in pairs:
             log_path = Path(tempfile.gettempdir()) / f"e2e-isolated-shard-{pair.index}.log"
             logs.append(log_path)
+            report_path = (
+                Path(tempfile.gettempdir()) / f"e2e-isolated-report-{pair.index}.json"
+            )
+            reports.append(report_path)
             shard_env = {
                 **os.environ,
                 "BASE_URL": pair.base_url,
                 "E2E_API_BASE": pair.api_base,
+                "PLAYWRIGHT_JSON_OUTPUT_NAME": str(report_path),
             }
             # --retries=1 matches CI (playwright.config sets retries:1 under CI).
             # Running N heavy Chromium+Plotly shards saturates the CPU, and
@@ -180,13 +283,20 @@ def main() -> int:
             # absorbs the load transient without masking a real failure — the
             # specs pass deterministically on their own. `*extra` comes last so
             # a user-forwarded --retries overrides this default.
+            split = (
+                [f"--shard={pair.index + 1}/{n}"]
+                if buckets is None
+                else [*LIFECYCLE_SPECS, *buckets[pair.index]]
+            )
             cmd = [
                 "npx",
                 "playwright",
                 "test",
-                f"--shard={pair.index + 1}/{n}",
-                "--reporter=list",
+                # `json` alongside `list` so the run records its own per-spec
+                # durations for the next run's packing.
+                "--reporter=list,json",
                 "--retries=1",
+                *split,
                 *extra,
             ]
             with open(log_path, "w") as log:
@@ -209,6 +319,16 @@ def main() -> int:
             tail = [ln for ln in log_path.read_text().splitlines() if "passed" in ln or "failed" in ln]
             summary = tail[-1].strip() if tail else ""
         print(f"  shard {i + 1}/{n}: {status}  {summary}    (log: {log_path})")
+
+    # Record durations even on failure — a red spec still timed itself, and the
+    # next run's packing should not regress just because something broke. Only
+    # rewrite when the run actually measured most of the suite, so a `--grep`
+    # or an early crash cannot shrink the table to a handful of specs.
+    measured = collect_timings(reports)
+    if len(measured) >= 0.8 * len(spec_files()):
+        merged = {**load_timings(), **measured}
+        TIMINGS_PATH.write_text(json.dumps(dict(sorted(merged.items())), indent=2) + "\n")
+        print(f"\nRecorded {len(measured)} spec timings -> {TIMINGS_PATH.name}")
 
     return 0 if all(rc == 0 for rc in returncodes) else 1
 
