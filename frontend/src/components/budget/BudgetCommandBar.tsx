@@ -16,8 +16,22 @@ interface PeriodNavProps {
   widthClass?: string;
 }
 
+/**
+ * One height for every control in the bar.
+ *
+ * They were each sized by their own padding, so a row of five controls came
+ * out at five heights — the period stepper 38px (its border sat outside the
+ * arrows' 36), "Today" 27, the freshness chip 25, against 36px tabs and
+ * primary action. Pin the height and let padding only set the width.
+ *
+ * Height ONLY — deliberately no `shrink-0`. The period stepper has to be able
+ * to shrink (its label truncates); pinning it un-shrinkable pushes the whole
+ * page sideways on a phone, which `budget.spec.ts` guards against.
+ */
+export const BAR_CONTROL = "h-9";
+
 const NAV_BUTTON =
-  "p-2 rounded-lg text-[var(--text-muted)] hover:text-[var(--text-default)] hover:bg-[var(--surface-light)] transition-colors";
+  "h-full px-2 rounded-lg text-[var(--text-muted)] hover:text-[var(--text-default)] hover:bg-[var(--surface-light)] transition-colors";
 
 /** Prev / label / next, shared by the monthly and yearly command bars. */
 export const PeriodNav: React.FC<PeriodNavProps> = ({
@@ -35,7 +49,9 @@ export const PeriodNav: React.FC<PeriodNavProps> = ({
 
   return (
     <div className="flex items-center gap-1 md:gap-2 min-w-0">
-      <div className="flex items-center min-w-0 rounded-xl border border-[var(--surface-light)] bg-[var(--surface-light)]/30">
+      <div
+        className={`flex items-center min-w-0 rounded-xl border border-[var(--surface-light)] bg-[var(--surface-light)]/30 ${BAR_CONTROL}`}
+      >
         <button
           onClick={onPrev}
           aria-label={t("common.previous")}
@@ -64,7 +80,7 @@ export const PeriodNav: React.FC<PeriodNavProps> = ({
         <button
           onClick={onToday}
           title={todayTitle}
-          className="inline-flex items-center px-2.5 py-1.5 text-xs font-medium text-[var(--primary)] bg-[var(--primary)]/10 hover:bg-[var(--primary)]/20 rounded-lg transition-colors whitespace-nowrap"
+          className={`inline-flex items-center px-2.5 text-xs font-medium text-[var(--primary)] bg-[var(--primary)]/10 hover:bg-[var(--primary)]/20 rounded-lg transition-colors whitespace-nowrap ${BAR_CONTROL}`}
         >
           {t("common.today")}
         </button>

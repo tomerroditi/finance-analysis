@@ -12,6 +12,7 @@ import type { FreshnessTier, StaleAccount } from "../../hooks/useBudgetFreshness
 import { groupStaleAccountsByMonth } from "../../hooks/useBudgetFreshness";
 import { formatMissingRange } from "../../utils/dateFormatting";
 import { humanizeProvider } from "../../utils/textFormatting";
+import { BAR_CONTROL } from "./BudgetCommandBar";
 
 interface DataFreshnessBadgeProps {
   tier: FreshnessTier;
@@ -144,8 +145,8 @@ export const DataFreshnessBadge: React.FC<DataFreshnessBadgeProps> = ({
 
   const chip = (
     <span
-      className={`inline-flex items-center gap-1.5 rounded-full border py-1 text-[11px] font-medium ${
-        isSevere ? "px-1.5" : "px-2.5"
+      className={`${BAR_CONTROL} inline-flex items-center gap-1.5 rounded-full border text-[11px] font-medium ${
+        isSevere ? "px-2" : "px-3"
       } ${style.chip} ${hasDetails ? "cursor-pointer" : ""}`}
       // Opens rather than toggles: a mouse click is preceded by a hover, which
       // already revealed the panel, so toggling here closed it on the way in.
@@ -166,7 +167,6 @@ export const DataFreshnessBadge: React.FC<DataFreshnessBadgeProps> = ({
       aria-label={
         isSevere || hasDetails ? t("budget.freshness.showDetails") : undefined
       }
-      title={isSevere ? t("budget.freshness.bannerTitle") : undefined}
     >
       {isSevere ? <AlertTriangle size={15} className="shrink-0" /> : style.icon}
       {!isSevere && labelNode}

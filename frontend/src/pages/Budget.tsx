@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Layers, Calendar, CalendarRange } from "lucide-react";
+import { BAR_CONTROL } from "../components/budget/BudgetCommandBar";
 import { MonthlyBudgetView } from "../components/budget/MonthlyBudgetView";
 import { YearlyBudgetView } from "../components/budget/YearlyBudgetView";
 import { ProjectBudgetView } from "../components/budget/ProjectBudgetView";
@@ -20,7 +21,7 @@ export const Budget: React.FC = () => {
   // width and the bar scrolls, instead of the widest tab forcing the page
   // past the viewport. See frontend_responsive.md → "Tab Bars & Button Groups".
   const tabClass = (tab: BudgetTab) =>
-    `shrink-0 whitespace-nowrap flex items-center justify-center gap-1.5 px-2.5 md:px-3.5 py-2 rounded-lg font-bold text-xs md:text-sm transition-all ${
+    `${BAR_CONTROL} shrink-0 whitespace-nowrap flex items-center justify-center gap-1.5 px-2.5 md:px-3.5 rounded-lg font-bold text-xs md:text-sm transition-all ${
       activeTab === tab
         ? "bg-[var(--surface)] text-[var(--primary)] shadow-sm"
         : "text-[var(--text-muted)] hover:text-[var(--text-default)]"

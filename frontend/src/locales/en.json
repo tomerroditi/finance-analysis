@@ -579,8 +579,7 @@
       "provisional": "Provisional — based on stale data",
       "showDetails": "Show sync details",
       "staleTitle": "Out-of-date sources",
-      "syncNow": "Sync now",
-      "bannerTitle": "Budget may be incomplete — these sources are behind:"
+      "syncNow": "Sync now"
     },
     "confirmDeleteRule": "Are you sure you want to delete this budget rule?",
     "projectSpending": "Project Spending",

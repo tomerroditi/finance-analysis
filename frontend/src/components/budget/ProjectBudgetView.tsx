@@ -8,7 +8,7 @@ import { BudgetRuleModal } from "../modals/BudgetRuleModal";
 import { useConfirm, useNotify } from "../../context/DialogContext";
 import { ProjectBudgetList } from "./ProjectBudgetList";
 import { isAllTagsRule } from "../../utils/budgetRules";
-import { BudgetCommandBar } from "./BudgetCommandBar";
+import { BAR_CONTROL, BudgetCommandBar } from "./BudgetCommandBar";
 import { BudgetStatusBand, type BandStat } from "./BudgetStatusBand";
 import { BudgetNoticeLine } from "./BudgetNoticeLine";
 import { RuleSparkline } from "./RuleSparkline";
@@ -264,7 +264,7 @@ export const ProjectBudgetView: React.FC<ProjectBudgetViewProps> = ({ tabs }) =>
                 setIsEditMode(false);
                 setIsProjectModalOpen(true);
               }}
-              className="inline-flex items-center gap-2 px-3 md:px-4 py-2 text-xs md:text-sm bg-[var(--primary)] text-white rounded-lg hover:bg-[var(--primary-dark)] transition-colors shadow-sm font-medium whitespace-nowrap"
+              className={`inline-flex items-center gap-2 px-3 md:px-4 text-xs md:text-sm bg-[var(--primary)] text-white rounded-lg hover:bg-[var(--primary-dark)] transition-colors shadow-sm font-medium whitespace-nowrap ${BAR_CONTROL}`}
             >
               <Plus size={18} className="shrink-0" />
               {t("budget.newProject")}
@@ -272,7 +272,7 @@ export const ProjectBudgetView: React.FC<ProjectBudgetViewProps> = ({ tabs }) =>
             {selectedProject && (
               <button
                 onClick={handleDeleteProject}
-                className="inline-flex items-center gap-2 px-3 md:px-4 py-2 text-xs md:text-sm bg-red-500/10 border border-red-500/20 text-red-500 rounded-lg hover:bg-red-500/20 transition-colors shadow-sm font-medium whitespace-nowrap"
+                className={`inline-flex items-center gap-2 px-3 md:px-4 text-xs md:text-sm bg-red-500/10 border border-red-500/20 text-red-500 rounded-lg hover:bg-red-500/20 transition-colors shadow-sm font-medium whitespace-nowrap ${BAR_CONTROL}`}
               >
                 <Trash2 size={18} className="shrink-0" />
                 {t("common.delete")}
@@ -295,6 +295,7 @@ export const ProjectBudgetView: React.FC<ProjectBudgetViewProps> = ({ tabs }) =>
               }
               disabled={projects.length === 0}
               size="sm"
+              triggerClassName={`${BAR_CONTROL} py-0`}
             />
           </div>
         </div>

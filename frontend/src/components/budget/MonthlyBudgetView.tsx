@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from "@tanstack/react-query";
-import { PenSquare, Trash2, Plus } from "lucide-react";
+import { Plus } from "lucide-react";
 import i18n from "../../i18n";
 import { budgetApi, pendingRefundsApi, budgetMonthOverridesApi, type PendingRefund, type RefundLink, type BudgetMonthOverride } from "../../services/api";
 import { formatMonthCompact } from "../../utils/dateFormatting";
@@ -14,10 +14,10 @@ import type { Transaction } from "../../types/transaction";
 import { PendingRefundsSection } from "./PendingRefundsSection";
 import { SavingsGoalsBudgetSection } from "./SavingsGoalsBudgetSection";
 import { useConfirm } from "../../context/DialogContext";
-import { BudgetCommandBar, PeriodNav } from "./BudgetCommandBar";
+import { BAR_CONTROL, BudgetCommandBar, PeriodNav } from "./BudgetCommandBar";
 import { BudgetStatusBand, type BandStat } from "./BudgetStatusBand";
 import { BudgetNoticeLine } from "./BudgetNoticeLine";
-import { BudgetLedgerRow } from "./BudgetLedgerRow";
+import { BudgetLedgerRow, LedgerRowAction } from "./BudgetLedgerRow";
 import { BudgetRail } from "./BudgetRail";
 import { RuleSparkline } from "./RuleSparkline";
 import { DataFreshnessBadge } from "./DataFreshnessBadge";
@@ -292,7 +292,7 @@ export const MonthlyBudgetView: React.FC<MonthlyBudgetViewProps> = ({
       actions={
         <button
           onClick={openAddModal}
-          className="inline-flex items-center justify-center gap-2 px-3 md:px-4 py-2 text-xs md:text-sm bg-[var(--primary)] text-white rounded-lg hover:bg-[var(--primary-dark)] transition-colors shadow-sm font-medium whitespace-nowrap"
+          className={`inline-flex items-center justify-center gap-2 px-3 md:px-4 text-xs md:text-sm bg-[var(--primary)] text-white rounded-lg hover:bg-[var(--primary-dark)] transition-colors shadow-sm font-medium whitespace-nowrap ${BAR_CONTROL}`}
         >
           <Plus size={18} className="shrink-0" />
           {t("budget.addRule")}
@@ -354,6 +354,11 @@ export const MonthlyBudgetView: React.FC<MonthlyBudgetViewProps> = ({
     analysis?.copied_from && !dismissedCopyMonths.has(currentMonthKey)
       ? analysis.copied_from
       : null;
+
+  // SavingsGoalsBudgetSection self-hides when there is nothing to show, so the
+  // row needs the same test to decide whether the goals half exists at all.
+  const hasGoalAllocations = (analysis?.savings_goals?.goals?.length ?? 0) > 0;
+  const monthProjects = (project_spending?.projects ?? []) as ProjectSpendingItem[];
 
   const totalItem = rules.find(
     (i: BudgetAnalysisItem) => i.rule.name === "Total Budget",
@@ -432,44 +437,41 @@ export const MonthlyBudgetView: React.FC<MonthlyBudgetViewProps> = ({
     },
   ];
 
-  const buildActions = (item: BudgetAnalysisItem) =>
-    item.allow_edit || item.allow_delete ? (
-      <>
-        {item.allow_edit && (
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              setEditingRule(item.rule);
-              setIsRuleModalOpen(true);
-            }}
-            className="p-1.5 text-[var(--text-muted)] hover:text-blue-500 hover:bg-blue-500/10 rounded-lg transition-all"
-            title={t("budget.editRule")}
-            aria-label={t("budget.editRule")}
-          >
-            <PenSquare size={16} />
-          </button>
-        )}
-        {item.allow_delete && (
-          <button
-            onClick={async (e) => {
-              e.stopPropagation();
-              const ok = await confirm({
-                title: t("budget.deleteRule"),
-                message: t("budget.confirmDeleteRule"),
-                confirmLabel: t("common.delete"),
-                isDestructive: true,
-              });
-              if (ok) deleteMutation.mutate(item.rule.id);
-            }}
-            className="p-1.5 text-[var(--text-muted)] hover:text-red-500 hover:bg-red-500/10 rounded-lg transition-all"
-            title={t("budget.deleteRule")}
-            aria-label={t("budget.deleteRule")}
-          >
-            <Trash2 size={16} />
-          </button>
-        )}
-      </>
-    ) : undefined;
+  // Both slots always render — a row that omitted them got a wider grid and
+  // fell out of line with its neighbours (see LedgerRowAction).
+  const buildActions = (item: BudgetAnalysisItem) => (
+    <>
+      <LedgerRowAction
+        kind="edit"
+        label={t("budget.editRule")}
+        onClick={
+          item.allow_edit
+            ? () => {
+                setEditingRule(item.rule);
+                setIsRuleModalOpen(true);
+              }
+            : undefined
+        }
+      />
+      <LedgerRowAction
+        kind="delete"
+        label={t("budget.deleteRule")}
+        onClick={
+          item.allow_delete
+            ? async () => {
+                const ok = await confirm({
+                  title: t("budget.deleteRule"),
+                  message: t("budget.confirmDeleteRule"),
+                  confirmLabel: t("common.delete"),
+                  isDestructive: true,
+                });
+                if (ok) deleteMutation.mutate(item.rule.id);
+              }
+            : undefined
+        }
+      />
+    </>
+  );
 
   const renderRow = (item: BudgetAnalysisItem) => (
     <BudgetLedgerRow
@@ -573,23 +575,31 @@ export const MonthlyBudgetView: React.FC<MonthlyBudgetViewProps> = ({
         />
       )}
 
-      {rules.length > 0 && (
+      {rules.length > 0 && !rulesCollapsed && (
+        <div className="w-full space-y-2">{childItems.map(renderRow)}</div>
+      )}
+
+      {/* Goals and projects share one row. Both are month summaries that sit
+          beside the ledger rather than in it, and the projects card is far too
+          short to earn a full row of its own — it used to ride in the rail
+          next to the ledger, leaving a tall column of empty space under it. */}
+      {(hasGoalAllocations || monthProjects.length > 0) && (
         <div className="flex flex-col xl:flex-row items-start gap-3 md:gap-4">
-          <div className="flex-1 min-w-0 w-full space-y-2">
-            {!rulesCollapsed && childItems.map(renderRow)}
-          </div>
-          {project_spending?.projects?.length > 0 && (
+          {hasGoalAllocations && (
+            <div className="flex-1 min-w-0 w-full">
+              <SavingsGoalsBudgetSection allocations={analysis?.savings_goals} />
+            </div>
+          )}
+          {monthProjects.length > 0 && (
             <BudgetRail>
               <ProjectsThisMonthSummary
-                projects={project_spending.projects as ProjectSpendingItem[]}
+                projects={monthProjects}
                 onViewAll={onViewProjects}
               />
             </BudgetRail>
           )}
         </div>
       )}
-
-      <SavingsGoalsBudgetSection allocations={analysis?.savings_goals} />
 
       {analysis?.pending_refunds && (
         <PendingRefundsSection pendingRefunds={analysis.pending_refunds} />

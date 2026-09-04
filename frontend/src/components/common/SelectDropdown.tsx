@@ -12,6 +12,8 @@ interface SelectDropdownProps {
   required?: boolean;
   disabled?: boolean;
   size?: "default" | "sm";
+  /** Extra classes for the trigger button — e.g. to match a control row's height. */
+  triggerClassName?: string;
   onCreateNew?: (value: string) => Promise<void> | void;
 }
 
@@ -23,6 +25,7 @@ export const SelectDropdown: React.FC<SelectDropdownProps> = ({
   required,
   disabled,
   size = "default",
+  triggerClassName = "",
   onCreateNew,
 }) => {
   const { t } = useTranslation();
@@ -210,7 +213,7 @@ export const SelectDropdown: React.FC<SelectDropdownProps> = ({
           }
         }}
         type="button"
-        className={`w-full flex items-center justify-between bg-[var(--surface-base)] border border-[var(--surface-light)] outline-none transition-all text-start ${sizeClasses} ${
+        className={`w-full flex items-center justify-between bg-[var(--surface-base)] border border-[var(--surface-light)] outline-none transition-all text-start ${sizeClasses} ${triggerClassName} ${
           disabled
             ? "opacity-50 cursor-not-allowed"
             : "hover:border-[var(--primary)] focus:border-[var(--primary)] cursor-pointer"

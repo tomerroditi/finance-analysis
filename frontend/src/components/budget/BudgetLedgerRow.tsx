@@ -1,7 +1,50 @@
 import React from "react";
 import { useTranslation } from "react-i18next";
-import { ChevronDown, ChevronUp } from "lucide-react";
+import { ChevronDown, ChevronUp, PenSquare, Trash2 } from "lucide-react";
 import { formatCurrency } from "../../utils/numberFormatting";
+
+/**
+ * One row action, rendered whether or not the rule allows it.
+ *
+ * A row that simply omitted its buttons got a wider grid than its neighbours
+ * — the actions sit outside the grid, so their absence widened every
+ * flexible track and knocked that row's figures out of line with the rest
+ * (the "Other Expenses" catch-all against every budgeted row above it).
+ * Rendering the slot disabled keeps the width identical and says why the
+ * control is unavailable, instead of leaving a mystery gap.
+ */
+export const LedgerRowAction: React.FC<{
+  kind: "edit" | "delete";
+  label: string;
+  /** Omit to render the slot disabled. */
+  onClick?: () => void;
+}> = ({ kind, label, onClick }) => {
+  const Icon = kind === "edit" ? PenSquare : Trash2;
+  const enabled = kind === "edit" ? "hover:text-blue-500 hover:bg-blue-500/10" : "hover:text-red-500 hover:bg-red-500/10";
+  return (
+    <button
+      type="button"
+      disabled={!onClick}
+      onClick={
+        onClick
+          ? (e) => {
+              e.stopPropagation();
+              onClick();
+            }
+          : undefined
+      }
+      className={`p-1.5 rounded-lg transition-all ${
+        onClick
+          ? `text-[var(--text-muted)] ${enabled}`
+          : "text-[var(--text-muted)]/25 cursor-not-allowed"
+      }`}
+      title={label}
+      aria-label={label}
+    >
+      <Icon size={16} />
+    </button>
+  );
+};
 
 export interface BudgetLedgerRowProps {
   label: string;
@@ -88,7 +131,7 @@ export const BudgetLedgerRow: React.FC<BudgetLedgerRowProps> = ({
       : "";
 
   return (
-    <div className="w-full rounded-xl border border-[var(--surface-light)] bg-[var(--surface)] shadow-sm hover:shadow-md transition-shadow group">
+    <div className="w-full rounded-xl border border-[var(--surface-light)] bg-[var(--surface)] shadow-sm hover:shadow-md transition-shadow">
       <div className="flex items-center gap-1 px-2 md:px-3">
         <button
           type="button"
@@ -186,10 +229,12 @@ export const BudgetLedgerRow: React.FC<BudgetLedgerRowProps> = ({
           </span>
         </button>
 
+        {/* Always on screen, not hover-revealed: a budget page is a handful of
+            rows a user edits directly, and hiding the controls until the
+            pointer arrives cost more than the quieter row bought — it also
+            left them unreachable while scanning with the keyboard. */}
         {actions && (
-          <div className="hidden md:flex items-center gap-1 shrink-0 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
-            {actions}
-          </div>
+          <div className="hidden md:flex items-center gap-1 shrink-0">{actions}</div>
         )}
 
         <span className="text-[var(--text-muted)] shrink-0">

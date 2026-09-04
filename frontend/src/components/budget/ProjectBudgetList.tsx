@@ -1,7 +1,7 @@
 import React, { useMemo } from "react";
 import { useTranslation } from "react-i18next";
-import { PenSquare } from "lucide-react";
-import { BudgetLedgerRow } from "./BudgetLedgerRow";
+
+import { BudgetLedgerRow, LedgerRowAction } from "./BudgetLedgerRow";
 import { TransactionCollapsibleList } from "./TransactionCollapsibleList";
 import { RuleSparkline } from "./RuleSparkline";
 import type { PendingRefund } from "../../services/api";
@@ -117,19 +117,13 @@ export const ProjectBudgetList: React.FC<ProjectBudgetListProps> = ({
               />
             }
             actions={
-              item.allow_edit ? (
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onEditTagRule(item.rule);
-                  }}
-                  className="p-1.5 text-[var(--text-muted)] hover:text-blue-500 hover:bg-blue-500/10 rounded-lg transition-all"
-                  title={t("budget.editRule")}
-                  aria-label={t("budget.editRule")}
-                >
-                  <PenSquare size={16} />
-                </button>
-              ) : undefined
+              <LedgerRowAction
+                kind="edit"
+                label={t("budget.editRule")}
+                onClick={
+                  item.allow_edit ? () => onEditTagRule(item.rule) : undefined
+                }
+              />
             }
           >
             <TransactionCollapsibleList
@@ -154,6 +148,7 @@ export const ProjectBudgetList: React.FC<ProjectBudgetListProps> = ({
           total={0}
           isExpanded={expandedRuleId === "other_project_txs"}
           onToggleExpand={() => toggleExpand("other_project_txs")}
+          actions={<LedgerRowAction kind="edit" label={t("budget.editRule")} />}
           trend={
             <RuleSparkline
               variant="burn"

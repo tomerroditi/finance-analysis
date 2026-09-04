@@ -1,15 +1,15 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, X, PenSquare, Trash2, Plus } from "lucide-react";
+import { AlertTriangle, X, Plus } from "lucide-react";
 import { budgetApi, type YearlyAnalysis } from "../../services/api";
 import { YearlyRuleModal } from "../modals/YearlyRuleModal";
 import { useConfirm } from "../../context/DialogContext";
 import { useQueryKeys } from "../../hooks/useQueryKeys";
-import { BudgetCommandBar, PeriodNav } from "./BudgetCommandBar";
+import { BAR_CONTROL, BudgetCommandBar, PeriodNav } from "./BudgetCommandBar";
 import { BudgetStatusBand, type BandStat } from "./BudgetStatusBand";
 import { BudgetNoticeLine } from "./BudgetNoticeLine";
-import { BudgetLedgerRow } from "./BudgetLedgerRow";
+import { BudgetLedgerRow, LedgerRowAction } from "./BudgetLedgerRow";
 import { RuleSparkline } from "./RuleSparkline";
 import { isAllTagsRule } from "../../utils/budgetRules";
 import { formatCurrency } from "../../utils/numberFormatting";
@@ -164,7 +164,7 @@ export const YearlyBudgetView: React.FC<YearlyBudgetViewProps> = ({ tabs }) => {
               setEditRule(null);
               setModalOpen(true);
             }}
-            className="inline-flex items-center justify-center gap-2 px-3 md:px-4 py-2 text-xs md:text-sm bg-[var(--primary)] text-white rounded-lg hover:bg-[var(--primary-dark)] transition-colors shadow-sm font-medium whitespace-nowrap"
+            className={`inline-flex items-center justify-center gap-2 px-3 md:px-4 text-xs md:text-sm bg-[var(--primary)] text-white rounded-lg hover:bg-[var(--primary-dark)] transition-colors shadow-sm font-medium whitespace-nowrap ${BAR_CONTROL}`}
           >
             <Plus size={18} className="shrink-0" />
             {t("budget.yearly.addRule")}
@@ -250,39 +250,35 @@ export const YearlyBudgetView: React.FC<YearlyBudgetViewProps> = ({ tabs }) => {
                   }
                   actions={
                     <>
-                      {entry.allow_edit && (
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setEditRule(rule);
-                            setModalOpen(true);
-                          }}
-                          className="p-1.5 text-[var(--text-muted)] hover:text-blue-500 hover:bg-blue-500/10 rounded-lg transition-all"
-                          title={t("budget.editRule")}
-                          aria-label={t("budget.editRule")}
-                        >
-                          <PenSquare size={16} />
-                        </button>
-                      )}
-                      {entry.allow_delete && (
-                        <button
-                          onClick={async (e) => {
-                            e.stopPropagation();
-                            const ok = await confirm({
-                              title: t("budget.deleteRule"),
-                              message: t("budget.yearly.confirmDelete", { name: rule.name }),
-                              confirmLabel: t("common.delete"),
-                              isDestructive: true,
-                            });
-                            if (ok) deleteMutation.mutate(rule.id);
-                          }}
-                          className="p-1.5 text-[var(--text-muted)] hover:text-red-500 hover:bg-red-500/10 rounded-lg transition-all"
-                          title={t("budget.deleteRule")}
-                          aria-label={t("budget.deleteRule")}
-                        >
-                          <Trash2 size={16} />
-                        </button>
-                      )}
+                      <LedgerRowAction
+                        kind="edit"
+                        label={t("budget.editRule")}
+                        onClick={
+                          entry.allow_edit
+                            ? () => {
+                                setEditRule(rule);
+                                setModalOpen(true);
+                              }
+                            : undefined
+                        }
+                      />
+                      <LedgerRowAction
+                        kind="delete"
+                        label={t("budget.deleteRule")}
+                        onClick={
+                          entry.allow_delete
+                            ? async () => {
+                                const ok = await confirm({
+                                  title: t("budget.deleteRule"),
+                                  message: t("budget.yearly.confirmDelete", { name: rule.name }),
+                                  confirmLabel: t("common.delete"),
+                                  isDestructive: true,
+                                });
+                                if (ok) deleteMutation.mutate(rule.id);
+                              }
+                            : undefined
+                        }
+                      />
                     </>
                   }
                 >
