@@ -1,3 +1,20 @@
+---
+paths:
+  - "build/**/*"
+  - "backend/uninstall/**/*.py"
+  - "backend/services/update_service.py"
+  - "backend/routes/updates.py"
+  - "backend/routes/uninstall.py"
+  - "backend/routes/version.py"
+  - "backend/utils/version.py"
+  - ".github/workflows/release.yml"
+  - ".github/workflows/build-smoke.yml"
+  - "frontend/src/components/UpdateAvailableToast.tsx"
+  - "frontend/src/components/settings/AboutPanel.tsx"
+  - "frontend/src/components/settings/UninstallSection.tsx"
+  - "frontend/src/hooks/useUpdateCheck.ts"
+  - "frontend/src/hooks/useVersionInfo.ts"
+---
 # Installation, Updates, and Uninstallation
 
 How the desktop app is installed, upgraded, and removed. Read this

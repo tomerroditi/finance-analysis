@@ -1,3 +1,8 @@
+---
+paths:
+  - "scraper/providers/banks/onezero.py"
+  - "scraper/providers/banks/onezero_mtls/**/*"
+---
 # OneZero mutual-TLS (Cloudflare client certificate)
 
 Read this before touching the OneZero scraper's transport, the vendored cert

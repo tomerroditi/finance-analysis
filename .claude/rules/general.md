@@ -1,176 +1,79 @@
-# Finance Analysis Dashboard - Global Context
+# Finance Analysis Dashboard — Architecture Context
 
-## Project Overview
-Personal finance tracking and analysis system that automates data collection from Israeli financial institutions (banks, credit cards, insurance) and provides intelligent expense categorization, budgeting, project budget tracking, and investment tracking.
+Always-on companion to `CLAUDE.md`. **`CLAUDE.md` is canonical** for commands,
+environment setup, key conventions (transaction signs, categories, budgets,
+tagging, savings goals, retirement), code style, the branch/PR workflow, and
+the gotcha list — this file deliberately does not repeat any of it. What lives
+here is the layer contract, the security model, and the map of the tree.
 
-**Tech Stack:**
-- **Backend:** FastAPI (Python 3.12+) + Uvicorn
-- **Frontend:** React 19 + Vite + TypeScript
-- **Styling:** Tailwind CSS 4
-- **Data:** SQLite (via SQLAlchemy 2.0.29) + Pandas 2.2.3
-- **Scraping:** Playwright (via israeli-bank-scrapers npm package)
-- **Package Managers:** Poetry (Backend), NPM (Frontend)
-- **State Management:** TanStack Query (React Query) + Zustand
-- **Testing:** pytest (Backend)
+## Layer contract
 
-**Important Paths:**
-- **Database:** `~/.finance-analysis/data.db`
-- **Credentials:** `~/.finance-analysis/credentials.yaml`
-- **User Data Dir:** `~/.finance-analysis/`
-
-## Architecture Principles
-
-### Decoupled Architecture
-The system consists of a standalone FastAPI backend and a React frontend.
-
-#### Backend Layers (Strict Dependency Flow)
 ```
-Routes (FastAPI) -> Services (Business Logic) -> Repositories (Data Access) -> Database
+Routes (FastAPI) -> Services (Business Logic) -> Repositories (Data Access) -> SQLite
+Pages (Routing)  -> Components (UI Logic)     -> services/api.ts -> Zustand / TanStack Query
 ```
 
-**Key Rules:**
-- **Routes** define entry points, handle HTTP concerns, and use Pydantic models for request/response validation.
-- **Services** orchestrate business logic and call repositories.
-- **Repositories** handle ALL database operations using the Repository Pattern with SQLAlchemy ORM.
-- **Models** define DB schemas (SQLAlchemy ORM models in `backend/models/`). Pydantic request/response schemas are defined inline in route files.
+- **Routes** own HTTP concerns only. Pydantic request/response schemas are
+  declared inline in the route file, not in `models/`.
+- **Services** orchestrate business logic and call repositories. All logic
+  lives here — never in a route or a component.
+- **Repositories** own *every* DB operation (SQLAlchemy ORM, Repository
+  Pattern). Nothing outside them touches a session.
+- **Models** (`backend/models/`) are SQLAlchemy ORM schemas only.
 
-**Service Naming Convention:**
-- Frontend and API use **plural** service names: `banks`, `credit_cards`, `cash`, `manual_investments`
-- These match the `Services` enum values in `backend/constants/providers.py`
-- Table names may differ (e.g., `credit_card_transactions` table vs `credit_cards` service)
+## Security model
 
-#### Frontend Layers
+- **Passwords** live in the OS Keyring, never in code or config. Every
+  keyring access goes through `backend/utils/keyring_store.py` — service
+  names, demo namespacing, get/set/delete, the field-encryption key, and
+  insecure-backend validation. No other backend module imports `keyring`
+  directly; the one exception is `backend/uninstall/cleanup.py`, which keeps
+  a lazy import so the standalone uninstall CLI stays best-effort (a
+  drift-guard test pins its constants to the store).
+- **Non-sensitive credential fields** (usernames, ID numbers, card digits)
+  are Fernet-encrypted at rest via `backend/utils/crypto.py`.
+- **Routes must not echo exception text in 5xx bodies** — it can carry SQL
+  fragments, file paths, or secrets. Let the global handler return the opaque
+  body and log the detail. Never log credentials.
+- **Dependency scanning:** `.github/dependabot.yml` (npm + pip + actions,
+  weekly) and `.github/workflows/codeql.yml` (Python + TypeScript,
+  `security-extended`). Workflows declare least-privilege `permissions:`;
+  only the two release jobs opt up to `contents: write`.
+- Network access model (loopback trust, bearer token, `ALLOWED_HOSTS`, CSRF
+  on writes) is in `CLAUDE.md` → Gotchas.
+
+## Adding a feature
+
+**New API route:** define it in `backend/routes/` → logic in a service →
+data via a repository → add the endpoint to `frontend/src/services/api.ts`
+(paths must match the route *exactly*, trailing slash included — see
+`api_paths.md`). `python .claude/scripts/scaffold_feature.py <name>`
+generates the boilerplate. If the response is sensitive, real-time, or a
+read-only POST, update the PWA cache lists too (`frontend_pwa.md`).
+
+**New UI page/component:** `frontend/src/pages/` or `components/`, Tailwind
+CSS 4 with logical properties, TanStack Query for fetching, `t("...")` for
+every user-visible string in both locale files.
+
+## Tree
+
 ```
-Pages (Routing) -> Components (UI Logic) -> Services (API Interaction) -> State Hubs (Zustand/Query)
+backend/       constants/ routes/ services/ repositories/ models/ scraper/
+               resources/ (default-category YAML) uninstall/ utils/ alembic/
+               database.py demo_setup.py errors.py main.py
+scraper/       Pure-Python provider framework (Playwright + httpx) — 19 providers
+frontend/src/  components/ pages/ services/ hooks/ stores/ context/ utils/
+               locales/ queryClient.ts
+tests/backend/ unit/ routes/ integration/ migrations/
+fad/           DEPRECATED legacy Streamlit package — ignore
 ```
 
-**Key Rules:**
-- **Pages** are high-level views registered in the router.
-- **Components** are reusable UI units. Use atomic design principles.
-- **Services/API** centralized axios client in `src/services/api.ts`.
-
-## Key Business Concepts
-
-### 1. Transaction Amount Convention
-- **Negative amounts:** Money SPENT (expenses, outgoing payments)
-- **Positive amounts:** Money RECEIVED (income, refunds, deposits)
-- Always account for sign when implementing business logic (negative = expense).
-
-### 2. Tagging & Categorization
-- **Categories:** High-level grouping (e.g., "Food", "Transport").
-- **Tags:** Sub-categories (e.g., "Groceries", "Restaurants").
-- **Rule-Based System:** Automatic tagging via `tagging_rules` table with priority-based matching.
-- **Priority:** Higher priority = evaluated first.
-
-### 3. Split Transactions
-Single transaction can be split across multiple categories/tags. Original remains in main table; individual splits in `split_transactions`.
-
-### 4. Budgets
-- **Regular Budgets:** Monthly spending limits per category/tag.
-- **Project Budgets:** Time-limited budgets for specific projects (e.g., Home Renovation).
-- "Total Budget" is a special "category" for overall monthly limit.
-
-### 5. Non-Expense Categories
-- **Ignore:** Internal transfers, credit card billing summaries.
-- **Income:** Salary, Other Income.
-- **Investments:** Allocated funds.
-- **Liabilities:** Debt payments.
-
-### 6. Investment Balance Snapshots
-- **Balance snapshots** store timestamped market-value observations per investment (`investment_balance_snapshots` table).
-- **Resolution:** Snapshot-first, transaction-based fallback (`-(sum of all transactions)`).
-- **Sources:** `manual` (user-entered), `calculated` (fixed-rate daily compounding), `scraped` (future).
-- **Closing:** Auto-creates a 0-balance snapshot on the last transaction date. Close date is user-selectable and editable after closing.
-- **Fixed-rate:** Daily compounding with protected dates (manual/scraped snapshots never overwritten).
-
-## Code Quality Standards
-
-### What NOT to Do
-- No business logic in Routes or Frontend Components.
-- No direct DB access outside Repositories.
-- No obvious comments or dead code.
-- No verbose comments explaining code that is already self-explanatory.
-- No raw Axios calls inside components (use `src/services/api.ts`).
-
-### What TO Do
-- Type hints in Python; strict TypeScript in Frontend.
-- NumPy-style docstrings for Python; JSDoc for complex React hooks/functions.
-- Functional React components with hooks.
-- Pydantic models for all API request/response bodies.
-- Account for transaction sign (negative = expense).
-
-## Security & Credentials
-- **Passwords:** Stored in OS Keyring (never in code/config). All keyring access goes through `backend/utils/keyring_store.py` — service names, demo namespacing, secret get/set/delete, the field-encryption key, and insecure-backend validation live there. No other backend module imports `keyring` directly (exception: `backend/uninstall/cleanup.py` keeps a lazy import so the standalone uninstall CLI stays best-effort; a drift-guard test pins its constants to the store).
-- **Non-sensitive credential fields** (usernames, ID numbers, card digits) are Fernet-encrypted at rest in the `credentials` table (`backend/utils/crypto.py`); the key lives in the OS Keyring under `finance-analysis-app` / `field-encryption-key`. Legacy plaintext rows are encrypted on startup; the legacy `credentials.yaml` is deleted after migration.
-- **Keyring backend validation:** credential writes fail loudly on null/plaintext keyring backends. Opt in explicitly with `PYTHON_KEYRING_BACKEND` (CI) or `FAD_ALLOW_INSECURE_KEYRING=1`.
-- **Network access model** (`backend/utils/auth.py`): loopback clients are trusted; non-loopback clients must send `Authorization: Bearer <token>` on `/api/*` (`FAD_API_TOKEN` env or `<user-dir>/api_token` file, 0600). All requests must carry an allowlisted `Host` header (DNS-rebinding guard) — extend with the `ALLOWED_HOSTS` env var; `*` disables (Vercel). `./start.sh prod` binds 127.0.0.1 by default; setting `BIND_HOST` enables exposure and prints a `?apiToken=` bootstrap URL that the frontend persists to localStorage.
-- **CSRF:** state-changing requests (`POST`/`PUT`/`PATCH`/`DELETE`) on `/api/*` must carry a same-site `Origin` header or none at all — see `auth.origin_allowed`. Loopback clients are trusted by connection, so without this any website the user visits could drive the API from their browser (CORS only blocks reading the response, not sending the request). Non-browser clients send no `Origin` and are unaffected.
-- **Dependency scanning:** `.github/dependabot.yml` (npm + pip + actions, weekly) and `.github/workflows/codeql.yml` (Python + TypeScript, `security-extended`) keep the Security tab honest. Workflows declare least-privilege `permissions:`; only the two release jobs opt up to `contents: write`.
-- **Sensitive Data:** Never log credentials. Use 2FA automation for scraping. Routes must not echo exception text in 5xx bodies — it can carry SQL fragments, file paths, or secrets. Let the global handler return the opaque body and log the detail.
-
-## Adding New Features
-
-### New API Route
-1. Define route in `backend/routes/`.
-2. Implement logic in a Service class.
-3. Access data via Repository.
-4. Add endpoint to `frontend/src/services/api.ts`.
-5. Or use `python .claude/scripts/scaffold_feature.py <name>` to generate boilerplate.
-6. **PWA cache layer:** decide whether the response is sensitive (credentials), real-time (scraping/polling), or normal. Update SW + persister exclusion lists accordingly. See `.claude/rules/frontend_pwa.md`.
-
-### New UI Page/Component
-1. Create in `frontend/src/pages/` or `frontend/src/components/`.
-2. Use Tailwind CSS 4 for styling.
-3. Use TanStack Query for data fetching.
-
-## Error Handling
-- Define custom exceptions in `backend/errors.py` (inherit from `AppException`): `EntityNotFoundException` (404), `EntityAlreadyExistsException` (409), `ValidationException` (400), `BadRequestException` (400).
-- Register global handlers in `backend/main.py`.
-- Raise exceptions in repositories/services — routes stay clean (no try/except for domain errors).
-
-## Testing
-- **Backend:** `poetry run pytest`. Use markers like `@pytest.mark.sensitive`.
-- **Test structure:** `tests/backend/unit/` (unit tests), `tests/backend/routes/` (endpoint tests), `tests/backend/integration/` (pipeline tests).
-- **Frontend:** (Planned) Vitest for unit tests.
-
-## Development Workflow
-1. **Backend:** `poetry run uvicorn backend.main:app --reload`
-2. **Frontend:** `npm run dev` (Vite)
-3. **Commits:** Conventional Commits (Commitizen).
-
-## Environment Setup (New Clone / Worktree)
-1. `python3.12 -m venv .venv && source .venv/bin/activate && pip install poetry && poetry install --no-root`
-2. `cd frontend && npm install`
-3. Ports are env-driven (`BACKEND_PORT` / `FRONTEND_PORT`) with non-clashing per-mode defaults owned by `start.sh`: dev 8000/5173, `./start.sh remote` (Tailscale, 0.0.0.0 + tailnet CORS) 8001/5174, `./start.sh prod` 8080. The VS Code tasks call these modes rather than repeating port numbers. Running two checkouts side by side still needs distinct ports set manually.
-
-## File Structure
-```
-finance-analysis/
-├── backend/            # FastAPI application
-│   ├── constants/      # Enums & constants (tables, providers, categories, budget)
-│   ├── routes/         # API endpoints (includes inline Pydantic schemas)
-│   ├── services/       # Business logic
-│   ├── repositories/   # DB access (Repository Pattern)
-│   ├── models/         # SQLAlchemy ORM models
-│   ├── scraper/        # Web scraping module (israeli-bank-scrapers integration)
-│   ├── resources/      # YAML config files (default categories, icons)
-│   ├── utils/          # Utility functions
-│   └── database.py     # DB connection session
-├── frontend/           # React application
-│   ├── src/
-│   │   ├── components/ # Reusable UI components
-│   │   ├── pages/      # View components
-│   │   ├── services/   # API client (api.ts)
-│   │   ├── hooks/      # Custom React hooks
-│   │   ├── stores/     # Zustand state stores
-│   │   ├── utils/      # Utility functions
-│   │   └── context/    # React Context providers
-│   └── public/
-├── tests/              # Test suite
-│   └── backend/
-│       ├── unit/       # Unit tests (models, repos, services, utils)
-│       ├── routes/     # Endpoint/integration tests
-│       └── integration/# Pipeline tests
-├── fad/                # DEPRECATED: Legacy code / Original Streamlit package (ignore)
-└── .claude/            # Agent rules and scripts
-```
+Scoped rule files in `.claude/rules/` load automatically when you open a file
+they cover (`paths:` frontmatter). Read one directly when you need its domain
+without touching the code: `backend_services.md`, `backend_repositories.md`,
+`backend_scraper.md`, `frontend_components.md`, `frontend_pages.md`,
+`frontend_pitfalls.md`, `frontend_responsive.md`, `frontend_i18n.md`,
+`frontend_i18n_checklist.md`, `frontend_utils.md`, `frontend_pwa.md`,
+`api_paths.md`, `testing.md`, `ci_and_release.md`, `kpi_calculations.md`,
+`retirement_calculations.md`, `savings_goals.md`, `split_transactions.md`,
+`installation_and_updates.md`, `onezero_mtls.md`, `backend_resources.md`.

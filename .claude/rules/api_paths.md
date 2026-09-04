@@ -1,3 +1,9 @@
+---
+paths:
+  - "backend/routes/**/*.py"
+  - "backend/main.py"
+  - "frontend/src/services/api.ts"
+---
 # API Path Conventions — Trailing Slashes & Vite Proxy
 
 How frontend and backend route paths must agree to avoid CSP-blocked redirects

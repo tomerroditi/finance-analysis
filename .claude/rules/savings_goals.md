@@ -1,3 +1,11 @@
+---
+paths:
+  - "backend/services/savings_goal_service.py"
+  - "backend/routes/savings_goals.py"
+  - "backend/models/savings_goal.py"
+  - "frontend/src/components/dashboard/GoalsSection.tsx"
+  - "frontend/src/components/budget/SavingsGoalsBudgetSection.tsx"
+---
 # Savings Goals — the surplus waterfall
 
 How `backend/services/savings_goal_service.py` turns each month's leftover
