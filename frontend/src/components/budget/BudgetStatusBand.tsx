@@ -78,7 +78,10 @@ export const BudgetStatusBand: React.FC<BudgetStatusBandProps> = ({
   );
 
   return (
-    <div className="bg-[var(--surface)] rounded-2xl border border-[var(--surface-light)] shadow-sm p-3 md:p-4">
+    <div
+      data-testid="budget-status-band"
+      className="bg-[var(--surface)] rounded-2xl border border-[var(--surface-light)] shadow-sm p-3 md:p-4"
+    >
       <div className="flex flex-col lg:flex-row lg:items-center gap-3 lg:gap-5">
         <div className="flex-1 min-w-0">
           {onToggleRules ? (

@@ -303,28 +303,34 @@ export const ProjectBudgetView: React.FC<ProjectBudgetViewProps> = ({ tabs }) =>
 
       <BudgetNoticeLine />
 
-      {selectedProject && projectDetails && projectTotalRule && (
+      {/* Only the status band needs the project's `all_tags` anchor rule (it
+          is where the project's total lives) — the envelope ledger does not.
+          Gating the whole block on the anchor rendered a project without one
+          as a blank page: no band, no ledger, not even an empty state. */}
+      {selectedProject && projectDetails && (
         <>
-          <BudgetStatusBand
-            label={selectedProject}
-            spent={spent}
-            total={total}
-            stats={stats}
-            footer={
-              projectTotalRule.allow_edit ? (
-                <button
-                  onClick={() => {
-                    setIsEditMode(true);
-                    setIsProjectModalOpen(true);
-                  }}
-                  className="inline-flex items-center gap-1.5 py-2 text-xs font-medium text-[var(--primary)] hover:text-[var(--primary-dark)] transition-colors"
-                >
-                  <PenSquare size={14} />
-                  {t("budget.editTotalBudget")}
-                </button>
-              ) : undefined
-            }
-          />
+          {projectTotalRule && (
+            <BudgetStatusBand
+              label={selectedProject}
+              spent={spent}
+              total={total}
+              stats={stats}
+              footer={
+                projectTotalRule.allow_edit ? (
+                  <button
+                    onClick={() => {
+                      setIsEditMode(true);
+                      setIsProjectModalOpen(true);
+                    }}
+                    className="inline-flex items-center gap-1.5 py-2 text-xs font-medium text-[var(--primary)] hover:text-[var(--primary-dark)] transition-colors"
+                  >
+                    <PenSquare size={14} />
+                    {t("budget.editTotalBudget")}
+                  </button>
+                ) : undefined
+              }
+            />
+          )}
 
           <div className="flex flex-col lg:flex-row items-start gap-3 md:gap-4">
             <div className="flex-1 min-w-0 w-full">
@@ -347,27 +353,36 @@ export const ProjectBudgetView: React.FC<ProjectBudgetViewProps> = ({ tabs }) =>
             </div>
 
             <BudgetRail>
-              <RailCard
-                title={t("budget.totalProjectBudget")}
-                items={[
-                  {
-                    key: "allocated",
-                    label: t("budget.yearly.allocated"),
-                    value: formatCurrency(total),
-                  },
-                  { key: "spent", label: t("budget.spent"), value: formatCurrency(Math.max(spent, 0)) },
-                  {
-                    key: "left",
-                    label: t("budget.remaining"),
-                    value: formatCurrency(total - Math.max(spent, 0)),
-                  },
-                  {
-                    key: "months",
-                    label: t("budget.projectActiveMonths"),
-                    value: String(activeMonths),
-                  },
-                ]}
-              />
+              {/* Every figure in this card comes from the anchor rule, so
+                  without one they are all zero — which reads as "nothing
+                  spent" beside a ledger showing real spend. */}
+              {projectTotalRule && (
+                <RailCard
+                  title={t("budget.totalProjectBudget")}
+                  items={[
+                    {
+                      key: "allocated",
+                      label: t("budget.yearly.allocated"),
+                      value: formatCurrency(total),
+                    },
+                    {
+                      key: "spent",
+                      label: t("budget.spent"),
+                      value: formatCurrency(Math.max(spent, 0)),
+                    },
+                    {
+                      key: "left",
+                      label: t("budget.remaining"),
+                      value: formatCurrency(total - Math.max(spent, 0)),
+                    },
+                    {
+                      key: "months",
+                      label: t("budget.projectActiveMonths"),
+                      value: String(activeMonths),
+                    },
+                  ]}
+                />
+              )}
             </BudgetRail>
           </div>
         </>

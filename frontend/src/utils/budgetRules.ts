@@ -3,16 +3,22 @@ export interface TaggedBudgetRule {
   tags?: string | string[];
 }
 
+/** The backend's `ALL_TAGS` constant (backend/constants/budget.py). */
+const ALL_TAGS = "all_tags";
+
 /**
  * True for a project's "everything in this category" anchor rule.
  *
- * The tag list is `["ALL_TAGS"]` for that rule, but it arrives as a raw
- * string from some endpoints and an array from others, so both are handled.
+ * The tag list is exactly `["all_tags"]` for that rule — lowercase, matching
+ * the backend constant — but it arrives as an array from some endpoints and as
+ * a raw semicolon-joined string from others, and rows written by older builds
+ * carry mixed case. Mirror the backend's own test
+ * (`[t.lower() for t in tags] == [ALL_TAGS]`) rather than matching a literal:
+ * ProjectBudgetView gates its whole body on finding this rule, so a missed
+ * match renders the tab blank.
  */
 export function isAllTagsRule(rule: TaggedBudgetRule): boolean {
-  return (
-    rule.tags?.includes("ALL_TAGS") === true ||
-    rule.tags === "ALL_TAGS" ||
-    (Array.isArray(rule.tags) && rule.tags[0] === "ALL_TAGS")
-  );
+  const tags =
+    typeof rule.tags === "string" ? rule.tags.split(";") : (rule.tags ?? []);
+  return tags.length === 1 && tags[0].trim().toLowerCase() === ALL_TAGS;
 }

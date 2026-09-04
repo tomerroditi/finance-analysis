@@ -56,8 +56,9 @@ describe("budgetTrends", () => {
     });
 
     it("flips the series when the caller's total uses the opposite sign", () => {
-      // Yearly rules report `current_amount` negative for spend; the sparkline
-      // must not come out mirrored below the axis.
+      // Every budget view reports `current_amount` spend-positive, so this
+      // guard is defensive: a caller that ever passes the opposite sign gets a
+      // series matching its own total instead of a chart mirrored below the axis.
       const series = bucketByMonth(
         [{ date: "2026-02-10", amount: 300 }],
         months,

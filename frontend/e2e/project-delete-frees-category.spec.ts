@@ -31,7 +31,7 @@ test.describe("Project deletion frees its category", () => {
     await page.close();
   });
 
-  test("deleting a project removes it from the list and returns its category to the new-project picker", async ({
+  test("renders a project's envelopes, then deletes it, frees its category and renders the project recreated from it", async ({
     page,
   }) => {
     await navigateTo(page, "/budget");
@@ -54,6 +54,16 @@ test.describe("Project deletion frees its category", () => {
     await expect(
       page.getByText(new RegExp(escapeRegExp(target), "i")).first(),
     ).toBeVisible({ timeout: 10_000 });
+
+    // The selected project's envelopes must actually render. The seeded demo
+    // projects carry no `all_tags` anchor rule, and the view used to gate its
+    // entire body — band, ledger and rail — on finding one, so picking such a
+    // project showed the command bar over an empty page with no explanation.
+    // The project name in the picker is not evidence the body rendered.
+    await expect(
+      page.getByTestId("ledger-figures").first(),
+    ).toBeVisible({ timeout: 10_000 });
+
     await page.getByRole("button", { name: /^Delete$/i }).first().click();
 
     // Confirm in the destructive dialog.
@@ -89,10 +99,24 @@ test.describe("Project deletion frees its category", () => {
     await modal.locator("form").getByRole("button").first().click();
     const listbox = page.getByRole("listbox");
     await expect(listbox).toBeVisible();
-    await expect(
-      listbox.getByRole("option", {
-        name: new RegExp(`^${escapeRegExp(target)}$`, "i"),
-      }),
-    ).toBeVisible();
+    const freedOption = listbox.getByRole("option", {
+      name: new RegExp(`^${escapeRegExp(target)}$`, "i"),
+    });
+    await expect(freedOption).toBeVisible();
+
+    // Recreate it. `create_project` writes the category-wide anchor rule
+    // tagged with the backend's lowercase `all_tags` constant; the view finds
+    // that rule to render its status band. Matching it against the uppercase
+    // literal instead made the match fail for every project and blanked the
+    // whole tab, so assert the band — not just the row — comes back.
+    await freedOption.click();
+    await modal.getByRole("spinbutton").fill("5000");
+    await modal.getByRole("button", { name: /^create$/i }).click();
+    await expect(modal).toBeHidden({ timeout: 10_000 });
+
+    const statusBand = page.getByTestId("budget-status-band");
+    await expect(statusBand).toBeVisible({ timeout: 10_000 });
+    await expect(statusBand).toContainText(new RegExp(escapeRegExp(target), "i"));
+    await expect(statusBand).toContainText("5,000");
   });
 });
