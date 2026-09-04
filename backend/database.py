@@ -92,13 +92,39 @@ def create_db_engine(db_path: str = None, echo: bool = False):
 # path rather than on the demo flag is more honest: it also covers the
 # FAD_DB_PATH override without a special case, and two contexts that happen
 # to resolve to the same file correctly share one engine.
-_engines: dict[str, "Engine"] = {}
+_engines: dict[str, Engine] = {}
 _session_factories: dict[str, sessionmaker] = {}
 
 # Guards lazy creation. Requests are served from a threadpool, so two threads
 # can miss the cache for the same path at once; without the lock they would
 # each build an engine and one would be silently discarded.
 _registry_lock = threading.Lock()
+
+
+def _get_engine_locked(db_path: str) -> Engine:
+    """
+    Get or create the engine for a database path.
+
+    Caller must hold ``_registry_lock``. This is a private helper factored
+    out so ``get_session_factory`` can resolve the engine and the factory
+    for a path under a single lock acquisition — otherwise a concurrent
+    ``reset_engines``/``reset_engine_for`` between two separate acquisitions
+    could dispose the engine ``get_session_factory`` just fetched, leaving
+    the registered factory bound to an orphaned engine.
+
+    Parameters
+    ----------
+    db_path : str
+        Resolved path to the SQLite database file (must not be ``None``).
+
+    Returns
+    -------
+    Engine
+        SQLAlchemy engine instance for that path.
+    """
+    if db_path not in _engines:
+        _engines[db_path] = create_db_engine(db_path)
+    return _engines[db_path]
 
 
 def get_engine(db_path: str = None):
@@ -119,9 +145,7 @@ def get_engine(db_path: str = None):
     if db_path is None:
         db_path = AppConfig().get_db_path()
     with _registry_lock:
-        if db_path not in _engines:
-            _engines[db_path] = create_db_engine(db_path)
-        return _engines[db_path]
+        return _get_engine_locked(db_path)
 
 
 def get_session_factory(db_path: str = None):
@@ -141,8 +165,8 @@ def get_session_factory(db_path: str = None):
     """
     if db_path is None:
         db_path = AppConfig().get_db_path()
-    engine = get_engine(db_path)
     with _registry_lock:
+        engine = _get_engine_locked(db_path)
         if db_path not in _session_factories:
             _session_factories[db_path] = sessionmaker(
                 autocommit=False, autoflush=False, bind=engine
