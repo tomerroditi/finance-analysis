@@ -202,7 +202,7 @@ export function Sidebar() {
       </nav>
 
       {/* Settings & Data Flow */}
-      <div className="absolute bottom-0 inset-inline-start-0 inset-inline-end-0 p-4 border-t border-[var(--surface-light)] space-y-1">
+      <div className="absolute bottom-0 inset-x-0 p-4 border-t border-[var(--surface-light)] space-y-1">
         {budgetAlertsEnabled && (
           <BudgetAlertsBell variant="sidebar" expanded={sidebarOpen || mobileSidebarOpen} />
         )}
@@ -262,7 +262,7 @@ export function Sidebar() {
 
       {/* Desktop sidebar */}
       <aside
-        className={`fixed inset-inline-start-0 top-0 h-screen bg-[var(--surface)] border-e border-[var(--surface-light)] transition-all duration-300 z-50 hidden md:block ${
+        className={`fixed start-0 top-0 h-screen bg-[var(--surface)] border-e border-[var(--surface-light)] transition-all duration-300 z-50 hidden md:block ${
           sidebarOpen ? "w-64" : "w-20"
         }`}
       >
