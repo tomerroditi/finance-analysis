@@ -1,28 +1,22 @@
-import { describe, expect, it } from "vitest";
+import { describe, it, expect, beforeEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { http, HttpResponse } from "msw";
-
-import { DemoModeProvider, useDemoMode } from "./DemoModeContext";
-import { useQueryKeys } from "../hooks/useQueryKeys";
 import { server } from "../mocks/server";
-
-/** Records the demo flag that was in force on every render it performed. */
-const seenFlags: boolean[] = [];
+import {
+  DemoModeProvider,
+  useDemoMode,
+  DEMO_MODE_STORAGE_KEY,
+} from "./DemoModeContext";
 
 function Probe() {
   const { isDemoMode } = useDemoMode();
-  const qk = useQueryKeys();
-  seenFlags.push(isDemoMode);
-  return <div data-testid="probe">{JSON.stringify(qk.analytics.overview())}</div>;
+  return <span data-testid="flag">{String(isDemoMode)}</span>;
 }
 
-function renderGated() {
-  const queryClient = new QueryClient({
-    defaultOptions: { queries: { retry: false, gcTime: 0 } },
-  });
+function renderProbe() {
   return render(
-    <QueryClientProvider client={queryClient}>
+    <QueryClientProvider client={new QueryClient()}>
       <DemoModeProvider>
         <Probe />
       </DemoModeProvider>
@@ -31,64 +25,47 @@ function renderGated() {
 }
 
 describe("DemoModeProvider", () => {
-  // Every key from `useQueryKeys()` carries the demo flag as its LAST
-  // segment. When the provider rendered children against its `false`
-  // placeholder, a demo-mode user fetched everything twice — once under
-  // [..., false] and again under [..., true] — and the demo response for
-  // that first pass was cached (and persisted to IndexedDB, since it passes
-  // shouldDehydrateQuery) under the REAL-mode key, where it could later
-  // hydrate as the user's own data with demo mode off.
-  it("renders nothing until the demo flag is known", async () => {
-    seenFlags.length = 0;
-    server.use(
-      http.get("/api/testing/demo_mode_status", () =>
-        HttpResponse.json({ demo_mode: true }),
-      ),
-    );
-
-    renderGated();
-
-    // Nothing below the provider has mounted yet, so no query key — and no
-    // fetch — can exist under the wrong flag.
-    expect(screen.queryByTestId("probe")).not.toBeInTheDocument();
-    expect(seenFlags).toEqual([]);
-
-    await waitFor(() =>
-      expect(screen.getByTestId("probe")).toBeInTheDocument(),
-    );
-
-    expect(seenFlags.every((flag) => flag === true)).toBe(true);
-    expect(screen.getByTestId("probe").textContent).toContain("true");
+  beforeEach(() => {
+    localStorage.clear();
   });
 
-  it("still renders (in real mode) when the status request fails", async () => {
-    seenFlags.length = 0;
-    server.use(
-      http.get("/api/testing/demo_mode_status", () =>
-        HttpResponse.json({ detail: "boom" }, { status: 500 }),
-      ),
-    );
-
-    renderGated();
-
-    await waitFor(() =>
-      expect(screen.getByTestId("probe")).toBeInTheDocument(),
-    );
-    expect(seenFlags.every((flag) => flag === false)).toBe(true);
+  it("renders children immediately without waiting for the status request", () => {
+    renderProbe();
+    expect(screen.getByTestId("flag")).toBeInTheDocument();
   });
 
-  it("skips the gate when the flag is supplied up front (test harness)", () => {
-    seenFlags.length = 0;
-    const queryClient = new QueryClient({
-      defaultOptions: { queries: { retry: false, gcTime: 0 } },
-    });
-    render(
-      <QueryClientProvider client={queryClient}>
-        <DemoModeProvider initialDemoMode={false}>
-          <Probe />
-        </DemoModeProvider>
-      </QueryClientProvider>,
+  it("reads the stored flag synchronously on mount", () => {
+    localStorage.setItem(DEMO_MODE_STORAGE_KEY, "1");
+    renderProbe();
+    expect(screen.getByTestId("flag")).toHaveTextContent("true");
+  });
+
+  it("defaults to real mode when nothing is stored", () => {
+    renderProbe();
+    expect(screen.getByTestId("flag")).toHaveTextContent("false");
+  });
+
+  it("adopts the server value when the deployment forces demo mode", async () => {
+    server.use(
+      http.get("/api/testing/demo_mode_status", () =>
+        HttpResponse.json({ demo_mode: true, forced: true }),
+      ),
     );
-    expect(screen.getByTestId("probe")).toBeInTheDocument();
+    renderProbe();
+    await waitFor(() =>
+      expect(screen.getByTestId("flag")).toHaveTextContent("true"),
+    );
+  });
+
+  it("ignores the server value when the deployment does not force it", async () => {
+    server.use(
+      http.get("/api/testing/demo_mode_status", () =>
+        HttpResponse.json({ demo_mode: true, forced: false }),
+      ),
+    );
+    renderProbe();
+    await waitFor(() =>
+      expect(screen.getByTestId("flag")).toHaveTextContent("false"),
+    );
   });
 });

@@ -1,4 +1,5 @@
 import axios from "axios";
+import { readStoredDemoMode } from "./demoMode";
 
 const api = axios.create({
   baseURL: "/api",
@@ -35,6 +36,12 @@ api.interceptors.request.use((config) => {
       : null;
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
+  }
+  // Demo Mode is per-client and declared per request. Without this header
+  // the backend serves the real database, which is the correct default for
+  // curl, the desktop app, and Playwright's request context.
+  if (readStoredDemoMode()) {
+    config.headers["X-FAD-Demo"] = "1";
   }
   return config;
 });

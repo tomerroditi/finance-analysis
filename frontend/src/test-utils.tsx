@@ -28,9 +28,9 @@ export function renderWithProviders(
   function Wrapper({ children }: WrapperProps) {
     return (
       <QueryClientProvider client={queryClient}>
-        {/* Pre-resolved so component tests can assert synchronously — the
-            real app mounts the gated provider (no `initialDemoMode`), which
-            renders nothing until GET /testing/demo_mode_status answers. */}
+        {/* Pre-resolved so tests don't depend on localStorage state — the
+            real app reads the flag from localStorage synchronously and
+            never passes `initialDemoMode`. */}
         <DemoModeProvider initialDemoMode={false}>
           <DialogProvider>
             <MemoryRouter initialEntries={[route]}>{children}</MemoryRouter>

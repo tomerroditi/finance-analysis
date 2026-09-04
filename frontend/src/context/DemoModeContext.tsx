@@ -7,6 +7,18 @@ import {
 } from "react";
 import { testingApi } from "../services/api";
 import { useQueryClient } from "@tanstack/react-query";
+import {
+  DEMO_MODE_STORAGE_KEY,
+  readStoredDemoMode,
+} from "../services/demoMode";
+
+// Re-exported so existing imports of these two names from this module keep
+// resolving. The canonical definitions live in `services/demoMode.ts` — a
+// standalone module was needed because this file imports `testingApi` from
+// `services/api.ts`, and `api.ts` in turn needs to read the stored flag on
+// every request; putting both here would create a circular import.
+// eslint-disable-next-line react-refresh/only-export-components
+export { DEMO_MODE_STORAGE_KEY, readStoredDemoMode };
 
 interface DemoModeContextType {
   isDemoMode: boolean;
@@ -21,14 +33,8 @@ const DemoModeContext = createContext<DemoModeContextType | undefined>(
 interface DemoModeProviderProps {
   children: ReactNode;
   /**
-   * Pre-resolved demo flag. When supplied, children render immediately and
-   * the initial-status gate is skipped (the status request still runs and
-   * corrects the value if the backend disagrees).
-   *
-   * This exists for the unit-test harness (`test-utils.tsx`), which renders
-   * components synchronously and would otherwise have to await the status
-   * round-trip in every test. The app itself never passes it — `App.tsx`
-   * mounts the gated provider, which is the whole point of the gate.
+   * Pre-resolved demo flag, overriding localStorage. Exists for the unit-test
+   * harness (`test-utils.tsx`), which renders components synchronously.
    */
   initialDemoMode?: boolean;
 }
@@ -37,50 +43,50 @@ export function DemoModeProvider({
   children,
   initialDemoMode,
 }: DemoModeProviderProps) {
-  const [isDemoMode, setIsDemoMode] = useState(initialDemoMode ?? false);
-  const [isResolved, setIsResolved] = useState(initialDemoMode !== undefined);
+  // Read synchronously: every key from `useQueryKeys()` carries this flag as
+  // its last segment, so it must be correct BEFORE the first fetch. The old
+  // implementation fetched it and blocked rendering until the round trip
+  // finished; localStorage makes the gate unnecessary.
+  const [isDemoMode, setIsDemoMode] = useState(
+    initialDemoMode ?? readStoredDemoMode(),
+  );
   const queryClient = useQueryClient();
 
   useEffect(() => {
-    // Fetch initial status
+    // The only reason to ask the server: a deployment (the shared Vercel
+    // instance) may pin the mode and refuse the client's choice. A
+    // non-forced answer is ignored — the client owns its own mode.
     testingApi
       .getDemoModeStatus()
       .then((res) => {
-        setIsDemoMode(res.data.demo_mode);
+        if (!res.data.forced) return;
+        setIsDemoMode((current) => {
+          if (current === res.data.demo_mode) return current;
+          void queryClient.resetQueries();
+          return res.data.demo_mode;
+        });
       })
       .catch((err) => {
         console.error("Failed to fetch demo mode status:", err);
-      })
-      .finally(() => {
-        setIsResolved(true);
       });
-  }, []);
+  }, [queryClient]);
 
   const toggleDemoMode = async (enabled: boolean) => {
-    try {
-      const res = await testingApi.toggleDemoMode(enabled);
-      setIsDemoMode(res.data.demo_mode);
-      // Reset all queries to clear cache and force refetch
-      // This prevents stale data from the other mode from being shown
-      await queryClient.resetQueries();
-    } catch (err) {
-      console.error("Failed to toggle demo mode:", err);
-      throw err;
+    if (enabled) {
+      // Build the demo database if this is the first client to ask for it.
+      // Idempotent by design: another client may be browsing demo data, and
+      // rebuilding would wipe its session mid-browse.
+      await testingApi.prepareDemo();
     }
+    try {
+      localStorage.setItem(DEMO_MODE_STORAGE_KEY, enabled ? "1" : "0");
+    } catch {
+      // A client that cannot persist the flag still switches for this
+      // session; it just reverts to real mode on reload.
+    }
+    setIsDemoMode(enabled);
+    await queryClient.resetQueries();
   };
-
-  // Nothing below this provider may render until the real flag is known.
-  //
-  // Every key from `useQueryKeys()` carries the demo flag as its last
-  // segment. Rendering children while the flag is still at its `false`
-  // placeholder made the whole app fetch once under `[..., false]` and then
-  // refetch everything under `[..., true]` when the status resolved — and,
-  // worse, the *demo* response for that first pass was cached (and
-  // persisted to IndexedDB, since it passes `shouldDehydrateQuery`) under
-  // the REAL-mode key, where it could later hydrate as the user's own data
-  // with demo mode off. Gating on resolution makes the flag correct before
-  // the first fetch, so that mix-up is structurally impossible.
-  if (!isResolved) return null;
 
   return (
     <DemoModeContext.Provider
