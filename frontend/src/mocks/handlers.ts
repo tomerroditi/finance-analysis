@@ -369,6 +369,16 @@ export const handlers = [
   http.get("/api/budget/analysis/:year/:month", () =>
     HttpResponse.json(mockBudgetAnalysis),
   ),
+  // The budget page fires these on mount. Unhandled, MSW passes them to the
+  // real network, they fail, and the axios interceptor `console.error`s — a
+  // log that can land after the test file's worker has closed its RPC, which
+  // fails the whole vitest run with an EnvironmentTeardownError.
+  http.get("/api/savings-goals/", () => HttpResponse.json([])),
+  http.get("/api/savings-goals/links", () => HttpResponse.json([])),
+  http.get("/api/budget/category-conflicts", () =>
+    HttpResponse.json({ conflicts: [] }),
+  ),
+  http.get("/api/budget-month-overrides/", () => HttpResponse.json([])),
   http.get("/api/budget/projects", () => HttpResponse.json([])),
   http.get("/api/budget/projects/available", () =>
     HttpResponse.json([]),
@@ -429,6 +439,14 @@ export const handlers = [
       { month: "2026-02", bank_balance: 48000, investment_value: 32000, cash: 500, net_worth: 80500 },
       { month: "2026-03", bank_balance: 50000, investment_value: 35000, cash: 500, net_worth: 85500 },
     ]),
+  ),
+  http.get("/api/analytics/income-by-source", () =>
+    HttpResponse.json({
+      sources: [{ label: "Salary", amount: 15000, share: 1 }],
+      total: 15000,
+      start: null,
+      end: null,
+    }),
   ),
   http.get("/api/analytics/income-by-source-over-time", () =>
     HttpResponse.json([
@@ -673,6 +691,16 @@ export const handlers = [
   ),
   http.post("/api/retirement/suggestions", () =>
     HttpResponse.json(mockRetirementSuggestions),
+  ),
+  // Same class as the budget handlers above: the retirement form fetches this
+  // on mount, and an unhandled request ends up as a late `console.error`.
+  http.get("/api/retirement/scraped-defaults", () =>
+    HttpResponse.json({
+      keren_hishtalmut_balance: null,
+      keren_hishtalmut_monthly_contribution: null,
+      pension_monthly_deposit: null,
+      avg_monthly_salary: null,
+    }),
   ),
   http.get("/api/retirement/keren-hishtalmut-balance", () =>
     HttpResponse.json({ balance: 100000 }),
