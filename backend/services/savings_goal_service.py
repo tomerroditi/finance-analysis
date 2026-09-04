@@ -114,6 +114,11 @@ class SavingsGoalService:
         self.db = db
         self.repo = SavingsGoalRepository(db)
         self.transactions_service = TransactionsService(db)
+        # Building the context scans every transaction, and a single request
+        # needs it more than once (the allocation pass, then the enrichment).
+        # The service is constructed per request, so caching it here is
+        # request-scoped and never goes stale mid-call.
+        self._context_cache: dict | None = None
 
     # ------------------------------------------------------------------
     # Public API
@@ -151,10 +156,24 @@ class SavingsGoalService:
             ``is_provisional`` — true while the month is still open, because
             the figures move as new transactions land.
         """
-        self.ensure_allocations()
         today = date.today()
         is_provisional = (year, month) >= (today.year, today.month)
+        empty_month = {
+            "year": year,
+            "month": month,
+            "goals": [],
+            "total_allocated": 0.0,
+            "surplus": 0.0,
+            "unallocated": 0.0,
+            "is_provisional": is_provisional,
+        }
+        # Short-circuit before touching transactions. The budget page renders
+        # this section on every month it shows, so for the many users who keep
+        # no goals it has to cost nothing.
+        if not self._goals_in_order():
+            return empty_month
 
+        self.ensure_allocations()
         allocations = self.repo.get_month_allocations(year, month)
         by_goal = (
             dict(zip(allocations["goal_id"], allocations["amount"]))
@@ -279,6 +298,8 @@ class SavingsGoalService:
         self.repo.upsert_link(
             goal_id, source_type, source_id, source_table, link_type
         )
+        # Links feed the context, so anything cached before this write is stale.
+        self._context_cache = None
         return self._after_write()
 
     def unlink_transaction(self, link_id: int) -> dict:
@@ -287,6 +308,7 @@ class SavingsGoalService:
             self.repo.delete_link(link_id)
         except ValueError:
             raise EntityNotFoundException(f"Savings goal link {link_id} not found")
+        self._context_cache = None
         return self._after_write()
 
     def get_links(self, goal_id: int | None = None) -> list[dict]:
@@ -513,7 +535,7 @@ class SavingsGoalService:
     # ------------------------------------------------------------------
 
     def _build_context(self) -> dict:
-        """Compute per-month surplus and per-month goal-linked amounts.
+        """Compute per-month surplus and per-month goal-linked amounts, memoised.
 
         Goal-linked transactions are pulled out of the surplus calculation
         before it runs, then reintroduced explicitly — a contribution consumes
@@ -526,6 +548,13 @@ class SavingsGoalService:
             ``surplus`` — ``{(year, month): float}``; ``direct`` and
             ``utilized`` — ``{(year, month): {goal_id: amount}}``.
         """
+        if self._context_cache is not None:
+            return self._context_cache
+        self._context_cache = self._compute_context()
+        return self._context_cache
+
+    def _compute_context(self) -> dict:
+        """Do the actual transaction scan behind :meth:`_build_context`."""
         df = self.transactions_service.get_data_for_analysis()
         empty = {"surplus": {}, "direct": {}, "utilized": {}}
         if df.empty:

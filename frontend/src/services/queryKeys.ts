@@ -130,6 +130,8 @@ export function makeQueryKeys(demo: boolean) {
     },
     savingsGoals: {
       all: () => ["savings-goals", demo] as const,
+      links: (goalId?: number) =>
+        ["savings-goals", "links", goalId ?? "all", demo] as const,
     },
     analytics: {
       overview: () => ["analytics", "overview", demo] as const,

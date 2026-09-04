@@ -361,3 +361,45 @@ class TestRebuild:
         assert goals["Done"]["funded"] == 500
         # The closed goal's 500 stays spoken for, so `Other` only sees the rest.
         assert goals["Other"]["funded"] == 0
+
+
+class TestCostWithoutGoals:
+    """A user who keeps no goals must not pay for the allocation machinery."""
+
+    def test_month_view_short_circuits_before_scanning_transactions(
+        self, db_session, service, monkeypatch
+    ):
+        """With no goals defined, the month view never loads transactions.
+
+        The budget page renders this section for every month it shows, so the
+        no-goals path has to be free. Scanning every transaction there once
+        made the budget page's post-mutation refresh miss its deadline.
+        """
+        calls = []
+        monkeypatch.setattr(
+            service, "_compute_context", lambda: calls.append(1) or {}
+        )
+
+        result = service.get_month_allocations(2026, 6)
+
+        assert calls == []
+        assert result["goals"] == []
+        assert result["total_allocated"] == 0.0
+
+    def test_context_is_computed_once_per_request(self, db_session, service):
+        """The transaction scan is memoised across one service instance.
+
+        A single request needs the context twice — once to allocate, once to
+        enrich — and the scan is the expensive part of both.
+        """
+        _seed_surplus(db_session, _month_str(1), income=10000, expenses=9000)
+        service.create(name="Goal", target_amount=5000, start_month=_month_str(1))
+
+        calls = []
+        original = service._compute_context
+        service._compute_context = lambda: calls.append(1) or original()
+        service._context_cache = None
+
+        service.get_all()
+
+        assert len(calls) == 1

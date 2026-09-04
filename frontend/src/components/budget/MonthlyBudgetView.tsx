@@ -12,6 +12,7 @@ import { BudgetRuleModal } from "../modals/BudgetRuleModal";
 import { TransactionCollapsibleList } from "./TransactionCollapsibleList";
 import type { Transaction } from "../../types/transaction";
 import { PendingRefundsSection } from "./PendingRefundsSection";
+import { SavingsGoalsBudgetSection } from "./SavingsGoalsBudgetSection";
 import { useConfirm } from "../../context/DialogContext";
 import { BudgetCommandBar, PeriodNav } from "./BudgetCommandBar";
 import { BudgetStatusBand, type BandStat } from "./BudgetStatusBand";
@@ -600,6 +601,8 @@ export const MonthlyBudgetView: React.FC<MonthlyBudgetViewProps> = ({
           </BudgetRail>
         </div>
       )}
+
+      <SavingsGoalsBudgetSection allocations={analysis?.savings_goals} />
 
       {analysis?.pending_refunds && (
         <PendingRefundsSection pendingRefunds={analysis.pending_refunds} />

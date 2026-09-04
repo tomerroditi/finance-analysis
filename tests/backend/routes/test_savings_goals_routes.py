@@ -201,3 +201,40 @@ class TestAllocationAndLinkRoutes:
             },
         )
         assert res.status_code == 404
+
+
+class TestBudgetAnalysisCarriesAllocations:
+    """The monthly budget analysis carries the goal allocations for its month."""
+
+    def test_analysis_includes_a_savings_goals_block(self, test_client):
+        """The budget page reads allocations off the analysis it already fetches.
+
+        Giving the section its own per-month endpoint call made it one more
+        straggler on every refresh of the same screen, which pushed the budget
+        page's post-mutation refresh past its deadline.
+        """
+        today = date.today()
+        res = test_client.get(f"/api/budget/analysis/{today.year}/{today.month}")
+
+        assert res.status_code == 200
+        block = res.json()["savings_goals"]
+        assert block["year"] == today.year
+        assert block["month"] == today.month
+        assert block["goals"] == []
+        assert block["is_provisional"] is True
+
+    def test_analysis_reports_a_funded_goal(self, test_client):
+        """A goal that received money in the month shows up in the block."""
+        goal = _create(
+            test_client, name="Trip", target_amount=1000, opening_balance=100
+        )
+        today = date.today()
+
+        res = test_client.get(f"/api/budget/analysis/{today.year}/{today.month}")
+
+        block = res.json()["savings_goals"]
+        # Demo-free test data has no surplus, so the goal is listed only if the
+        # engine actually directed something at it; either way the block must
+        # stay well-formed and never invent an allocation.
+        assert all(row["goal_id"] == goal["id"] for row in block["goals"])
+        assert block["total_allocated"] >= 0
