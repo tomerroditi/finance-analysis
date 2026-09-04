@@ -36,3 +36,37 @@ class TestVercelEntry:
             f"index.py no longer exposes a FastAPI `app` binding — Vercel "
             f"will fail to deploy.\nstdout: {result.stdout}\nstderr: {result.stderr}"
         )
+
+
+class TestVercelForcesDemoMode:
+    """Tests that the serverless entry point pins demo mode process-wide."""
+
+    def test_entry_pins_demo_mode_for_every_thread(self):
+        """Verify importing index.py leaves demo mode on for all threads.
+
+        A contextvar set at import time would not reach the threads that
+        serve requests, so every Vercel request would silently fall back to
+        real mode against an empty database. Asserting from a worker thread
+        is what distinguishes a process-wide pin from a context-local flag.
+
+        Runs in a subprocess so the env vars and demo-mode side effects in
+        ``index.py`` do not leak into the current pytest session.
+        """
+        project_root = Path(__file__).resolve().parents[2]
+        script = (
+            "import threading; import index; "
+            "from backend.config import AppConfig; "
+            "seen = []; "
+            "t = threading.Thread("
+            "    target=lambda: seen.append(AppConfig().is_demo_mode)); "
+            "t.start(); t.join(); "
+            "assert seen == [True], seen; "
+            "assert AppConfig._forced_mode is True, AppConfig._forced_mode"
+        )
+        result = subprocess.run(
+            [sys.executable, "-c", script],
+            cwd=project_root,
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0, result.stderr
