@@ -1,3 +1,15 @@
+---
+paths:
+  - "frontend/vite.config.ts"
+  - "frontend/index.html"
+  - "frontend/src/queryClient.ts"
+  - "frontend/src/services/api.ts"
+  - "frontend/src/components/ServiceWorkerUpdatePrompt.tsx"
+  - "frontend/src/components/NetworkStatusToast.tsx"
+  - "frontend/src/hooks/useNetworkFailureToast.ts"
+  - "frontend/public/**/*"
+  - ".claude/scripts/generate_pwa_icons.py"
+---
 # Frontend PWA / Offline Cache
 
 The dashboard ships as a Progressive Web App: a service worker precaches the

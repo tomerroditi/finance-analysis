@@ -1,3 +1,11 @@
+---
+paths:
+  - "backend/services/retirement_service.py"
+  - "backend/routes/retirement.py"
+  - "backend/models/retirement_goal.py"
+  - "backend/services/investments/insurance_sync.py"
+  - "frontend/src/components/retirement/**/*.{ts,tsx}"
+---
 # Retirement / FIRE Calculations
 
 How `backend/services/retirement_service.py` models early retirement.

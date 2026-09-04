@@ -20,6 +20,7 @@ npm run lint                                           # ESLint
 # Both servers
 ./start.sh                                             # Dev: backend + frontend together (auto-bootstraps venv; BACKEND_PORT / FRONTEND_PORT env to override ports)
 ./start.sh prod                                        # Prod: build frontend, serve everything from backend on :8080 (won't clash with a running dev backend)
+./start.sh remote                                      # Tailscale: binds 0.0.0.0 with tailnet CORS (:8001 / :5174)
 python .claude/scripts/with_server.py -- <command>     # Start both, run command, tear down
 
 # Scaffolding
@@ -73,7 +74,7 @@ Routes (FastAPI) -> Services (Business Logic) -> Repositories (Data Access) -> S
 
 - **Transaction amounts:** negative = expense, positive = income or refund
 - **Non-expense categories:** Ignore, Salary, Other Income, Investments, Liabilities
-- **Service names:** frontend/API use plural (`banks`, `credit_cards`, `cash`, `manual_investments`)
+- **Service names:** frontend/API use plural (`banks`, `credit_cards`, `cash`, `manual_investments`) — the `Services` enum in `backend/constants/providers.py` is canonical; table names may differ (`credit_card_transactions` table vs `credit_cards` service)
 - **Tags stored in budgets:** semicolon-separated (`"tag1;tag2;tag3"`)
 - **Budget kinds:** three kinds — monthly, yearly, project — discriminated by `budget_rules.period_type` (explicit column, not inferred from nulls). Yearly rules are per-year category/tag envelopes, mutually exclusive with monthly rules on the same (category, tag) within a year. Demo DB backfills `period_type` in `backend/demo_setup.py`.
 - **Project ↔ monthly/yearly category exclusion:** a category can't be both project-owned and used by a monthly/yearly rule — the new-project category picker (`GET /budget/projects/available`) filters out any category already claimed by a monthly/yearly rule, and monthly/yearly rule creation blocks categories already claimed by a project. Existing overlaps (e.g. from data predating this rule) surface via `GET /budget/category-conflicts` as a chip in the Budget page's `BudgetNoticeLine` — non-blocking, dismissible.
@@ -89,6 +90,8 @@ Routes (FastAPI) -> Services (Business Logic) -> Repositories (Data Access) -> S
 - Tests: always use test classes, every test needs a docstring
 - No business logic in routes or components — services handle all logic
 - No direct DB access outside repositories
+- No raw axios calls in components — go through `frontend/src/services/api.ts`
+- No obvious comments, no dead code
 - Commits: Conventional Commits (Commitizen)
 
 ## Branch & PR Workflow
@@ -177,7 +180,7 @@ wait is genuinely needed, prefer a positive anchor
 - Base URL: `http://localhost:8000`
 - Docs: `http://localhost:8000/docs`
 - Frontend proxies `/api/*` to backend via Vite config
-- Custom exceptions: `EntityNotFoundException` (404), `EntityAlreadyExistsException` (409), `ValidationException` (400)
+- Custom exceptions (`backend/errors.py`, all inherit `AppException`): `EntityNotFoundException` (404), `EntityAlreadyExistsException` (409), `ValidationException` (400), `BadRequestException` (400). Raise them in repositories/services — routes stay free of try/except for domain errors.
 
 ## UI Testing
 

@@ -1,3 +1,8 @@
+---
+paths:
+  - ".github/**/*"
+  - "pyproject.toml"
+---
 # CI & Release Pipeline
 
 How GitHub Actions are wired up. Read this before touching anything in

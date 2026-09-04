@@ -488,3 +488,8 @@ If any of the four cells surfaces an issue that the others didn't,
 that's the bug class to add a regression test for.
 
 > When changing test structure, naming conventions, or global fixtures, update this rule file.
+
+**Markers.** `pyproject.toml` registers one pytest marker — `sensitive`
+("tests that pull sensitive data from the internet"). Nothing uses it today;
+tag a test with it rather than inventing a second name if you add one that
+hits a real provider.

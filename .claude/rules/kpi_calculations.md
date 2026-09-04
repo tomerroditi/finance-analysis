@@ -1,3 +1,14 @@
+---
+paths:
+  - "backend/services/analysis/**/*.py"
+  - "backend/services/analysis_service.py"
+  - "backend/services/investments/**/*.py"
+  - "backend/services/investments_service.py"
+  - "backend/services/bank_balance_service.py"
+  - "backend/services/cash_balance_service.py"
+  - "backend/routes/analytics.py"
+  - "backend/routes/investments.py"
+---
 # KPI Calculations - Financial Analysis Logic
 
 How we calculate financial KPIs across the dashboard. Every analytics method must follow these rules.
