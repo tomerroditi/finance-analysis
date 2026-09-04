@@ -20,9 +20,14 @@ Pages are top-level views mapped to routes. They orchestrate layout, compose fea
 | `DataSources.tsx` | `/data-sources` | Bank/CC account management and scraping triggers |
 | `Liabilities.tsx` | `/liabilities` | Loan/debt tracking |
 | `Insurances.tsx` | `/insurances` | Insurance policy tracking |
-| `EarlyRetirement.tsx` | `/retirement` | FIRE calculator |
+| `EarlyRetirement.tsx` | `/early-retirement` | FIRE calculator |
+| `DataFlow.tsx` | `/data-flow` | Visual map of how data moves through the system (`components/dataflow/dataFlowData.ts`) |
+| `Onboarding.tsx` | `/onboarding` | First-run setup — the one page **outside** `Layout` |
 
-Pages are registered in `App.tsx` with `react-router-dom` and rendered inside the `Layout` component.
+Pages are registered in `App.tsx` with `react-router-dom`. All except
+`Onboarding` render inside `Layout`, nested under `OnboardingGate` — which
+redirects to `/onboarding` until setup completes. A new page added outside that
+gate is reachable before setup; that is almost never what you want.
 
 ## What Pages DO:
 - Compose feature components from `components/<feature>/`
