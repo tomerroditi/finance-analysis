@@ -1,5 +1,6 @@
 """Tests for the path-keyed SQLAlchemy engine registry."""
 
+import sys
 import threading
 
 import backend.database as database
@@ -71,71 +72,126 @@ class TestEngineRegistry:
         finally:
             AppConfig._base_user_dir_override = previous
 
-    def test_session_factory_never_bound_to_engine_absent_from_registry(
+    def test_session_factory_bound_to_registered_engine_after_normal_call(
         self, tmp_path
     ):
-        """Verify get_session_factory never returns a factory whose bound
-        engine has already been dropped from ``_engines``.
+        """Verify the ordinary, non-concurrent case: right after a plain
+        ``get_session_factory`` call, the factory's bound engine is the
+        engine registered for that path.
 
-        This is the invariant the engine/factory desync race breaks: if
-        ``get_session_factory`` resolved the engine and the factory under
-        two separate lock acquisitions, a ``reset_engines()`` landing in the
-        gap between them could dispose the engine it already fetched and
-        register a factory bound to that now-orphaned engine, while a later
-        ``get_engine`` call would build (and register) a different one for
-        the same path. Resolving both under one lock acquisition (via the
-        ``_get_engine_locked`` helper) makes that window impossible —
-        whatever engine a returned factory is bound to must still be the
-        one registered for that path, checked atomically under the same
-        lock the production code uses.
+        This covers the single-threaded happy path only. It does NOT
+        exercise the concurrent desync race the production fix (resolving
+        the engine and the factory under one ``_registry_lock`` acquisition
+        in ``_get_engine_locked``) protects against — a single-threaded test
+        cannot race anything. See
+        ``test_registry_engine_and_factory_never_disagree_under_concurrency``
+        for the concurrent invariant check.
         """
         path = str(tmp_path / "a.db")
-        for _ in range(200):
-            factory = database.get_session_factory(path)
-            with database._registry_lock:
-                bound_engine = factory.kw["bind"]
-                registered_engine = database._engines.get(path)
-                assert bound_engine is registered_engine
-            database.reset_engine_for(path)
+        factory = database.get_session_factory(path)
+        with database._registry_lock:
+            assert factory.kw["bind"] is database._engines.get(path)
 
-    def test_concurrent_reset_never_desyncs_factory_from_engine(self, tmp_path):
-        """Verify hammering get_session_factory concurrently with
-        reset_engines never yields a factory bound to a dropped engine.
+    def test_registry_engine_and_factory_never_disagree_under_concurrency(
+        self, tmp_path
+    ):
+        """Verify _engines and _session_factories never disagree for any
+        path while the registry is under concurrent read/reset load.
 
-        Many threads race ``get_session_factory`` against ``reset_engines``
-        for the same path. Each successful factory fetch immediately checks
-        (holding the lock, same as the helper above) that its bound engine
-        is still the one registered for the path — the exact invariant the
-        two-lock-acquisition race in the old ``get_session_factory``
-        violated. Run as many short iterations as possible rather than
-        relying on sleeps, to make the race window likely to be hit without
-        flakiness.
+        This checks the registry's internal consistency rather than the
+        freshness of any single returned value. A factory fetched by
+        ``get_session_factory`` at time T is bound to whatever engine was
+        current at T; a concurrent reset can legitimately rotate the
+        registry immediately afterwards, so asserting that a *previously
+        returned* factory still matches the *current* registry is asserting
+        something no correct concurrent design can guarantee (that was the
+        flaw in the two tests this one replaces — they raced their own
+        assertions against the registry rather than testing it).
+
+        The real invariant the production fix guarantees is that the engine
+        and factory for a path are always written together, under one
+        ``_registry_lock`` acquisition (``_get_engine_locked`` called from
+        inside ``get_session_factory``'s own lock scope) — so the two dicts
+        can never disagree for a path present in both. A checker thread
+        verifies exactly that: while holding ``_registry_lock``, for every
+        path present in both ``_engines`` and ``_session_factories``, the
+        factory's bound engine must be identical to the registered engine.
+        Holding the lock across reading both dicts closes the only window
+        that could make this racy, so the check itself is race-free.
+
+        Worker threads hammer ``get_session_factory``/``get_engine`` for two
+        paths while other threads reset the registry (targeted and full) in
+        a tight loop; all loops use bounded iteration counts rather than
+        sleeps. The race window this targets (the gap between
+        ``get_session_factory`` releasing the lock inside its call to
+        ``get_engine`` and re-acquiring it for the factory logic, in the
+        pre-fix two-acquisition implementation) is only a couple of Python
+        bytecodes wide, so the test temporarily shortens the interpreter's
+        GIL switch interval (``sys.setswitchinterval``) to make the OS
+        scheduler far more likely to preempt a thread inside that gap. This
+        only changes how often threads are given a chance to interleave —
+        it does not add any sleep/timing dependency to the assertions
+        themselves, and the invariant checked is timing-independent: it must
+        hold under the default interval too, just less reliably observably
+        broken pre-fix within a bounded number of iterations.
         """
-        path = str(tmp_path / "a.db")
-        iterations = 500
-        errors = []
+        paths = [str(tmp_path / "a.db"), str(tmp_path / "b.db")]
+        iterations = 300
+        checker_max_iterations = 20000
+        violations = []
+        stop = threading.Event()
 
-        def hammer_factory():
+        def hammer_session_factory(path):
             for _ in range(iterations):
-                factory = database.get_session_factory(path)
-                with database._registry_lock:
-                    bound_engine = factory.kw["bind"]
-                    registered_engine = database._engines.get(path)
-                    if bound_engine is not registered_engine:
-                        errors.append((bound_engine, registered_engine))
+                database.get_session_factory(path)
+
+        def hammer_get_engine(path):
+            for _ in range(iterations):
+                database.get_engine(path)
 
         def hammer_reset():
-            for _ in range(iterations):
-                database.reset_engines()
+            for i in range(iterations):
+                if i % 2 == 0:
+                    database.reset_engine_for(paths[i % len(paths)])
+                else:
+                    database.reset_engines()
 
-        threads = [
-            threading.Thread(target=hammer_factory),
-            threading.Thread(target=hammer_factory),
+        def checker():
+            for _ in range(checker_max_iterations):
+                if stop.is_set():
+                    return
+                with database._registry_lock:
+                    for path, engine in database._engines.items():
+                        factory = database._session_factories.get(path)
+                        if factory is not None and factory.kw["bind"] is not engine:
+                            violations.append(
+                                {
+                                    "path": path,
+                                    "factory_bound_engine": factory.kw["bind"],
+                                    "registered_engine": engine,
+                                }
+                            )
+
+        checker_thread = threading.Thread(target=checker)
+        worker_threads = [
+            threading.Thread(target=hammer_session_factory, args=(paths[0],)),
+            threading.Thread(target=hammer_session_factory, args=(paths[1],)),
+            threading.Thread(target=hammer_get_engine, args=(paths[0],)),
+            threading.Thread(target=hammer_get_engine, args=(paths[1],)),
             threading.Thread(target=hammer_reset),
         ]
-        for thread in threads:
-            thread.start()
-        for thread in threads:
-            thread.join()
 
-        assert errors == []
+        original_switch_interval = sys.getswitchinterval()
+        sys.setswitchinterval(1e-6)
+        try:
+            checker_thread.start()
+            for thread in worker_threads:
+                thread.start()
+            for thread in worker_threads:
+                thread.join()
+            stop.set()
+            checker_thread.join()
+        finally:
+            sys.setswitchinterval(original_switch_interval)
+
+        assert violations == []
