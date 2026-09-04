@@ -1,3 +1,10 @@
+## v1.52.0 (2026-09-04)
+
+### Feat
+
+- **savings-goals**: surface the waterfall in the UI and on the monthly budget
+- **savings-goals**: derive goal progress from a monthly surplus waterfall
+
 ## v1.51.2 (2026-09-03)
 
 ### Fix
