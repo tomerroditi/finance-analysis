@@ -59,6 +59,21 @@ describe("BudgetLedgerRow", () => {
     });
   });
 
+  describe("expand affordance", () => {
+    it("renders no chevron icon — the row itself is the toggle", () => {
+      const { container } = renderRow(1000, 3000);
+      // The chevron was a plain <span>, so it could not be clicked while it
+      // still read as a control. Expansion is driven by the row button's
+      // aria-expanded state instead.
+      expect(
+        container.querySelector(".lucide-chevron-down, .lucide-chevron-up"),
+      ).toBeNull();
+      expect(
+        container.querySelector("button[aria-expanded]"),
+      ).not.toBeNull();
+    });
+  });
+
   describe("percentage column", () => {
     it("reads 0% for a net refund rather than a negative percentage", () => {
       const { container } = renderRow(-1200, 3000);
