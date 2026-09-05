@@ -1,4 +1,5 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, type MouseEvent as ReactMouseEvent } from "react";
+import { createPortal } from "react-dom";
 import { useQuery } from "@tanstack/react-query";
 import { TrendingUp, TrendingDown, ArrowUp, ArrowDown, Minus, ChevronDown, ChevronUp } from "lucide-react";
 import { analyticsApi } from "../../services/api";
@@ -492,7 +493,12 @@ function LedgerBar({
  * sits on the right with a thin magnitude meter beneath it (relative to the
  * biggest month), so absolute size is still legible. Segment labels show the
  * share (%) or exact amount (₪) per `labelMode`, printed only where the slice
- * is wide enough to hold them; every slice reveals its value on hover.
+ * is wide enough to hold them.
+ *
+ * There is deliberately no colour legend: with 20+ categories it was a wall of
+ * swatches nobody could scan. Instead every slice names itself in a tooltip
+ * that follows the cursor and appears instantly (the native `title` attribute
+ * made you wait a second per slice, which is unusable for hunting a category).
  */
 function CompositionView({
   rows,
@@ -512,8 +518,22 @@ function CompositionView({
   onShowLess: () => void;
 }) {
   const { t } = useTranslation();
-  // Stable series order + colour, shared by the legend and every row so a
-  // category keeps its colour month to month.
+  // Cursor-following tooltip: the only way to name a slice now that the legend
+  // is gone, so it has to be instant. Portalled to <body> because the bar clips
+  // its children (`overflow-hidden`) and the card may sit in a scroll container.
+  const [tip, setTip] = useState<Tip | null>(null);
+  const showTip = (e: ReactMouseEvent, name: string, val: number, pct: number, color: string) =>
+    setTip({
+      x: Math.min(Math.max(e.clientX, 90), window.innerWidth - 90),
+      // Above the cursor, unless the row sits so close to the top of the
+      // viewport that the panel would be cut off — then flip below it.
+      y: e.clientY < 56 ? e.clientY + 20 : e.clientY - 12,
+      below: e.clientY < 56,
+      text: `${name}: ${formatCurrency(val)} (${Math.round(pct)}%)`,
+      color,
+    });
+  // Stable series order + colour, shared by every row so a category keeps its
+  // colour month to month.
   let series = Array.from(new Set(rows.flatMap((d) => Object.keys(d.values))));
   if (sortSeries) series = series.sort();
   const colorOf = (name: string) => palette[series.indexOf(name) % palette.length];
@@ -550,15 +570,7 @@ function CompositionView({
   };
 
   return (
-    <div ref={rootRef} className="min-w-[320px]">
-      <div className="flex flex-wrap gap-x-3.5 gap-y-2 mb-3">
-        {series.map((name) => (
-          <span key={name} className="flex items-center gap-1.5 text-[11px] text-[var(--text-muted)]">
-            <i className="w-2.5 h-2.5 rounded-sm flex-none" style={{ background: colorOf(name) }} />
-            {name}
-          </span>
-        ))}
-      </div>
+    <div ref={rootRef} className="min-w-[320px]" onMouseLeave={() => setTip(null)}>
       {visible.map((d) => {
         const total = totalOf(d.values);
         const isCurrent = d.month === lastMonth;
@@ -584,9 +596,13 @@ function CompositionView({
                 return (
                   <div
                     key={name}
+                    data-testid="composition-segment"
+                    aria-label={`${name}: ${formatCurrency(val)} (${Math.round(pct)}%)`}
                     className="h-full flex items-center justify-center overflow-hidden"
                     style={{ width: `${pct}%`, background: segColor }}
-                    title={`${name}: ${formatCurrency(val)} (${Math.round(pct)}%)`}
+                    onMouseEnter={(e) => showTip(e, name, val, pct, segColor)}
+                    onMouseMove={(e) => showTip(e, name, val, pct, segColor)}
+                    onMouseLeave={() => setTip(null)}
                   >
                     {fits(label, pct) && (
                       <span
@@ -622,7 +638,38 @@ function CompositionView({
         );
       })}
       <MonthPager total={rows.length} visible={visible.length} onShowMore={onShowMore} onShowLess={onShowLess} />
+      <SegmentTooltip tip={tip} />
     </div>
+  );
+}
+
+/**
+ * A slice's hover readout: viewport coordinates, whether the panel hangs below
+ * the cursor (top-of-viewport flip), the text, and the slice colour.
+ */
+type Tip = { x: number; y: number; below: boolean; text: string; color: string };
+
+/**
+ * The cursor-following slice tooltip, rendered into <body> so no ancestor's
+ * `overflow-hidden` can clip it. Sits above the cursor (below it near the top
+ * of the viewport) and is horizontally clamped so it never runs off an edge.
+ */
+function SegmentTooltip({ tip }: { tip: Tip | null }) {
+  if (!tip) return null;
+  return createPortal(
+    <div
+      data-testid="composition-tooltip"
+      className="pointer-events-none fixed z-50 flex items-center gap-1.5 whitespace-nowrap rounded-lg border border-white/10 bg-[var(--surface-light)] px-2.5 py-1.5 text-[11px] font-semibold text-white shadow-xl"
+      style={{
+        left: tip.x,
+        top: tip.y,
+        transform: `translate(-50%, ${tip.below ? "0" : "-100%"})`,
+      }}
+    >
+      <i className="h-2 w-2 flex-none rounded-sm" style={{ background: tip.color }} />
+      {tip.text}
+    </div>,
+    document.body,
   );
 }
 

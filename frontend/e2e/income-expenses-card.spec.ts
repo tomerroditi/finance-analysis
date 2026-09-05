@@ -10,8 +10,9 @@ import { enableDemoMode, navigateTo, resetDemoData } from "./helpers";
  *                       with a % / ₪ label toggle.
  *
  * This spec guards that each tab renders, that the ledger is ordered
- * newest-first, and that the label toggle + tab switches never crash the card.
- * Demo Mode supplies the sample data.
+ * newest-first, that the label toggle + tab switches never crash the card, and
+ * that hovering a composition slice pops the cursor-following tooltip that
+ * replaced the (removed) colour legend. Demo Mode supplies the sample data.
  *
  * All checks are client-side interactions on one rendered card, so they run
  * as a single test on a single dashboard load — the cold dashboard boot is
@@ -135,6 +136,24 @@ test.describe("Income & Expenses dashboard card", () => {
     await expect(shareBtn).toHaveAttribute("aria-pressed", "true");
     await expect(card.getByTestId("composition-row")).toHaveCount(before);
 
+    // --- Hovering a slice names it instantly (the legend is gone) ---
+    // The tooltip is portalled to <body>, so it is looked up on the page, not
+    // inside the card. A short timeout is the point of the assertion: this
+    // replaced a native `title`, which browsers delay by ~1s and never expose
+    // in the DOM at all.
+    const tooltip = page.getByTestId("composition-tooltip");
+    await expect(tooltip).toHaveCount(0);
+
+    const segment = compositionRows.first().getByTestId("composition-segment").first();
+    await segment.hover();
+    await expect(tooltip).toBeVisible({ timeout: 1_000 });
+    // "<Category>: <amount> ₪ (<share>%)" — the slice's own aria-label.
+    await expect(tooltip).toHaveText(/.+: .+\(\d+%\)/);
+
+    // Leaving the chart dismisses it.
+    await card.getByRole("heading", { name: "Income & Expenses" }).hover();
+    await expect(tooltip).toHaveCount(0);
+
     // --- Expenses Breakdown renders composition rows too ---
     await card.getByRole("button", { name: "Expenses Breakdown" }).click();
 
@@ -145,5 +164,11 @@ test.describe("Income & Expenses dashboard card", () => {
     await expect(
       card.getByRole("button", { name: "Show amount (₪)" }),
     ).toBeVisible();
+
+    // Slices carry their readout here as well.
+    await compositionRows.first().getByTestId("composition-segment").first().hover();
+    await expect(page.getByTestId("composition-tooltip")).toBeVisible({
+      timeout: 1_000,
+    });
   });
 });
