@@ -159,6 +159,43 @@ function StatCard({
   );
 }
 
+function CoversSection({ covers }: { covers: Cover[] }) {
+  const { t } = useTranslation();
+  return (
+    <div className="px-4 sm:px-6 pb-4">
+      <p className="text-[var(--text-muted)] text-[10px] uppercase tracking-widest font-bold mb-2">
+        {t("insurance.monthlyAmounts")}
+      </p>
+      <div className="flex flex-col gap-2">
+        {covers.map((cover, i) => (
+          <div
+            key={i}
+            data-testid="insurance-cover-row"
+            className="flex items-start justify-between gap-4 border-b border-[var(--surface-light)]/30 pb-2 last:border-0"
+          >
+            <div className="min-w-0">
+              <p className="text-white text-sm font-semibold" dir="auto">
+                {cover.title}
+              </p>
+              {cover.desc && (
+                <p className="text-[var(--text-muted)] text-xs mt-0.5" dir="auto">
+                  {cover.desc}
+                </p>
+              )}
+            </div>
+            <span
+              className="text-white font-mono font-bold text-sm whitespace-nowrap shrink-0"
+              dir="ltr"
+            >
+              {formatCurrency(unwrapAmount(cover.sum))}
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // ─── Account Card ────────────────────────────────────────────────────────
 function AccountCardFull({
   account,
@@ -169,7 +206,11 @@ function AccountCardFull({
 }) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
-  const [expanded, setExpanded] = useState(false);
+  // One slot, so opening covers closes deposits (and vice versa) — the card
+  // can never grow by both sections at once.
+  const [expandedSection, setExpandedSection] = useState<"covers" | "deposits" | null>(null);
+  const toggleSection = (section: "covers" | "deposits") =>
+    setExpandedSection((current) => (current === section ? null : section));
   const [isEditingName, setIsEditingName] = useState(false);
   const [draftName, setDraftName] = useState("");
   const tracks = parseTracks(account.investment_tracks);
@@ -386,33 +427,37 @@ function AccountCardFull({
 
         {/* Insurance Covers / Liquidity / Activity (last column — variable content) */}
         {covers.length > 0 ? (
-          <div className="bg-[var(--background)]/50 rounded-xl p-3">
+          <div
+            data-testid="insurance-covers-summary"
+            className="bg-[var(--background)]/50 rounded-xl p-3"
+          >
             <p className="text-[var(--text-muted)] text-[9px] uppercase tracking-widest font-bold mb-2">
               {t("insurance.insuranceCovers")}
             </p>
-            <div className="flex flex-col gap-1.5 xl:gap-1">
-              {covers.map((c, i) => (
-                <div
-                  key={i}
-                  data-testid="insurance-cover-row"
-                  className="flex flex-col xl:flex-row xl:items-center xl:justify-between xl:gap-2"
-                >
-                  <span
-                    className="text-[var(--text-muted)] text-[10px] xl:text-xs leading-tight xl:truncate"
-                    dir="auto"
-                    title={c.title}
-                  >
-                    {c.title}
-                  </span>
-                  <span
-                    className="text-white font-mono font-bold text-xs leading-tight whitespace-nowrap"
-                    dir="ltr"
-                  >
-                    {formatCurrency(unwrapAmount(c.sum))}
-                  </span>
-                </div>
-              ))}
-            </div>
+            {/* Headline is covers[0] by scrape order — the provider lists the
+                retirement annuity first. Ordinal beats title matching (no
+                hardcoded Hebrew) and beats largest-value (that surfaces a
+                death benefit, not the headline figure). */}
+            <p className="text-white font-black text-lg" dir="ltr">
+              {formatCurrency(unwrapAmount(covers[0].sum))}
+              <span className="text-[10px] font-bold text-[var(--text-muted)] ms-1">
+                {t("insurance.perMonth")}
+              </span>
+            </p>
+            <p
+              className="text-[var(--text-muted)] text-[10px] truncate"
+              dir="auto"
+              title={covers[0].title}
+            >
+              {covers[0].title}
+            </p>
+            <button
+              type="button"
+              onClick={() => toggleSection("covers")}
+              className="mt-1 text-[10px] font-bold text-blue-400 hover:text-blue-300"
+            >
+              {t("insurance.coversCount", { count: covers.length })}
+            </button>
           </div>
         ) : account.liquidity_date ? (
           <div className="bg-[var(--background)]/50 rounded-xl p-3">
@@ -436,18 +481,42 @@ function AccountCardFull({
         )}
       </div>
 
-      {/* Expandable Transaction Table */}
+      {/* Expandable footer: covers list and deposit history share one slot */}
       <div className="border-t border-[var(--surface-light)]">
-        <button
-          onClick={() => setExpanded(!expanded)}
-          className="w-full px-6 py-3 flex items-center justify-between text-sm text-[var(--text-muted)] hover:text-white transition-colors"
-        >
-          <span>
-            {expanded ? t("insurance.hideDepositHistory") : t("insurance.showDepositHistory")} ({txs.length} {t("insurance.transactions")})
-          </span>
-          {expanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
-        </button>
-        {expanded && (
+        <div className="flex flex-col sm:flex-row">
+          {covers.length > 0 && (
+            <button
+              type="button"
+              data-testid="insurance-covers-toggle"
+              onClick={() => toggleSection("covers")}
+              className="flex-1 px-6 py-3 flex items-center justify-between text-sm text-[var(--text-muted)] hover:text-white transition-colors"
+            >
+              <span>
+                {expandedSection === "covers"
+                  ? t("insurance.hideInsuranceCovers")
+                  : t("insurance.showInsuranceCovers")}{" "}
+                ({covers.length})
+              </span>
+              {expandedSection === "covers" ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+            </button>
+          )}
+          <button
+            type="button"
+            data-testid="insurance-deposits-toggle"
+            onClick={() => toggleSection("deposits")}
+            className="flex-1 px-6 py-3 flex items-center justify-between text-sm text-[var(--text-muted)] hover:text-white transition-colors"
+          >
+            <span>
+              {expandedSection === "deposits"
+                ? t("insurance.hideDepositHistory")
+                : t("insurance.showDepositHistory")}{" "}
+              ({txs.length} {t("insurance.transactions")})
+            </span>
+            {expandedSection === "deposits" ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+          </button>
+        </div>
+        {expandedSection === "covers" && <CoversSection covers={covers} />}
+        {expandedSection === "deposits" && (
           <div className="overflow-x-auto max-h-80 overflow-y-auto">
             <table className="w-full text-sm">
               <thead className="sticky top-0 bg-[var(--surface)]">
