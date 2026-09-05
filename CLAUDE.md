@@ -179,6 +179,23 @@ shared DB → no cross-shard races → every shard runs concurrently.
 ~240 s serial — 3.3×.** This is the local default in the checklist above; CI
 keeps its single-backend `--shard=X/4` matrix.
 
+**The runner only ever drives servers it started.** A shard pinned to a
+leftover server from a previous run silently tests *that* checkout's source —
+specs fail here and pass in isolation, which is exactly how a stale frontend on
+:5273 once broke a `toHaveCount(0)` assertion for a DOM node the current source
+no longer renders. Four guards keep ownership honest: children run in their own
+process group (`start_new_session`) and are torn down with `killpg`, so
+`npm run dev`'s `vite` child cannot survive its npm parent; a **preflight
+refuses to start** when any target port (8100+, 5273+) is already listening —
+pass `--reclaim-ports` to kill the squatters instead; Vite is launched with
+`--strictPort`, so a taken port is a hard exit rather than a silent
+fall-forward to 5277+; and readiness means *our* server answered — the backend
+must have created `data.db` inside that shard's `FAD_USER_DIR`, which a
+squatter cannot fake. Server stdout/stderr go to
+`$TMPDIR/e2e-isolated-{backend,frontend}-N.log`, never `/dev/null`, so a
+bind failure is readable. If a run is `kill -9`'d, orphans do survive — the
+next run then refuses loudly instead of testing stale code.
+
 The runner does **not** use Playwright's `--shard`, which splits by test count
 and left one shard at 31 s beside another at 1.5 m — the slowest sets the wall
 clock, so a third of the parallelism was idle. It packs spec files by recorded

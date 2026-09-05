@@ -22,11 +22,30 @@ cross-shard races, and the only ceiling is real CPU cores.
 This is an **opt-in local tool** (``npm run test:e2e:isolated``). It does not
 change CI, which keeps its proven single-backend ``--shard=X/4`` matrix.
 
+Server ownership
+----------------
+Pinning a shard to a server this run did not start is silent poison: the shard
+drives a *previous* run's frontend, serving whatever source that checkout had,
+and specs fail in ways that never reproduce in isolation. Four things keep
+ownership honest, and all four are load-bearing:
+
+* children run in their own process group (``start_new_session``) and are torn
+  down with ``killpg`` — ``npm run dev`` forks ``vite``, so terminating npm
+  alone leaves vite holding the port;
+* a preflight refuses to start when a target port is already listening
+  (``--reclaim-ports`` kills the squatters instead);
+* Vite runs with ``--strictPort`` so a taken port is a hard failure rather than
+  a silent fall-forward to the next free one;
+* readiness means *our* server answered — the backend must have created
+  ``data.db`` inside this shard's ``FAD_USER_DIR``, which a squatter cannot
+  fake — and server output goes to per-shard log files, not ``/dev/null``.
+
 Usage
 -----
     # From repo root (venv need not be on PATH — the script finds .venv):
     python .claude/scripts/e2e_parallel_isolated.py            # auto-pick shard count
     python .claude/scripts/e2e_parallel_isolated.py --shards 4
+    python .claude/scripts/e2e_parallel_isolated.py --reclaim-ports
     python .claude/scripts/e2e_parallel_isolated.py --shards 3 -- --grep @smoke
 
 Anything after ``--`` is forwarded verbatim to every ``playwright test`` shard.
@@ -36,6 +55,7 @@ import argparse
 import json
 import os
 import shutil
+import signal
 import socket
 import subprocess
 import sys
@@ -45,6 +65,7 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 FRONTEND_DIR = REPO_ROOT / "frontend"
+LOG_DIR = Path(tempfile.gettempdir())
 
 # Bases chosen to avoid the default dev ports (8000 / 5173) and the per-worktree
 # ports, so this can run alongside a normal dev session without clashing.
@@ -130,16 +151,89 @@ def collect_timings(report_paths: list[Path]) -> dict[str, float]:
     return totals
 
 
-def wait_for_port(port: int, timeout: float) -> bool:
-    """Poll ``localhost:port`` until it accepts a connection or ``timeout`` elapses."""
-    deadline = time.time() + timeout
-    while time.time() < deadline:
+def read_log(path: Path) -> str:
+    """Read a server/shard log defensively.
+
+    Playwright and Vite emit box-drawing and progress bytes that are not valid
+    UTF-8 in every locale; a strict decode here used to abort the whole summary
+    loop with `UnicodeDecodeError`, throwing away every shard's result after the
+    first one even when the tests themselves were fine.
+    """
+    try:
+        return path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return ""
+
+
+def log_tail(path: Path, lines: int = 15) -> str:
+    """Last `lines` of a log, indented, for embedding in an error message."""
+    tail = read_log(path).splitlines()[-lines:]
+    return "\n".join(f"      {line}" for line in tail) or "      (log empty)"
+
+
+def port_is_listening(port: int) -> bool:
+    """True if anything accepts a TCP connection on `port` (v4 or v6 loopback)."""
+    for host in ("127.0.0.1", "::1"):
         try:
-            with socket.create_connection(("localhost", port), timeout=1):
+            with socket.create_connection((host, port), timeout=0.5):
                 return True
         except OSError:
-            time.sleep(0.5)
+            continue
     return False
+
+
+def listening_pids(port: int) -> list[int]:
+    """PIDs holding a LISTEN socket on `port` (best effort, via lsof)."""
+    try:
+        completed = subprocess.run(
+            ["lsof", "-nP", f"-iTCP:{port}", "-sTCP:LISTEN", "-t"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return []
+    return sorted({int(tok) for tok in completed.stdout.split() if tok.isdigit()})
+
+
+def reclaim_port(port: int) -> bool:
+    """Kill whatever holds `port`; return True once it is free.
+
+    Signals the *listening* pid directly rather than its process group: a
+    squatter is by definition not ours, and its group could well be the user's
+    own shell session.
+    """
+    pids = listening_pids(port)
+    for sig in (signal.SIGTERM, signal.SIGKILL):
+        for pid in pids:
+            try:
+                os.kill(pid, sig)
+            except OSError:
+                pass
+        deadline = time.time() + 5
+        while time.time() < deadline:
+            if not port_is_listening(port):
+                return True
+            time.sleep(0.2)
+    return not port_is_listening(port)
+
+
+def wait_for_port(port: int, timeout: float, proc: subprocess.Popen | None = None) -> str | None:
+    """Wait until `port` accepts a connection.
+
+    Returns None on success, or a short reason on failure. When `proc` is given,
+    its death short-circuits the wait — a server that failed to bind (uvicorn on
+    a taken port, Vite under `--strictPort`) should surface immediately instead
+    of burning the full readiness timeout.
+    """
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        if proc is not None and proc.poll() is not None:
+            return f"process exited with code {proc.returncode} before binding :{port}"
+        if port_is_listening(port):
+            return None
+        time.sleep(0.25)
+    return f"timed out after {timeout:.0f}s waiting for :{port}"
 
 
 def uvicorn_argv(port: int) -> list[str]:
@@ -155,6 +249,34 @@ def default_shard_count() -> int:
     return max(2, min(6, cores // 3))
 
 
+def terminate_group(proc: subprocess.Popen) -> None:
+    """Kill a child *and every process it spawned*.
+
+    `npm run dev` execs `npm`, which forks `vite` as a child, so terminating the
+    npm process alone left vite holding the frontend port — which is exactly how
+    later runs ended up silently driving a previous run's servers. Children are
+    started with `start_new_session=True`, so each is its own process-group
+    leader (pgid == pid) and a single killpg takes the whole tree down.
+    """
+    pgid = proc.pid
+    for sig in (signal.SIGTERM, signal.SIGKILL):
+        try:
+            os.killpg(pgid, sig)
+        except OSError:
+            pass
+        try:
+            proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            continue
+        if sig is signal.SIGTERM:
+            # Leader reaped; sweep any straggler still in the group.
+            try:
+                os.killpg(pgid, signal.SIGKILL)
+            except OSError:
+                pass
+        return
+
+
 class Pair:
     """One isolated (backend + frontend) pair for a single shard."""
 
@@ -165,6 +287,13 @@ class Pair:
         self.user_dir = tempfile.mkdtemp(prefix=f"e2e-isolated-{index}-")
         self.backend: subprocess.Popen | None = None
         self.frontend: subprocess.Popen | None = None
+        self.backend_log = LOG_DIR / f"e2e-isolated-backend-{index}.log"
+        self.frontend_log = LOG_DIR / f"e2e-isolated-frontend-{index}.log"
+        self._log_handles: list = []
+
+    @property
+    def ports(self) -> tuple[int, int]:
+        return (self.backend_port, self.frontend_port)
 
     @property
     def api_base(self) -> str:
@@ -174,57 +303,162 @@ class Pair:
     def base_url(self) -> str:
         return f"http://localhost:{self.frontend_port}"
 
-    def start(self, timeout: int) -> None:
-        backend_env = {**os.environ, "FAD_USER_DIR": self.user_dir}
-        self.backend = subprocess.Popen(
-            uvicorn_argv(self.backend_port),
-            cwd=str(REPO_ROOT),
-            env=backend_env,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
+    def _spawn(self, argv: list[str], cwd: Path, env: dict, log_path: Path) -> subprocess.Popen:
+        handle = open(log_path, "w")
+        self._log_handles.append(handle)
+        return subprocess.Popen(
+            argv,
+            cwd=str(cwd),
+            env=env,
+            stdout=handle,
+            stderr=subprocess.STDOUT,
+            # Own process group, so teardown can killpg the whole tree.
+            start_new_session=True,
         )
 
-        frontend_env = {
-            **os.environ,
-            "PORT": str(self.frontend_port),
-            "VITE_BACKEND_URL": f"http://127.0.0.1:{self.backend_port}",
-        }
-        self.frontend = subprocess.Popen(
-            ["npm", "run", "dev"],
-            cwd=str(FRONTEND_DIR),
-            env=frontend_env,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
+    def start(self, timeout: int) -> None:
+        self.backend = self._spawn(
+            uvicorn_argv(self.backend_port),
+            REPO_ROOT,
+            {**os.environ, "FAD_USER_DIR": self.user_dir},
+            self.backend_log,
+        )
+
+        self.frontend = self._spawn(
+            # `--strictPort`: without it Vite quietly falls forward to the next
+            # free port when its assigned one is taken, and this run would then
+            # pin its shard to a server it neither started nor can kill.
+            ["npm", "run", "dev", "--", "--strictPort"],
+            FRONTEND_DIR,
+            {
+                **os.environ,
+                "PORT": str(self.frontend_port),
+                "VITE_BACKEND_URL": f"http://127.0.0.1:{self.backend_port}",
+            },
+            self.frontend_log,
         )
 
         print(
             f"  shard {self.index}: backend :{self.backend_port} "
             f"(FAD_USER_DIR={self.user_dir}), frontend :{self.frontend_port}"
         )
-        if not wait_for_port(self.backend_port, timeout):
-            raise RuntimeError(f"shard {self.index} backend failed on :{self.backend_port}")
-        if not wait_for_port(self.frontend_port, timeout):
-            raise RuntimeError(f"shard {self.index} frontend failed on :{self.frontend_port}")
+        self._await("backend", self.backend, self.backend_port, self.backend_log, timeout)
+        self._await_backend_identity(timeout)
+        self._await("frontend", self.frontend, self.frontend_port, self.frontend_log, timeout)
+
+    def _await(
+        self,
+        label: str,
+        proc: subprocess.Popen,
+        port: int,
+        log_path: Path,
+        timeout: int,
+    ) -> None:
+        reason = wait_for_port(port, timeout, proc)
+        if reason is None:
+            return
+        raise RuntimeError(
+            f"shard {self.index} {label} failed on :{port} — {reason}\n"
+            f"    log: {log_path}\n{log_tail(log_path)}"
+        )
+
+    def _await_backend_identity(self, timeout: int) -> None:
+        """Confirm the backend answering on our port is the one we started.
+
+        A bare TCP accept proves only that *something* listens — an orphan from
+        an earlier run satisfies it instantly, which is how a run could report
+        "ready in 0s" and then drive stale servers. Our backend creates
+        `data.db` inside this shard's private `FAD_USER_DIR` during startup, so
+        that file's existence is identity a squatter cannot fake.
+        """
+        marker = Path(self.user_dir) / "data.db"
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            if marker.exists():
+                return
+            if self.backend is not None and self.backend.poll() is not None:
+                break
+            time.sleep(0.25)
+        raise RuntimeError(
+            f"shard {self.index} backend on :{self.backend_port} is not ours — it never "
+            f"created {marker}.\n"
+            f"    Something else is listening on that port; this run would have tested "
+            f"against it.\n"
+            f"    log: {self.backend_log}\n{log_tail(self.backend_log)}"
+        )
 
     def stop(self) -> None:
         for proc in (self.frontend, self.backend):
-            if proc is None:
-                continue
-            try:
-                proc.terminate()
-                proc.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                proc.kill()
-                proc.wait()
+            if proc is not None:
+                terminate_group(proc)
+        for handle in self._log_handles:
+            handle.close()
+        self._log_handles.clear()
+        leaked = [port for port in self.ports if port_is_listening(port)]
+        if leaked:
+            print(
+                f"  WARNING: shard {self.index} left listeners on "
+                f"{', '.join(str(p) for p in leaked)} — the next run will refuse to start"
+            )
         shutil.rmtree(self.user_dir, ignore_errors=True)
+
+
+def preflight_ports(pairs: list[Pair], reclaim: bool) -> None:
+    """Refuse to race a server this run does not own (or reclaim the port)."""
+    busy = [(pair, port) for pair in pairs for port in pair.ports if port_is_listening(port)]
+    if not busy:
+        return
+
+    if reclaim:
+        print("Reclaiming ports held by a previous run...")
+        for _, port in busy:
+            freed = reclaim_port(port)
+            print(f"  :{port} -> {'freed' if freed else 'STILL BUSY'}")
+        still = [str(port) for _, port in busy if port_is_listening(port)]
+        if still:
+            raise RuntimeError(f"could not free port(s): {', '.join(still)}")
+        print()
+        return
+
+    ports = sorted({port for _, port in busy})
+    pattern = "|".join(str(port) for port in ports)
+    raise RuntimeError(
+        "ports already in use: " + ", ".join(str(p) for p in ports) + "\n"
+        "  A previous run left its servers behind (or something else owns these ports).\n"
+        "  Starting anyway would pin shards to servers this run does not control: they\n"
+        "  serve whatever source they were started with, so specs fail here and pass in\n"
+        "  isolation.\n"
+        f"  Inspect: lsof -nP -iTCP -sTCP:LISTEN | grep -E ':({pattern}) '\n"
+        "  Reclaim: python .claude/scripts/e2e_parallel_isolated.py --reclaim-ports"
+    )
+
+
+def install_signal_handlers() -> None:
+    """Turn SIGTERM/SIGHUP into SystemExit so the teardown `finally` still runs."""
+
+    def _exit(signum, _frame):
+        raise SystemExit(128 + signum)
+
+    for sig in (signal.SIGTERM, signal.SIGHUP):
+        try:
+            signal.signal(sig, _exit)
+        except (OSError, ValueError):
+            pass
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--shards", type=int, default=default_shard_count())
     parser.add_argument("--timeout", type=int, default=90, help="per-server readiness timeout (s)")
+    parser.add_argument(
+        "--reclaim-ports",
+        action="store_true",
+        help="kill whatever is listening on this run's ports instead of refusing to start",
+    )
     parser.add_argument("playwright_args", nargs=argparse.REMAINDER)
     args = parser.parse_args()
+
+    install_signal_handlers()
 
     extra = args.playwright_args
     if extra and extra[0] == "--":
@@ -255,7 +489,16 @@ def main() -> int:
     shard_procs: list[subprocess.Popen] = []
     logs: list[Path] = []
     reports: list[Path] = []
+    returncodes: list[int] = []
     started = time.time()
+
+    try:
+        preflight_ports(pairs, args.reclaim_ports)
+    except RuntimeError as exc:
+        for pair in pairs:
+            shutil.rmtree(pair.user_dir, ignore_errors=True)
+        print(f"\nERROR: {exc}", file=sys.stderr)
+        return 2
 
     try:
         print("Starting isolated backend+frontend pairs...")
@@ -264,11 +507,9 @@ def main() -> int:
         print(f"\nAll {n} pairs ready in {time.time() - started:.0f}s. Launching shards...\n")
 
         for pair in pairs:
-            log_path = Path(tempfile.gettempdir()) / f"e2e-isolated-shard-{pair.index}.log"
+            log_path = LOG_DIR / f"e2e-isolated-shard-{pair.index}.log"
             logs.append(log_path)
-            report_path = (
-                Path(tempfile.gettempdir()) / f"e2e-isolated-report-{pair.index}.json"
-            )
+            report_path = LOG_DIR / f"e2e-isolated-report-{pair.index}.json"
             reports.append(report_path)
             shard_env = {
                 **os.environ,
@@ -305,7 +546,16 @@ def main() -> int:
                 )
 
         returncodes = [proc.wait() for proc in shard_procs]
+    except (RuntimeError, KeyboardInterrupt, SystemExit) as exc:
+        print(f"\nERROR: {exc}", file=sys.stderr)
+        return 2
     finally:
+        # Shards first: a still-running Playwright would otherwise keep hitting
+        # servers we are about to kill and spray connection errors into its log.
+        for proc in shard_procs:
+            if proc.poll() is None:
+                proc.kill()
+                proc.wait()
         print("\nStopping all pairs...")
         for pair in pairs:
             pair.stop()
@@ -316,7 +566,7 @@ def main() -> int:
         status = "PASS" if rc == 0 else f"FAIL (exit {rc})"
         summary = ""
         if log_path.exists():
-            tail = [ln for ln in log_path.read_text().splitlines() if "passed" in ln or "failed" in ln]
+            tail = [ln for ln in read_log(log_path).splitlines() if "passed" in ln or "failed" in ln]
             summary = tail[-1].strip() if tail else ""
         print(f"  shard {i + 1}/{n}: {status}  {summary}    (log: {log_path})")
 
