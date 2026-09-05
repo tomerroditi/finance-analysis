@@ -7,7 +7,7 @@ from scraper.models.transaction import TransactionStatus, TransactionType
 from scraper.providers.banks.hapoalim import (
     _convert_transactions,
     _get_possible_login_results,
-    _mask_account,
+    _account_log_id,
 )
 
 
@@ -154,21 +154,29 @@ class TestHapoalimLoginResults:
         }
 
 
-class TestMaskAccount:
-    """Tests for the account-number log masker (py/clear-text-logging-sensitive-data)."""
+class TestAccountLogId:
+    """The account identifier must never reach a log in clear text."""
 
-    def test_masks_to_last_four_characters(self):
-        """A normal bank-branch-account identifier keeps only its last 4 chars."""
-        assert _mask_account("12-345-6789012") == "***9012"
+    def test_id_is_not_the_account_number(self):
+        """Verify no part of the raw identifier survives into the id."""
+        raw = "12-345-6789012"
+        out = _account_log_id(raw)
+        assert raw not in out
+        assert "6789012" not in out
+        assert "9012" not in out
+
+    def test_id_is_stable_for_the_same_account(self):
+        """Verify log lines for one account can be correlated."""
+        assert _account_log_id("12-345-6789012") == _account_log_id("12-345-6789012")
+
+    def test_different_accounts_get_different_ids(self):
+        """Verify two accounts in one scrape stay distinguishable."""
+        assert _account_log_id("12-345-6789012") != _account_log_id("12-345-6789013")
 
     def test_none_does_not_raise(self):
-        """A None account number is handled safely, not raised on."""
-        assert _mask_account(None) == "***"
-
-    def test_short_value_does_not_raise(self):
-        """A value no longer than 4 characters is fully masked, not sliced."""
-        assert _mask_account("12") == "***"
+        """Verify a missing account number is handled, not raised on."""
+        assert _account_log_id(None).startswith("acct:")
 
     def test_empty_string_does_not_raise(self):
-        """An empty string is handled the same as a too-short value."""
-        assert _mask_account("") == "***"
+        """Verify an empty identifier is handled the same way."""
+        assert _account_log_id("").startswith("acct:")
