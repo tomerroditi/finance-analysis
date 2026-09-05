@@ -23,6 +23,30 @@ DATE_FORMAT = "%Y%m%d"
 BASE_URL = "https://login.bankhapoalim.co.il"
 
 
+def _mask_account(account_number: object) -> str:
+    """Mask a bank account number down to its last 4 characters for logging.
+
+    ``account_number`` here is the full ``bankNumber-branchNumber-accountNumber``
+    identifier — clear-text enough to identify the account — so every log
+    line that mentions it must go through this rather than logging the raw
+    value. Follows the same precedent as ``onezero._mask_phone``: that
+    function's docstring records a real regression where one branch masked
+    the value while another branch, added later, logged it in full.
+
+    Parameters
+    ----------
+    account_number : object
+        The raw account identifier (may be ``None`` or unexpectedly short).
+
+    Returns
+    -------
+    str
+        ``"***"`` plus at most the trailing 4 characters.
+    """
+    text = str(account_number or "")
+    return f"***{text[-4:]}" if len(text) > 4 else "***"
+
+
 def _convert_transactions(txns: list[dict]) -> list[Transaction]:
     """Convert raw Hapoalim transaction dicts to Transaction objects.
 
@@ -593,7 +617,9 @@ class HapoalimScraper(BrowserScraper):
             account_number = (
                 f"{account['bankNumber']}-{account['branchNumber']}-{account['accountNumber']}"
             )
-            logger.debug("Getting information for account %s", account_number)
+            logger.debug(
+                "Getting information for account %s", _mask_account(account_number)
+            )
 
             balance = await _get_account_balance(
                 api_site_url, self.page, account_number

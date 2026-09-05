@@ -7,6 +7,7 @@ from scraper.models.transaction import TransactionStatus, TransactionType
 from scraper.providers.banks.hapoalim import (
     _convert_transactions,
     _get_possible_login_results,
+    _mask_account,
 )
 
 
@@ -151,3 +152,23 @@ class TestHapoalimLoginResults:
             LoginResult.INVALID_PASSWORD,
             LoginResult.CHANGE_PASSWORD,
         }
+
+
+class TestMaskAccount:
+    """Tests for the account-number log masker (py/clear-text-logging-sensitive-data)."""
+
+    def test_masks_to_last_four_characters(self):
+        """A normal bank-branch-account identifier keeps only its last 4 chars."""
+        assert _mask_account("12-345-6789012") == "***9012"
+
+    def test_none_does_not_raise(self):
+        """A None account number is handled safely, not raised on."""
+        assert _mask_account(None) == "***"
+
+    def test_short_value_does_not_raise(self):
+        """A value no longer than 4 characters is fully masked, not sliced."""
+        assert _mask_account("12") == "***"
+
+    def test_empty_string_does_not_raise(self):
+        """An empty string is handled the same as a too-short value."""
+        assert _mask_account("") == "***"

@@ -13,6 +13,7 @@ from datetime import datetime
 from pathlib import Path
 
 from backend.config import AppConfig
+from backend.utils.log_sanitize import scrub
 
 logger = logging.getLogger(__name__)
 
@@ -139,7 +140,24 @@ def restore_backup(filename: str) -> None:
         raise ValueError(f"Invalid backup filename: {filename}")
 
     backup_dir = get_backup_dir().resolve()
-    backup_path = (backup_dir / filename).resolve()
+
+    # Resolve the target by matching `filename` against the real directory
+    # listing rather than joining the raw string onto backup_dir. The regex
+    # check above already makes traversal impossible, and the relative_to()
+    # containment check below is kept as defence in depth — but neither is a
+    # sanitiser a static analyzer can see through, so a path built from the
+    # (still tainted, in its view) raw filename keeps reading as attacker
+    # controlled. Picking the path out of a trusted enumeration instead gives
+    # the value a provenance the analyzer does recognise as sanitised.
+    backup_path = None
+    if backup_dir.is_dir():
+        for entry in backup_dir.iterdir():
+            if entry.name == filename:
+                backup_path = entry.resolve()
+                break
+    if backup_path is None:
+        raise FileNotFoundError(f"Backup file not found: {filename}")
+
     try:
         backup_path.relative_to(backup_dir)
     except ValueError as exc:
@@ -192,7 +210,7 @@ def restore_backup(filename: str) -> None:
     # "no such column" errors until the app was restarted.
     _upgrade_restored_db()
 
-    logger.info("Database restored from %s", filename)
+    logger.info("Database restored from %s", scrub(filename))
 
 
 def _upgrade_restored_db() -> None:

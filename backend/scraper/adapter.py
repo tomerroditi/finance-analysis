@@ -30,6 +30,7 @@ from backend.repositories.transactions_repository import TransactionsRepository
 from backend.services.bank_balance_service import BankBalanceService
 from backend.services.tagging_rules_service import TaggingRulesService
 from backend.services.tagging_service import CategoriesTagsService
+from backend.utils.log_sanitize import scrub
 
 logger = logging.getLogger(__name__)
 
@@ -349,7 +350,7 @@ class ScraperAdapter:
             ts = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             logger.info(
                 "[%s] %s: Scraping started (from %s)",
-                ts, self._log_id, self.start_date,
+                ts, scrub(self._log_id), self.start_date,
             )
 
             scraper = None
@@ -390,8 +391,8 @@ class ScraperAdapter:
                     )
                     logger.error(
                         "%s: Scraping failed — [%s] %s",
-                        self._log_id,
-                        self._error_type, self._error,
+                        scrub(self._log_id),
+                        scrub(self._error_type), scrub(self._error),
                     )
             except asyncio.TimeoutError:
                 self._error_type = "TIMEOUT"
@@ -401,7 +402,7 @@ class ScraperAdapter:
                 )
                 logger.error(
                     "%s: Scraping timed out — %s",
-                    self._log_id, self._error,
+                    scrub(self._log_id), scrub(self._error),
                 )
                 # wait_for cancelled scrape() mid-flight, so the scraper's own
                 # terminate() in its finally may not have run — force browser
@@ -413,7 +414,7 @@ class ScraperAdapter:
                 self._error = _describe_exception(exc)
                 logger.error(
                     "%s: Unexpected error — %s",
-                    self._log_id, self._error,
+                    scrub(self._log_id), scrub(self._error),
                 )
             finally:
                 # Persist before anything that can raise, and regardless of how the
@@ -435,13 +436,13 @@ class ScraperAdapter:
                 except Exception:
                     logger.exception(
                         "%s: Failed to record scraping attempt",
-                        self._log_id,
+                        scrub(self._log_id),
                     )
 
             ts = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             logger.info(
                 "[%s] %s: Scraping finished",
-                ts, self._log_id,
+                ts, scrub(self._log_id),
             )
 
     def _unregister_from_2fa_waiting(self) -> None:
@@ -510,12 +511,12 @@ class ScraperAdapter:
                 )
             logger.info(
                 "%s: Persisted long-term token; later scrapes can skip the SMS",
-                self._log_id,
+                scrub(self._log_id),
             )
         except Exception as exc:
             logger.warning(
                 "%s: Failed to persist refreshed long-term token — %s",
-                self._log_id, exc,
+                scrub(self._log_id), scrub(exc),
             )
 
     def set_otp_code(self, code: str) -> None:
@@ -652,7 +653,7 @@ class ScraperAdapter:
         except Exception as exc:
             logger.warning(
                 "%s: Failed to mark waiting_for_2fa — %s",
-                self._log_id, exc,
+                scrub(self._log_id), scrub(exc),
             )
 
     # ------------------------------------------------------------------
@@ -827,12 +828,12 @@ class ScraperAdapter:
                 if count > 0:
                     logger.info(
                         "%s: Auto-tagged %d transactions",
-                        self._log_id, count,
+                        scrub(self._log_id), count,
                     )
         except Exception as exc:
             logger.error(
                 "%s: Error auto-tagging — %s",
-                self._log_id, exc,
+                scrub(self._log_id), scrub(exc),
             )
 
     def _recalculate_bank_balances(self) -> None:
@@ -848,7 +849,7 @@ class ScraperAdapter:
         except Exception as exc:
             logger.error(
                 "%s: Error recalculating bank balance — %s",
-                self._log_id, exc,
+                scrub(self._log_id), scrub(exc),
             )
 
     def _post_save_hook(self, result) -> None:
@@ -876,7 +877,7 @@ class ScraperAdapter:
                 error_type = "NO_ACCOUNTS"
                 logger.error(
                     "%s: %s",
-                    self._log_id, NO_ACCOUNTS_ERROR,
+                    scrub(self._log_id), NO_ACCOUNTS_ERROR,
                 )
             else:
                 status = ScrapingHistoryRepository.SUCCESS
@@ -939,7 +940,7 @@ class InsuranceScraperAdapter(ScraperAdapter):
                     service.upsert(**meta)
                 logger.info(
                     "%s: Saved metadata for %d insurance accounts",
-                    self._log_id, len(accounts_to_upsert),
+                    scrub(self._log_id), len(accounts_to_upsert),
                 )
 
                 inv_service = InvestmentsService(db)
@@ -950,15 +951,15 @@ class InsuranceScraperAdapter(ScraperAdapter):
                         inv_service.sync_from_insurance(meta)
                         logger.info(
                             "%s: Synced hishtalmut investment for policy %s",
-                            self._log_id, meta["policy_id"],
+                            scrub(self._log_id), scrub(meta["policy_id"]),
                         )
                     except Exception:
                         logger.exception(
                             "%s: Failed to sync hishtalmut investment for policy %s",
-                            self._log_id, meta["policy_id"],
+                            scrub(self._log_id), scrub(meta["policy_id"]),
                         )
         except Exception as exc:
             logger.error(
                 "%s: Error saving insurance metadata — %s",
-                self._log_id, exc,
+                scrub(self._log_id), scrub(exc),
             )
