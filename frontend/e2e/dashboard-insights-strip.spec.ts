@@ -15,24 +15,35 @@ import { enableDemoMode } from "./helpers";
  * that puts them first, ahead of the half-width `budget` card.
  */
 test.describe("Dashboard strip cards", () => {
-  // Self-heal demo mode: a no-op when already enabled (the `demo-setup`
-  // project turns it on once), so this is safe under parallel workers and
-  // makes the spec order-independent when sharded alongside mutating specs.
-  test.beforeAll(async () => {
-    await enableDemoMode();
-  });
-
   const CAP = 624; // --dash-card-h: 39rem at the default 16px root font size.
   const STRIP_CARDS = ["forecast", "insights"] as const;
 
   const LAYOUT = {
-    order: ["forecast", "insights", "budget", "recent", "heatmap", "income_by_source", "income_expenses", "net_worth"],
+    order: [
+      "forecast",
+      "insights",
+      "budget",
+      "recent",
+      "heatmap",
+      "income_by_source",
+      "income_expenses",
+      "net_worth",
+    ],
     hidden: ["recurring", "goals", "cash_flow", "category"],
     v: 3,
   };
+  // Demo Mode lives in the browser context's localStorage, so it must be
+  // seeded per-test (a fresh context per test) rather than once in
+  // beforeAll. enableDemoMode's demo/prepare call is idempotent, so this
+  // is still cheap and order-independent when sharded alongside mutating
+  // specs.
   test.beforeEach(async ({ page }) => {
+    await enableDemoMode(page);
     await page.addInitScript((layout) => {
-      window.localStorage.setItem("fa.dashboard.layout", JSON.stringify(layout));
+      window.localStorage.setItem(
+        "fa.dashboard.layout",
+        JSON.stringify(layout),
+      );
     }, LAYOUT);
   });
 
@@ -58,13 +69,18 @@ test.describe("Dashboard strip cards", () => {
     // The content-heavy `budget` card stays within the cap (taller content
     // scrolls inside instead of growing the row).
     const budget = await boxOf(page, "budget");
-    expect(budget.height, "budget should not exceed the cap").toBeLessThanOrEqual(CAP + 2);
+    expect(
+      budget.height,
+      "budget should not exceed the cap",
+    ).toBeLessThanOrEqual(CAP + 2);
 
     // Each strip is much shorter than the cap — it sized to its content instead
     // of being stretched to a fixed row height.
     for (const id of STRIP_CARDS) {
       const strip = await boxOf(page, id);
-      expect(strip.height, `${id} should collapse to content`).toBeLessThan(CAP * 0.8);
+      expect(strip.height, `${id} should collapse to content`).toBeLessThan(
+        CAP * 0.8,
+      );
     }
 
     // --- >=lg: the card after a strip follows immediately, no tall empty gap ---

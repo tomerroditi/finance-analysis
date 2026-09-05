@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { enableDemoMode, disableDemoMode, navigateTo } from "./helpers";
+import { enableDemoMode, navigateTo } from "./helpers";
 
 /**
  * E2E coverage for the auto-tagging bulk-actions quick action: while marking
@@ -11,19 +11,18 @@ import { enableDemoMode, disableDemoMode, navigateTo } from "./helpers";
  * auto-tagging-service-operator.spec.ts.)
  */
 test.describe("Auto-tagging quick action", () => {
-  test.beforeAll(async ({ browser }) => {
-    const page = await browser.newPage();
+  // Demo Mode lives in the browser context's localStorage, so it must be
+  // seeded per-test (a fresh context per test) rather than once in
+  // beforeAll via a throwaway page — that page is a different browser
+  // context from the one each test actually navigates in, so anything it
+  // set there never reached the real test.
+  test.beforeEach(async ({ page }) => {
     await enableDemoMode(page);
-    await page.close();
   });
 
-  test.afterAll(async ({ browser }) => {
-    const page = await browser.newPage();
-    await disableDemoMode(page);
-    await page.close();
-  });
-
-  test("bulk selection surfaces the Add/View rule quick action", async ({ page }) => {
+  test("bulk selection surfaces the Add/View rule quick action", async ({
+    page,
+  }) => {
     await navigateTo(page, "/transactions");
 
     // Credit-card transactions are rule-applicable, so the quick action shows.
@@ -41,7 +40,9 @@ test.describe("Auto-tagging quick action", () => {
       .last();
     await expect(bulkBar).toBeVisible({ timeout: 5_000 });
 
-    const ruleButton = bulkBar.getByRole("button", { name: /Add Rule|View Rule/ });
+    const ruleButton = bulkBar.getByRole("button", {
+      name: /Add Rule|View Rule/,
+    });
     await expect(ruleButton).toBeVisible();
 
     const label = (await ruleButton.textContent())?.trim() ?? "";
@@ -84,7 +85,9 @@ test.describe("Auto-tagging quick action", () => {
     }
   });
 
-  test("Add Rule from a multi-merchant selection OR-chains description conditions", async ({ page }) => {
+  test("Add Rule from a multi-merchant selection OR-chains description conditions", async ({
+    page,
+  }) => {
     await navigateTo(page, "/transactions");
 
     // Restrict to credit-card transactions so the selection is rule-applicable.

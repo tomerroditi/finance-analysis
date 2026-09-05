@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { enableDemoMode, disableDemoMode } from "./helpers";
+import { enableDemoMode } from "./helpers";
 
 /**
  * E2E coverage for the Israeli-finance-app feature additions:
@@ -12,16 +12,13 @@ import { enableDemoMode, disableDemoMode } from "./helpers";
  * dashboard, so they share a single (expensive) dashboard load.
  */
 test.describe("Dashboard — forecast, recurring, goals", () => {
-  test.beforeAll(async ({ browser }) => {
-    const page = await browser.newPage();
+  // Demo Mode lives in the browser context's localStorage, so it must be
+  // seeded per-test (a fresh context per test) rather than once in
+  // beforeAll via a throwaway page — that page is a different browser
+  // context from the one each test actually navigates in, so anything it
+  // set there never reached the real test.
+  test.beforeEach(async ({ page }) => {
     await enableDemoMode(page);
-    await page.close();
-  });
-
-  test.afterAll(async ({ browser }) => {
-    const page = await browser.newPage();
-    await disableDemoMode(page);
-    await page.close();
   });
 
   // Seed a current (v3, so no migration) layout with the beta forecast /
@@ -56,21 +53,32 @@ test.describe("Dashboard — forecast, recurring, goals", () => {
     await page.waitForLoadState("domcontentloaded");
 
     // The "This Month" cash-flow forecast hero.
-    await expect(page.getByText("This Month").first()).toBeVisible({ timeout: 45_000 });
+    await expect(page.getByText("This Month").first()).toBeVisible({
+      timeout: 45_000,
+    });
     await expect(page.getByText(/Safe to spend/i).first()).toBeVisible();
-    await expect(page.getByText(/Projected end balance/i).first()).toBeVisible();
+    await expect(
+      page.getByText(/Projected end balance/i).first(),
+    ).toBeVisible();
 
     // The subscriptions / recurring panel.
-    await expect(page.getByText(/Subscriptions & Recurring/i).first()).toBeVisible({
+    await expect(
+      page.getByText(/Subscriptions & Recurring/i).first(),
+    ).toBeVisible({
       timeout: 45_000,
     });
 
     // The savings goals panel and spending calendar.
-    await expect(page.getByText(/Savings Goals/i).first()).toBeVisible({ timeout: 45_000 });
+    await expect(page.getByText(/Savings Goals/i).first()).toBeVisible({
+      timeout: 45_000,
+    });
     await expect(page.getByText(/Spending Calendar/i).first()).toBeVisible();
 
     // The add-goal editor modal opens.
-    await page.getByRole("button", { name: /Add goal/i }).first().click();
+    await page
+      .getByRole("button", { name: /Add goal/i })
+      .first()
+      .click();
     await expect(page.getByText(/New savings goal/i)).toBeVisible();
     await expect(page.getByPlaceholder(/Vacation/i)).toBeVisible();
   });

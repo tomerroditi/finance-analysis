@@ -14,7 +14,8 @@ import { disableDemoMode, navigateTo } from "./helpers";
  */
 
 const DAY_MS = 24 * 60 * 60 * 1000;
-const daysAgoIso = (days: number) => new Date(Date.now() - days * DAY_MS).toISOString();
+const daysAgoIso = (days: number) =>
+  new Date(Date.now() - days * DAY_MS).toISOString();
 
 async function mockLastScrapes(
   page: Page,
@@ -44,17 +45,28 @@ async function mockLastScrapes(
 const badgeOf = (page: Page) => page.getByRole("button", { name: /Show sync details/i });
 
 test.describe("Budget data freshness", () => {
-  test.beforeAll(async () => {
-    // Freshness only renders outside Demo Mode.
-    await disableDemoMode();
+  // Freshness only renders outside Demo Mode. A fresh browser context
+  // already starts with no stored flag (equivalent to OFF), but seeding it
+  // explicitly per-test documents the requirement and stays correct if the
+  // fixture setup ever changes.
+  test.beforeEach(async ({ page }) => {
+    await disableDemoMode(page);
   });
 
   test("very-stale collapses to a warning icon whose popover names every behind account", async ({
     page,
   }) => {
     await mockLastScrapes(page, [
-      { provider: "hapoalim", account_name: "Checking", last_scrape_date: daysAgoIso(10) },
-      { provider: "leumi", account_name: "Savings", last_scrape_date: daysAgoIso(12) },
+      {
+        provider: "hapoalim",
+        account_name: "Checking",
+        last_scrape_date: daysAgoIso(10),
+      },
+      {
+        provider: "leumi",
+        account_name: "Savings",
+        last_scrape_date: daysAgoIso(12),
+      },
     ]);
     await navigateTo(page, "/budget");
 
@@ -76,7 +88,11 @@ test.describe("Budget data freshness", () => {
 
   test("mildly-stale shows a labelled chip with the same popover", async ({ page }) => {
     await mockLastScrapes(page, [
-      { provider: "hapoalim", account_name: "Checking", last_scrape_date: daysAgoIso(5) },
+      {
+        provider: "hapoalim",
+        account_name: "Checking",
+        last_scrape_date: daysAgoIso(5),
+      },
     ]);
     await navigateTo(page, "/budget");
 
@@ -94,7 +110,11 @@ test.describe("Budget data freshness", () => {
 
   test("fresh sync shows an up-to-date chip", async ({ page }) => {
     await mockLastScrapes(page, [
-      { provider: "hapoalim", account_name: "Checking", last_scrape_date: daysAgoIso(0) },
+      {
+        provider: "hapoalim",
+        account_name: "Checking",
+        last_scrape_date: daysAgoIso(0),
+      },
     ]);
     await navigateTo(page, "/budget");
 
@@ -109,8 +129,16 @@ test.describe("Budget data freshness", () => {
     const sameDay = daysAgoIso(10);
     await mockLastScrapes(page, [
       { provider: "hapoalim", account_name: "Shir", last_scrape_date: sameDay },
-      { provider: "one_zero", account_name: "Tomer", last_scrape_date: sameDay },
-      { provider: "isracard", account_name: "Joint", last_scrape_date: sameDay },
+      {
+        provider: "one_zero",
+        account_name: "Tomer",
+        last_scrape_date: sameDay,
+      },
+      {
+        provider: "isracard",
+        account_name: "Joint",
+        last_scrape_date: sameDay,
+      },
     ]);
     await navigateTo(page, "/budget");
 
@@ -128,7 +156,11 @@ test.describe("Budget data freshness", () => {
     page,
   }) => {
     await mockLastScrapes(page, [
-      { provider: "hapoalim", account_name: "Checking", last_scrape_date: null },
+      {
+        provider: "hapoalim",
+        account_name: "Checking",
+        last_scrape_date: null,
+      },
     ]);
     await navigateTo(page, "/budget");
 
@@ -183,14 +215,24 @@ test.describe("Budget data freshness", () => {
     // Sync at the first day of the previous month: the previous month (and the
     // current one) could still be missing transactions; two months ago cannot.
     const now = new Date();
-    const prevMonthFirst = new Date(now.getFullYear(), now.getMonth() - 1, 1, 12).toISOString();
+    const prevMonthFirst = new Date(
+      now.getFullYear(),
+      now.getMonth() - 1,
+      1,
+      12,
+    ).toISOString();
     const curMonthShort = now.toLocaleString("en-US", { month: "short" });
-    const prevMonthShort = new Date(now.getFullYear(), now.getMonth() - 1, 1).toLocaleString(
-      "en-US",
-      { month: "short" },
-    );
+    const prevMonthShort = new Date(
+      now.getFullYear(),
+      now.getMonth() - 1,
+      1,
+    ).toLocaleString("en-US", { month: "short" });
     await mockLastScrapes(page, [
-      { provider: "hapoalim", account_name: "Checking", last_scrape_date: prevMonthFirst },
+      {
+        provider: "hapoalim",
+        account_name: "Checking",
+        last_scrape_date: prevMonthFirst,
+      },
     ]);
     await navigateTo(page, "/budget");
 

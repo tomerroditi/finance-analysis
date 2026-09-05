@@ -29,15 +29,16 @@ import { enableDemoMode } from "./helpers";
 const MONTH_ROW = /\b\d{2}\.\d{2}\b/;
 
 test.describe("Dashboard half-width blocks", () => {
-  // Self-heal demo mode: a no-op when already enabled (the `demo-setup`
-  // project turns it on once), so this is safe under parallel workers and
-  // makes the spec order-independent when sharded alongside mutating specs.
-  test.beforeAll(async () => {
-    await enableDemoMode();
-  });
-
+  // Demo Mode lives in the browser context's localStorage, so it must be
+  // seeded per-test (a fresh context per test) rather than once in
+  // beforeAll. enableDemoMode's demo/prepare call is idempotent, so this
+  // is still cheap and order-independent when sharded alongside mutating
+  // specs.
   test.beforeEach(async ({ page }) => {
-    await page.addInitScript(() => window.localStorage.removeItem("fa.dashboard.layout"));
+    await enableDemoMode(page);
+    await page.addInitScript(() =>
+      window.localStorage.removeItem("fa.dashboard.layout"),
+    );
   });
 
   async function boxOf(page: Page, id: string) {
@@ -67,23 +68,39 @@ test.describe("Dashboard half-width blocks", () => {
     await page.goto("/");
 
     // --- Two half cards pair on one row; a full card spans the row ---
-    const ids = ["budget", "recent", "heatmap", "income_by_source", "income_expenses"];
-    const boxes: Record<string, { x: number; y: number; width: number; height: number }> = {};
+    const ids = [
+      "budget",
+      "recent",
+      "heatmap",
+      "income_by_source",
+      "income_expenses",
+    ];
+    const boxes: Record<
+      string,
+      { x: number; y: number; width: number; height: number }
+    > = {};
     for (const id of ids) boxes[id] = await boxOf(page, id);
 
     expect(Math.abs(boxes.budget.y - boxes.recent.y)).toBeLessThan(4);
     expect(Math.abs(boxes.budget.width - boxes.recent.width)).toBeLessThan(8);
     expect(boxes.budget.x).toBeLessThan(boxes.recent.x);
-    expect(boxes.income_expenses.width).toBeGreaterThan(boxes.budget.width * 1.8);
+    expect(boxes.income_expenses.width).toBeGreaterThan(
+      boxes.budget.width * 1.8,
+    );
 
     // --- No block grows past the cap — taller content scrolls inside instead ---
     for (const id of ids) {
-      expect(boxes[id].height, `${id} should not exceed the cap`).toBeLessThanOrEqual(CAP + 2);
+      expect(
+        boxes[id].height,
+        `${id} should not exceed the cap`,
+      ).toBeLessThanOrEqual(CAP + 2);
     }
 
     // Two half cards sharing a row are the same height (the taller of the two).
     expect(Math.abs(boxes.budget.height - boxes.recent.height)).toBeLessThan(2);
-    expect(Math.abs(boxes.heatmap.height - boxes.income_by_source.height)).toBeLessThan(2);
+    expect(
+      Math.abs(boxes.heatmap.height - boxes.income_by_source.height),
+    ).toBeLessThan(2);
 
     // Every block enables internal scrolling.
     const allOverflows = await page
@@ -96,9 +113,7 @@ test.describe("Dashboard half-width blocks", () => {
     // uncapped so it can show more transactions than the cap allows.
     const cappedStyles = await page
       .locator("[data-card-id]:not([data-card-id='recent']) > *")
-      .evaluateAll((els) =>
-        els.map((el) => getComputedStyle(el).maxHeight),
-      );
+      .evaluateAll((els) => els.map((el) => getComputedStyle(el).maxHeight));
     expect(cappedStyles.length).toBeGreaterThan(0);
     expect(cappedStyles.every((h) => h === `${CAP}px`)).toBe(true);
 
@@ -114,7 +129,10 @@ test.describe("Dashboard half-width blocks", () => {
     // exactly. (Chart cards resize their plot to fit instead of overflowing at
     // the card level; list-heavy cards scroll inside their own inner regions.)
     const tallest = Math.max(...ids.map((id) => boxes[id].height));
-    expect(tallest, "a card should reach the height cap").toBeGreaterThanOrEqual(CAP - 2);
+    expect(
+      tallest,
+      "a card should reach the height cap",
+    ).toBeGreaterThanOrEqual(CAP - 2);
 
     // --- Spending Calendar shows two months at half-row width (>=lg) ---
     await expect.poll(() => monthGridCount(page), { timeout: 45_000 }).toBe(2);
@@ -158,7 +176,9 @@ test.describe("Dashboard half-width blocks", () => {
     const budgetNarrow = await boxOf(page, "budget");
     const recentNarrow = await boxOf(page, "recent");
 
-    expect(recentNarrow.y).toBeGreaterThan(budgetNarrow.y + budgetNarrow.height - 4);
+    expect(recentNarrow.y).toBeGreaterThan(
+      budgetNarrow.y + budgetNarrow.height - 4,
+    );
     expect(Math.abs(budgetNarrow.width - recentNarrow.width)).toBeLessThan(8);
 
     // --- Spending Calendar collapses to a single month in the mobile layout ---
@@ -166,7 +186,9 @@ test.describe("Dashboard half-width blocks", () => {
   });
 
   test("fill order flips under RTL (Hebrew)", async ({ page }) => {
-    await page.addInitScript(() => window.localStorage.setItem("language", "he"));
+    await page.addInitScript(() =>
+      window.localStorage.setItem("language", "he"),
+    );
     await page.setViewportSize({ width: 1440, height: 1000 });
     await page.goto("/");
 

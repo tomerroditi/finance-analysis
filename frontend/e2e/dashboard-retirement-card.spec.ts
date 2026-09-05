@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { enableDemoMode, disableDemoMode } from "./helpers";
+import { enableDemoMode } from "./helpers";
 
 /**
  * Early Retirement dashboard card — an opt-in (hidden by default) full-width
@@ -12,39 +12,49 @@ import { enableDemoMode, disableDemoMode } from "./helpers";
  * renders the projections path (not the setup CTA).
  */
 test.describe("Dashboard early-retirement card", () => {
-  test.beforeAll(async ({ browser }) => {
-    const page = await browser.newPage();
+  // Demo Mode lives in the browser context's localStorage, so it must be
+  // seeded per-test (a fresh context per test) rather than once in
+  // beforeAll via a throwaway page — that page is a different browser
+  // context from the one each test actually navigates in, so anything it
+  // set there never reached the real test.
+  test.beforeEach(async ({ page }) => {
     await enableDemoMode(page);
-    await page.close();
-  });
-
-  test.afterAll(async ({ browser }) => {
-    const page = await browser.newPage();
-    await disableDemoMode(page);
-    await page.close();
   });
 
   test.beforeEach(async ({ page }) => {
     // Start from a clean (default) layout.
-    await page.addInitScript(() => window.localStorage.removeItem("fa.dashboard.layout"));
+    await page.addInitScript(() =>
+      window.localStorage.removeItem("fa.dashboard.layout"),
+    );
   });
 
-  test("hidden by default, opt-in via Settings shows KPIs and projection chart", async ({ page }) => {
+  test("hidden by default, opt-in via Settings shows KPIs and projection chart", async ({
+    page,
+  }) => {
     await page.goto("/");
 
     // Not rendered on the default dashboard.
-    await expect(page.locator('[data-card-id="net_worth"]')).toBeVisible({ timeout: 45_000 });
+    await expect(page.locator('[data-card-id="net_worth"]')).toBeVisible({
+      timeout: 45_000,
+    });
     await expect(page.locator('[data-card-id="retirement"]')).toHaveCount(0);
 
-    await page.getByRole("button", { name: /^Settings$/ }).first().click();
+    await page
+      .getByRole("button", { name: /^Settings$/ })
+      .first()
+      .click();
     await page.getByRole("button", { name: /^Dashboard$/ }).click();
 
     // Early Retirement sits under Hidden cards, with no Beta pill (opt-in,
     // not experimental). Scope the lookup to the Hidden-cards section — the
     // sidebar behind the popup carries the same "Early Retirement" label.
     await expect(page.getByText("Hidden cards", { exact: true })).toBeVisible();
-    const hiddenSection = page.getByText("Hidden cards", { exact: true }).locator("xpath=..");
-    const retirementRow = hiddenSection.getByText("Early Retirement", { exact: true }).locator("xpath=..");
+    const hiddenSection = page
+      .getByText("Hidden cards", { exact: true })
+      .locator("xpath=..");
+    const retirementRow = hiddenSection
+      .getByText("Early Retirement", { exact: true })
+      .locator("xpath=..");
     await expect(retirementRow).toBeVisible();
     await expect(retirementRow.getByText(/^Beta$/i)).toHaveCount(0);
 
@@ -59,7 +69,9 @@ test.describe("Dashboard early-retirement card", () => {
     await card.scrollIntoViewIfNeeded();
 
     // Insight KPIs render from the demo plan (readiness + FIRE number).
-    await expect(card.getByText("Readiness", { exact: true })).toBeVisible({ timeout: 15_000 });
+    await expect(card.getByText("Readiness", { exact: true })).toBeVisible({
+      timeout: 15_000,
+    });
     await expect(card.getByText("FIRE Number", { exact: true })).toBeVisible();
     // The demo plan is deliberately tuned to be on track (see
     // create_retirement_goal in scripts/generate_demo_data.py) — guard it.
@@ -67,11 +79,17 @@ test.describe("Dashboard early-retirement card", () => {
 
     // The net worth projection chart renders an actual Recharts SVG.
     await expect(
-      card.locator('[data-testid="retirement-projection-chart"] .recharts-wrapper svg').first(),
+      card
+        .locator(
+          '[data-testid="retirement-projection-chart"] .recharts-wrapper svg',
+        )
+        .first(),
     ).toBeVisible({ timeout: 15_000 });
 
     // No plan settings are exposed on the card — the goal form (with its
     // Save/Calculate controls) lives only on the retirement page.
-    await expect(card.getByRole("button", { name: /Save Plan|Calculate/i })).toHaveCount(0);
+    await expect(
+      card.getByRole("button", { name: /Save Plan|Calculate/i }),
+    ).toHaveCount(0);
   });
 });

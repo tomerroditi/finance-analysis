@@ -4,9 +4,17 @@ import { API_BASE, enableDemoMode, navigateTo } from "./helpers";
 // Mutating spec (kept out of READ_ONLY_SPECS): creates a prime-linked loan
 // through the API and verifies the Liabilities page renders the new
 // loan-type metadata, then cleans up.
+//
+// The `request` fixture is Playwright's own HTTP client — it does not run
+// the app's JS, so the axios interceptor that attaches `X-FAD-Demo` from
+// localStorage never runs for it. Every call below must declare the header
+// itself to read/write the same database the UI (seeded via
+// `enableDemoMode(page)`) is showing, instead of the real one.
+const DEMO_HEADERS = { "X-FAD-Demo": "1" };
+
 test.describe("Liabilities loan types", () => {
-  test.beforeAll(async () => {
-    await enableDemoMode();
+  test.beforeEach(async ({ page }) => {
+    await enableDemoMode(page);
   });
 
   test("renders a prime-linked loan with spread and effective rate", async ({
@@ -14,6 +22,7 @@ test.describe("Liabilities loan types", () => {
     request,
   }) => {
     const create = await request.post(`${API_BASE}/liabilities/`, {
+      headers: DEMO_HEADERS,
       data: {
         name: "E2E Prime Loan",
         tag: "E2E Prime Loan",
@@ -39,12 +48,16 @@ test.describe("Liabilities loan types", () => {
       await expect(card.getByText(/Prime-0\.5%/)).toBeVisible();
       await expect(card.getByText(/% interest/)).toBeVisible();
     } finally {
-      const list = await request.get(`${API_BASE}/liabilities/`);
+      const list = await request.get(`${API_BASE}/liabilities/`, {
+        headers: DEMO_HEADERS,
+      });
       const record = (await list.json()).find(
         (l: { name: string }) => l.name === "E2E Prime Loan",
       );
       if (record) {
-        await request.delete(`${API_BASE}/liabilities/${record.id}`);
+        await request.delete(`${API_BASE}/liabilities/${record.id}`, {
+          headers: DEMO_HEADERS,
+        });
       }
     }
   });

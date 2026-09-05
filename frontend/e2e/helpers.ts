@@ -1,4 +1,9 @@
-import { type Page, type APIRequestContext, expect, request } from "@playwright/test";
+import {
+  type Page,
+  type APIRequestContext,
+  expect,
+  request,
+} from "@playwright/test";
 
 /**
  * Backend API base. Defaults to the single shared dev backend on :8000, but
@@ -11,34 +16,54 @@ import { type Page, type APIRequestContext, expect, request } from "@playwright/
 export const API_BASE = process.env.E2E_API_BASE ?? "http://localhost:8000/api";
 
 /**
- * Toggle Demo Mode via the testing API. Faster and more reliable than
- * driving the Settings popup, and the Settings popup itself has its own
- * dedicated test in `flows/demo-mode-toggle.spec.ts`.
+ * localStorage key the app reads its Demo Mode flag from. Must match
+ * DEMO_MODE_STORAGE_KEY in src/services/demoMode.ts.
  */
-async function setDemoModeApi(enabled: boolean) {
+const DEMO_MODE_STORAGE_KEY = "fad_demo_mode";
+
+/**
+ * Put a browser context into Demo Mode.
+ *
+ * Demo Mode is per-client and lives in localStorage, so it must be seeded
+ * before the document loads — a Node-side API call cannot switch a browser.
+ * Also ensures the demo database exists, which is idempotent and will not
+ * disturb another context already browsing demo data.
+ */
+export async function enableDemoMode(page: Page) {
   const ctx: APIRequestContext = await request.newContext();
   try {
-    await ctx.post(`${API_BASE}/testing/toggle_demo_mode`, {
-      data: { enabled },
-    });
+    await ctx.post(`${API_BASE}/testing/demo/prepare`);
   } finally {
     await ctx.dispose();
   }
+  await page.addInitScript(
+    ([key]) => localStorage.setItem(key, "1"),
+    [DEMO_MODE_STORAGE_KEY],
+  );
 }
 
 /**
- * Enable Demo Mode at the backend level. Tests can then navigate to any
- * page and the React Query queries will fetch demo data.
+ * Take a browser context out of Demo Mode.
  */
-export async function enableDemoMode(_page?: Page) {
-  await setDemoModeApi(true);
+export async function disableDemoMode(page: Page) {
+  await page.addInitScript(
+    ([key]) => localStorage.setItem(key, "0"),
+    [DEMO_MODE_STORAGE_KEY],
+  );
 }
 
 /**
- * Disable Demo Mode after tests complete.
+ * Rebuild the demo database from the frozen snapshot, discarding every
+ * change made in Demo Mode. Use where a spec needs guaranteed-pristine
+ * demo data; it affects every client currently in Demo Mode.
  */
-export async function disableDemoMode(_page?: Page) {
-  await setDemoModeApi(false);
+export async function resetDemoData() {
+  const ctx: APIRequestContext = await request.newContext();
+  try {
+    await ctx.post(`${API_BASE}/testing/demo/reset`);
+  } finally {
+    await ctx.dispose();
+  }
 }
 
 /**

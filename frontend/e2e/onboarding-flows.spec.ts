@@ -1,5 +1,5 @@
-import { test, expect, type APIRequestContext } from "@playwright/test";
-import { API_BASE } from "./helpers";
+import { test, expect } from "@playwright/test";
+import { disableDemoMode } from "./helpers";
 
 /**
  * End-to-end coverage for the onboarding wizard flows.
@@ -15,9 +15,11 @@ import { API_BASE } from "./helpers";
  * sibling `empty-state.spec.ts` for the same pattern.
  *
  * Side-effect hygiene:
- *   - The demo-path test toggles Demo Mode on. The afterEach cleanup
- *     toggles it back off so subsequent tests run against the empty
- *     production DB.
+ *   - Demo Mode is per-client (localStorage) now, so it cannot leak from
+ *     one test into another — each test gets a fresh browser context (the
+ *     Playwright default), which starts with no stored flag at all. The
+ *     `beforeEach` below still seeds it OFF explicitly for defensive
+ *     clarity and to match the "real-data path" tests' expectations.
  *   - Each test gets a fresh browser context (the Playwright default),
  *     so sessionStorage / localStorage / i18n persistence don't leak
  *     between tests.
@@ -25,29 +27,18 @@ import { API_BASE } from "./helpers";
 
 const SHOULD_RUN = process.env.E2E_EMPTY_DB === "1";
 
-const DEMO_TOGGLE_URL = `${API_BASE}/testing/toggle_demo_mode`;
-const DEMO_STATUS_URL = `${API_BASE}/testing/demo_mode_status`;
-
 test.describe("Onboarding flows", () => {
   test.skip(
     !SHOULD_RUN,
     "Set E2E_EMPTY_DB=1 (and point the backend at an empty FAD_USER_DIR) to run.",
   );
 
-  // Defensive: a previous test that crashed mid-flight could have left
-  // Demo Mode on. Reset before every test so the wizard always starts
-  // against an empty backend.
-  test.beforeEach(async ({ request }) => {
-    await ensureDemoModeOff(request);
-  });
-
-  test.afterEach(async ({ request }) => {
-    await ensureDemoModeOff(request);
+  test.beforeEach(async ({ page }) => {
+    await disableDemoMode(page);
   });
 
   test("real-data path lands on /data-sources without touching demo mode", async ({
     page,
-    request,
   }) => {
     await page.goto("/onboarding");
     await expect(page.getByRole("button", { name: /^English/ })).toBeVisible();
@@ -62,14 +53,18 @@ test.describe("Onboarding flows", () => {
     await page.waitForURL(/\/data-sources$/);
     await expect(page.getByRole("heading", { level: 1 }).first()).toBeVisible();
 
-    // Side-effect check: real path must NOT have toggled Demo Mode.
-    const status = await request.get(DEMO_STATUS_URL);
-    expect((await status.json()).demo_mode).toBe(false);
+    // Side-effect check: real path must NOT have toggled Demo Mode. Demo
+    // Mode is a localStorage flag now, so read it directly rather than
+    // through a headerless backend call (which would always read back
+    // `false` regardless of what the browser actually did).
+    const demoFlag = await page.evaluate(() =>
+      localStorage.getItem("fad_demo_mode"),
+    );
+    expect(demoFlag).not.toBe("1");
   });
 
   test("demo path turns Demo Mode on and lands on the dashboard", async ({
     page,
-    request,
   }) => {
     await page.goto("/onboarding");
     await page.getByRole("button", { name: /^English/ }).click();
@@ -81,9 +76,12 @@ test.describe("Onboarding flows", () => {
     const finish = page.getByRole("button", { name: /Go to dashboard/i });
     await expect(finish).toBeVisible({ timeout: 20_000 });
 
-    // Confirm the backend actually flipped before we click through.
-    const status = await request.get(DEMO_STATUS_URL);
-    expect((await status.json()).demo_mode).toBe(true);
+    // Confirm the wizard actually flipped the client-side flag before we
+    // click through.
+    const demoFlag = await page.evaluate(() =>
+      localStorage.getItem("fad_demo_mode"),
+    );
+    expect(demoFlag).toBe("1");
 
     await finish.click();
     await page.waitForURL((url) => url.pathname === "/");
@@ -124,9 +122,7 @@ test.describe("Onboarding flows", () => {
     // fallback rendering as the key path).
     await page.goto("/onboarding");
     await page.getByRole("button", { name: /עברית/ }).click();
-    await page
-      .getByRole("button", { name: /להשתמש בנתונים אמיתיים/ })
-      .click();
+    await page.getByRole("button", { name: /להשתמש בנתונים אמיתיים/ }).click();
     await expect(
       page.getByRole("button", { name: /מעבר למקורות נתונים/ }),
     ).toBeVisible();
@@ -178,17 +174,3 @@ test.describe("Onboarding flows", () => {
     });
   });
 });
-
-async function ensureDemoModeOff(request: APIRequestContext): Promise<void> {
-  try {
-    const status = await request.get(DEMO_STATUS_URL);
-    if (!status.ok()) return;
-    const body = await status.json();
-    if (body.demo_mode) {
-      await request.post(DEMO_TOGGLE_URL, { data: { enabled: false } });
-    }
-  } catch {
-    // If the testing routes aren't mounted (production build) the
-    // wizard's demo path can't run anyway, so we simply skip cleanup.
-  }
-}

@@ -1,16 +1,20 @@
 import { test, expect } from "@playwright/test";
-import { setDemoMode, gotoAndWait } from "./_helpers";
+import { gotoAndWait } from "./_helpers";
+import { enableDemoMode } from "../helpers";
 
 /**
  * Creates a new monthly budget rule and verifies it appears in the list,
  * then deletes it to keep the demo dataset stable.
+ *
+ * Demo Mode is seeded per-page via `enableDemoMode` in `beforeEach` rather
+ * than a `beforeAll` — the flag lives in the test's own browser context
+ * (localStorage), which doesn't exist yet in `beforeAll` (no `page`
+ * fixture there), and wouldn't carry over from a separately-created page
+ * even if it did.
  */
 test.describe("Budget rule creation flow", () => {
-  test.beforeAll(async ({ request }) => {
-    await setDemoMode(request, true);
-  });
-  test.afterAll(async ({ request }) => {
-    await setDemoMode(request, false);
+  test.beforeEach(async ({ page }) => {
+    await enableDemoMode(page);
   });
 
   test("creates a new monthly budget rule", async ({ page }) => {
@@ -18,7 +22,10 @@ test.describe("Budget rule creation flow", () => {
     await gotoAndWait(page, "/budget");
 
     // Open the Add Rule modal.
-    await page.getByRole("button", { name: /^add rule$/i }).first().click();
+    await page
+      .getByRole("button", { name: /^add rule$/i })
+      .first()
+      .click();
     const dialog = page.getByRole("dialog", { name: /add budget rule/i });
     await expect(dialog).toBeVisible();
 

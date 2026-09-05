@@ -1,16 +1,4 @@
-import { type Page, type APIRequestContext } from "@playwright/test";
-import { API_BASE } from "../helpers";
-
-/**
- * Toggle Demo Mode via the testing API rather than the Settings popup.
- * Faster and more reliable than driving the UI for setup/teardown — the UI
- * helper exists in `../helpers.ts` for tests that exercise the toggle itself.
- */
-export async function setDemoMode(request: APIRequestContext, enabled: boolean) {
-  await request.post(`${API_BASE}/testing/toggle_demo_mode`, {
-    data: { enabled },
-  });
-}
+import { type Page } from "@playwright/test";
 
 /**
  * Navigate to the app, wiping any persisted React Query / IndexedDB cache
@@ -18,9 +6,10 @@ export async function setDemoMode(request: APIRequestContext, enabled: boolean) 
  * Mode session. Then wait for the network to settle.
  *
  * The dashboard persists its query cache to IndexedDB (`finance-analysis`).
- * If we leave it intact, switching demo mode via the testing API leaves
- * the page rendering production-mode data even though the backend now
- * serves demo data. Clearing storage at navigation time forces a cold load.
+ * If we leave it intact, a Demo Mode change made via `enableDemoMode`/
+ * `disableDemoMode` leaves the page rendering the previous mode's cached
+ * data even after the flag and the backend's responses have flipped.
+ * Clearing storage at navigation time forces a cold load.
  */
 export async function gotoAndWait(page: Page, path: string) {
   // Land on a placeholder page so storage APIs are available without
@@ -75,7 +64,11 @@ export async function gotoAndWait(page: Page, path: string) {
  * Click a sidebar nav link by its visible English label. Falls back to a
  * direct goto if the link isn't visible (e.g. mobile drawer is closed).
  */
-export async function navigateViaSidebar(page: Page, label: RegExp, fallbackPath: string) {
+export async function navigateViaSidebar(
+  page: Page,
+  label: RegExp,
+  fallbackPath: string,
+) {
   const link = page.getByRole("link", { name: label }).first();
   if (await link.isVisible().catch(() => false)) {
     await link.click();

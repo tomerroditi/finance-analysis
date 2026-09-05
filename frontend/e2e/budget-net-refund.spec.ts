@@ -17,11 +17,13 @@ import { enableDemoMode, navigateTo } from "./helpers";
  * every recent month, catching a regression the moment such a row appears.
  */
 test.describe("Budget — net refund rows", () => {
-  // Self-heal demo mode: a no-op when already enabled (the `demo-setup`
-  // project turns it on once), so this is safe under parallel workers and
-  // makes the spec order-independent when sharded alongside mutating specs.
-  test.beforeAll(async () => {
-    await enableDemoMode();
+  // Demo Mode lives in the browser context's localStorage, so it must be
+  // seeded per-test (a fresh context per test) rather than once in
+  // beforeAll. enableDemoMode's demo/prepare call is idempotent, so this
+  // is still cheap and order-independent when sharded alongside mutating
+  // specs.
+  test.beforeEach(async ({ page }) => {
+    await enableDemoMode(page);
   });
 
   test("a refund figure is never shown as over budget", async ({ page }) => {
@@ -32,21 +34,24 @@ test.describe("Budget — net refund rows", () => {
     // Walk back through several months so more rule rows are sampled.
     for (let i = 0; i < 6; i++) {
       const rows = await page.evaluate(() => {
-        const strip = (s: string | null) =>
-          (s ?? "").replace(/[⁦⁩\s]/g, "");
+        const strip = (s: string | null) => (s ?? "").replace(/[⁦⁩\s]/g, "");
         // Rule rows are the bordered cards that hold the spent/budget figure
         // and a progress-bar fill. Target that figure by testid: the ledger
         // row also renders the remaining amount and the percentage in
         // font-mono, and "-384" in the remaining column is an OVERSPEND, not
         // a refund — reading it as one made this invariant fire on every
         // over-budget row.
-        const figures = [...document.querySelectorAll('[data-testid="ledger-figures"]')];
+        const figures = [
+          ...document.querySelectorAll('[data-testid="ledger-figures"]'),
+        ];
         return figures.map((fig) => {
           const row = fig.closest("div.rounded-xl") ?? fig.parentElement;
           const text = strip(fig.textContent);
           // Leading signed amount, e.g. "-1,200 ₪ / 3,000 ₪" -> -1200.
           const m = text.match(/^(-?)([\d,]+)/);
-          const amount = m ? Number(m[2].replace(/,/g, "")) * (m[1] ? -1 : 1) : 0;
+          const amount = m
+            ? Number(m[2].replace(/,/g, "")) * (m[1] ? -1 : 1)
+            : 0;
           const hasRose = !!row?.querySelector(".bg-rose-500");
           const hasOver = strip(row?.textContent ?? "").includes("over");
           return { text, amount, hasRose, hasOver };

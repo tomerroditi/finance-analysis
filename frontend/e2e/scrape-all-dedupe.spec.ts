@@ -1,5 +1,5 @@
 import { test, expect, request } from "@playwright/test";
-import { enableDemoMode, disableDemoMode, navigateTo, API_BASE } from "./helpers";
+import { enableDemoMode, navigateTo, API_BASE } from "./helpers";
 
 // Two throwaway accounts seeded into the demo DB so "Scrape All" has more
 // than one card to act on. One (RUNNING_ACCOUNT) is driven into
@@ -11,8 +11,14 @@ const FAILED_ACCOUNT = "E2E ScrapeAll Failed";
 const RUNNING_PROCESS_ID = 5001;
 const FAILED_PROCESS_ID = 5003;
 
+// These credential writes bypass the browser (Node-side `request` fixture),
+// so they must declare the demo header themselves — Demo Mode is per-client
+// now, and a header-less request would land these throwaway accounts in the
+// real database instead of the demo one.
 async function setBankCredential(accountName: string, create: boolean) {
-  const ctx = await request.newContext();
+  const ctx = await request.newContext({
+    extraHTTPHeaders: { "X-FAD-Demo": "1" },
+  });
   try {
     if (create) {
       await ctx.post(`${API_BASE}/credentials/`, {
@@ -39,7 +45,18 @@ async function setBankCredential(accountName: string, create: boolean) {
 
 test.describe("Scrape All burst guard", () => {
   test.beforeAll(async () => {
-    await enableDemoMode();
+    // Build the demo DB before writing the throwaway credentials into it —
+    // these two calls don't go through a `page`, so they carry the demo
+    // header themselves rather than relying on `enableDemoMode`'s
+    // localStorage seeding (which needs a browser context).
+    const ctx = await request.newContext({
+      extraHTTPHeaders: { "X-FAD-Demo": "1" },
+    });
+    try {
+      await ctx.post(`${API_BASE}/testing/demo/prepare`);
+    } finally {
+      await ctx.dispose();
+    }
     await setBankCredential(RUNNING_ACCOUNT, true);
     await setBankCredential(IDLE_ACCOUNT, true);
   });
@@ -47,7 +64,12 @@ test.describe("Scrape All burst guard", () => {
   test.afterAll(async () => {
     await setBankCredential(RUNNING_ACCOUNT, false);
     await setBankCredential(IDLE_ACCOUNT, false);
-    await disableDemoMode();
+  });
+
+  // Demo Mode itself is per-page (localStorage), so it's seeded per-test
+  // here rather than alongside the beforeAll credential setup above.
+  test.beforeEach(async ({ page }) => {
+    await enableDemoMode(page);
   });
 
   test("Scrape All disables the instant any account is active, blocking a second dispatch while one is scraping", async ({
@@ -55,7 +77,7 @@ test.describe("Scrape All burst guard", () => {
   }) => {
     // Stub the whole /api/scraping/* surface — Demo Mode's dummy scrapers
     // never enter waiting_for_2fa on their own, and a live scrape here would
-    // race disableDemoMode() in afterAll the same way documented in
+    // hit a real provider's site from a test, the same concern documented in
     // onezero-resend.spec.ts.
     //
     // Reality check performed while writing this spec: "Scrape All" is
@@ -80,9 +102,7 @@ test.describe("Scrape All burst guard", () => {
       const body = route.request().postDataJSON() as { account: string };
       startedAccounts.push(body.account);
       const processId =
-        body.account === RUNNING_ACCOUNT
-          ? RUNNING_PROCESS_ID
-          : nextProcessId++;
+        body.account === RUNNING_ACCOUNT ? RUNNING_PROCESS_ID : nextProcessId++;
       await route.fulfill({
         status: 200,
         contentType: "application/json",
@@ -110,7 +130,9 @@ test.describe("Scrape All burst guard", () => {
 
     await navigateTo(page, "/data-sources");
 
-    await expect(page.getByText(RUNNING_ACCOUNT, { exact: false })).toBeVisible();
+    await expect(
+      page.getByText(RUNNING_ACCOUNT, { exact: false }),
+    ).toBeVisible();
     await expect(page.getByText(IDLE_ACCOUNT, { exact: false })).toBeVisible();
 
     // Located structurally, not by its accessible name: the button's label

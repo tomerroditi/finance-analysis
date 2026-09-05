@@ -10,20 +10,26 @@ import { enableDemoMode, navigateTo, expectPageTitle } from "./helpers";
  * assertion group (6×).
  */
 test.describe("Categories", () => {
-  // Self-heal demo mode: a no-op when already enabled (the `demo-setup`
-  // project turns it on once), so this is safe under parallel workers and
-  // makes the spec order-independent when sharded alongside mutating specs.
-  test.beforeAll(async () => {
-    await enableDemoMode();
+  // Demo Mode lives in the browser context's localStorage, so it must be
+  // seeded per-test (a fresh context per test) rather than once in
+  // beforeAll. enableDemoMode's demo/prepare call is idempotent, so this
+  // is still cheap and order-independent when sharded alongside mutating
+  // specs.
+  test.beforeEach(async ({ page }) => {
+    await enableDemoMode(page);
   });
 
-  test("list, layout, and category detail panels behave on one load", async ({ page }) => {
+  test("list, layout, and category detail panels behave on one load", async ({
+    page,
+  }) => {
     await page.setViewportSize({ width: 1280, height: 800 });
     await navigateTo(page, "/categories");
     await expectPageTitle(page, /Categories/);
 
     // --- Category list renders, including protected categories ---
-    await expect(page.getByText("Food").first()).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByText("Food").first()).toBeVisible({
+      timeout: 10_000,
+    });
     await expect(page.getByText("Salary").first()).toBeVisible();
     await expect(page.getByText("Investments").first()).toBeVisible();
 
@@ -43,12 +49,16 @@ test.describe("Categories", () => {
     expect(rulesBox && searchBoxBox && addBox).toBeTruthy();
 
     // The auto-tagging rules card is at the top — above the search row.
-    expect(rulesBox!.y + rulesBox!.height).toBeLessThanOrEqual(searchBoxBox!.y + 1);
+    expect(rulesBox!.y + rulesBox!.height).toBeLessThanOrEqual(
+      searchBoxBox!.y + 1,
+    );
 
     // The search box and the add-category button share the same row (vertically aligned).
     const searchCenter = searchBoxBox!.y + searchBoxBox!.height / 2;
     const addCenter = addBox!.y + addBox!.height / 2;
-    expect(Math.abs(searchCenter - addCenter)).toBeLessThan(searchBoxBox!.height);
+    expect(Math.abs(searchCenter - addCenter)).toBeLessThan(
+      searchBoxBox!.height,
+    );
 
     // --- Non-protected category panel: delete button visible without hover ---
     const foodCard = page.locator('[data-testid="category-card-Food"]');
@@ -72,31 +82,42 @@ test.describe("Categories", () => {
       }
       return 1;
     });
-    expect(opacity, "Delete button must not have opacity:0 — it should be visible without hover").toBe(1);
+    expect(
+      opacity,
+      "Delete button must not have opacity:0 — it should be visible without hover",
+    ).toBe(1);
 
     await panel.getByRole("button", { name: /^close$/i }).click();
     await expect(panel).toBeHidden({ timeout: 3_000 });
 
     // --- Protected category panel: disabled delete with a reason on hover ---
-    const protectedCard = page.locator('[data-testid="category-card-Investments"]');
+    const protectedCard = page.locator(
+      '[data-testid="category-card-Investments"]',
+    );
     await expect(protectedCard).toBeVisible({ timeout: 10_000 });
     await protectedCard.click();
 
     await expect(panel).toBeVisible({ timeout: 5_000 });
 
     // The delete button is rendered but disabled (not hidden).
-    const protectedDeleteBtn = panel.getByRole("button", { name: /delete category/i });
+    const protectedDeleteBtn = panel.getByRole("button", {
+      name: /delete category/i,
+    });
     await expect(protectedDeleteBtn).toBeVisible({ timeout: 5_000 });
     await expect(protectedDeleteBtn).toBeDisabled();
 
     // Hovering reveals the reason tooltip.
     const reason = panel.getByText(/cannot be deleted/i);
-    const hiddenOpacity = await reason.evaluate((el) => getComputedStyle(el.parentElement!).opacity);
+    const hiddenOpacity = await reason.evaluate(
+      (el) => getComputedStyle(el.parentElement!).opacity,
+    );
     expect(Number(hiddenOpacity)).toBe(0);
 
     await protectedDeleteBtn.hover();
     await expect
-      .poll(async () => reason.evaluate((el) => getComputedStyle(el.parentElement!).opacity))
+      .poll(async () =>
+        reason.evaluate((el) => getComputedStyle(el.parentElement!).opacity),
+      )
       .toBe("1");
 
     await panel.getByRole("button", { name: /^close$/i }).click();

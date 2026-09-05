@@ -62,6 +62,7 @@ const READ_ONLY_SPECS = [
   "**/dashboard-insights-strip.spec.ts",
   "**/dashboard-lazy-cards.spec.ts",
   "**/data-flow.spec.ts",
+  "**/flows/demo-mode-isolation.spec.ts",
   "**/income-by-source-card.spec.ts",
   "**/info-tooltip-aria-label.spec.ts",
   "**/investments.spec.ts",
@@ -75,7 +76,11 @@ const READ_ONLY_SPECS = [
 const chromiumUse = {
   ...devices["Desktop Chrome"],
   ...(process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH
-    ? { launchOptions: { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH } }
+    ? {
+        launchOptions: {
+          executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH,
+        },
+      }
     : {}),
 };
 

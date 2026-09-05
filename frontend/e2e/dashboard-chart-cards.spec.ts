@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { enableDemoMode, disableDemoMode } from "./helpers";
+import { enableDemoMode } from "./helpers";
 
 /**
  * The former single tabbed "Charts & analytics" panel is now four independent
@@ -11,51 +11,63 @@ import { enableDemoMode, disableDemoMode } from "./helpers";
  * rules, and the opt-in flow — the cold dashboard boot is the expensive step.
  */
 test.describe("Dashboard per-chart cards", () => {
-  test.beforeAll(async ({ browser }) => {
-    const page = await browser.newPage();
+  // Demo Mode lives in the browser context's localStorage, so it must be
+  // seeded per-test (a fresh context per test) rather than once in
+  // beforeAll via a throwaway page — that page is a different browser
+  // context from the one each test actually navigates in, so anything it
+  // set there never reached the real test.
+  test.beforeEach(async ({ page }) => {
     await enableDemoMode(page);
-    await page.close();
-  });
-
-  test.afterAll(async ({ browser }) => {
-    const page = await browser.newPage();
-    await disableDemoMode(page);
-    await page.close();
   });
 
   test.beforeEach(async ({ page }) => {
     // Start from a clean (default) layout.
-    await page.addInitScript(() => window.localStorage.removeItem("fa.dashboard.layout"));
+    await page.addInitScript(() =>
+      window.localStorage.removeItem("fa.dashboard.layout"),
+    );
   });
 
-  test("default cards, Hidden-cards badges, and the Cash Flow opt-in on one load", async ({ page }) => {
+  test("default cards, Hidden-cards badges, and the Cash Flow opt-in on one load", async ({
+    page,
+  }) => {
     await page.goto("/");
 
     // Income & Expenses and Net Worth render as separate cards by default;
     // Cash Flow + Categories are opt-in: not rendered on the default dashboard.
-    await expect(page.locator('[data-card-id="income_expenses"]')).toBeVisible({ timeout: 45_000 });
+    await expect(page.locator('[data-card-id="income_expenses"]')).toBeVisible({
+      timeout: 45_000,
+    });
     await expect(page.locator('[data-card-id="net_worth"]')).toBeVisible();
     await expect(page.locator('[data-card-id="cash_flow"]')).toHaveCount(0);
     await expect(page.locator('[data-card-id="category"]')).toHaveCount(0);
 
-    await page.getByRole("button", { name: /^Settings$/ }).first().click();
+    await page
+      .getByRole("button", { name: /^Settings$/ })
+      .first()
+      .click();
     await page.getByRole("button", { name: /^Dashboard$/ }).click();
 
     // Cash Flow is under Hidden cards…
     await expect(page.getByText("Hidden cards", { exact: true })).toBeVisible();
-    const cashFlowRow = page.getByText("Cash Flow", { exact: true }).locator("xpath=..");
+    const cashFlowRow = page
+      .getByText("Cash Flow", { exact: true })
+      .locator("xpath=..");
     await expect(cashFlowRow).toBeVisible();
     // …but it is default-hidden, NOT beta, so it carries no Beta pill (contrast
     // the forecast card, which does).
     await expect(cashFlowRow.getByText(/^Beta$/i)).toHaveCount(0);
-    const forecastRow = page.getByText("This Month (forecast)", { exact: true }).locator("xpath=..");
+    const forecastRow = page
+      .getByText("This Month (forecast)", { exact: true })
+      .locator("xpath=..");
     await expect(forecastRow.getByText(/^Beta$/i)).toBeVisible();
 
     // Opting Cash Flow in shows it on the dashboard.
     await cashFlowRow.getByRole("button", { name: /Show card/i }).click();
     await page.keyboard.press("Escape");
 
-    await expect(page.locator('[data-card-id="cash_flow"]')).toBeVisible({ timeout: 30_000 });
+    await expect(page.locator('[data-card-id="cash_flow"]')).toBeVisible({
+      timeout: 30_000,
+    });
     // The newly enabled card is appended below the fold, where cards defer
     // their mount until scrolled near — scroll it in first (the placeholder is
     // "visible" to Playwright even off-screen, but the Sankey only renders
@@ -64,7 +76,9 @@ test.describe("Dashboard per-chart cards", () => {
     // The card must render the actual Sankey flow SVG (guards the Recharts
     // Sankey against silently falling into the error boundary / no-data path).
     await expect(
-      page.locator('[data-card-id="cash_flow"] [data-testid="sankey-chart"] svg').first(),
+      page
+        .locator('[data-card-id="cash_flow"] [data-testid="sankey-chart"] svg')
+        .first(),
     ).toBeVisible({ timeout: 15_000 });
   });
 });

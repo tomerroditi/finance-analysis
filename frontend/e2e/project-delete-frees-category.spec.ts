@@ -1,34 +1,23 @@
-import { test, expect, type Page } from "@playwright/test";
-import { navigateTo } from "./helpers";
-
-/**
- * Toggle Demo Mode through the frontend dev-server proxy (relative ``/api``)
- * so the toggle follows Playwright's ``baseURL`` and the Vite proxy to
- * whichever backend serves this run. Mirrors ``project-category-exclusion``.
- */
-async function setDemoMode(page: Page, enabled: boolean) {
-  const res = await page.request.post("/api/testing/toggle_demo_mode", {
-    data: { enabled },
-  });
-  expect(res.ok()).toBeTruthy();
-}
+import { test, expect } from "@playwright/test";
+import { enableDemoMode, navigateTo } from "./helpers";
 
 /** Escape a string for safe use inside a RegExp constructor. */
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-test.describe("Project deletion frees its category", () => {
-  test.beforeAll(async ({ browser }) => {
-    const page = await browser.newPage();
-    await setDemoMode(page, true);
-    await page.close();
-  });
+/**
+ * `page.request` is Playwright's own HTTP client for the page's context —
+ * it does not run the app's JS, so the axios interceptor that attaches
+ * `X-FAD-Demo` from localStorage never runs for it. Every direct backend
+ * check below must therefore declare the header itself to read/write the
+ * same database the UI (seeded via `enableDemoMode(page)`) is showing.
+ */
+const DEMO_HEADERS = { "X-FAD-Demo": "1" };
 
-  test.afterAll(async ({ browser }) => {
-    const page = await browser.newPage();
-    await setDemoMode(page, false);
-    await page.close();
+test.describe("Project deletion frees its category", () => {
+  test.beforeEach(async ({ page }) => {
+    await enableDemoMode(page);
   });
 
   test("renders a project's envelopes, then deletes it, frees its category and renders the project recreated from it", async ({
@@ -39,14 +28,18 @@ test.describe("Project deletion frees its category", () => {
 
     // Discover the seeded project. Its category must start out claimed (absent
     // from the available-categories picker).
-    const projectsRes = await page.request.get("/api/budget/projects");
+    const projectsRes = await page.request.get("/api/budget/projects", {
+      headers: DEMO_HEADERS,
+    });
     expect(projectsRes.ok()).toBeTruthy();
     const projects: string[] = await projectsRes.json();
     expect(projects.length).toBeGreaterThan(0);
     const target = projects[0];
 
     const availBefore = await (
-      await page.request.get("/api/budget/projects/available")
+      await page.request.get("/api/budget/projects/available", {
+        headers: DEMO_HEADERS,
+      })
     ).json();
     expect(availBefore).not.toContain(target);
 
@@ -60,11 +53,14 @@ test.describe("Project deletion frees its category", () => {
     // entire body — band, ledger and rail — on finding one, so picking such a
     // project showed the command bar over an empty page with no explanation.
     // The project name in the picker is not evidence the body rendered.
-    await expect(
-      page.getByTestId("ledger-figures").first(),
-    ).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByTestId("ledger-figures").first()).toBeVisible({
+      timeout: 10_000,
+    });
 
-    await page.getByRole("button", { name: /^Delete$/i }).first().click();
+    await page
+      .getByRole("button", { name: /^Delete$/i })
+      .first()
+      .click();
 
     // Confirm in the destructive dialog.
     const dialog = page.locator("div.modal-overlay", {
@@ -75,7 +71,9 @@ test.describe("Project deletion frees its category", () => {
 
     // Backend: the project is gone from the list...
     await expect(async () => {
-      const listRes = await page.request.get("/api/budget/projects");
+      const listRes = await page.request.get("/api/budget/projects", {
+        headers: DEMO_HEADERS,
+      });
       expect(await listRes.json()).not.toContain(target);
     }).toPass({ timeout: 10_000 });
 
@@ -83,12 +81,15 @@ test.describe("Project deletion frees its category", () => {
     // the transactions still categorized under it (the original bug).
     const detailRes = await page.request.get(
       `/api/budget/projects/${encodeURIComponent(target)}`,
+      { headers: DEMO_HEADERS },
     );
     expect(detailRes.status()).toBe(404);
 
     // The category is available for a new project again.
     const availAfter = await (
-      await page.request.get("/api/budget/projects/available")
+      await page.request.get("/api/budget/projects/available", {
+        headers: DEMO_HEADERS,
+      })
     ).json();
     expect(availAfter).toContain(target);
 
@@ -116,7 +117,9 @@ test.describe("Project deletion frees its category", () => {
 
     const statusBand = page.getByTestId("budget-status-band");
     await expect(statusBand).toBeVisible({ timeout: 10_000 });
-    await expect(statusBand).toContainText(new RegExp(escapeRegExp(target), "i"));
+    await expect(statusBand).toContainText(
+      new RegExp(escapeRegExp(target), "i"),
+    );
     await expect(statusBand).toContainText("5,000");
   });
 });

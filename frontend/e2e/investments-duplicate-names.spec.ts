@@ -13,7 +13,14 @@ import { API_BASE, enableDemoMode, navigateTo } from "./helpers";
  *
  * Mutating spec (kept out of READ_ONLY_SPECS): seeds two same-named
  * investments plus a balance snapshot each, then cleans up.
+ *
+ * The `request` fixture is Playwright's own HTTP client — it does not run
+ * the app's JS, so the axios interceptor that attaches `X-FAD-Demo` from
+ * localStorage never runs for it. Every call below must declare the header
+ * itself to read/write the same database the UI (seeded via
+ * `enableDemoMode(page)`) is showing, instead of the real one.
  */
+const DEMO_HEADERS = { "X-FAD-Demo": "1" };
 const NAME = "E2E Duplicate Fund";
 const ACCOUNTS = [
   { tag: "E2E Dup A", date: "2026-05-15", balance: 1000 },
@@ -21,8 +28,8 @@ const ACCOUNTS = [
 ];
 
 test.describe("Investments duplicate names", () => {
-  test.beforeAll(async () => {
-    await enableDemoMode();
+  test.beforeEach(async ({ page }) => {
+    await enableDemoMode(page);
   });
 
   test("same-named investments render as separate, labelled series", async ({
@@ -33,6 +40,7 @@ test.describe("Investments duplicate names", () => {
     try {
       for (const account of ACCOUNTS) {
         const create = await request.post(`${API_BASE}/investments/`, {
+          headers: DEMO_HEADERS,
           data: {
             category: "Investments",
             tag: account.tag,
@@ -43,7 +51,9 @@ test.describe("Investments duplicate names", () => {
         });
         expect(create.ok()).toBeTruthy();
 
-        const list = await request.get(`${API_BASE}/investments/`);
+        const list = await request.get(`${API_BASE}/investments/`, {
+          headers: DEMO_HEADERS,
+        });
         const record = (await list.json()).find(
           (inv: { tag: string }) => inv.tag === account.tag,
         );
@@ -54,7 +64,10 @@ test.describe("Investments duplicate names", () => {
         // the old name-keyed merge alternated between these two levels.
         const snapshot = await request.post(
           `${API_BASE}/investments/${record.id}/balances`,
-          { data: { date: account.date, balance: account.balance } },
+          {
+            headers: DEMO_HEADERS,
+            data: { date: account.date, balance: account.balance },
+          },
         );
         expect(snapshot.ok()).toBeTruthy();
       }
@@ -79,7 +92,9 @@ test.describe("Investments duplicate names", () => {
       expect(new Set(labels).size).toBe(labels.length);
     } finally {
       for (const id of created) {
-        await request.delete(`${API_BASE}/investments/${id}`);
+        await request.delete(`${API_BASE}/investments/${id}`, {
+          headers: DEMO_HEADERS,
+        });
       }
     }
   });

@@ -1,5 +1,6 @@
 import { test, expect } from "@playwright/test";
-import { setDemoMode, gotoAndWait } from "./_helpers";
+import { gotoAndWait } from "./_helpers";
+import { enableDemoMode } from "../helpers";
 
 /**
  * Renames the Food category via the panel's click-to-rename heading, verifies
@@ -7,16 +8,21 @@ import { setDemoMode, gotoAndWait } from "./_helpers";
  * payload, and confirms the new name appears in the UI.
  * Renames back to "Food" for cleanup, then adds a new tag to Food (formerly
  * flows/categories-add-tag.spec.ts) — both mutations share one page load.
+ *
+ * Demo Mode is seeded per-page via `enableDemoMode` in `beforeEach` rather
+ * than a `beforeAll` — the flag lives in the test's own browser context
+ * (localStorage), which doesn't exist yet in `beforeAll` (no `page`
+ * fixture there), and wouldn't carry over from a separately-created page
+ * even if it did.
  */
 test.describe("Categories rename + add-tag flow", () => {
-  test.beforeAll(async ({ request }) => {
-    await setDemoMode(request, true);
-  });
-  test.afterAll(async ({ request }) => {
-    await setDemoMode(request, false);
+  test.beforeEach(async ({ page }) => {
+    await enableDemoMode(page);
   });
 
-  test("renames a category via the panel, then adds a new tag to it", async ({ page }) => {
+  test("renames a category via the panel, then adds a new tag to it", async ({
+    page,
+  }) => {
     // The backend's rename endpoint runs the new name through `to_title_case`,
     // which capitalizes each hyphen-separated segment (e.g. "e2e-cat-123" →
     // "E2e-Cat-123"). The DOM/data-testid reflect the stored (transformed)
@@ -56,14 +62,19 @@ test.describe("Categories rename + add-tag flow", () => {
       renameInput.press("Enter"),
     ]);
 
-    expect(response.status(), "PUT /api/tagging/categories/{name} should return 200").toBe(200);
+    expect(
+      response.status(),
+      "PUT /api/tagging/categories/{name} should return 200",
+    ).toBe(200);
 
     const body = response.request().postDataJSON() as { new_name: string };
     expect(body.new_name).toBe(inputName);
 
     // Panel heading updates immediately to the new name (case-insensitive
     // because the panel renders the stored, title-cased version).
-    await expect(panel.getByRole("heading", { name: new RegExp(`^${storedName}$`, "i") })).toBeVisible({ timeout: 5_000 });
+    await expect(
+      panel.getByRole("heading", { name: new RegExp(`^${storedName}$`, "i") }),
+    ).toBeVisible({ timeout: 5_000 });
 
     // Close the panel so the grid is unobscured.
     await panel.getByRole("button", { name: /^close$/i }).click();
@@ -74,13 +85,17 @@ test.describe("Categories rename + add-tag flow", () => {
     // queryClient.ts; either should refetch the categories list. A direct
     // DOM poll is more reliable than waitForResponse with body inspection,
     // which has timing issues when reading r.json() inside the predicate.
-    await expect(page.getByTestId(`category-card-${storedName}`)).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByTestId(`category-card-${storedName}`)).toBeVisible({
+      timeout: 30_000,
+    });
 
     // Cleanup: open the panel for the renamed category and rename back to "Food".
     await page.locator(`[data-testid="category-card-${storedName}"]`).click();
     const renamedPanel = page.locator('[data-testid="category-panel"]');
     await expect(renamedPanel).toBeVisible({ timeout: 5_000 });
-    const renamedHeading = renamedPanel.getByRole("heading", { name: new RegExp(`^${storedName}$`, "i") });
+    const renamedHeading = renamedPanel.getByRole("heading", {
+      name: new RegExp(`^${storedName}$`, "i"),
+    });
     await renamedHeading.click();
     const cleanupInput = renamedPanel.locator("input:focus");
     await cleanupInput.fill("Food");
@@ -96,11 +111,15 @@ test.describe("Categories rename + add-tag flow", () => {
     ]);
 
     // Panel heading updates to "Food" immediately.
-    await expect(renamedPanel.getByRole("heading", { name: /^food$/i })).toBeVisible({ timeout: 5_000 });
+    await expect(
+      renamedPanel.getByRole("heading", { name: /^food$/i }),
+    ).toBeVisible({ timeout: 5_000 });
 
     await renamedPanel.getByRole("button", { name: /^close$/i }).click();
     await expect(renamedPanel).toBeHidden({ timeout: 3_000 });
-    await expect(page.getByTestId("category-card-Food")).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByTestId("category-card-Food")).toBeVisible({
+      timeout: 30_000,
+    });
 
     // ---- Add a new tag to the (restored) Food category ----
     const tagName = `e2e-tag-${timestamp}`;

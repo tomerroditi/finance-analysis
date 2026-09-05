@@ -1,17 +1,14 @@
 import { test, expect } from "@playwright/test";
-import { enableDemoMode, disableDemoMode, navigateTo, expectPageTitle } from "./helpers";
+import { enableDemoMode, navigateTo, expectPageTitle } from "./helpers";
 
 test.describe("Transactions", () => {
-  test.beforeAll(async ({ browser }) => {
-    const page = await browser.newPage();
+  // Demo Mode lives in the browser context's localStorage, so it must be
+  // seeded per-test (a fresh context per test) rather than once in
+  // beforeAll via a throwaway page — that page is a different browser
+  // context from the one each test actually navigates in, so anything it
+  // set there never reached the real test.
+  test.beforeEach(async ({ page }) => {
     await enableDemoMode(page);
-    await page.close();
-  });
-
-  test.afterAll(async ({ browser }) => {
-    const page = await browser.newPage();
-    await disableDemoMode(page);
-    await page.close();
   });
 
   // Pure read-only assertions (table smoke, pagination, column sizing, eraser
@@ -35,7 +32,10 @@ test.describe("Transactions", () => {
     // an explicit pixel width. With the old `min-w-[800px]` the fixed columns
     // consumed almost the whole table, collapsing the description column to
     // ~20px (≈3 characters). It now has a 150px width floor.
-    const descHeader = page.locator("thead th").filter({ hasText: /Description/i }).first();
+    const descHeader = page
+      .locator("thead th")
+      .filter({ hasText: /Description/i })
+      .first();
     await expect(descHeader).toBeVisible();
     const headerBox = await descHeader.boundingBox();
     expect(headerBox).not.toBeNull();
@@ -44,10 +44,12 @@ test.describe("Transactions", () => {
     // Sanity-check a body cell in the same column matches the header width,
     // so the data cell isn't independently squeezed.
     const firstRow = rows.first();
-    const descCell = firstRow.locator("td").nth(await descHeader.evaluate((th) => {
-      // Column index of the description header among its sibling <th> cells.
-      return Array.from(th.parentElement!.children).indexOf(th);
-    }));
+    const descCell = firstRow.locator("td").nth(
+      await descHeader.evaluate((th) => {
+        // Column index of the description header among its sibling <th> cells.
+        return Array.from(th.parentElement!.children).indexOf(th);
+      }),
+    );
     const cellBox = await descCell.boundingBox();
     expect(cellBox).not.toBeNull();
     expect(cellBox!.width).toBeGreaterThan(110);
@@ -58,7 +60,9 @@ test.describe("Transactions", () => {
     // the per-row eraser test below.)
     await page.waitForLoadState("networkidle");
     const rowCount = await rows.count();
-    const erasers = page.locator('table tbody button[aria-label="Clear category and tag"]');
+    const erasers = page.locator(
+      'table tbody button[aria-label="Clear category and tag"]',
+    );
     await expect(erasers).toHaveCount(rowCount);
 
     // --- Service tab + text search narrow the list together ---
@@ -78,7 +82,9 @@ test.describe("Transactions", () => {
     }
   });
 
-  test("per-row eraser clears category and tag from a transaction", async ({ page }) => {
+  test("per-row eraser clears category and tag from a transaction", async ({
+    page,
+  }) => {
     await navigateTo(page, "/transactions");
 
     // Wait for the table to populate
@@ -89,7 +95,9 @@ test.describe("Transactions", () => {
     // category/tag (so the action column stays aligned). Find the first
     // *enabled* eraser — that's a row with a category or tag.
     const clearButton = page
-      .locator('table tbody button[aria-label="Clear category and tag"]:enabled')
+      .locator(
+        'table tbody button[aria-label="Clear category and tag"]:enabled',
+      )
       .first();
     await expect(clearButton).toBeVisible({ timeout: 10_000 });
 
@@ -115,7 +123,9 @@ test.describe("Transactions", () => {
     ).toBeDisabled();
   });
 
-  test("bulk eraser clears category and tag from selected transactions", async ({ page }) => {
+  test("bulk eraser clears category and tag from selected transactions", async ({
+    page,
+  }) => {
     await navigateTo(page, "/transactions");
 
     // Wait for the table to populate.
@@ -127,7 +137,11 @@ test.describe("Transactions", () => {
     // disabled when untagged). We need at least two such rows.
     const candidateRows = page
       .locator("table tbody tr")
-      .filter({ has: page.locator('button[aria-label="Clear category and tag"]:enabled') });
+      .filter({
+        has: page.locator(
+          'button[aria-label="Clear category and tag"]:enabled',
+        ),
+      });
 
     const firstRow = candidateRows.nth(0);
     const secondRow = candidateRows.nth(1);
@@ -153,8 +167,12 @@ test.describe("Transactions", () => {
     // same aria-label ("Clear category and tag") as the per-row erasers.
     // We target it by scoping to the bar's container div (identified by its
     // unique fixed-position styling class).
-    const bulkBar = page.locator("div.fixed.bottom-4, div.fixed.md\\:bottom-8").last();
-    const bulkEraser = bulkBar.getByRole("button", { name: /clear category and tag/i });
+    const bulkBar = page
+      .locator("div.fixed.bottom-4, div.fixed.md\\:bottom-8")
+      .last();
+    const bulkEraser = bulkBar.getByRole("button", {
+      name: /clear category and tag/i,
+    });
     await expect(bulkEraser).toBeVisible({ timeout: 5_000 });
     await bulkEraser.click();
 
@@ -182,13 +200,17 @@ test.describe("Transactions", () => {
     ).toBeDisabled();
   });
 
-  test("bulk-edit category dropdown does not scroll when hovering visible options", async ({ page }) => {
+  test("bulk-edit category dropdown does not scroll when hovering visible options", async ({
+    page,
+  }) => {
     // Regression: hovering options used to call scrollIntoView on every
     // mouseenter, which fed back on itself — items shifted under the cursor,
     // a new mouseenter fired, the list scrolled again, and so on until it
     // bottomed out.
     await navigateTo(page, "/transactions");
-    await expect(page.locator("table tbody tr").first()).toBeVisible({ timeout: 10_000 });
+    await expect(page.locator("table tbody tr").first()).toBeVisible({
+      timeout: 10_000,
+    });
 
     // Select 3 transactions to surface the BulkActionsBar.
     const checkboxes = page.locator("table tbody tr input[type='checkbox']");

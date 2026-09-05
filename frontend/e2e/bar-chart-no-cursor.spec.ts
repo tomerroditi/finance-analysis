@@ -1,28 +1,9 @@
-import { test, expect, type Page } from "@playwright/test";
-import { navigateTo } from "./helpers";
-
-/**
- * Toggle Demo Mode through the frontend dev-server proxy (relative ``/api``)
- * so the toggle follows Playwright's ``baseURL`` and the Vite proxy.
- */
-async function setDemoMode(page: Page, enabled: boolean) {
-  const res = await page.request.post("/api/testing/toggle_demo_mode", {
-    data: { enabled },
-  });
-  expect(res.ok()).toBeTruthy();
-}
+import { test, expect } from "@playwright/test";
+import { enableDemoMode, navigateTo } from "./helpers";
 
 test.describe("Bar chart hover shows the tooltip without the cursor rectangle", () => {
-  test.beforeAll(async ({ browser }) => {
-    const page = await browser.newPage();
-    await setDemoMode(page, true);
-    await page.close();
-  });
-
-  test.afterAll(async ({ browser }) => {
-    const page = await browser.newPage();
-    await setDemoMode(page, false);
-    await page.close();
+  test.beforeEach(async ({ page }) => {
+    await enableDemoMode(page);
   });
 
   test("hovering a net-worth bar shows only the data tooltip, no grey highlight", async ({
