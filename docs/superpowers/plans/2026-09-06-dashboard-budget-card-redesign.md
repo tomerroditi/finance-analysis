@@ -53,6 +53,8 @@ so it absorbs whatever height the dashboard grid row gives the card.
 | create | `frontend/src/components/dashboard/budget/ProjectBudgetTab.tsx` | Project selector + project details query + grid. |
 | create | `frontend/src/components/dashboard/budget/YearlyBudgetTab.tsx` | Year nav + yearly analysis query + grid. |
 | create | `frontend/src/components/dashboard/budget/types.ts` | The `BudgetRule` shape all three tabs normalize to. |
+| create | `frontend/src/components/dashboard/budget/normalizeAnalysis.ts` | Folds a monthly/project analysis payload into rules + totals. |
+| create | `frontend/src/components/dashboard/budget/normalizeAnalysis.test.ts` | Total-Budget-row and fallback unit tests. |
 | modify | `frontend/src/components/dashboard/BudgetSection.tsx` | Shell: card chrome, tab strip, tab state, period cursors. 425 → ~110 lines. |
 | delete | `frontend/src/components/common/SemiGauge.tsx` | Sole consumer removed. |
 | modify | `frontend/e2e/dashboard.spec.ts` | Extend the existing journey test with a tab block. |
@@ -689,6 +691,8 @@ git commit -m "feat(dashboard): replace the budget gauge with a compact total ba
 ### Task 5: Split the shell from the tabs
 
 **Files:**
+- Create: `frontend/src/components/dashboard/budget/normalizeAnalysis.ts`
+- Test: `frontend/src/components/dashboard/budget/normalizeAnalysis.test.ts`
 - Create: `frontend/src/components/dashboard/budget/MonthlyBudgetTab.tsx`
 - Create: `frontend/src/components/dashboard/budget/ProjectBudgetTab.tsx`
 - Modify: `frontend/src/components/dashboard/BudgetSection.tsx`
@@ -697,6 +701,21 @@ git commit -m "feat(dashboard): replace the budget gauge with a compact total ba
 **Interfaces:**
 - Produces:
   ```ts
+  // normalizeAnalysis.ts
+  export interface AnalysisEntry {
+    rule: { id: number; name: string; category: string; amount: number };
+    current_amount: number;
+  }
+  export interface NormalizedAnalysis {
+    rules: BudgetRule[];
+    totalBudget: number;
+    totalSpent: number;
+  }
+  export function normalizeAnalysis(
+    entries: AnalysisEntry[],
+    spentFallback?: number,
+  ): NormalizedAnalysis
+
   // MonthlyBudgetTab.tsx
   interface MonthlyBudgetTabProps {
     year: number;
@@ -725,7 +744,166 @@ component that no longer exists. `Dashboard.tsx` is the only importer.
 Period cursors live in the shell and come down as props so switching tabs does
 not discard a month the user navigated to.
 
-- [ ] **Step 1: Create MonthlyBudgetTab**
+- [ ] **Step 1: Write the failing test for the shared normalizer**
+
+Monthly and project analyses both carry a synthetic `"Total Budget"` row that
+supplies the card's totals and must never render as a tile. Extracting the fold
+keeps that rule in one place. Create
+`frontend/src/components/dashboard/budget/normalizeAnalysis.test.ts`:
+
+```ts
+import { describe, it, expect } from "vitest";
+import { normalizeAnalysis, type AnalysisEntry } from "./normalizeAnalysis";
+
+function entry(
+  id: number,
+  name: string,
+  amount: number,
+  spent: number,
+): AnalysisEntry {
+  return {
+    rule: { id, name, category: `cat-${id}`, amount },
+    current_amount: spent,
+  };
+}
+
+describe("normalizeAnalysis", () => {
+  it("takes the totals from the Total Budget row and keeps it out of the tiles", () => {
+    const result = normalizeAnalysis([
+      entry(1, "Total Budget", 12000, 66),
+      entry(2, "Groceries", 2000, 500),
+    ]);
+    expect(result.totalBudget).toBe(12000);
+    expect(result.totalSpent).toBe(66);
+    expect(result.rules.map((r) => r.name)).toEqual(["Groceries"]);
+  });
+
+  it("orders the remaining rules by spend, descending", () => {
+    const result = normalizeAnalysis([
+      entry(1, "Total Budget", 100, 0),
+      entry(2, "Small", 50, 10),
+      entry(3, "Big", 50, 40),
+      entry(4, "Middle", 50, 25),
+    ]);
+    expect(result.rules.map((r) => r.name)).toEqual(["Big", "Middle", "Small"]);
+  });
+
+  it("maps a rule onto the grid's shape", () => {
+    const { rules } = normalizeAnalysis([entry(7, "Groceries", 2000, 500)]);
+    expect(rules[0]).toEqual({
+      id: 7,
+      name: "Groceries",
+      category: "cat-7",
+      budget_amount: 2000,
+      spent_amount: 500,
+    });
+  });
+
+  it("sums the rules when there is no Total Budget row", () => {
+    const result = normalizeAnalysis([
+      entry(1, "Groceries", 2000, 500),
+      entry(2, "Bills", 3000, 1200),
+    ]);
+    expect(result.totalBudget).toBe(5000);
+    expect(result.totalSpent).toBe(1700);
+  });
+
+  it("prefers an explicit spent fallback over the sum", () => {
+    const result = normalizeAnalysis(
+      [entry(1, "Groceries", 2000, 500)],
+      9999,
+    );
+    expect(result.totalSpent).toBe(9999);
+  });
+
+  it("still prefers the Total Budget row over an explicit fallback", () => {
+    const result = normalizeAnalysis(
+      [entry(1, "Total Budget", 2000, 42), entry(2, "Groceries", 2000, 500)],
+      9999,
+    );
+    expect(result.totalSpent).toBe(42);
+  });
+
+  it("returns zeroed totals and no rules for an empty payload", () => {
+    expect(normalizeAnalysis([])).toEqual({
+      rules: [],
+      totalBudget: 0,
+      totalSpent: 0,
+    });
+  });
+});
+```
+
+- [ ] **Step 2: Run the test to verify it fails**
+
+```bash
+cd frontend && npx vitest run src/components/dashboard/budget/normalizeAnalysis.test.ts
+```
+
+Expected: FAIL — `Failed to resolve import "./normalizeAnalysis"`.
+
+- [ ] **Step 3: Implement the normalizer**
+
+Create `frontend/src/components/dashboard/budget/normalizeAnalysis.ts`:
+
+```ts
+import type { BudgetRule } from "./types";
+
+export interface AnalysisEntry {
+  rule: { id: number; name: string; category: string; amount: number };
+  current_amount: number;
+}
+
+export interface NormalizedAnalysis {
+  rules: BudgetRule[];
+  totalBudget: number;
+  totalSpent: number;
+}
+
+const TOTAL_BUDGET_RULE = "Total Budget";
+
+/**
+ * Fold a monthly or project analysis payload into what the card renders.
+ *
+ * Both carry a synthetic "Total Budget" row that supplies the totals and must
+ * not appear as a tile. Yearly analysis has no such row and does not use this —
+ * its totals come from the server's roll-up instead.
+ */
+export function normalizeAnalysis(
+  entries: AnalysisEntry[],
+  spentFallback?: number,
+): NormalizedAnalysis {
+  const rules: BudgetRule[] = entries.map((item) => ({
+    id: item.rule.id,
+    name: item.rule.name,
+    category: item.rule.category,
+    budget_amount: item.rule.amount,
+    spent_amount: item.current_amount,
+  }));
+  const totalRule = rules.find((r) => r.name === TOTAL_BUDGET_RULE);
+  return {
+    rules: rules
+      .filter((r) => r.name !== TOTAL_BUDGET_RULE)
+      .sort((a, b) => b.spent_amount - a.spent_amount),
+    totalBudget:
+      totalRule?.budget_amount ?? rules.reduce((sum, r) => sum + r.budget_amount, 0),
+    totalSpent:
+      totalRule?.spent_amount ??
+      spentFallback ??
+      rules.reduce((sum, r) => sum + r.spent_amount, 0),
+  };
+}
+```
+
+- [ ] **Step 4: Run the test to verify it passes**
+
+```bash
+cd frontend && npx vitest run src/components/dashboard/budget/normalizeAnalysis.test.ts
+```
+
+Expected: PASS, 7 tests.
+
+- [ ] **Step 5: Create MonthlyBudgetTab**
 
 Create `frontend/src/components/dashboard/budget/MonthlyBudgetTab.tsx`. Move the
 monthly query, the prefetch effect, the month-nav handlers and the monthly empty
@@ -744,7 +922,7 @@ import { Skeleton } from "../../common/Skeleton";
 import { useQueryKeys } from "../../../hooks/useQueryKeys";
 import { formatMonthYear } from "../../../utils/dateFormatting";
 import { BudgetRuleGrid } from "./BudgetRuleGrid";
-import type { BudgetRule } from "./types";
+import { normalizeAnalysis } from "./normalizeAnalysis";
 
 interface MonthlyBudgetTabProps {
   year: number;
@@ -752,11 +930,6 @@ interface MonthlyBudgetTabProps {
   onYearChange: (year: number) => void;
   onMonthChange: (month: number) => void;
   categoryIcons: Record<string, string> | undefined;
-}
-
-interface AnalysisEntry {
-  rule: { id: number; name: string; category: string; amount: number };
-  current_amount: number;
 }
 
 export const MonthlyBudgetTab: React.FC<MonthlyBudgetTabProps> = ({
@@ -820,22 +993,10 @@ export const MonthlyBudgetTab: React.FC<MonthlyBudgetTabProps> = ({
     },
   });
 
-  const analysis = useMemo(() => {
-    if (!data?.rules) return undefined;
-    const rules: BudgetRule[] = data.rules.map((item: AnalysisEntry) => ({
-      id: item.rule.id,
-      name: item.rule.name,
-      category: item.rule.category,
-      budget_amount: item.rule.amount,
-      spent_amount: item.current_amount,
-    }));
-    const totalRule = rules.find((r) => r.name === "Total Budget");
-    return {
-      rules: rules.filter((r) => r.name !== "Total Budget").sort((a, b) => b.spent_amount - a.spent_amount),
-      totalBudget: totalRule?.budget_amount ?? rules.reduce((s, r) => s + r.budget_amount, 0),
-      totalSpent: totalRule?.spent_amount ?? rules.reduce((s, r) => s + r.spent_amount, 0),
-    };
-  }, [data]);
+  const analysis = useMemo(
+    () => (data?.rules ? normalizeAnalysis(data.rules) : undefined),
+    [data],
+  );
 
   const nav = (
     <div className="h-9 flex items-center justify-between w-full mb-4">
@@ -912,7 +1073,7 @@ export const MonthlyBudgetTab: React.FC<MonthlyBudgetTabProps> = ({
 };
 ```
 
-- [ ] **Step 2: Create ProjectBudgetTab**
+- [ ] **Step 6: Create ProjectBudgetTab**
 
 Create `frontend/src/components/dashboard/budget/ProjectBudgetTab.tsx`, moving
 the project query, the auto-select effect, the create mutation, the selector row
@@ -932,17 +1093,12 @@ import { ProjectModal } from "../../modals/ProjectModal";
 import { useQueryKeys } from "../../../hooks/useQueryKeys";
 import { qkPrefix } from "../../../services/queryKeys";
 import { BudgetRuleGrid } from "./BudgetRuleGrid";
-import type { BudgetRule } from "./types";
+import { normalizeAnalysis } from "./normalizeAnalysis";
 
 interface ProjectBudgetTabProps {
   selectedProject: string | null;
   onSelectProject: (project: string | null) => void;
   categoryIcons: Record<string, string> | undefined;
-}
-
-interface ProjectEntry {
-  rule: { id: number; name: string; category: string; amount: number };
-  current_amount: number;
 }
 
 export const ProjectBudgetTab: React.FC<ProjectBudgetTabProps> = ({
@@ -987,22 +1143,12 @@ export const ProjectBudgetTab: React.FC<ProjectBudgetTabProps> = ({
     enabled: !!selectedProject,
   });
 
-  const analysis = useMemo(() => {
-    if (!data?.rules) return undefined;
-    const rules: BudgetRule[] = data.rules.map((item: ProjectEntry) => ({
-      id: item.rule.id,
-      name: item.rule.name,
-      category: item.rule.category,
-      budget_amount: item.rule.amount,
-      spent_amount: item.current_amount,
-    }));
-    const totalRule = rules.find((r) => r.name === "Total Budget");
-    return {
-      rules: rules.filter((r) => r.name !== "Total Budget").sort((a, b) => b.spent_amount - a.spent_amount),
-      totalBudget: totalRule?.budget_amount ?? rules.reduce((s, r) => s + r.budget_amount, 0),
-      totalSpent: totalRule?.spent_amount ?? data.total_spent ?? 0,
-    };
-  }, [data]);
+  // Projects fall back to the payload's own total_spent, which covers spend
+  // that predates any rule; monthly has no such field and sums its rules.
+  const analysis = useMemo(
+    () => (data?.rules ? normalizeAnalysis(data.rules, data.total_spent) : undefined),
+    [data],
+  );
 
   const modal = (
     <ProjectModal
@@ -1082,7 +1228,7 @@ Note the `useEffect` auto-select no longer needs the
 it calls a prop callback, not a local setter. If ESLint still flags it, keep the
 disable comment with the original's wording.
 
-- [ ] **Step 3: Reduce BudgetSection to a shell**
+- [ ] **Step 7: Reduce BudgetSection to a shell**
 
 Replace the entire contents of
 `frontend/src/components/dashboard/BudgetSection.tsx` with:
@@ -1166,7 +1312,7 @@ export function BudgetSection({ categoryIcons }: BudgetSectionProps) {
 }
 ```
 
-- [ ] **Step 4: Update the Dashboard import**
+- [ ] **Step 8: Update the Dashboard import**
 
 In `frontend/src/pages/Dashboard.tsx`, change line 16 from
 `import { BudgetSpendingGauge } from "../components/dashboard/BudgetSection";`
@@ -1182,7 +1328,7 @@ and line 416 from `budget: () => <BudgetSpendingGauge categoryIcons={categoryIco
     budget: () => <BudgetSection categoryIcons={categoryIcons} />,
 ```
 
-- [ ] **Step 5: Prove the old name is gone**
+- [ ] **Step 9: Prove the old name is gone**
 
 ```bash
 cd frontend && grep -rn "BudgetSpendingGauge" src/ e2e/
@@ -1190,7 +1336,7 @@ cd frontend && grep -rn "BudgetSpendingGauge" src/ e2e/
 
 Expected: no output.
 
-- [ ] **Step 6: Lint, build, unit tests**
+- [ ] **Step 10: Lint, build, unit tests**
 
 ```bash
 cd frontend && npm run lint && npm run build && npm test
@@ -1198,7 +1344,7 @@ cd frontend && npm run lint && npm run build && npm test
 
 Expected: all PASS.
 
-- [ ] **Step 7: e2e — behaviour must be unchanged by this refactor**
+- [ ] **Step 11: e2e — behaviour must be unchanged by this refactor**
 
 ```bash
 cd frontend && npm run test:e2e:isolated -- dashboard.spec.ts dashboard-block-sizes.spec.ts dashboard-layout.spec.ts rtl-chevrons.spec.ts
@@ -1206,7 +1352,7 @@ cd frontend && npm run test:e2e:isolated -- dashboard.spec.ts dashboard-block-si
 
 Expected: PASS.
 
-- [ ] **Step 8: Commit**
+- [ ] **Step 12: Commit**
 
 ```bash
 git add -A frontend/src
@@ -1551,6 +1697,13 @@ everywhere it is used (Tasks 1, 2, 4, 5, 6). `BudgetRuleGrid` takes
 `rules`/`categoryIcons` in every call site. Test ids `budget-total-bar`,
 `budget-total-bar-fill` and `budget-rule-grid` are defined in Tasks 1 and 3 and
 used in Tasks 1 and 7.
+
+**Amendment (pre-flight, agreed before execution).** Task 5 originally inlined
+a ~15-line `analysis` memo in both `MonthlyBudgetTab` and `ProjectBudgetTab`,
+identical apart from the `totalSpent` fallback. They now share
+`normalizeAnalysis(entries, spentFallback?)`, covered by its own unit test.
+`YearlyBudgetTab` (Task 6) deliberately does **not** use it — yearly analysis
+has no `"Total Budget"` row and its totals come from the server roll-up.
 
 **Sequencing.** Tasks 4 and 5 both touch `BudgetSection.tsx`; 4 lands the visual
 change on the two-tab structure and 5 restructures it, so they must run in
