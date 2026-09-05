@@ -5,17 +5,13 @@
  * scrolls horizontally (`overflow-x: auto|scroll`), and reports the narrowest
  * offenders together with their ancestor chain so the culprit CSS is obvious.
  */
-import { chromium, request } from "@playwright/test";
+import { chromium } from "@playwright/test";
+import { enableDemoMode } from "./helpers";
 
-const API_BASE = process.env.E2E_API_BASE ?? "http://localhost:8000/api";
 const BASE_URL = process.env.BASE_URL ?? "http://localhost:5173";
 const TARGETS = (process.env.PROBE_PAGES ?? "/budget").split(",");
 
 async function main() {
-  const ctx = await request.newContext();
-  await ctx.post(`${API_BASE}/testing/toggle_demo_mode`, { data: { enabled: true } });
-  await ctx.dispose();
-
   const browser = await chromium.launch({
     executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH,
   });
@@ -23,6 +19,10 @@ async function main() {
   for (const lang of ["en", "he"]) {
     const context = await browser.newContext({ viewport: { width: 375, height: 812 } });
     const page = await context.newPage();
+    // Per-client Demo Mode: builds the demo DB (idempotent) and seeds the
+    // localStorage flag the app + axios interceptor read on every request.
+    // Without this the page loads against the real database.
+    await enableDemoMode(page);
     await page.addInitScript((l) => {
       sessionStorage.setItem("onboardingDismissedAt", String(Date.now()));
       localStorage.setItem("i18nextLng", l);

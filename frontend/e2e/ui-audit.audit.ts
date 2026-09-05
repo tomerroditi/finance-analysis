@@ -20,8 +20,8 @@
  * the Playwright suite (`.audit.ts`, not `.spec.ts`) so it never gates CI.
  */
 import { chromium, type Page } from "@playwright/test";
+import { enableDemoMode } from "./helpers";
 
-const API_BASE = process.env.E2E_API_BASE ?? "http://localhost:8000/api";
 const BASE_URL = process.env.BASE_URL ?? "http://localhost:5173";
 
 const PAGES = [
@@ -177,11 +177,6 @@ async function auditPage(page: Page, cell: string, path: string) {
 }
 
 async function main() {
-  // Enable demo mode so every page has data to lay out.
-  const ctx = await (await import("@playwright/test")).request.newContext();
-  await ctx.post(`${API_BASE}/testing/toggle_demo_mode`, { data: { enabled: true } });
-  await ctx.dispose();
-
   const browser = await chromium.launch({
     executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH,
   });
@@ -191,6 +186,10 @@ async function main() {
       viewport: { width: cell.width, height: cell.height },
     });
     const page = await context.newPage();
+    // Per-client Demo Mode: builds the demo DB (idempotent) and seeds the
+    // localStorage flag the app + axios interceptor read on every request.
+    // Without this each context loads against the real database.
+    await enableDemoMode(page);
     await page.addInitScript((lang) => {
       sessionStorage.setItem("onboardingDismissedAt", String(Date.now()));
       localStorage.setItem("i18nextLng", lang);

@@ -53,18 +53,27 @@ class AppConfig:
             return self._forced_mode
         return _demo_mode_ctx.get()
 
-    def set_demo_mode(self, enabled: bool) -> Token[bool]:
+    def set_demo_mode(self, enabled: bool, *, ensure_dir: bool = True) -> Token[bool]:
         """Set demo mode for the current context.
 
         When enabling, the demo user directory is created if it does not
-        exist.
+        exist (unless ``ensure_dir`` is ``False``).
 
         Parameters
         ----------
         enabled : bool
             ``True`` to switch this context to the isolated demo
             environment, ``False`` for production.
-
+        ensure_dir : bool
+            Whether to ``os.makedirs`` the demo user directory when
+            enabling. Defaults to ``True`` for callers that need the
+            directory to exist (the demo-database lifecycle: preparing,
+            resetting, or checking demo_mode_status against a freshly
+            created install). Pass ``False`` for hot paths that merely
+            bind the flag for the duration of a request and never touch
+            the filesystem themselves — e.g. the ``resolve_demo_mode``
+            middleware, which otherwise pays a blocking ``os.makedirs``
+            syscall on the event loop for every single demo-mode request.
         Returns
         -------
         Token[bool]
@@ -73,7 +82,7 @@ class AppConfig:
             worker thread will carry the mode into unrelated work.
         """
         token = _demo_mode_ctx.set(enabled)
-        if enabled:
+        if enabled and ensure_dir:
             os.makedirs(self.get_user_dir(), exist_ok=True)
         return token
 

@@ -90,12 +90,15 @@ export function DemoModeProvider({
       // rebuilding would wipe its session mid-browse.
       await testingApi.prepareDemo();
     }
-    try {
-      localStorage.setItem(DEMO_MODE_STORAGE_KEY, enabled ? "1" : "0");
-    } catch {
-      // A client that cannot persist the flag still switches for this
-      // session; it just reverts to real mode on reload.
-    }
+    // The axios interceptor re-reads localStorage on every request to decide
+    // whether to send X-FAD-Demo. If the write below fails (private
+    // browsing, full storage quota, disabled storage), React state and the
+    // interceptor would disagree about the mode: query keys would move to
+    // the new namespace while requests kept going out under the old one,
+    // so responses land under the wrong-mode cache keys and get displayed
+    // as if they were the other mode's data. Bail out before flipping state
+    // so the two always agree — surface the failure to the caller instead.
+    localStorage.setItem(DEMO_MODE_STORAGE_KEY, enabled ? "1" : "0");
     setIsDemoMode(enabled);
     await queryClient.resetQueries();
   };

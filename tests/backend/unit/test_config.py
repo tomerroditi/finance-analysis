@@ -202,17 +202,21 @@ class TestDemoModeContextIsolation:
 
         assert AppConfig().is_demo_mode is False
 
-    def test_set_returns_token_and_reset_restores(self):
+    def test_set_returns_token_and_reset_restores(self, tmp_path):
         """Verify set_demo_mode returns a token that reset_demo_mode honours."""
         from backend.config import AppConfig
 
         config = AppConfig()
+        # Pinned so set_demo_mode(True)'s os.makedirs(get_user_dir()) never
+        # touches the real ~/.finance-analysis/demo_env on the dev machine
+        # running this test.
+        config._base_user_dir = str(tmp_path)
         token = config.set_demo_mode(True)
         assert config.is_demo_mode is True
         config.reset_demo_mode(token)
         assert config.is_demo_mode is False
 
-    def test_separate_contexts_do_not_leak(self):
+    def test_separate_contexts_do_not_leak(self, tmp_path):
         """Verify demo mode set in one context is invisible in another."""
         import contextvars
 
@@ -222,6 +226,10 @@ class TestDemoModeContextIsolation:
             return AppConfig().is_demo_mode
 
         config = AppConfig()
+        # Pinned so set_demo_mode(True)'s os.makedirs(get_user_dir()) never
+        # touches the real ~/.finance-analysis/demo_env on the dev machine
+        # running this test.
+        config._base_user_dir = str(tmp_path)
         token = config.set_demo_mode(True)
         try:
             # A fresh Context() holds no values, so the var falls back to
@@ -246,11 +254,15 @@ class TestDemoModeContextIsolation:
             AppConfig._forced_mode = None
             config.reset_demo_mode(token)
 
-    def test_forced_mode_none_defers_to_contextvar(self):
+    def test_forced_mode_none_defers_to_contextvar(self, tmp_path):
         """Verify clearing _forced_mode restores context-driven behaviour."""
         from backend.config import AppConfig
 
         config = AppConfig()
+        # Pinned so set_demo_mode(True)'s os.makedirs(get_user_dir()) never
+        # touches the real ~/.finance-analysis/demo_env on the dev machine
+        # running this test.
+        config._base_user_dir = str(tmp_path)
         AppConfig._forced_mode = None
         token = config.set_demo_mode(True)
         try:

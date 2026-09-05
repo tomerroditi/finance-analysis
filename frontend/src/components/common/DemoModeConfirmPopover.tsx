@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useDemoMode } from "../../context/DemoModeContext";
+import { useNotify } from "../../context/DialogContext";
 
 interface DemoModeConfirmPopoverProps {
   onClose: () => void;
@@ -11,6 +12,7 @@ export function DemoModeConfirmPopover({
 }: DemoModeConfirmPopoverProps) {
   const { toggleDemoMode } = useDemoMode();
   const { t } = useTranslation();
+  const notify = useNotify();
   const [isPending, setIsPending] = useState(false);
 
   const handleConfirm = async () => {
@@ -18,6 +20,8 @@ export function DemoModeConfirmPopover({
     try {
       await toggleDemoMode(true);
       onClose();
+    } catch {
+      notify.error(t("settings.demoModeToggleFailed"));
     } finally {
       setIsPending(false);
     }

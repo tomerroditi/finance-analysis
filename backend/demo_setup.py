@@ -366,20 +366,36 @@ def prepare_demo_database() -> None:
     re-anchored to ``date.today()``.
     """
     config = AppConfig()
-    demo_db_path = config.get_db_path()
-    source = _source_db_path()
+    # Force demo context for this function's entire duration, regardless of
+    # the caller's own mode. This function's whole job is to overwrite the
+    # demo DB file with the frozen snapshot — if it ever resolved
+    # get_db_path()/get_engine() while the ambient context was real mode, it
+    # would copy demo data straight over the user's real data.db, a total
+    # loss with no undo. Demo mode is now per-request/context-local rather
+    # than a single global toggle, which makes that mistake easier for a
+    # future caller to make than it used to be, so this must not rely on
+    # the caller having pinned it first. Existing callers
+    # (backend/routes/testing.py, index.py) already pin demo mode before
+    # calling this — that is intentional defense in depth, not redundant
+    # dead code, and stays as-is.
+    token = config.set_demo_mode(True)
+    try:
+        demo_db_path = config.get_db_path()
+        source = _source_db_path()
 
-    if os.path.exists(source):
-        os.makedirs(os.path.dirname(demo_db_path), exist_ok=True)
-        shutil.copy2(source, demo_db_path)
+        if os.path.exists(source):
+            os.makedirs(os.path.dirname(demo_db_path), exist_ok=True)
+            shutil.copy2(source, demo_db_path)
 
-    database.reset_engines()
-    engine = database.get_engine()
-    Base.metadata.create_all(bind=engine)
-    sync_missing_columns(engine)
-    _drop_retired_columns(engine)
-    _backfill_budget_rule_period_type(engine)
-    _backfill_liability_loan_type(engine)
+        database.reset_engines()
+        engine = database.get_engine()
+        Base.metadata.create_all(bind=engine)
+        sync_missing_columns(engine)
+        _drop_retired_columns(engine)
+        _backfill_budget_rule_period_type(engine)
+        _backfill_liability_loan_type(engine)
 
-    offset_days = (date.today() - DEMO_REFERENCE_DATE).days
-    _shift_dates(engine, offset_days)
+        offset_days = (date.today() - DEMO_REFERENCE_DATE).days
+        _shift_dates(engine, offset_days)
+    finally:
+        config.reset_demo_mode(token)

@@ -111,7 +111,7 @@ export default defineConfig(({ mode }) => {
                 !request.headers.get("X-FAD-Demo"),
               handler: "NetworkFirst",
               options: {
-                cacheName: "finance-api-get",
+                cacheName: "finance-api-get-v2",
                 networkTimeoutSeconds: 4,
                 expiration: {
                   maxEntries: 200,

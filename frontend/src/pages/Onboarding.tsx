@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router";
 import { Languages, Sparkles, Check, ArrowLeft, ArrowRight, Database, Wand2 } from "lucide-react";
 import { useDemoMode } from "../context/DemoModeContext";
+import { useNotify } from "../context/DialogContext";
 
 type Step = "language" | "path" | "done";
 type Path = "real" | "demo";
@@ -21,6 +22,7 @@ export function Onboarding() {
   const { t, i18n } = useTranslation();
   const navigate = useNavigate();
   const { toggleDemoMode } = useDemoMode();
+  const notify = useNotify();
   const [step, setStep] = useState<Step>("language");
   const [chosenPath, setChosenPath] = useState<Path | null>(null);
   const [busy, setBusy] = useState(false);
@@ -39,7 +41,7 @@ export function Onboarding() {
       }
       setStep("done");
     } catch {
-      setBusy(false);
+      notify.error(t("settings.demoModeToggleFailed"));
     } finally {
       setBusy(false);
     }

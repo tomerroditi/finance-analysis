@@ -191,7 +191,7 @@ app.add_middleware(
     allow_origins=_cors_origins,
     allow_credentials=_cors_allow_credentials,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allow_headers=["Content-Type", "Authorization", "X-Requested-With"],
+    allow_headers=["Content-Type", "Authorization", "X-Requested-With", "X-FAD-Demo"],
 )
 
 
@@ -230,7 +230,15 @@ async def resolve_demo_mode(request: Request, call_next):
     enabled = header.strip().lower() in _DEMO_HEADER_TRUTHY
 
     config = AppConfig()
-    token = config.set_demo_mode(enabled)
+    # ensure_dir=False: this middleware only binds the context-local flag
+    # for the request's duration and never itself touches the filesystem,
+    # so the os.makedirs set_demo_mode() otherwise performs on every enable
+    # would be a blocking syscall on the event loop for every demo-mode
+    # request. The demo user directory is guaranteed to already exist by
+    # the time any client can be in demo mode — prepare_demo_database()
+    # (routes/testing.py, index.py) creates it via its own set_demo_mode(True)
+    # call, which keeps the default ensure_dir=True.
+    token = config.set_demo_mode(enabled, ensure_dir=False)
     try:
         return await call_next(request)
     finally:
