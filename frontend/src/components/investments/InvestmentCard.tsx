@@ -41,6 +41,7 @@ const TYPE_KEY_MAP: Record<string, string> = {
   pension: "pension",
   brokerage_account: "brokerageAccount",
   p2p_lending: "p2pLending",
+  hishtalmut: "kerenHishtalmut",
   other: "other",
 };
 
@@ -204,6 +205,32 @@ export function InvestmentCard({
               >
                 <Pencil size={10} />
               </button>
+            </span>
+          </>
+        )}
+        {inv.type === "hishtalmut" && inv.liquidity_date && (
+          <>
+            <span>·</span>
+            <span dir="ltr">
+              {t("investments.liquidityDate")} {inv.liquidity_date}
+            </span>
+          </>
+        )}
+        {inv.type === "hishtalmut" && inv.commission_deposit != null && (
+          <>
+            <span>·</span>
+            <span>
+              {t("investments.depositFee")}{" "}
+              <span dir="ltr">{inv.commission_deposit}%</span>
+            </span>
+          </>
+        )}
+        {inv.type === "hishtalmut" && inv.commission_management != null && (
+          <>
+            <span>·</span>
+            <span>
+              {t("investments.managementFee")}{" "}
+              <span dir="ltr">{inv.commission_management}%</span>
             </span>
           </>
         )}

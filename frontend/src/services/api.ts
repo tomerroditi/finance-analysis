@@ -441,6 +441,10 @@ export interface Investment {
   interest_rate_type?: string;
   rate_spread?: number | null;
   notes?: string;
+  insurance_policy_id?: string | null;
+  liquidity_date?: string | null;
+  commission_deposit?: number | null;
+  commission_management?: number | null;
   latest_snapshot_date?: string;
   latest_snapshot_balance?: number;
   current_balance?: number;

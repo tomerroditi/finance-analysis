@@ -832,6 +832,9 @@
     "allTagsInUse": "All tags in use",
     "balance": "Balance",
     "source": "Source",
+    "liquidityDate": "Liquid",
+    "depositFee": "Deposit fee",
+    "managementFee": "Management fee",
     "types": {
       "stocks": "Stocks",
       "crypto": "Crypto",
@@ -840,6 +843,7 @@
       "pension": "Pension",
       "brokerageAccount": "Brokerage Account",
       "p2pLending": "P2P Lending",
+      "kerenHishtalmut": "Keren Hishtalmut",
       "other": "Other"
     },
     "primeLinkedRate": "Prime-Linked",

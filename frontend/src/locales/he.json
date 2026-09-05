@@ -832,6 +832,9 @@
     "allTagsInUse": "כל התגיות בשימוש",
     "balance": "יתרה",
     "source": "מקור",
+    "liquidityDate": "נזיל",
+    "depositFee": "דמי ניהול מהפקדה",
+    "managementFee": "דמי ניהול מצבירה",
     "types": {
       "stocks": "מניות",
       "crypto": "קריפטו",
@@ -840,6 +843,7 @@
       "pension": "פנסיה",
       "brokerageAccount": "חשבון ברוקר",
       "p2pLending": "הלוואות P2P",
+      "kerenHishtalmut": "קרן השתלמות",
       "other": "אחר"
     },
     "primeLinkedRate": "צמוד פריים",

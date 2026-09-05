@@ -40,6 +40,13 @@ describe("Investments", () => {
         expect(buttons.length).toBeGreaterThan(0);
       });
     });
+
+    it("labels hishtalmut investments as Keren Hishtalmut, not Other", async () => {
+      renderWithProviders(<Investments />);
+      await waitFor(() => {
+        expect(screen.getAllByText(/Keren Hishtalmut/i).length).toBeGreaterThan(0);
+      });
+    });
   });
 
   describe("portfolio overview", () => {
