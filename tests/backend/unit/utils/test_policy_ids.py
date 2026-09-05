@@ -9,6 +9,7 @@ deposit history for every affected policy.
 
 import inspect
 import sys
+import time
 
 import pytest
 
@@ -43,6 +44,31 @@ class TestNormalizePolicyId:
     def test_empty_input_returns_empty_string(self, empty):
         """Verify missing values normalize to an empty string, not ``None``."""
         assert normalize_policy_id(empty) == ""
+
+    @pytest.mark.parametrize(
+        "value",
+        ["a (b) c)", "x ((y))", "a (b (c))", "weird ) (", "trailing )"],
+    )
+    def test_a_malformed_trailing_group_is_left_alone(self, value):
+        """Verify only a clean, non-nested trailing "(...)" group is stripped."""
+        assert normalize_policy_id(value) == value
+
+    def test_only_the_last_group_is_stripped(self):
+        """Verify an earlier parenthesised group is preserved."""
+        assert normalize_policy_id("007-1 (a) (2)") == "007-1 (a)"
+
+    def test_long_whitespace_run_normalizes_in_linear_time(self):
+        r"""Verify a pathological input cannot stall the parser.
+
+        The natural pattern for this (``\s*\([^()]*\)\s*$``) backtracks
+        quadratically over a long run of spaces — 1.7 s for 40k of them — and
+        this runs on provider-supplied text, so the implementation avoids
+        regex here. The bound is loose on purpose: the string version takes
+        microseconds, the regex version seconds.
+        """
+        start = time.perf_counter()
+        normalize_policy_id(" " * 40_000 + ")")
+        assert time.perf_counter() - start < 1.0
 
 
 class TestPolicyIdKey:

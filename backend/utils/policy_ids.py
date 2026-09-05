@@ -25,7 +25,6 @@ path instead breaks the frozen Windows build, where PyInstaller bundles no
 
 import re
 
-_PAREN_SUFFIX_RE = re.compile(r"\s*\([^()]*\)\s*$")
 _DIGIT_RUN_RE = re.compile(r"\d+")
 
 __all__ = ["normalize_policy_id", "policy_id_key"]
@@ -53,7 +52,17 @@ def normalize_policy_id(raw: str | None) -> str:
     if raw is None:
         return ""
     value = str(raw).strip()
-    stripped = _PAREN_SUFFIX_RE.sub("", value).strip()
+    if not value.endswith(")"):
+        return value
+
+    # Deliberately not a regex: the natural pattern here (``\s*\([^()]*\)\s*$``)
+    # backtracks quadratically over a long run of spaces, and this runs on
+    # provider-supplied text. rfind + a nesting check is linear and matches the
+    # same shape — a trailing "(...)" group containing no parentheses of its own.
+    opener = value.rfind("(")
+    if opener == -1 or ")" in value[opener + 1 : -1]:
+        return value
+    stripped = value[:opener].strip()
     return stripped or value
 
 
