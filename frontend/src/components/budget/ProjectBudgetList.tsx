@@ -90,15 +90,13 @@ export const ProjectBudgetList: React.FC<ProjectBudgetListProps> = ({
 
   return (
     <div className="space-y-2">
+      {/* No sub-label: a project rule always covers exactly one tag, so the
+          tag line only ever repeated the rule name back at the reader. */}
       {tagRules.map((item) => {
-        const subLabel = Array.isArray(item.rule.tags)
-          ? item.rule.tags.join(", ")
-          : item.rule.tags;
         return (
           <BudgetLedgerRow
             key={item.rule.id}
             label={item.rule.name}
-            subLabel={subLabel}
             current={item.current_amount}
             total={item.rule.amount}
             isExpanded={expandedRuleId === String(item.rule.id)}
