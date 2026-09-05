@@ -1,3 +1,9 @@
+## v1.54.1 (2026-09-05)
+
+### Fix
+
+- **security**: close the CodeQL log-injection and clear-text-logging alerts (#244)
+
 ## v1.54.0 (2026-09-05)
 
 ### Feat
