@@ -91,7 +91,6 @@ export function BudgetSpendingGauge({
       id: item.rule.id,
       name: item.rule.name,
       category: item.rule.category,
-      tags: item.rule.tags,
       budget_amount: item.rule.amount,
       spent_amount: item.current_amount,
     }));
@@ -146,7 +145,6 @@ export function BudgetSpendingGauge({
       id: item.rule.id,
       name: item.rule.name,
       category: item.rule.category,
-      tags: item.rule.tags,
       budget_amount: item.rule.amount,
       spent_amount: item.current_amount,
     }));
