@@ -287,6 +287,16 @@ export const mockRetirementSuggestions = {
 
 export const handlers = [
   // ── Tagging API ──
+  http.get("/api/tagging/categories/usage", () =>
+    HttpResponse.json(
+      Object.fromEntries(
+        Object.keys(mockCategories).map((name) => [
+          name,
+          { last_used: "2026-08-01", unused: false },
+        ]),
+      ),
+    ),
+  ),
   http.get("/api/tagging/categories", () =>
     HttpResponse.json(mockCategories),
   ),

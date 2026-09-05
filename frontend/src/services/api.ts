@@ -246,6 +246,7 @@ export interface TaggingRule {
 export const taggingApi = {
   // Category & Tag Management (Legislated in routes/tagging.py)
   getCategories: () => api.get("/tagging/categories"),
+  getCategoryUsage: () => api.get("/tagging/categories/usage"),
   createCategory: (name: string, tags?: string[]) =>
     api.post("/tagging/categories", { name, tags }),
   deleteCategory: (name: string) =>
