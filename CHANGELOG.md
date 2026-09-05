@@ -1,3 +1,13 @@
+## v1.54.0 (2026-09-05)
+
+### Feat
+
+- isolate Demo Mode per client (#241)
+
+### Fix
+
+- **scraper**: partition scraper registries by demo mode (#242)
+
 ## v1.53.0 (2026-09-04)
 
 ### Feat
