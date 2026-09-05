@@ -145,12 +145,42 @@ test.describe("Budget", () => {
     expect(await sparklines.first().locator("rect").count()).toBeGreaterThan(0);
     await expect(sparklines.first().locator("polyline")).toHaveCount(0);
 
+    // --- Rule rows carry no chevron; the row itself is the toggle ---
+    // The trailing chevron was a decorative <span>, not a control: it could
+    // not be clicked and only restated what clicking the row already does,
+    // so it took a column for nothing. Assert both halves — the icon is
+    // gone, and the row still expands and collapses on click.
+    const ruleRow = page
+      .locator("button[aria-expanded]")
+      .filter({ has: page.getByTestId("ledger-figures") })
+      .first();
+    await expect(ruleRow).toBeVisible();
+    await expect(
+      ruleRow
+        .locator("xpath=..")
+        .locator("svg.lucide-chevron-down, svg.lucide-chevron-up"),
+    ).toHaveCount(0);
+    await expect(ruleRow).toHaveAttribute("aria-expanded", "false");
+    await ruleRow.click();
+    await expect(ruleRow).toHaveAttribute("aria-expanded", "true");
+    await ruleRow.click();
+    await expect(ruleRow).toHaveAttribute("aria-expanded", "false");
+
     await page.getByRole("button", { name: /^Yearly$/i }).click();
     const yearlySpark = page.getByTestId("rule-sparkline").first();
     if (await yearlySpark.isVisible().catch(() => false)) {
       await expect(yearlySpark.locator("polyline")).toHaveCount(1);
       await expect(yearlySpark.locator("rect")).toHaveCount(0);
     }
+    // Same rows, same component — the yearly tab is chevron-free too.
+    await expect(
+      page
+        .locator("button[aria-expanded]")
+        .filter({ has: page.getByTestId("ledger-figures") })
+        .first()
+        .locator("xpath=..")
+        .locator("svg.lucide-chevron-down, svg.lucide-chevron-up"),
+    ).toHaveCount(0);
     await page.getByText(/Monthly Budget/i).click();
     await expect(prevMonth).toBeVisible();
 

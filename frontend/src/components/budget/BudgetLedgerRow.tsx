@@ -1,6 +1,6 @@
 import React from "react";
 import { useTranslation } from "react-i18next";
-import { ChevronDown, ChevronUp, PenSquare, Trash2 } from "lucide-react";
+import { PenSquare, Trash2 } from "lucide-react";
 import { formatCurrency } from "../../utils/numberFormatting";
 
 /**
@@ -236,10 +236,6 @@ export const BudgetLedgerRow: React.FC<BudgetLedgerRowProps> = ({
         {actions && (
           <div className="hidden md:flex items-center gap-1 shrink-0">{actions}</div>
         )}
-
-        <span className="text-[var(--text-muted)] shrink-0">
-          {isExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
-        </span>
       </div>
 
       {/* Mobile has no hover, so actions get their own always-visible row. */}
