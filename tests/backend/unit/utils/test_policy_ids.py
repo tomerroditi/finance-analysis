@@ -7,8 +7,12 @@ September 2026, which forked a duplicate insurance account, investment and
 deposit history for every affected policy.
 """
 
+import inspect
+import sys
+
 import pytest
 
+from backend.utils import policy_ids as backend_policy_ids
 from backend.utils.policy_ids import normalize_policy_id, policy_id_key
 
 
@@ -76,3 +80,37 @@ class TestPolicyIdKey:
     def test_empty_input_returns_empty_key(self, empty):
         """Verify missing values produce a falsy key callers can reject."""
         assert policy_id_key(empty) == ""
+
+
+class TestHelperModuleWiring:
+    """Guards on where the helpers live and what importing them costs."""
+
+    def test_scraper_reexport_is_the_same_object(self):
+        """Verify provider code and backend code share one implementation."""
+        from scraper.utils import policy_ids as scraper_policy_ids
+
+        assert scraper_policy_ids.normalize_policy_id is normalize_policy_id
+        assert scraper_policy_ids.policy_id_key is policy_id_key
+
+    def test_importing_the_helpers_pulls_in_no_scraper_runtime(self):
+        """Verify the backend helper stays free of httpx/Playwright.
+
+        ``scraper`` and ``scraper.utils`` import both at package init, and the
+        Vercel build ships neither — importing in that direction would 500
+        every route on cold start.
+        """
+        source = inspect.getsource(backend_policy_ids)
+
+        assert "import scraper" not in source
+        assert "from scraper" not in source
+
+    def test_helpers_are_a_plain_importable_module(self):
+        """Verify the module never loads its own source from a file path.
+
+        PyInstaller bundles no ``.py`` sources on disk, so file-path loading
+        raises ``FileNotFoundError`` at startup in the frozen Windows build.
+        """
+        source = inspect.getsource(backend_policy_ids)
+
+        assert "spec_from_file_location" not in source
+        assert backend_policy_ids is sys.modules["backend.utils.policy_ids"]
