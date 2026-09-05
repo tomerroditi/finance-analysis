@@ -15,6 +15,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from backend.constants.tables import SplitTransactionsTableFields
 
 from backend.repositories.transactions.service_repositories import T_service
+from backend.utils.log_sanitize import scrub
 
 logger = logging.getLogger(__name__)
 
@@ -74,7 +75,7 @@ class SplitsMixin:
             repo = self.get_repo_by_source(source)
             if repo is None:
                 logger.warning(
-                    "Splits reference unknown source %s — skipping", source
+                    "Splits reference unknown source %s — skipping", scrub(source)
                 )
                 continue
             ids = [int(v) for v in group[tid_col].unique()]
@@ -228,7 +229,7 @@ class SplitsMixin:
             raise
         except SQLAlchemyError:
             logger.exception(
-                "Split failed for unique_id=%s in %s", unique_id, source
+                "Split failed for unique_id=%s in %s", scrub(unique_id), scrub(source)
             )
             self.db.rollback()
             raise
@@ -261,7 +262,7 @@ class SplitsMixin:
             return True
         except SQLAlchemyError:
             logger.exception(
-                "Revert split failed for unique_id=%s in %s", unique_id, source
+                "Revert split failed for unique_id=%s in %s", scrub(unique_id), scrub(source)
             )
             self.db.rollback()
             raise

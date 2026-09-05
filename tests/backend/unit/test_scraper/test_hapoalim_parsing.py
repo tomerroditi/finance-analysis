@@ -7,6 +7,7 @@ from scraper.models.transaction import TransactionStatus, TransactionType
 from scraper.providers.banks.hapoalim import (
     _convert_transactions,
     _get_possible_login_results,
+    _account_log_id,
 )
 
 
@@ -151,3 +152,31 @@ class TestHapoalimLoginResults:
             LoginResult.INVALID_PASSWORD,
             LoginResult.CHANGE_PASSWORD,
         }
+
+
+class TestAccountLogId:
+    """The account identifier must never reach a log in clear text."""
+
+    def test_id_is_not_the_account_number(self):
+        """Verify no part of the raw identifier survives into the id."""
+        raw = "12-345-6789012"
+        out = _account_log_id(raw)
+        assert raw not in out
+        assert "6789012" not in out
+        assert "9012" not in out
+
+    def test_id_is_stable_for_the_same_account(self):
+        """Verify log lines for one account can be correlated."""
+        assert _account_log_id("12-345-6789012") == _account_log_id("12-345-6789012")
+
+    def test_different_accounts_get_different_ids(self):
+        """Verify two accounts in one scrape stay distinguishable."""
+        assert _account_log_id("12-345-6789012") != _account_log_id("12-345-6789013")
+
+    def test_none_does_not_raise(self):
+        """Verify a missing account number is handled, not raised on."""
+        assert _account_log_id(None).startswith("acct:")
+
+    def test_empty_string_does_not_raise(self):
+        """Verify an empty identifier is handled the same way."""
+        assert _account_log_id("").startswith("acct:")

@@ -1,4 +1,5 @@
 import json
+import hashlib
 import logging
 import random
 import re
@@ -21,6 +22,37 @@ logger = logging.getLogger(__name__)
 DATE_FORMAT = "%Y%m%d"
 
 BASE_URL = "https://login.bankhapoalim.co.il"
+
+
+def _account_log_id(account_number: object) -> str:
+    """Return a stable, non-reversible id for correlating log lines.
+
+    The raw value here is the full ``bankNumber-branchNumber-accountNumber``
+    identifier. This log line exists only to tell one account apart from
+    another within a single multi-account scrape, which a digest does just
+    as well as the number itself — so nothing about the account needs to
+    reach the log at all.
+
+    This deliberately departs from the last-4 masking used by
+    ``onezero._mask_phone``: the last four digits of a bank account are
+    themselves commonly used to identify it, and unlike a phone number
+    there is no operator flow here that needs a human-recognisable
+    fragment. Hashing is also the shape static analysis recognises as
+    sanitising, so the alert closes in code rather than by dismissal.
+
+    Parameters
+    ----------
+    account_number : object
+        The raw account identifier (may be ``None``).
+
+    Returns
+    -------
+    str
+        ``"acct:"`` plus the first 8 hex characters of the SHA-256 digest.
+        Stable within and across runs, and not reversible to the account.
+    """
+    digest = hashlib.sha256(str(account_number or "").encode("utf-8")).hexdigest()
+    return f"acct:{digest[:8]}"
 
 
 def _convert_transactions(txns: list[dict]) -> list[Transaction]:
@@ -593,7 +625,9 @@ class HapoalimScraper(BrowserScraper):
             account_number = (
                 f"{account['bankNumber']}-{account['branchNumber']}-{account['accountNumber']}"
             )
-            logger.debug("Getting information for account %s", account_number)
+            logger.debug(
+                "Getting information for account %s", _account_log_id(account_number)
+            )
 
             balance = await _get_account_balance(
                 api_site_url, self.page, account_number
