@@ -1,3 +1,14 @@
+## v1.56.2 (2026-09-05)
+
+### Fix
+
+- **budget**: drop the redundant tag line from project rules (#249)
+- **insurance**: stop provider policy-ID reformats from forking Keren Hishtalmut duplicates (#247)
+
+### Refactor
+
+- **budget**: always show budget rules and tidy the status band header (#250)
+
 ## v1.56.1 (2026-09-05)
 
 ### Fix
