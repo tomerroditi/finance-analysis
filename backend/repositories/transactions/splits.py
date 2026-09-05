@@ -229,7 +229,7 @@ class SplitsMixin:
             raise
         except SQLAlchemyError:
             logger.exception(
-                "Split failed for unique_id=%s in %s", unique_id, scrub(source)
+                "Split failed for unique_id=%s in %s", scrub(unique_id), scrub(source)
             )
             self.db.rollback()
             raise
@@ -262,7 +262,7 @@ class SplitsMixin:
             return True
         except SQLAlchemyError:
             logger.exception(
-                "Revert split failed for unique_id=%s in %s", unique_id, scrub(source)
+                "Revert split failed for unique_id=%s in %s", scrub(unique_id), scrub(source)
             )
             self.db.rollback()
             raise
