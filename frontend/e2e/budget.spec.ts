@@ -75,38 +75,27 @@ test.describe("Budget", () => {
       /Budget\s/,
     );
 
-    // --- Total Budget card collapses the rule list and shows month transactions ---
-    const totalBudget = page.getByRole("button", {
-      name: /^\s*Total Budget\s*$/,
+    // --- The rule list is always shown; the band's label is no longer a toggle ---
+    await expect(
+      page.getByRole("button", { name: /^\s*Total Budget\s*$/ }),
+    ).toHaveCount(0);
+    await expect(band.getByText(/Total Budget/i).first()).toBeVisible();
+
+    // "View month transactions" rides on the band's heading line and reveals a
+    // transactions table under the card.
+    const viewMonth = page.getByRole("button", {
+      name: /View month transactions/i,
     });
     if (
-      await totalBudget
+      await viewMonth
         .first()
         .isVisible()
         .catch(() => false)
     ) {
-      // Collapsing hides the per-rule rows; expanding shows them again.
-      await totalBudget.first().click();
-      await page.waitForTimeout(400);
-      await totalBudget.first().click();
-      await page.waitForTimeout(400);
-
-      // "View month transactions" reveals a transactions table under the card.
-      const viewMonth = page.getByRole("button", {
-        name: /View month transactions/i,
-      });
-      if (
-        await viewMonth
-          .first()
-          .isVisible()
-          .catch(() => false)
-      ) {
-        await viewMonth.first().click();
-        await page.waitForTimeout(500);
-        await expect(
-          page.getByRole("button", { name: /Hide Transactions/i }).first(),
-        ).toBeVisible();
-      }
+      await viewMonth.first().click();
+      await expect(
+        page.getByRole("button", { name: /Hide Transactions/i }).first(),
+      ).toBeVisible();
     }
 
     // --- Pending Refunds section collapses from its header ---

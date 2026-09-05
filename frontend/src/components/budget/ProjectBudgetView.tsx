@@ -322,7 +322,7 @@ export const ProjectBudgetView: React.FC<ProjectBudgetViewProps> = ({ tabs }) =>
                       setIsEditMode(true);
                       setIsProjectModalOpen(true);
                     }}
-                    className="inline-flex items-center gap-1.5 py-2 text-xs font-medium text-[var(--primary)] hover:text-[var(--primary-dark)] transition-colors"
+                    className="inline-flex items-center gap-1.5 text-xs font-medium text-[var(--primary)] hover:text-[var(--primary-dark)] transition-colors"
                   >
                     <PenSquare size={14} />
                     {t("budget.editTotalBudget")}

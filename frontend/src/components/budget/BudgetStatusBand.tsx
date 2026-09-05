@@ -1,6 +1,6 @@
 import React from "react";
 import { useTranslation } from "react-i18next";
-import { ChevronDown, ChevronUp, Clock } from "lucide-react";
+import { Clock } from "lucide-react";
 import { formatCurrency } from "../../utils/numberFormatting";
 
 export interface BandStat {
@@ -18,15 +18,15 @@ export interface BandStat {
 }
 
 interface BudgetStatusBandProps {
-  /** Accessible name of the collapse control — keep it short and stable. */
+  /** Name of the band — keep it short and stable. */
   label: string;
   spent: number;
   total: number;
   stats: BandStat[];
-  /** When provided, the label becomes a button that collapses the rule list. */
-  onToggleRules?: () => void;
-  rulesCollapsed?: boolean;
-  /** Secondary control row (e.g. "View month transactions"). */
+  /**
+   * Secondary control (e.g. "View month transactions"). Rides on the heading
+   * line rather than claiming a row of its own under the gauge.
+   */
   footer?: React.ReactNode;
   /** Figures are provisional because the underlying scrape is stale. */
   isStale?: boolean;
@@ -46,8 +46,6 @@ export const BudgetStatusBand: React.FC<BudgetStatusBandProps> = ({
   spent,
   total,
   stats,
-  onToggleRules,
-  rulesCollapsed = false,
   footer,
   isStale = false,
   children,
@@ -64,12 +62,7 @@ export const BudgetStatusBand: React.FC<BudgetStatusBandProps> = ({
   const staleValue = isStale ? "opacity-60" : "";
 
   const heading = (
-    <span className="flex items-center gap-1.5 text-[10px] sm:text-xs text-[var(--text-muted)] uppercase tracking-wide">
-      {onToggleRules && (
-        <span className="text-[var(--text-muted)]">
-          {rulesCollapsed ? <ChevronDown size={14} /> : <ChevronUp size={14} />}
-        </span>
-      )}
+    <span className="flex items-center gap-1.5 min-w-0 text-[10px] sm:text-xs text-[var(--text-muted)] uppercase tracking-wide">
       <span className="truncate" dir="auto">
         {label}
       </span>
@@ -91,23 +84,20 @@ export const BudgetStatusBand: React.FC<BudgetStatusBandProps> = ({
       {/* Side by side only from `xl:`. At 1024 the gauge plus four stats left
           the trend figure a ~50px sliver and truncated its label to "BUDG…";
           stacked, the stats row gets the card's full width instead. */}
-      <div className="flex flex-col xl:flex-row xl:items-center gap-3 xl:gap-5">
+      <div className="flex flex-col xl:flex-row xl:items-stretch gap-3 xl:gap-5">
         {/* The gauge is capped rather than greedy: a full-width bar spent the
             row's whole width restating a number already spelled out above it,
             leaving the stats — and the trend figure in particular — squeezed. */}
         <div className="w-full xl:w-[32%] xl:shrink-0 min-w-0">
-          {onToggleRules ? (
-            <button
-              type="button"
-              onClick={onToggleRules}
-              aria-expanded={!rulesCollapsed}
-              className="text-start max-w-full"
-            >
-              {heading}
-            </button>
-          ) : (
-            heading
-          )}
+          {/* Top-aligned, not centred: the heading has to sit on the same line as
+              the stat labels across the divider, and the footer control is
+              taller than the label it rides beside. */}
+          <div className="flex items-start justify-between gap-2 min-w-0">
+            {heading}
+            {/* `flex`, not a block: a block wrapper gives the control a 24px line
+                box and drops it 6px below the heading it sits beside. */}
+            {footer && <div className="flex shrink-0">{footer}</div>}
+          </div>
 
           <div className={`flex items-baseline flex-wrap gap-2 mt-1.5 mb-2 ${staleValue}`}>
             <span className="text-xl md:text-2xl font-bold font-mono" dir="ltr">
@@ -140,7 +130,7 @@ export const BudgetStatusBand: React.FC<BudgetStatusBandProps> = ({
           </div>
         </div>
 
-        <div className="grid grid-cols-3 xl:flex xl:flex-1 xl:items-center gap-2 xl:gap-5 min-w-0 xl:border-s xl:border-[var(--surface-light)] xl:ps-5">
+        <div className="grid grid-cols-3 xl:flex xl:flex-1 xl:items-start gap-2 xl:gap-5 min-w-0 xl:border-s xl:border-[var(--surface-light)] xl:ps-5">
           {stats.map((stat) => (
             <div
               key={stat.key}
@@ -155,7 +145,6 @@ export const BudgetStatusBand: React.FC<BudgetStatusBandProps> = ({
         </div>
       </div>
 
-      {footer && <div className="mt-1">{footer}</div>}
       {children}
     </div>
   );

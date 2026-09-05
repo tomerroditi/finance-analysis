@@ -110,7 +110,7 @@ describe("YearlyBudgetView", () => {
 
       // The band sums `summary.total_spent` straight from the API; the row
       // must read the same number rather than its mirror image.
-      const band = screen.getByText(/allocated/i).closest("div") as HTMLElement;
+      const band = screen.getByTestId("budget-status-band");
       expect(band.textContent).toContain("5,000");
     });
   });

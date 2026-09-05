@@ -74,7 +74,6 @@ export const MonthlyBudgetView: React.FC<MonthlyBudgetViewProps> = ({
   const [isRuleModalOpen, setIsRuleModalOpen] = useState(false);
   const [editingRule, setEditingRule] = useState<BudgetRule | null>(null);
   const [expandedRuleId, setExpandedRuleId] = useState<string | null>(null);
-  const [rulesCollapsed, setRulesCollapsed] = useState(false);
   const [showTotalTransactions, setShowTotalTransactions] = useState(false);
   const [includeSplitParents, setIncludeSplitParents] = useState(false);
   const [showDemoConfirm, setShowDemoConfirm] = useState(false);
@@ -521,13 +520,11 @@ export const MonthlyBudgetView: React.FC<MonthlyBudgetViewProps> = ({
           spent={totalItem.current_amount}
           total={totalItem.rule.amount}
           stats={stats}
-          onToggleRules={() => setRulesCollapsed((v) => !v)}
-          rulesCollapsed={rulesCollapsed}
           isStale={isBudgetStale}
           footer={
             <button
               onClick={() => setShowTotalTransactions((v) => !v)}
-              className="py-2 text-xs font-medium text-[var(--primary)] hover:text-[var(--primary-dark)] transition-colors"
+              className="text-xs font-medium text-[var(--primary)] hover:text-[var(--primary-dark)] transition-colors"
             >
               {showTotalTransactions
                 ? t("budget.hideTransactions")
@@ -571,7 +568,7 @@ export const MonthlyBudgetView: React.FC<MonthlyBudgetViewProps> = ({
         />
       )}
 
-      {rules.length > 0 && !rulesCollapsed && (
+      {rules.length > 0 && (
         <div className="w-full space-y-2">{childItems.map(renderRow)}</div>
       )}
 
