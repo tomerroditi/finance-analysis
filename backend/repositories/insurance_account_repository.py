@@ -8,6 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.models.insurance_account import InsuranceAccount
+from backend.utils.policy_ids import policy_id_key
 
 
 class InsuranceAccountRepository:
@@ -35,11 +36,28 @@ class InsuranceAccountRepository:
         return list(self.db.execute(stmt).scalars().all())
 
     def get_by_policy_id(self, policy_id: str) -> InsuranceAccount | None:
-        """Get a single insurance account by its policy ID."""
+        """Get a single insurance account by its policy ID.
+
+        Falls back to a reformat-insensitive match (see
+        ``backend.utils.policy_ids``) so a provider cosmetically restyling its
+        policy IDs does not orphan the stored account and fork a duplicate.
+        The stored ``policy_id`` is deliberately left as first seen — other
+        tables join on that string.
+        """
         stmt = select(InsuranceAccount).where(
             InsuranceAccount.policy_id == policy_id
         )
-        return self.db.execute(stmt).scalars().first()
+        exact = self.db.execute(stmt).scalars().first()
+        if exact is not None:
+            return exact
+
+        key = policy_id_key(policy_id)
+        if not key:
+            return None
+        for account in self.get_all():
+            if policy_id_key(account.policy_id) == key:
+                return account
+        return None
 
     def set_custom_name(
         self, policy_id: str, custom_name: str | None
