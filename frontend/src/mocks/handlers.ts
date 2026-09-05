@@ -647,6 +647,7 @@ export const handlers = [
   http.post("/api/scraping/abort", () =>
     HttpResponse.json({ status: "ok" }),
   ),
+  http.get("/api/scraping/active", () => HttpResponse.json([])),
   http.get("/api/scraping/last-scrapes", () =>
     HttpResponse.json([
       {

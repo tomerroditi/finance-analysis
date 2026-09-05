@@ -1,10 +1,10 @@
 import { test, expect, request } from "@playwright/test";
 import { enableDemoMode, navigateTo, API_BASE } from "./helpers";
 
-// Two throwaway accounts seeded into the demo DB so "Scrape All" has more
-// than one card to act on. One (RUNNING_ACCOUNT) is driven into
-// waiting_for_2fa before "Scrape All" fires a second time; the other
-// (IDLE_ACCOUNT) stays idle and must still be launched.
+// Two throwaway accounts seeded into the demo DB so there is more than one
+// card to act on. RUNNING_ACCOUNT is scraped first and parked in
+// waiting_for_2fa; IDLE_ACCOUNT is the neighbour that must still be
+// startable while RUNNING_ACCOUNT is mid-scrape.
 const RUNNING_ACCOUNT = "E2E ScrapeAll Running";
 const IDLE_ACCOUNT = "E2E ScrapeAll Idle";
 const FAILED_ACCOUNT = "E2E ScrapeAll Failed";
@@ -43,7 +43,7 @@ async function setBankCredential(accountName: string, create: boolean) {
   }
 }
 
-test.describe("Scrape All burst guard", () => {
+test.describe("Per-account scraping concurrency", () => {
   test.beforeAll(async () => {
     // Build the demo DB before writing the throwaway credentials into it —
     // these two calls don't go through a `page`, so they carry the demo
@@ -72,7 +72,7 @@ test.describe("Scrape All burst guard", () => {
     await enableDemoMode(page);
   });
 
-  test("Scrape All disables the instant any account is active, blocking a second dispatch while one is scraping", async ({
+  test("a mid-scrape account never blocks its neighbours, and Scrape All skips the ones already running", async ({
     page,
   }) => {
     // Stub the whole /api/scraping/* surface — Demo Mode's dummy scrapers
@@ -80,21 +80,13 @@ test.describe("Scrape All burst guard", () => {
     // hit a real provider's site from a test, the same concern documented in
     // onezero-resend.spec.ts.
     //
-    // Reality check performed while writing this spec: "Scrape All" is
-    // disabled the instant *any* account's start() response registers in
-    // runningScrapers — which, with several accounts firing in parallel
-    // (RUNNING_ACCOUNT, IDLE_ACCOUNT, plus whatever demo accounts already
-    // exist), happens within a single render tick of the first click. There
-    // is no click-twice-on-the-real-button window to exploit here; the
-    // button is the FIRST layer of the guard and, per this test, it holds.
-    // The scrapeAll() dedupe itself (the actual subject of this task) is
-    // exercised directly and deterministically in
-    // useScraping.test.ts — that's the right layer for it: proving the
-    // hook's own bookkeeping refuses a second launch, independent of
-    // whatever timing the DOM happens to allow on a given run. This test
-    // proves the two layers agree: the button disables immediately, so a
-    // real user can never even reach the code path scrapeAll's dedupe
-    // guards.
+    // The behaviour under test: concurrency is per-account, not global. The
+    // backend has always allowed it (ScrapingService.start_scraping_single
+    // is single-flight per account, keyed on service/provider/account), but
+    // the UI used to gate every card's Play button on a global
+    // `isAnyScraping`, so scraping one source froze all the others. Both
+    // layers of the dedupe still hold: the card whose scraper is live swaps
+    // Play for Abort, and scrapeAll() refuses to relaunch an active account.
     const startedAccounts: string[] = [];
     let nextProcessId = 6000;
 
@@ -130,56 +122,114 @@ test.describe("Scrape All burst guard", () => {
 
     await navigateTo(page, "/data-sources");
 
-    await expect(
-      page.getByText(RUNNING_ACCOUNT, { exact: false }),
-    ).toBeVisible();
-    await expect(page.getByText(IDLE_ACCOUNT, { exact: false })).toBeVisible();
+    const cardFor = (name: string) =>
+      page
+        .getByRole("heading", { name, exact: true })
+        .locator("xpath=ancestor::div[contains(@class, 'group')][1]");
+    const runningCard = cardFor(RUNNING_ACCOUNT);
+    const idleCard = cardFor(IDLE_ACCOUNT);
+    const playButton = (card: ReturnType<typeof cardFor>) =>
+      card.getByTitle(/Scrape This Source|שלוף מקור זה/);
 
-    // Located structurally, not by its accessible name: the button's label
-    // flips from "Scrape All" to "Scraping..." the instant isAnyScraping
-    // becomes true (DataSources.tsx), so a name-based getByRole locator
-    // stops matching anything right when we need to assert its disabled
-    // state — the same gotcha documented in onezero-resend.spec.ts for the
-    // Resend button. The "Connect Account" button's name never changes, so
-    // walk to its immediately preceding sibling instead.
+    await expect(runningCard).toBeVisible();
+    await expect(idleCard).toBeVisible();
+
+    // Scrape ONE account, then wait for the poller to flip its card into the
+    // waiting_for_2fa block — that card is now unambiguously mid-scrape.
+    await playButton(runningCard).click();
+    await expect(runningCard.getByPlaceholder(/Code|קוד/)).toBeVisible({
+      timeout: 10_000,
+    });
+    expect(startedAccounts).toEqual([RUNNING_ACCOUNT]);
+
+    // The regression this test exists for: a neighbouring account's Play
+    // button must still be live and must actually dispatch a scrape.
+    await expect(playButton(idleCard)).toBeEnabled();
+    await playButton(idleCard).click();
+    await expect
+      .poll(() => startedAccounts)
+      .toEqual([RUNNING_ACCOUNT, IDLE_ACCOUNT]);
+
+    // Located structurally rather than by accessible name so the locator
+    // survives any future label change — the same gotcha documented in
+    // onezero-resend.spec.ts for the Resend button.
     const scrapeAllButton = page
       .getByRole("button", { name: "Connect Account", exact: true })
       .locator("xpath=preceding-sibling::button[1]");
-    await expect(scrapeAllButton).toBeEnabled();
 
+    // Scrape All also stays usable mid-run: it is how the user launches the
+    // accounts that are still idle. Its dedupe (useScraping.scrapeAll, unit
+    // tested in useScraping.test.ts) is what keeps the two already-running
+    // accounts from being relaunched.
+    await expect(scrapeAllButton).toBeEnabled();
     await scrapeAllButton.click();
 
-    await expect.poll(() => startedAccounts).toContain(RUNNING_ACCOUNT);
-    await expect.poll(() => startedAccounts).toContain(IDLE_ACCOUNT);
+    // The pre-existing demo accounts get launched…
+    await expect
+      .poll(() => startedAccounts.length)
+      .toBeGreaterThan(2);
+    await page.waitForTimeout(500);
+    // …while neither active account is dispatched a second time.
+    expect(
+      startedAccounts.filter((a) => a === RUNNING_ACCOUNT),
+    ).toHaveLength(1);
+    expect(startedAccounts.filter((a) => a === IDLE_ACCOUNT)).toHaveLength(1);
+  });
 
-    // Wait for the poller to flip RUNNING_ACCOUNT's card into the
-    // waiting_for_2fa 2FA block — the same "account already has an active
-    // scraper" state the brief describes.
+  test("a running scrape is still shown after navigating away and back", async ({
+    page,
+  }) => {
+    // The hook's `runningScrapers` map is component-local, so leaving Data
+    // Sources unmounts it. Without the GET /api/scraping/active hydration on
+    // mount, the card came back reading "idle" while the scraper was still
+    // running — and the 2s poller never restarted, so the scrape's completion
+    // invalidations never fired either.
+    const ACTIVE = {
+      process_id: RUNNING_PROCESS_ID,
+      service: "banks",
+      provider: "onezero",
+      account_name: RUNNING_ACCOUNT,
+      status: "waiting_for_2fa",
+    };
+
+    await page.route("**/api/scraping/active", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify([ACTIVE]),
+      });
+    });
+    await page.route("**/api/scraping/status*", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ status: "waiting_for_2fa" }),
+      });
+    });
+
+    await navigateTo(page, "/data-sources");
+
     const runningCard = page
       .getByRole("heading", { name: RUNNING_ACCOUNT, exact: true })
       .locator("xpath=ancestor::div[contains(@class, 'group')][1]");
+
+    // Never clicked Scrape in this browser — the card is live purely because
+    // the backend said the scrape is still in flight.
     await expect(runningCard.getByPlaceholder(/Code|קוד/)).toBeVisible({
       timeout: 10_000,
     });
 
-    // The primary, always-on guard: "Scrape All" must be disabled while any
-    // scraper is active, so a real second click can never reach scrapeAll()
-    // at all.
-    await expect(scrapeAllButton).toBeDisabled();
+    // Leave the page (unmounting the hook) and come back.
+    await navigateTo(page, "/transactions");
+    await navigateTo(page, "/data-sources");
 
-    const startedAfterFirstClick = [...startedAccounts];
-
-    // A genuinely `disabled` <button> never dispatches click in a real
-    // browser (Playwright's `force: true` still performs a real mouse event
-    // — it just skips Playwright's own actionability pre-checks — and the
-    // browser correctly refuses to fire onClick regardless). So this
-    // confirms the disabled state actually blocks the click, rather than
-    // faking a bypass: the click below must NOT produce any new
-    // /scraping/start calls.
-    await scrapeAllButton.click({ force: true });
-    await page.waitForTimeout(500);
-
-    expect(startedAccounts).toEqual(startedAfterFirstClick);
+    await expect(runningCard.getByPlaceholder(/Code|קוד/)).toBeVisible({
+      timeout: 10_000,
+    });
+    // Still mid-scrape, so the card offers Abort rather than Scrape.
+    await expect(
+      runningCard.getByTitle(/Abort Scraping|הפסק שליפה/),
+    ).toBeVisible();
   });
 
   test("a failed scrape explains itself and still exposes the provider's text", async ({

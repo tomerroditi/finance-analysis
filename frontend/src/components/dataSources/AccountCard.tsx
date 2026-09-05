@@ -26,7 +26,6 @@ interface AccountCardProps {
   balance: BankBalance | undefined;
   /** Whether this account was scraped today (gates balance entry + badge). */
   scrapedToday: boolean;
-  isAnyScraping: boolean;
   tfaIsPending: boolean;
   tfaCode: string;
   onTfaCodeChange: (code: string) => void;
@@ -51,7 +50,6 @@ export function AccountCard({
   lastScrapeDate,
   balance,
   scrapedToday,
-  isAnyScraping,
   tfaIsPending,
   tfaCode,
   onTfaCodeChange,
@@ -189,7 +187,10 @@ export function AccountCard({
         </div>
 
         <div className="flex gap-2">
-          {/* Scrape / Abort Button */}
+          {/* Scrape / Abort Button. Deliberately gated on THIS account only —
+              scrapers run concurrently backend-side (single-flight is
+              per-account, see ScrapingService.start_scraping_single), so one
+              account mid-scrape must not disable every other card's button. */}
           {isActive ? (
             <button
               onClick={onAbortScrape}
@@ -201,7 +202,6 @@ export function AccountCard({
           ) : (
             <button
               onClick={() => onStartScrape()}
-              disabled={isAnyScraping}
               className="p-2.5 rounded-xl bg-[var(--surface-light)] text-[var(--text-muted)] hover:text-[var(--primary)] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
               title={t("dataSources.scrapeThisSource")}
             >
@@ -210,8 +210,11 @@ export function AccountCard({
           )}
           {acc.provider === "onezero" && (
             <button
+              // Only this account is locked: it already has a live scraper,
+              // and the backend would return that run's process_id rather
+              // than honouring force_2fa.
               onClick={() => onStartScrape({ force2fa: true })}
-              disabled={isAnyScraping}
+              disabled={!!isActive}
               className="p-2.5 rounded-xl bg-[var(--surface-light)] text-[var(--text-muted)] hover:text-amber-400 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
               title={t("dataSources.forceTfaTitle")}
               aria-label={t("dataSources.forceTfa")}

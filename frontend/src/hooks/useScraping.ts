@@ -121,6 +121,54 @@ export function useScraping() {
     return () => clearInterval(interval);
   }, [resendCooldownEnd]);
 
+  // Re-hydrate from the backend on mount.
+  //
+  // `runningScrapers` is component-local state, so it dies with whatever
+  // component called this hook — leaving Data Sources and coming back used
+  // to reset every card to idle even though the scraper was still running,
+  // and the polling effect never restarted, so the finished scrape's
+  // invalidations never fired either. The backend's `_active_scrapers`
+  // registry is the real source of truth; ask it what is still live.
+  //
+  // Merged rather than assigned: a scrape started microseconds before this
+  // request resolves is already in local state and must not be dropped, and
+  // locally-known terminal states (a just-failed scrape the user is still
+  // reading) must survive too. Existing entries win — their `last_updated`
+  // and error fields are fresher than anything this endpoint returns.
+  useEffect(() => {
+    let cancelled = false;
+    scrapingApi
+      .getActive()
+      .then((res) => {
+        if (cancelled || res.data.length === 0) return;
+        setRunningScrapers((prev) => {
+          const next = { ...prev };
+          for (const entry of res.data) {
+            if (next[entry.process_id]) continue;
+            next[entry.process_id] = {
+              process_id: entry.process_id,
+              account: {
+                service: entry.service,
+                provider: entry.provider,
+                account_name: entry.account_name,
+              },
+              status: entry.status,
+              last_updated: Date.now(),
+            };
+          }
+          return next;
+        });
+      })
+      .catch((e) => {
+        // Non-fatal: the user simply sees idle cards until they act, which
+        // is exactly the pre-hydration behaviour.
+        console.error("Failed to load active scrapers:", e);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   /** Seconds remaining in the resend cooldown for a process, or 0 if none. */
   const resendCooldownRemaining = useCallback(
     (processId: number): number => {

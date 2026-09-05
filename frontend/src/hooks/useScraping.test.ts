@@ -15,6 +15,7 @@ vi.mock("../services/api", () => ({
   scrapingApi: {
     start: vi.fn().mockResolvedValue({ data: 1 }),
     getStatus: vi.fn().mockResolvedValue({ data: { status: "in_progress" } }),
+    getActive: vi.fn().mockResolvedValue({ data: [] }),
     abort: vi.fn().mockResolvedValue({ data: { status: "aborted" } }),
     submit2fa: vi.fn().mockResolvedValue({ data: { status: "success" } }),
     resend2fa: vi
@@ -36,6 +37,83 @@ const waitingScraper: ScraperState = {
   status: "waiting_for_2fa",
   last_updated: Date.now(),
 };
+
+describe("useScraping hydration from the backend", () => {
+  // `runningScrapers` is component-local, so leaving Data Sources and coming
+  // back used to reset every card to idle while the scrape was still running
+  // — and the polling effect never restarted, so the scrape's completion
+  // invalidations never fired either. On mount the hook now asks the backend
+  // which scrapes are actually live.
+  beforeEach(() => vi.clearAllMocks());
+
+  it("restores an in-flight scraper on mount so a remount shows it as running", async () => {
+    (scrapingApi.getActive as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      data: [
+        {
+          process_id: 42,
+          service: "banks",
+          provider: "onezero",
+          account_name: "Acc",
+          status: "waiting_for_2fa",
+        },
+      ],
+    });
+
+    const { result } = renderHook(() => useScraping(), { wrapper });
+
+    await waitFor(() => expect(result.current.isAnyScraping).toBe(true));
+    expect(result.current.getScraperForAccount(acc)).toMatchObject({
+      process_id: 42,
+      status: "waiting_for_2fa",
+    });
+  });
+
+  it("keeps a locally-started scraper when hydration resolves afterwards", async () => {
+    // The hydration response is a snapshot taken before this scrape existed;
+    // merging (rather than replacing) is what stops it from erasing a scrape
+    // the user kicked off microseconds earlier.
+    let resolveActive: (v: unknown) => void = () => {};
+    (scrapingApi.getActive as ReturnType<typeof vi.fn>).mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveActive = resolve;
+      }),
+    );
+    (scrapingApi.start as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      data: 7,
+    });
+
+    const { result } = renderHook(() => useScraping(), { wrapper });
+    await act(async () => {
+      await result.current.startScraper(acc, 30);
+    });
+
+    await act(async () => {
+      resolveActive({ data: [] });
+    });
+
+    await waitFor(() =>
+      expect(result.current.getScraperForAccount(acc)).toMatchObject({
+        process_id: 7,
+        status: "in_progress",
+      }),
+    );
+  });
+
+  it("survives a failing /active call without breaking the hook", async () => {
+    (scrapingApi.getActive as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
+      new Error("offline"),
+    );
+    const consoleError = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => {});
+
+    const { result } = renderHook(() => useScraping(), { wrapper });
+
+    await waitFor(() => expect(consoleError).toHaveBeenCalled());
+    expect(result.current.isAnyScraping).toBe(false);
+    consoleError.mockRestore();
+  });
+});
 
 describe("useScraping.startScraper force2fa", () => {
   beforeEach(() => vi.clearAllMocks());
@@ -276,8 +354,9 @@ describe("useScraping.resendTfa restarted — stale process cleanup (regression)
   // Object.values(runningScrapers).filter(...) — with no dedup by account.
   // If `resendTfa`'s "restarted" branch ever stopped deleting the old
   // process_id before adding the new one, the leaked old entry would (a)
-  // permanently disable scrape buttons via `isAnyScraping`'s `.some()` over
-  // ALL entries, and (b) keep polling a dead process every 2s forever. This
+  // keep the Scrape All spinner running forever via `isAnyScraping`'s
+  // `.some()` over ALL entries, and (b) keep polling a dead process every 2s
+  // forever. This
   // test drives the real polling effect (not getScraperForAccount) so it
   // can't be fooled by that masking.
   beforeEach(() => {

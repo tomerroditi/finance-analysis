@@ -286,7 +286,6 @@ export function DataSources() {
               onChange={(e) =>
                 setScrapingPeriodDays(e.target.value === "auto" ? null : Number(e.target.value))
               }
-              disabled={isAnyScraping}
               className="appearance-none bg-[var(--surface)] border border-[var(--surface-light)] rounded-xl px-3 pe-7 py-2.5 text-xs font-bold text-white outline-none focus:border-[var(--primary)]/50 transition-colors disabled:opacity-50 cursor-pointer"
             >
               {SCRAPING_PERIODS.map((p) => (
@@ -297,11 +296,16 @@ export function DataSources() {
           </div>
           <button
             onClick={() => accounts && scrapeAll(accounts, scrapingPeriodDays)}
-            disabled={isAnyScraping || !accounts?.length}
+            disabled={!accounts?.length}
             className="flex items-center gap-2 px-5 py-2.5 bg-[var(--surface)] border border-[var(--surface-light)] text-white rounded-xl font-bold hover:border-[var(--primary)]/50 hover:bg-[var(--primary)]/5 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
           >
+            {/* Stays clickable while scrapes are in flight so the remaining
+                idle accounts can still be launched; scrapeAll() skips the
+                ones already running. The spinner is the only in-progress
+                signal — the label must NOT swap, or a name-based locator
+                (and the user's muscle memory) loses the button mid-run. */}
             <RefreshCw size={16} className={isAnyScraping ? "animate-spin" : ""} />
-            {isAnyScraping ? t("dataSources.scraping") : t("dataSources.scrapeAll")}
+            {t("dataSources.scrapeAll")}
           </button>
           <button
             onClick={() => setIsAddOpen(true)}
@@ -350,7 +354,6 @@ export function DataSources() {
                   lastScrapeDate={lastScrape?.last_scrape_date}
                   balance={bal}
                   scrapedToday={isScrapedToday(acc.provider, acc.account_name)}
-                  isAnyScraping={isAnyScraping}
                   tfaIsPending={tfaIsPending}
                   tfaCode={tfaCodes[tfaKey] || ""}
                   onTfaCodeChange={(code) =>

@@ -370,6 +370,23 @@ export const scrapingApi = {
     ),
   abort: (processId: number) =>
     api.post("/scraping/abort", { process_id: processId }),
+  /**
+   * Scrapes still in flight on the backend for this client.
+   *
+   * Lets `useScraping` re-hydrate after its component unmounts (navigating
+   * away from Data Sources and back, a reload, a second tab) instead of
+   * losing track of a running scrape.
+   */
+  getActive: () =>
+    api.get<
+      {
+        process_id: number;
+        service: string;
+        provider: string;
+        account_name: string;
+        status: string;
+      }[]
+    >("/scraping/active"),
   getLastScrapes: () =>
     api.get<
       {

@@ -167,6 +167,52 @@ class ScrapingService:
             )
         return result
 
+    def get_active_scrapes(self) -> List[Dict[str, str | int]]:
+        """List the scrapes currently running for the caller's demo mode.
+
+        The UI's in-progress state lives in a React hook that is torn down
+        whenever the user leaves the Data Sources page, so it needs a way to
+        re-learn what is still running on mount. ``_active_scrapers`` is the
+        authoritative answer: an adapter is inserted there when a scrape is
+        launched and popped by ``run()``'s ``finally`` on success, failure, or
+        cancellation.
+
+        Deliberately sourced from the in-memory registry rather than from
+        history rows with an ``in_progress`` status. A scrape interrupted by a
+        server restart leaves its row stuck at ``in_progress`` forever with no
+        live adapter behind it — surfacing those would pin a permanent, and
+        un-abortable, "scraping…" card in the UI.
+
+        Scoped to the caller's demo mode: a demo client must not be shown (or
+        handed the ``process_id`` of) a real-mode client's in-flight scrape,
+        and vice versa.
+
+        Returns
+        -------
+        list[dict]
+            One entry per live scrape, with ``process_id``, ``service``,
+            ``provider``, ``account_name``, and ``status`` (``"in_progress"``
+            or ``"waiting_for_2fa"``). Empty when nothing is running.
+        """
+        demo = AppConfig().is_demo_mode
+        active: List[Dict[str, str | int]] = []
+        for adapter in list(_active_scrapers.values()):
+            if adapter.demo_mode != demo:
+                continue
+            status = self.scraping_history_repo.get_scraping_status(
+                adapter.process_id
+            )
+            active.append(
+                {
+                    "process_id": adapter.process_id,
+                    "service": adapter.service_name,
+                    "provider": adapter.provider_name,
+                    "account_name": adapter.account_name,
+                    "status": status or self.scraping_history_repo.IN_PROGRESS,
+                }
+            )
+        return active
+
     def start_scraping_single(
         self,
         service: str,
