@@ -1,3 +1,13 @@
+## v1.56.3 (2026-09-05)
+
+### Fix
+
+- **e2e**: stop the isolated runner from leaking servers and losing shard results (#252)
+
+### Refactor
+
+- **budget**: drop the dead chevron from budget rule rows (#248)
+
 ## v1.56.2 (2026-09-05)
 
 ### Fix
