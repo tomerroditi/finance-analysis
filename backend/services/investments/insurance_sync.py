@@ -11,6 +11,7 @@ import pandas as pd
 
 from backend.constants.categories import INVESTMENTS_CATEGORY
 from backend.repositories.insurance_account_repository import InsuranceAccountRepository
+from backend.services.investments.valuation import HISHTALMUT_TYPE
 
 
 class InsuranceSyncMixin:
@@ -79,7 +80,7 @@ class InsuranceSyncMixin:
                 inv_id = self.investments_repo.create_investment(
                     category=INVESTMENTS_CATEGORY,
                     tag=tag,
-                    type_="hishtalmut",
+                    type_=HISHTALMUT_TYPE,
                     name=display_name,
                     interest_rate_type="variable",
                     commission_deposit=insurance_meta.get("commission_deposits_pct"),

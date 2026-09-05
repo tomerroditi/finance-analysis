@@ -963,3 +963,81 @@ class TestInsuranceLinkedTransactions:
 
         metrics = service.calculate_profit_loss(inv_id)
         assert metrics["total_deposits"] == 0.0
+
+
+class TestHishtalmutTotalBalance:
+    """Tests for InvestmentsService.get_hishtalmut_total_balance."""
+
+    def test_returns_none_when_no_hishtalmut_investments(self, db_session):
+        """Verify None is returned when no hishtalmut investments exist."""
+        service = InvestmentsService(db_session)
+        service.create_investment(
+            category="Investments",
+            tag="Stock Fund",
+            type_="stocks",
+            name="S&P 500",
+        )
+
+        assert service.get_hishtalmut_total_balance() is None
+
+    def test_sums_scraped_and_manual_hishtalmut(self, db_session):
+        """Verify both insurance-linked and manually-typed KH are summed."""
+        service = InvestmentsService(db_session)
+        scraped_id = service.investments_repo.create_investment(
+            category="Investments",
+            tag="Keren Hishtalmut - hafenix (007-916-407357)",
+            type_="hishtalmut",
+            name="Scraped KH",
+            insurance_policy_id="007-916-407357",
+        )
+        manual_id = service.investments_repo.create_investment(
+            category="Investments",
+            tag="Keren Hishtalmut - manual",
+            type_="hishtalmut",
+            name="Manual KH",
+        )
+        service.create_balance_snapshot(scraped_id, "2026-08-30", 56957.0)
+        service.create_balance_snapshot(manual_id, "2026-08-30", 12000.0)
+
+        assert service.get_hishtalmut_total_balance() == pytest.approx(68957.0)
+
+    def test_ignores_non_hishtalmut_types(self, db_session):
+        """Verify investments of other types do not contribute to the total."""
+        service = InvestmentsService(db_session)
+        kh_id = service.investments_repo.create_investment(
+            category="Investments",
+            tag="Keren Hishtalmut - manual",
+            type_="hishtalmut",
+            name="Manual KH",
+        )
+        stocks_id = service.investments_repo.create_investment(
+            category="Investments",
+            tag="Stock Fund",
+            type_="stocks",
+            name="S&P 500",
+        )
+        service.create_balance_snapshot(kh_id, "2026-08-30", 12000.0)
+        service.create_balance_snapshot(stocks_id, "2026-08-30", 99000.0)
+
+        assert service.get_hishtalmut_total_balance() == pytest.approx(12000.0)
+
+    def test_excludes_closed_hishtalmut(self, db_session):
+        """Verify closed KH investments are excluded from the total."""
+        service = InvestmentsService(db_session)
+        open_id = service.investments_repo.create_investment(
+            category="Investments",
+            tag="Keren Hishtalmut - open",
+            type_="hishtalmut",
+            name="Open KH",
+        )
+        closed_id = service.investments_repo.create_investment(
+            category="Investments",
+            tag="Keren Hishtalmut - closed",
+            type_="hishtalmut",
+            name="Closed KH",
+        )
+        service.create_balance_snapshot(open_id, "2026-08-30", 12000.0)
+        service.create_balance_snapshot(closed_id, "2026-08-30", 5000.0)
+        service.close_investment(closed_id, "2026-08-31")
+
+        assert service.get_hishtalmut_total_balance() == pytest.approx(12000.0)
