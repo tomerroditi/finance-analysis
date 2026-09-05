@@ -3,6 +3,7 @@
 import pandas as pd
 import pytest
 
+from backend.errors import ValidationException
 from backend.models.insurance_account import InsuranceAccount
 from backend.models.investment import Investment as InvestmentModel
 from backend.models.transaction import InsuranceTransaction, ManualInvestmentTransaction
@@ -1041,3 +1042,50 @@ class TestHishtalmutTotalBalance:
         service.close_investment(closed_id, "2026-08-31")
 
         assert service.get_hishtalmut_total_balance() == pytest.approx(12000.0)
+
+
+class TestScrapedInvestmentTypeGuard:
+    """Insurance-linked investments must keep the type sync gave them."""
+
+    def test_rejects_type_change_on_insurance_linked_investment(self, db_session):
+        """Verify reclassifying a scraped KH investment raises ValidationException."""
+        service = InvestmentsService(db_session)
+        inv_id = service.investments_repo.create_investment(
+            category="Investments",
+            tag="Keren Hishtalmut - hafenix (007-916-407357)",
+            type_="hishtalmut",
+            name="Scraped KH",
+            insurance_policy_id="007-916-407357",
+        )
+
+        with pytest.raises(ValidationException):
+            service.update_investment(inv_id, type="stocks")
+
+    def test_allows_other_updates_on_insurance_linked_investment(self, db_session):
+        """Verify non-type updates still succeed on a scraped investment."""
+        service = InvestmentsService(db_session)
+        inv_id = service.investments_repo.create_investment(
+            category="Investments",
+            tag="Keren Hishtalmut - hafenix (007-916-407357)",
+            type_="hishtalmut",
+            name="Scraped KH",
+            insurance_policy_id="007-916-407357",
+        )
+
+        service.update_investment(inv_id, notes="reviewed")
+
+        assert service.investments_repo.get_by_id(inv_id).iloc[0]["notes"] == "reviewed"
+
+    def test_allows_type_change_on_manual_investment(self, db_session):
+        """Verify a manually-created investment can be reclassified as KH."""
+        service = InvestmentsService(db_session)
+        inv_id = service.investments_repo.create_investment(
+            category="Investments",
+            tag="Old Fund",
+            type_="other",
+            name="Manual Fund",
+        )
+
+        service.update_investment(inv_id, type="hishtalmut")
+
+        assert service.investments_repo.get_by_id(inv_id).iloc[0]["type"] == "hishtalmut"
