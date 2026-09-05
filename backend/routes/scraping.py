@@ -179,6 +179,24 @@ async def resend_2fa(
     )
 
 
+@router.get("/active")
+def get_active_scrapes(db: Session = Depends(get_database)) -> list:
+    """Return the scrapes currently in flight for this client.
+
+    Lets the UI re-hydrate its in-progress state after the Data Sources page
+    is unmounted and remounted (navigation, reload, a second tab), instead of
+    silently forgetting a running scrape.
+
+    Returns
+    -------
+    list[dict]
+        One entry per live scrape with ``process_id``, ``service``,
+        ``provider``, ``account_name``, and ``status``.
+    """
+    service = ScrapingService(db)
+    return service.get_active_scrapes()
+
+
 @router.get("/last-scrapes")
 def get_last_scrapes(db: Session = Depends(get_database)) -> list:
     """Return the last successful scrape date for each configured account.
