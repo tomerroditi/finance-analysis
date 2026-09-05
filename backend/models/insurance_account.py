@@ -42,7 +42,12 @@ class InsuranceAccount(Base, TimestampMixin):
     insurance_covers : str, optional
         JSON string: ``[{title, desc, sum}]`` (pension only).
     insurance_costs : str, optional
-        JSON string: ``[{title, amount}]`` — annual internal deductions (pension only).
+        JSON string: ``[{title, amount}]`` — the provider's **year-to-date
+        movement statement**, not a cost list. Rows include opening/closing
+        balance, deposits and gains alongside the deductions, and they sum to
+        the closing balance. Read it only through the frontend classifier
+        (``frontend/src/utils/insuranceStatement.ts``); summing it blindly
+        produces a number several times larger than any real cost.
     liquidity_date : str, optional
         Earliest withdrawal date (hishtalmut only, YYYY-MM-DD).
     """
