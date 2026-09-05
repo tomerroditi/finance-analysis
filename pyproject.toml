@@ -85,6 +85,15 @@ version_provider = "poetry"
 version_files = [
     "pyproject.toml:tool.poetry.version",
     "frontend/package.json:\"version\"",
+    # The lockfile carries the app version twice (top level and the root
+    # `packages[""]` entry). Bumping package.json without it left the lockfile
+    # frozen at 1.52.1, so every fresh `npm install` produced a spurious 2-line
+    # diff. Both lines are rewritten here because commitizen substitutes the
+    # *current* version string on every line matching the pattern — see
+    # tests/backend/unit/test_version_files_consistency.py, which guards the
+    # one hazard that comes with it: a dependency pinned at the same version
+    # would be rewritten too.
+    "frontend/package-lock.json:\"version\"",
     "build/installer_script.nsi:^!define APP_VERSION \".*\"$",
 ]
 update_changelog_on_bump = true
