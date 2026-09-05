@@ -8,6 +8,7 @@ import pandas as pd
 from sqlalchemy import select, update, delete
 from sqlalchemy.orm import Session
 from backend.errors import EntityNotFoundException
+from backend.utils.policy_ids import policy_id_key
 from backend.utils.session_cache import session_cache_get, session_cache_set
 
 from backend.models.investment import Investment
@@ -207,11 +208,32 @@ class InvestmentsRepository:
         -------
         pd.DataFrame
             Matching investment row, or empty DataFrame if not found.
+
+        Notes
+        -----
+        Falls back to a reformat-insensitive match (see
+        ``backend.utils.policy_ids``) when no exact match exists, so a
+        provider restyling its policy IDs cannot fork a duplicate investment.
         """
         stmt = select(Investment).where(
             Investment.insurance_policy_id == policy_id
         )
-        return pd.read_sql(stmt, self.db.bind)
+        exact = pd.read_sql(stmt, self.db.bind)
+        if not exact.empty:
+            return exact
+
+        key = policy_id_key(policy_id)
+        if not key:
+            return exact
+        linked = pd.read_sql(
+            select(Investment).where(Investment.insurance_policy_id.isnot(None)),
+            self.db.bind,
+        )
+        if linked.empty:
+            return exact
+        return linked[
+            linked["insurance_policy_id"].map(policy_id_key) == key
+        ].reset_index(drop=True)
 
     def update_investment(self, investment_id: int, **fields) -> None:
         """Update an investment by ID.

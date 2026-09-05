@@ -44,7 +44,16 @@ class InsuranceSyncMixin:
             if persisted is not None:
                 custom_name = persisted.custom_name
         display_name = custom_name or account_name
-        tag = f"Keren Hishtalmut - {provider} ({policy_id})"
+
+        existing = self.investments_repo.get_by_insurance_policy_id(policy_id)
+        # A matched investment keeps its stored policy ID: the insurance
+        # transactions and snapshots already join on that exact string, so the
+        # tag has to be built from it rather than from a provider's restyled
+        # incoming value.
+        tag_policy_id = (
+            existing.iloc[0]["insurance_policy_id"] if not existing.empty else policy_id
+        )
+        tag = f"Keren Hishtalmut - {provider} ({tag_policy_id})"
         metadata_fields = {
             "tag": tag,
             "name": display_name,
@@ -53,7 +62,6 @@ class InsuranceSyncMixin:
             "liquidity_date": insurance_meta.get("liquidity_date"),
         }
 
-        existing = self.investments_repo.get_by_insurance_policy_id(policy_id)
         if not existing.empty:
             inv_id = int(existing.iloc[0]["id"])
             self.investments_repo.update_investment(inv_id, **metadata_fields)

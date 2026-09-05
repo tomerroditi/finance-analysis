@@ -10,6 +10,7 @@ from scraper.models.account import AccountResult
 from scraper.models.result import LoginResult
 from scraper.models.transaction import Transaction, TransactionStatus, TransactionType
 from scraper.utils import parse_provider_date, wait_until_element_found
+from scraper.utils.policy_ids import normalize_policy_id, policy_id_key
 
 logger = logging.getLogger(__name__)
 
@@ -406,7 +407,13 @@ class HaPhoenixScraper(BrowserScraper):
         AccountResult
             Pension account data with deposit transactions and metadata.
         """
-        policy_id = account_info["policyId"]
+        # ``policyId`` is a provider display string and is NOT stable — HaPhoenix
+        # reformatted the parenthesised internal ID in September 2026 without
+        # any account changing. Keep the raw value for the detail URL, but
+        # derive every persisted identity from the normalized form.
+        raw_policy_id = account_info["policyId"]
+        policy_id = normalize_policy_id(raw_policy_id)
+        policy_key = policy_id_key(raw_policy_id)
         pension_type = account_info.get("pensionType", "makifa").lower()
         balance = _safe_float(account_info.get("balance", 0))
         balance_date = _parse_date(account_info.get("balanceDate", "")) or ""
@@ -414,7 +421,7 @@ class HaPhoenixScraper(BrowserScraper):
         self._emit_progress(f"scraping pension {policy_id}")
 
         # Navigate to pension detail page
-        url = f"https://my.fnx.co.il/policies/pension/{policy_id}/{pension_type}/info"
+        url = f"https://my.fnx.co.il/policies/pension/{raw_policy_id}/{pension_type}/info"
         await self.navigate_to(url, wait_until="domcontentloaded")
         await self._human_delay(1.0, 2.0)
 
@@ -465,7 +472,7 @@ class HaPhoenixScraper(BrowserScraper):
             })
 
         # Build deposit transactions (only deposits/withdrawals, not internal costs)
-        transactions = self._build_pension_deposits(policy_id, detail)
+        transactions = self._build_pension_deposits(policy_key, detail)
 
         # Extract insurance costs as metadata (not transactions — they're internal deductions)
         insurance_costs = []
@@ -517,7 +524,10 @@ class HaPhoenixScraper(BrowserScraper):
         AccountResult
             Hishtalmut account data with deposit transactions and metadata.
         """
-        policy_id = account_info["policyId"]
+        # See ``_scrape_pension`` — the raw ``policyId`` drives the URL only.
+        raw_policy_id = account_info["policyId"]
+        policy_id = normalize_policy_id(raw_policy_id)
+        policy_key = policy_id_key(raw_policy_id)
         balance = _safe_float(account_info.get("balance", 0))
         balance_date = _parse_date(account_info.get("balanceDate", "")) or ""
 
@@ -526,7 +536,7 @@ class HaPhoenixScraper(BrowserScraper):
         # Navigate to hishtalmut detail page
         # Policy IDs like "007-916-407357 (8296857)" need full URL encoding
         # (spaces AND parentheses) or Angular routing fails
-        encoded_id = quote(policy_id, safe="-")
+        encoded_id = quote(raw_policy_id, safe="-")
         url = f"https://my.fnx.co.il/policies/hishtalmut/{encoded_id}/info"
         await self.navigate_to(url, wait_until="domcontentloaded")
         await self._human_delay(1.0, 2.0)
@@ -597,7 +607,7 @@ class HaPhoenixScraper(BrowserScraper):
                 break
 
         # Build deposit transactions
-        transactions = self._build_hishtalmut_deposits(policy_id, detail)
+        transactions = self._build_hishtalmut_deposits(policy_key, detail)
 
         account_name = detail.get("general", {}).get("policyName", f"Hishtalmut {policy_id}")
 
@@ -655,14 +665,16 @@ class HaPhoenixScraper(BrowserScraper):
             logger.debug("Year iteration not available: %s", e)
 
     def _build_pension_deposits(
-        self, policy_id: str, detail: dict
+        self, policy_key: str, detail: dict
     ) -> list[Transaction]:
         """Build Transaction objects from pension deposit records.
 
         Parameters
         ----------
-        policy_id : str
-            The policy ID.
+        policy_key : str
+            Reformat-insensitive policy key (see ``scraper.utils.policy_ids``);
+            prefixes each transaction's dedup identifier so a provider-side
+            policy-ID reformat cannot re-report the whole deposit history.
         detail : dict
             Pension detail data from sessionStorage.
 
@@ -683,7 +695,7 @@ class HaPhoenixScraper(BrowserScraper):
                         "HaPhoenix: dropping deposit with unparseable "
                         "depositDate %r for policy %s",
                         date_raw,
-                        policy_id,
+                        policy_key,
                     )
                     continue
                 total = _safe_float(deposit.get("totalDeposit", 0))
@@ -713,7 +725,7 @@ class HaPhoenixScraper(BrowserScraper):
                         charged_amount=total,
                         charged_currency="ILS",
                         description=description,
-                        identifier=f"{policy_id}_{date_str}_{total}",
+                        identifier=f"{policy_key}_{date_str}_{total}",
                         memo=memo,
                     )
                 )
@@ -722,14 +734,16 @@ class HaPhoenixScraper(BrowserScraper):
 
 
     def _build_hishtalmut_deposits(
-        self, policy_id: str, detail: dict
+        self, policy_key: str, detail: dict
     ) -> list[Transaction]:
         """Build Transaction objects from hishtalmut deposit records.
 
         Parameters
         ----------
-        policy_id : str
-            The policy ID.
+        policy_key : str
+            Reformat-insensitive policy key (see ``scraper.utils.policy_ids``);
+            prefixes each transaction's dedup identifier so a provider-side
+            policy-ID reformat cannot re-report the whole deposit history.
         detail : dict
             Hishtalmut detail data from sessionStorage.
 
@@ -750,7 +764,7 @@ class HaPhoenixScraper(BrowserScraper):
                         "HaPhoenix: dropping deposit with unparseable "
                         "depositDate %r for policy %s",
                         date_raw,
-                        policy_id,
+                        policy_key,
                     )
                     continue
                 total = _safe_float(deposit.get("totalDeposit", 0))
@@ -766,7 +780,7 @@ class HaPhoenixScraper(BrowserScraper):
                         charged_amount=total,
                         charged_currency="ILS",
                         description="הפקדה",
-                        identifier=f"{policy_id}_{date_str}_{total}",
+                        identifier=f"{policy_key}_{date_str}_{total}",
                         memo=None,
                     )
                 )
