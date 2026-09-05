@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { enableDemoMode, navigateTo } from "./helpers";
+import { enableDemoMode, navigateTo, resetDemoData } from "./helpers";
 
 /** Escape a string for safe use inside a RegExp constructor. */
 function escapeRegExp(value: string): string {
@@ -16,6 +16,14 @@ function escapeRegExp(value: string): string {
 const DEMO_HEADERS = { "X-FAD-Demo": "1" };
 
 test.describe("Project deletion frees its category", () => {
+  // Restore pristine demo data before this file runs. The `mutating`
+  // project is serial and each file is expected to own its DB state; the
+  // demo database is process-global, so without this a predecessor's
+  // writes leak in and this spec asserts against data it did not set up.
+  test.beforeAll(async () => {
+    await resetDemoData();
+  });
+
   test.beforeEach(async ({ page }) => {
     await enableDemoMode(page);
   });

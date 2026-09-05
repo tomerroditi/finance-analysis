@@ -310,10 +310,21 @@ demo-setup ─▶ read-only (parallel) ─▶ mutating (serial) ─▶ demo-tear
   fan out across workers (`fullyParallel`). This is the main speedup — it
   overlaps the slow cold-cache page loads (13–25 s each) instead of paying
   them back to back.
-- **`mutating`** holds everything else and runs **serially**. Each mutating
-  spec still owns its `beforeAll`/`afterAll` demo lifecycle (seeding its own
-  browser context via `enableDemoMode(page)` / `disableDemoMode(page)`) for
-  per-file DB isolation, so its writes never leak into a sibling.
+- **`mutating`** holds everything else and runs **serially**. Two hooks, and
+  they do different jobs — a new mutating spec needs both:
+  - `beforeAll(() => resetDemoData())` rebuilds the shared demo DB so the
+    file starts from pristine data. **This is what provides per-file DB
+    isolation.** Nothing else does: `demo/prepare` is idempotent, and the
+    old `beforeAll(enable)`/`afterAll(disable)` pair only rebuilt the DB as
+    a side effect of a backend flag that no longer exists.
+  - `beforeEach(({ page }) => enableDemoMode(page))` seeds that browser
+    context's `fad_demo_mode` localStorage flag. It gives **no** DB
+    isolation — it only makes the page send `X-FAD-Demo`.
+
+  Skipping the reset produces a spec that passes alone and fails in suite
+  order, which is expensive to diagnose — it is how `transactions.spec.ts`'s
+  bulk-eraser test began failing after a sibling cleared the category it
+  asserts on. A rebuild is ~22 ms.
 - **`demo-teardown`** rebuilds the demo DB from its frozen snapshot at the
   very end (`resetDemoData()`, i.e. `POST /api/testing/demo/reset`),
   discarding whatever `mutating`'s specs wrote so the DB is pristine again.

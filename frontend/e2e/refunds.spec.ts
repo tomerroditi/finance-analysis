@@ -45,7 +45,7 @@ test.describe("Refunds redesign", () => {
     const request = await playwrightRequest.newContext({
       extraHTTPHeaders: { "X-FAD-Demo": "1" },
     });
-    await request.post(`${API_BASE}/testing/demo/prepare`);
+    await request.post(`${API_BASE}/testing/demo/reset`);
 
     const txns: ApiTxn[] = await (
       await request.get(`${API_BASE}/transactions/`)

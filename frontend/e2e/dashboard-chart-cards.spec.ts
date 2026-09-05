@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { enableDemoMode } from "./helpers";
+import { enableDemoMode, resetDemoData } from "./helpers";
 
 /**
  * The former single tabbed "Charts & analytics" panel is now four independent
@@ -11,6 +11,14 @@ import { enableDemoMode } from "./helpers";
  * rules, and the opt-in flow — the cold dashboard boot is the expensive step.
  */
 test.describe("Dashboard per-chart cards", () => {
+  // Restore pristine demo data before this file runs. The `mutating`
+  // project is serial and each file is expected to own its DB state; the
+  // demo database is process-global, so without this a predecessor's
+  // writes leak in and this spec asserts against data it did not set up.
+  test.beforeAll(async () => {
+    await resetDemoData();
+  });
+
   // Demo Mode lives in the browser context's localStorage, so it must be
   // seeded per-test (a fresh context per test) rather than once in
   // beforeAll via a throwaway page — that page is a different browser

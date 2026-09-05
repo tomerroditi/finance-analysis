@@ -61,7 +61,7 @@ test.describe("OneZero resend-in-place 2FA", () => {
       extraHTTPHeaders: { "X-FAD-Demo": "1" },
     });
     try {
-      await ctx.post(`${API_BASE}/testing/demo/prepare`);
+      await ctx.post(`${API_BASE}/testing/demo/reset`);
     } finally {
       await ctx.dispose();
     }

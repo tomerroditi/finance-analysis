@@ -28,13 +28,19 @@ import { defineConfig, devices } from "@playwright/test";
  *
  *   demo-setup ─▶ read-only (parallel) ─▶ mutating (serial) ─▶ demo-teardown
  *
- * - `demo-setup` enables Demo Mode once (was: a full DB rebuild at every
- *   file boundary via per-file beforeAll/afterAll).
+ * - `demo-setup` builds the demo database file once, before `read-only` fans
+ *   out, so several workers can't race to create it on their first spec.
  * - `read-only` holds specs that perform ZERO backend writes. They share the
  *   one demo snapshot safely, so they fan out across workers (`fullyParallel`).
- * - `mutating` holds everything else. Each mutating spec still manages its own
- *   demo lifecycle (beforeAll/afterAll) for per-file DB isolation, so this
- *   project stays serial (`--workers=1`).
+ * - `mutating` holds everything else, and stays serial (`--workers=1`).
+ *   Each mutating spec calls `resetDemoData()` in its own `beforeAll` to get
+ *   pristine data for the file. That reset is load-bearing: Demo Mode is
+ *   per-client, but the demo DATABASE is still process-global, so without it
+ *   one file's writes leak into the next file's assertions. It replaces the
+ *   old beforeAll(enable)/afterAll(disable) pair, which rebuilt the DB only
+ *   as a side effect of the flag flipping — there is no such flag any more.
+ *   A rebuild is ~22 ms, so per-file isolation costs well under a second
+ *   across the whole project.
  *
  * `npm run test:e2e` is a bare `playwright test`: everything runs serially
  * (global `workers: 1`) and is always safe. read-only and mutating are both

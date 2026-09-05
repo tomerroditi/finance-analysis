@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { API_BASE, enableDemoMode, navigateTo } from "./helpers";
+import { API_BASE, enableDemoMode, navigateTo, resetDemoData } from "./helpers";
 
 // Mutating spec (kept out of READ_ONLY_SPECS): creates a prime-linked loan
 // through the API and verifies the Liabilities page renders the new
@@ -13,6 +13,14 @@ import { API_BASE, enableDemoMode, navigateTo } from "./helpers";
 const DEMO_HEADERS = { "X-FAD-Demo": "1" };
 
 test.describe("Liabilities loan types", () => {
+  // Restore pristine demo data before this file runs. The `mutating`
+  // project is serial and each file is expected to own its DB state; the
+  // demo database is process-global, so without this a predecessor's
+  // writes leak in and this spec asserts against data it did not set up.
+  test.beforeAll(async () => {
+    await resetDemoData();
+  });
+
   test.beforeEach(async ({ page }) => {
     await enableDemoMode(page);
   });

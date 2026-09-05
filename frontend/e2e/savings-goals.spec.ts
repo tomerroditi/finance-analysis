@@ -75,7 +75,7 @@ test.describe("Savings goals", () => {
     ctx = await request.newContext({
       extraHTTPHeaders: { "X-FAD-Demo": "1" },
     });
-    await ctx.post(`${API_BASE}/testing/demo/prepare`);
+    await ctx.post(`${API_BASE}/testing/demo/reset`);
 
     // Both goals start far enough back to have accrued real allocations, so
     // the budget-page assertion below has something to find. The 1-per-month

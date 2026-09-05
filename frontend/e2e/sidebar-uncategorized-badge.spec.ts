@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { enableDemoMode, API_BASE } from "./helpers";
+import { enableDemoMode, API_BASE, resetDemoData } from "./helpers";
 
 /**
  * Sidebar.tsx no longer fetches the full transaction list to compute the
@@ -10,6 +10,14 @@ import { enableDemoMode, API_BASE } from "./helpers";
  * count > 0, and no numeric badge when everything is categorized.
  */
 test.describe("sidebar uncategorized badge", () => {
+  // Restore pristine demo data before this file runs. The `mutating`
+  // project is serial and each file is expected to own its DB state; the
+  // demo database is process-global, so without this a predecessor's
+  // writes leak in and this spec asserts against data it did not set up.
+  test.beforeAll(async () => {
+    await resetDemoData();
+  });
+
   // Demo Mode lives in the browser context's localStorage, so it must be
   // seeded per-test (a fresh context per test) rather than once in
   // beforeAll via a throwaway page — that page is a different browser

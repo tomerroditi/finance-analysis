@@ -1,10 +1,5 @@
 import { test, expect, request } from "@playwright/test";
-import {
-  enableDemoMode,
-  navigateTo,
-  expectPageTitle,
-  API_BASE,
-} from "./helpers";
+import { enableDemoMode, navigateTo, expectPageTitle, API_BASE, resetDemoData } from "./helpers";
 
 // Every `request.newContext()` below declares the demo header itself: the
 // `request` fixture/module is Playwright's own HTTP client, which does not
@@ -13,6 +8,14 @@ import {
 // would read/write the real database instead of the demo one each test's
 // own page (seeded via `enableDemoMode(page)`) is showing.
 test.describe("DataSources", () => {
+  // Restore pristine demo data before this file runs. The `mutating`
+  // project is serial and each file is expected to own its DB state; the
+  // demo database is process-global, so without this a predecessor's
+  // writes leak in and this spec asserts against data it did not set up.
+  test.beforeAll(async () => {
+    await resetDemoData();
+  });
+
   // Demo Mode lives in the browser context's localStorage, so it must be
   // seeded per-test (a fresh context per test) rather than once in
   // beforeAll via a throwaway page — that page is a different browser

@@ -1,6 +1,6 @@
 import { test, expect } from "@playwright/test";
 import { gotoAndWait } from "./_helpers";
-import { enableDemoMode } from "../helpers";
+import { enableDemoMode, resetDemoData } from "../helpers";
 
 /**
  * Renames the Food category via the panel's click-to-rename heading, verifies
@@ -16,6 +16,14 @@ import { enableDemoMode } from "../helpers";
  * even if it did.
  */
 test.describe("Categories rename + add-tag flow", () => {
+  // Restore pristine demo data before this file runs. The `mutating`
+  // project is serial and each file is expected to own its DB state; the
+  // demo database is process-global, so without this a predecessor's
+  // writes leak in and this spec asserts against data it did not set up.
+  test.beforeAll(async () => {
+    await resetDemoData();
+  });
+
   test.beforeEach(async ({ page }) => {
     await enableDemoMode(page);
   });

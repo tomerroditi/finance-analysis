@@ -1,6 +1,6 @@
 import { test, expect } from "@playwright/test";
 import { gotoAndWait } from "./_helpers";
-import { API_BASE, disableDemoMode, enableDemoMode } from "../helpers";
+import { API_BASE, disableDemoMode, enableDemoMode, resetDemoData } from "../helpers";
 
 /**
  * Verifies Demo Mode actually swaps the database underneath the UI.
@@ -22,6 +22,14 @@ import { API_BASE, disableDemoMode, enableDemoMode } from "../helpers";
  * must stay OUT of `READ_ONLY_SPECS` in `playwright.config.ts`.
  */
 test.describe("Demo Mode toggle flow", () => {
+  // Restore pristine demo data before this file runs. The `mutating`
+  // project is serial and each file is expected to own its DB state; the
+  // demo database is process-global, so without this a predecessor's
+  // writes leak in and this spec asserts against data it did not set up.
+  test.beforeAll(async () => {
+    await resetDemoData();
+  });
+
   test.beforeEach(async ({ page }) => {
     // Start from a known state: demo mode OFF.
     await disableDemoMode(page);

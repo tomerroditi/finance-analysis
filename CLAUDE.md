@@ -132,10 +132,16 @@ localStorage flag) — but the demo **database file** is still process-global:
 every client that sends the header reads and writes the same on-disk demo DB.
 That's why the suite is still organized into Playwright projects sequenced by
 a shared setup: `demo-setup` builds the demo DB file **once** (via
-`enableDemoMode`'s idempotent `POST /api/testing/demo/prepare` call — this
-replaced the old per-file enable/disable that forced a full demo-DB rebuild
-at every file boundary), `read-only` holds write-free specs, `mutating` holds
-the rest (each keeps its own per-file demo lifecycle for DB isolation), and
+`enableDemoMode`'s idempotent `POST /api/testing/demo/prepare` call),
+`read-only` holds write-free specs, `mutating` holds the rest — **and every
+mutating spec must call `resetDemoData()` in its own `beforeAll`** to get
+pristine data for the file. That reset is load-bearing and easy to forget:
+`enableDemoMode(page)` only seeds a browser's localStorage flag, and
+`demo/prepare` is idempotent, so nothing else rebuilds the shared demo DB
+between files. Omit it and a predecessor's writes leak into your assertions
+(this is exactly how `transactions.spec.ts`'s bulk-eraser test started
+failing only when run after its siblings). A rebuild is ~22 ms — under a
+second across the whole project. Finally,
 `demo-teardown` rebuilds the demo DB from its frozen snapshot at the end
 (`POST /api/testing/demo/reset`) so it's pristine for the next run. read-only
 and mutating are both plain, shardable projects (CI runs `playwright test
