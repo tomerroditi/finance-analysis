@@ -389,11 +389,24 @@ function AccountCardFull({
             <p className="text-[var(--text-muted)] text-[9px] uppercase tracking-widest font-bold mb-2">
               {t("insurance.insuranceCovers")}
             </p>
-            <div className="flex flex-col gap-1.5">
+            <div className="flex flex-col gap-1.5 xl:gap-1">
               {covers.map((c, i) => (
-                <div key={i} className="flex flex-col">
-                  <span className="text-[var(--text-muted)] text-[10px] leading-tight">{c.title}</span>
-                  <span className="text-white font-mono font-bold text-xs leading-tight" dir="ltr">
+                <div
+                  key={i}
+                  data-testid="insurance-cover-row"
+                  className="flex flex-col xl:flex-row xl:items-center xl:justify-between xl:gap-2"
+                >
+                  <span
+                    className="text-[var(--text-muted)] text-[10px] xl:text-xs leading-tight xl:truncate"
+                    dir="auto"
+                    title={c.title}
+                  >
+                    {c.title}
+                  </span>
+                  <span
+                    className="text-white font-mono font-bold text-xs leading-tight whitespace-nowrap"
+                    dir="ltr"
+                  >
                     {formatCurrency(unwrapAmount(c.sum))}
                   </span>
                 </div>
