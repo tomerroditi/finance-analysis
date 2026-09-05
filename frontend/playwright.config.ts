@@ -79,6 +79,7 @@ const READ_ONLY_SPECS = [
   "**/flows/demo-mode-isolation.spec.ts",
   "**/income-by-source-card.spec.ts",
   "**/info-tooltip-aria-label.spec.ts",
+  "**/insurances.spec.ts",
   "**/investments.spec.ts",
   "**/liabilities.spec.ts",
   "**/retirement-readiness.spec.ts",
