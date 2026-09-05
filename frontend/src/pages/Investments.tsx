@@ -19,6 +19,42 @@ import { useQueryKeys } from "../hooks/useQueryKeys";
 import { qkPrefix } from "../services/queryKeys";
 
 const RATE_TYPES = new Set(["bonds", "pension", "p2p_lending"]);
+const KH_TYPES = new Set(["hishtalmut"]);
+
+export type InvestmentFormState = {
+  name: string;
+  category: string;
+  tag: string;
+  type: string;
+  interest_rate: number;
+  interest_rate_type: string;
+  rate_spread: number;
+  notes: string;
+  liquidity_date: string;
+  commission_deposit: number;
+  commission_management: number;
+};
+
+/**
+ * Build the create/update request body from form state.
+ *
+ * The Keren Hishtalmut fields are dropped entirely for other types: the
+ * backend validates `liquidity_date` as an ISO date and rejects the empty
+ * string with a 422.
+ */
+// eslint-disable-next-line react-refresh/only-export-components
+export function buildInvestmentPayload(
+  form: InvestmentFormState,
+): Record<string, unknown> {
+  const { liquidity_date, commission_deposit, commission_management, ...rest } = form;
+  if (!KH_TYPES.has(form.type)) return rest;
+  return {
+    ...rest,
+    ...(liquidity_date ? { liquidity_date } : {}),
+    ...(commission_deposit ? { commission_deposit } : {}),
+    ...(commission_management ? { commission_management } : {}),
+  };
+}
 
 export function Investments() {
   const { t } = useTranslation();
@@ -41,6 +77,9 @@ export function Investments() {
     interest_rate_type: "fixed",
     rate_spread: 0,
     notes: "",
+    liquidity_date: "",
+    commission_deposit: 0,
+    commission_management: 0,
   });
 
   const [editForm, setEditForm] = useState<{
@@ -116,6 +155,9 @@ export function Investments() {
         interest_rate_type: "fixed",
         rate_spread: 0,
         notes: "",
+        liquidity_date: "",
+        commission_deposit: 0,
+        commission_management: 0,
       });
     },
   });
@@ -702,6 +744,7 @@ export function Investments() {
                     { label: t("investments.types.realEstate"), value: "real_estate" },
                     { label: t("investments.types.pension"), value: "pension" },
                     { label: t("investments.types.brokerageAccount"), value: "brokerage_account" },
+                    { label: t("investments.types.kerenHishtalmut"), value: "hishtalmut" },
                     { label: t("investments.types.other"), value: "other" },
                   ]}
                   value={newInvestment.type}
@@ -711,6 +754,59 @@ export function Investments() {
                   placeholder={t("investments.selectType")}
                 />
               </div>
+              {KH_TYPES.has(newInvestment.type) && (
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div>
+                    <label className="block text-[10px] font-black uppercase tracking-widest text-[var(--text-muted)] mb-2">
+                      {t("investments.liquidityDate")}
+                    </label>
+                    <input
+                      type="date"
+                      className="w-full bg-[var(--surface-base)] border border-[var(--surface-light)] rounded-xl px-4 py-3.5 outline-none focus:border-[var(--primary)] transition-all font-medium"
+                      value={newInvestment.liquidity_date}
+                      onChange={(e) =>
+                        setNewInvestment({ ...newInvestment, liquidity_date: e.target.value })
+                      }
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-black uppercase tracking-widest text-[var(--text-muted)] mb-2">
+                      {t("investments.depositFee")}
+                    </label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      dir="ltr"
+                      className="w-full bg-[var(--surface-base)] border border-[var(--surface-light)] rounded-xl px-4 py-3.5 outline-none focus:border-[var(--primary)] transition-all font-medium"
+                      value={newInvestment.commission_deposit}
+                      onChange={(e) =>
+                        setNewInvestment({
+                          ...newInvestment,
+                          commission_deposit: parseFloat(e.target.value) || 0,
+                        })
+                      }
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-black uppercase tracking-widest text-[var(--text-muted)] mb-2">
+                      {t("investments.managementFee")}
+                    </label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      dir="ltr"
+                      className="w-full bg-[var(--surface-base)] border border-[var(--surface-light)] rounded-xl px-4 py-3.5 outline-none focus:border-[var(--primary)] transition-all font-medium"
+                      value={newInvestment.commission_management}
+                      onChange={(e) =>
+                        setNewInvestment({
+                          ...newInvestment,
+                          commission_management: parseFloat(e.target.value) || 0,
+                        })
+                      }
+                    />
+                  </div>
+                </div>
+              )}
               {RATE_TYPES.has(newInvestment.type) && (
               <>
               <div>
@@ -810,7 +906,7 @@ export function Investments() {
                   !newInvestment.tag ||
                   createMutation.isPending
                 }
-                onClick={() => createMutation.mutate(newInvestment)}
+                onClick={() => createMutation.mutate(buildInvestmentPayload(newInvestment))}
                 className="flex-[2] py-4 bg-[var(--primary)] rounded-2xl text-white font-black hover:bg-[var(--primary-dark)] transition-all shadow-xl shadow-[var(--primary)]/20 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {createMutation.isPending ? t("investments.creating") : t("investments.createInvestment")}
