@@ -33,6 +33,7 @@ import { DonutChart } from "../components/charts/DonutChart";
 import { insuranceAccountsApi, transactionsApi, type InsuranceAccount } from "../services/api";
 import { formatDate, formatMonthCompact, formatMonthYear } from "../utils/dateFormatting";
 import { formatCurrency } from "../utils/numberFormatting";
+import { classifyStatement } from "../utils/insuranceStatement";
 import { EmptyState } from "../components/common/EmptyState";
 import { DemoModeConfirmPopover } from "../components/common/DemoModeConfirmPopover";
 import { useQueryKeys } from "../hooks/useQueryKeys";
@@ -63,11 +64,6 @@ interface Cover {
   sum: number | { value: number; currency: string };
 }
 
-interface InsuranceCost {
-  title: string;
-  amount: number;
-}
-
 // ─── Helpers ─────────────────────────────────────────────────────────────
 function fmtPct(val: number | null | undefined): string {
   if (val === null || val === undefined) return "—";
@@ -96,15 +92,6 @@ function parseTracks(json: string | null): Track[] {
 }
 
 function parseCovers(json: string | null): Cover[] {
-  if (!json) return [];
-  try {
-    return JSON.parse(json);
-  } catch {
-    return [];
-  }
-}
-
-function parseCosts(json: string | null): InsuranceCost[] {
   if (!json) return [];
   try {
     return JSON.parse(json);
@@ -187,12 +174,11 @@ function AccountCardFull({
   const [draftName, setDraftName] = useState("");
   const tracks = parseTracks(account.investment_tracks);
   const covers = parseCovers(account.insurance_covers);
-  const insuranceCosts = parseCosts(account.insurance_costs);
+  const statement = classifyStatement(account.insurance_costs);
   const txs = transactions
     .filter((tx) => tx.account_number === account.policy_id)
     .sort((a, b) => b.date.localeCompare(a.date));
   const deposits = txs.filter((tx) => tx.amount > 0);
-  const totalCosts = insuranceCosts.reduce((s, c) => s + Math.abs(c.amount), 0);
 
   const renameMutation = useMutation({
     mutationFn: (customName: string | null) =>
@@ -376,9 +362,24 @@ function AccountCardFull({
           <p className="text-[var(--text-muted)] text-[9px] uppercase tracking-widest font-bold mb-2">{t("insurance.deposits")}</p>
           <p className="text-emerald-400 font-black text-lg" dir="ltr">{formatCurrency(deposits.reduce((s, dep) => s + dep.amount, 0))}</p>
           <p className="text-[var(--text-muted)] text-[10px]">{t("insurance.totalDepositsCount", { count: deposits.length })}</p>
-          {totalCosts > 0 && (
-            <p className="text-rose-400 text-[10px] mt-1 font-bold">
-              <span dir="ltr">{formatCurrency(-totalCosts)}</span> {t("insurance.insuranceCostsLabel")}
+          {statement.riskCost > 0 && (
+            <p
+              data-testid="insurance-risk-cost"
+              className="text-rose-400 text-[10px] mt-1 font-bold"
+            >
+              {t("insurance.riskCost")}{" "}
+              <span dir="ltr">{formatCurrency(-statement.riskCost)}</span> ·{" "}
+              {t("insurance.thisYear")}
+            </p>
+          )}
+          {statement.managementFee > 0 && (
+            <p
+              data-testid="insurance-mgmt-fee"
+              className="text-[var(--text-muted)] text-[10px] font-bold"
+            >
+              {t("insurance.managementFeeAmount")}{" "}
+              <span dir="ltr">{formatCurrency(-statement.managementFee)}</span> ·{" "}
+              {t("insurance.thisYear")}
             </p>
           )}
         </div>
@@ -562,11 +563,11 @@ export function Insurances() {
   const totalBalance = accounts.reduce((s, a) => s + (a.balance ?? 0), 0);
   const allDeposits = transactions.filter((tx) => tx.amount > 0);
   const totalDeposits = allDeposits.reduce((s, tx) => s + tx.amount, 0);
-  // Insurance costs come from metadata, not transactions
-  const totalCosts = accounts.reduce((s, a) => {
-    const costs = parseCosts(a.insurance_costs);
-    return s + costs.reduce((cs, c) => cs + Math.abs(c.amount), 0);
-  }, 0);
+  // Risk cost only — the management fee is shown per-card beside its own rate.
+  const totalRiskCost = accounts.reduce(
+    (s, a) => s + classifyStatement(a.insurance_costs).riskCost,
+    0,
+  );
   const avgCommission =
     accounts.reduce((s, a) => s + (a.commission_savings_pct ?? 0), 0) / accounts.length;
 
@@ -604,7 +605,12 @@ export function Insurances() {
           icon={ArrowUpRight}
           color="bg-emerald-500/10 text-emerald-400"
         />
-        <StatCard title={t("insurance.insuranceCosts")} value={formatCurrency(totalCosts)} icon={Heart} color="bg-rose-500/10 text-rose-400" />
+        <StatCard
+          title={t("insurance.riskCostsThisYear")}
+          value={formatCurrency(totalRiskCost)}
+          icon={Heart}
+          color="bg-rose-500/10 text-rose-400"
+        />
         <StatCard
           title={t("insurance.avgCommission")}
           value={fmtPct(avgCommission)}
