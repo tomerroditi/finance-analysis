@@ -5,10 +5,11 @@ import { Plus, Search } from "lucide-react";
 import { taggingApi } from "../services/api";
 import { Skeleton } from "../components/common/Skeleton";
 import { Modal } from "../components/common/Modal";
-import { useCategories } from "../hooks/useCategories";
+import { useCategories, useCategoryUsage } from "../hooks/useCategories";
 import { CategoryDetailPanel } from "../components/categories/CategoryDetailPanel";
 import { RulesSection } from "../components/categories/RulesSection";
 import { CategoryCard } from "../components/categories/CategoryCard";
+import { UnusedCategoriesSection } from "../components/categories/UnusedCategoriesSection";
 import { useQueryKeys } from "../hooks/useQueryKeys";
 import { qkPrefix } from "../services/queryKeys";
 
@@ -20,12 +21,14 @@ export function Categories() {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [isAddCategoryOpen, setIsAddCategoryOpen] = useState(false);
+  const [unusedExpanded, setUnusedExpanded] = useState(false);
 
   const { data: categories, isLoading } = useCategories();
   const { data: icons } = useQuery({
     queryKey: qk.tagging.icons(),
     queryFn: () => taggingApi.getIcons().then((res) => res.data),
   });
+  const { data: usage } = useCategoryUsage();
 
   const createCategoryMutation = useMutation({
     mutationFn: (name: string) => taggingApi.createCategory(name),
@@ -37,17 +40,27 @@ export function Categories() {
 
   const categoriesRecord = categories as Record<string, string[]> | undefined;
 
-  const filteredEntries = useMemo(() => {
-    if (!categoriesRecord) return [];
-    const allEntries = Object.entries(categoriesRecord).sort(([a], [b]) => a.localeCompare(b));
-    const query = searchQuery.toLowerCase().trim();
-    if (!query) return allEntries;
-    return allEntries.filter(
-      ([category, tags]) =>
-        category.toLowerCase().includes(query) ||
-        tags.some((tagName) => tagName.toLowerCase().includes(query)),
+  const { activeEntries, unusedEntries } = useMemo(() => {
+    if (!categoriesRecord) return { activeEntries: [], unusedEntries: [] };
+    const allEntries = Object.entries(categoriesRecord).sort(([a], [b]) =>
+      a.localeCompare(b),
     );
-  }, [categoriesRecord, searchQuery]);
+    const query = searchQuery.toLowerCase().trim();
+    const matching = query
+      ? allEntries.filter(
+          ([category, tags]) =>
+            category.toLowerCase().includes(query) ||
+            tags.some((tagName) => tagName.toLowerCase().includes(query)),
+        )
+      : allEntries;
+    // Until the usage query resolves, every category renders in the main grid
+    // — the page degrades to its previous behavior rather than flashing cards
+    // in and out of the collapsed section.
+    return {
+      activeEntries: matching.filter(([category]) => !usage?.[category]?.unused),
+      unusedEntries: matching.filter(([category]) => usage?.[category]?.unused),
+    };
+  }, [categoriesRecord, searchQuery, usage]);
 
   if (isLoading)
     return (
@@ -89,9 +102,9 @@ export function Categories() {
       </div>
 
       {/* Category Grid */}
-      {filteredEntries.length > 0 ? (
+      {activeEntries.length > 0 ? (
         <div className="grid grid-cols-4 lg:grid-cols-5 gap-2 sm:gap-3">
-          {filteredEntries.map(([category, tags]) => (
+          {activeEntries.map(([category, tags]) => (
             <CategoryCard
               key={category}
               category={category}
@@ -102,7 +115,9 @@ export function Categories() {
           ))}
         </div>
       ) : (
-        searchQuery.trim() && (
+        searchQuery.trim() &&
+        activeEntries.length === 0 &&
+        unusedEntries.length === 0 && (
           <div className="text-center py-12 text-[var(--text-muted)]">
             <Search size={40} className="mx-auto mb-3 opacity-30" />
             <p className="font-bold">{t("categories.noResults")}</p>
@@ -110,6 +125,15 @@ export function Categories() {
           </div>
         )
       )}
+
+      <UnusedCategoriesSection
+        entries={unusedEntries}
+        icons={icons ?? {}}
+        usage={usage ?? {}}
+        expanded={unusedExpanded || searchQuery.trim().length > 0}
+        onToggle={() => setUnusedExpanded((prev) => !prev)}
+        onSelect={setSelectedCategory}
+      />
 
       {/* Detail Panel */}
       {selectedCategory && (
