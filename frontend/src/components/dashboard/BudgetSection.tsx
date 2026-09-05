@@ -11,98 +11,10 @@ import { ProjectModal } from "../modals/ProjectModal";
 import { useQueryKeys } from "../../hooks/useQueryKeys";
 import { qkPrefix } from "../../services/queryKeys";
 import { formatMonthYear } from "../../utils/dateFormatting";
-import { formatCurrency } from "../../utils/numberFormatting";
+import { BudgetRuleGrid } from "./budget/BudgetRuleGrid";
+import type { BudgetRule } from "./budget/types";
 
 type BudgetViewMode = "monthly" | "projects";
-
-interface BudgetRule {
-  id: number;
-  name: string;
-  category: string;
-  tags: string | null;
-  budget_amount: number;
-  spent_amount: number;
-}
-
-function getProgressColor(pct: number, isUnbudgetedSpend: boolean): string {
-  if (isUnbudgetedSpend || pct > 100) return "bg-rose-500";
-  if (pct >= 75) return "bg-amber-500";
-  return "bg-emerald-500";
-}
-
-function BudgetRuleCards({
-  rules,
-  categoryIcons,
-}: {
-  rules: BudgetRule[];
-  categoryIcons: Record<string, string> | undefined;
-}) {
-  const { t } = useTranslation();
-  return (
-    <div className="h-[260px] overflow-y-auto scrollbar-auto-hide mb-4">
-      {rules.length > 0 && (
-        <div className="grid grid-cols-2 gap-3">
-          {rules.map((rule) => {
-            // budget_amount can be 0 (e.g., "Other Expenses" when the user has
-            // allocated their full Total Budget across explicit rules). Treat any
-            // spend in a zero-budget rule as fully over budget so the bar fills
-            // rose instead of staying empty.
-            const isUnbudgetedSpend =
-              rule.budget_amount <= 0 && rule.spent_amount > 0;
-            const pct = rule.budget_amount > 0
-              ? (rule.spent_amount / rule.budget_amount) * 100
-              : isUnbudgetedSpend
-                ? 100
-                : 0;
-            const remaining = rule.budget_amount - rule.spent_amount;
-            const icon = categoryIcons?.[rule.category] ?? "";
-            return (
-              <div
-                key={rule.id}
-                className="bg-[var(--surface-light)] rounded-xl p-3.5 space-y-2"
-              >
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-1.5 min-w-0">
-                    {icon && <span className="text-sm flex-shrink-0">{icon}</span>}
-                    <span className="text-xs font-semibold truncate" dir="auto">{rule.name}</span>
-                  </div>
-                  <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full flex-shrink-0 ${
-                    isUnbudgetedSpend || pct > 100
-                      ? "bg-rose-500/20 text-rose-400"
-                      : pct >= 75
-                        ? "bg-amber-500/20 text-amber-400"
-                        : "bg-emerald-500/20 text-emerald-400"
-                  }`}>
-                    {Math.round(pct)}%
-                  </span>
-                </div>
-                <p className="text-sm font-bold">
-                  {formatCurrency(rule.spent_amount)}
-                  <span className="text-xs font-normal text-[var(--text-muted)]">
-                    {" "}/ {formatCurrency(rule.budget_amount)}
-                  </span>
-                </p>
-                <div className="h-1.5 w-full rounded-full bg-[var(--surface)] overflow-hidden">
-                  <div
-                    className={`h-full rounded-full transition-all ${getProgressColor(pct, isUnbudgetedSpend)}`}
-                    style={{ width: `${Math.min(pct, 100)}%` }}
-                  />
-                </div>
-                <p className={`text-[10px] font-medium ${
-                  remaining >= 0 ? "text-[var(--text-muted)]" : "text-rose-400"
-                }`}>
-                  {remaining >= 0
-                    ? `${formatCurrency(remaining)} ${t("budget.remaining").toLowerCase()}`
-                    : `${formatCurrency(Math.abs(remaining))} ${t("budget.overBudget").toLowerCase()}`}
-                </p>
-              </div>
-            );
-          })}
-        </div>
-      )}
-    </div>
-  );
-}
 
 export function BudgetSpendingGauge({
   categoryIcons,
@@ -399,7 +311,7 @@ export function BudgetSpendingGauge({
               </div>
 
               {/* Budget rule cards */}
-              <BudgetRuleCards rules={miniRules} categoryIcons={categoryIcons} />
+              <BudgetRuleGrid rules={miniRules} categoryIcons={categoryIcons} />
 
               {/* Link to budget page */}
               <div className="text-end">
