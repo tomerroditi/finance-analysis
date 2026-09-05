@@ -31,8 +31,8 @@ export type InvestmentFormState = {
   rate_spread: number;
   notes: string;
   liquidity_date: string;
-  commission_deposit: number;
-  commission_management: number;
+  commission_deposit: string;
+  commission_management: string;
 };
 
 /**
@@ -40,7 +40,11 @@ export type InvestmentFormState = {
  *
  * The Keren Hishtalmut fields are dropped entirely for other types: the
  * backend validates `liquidity_date` as an ISO date and rejects the empty
- * string with a 422.
+ * string with a 422. `commission_deposit`/`commission_management` are kept
+ * as empty-by-default strings (not numbers) so a genuine 0% fee — a
+ * non-empty `"0"` — is distinguishable from a field the user never touched:
+ * an emptiness check (not truthiness) decides omission, and a non-empty
+ * value is sent as a number.
  */
 // eslint-disable-next-line react-refresh/only-export-components
 export function buildInvestmentPayload(
@@ -51,8 +55,10 @@ export function buildInvestmentPayload(
   return {
     ...rest,
     ...(liquidity_date ? { liquidity_date } : {}),
-    ...(commission_deposit ? { commission_deposit } : {}),
-    ...(commission_management ? { commission_management } : {}),
+    ...(commission_deposit !== "" ? { commission_deposit: Number(commission_deposit) } : {}),
+    ...(commission_management !== ""
+      ? { commission_management: Number(commission_management) }
+      : {}),
   };
 }
 
@@ -78,8 +84,8 @@ export function Investments() {
     rate_spread: 0,
     notes: "",
     liquidity_date: "",
-    commission_deposit: 0,
-    commission_management: 0,
+    commission_deposit: "",
+    commission_management: "",
   });
 
   const [editForm, setEditForm] = useState<{
@@ -156,8 +162,8 @@ export function Investments() {
         rate_spread: 0,
         notes: "",
         liquidity_date: "",
-        commission_deposit: 0,
-        commission_management: 0,
+        commission_deposit: "",
+        commission_management: "",
       });
     },
   });
@@ -782,7 +788,7 @@ export function Investments() {
                       onChange={(e) =>
                         setNewInvestment({
                           ...newInvestment,
-                          commission_deposit: parseFloat(e.target.value) || 0,
+                          commission_deposit: e.target.value,
                         })
                       }
                     />
@@ -800,7 +806,7 @@ export function Investments() {
                       onChange={(e) =>
                         setNewInvestment({
                           ...newInvestment,
-                          commission_management: parseFloat(e.target.value) || 0,
+                          commission_management: e.target.value,
                         })
                       }
                     />

@@ -76,8 +76,8 @@ describe("Investments", () => {
         rate_spread: 0,
         notes: "",
         liquidity_date: "",
-        commission_deposit: 0,
-        commission_management: 0,
+        commission_deposit: "",
+        commission_management: "",
       });
 
       expect(payload).not.toHaveProperty("liquidity_date");
@@ -96,8 +96,8 @@ describe("Investments", () => {
         rate_spread: 0,
         notes: "",
         liquidity_date: "2030-01-01",
-        commission_deposit: 1.5,
-        commission_management: 0.4,
+        commission_deposit: "1.5",
+        commission_management: "0.4",
       });
 
       expect(payload).toMatchObject({
@@ -118,11 +118,48 @@ describe("Investments", () => {
         rate_spread: 0,
         notes: "",
         liquidity_date: "",
-        commission_deposit: 0,
-        commission_management: 0,
+        commission_deposit: "",
+        commission_management: "",
       });
 
       expect(payload).not.toHaveProperty("liquidity_date");
+    });
+
+    it("includes a genuine 0% deposit fee as the number zero, not omitted", () => {
+      const payload = buildInvestmentPayload({
+        name: "Keren Hishtalmut",
+        category: "Investments",
+        tag: "KH",
+        type: "hishtalmut",
+        interest_rate: 0,
+        interest_rate_type: "variable",
+        rate_spread: 0,
+        notes: "",
+        liquidity_date: "2030-01-01",
+        commission_deposit: "0",
+        commission_management: "",
+      });
+
+      expect(payload.commission_deposit).toBe(0);
+      expect(typeof payload.commission_deposit).toBe("number");
+    });
+
+    it("omits commission_deposit entirely when the input was left empty", () => {
+      const payload = buildInvestmentPayload({
+        name: "Keren Hishtalmut",
+        category: "Investments",
+        tag: "KH",
+        type: "hishtalmut",
+        interest_rate: 0,
+        interest_rate_type: "variable",
+        rate_spread: 0,
+        notes: "",
+        liquidity_date: "2030-01-01",
+        commission_deposit: "",
+        commission_management: "0.4",
+      });
+
+      expect(payload).not.toHaveProperty("commission_deposit");
     });
   });
 });
