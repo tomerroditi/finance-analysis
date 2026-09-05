@@ -1,5 +1,5 @@
 import { test, expect, type Page, type Locator } from "@playwright/test";
-import { enableDemoMode, disableDemoMode, navigateTo } from "./helpers";
+import { enableDemoMode, navigateTo, resetDemoData } from "./helpers";
 
 /**
  * The redesigned "Income & Expenses" dashboard card. It replaces the old
@@ -19,16 +19,21 @@ import { enableDemoMode, disableDemoMode, navigateTo } from "./helpers";
  * group (5×).
  */
 test.describe("Income & Expenses dashboard card", () => {
-  test.beforeAll(async ({ browser }) => {
-    const page = await browser.newPage();
-    await enableDemoMode(page);
-    await page.close();
+  // Restore pristine demo data before this file runs. The `mutating`
+  // project is serial and each file is expected to own its DB state; the
+  // demo database is process-global, so without this a predecessor's
+  // writes leak in and this spec asserts against data it did not set up.
+  test.beforeAll(async () => {
+    await resetDemoData();
   });
 
-  test.afterAll(async ({ browser }) => {
-    const page = await browser.newPage();
-    await disableDemoMode(page);
-    await page.close();
+  // Demo Mode lives in the browser context's localStorage, so it must be
+  // seeded per-test (a fresh context per test) rather than once in
+  // beforeAll via a throwaway page — that page is a different browser
+  // context from the one each test actually navigates in, so anything it
+  // set there never reached the real test.
+  test.beforeEach(async ({ page }) => {
+    await enableDemoMode(page);
   });
 
   /** The Income & Expenses dashboard card (its lazy placeholder reserves height). */
@@ -46,17 +51,23 @@ test.describe("Income & Expenses dashboard card", () => {
     const card = cardContainer(page);
     await expect(card).toBeVisible({ timeout: 45_000 });
     await card.scrollIntoViewIfNeeded();
-    await expect(card.getByRole("heading", { name: "Income & Expenses" })).toBeVisible({
+    await expect(
+      card.getByRole("heading", { name: "Income & Expenses" }),
+    ).toBeVisible({
       timeout: 45_000,
     });
     return card;
   }
 
-  test("tabs, ledger, KPIs, pager, and label toggles all behave on one load", async ({ page }) => {
+  test("tabs, ledger, KPIs, pager, and label toggles all behave on one load", async ({
+    page,
+  }) => {
     const card = await openCard(page);
 
     // --- Totals tab: ledger renders newest-first with a Net column ---
-    await expect(card.getByText("Month", { exact: true }).first()).toBeVisible();
+    await expect(
+      card.getByText("Month", { exact: true }).first(),
+    ).toBeVisible();
     await expect(card.getByText("Net", { exact: true }).first()).toBeVisible();
 
     const rows = card.getByTestId("ledger-row");
@@ -131,6 +142,8 @@ test.describe("Income & Expenses dashboard card", () => {
     expect(await compositionRows.count()).toBeGreaterThan(0);
 
     // Toggle is present here too and defaults to share.
-    await expect(card.getByRole("button", { name: "Show amount (₪)" })).toBeVisible();
+    await expect(
+      card.getByRole("button", { name: "Show amount (₪)" }),
+    ).toBeVisible();
   });
 });

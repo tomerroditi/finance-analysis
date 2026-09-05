@@ -166,10 +166,10 @@ def restore_backup(filename: str) -> None:
     # deleting the backup we're about to restore)
     backup_db(max_backups=0)
 
-    # Dispose the SQLAlchemy engine so no connections hold the DB file open
-    from backend.database import reset_engine
+    # Dispose every SQLAlchemy engine so no connections hold the DB file open
+    from backend.database import reset_engines
 
-    reset_engine()
+    reset_engines()
 
     # Restore: copy backup over the active database
     src_conn = sqlite3.connect(str(backup_path))

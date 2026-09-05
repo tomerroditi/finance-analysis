@@ -1,17 +1,22 @@
 import { test, expect } from "@playwright/test";
-import { enableDemoMode, disableDemoMode, navigateTo, expectPageTitle } from "./helpers";
+import { enableDemoMode, navigateTo, expectPageTitle, resetDemoData } from "./helpers";
 
 test.describe("Budget", () => {
-  test.beforeAll(async ({ browser }) => {
-    const page = await browser.newPage();
-    await enableDemoMode(page);
-    await page.close();
+  // Restore pristine demo data before this file runs. The `mutating`
+  // project is serial and each file is expected to own its DB state; the
+  // demo database is process-global, so without this a predecessor's
+  // writes leak in and this spec asserts against data it did not set up.
+  test.beforeAll(async () => {
+    await resetDemoData();
   });
 
-  test.afterAll(async ({ browser }) => {
-    const page = await browser.newPage();
-    await disableDemoMode(page);
-    await page.close();
+  // Demo Mode lives in the browser context's localStorage, so it must be
+  // seeded per-test (a fresh context per test) rather than once in
+  // beforeAll via a throwaway page — that page is a different browser
+  // context from the one each test actually navigates in, so anything it
+  // set there never reached the real test.
+  test.beforeEach(async ({ page }) => {
+    await enableDemoMode(page);
   });
 
   // Every check here is a read-only interaction (tab switches, month
@@ -71,8 +76,15 @@ test.describe("Budget", () => {
     );
 
     // --- Total Budget card collapses the rule list and shows month transactions ---
-    const totalBudget = page.getByRole("button", { name: /^\s*Total Budget\s*$/ });
-    if (await totalBudget.first().isVisible().catch(() => false)) {
+    const totalBudget = page.getByRole("button", {
+      name: /^\s*Total Budget\s*$/,
+    });
+    if (
+      await totalBudget
+        .first()
+        .isVisible()
+        .catch(() => false)
+    ) {
       // Collapsing hides the per-rule rows; expanding shows them again.
       await totalBudget.first().click();
       await page.waitForTimeout(400);
@@ -80,8 +92,15 @@ test.describe("Budget", () => {
       await page.waitForTimeout(400);
 
       // "View month transactions" reveals a transactions table under the card.
-      const viewMonth = page.getByRole("button", { name: /View month transactions/i });
-      if (await viewMonth.first().isVisible().catch(() => false)) {
+      const viewMonth = page.getByRole("button", {
+        name: /View month transactions/i,
+      });
+      if (
+        await viewMonth
+          .first()
+          .isVisible()
+          .catch(() => false)
+      ) {
         await viewMonth.first().click();
         await page.waitForTimeout(500);
         await expect(
@@ -91,8 +110,15 @@ test.describe("Budget", () => {
     }
 
     // --- Pending Refunds section collapses from its header ---
-    const refundsHeader = page.getByRole("button", { name: /Pending Refunds/i });
-    if (await refundsHeader.first().isVisible().catch(() => false)) {
+    const refundsHeader = page.getByRole("button", {
+      name: /Pending Refunds/i,
+    });
+    if (
+      await refundsHeader
+        .first()
+        .isVisible()
+        .catch(() => false)
+    ) {
       await refundsHeader.first().click();
       await page.waitForTimeout(300);
       await refundsHeader.first().click();
@@ -181,7 +207,9 @@ test.describe("Budget", () => {
     // The settings control is a <label>; the mobile drawer tile uses a
     // <span>, so scope to the label.
     await page.getByRole("button", { name: "Settings" }).first().click();
-    const toggleRow = page.locator("label", { hasText: "Budget Alerts" }).first();
+    const toggleRow = page
+      .locator("label", { hasText: "Budget Alerts" })
+      .first();
     await expect(toggleRow).toBeVisible();
     await toggleRow.click();
     await page.keyboard.press("Escape");

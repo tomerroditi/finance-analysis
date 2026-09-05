@@ -714,9 +714,12 @@ export const handlers = [
 
   // ── Testing/Demo Mode API ──
   http.get("/api/testing/demo_mode_status", () =>
-    HttpResponse.json({ demo_mode: false }),
+    HttpResponse.json({ demo_mode: false, forced: false }),
   ),
-  http.post("/api/testing/toggle_demo_mode", () =>
-    HttpResponse.json({ status: "ok", demo_mode: true }),
+  http.post("/api/testing/demo/prepare", () =>
+    HttpResponse.json({ status: "success", created: false }),
+  ),
+  http.post("/api/testing/demo/reset", () =>
+    HttpResponse.json({ status: "success" }),
   ),
 ];

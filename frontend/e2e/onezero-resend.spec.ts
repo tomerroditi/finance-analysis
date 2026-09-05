@@ -1,5 +1,5 @@
 import { test, expect, request } from "@playwright/test";
-import { enableDemoMode, disableDemoMode, navigateTo, API_BASE } from "./helpers";
+import { enableDemoMode, navigateTo, API_BASE } from "./helpers";
 
 const PROCESS_ID = 4242;
 
@@ -16,11 +16,17 @@ const INITIAL_2FA_COOLDOWN_SECONDS = 30;
 
 /**
  * Seed (or remove) a OneZero bank credential through the credentials API,
- * the same path the Data Sources "add account" form uses. Demo mode must
- * be enabled first so the write lands in the isolated demo DB.
+ * the same path the Data Sources "add account" form uses.
+ *
+ * This bypasses the browser (Node-side `request` fixture), so it must
+ * declare the `X-FAD-Demo` header itself — Demo Mode is per-client now, and
+ * a header-less request would land this throwaway account in the real
+ * database instead of the demo one.
  */
 async function setOneZeroCredential(create: boolean) {
-  const ctx = await request.newContext();
+  const ctx = await request.newContext({
+    extraHTTPHeaders: { "X-FAD-Demo": "1" },
+  });
   try {
     if (create) {
       await ctx.post(`${API_BASE}/credentials/`, {
@@ -47,13 +53,29 @@ async function setOneZeroCredential(create: boolean) {
 
 test.describe("OneZero resend-in-place 2FA", () => {
   test.beforeAll(async () => {
-    await enableDemoMode();
+    // Build the demo DB before writing the throwaway credential into it —
+    // this doesn't go through a `page`, so it carries the demo header
+    // itself rather than relying on `enableDemoMode`'s localStorage seeding
+    // (which needs a browser context).
+    const ctx = await request.newContext({
+      extraHTTPHeaders: { "X-FAD-Demo": "1" },
+    });
+    try {
+      await ctx.post(`${API_BASE}/testing/demo/reset`);
+    } finally {
+      await ctx.dispose();
+    }
     await setOneZeroCredential(true);
   });
 
   test.afterAll(async () => {
     await setOneZeroCredential(false);
-    await disableDemoMode();
+  });
+
+  // Demo Mode itself is per-page (localStorage), so it's seeded per-test
+  // here rather than alongside the beforeAll credential setup above.
+  test.beforeEach(async ({ page }) => {
+    await enableDemoMode(page);
   });
 
   test("Resend calls resend-2fa (not abort), keeps the process id, and starts a cooldown", async ({
@@ -64,11 +86,12 @@ test.describe("OneZero resend-in-place 2FA", () => {
     // /api/scraping/* surface so we can drive the UI into
     // "waiting_for_2fa" deterministically and never touch a real scraper
     // or a real 2FA/otp channel. This also guards a real data-leak: Demo
-    // Mode is a process-global flag (backend/config.py), a scrape runs as
-    // an async background task, and afterAll's disableDemoMode() races it
-    // back to the production DB — a live dummy scrape here once leaked 6
-    // fake transactions into the user's real data.db. Do NOT "simplify"
-    // this to waitForRequest + a live click; that reopens the leak.
+    // Mode used to be a process-global flag (backend/config.py), so a live
+    // scrape here plus afterAll's cleanup racing it back to production once
+    // leaked 6 fake transactions into the user's real data.db. Demo Mode is
+    // per-client now (no shared flag left to race), but a live scrape would
+    // still hit a real provider's site from a test — do NOT "simplify" this
+    // to waitForRequest + a live click.
     let startBody: unknown;
     let abortCalled = false;
     let resendBody: unknown;
@@ -145,17 +168,21 @@ test.describe("OneZero resend-in-place 2FA", () => {
       .getByRole("heading", { name: ONEZERO_ACCOUNT, exact: true })
       .locator("xpath=ancestor::div[contains(@class, 'group')][1]");
 
-    const reauth = card.getByRole("button", { name: /Re-authenticate|אימות מחדש/ });
+    const reauth = card.getByRole("button", {
+      name: /Re-authenticate|אימות מחדש/,
+    });
     await expect(reauth).toBeVisible();
     await reauth.click();
 
     // Wait for the forced-2FA start to land, then for the status poll
     // (stubbed to "waiting_for_2fa") to flip the card into the inline 2FA
     // section where Verify/Resend live.
-    await expect.poll(() => startBody).toMatchObject({
-      provider: "onezero",
-      force_2fa: true,
-    });
+    await expect
+      .poll(() => startBody)
+      .toMatchObject({
+        provider: "onezero",
+        force_2fa: true,
+      });
 
     // Locate Resend structurally (last button in the 2FA action row: input,
     // then Verify, then Resend) rather than by its current label text.

@@ -18,11 +18,13 @@ import { enableDemoMode, navigateTo } from "./helpers";
  * he.json common.moreInfo = "מידע נוסף"
  */
 test.describe("InfoTooltip aria-label i18n", () => {
-  // Self-heal demo mode: a no-op when already enabled (the `demo-setup`
-  // project turns it on once), so this is safe under parallel workers and
-  // makes the spec order-independent when sharded alongside mutating specs.
-  test.beforeAll(async () => {
-    await enableDemoMode();
+  // Demo Mode lives in the browser context's localStorage, so it must be
+  // seeded per-test (a fresh context per test) rather than once in
+  // beforeAll. enableDemoMode's demo/prepare call is idempotent, so this
+  // is still cheap and order-independent when sharded alongside mutating
+  // specs.
+  test.beforeEach(async ({ page }) => {
+    await enableDemoMode(page);
   });
 
   test.afterEach(async ({ page }) => {
@@ -31,7 +33,9 @@ test.describe("InfoTooltip aria-label i18n", () => {
     }
   });
 
-  test("info button localizes the accessible name to Hebrew", async ({ page }) => {
+  test("info button localizes the accessible name to Hebrew", async ({
+    page,
+  }) => {
     // Seed the language before the app boots so a single navigation lands
     // directly in Hebrew.
     await page.addInitScript(() => localStorage.setItem("language", "he"));
@@ -47,6 +51,8 @@ test.describe("InfoTooltip aria-label i18n", () => {
 
     // The English label must be gone — proving the aria-label is driven by
     // i18n and not hardcoded.
-    await expect(page.getByRole("button", { name: "More info" })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "More info" })).toHaveCount(
+      0,
+    );
   });
 });

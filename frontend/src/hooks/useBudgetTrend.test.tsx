@@ -9,7 +9,9 @@ import { DemoModeProvider } from "../context/DemoModeContext";
 vi.mock("../services/api", () => ({
   budgetApi: { getAnalysis: vi.fn() },
   testingApi: {
-    getDemoModeStatus: vi.fn().mockResolvedValue({ data: { demo_mode: false } }),
+    getDemoModeStatus: vi
+      .fn()
+      .mockResolvedValue({ data: { demo_mode: false, forced: false } }),
   },
 }));
 

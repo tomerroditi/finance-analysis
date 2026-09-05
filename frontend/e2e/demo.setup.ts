@@ -4,17 +4,18 @@ import { enableDemoMode } from "./helpers";
 /**
  * Demo-mode setup project.
  *
- * Enables Demo Mode exactly once, before the `read-only` and `mutating`
- * projects run (they declare this as a dependency). This replaces the old
- * per-file `beforeAll(enableDemoMode)` / `afterAll(disableDemoMode)` dance,
- * which flipped the global demo toggle at every file boundary and forced a
- * full demo-DB rebuild (file copy + date-shift over every table) each time.
+ * Demo Mode is now per-client (a localStorage flag carried to the backend
+ * via the `X-FAD-Demo` header), so this project no longer "enables"
+ * anything globally — there is no backend flag left to flip, and every spec
+ * seeds its own browser context via `enableDemoMode(page)` in its own
+ * `beforeEach`.
  *
- * Because demo mode is a process-global backend singleton, enabling it once
- * up front also makes it safe for the `read-only` project to fan its
- * (write-free) specs across multiple workers: every worker sees demo mode
- * already on, so nothing races to rebuild the DB.
+ * What this project still buys: `enableDemoMode`'s `demo/prepare` call
+ * builds the demo database file once, before the `read-only` project fans
+ * its (write-free) specs across multiple workers. Without running it here
+ * first as a declared dependency, several workers could race to build the
+ * demo DB file on their own first spec at once.
  */
-setup("enable demo mode", async () => {
-  await enableDemoMode();
+setup("prepare the demo database", async ({ page }) => {
+  await enableDemoMode(page);
 });

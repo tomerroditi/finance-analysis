@@ -1,19 +1,33 @@
 import { test, expect } from "@playwright/test";
-import { setDemoMode, gotoAndWait } from "./_helpers";
+import { gotoAndWait } from "./_helpers";
+import { enableDemoMode, resetDemoData } from "../helpers";
 
 /**
  * Switches the UI language between English and Hebrew via the Settings
  * popup and verifies that the document direction flips to RTL.
+ *
+ * Demo Mode is seeded per-page via `enableDemoMode` in `beforeEach` rather
+ * than a `beforeAll` — the flag lives in the test's own browser context
+ * (localStorage), which doesn't exist yet in `beforeAll` (no `page`
+ * fixture there), and wouldn't carry over from a separately-created page
+ * even if it did.
  */
 test.describe("Settings language toggle flow", () => {
-  test.beforeAll(async ({ request }) => {
-    await setDemoMode(request, true);
-  });
-  test.afterAll(async ({ request }) => {
-    await setDemoMode(request, false);
+  // Restore pristine demo data before this file runs. The `mutating`
+  // project is serial and each file is expected to own its DB state; the
+  // demo database is process-global, so without this a predecessor's
+  // writes leak in and this spec asserts against data it did not set up.
+  test.beforeAll(async () => {
+    await resetDemoData();
   });
 
-  test("switching to Hebrew flips document direction to RTL", async ({ page }) => {
+  test.beforeEach(async ({ page }) => {
+    await enableDemoMode(page);
+  });
+
+  test("switching to Hebrew flips document direction to RTL", async ({
+    page,
+  }) => {
     await gotoAndWait(page, "/");
 
     // Sanity: starts as LTR.
@@ -37,7 +51,10 @@ test.describe("Settings language toggle flow", () => {
 
     // Cleanup: switch back to English.
     await settingsButton.click();
-    await page.getByText(/^English$/i).first().click();
+    await page
+      .getByText(/^English$/i)
+      .first()
+      .click();
     await page.keyboard.press("Escape");
     await expect(page.locator("html")).toHaveAttribute("dir", "ltr", {
       timeout: 5_000,

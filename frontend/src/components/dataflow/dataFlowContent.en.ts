@@ -319,9 +319,9 @@ const content: DataFlowContent = {
     "demo-mode": {
       title: "Demo Mode", tag: "Toggle",
       sections: [
-        { heading: "How It Works", items: ["Toggle in Settings (sidebar) switches to isolated demo database", "Demo DB is a copy of bundled template with date-shifted data", "All dates relative to current date for realistic appearance", "Pre-seeded bank and credit card accounts (with/without 2FA)"] },
+        { heading: "How It Works", items: ["Toggle in Settings (sidebar) switches THIS browser only \u2014 other clients on the same backend are unaffected", "The choice is stored in localStorage and sent as the X-FAD-Demo request header", "Demo DB is a copy of bundled template with date-shifted data", "All dates relative to current date for realistic appearance", "Pre-seeded bank and credit card accounts (with/without 2FA)"] },
         { heading: "Scraper Redirect", text: "When demo mode is active, scraping requests are automatically redirected to dummy scrapers that generate fake data. No real financial institutions are contacted." },
-        { heading: "Isolation", text: "Completely separate database \u2014 no production data is read or affected. Safe for UI testing and demos." },
+        { heading: "Isolation", text: "Separate database \u2014 no production data is read or affected. Per-client: one browser can be in demo mode while another reads real data. Two clients both in demo mode do share one demo database." },
       ],
     },
     backup: {

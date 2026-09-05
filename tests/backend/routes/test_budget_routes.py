@@ -148,7 +148,7 @@ class TestBudgetRoutes:
         """GET /api/budget/analysis/2024/1 returns analysis."""
         monkeypatch.setattr(
             "backend.services.tagging_service._categories_cache",
-            SAMPLE_CATEGORIES,
+            {False: SAMPLE_CATEGORIES},
         )
         response = test_client.get("/api/budget/analysis/2024/1")
         assert response.status_code == 200
@@ -165,7 +165,7 @@ class TestBudgetRoutes:
         """GET /api/budget/alerts/{year}/{month} returns alerts payload."""
         monkeypatch.setattr(
             "backend.services.tagging_service._categories_cache",
-            SAMPLE_CATEGORIES,
+            {False: SAMPLE_CATEGORIES},
         )
         # Seed a tight Food budget that will be tripped by Jan 2024 transactions.
         test_client.post(
@@ -208,7 +208,7 @@ class TestBudgetRoutes:
         """GET /api/budget/alerts returns current-month payload, even when empty."""
         monkeypatch.setattr(
             "backend.services.tagging_service._categories_cache",
-            SAMPLE_CATEGORIES,
+            {False: SAMPLE_CATEGORIES},
         )
         response = test_client.get("/api/budget/alerts")
         assert response.status_code == 200
@@ -230,7 +230,7 @@ class TestBudgetRoutes:
         """POST /api/budget/projects creates a project."""
         monkeypatch.setattr(
             "backend.services.tagging_service._categories_cache",
-            SAMPLE_CATEGORIES,
+            {False: SAMPLE_CATEGORIES},
         )
         payload = {"category": "Housing", "total_budget": 5000.0}
         response = test_client.post("/api/budget/projects", json=payload)
@@ -356,7 +356,7 @@ class TestCategoryConflictsRoutes:
         """
         monkeypatch.setattr(
             "backend.services.tagging_service._categories_cache",
-            SAMPLE_CATEGORIES,
+            {False: SAMPLE_CATEGORIES},
         )
         test_client.post("/api/budget/rules", json={
             "name": "Total Budget", "amount": 9999, "category": "Total Budget",

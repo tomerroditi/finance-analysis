@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { enableDemoMode, disableDemoMode, navigateTo } from "./helpers";
+import { enableDemoMode, navigateTo, resetDemoData } from "./helpers";
 
 /**
  * Retirement page — editable Current Financial Status snapshot fields.
@@ -11,16 +11,21 @@ import { enableDemoMode, disableDemoMode, navigateTo } from "./helpers";
  * reset button that appears when the value differs from the calculated one.
  */
 test.describe("Retirement snapshot fields", () => {
-  test.beforeAll(async ({ browser }) => {
-    const page = await browser.newPage();
-    await enableDemoMode(page);
-    await page.close();
+  // Restore pristine demo data before this file runs. The `mutating`
+  // project is serial and each file is expected to own its DB state; the
+  // demo database is process-global, so without this a predecessor's
+  // writes leak in and this spec asserts against data it did not set up.
+  test.beforeAll(async () => {
+    await resetDemoData();
   });
 
-  test.afterAll(async ({ browser }) => {
-    const page = await browser.newPage();
-    await disableDemoMode(page);
-    await page.close();
+  // Demo Mode lives in the browser context's localStorage, so it must be
+  // seeded per-test (a fresh context per test) rather than once in
+  // beforeAll via a throwaway page — that page is a different browser
+  // context from the one each test actually navigates in, so anything it
+  // set there never reached the real test.
+  test.beforeEach(async ({ page }) => {
+    await enableDemoMode(page);
   });
 
   // All three scenarios are client-side reads/edits against one rendered
@@ -33,15 +38,11 @@ test.describe("Retirement snapshot fields", () => {
     await page.waitForLoadState("networkidle");
 
     // The CURRENT FINANCIAL STATUS header should be visible
-    await expect(
-      page.getByText("CURRENT FINANCIAL STATUS"),
-    ).toBeVisible();
+    await expect(page.getByText("CURRENT FINANCIAL STATUS")).toBeVisible();
 
     // All 4 editable snapshot inputs should have non-zero values
     const snapshotInputs = page
-      .locator(
-        ".p-3.rounded-xl input[type='number']",
-      )
+      .locator(".p-3.rounded-xl input[type='number']")
       .filter({ visible: true });
 
     const count = await snapshotInputs.count();
@@ -102,9 +103,15 @@ test.describe("Retirement snapshot fields", () => {
     await netWorthInput.fill("2222222");
 
     // Client-side navigation away and back via the sidebar.
-    await page.getByRole("link", { name: /Transactions/i }).first().click();
+    await page
+      .getByRole("link", { name: /Transactions/i })
+      .first()
+      .click();
     await expect(page).toHaveURL(/transactions/);
-    await page.getByRole("link", { name: /Early Retirement/i }).first().click();
+    await page
+      .getByRole("link", { name: /Early Retirement/i })
+      .first()
+      .click();
 
     // The edited value is restored — not rebuilt from the saved goal.
     await expect(netWorthInput).toHaveValue("2222222", { timeout: 30_000 });
@@ -124,7 +131,9 @@ test.describe("Retirement snapshot fields", () => {
     // lost or Save Plan can stay disabled, and the save request never fires
     // (surfaces as a waitForResponse timeout under CPU load).
     await expect
-      .poll(async () => Number(await netWorthInput.inputValue()), { timeout: 30_000 })
+      .poll(async () => Number(await netWorthInput.inputValue()), {
+        timeout: 30_000,
+      })
       .toBeGreaterThan(0);
 
     // Set a custom net worth
@@ -135,8 +144,7 @@ test.describe("Retirement snapshot fields", () => {
       page.waitForResponse(
         (r) =>
           r.url().includes("/api/retirement/goal") &&
-          (r.request().method() === "POST" ||
-            r.request().method() === "PUT"),
+          (r.request().method() === "POST" || r.request().method() === "PUT"),
       ),
       page.getByRole("button", { name: /Save Plan/i }).click(),
     ]);

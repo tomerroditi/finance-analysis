@@ -62,6 +62,11 @@ Walk through this checklist before assuming it Just Works:
    will runtime-cache it under `finance-api-get` and the persister will
    write it to IndexedDB on next throttle tick.
 
+- **Demo Mode requests are never runtime-cached.** The cache is keyed by URL
+  and a request header does not vary that key, so a cached demo response
+  could be served to a real-mode request. Any new caching layer keyed by URL
+  must apply the same exclusion.
+
 Mirror exclusions in **both** the SW filter and the persister — one without
 the other still leaks data.
 

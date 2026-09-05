@@ -53,6 +53,11 @@ def _launch_adapter(adapter: ScraperAdapter) -> None:
     returned ``concurrent.futures.Future`` is stored on the adapter so the
     running task stays referenced for its full lifetime.
 
+    ``run_coroutine_threadsafe`` does not carry the caller's context, so the
+    adapter re-applies the demo mode it captured at construction (see
+    ``ScraperAdapter._apply_demo_context``). Do not assume the coroutine
+    inherits anything context-local from this call site.
+
     Parameters
     ----------
     adapter : ScraperAdapter

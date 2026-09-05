@@ -1,22 +1,35 @@
 import { test, expect, request } from "@playwright/test";
-import { enableDemoMode, disableDemoMode, navigateTo, expectPageTitle, API_BASE } from "./helpers";
+import { enableDemoMode, navigateTo, expectPageTitle, API_BASE, resetDemoData } from "./helpers";
 
+// Every `request.newContext()` below declares the demo header itself: the
+// `request` fixture/module is Playwright's own HTTP client, which does not
+// run the app's JS, so the axios interceptor that attaches `X-FAD-Demo` from
+// localStorage never runs for it. Without it, these direct backend calls
+// would read/write the real database instead of the demo one each test's
+// own page (seeded via `enableDemoMode(page)`) is showing.
 test.describe("DataSources", () => {
-  test.beforeAll(async ({ browser }) => {
-    const page = await browser.newPage();
-    await enableDemoMode(page);
-    await page.close();
+  // Restore pristine demo data before this file runs. The `mutating`
+  // project is serial and each file is expected to own its DB state; the
+  // demo database is process-global, so without this a predecessor's
+  // writes leak in and this spec asserts against data it did not set up.
+  test.beforeAll(async () => {
+    await resetDemoData();
   });
 
-  test.afterAll(async ({ browser }) => {
-    const page = await browser.newPage();
-    await disableDemoMode(page);
-    await page.close();
+  // Demo Mode lives in the browser context's localStorage, so it must be
+  // seeded per-test (a fresh context per test) rather than once in
+  // beforeAll via a throwaway page — that page is a different browser
+  // context from the one each test actually navigates in, so anything it
+  // set there never reached the real test.
+  test.beforeEach(async ({ page }) => {
+    await enableDemoMode(page);
   });
 
   // Read-only page smoke + provider logos + the Connect Account chooser, all
   // against one rendered page — a single navigation covers all of them.
-  test("page, account-card logos, and the connect-account modal on one load", async ({ page }) => {
+  test("page, account-card logos, and the connect-account modal on one load", async ({
+    page,
+  }) => {
     await navigateTo(page, "/data-sources");
     await expectPageTitle(page, /Data Sources/);
     await expect(page.locator("main")).toBeVisible();
@@ -38,11 +51,21 @@ test.describe("DataSources", () => {
 
     // Step 1: open the connect-account modal — the chooser surfaces all
     // three top-level service types.
-    await page.getByRole("button", { name: "Connect Account", exact: true }).click();
-    await expect(page.getByRole("heading", { name: /connect new account/i })).toBeVisible();
-    await expect(page.getByRole("button", { name: /bank account/i })).toBeVisible();
-    await expect(page.getByRole("button", { name: /credit card/i })).toBeVisible();
-    await expect(page.getByRole("button", { name: /^insurance/i })).toBeVisible();
+    await page
+      .getByRole("button", { name: "Connect Account", exact: true })
+      .click();
+    await expect(
+      page.getByRole("heading", { name: /connect new account/i }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: /bank account/i }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: /credit card/i }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: /^insurance/i }),
+    ).toBeVisible();
 
     // Step 2: a representative subset of banks should appear with their logos.
     // We don't enumerate all 11 — the goal is to lock in that the grid actually
@@ -64,13 +87,17 @@ test.describe("DataSources", () => {
     }
   });
 
-  test("opens the shared balance modal from the $ button and saves", async ({ page }) => {
+  test("opens the shared balance modal from the $ button and saves", async ({
+    page,
+  }) => {
     const provider = "onezero";
     const accountName = "E2E Balance Bank";
     const today = new Date().toISOString();
 
     // Seed a throwaway bank credential so a bank row (with the $ button) renders.
-    const ctx = await request.newContext();
+    const ctx = await request.newContext({
+      extraHTTPHeaders: { "X-FAD-Demo": "1" },
+    });
     await ctx.post(`${API_BASE}/credentials/`, {
       data: {
         service: "banks",
@@ -90,7 +117,12 @@ test.describe("DataSources", () => {
       await page.route("**/api/scraping/last-scrapes", async (route) => {
         await route.fulfill({
           json: [
-            { service: "banks", provider, account_name: accountName, last_scrape_date: today },
+            {
+              service: "banks",
+              provider,
+              account_name: accountName,
+              last_scrape_date: today,
+            },
           ],
         });
       });
@@ -131,7 +163,9 @@ test.describe("DataSources", () => {
       await page.goto("/data-sources");
 
       // The seeded bank row's amber "$" button (enabled because scraped today).
-      const setBtn = page.getByRole("button", { name: /^Set Balance$/ }).first();
+      const setBtn = page
+        .getByRole("button", { name: /^Set Balance$/ })
+        .first();
       await expect(setBtn).toBeEnabled();
       await setBtn.click();
 
@@ -141,17 +175,24 @@ test.describe("DataSources", () => {
 
       const [req] = await Promise.all([
         page.waitForRequest(
-          (r) => r.url().includes("/api/bank-balances/") && r.method() === "POST",
+          (r) =>
+            r.url().includes("/api/bank-balances/") && r.method() === "POST",
         ),
         (async () => {
           await dialog.getByRole("spinbutton").fill("7777");
           await dialog.getByRole("button", { name: /^Save$/ }).click();
         })(),
       ]);
-      expect(req.postDataJSON()).toEqual({ provider, account_name: accountName, balance: 7777 });
+      expect(req.postDataJSON()).toEqual({
+        provider,
+        account_name: accountName,
+        balance: 7777,
+      });
       await expect(dialog).toBeHidden();
     } finally {
-      const cleanup = await request.newContext();
+      const cleanup = await request.newContext({
+        extraHTTPHeaders: { "X-FAD-Demo": "1" },
+      });
       await cleanup.delete(
         `${API_BASE}/credentials/banks/${provider}/${encodeURIComponent(accountName)}`,
       );
@@ -169,7 +210,9 @@ test.describe("DataSources", () => {
     const wipeAccount = "E2E Disconnect Wipe";
 
     const seed = async (accountName: string) => {
-      const ctx = await request.newContext();
+      const ctx = await request.newContext({
+        extraHTTPHeaders: { "X-FAD-Demo": "1" },
+      });
       await ctx.post(`${API_BASE}/credentials/`, {
         data: {
           service: "banks",
@@ -205,7 +248,9 @@ test.describe("DataSources", () => {
       const dialog = page.getByRole("dialog");
       await expect(dialog).toBeVisible();
       const keepRadio = dialog.getByRole("radio", { name: /Keep my data/ });
-      const wipeRadio = dialog.getByRole("radio", { name: /Delete everything/ });
+      const wipeRadio = dialog.getByRole("radio", {
+        name: /Delete everything/,
+      });
       await expect(keepRadio).toBeChecked();
       await expect(wipeRadio).not.toBeChecked();
       // The irreversible-action warning belongs to the destructive branch only.
@@ -213,11 +258,15 @@ test.describe("DataSources", () => {
 
       const [keepReq] = await Promise.all([
         page.waitForRequest(
-          (r) => r.url().includes("/api/credentials/banks/") && r.method() === "DELETE",
+          (r) =>
+            r.url().includes("/api/credentials/banks/") &&
+            r.method() === "DELETE",
         ),
         dialog.getByRole("button", { name: "Disconnect, keep data" }).click(),
       ]);
-      expect(new URL(keepReq.url()).searchParams.get("delete_data")).toBe("false");
+      expect(new URL(keepReq.url()).searchParams.get("delete_data")).toBe(
+        "false",
+      );
       await expect(dialog).toBeHidden();
 
       // ---- Branch 2: opting in flips the copy and the wire contract ----
@@ -230,7 +279,9 @@ test.describe("DataSources", () => {
         .click();
       await expect(dialog).toBeVisible();
       // A fresh open must not remember the previous session's choice.
-      await expect(dialog.getByRole("radio", { name: /Keep my data/ })).toBeChecked();
+      await expect(
+        dialog.getByRole("radio", { name: /Keep my data/ }),
+      ).toBeChecked();
 
       await dialog.getByRole("radio", { name: /Delete everything/ }).check();
       const warning = dialog.getByRole("alert");
@@ -242,18 +293,30 @@ test.describe("DataSources", () => {
 
       const [wipeReq] = await Promise.all([
         page.waitForRequest(
-          (r) => r.url().includes("/api/credentials/banks/") && r.method() === "DELETE",
+          (r) =>
+            r.url().includes("/api/credentials/banks/") &&
+            r.method() === "DELETE",
         ),
-        dialog.getByRole("button", { name: "Disconnect and delete data" }).click(),
+        dialog
+          .getByRole("button", { name: "Disconnect and delete data" })
+          .click(),
       ]);
-      expect(new URL(wipeReq.url()).searchParams.get("delete_data")).toBe("true");
+      expect(new URL(wipeReq.url()).searchParams.get("delete_data")).toBe(
+        "true",
+      );
       await expect(dialog).toBeHidden();
 
       // Both cards are gone from the list.
-      await expect(page.getByRole("heading", { name: keepAccount })).toHaveCount(0);
-      await expect(page.getByRole("heading", { name: wipeAccount })).toHaveCount(0);
+      await expect(
+        page.getByRole("heading", { name: keepAccount }),
+      ).toHaveCount(0);
+      await expect(
+        page.getByRole("heading", { name: wipeAccount }),
+      ).toHaveCount(0);
     } finally {
-      const cleanup = await request.newContext();
+      const cleanup = await request.newContext({
+        extraHTTPHeaders: { "X-FAD-Demo": "1" },
+      });
       for (const accountName of [keepAccount, wipeAccount]) {
         await cleanup.delete(
           `${API_BASE}/credentials/banks/${provider}/${encodeURIComponent(accountName)}`,
@@ -263,11 +326,15 @@ test.describe("DataSources", () => {
     }
   });
 
-  test("credential details API never returns plaintext secrets", async ({ page }) => {
+  test("credential details API never returns plaintext secrets", async ({
+    page,
+  }) => {
     // Regression guard: GET /api/credentials/{service}/{provider}/{account}
     // used to return the keyring password as plaintext JSON. It must now be
     // masked with the __unchanged__ sentinel (or empty when nothing stored).
-    const ctx = await request.newContext();
+    const ctx = await request.newContext({
+      extraHTTPHeaders: { "X-FAD-Demo": "1" },
+    });
     const res = await ctx.get(
       `${API_BASE}/credentials/banks/hapoalim/${encodeURIComponent("Main Account")}`,
     );

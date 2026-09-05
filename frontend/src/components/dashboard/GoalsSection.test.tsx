@@ -57,7 +57,7 @@ async function renderGoals(goals: SavingsGoal[]) {
   } as Awaited<ReturnType<typeof savingsGoalsApi.getAll>>);
 
   vi.spyOn(testingApi, "getDemoModeStatus").mockResolvedValue({
-    data: { demo_mode: false },
+    data: { demo_mode: false, forced: false },
   } as Awaited<ReturnType<typeof testingApi.getDemoModeStatus>>);
 
   const client = new QueryClient({

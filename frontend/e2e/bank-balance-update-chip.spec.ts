@@ -1,35 +1,71 @@
 import { test, expect } from "@playwright/test";
-import { enableDemoMode, disableDemoMode } from "./helpers";
+import { enableDemoMode, resetDemoData } from "./helpers";
 
 test.describe("Dashboard bank-balance update chip", () => {
+  // Restore pristine demo data before this file runs. The `mutating`
+  // project is serial and each file is expected to own its DB state; the
+  // demo database is process-global, so without this a predecessor's
+  // writes leak in and this spec asserts against data it did not set up.
   test.beforeAll(async () => {
-    await enableDemoMode();
-  });
-  test.afterAll(async () => {
-    await disableDemoMode();
+    await resetDemoData();
   });
 
   test.beforeEach(async ({ page }) => {
+    await enableDemoMode(page);
     const today = new Date().toISOString();
     await page.route("**/api/bank-balances/", async (route) => {
       if (route.request().method() === "GET") {
         await route.fulfill({
           json: [
-            { id: 1, provider: "hapoalim", account_name: "Fresh Checking", balance: 1000, prior_wealth_amount: 0, last_manual_update: null, last_scrape_update: today },
-            { id: 2, provider: "leumi", account_name: "Stale Savings", balance: 2000, prior_wealth_amount: 0, last_manual_update: null, last_scrape_update: null },
+            {
+              id: 1,
+              provider: "hapoalim",
+              account_name: "Fresh Checking",
+              balance: 1000,
+              prior_wealth_amount: 0,
+              last_manual_update: null,
+              last_scrape_update: today,
+            },
+            {
+              id: 2,
+              provider: "leumi",
+              account_name: "Stale Savings",
+              balance: 2000,
+              prior_wealth_amount: 0,
+              last_manual_update: null,
+              last_scrape_update: null,
+            },
           ],
         });
       } else {
         await route.fulfill({
-          json: { id: 1, provider: "hapoalim", account_name: "Fresh Checking", balance: 4242, prior_wealth_amount: 0, last_manual_update: today, last_scrape_update: today },
+          json: {
+            id: 1,
+            provider: "hapoalim",
+            account_name: "Fresh Checking",
+            balance: 4242,
+            prior_wealth_amount: 0,
+            last_manual_update: today,
+            last_scrape_update: today,
+          },
         });
       }
     });
     await page.route("**/api/scraping/last-scrapes", async (route) => {
       await route.fulfill({
         json: [
-          { service: "banks", provider: "hapoalim", account_name: "Fresh Checking", last_scrape_date: today },
-          { service: "banks", provider: "leumi", account_name: "Stale Savings", last_scrape_date: "2020-01-01T00:00:00" },
+          {
+            service: "banks",
+            provider: "hapoalim",
+            account_name: "Fresh Checking",
+            last_scrape_date: today,
+          },
+          {
+            service: "banks",
+            provider: "leumi",
+            account_name: "Stale Savings",
+            last_scrape_date: "2020-01-01T00:00:00",
+          },
         ],
       });
     });
@@ -42,7 +78,9 @@ test.describe("Dashboard bank-balance update chip", () => {
 
   // One dashboard load covers both scenarios: the disabled stale chip and the
   // save flow on the fresh account's chip.
-  test("per-account chips: stale is disabled; fresh opens the modal, saves, and keeps the card expanded", async ({ page }) => {
+  test("per-account chips: stale is disabled; fresh opens the modal, saves, and keeps the card expanded", async ({
+    page,
+  }) => {
     await page.getByText("Bank Balance", { exact: true }).click(); // expand KPI header
     await expect(page.getByText("Fresh Checking")).toBeVisible();
     await expect(page.getByText("Stale Savings")).toBeVisible();
@@ -52,7 +90,10 @@ test.describe("Dashboard bank-balance update chip", () => {
     await expect(staleChip).toBeVisible();
     await expect(staleChip).toBeDisabled();
 
-    await page.getByRole("button", { name: /^Set Balance$/ }).first().click();
+    await page
+      .getByRole("button", { name: /^Set Balance$/ })
+      .first()
+      .click();
 
     const dialog = page.getByRole("dialog");
     await expect(dialog).toBeVisible();

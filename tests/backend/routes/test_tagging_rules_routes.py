@@ -10,7 +10,7 @@ from backend.models.category import Category
 @pytest.fixture(autouse=True)
 def seed_route_categories(db_session):
     """Seed categories into the DB and reset cache for each route test."""
-    ts._categories_cache = None
+    ts._categories_cache = {}
     categories = {
         "Food": ["Groceries", "Restaurants"],
         "Transport": ["Gas", "Public Transport", "Rides"],
@@ -27,7 +27,7 @@ def seed_route_categories(db_session):
         db_session.add(Category(name=name, tags=tags))
     db_session.commit()
     yield
-    ts._categories_cache = None
+    ts._categories_cache = {}
 
 
 class TestTaggingRulesRoutes:

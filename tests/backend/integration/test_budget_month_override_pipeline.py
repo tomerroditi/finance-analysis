@@ -26,7 +26,7 @@ def _mock_categories_cache(sample_categories_yaml):
     """Mock the categories cache for all tests in this module."""
     with patch(
         "backend.services.tagging_service._categories_cache",
-        sample_categories_yaml,
+        {False: sample_categories_yaml},
     ):
         yield
 

@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { enableDemoMode, disableDemoMode } from "./helpers";
+import { enableDemoMode, resetDemoData } from "./helpers";
 
 /**
  * Customizable dashboard layout: the Settings → Dashboard tab lets users
@@ -8,21 +8,28 @@ import { enableDemoMode, disableDemoMode } from "./helpers";
  * localStorage-backed.
  */
 test.describe("Dashboard layout customization", () => {
-  test.beforeAll(async ({ browser }) => {
-    const page = await browser.newPage();
-    await enableDemoMode(page);
-    await page.close();
+  // Restore pristine demo data before this file runs. The `mutating`
+  // project is serial and each file is expected to own its DB state; the
+  // demo database is process-global, so without this a predecessor's
+  // writes leak in and this spec asserts against data it did not set up.
+  test.beforeAll(async () => {
+    await resetDemoData();
   });
 
-  test.afterAll(async ({ browser }) => {
-    const page = await browser.newPage();
-    await disableDemoMode(page);
-    await page.close();
+  // Demo Mode lives in the browser context's localStorage, so it must be
+  // seeded per-test (a fresh context per test) rather than once in
+  // beforeAll via a throwaway page — that page is a different browser
+  // context from the one each test actually navigates in, so anything it
+  // set there never reached the real test.
+  test.beforeEach(async ({ page }) => {
+    await enableDemoMode(page);
   });
 
   test.beforeEach(async ({ page }) => {
     // Start each test from a clean (default) layout.
-    await page.addInitScript(() => window.localStorage.removeItem("fa.dashboard.layout"));
+    await page.addInitScript(() =>
+      window.localStorage.removeItem("fa.dashboard.layout"),
+    );
   });
 
   // One dashboard load covers every settings-popup scenario that starts from
@@ -37,32 +44,48 @@ test.describe("Dashboard layout customization", () => {
   }) => {
     await page.goto("/");
     // Net Worth KPI lives in the pinned header and is never in the card set.
-    await expect(page.getByText(/Net Worth/i).first()).toBeVisible({ timeout: 45_000 });
+    await expect(page.getByText(/Net Worth/i).first()).toBeVisible({
+      timeout: 45_000,
+    });
     // Recent transactions is a non-beta card, visible by default.
-    await expect(page.getByText(/Recent Transactions/i).first()).toBeVisible({ timeout: 45_000 });
+    await expect(page.getByText(/Recent Transactions/i).first()).toBeVisible({
+      timeout: 45_000,
+    });
 
     // Beta dashboard sections are not rendered on a fresh layout. "Safe to
     // spend" is unique to the forecast card (avoids matching the heatmap's
     // "This month" total label).
     await expect(page.getByText(/Safe to spend/i)).toHaveCount(0);
 
-    await page.getByRole("button", { name: /^Settings$/ }).first().click();
-    await expect(page.getByRole("heading", { name: /^Settings$/ })).toBeVisible();
+    await page
+      .getByRole("button", { name: /^Settings$/ })
+      .first()
+      .click();
+    await expect(
+      page.getByRole("heading", { name: /^Settings$/ }),
+    ).toBeVisible();
     await page.getByRole("button", { name: /^Dashboard$/ }).click();
 
     // The beta forecast card sits under Hidden cards with a Beta badge.
-    const betaRow = page.getByText("This Month (forecast)", { exact: true }).locator("xpath=..");
+    const betaRow = page
+      .getByText("This Month (forecast)", { exact: true })
+      .locator("xpath=..");
     await expect(betaRow).toBeVisible();
     await expect(betaRow.getByText(/^Beta$/i)).toBeVisible();
 
     // Non-beta visible card carries no Beta badge.
-    const visibleRow = page.getByText("Recent transactions", { exact: true }).locator("xpath=..");
+    const visibleRow = page
+      .getByText("Recent transactions", { exact: true })
+      .locator("xpath=..");
     await expect(visibleRow.getByText(/^Beta$/i)).toHaveCount(0);
 
     // Hide the "Spending calendar" card (non-beta, visible by default).
     const label = page.getByText("Spending calendar", { exact: true });
     await expect(label).toBeVisible();
-    await label.locator("xpath=..").getByRole("button", { name: /Hide card/i }).click();
+    await label
+      .locator("xpath=..")
+      .getByRole("button", { name: /Hide card/i })
+      .click();
     await expect(page.getByText("Hidden cards", { exact: true })).toBeVisible();
 
     // Opt into the beta forecast card.
@@ -70,7 +93,9 @@ test.describe("Dashboard layout customization", () => {
 
     // The X button closes the settings popup.
     await page.getByRole("button", { name: /^Close$/ }).click();
-    await expect(page.getByRole("heading", { name: /^Settings$/ })).toHaveCount(0);
+    await expect(page.getByRole("heading", { name: /^Settings$/ })).toHaveCount(
+      0,
+    );
 
     // The hidden card is gone from the dashboard.
     await expect(page.getByText(/Spending Calendar/i)).toHaveCount(0);
@@ -82,11 +107,16 @@ test.describe("Dashboard layout customization", () => {
     await expect(page.getByText(/Safe to spend/i).first()).toBeVisible();
 
     // --- Drag-reorder: re-open the popup and drag the first row down ---
-    await page.getByRole("button", { name: /^Settings$/ }).first().click();
+    await page
+      .getByRole("button", { name: /^Settings$/ })
+      .first()
+      .click();
     await page.getByRole("button", { name: /^Dashboard$/ }).click();
 
     // Visible order still starts with "Budget spending"; drag it down.
-    const firstRow = page.getByText("Budget spending", { exact: true }).locator("xpath=..");
+    const firstRow = page
+      .getByText("Budget spending", { exact: true })
+      .locator("xpath=..");
     await expect(firstRow).toBeVisible();
 
     // Regression guard before dragging: @dnd-kit spreads role="button" onto
@@ -94,7 +124,9 @@ test.describe("Dashboard layout customization", () => {
     // rule would otherwise win the cascade and break dragging on
     // touch/trackpad. The inline `touch-action: none` must override it —
     // a synthetic-mouse drag alone cannot catch that bug.
-    const touchAction = await firstRow.evaluate((el) => getComputedStyle(el).touchAction);
+    const touchAction = await firstRow.evaluate(
+      (el) => getComputedStyle(el).touchAction,
+    );
     expect(touchAction).toBe("none");
 
     const box = await firstRow.boundingBox();
@@ -114,7 +146,9 @@ test.describe("Dashboard layout customization", () => {
     expect(order).toContain("budget");
   });
 
-  test("hidden card persists across reload and can be restored", async ({ page }) => {
+  test("hidden card persists across reload and can be restored", async ({
+    page,
+  }) => {
     // Current (v:3) layout so it isn't migrated; heatmap hidden explicitly.
     await page.addInitScript(() => {
       window.localStorage.setItem(
@@ -127,13 +161,20 @@ test.describe("Dashboard layout customization", () => {
       );
     });
     await page.goto("/");
-    await expect(page.getByText(/Recent Transactions/i).first()).toBeVisible({ timeout: 45_000 });
+    await expect(page.getByText(/Recent Transactions/i).first()).toBeVisible({
+      timeout: 45_000,
+    });
     await expect(page.getByText(/Spending Calendar/i)).toHaveCount(0);
 
     // Restore it from settings.
-    await page.getByRole("button", { name: /^Settings$/ }).first().click();
+    await page
+      .getByRole("button", { name: /^Settings$/ })
+      .first()
+      .click();
     await page.getByRole("button", { name: /^Dashboard$/ }).click();
-    const hiddenRow = page.getByText("Spending calendar", { exact: true }).locator("xpath=..");
+    const hiddenRow = page
+      .getByText("Spending calendar", { exact: true })
+      .locator("xpath=..");
     await hiddenRow.getByRole("button", { name: /Show card/i }).click();
     await page.keyboard.press("Escape");
 

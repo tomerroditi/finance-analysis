@@ -1,17 +1,22 @@
 import { test, expect } from "@playwright/test";
-import { enableDemoMode, disableDemoMode, expectPageTitle } from "./helpers";
+import { enableDemoMode, expectPageTitle, resetDemoData } from "./helpers";
 
 test.describe("Dashboard", () => {
-  test.beforeAll(async ({ browser }) => {
-    const page = await browser.newPage();
-    await enableDemoMode(page);
-    await page.close();
+  // Restore pristine demo data before this file runs. The `mutating`
+  // project is serial and each file is expected to own its DB state; the
+  // demo database is process-global, so without this a predecessor's
+  // writes leak in and this spec asserts against data it did not set up.
+  test.beforeAll(async () => {
+    await resetDemoData();
   });
 
-  test.afterAll(async ({ browser }) => {
-    const page = await browser.newPage();
-    await disableDemoMode(page);
-    await page.close();
+  // Demo Mode lives in the browser context's localStorage, so it must be
+  // seeded per-test (a fresh context per test) rather than once in
+  // beforeAll via a throwaway page — that page is a different browser
+  // context from the one each test actually navigates in, so anything it
+  // set there never reached the real test.
+  test.beforeEach(async ({ page }) => {
+    await enableDemoMode(page);
   });
 
   // The cold dashboard boot is the expensive step (~30 s of queued React
@@ -35,7 +40,9 @@ test.describe("Dashboard", () => {
     // Recent transactions feed. Cold-cache navigation queues ~30 React Query
     // requests behind the browser's HTTP/1.1 connection limit; the slowest
     // queries can take ~30 s to resolve. 45 s keeps the assertion robust.
-    await expect(page.getByText(/Recent Transactions/i)).toBeVisible({ timeout: 45_000 });
+    await expect(page.getByText(/Recent Transactions/i)).toBeVisible({
+      timeout: 45_000,
+    });
 
     // Budget progress section. The section's "Budget" header is too generic
     // to locate uniquely (the sidebar nav link has the same text). Assert on
@@ -46,7 +53,9 @@ test.describe("Dashboard", () => {
     // --- Refunds card: KPIs + open requests render from demo data ---
     const refundsCard = page.locator('[data-card-id="refunds"]');
     await refundsCard.scrollIntoViewIfNeeded();
-    await expect(refundsCard.getByText("Owed back")).toBeVisible({ timeout: 20_000 });
+    await expect(refundsCard.getByText("Owed back")).toBeVisible({
+      timeout: 20_000,
+    });
     await expect(refundsCard.getByText(/recovered/)).toBeVisible();
     // Demo data ships open (pending/partial) refunds, so the list renders,
     // with each remaining amount shown out of its expected total.
@@ -56,9 +65,13 @@ test.describe("Dashboard", () => {
     ).toContainText("/");
 
     // --- Inline tag editor: stages edits, commits on Done ---
-    const editButtons = page.getByRole("button", { name: /Edit category \/ tag/i });
+    const editButtons = page.getByRole("button", {
+      name: /Edit category \/ tag/i,
+    });
     await editButtons.first().waitFor();
-    const targetRow = editButtons.first().locator("xpath=ancestor::*[contains(@class,'cursor-pointer')][1]");
+    const targetRow = editButtons
+      .first()
+      .locator("xpath=ancestor::*[contains(@class,'cursor-pointer')][1]");
     const rowTextBefore = (await targetRow.textContent())?.trim() ?? "";
     await editButtons.first().click();
 
@@ -95,7 +108,9 @@ test.describe("Dashboard", () => {
     await doneBtn.click();
     await expect(panel).toBeHidden();
     if (tagName) {
-      await expect(targetRow).toContainText(new RegExp(`${newCategoryName} / ${tagName}`));
+      await expect(targetRow).toContainText(
+        new RegExp(`${newCategoryName} / ${tagName}`),
+      );
     }
   });
 });

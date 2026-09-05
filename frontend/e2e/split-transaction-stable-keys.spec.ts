@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { enableDemoMode, disableDemoMode, navigateTo } from "./helpers";
+import { enableDemoMode, navigateTo, resetDemoData } from "./helpers";
 
 /**
  * Regression coverage for SplitTransactionModal.tsx.
@@ -12,19 +12,26 @@ import { enableDemoMode, disableDemoMode, navigateTo } from "./helpers";
  * assert the surviving rows still carry their own values.
  */
 test.describe("Split transaction modal stable keys", () => {
-  test.beforeAll(async ({ browser }) => {
-    const page = await browser.newPage();
+  // Restore pristine demo data before this file runs. The `mutating`
+  // project is serial and each file is expected to own its DB state; the
+  // demo database is process-global, so without this a predecessor's
+  // writes leak in and this spec asserts against data it did not set up.
+  test.beforeAll(async () => {
+    await resetDemoData();
+  });
+
+  // Demo Mode lives in the browser context's localStorage, so it must be
+  // seeded per-test (a fresh context per test) rather than once in
+  // beforeAll via a throwaway page — that page is a different browser
+  // context from the one each test actually navigates in, so anything it
+  // set there never reached the real test.
+  test.beforeEach(async ({ page }) => {
     await enableDemoMode(page);
-    await page.close();
   });
 
-  test.afterAll(async ({ browser }) => {
-    const page = await browser.newPage();
-    await disableDemoMode(page);
-    await page.close();
-  });
-
-  test("removing a middle row keeps the remaining rows' amounts intact", async ({ page }) => {
+  test("removing a middle row keeps the remaining rows' amounts intact", async ({
+    page,
+  }) => {
     await navigateTo(page, "/transactions");
 
     // Wait for the table to populate.
@@ -40,7 +47,9 @@ test.describe("Split transaction modal stable keys", () => {
     await splitButton.click();
 
     // Modal heading confirms it opened.
-    await expect(page.getByRole("heading", { name: /Split Transaction/i })).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: /Split Transaction/i }),
+    ).toBeVisible();
 
     // The modal seeds two rows. Each row's amount input is the only
     // number input inside that row block. Add two more rows so we have four.
@@ -126,7 +135,9 @@ test.describe("Split transaction modal stable keys", () => {
     // The split totals balance, so the dialog header marker reads
     // "Balanced" and the Save button enables.
     await expect(dialog.getByText(/^balanced$/i)).toBeVisible();
-    const saveBtn = dialog.getByRole("button", { name: /^split transaction$/i });
+    const saveBtn = dialog.getByRole("button", {
+      name: /^split transaction$/i,
+    });
     await expect(saveBtn).toBeEnabled();
 
     // Submit and confirm the backend accepted the request. The route is

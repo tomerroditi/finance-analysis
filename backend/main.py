@@ -191,7 +191,7 @@ app.add_middleware(
     allow_origins=_cors_origins,
     allow_credentials=_cors_allow_credentials,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allow_headers=["Content-Type", "Authorization", "X-Requested-With"],
+    allow_headers=["Content-Type", "Authorization", "X-Requested-With", "X-FAD-Demo"],
 )
 
 
@@ -203,6 +203,48 @@ _MAX_REQUEST_BYTES = int(os.getenv("MAX_REQUEST_BYTES", str(10 * 1024 * 1024)))
 # Methods that may carry a body. Bodiless methods skip the streaming path so
 # a plain GET never waits on a request-body message.
 _BODY_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
+
+
+# Values of X-FAD-Demo that select the demo database. Anything else — an
+# absent header, "0", or a malformed value — resolves to real mode.
+_DEMO_HEADER_TRUTHY = frozenset({"1", "true"})
+
+
+# Declared FIRST so it is registered first and therefore runs INNERMOST:
+# Starlette makes the last-registered middleware outermost, so this executes
+# after the host allowlist, bearer token, and same-origin checks have all
+# passed. Requests that those middlewares reject never resolve a mode.
+@app.middleware("http")
+async def resolve_demo_mode(request: Request, call_next):
+    """Bind the request's demo-mode flag from the ``X-FAD-Demo`` header.
+
+    Demo Mode is per-client: the flag lives in a context variable rather
+    than on a process-global singleton, so two clients on one backend can
+    read different databases concurrently. The header is the client's whole
+    declaration — the backend stores nothing per client.
+    """
+    if AppConfig._forced_mode is not None:
+        return await call_next(request)
+
+    header = request.headers.get("x-fad-demo", "")
+    enabled = header.strip().lower() in _DEMO_HEADER_TRUTHY
+
+    config = AppConfig()
+    # ensure_dir=False: this middleware only binds the context-local flag
+    # for the request's duration and never itself touches the filesystem,
+    # so the os.makedirs set_demo_mode() otherwise performs on every enable
+    # would be a blocking syscall on the event loop for every demo-mode
+    # request. The demo user directory is guaranteed to already exist by
+    # the time any client can be in demo mode — prepare_demo_database()
+    # (routes/testing.py, index.py) creates it via its own set_demo_mode(True)
+    # call, which keeps the default ensure_dir=True.
+    token = config.set_demo_mode(enabled, ensure_dir=False)
+    try:
+        return await call_next(request)
+    finally:
+        # Requests are served from a shared threadpool; without the reset a
+        # worker would carry this mode into the next request it picks up.
+        config.reset_demo_mode(token)
 
 
 @app.middleware("http")

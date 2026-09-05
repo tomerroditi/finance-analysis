@@ -2,8 +2,8 @@
 
 Vercel natively supports FastAPI — it auto-detects the `app` variable.
 No Mangum adapter needed. On cold start we seed the demo database into /tmp,
-shift its dates so the data tracks today, and force demo mode so preview
-deployments are stocked with sample data.
+shift its dates so the data tracks today, and pin demo mode process-wide so
+preview deployments are stocked with sample data.
 """
 
 import os
@@ -28,8 +28,9 @@ else:
 os.environ.setdefault("VERCEL", "1")
 # Fail closed: without this, ENVIRONMENT defaults to "development" and the
 # public deployment would expose /docs and /openapi.json. The testing router
-# (demo-mode status/toggle) must stay mounted — the demo UI uses it — so it is
-# explicitly re-enabled; the toggle route itself is a no-op on Vercel.
+# (demo-mode status/prepare/reset) must stay mounted — the demo UI uses it —
+# so it is explicitly re-enabled; the prepare and reset routes no-op under
+# the forced-mode pin.
 os.environ.setdefault("ENVIRONMENT", "production")
 os.environ.setdefault("ENABLE_TESTING_ROUTES", "1")
 
@@ -37,7 +38,12 @@ from backend.config import AppConfig  # noqa: E402
 from backend.demo_setup import prepare_demo_database  # noqa: E402
 
 config = AppConfig()
-config.set_demo_mode(True)
+# Pin demo mode for the whole process. A contextvar set here would not reach
+# the threads that serve requests, and this deployment is a single shared
+# demo instance where no client may opt out — so the pin is the correct
+# expression of the requirement, and it makes the demo routes no-op cleanly.
+AppConfig._forced_mode = True
+os.makedirs(config.get_user_dir(), exist_ok=True)
 
 # Copy the frozen demo DB into /tmp, sync any missing schema, and shift every
 # date column to be relative to today. Without this step the demo data stays

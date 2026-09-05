@@ -15,18 +15,32 @@ import { defineConfig, devices } from "@playwright/test";
  *
  * ## Projects & parallelism
  *
- * Demo Mode is a process-global backend singleton (one shared SQLite DB),
- * so the suite is split into two phases sequenced by a shared setup project:
+ * Demo Mode is declared per request via the `X-FAD-Demo` header — the
+ * backend branches on it per-client rather than on a shared toggle, and the
+ * browser's copy of the flag lives in localStorage under `fad_demo_mode`
+ * (see `helpers.ts`). What remains process-global is the demo DATABASE FILE
+ * itself: every client that sends the header reads and writes the same
+ * on-disk demo DB. That's why the suite still needs `demo-setup` to warm
+ * that file once and `demo-teardown` to reset it, and why two concurrent
+ * demo clients still share one demo database — isolation is between demo
+ * and real traffic, not between one demo client and another. The suite is
+ * split into two phases sequenced by a shared setup project:
  *
  *   demo-setup ─▶ read-only (parallel) ─▶ mutating (serial) ─▶ demo-teardown
  *
- * - `demo-setup` enables Demo Mode once (was: a full DB rebuild at every
- *   file boundary via per-file beforeAll/afterAll).
+ * - `demo-setup` builds the demo database file once, before `read-only` fans
+ *   out, so several workers can't race to create it on their first spec.
  * - `read-only` holds specs that perform ZERO backend writes. They share the
  *   one demo snapshot safely, so they fan out across workers (`fullyParallel`).
- * - `mutating` holds everything else. Each mutating spec still manages its own
- *   demo lifecycle (beforeAll/afterAll) for per-file DB isolation, so this
- *   project stays serial (`--workers=1`).
+ * - `mutating` holds everything else, and stays serial (`--workers=1`).
+ *   Each mutating spec calls `resetDemoData()` in its own `beforeAll` to get
+ *   pristine data for the file. That reset is load-bearing: Demo Mode is
+ *   per-client, but the demo DATABASE is still process-global, so without it
+ *   one file's writes leak into the next file's assertions. It replaces the
+ *   old beforeAll(enable)/afterAll(disable) pair, which rebuilt the DB only
+ *   as a side effect of the flag flipping — there is no such flag any more.
+ *   A rebuild is ~22 ms, so per-file isolation costs well under a second
+ *   across the whole project.
  *
  * `npm run test:e2e` is a bare `playwright test`: everything runs serially
  * (global `workers: 1`) and is always safe. read-only and mutating are both
@@ -62,6 +76,7 @@ const READ_ONLY_SPECS = [
   "**/dashboard-insights-strip.spec.ts",
   "**/dashboard-lazy-cards.spec.ts",
   "**/data-flow.spec.ts",
+  "**/flows/demo-mode-isolation.spec.ts",
   "**/income-by-source-card.spec.ts",
   "**/info-tooltip-aria-label.spec.ts",
   "**/investments.spec.ts",
@@ -75,7 +90,11 @@ const READ_ONLY_SPECS = [
 const chromiumUse = {
   ...devices["Desktop Chrome"],
   ...(process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH
-    ? { launchOptions: { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH } }
+    ? {
+        launchOptions: {
+          executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH,
+        },
+      }
     : {}),
 };
 

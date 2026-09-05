@@ -4,6 +4,14 @@ Handles environment switching between production and demo modes.
 """
 
 import os
+from contextvars import ContextVar, Token
+
+#: Per-request demo-mode flag. Context-local so two clients on one backend
+#: can read different databases in the same process. Set by the
+#: ``resolve_demo_mode`` middleware in ``backend/main.py`` from the
+#: ``X-FAD-Demo`` header; defaults to real mode everywhere else (startup,
+#: scripts, background work that has not explicitly opted in).
+_demo_mode_ctx: ContextVar[bool] = ContextVar("fad_demo_mode", default=False)
 
 
 class AppConfig:
@@ -17,7 +25,12 @@ class AppConfig:
     """
 
     _instance = None
-    _demo_mode = False
+
+    #: Process-wide pin that overrides both the contextvar and the request
+    #: header. ``None`` means "defer to context". Set to ``True`` by the
+    #: Vercel entry point (``index.py``), where the whole deployment is a
+    #: shared demo instance and no client may opt out.
+    _forced_mode: bool | None = None
 
     # Base user directory override (tests / callers may assign
     # ``_base_user_dir`` directly; None means "resolve from env at call time")
@@ -31,24 +44,57 @@ class AppConfig:
 
     @property
     def is_demo_mode(self) -> bool:
-        """Return ``True`` when the application is running in demo mode."""
-        return self._demo_mode
+        """Return ``True`` when the current context is in demo mode.
 
-    def set_demo_mode(self, enabled: bool):
-        """Enable or disable demo mode.
+        Resolution order: the process-wide ``_forced_mode`` pin, then the
+        context-local flag set from the request header.
+        """
+        if self._forced_mode is not None:
+            return self._forced_mode
+        return _demo_mode_ctx.get()
 
-        When enabling, the demo user directory is created if it does not exist.
+    def set_demo_mode(self, enabled: bool, *, ensure_dir: bool = True) -> Token[bool]:
+        """Set demo mode for the current context.
+
+        When enabling, the demo user directory is created if it does not
+        exist (unless ``ensure_dir`` is ``False``).
 
         Parameters
         ----------
         enabled : bool
-            ``True`` to switch to the isolated demo environment,
-            ``False`` to switch back to production.
+            ``True`` to switch this context to the isolated demo
+            environment, ``False`` for production.
+        ensure_dir : bool
+            Whether to ``os.makedirs`` the demo user directory when
+            enabling. Defaults to ``True`` for callers that need the
+            directory to exist (the demo-database lifecycle: preparing,
+            resetting, or checking demo_mode_status against a freshly
+            created install). Pass ``False`` for hot paths that merely
+            bind the flag for the duration of a request and never touch
+            the filesystem themselves — e.g. the ``resolve_demo_mode``
+            middleware, which otherwise pays a blocking ``os.makedirs``
+            syscall on the event loop for every single demo-mode request.
+        Returns
+        -------
+        Token[bool]
+            Token for :meth:`reset_demo_mode`. Callers that set the flag for
+            a bounded scope (a request, a scrape) must reset it, or a pooled
+            worker thread will carry the mode into unrelated work.
         """
-        self._demo_mode = enabled
-        # Ensure demo directory exists if entering demo mode
-        if enabled:
+        token = _demo_mode_ctx.set(enabled)
+        if enabled and ensure_dir:
             os.makedirs(self.get_user_dir(), exist_ok=True)
+        return token
+
+    def reset_demo_mode(self, token: Token[bool]) -> None:
+        """Restore the demo flag to its value before ``token`` was issued.
+
+        Parameters
+        ----------
+        token : Token[bool]
+            The token returned by :meth:`set_demo_mode`.
+        """
+        _demo_mode_ctx.reset(token)
 
     @property
     def _base_user_dir(self) -> str:
@@ -71,36 +117,36 @@ class AppConfig:
 
     def get_user_dir(self) -> str:
         """Get the current user directory based on mode."""
-        if self._demo_mode:
+        if self.is_demo_mode:
             return os.path.join(self._base_user_dir, "demo_env")
         return self._base_user_dir
 
     def get_db_path(self) -> str:
         """Get the current database path."""
         # Allow override via env var in non-demo mode only
-        if not self._demo_mode and os.environ.get("FAD_DB_PATH"):
+        if not self.is_demo_mode and os.environ.get("FAD_DB_PATH"):
             return os.environ.get("FAD_DB_PATH")
 
-        filename = "demo_data.db" if self._demo_mode else "data.db"
+        filename = "demo_data.db" if self.is_demo_mode else "data.db"
         return os.path.join(self.get_user_dir(), filename)
 
     def get_credentials_path(self) -> str:
         """Get the current credentials file path."""
-        if not self._demo_mode and os.environ.get("FAD_CREDENTIALS_PATH"):
+        if not self.is_demo_mode and os.environ.get("FAD_CREDENTIALS_PATH"):
             return os.environ.get("FAD_CREDENTIALS_PATH")
 
         return os.path.join(self.get_user_dir(), "credentials.yaml")
 
     def get_categories_path(self) -> str:
         """Get the current categories file path."""
-        if not self._demo_mode and os.environ.get("FAD_CATEGORIES_PATH"):
+        if not self.is_demo_mode and os.environ.get("FAD_CATEGORIES_PATH"):
             return os.environ.get("FAD_CATEGORIES_PATH")
 
         return os.path.join(self.get_user_dir(), "categories.yaml")
 
     def get_categories_icons_path(self) -> str:
         """Get the current categories icons file path."""
-        if not self._demo_mode and os.environ.get("FAD_CATEGORIES_ICONS_PATH"):
+        if not self.is_demo_mode and os.environ.get("FAD_CATEGORIES_ICONS_PATH"):
             return os.environ.get("FAD_CATEGORIES_ICONS_PATH")
 
         return os.path.join(self.get_user_dir(), "categories_icons.yaml")

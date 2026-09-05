@@ -17,11 +17,13 @@ import { enableDemoMode, navigateTo, expectPageTitle } from "./helpers";
  *   3. allocation donuts show a center total (DonutChart centerLabel).
  */
 test.describe("Investments", () => {
-  // Self-heal demo mode: a no-op when already enabled (the `demo-setup`
-  // project turns it on once), so this is safe under parallel workers and
-  // makes the spec order-independent when sharded alongside mutating specs.
-  test.beforeAll(async () => {
-    await enableDemoMode();
+  // Demo Mode lives in the browser context's localStorage, so it must be
+  // seeded per-test (a fresh context per test) rather than once in
+  // beforeAll. enableDemoMode's demo/prepare call is idempotent, so this
+  // is still cheap and order-independent when sharded alongside mutating
+  // specs.
+  test.beforeEach(async ({ page }) => {
+    await enableDemoMode(page);
   });
 
   test("page renders cards, portfolio, closed toggle, donut total, tooltip label, and gradient chart", async ({
@@ -73,7 +75,10 @@ test.describe("Investments", () => {
 
     // The gradient area fill lives in the single-series balance chart inside
     // the Investment Analysis modal (multi-line charts keep clean lines).
-    await page.getByRole("button", { name: /analysis/i }).first().click();
+    await page
+      .getByRole("button", { name: /analysis/i })
+      .first()
+      .click();
     const modalPlot = page.locator(".recharts-wrapper").last();
     await expect(modalPlot).toBeVisible({ timeout: 15_000 });
 

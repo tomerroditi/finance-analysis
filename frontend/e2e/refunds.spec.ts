@@ -1,10 +1,5 @@
-import { test, expect } from "@playwright/test";
-import {
-  API_BASE,
-  enableDemoMode,
-  disableDemoMode,
-  navigateTo,
-} from "./helpers";
+import { test, expect, request as playwrightRequest } from "@playwright/test";
+import { API_BASE, enableDemoMode, navigateTo } from "./helpers";
 
 /**
  * Redesigned Refunds experience — dense two-pane layout.
@@ -20,6 +15,11 @@ import {
  *
  * Mutating spec: seeds its own pending refunds via the API in beforeAll and
  * relies on the demo-DB re-copy on the next demo-mode enable for cleanup.
+ *
+ * The beforeAll seeding uses its own `request.newContext()` (declaring the
+ * `X-FAD-Demo` header itself) rather than the built-in `request` fixture —
+ * Demo Mode is per-client now, and the fixture's headerless calls would
+ * otherwise read and write the real database instead of the demo one.
  */
 
 interface ApiTxn {
@@ -41,8 +41,11 @@ test.describe("Refunds redesign", () => {
   let p1Id: number;
   let p2Id: number;
 
-  test.beforeAll(async ({ request }) => {
-    await enableDemoMode();
+  test.beforeAll(async () => {
+    const request = await playwrightRequest.newContext({
+      extraHTTPHeaders: { "X-FAD-Demo": "1" },
+    });
+    await request.post(`${API_BASE}/testing/demo/reset`);
 
     const txns: ApiTxn[] = await (
       await request.get(`${API_BASE}/transactions/`)
@@ -87,8 +90,14 @@ test.describe("Refunds redesign", () => {
           Math.abs(t.amount - 7) > 1,
       )
       .sort((a, b) => a.amount - b.amount)[0];
-    expect(income1, "demo data must contain an available income txn").toBeTruthy();
-    expect(income2, "demo data must contain an unallocated income txn").toBeTruthy();
+    expect(
+      income1,
+      "demo data must contain an available income txn",
+    ).toBeTruthy();
+    expect(
+      income2,
+      "demo data must contain an unallocated income txn",
+    ).toBeTruthy();
 
     const expenses = txns.filter(
       (t) =>
@@ -101,7 +110,10 @@ test.describe("Refunds redesign", () => {
     );
     expense1 = expenses[0];
     expense2 = expenses.find((t) => descOf(t) !== descOf(expense1))!;
-    expect(expense1, "demo data must contain expense transactions").toBeTruthy();
+    expect(
+      expense1,
+      "demo data must contain expense transactions",
+    ).toBeTruthy();
     expect(expense2, "demo data must contain a second expense").toBeTruthy();
 
     const r1 = await request.post(`${API_BASE}/pending-refunds/`, {
@@ -134,10 +146,13 @@ test.describe("Refunds redesign", () => {
       },
     });
     expect(l1.ok()).toBeTruthy();
+    await request.dispose();
   });
 
-  test.afterAll(async () => {
-    await disableDemoMode();
+  // Demo Mode itself is per-page (localStorage), so it's seeded per-test
+  // here rather than alongside the beforeAll seeding above.
+  test.beforeEach(async ({ page }) => {
+    await enableDemoMode(page);
   });
 
   test("KPIs, dense rows, inline notes, suggested source linking, sources rail", async ({
@@ -147,7 +162,9 @@ test.describe("Refunds redesign", () => {
     await page.getByRole("button", { name: /Refunds/ }).click();
 
     // --- toolbar KPIs ---
-    await expect(page.getByText("Expected Back", { exact: false })).toBeVisible();
+    await expect(
+      page.getByText("Expected Back", { exact: false }),
+    ).toBeVisible();
     await expect(page.getByText("Received Back")).toBeVisible();
     await expect(page.getByText("Unallocated Refund Money")).toBeVisible();
 
@@ -195,7 +212,9 @@ test.describe("Refunds redesign", () => {
     await suggested.click();
 
     const expectedDefault = String(Math.round(income2.amount * 100) / 100);
-    await expect(dialog.locator('input[type="number"]')).toHaveValue(expectedDefault);
+    await expect(dialog.locator('input[type="number"]')).toHaveValue(
+      expectedDefault,
+    );
 
     const [linkResp] = await Promise.all([
       page.waitForResponse(

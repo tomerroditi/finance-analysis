@@ -1,5 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
-import { enableDemoMode, disableDemoMode, navigateTo } from "./helpers";
+import { enableDemoMode, navigateTo } from "./helpers";
 
 /**
  * Retirement readiness ladder.
@@ -69,16 +69,13 @@ function stubProjections(
 }
 
 test.describe("Retirement readiness", () => {
-  test.beforeAll(async ({ browser }) => {
-    const page = await browser.newPage();
+  // Demo Mode lives in the browser context's localStorage, so it must be
+  // seeded per-test (a fresh context per test) rather than once in
+  // beforeAll via a throwaway page — that page is a different browser
+  // context from the one each test actually navigates in, so anything it
+  // set there never reached the real test.
+  test.beforeEach(async ({ page }) => {
     await enableDemoMode(page);
-    await page.close();
-  });
-
-  test.afterAll(async ({ browser }) => {
-    const page = await browser.newPage();
-    await disableDemoMode(page);
-    await page.close();
   });
 
   // Regression: a plan that never reaches the FIRE number fell through to

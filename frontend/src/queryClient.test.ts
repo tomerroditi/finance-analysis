@@ -49,10 +49,11 @@ describe("shouldDehydrateQuery", () => {
 describe("PERSIST_BUSTER", () => {
   // `PendingRefund` (links / total_refunded / remaining) and `Liability`
   // (current_rate / rate_spread / new loan_type values) changed shape after
-  // the v3 bump; a hydrated v3 snapshot would feed the new components the
-  // old shape. Bump this string whenever a cached response shape changes.
-  it("is past v3, the last shape-incompatible cache generation", () => {
-    expect(PERSIST_BUSTER).not.toBe("v3");
-    expect(PERSIST_BUSTER).toBe("v4");
+  // the v3 bump, and per-client Demo Mode invalidated everything cached
+  // before v5 (a demo response could be cached under a real-mode query key
+  // pre-bump). Bump this string whenever a cached response shape changes.
+  it("is past v4, the last shape-incompatible cache generation", () => {
+    expect(PERSIST_BUSTER).not.toBe("v4");
+    expect(PERSIST_BUSTER).toBe("v5");
   });
 });

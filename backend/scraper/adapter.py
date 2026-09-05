@@ -9,6 +9,7 @@ to avoid the naming collision with ``backend.scraper``.
 """
 
 import asyncio
+import contextlib
 import datetime
 import importlib
 import logging
@@ -250,9 +251,34 @@ class ScraperAdapter:
         # at all" (a swallowed failure). See NO_ACCOUNTS_ERROR.
         self._accounts_fetched: int | None = None
 
+        # Demo mode is context-local and does NOT survive the hand-off in
+        # scraping_service._launch_adapter (run_coroutine_threadsafe starts
+        # the coroutine in a context copied on the event loop, not ours), so
+        # capture it here — inside the request — and re-apply it in run().
+        self.demo_mode = AppConfig().is_demo_mode
+
     # ------------------------------------------------------------------
     # Public interface
     # ------------------------------------------------------------------
+
+    @contextlib.contextmanager
+    def _apply_demo_context(self):
+        """Bind the captured demo mode for the duration of the block.
+
+        Yields
+        ------
+        None
+            The block runs with ``AppConfig().is_demo_mode`` equal to the
+            mode captured when this adapter was constructed. Restores the
+            previous value on exit so the event loop's context is not left
+            mutated for unrelated tasks.
+        """
+        config = AppConfig()
+        token = config.set_demo_mode(self.demo_mode)
+        try:
+            yield
+        finally:
+            config.reset_demo_mode(token)
 
     async def run(self) -> None:
         """Run the scraper and feed results through the backend pipeline.
@@ -261,113 +287,120 @@ class ScraperAdapter:
         ``ScrapingResult`` to a DataFrame, saves transactions, applies
         auto-tagging, and recalculates bank balances. Always records the
         outcome in the scraping history table.
+
+        Runs entirely inside the demo-mode context captured at construction,
+        so both the database this writes to and the choice of dummy versus
+        real provider match the client that launched the scrape.
         """
         # Capture the loop we're running on so set_otp_code (called from a
         # threadpool worker thread) can wake us thread-safely.
         self._loop = asyncio.get_running_loop()
 
-        _scraper_pkg = _import_scraper_module("scraper")
-        create_scraper = _scraper_pkg.create_scraper
-        scraper_is_2fa_required = _scraper_pkg.is_2fa_required
-        ScraperOptions = _import_scraper_module("scraper.base.base_scraper").ScraperOptions
+        with self._apply_demo_context():
+            _scraper_pkg = _import_scraper_module("scraper")
+            create_scraper = _scraper_pkg.create_scraper
+            scraper_is_2fa_required = _scraper_pkg.is_2fa_required
+            ScraperOptions = _import_scraper_module(
+                "scraper.base.base_scraper"
+            ).ScraperOptions
 
-        ts = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        logger.info(
-            "[%s] %s: Scraping started (from %s)",
-            ts, self._log_id, self.start_date,
-        )
-
-        scraper = None
-        try:
-            scraper = self._create_scraper(create_scraper, ScraperOptions)
-            # Expose the scraper so resend_otp can reach it while the
-            # coroutine is parked in _otp_callback awaiting the user's code.
-            self._scraper = scraper
-            if scraper_is_2fa_required(self.provider_name):
-                scraper.on_otp_request = self._otp_callback
-
-            result = await asyncio.wait_for(
-                scraper.scrape(), timeout=SCRAPE_TIMEOUT_SECONDS
+            ts = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            logger.info(
+                "[%s] %s: Scraping started (from %s)",
+                ts, self._log_id, self.start_date,
             )
 
-            if result.success:
-                self._accounts_fetched = len(result.accounts)
-                self._data = self._result_to_dataframe(result, self.service_name)
-                if self._data is not None and not self._data.empty:
-                    self._data = self._data.sort_values(by=["date"])
-                    # TODO(perf): these are blocking sync DB writes (save,
-                    # auto-tag, rebalance) that run on the event loop thread.
-                    # Offloading them via run_in_executor was considered but
-                    # deferred: thread-pool work is NOT cancellable by the
-                    # asyncio.wait_for timeout above, so an executor hop would
-                    # let DB writes outlive the 5-minute ceiling. Revisit with
-                    # an explicit cancellation/cleanup story before offloading.
-                    self._save_scraped_transactions()
-                    self._apply_auto_tagging()
-                    self._recalculate_bank_balances()
-                    self._post_save_hook(result)
-            else:
-                self._error_type = result.error_type or "GENERAL_ERROR"
+            scraper = None
+            try:
+                scraper = self._create_scraper(create_scraper, ScraperOptions)
+                # Expose the scraper so resend_otp can reach it while the
+                # coroutine is parked in _otp_callback awaiting the user's code.
+                self._scraper = scraper
+                if scraper_is_2fa_required(self.provider_name):
+                    scraper.on_otp_request = self._otp_callback
+
+                result = await asyncio.wait_for(
+                    scraper.scrape(), timeout=SCRAPE_TIMEOUT_SECONDS
+                )
+
+                if result.success:
+                    self._accounts_fetched = len(result.accounts)
+                    self._data = self._result_to_dataframe(result, self.service_name)
+                    if self._data is not None and not self._data.empty:
+                        self._data = self._data.sort_values(by=["date"])
+                        # TODO(perf): these are blocking sync DB writes (save,
+                        # auto-tag, rebalance) that run on the event loop thread.
+                        # Offloading them via run_in_executor was considered but
+                        # deferred: thread-pool work is NOT cancellable by the
+                        # asyncio.wait_for timeout above, so an executor hop would
+                        # let DB writes outlive the 5-minute ceiling. Revisit with
+                        # an explicit cancellation/cleanup story before offloading.
+                        self._save_scraped_transactions()
+                        self._apply_auto_tagging()
+                        self._recalculate_bank_balances()
+                        self._post_save_hook(result)
+                else:
+                    self._error_type = result.error_type or "GENERAL_ERROR"
+                    self._error = (
+                        result.error_message
+                        or f"the {self.provider_name} scraper reported "
+                        f"{self._error_type} with no further detail"
+                    )
+                    logger.error(
+                        "%s: Scraping failed — [%s] %s",
+                        self._log_id,
+                        self._error_type, self._error,
+                    )
+            except asyncio.TimeoutError:
+                self._error_type = "TIMEOUT"
                 self._error = (
-                    result.error_message
-                    or f"the {self.provider_name} scraper reported "
-                    f"{self._error_type} with no further detail"
+                    f"Scraping exceeded the {SCRAPE_TIMEOUT_SECONDS}-second limit "
+                    "and was aborted"
                 )
                 logger.error(
-                    "%s: Scraping failed — [%s] %s",
-                    self._log_id,
-                    self._error_type, self._error,
+                    "%s: Scraping timed out — %s",
+                    self._log_id, self._error,
                 )
-        except asyncio.TimeoutError:
-            self._error_type = "TIMEOUT"
-            self._error = (
-                f"Scraping exceeded the {SCRAPE_TIMEOUT_SECONDS}-second limit "
-                "and was aborted"
-            )
-            logger.error(
-                "%s: Scraping timed out — %s",
-                self._log_id, self._error,
-            )
-            # wait_for cancelled scrape() mid-flight, so the scraper's own
-            # terminate() in its finally may not have run — force browser
-            # cleanup here to avoid leaking a Playwright process on timeout.
-            if scraper is not None:
-                await scraper._safe_terminate(False)
-        except Exception as exc:
-            self._error_type = "GENERAL_ERROR"
-            self._error = _describe_exception(exc)
-            logger.error(
-                "%s: Unexpected error — %s",
-                self._log_id, self._error,
-            )
-        finally:
-            # Persist before anything that can raise, and regardless of how the
-            # scrape ended. A token is minted the moment login succeeds, so a
-            # later fetch_data failure (or the 5-minute timeout) must not throw
-            # it away — doing so costs the user another SMS for a failure that
-            # had nothing to do with authentication, and every wasted SMS walks
-            # them toward the provider's own rate limit.
-            if scraper is not None:
-                self._persist_refreshed_otp_token(scraper)
-
-            # Unregister FIRST: _record_scraping_attempt is a DB write that
-            # can raise, and a raise before unregistering would leave this
-            # adapter stuck in _active_scrapers — permanently blocking new
-            # scrapes for the account until process restart.
-            self._unregister_from_2fa_waiting()
-            try:
-                self._record_scraping_attempt(self.process_id)
-            except Exception:
-                logger.exception(
-                    "%s: Failed to record scraping attempt",
-                    self._log_id,
+                # wait_for cancelled scrape() mid-flight, so the scraper's own
+                # terminate() in its finally may not have run — force browser
+                # cleanup here to avoid leaking a Playwright process on timeout.
+                if scraper is not None:
+                    await scraper._safe_terminate(False)
+            except Exception as exc:
+                self._error_type = "GENERAL_ERROR"
+                self._error = _describe_exception(exc)
+                logger.error(
+                    "%s: Unexpected error — %s",
+                    self._log_id, self._error,
                 )
+            finally:
+                # Persist before anything that can raise, and regardless of how the
+                # scrape ended. A token is minted the moment login succeeds, so a
+                # later fetch_data failure (or the 5-minute timeout) must not throw
+                # it away — doing so costs the user another SMS for a failure that
+                # had nothing to do with authentication, and every wasted SMS walks
+                # them toward the provider's own rate limit.
+                if scraper is not None:
+                    self._persist_refreshed_otp_token(scraper)
 
-        ts = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        logger.info(
-            "[%s] %s: Scraping finished",
-            ts, self._log_id,
-        )
+                # Unregister FIRST: _record_scraping_attempt is a DB write that
+                # can raise, and a raise before unregistering would leave this
+                # adapter stuck in _active_scrapers — permanently blocking new
+                # scrapes for the account until process restart.
+                self._unregister_from_2fa_waiting()
+                try:
+                    self._record_scraping_attempt(self.process_id)
+                except Exception:
+                    logger.exception(
+                        "%s: Failed to record scraping attempt",
+                        self._log_id,
+                    )
+
+            ts = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            logger.info(
+                "[%s] %s: Scraping finished",
+                ts, self._log_id,
+            )
 
     def _unregister_from_2fa_waiting(self) -> None:
         """Pop this adapter from the 2FA-waiting and active-scraper registries.

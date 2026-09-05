@@ -1,19 +1,33 @@
 import { test, expect } from "@playwright/test";
-import { setDemoMode, gotoAndWait } from "./_helpers";
+import { gotoAndWait } from "./_helpers";
+import { enableDemoMode, resetDemoData } from "../helpers";
 
 /**
  * Adds a balance snapshot to one of the demo investments by opening its
  * detail card and submitting the snapshot form.
+ *
+ * Demo Mode is seeded per-page via `enableDemoMode` in `beforeEach` rather
+ * than a `beforeAll` — the flag lives in the test's own browser context
+ * (localStorage), which doesn't exist yet in `beforeAll` (no `page`
+ * fixture there), and wouldn't carry over from a separately-created page
+ * even if it did.
  */
 test.describe("Investment balance snapshot flow", () => {
-  test.beforeAll(async ({ request }) => {
-    await setDemoMode(request, true);
-  });
-  test.afterAll(async ({ request }) => {
-    await setDemoMode(request, false);
+  // Restore pristine demo data before this file runs. The `mutating`
+  // project is serial and each file is expected to own its DB state; the
+  // demo database is process-global, so without this a predecessor's
+  // writes leak in and this spec asserts against data it did not set up.
+  test.beforeAll(async () => {
+    await resetDemoData();
   });
 
-  test("opens the Update Balance modal for an active investment", async ({ page }) => {
+  test.beforeEach(async ({ page }) => {
+    await enableDemoMode(page);
+  });
+
+  test("opens the Update Balance modal for an active investment", async ({
+    page,
+  }) => {
     await gotoAndWait(page, "/investments");
 
     // Each active card has a circular "$" button (DollarSign icon) with
@@ -41,7 +55,7 @@ test.describe("Investment balance snapshot flow", () => {
     const [response] = await Promise.all([
       page.waitForResponse(
         (r) => r.url().includes("/balances") && r.request().method() === "POST",
-        { timeout: 15_000 }
+        { timeout: 15_000 },
       ),
       page.getByRole("button", { name: /^save$/i }).click(),
     ]);

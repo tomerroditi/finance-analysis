@@ -5,7 +5,7 @@ import { X } from "lucide-react";
 import { useDemoMode } from "../../context/DemoModeContext";
 import { useBudgetAlertSettings } from "../../hooks/useBudgetAlertSettings";
 import { useConfirm, useNotify } from "../../context/DialogContext";
-import { backupApi } from "../../services/api";
+import { backupApi, testingApi } from "../../services/api";
 import { useQueryKeys } from "../../hooks/useQueryKeys";
 import { qkPrefix } from "../../services/queryKeys";
 import { AboutPanel } from "../settings/AboutPanel";
@@ -67,10 +67,38 @@ export function SettingsPopup({
     onError: () => notify.error(t("settings.backupFailed")),
   });
 
+  const resetDemoDataMutation = useMutation({
+    mutationFn: () => testingApi.resetDemo(),
+    onSuccess: () => {
+      void queryClient.resetQueries();
+      notify.success(t("settings.resetDemoDataSuccess"));
+    },
+    onError: () => notify.error(t("settings.resetDemoDataFailed")),
+  });
+
   if (!isOpen) return null;
 
   const changeLanguage = (lng: string) => {
     i18n.changeLanguage(lng);
+  };
+
+  const handleToggleDemoMode = async () => {
+    try {
+      await toggleDemoMode(!isDemoMode);
+    } catch {
+      notify.error(t("settings.demoModeToggleFailed"));
+    }
+  };
+
+  const handleResetDemoData = async () => {
+    const ok = await confirm({
+      title: t("settings.resetDemoData"),
+      message: t("settings.resetDemoDataConfirmMessage"),
+      confirmLabel: t("settings.resetDemoData"),
+      isDestructive: true,
+    });
+    if (!ok) return;
+    resetDemoDataMutation.mutate();
   };
 
   const handleRestore = async (filename: string) => {
@@ -176,7 +204,7 @@ export function SettingsPopup({
         <div>
           <div
             className="flex items-center justify-between cursor-pointer"
-            onClick={() => toggleDemoMode(!isDemoMode)}
+            onClick={() => void handleToggleDemoMode()}
           >
             <label className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wider cursor-pointer">
               {t("settings.demoMode")}
@@ -188,13 +216,23 @@ export function SettingsPopup({
             >
               <div
                 className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all shadow-sm ${
-                  isDemoMode
-                    ? "start-[calc(100%-18px)]"
-                    : "start-0.5"
+                  isDemoMode ? "start-[calc(100%-18px)]" : "start-0.5"
                 }`}
               />
             </div>
           </div>
+          {isDemoMode && (
+            <button
+              type="button"
+              onClick={() => void handleResetDemoData()}
+              disabled={resetDemoDataMutation.isPending}
+              className="mt-2 text-xs font-medium px-3 py-1.5 rounded-lg bg-[var(--surface-light)] text-[var(--text)] hover:bg-[var(--surface-light)]/80 transition-colors disabled:opacity-50"
+            >
+              {resetDemoDataMutation.isPending
+                ? t("settings.resettingDemoData")
+                : t("settings.resetDemoData")}
+            </button>
+          )}
         </div>
 
         {/* Budget Alerts */}

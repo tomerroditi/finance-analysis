@@ -149,4 +149,9 @@ export function shouldDehydrateQuery(query: Query): boolean {
 // components the old shape. Also discards the orphan `["retirement", …]`
 // prefetch entries written under the drifted literal keys in
 // services/routePrefetch.ts.
-export const PERSIST_BUSTER = "v4";
+// v5: per-client Demo Mode replaced the old global toggle. Before this
+// change, a demo response could be cached under a real-mode query key (the
+// header didn't vary the key), so upgrading clients may be holding demo
+// payloads persisted as if they were real data. Discard everything written
+// before the bump.
+export const PERSIST_BUSTER = "v5";

@@ -1,21 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
-import { navigateTo } from "./helpers";
-
-/**
- * Toggle Demo Mode through the frontend dev-server proxy rather than the
- * shared ``enableDemoMode``/``disableDemoMode`` helpers, which post to a
- * hardcoded ``http://localhost:8000``. Driving it through ``page.request``
- * (relative ``/api``) makes the toggle follow Playwright's ``baseURL`` and
- * the Vite proxy to whichever backend is actually serving this run — which
- * keeps the spec correct under worktree port isolation, where the backend
- * may not be on the canonical 8000.
- */
-async function setDemoMode(page: Page, enabled: boolean) {
-  const res = await page.request.post("/api/testing/toggle_demo_mode", {
-    data: { enabled },
-  });
-  expect(res.ok()).toBeTruthy();
-}
+import { enableDemoMode, navigateTo, resetDemoData } from "./helpers";
 
 /**
  * Escape a string for safe use inside a RegExp constructor.
@@ -23,6 +7,15 @@ async function setDemoMode(page: Page, enabled: boolean) {
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
+
+/**
+ * `page.request` is Playwright's own HTTP client for the page's context —
+ * it does not run the app's JS, so the axios interceptor that attaches
+ * `X-FAD-Demo` from localStorage never runs for it. Every direct backend
+ * check below must therefore declare the header itself to read the same
+ * database the UI (seeded via `enableDemoMode(page)`) is showing.
+ */
+const DEMO_HEADERS = { "X-FAD-Demo": "1" };
 
 interface BudgetRuleRecord {
   id: number;
@@ -43,19 +36,16 @@ function ruleRow(page: Page, name: string) {
 }
 
 test.describe("Yearly budget", () => {
-  test.beforeAll(async ({ browser }) => {
-    const page = await browser.newPage();
-    await setDemoMode(page, true);
-    await page.close();
-  });
-
-  test.afterAll(async ({ browser }) => {
-    const page = await browser.newPage();
-    await setDemoMode(page, false);
-    await page.close();
+  // Restore pristine demo data before this file runs. The `mutating`
+  // project is serial and each file is expected to own its DB state; the
+  // demo database is process-global, so without this a predecessor's
+  // writes leak in and this spec asserts against data it did not set up.
+  test.beforeAll(async () => {
+    await resetDemoData();
   });
 
   test.beforeEach(async ({ page }) => {
+    await enableDemoMode(page);
     await navigateTo(page, "/budget");
     await page.getByRole("button", { name: /^Yearly$/i }).click();
   });
@@ -79,9 +69,11 @@ test.describe("Yearly budget", () => {
     // seeded dataset actually contains, instead of hardcoding category/tag
     // names that could drift out of sync with the demo generator. ----
     const [rulesRes, categoriesRes, spendRes] = await Promise.all([
-      page.request.get("/api/budget/rules"),
-      page.request.get("/api/tagging/categories"),
-      page.request.get("/api/analytics/expenses-by-category-over-time"),
+      page.request.get("/api/budget/rules", { headers: DEMO_HEADERS }),
+      page.request.get("/api/tagging/categories", { headers: DEMO_HEADERS }),
+      page.request.get("/api/analytics/expenses-by-category-over-time", {
+        headers: DEMO_HEADERS,
+      }),
     ]);
     expect(rulesRes.ok()).toBeTruthy();
     expect(categoriesRes.ok()).toBeTruthy();
@@ -94,13 +86,18 @@ test.describe("Yearly budget", () => {
     // zero-spend envelope renders "0 ₪" and 0% whichever sign the view
     // applies, so it cannot catch a flipped `current_amount` (which is how a
     // double negation shipped — every yearly row read as a net refund).
-    const spendByMonth: { month: string; categories: Record<string, number> }[] =
-      await spendRes.json();
+    const spendByMonth: {
+      month: string;
+      categories: Record<string, number>;
+    }[] = await spendRes.json();
     const spendThisYear = new Map<string, number>();
     for (const row of spendByMonth) {
       if (!row.month.startsWith(String(currentYear))) continue;
       for (const [category, amount] of Object.entries(row.categories)) {
-        spendThisYear.set(category, (spendThisYear.get(category) ?? 0) + amount);
+        spendThisYear.set(
+          category,
+          (spendThisYear.get(category) ?? 0) + amount,
+        );
       }
     }
 
@@ -149,7 +146,9 @@ test.describe("Yearly budget", () => {
 
     await addDialog.getByRole("button", { name: /select a category/i }).click();
     await page
-      .getByRole("option", { name: new RegExp(`^${escapeRegExp(freeCategory)}$`, "i") })
+      .getByRole("option", {
+        name: new RegExp(`^${escapeRegExp(freeCategory)}$`, "i"),
+      })
       .click();
 
     // Take every tag in the category so the envelope covers the whole of that
@@ -157,7 +156,9 @@ test.describe("Yearly budget", () => {
     await addDialog.getByRole("button", { name: /select tags/i }).click();
     for (const tag of freeCategoryTags) {
       await page
-        .getByRole("option", { name: new RegExp(`^${escapeRegExp(tag)}$`, "i") })
+        .getByRole("option", {
+          name: new RegExp(`^${escapeRegExp(tag)}$`, "i"),
+        })
         .click();
     }
     // Close the tags popover (it stays open to allow multiple picks).
@@ -173,10 +174,9 @@ test.describe("Yearly budget", () => {
     // The progress fill is an inline-styled element driven by percent spent.
     // It is a <span> now: the ledger row's clickable area is a <button>, and
     // a <div> inside a button is not valid phrasing content.
-    await expect(createdRow.locator("[style*='width']").first()).toHaveAttribute(
-      "style",
-      /width:/,
-    );
+    await expect(
+      createdRow.locator("[style*='width']").first(),
+    ).toHaveAttribute("style", /width:/);
 
     // ---- 1b. The row must render the API's spend with the API's sign. ----
     // `current_amount` is spend-positive (get_yearly_budget_view already
@@ -186,13 +186,17 @@ test.describe("Yearly budget", () => {
     // yearly row's progress while the header above it showed the real total.
     const analysisRes = await page.request.get(
       `/api/budget/yearly/${currentYear}/analysis`,
+      { headers: DEMO_HEADERS },
     );
     expect(analysisRes.ok()).toBeTruthy();
     const analysis: {
       rules: { rule: { name: string }; current_amount: number }[];
     } = await analysisRes.json();
     const createdEntry = analysis.rules.find((r) => r.rule.name === ruleName);
-    expect(createdEntry, "the created rule is missing from the analysis").toBeTruthy();
+    expect(
+      createdEntry,
+      "the created rule is missing from the analysis",
+    ).toBeTruthy();
     expect(
       createdEntry!.current_amount,
       `expected demo spend in ${freeCategory} for ${currentYear} — without it this ` +
@@ -206,26 +210,35 @@ test.describe("Yearly budget", () => {
     );
     // A refund-shaped row reports 0%; a real one does not.
     await expect(createdRow).not.toContainText(/\bnet refund\b/i);
-    await expect(createdRow.locator("[style*='width']").first()).not.toHaveAttribute(
-      "style",
-      /width:\s*0%/,
-    );
+    await expect(
+      createdRow.locator("[style*='width']").first(),
+    ).not.toHaveAttribute("style", /width:\s*0%/);
 
     // ---- 2. Attempt a colliding yearly rule and assert the inline error. ----
     await page.getByRole("button", { name: /add yearly rule/i }).click();
-    const conflictDialog = page.getByRole("dialog", { name: /add yearly rule/i });
+    const conflictDialog = page.getByRole("dialog", {
+      name: /add yearly rule/i,
+    });
     await expect(conflictDialog).toBeVisible();
 
-    await conflictDialog.getByPlaceholder(/vacations/i).fill(`E2E Conflict ${Date.now()}`);
+    await conflictDialog
+      .getByPlaceholder(/vacations/i)
+      .fill(`E2E Conflict ${Date.now()}`);
 
-    await conflictDialog.getByRole("button", { name: /select a category/i }).click();
+    await conflictDialog
+      .getByRole("button", { name: /select a category/i })
+      .click();
     await page
-      .getByRole("option", { name: new RegExp(`^${escapeRegExp(conflictCategory)}$`, "i") })
+      .getByRole("option", {
+        name: new RegExp(`^${escapeRegExp(conflictCategory)}$`, "i"),
+      })
       .click();
 
     await conflictDialog.getByRole("button", { name: /select tags/i }).click();
     await page
-      .getByRole("option", { name: new RegExp(`^${escapeRegExp(conflictTag)}$`, "i") })
+      .getByRole("option", {
+        name: new RegExp(`^${escapeRegExp(conflictTag)}$`, "i"),
+      })
       .click();
     await conflictDialog.getByPlaceholder(/vacations/i).click();
 
@@ -243,7 +256,9 @@ test.describe("Yearly budget", () => {
     await expect(conflictDialog).toBeHidden();
 
     // ---- 3. Delete the rule created in step 1 via the themed confirm dialog. ----
-    const deleteButton = createdRow.getByRole("button", { name: /delete rule/i });
+    const deleteButton = createdRow.getByRole("button", {
+      name: /delete rule/i,
+    });
     await deleteButton.click();
 
     const confirmDialog = page.getByRole("alertdialog");

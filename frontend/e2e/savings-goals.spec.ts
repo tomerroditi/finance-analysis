@@ -1,5 +1,11 @@
-import { test, expect, request, type APIRequestContext, type Page } from "@playwright/test";
-import { enableDemoMode, disableDemoMode, API_BASE } from "./helpers";
+import {
+  test,
+  expect,
+  request,
+  type APIRequestContext,
+  type Page,
+} from "@playwright/test";
+import { enableDemoMode, API_BASE } from "./helpers";
 
 /**
  * The Goals card is a "beta" dashboard widget, hidden by default
@@ -14,7 +20,11 @@ async function openDashboardWithGoals(page: Page) {
     sessionStorage.setItem("onboardingDismissedAt", String(Date.now()));
     localStorage.setItem(
       "fa.dashboard.layout",
-      JSON.stringify({ v: 2, order: ["goals", "budget", "recent"], hidden: [] }),
+      JSON.stringify({
+        v: 2,
+        order: ["goals", "budget", "recent"],
+        hidden: [],
+      }),
     );
   });
   await page.goto("/");
@@ -57,12 +67,15 @@ test.describe("Savings goals", () => {
     return goal;
   }
 
-  test.beforeAll(async ({ browser }) => {
-    const page = await browser.newPage();
-    await enableDemoMode(page);
-    await page.close();
-
-    ctx = await request.newContext();
+  test.beforeAll(async () => {
+    // This bypasses the browser (Node-side `request` fixture), so it must
+    // declare the demo header itself — Demo Mode is per-client now, and a
+    // header-less request would create these throwaway goals in the real
+    // database instead of the demo one each test's own page browses.
+    ctx = await request.newContext({
+      extraHTTPHeaders: { "X-FAD-Demo": "1" },
+    });
+    await ctx.post(`${API_BASE}/testing/demo/reset`);
 
     // Both goals start far enough back to have accrued real allocations, so
     // the budget-page assertion below has something to find. The 1-per-month
@@ -85,15 +98,17 @@ test.describe("Savings goals", () => {
     });
   });
 
-  test.afterAll(async ({ browser }) => {
+  test.afterAll(async () => {
     for (const id of created) {
       await ctx.delete(`${API_BASE}/savings-goals/${id}`).catch(() => {});
     }
     await ctx.dispose();
+  });
 
-    const page = await browser.newPage();
-    await disableDemoMode(page);
-    await page.close();
+  // Demo Mode itself is per-page (localStorage), so it's seeded per-test
+  // here rather than alongside the beforeAll goal seeding above.
+  test.beforeEach(async ({ page }) => {
+    await enableDemoMode(page);
   });
 
   test("renders the waterfall with per-goal state on one dashboard load", async ({
@@ -101,7 +116,9 @@ test.describe("Savings goals", () => {
   }) => {
     await openDashboardWithGoals(page);
 
-    const inProgressName = page.getByText("E2E In Progress Goal", { exact: true });
+    const inProgressName = page.getByText("E2E In Progress Goal", {
+      exact: true,
+    });
     const achievedName = page.getByText("E2E Achieved Goal", { exact: true });
     await expect(inProgressName).toBeVisible({ timeout: 30_000 });
     await expect(achievedName).toBeVisible();
@@ -138,7 +155,9 @@ test.describe("Savings goals", () => {
 
   test("reordering moves a goal up the waterfall", async ({ page }) => {
     await openDashboardWithGoals(page);
-    await expect(page.getByText("E2E Achieved Goal", { exact: true })).toBeVisible({
+    await expect(
+      page.getByText("E2E Achieved Goal", { exact: true }),
+    ).toBeVisible({
       timeout: 30_000,
     });
 
@@ -147,7 +166,9 @@ test.describe("Savings goals", () => {
       .click();
 
     // The promoted goal takes position 1 and the demoted one drops to 2.
-    await expect(goalRow(page, "E2E Achieved Goal").getByText("#1")).toBeVisible();
+    await expect(
+      goalRow(page, "E2E Achieved Goal").getByText("#1"),
+    ).toBeVisible();
     await expect(
       goalRow(page, "E2E In Progress Goal").getByText("#2"),
     ).toBeVisible();
@@ -161,7 +182,9 @@ test.describe("Savings goals", () => {
     ).toBeVisible();
   });
 
-  test("the budget month shows what was directed into goals", async ({ page }) => {
+  test("the budget month shows what was directed into goals", async ({
+    page,
+  }) => {
     // The current month is usually mid-flight and often nets negative, so the
     // section legitimately has nothing to show there. Ask the backend which
     // recent month actually funded a goal and drive the page to that one.
@@ -188,7 +211,10 @@ test.describe("Savings goals", () => {
     await page.goto("/budget");
     await page.waitForLoadState("domcontentloaded");
     for (let i = 0; i < monthsBack; i += 1) {
-      await page.getByRole("button", { name: /previous/i }).first().click();
+      await page
+        .getByRole("button", { name: /previous/i })
+        .first()
+        .click();
     }
 
     await expect(
@@ -200,5 +226,4 @@ test.describe("Savings goals", () => {
       ).toBeVisible();
     }
   });
-
 });

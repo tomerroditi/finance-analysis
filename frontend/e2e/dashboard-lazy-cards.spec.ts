@@ -8,14 +8,13 @@ import { enableDemoMode } from "./helpers";
  * a deferred chart card must mount its chart only after it scrolls in.
  */
 test.describe("Dashboard lazy card mounting", () => {
-  // Self-heal demo mode: a no-op when already enabled (the `demo-setup`
-  // project turns it on once), so this is safe under parallel workers and
-  // makes the spec order-independent when sharded alongside mutating specs.
-  test.beforeAll(async () => {
-    await enableDemoMode();
-  });
-
+  // Demo Mode lives in the browser context's localStorage, so it must be
+  // seeded per-test (a fresh context per test) rather than once in
+  // beforeAll. enableDemoMode's demo/prepare call is idempotent, so this
+  // is still cheap and order-independent when sharded alongside mutating
+  // specs.
   test.beforeEach(async ({ page }) => {
+    await enableDemoMode(page);
     // Start from the default layout (income_expenses + net_worth visible last).
     await page.addInitScript(() =>
       window.localStorage.removeItem("fa.dashboard.layout"),
@@ -37,7 +36,9 @@ test.describe("Dashboard lazy card mounting", () => {
     // The first eager chart card (Income by source, row 2) renders its plot
     // without any scrolling.
     await expect(
-      page.locator('[data-card-id="income_by_source"] .recharts-wrapper').first(),
+      page
+        .locator('[data-card-id="income_by_source"] .recharts-wrapper')
+        .first(),
     ).toBeVisible({ timeout: 45_000 });
 
     // The trailing Net Worth card exists (placeholder reserves its height) but
@@ -48,8 +49,10 @@ test.describe("Dashboard lazy card mounting", () => {
 
     // Scroll it into view — now it mounts and renders its chart.
     await netWorthCard.scrollIntoViewIfNeeded();
-    await expect(netWorthCard.locator(".recharts-wrapper").first()).toBeVisible({
-      timeout: 45_000,
-    });
+    await expect(netWorthCard.locator(".recharts-wrapper").first()).toBeVisible(
+      {
+        timeout: 45_000,
+      },
+    );
   });
 });

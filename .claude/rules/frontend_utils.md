@@ -82,7 +82,7 @@ Zustand stores for global client-side state.
 
 | Store | Purpose |
 |-------|---------|
-| `appStore.ts` | App-wide UI state: sidebar collapse, mobile sidebar, language, demo mode, date range |
+| `appStore.ts` | App-wide UI state: sidebar collapse, mobile sidebar, language, date range |
 
 **Use Zustand for:** UI state shared across unrelated components (sidebar, language, date range).
 **Use React Query for:** All server/API data. Never duplicate API data in Zustand.

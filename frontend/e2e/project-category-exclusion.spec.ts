@@ -1,21 +1,5 @@
-import { test, expect, type Page } from "@playwright/test";
-import { navigateTo } from "./helpers";
-
-/**
- * Toggle Demo Mode through the frontend dev-server proxy rather than the
- * shared ``enableDemoMode``/``disableDemoMode`` helpers, which post to a
- * hardcoded ``http://localhost:8000``. Driving it through ``page.request``
- * (relative ``/api``) makes the toggle follow Playwright's ``baseURL`` and
- * the Vite proxy to whichever backend is actually serving this run — which
- * keeps the spec correct under worktree port isolation, where the backend
- * may not be on the canonical 8000. Mirrors ``yearly-budget.spec.ts``.
- */
-async function setDemoMode(page: Page, enabled: boolean) {
-  const res = await page.request.post("/api/testing/toggle_demo_mode", {
-    data: { enabled },
-  });
-  expect(res.ok()).toBeTruthy();
-}
+import { test, expect } from "@playwright/test";
+import { enableDemoMode, navigateTo, resetDemoData } from "./helpers";
 
 /**
  * Escape a string for safe use inside a RegExp constructor.
@@ -23,6 +7,15 @@ async function setDemoMode(page: Page, enabled: boolean) {
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
+
+/**
+ * `page.request` is Playwright's own HTTP client for the page's context —
+ * it does not run the app's JS, so the axios interceptor that attaches
+ * `X-FAD-Demo` from localStorage never runs for it. Every direct backend
+ * check below must therefore declare the header itself to read the same
+ * database the UI (seeded via `enableDemoMode(page)`) is showing.
+ */
+const DEMO_HEADERS = { "X-FAD-Demo": "1" };
 
 interface BudgetRuleRecord {
   id: number;
@@ -35,19 +28,16 @@ interface BudgetRuleRecord {
 }
 
 test.describe("Project-category exclusion", () => {
-  test.beforeAll(async ({ browser }) => {
-    const page = await browser.newPage();
-    await setDemoMode(page, true);
-    await page.close();
-  });
-
-  test.afterAll(async ({ browser }) => {
-    const page = await browser.newPage();
-    await setDemoMode(page, false);
-    await page.close();
+  // Restore pristine demo data before this file runs. The `mutating`
+  // project is serial and each file is expected to own its DB state; the
+  // demo database is process-global, so without this a predecessor's
+  // writes leak in and this spec asserts against data it did not set up.
+  test.beforeAll(async () => {
+    await resetDemoData();
   });
 
   test.beforeEach(async ({ page }) => {
+    await enableDemoMode(page);
     await navigateTo(page, "/budget");
     await page.getByRole("button", { name: /^Project Budgets$/i }).click();
     await page.waitForLoadState("networkidle");
@@ -64,15 +54,22 @@ test.describe("Project-category exclusion", () => {
 
     // ---- Clean demo data has no project / monthly-yearly overlaps, so the
     // conflict banner must stay hidden. ----
-    const conflictsRes = await page.request.get("/api/budget/category-conflicts");
+    const conflictsRes = await page.request.get(
+      "/api/budget/category-conflicts",
+      { headers: DEMO_HEADERS },
+    );
     expect(conflictsRes.ok()).toBeTruthy();
     const conflictsBody = await conflictsRes.json();
     expect(conflictsBody.conflicts).toEqual([]);
-    await expect(page.getByText(/resolve to avoid double-tracking/i)).toHaveCount(0);
+    await expect(
+      page.getByText(/resolve to avoid double-tracking/i),
+    ).toHaveCount(0);
 
     // ---- Discover a category the demo dataset seeds a monthly rule for, so
     // the scenario adapts to whatever the demo generator currently ships. ----
-    const rulesRes = await page.request.get("/api/budget/rules");
+    const rulesRes = await page.request.get("/api/budget/rules", {
+      headers: DEMO_HEADERS,
+    });
     expect(rulesRes.ok()).toBeTruthy();
     const allRules: BudgetRuleRecord[] = await rulesRes.json();
     const monthlyRuleCategory = allRules.find(

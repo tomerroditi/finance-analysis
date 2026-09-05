@@ -2,11 +2,13 @@ import { test, expect, type Page } from "@playwright/test";
 import { enableDemoMode, navigateTo } from "./helpers";
 
 test.describe("RTL chevrons", () => {
-  // Self-heal demo mode: a no-op when already enabled (the `demo-setup`
-  // project turns it on once), so this is safe under parallel workers and
-  // makes the spec order-independent when sharded alongside mutating specs.
-  test.beforeAll(async () => {
-    await enableDemoMode();
+  // Demo Mode lives in the browser context's localStorage, so it must be
+  // seeded per-test (a fresh context per test) rather than once in
+  // beforeAll. enableDemoMode's demo/prepare call is idempotent, so this
+  // is still cheap and order-independent when sharded alongside mutating
+  // specs.
+  test.beforeEach(async ({ page }) => {
+    await enableDemoMode(page);
   });
 
   /**
@@ -25,7 +27,9 @@ test.describe("RTL chevrons", () => {
     await setLanguage(page, "he");
     await navigateTo(page, "/transactions");
 
-    await expect(page.getByText(/עמוד\s+\d+\s+מתוך/)).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByText(/עמוד\s+\d+\s+מתוך/)).toBeVisible({
+      timeout: 30_000,
+    });
     await expect(page.locator("html")).toHaveAttribute("dir", "rtl");
 
     const icons = await page.evaluate(() => {
@@ -38,7 +42,7 @@ test.describe("RTL chevrons", () => {
       );
       return btns.map((b) => {
         const svg = b.querySelector("svg");
-        return svg ? svg.getAttribute("class") ?? "" : "";
+        return svg ? (svg.getAttribute("class") ?? "") : "";
       });
     });
 
@@ -67,7 +71,9 @@ test.describe("RTL chevrons", () => {
     await setLanguage(page, "en");
     await navigateTo(page, "/transactions");
 
-    await expect(page.getByText(/Page\s+\d+\s+of/)).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByText(/Page\s+\d+\s+of/)).toBeVisible({
+      timeout: 30_000,
+    });
     await expect(page.locator("html")).toHaveAttribute("dir", "ltr");
 
     const icons = await page.evaluate(() => {
@@ -80,7 +86,7 @@ test.describe("RTL chevrons", () => {
       );
       return btns.map((b) => {
         const svg = b.querySelector("svg");
-        return svg ? svg.getAttribute("class") ?? "" : "";
+        return svg ? (svg.getAttribute("class") ?? "") : "";
       });
     });
 
@@ -94,7 +100,9 @@ test.describe("RTL chevrons", () => {
     expect(icons![3]).toContain("lucide-chevrons-right");
   });
 
-  test("dashboard monthly-budget month switcher flips chevrons in Hebrew", async ({ page }) => {
+  test("dashboard monthly-budget month switcher flips chevrons in Hebrew", async ({
+    page,
+  }) => {
     await setLanguage(page, "he");
     await navigateTo(page, "/");
 
@@ -117,7 +125,9 @@ test.describe("RTL chevrons", () => {
     expect(icons![1]).toContain("lucide-chevron-left");
   });
 
-  test("DataSources connect-account flow flips proceed chevrons in Hebrew", async ({ page }) => {
+  test("DataSources connect-account flow flips proceed chevrons in Hebrew", async ({
+    page,
+  }) => {
     await setLanguage(page, "he");
     await navigateTo(page, "/data-sources");
 

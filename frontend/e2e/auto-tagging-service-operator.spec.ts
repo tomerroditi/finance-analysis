@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { navigateTo, enableDemoMode, disableDemoMode } from "./helpers";
+import { navigateTo, enableDemoMode, resetDemoData } from "./helpers";
 
 /**
  * E2E coverage for the auto-tagging rules manager + rule editor, consolidated
@@ -23,16 +23,21 @@ import { navigateTo, enableDemoMode, disableDemoMode } from "./helpers";
  */
 
 test.describe("Auto-tagging rules manager + editor", () => {
-  test.beforeAll(async ({ browser }) => {
-    const page = await browser.newPage();
-    await enableDemoMode(page);
-    await page.close();
+  // Restore pristine demo data before this file runs. The `mutating`
+  // project is serial and each file is expected to own its DB state; the
+  // demo database is process-global, so without this a predecessor's
+  // writes leak in and this spec asserts against data it did not set up.
+  test.beforeAll(async () => {
+    await resetDemoData();
   });
 
-  test.afterAll(async ({ browser }) => {
-    const page = await browser.newPage();
-    await disableDemoMode(page);
-    await page.close();
+  // Demo Mode lives in the browser context's localStorage, so it must be
+  // seeded per-test (a fresh context per test) rather than once in
+  // beforeAll via a throwaway page — that page is a different browser
+  // context from the one each test actually navigates in, so anything it
+  // set there never reached the real test.
+  test.beforeEach(async ({ page }) => {
+    await enableDemoMode(page);
   });
 
   test("manager opens full-screen; editor defaults to OR, previews uncapped, restricts the service operator", async ({
@@ -64,7 +69,9 @@ test.describe("Auto-tagging rules manager + editor", () => {
     // --- Preview is not capped at 50 ---
     // Pick the visible Value input (there can be a duplicate hidden one for
     // the mobile layout) and type a merchant with many demo transactions.
-    const valueInput = modal.locator('input[placeholder="Value"]:visible').first();
+    const valueInput = modal
+      .locator('input[placeholder="Value"]:visible')
+      .first();
     await expect(valueInput).toBeVisible();
     await valueInput.fill("WOLT");
 
@@ -88,7 +95,10 @@ test.describe("Auto-tagging rules manager + editor", () => {
     await expect(previewRows).toHaveCount(matchCount);
 
     // --- Adding a nested group also defaults to OR (consistency) ---
-    await modal.getByRole("button", { name: /^\+ Group$|^Group$/ }).first().click();
+    await modal
+      .getByRole("button", { name: /^\+ Group$|^Group$/ })
+      .first()
+      .click();
     await expect(
       modal.getByRole("button", { name: /OR \(Any match\)/i }),
     ).toHaveCount(2, { timeout: 5_000 });
@@ -96,7 +106,10 @@ test.describe("Auto-tagging rules manager + editor", () => {
     // --- Service field exposes only the Equals operator ---
     // The first condition row defaults to field=Description, operator=Contains.
     // Switch the field dropdown to "Service".
-    await modal.getByRole("button", { name: /^Description$/ }).first().click();
+    await modal
+      .getByRole("button", { name: /^Description$/ })
+      .first()
+      .click();
     await page
       .getByRole("option", { name: /^Service$/ })
       .filter({ visible: true })
@@ -120,7 +133,9 @@ test.describe("Auto-tagging rules manager + editor", () => {
     await page.keyboard.press("Escape");
   });
 
-  test("applying all rules surfaces a localized success toast", async ({ page }) => {
+  test("applying all rules surfaces a localized success toast", async ({
+    page,
+  }) => {
     await navigateTo(page, "/categories");
 
     // Open the rules manager, then apply all rules.

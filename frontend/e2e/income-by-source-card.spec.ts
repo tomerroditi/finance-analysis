@@ -14,11 +14,13 @@ import { enableDemoMode, navigateTo } from "./helpers";
  * expensive step — it used to be paid once per assertion group, 4×).
  */
 test.describe("Income by source dashboard card", () => {
-  // Self-heal demo mode: a no-op when already enabled (the `demo-setup`
-  // project turns it on once), so this is safe under parallel workers and
-  // makes the spec order-independent when sharded alongside mutating specs.
-  test.beforeAll(async () => {
-    await enableDemoMode();
+  // Demo Mode lives in the browser context's localStorage, so it must be
+  // seeded per-test (a fresh context per test) rather than once in
+  // beforeAll. enableDemoMode's demo/prepare call is idempotent, so this
+  // is still cheap and order-independent when sharded alongside mutating
+  // specs.
+  test.beforeEach(async ({ page }) => {
+    await enableDemoMode(page);
   });
 
   /**
@@ -51,14 +53,18 @@ test.describe("Income by source dashboard card", () => {
     await expect(card.locator(".recharts-wrapper").first()).toBeVisible({
       timeout: 45_000,
     });
-    await expect(card.getByText("Total", { exact: true }).first()).toBeVisible();
+    await expect(
+      card.getByText("Total", { exact: true }).first(),
+    ).toBeVisible();
 
     // --- Switching to "Last 12 months" keeps the card rendered (no crash) ---
     await card.getByRole("button", { name: "Last 12 months" }).first().click();
     await expect(card.locator(".recharts-wrapper").first()).toBeVisible({
       timeout: 45_000,
     });
-    await expect(card.getByText("Total", { exact: true }).first()).toBeVisible();
+    await expect(
+      card.getByText("Total", { exact: true }).first(),
+    ).toBeVisible();
 
     // --- Breakdown toggle collapses and restores the table ---
     await expect(card.locator("table").first()).toBeVisible();
