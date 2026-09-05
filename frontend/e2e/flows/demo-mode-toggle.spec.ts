@@ -16,6 +16,10 @@ import { API_BASE, disableDemoMode, enableDemoMode } from "../helpers";
  * post-toggle sanity check below reads the flag through the page itself
  * (mirroring how `services/api.ts`'s interceptor attaches the header)
  * instead of a headerless Node-side request.
+ *
+ * This spec performs backend writes (the demo toggle itself, and — in the
+ * "Reset demo data" block below — an unconditional demo-DB rebuild), so it
+ * must stay OUT of `READ_ONLY_SPECS` in `playwright.config.ts`.
  */
 test.describe("Demo Mode toggle flow", () => {
   test.beforeEach(async ({ page }) => {
@@ -33,13 +37,26 @@ test.describe("Demo Mode toggle flow", () => {
 
     await gotoAndWait(page, "/data-sources");
 
-    // Toggle Demo Mode ON via the UI. Two settings buttons exist (sidebar +
-    // mobile top bar); click the one visible at the current viewport.
-    await page
-      .locator("button:has(svg.lucide-settings)")
-      .filter({ visible: true })
-      .first()
-      .click();
+    // Two settings buttons exist (sidebar + mobile top bar); click the one
+    // visible at the current viewport.
+    const openSettings = () =>
+      page
+        .locator("button:has(svg.lucide-settings)")
+        .filter({ visible: true })
+        .first()
+        .click();
+
+    await openSettings();
+
+    await test.step("reset-demo-data control is absent while Demo Mode is off", async () => {
+      const toggleRow = page.getByText(/^Demo Mode$/);
+      await expect(toggleRow).toBeVisible();
+      await expect(
+        page.getByRole("button", { name: "Reset demo data" }),
+      ).toHaveCount(0);
+    });
+
+    // Toggle Demo Mode ON via the UI.
     const toggleRow = page.getByText(/^Demo Mode$/);
     await toggleRow.waitFor();
     await toggleRow.click();
@@ -78,5 +95,57 @@ test.describe("Demo Mode toggle flow", () => {
       return res.json();
     });
     expect(status.demo_mode).toBe(true);
+
+    await test.step("resetting demo data confirms, POSTs /demo/reset, and the UI recovers", async () => {
+      // Reopen Settings — the earlier Escape closed it, and DemoModeContext's
+      // query reset + the reload above would have unmounted it anyway.
+      await openSettings();
+
+      const resetButton = page.getByRole("button", { name: "Reset demo data" });
+      await expect(resetButton).toBeVisible();
+      await resetButton.click();
+
+      // Confirmation goes through the shared useConfirm()/alertdialog idiom,
+      // not window.confirm — assert the real dialog, not a browser prompt.
+      const confirmDialog = page.getByRole("alertdialog");
+      await expect(confirmDialog).toBeVisible();
+      await expect(
+        confirmDialog.getByRole("heading", { name: "Reset demo data" }),
+      ).toBeVisible();
+      await expect(
+        confirmDialog.getByText(
+          "This rebuilds the demo database from scratch, discarding every change made in demo mode by any client. This cannot be undone.",
+        ),
+      ).toBeVisible();
+
+      // Assert the real wiring: confirming must actually issue the
+      // unconditional rebuild POST, not just close the dialog and hope.
+      const resetRequestPromise = page.waitForResponse(
+        (res) =>
+          res.url().includes("/api/testing/demo/reset") &&
+          res.request().method() === "POST",
+      );
+      await confirmDialog.getByRole("button", { name: "Reset demo data" }).click();
+      const resetResponse = await resetRequestPromise;
+      expect(resetResponse.status()).toBe(200);
+      expect(await resetResponse.json()).toEqual({ status: "success" });
+
+      // UI settles: the success toast fires and the app still renders demo
+      // data afterwards (queryClient.resetQueries() re-fetches into a
+      // populated state, not an empty one — proving the rebuild actually
+      // repopulated the demo DB rather than leaving it corrupted/empty).
+      // Other role="status" regions exist in the app (network/SW toasts),
+      // so filter by text rather than asserting on the bare role.
+      const successToast = page
+        .getByRole("status")
+        .filter({ hasText: "Demo data reset successfully" });
+      await expect(successToast).toBeVisible();
+      await expect(confirmDialog).toBeHidden();
+      await expect(
+        page.getByRole("heading", { name: /no accounts connected/i }),
+      ).toBeHidden();
+      await expect(resetButton).toBeVisible();
+      await expect(resetButton).toBeEnabled();
+    });
   });
 });
