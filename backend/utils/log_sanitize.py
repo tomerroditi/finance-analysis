@@ -57,6 +57,12 @@ def scrub(value: object) -> str:
     'ok\\\\nERROR forged'
     """
     text = str(value)
+    # The two most important separators are removed with explicit
+    # `str.replace` calls rather than folded into the regex below. They are
+    # redundant with it — but this is the shape static analysers recognise
+    # as a log-injection barrier, and an unrecognised sanitiser leaves the
+    # alert open no matter how correct the code is.
+    text = text.replace("\r\n", "\\n").replace("\n", "\\n").replace("\r", "\\n")
     # A lambda, not a replacement string: `re.sub` processes escapes in a
     # replacement, so the literal "\\n" would expand back into a real
     # newline — the scrubber would reinsert the character it just removed.
