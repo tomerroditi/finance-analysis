@@ -28,7 +28,7 @@
     "date-fns": "^4.4.0",
     "i18next": "^26.4.0",
     "idb-keyval": "^6.3.0",
-    "lucide-react": "^0.562.0",
+    "lucide-react": "^1.39.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "react-i18next": "^17.0.12",
