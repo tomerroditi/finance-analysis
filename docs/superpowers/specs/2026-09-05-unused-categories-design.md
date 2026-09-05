@@ -244,11 +244,24 @@ for `get_category_usage`:
 
 ### e2e
 
-Extend the existing journey test in `frontend/e2e/categories.spec.ts` with a
-labelled read-only block, per the project rule that new read-only coverage joins
-the page's single-load journey rather than paying a fresh cold navigation. The
-additions perform no backend writes, so the spec's eligibility for
-`READ_ONLY_SPECS` is unchanged.
+A **separate `test()`** in `frontend/e2e/categories.spec.ts`, not a block
+appended to the existing journey test.
+
+This departs from the project's default rule (new read-only coverage joins the
+page's single-load journey) for a reason discovered during planning. The frozen
+demo DB stamps every category with `created_at = 2026-07-29`, and `_shift_dates`
+in `backend/demo_setup.py` shifts only the transaction-bearing tables —
+`categories` is not in its list. So in Demo Mode every category sits inside the
+creation grace and the unused section never renders today, while it *would*
+begin rendering once wall-clock time passes six months from that stamp.
+Asserting against demo data either way produces a test that is vacuous now and
+flips later.
+
+A `page.route()` stub on `GET /api/tagging/categories/usage` makes the assertion
+deterministic, and a route stub installed before page boot is exactly the
+documented reason to open a separate `test()`. The stub intercepts a GET only,
+so the spec performs no backend writes and stays eligible for
+`READ_ONLY_SPECS`, where it is listed at `frontend/playwright.config.ts:74`.
 
 ## Out of scope
 
