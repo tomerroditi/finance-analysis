@@ -459,6 +459,69 @@ class TransactionsRepository(IngestionMixin, SplitsMixin):
             total += int(self.db.execute(split_stmt).scalar_one())
         return total
 
+    def get_category_last_used(self) -> dict[str, str]:
+        """Return each category's most recent transaction date.
+
+        Scans the four non-insurance transaction tables plus their split
+        children, mirroring the merged view used elsewhere: ``split_parent``
+        rows are skipped (their children replace them) and split children take
+        their date from the parent row, which they are joined to on both
+        ``unique_id`` and ``source`` because ``unique_id`` is a per-table
+        auto-increment. Orphaned splits are dropped by the inner join, exactly
+        as the pandas merged view drops them. Insurance transactions are
+        excluded. Pure SQL ``MAX``/``GROUP BY`` — no DataFrame load.
+
+        Dates are ``YYYY-MM-DD`` strings, so lexicographic ``MAX`` is
+        chronologically correct.
+
+        Returns
+        -------
+        dict[str, str]
+            Mapping of category name to its latest transaction date. Categories
+            with no transactions at all are absent from the mapping.
+        """
+        last_used: dict[str, str] = {}
+
+        def _record(category: str | None, date_value: str | None) -> None:
+            if not category or not date_value:
+                return
+            current = last_used.get(category)
+            if current is None or date_value > current:
+                last_used[category] = date_value
+
+        for repo in [
+            self.cc_repo,
+            self.bank_repo,
+            self.cash_repo,
+            self.manual_investments_repo,
+        ]:
+            model = repo.model
+
+            direct_stmt = (
+                select(model.category, func.max(model.date))
+                .where(
+                    model.category.is_not(None),
+                    or_(model.type.is_(None), model.type != "split_parent"),
+                )
+                .group_by(model.category)
+            )
+            for category, date_value in self.db.execute(direct_stmt).all():
+                _record(category, date_value)
+
+            split_stmt = (
+                select(SplitTransaction.category, func.max(model.date))
+                .join(model, model.unique_id == SplitTransaction.transaction_id)
+                .where(
+                    SplitTransaction.category.is_not(None),
+                    SplitTransaction.source == repo.table,
+                )
+                .group_by(SplitTransaction.category)
+            )
+            for category, date_value in self.db.execute(split_stmt).all():
+                _record(category, date_value)
+
+        return last_used
+
     def nullify_category_and_tag(self, category: str, tag: str) -> None:
         """Set category and tag to NULL across all transaction tables.
 
