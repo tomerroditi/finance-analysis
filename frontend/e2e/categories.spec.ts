@@ -123,4 +123,46 @@ test.describe("Categories", () => {
     await panel.getByRole("button", { name: /^close$/i }).click();
     await expect(panel).toBeHidden({ timeout: 3_000 });
   });
+
+  // Separate test (not folded into the journey above) because it needs a
+  // page.route() stub installed before the page boots. The demo DB stamps
+  // every category's created_at at snapshot-build time and demo_setup's
+  // date shift does not touch the categories table, so no demo category is
+  // ever old enough to be unused — the stub is what makes this assertable.
+  test("unused categories collapse into their own section", async ({ page }) => {
+    await page.route("**/api/tagging/categories/usage", async (route) => {
+      const response = await route.fetch();
+      const usage = await response.json();
+      const stubbed = Object.fromEntries(
+        Object.keys(usage).map((name) => [
+          name,
+          name === "Wedding"
+            ? { last_used: "2025-01-20", unused: true }
+            : { last_used: "2026-08-01", unused: false },
+        ]),
+      );
+      await route.fulfill({ json: stubbed });
+    });
+
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await navigateTo(page, "/categories");
+
+    const toggle = page.getByTestId("unused-categories-toggle");
+    await expect(toggle).toBeVisible({ timeout: 10_000 });
+
+    // --- Collapsed by default: the unused card is out of the main grid ---
+    await expect(page.getByTestId("unused-categories-grid")).toBeHidden();
+    await expect(page.getByTestId("category-card-Wedding")).toBeHidden();
+    await expect(page.getByTestId("category-card-Food")).toBeVisible();
+
+    // --- Expanding reveals the card ---
+    await toggle.click();
+    await expect(page.getByTestId("category-card-Wedding")).toBeVisible();
+
+    // --- Searching an unused category auto-expands the section ---
+    await toggle.click();
+    await expect(page.getByTestId("category-card-Wedding")).toBeHidden();
+    await page.getByPlaceholder(/Search categories and tags/i).fill("Wedding");
+    await expect(page.getByTestId("category-card-Wedding")).toBeVisible();
+  });
 });
