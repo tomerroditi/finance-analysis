@@ -6,6 +6,7 @@ from unittest.mock import MagicMock, patch
 from contextlib import contextmanager
 
 import backend.services.scraping_service as ss
+from backend.scraper.adapter import scraper_registry_key
 from backend.errors import EntityNotFoundException
 from backend.services.scraping_service import ScrapingService
 
@@ -229,7 +230,7 @@ class TestScrapingServiceStart:
         ):
             service.start_scraping_single("banks", "leumi", "MyAcc")
 
-        expected_key = "banks - leumi - MyAcc"
+        expected_key = scraper_registry_key(False, "banks", "leumi", "MyAcc")
         assert expected_key in ss._tfa_scrapers_waiting
         assert ss._tfa_scrapers_waiting[expected_key] is mock_adapter
 
@@ -491,7 +492,7 @@ class TestScrapingServiceSingleFlight:
         ):
             service.start_scraping_single("credit_cards", "isracard", "Card1")
 
-        expected_key = "credit_cards - isracard - Card1"
+        expected_key = scraper_registry_key(False, "credit_cards", "isracard", "Card1")
         assert expected_key in ss._active_scrapers
         assert ss._active_scrapers[expected_key] is mock_adapter
 
@@ -536,8 +537,8 @@ class TestScrapingService2FA:
     def test_submit_2fa_code(self, service):
         """Verify set_otp_code is called on the correct adapter."""
         mock_adapter = MagicMock()
-        name = "credit_cards - isracard - Main"
-        ss._tfa_scrapers_waiting[name] = mock_adapter
+        key = scraper_registry_key(False, "credit_cards", "isracard", "Main")
+        ss._tfa_scrapers_waiting[key] = mock_adapter
 
         service.submit_2fa_code("credit_cards", "isracard", "Main", "123456")
 
@@ -558,7 +559,9 @@ class TestScrapingServiceAbort:
         mock_adapter = MagicMock()
         mock_adapter.process_id = 20
         mock_adapter.CANCEL = "cancel"
-        ss._tfa_scrapers_waiting["banks - leumi - Acc"] = mock_adapter
+        # abort_scraping_process now matches on mode as well as process_id.
+        mock_adapter.demo_mode = False
+        ss._tfa_scrapers_waiting[scraper_registry_key(False, "banks", "leumi", "Acc")] = mock_adapter
 
         mock_history_repo = MagicMock()
         mock_history_repo.FAILED = "failed"
@@ -577,7 +580,7 @@ class TestScrapingServiceAbort:
 
         mock_adapter.set_otp_code.assert_called_once_with("cancel")
         mock_history_repo.record_scrape_end.assert_called_once_with(20, "failed")
-        assert "banks - leumi - Acc" not in ss._tfa_scrapers_waiting
+        assert scraper_registry_key(False, "banks", "leumi", "Acc") not in ss._tfa_scrapers_waiting
 
     @patch("backend.services.scraping_service.get_db_context")
     def test_abort_scraping_process_pops_active_scrapers(self, mock_get_db_ctx, service):
@@ -585,8 +588,10 @@ class TestScrapingServiceAbort:
         mock_adapter = MagicMock()
         mock_adapter.process_id = 21
         mock_adapter.CANCEL = "cancel"
-        ss._tfa_scrapers_waiting["banks - leumi - Acc2"] = mock_adapter
-        ss._active_scrapers["banks - leumi - Acc2"] = mock_adapter
+        # abort_scraping_process now matches on mode as well as process_id.
+        mock_adapter.demo_mode = False
+        ss._tfa_scrapers_waiting[scraper_registry_key(False, "banks", "leumi", "Acc2")] = mock_adapter
+        ss._active_scrapers[scraper_registry_key(False, "banks", "leumi", "Acc2")] = mock_adapter
 
         mock_history_repo = MagicMock()
         mock_history_repo.FAILED = "failed"
@@ -603,7 +608,7 @@ class TestScrapingServiceAbort:
         ):
             service.abort_scraping_process(21)
 
-        assert "banks - leumi - Acc2" not in ss._active_scrapers
+        assert scraper_registry_key(False, "banks", "leumi", "Acc2") not in ss._active_scrapers
 
     @patch("backend.services.scraping_service.get_db_context")
     def test_abort_2fa_scraper(self, mock_get_db_ctx, service):
@@ -611,7 +616,9 @@ class TestScrapingServiceAbort:
         mock_adapter = MagicMock()
         mock_adapter.process_id = 55
         mock_adapter.CANCEL = "cancel"
-        ss._tfa_scrapers_waiting["credit_cards - max - Card1"] = mock_adapter
+        # abort_scraping_process now matches on mode as well as process_id.
+        mock_adapter.demo_mode = False
+        ss._tfa_scrapers_waiting[scraper_registry_key(False, "credit_cards", "max", "Card1")] = mock_adapter
 
         mock_history_repo = MagicMock()
         mock_history_repo.FAILED = "failed"
@@ -629,7 +636,7 @@ class TestScrapingServiceAbort:
             service.abort_scraping_process(55)
 
         mock_adapter.set_otp_code.assert_called_once_with("cancel")
-        assert "credit_cards - max - Card1" not in ss._tfa_scrapers_waiting
+        assert scraper_registry_key(False, "credit_cards", "max", "Card1") not in ss._tfa_scrapers_waiting
 
     @patch("backend.services.scraping_service.get_db_context")
     def test_abort_non_2fa_process_records_failure(self, mock_get_db_ctx, service):
@@ -758,8 +765,8 @@ class TestScrapingServiceCollectAdapters:
 
         normal, tfa = service._collect_adapters(credentials)
 
-        assert "banks - hapoalim - Main" in normal
-        assert "banks - onezero - Account1" in tfa
+        assert scraper_registry_key(False, "banks", "hapoalim", "Main") in normal
+        assert scraper_registry_key(False, "banks", "onezero", "Account1") in tfa
         assert len(normal) == 1
         assert len(tfa) == 1
 

@@ -15,6 +15,7 @@ import pytest
 
 from backend.errors import EntityNotFoundException
 from backend.scraper.adapter import (
+    scraper_registry_key,
     ScraperAdapter,
     _active_scrapers,
     _tfa_scrapers_waiting,
@@ -82,42 +83,42 @@ class TestPopByIdentity:
 
     def test_unregister_leaves_newer_active_adapter(self):
         """A's unregister must not evict B's _active_scrapers entry."""
-        name = "banks - onezero - Acc"
+        key = scraper_registry_key(False, "banks", "onezero", "Acc")
         adapter_a = _adapter(process_id=1)
         adapter_b = _adapter(process_id=2)
 
         # A was registered, then superseded by B under the same key.
-        _active_scrapers[name] = adapter_a
-        _active_scrapers[name] = adapter_b
+        _active_scrapers[key] = adapter_a
+        _active_scrapers[key] = adapter_b
 
         adapter_a._unregister_from_2fa_waiting()
 
-        assert _active_scrapers.get(name) is adapter_b
+        assert _active_scrapers.get(key) is adapter_b
 
     def test_unregister_leaves_newer_tfa_adapter(self):
         """A's unregister must not evict B's _tfa_scrapers_waiting entry."""
-        name = "banks - onezero - Acc"
+        key = scraper_registry_key(False, "banks", "onezero", "Acc")
         adapter_a = _adapter(process_id=1)
         adapter_b = _adapter(process_id=2)
 
-        _tfa_scrapers_waiting[name] = adapter_a
-        _tfa_scrapers_waiting[name] = adapter_b
+        _tfa_scrapers_waiting[key] = adapter_a
+        _tfa_scrapers_waiting[key] = adapter_b
 
         adapter_a._unregister_from_2fa_waiting()
 
-        assert _tfa_scrapers_waiting.get(name) is adapter_b
+        assert _tfa_scrapers_waiting.get(key) is adapter_b
 
     def test_unregister_removes_own_entry(self):
         """When the entry still points to self, unregister removes it."""
-        name = "banks - onezero - Acc"
+        key = scraper_registry_key(False, "banks", "onezero", "Acc")
         adapter_a = _adapter(process_id=1)
-        _active_scrapers[name] = adapter_a
-        _tfa_scrapers_waiting[name] = adapter_a
+        _active_scrapers[key] = adapter_a
+        _tfa_scrapers_waiting[key] = adapter_a
 
         adapter_a._unregister_from_2fa_waiting()
 
-        assert name not in _active_scrapers
-        assert name not in _tfa_scrapers_waiting
+        assert key not in _active_scrapers
+        assert key not in _tfa_scrapers_waiting
 
     def test_unregister_no_entry_does_not_raise(self):
         """Unregister is safe when no entry exists (e.g. already aborted)."""

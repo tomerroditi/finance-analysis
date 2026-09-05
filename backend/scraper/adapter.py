@@ -57,10 +57,52 @@ NO_ACCOUNTS_ERROR = (
 # and these guards (single-flight lock, 2FA-waiting registry) would need
 # to move to shared state (e.g. a DB row or Redis) to stay correct.
 
+#: Registry key: ``(demo_mode, service, provider, account)``.
+#:
+#: Demo Mode is per-client, so one backend process can be running a demo
+#: scrape and a real scrape for the *same* account name at the same time —
+#: demo seed credentials use names like ``"Main Account"`` and
+#: ``"Family Card"``, which a real user can plausibly reuse. The mode is
+#: therefore part of the key, not an assumption about the process.
+ScraperRegistryKey = tuple[bool, str, str, str]
+
+
+def scraper_registry_key(
+    demo_mode: bool, service: str, provider: str, account: str
+) -> ScraperRegistryKey:
+    """Build the registry key for one account under one demo mode.
+
+    A tuple rather than an interpolated string: the previous
+    ``f"{service} - {provider} - {account}"`` form let a user-supplied
+    account name containing the delimiter land on another account's key.
+
+    Parameters
+    ----------
+    demo_mode : bool
+        Whether the scrape belongs to a demo-mode client. Callers serving a
+        request pass ``AppConfig().is_demo_mode``; an adapter passes its own
+        captured ``self.demo_mode``, which is the mode of the client that
+        launched it.
+    service : str
+        Service type (e.g. ``"credit_cards"``, ``"banks"``).
+    provider : str
+        Provider identifier (e.g. ``"isracard"``, ``"hapoalim"``).
+    account : str
+        User-assigned account label.
+
+    Returns
+    -------
+    ScraperRegistryKey
+        Key into :data:`_active_scrapers` and :data:`_tfa_scrapers_waiting`.
+    """
+    return (demo_mode, service, provider, account)
+
+
 # Live adapters whose scrapers may end up awaiting an OTP. Keyed by
-# ``"{service} - {provider} - {account}"`` — the same string the
-# ``POST /api/scraping/2fa`` route uses to resolve the waiting adapter.
-_tfa_scrapers_waiting: dict[str, "ScraperAdapter"] = {}
+# :func:`scraper_registry_key` — the ``POST /api/scraping/2fa`` route passes
+# the service/provider/account components and the service rebuilds the key,
+# so the key shape never crosses the API boundary.
+_tfa_scrapers_waiting: dict[ScraperRegistryKey, "ScraperAdapter"] = {}
 
 # Every adapter currently running for a given account, across ALL
 # providers (not just 2FA-capable ones). Keyed identically to
@@ -69,7 +111,7 @@ _tfa_scrapers_waiting: dict[str, "ScraperAdapter"] = {}
 # "scrape all" fan-out can't double-launch the same account — critical
 # for 2FA providers, where a second launch fires a second ``/otp/prepare``
 # that supersedes the SMS code the user is already looking at.
-_active_scrapers: dict[str, "ScraperAdapter"] = {}
+_active_scrapers: dict[ScraperRegistryKey, "ScraperAdapter"] = {}
 
 
 def _import_scraper_module(name: str):
@@ -421,11 +463,15 @@ class ScraperAdapter:
         duplicate scrape — and a duplicate OTP SMS — launch). Checking
         identity leaves the newer adapter untouched.
         """
-        name = f"{self.service_name} - {self.provider_name} - {self.account_name}"
-        if _tfa_scrapers_waiting.get(name) is self:
-            _tfa_scrapers_waiting.pop(name, None)
-        if _active_scrapers.get(name) is self:
-            _active_scrapers.pop(name, None)
+        # Keyed on the mode captured at construction, not the ambient one, so
+        # the cleanup can only ever reach this adapter's own client's entry.
+        key = scraper_registry_key(
+            self.demo_mode, self.service_name, self.provider_name, self.account_name
+        )
+        if _tfa_scrapers_waiting.get(key) is self:
+            _tfa_scrapers_waiting.pop(key, None)
+        if _active_scrapers.get(key) is self:
+            _active_scrapers.pop(key, None)
 
     def _persist_refreshed_otp_token(self, scraper) -> None:
         """Persist a freshly obtained long-term token, however it was obtained.

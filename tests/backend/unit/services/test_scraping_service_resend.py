@@ -14,6 +14,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 import backend.services.scraping_service as ss
+from backend.scraper.adapter import scraper_registry_key
 from backend.errors import BadRequestException, EntityNotFoundException
 from backend.scraper.adapter import OtpRateLimitError, ResendNotSupportedError
 from backend.services.scraping_service import ScrapingService
@@ -63,7 +64,7 @@ class TestResend2FACodeSuccess:
         adapter = MagicMock()
         adapter.process_id = 77
         adapter.resend_otp = AsyncMock()
-        ss._active_scrapers["banks - onezero - Acc"] = adapter
+        ss._active_scrapers[scraper_registry_key(False, "banks", "onezero", "Acc")] = adapter
 
         with patch.object(service, "abort_scraping_process") as abort, patch.object(
             service, "start_scraping_single"
@@ -83,7 +84,7 @@ class TestResend2FACodeSuccess:
         adapter = MagicMock()
         adapter.process_id = 88
         adapter.resend_otp = AsyncMock()
-        ss._tfa_scrapers_waiting["banks - onezero - Acc"] = adapter
+        ss._tfa_scrapers_waiting[scraper_registry_key(False, "banks", "onezero", "Acc")] = adapter
 
         result = asyncio.run(service.resend_2fa_code("banks", "onezero", "Acc"))
 
@@ -110,7 +111,7 @@ class TestResend2FACodeRateLimited:
         adapter.resend_otp = AsyncMock(
             side_effect=OtpRateLimitError("Wait about a minute before requesting another code.")
         )
-        ss._active_scrapers["banks - onezero - Acc"] = adapter
+        ss._active_scrapers[scraper_registry_key(False, "banks", "onezero", "Acc")] = adapter
 
         with pytest.raises(BadRequestException, match="Wait about a minute"):
             asyncio.run(service.resend_2fa_code("banks", "onezero", "Acc"))
@@ -124,7 +125,7 @@ class TestResend2FACodeFallbackRestart:
         adapter = MagicMock()
         adapter.process_id = 100
         adapter.resend_otp = AsyncMock(side_effect=ResendNotSupportedError("nope"))
-        ss._active_scrapers["banks - hapoalim - Acc"] = adapter
+        ss._active_scrapers[scraper_registry_key(False, "banks", "hapoalim", "Acc")] = adapter
 
         with patch.object(service, "abort_scraping_process") as abort, patch.object(
             service, "start_scraping_single", return_value=101

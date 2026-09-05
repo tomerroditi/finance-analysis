@@ -8,7 +8,12 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from backend.scraper.adapter import ScraperAdapter, _active_scrapers, _tfa_scrapers_waiting
+from backend.scraper.adapter import (
+    ScraperAdapter,
+    _active_scrapers,
+    _tfa_scrapers_waiting,
+    scraper_registry_key,
+)
 
 DUMMY_CREDENTIALS = {"email": "test@test.com", "password": "pass123"}
 DUMMY_START_DATE = date(2025, 1, 1)
@@ -43,8 +48,8 @@ class TestRunPopsActiveScrapers:
     def test_run_pops_active_scrapers_on_failure(self):
         """A failed scrape still pops its _active_scrapers entry in finally."""
         adapter = _adapter(process_id=101)
-        name = "credit_cards - isracard - Card1"
-        _active_scrapers[name] = adapter
+        key = scraper_registry_key(False, "credit_cards", "isracard", "Card1")
+        _active_scrapers[key] = adapter
 
         fake_scraper = MagicMock()
         fake_scraper.scrape = AsyncMock(
@@ -84,13 +89,13 @@ class TestRunPopsActiveScrapers:
         ):
             asyncio.run(adapter.run())
 
-        assert name not in _active_scrapers
+        assert key not in _active_scrapers
 
     def test_run_pops_active_scrapers_on_success(self):
         """A successful scrape with no transactions also pops its entry."""
         adapter = _adapter(process_id=102)
-        name = "credit_cards - isracard - Card1"
-        _active_scrapers[name] = adapter
+        key = scraper_registry_key(False, "credit_cards", "isracard", "Card1")
+        _active_scrapers[key] = adapter
 
         fake_scraper = MagicMock()
         fake_scraper.scrape = AsyncMock(
@@ -129,7 +134,7 @@ class TestRunPopsActiveScrapers:
         ):
             asyncio.run(adapter.run())
 
-        assert name not in _active_scrapers
+        assert key not in _active_scrapers
 
     def test_run_pops_active_scrapers_even_when_not_registered(self):
         """run() must not raise if the entry is already absent (e.g. aborted)."""
@@ -174,4 +179,4 @@ class TestRunPopsActiveScrapers:
         ):
             asyncio.run(adapter.run())  # must not raise
 
-        assert "credit_cards - isracard - Card1" not in _active_scrapers
+        assert scraper_registry_key(False, "credit_cards", "isracard", "Card1") not in _active_scrapers
