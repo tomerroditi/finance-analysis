@@ -185,16 +185,23 @@ specs fail here and pass in isolation, which is exactly how a stale frontend on
 :5273 once broke a `toHaveCount(0)` assertion for a DOM node the current source
 no longer renders. Four guards keep ownership honest: children run in their own
 process group (`start_new_session`) and are torn down with `killpg`, so
-`npm run dev`'s `vite` child cannot survive its npm parent; a **preflight
-refuses to start** when any target port (8100+, 5273+) is already listening —
-pass `--reclaim-ports` to kill the squatters instead; Vite is launched with
-`--strictPort`, so a taken port is a hard exit rather than a silent
-fall-forward to 5277+; and readiness means *our* server answered — the backend
-must have created `data.db` inside that shard's `FAD_USER_DIR`, which a
-squatter cannot fake. Server stdout/stderr go to
-`$TMPDIR/e2e-isolated-{backend,frontend}-N.log`, never `/dev/null`, so a
-bind failure is readable. If a run is `kill -9`'d, orphans do survive — the
-next run then refuses loudly instead of testing stale code.
+`npm run dev`'s `vite` child cannot survive its npm parent; **ports are
+allocated, not assumed** — 8100/5273 are only where the search starts
+(`--backend-port-base` / `--frontend-port-base`, or `E2E_BACKEND_PORT_BASE` /
+`E2E_FRONTEND_PORT_BASE`), and the allocator walks up to the first port it can
+*bind*, naming who held the one it skipped, so **several worktrees can run the
+suite at once**; Vite is launched with `--strictPort`, so a taken port is a
+hard exit rather than a silent fall-forward to 5277+, and a server that loses
+the probe-to-bind race is retried on fresh ports; and readiness means *our*
+server answered — the backend must have created `data.db` inside that shard's
+`FAD_USER_DIR`, which a squatter cannot fake. Server stdout/stderr go to
+`$TMPDIR/e2e-isolated-<worktree>-<hash>/{backend,frontend}-N.log`, never
+`/dev/null`, so a bind failure is readable — that directory is keyed per
+checkout so concurrent runs cannot clobber each other's JSON reports, which
+feed the committed timings file. If a run is `kill -9`'d, its orphans survive
+and later runs simply allocate around them; `--reclaim-ports` kills the
+holders of the preferred ports, so use it only when you know they are yours
+and not a neighbouring worktree's live run.
 
 The runner does **not** use Playwright's `--shard`, which splits by test count
 and left one shard at 31 s beside another at 1.5 m — the slowest sets the wall

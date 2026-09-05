@@ -32,10 +32,15 @@ ownership honest, and all four are load-bearing:
 * children run in their own process group (``start_new_session``) and are torn
   down with ``killpg`` — ``npm run dev`` forks ``vite``, so terminating npm
   alone leaves vite holding the port;
-* a preflight refuses to start when a target port is already listening
-  (``--reclaim-ports`` kills the squatters instead);
+* ports are **allocated, not assumed**: the bases below are a starting point and
+  the allocator walks upward to the first port it can actually *bind*, naming
+  whoever holds the one it skipped. Two worktrees running this concurrently
+  therefore each get their own pair instead of fighting over :5273. Both bases
+  are overridable (``--backend-port-base`` / ``--frontend-port-base``, or
+  ``E2E_BACKEND_PORT_BASE`` / ``E2E_FRONTEND_PORT_BASE``);
 * Vite runs with ``--strictPort`` so a taken port is a hard failure rather than
-  a silent fall-forward to the next free one;
+  a silent fall-forward to the next free one — and a server that loses the race
+  between the free-port probe and its own bind is retried on fresh ports;
 * readiness means *our* server answered — the backend must have created
   ``data.db`` inside this shard's ``FAD_USER_DIR``, which a squatter cannot
   fake — and server output goes to per-shard log files, not ``/dev/null``.
@@ -45,6 +50,7 @@ Usage
     # From repo root (venv need not be on PATH — the script finds .venv):
     python .claude/scripts/e2e_parallel_isolated.py            # auto-pick shard count
     python .claude/scripts/e2e_parallel_isolated.py --shards 4
+    python .claude/scripts/e2e_parallel_isolated.py --frontend-port-base 5400
     python .claude/scripts/e2e_parallel_isolated.py --reclaim-ports
     python .claude/scripts/e2e_parallel_isolated.py --shards 3 -- --grep @smoke
 
@@ -52,6 +58,7 @@ Anything after ``--`` is forwarded verbatim to every ``playwright test`` shard.
 """
 
 import argparse
+import hashlib
 import json
 import os
 import shutil
@@ -65,12 +72,22 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 FRONTEND_DIR = REPO_ROOT / "frontend"
-LOG_DIR = Path(tempfile.gettempdir())
 
-# Bases chosen to avoid the default dev ports (8000 / 5173) and the per-worktree
-# ports, so this can run alongside a normal dev session without clashing.
-BACKEND_PORT_BASE = 8100
-FRONTEND_PORT_BASE = 5273
+# Logs and JSON reports are keyed by checkout, not just by shard index. With a
+# flat `$TMPDIR/e2e-isolated-report-0.json`, two worktrees running at once
+# overwrite each other's reports — and `collect_timings` would then fold the
+# *other* checkout's numbers into this repo's committed timings file.
+_ROOT_KEY = hashlib.sha256(str(REPO_ROOT).encode()).hexdigest()[:8]
+LOG_DIR = Path(tempfile.gettempdir()) / f"e2e-isolated-{REPO_ROOT.name}-{_ROOT_KEY}"
+
+# Preferred bases, chosen to avoid the default dev ports (8000 / 5173) and the
+# per-worktree ports. They are only a *starting point*: `PortAllocator` walks
+# upward from here to the first port it can bind, so a neighbouring worktree
+# already on :5273 costs this run nothing.
+DEFAULT_BACKEND_PORT_BASE = 8100
+DEFAULT_FRONTEND_PORT_BASE = 5273
+# How far past a base the allocator searches before giving up.
+PORT_SEARCH_SPAN = 200
 
 # Per-spec wall times from the last successful run, used to pack shards evenly.
 # Committed on purpose: absolute times are machine-specific but the *ratios*
@@ -182,6 +199,113 @@ def port_is_listening(port: int) -> bool:
     return False
 
 
+def port_is_free(port: int) -> bool:
+    """True if we could actually *bind* `port` on every loopback family.
+
+    A connect probe only proves nobody is accepting yet: a socket that is bound
+    but not listening, or one bound on an interface the probe does not poll,
+    still owns the port and would fail our server's own bind. Binding is the
+    same question the server will ask, so it is the one worth asking.
+
+    `SO_REUSEADDR` is set for the same reason — it is what uvicorn and Vite set,
+    so the probe answers *their* question. Without it a port left in TIME_WAIT
+    by the previous run reads as busy though both servers would happily bind it,
+    and back-to-back runs drift steadily up the port range for no reason. It
+    does not weaken the check: a socket already bound, listening or not, still
+    refuses the second bind.
+    """
+    for family, host in ((socket.AF_INET, "127.0.0.1"), (socket.AF_INET6, "::1")):
+        try:
+            sock = socket.socket(family, socket.SOCK_STREAM)
+        except OSError:
+            continue  # family unavailable on this host; nothing to check
+        try:
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            sock.bind((host, port))
+        except OSError:
+            return False
+        finally:
+            sock.close()
+    return True
+
+
+def describe_port_holder(port: int) -> str:
+    """Best-effort "who has this port" — command, pid and working directory.
+
+    The working directory is the useful half when the answer is "the worktree
+    in the next terminal": it names which checkout, not just which binary.
+    """
+    pids = listening_pids(port)
+    if not pids:
+        return "an unidentified process"
+    described = []
+    for pid in pids[:3]:
+        name = f"pid {pid}"
+        try:
+            out = subprocess.run(
+                ["ps", "-p", str(pid), "-o", "comm="],
+                capture_output=True, text=True, timeout=5,
+            ).stdout.strip()
+            if out:
+                name = f"{Path(out).name} (pid {pid})"
+        except (OSError, subprocess.SubprocessError):
+            pass
+        try:
+            cwd = subprocess.run(
+                ["lsof", "-a", "-p", str(pid), "-d", "cwd", "-Fn"],
+                capture_output=True, text=True, timeout=5,
+            ).stdout
+            for line in cwd.splitlines():
+                if line.startswith("n"):
+                    name += f" in {line[1:]}"
+                    break
+        except (OSError, subprocess.SubprocessError):
+            pass
+        described.append(name)
+    return ", ".join(described)
+
+
+class PortRaceError(RuntimeError):
+    """A server died without binding while someone else holds its port.
+
+    Distinct from a plain startup crash because it is worth *retrying* on a
+    different port — the probe-then-bind window is small but real when several
+    worktrees start runs at the same moment.
+    """
+
+
+class PortAllocator:
+    """Hands out ports, preferring `base + index` but never insisting on it.
+
+    Fixed ports were the root of the cross-worktree collision: the second run
+    could not bind :5273, Vite silently moved to :5274, and `BASE_URL` still
+    said :5273 — so its specs drove the neighbour's app. Allocating instead of
+    assuming makes concurrent worktrees a non-event.
+    """
+
+    def __init__(self, backend_base: int, frontend_base: int, span: int = PORT_SEARCH_SPAN):
+        self.backend_base = backend_base
+        self.frontend_base = frontend_base
+        self.span = span
+        self.taken: set[int] = set()
+
+    def take(self, base: int, index: int) -> int:
+        preferred = base + index
+        for port in range(preferred, preferred + self.span):
+            if port in self.taken or not port_is_free(port):
+                continue
+            self.taken.add(port)
+            return port
+        raise RuntimeError(
+            f"no free port in {preferred}-{preferred + self.span - 1}; "
+            f"pass --backend-port-base / --frontend-port-base to move elsewhere"
+        )
+
+    def release(self, *ports: int) -> None:
+        for port in ports:
+            self.taken.discard(port)
+
+
 def listening_pids(port: int) -> list[int]:
     """PIDs holding a LISTEN socket on `port` (best effort, via lsof)."""
     try:
@@ -282,18 +406,53 @@ class Pair:
 
     def __init__(self, index: int):
         self.index = index
-        self.backend_port = BACKEND_PORT_BASE + index
-        self.frontend_port = FRONTEND_PORT_BASE + index
+        self.backend_port: int | None = None
+        self.frontend_port: int | None = None
         self.user_dir = tempfile.mkdtemp(prefix=f"e2e-isolated-{index}-")
         self.backend: subprocess.Popen | None = None
         self.frontend: subprocess.Popen | None = None
-        self.backend_log = LOG_DIR / f"e2e-isolated-backend-{index}.log"
-        self.frontend_log = LOG_DIR / f"e2e-isolated-frontend-{index}.log"
+        self.backend_log = LOG_DIR / f"backend-{index}.log"
+        self.frontend_log = LOG_DIR / f"frontend-{index}.log"
         self._log_handles: list = []
 
     @property
-    def ports(self) -> tuple[int, int]:
-        return (self.backend_port, self.frontend_port)
+    def ports(self) -> tuple[int, ...]:
+        return tuple(p for p in (self.backend_port, self.frontend_port) if p is not None)
+
+    def assign_ports(self, allocator: PortAllocator) -> None:
+        """Claim a backend and frontend port, announcing any displacement."""
+        self.backend_port = allocator.take(allocator.backend_base, self.index)
+        self.frontend_port = allocator.take(allocator.frontend_base, self.index)
+        for label, preferred, actual in (
+            ("backend", allocator.backend_base + self.index, self.backend_port),
+            ("frontend", allocator.frontend_base + self.index, self.frontend_port),
+        ):
+            if actual != preferred:
+                # A port this run already claimed needs no lsof lookup, and
+                # naming it as a stranger would be actively confusing.
+                holder = (
+                    "an earlier shard of this run"
+                    if preferred in allocator.taken
+                    else describe_port_holder(preferred)
+                )
+                print(
+                    f"  shard {self.index}: {label} :{preferred} is held by "
+                    f"{holder} — using :{actual}"
+                )
+
+    def launch(self, allocator: PortAllocator, timeout: int, attempts: int = 3) -> None:
+        """Start the pair, retrying on fresh ports if we lose a bind race."""
+        for attempt in range(1, attempts + 1):
+            self.assign_ports(allocator)
+            try:
+                self.start(timeout)
+                return
+            except PortRaceError:
+                self.stop_processes()
+                allocator.release(*self.ports)
+                if attempt == attempts:
+                    raise
+                print(f"  shard {self.index}: lost a port race, retrying on fresh ports")
 
     @property
     def api_base(self) -> str:
@@ -357,10 +516,16 @@ class Pair:
         reason = wait_for_port(port, timeout, proc)
         if reason is None:
             return
-        raise RuntimeError(
+        message = (
             f"shard {self.index} {label} failed on :{port} — {reason}\n"
             f"    log: {log_path}\n{log_tail(log_path)}"
         )
+        # Exited without binding *and* someone else now owns the port: we lost
+        # the window between the free-port probe and the server's own bind, so
+        # this is retryable. A crash on a still-free port is a real failure.
+        if proc.poll() is not None and not port_is_free(port):
+            raise PortRaceError(message)
+        raise RuntimeError(message)
 
     def _await_backend_identity(self, timeout: int) -> None:
         """Confirm the backend answering on our port is the one we started.
@@ -387,14 +552,20 @@ class Pair:
             f"    log: {self.backend_log}\n{log_tail(self.backend_log)}"
         )
 
-    def stop(self) -> None:
+    def stop_processes(self) -> None:
+        """Tear down the servers, leaving the pair reusable for a retry."""
         for proc in (self.frontend, self.backend):
             if proc is not None:
                 terminate_group(proc)
+        self.frontend = self.backend = None
         for handle in self._log_handles:
             handle.close()
         self._log_handles.clear()
-        leaked = [port for port in self.ports if port_is_listening(port)]
+
+    def stop(self) -> None:
+        ports = self.ports
+        self.stop_processes()
+        leaked = [port for port in ports if port_is_listening(port)]
         if leaked:
             print(
                 f"  WARNING: shard {self.index} left listeners on "
@@ -403,34 +574,40 @@ class Pair:
         shutil.rmtree(self.user_dir, ignore_errors=True)
 
 
-def preflight_ports(pairs: list[Pair], reclaim: bool) -> None:
-    """Refuse to race a server this run does not own (or reclaim the port)."""
-    busy = [(pair, port) for pair in pairs for port in pair.ports if port_is_listening(port)]
+def env_port_base(name: str, default: int) -> int:
+    """Read a port base from the environment, ignoring anything unusable."""
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    try:
+        port = int(raw)
+    except ValueError:
+        print(f"  ignoring {name}={raw!r} (not an integer); using {default}")
+        return default
+    if not 1024 <= port <= 65000:
+        print(f"  ignoring {name}={raw!r} (out of range 1024-65000); using {default}")
+        return default
+    return port
+
+
+def reclaim_preferred_ports(backend_base: int, frontend_base: int, n: int) -> None:
+    """Kill whatever holds the preferred ports, so this run lands on them.
+
+    Only ever run on request (`--reclaim-ports`). Without it a busy port is
+    simply skipped, which is the right default — the holder may well be a
+    neighbouring worktree's live test run, and killing that is nobody's idea of
+    a fix.
+    """
+    targets = [base + i for base in (backend_base, frontend_base) for i in range(n)]
+    busy = [port for port in targets if not port_is_free(port)]
     if not busy:
         return
-
-    if reclaim:
-        print("Reclaiming ports held by a previous run...")
-        for _, port in busy:
-            freed = reclaim_port(port)
-            print(f"  :{port} -> {'freed' if freed else 'STILL BUSY'}")
-        still = [str(port) for _, port in busy if port_is_listening(port)]
-        if still:
-            raise RuntimeError(f"could not free port(s): {', '.join(still)}")
-        print()
-        return
-
-    ports = sorted({port for _, port in busy})
-    pattern = "|".join(str(port) for port in ports)
-    raise RuntimeError(
-        "ports already in use: " + ", ".join(str(p) for p in ports) + "\n"
-        "  A previous run left its servers behind (or something else owns these ports).\n"
-        "  Starting anyway would pin shards to servers this run does not control: they\n"
-        "  serve whatever source they were started with, so specs fail here and pass in\n"
-        "  isolation.\n"
-        f"  Inspect: lsof -nP -iTCP -sTCP:LISTEN | grep -E ':({pattern}) '\n"
-        "  Reclaim: python .claude/scripts/e2e_parallel_isolated.py --reclaim-ports"
-    )
+    print("Reclaiming preferred ports...")
+    for port in busy:
+        holder = describe_port_holder(port)
+        freed = reclaim_port(port)
+        print(f"  :{port} ({holder}) -> {'freed' if freed else 'STILL BUSY, will skip'}")
+    print()
 
 
 def install_signal_handlers() -> None:
@@ -451,9 +628,23 @@ def main() -> int:
     parser.add_argument("--shards", type=int, default=default_shard_count())
     parser.add_argument("--timeout", type=int, default=90, help="per-server readiness timeout (s)")
     parser.add_argument(
+        "--backend-port-base",
+        type=int,
+        default=env_port_base("E2E_BACKEND_PORT_BASE", DEFAULT_BACKEND_PORT_BASE),
+        help="first backend port to try (env: E2E_BACKEND_PORT_BASE)",
+    )
+    parser.add_argument(
+        "--frontend-port-base",
+        type=int,
+        default=env_port_base("E2E_FRONTEND_PORT_BASE", DEFAULT_FRONTEND_PORT_BASE),
+        help="first frontend port to try (env: E2E_FRONTEND_PORT_BASE)",
+    )
+    parser.add_argument(
         "--reclaim-ports",
         action="store_true",
-        help="kill whatever is listening on this run's ports instead of refusing to start",
+        help="kill whatever holds the preferred ports first. Busy ports are otherwise "
+        "just skipped; only use this when you know the holder is your own orphan and "
+        "not a neighbouring worktree's live run",
     )
     parser.add_argument("playwright_args", nargs=argparse.REMAINDER)
     args = parser.parse_args()
@@ -485,6 +676,10 @@ def main() -> int:
     else:
         print("  no timings recorded yet; this run will write them\n")
 
+    if args.reclaim_ports:
+        reclaim_preferred_ports(args.backend_port_base, args.frontend_port_base, n)
+
+    allocator = PortAllocator(args.backend_port_base, args.frontend_port_base)
     pairs: list[Pair] = [Pair(i) for i in range(n)]
     shard_procs: list[subprocess.Popen] = []
     logs: list[Path] = []
@@ -492,24 +687,18 @@ def main() -> int:
     returncodes: list[int] = []
     started = time.time()
 
-    try:
-        preflight_ports(pairs, args.reclaim_ports)
-    except RuntimeError as exc:
-        for pair in pairs:
-            shutil.rmtree(pair.user_dir, ignore_errors=True)
-        print(f"\nERROR: {exc}", file=sys.stderr)
-        return 2
+    LOG_DIR.mkdir(parents=True, exist_ok=True)
 
     try:
         print("Starting isolated backend+frontend pairs...")
         for pair in pairs:
-            pair.start(args.timeout)
+            pair.launch(allocator, args.timeout)
         print(f"\nAll {n} pairs ready in {time.time() - started:.0f}s. Launching shards...\n")
 
         for pair in pairs:
-            log_path = LOG_DIR / f"e2e-isolated-shard-{pair.index}.log"
+            log_path = LOG_DIR / f"shard-{pair.index}.log"
             logs.append(log_path)
-            report_path = LOG_DIR / f"e2e-isolated-report-{pair.index}.json"
+            report_path = LOG_DIR / f"report-{pair.index}.json"
             reports.append(report_path)
             shard_env = {
                 **os.environ,
