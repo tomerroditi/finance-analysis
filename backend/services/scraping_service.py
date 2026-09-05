@@ -467,7 +467,10 @@ class ScrapingService:
 
     def _collect_adapters(
         self, credentials: Dict
-    ) -> tuple[Dict[str, ScraperAdapter], Dict[str, ScraperAdapter]]:
+    ) -> tuple[
+        Dict[ScraperRegistryKey, ScraperAdapter],
+        Dict[ScraperRegistryKey, ScraperAdapter],
+    ]:
         """
         Build adapter instances for all accounts in a credentials dict.
 
@@ -480,9 +483,9 @@ class ScrapingService:
         Returns
         -------
         tuple[dict, dict]
-            A ``(normal, tfa)`` pair where ``normal`` maps account name strings
-            to adapters that do not require 2FA, and ``tfa`` maps to adapters
-            that do require 2FA.
+            A ``(normal, tfa)`` pair keyed by :func:`scraper_registry_key`,
+            where ``normal`` holds adapters that do not require 2FA and
+            ``tfa`` holds those that do.
 
         Notes
         -----
