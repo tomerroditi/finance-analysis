@@ -1,3 +1,9 @@
+## v1.56.1 (2026-09-05)
+
+### Fix
+
+- **insurance**: compact the insurance-covers panel on wide screens (#251)
+
 ## v1.56.0 (2026-09-05)
 
 ### Feat
