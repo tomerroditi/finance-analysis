@@ -113,16 +113,32 @@ class TestTaggingRepositoryLoad:
 ```
 
 ### Config tests (reset singleton between tests)
+
+Demo mode lives in a `ContextVar` (`_demo_mode_ctx` in `backend/config.py`),
+not a plain class attribute — reset it via its own token, not by assigning a
+bare value:
+
 ```python
+from backend.config import AppConfig, _demo_mode_ctx
+
 @pytest.fixture(autouse=True)
 def reset_config():
     """Reset AppConfig singleton state between tests."""
-    AppConfig._demo_mode = False
-    AppConfig._base_user_dir = None
+    config = AppConfig()
+    token = _demo_mode_ctx.set(_demo_mode_ctx.get())
+    original_base_dir = config._base_user_dir
+    original_forced_mode = AppConfig._forced_mode
     yield
-    AppConfig._demo_mode = False
-    AppConfig._base_user_dir = None
+    _demo_mode_ctx.reset(token)
+    config._base_user_dir = original_base_dir
+    AppConfig._forced_mode = original_forced_mode
 ```
+
+See "`ContextVar` does not cross the TestClient portal thread" in
+`CLAUDE.md` → Gotchas: a route test that needs demo mode active during a
+`test_client` request must send the `X-FAD-Demo` header on that request, or
+pin `AppConfig._forced_mode = True` — setting the contextvar from the test
+body has no effect on the request, which runs in a different thread.
 
 ## Route Test Patterns
 
@@ -186,8 +202,9 @@ invalidations remounting components mid-interaction).
 1. Start the dev servers (`python .claude/scripts/with_server.py -- <cmd>`
    or backend + frontend manually).
 2. Drive the actual user flow with the Playwright MCP — open the page,
-   enable Demo Mode (Settings → Demo Mode toggle, see CLAUDE.md), and
-   reproduce the exact interaction the user reported.
+   enable Demo Mode (Settings → Demo Mode toggle, see CLAUDE.md; this only
+   affects the current browser profile), and reproduce the exact
+   interaction the user reported.
 3. Confirm the broken behavior **and** that your patch makes it work
    end-to-end, not just that the affected component renders. Click through
    every step of the original repro.
@@ -209,16 +226,18 @@ python .claude/scripts/with_server.py -- bash -c \
   "cd frontend && npx playwright test <file>.spec.ts --reporter=line"
 ```
 
-**Keyring gotcha (sandboxes / headless boxes):** the demo-mode toggle's
-`seed_demo_credentials()` writes credentials, and credential writes reject
-null/plaintext keyring backends unless explicitly opted in. Without
+**Keyring gotcha (sandboxes / headless boxes):** building the demo database
+(`POST /api/testing/demo/prepare` or `/demo/reset`, called by
+`enableDemoMode`/`resetDemoData`) ends with `seed_demo_credentials()`, which
+writes credentials — and credential writes reject null/plaintext keyring
+backends unless explicitly opted in. Without
 `PYTHON_KEYRING_BACKEND=keyrings.alt.file.PlaintextKeyring` in the
-**backend's** environment (CI sets it — see `ci.yml`), the first OFF→ON
-demo toggle 500s: demo mode still flips (the DB copy happens first) so most
-specs appear fine, but the demo accounts never seed. The symptom is every
-credential-dependent spec failing at once — Data Sources shows "No accounts
-connected", `setDemoMode`-asserting specs (`yearly-budget`,
-`project-category-exclusion`) fail on `res.ok()`, and the onezero /
+**backend's** environment (CI sets it — see `ci.yml`), the first demo-DB
+build 500s: the DB copy happens first, so most specs appear fine, but the
+demo accounts never seed. The symptom is every credential-dependent spec
+failing at once — Data Sources shows "No accounts connected", specs that
+assert on account-backed endpoints (`yearly-budget`,
+`project-category-exclusion`) fail their `res.ok()` checks, and the onezero /
 scrape-all specs can't seed their throwaway accounts.
 
 The orchestrator is hardened against the failure modes that produced
@@ -265,30 +284,39 @@ matter what the exit summary scrolls past.
 
 ### Projects & parallelism (why the suite isn't one flat run)
 
-Demo Mode is a **process-global backend singleton** — one shared SQLite DB
-for the whole backend process. That's why the suite can't naively run at
-`workers > 1`: parallel workers would race on the same rows, and any spec
-that flips the global demo toggle would pull the DB out from under a
-concurrently-running spec. The config (`frontend/playwright.config.ts`)
-handles this with four projects sequenced by a shared setup:
+Demo Mode itself is **per-client**: it's declared per request via the
+`X-FAD-Demo` header — the backend branches on it per-client rather than on a
+shared toggle, and the browser's copy of the flag lives in localStorage under
+`fad_demo_mode` (see `helpers.ts`). What remains **process-global** is the
+demo **database file** itself: every client that sends the header reads and
+writes the same on-disk demo DB. That's why the suite still can't naively run
+at `workers > 1` — parallel workers would race on the same rows in that one
+file — and why two concurrent demo clients still share one demo database
+(isolation is between demo and real traffic, not between one demo client and
+another). The config (`frontend/playwright.config.ts`) handles this with four
+projects sequenced by a shared setup:
 
 ```
 demo-setup ─▶ read-only (parallel) ─▶ mutating (serial) ─▶ demo-teardown
 ```
 
-- **`demo-setup`** enables Demo Mode once. This replaced the old per-file
-  `beforeAll(enableDemoMode)` / `afterAll(disableDemoMode)` pattern, which
-  toggled the global demo state at *every* file boundary and forced a full
-  demo-DB rebuild (file copy + date-shift over every table) each time.
+- **`demo-setup`** builds the demo DB file once, via `enableDemoMode`'s
+  idempotent `POST /api/testing/demo/prepare` call. This replaced the old
+  per-file `beforeAll(enableDemoMode)` / `afterAll(disableDemoMode)` pattern,
+  which forced a full demo-DB rebuild (file copy + date-shift over every
+  table) at *every* file boundary.
 - **`read-only`** holds specs that do **zero backend writes** (the
   `READ_ONLY_SPECS` list). They share the one demo snapshot safely, so they
   fan out across workers (`fullyParallel`). This is the main speedup — it
   overlaps the slow cold-cache page loads (13–25 s each) instead of paying
   them back to back.
 - **`mutating`** holds everything else and runs **serially**. Each mutating
-  spec still owns its `beforeAll`/`afterAll` demo lifecycle for per-file DB
-  isolation, so its writes never leak into a sibling.
-- **`demo-teardown`** disables Demo Mode at the very end.
+  spec still owns its `beforeAll`/`afterAll` demo lifecycle (seeding its own
+  browser context via `enableDemoMode(page)` / `disableDemoMode(page)`) for
+  per-file DB isolation, so its writes never leak into a sibling.
+- **`demo-teardown`** rebuilds the demo DB from its frozen snapshot at the
+  very end (`resetDemoData()`, i.e. `POST /api/testing/demo/reset`),
+  discarding whatever `mutating`'s specs wrote so the DB is pristine again.
 
 Run it with the npm script:
 
@@ -301,11 +329,18 @@ python .claude/scripts/with_server.py -- bash -c \
 `npm run test:e2e` is a bare `playwright test` — it runs every project
 **serially** and is always safe. read-only and mutating are both plain,
 shardable projects (CI runs `playwright test --shard=X/4` across 4 jobs); each
-spec self-heals Demo Mode in its own `beforeAll` (a no-op once `demo-setup` has
-enabled it), so they can run in any order or interleave within a shard without
-one spec's teardown pulling demo out from under another. The `demo-setup`
-project enables Demo Mode once up front, which also lets the `read-only` project
-fan out across workers safely (no worker races to rebuild the demo DB).
+spec self-heals its own browser's Demo Mode flag in its own `beforeAll` (a
+no-op once the flag is already set), so they can run in any order or
+interleave within a shard without one spec's teardown pulling the demo DB out
+from under another. The `demo-setup` project builds the demo DB file once up
+front, which also lets the `read-only` project fan out across workers safely
+(no worker races to build the file for the first time).
+
+A spec whose backend calls go straight to the API rather than through the UI
+(`request.newContext()`) does **not** inherit the page's localStorage flag —
+it must pass `extraHTTPHeaders: { "X-FAD-Demo": "1" }` when creating that
+context, or it silently reads/writes the **real** database instead of demo
+data.
 
 **Do not make `read-only` a dependency of `mutating`.** Playwright never shards
 dependency projects — they run in full in every shard — so a `mutating ->

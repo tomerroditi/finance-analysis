@@ -109,7 +109,11 @@ Run these locally and get them **all green before opening a PR** — CI runs the
 # 1. Backend tests (full suite — matches CI's `poetry run pytest`)
 poetry run pytest
 
-# 2. Frontend lint + type-check/build + unit tests (matches CI)
+# 2. Frontend lint + type-check/build + unit tests (matches CI). NOTE: this
+#    does not type-check frontend/e2e/ — tsconfig.app.json includes only
+#    `src` and tsconfig.node.json only `vite.config.ts`, and ESLint here
+#    isn't type-aware. e2e type errors surface only when Playwright runs
+#    the spec (step 3).
 cd frontend && npm run lint && npm run build && npm test && cd ..
 
 # 3. Frontend e2e (Playwright). Prefer the isolated runner on a multi-core box:
@@ -122,16 +126,21 @@ python .claude/scripts/with_server.py -- bash -c \
   "cd frontend && npm run test:e2e"
 ```
 
-**e2e projects & parallelism.** Demo Mode is a **process-global backend DB**
-(one shared SQLite for the whole backend process), so the suite is organized
-into Playwright projects sequenced by a shared setup:
-`demo-setup` enables Demo Mode **once** (this replaced the old per-file
-enable/disable that forced a full demo-DB rebuild at every file boundary),
-`read-only` holds write-free specs, `mutating` holds the rest (each keeps its
-own per-file demo lifecycle for DB isolation), and `demo-teardown` disables
-Demo Mode at the end. read-only and mutating are both plain, shardable
-projects (CI runs `playwright test --shard=X/4`); each spec self-heals Demo
-Mode in its own `beforeAll`, so any order or per-shard interleaving is safe.
+**e2e projects & parallelism.** Demo Mode itself is per-client (declared via
+the `X-FAD-Demo` header, sourced from each browser's `fad_demo_mode`
+localStorage flag) — but the demo **database file** is still process-global:
+every client that sends the header reads and writes the same on-disk demo DB.
+That's why the suite is still organized into Playwright projects sequenced by
+a shared setup: `demo-setup` builds the demo DB file **once** (via
+`enableDemoMode`'s idempotent `POST /api/testing/demo/prepare` call — this
+replaced the old per-file enable/disable that forced a full demo-DB rebuild
+at every file boundary), `read-only` holds write-free specs, `mutating` holds
+the rest (each keeps its own per-file demo lifecycle for DB isolation), and
+`demo-teardown` rebuilds the demo DB from its frozen snapshot at the end
+(`POST /api/testing/demo/reset`) so it's pristine for the next run. read-only
+and mutating are both plain, shardable projects (CI runs `playwright test
+--shard=X/4`); each spec self-heals its own browser's Demo Mode flag in its
+own `beforeAll`, so any order or per-shard interleaving is safe.
 
 **`playwright.config.ts` is serial (`workers: 1`, `fullyParallel: false`)** —
 that is a correctness constraint (the shared demo DB), not a tuning choice, and
@@ -212,7 +221,7 @@ wait is genuinely needed, prefer a positive anchor
 
 ## UI Testing
 
-When smoke-testing UI changes in the browser, **enable Demo Mode first** (toggle in Settings — click Settings in the sidebar). Demo Mode switches the backend to a separate demo database with pre-built sample data, so real financial data is not accidentally modified. Remember to disable it when done.
+When smoke-testing UI changes in the browser, **enable Demo Mode first** (toggle in Settings — click Settings in the sidebar). Demo Mode is per-client: the toggle only affects the current browser profile (it sets a localStorage flag sent as the `X-FAD-Demo` header), so it switches that browser to a separate demo database with pre-built sample data without touching real financial data or any other client on the same backend. Remember to disable it when done.
 
 **REQUIRED for every UI patch (including small ones):** Drive the actual user
 flow with the Playwright MCP before marking the fix resolved, and add an e2e
@@ -267,6 +276,24 @@ The frontend ships as a PWA — service worker precaches the build, persists the
 - Closing an investment auto-creates a balance snapshot of 0 on the last transaction date (not the closure date)
 - Investment balance snapshots override transaction-based balance when present (snapshot-first, transaction fallback)
 - Alembic migrations run on startup (`backend/main.py` → `alembic upgrade head`) AFTER `Base.metadata.create_all` — they must be idempotent (fresh DBs already have current-model tables), set `down_revision` to the current head, and use `op.batch_alter_table(..., recreate="always")` to drop SQLite constraints/columns
-- Toggling Demo Mode (including e2e specs that flip it) re-copies the frozen demo snapshot — hand-added demo accounts/data are lost (real data is untouched)
+- **Demo Mode is per-client, not per-process.** A client declares it with the
+  `X-FAD-Demo: 1` request header; the frontend stores the flag in
+  localStorage (`fad_demo_mode`) and sends it from the axios interceptor. The
+  backend keeps zero per-client state — a middleware in `main.py` binds the
+  header to a `ContextVar`, and `AppConfig.is_demo_mode` reads it. Two
+  clients on one backend can therefore browse different databases at once.
+  Absent or malformed header means real mode.
+- **Two demo clients still share one demo database.** Per-client *mode*
+  isolation is not per-client *data* isolation; shared-backend Playwright
+  shards still need `e2e_parallel_isolated.py`.
+- **`ContextVar` does not cross the TestClient portal thread.** In a backend
+  test, put a request into demo mode with the header
+  (`headers={"X-FAD-Demo": "1"}`), or pin the whole process with
+  `AppConfig._forced_mode = True` and restore it in teardown. Calling
+  `set_demo_mode()` and then issuing a `test_client` request does nothing.
+- **Demo data is no longer rebuilt on every toggle.** `POST
+  /api/testing/demo/prepare` is idempotent (builds only when the demo DB is
+  absent); `POST /api/testing/demo/reset` forces a rebuild and discards every
+  demo-mode change for every client.
 - **Vercel serverless (`index.py` → `backend/main.py` lifespan):** the `if os.environ.get("VERCEL"): yield; return` guard MUST stay at the very top of `lifespan`, before any import that transitively pulls in `keyring` (`scraping_service` → `credentials_repository` → `import keyring`). `keyring` is intentionally absent from the Vercel `requirements.txt` (no OS keyring in the sandbox; demo mode never scrapes), so any keyring-backed import placed above the guard crashes cold start with `ModuleNotFoundError: No module named 'keyring'` → the whole function 500s with `FUNCTION_INVOCATION_FAILED` on every route (it fails in lifespan, so it takes down all routes). Regression guard: `tests/backend/unit/test_vercel_lifespan.py`
 - **OneZero requires a Cloudflare mTLS client certificate** (since ~2026-08): its API hosts 403 with an "Attention Required" block page before login unless the request presents a client cert. The cert is bundled+shared in the OneZero app (not per-account — generic `O=One Zero` subject, no personal identifiers), so we vendor the extracted PEMs at `scraper/providers/banks/onezero_mtls/` and `OneZeroScraper.initialize()` builds an mTLS httpx client from them. If OneZero scraping starts 403ing, the cert likely rotated or expired (current one valid until 2027-08-05) — re-extract per `.claude/rules/onezero_mtls.md`. The cert is public-by-construction (extractable from the free app), so committing it exposes nothing about any account.
