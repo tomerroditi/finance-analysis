@@ -390,6 +390,25 @@ local tool** — it does not touch CI, which keeps its proven single-backend
 `npm`; each pair costs a uvicorn + a Vite dev server, so it's for multi-core
 dev boxes, not the 4-core sandbox.
 
+**Ports are allocated, not fixed — several worktrees can run it at once.**
+`--backend-port-base` / `--frontend-port-base` (env: `E2E_BACKEND_PORT_BASE` /
+`E2E_FRONTEND_PORT_BASE`) set where the search *starts*, defaulting to 8100 /
+5273; the allocator then walks upward to the first port it can actually bind,
+prints who held the one it skipped (command, pid, and working directory — so
+you can see which worktree), and pins that shard's `BASE_URL` /
+`VITE_BACKEND_URL` to what it got. Nothing is killed by default: a busy port
+usually belongs to a neighbouring worktree's live run. `--reclaim-ports` kills
+the holders of the preferred ports instead — only reach for it when you know
+they are your own orphans. Logs and JSON reports live in
+`$TMPDIR/e2e-isolated-<worktree>-<hash>/`, keyed per checkout so concurrent
+runs cannot overwrite each other's reports (`collect_timings` reads those back
+into the committed timings file). Unit tests for the allocation logic:
+`tests/scripts/test_e2e_parallel_isolated.py`.
+
+What this does *not* isolate: CPU (N worktrees × N shards each all drive
+Chromium — halve `--shards` when sharing a box) and the OS keyring's shared
+`finance-analysis-app-demo` namespace.
+
 **Prefer auto-waiting assertions over `waitForLoadState("networkidle")`.** A
 bare `networkidle` after navigation waits for *every* straggler request plus a
 500 ms quiet window — measured ~2 s of dead wait on a warm dashboard, far more
