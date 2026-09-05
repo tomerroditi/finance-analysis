@@ -1,3 +1,9 @@
+## v1.55.0 (2026-09-05)
+
+### Feat
+
+- **scraping**: allow parallel single-account scrapes and persist their status (#245)
+
 ## v1.54.1 (2026-09-05)
 
 ### Fix
