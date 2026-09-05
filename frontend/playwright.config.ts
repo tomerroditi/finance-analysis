@@ -15,8 +15,16 @@ import { defineConfig, devices } from "@playwright/test";
  *
  * ## Projects & parallelism
  *
- * Demo Mode is a process-global backend singleton (one shared SQLite DB),
- * so the suite is split into two phases sequenced by a shared setup project:
+ * Demo Mode is declared per request via the `X-FAD-Demo` header — the
+ * backend branches on it per-client rather than on a shared toggle, and the
+ * browser's copy of the flag lives in localStorage under `fad_demo_mode`
+ * (see `helpers.ts`). What remains process-global is the demo DATABASE FILE
+ * itself: every client that sends the header reads and writes the same
+ * on-disk demo DB. That's why the suite still needs `demo-setup` to warm
+ * that file once and `demo-teardown` to reset it, and why two concurrent
+ * demo clients still share one demo database — isolation is between demo
+ * and real traffic, not between one demo client and another. The suite is
+ * split into two phases sequenced by a shared setup project:
  *
  *   demo-setup ─▶ read-only (parallel) ─▶ mutating (serial) ─▶ demo-teardown
  *
