@@ -162,6 +162,15 @@ test.describe("Budget", () => {
       // Projects tab content: the project selector label appears.
       await expect(page.getByText(/Select Project/i).first()).toBeVisible();
     }
+
+    // --- Project rows carry no tag sub-label ---
+    // A project rule always covers exactly one tag, so the sub-label only
+    // repeated the rule name back at the reader (in all-caps, which hid the
+    // case difference that let duplicate rules look identical).
+    await page.getByText(/Project Budgets/i).click();
+    const projectRows = page.getByTestId("ledger-figures");
+    await expect(projectRows.first()).toBeVisible();
+    await expect(page.getByTestId("ledger-sublabel")).toHaveCount(0);
   });
 
   // Its own test because the assertion is about layout at a mobile width.

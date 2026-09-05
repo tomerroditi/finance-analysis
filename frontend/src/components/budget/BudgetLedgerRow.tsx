@@ -160,7 +160,8 @@ export const BudgetLedgerRow: React.FC<BudgetLedgerRowProps> = ({
               </span>
               {subLabel && (
                 <span
-                  className="block text-[10px] uppercase tracking-wide text-[var(--text-muted)] truncate"
+                  data-testid="ledger-sublabel"
+                  className="block text-[10px] tracking-wide text-[var(--text-muted)] truncate"
                   dir="auto"
                 >
                   {subLabel}
