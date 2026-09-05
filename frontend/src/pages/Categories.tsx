@@ -1,13 +1,14 @@
 import { useState, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Plus, Search, Wallet } from "lucide-react";
+import { Plus, Search } from "lucide-react";
 import { taggingApi } from "../services/api";
 import { Skeleton } from "../components/common/Skeleton";
 import { Modal } from "../components/common/Modal";
 import { useCategories } from "../hooks/useCategories";
 import { CategoryDetailPanel } from "../components/categories/CategoryDetailPanel";
 import { RulesSection } from "../components/categories/RulesSection";
+import { CategoryCard } from "../components/categories/CategoryCard";
 import { useQueryKeys } from "../hooks/useQueryKeys";
 import { qkPrefix } from "../services/queryKeys";
 
@@ -90,31 +91,15 @@ export function Categories() {
       {/* Category Grid */}
       {filteredEntries.length > 0 ? (
         <div className="grid grid-cols-4 lg:grid-cols-5 gap-2 sm:gap-3">
-          {filteredEntries.map(([category, tags]) => {
-            const icon = icons?.[category];
-            return (
-              <button
-                key={category}
-                data-testid={`category-card-${category}`}
-                onClick={() => setSelectedCategory(category)}
-                className="flex flex-col items-center gap-1.5 sm:gap-2 p-2 sm:p-4 bg-[var(--surface)] rounded-xl sm:rounded-2xl border border-[var(--surface-light)] hover:border-[var(--primary)]/50 hover:bg-[var(--surface-light)]/30 transition-all text-center group"
-              >
-                <div className="w-9 h-9 sm:w-12 sm:h-12 flex items-center justify-center rounded-lg sm:rounded-xl bg-blue-500/10 border border-blue-500/20 text-lg sm:text-2xl shrink-0">
-                  {icon ? (
-                    <span>{icon}</span>
-                  ) : (
-                    <Wallet className="text-blue-400 w-[18px] h-[18px] sm:w-[22px] sm:h-[22px]" />
-                  )}
-                </div>
-                <h3 className="font-bold text-xs sm:text-sm truncate w-full" dir="auto">
-                  {category}
-                </h3>
-                <span className="text-[10px] sm:text-xs text-[var(--text-muted)]" dir="ltr">
-                  {t("categories.tagsCount", { count: tags.length })}
-                </span>
-              </button>
-            );
-          })}
+          {filteredEntries.map(([category, tags]) => (
+            <CategoryCard
+              key={category}
+              category={category}
+              icon={icons?.[category]}
+              subtitle={t("categories.tagsCount", { count: tags.length })}
+              onClick={() => setSelectedCategory(category)}
+            />
+          ))}
         </div>
       ) : (
         searchQuery.trim() && (
