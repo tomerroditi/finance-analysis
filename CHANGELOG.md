@@ -1,3 +1,9 @@
+## v1.56.0 (2026-09-05)
+
+### Feat
+
+- **dashboard**: replace breakdown legend with an instant slice tooltip (#246)
+
 ## v1.55.0 (2026-09-05)
 
 ### Feat
