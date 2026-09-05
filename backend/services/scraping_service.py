@@ -4,6 +4,7 @@ from typing import Dict, List, Optional
 
 from sqlalchemy.orm import Session
 
+from backend.config import AppConfig
 from backend.database import get_db_context
 from backend.errors import BadRequestException, EntityNotFoundException
 from backend.repositories.credentials_repository import CredentialsRepository
@@ -12,8 +13,10 @@ from backend.scraper import ScraperAdapter, create_adapter, is_2fa_required
 from backend.scraper.adapter import (
     OtpRateLimitError,
     ResendNotSupportedError,
+    ScraperRegistryKey,
     _active_scrapers,
     _tfa_scrapers_waiting,
+    scraper_registry_key,
 )
 
 
@@ -202,8 +205,10 @@ class ScrapingService:
             The ``process_id`` of the (possibly already-running) scraping
             history record.
         """
-        name = f"{service} - {provider} - {account}"
-        existing = _active_scrapers.get(name)
+        key = scraper_registry_key(
+            AppConfig().is_demo_mode, service, provider, account
+        )
+        existing = _active_scrapers.get(key)
         if existing is not None:
             return existing.process_id
 
@@ -242,7 +247,7 @@ class ScrapingService:
         # providers, not just 2FA ones, so any account is single-flight.
         # The adapter's run() pops this entry on completion (success,
         # failure, or cancellation).
-        _active_scrapers[name] = adapter
+        _active_scrapers[key] = adapter
 
         # Park the adapter so submit_2fa_code can resolve it later. We register
         # eagerly (rather than when the scraper actually awaits OTP) because
@@ -250,7 +255,7 @@ class ScrapingService:
         # before the scraper has reached `await on_otp_request()`. The
         # adapter's run() cleans this entry up on completion.
         if requires_2fa:
-            _tfa_scrapers_waiting[name] = adapter
+            _tfa_scrapers_waiting[key] = adapter
 
         return process_id
 
@@ -279,11 +284,13 @@ class ScrapingService:
         EntityNotFoundException
             If no 2FA-waiting scraper is found for the given service/provider/account.
         """
-        name = f"{service} - {provider} - {account}"
-        if name not in _tfa_scrapers_waiting:
+        key = scraper_registry_key(
+            AppConfig().is_demo_mode, service, provider, account
+        )
+        if key not in _tfa_scrapers_waiting:
             raise EntityNotFoundException("Scraping process not found")
 
-        adapter = _tfa_scrapers_waiting.pop(name)
+        adapter = _tfa_scrapers_waiting.pop(key)
         adapter.set_otp_code(code)
 
         # _active_scrapers is deliberately NOT popped here: the entry must
@@ -341,8 +348,10 @@ class ScrapingService:
             If the resend is rate-limited (too many code requests too
             quickly). The message is the actionable wait-and-retry hint.
         """
-        name = f"{service} - {provider} - {account}"
-        adapter = _active_scrapers.get(name) or _tfa_scrapers_waiting.get(name)
+        key = scraper_registry_key(
+            AppConfig().is_demo_mode, service, provider, account
+        )
+        adapter = _active_scrapers.get(key) or _tfa_scrapers_waiting.get(key)
         if adapter is None:
             raise EntityNotFoundException("Scraping process not found")
 
@@ -374,32 +383,44 @@ class ScrapingService:
         (now-moot) cleanup. The history record is always marked ``FAILED``
         regardless.
 
+        Scoped to the caller's demo mode. ``process_id`` is a per-database
+        autoincrement, so demo ``5`` and real ``5`` are different scrapes;
+        matching on the number alone would let one client abort another
+        client's in-flight scraper. The history write is already
+        mode-correct — ``get_db_context()`` resolves per context.
+
         Parameters
         ----------
         process_id : int
             ID of the scraping history record to abort.
         """
+        # ``process_id`` is a per-database autoincrement, so demo 5 and real 5
+        # are different scrapes. Match on the caller's mode as well, or an
+        # abort from one client would cancel another client's in-flight
+        # scraper that merely shares the number.
+        demo = AppConfig().is_demo_mode
+
         # Check if it's a 2FA-waiting scraper
-        target_name = None
-        for name, adapter in _tfa_scrapers_waiting.items():
-            if adapter.process_id == process_id:
-                target_name = name
+        target_key = None
+        for candidate_key, adapter in _tfa_scrapers_waiting.items():
+            if adapter.process_id == process_id and adapter.demo_mode == demo:
+                target_key = candidate_key
                 break
 
-        if target_name:
+        if target_key:
             # Cancel the 2FA scraper
-            adapter = _tfa_scrapers_waiting.pop(target_name)
+            adapter = _tfa_scrapers_waiting.pop(target_key)
             adapter.set_otp_code(ScraperAdapter.CANCEL)
 
         # Remove from the active-scraper registry regardless of 2FA state,
         # so the account isn't left single-flight-locked after an abort.
-        active_name = None
-        for name, adapter in _active_scrapers.items():
-            if adapter.process_id == process_id:
-                active_name = name
+        active_key = None
+        for candidate_key, adapter in _active_scrapers.items():
+            if adapter.process_id == process_id and adapter.demo_mode == demo:
+                active_key = candidate_key
                 break
-        if active_name:
-            _active_scrapers.pop(active_name, None)
+        if active_key:
+            _active_scrapers.pop(active_key, None)
 
         # Mark as failed in the database regardless
         with get_db_context() as db:
@@ -468,18 +489,19 @@ class ScrapingService:
         This method is not called by the current scraping flow (which creates
         adapters one at a time via ``start_scraping_single``) and may be unused.
         """
-        normal: Dict[str, ScraperAdapter] = {}
-        tfa: Dict[str, ScraperAdapter] = {}
+        normal: Dict[ScraperRegistryKey, ScraperAdapter] = {}
+        tfa: Dict[ScraperRegistryKey, ScraperAdapter] = {}
+        demo = AppConfig().is_demo_mode
         for service, providers in credentials.items():
             for provider, accounts in providers.items():
                 for account, acc_creds in accounts.items():
-                    name = f"{service} - {provider} - {account}"
+                    key = scraper_registry_key(demo, service, provider, account)
                     start = self._get_scraper_start_date(service, provider, account)
                     adapter = create_adapter(
                         service, provider, account, acc_creds, start, 0
                     )
                     if is_2fa_required(service, provider):
-                        tfa[name] = adapter
+                        tfa[key] = adapter
                     else:
-                        normal[name] = adapter
+                        normal[key] = adapter
         return normal, tfa
