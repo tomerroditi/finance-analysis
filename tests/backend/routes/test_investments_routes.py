@@ -112,3 +112,38 @@ class TestInvestmentsRoutes:
         assert "total_profit" in data
         assert "portfolio_roi" in data
         assert "allocation" in data
+
+    def test_update_investment_type_and_kh_fields(self, test_client, seed_investments):
+        """Verify PUT accepts type plus the Keren Hishtalmut metadata fields."""
+        list_resp = test_client.get("/api/investments/")
+        inv_id = list_resp.json()[0]["id"]
+
+        response = test_client.put(
+            f"/api/investments/{inv_id}",
+            json={
+                "type": "hishtalmut",
+                "commission_deposit": 1.5,
+                "commission_management": 0.4,
+                "liquidity_date": "2030-01-01",
+            },
+        )
+
+        assert response.status_code == 200
+        updated = test_client.get(f"/api/investments/{inv_id}").json()
+        assert updated["type"] == "hishtalmut"
+        assert updated["commission_deposit"] == 1.5
+        assert updated["commission_management"] == 0.4
+        assert updated["liquidity_date"] == "2030-01-01"
+
+    def test_update_investment_rejects_malformed_liquidity_date(
+        self, test_client, seed_investments
+    ):
+        """Verify a non-ISO liquidity_date is rejected before it is persisted."""
+        list_resp = test_client.get("/api/investments/")
+        inv_id = list_resp.json()[0]["id"]
+
+        response = test_client.put(
+            f"/api/investments/{inv_id}", json={"liquidity_date": "01/01/2030"}
+        )
+
+        assert response.status_code == 422
