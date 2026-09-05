@@ -44,7 +44,12 @@ describe("Investments", () => {
     it("labels hishtalmut investments as Keren Hishtalmut, not Other", async () => {
       renderWithProviders(<Investments />);
       await waitFor(() => {
+        // The fixture's own name ("Migdal 007-916-407357") never contains
+        // "Keren Hishtalmut", so this can only match the type badge —
+        // proving TYPE_KEY_MAP maps "hishtalmut" instead of falling through
+        // to "Other".
         expect(screen.getAllByText(/Keren Hishtalmut/i).length).toBeGreaterThan(0);
+        expect(screen.queryAllByText(/^Other$/i).length).toBe(0);
       });
     });
   });

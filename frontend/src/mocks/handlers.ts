@@ -124,7 +124,7 @@ export const mockInvestments = [
   },
   {
     id: 3,
-    name: "Keren Hishtalmut",
+    name: "Migdal 007-916-407357",
     type: "hishtalmut",
     category: "Investments",
     tag: null,
