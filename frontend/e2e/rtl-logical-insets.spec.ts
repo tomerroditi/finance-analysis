@@ -66,10 +66,14 @@ async function knobIsOn(page: Page, labelText: string) {
 }
 
 test.describe("logical inset utilities", () => {
-  // Self-heal demo mode, matching the other read-only specs: a no-op when
-  // `demo-setup` already enabled it, so the spec is order-independent.
-  test.beforeAll(async () => {
-    await enableDemoMode();
+  // Self-heal demo mode, matching the other read-only specs, so the spec is
+  // order-independent. Demo Mode lives in the browser context's
+  // localStorage, so it must be seeded per-test (each test gets a fresh
+  // context) rather than once in beforeAll via a throwaway page — that page
+  // is a different browser context from the one the test navigates in, so
+  // anything set there never reaches the real test.
+  test.beforeEach(async ({ page }) => {
+    await enableDemoMode(page);
   });
 
   test("sidebar footer spans the sidebar and the settings toggle knob travels, in both directions", async ({
