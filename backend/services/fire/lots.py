@@ -42,8 +42,19 @@ class Lot:
 
 
 def solve_lot_count(monthly_factor: float, profit_fraction: float) -> int:
-    """Number of synthetic monthly purchases implied by a profit fraction."""
-    if profit_fraction <= 0:
+    """Number of synthetic monthly purchases implied by a profit fraction.
+
+    A portfolio that does not grow has no history to manufacture: without
+    growth every lot would be identical, so the profit fraction cannot be
+    produced by ageing purchases at all. One lot carrying the whole embedded
+    gain is then the only consistent answer — and the right one, since FIFO,
+    LIFO and a flat basis are indistinguishable on identical lots.
+
+    A balance declared 100% profit is the same degenerate case from the other
+    end: it would need infinitely many lots of zero basis, which is one lot of
+    zero basis.
+    """
+    if profit_fraction <= 0 or profit_fraction >= 1 or monthly_factor <= 1:
         return 1
     f = monthly_factor
     low, high = 1.0, 4000.0
@@ -68,6 +79,8 @@ def opening_lots(balance: float, profit_fraction: float,
         return [Lot(basis=balance, value=balance)]
 
     count = solve_lot_count(monthly_factor, profit_fraction)
+    if count == 1:
+        return [Lot(basis=balance * (1 - profit_fraction), value=balance)]
     per_lot = balance * (1 - profit_fraction) / count
     lots = [Lot(basis=per_lot, value=per_lot * monthly_factor ** age)
             for age in reversed(range(count))]

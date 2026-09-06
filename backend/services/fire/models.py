@@ -212,13 +212,11 @@ class Plan:
 
     retire_rule_confidence: float = 85.0
     decumulation_return_pct: float | None = None
-    """Real return applied to withdrawal portfolios after retirement.
+    """Override for the return withdrawal portfolios earn after retirement.
 
-    The reference derives this from `retire_rule_confidence` and the length of
-    the bridge to the state pension (a Trinity-style table — see
-    notes/07-phase-model.md). That table has not been mapped yet, so this field
-    lets a caller inject a known value; leaving it ``None`` falls back to zero,
-    which is close for short bridges but wrong for long ones.
+    Leave it ``None`` — the engine then reads the measured surface itself, on
+    the bridge from retirement to this plan's own pension (notes/15). The field
+    exists so a test can pin one scenario's rate and assert everything else.
     """
     draw_keren_before_portfolio: bool = False
 
