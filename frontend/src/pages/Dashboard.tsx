@@ -13,7 +13,7 @@ import {
   type BankBalance,
 } from "../services/api";
 import { UpdateBankBalanceModal } from "../components/modals/UpdateBankBalanceModal";
-import { BudgetSpendingGauge } from "../components/dashboard/BudgetSection";
+import { BudgetSection } from "../components/dashboard/BudgetSection";
 import { RecentTransactionsFeed } from "../components/dashboard/RecentTransactionsSection";
 import { CashFlowForecastSection } from "../components/dashboard/CashFlowForecastCard";
 import { InsightsStrip } from "../components/dashboard/InsightsStrip";
@@ -413,7 +413,7 @@ export function Dashboard() {
   const cardRenderers: Record<DashboardCardId, () => ReactNode> = {
     forecast: () => <CashFlowForecastSection />,
     insights: () => <InsightsStrip />,
-    budget: () => <BudgetSpendingGauge categoryIcons={categoryIcons} />,
+    budget: () => <BudgetSection categoryIcons={categoryIcons} />,
     recent: () => (
       <RecentTransactionsFeed
         transactions={allTransactions}

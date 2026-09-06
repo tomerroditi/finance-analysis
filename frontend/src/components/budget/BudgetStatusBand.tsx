@@ -1,7 +1,7 @@
 import React from "react";
 import { useTranslation } from "react-i18next";
 import { Clock } from "lucide-react";
-import { formatCurrency } from "../../utils/numberFormatting";
+import { BudgetTotalBar } from "../common/BudgetTotalBar";
 
 export interface BandStat {
   key: string;
@@ -25,7 +25,7 @@ interface BudgetStatusBandProps {
   stats: BandStat[];
   /**
    * Secondary control (e.g. "View month transactions"). Rides on the heading
-   * line rather than claiming a row of its own under the gauge.
+   * line rather than claiming a row of its own under the total bar.
    */
   footer?: React.ReactNode;
   /** Figures are provisional because the underlying scrape is stale. */
@@ -37,9 +37,9 @@ interface BudgetStatusBandProps {
  * The one place the page answers "how am I doing".
  *
  * Merges three blocks that each answered it differently: the Total Budget
- * gauge card, the three-tile summary strip, and the always-mounted trend
- * chart. Left side carries the gauge, right side the stats — including the
- * period trend, which used to be a ~300px chart block of its own.
+ * bar card, the three-tile summary strip, and the always-mounted trend
+ * chart. Left side carries the total bar, right side the stats — including
+ * the period trend, which used to be a ~300px chart block of its own.
  */
 export const BudgetStatusBand: React.FC<BudgetStatusBandProps> = ({
   label,
@@ -52,13 +52,6 @@ export const BudgetStatusBand: React.FC<BudgetStatusBandProps> = ({
 }) => {
   const { t } = useTranslation();
 
-  const clamped = Math.max(spent, 0);
-  const percent =
-    total > 0 ? Math.min((clamped / total) * 100, 100) : clamped > 0 ? 100 : 0;
-  const over = clamped > total && total > 0;
-  const near = !over && total > 0 && clamped > total * 0.9;
-  const barColor = over ? "bg-rose-500" : near ? "bg-amber-500" : "bg-emerald-500";
-  const remaining = total - clamped;
   const staleValue = isStale ? "opacity-60" : "";
 
   const heading = (
@@ -81,13 +74,14 @@ export const BudgetStatusBand: React.FC<BudgetStatusBandProps> = ({
       data-testid="budget-status-band"
       className="bg-[var(--surface)] rounded-2xl border border-[var(--surface-light)] shadow-sm p-3 md:p-4"
     >
-      {/* Side by side only from `xl:`. At 1024 the gauge plus four stats left
-          the trend figure a ~50px sliver and truncated its label to "BUDG…";
-          stacked, the stats row gets the card's full width instead. */}
+      {/* Side by side only from `xl:`. At 1024 the total bar plus four stats
+          left the trend figure a ~50px sliver and truncated its label to
+          "BUDG…"; stacked, the stats row gets the card's full width instead. */}
       <div className="flex flex-col xl:flex-row xl:items-stretch gap-3 xl:gap-5">
-        {/* The gauge is capped rather than greedy: a full-width bar spent the
-            row's whole width restating a number already spelled out above it,
-            leaving the stats — and the trend figure in particular — squeezed. */}
+        {/* The total bar is capped rather than greedy: letting it span the
+            row's whole width would restate a number already spelled out
+            above it, leaving the stats — and the trend figure in particular
+            — squeezed. */}
         <div className="w-full xl:w-[32%] xl:shrink-0 min-w-0">
           {/* Top-aligned, not centred: the heading has to sit on the same line as
               the stat labels across the divider, and the footer control is
@@ -99,34 +93,8 @@ export const BudgetStatusBand: React.FC<BudgetStatusBandProps> = ({
             {footer && <div className="flex shrink-0">{footer}</div>}
           </div>
 
-          <div className={`flex items-baseline flex-wrap gap-2 mt-1.5 mb-2 ${staleValue}`}>
-            <span className="text-xl md:text-2xl font-bold font-mono" dir="ltr">
-              {formatCurrency(clamped)}
-            </span>
-            <span className="text-xs md:text-sm text-[var(--text-muted)] font-mono" dir="ltr">
-              / {formatCurrency(total)}
-            </span>
-            {total > 0 && (
-              <span
-                className={`text-[10px] sm:text-xs font-medium px-2 py-0.5 rounded-full ${
-                  over
-                    ? "bg-rose-500/10 text-rose-400"
-                    : "bg-emerald-500/10 text-emerald-400"
-                }`}
-                dir="ltr"
-              >
-                {over
-                  ? t("budget.overByAmount", { amount: formatCurrency(Math.abs(remaining)) })
-                  : t("budget.remainingAmount", { amount: formatCurrency(remaining) })}
-              </span>
-            )}
-          </div>
-
-          <div className="relative h-2 rounded-full bg-[var(--surface-light)] overflow-hidden">
-            <div
-              className={`absolute inset-y-0 start-0 rounded-full ${barColor} transition-all duration-500 ease-out`}
-              style={{ width: `${percent}%` }}
-            />
+          <div className="mt-1.5">
+            <BudgetTotalBar spent={spent} total={total} muted={isStale} />
           </div>
         </div>
 
