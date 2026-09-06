@@ -53,7 +53,8 @@
     "link": "קישור",
     "pending": "ממתין",
     "clearSelection": "נקה בחירה",
-    "remove": "הסר"
+    "remove": "הסר",
+    "reset": "איפוס"
   },
   "onboarding": {
     "welcome": "ברוך הבא ל‑Finance Analysis",
@@ -83,7 +84,8 @@
     "insurance": "ביטוח",
     "dataSources": "מקורות מידע",
     "earlyRetirement": "פרישה מוקדמת",
-    "dataFlow": "זרימת מידע"
+    "dataFlow": "זרימת מידע",
+    "fireCalculator": "מחשבון פרישה"
   },
   "settings": {
     "title": "הגדרות",
@@ -1469,5 +1471,180 @@
     "confirmAction": "הסר",
     "running": "מסיר — ניתן לסגור את חלון ה-Terminal לאחר סיום הפעולה.",
     "failed": "ההסרה נכשלה. נסה שוב או השתמש בכלי ההסרה העצמאי."
+  },
+  "fire": {
+    "title": "מחשבון פרישה מוקדמת",
+    "subtitle": "תחזית חודשית מלאה בשקלים של היום, לפי כללי הפנסיה, המס והביטוח הלאומי בישראל.",
+    "calculate": "חשב",
+    "calculating": "מחשב…",
+    "section": {
+      "problem": "מה אנחנו פותרים?",
+      "person": "הפורש",
+      "partner": "בן/בת הזוג",
+      "withdrawal": "הגדרות משיכה",
+      "cash": "עובר ושב",
+      "expenses": "הוצאות",
+      "incomes": "הכנסות",
+      "portfolios": "תיקי השקעות ממוסים",
+      "pension": "קרן פנסיה",
+      "partnerPension": "קרן פנסיה של בן/בת הזוג",
+      "keren": "קרנות השתלמות",
+      "loans": "הלוואות",
+      "realEstate": "נדל\"ן"
+    },
+    "hint": {
+      "problem": "\"פרישה מוקדמת\" מחפשת את מועד הפרישה המוקדם ביותר האפשרי, עד לגיל המירבי שתגדירו.",
+      "withdrawal": "אחוז הביטחון קובע עד כמה שמרנית ההנחה לגבי תשואת התיק בתקופת הפרישה.",
+      "expenses": "שורה לכל הוצאה קבועה. הוצאה חד-פעמית מתאימה לחתונה, רכב או טיול גדול. הלוואות מוזנות בחלק ההלוואות.",
+      "incomes": "עבודה שממנה תפרשו מסתיימת \"בפרישה מוקדמת\". משרה חלקית אחריה מתחילה שם. שכר דירה הוא \"עד עולם\".",
+      "portfolios": "הסדר קובע גם את סדר ההפקדה וגם את סדר המשיכה. יעד 0 פירושו שהתיק לא יקבל הפקדות כלל.",
+      "keren": "בקרנות לא פעילות יש יתרה וללא הפקדה חודשית; בפעילות יש שתיהן."
+    },
+    "field": {
+      "baseProblem": "בעיית יסוד",
+      "targetAge": "גיל יעד לפרישה",
+      "maxAge": "גיל מירבי לפרישה",
+      "maxCashImprovement": "שיפור תזרים מירבי לבדיקה",
+      "maxRiskIncrease": "הגדלת תשואה מירבית [%]",
+      "name": "שם",
+      "gender": "מין",
+      "dateOfBirth": "תאריך לידה",
+      "isAmerican": "אזרחות אמריקאית?",
+      "includePartner": "לצרף בן/בת זוג",
+      "confidence": "אחוז ביטחון [%]",
+      "drawOrder": "למשוך קודם מ",
+      "desiredBuffer": "יתרה רצויה",
+      "currentBalance": "יתרה נוכחית",
+      "creditLimit": "מסגרת אשראי",
+      "start": "התחלה",
+      "startDate": "תאריך התחלה",
+      "end": "סיום",
+      "endDate": "תאריך סיום",
+      "amount": "סכום חודשי",
+      "annualRise": "עלייה שנתית [%]",
+      "description": "תיאור",
+      "designation": "ייעוד",
+      "instrument": "מכשיר",
+      "balance": "יתרה",
+      "monthlyDepositCap": "תקרת הפקדה חודשית",
+      "goal": "יעד",
+      "expectedReturn": "תשואה משוערת [%]",
+      "fee": "דמי ניהול [%]",
+      "profitFraction": "אחוז רווחים [%]",
+      "lotMethod": "שיטת משיכה",
+      "pensionBalance": "צבירה",
+      "pensionDeposit": "הפקדה חודשית",
+      "feeOnBalance": "ד\"נ מצבירה [%]",
+      "feeOnDeposit": "ד\"נ מהפקדה [%]",
+      "pensionTactic": "טכניקת משיכה",
+      "mukeretPct": "אחוז קצבה מוכרת",
+      "depositsEnd": "סיום הפקדה",
+      "withdrawSeverance": "פדיון פיצויים בפרישה",
+      "workStartYear": "שנת תחילת עבודה",
+      "monthlyDeposit": "הפקדה חודשית",
+      "kerenType": "סוג הקרן",
+      "loanStart": "תאריך תחילה",
+      "interestRate": "ריבית [%]",
+      "originalPrincipal": "סכום מקורי",
+      "termYears": "תקופה בשנים",
+      "loanType": "סוג החזר",
+      "currentValue": "שווי נוכחי",
+      "annualAppreciation": "עליית ערך שנתית [%]"
+    },
+    "opt": {
+      "start": {
+        "now": "מעכשיו",
+        "fire": "מפרישה מוקדמת",
+        "fromDate": "מתאריך",
+        "oneTime": "חד פעמי"
+      },
+      "end": {
+        "forever": "עד עולם",
+        "fire": "עד פרישה מוקדמת",
+        "toDate": "עד תאריך",
+        "age60": "עד גיל 60"
+      },
+      "gender": {
+        "male": "גבר",
+        "female": "אישה"
+      },
+      "problem": {
+        "asap": "פרישה מוקדמת ככל האפשר",
+        "checkup": "צ'ק-אפ בגיל נתון",
+        "improveCash": "הגעה לגיל דרך שיפור תזרים",
+        "increaseRisk": "הגעה לגיל דרך הגדלת תשואה"
+      },
+      "order": {
+        "portfolioFirst": "תיק ממוסה",
+        "kerenFirst": "קרן השתלמות"
+      },
+      "designation": {
+        "withdraw": "תיק משיכה למחיה",
+        "goal": "תיק ליעדים",
+        "mukeretMain": "מוכרת לפורש",
+        "mukeretPartner": "מוכרת לבן/בת הזוג"
+      },
+      "instrument": {
+        "broker": "תיק בברוקר בארץ",
+        "ibkr": "תיק ב-IBKR",
+        "gemel": "גמל להשקעה",
+        "polisa": "פוליסת חיסכון",
+        "kaspit": "קרן כספית",
+        "pikadon": "פיקדון בנקאי"
+      },
+      "lot": {
+        "flat": "אחיד",
+        "fifo": "FIFO",
+        "lifo": "LIFO"
+      },
+      "tactic": {
+        "all60": "למשוך הכל מגיל 60",
+        "allStatutory": "למשוך הכל מגיל פרישה",
+        "split": "מוכרת מ-60 ומזכה מגיל פרישה"
+      },
+      "keren": {
+        "maslulit": "מסלולית",
+        "ira": "IRA"
+      },
+      "loan": {
+        "spitzer": "שפיצר",
+        "balloon": "בלון",
+        "grace": "גרייס"
+      }
+    },
+    "action": {
+      "addExpense": "הוסף הוצאה",
+      "addIncome": "הוסף הכנסה",
+      "addPortfolio": "הוסף תיק",
+      "addKeren": "הוסף קרן",
+      "addLoan": "הוסף הלוואה",
+      "addProperty": "הוסף נכס"
+    },
+    "result": {
+      "success": "אתם צפויים לפרוש ב-{{month}}/{{year}} — בגיל {{age}}.",
+      "goalsNotMet": "לא נמצא מועד פרישה בתוך {{months}} חודשים שעומד בכל היעדים.",
+      "noResult": "אין תוצאות להצגה — בדקו את גיל הפרישה מול הגיל הנוכחי.",
+      "goals": "עמידה ביעדים",
+      "advice": "המלצה",
+      "error": "החישוב נכשל. בדקו את הנתונים ונסו שוב.",
+      "inferredMode": "מצב זה אינו ממומש במחשבון המקורי, ולכן התוצאות הן פרשנות שלנו ולא שחזור."
+    },
+    "goal": {
+      "living_expenses": "כיסוי הוצאות מחיה",
+      "bequest": "יעד הורשה",
+      "pension_main": "קרן הפנסיה מחזיקה",
+      "pension_partner": "קרן הפנסיה של בן/בת הזוג מחזיקה"
+    },
+    "advice": {
+      "no_living_portfolio": "אין חשבון שממנו אפשר לממן מחיה — פתיחת תיק כזה תאפשר לתוכנית לעבוד.",
+      "surplus_sits_in_cash": "העודף החודשי נצבר בעובר ושב ללא תשואה. הגדירו יעד לתיק כדי שיושקע.",
+      "monthsSaved": "זה יקדים את הפרישה ב-{{months}} חודשים.",
+      "noBenefit": "זה לא יקדים את הפרישה."
+    },
+    "chart": {
+      "netWorth": "שווי נקי",
+      "assets": "התפתחות נכסים",
+      "flows": "הכנסות מול הוצאות"
+    }
   }
 }

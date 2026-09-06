@@ -1115,3 +1115,57 @@ export const uninstallApi = {
 };
 
 export default api;
+
+// ---------------------------------------------------------------------------
+// Early-retirement calculator (reverse-engineered reference model)
+// ---------------------------------------------------------------------------
+
+export interface FireGoal {
+  key: string;
+  label: string;
+  met: boolean;
+  shortfall: number;
+}
+
+export interface FireMonth {
+  index: number;
+  year: number;
+  month: number;
+  age: number;
+  net_worth: number;
+  cash: number;
+  assets: Record<string, number>;
+  incomes: Record<string, number>;
+  expenses: Record<string, number>;
+  liabilities: number;
+}
+
+export interface FireRecommendation {
+  action: string;
+  reason: string;
+  outcome: string;
+  months_saved: number;
+  missing_piece: number;
+  token: string;
+}
+
+export interface FireProjection {
+  status: "success" | "goals_not_met" | "no_result";
+  retire_index: number | null;
+  retire_age: number | null;
+  retire_year: number | null;
+  retire_month: number | null;
+  search_limit_months: number;
+  inferred: boolean;
+  goals: FireGoal[];
+  months: FireMonth[];
+  recommendation: FireRecommendation | null;
+}
+
+export const fireApi = {
+  calculate: (fields: Record<string, string>, decumulationReturnPct?: number) =>
+    api.post<FireProjection>("/fire/calculate", {
+      fields,
+      decumulation_return_pct: decumulationReturnPct ?? null,
+    }),
+};

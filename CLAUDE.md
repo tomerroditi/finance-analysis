@@ -82,6 +82,22 @@ Routes (FastAPI) -> Services (Business Logic) -> Repositories (Data Access) -> S
 - **Tagging rules:** priority DESC, first match wins
 - **Split transactions:** original stays in main table, splits in `split_transactions`, merged in service layer
 - **Savings goals:** a goal is a **virtual earmark** over money already in tracked accounts — never added to net worth. Progress is derived, not typed: each month's realized surplus (`income - expenses - investments`, CC-deduped) flows down goals by `priority`, each taking up to `min(remaining need, monthly_cap)`. Linked transactions are pulled out of the surplus and reintroduced explicitly (a *contribution* consumes the pool; a *utilization* draws the goal down without ever reducing its target), so no shekel counts twice. Allocations persist per `(goal, month)`; priority changes apply forward and rewriting history is an explicit previewed `rebuild`. Closed goals are frozen — their allocations can never be reclaimed. Full rules: `.claude/rules/savings_goals.md`
+- **Early-retirement calculator (`backend/services/fire/`):** a *second*,
+  standalone engine — a reverse-engineered clone of the zekestories reference
+  calculator, unrelated to `retirement_service.py` and not wired to the user's
+  tracked data. Monthly simulation in real shekels from the current month to a
+  hard-coded **age 81**. Two rules dominate: growth is
+  `((1+return)(1-fee))**(1/12)` with the fee **multiplicative**, and the model is
+  **two-phase** — at retirement a withdrawal portfolio (and any study fund)
+  stops earning the user's return and switches to a confidence-derived
+  "decumulation return" from a measured table (`decumulation_table.json`), which
+  collapses to ~0 between ages 54 and 60 and jumps back after 60. Exposed at
+  `POST /api/fire/calculate` and the `/fire-calculator` page. Every rule is
+  evidence-backed in `research/zeke_retire_calc/notes/` (14 notes, 89 recorded
+  fixtures); parity tests replay those fixtures month by month. **Read the notes
+  before changing any constant** — several are counter-intuitive (there is no
+  age-60 capital-gains exemption; the gemel ceiling is 76,449/yr; Bituach Leumi
+  is a flat 2,757 stepping to 2,911.5 at 80).
 - **Retirement calculator:** all-real-terms model (today's shekels; nominal return converted via inflation). Scraped Keren Hishtalmut policies are auto-synced into `type='hishtalmut'` investments (with scraped snapshots) and are therefore **already inside tracked net worth** — retirement math swaps them out via `status["tracked_kh_value"]` before adding the goal's KH bucket, so KH counts exactly once for both scraped and typed-only users. Full rules: `.claude/rules/retirement_calculations.md`
 
 ## Code Style
