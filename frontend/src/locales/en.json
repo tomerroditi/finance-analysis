@@ -835,6 +835,7 @@
     "liquidityDate": "Liquid",
     "depositFee": "Deposit fee",
     "managementFee": "Management fee",
+    "typeLockedByPolicy": "Set by the scraped policy",
     "types": {
       "stocks": "Stocks",
       "crypto": "Crypto",

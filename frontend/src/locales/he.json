@@ -835,6 +835,7 @@
     "liquidityDate": "נזיל",
     "depositFee": "דמי ניהול מהפקדה",
     "managementFee": "דמי ניהול מצבירה",
+    "typeLockedByPolicy": "נקבע על ידי הפוליסה הסרוקה",
     "types": {
       "stocks": "מניות",
       "crypto": "קריפטו",

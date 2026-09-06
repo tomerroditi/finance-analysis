@@ -1,7 +1,11 @@
 import { describe, it, expect } from "vitest";
 import { screen, waitFor } from "@testing-library/react";
 import { renderWithProviders } from "../test-utils";
-import { Investments, buildInvestmentPayload } from "./Investments";
+import {
+  Investments,
+  buildInvestmentPayload,
+  buildInvestmentUpdatePayload,
+} from "./Investments";
 
 describe("Investments", () => {
   describe("rendering", () => {
@@ -160,6 +164,72 @@ describe("Investments", () => {
       });
 
       expect(payload).not.toHaveProperty("commission_deposit");
+    });
+  });
+
+  describe("edit payload", () => {
+    const baseEditForm = {
+      name: "Migdal Keren Hishtalmut",
+      type: "hishtalmut",
+      interest_rate: 0,
+      interest_rate_type: "variable",
+      rate_spread: 0,
+      notes: "",
+      insurancePolicyId: null as string | null,
+      liquidity_date: "2030-01-01",
+      commission_deposit: "",
+      commission_management: "",
+    };
+
+    it("omits type for a scraped investment (non-null insurance_policy_id)", () => {
+      const payload = buildInvestmentUpdatePayload({
+        ...baseEditForm,
+        insurancePolicyId: "007-916-407357 (8296857)",
+      });
+
+      expect(payload).not.toHaveProperty("type");
+    });
+
+    it("includes type for a manually-created investment (null insurance_policy_id)", () => {
+      const payload = buildInvestmentUpdatePayload({
+        ...baseEditForm,
+        insurancePolicyId: null,
+      });
+
+      expect(payload).toMatchObject({ type: "hishtalmut" });
+    });
+
+    it("sends a genuine 0% deposit fee as the number zero, not omitted", () => {
+      const payload = buildInvestmentUpdatePayload({
+        ...baseEditForm,
+        commission_deposit: "0",
+      });
+
+      expect(payload.commission_deposit).toBe(0);
+      expect(typeof payload.commission_deposit).toBe("number");
+    });
+
+    it("omits commission_deposit entirely when the input was left empty", () => {
+      const payload = buildInvestmentUpdatePayload({
+        ...baseEditForm,
+        commission_deposit: "",
+      });
+
+      expect(payload).not.toHaveProperty("commission_deposit");
+    });
+
+    it("omits liquidity_date and commission fields for non-KH types", () => {
+      const payload = buildInvestmentUpdatePayload({
+        ...baseEditForm,
+        type: "stocks",
+        insurancePolicyId: null,
+        commission_deposit: "1.5",
+        commission_management: "0.4",
+      });
+
+      expect(payload).not.toHaveProperty("liquidity_date");
+      expect(payload).not.toHaveProperty("commission_deposit");
+      expect(payload).not.toHaveProperty("commission_management");
     });
   });
 });
