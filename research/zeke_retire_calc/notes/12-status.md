@@ -130,5 +130,10 @@ of the clean ones, and the approximation shows its own cost instead of
 spreading it.
 
 `pn_annuity_6067` is the last of them, and it is the surface's own
-interpolation rather than a modelling gap: that run claims half its pension at
-60 and half at 67, so it reads a blend of two bridges rather than a cell.
+interpolation rather than a modelling gap. It is the only run that genuinely
+reads two bridges, and its shorter one lands in the collapsed stretch where the
+surface is 0.0002 — so the blend reduces to the longer stream's weight times
+`S(18)`, and solving it gives `S(18) = 1.3462` against the 1.3559 the table
+interpolates. Rule 85 is measured at 17.25 and 18.333 and nowhere between, over
+a gap where the curve climbs 26%. A single probe of the reference at a bridge of
+18.0 would close it (notes/15).

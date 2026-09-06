@@ -110,3 +110,25 @@ class TestDecumulationBridge:
         """No early claim means no need to run the simulation twice."""
         assert not Simulator(_plan(PensionTactic.ALL_FROM_STATUTORY))._needs_stream_pass()
         assert Simulator(_plan(PensionTactic.ALL_FROM_60))._needs_stream_pass()
+
+    def test_the_blend_reproduces_the_one_recorded_two_bridge_run(self):
+        """`pn_annuity_6067` is the only run that genuinely reads two bridges.
+
+        Its shorter bridge is 11 years, deep in the stretch where the surface
+        has collapsed to 0.0002, so the blend reduces to the longer stream's
+        weight times the surface at 18 years. Solving the rule for that one
+        value gives 1.3462 — and with it the rule returns the rate the run was
+        measured at, exactly. What is left over is the surface's interpolation
+        across a gap it has no cell in, not the weighting rule (notes/15).
+        """
+        from backend.services.fire.decumulation import _for_rule
+
+        short_pay, long_pay = 1604.15, 4246.21
+        measured = 0.97710461
+        implied = ((measured * (short_pay + long_pay)
+                    - short_pay * _for_rule(85.0, 11.0)) / long_pay)
+        assert implied == pytest.approx(1.3462, abs=5e-4)
+        assert _for_rule(85.0, 11.0) < 0.01, "the short bridge must be collapsed"
+        assert _for_rule(85.0, 18.0) == pytest.approx(implied, rel=0.01), (
+            "the interpolated cell is within a percent of what the run measures; "
+            "a probe of the reference at bridge 18.0 would close the rest")

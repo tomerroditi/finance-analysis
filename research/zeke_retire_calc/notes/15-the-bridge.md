@@ -63,7 +63,39 @@ rate = Σ pay_i · surface(start_i - retirement) / Σ pay_i
 - `pn_annuity_60`: one wait, to 60 → 0.0006 against 0.0007 measured.
 - `pf_mukeret_ref`: four streams, all at 60 → 1.7233 against 1.7239.
 - `pn_annuity_6067`: 1,604.2/month from 60 and 4,246.2/month from 67 → 0.9841
-  against 0.9776 — inside the surface's own interpolation error there.
+  against 0.9776. That last miss is the surface's own interpolation, not the
+  rule — see below.
+
+### The one two-bridge run pins the rule, and blames the interpolation
+
+`pn_annuity_6067` is the only run in the corpus that genuinely reads two
+bridges, so the whole weighting rule rests on it, and it is worth being exact
+about what its 0.0065 miss is.
+
+Its shorter bridge is 11 years, which lands in the collapsed stretch of the
+curve: the surface there is 0.000193. So the blend is, to four decimals, just
+the longer stream's weight times the surface at 18 years —
+
+```
+0.9771 = (1,604.2 x 0.000193 + 4,246.2 x S(18)) / 5,850.4   =>   S(18) = 1.3462
+```
+
+— and the rule is not being tested against a free parameter at all: given
+`S(18)`, it reproduces the measured rate exactly. What the run actually
+measures is `S(18) = 1.3462`, and the shipped surface interpolates **1.3559**
+there, 0.7% high.
+
+That is a sparsity, not a modelling gap. Rule 85 has measured cells at 17.25
+(1.1466) and 18.333 (1.4420) and nothing between, and the curve climbs 26% over
+that gap, so a monotone cubic across it is doing real work. **Whoever probes the
+reference next should sample rule 85 at a bridge of 18.0** — a single cell there
+closes the last 260 shekels in the corpus, and confirms `S(18) = 1.3462`
+independently of the weighting rule.
+
+The cell is not being derived from the equation above and added to the table:
+every other cell is measured off a run that reads one bridge, and a cell
+back-solved from the blend would make the surface depend on the rule that reads
+it.
 
 Two variants are ruled out by the same three runs. Averaging the *ages* and
 reading the surface once gives 0.748 for `pn_annuity_6067` against 0.9776 — the
