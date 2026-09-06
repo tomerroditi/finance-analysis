@@ -1,3 +1,13 @@
+## v1.59.0 (2026-09-06)
+
+### Feat
+
+- **investments**: add a Keren Hishtalmut investment kind (#259)
+
+### Fix
+
+- **insurance**: surface statement deductions we could not classify (#261)
+
 ## v1.58.0 (2026-09-06)
 
 ### Feat
