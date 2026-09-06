@@ -5,7 +5,7 @@ import { Link } from "react-router";
 import { ChevronLeft, ChevronRight, Plus } from "lucide-react";
 import { budgetApi } from "../../services/api";
 import { SelectDropdown } from "../common/SelectDropdown";
-import { SemiGauge } from "../common/SemiGauge";
+import { BudgetTotalBar } from "../common/BudgetTotalBar";
 import { Skeleton } from "../common/Skeleton";
 import { ProjectModal } from "../modals/ProjectModal";
 import { useQueryKeys } from "../../hooks/useQueryKeys";
@@ -206,7 +206,7 @@ export function BudgetSpendingGauge({
 
   return (
     <div
-      className="bg-[var(--surface)] rounded-2xl p-4 md:p-6 border border-[var(--surface-light)]"
+      className="bg-[var(--surface)] rounded-2xl p-4 md:p-6 border border-[var(--surface-light)] flex flex-col h-full"
     >
       {/* Header row: segmented control */}
       <div className="flex items-center justify-between mb-4">
@@ -221,11 +221,11 @@ export function BudgetSpendingGauge({
           <div className="h-9 mb-4">
             <Skeleton variant="text" lines={1} className="h-full" />
           </div>
-          <Skeleton variant="chart" className="h-40" />
+          <Skeleton variant="chart" className="h-16" />
         </>
       ) : (
         <>
-          {/* Sub-header: month nav or project selector — fixed h-9 so gauge stays in place */}
+          {/* Sub-header: month nav or project selector — fixed h-9 so content below stays in place */}
           <div className="h-9 flex items-center mb-4">
             {viewMode === "monthly" ? (
               <div className="flex items-center justify-between w-full">
@@ -302,10 +302,9 @@ export function BudgetSpendingGauge({
               </Link>
             </div>
           ) : (
-            <>
-              {/* Gauge */}
-              <div className="flex justify-center mb-6">
-                <SemiGauge spent={totalSpent} budget={totalBudget} size={240} />
+            <div className="flex flex-1 flex-col min-h-0">
+              <div className="mb-4">
+                <BudgetTotalBar spent={totalSpent} total={totalBudget} />
               </div>
 
               {/* Budget rule cards */}
@@ -320,7 +319,7 @@ export function BudgetSpendingGauge({
                   {t("dashboard.viewAllBudgetRules")} &rarr;
                 </Link>
               </div>
-            </>
+            </div>
           )}
         </>
       )}
