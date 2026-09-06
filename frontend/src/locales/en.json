@@ -53,7 +53,8 @@
     "link": "Link",
     "pending": "Pending",
     "clearSelection": "Clear selection",
-    "remove": "Remove"
+    "remove": "Remove",
+    "reset": "Reset"
   },
   "onboarding": {
     "welcome": "Welcome to Finance Analysis",
@@ -83,7 +84,8 @@
     "insurance": "Insurance",
     "dataSources": "Data Sources",
     "earlyRetirement": "Early Retirement",
-    "dataFlow": "Data Flow"
+    "dataFlow": "Data Flow",
+    "fireCalculator": "FIRE Calculator"
   },
   "settings": {
     "title": "Settings",
@@ -1480,5 +1482,180 @@
     "confirmAction": "Uninstall",
     "running": "Removing — you can close the Terminal window when it finishes.",
     "failed": "Uninstall failed. Please try again or use the standalone uninstaller."
+  },
+  "fire": {
+    "title": "Early-Retirement Calculator",
+    "subtitle": "A full monthly projection in today's shekels, using the Israeli pension, tax and Bituach Leumi rules.",
+    "calculate": "Calculate",
+    "calculating": "Calculating…",
+    "section": {
+      "problem": "What are we solving?",
+      "person": "Retiree",
+      "partner": "Partner",
+      "withdrawal": "Withdrawal settings",
+      "cash": "Checking account",
+      "expenses": "Expenses",
+      "incomes": "Income",
+      "portfolios": "Taxable portfolios",
+      "pension": "Pension fund",
+      "partnerPension": "Partner's pension fund",
+      "keren": "Keren Hishtalmut",
+      "loans": "Loans",
+      "realEstate": "Real estate"
+    },
+    "hint": {
+      "problem": "\"Retire ASAP\" searches for the earliest workable retirement month, up to the maximum age you allow.",
+      "withdrawal": "The confidence level sets how conservatively the portfolio is assumed to perform during retirement.",
+      "expenses": "One row per recurring expense. Use \"one-time\" for a wedding, a car, or a big trip. Loans belong in the Loans section.",
+      "incomes": "Work you will retire from ends \"at early retirement\". Part-time work afterwards starts there. Rent is \"forever\".",
+      "portfolios": "Order matters: it sets both the order accounts are filled and the order they are drawn down. A goal of 0 means the account never receives deposits.",
+      "keren": "Dormant funds have a balance and no monthly deposit; active ones have both."
+    },
+    "field": {
+      "baseProblem": "Problem",
+      "targetAge": "Target retirement age",
+      "maxAge": "Maximum retirement age",
+      "maxCashImprovement": "Max monthly improvement to consider",
+      "maxRiskIncrease": "Max extra return to consider [%]",
+      "name": "Name",
+      "gender": "Gender",
+      "dateOfBirth": "Date of birth",
+      "isAmerican": "US citizen?",
+      "includePartner": "Include a partner",
+      "confidence": "Confidence level [%]",
+      "drawOrder": "Draw from first",
+      "desiredBuffer": "Desired balance",
+      "currentBalance": "Current balance",
+      "creditLimit": "Credit limit",
+      "start": "Starts",
+      "startDate": "Start date",
+      "end": "Ends",
+      "endDate": "End date",
+      "amount": "Monthly amount",
+      "annualRise": "Annual rise [%]",
+      "description": "Description",
+      "designation": "Purpose",
+      "instrument": "Instrument",
+      "balance": "Balance",
+      "monthlyDepositCap": "Monthly deposit cap",
+      "goal": "Target balance",
+      "expectedReturn": "Expected return [%]",
+      "fee": "Management fee [%]",
+      "profitFraction": "Unrealised profit [%]",
+      "lotMethod": "Lot method",
+      "pensionBalance": "Accrued balance",
+      "pensionDeposit": "Monthly deposit",
+      "feeOnBalance": "Fee on balance [%]",
+      "feeOnDeposit": "Fee on deposit [%]",
+      "pensionTactic": "Withdrawal tactic",
+      "mukeretPct": "Recognised annuity [%]",
+      "depositsEnd": "Deposits end",
+      "withdrawSeverance": "Redeem severance at retirement",
+      "workStartYear": "First year of work",
+      "monthlyDeposit": "Monthly deposit",
+      "kerenType": "Fund type",
+      "loanStart": "Start date",
+      "interestRate": "Interest rate [%]",
+      "originalPrincipal": "Original principal",
+      "termYears": "Term (years)",
+      "loanType": "Repayment type",
+      "currentValue": "Current value",
+      "annualAppreciation": "Annual appreciation [%]"
+    },
+    "opt": {
+      "start": {
+        "now": "Now",
+        "fire": "From early retirement",
+        "fromDate": "From a date",
+        "oneTime": "One-time"
+      },
+      "end": {
+        "forever": "Forever",
+        "fire": "Until early retirement",
+        "toDate": "Until a date",
+        "age60": "Until age 60"
+      },
+      "gender": {
+        "male": "Male",
+        "female": "Female"
+      },
+      "problem": {
+        "asap": "Retire as early as possible",
+        "checkup": "Check-up at a given age",
+        "improveCash": "Reach an age by improving cash flow",
+        "increaseRisk": "Reach an age by taking more risk"
+      },
+      "order": {
+        "portfolioFirst": "Taxable portfolio",
+        "kerenFirst": "Keren Hishtalmut"
+      },
+      "designation": {
+        "withdraw": "Funds living expenses",
+        "goal": "Earmarked for a goal",
+        "mukeretMain": "Recognised annuity (retiree)",
+        "mukeretPartner": "Recognised annuity (partner)"
+      },
+      "instrument": {
+        "broker": "Israeli broker",
+        "ibkr": "IBKR",
+        "gemel": "Gemel le'hashkaa",
+        "polisa": "Savings policy",
+        "kaspit": "Money-market fund",
+        "pikadon": "Bank deposit"
+      },
+      "lot": {
+        "flat": "Proportional",
+        "fifo": "FIFO",
+        "lifo": "LIFO"
+      },
+      "tactic": {
+        "all60": "Everything from 60",
+        "allStatutory": "Everything from statutory age",
+        "split": "Recognised from 60, entitling from statutory age"
+      },
+      "keren": {
+        "maslulit": "Managed track",
+        "ira": "IRA"
+      },
+      "loan": {
+        "spitzer": "Equal instalments (Spitzer)",
+        "balloon": "Balloon",
+        "grace": "Grace"
+      }
+    },
+    "action": {
+      "addExpense": "Add expense",
+      "addIncome": "Add income",
+      "addPortfolio": "Add portfolio",
+      "addKeren": "Add fund",
+      "addLoan": "Add loan",
+      "addProperty": "Add property"
+    },
+    "result": {
+      "success": "You can retire in {{month}}/{{year}} — at age {{age}}.",
+      "goalsNotMet": "No retirement date within {{months}} months meets every goal.",
+      "noResult": "Nothing to show — check the retirement age against the current age.",
+      "goals": "Goals",
+      "advice": "Suggestion",
+      "error": "The calculation failed. Check the inputs and try again.",
+      "inferredMode": "This mode is not implemented in the original calculator, so these results are our own interpretation rather than a reproduction."
+    },
+    "goal": {
+      "living_expenses": "Living expenses covered",
+      "bequest": "Nothing left owing at the end",
+      "pension_main": "Pension fund holds up",
+      "pension_partner": "Partner's pension fund holds up"
+    },
+    "advice": {
+      "no_living_portfolio": "No account is available to fund living costs — opening one would let the plan work.",
+      "surplus_sits_in_cash": "Your monthly surplus is piling up in the checking account earning nothing. Give a portfolio a target balance so it can be invested.",
+      "monthsSaved": "This would bring retirement forward by {{months}} months.",
+      "noBenefit": "This would not bring retirement any closer."
+    },
+    "chart": {
+      "netWorth": "Net worth",
+      "assets": "Assets over time",
+      "flows": "Income vs expenses"
+    }
   }
 }

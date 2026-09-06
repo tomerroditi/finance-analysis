@@ -32,6 +32,7 @@ from backend.models import Base
 from backend.utils import auth
 from backend.routes import (
     analytics,
+    fire,
     backup,
     bank_balances,
     budget,
@@ -427,6 +428,7 @@ app.include_router(tagging.router, prefix="/api/tagging", tags=["Tagging"])
 app.include_router(investments.router, prefix="/api/investments", tags=["Investments"])
 app.include_router(liabilities.router, prefix="/api/liabilities", tags=["Liabilities"])
 app.include_router(analytics.router, prefix="/api/analytics", tags=["Analytics"])
+app.include_router(fire.router, prefix="/api/fire", tags=["Early Retirement"])
 app.include_router(rates.router, prefix="/api/rates", tags=["Rates"])
 app.include_router(backup.router, prefix="/api/backups", tags=["Backups"])
 app.include_router(
