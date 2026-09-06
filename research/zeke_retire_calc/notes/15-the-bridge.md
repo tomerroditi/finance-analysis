@@ -1,5 +1,23 @@
 # The bridge — what the decumulation surface is actually read on
 
+> **Confirmed by the author.** Everything below was recovered from the outside,
+> before finding that the reference's own guide states it. Its wording, via
+> search snippets (the site itself is unreachable from here):
+>
+> - *"תקופת הגישור היא המשך מנקודת הפרישה המוקדמת עד לנקודת קבלת הקצבה מקרן
+>   הפנסיה"* — the bridge period runs from early retirement to the point the
+>   annuity **from the pension fund** is received. Note which annuity: the
+>   pension fund's, which is why Bituach Leumi is not in the weights.
+> - *"מחקר טריניטי נותן סיכויי הצלחה בתלות בהקצאה מנייתית, אופק ההשקעה ואחוז
+>   המשיכה, והמחשבון מבצע חישוב הפוך ומתוך סיכויי הצלחה מחפש פיתרון שיקיים את
+>   השרדות התיק לפרק זמן דרוש"* — Trinity gives a success probability from the
+>   equity allocation, the horizon and the withdrawal rate; the calculator runs
+>   it backwards, and from the success probability finds what sustains the
+>   portfolio for the period required. So `retireRule` is a success
+>   probability, the horizon is the bridge, and the surface is the return that
+>   inversion yields.
+
+
 notes/14 measured the surface as a function of `(retireRule, retirement age)`.
 That was the right shape but the wrong key. The surface is read on the
 **bridge**: how long the withdrawal portfolio must last before pension money
@@ -90,6 +108,24 @@ not the 22.7 years to its own 60th birthday. Something in the plan is still
 being waited for. `pf_mukeret_ref` is the control — same couple, same
 all-at-60 claim, no gemel — and it is exact.
 
+### What it cannot be
+
+Under the rate blend, with the pension streams at their stated ages, **no single
+(age, weight) for the gemel money can satisfy both `pf_mukeret2` and
+`pf_mukeret3_t60`**. Solving each for the total locked weight `L` at a common
+surface value `G`:
+
+```
+pf_mukeret2:      G = 2.7182 + 1694.6 / L
+pf_mukeret3_t60:  G = 2.5201 + 5320.6 / L
+```
+
+which meet at `L = 18,304` and `G = 2.8108` — above the rule-85 curve's
+maximum of 2.7748, so there is no bridge at which the surface takes that value.
+The two runs differ *only* in `pension_tactics`, so whatever the gemel
+contributes has to depend on how the pension is claimed, which rules out
+treating it as one more stream at a fixed age.
+
 Counting the gemel conversions at the statutory age instead of at 60 fits two
 of the three much better (2.6830 and 2.4188, and the total absolute error over
 the corpus drops from 0.58 to 0.23 points) but pushes `pf_mukeret4_order` past
@@ -97,6 +133,19 @@ the truth in the other direction, so it is not the rule either. It is recorded
 here because it is the best lead: whoever probes the reference next should
 sweep gemel balance against the implied rate at a fixed retirement age, which
 separates "the gemel is weighted differently" from "the gemel is waited for".
+
+Domain knowledge sharpens the question rather than answering it. A gemel
+le'hashkaa may only pay a **tax-free recognised annuity** once the saver is
+already drawing a qualifying old-age pension of at least ~4,849 a month; below
+that the withdrawal is "not according to the rules" and taxed at 35%. So there
+is a real-world reason a gemel's annuity might be treated as arriving later
+than 60 — but the condition is *met* at 60 in `pf_mukeret3_t60`, where the
+pension pays 17,179.7 from that age, and that is the run which needs the
+longest bridge of the three. Whatever the rule is, it is not this test.
+
+Given the right rate, all three now replay to 2.4-7.1 shekels over 533 months,
+so what is unexplained in them is exactly one scalar each — no other part of
+those scenarios is in doubt.
 
 Until then the engine uses rule 3 — the reading the annuity chart supports,
 since those annuities really are paid from 60 — and the three fixtures carry
