@@ -204,6 +204,28 @@ class SimulationResult:
                     if total}))
         return out
 
+    def pension_income(self) -> list[tuple[str, float, float]]:
+        """`(owner, age, monthly)` — the reference's closing line, per person.
+
+        "Your annuity from all pension sources will be, at age X, Y" — where X
+        is the age the last of that person's pension components starts (the
+        state pension is not one of them, and a person with no pension at all
+        is quoted at 60), and Y is what they all pay together.
+        """
+        out = []
+        for owner in dict.fromkeys(a.owner for a in self.annuities):
+            rows = [a for a in self.annuities
+                    if a.owner == owner and a.source != "national_insurance"]
+            out.append((owner,
+                        max((a.claim_age for a in rows),
+                            default=self.default_claim_age.get(owner, 60.0)),
+                        sum(a.monthly for a in rows)))
+        return out
+
+    default_claim_age: dict[str, float] = field(default_factory=dict)
+    """Age the reference quotes for a person whose pension pays nothing — the
+    age their tactic would have claimed at (`pf_tactics67` quotes 67, not 60)."""
+
     def _shortfall_capital(self, as_of: int) -> float:
         """Present value at month `as_of` of everything the plan cannot fund.
 
@@ -612,6 +634,12 @@ class Simulator:
         return SimulationResult(
             months=months, retire_index=retire_index, solvent=solvent,
             annuity_streams=annuity_streams, labels=self._labels(),
+            default_claim_age={
+                owner.name: float(60 if pension.tactic is PensionTactic.ALL_FROM_60
+                                  else national_insurance.STATUTORY_AGE[owner.gender])
+                for owner, pension in ((plan.person, plan.pension),
+                                       (plan.partner, plan.partner_pension))
+                if owner is not None and pension is not None},
             goals={f"portfolio{index}": portfolio.goal
                    for index, portfolio in enumerate(plan.portfolios)
                    if portfolio.goal > 0

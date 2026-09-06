@@ -105,6 +105,14 @@ class SnapshotRow(BaseModel):
     shortfall_capital: float
 
 
+class PensionIncomeRow(BaseModel):
+    """What one person's pension will pay, and from what age."""
+
+    owner: str
+    age: float
+    monthly: float
+
+
 class FireProjection(BaseModel):
     """Everything the results view needs."""
 
@@ -121,6 +129,7 @@ class FireProjection(BaseModel):
     annuities: list[AnnuityRow]
     withdrawal_plan: list[WithdrawalRow]
     snapshots: list[SnapshotRow]
+    pension_income: list[PensionIncomeRow]
 
 
 @router.post("/calculate", response_model=FireProjection)
@@ -139,7 +148,7 @@ def calculate(scenario: FireScenario) -> FireProjection:
             retire_year=None, retire_month=None,
             search_limit_months=result.search_limit, inferred=result.inferred,
             goals=[], months=[], recommendation=None,
-            annuities=[], withdrawal_plan=[], snapshots=[],
+            annuities=[], withdrawal_plan=[], snapshots=[], pension_income=[],
         )
 
     recommendation = advise(plan, result, today)
@@ -178,6 +187,10 @@ def calculate(scenario: FireScenario) -> FireProjection:
                         net_worth=s.net_worth, breakdown=s.breakdown,
                         shortfall_capital=s.shortfall_capital)
             for s in result.simulation.snapshots()
+        ],
+        pension_income=[
+            PensionIncomeRow(owner=owner, age=age, monthly=monthly)
+            for owner, age, monthly in result.simulation.pension_income()
         ],
         recommendation=(
             RecommendationRow(

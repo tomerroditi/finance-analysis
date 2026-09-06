@@ -50,6 +50,10 @@ What that covers:
 - all four solver modes; `retire_asap` reaches the reference's own published
   retirement month on 47 of 47 applicable fixtures
 - the smart-advice optimiser
+- every section of the result page, each against the reference's own output:
+  the verdict, the goal checklist, the annuity list (one row per component,
+  with claim ages and annuity factors), the drawdown plan, both asset cards
+  with their shortfall slice, and the closing pension line (notes/16)
 - the API (`POST /api/fire/calculate`) and the whole UI
 
 ## The decumulation surface has no free parameters

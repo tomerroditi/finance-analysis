@@ -1621,13 +1621,14 @@
       "addProperty": "Add property"
     },
     "result": {
-      "success": "You can retire in {{month}}/{{year}} — at age {{age}}.",
-      "goalsNotMet": "No retirement date within {{months}} months meets every goal.",
-      "noResult": "Nothing to show — check the retirement age against the current age.",
-      "goals": "Goals",
       "advice": "Suggestion",
       "error": "The calculation failed. Check the inputs and try again.",
-      "inferredMode": "This mode is not implemented in the original calculator, so these results are our own interpretation rather than a reproduction."
+      "goals": "Goals",
+      "goalsNotMet": "No retirement date within {{months}} months meets every goal.",
+      "inferredMode": "This mode is not implemented in the original calculator, so these results are our own interpretation rather than a reproduction.",
+      "noResult": "Nothing to show — check the retirement age against the current age.",
+      "pensionIncome": "{{owner}}: pension income of {{amount}} a month from age {{age}}.",
+      "success": "You can retire in {{month}}/{{year}} — at age {{age}}."
     },
     "goal": {
       "living_expenses": "Living expenses covered",

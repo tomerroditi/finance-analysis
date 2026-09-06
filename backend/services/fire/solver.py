@@ -60,24 +60,38 @@ def search_limit(plan: Plan, today: date) -> int:
 def evaluate_goals(plan: Plan, result: SimulationResult) -> list[Goal]:
     """The attainment checklist the reference prints alongside the verdict."""
     shortfall = sum(month.shortfall for month in result.months)
+    final = result.months[-1].assets
+
+    earmarked = []
+    for index, portfolio in enumerate(plan.portfolios):
+        # Every portfolio that is not there to be withdrawn from gets a row,
+        # even one with no target — `pf_mukeret_ref` lists its X2 with a goal of
+        # zero, trivially reached.
+        if portfolio.designation == PortfolioDesignation.WITHDRAW:
+            continue
+        reached = max(month.assets.get(f"portfolio{index}", 0.0) for month in result.months)
+        earmarked.append(Goal(f"portfolio{index}",
+                              portfolio.description or f"תיק {index + 1}",
+                              met=reached >= portfolio.goal - 1e-6,
+                              shortfall=max(portfolio.goal - reached, 0.0)))
+
     goals = [
         Goal("living_expenses", "כיסוי הוצאות מחיה",
              met=shortfall <= 1e-6, shortfall=shortfall),
-        Goal("bequest", "יעד הורשה", met=result.months[-1].net_worth >= -1e-6,
+        # What is left behind: the plan has to end solvent *and* every earmarked
+        # portfolio has to have reached what it was earmarked for. `desig_goal`
+        # is the one recorded run that separates the two — it ends holding 7.9M,
+        # more than any other failing plan, and the reference still marks the
+        # bequest failed, because that 7.9M was meant to be 9M.
+        Goal("bequest", "יעד הורשה",
+             met=result.months[-1].net_worth >= -1e-6 and all(g.met for g in earmarked),
              shortfall=max(-result.months[-1].net_worth, 0.0)),
     ]
-    final = result.months[-1].assets
-    for index, portfolio in enumerate(plan.portfolios):
-        if portfolio.goal <= 0 or portfolio.designation == PortfolioDesignation.WITHDRAW:
-            continue
-        reached = max(month.assets.get(f"portfolio{index}", 0.0) for month in result.months)
-        goals.append(Goal(f"portfolio{index}",
-                          portfolio.description or f"תיק {index + 1}",
-                          met=reached >= portfolio.goal - 1e-6,
-                          shortfall=max(portfolio.goal - reached, 0.0)))
-    for who, fund in (("main", plan.pension), ("partner", plan.partner_pension)):
-        if fund is not None:
-            goals.append(Goal(f"pension_{who}", f"קרן פנסיה ({who})",
+    goals.extend(earmarked)
+    for who, owner, fund in (("main", plan.person, plan.pension),
+                             ("partner", plan.partner, plan.partner_pension)):
+        if fund is not None and owner is not None:
+            goals.append(Goal(f"pension_{who}", f"קרן פנסיה של {owner.name}",
                               met=final.get("pension0", 0.0) >= -1e-6))
     return goals
 

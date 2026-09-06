@@ -1177,6 +1177,12 @@ export interface FireSnapshot {
   shortfall_capital: number;
 }
 
+export interface FirePensionIncome {
+  owner: string;
+  age: number;
+  monthly: number;
+}
+
 export interface FireProjection {
   status: "success" | "goals_not_met" | "no_result";
   retire_index: number | null;
@@ -1191,6 +1197,7 @@ export interface FireProjection {
   annuities: FireAnnuity[];
   withdrawal_plan: FireWithdrawal[];
   snapshots: FireSnapshot[];
+  pension_income: FirePensionIncome[];
 }
 
 export const fireApi = {

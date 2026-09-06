@@ -199,6 +199,23 @@ export function ProjectionResults({ projection }: Props) {
         </div>
       )}
 
+      {projection.pension_income.length > 0 && (
+        <div
+          data-testid="fire-pension-income"
+          className="p-4 rounded-xl bg-[var(--surface)] border border-[var(--surface-light)]"
+        >
+          {projection.pension_income.map((row) => (
+            <p key={row.owner} className="text-sm text-[var(--text-secondary)]">
+              {t("fire.result.pensionIncome", {
+                owner: row.owner,
+                age: row.age.toFixed(1),
+                amount: money.format(row.monthly),
+              })}
+            </p>
+          ))}
+        </div>
+      )}
+
       {projection.snapshots.length > 0 && (
         <div className="grid gap-4 md:grid-cols-2" data-testid="fire-snapshots">
           {projection.snapshots.map((snapshot) => (

@@ -29,6 +29,7 @@ RECORDED_IN = date(2026, 9, 1)
 
 ANNUITY_ROW = re.compile(
     r"קצבה מגיל (\d+) בגובה ([\d,]+\.\d) ₪(?: \(מקדם ([\d.]+) \))?")
+NARRATIVE_ROW = re.compile(r"בגיל ([\d.]+) על ([\d,]+\.\d)")
 WITHDRAWAL_ROW = re.compile(
     r"מגיל ([\d.]+) עד גיל ([\d.]+), ממוצע של ([\d,]+\.\d) ש")
 PIE_CATEGORIES = {"תיקים": "portfolios", "עובר ושב": "cash", "השתלמות": "keren",
@@ -158,3 +159,49 @@ class TestAssetCards:
             for group, value in expected.items():
                 assert snapshot.breakdown[group] == pytest.approx(value, abs=0.6), (
                     f"{name}: {key} {group}")
+
+
+class TestNarrative:
+    """The closing line: what the pension will pay, and from what age."""
+
+    @pytest.mark.parametrize("name", _fixtures())
+    def test_the_pension_summary_matches(self, name):
+        """Per person: the age their last pension component starts, and the total.
+
+        The state pension is not one of them — the reference quotes only what
+        the plan's own funds pay — and a person with no pension at all is quoted
+        at 60 with nothing.
+        """
+        fixture, result = _run(name)
+        expected = [(float(age), _number(amount))
+                    for age, amount in NARRATIVE_ROW.findall(fixture["summary"])]
+        ours = [(round(age, 1), monthly) for _, age, monthly in result.pension_income()]
+        assert len(ours) == len(expected)
+        for (age, monthly), (their_age, their_monthly) in zip(ours, expected):
+            assert age == their_age
+            assert monthly == pytest.approx(their_monthly, abs=0.4)
+
+
+CHECKLIST_ROW = re.compile(r"([VX]) [^:]+: (?:הושג|כישלון)")
+
+
+class TestGoalChecklist:
+    """`עמידה ביעדים` — the ✓/✗ list beside the verdict."""
+
+    @pytest.mark.parametrize("name", _fixtures())
+    def test_same_rows_with_the_same_verdicts(self, name):
+        """One row per goal, in the reference's own order, met or not."""
+        from backend.services.fire.reference_form import plan_from_reference
+        from backend.services.fire.solver import evaluate_goals
+
+        fixture, result = _run(name)
+        block = fixture["summary"]
+        block = block[block.find("עמידה ביעדים"):block.find("מצב נכסים")]
+        expected = [mark == "V" for mark in CHECKLIST_ROW.findall(block)]
+        goals = evaluate_goals(plan_from_reference(fixture["overrides"]), result)
+        assert len(goals) == len(expected), f"{name}: checklist has different rows"
+        if name in KNOWN_GAPS:
+            # Their portfolio empties a few months early, so the living-expense
+            # row goes the other way; the rows themselves still line up.
+            return
+        assert [goal.met for goal in goals] == expected, f"{name}: checklist differs"

@@ -116,13 +116,19 @@ def _portfolio(payload: dict, index: int) -> Portfolio:
 
 
 def _pension(payload: dict, suffix: str, tactic_key: str, end_key: str) -> Pension | None:
-    balance = _req(payload, f"pensionBalance{suffix}")
-    deposit = _req(payload, f"pensionDeposit{suffix}")
-    if not balance and not deposit:
+    """The person's pension fund, empty or not.
+
+    An empty fund is still a fund: the reference lists a pension goal for it and
+    quotes the age its tactic would have claimed at, so a plan that has the
+    section filled in but no money in it is not the same as a plan with no
+    pension section at all (`pf_tactics67` is quoted at 67, `baseline` at 60).
+    The partner's fund exists only when the partner does.
+    """
+    if suffix and not payload.get(f"pensionTake{suffix}"):
         return None
     return Pension(
-        balance=balance,
-        monthly_deposit=deposit,
+        balance=_req(payload, f"pensionBalance{suffix}"),
+        monthly_deposit=_req(payload, f"pensionDeposit{suffix}"),
         fee_on_balance_pct=_req(payload, f"pensionFee1{suffix}", 0.05),
         fee_on_deposit_pct=_req(payload, f"pensionFee2{suffix}", 1.5),
         annual_return_pct=_req(payload, f"pensionInterest{suffix}", 7.0),

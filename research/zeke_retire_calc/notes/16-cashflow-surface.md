@@ -110,3 +110,26 @@ and to the first *retired* month on the second, one month past the balances
 printed beside it. Recovered from seven recorded runs and exact on every one,
 including `desig_goal`, where the goal component is 9,000,000 wanted against
 2,900,229.1 held.
+
+
+## The verdict block, and what "bequest" means
+
+The goal checklist has one row per *non-withdrawal* portfolio — including one
+with no target at all, which `pf_mukeret_ref` lists as trivially reached — plus
+a row per person with a pension fund, named after them.
+
+`יעד הורשה`, the bequest goal, is not simply "net worth at 81 is not negative".
+`desig_goal` is the run that separates them: it ends holding **7.9M**, more than
+any other failing plan, and the reference still marks the bequest failed —
+because that 7.9M was earmarked to be 9M. The rule that fits all 134 is *ends
+solvent **and** every earmarked portfolio reached what it was earmarked for*.
+Three runs end at exactly zero net worth with the bequest met, so it is not a
+"leave something behind" test either.
+
+The closing line — "your annuity from all pension sources will be, at age X, Y"
+— quotes the age the **last** of that person's pension components starts and
+what they all pay together. Bituach Leumi is not one of them, and a person
+whose fund is empty is quoted at the age their tactic would have claimed at:
+`pf_tactics67` says 67, `baseline` says 60. That last detail is why an empty
+pension section is still a pension: the reference lists a goal row for it and
+quotes its tactic, which a plan with no pension section at all does not get.
