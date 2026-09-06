@@ -350,6 +350,42 @@ def _shift_dates(engine: Engine, offset_days: int) -> None:
             {"offset": offset_str},
         )
 
+        conn.execute(
+            text(
+                "UPDATE savings_goals SET target_date = date(target_date, :offset) "
+                "WHERE target_date IS NOT NULL"
+            ),
+            {"offset": offset_str},
+        )
+
+        # Savings-goal months are "YYYY-MM" strings, so they shift the same
+        # way budget_rules do: anchor to day 1, move by the offset, keep the
+        # resulting month. Allocation rows are deliberately NOT shifted — the
+        # snapshot ships none, and the engine recomputes the whole ledger on
+        # first read from the already-shifted transactions.
+        for column in ("start_month", "closed_month"):
+            months = conn.execute(
+                text(
+                    f"SELECT id, {column} FROM savings_goals "
+                    f"WHERE {column} IS NOT NULL"
+                )
+            ).fetchall()
+            for goal_id, value in months:
+                try:
+                    anchor = date(int(value[:4]), int(value[5:7]), 1)
+                except (TypeError, ValueError):
+                    continue
+                shifted = anchor + timedelta(days=offset_days)
+                conn.execute(
+                    text(
+                        f"UPDATE savings_goals SET {column} = :value WHERE id = :id"
+                    ),
+                    {
+                        "value": f"{shifted.year:04d}-{shifted.month:02d}",
+                        "id": goal_id,
+                    },
+                )
+
         rows = conn.execute(
             text(
                 "SELECT DISTINCT id, year, month FROM budget_rules WHERE year IS NOT NULL"

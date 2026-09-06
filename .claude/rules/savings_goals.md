@@ -236,6 +236,18 @@ so the many users who keep no goals pay nothing for the section.
 
 ## Gotchas
 
+- **Compare against a target with `ROUNDING_EPSILON`, never bare `>=`.**
+  `funded` is accumulated by summing dozens of stored rows, so a goal that
+  filled exactly can land a hair under its target through float error — it
+  then renders "100%, 0 to go" while `is_achieved` is false, and never
+  auto-closes. Both the enrichment and the auto-close check absorb half an
+  agora; there is a unit test pinning it.
+- **Demo Mode ships three goals** (`create_savings_goals` in
+  `scripts/generate_demo_data.py`) covering achieved, investment-backed, and
+  utilized states. Allocations are deliberately *not* seeded — the engine
+  derives them on first read, after `_shift_dates` has re-anchored
+  `start_month` / `target_date`. A spec that asserts absolute waterfall
+  positions must clear those goals first.
 - `SavingsGoal.status` / `is_achieved` / `is_closed` arrive from SQLite as
   0/1 integers. Guard them with `!!` in JSX — `{0 && <Check/>}` renders a
   literal "0" beside the goal name (there is an e2e pinning this).

@@ -159,6 +159,37 @@ class TestMonthlyCap:
         assert goal["funded"] == 1200
 
 
+class TestAchievement:
+    """A goal that filled reads as achieved, float error notwithstanding."""
+
+    def test_goal_filled_across_many_months_reads_achieved(self, db_session, service):
+        """Summing dozens of rows must not leave a full goal a hair short.
+
+        `funded` is accumulated row by row, so a goal filled over many capped
+        months can land microscopically under its target. Rounded for display
+        it reads "100%, 0 to go" — it must not also read "not achieved", and
+        it must still be able to auto-close.
+        """
+        months = [_month_str(i) for i in range(1, 13)]
+        for month in months:
+            _seed_surplus(db_session, month, income=10000, expenses=9000)
+
+        # 12 months x 1000 surplus, capped at 333.33 -> a target only float
+        # accumulation can miss.
+        service.create(
+            name="Goal",
+            target_amount=3999.96,
+            priority=0,
+            monthly_cap=333.33,
+            start_month=months[-1],
+        )
+
+        goal = service.get_all()[0]
+        assert goal["progress_pct"] == 100.0
+        assert goal["remaining"] == 0
+        assert goal["is_achieved"] is True
+
+
 class TestSurplusDefinition:
     """What counts as the month's spare money."""
 

@@ -44,6 +44,9 @@ from backend.models import (  # noqa: E402
     PendingRefund,
     RefundLink,
     RetirementGoal,
+    SavingsGoal,
+    SavingsGoalInvestment,
+    SavingsGoalLink,
     ScrapingHistory,
     SplitTransaction,
     TaggingRule,
@@ -2437,6 +2440,115 @@ def create_pending_refunds(session, cc_txns, bank_txns):
     session.flush()
 
 
+def create_savings_goals(session, savings_plan, bank_txns):
+    """Create the Cohens' three savings goals and what backs them.
+
+    The goals demo every way a goal can be funded, in one waterfall:
+
+    1. **Emergency Fund** — the classic first goal. Capped so it fills
+       steadily rather than swallowing a single big month, and started early
+       enough that it is already achieved.
+    2. **Kids' Education Fund** — part cash, part **backed by the Savings
+       Plan**, which matures a year out and is money the couple already
+       intends to roll into it. That backing counts toward the goal without
+       ever entering the free-cash pool.
+    3. **Wedding Fund** — the saving side of the wedding arc the rest of the
+       dataset already tells. The two largest wedding bank transfers are
+       linked as **utilizations**, so the goal shows money set aside *and*
+       money since spent out of it, without its target shrinking. It carries
+       no target date: the wedding is already being paid for, and a deadline
+       weeks away would only render an implausible "catch up by" figure.
+
+    Only the education fund carries a ``target_date`` — far enough out (the
+    older child reaching university) that the monthly-needed figure it drives
+    is a realistic number rather than a panic.
+
+    Whatever the three leave unclaimed each month stays in the free-cash pool,
+    which is what a negative month drains before any goal is touched.
+
+    No allocation rows are seeded: the engine derives the whole ledger on
+    first read, and doing it here would anchor it to this script's reference
+    date instead of the date-shifted one Demo Mode actually serves.
+    """
+    def month_str(months_back: int) -> str:
+        """``YYYY-MM`` for the month ``months_back`` before the reference."""
+        month = REFERENCE_DATE.month - months_back
+        year = REFERENCE_DATE.year
+        while month <= 0:
+            month += 12
+            year -= 1
+        return f"{year:04d}-{month:02d}"
+
+    emergency = SavingsGoal(
+        name="Emergency Fund",
+        target_amount=60000.0,
+        opening_balance=0.0,
+        priority=0,
+        monthly_cap=2500.0,
+        start_month=month_str(34),
+        status="active",
+        notes="Six months of expenses, kept liquid.",
+    )
+    education = SavingsGoal(
+        name="Kids' Education Fund",
+        target_amount=150000.0,
+        opening_balance=0.0,
+        priority=1,
+        monthly_cap=2000.0,
+        start_month=month_str(30),
+        target_date=(REFERENCE_DATE + timedelta(days=365 * 6)).isoformat(),
+        status="active",
+        notes="Backed by the savings plan that matures next year.",
+    )
+    wedding = SavingsGoal(
+        name="Wedding Fund",
+        target_amount=120000.0,
+        opening_balance=0.0,
+        priority=2,
+        monthly_cap=3000.0,
+        start_month=month_str(24),
+        status="active",
+        notes="Saving for the wedding the budget project tracks spending against.",
+    )
+    session.add_all([emergency, education, wedding])
+    session.flush()
+
+    # The savings plan backs the education fund in full. No amount is given,
+    # so the earmark is "whatever is left of it" and tracks the holding's
+    # value instead of a number that goes stale.
+    session.add(
+        SavingsGoalInvestment(
+            goal_id=education.id,
+            investment_id=savings_plan.id,
+            amount=None,
+        )
+    )
+
+    # The two largest wedding bank transfers are money spent back out of the
+    # wedding fund. Credit-card rows can never be linked — they are excluded
+    # from the surplus before links are resolved — so these have to be the
+    # bank-side deposits.
+    utilized = [
+        txn
+        for txn in bank_txns
+        if txn.category == "Wedding"
+        and txn.description in ("CATERING - FINAL PAYMENT", "VENUE - BALANCE PAYMENT")
+    ]
+    for txn in utilized:
+        session.add(
+            SavingsGoalLink(
+                goal_id=wedding.id,
+                source_type="transaction",
+                source_id=txn.unique_id,
+                source_table="bank_transactions",
+                link_type="utilization",
+            )
+        )
+
+    session.flush()
+    return emergency, education, wedding
+
+
 def create_retirement_goal(session):
     """Create a retirement goal record for FIRE page testing.
 
@@ -2993,6 +3105,10 @@ def main():
         print("  Creating retirement goal...")
         create_retirement_goal(session)
 
+        # 19. Savings goals (waterfall, investment backing, utilizations)
+        print("  Creating savings goals...")
+        create_savings_goals(session, savings_plan, bank_txns)
+
         session.commit()
 
         # 18. Link hishtalmut policies to Investment records. Done after
@@ -3029,6 +3145,9 @@ def main():
             "split_transactions",
             "liabilities",
             "retirement_goals",
+            "savings_goals",
+            "savings_goal_links",
+            "savings_goal_investments",
         ]
         from sqlalchemy import text
         for table in tables:

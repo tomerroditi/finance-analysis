@@ -95,7 +95,12 @@ class SavingsGoalRepository:
         return goal
 
     def delete(self, goal_id: int) -> None:
-        """Delete a goal along with its allocations and transaction links."""
+        """Delete a goal with its allocations, transaction links and earmarks.
+
+        The investment earmarks have to go too: an orphaned row would keep
+        consuming its holding's headroom, so a deleted goal would silently
+        block anyone else from ever earmarking that investment again.
+        """
         goal = self.db.get(SavingsGoal, goal_id)
         if not goal:
             raise ValueError(f"No savings goal with id {goal_id}")
@@ -104,6 +109,9 @@ class SavingsGoalRepository:
         ).delete()
         self.db.query(SavingsGoalLink).filter(
             SavingsGoalLink.goal_id == goal_id
+        ).delete()
+        self.db.query(SavingsGoalInvestment).filter(
+            SavingsGoalInvestment.goal_id == goal_id
         ).delete()
         self.db.delete(goal)
         self.db.commit()

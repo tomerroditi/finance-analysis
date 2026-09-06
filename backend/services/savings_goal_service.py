@@ -60,6 +60,14 @@ from backend.services.transactions_service import TransactionsService
 # months so `monthly_needed` reflects the time actually left.
 DAYS_PER_MONTH = 30.44
 
+# Half an agora. Every amount the ledger reports is rounded to two decimals,
+# but `funded` is accumulated by summing dozens of stored rows, so a goal that
+# filled exactly can land a hair under its target through float error alone —
+# reading as "100%, 0 to go" yet never achieved, and never auto-closing.
+# Comparisons against a target absorb that with the same precision the rest of
+# the payload is rounded to.
+ROUNDING_EPSILON = 0.005
+
 # Rows synthesised from prior-wealth balances are opening capital, not income.
 # Counting them would hand one month an enormous phantom surplus.
 _PRIOR_WEALTH_SOURCES = {"bank_balances", "investments"}
@@ -621,7 +629,7 @@ class SavingsGoalService:
             return
 
         headroom = value - claimed
-        if amount > headroom + 0.005:
+        if amount > headroom + ROUNDING_EPSILON:
             raise ValidationException(
                 f"Only {round(max(0.0, headroom), 2)} of this investment is "
                 f"still unearmarked"
@@ -855,11 +863,11 @@ class SavingsGoalService:
             # pool down. Only once the pool is empty does the overspend reach
             # the goals, taking from the least important first — the mirror
             # image of the funding waterfall.
-            if free_cash < -0.005:
+            if free_cash < -ROUNDING_EPSILON:
                 shortfall = -free_cash
                 free_cash = 0.0
                 for goal in reversed(goals):
-                    if shortfall <= 0.005:
+                    if shortfall <= ROUNDING_EPSILON:
                         break
                     if frozen[goal.id] or key < start_of[goal.id]:
                         continue
@@ -896,7 +904,7 @@ class SavingsGoalService:
                     continue
                 target = float(goal.target_amount or 0.0)
                 total = funded[goal.id] + backed[goal.id]
-                achieved = target > 0 and total >= target
+                achieved = target > 0 and total >= target - ROUNDING_EPSILON
                 if achieved and (total - utilized[goal.id]) <= 0:
                     frozen[goal.id] = True
                     plan.closed_month[goal.id] = _month_str(key)
@@ -1268,7 +1276,7 @@ class SavingsGoalService:
         available = funded - spent
         remaining = max(0.0, target - funded)
         progress_pct = round(min(100.0, (funded / target * 100) if target > 0 else 0.0), 1)
-        is_achieved = target > 0 and funded >= target
+        is_achieved = target > 0 and funded >= target - ROUNDING_EPSILON
 
         months_remaining = None
         monthly_needed = None

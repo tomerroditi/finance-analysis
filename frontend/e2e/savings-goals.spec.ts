@@ -77,6 +77,15 @@ test.describe("Savings goals", () => {
     });
     await ctx.post(`${API_BASE}/testing/demo/reset`);
 
+    // Demo data now ships the Cohens' own three goals. This spec asserts
+    // absolute waterfall positions, so clear them first — otherwise the
+    // goals created below land at #4 and #5. The teardown restores the
+    // snapshot, so the demo's goals come back for the next run.
+    const seeded = await (await ctx.get(`${API_BASE}/savings-goals/`)).json();
+    for (const goal of seeded as { id: number }[]) {
+      await ctx.delete(`${API_BASE}/savings-goals/${goal.id}`);
+    }
+
     // Both goals start far enough back to have accrued real allocations, so
     // the budget-page assertion below has something to find. The 1-per-month
     // cap keeps `funded` dominated by `opening_balance`, which is what makes
