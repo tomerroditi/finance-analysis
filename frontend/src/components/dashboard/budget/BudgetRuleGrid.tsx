@@ -25,6 +25,14 @@ function getProgressColor(pct: number, isUnbudgetedSpend: boolean): string {
  * a short row, or the content-sized single-column mobile grid, from crushing
  * it. Do not add `min-h-0` alongside it: both compile to `min-height` and the
  * winner would come down to stylesheet order.
+ *
+ * `max-h-[16rem] lg:max-h-none` bounds the same box below `lg`: the dashboard
+ * row only gets a definite height at `lg` (Dashboard.tsx's `--dash-card-h`
+ * cap is `lg:`-scoped), so below that breakpoint the flex parent's height is
+ * indefinite and `flex-1` has nothing to fill — the grid would otherwise grow
+ * to its full content (all tiles, no scroll) instead of the old four-tile
+ * scrolling box. Capping it below `lg` restores that behavior; `lg:max-h-none`
+ * hands control back to `flex-1` once the parent height is definite again.
  */
 export const BudgetRuleGrid: React.FC<BudgetRuleGridProps> = ({
   rules,
@@ -34,7 +42,7 @@ export const BudgetRuleGrid: React.FC<BudgetRuleGridProps> = ({
   return (
     <div
       data-testid="budget-rule-grid"
-      className="flex-1 min-h-[16rem] overflow-y-auto scrollbar-auto-hide mb-4"
+      className="flex-1 min-h-[16rem] max-h-[16rem] lg:max-h-none overflow-y-auto scrollbar-auto-hide mb-4"
     >
       <div className="grid grid-cols-2 gap-3">
         {rules.map((rule) => {
