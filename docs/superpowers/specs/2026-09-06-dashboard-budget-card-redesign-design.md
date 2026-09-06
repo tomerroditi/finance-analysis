@@ -81,6 +81,18 @@ Making the tile grid `flex-1 min-h-0 overflow-y-auto` inside a
 A `min-h-[16rem]` floor (about today's 4-tile height) keeps a short row from
 crushing the grid.
 
+**The mobile case needs a ceiling as well as a floor** (found in Task 4's
+visual verification; the original reasoning below was incomplete). `Dashboard.tsx:471`
+applies its `--dash-card-h` cap only at `lg:` — below that the comment at line
+462 is explicit: "a single column with natural, uncapped heights". So the
+card's flex parent has an *indefinite* height on mobile, where `flex-1` bounds
+nothing and `min-h-[16rem]` is only a floor: the grid renders every tile and
+the card grew to 968px with demo data, against ~684px before the redesign —
+the opposite of the goal. The grid is therefore `max-h-[16rem] lg:max-h-none`:
+pinned to the old four-tile scrolling box wherever the row height is
+indefinite, flex-filling wherever it is definite. Measured after the fix: 486px
+on mobile (vs ~684px before), 624px on desktop with a 374px grid (vs 260px).
+
 The full chain must be unbroken: dashboard grid child (`h-full`, already
 present) → `BudgetSection` root (`flex flex-col h-full`) → tab root
 (`flex flex-1 flex-col min-h-0`) → grid (`flex-1 min-h-0 overflow-y-auto`).
