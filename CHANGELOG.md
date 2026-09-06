@@ -1,3 +1,9 @@
+## v1.58.0 (2026-09-06)
+
+### Feat
+
+- **dashboard**: redesign the budget card and add the yearly tab (#258)
+
 ## v1.57.1 (2026-09-06)
 
 ### Fix
