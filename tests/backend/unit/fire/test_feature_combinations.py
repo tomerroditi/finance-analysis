@@ -347,24 +347,31 @@ class TestHostileInputs:
         mutate(plan)
         assert_sound(Simulator(plan).run(retire_index=150, today=TODAY), plan)
 
-    @pytest.mark.parametrize("method", [LotMethod.FIFO, LotMethod.LIFO])
-    def test_a_portfolio_that_does_not_grow_still_sells_lots(self, method):
+    def test_a_portfolio_that_does_not_grow_still_sells_lots(self):
         """No growth means no synthetic history to manufacture.
 
         The lot model ages equal-basis purchases to reach the stated profit
         fraction; at a growth factor of exactly 1 there is nothing to age, and
-        the search for a lot count used to divide by zero.
+        the search for a lot count used to divide by zero. One lot carrying the
+        whole gain is the answer — and the two methods then differ exactly as
+        they should: FIFO sells that lot first and pays, LIFO sells the
+        deposits bought at par and defers.
         """
-        plan = everything_plan()
-        for portfolio in plan.portfolios:
-            portfolio.lot_method = method
-            portfolio.annual_return_pct = 0.0
-            portfolio.annual_fee_pct = 0.0
-            portfolio.profit_fraction_pct = 60
-        result = Simulator(plan).run(retire_index=150, today=TODAY)
-        assert_sound(result, plan)
-        assert any(m.expenses.get("capital_gains_tax0") for m in result.months), (
-            "a 60%-profit portfolio must still pay tax when it is sold")
+        paid = {}
+        for method in (LotMethod.FIFO, LotMethod.LIFO):
+            plan = everything_plan()
+            for portfolio in plan.portfolios:
+                portfolio.lot_method = method
+                portfolio.annual_return_pct = 0.0
+                portfolio.annual_fee_pct = 0.0
+                portfolio.profit_fraction_pct = 60
+            result = Simulator(plan).run(retire_index=150, today=TODAY)
+            assert_sound(result, plan)
+            paid[method] = sum(m.expenses.get("capital_gains_tax0", 0.0)
+                               for m in result.months)
+        assert paid[LotMethod.FIFO] > 0, "FIFO sells the gain first and must pay"
+        assert paid[LotMethod.LIFO] < paid[LotMethod.FIFO], (
+            "LIFO sells the deposits bought at par first and defers the gain")
 
     def test_retiring_beyond_the_horizon_is_a_working_life(self):
         """A retirement month past age 81 simply never arrives."""

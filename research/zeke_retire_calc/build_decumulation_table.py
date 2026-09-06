@@ -122,7 +122,10 @@ def cells() -> dict[float, dict[float, float]]:
         if age > BRANCH_AGE:
             bridge += POST_60_SHIFT
         grouped[row["rule"]][round(bridge, 6)].append(row["decumulation_return_pct"])
-    return {rule: {bridge: round(sum(v) / len(v), 4) for bridge, v in sorted(cell.items())}
+    # Keep the fit's own precision. Rounding a cell to four decimals moves the
+    # monthly growth factor by ~4e-9, which is invisible in a month and worth
+    # tens of shekels once compounded over 533 of them.
+    return {rule: {bridge: round(sum(v) / len(v), 8) for bridge, v in sorted(cell.items())}
             for rule, cell in sorted(grouped.items())}
 
 

@@ -4,16 +4,21 @@
 
 **Every one of the 134 recorded reference runs replays the full 533-month
 horizon with nothing fed in** — the engine derives its own decumulation return.
-121 of them land within 30 shekels over 533 months (three parts per million of
-a seven-figure balance, which is what the reference's one-decimal display
-rounding compounds to), and 37 are exact to the agora.
+**105 of them are exact to the agora** over all 533 months; the rest of the
+corpus lands within 15 shekels, bar the named gaps below.
+
+That last order of magnitude came from an unglamorous place: the surface's
+cells were being stored rounded to four decimals. Four decimals of an annual
+rate moves the monthly growth factor by 4e-9 — invisible in a month, and worth
+tens of shekels once compounded 533 times. Keeping the fit's own precision took
+the count exact to the agora from 37 to 105.
 
 Three suites assert it. `test_reference_parity` replays all 134 balance series
 with no input, and separately replays the 119 runs that pin their own rate to a
 two-shekel tolerance with that rate supplied — the tighter statement about
 everything other than the surface. `test_cashflow_parity` asserts the
 reference's other two charts, `income_plot` and `expense_plot`, row by row and
-month by month: a *closed* decomposition of every shekel in and out, which is
+month by month — 123 of the 134 match every row inside 0.15 shekels: a *closed* decomposition of every shekel in and out, which is
 what pins the withdrawal order, the deposit routing, the tax on each individual
 sale and each person's national-insurance base (notes/16). And
 `test_feature_combinations` runs plans nobody recorded — every instrument at

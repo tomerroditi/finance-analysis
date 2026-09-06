@@ -30,34 +30,27 @@ from backend.services.fire.reference_form import plan_from_reference
 FIXTURES = Path(__file__).resolve().parents[4] / "research" / "zeke_retire_calc" / "fixtures"
 RECORDED_IN = date(2026, 9, 1)
 
-TOLERANCE = 1.0
+TOLERANCE = 0.5
 """Shekels, over 533 months. The reference prints every row to one decimal, and
 a row that is a residual of several others — `unplanned` most of all — carries a
-rounding step from each. 119 of the 134 runs match every row inside this."""
+rounding step from each. 123 of the 134 runs match every row inside 0.15."""
 
 KNOWN_GAPS = {
     "pf_mukeret2": (6_200, "gemel-conversion bridge (notes/15)"),
     "pf_mukeret3_t60": (6_200, "gemel-conversion bridge (notes/15)"),
     "pf_mukeret4_order": (6_200, "gemel-conversion bridge (notes/15)"),
-    "cf_rise": (9, "which bucket funds the month the plan runs dry"),
-    "buffer_20k": (8, "cash/portfolio split in the last months"),
-    "pf_types_all": (8, "which portfolio empties first, to the agora"),
-    "pf_american": (8, "which portfolio empties first, to the agora"),
     "lot_lifo_nodep": (5, "synthetic lot history (notes/13)"),
     "pf_lifo": (4, "synthetic lot history (notes/13)"),
     "pf_fifo_nodep": (3, "synthetic lot history (notes/13)"),
     "pf_fifo": (3, "synthetic lot history (notes/13)"),
-    "pf_kh_hishtalmut": (3, "study-fund draw order, to the agora"),
-    "pf_kaspit_pikadon": (2, "deposit order across two capped accounts"),
-    "pf_kh_prati": (2, "study-fund draw order, to the agora"),
-    "pf_american_kh": (2, "study-fund draw order, to the agora"),
+    "cf_rise": (3, "which bucket funds the month the plan runs dry"),
 }
 """Runs with a row outside `TOLERANCE`, bounded and named.
 
-Every one is an accumulation of the reference's own display rounding deciding a
-split — which bucket funds a month, which portfolio empties first — except the
-three `pf_mukeret*`, where the decumulation bridge itself is unsolved and the
-withdrawal is genuinely different."""
+The three `pf_mukeret*` are the unsolved decumulation bridge, so their
+withdrawal is genuinely different. The rest is the synthetic lot history
+deciding a tax to the agora, and one run where rounding decides which bucket
+funds the month the plan runs dry."""
 
 TYPE_LABELS = {
     PortfolioType.BROKER_IL: "תיק בברוקר בארץ",

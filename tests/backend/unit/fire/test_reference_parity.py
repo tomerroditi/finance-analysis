@@ -49,23 +49,23 @@ as the scenario pins the rate (see `build_decumulation_table.py`) — but carrie
 a residual of its own, from the synthetic lot history or the one-decimal
 annuity factors, so it is asserted by `TestDerivedParity`'s bounds instead."""
 
-DERIVED_TOLERANCE = 30.0
+DERIVED_TOLERANCE = 15.0
 """Shekels, over 533 months, with nothing supplied to the engine.
 
-Three parts per million of a seven-figure balance: what is left after the
-reference's own one-decimal display rounding has compounded."""
+105 of the 134 runs come back **under one shekel**; the rest of the corpus
+lands under this. What is left at this scale is the reference's one-decimal
+display precision compounding, chiefly through the annuity factors, which it
+only ever prints to one decimal."""
 
 KNOWN_GAPS = {
     "pf_mukeret2": (40_000, "gemel-conversion bridge (notes/15)"),
     "pf_mukeret3_t60": (60_000, "gemel-conversion bridge (notes/15)"),
     "pf_mukeret4_order": (20_000, "gemel-conversion bridge (notes/15)"),
     "pn_annuity_6067": (300, "interpolated bridge for a split pension claim"),
-    "lot_lifo_nodep": (250, "synthetic lot history (notes/13)"),
-    "pf_lifo": (120, "synthetic lot history (notes/13)"),
-    "pf_fifo": (110, "synthetic lot history (notes/13)"),
+    "lot_lifo_nodep": (220, "synthetic lot history (notes/13)"),
+    "pf_lifo": (140, "synthetic lot history (notes/13)"),
+    "pf_fifo": (80, "synthetic lot history (notes/13)"),
     "pf_fifo_nodep": (70, "synthetic lot history (notes/13)"),
-    "pf_gemel_two": (110, "deposit order across two capped accounts"),
-    "pf_deposit_caps": (110, "deposit order across two capped accounts"),
     "pf_mukeret_ref": (70, "a couple both annuitising at 60"),
     "pf_mukeret_main": (70, "a couple both annuitising at 60"),
     "pf_mukeret_partner": (70, "a couple both annuitising at 60"),
