@@ -100,7 +100,9 @@ class SavingsGoalAllocation(Base, TimestampMixin):
 
     Rows are written by the allocation engine, one per (goal, month). Past
     months are left untouched on subsequent runs — only an explicit rebuild
-    rewrites them — so a priority change never silently restates history.
+    rewrites them — so a priority change never silently restates history. The
+    single row per month carries the net movement: funding is positive, a
+    deficit month's clawback is negative.
 
     Attributes
     ----------
@@ -109,7 +111,10 @@ class SavingsGoalAllocation(Base, TimestampMixin):
     year, month : int
         Calendar month this allocation belongs to.
     amount : float
-        Money directed into the goal that month (never negative).
+        Money directed into the goal that month. Normally positive; a month
+        that spent more than it earned, and drained the free-cash pool dry,
+        writes a **negative** row for the amount it had to take back out of
+        the goal (never more than the goal still had available).
     source : str
         ``"auto"`` for engine-computed rows, ``"manual"`` for user overrides.
     """

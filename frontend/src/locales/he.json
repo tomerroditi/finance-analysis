@@ -282,6 +282,10 @@
       "monthlyNeeded": "{{amount}} לחודש במשך {{count}} ח׳",
       "thisMonth": "{{amount}} החודש",
       "utilized": "{{spent}} נוצלו · {{available}} נותרו",
+      "clawedBack": "{{amount}} הוחזרו לכיסוי הגירעון",
+      "freeCash": "כסף פנוי",
+      "freeCashHint": "כסף במעקב שאף יעד לא ייעד לעצמו",
+      "poolDrained": "הגירעון החודש רוקן את הכסף הפנוי ולקח {{amount}} בחזרה מהיעדים",
       "priorityHint": "סדר המימון — היעד העליון מתמלא ראשון",
       "moveUp": "העלאה בסדר המימון",
       "moveDown": "הורדה בסדר המימון",
@@ -674,7 +678,9 @@
       "provisionalHint": "החודש עדיין פתוח — הסכום משתנה ככל שנקלטות תנועות",
       "contributed": "{{amount}} מקושרים",
       "surplus": "עודף החודש: {{amount}}",
-      "unallocated": "לא הוקצה: {{amount}}"
+      "unallocated": "לא הוקצה: {{amount}}",
+      "freeCash": "כסף פנוי: {{amount}}",
+      "clawedBack": "החודש הוצא יותר משנכנס. הכסף הפנוי כיסה את מה שיכול, ו-{{amount}} הוחזרו מהיעדים."
     }
   },
   "budgetAlerts": {

@@ -282,6 +282,10 @@
       "monthlyNeeded": "{{amount}}/mo for {{count}} mo",
       "thisMonth": "{{amount}} this month",
       "utilized": "{{spent}} used · {{available}} left",
+      "clawedBack": "{{amount}} taken back to cover overspending",
+      "freeCash": "Free cash",
+      "freeCashHint": "Tracked money no goal has earmarked",
+      "poolDrained": "Overspending emptied the pool this month and took {{amount}} back out of the goals",
       "priorityHint": "Funding order — the top goal fills first",
       "moveUp": "Move up in funding order",
       "moveDown": "Move down in funding order",
@@ -674,7 +678,9 @@
       "provisionalHint": "This month is still open — the figure moves as transactions land",
       "contributed": "{{amount}} linked",
       "surplus": "Month's surplus: {{amount}}",
-      "unallocated": "Unallocated: {{amount}}"
+      "unallocated": "Unallocated: {{amount}}",
+      "freeCash": "Free cash: {{amount}}",
+      "clawedBack": "This month spent more than it earned. The free-cash pool covered what it could, and {{amount}} came back out of the goals."
     }
   },
   "budgetAlerts": {

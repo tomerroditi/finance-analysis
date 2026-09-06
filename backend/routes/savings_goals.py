@@ -114,6 +114,12 @@ def reopen_goal(goal_id: int, db: Session = Depends(get_database)):
     return SavingsGoalService(db).reopen(goal_id)
 
 
+@router.get("/free-cash")
+def get_free_cash(db: Session = Depends(get_database)):
+    """Return the pool of tracked money no goal has earmarked."""
+    return SavingsGoalService(db).get_free_cash()
+
+
 @router.get("/allocations/{year}/{month}")
 def get_month_allocations(year: int, month: int, db: Session = Depends(get_database)):
     """Return how much each goal received in one month, for the budget view."""

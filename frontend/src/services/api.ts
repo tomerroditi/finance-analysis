@@ -944,7 +944,9 @@ export interface SavingsGoal {
   contributed: number;
   /** Money spent back out of the goal. Never reduces `target_amount`. */
   utilized: number;
-  /** opening_balance + allocated + contributed. */
+  /** Money deficit months pulled back out, once the free-cash pool ran dry. */
+  clawed_back: number;
+  /** opening_balance + allocated + contributed, net of any clawback. */
   funded: number;
   /** funded - utilized: what is still earmarked and unspent. */
   available: number;
@@ -988,6 +990,10 @@ export interface SavingsGoalMonthAllocations {
   total_allocated: number;
   surplus: number;
   unallocated: number;
+  /** Unearmarked money left in the pool at the end of this month. */
+  free_cash: number;
+  /** Money this month's deficit pulled back out of goals (positive). */
+  clawed_back: number;
   is_provisional: boolean;
 }
 
@@ -1004,6 +1010,15 @@ export interface SavingsGoalRebuildResult {
   dry_run: boolean;
   changes: SavingsGoalRebuildChange[];
   goals: SavingsGoal[];
+}
+
+/** The pool of tracked money that no goal has earmarked. */
+export interface SavingsGoalFreeCash {
+  free_cash: number;
+  earmarked: number;
+  liquid: number;
+  clawed_back_this_month: number;
+  has_goals: boolean;
 }
 
 export type SavingsGoalLinkType = "contribution" | "utilization";
@@ -1032,6 +1047,7 @@ export const savingsGoalsApi = {
       from_month: fromMonth,
       dry_run: dryRun,
     }),
+  getFreeCash: () => api.get<SavingsGoalFreeCash>("/savings-goals/free-cash"),
   getLinks: (goalId?: number) =>
     api.get<SavingsGoalLink[]>("/savings-goals/links", {
       params: goalId ? { goal_id: goalId } : undefined,

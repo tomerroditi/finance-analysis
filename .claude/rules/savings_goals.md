@@ -28,12 +28,18 @@ the account it sits in.
 For each month, from the earliest goal's `start_month` through the current one:
 
 ```
-surplus = income - expenses - investments        (realized, CC-deduped)
-pool    = max(0, surplus)
-pool   -= frozen allocations of closed goals     (already spoken for)
-pool   -= explicit contributions                 (consume before the waterfall)
+surplus    = income - expenses - investments     (realized, CC-deduped)
+free_cash += surplus                             (the pool moves with the month)
+pool       = max(0, surplus)
+pool      -= frozen allocations of closed goals  (already spoken for)
+pool      -= explicit contributions              (consume before the waterfall)
 for each active goal, by priority ascending:
     take = min(target - funded, pool, monthly_cap or ∞)
+    free_cash -= take
+if free_cash < 0:                                (the month overspent)
+    free_cash = 0
+    for each active goal, by priority DESCENDING:
+        give_back = min(funded - utilized, shortfall)
 ```
 
 - **Surplus is realized, not forecast.** It comes from actual transactions,
@@ -42,12 +48,65 @@ for each active goal, by priority ascending:
   and counting them would hand one month an enormous phantom surplus.
 - **Investment transfers reduce the surplus.** Money moved into an investment
   has left the spendable balance the earmark sits over.
-- **A negative month allocates nothing and never claws back.** Overspending
-  does not un-fund a goal.
+- **A negative month allocates nothing, and reaches the goals only last.**
+  Overspending drains the free-cash pool first (below); a goal is only
+  un-funded once that pool is empty.
 - **`monthly_cap` is what stops a big goal starving the rest.** Uncapped, a
   priority-1 goal absorbs everything until it fills.
 - **`start_month` gates participation**, so a goal created today cannot claim
   surpluses that predate it. It defaults to the creation month.
+
+## The free-cash pool
+
+The counterweight to the goals is `free_cash`: the tracked money no goal has
+earmarked. It exists so an overspent month has somewhere to land before the
+engine starts taking money back out of the goals.
+
+- **It opens at the spendable money that existed when the first goal started** —
+  bank + cash *prior wealth* (`_opening_free_cash`, investment prior wealth
+  deliberately excluded: money in an investment is not free cash), plus every
+  month of realized surplus that predates the walk, less the goals' opening
+  balances. Anchoring on prior wealth alone would ignore all the history the
+  goals never saw.
+- **It moves with the whole month, not just the positive part.** The waterfall
+  still only distributes `max(0, surplus)`, but the pool is credited with the
+  surplus itself and debited for every shekel a goal takes out of it. What the
+  goals do not claim simply stays in the pool.
+- **It never goes negative.** An overspend the goals cannot cover came from
+  money this model does not track (an overdraft, an untagged account); the pool
+  floors at zero rather than carrying a phantom debt forward.
+- **It is spendable cash, not a bank statement.** Investment transfers reduce it
+  for the same reason they reduce the surplus, so it will sit below the raw
+  bank + cash balance for anyone who invests.
+- `free_cash + Σ available` is the liquid money the goals sit over, which is
+  what `GET /savings-goals/free-cash` reports as `liquid`. That endpoint
+  short-circuits to zeros when the user keeps no goals, so the no-goals path
+  still pays for no transaction scan.
+
+### Clawback: the waterfall in reverse
+
+When a month's deficit outlives the pool, the shortfall comes back out of the
+goals **lowest priority first** — the mirror image of funding, so the goal that
+matters most is drained last.
+
+- **A goal gives back at most `funded - utilized`.** Money already spent out of
+  a goal is gone and can never be reclaimed; a goal with nothing available
+  gives nothing. This is what makes tracking utilization load-bearing rather
+  than merely informative.
+- **A clawback is a negative `savings_goal_allocations` row** in the deficit
+  month, so the ledger stays the single source of truth and `allocated` nets
+  out on its own. `clawed_back` on the API payload sums those rows so the UI
+  can show what was taken without reading the ledger itself.
+- **Closed goals are never clawed back** — frozen means frozen, in both
+  directions.
+- **A history month's existing rows still stand.** The clawback obeys the same
+  immutability rule as funding: only an explicit `rebuild` restates a month
+  that already has rows. That is also why a plan's clawbacks cannot be read
+  back off `_Plan` — a replayed history month computes nothing — so
+  `get_month_allocations` and `get_free_cash` read them from the stored rows.
+- **A replayed negative row must not refill the month's distributable pool.**
+  It hands money back to `free_cash`, not to the waterfall; getting this wrong
+  lets a deficit month fund a goal that had no row there yet.
 
 ## Every shekel is counted once
 
@@ -101,10 +160,13 @@ not closed.
 ## Where the numbers surface
 
 - **Dashboard** (`GoalsSection.tsx`) — the waterfall in priority order, with
-  reorder arrows, `this_month_allocation`, `utilized`/`available`, and the
-  redistribute preview.
+  reorder arrows, `this_month_allocation`, `utilized`/`available`,
+  `clawed_back`, the redistribute preview, and the free-cash pool on a dashed
+  row below the goals (`GET /savings-goals/free-cash`, its own query key).
 - **Monthly budget** (`SavingsGoalsBudgetSection.tsx`) — what each goal
-  received that month, below the ledger rows.
+  received that month, below the ledger rows. A deficit month reads in
+  reverse: an amber banner explains the clawback and the per-goal rows go
+  negative.
 
 The budget block's data rides on `GET /budget/analysis/{year}/{month}` as a
 `savings_goals` key, **not** its own request. It used to have one, and that

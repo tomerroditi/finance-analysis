@@ -151,6 +151,26 @@ test.describe("Savings goals", () => {
     // in-progress row's header must read exactly rank + name.
     const header = inProgressRow.locator("xpath=.//p[1]/..");
     await expect(header).toHaveText("#1E2E In Progress Goal");
+
+    // --- free-cash pool ------------------------------------------------
+    // The unearmarked remainder renders below the waterfall and outside any
+    // goal row — it is the buffer a deficit month drains before the engine
+    // reaches back into the goals themselves.
+    const pool = page.getByText("Free cash", { exact: true });
+    await expect(pool).toBeVisible();
+    await expect(
+      pool.locator("xpath=ancestor::div[contains(@class,'group')]"),
+    ).toHaveCount(0);
+
+    // What it reports must reconcile: pool + earmarked = liquid.
+    const reported = await (
+      await ctx.get(`${API_BASE}/savings-goals/free-cash`)
+    ).json();
+    expect(reported.has_goals).toBe(true);
+    expect(reported.free_cash + reported.earmarked).toBeCloseTo(
+      reported.liquid,
+      2,
+    );
   });
 
   test("reordering moves a goal up the waterfall", async ({ page }) => {
@@ -225,5 +245,9 @@ test.describe("Savings goals", () => {
         page.getByText(goal.name, { exact: true }).first(),
       ).toBeVisible();
     }
+
+    // The month's footer names what the goals left behind as well as what
+    // they took, so a deficit month can explain itself.
+    await expect(page.getByText(/^Free cash:/)).toBeVisible();
   });
 });

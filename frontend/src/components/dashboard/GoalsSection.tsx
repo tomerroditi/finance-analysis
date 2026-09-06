@@ -12,12 +12,14 @@ import {
   History,
   Lock,
   RotateCcw,
+  Wallet,
 } from "lucide-react";
 import {
   savingsGoalsApi,
   type SavingsGoal,
   type SavingsGoalInput,
   type SavingsGoalRebuildChange,
+  type SavingsGoalFreeCash,
 } from "../../services/api";
 import { useQueryKeys } from "../../hooks/useQueryKeys";
 import { qkPrefix } from "../../services/queryKeys";
@@ -34,6 +36,10 @@ import { formatCurrency } from "../../utils/numberFormatting";
  * take (its target, or its monthly cap) down to the next one. Reordering
  * applies to future months only — restating history is the explicit
  * "redistribute" action, which previews the diff before committing.
+ *
+ * Below the waterfall sits the free-cash pool: the tracked money no goal has
+ * earmarked. It is the buffer a month of overspending drains first, and only
+ * once it is empty does a deficit reach back into the goals.
  */
 export function GoalsSection() {
   const { t } = useTranslation();
@@ -47,6 +53,14 @@ export function GoalsSection() {
     queryKey: qk.savingsGoals.all(),
     queryFn: async () => {
       const res = await savingsGoalsApi.getAll();
+      return res.data;
+    },
+  });
+
+  const { data: pool } = useQuery({
+    queryKey: qk.savingsGoals.freeCash(),
+    queryFn: async () => {
+      const res = await savingsGoalsApi.getFreeCash();
       return res.data;
     },
   });
@@ -135,6 +149,8 @@ export function GoalsSection() {
         </div>
       )}
 
+      {!!pool?.has_goals && <FreeCashRow pool={pool} />}
+
       {editing !== null && (
         <GoalEditorModal
           goal={editing === "new" ? null : editing}
@@ -144,6 +160,47 @@ export function GoalsSection() {
 
       {redistributing && (
         <RedistributeModal onClose={() => setRedistributing(false)} />
+      )}
+    </div>
+  );
+}
+
+/**
+ * The unearmarked remainder of the tracked money, shown under the waterfall.
+ *
+ * It is deliberately not a goal: nothing fills it and nothing spends it on
+ * purpose. It exists so a deficit month has somewhere to land before the
+ * engine starts taking money back out of the goals themselves.
+ */
+function FreeCashRow({ pool }: { pool: SavingsGoalFreeCash }) {
+  const { t } = useTranslation();
+
+  return (
+    <div className="mt-3 border border-dashed border-[var(--surface-light)] rounded-xl p-3">
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2 min-w-0">
+          <div className="p-1.5 rounded-lg bg-[var(--surface-light)] text-[var(--text-muted)]">
+            <Wallet size={14} />
+          </div>
+          <div className="min-w-0">
+            <p className="text-xs md:text-sm font-medium truncate">
+              {t("dashboard.goals.freeCash")}
+            </p>
+            <p className="text-[10px] md:text-xs text-[var(--text-muted)]">
+              {t("dashboard.goals.freeCashHint")}
+            </p>
+          </div>
+        </div>
+        <span className="text-sm md:text-base font-bold shrink-0" dir="ltr">
+          {formatCurrency(pool.free_cash)}
+        </span>
+      </div>
+      {pool.clawed_back_this_month > 0 && (
+        <p className="mt-1.5 text-[10px] md:text-xs text-amber-400">
+          {t("dashboard.goals.poolDrained", {
+            amount: formatCurrency(pool.clawed_back_this_month),
+          })}
+        </p>
       )}
     </div>
   );
@@ -228,7 +285,9 @@ function GoalRow({
         <span dir="ltr">{goal.progress_pct}%</span>
         <GoalStatusLine goal={goal} />
       </div>
-      {(goal.this_month_allocation > 0 || goal.utilized > 0) && (
+      {(goal.this_month_allocation > 0 ||
+        goal.utilized > 0 ||
+        goal.clawed_back > 0) && (
         <div className="flex flex-wrap gap-x-3 gap-y-1 mt-1.5 text-[10px] md:text-xs text-[var(--text-muted)]">
           {goal.this_month_allocation > 0 && (
             <span>
@@ -242,6 +301,13 @@ function GoalRow({
               {t("dashboard.goals.utilized", {
                 spent: formatCurrency(goal.utilized),
                 available: formatCurrency(goal.available),
+              })}
+            </span>
+          )}
+          {goal.clawed_back > 0 && (
+            <span className="text-amber-400">
+              {t("dashboard.goals.clawedBack", {
+                amount: formatCurrency(goal.clawed_back),
               })}
             </span>
           )}

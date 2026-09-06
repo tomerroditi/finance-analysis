@@ -13,6 +13,10 @@ never an addition to net worth. Progress is derived rather than typed:
    the pool — it was set aside in an earlier month.
 3. Whatever is left flows down the goals by ``priority``, each taking up to
    ``min(remaining need, monthly_cap)`` and spilling the rest to the next goal.
+4. Whatever *still* remains lands in the **free-cash pool** — the tracked
+   money no goal has earmarked. A month that spends more than it earns drains
+   that pool first, and only claws money back out of goals (lowest priority
+   first, never below what a goal has already spent) once the pool is empty.
 
 Results are persisted per (goal, month) in ``savings_goal_allocations``. Past
 months are never silently restated: a priority change applies going forward,
@@ -40,6 +44,8 @@ from backend.models.savings_goal import (
     LINK_UTILIZATION,
 )
 from backend.repositories.savings_goal_repository import SavingsGoalRepository
+from backend.services.bank_balance_service import BankBalanceService
+from backend.services.cash_balance_service import CashBalanceService
 from backend.services.transaction_classification import transactions_masks
 from backend.services.transactions_service import TransactionsService
 
@@ -98,6 +104,8 @@ class _Plan:
     closed_month: dict = field(default_factory=dict)
     #: ``{(year, month): surplus}`` pool available before any goal took a share.
     surplus: dict = field(default_factory=dict)
+    #: ``{(year, month): free cash}`` left unearmarked at the end of each month.
+    free_cash: dict = field(default_factory=dict)
 
 
 class SavingsGoalService:
@@ -119,6 +127,10 @@ class SavingsGoalService:
         # The service is constructed per request, so caching it here is
         # request-scoped and never goes stale mid-call.
         self._context_cache: dict | None = None
+        # The last simulation pass, kept so the free-cash pool and the
+        # per-month deficit figures can be read back without walking the
+        # whole timeline a second time.
+        self._last_plan: _Plan | None = None
 
     # ------------------------------------------------------------------
     # Public API
@@ -152,7 +164,9 @@ class SavingsGoalService:
         -------
         dict
             ``goals`` (per-goal allocation rows), ``total_allocated``,
-            ``surplus`` for the month, ``unallocated`` remainder, and
+            ``surplus`` for the month, ``unallocated`` remainder,
+            ``free_cash`` left in the pool at month end, ``clawed_back``
+            (money a deficit pulled back out of goals, positive), and
             ``is_provisional`` — true while the month is still open, because
             the figures move as new transactions land.
         """
@@ -165,6 +179,8 @@ class SavingsGoalService:
             "total_allocated": 0.0,
             "surplus": 0.0,
             "unallocated": 0.0,
+            "free_cash": 0.0,
+            "clawed_back": 0.0,
             "is_provisional": is_provisional,
         }
         # Short-circuit before touching transactions. The budget page renders
@@ -204,6 +220,8 @@ class SavingsGoalService:
             )
 
         total = sum(row["total"] for row in rows)
+        plan = self._last_plan
+        clawed = -sum(amount for amount in by_goal.values() if amount < 0)
         return {
             "year": year,
             "month": month,
@@ -211,7 +229,57 @@ class SavingsGoalService:
             "total_allocated": round(total, 2),
             "surplus": round(surplus, 2),
             "unallocated": round(max(0.0, surplus - total), 2),
+            "free_cash": round(float(plan.free_cash.get((year, month), 0.0)), 2)
+            if plan
+            else 0.0,
+            "clawed_back": round(clawed, 2),
             "is_provisional": is_provisional,
+        }
+
+    def get_free_cash(self) -> dict:
+        """Return the pool of tracked money that no goal has earmarked.
+
+        The pool is the counterweight to the goals: liquid money (bank + cash)
+        minus what every goal still holds. It is what a deficit month drains
+        before any goal is touched.
+
+        Returns
+        -------
+        dict
+            ``free_cash`` (the unearmarked pool), ``earmarked`` (the sum of
+            every goal's available balance), ``liquid`` (the two together),
+            ``clawed_back_this_month`` and ``has_goals``. With no goals the
+            figures are zero and no transaction scan happens — the pool only
+            means something relative to goals.
+        """
+        empty = {
+            "free_cash": 0.0,
+            "earmarked": 0.0,
+            "liquid": 0.0,
+            "clawed_back_this_month": 0.0,
+            "has_goals": False,
+        }
+        if not self._goals_in_order():
+            return empty
+
+        goals = self.get_all()
+        plan = self._last_plan
+        today = date.today()
+        current = (today.year, today.month)
+        free_cash = float(plan.free_cash.get(current, 0.0)) if plan else 0.0
+        earmarked = sum(max(0.0, g["available"]) for g in goals)
+        this_month = self.repo.get_month_allocations(*current)
+        clawed = (
+            -float(this_month.loc[this_month["amount"] < 0, "amount"].sum())
+            if not this_month.empty
+            else 0.0
+        )
+        return {
+            "free_cash": round(free_cash, 2),
+            "earmarked": round(earmarked, 2),
+            "liquid": round(free_cash + earmarked, 2),
+            "clawed_back_this_month": round(clawed, 2),
+            "has_goals": True,
         }
 
     def create(self, **fields) -> dict:
@@ -332,6 +400,7 @@ class SavingsGoalService:
         the month ends.
         """
         plan = self._simulate(recompute_from=None)
+        self._last_plan = plan
         self._persist(plan)
 
     def rebuild(self, from_month: str | None = None, dry_run: bool = False) -> dict:
@@ -431,6 +500,24 @@ class SavingsGoalService:
 
         funded = {g.id: float(g.opening_balance or 0.0) for g in goals}
         utilized = {g.id: 0.0 for g in goals}
+        # The pool opens at the spendable money the user had when the first
+        # goal started: the capital that predates tracking, plus every month
+        # of realized cash flow before the walk begins, less whatever the
+        # goals already earmark of it. Anchoring on prior wealth alone would
+        # ignore years of history the goals never saw.
+        #
+        # It can only go negative if the goals claim more than that, which is
+        # a bookkeeping artefact rather than real debt — floor it at zero so
+        # the first deficit month does not raid goals over a phantom hole.
+        earlier_flow = sum(
+            amount
+            for month_key, amount in context["surplus"].items()
+            if month_key < first_month
+        )
+        free_cash = max(
+            0.0,
+            self._opening_free_cash() + earlier_flow - sum(funded.values()),
+        )
         # A goal closed by the user is frozen from the outset; one that fills
         # and is fully spent closes partway through the walk.
         frozen = {g.id: g.status == GOAL_STATUS_CLOSED for g in goals}
@@ -448,7 +535,14 @@ class SavingsGoalService:
                 recompute_from is not None and key >= recompute_from
             ) or key == current
 
-            pool = max(0.0, context["surplus"].get(key, 0.0))
+            surplus = context["surplus"].get(key, 0.0)
+            # The pool tracks real money, so it moves with the whole month —
+            # a deficit pulls it down just as a surplus lifts it. Only the
+            # positive part is ever handed to the waterfall, and every shekel
+            # a goal takes is debited below, so what the goals leave behind
+            # needs no separate step: it is already in the pool.
+            free_cash += surplus
+            pool = max(0.0, surplus)
 
             # A closed goal keeps whatever it was given; that money is spoken
             # for, so it leaves the pool before anyone else draws on it.
@@ -457,7 +551,11 @@ class SavingsGoalService:
                     amount = stored.get((goal.id, year, month), 0.0)
                     if amount:
                         funded[goal.id] += amount
-                        pool -= amount
+                        # Only funding drains the month's distributable pool.
+                        # A replayed clawback is negative — it hands money
+                        # back to the free-cash pool, not to the waterfall.
+                        pool -= max(0.0, amount)
+                        free_cash -= amount
 
             # Contributions are derived from transactions rather than stored,
             # so they are always current — and they claim their share of the
@@ -466,6 +564,7 @@ class SavingsGoalService:
                 if goal_id in funded and not frozen[goal_id]:
                     funded[goal_id] += amount
                     pool -= amount
+                    free_cash -= amount
             pool = max(0.0, pool)
 
             if not recompute:
@@ -475,7 +574,8 @@ class SavingsGoalService:
                     amount = stored.get((goal.id, year, month))
                     if amount is not None:
                         funded[goal.id] += amount
-                        pool -= amount
+                        pool -= max(0.0, amount)
+                        free_cash -= amount
                 pool = max(0.0, pool)
 
             for goal in goals:
@@ -499,6 +599,39 @@ class SavingsGoalService:
                 plan.computed[(goal.id, year, month)] = take
                 funded[goal.id] += take
                 pool -= take
+                free_cash -= take
+
+            # A month that spent more than it earned has already pulled the
+            # pool down. Only once the pool is empty does the overspend reach
+            # the goals, taking from the least important first — the mirror
+            # image of the funding waterfall.
+            if free_cash < -0.005:
+                shortfall = -free_cash
+                free_cash = 0.0
+                for goal in reversed(goals):
+                    if shortfall <= 0.005:
+                        break
+                    if frozen[goal.id] or key < start_of[goal.id]:
+                        continue
+                    # A history month's existing rows stand, exactly as they
+                    # do for funding — only an explicit rebuild restates them.
+                    if not recompute and stored.get((goal.id, year, month)) is not None:
+                        continue
+                    # Money already spent out of a goal is gone; only what is
+                    # still available can be handed back.
+                    give_back = round(
+                        min(funded[goal.id] - utilized[goal.id], shortfall), 2
+                    )
+                    if give_back <= 0:
+                        continue
+                    plan.computed[(goal.id, year, month)] = -give_back
+                    funded[goal.id] -= give_back
+                    shortfall -= give_back
+                # An overspend the goals cannot cover came out of money this
+                # model does not track (an overdraft, an untagged account).
+                # The pool is empty either way; it never goes negative.
+
+            plan.free_cash[key] = round(free_cash, 2)
 
             # Money spent back out of a goal lands after that month's funding,
             # and never reduces the target — it is utilization, not a refund.
@@ -533,6 +666,26 @@ class SavingsGoalService:
     # ------------------------------------------------------------------
     # Inputs
     # ------------------------------------------------------------------
+
+    def _opening_free_cash(self) -> float:
+        """Liquid money that existed before any transaction was tracked.
+
+        Bank and cash *prior wealth* is exactly that opening balance — each
+        account stores ``current balance - sum(its tracked transactions)`` —
+        so walking the realized surplus forward from here reconstructs the
+        liquid balance, the same way the net-worth chart does. Investment
+        prior wealth is deliberately left out: money sitting in an investment
+        is not free cash, which is also why transfers into one reduce the
+        pool as they happen.
+
+        Returns
+        -------
+        float
+            Combined bank + cash prior wealth, ``0.0`` when neither is set up.
+        """
+        bank = BankBalanceService(self.db).get_total_prior_wealth()
+        cash = CashBalanceService(self.db).get_total_prior_wealth()
+        return float(bank) + float(cash)
 
     def _build_context(self) -> dict:
         """Compute per-month surplus and per-month goal-linked amounts, memoised.
@@ -733,15 +886,22 @@ class SavingsGoalService:
 
         allocations = self.repo.get_allocations()
         totals: dict[int, float] = {}
+        reclaimed: dict[int, float] = {}
         history: dict[int, list[dict]] = {}
         if not allocations.empty:
             for row in allocations.sort_values(["year", "month"]).itertuples(index=False):
                 goal_id = int(row.goal_id)
-                totals[goal_id] = totals.get(goal_id, 0.0) + float(row.amount)
+                amount = float(row.amount)
+                totals[goal_id] = totals.get(goal_id, 0.0) + amount
+                # A negative row is a deficit month taking money back out of
+                # the goal; `allocated` nets it off, but the user still wants
+                # to see how much was reclaimed.
+                if amount < 0:
+                    reclaimed[goal_id] = reclaimed.get(goal_id, 0.0) - amount
                 history.setdefault(goal_id, []).append(
                     {
                         "month": _month_str((int(row.year), int(row.month))),
-                        "amount": round(float(row.amount), 2),
+                        "amount": round(amount, 2),
                     }
                 )
 
@@ -768,7 +928,9 @@ class SavingsGoalService:
         }
 
         return [
-            self._enrich(goal, totals, contributed, utilized, history, provisional)
+            self._enrich(
+                goal, totals, contributed, utilized, history, provisional, reclaimed
+            )
             for goal in goals
         ]
 
@@ -780,6 +942,7 @@ class SavingsGoalService:
         utilized: dict,
         history: dict,
         provisional: dict,
+        reclaimed: dict,
     ) -> dict:
         """Assemble one goal's derived progress metrics."""
         target = float(goal.target_amount or 0.0)
@@ -831,6 +994,7 @@ class SavingsGoalService:
             "allocated": round(allocated, 2),
             "contributed": round(contributions, 2),
             "utilized": round(spent, 2),
+            "clawed_back": round(float(reclaimed.get(goal.id, 0.0)), 2),
             "funded": round(funded, 2),
             "available": round(available, 2),
             "remaining": round(remaining, 2),

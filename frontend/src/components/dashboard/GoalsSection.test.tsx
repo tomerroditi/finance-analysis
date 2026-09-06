@@ -2,7 +2,12 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { GoalsSection } from "./GoalsSection";
-import { savingsGoalsApi, testingApi, type SavingsGoal } from "../../services/api";
+import {
+  savingsGoalsApi,
+  testingApi,
+  type SavingsGoal,
+  type SavingsGoalFreeCash,
+} from "../../services/api";
 import { DemoModeProvider } from "../../context/DemoModeContext";
 
 /**
@@ -37,6 +42,7 @@ function makeGoal(overrides: Partial<SavingsGoal> = {}): SavingsGoal {
     allocated: 2500,
     contributed: 0,
     utilized: 0,
+    clawed_back: 0,
     funded: 2500,
     available: 2500,
     remaining: 7500,
@@ -51,10 +57,24 @@ function makeGoal(overrides: Partial<SavingsGoal> = {}): SavingsGoal {
   };
 }
 
-async function renderGoals(goals: SavingsGoal[]) {
+async function renderGoals(
+  goals: SavingsGoal[],
+  pool: Partial<SavingsGoalFreeCash> = {},
+) {
   vi.spyOn(savingsGoalsApi, "getAll").mockResolvedValue({
     data: goals,
   } as Awaited<ReturnType<typeof savingsGoalsApi.getAll>>);
+
+  vi.spyOn(savingsGoalsApi, "getFreeCash").mockResolvedValue({
+    data: {
+      free_cash: 0,
+      earmarked: 0,
+      liquid: 0,
+      clawed_back_this_month: 0,
+      has_goals: false,
+      ...pool,
+    },
+  } as Awaited<ReturnType<typeof savingsGoalsApi.getFreeCash>>);
 
   vi.spyOn(testingApi, "getDemoModeStatus").mockResolvedValue({
     data: { demo_mode: false, forced: false },
@@ -278,6 +298,36 @@ describe("GoalsSection", () => {
       fireEvent.click(confirm);
 
       await waitFor(() => expect(rebuild).toHaveBeenCalledWith(null, false));
+    });
+  });
+
+  describe("free-cash pool", () => {
+    it("shows the unearmarked pool under the waterfall", async () => {
+      await renderGoals([makeGoal({ name: "Vacation" })], {
+        free_cash: 4200,
+        earmarked: 2500,
+        liquid: 6700,
+        has_goals: true,
+      });
+
+      expect(await screen.findByText(/free cash/i)).toBeInTheDocument();
+      expect(screen.getByText(/4,200/)).toBeInTheDocument();
+    });
+
+    it("stays hidden while the user keeps no goals", async () => {
+      await renderGoals([makeGoal({ name: "Vacation" })], { has_goals: false });
+
+      expect(screen.queryByText(/free cash/i)).not.toBeInTheDocument();
+    });
+
+    it("flags money a deficit pulled back out of a goal", async () => {
+      await renderGoals([makeGoal({ name: "Vacation", clawed_back: 800 })], {
+        has_goals: true,
+      });
+
+      expect(
+        within(rowFor("Vacation")).getByText(/taken back/i),
+      ).toBeInTheDocument();
     });
   });
 });

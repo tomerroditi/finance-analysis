@@ -3,8 +3,9 @@
 Covers the waterfall itself — priority order, per-goal monthly caps, spillover
 — plus the rules that surround it: contributions consuming the month's surplus
 before the waterfall runs, utilizations drawing a goal down without touching
-its target, negative-surplus months, auto-closure, and the immutability of a
-closed goal's history across a rebuild.
+its target, negative-surplus months draining the free-cash pool before they
+reach any goal, auto-closure, and the immutability of a closed goal's history
+across a rebuild.
 """
 
 from datetime import date
@@ -16,6 +17,7 @@ from backend.models.savings_goal import (
     LINK_CONTRIBUTION,
     LINK_UTILIZATION,
 )
+from backend.models.bank_balance import BankBalance
 from backend.models.transaction import BankTransaction
 from backend.services.savings_goal_service import SavingsGoalService
 
@@ -60,6 +62,23 @@ def _seed_surplus(db, month: str, income: float, expenses: float) -> None:
     """Give a month a known realized surplus of ``income - expenses``."""
     _add_txn(db, month, income, "Salary", day=1)
     _add_txn(db, month, -expenses, "Food", day=2)
+
+
+def _seed_free_cash(db, amount: float) -> None:
+    """Give the user ``amount`` of liquid money from before tracking began.
+
+    Bank prior wealth is what seeds the free-cash pool, so this is how a test
+    says "there was already money in the account".
+    """
+    db.add(
+        BankBalance(
+            provider="TestBank",
+            account_name="Main",
+            balance=amount,
+            prior_wealth_amount=amount,
+        )
+    )
+    db.commit()
 
 
 @pytest.fixture
@@ -144,8 +163,9 @@ class TestSurplusDefinition:
     """What counts as the month's spare money."""
 
     def test_negative_surplus_month_allocates_nothing(self, db_session, service):
-        """Overspending a month funds no goals — and never claws money back."""
+        """Overspending a month funds no goals — the deficit hits the pool."""
         good, bad = _month_str(2), _month_str(1)
+        _seed_free_cash(db_session, 50000)
         _seed_surplus(db_session, good, income=10000, expenses=9000)
         _seed_surplus(db_session, bad, income=5000, expenses=8000)
 
@@ -153,6 +173,7 @@ class TestSurplusDefinition:
 
         goal = service.get_all()[0]
         assert goal["funded"] == 1000
+        assert goal["clawed_back"] == 0
 
     def test_investment_transfers_reduce_the_surplus(self, db_session, service):
         """Money moved into investments has left the spendable pool."""
@@ -403,3 +424,138 @@ class TestCostWithoutGoals:
         service.get_all()
 
         assert len(calls) == 1
+
+
+class TestFreeCashPool:
+    """The unearmarked pool absorbs a deficit before any goal is touched."""
+
+    def test_unallocated_surplus_lands_in_the_pool(self, db_session, service):
+        """Money no goal claimed stays free rather than vanishing."""
+        last = _month_str(1)
+        _seed_surplus(db_session, last, income=10000, expenses=7000)
+
+        service.create(name="Goal", target_amount=1000, priority=0, start_month=last)
+
+        pool = service.get_free_cash()
+        assert pool["has_goals"] is True
+        # 3000 surplus, 1000 earmarked by the goal, 2000 left free.
+        assert pool["free_cash"] == 2000
+        assert pool["earmarked"] == 1000
+        assert pool["liquid"] == 3000
+
+    def test_pool_absorbs_the_whole_deficit(self, db_session, service):
+        """A deficit smaller than the pool never reaches the goals."""
+        good, bad = _month_str(2), _month_str(1)
+        _seed_free_cash(db_session, 20000)
+        _seed_surplus(db_session, good, income=10000, expenses=9000)
+        _seed_surplus(db_session, bad, income=5000, expenses=8000)
+
+        service.create(name="Goal", target_amount=5000, priority=0, start_month=good)
+
+        goal = service.get_all()[0]
+        assert goal["funded"] == 1000
+        assert goal["clawed_back"] == 0
+        # 20000 opening + 1000 - 3000, less the 1000 the goal earmarked.
+        assert service.get_free_cash()["free_cash"] == 17000
+
+    def test_goals_absorb_only_what_the_pool_could_not(self, db_session, service):
+        """Once the pool is dry the remainder comes out of the goals."""
+        good, bad = _month_str(2), _month_str(1)
+        _seed_free_cash(db_session, 500)
+        _seed_surplus(db_session, good, income=10000, expenses=9000)
+        _seed_surplus(db_session, bad, income=5000, expenses=8000)
+
+        service.create(name="Goal", target_amount=5000, priority=0, start_month=good)
+
+        goal = service.get_all()[0]
+        # Pool holds 500 opening + 0 unallocated; the 3000 deficit empties it
+        # and takes the remaining 2500 from the goal, which only had 1000.
+        assert goal["clawed_back"] == 1000
+        assert goal["funded"] == 0
+        assert service.get_free_cash()["free_cash"] == 0
+
+    def test_clawback_runs_in_reverse_priority(self, db_session, service):
+        """The least important goal is drained first — the waterfall in reverse."""
+        good, bad = _month_str(2), _month_str(1)
+        _seed_surplus(db_session, good, income=10000, expenses=8000)
+        _seed_surplus(db_session, bad, income=5000, expenses=5600)
+
+        service.create(name="First", target_amount=1000, priority=0, start_month=good)
+        service.create(name="Second", target_amount=1000, priority=1, start_month=good)
+
+        goals = {g["name"]: g for g in service.get_all()}
+        # Both filled from the 2000 surplus; the 600 deficit takes from Second.
+        assert goals["Second"]["clawed_back"] == 600
+        assert goals["First"]["clawed_back"] == 0
+        assert goals["First"]["funded"] == 1000
+        assert goals["Second"]["funded"] == 400
+
+    def test_clawback_stops_at_what_the_goal_already_spent(self, db_session, service):
+        """Money utilized out of a goal is gone and can never be reclaimed."""
+        good, bad = _month_str(2), _month_str(1)
+        _seed_surplus(db_session, good, income=10000, expenses=9000)
+        _seed_surplus(db_session, bad, income=5000, expenses=6000)
+        spend = _add_txn(db_session, good, -700, "Travel", day=20)
+
+        goals = service.create(
+            name="Goal", target_amount=5000, priority=0, start_month=good
+        )
+        service.link_transaction(
+            goals[0]["id"], "transaction", spend.unique_id,
+            "bank_transactions", LINK_UTILIZATION,
+        )
+        # The link arrived after the ledger was written, and history is never
+        # silently restated — an explicit rebuild is what applies it.
+        service.rebuild()
+
+        goal = service.get_all()[0]
+        # The utilization leaves the good month's surplus at 1000, of which
+        # 700 is already spent. The 1000 deficit can only reclaim the 300
+        # still available.
+        assert goal["utilized"] == 700
+        assert goal["clawed_back"] == 300
+        assert goal["available"] == 0
+        assert goal["funded"] == 700
+
+    def test_closed_goal_is_never_clawed_back(self, db_session, service):
+        """A frozen goal's allocations survive a later deficit month untouched."""
+        good, bad = _month_str(2), _month_str(1)
+        _seed_surplus(db_session, good, income=10000, expenses=9000)
+
+        created = service.create(
+            name="Goal", target_amount=5000, priority=0, start_month=good
+        )
+        service.close(created[0]["id"])
+        # The deficit only lands once the goal is already frozen.
+        _seed_surplus(db_session, bad, income=5000, expenses=8000)
+
+        goal = service.get_all()[0]
+        assert goal["is_closed"] is True
+        assert goal["clawed_back"] == 0
+        assert goal["funded"] == 1000
+
+    def test_pool_reports_nothing_when_no_goals_exist(self, db_session, service):
+        """With no goals the pool means nothing, and costs no transaction scan."""
+        _seed_surplus(db_session, _month_str(1), income=10000, expenses=7000)
+
+        assert service.get_free_cash() == {
+            "free_cash": 0.0,
+            "earmarked": 0.0,
+            "liquid": 0.0,
+            "clawed_back_this_month": 0.0,
+            "has_goals": False,
+        }
+
+    def test_month_view_reports_the_clawback(self, db_session, service):
+        """The budget month view explains where a deficit month's money went."""
+        good, bad = _month_str(2), _month_str(1)
+        _seed_surplus(db_session, good, income=10000, expenses=9000)
+        _seed_surplus(db_session, bad, income=5000, expenses=8000)
+
+        service.create(name="Goal", target_amount=5000, priority=0, start_month=good)
+
+        year, month = (int(part) for part in bad.split("-"))
+        view = service.get_month_allocations(year, month)
+        assert view["clawed_back"] == 1000
+        assert view["free_cash"] == 0
+        assert view["goals"][0]["allocated"] == -1000
