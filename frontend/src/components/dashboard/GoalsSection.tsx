@@ -13,6 +13,8 @@ import {
   Lock,
   RotateCcw,
   Wallet,
+  Landmark,
+  X,
 } from "lucide-react";
 import {
   savingsGoalsApi,
@@ -20,6 +22,7 @@ import {
   type SavingsGoalInput,
   type SavingsGoalRebuildChange,
   type SavingsGoalFreeCash,
+  type SavingsGoalInvestment,
 } from "../../services/api";
 import { useQueryKeys } from "../../hooks/useQueryKeys";
 import { qkPrefix } from "../../services/queryKeys";
@@ -40,6 +43,10 @@ import { formatCurrency } from "../../utils/numberFormatting";
  * Below the waterfall sits the free-cash pool: the tracked money no goal has
  * earmarked. It is the buffer a month of overspending drains first, and only
  * once it is empty does a deficit reach back into the goals.
+ *
+ * A goal can also be backed by an investment the user means to sell. That
+ * backing shows on the row but is deliberately not cash: it never enters the
+ * pool and a deficit can never take it back.
  */
 export function GoalsSection() {
   const { t } = useTranslation();
@@ -47,6 +54,7 @@ export function GoalsSection() {
   const queryClient = useQueryClient();
   const confirm = useConfirm();
   const [editing, setEditing] = useState<SavingsGoal | "new" | null>(null);
+  const [backing, setBacking] = useState<SavingsGoal | null>(null);
   const [redistributing, setRedistributing] = useState(false);
 
   const { data, isLoading } = useQuery({
@@ -135,6 +143,7 @@ export function GoalsSection() {
               onMoveUp={() => move(index, -1)}
               onMoveDown={() => move(index, 1)}
               onEdit={() => setEditing(goal)}
+              onBack={() => setBacking(goal)}
               onDelete={async () => {
                 const ok = await confirm({
                   title: t("common.deleteTitle"),
@@ -156,6 +165,10 @@ export function GoalsSection() {
           goal={editing === "new" ? null : editing}
           onClose={() => setEditing(null)}
         />
+      )}
+
+      {backing !== null && (
+        <InvestmentBackingModal goal={backing} onClose={() => setBacking(null)} />
       )}
 
       {redistributing && (
@@ -214,6 +227,7 @@ function GoalRow({
   onMoveUp,
   onMoveDown,
   onEdit,
+  onBack,
   onDelete,
 }: {
   goal: SavingsGoal;
@@ -223,6 +237,7 @@ function GoalRow({
   onMoveUp: () => void;
   onMoveDown: () => void;
   onEdit: () => void;
+  onBack: () => void;
   onDelete: () => void;
 }) {
   const { t } = useTranslation();
@@ -270,6 +285,17 @@ function GoalRow({
           >
             <ChevronDown size={14} />
           </button>
+          <button
+            onClick={onBack}
+            aria-label={t("dashboard.goals.backWithInvestment")}
+            className={`p-1.5 rounded-lg hover:bg-[var(--surface-light)] transition-colors ${
+              goal.investment_backed > 0
+                ? "text-[var(--primary)]"
+                : "text-[var(--text-muted)] hover:text-[var(--text-primary)]"
+            }`}
+          >
+            <Landmark size={14} />
+          </button>
           <button onClick={onEdit} aria-label={t("common.edit")} className="p-1.5 rounded-lg text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-light)] transition-colors">
             <Pencil size={14} />
           </button>
@@ -287,7 +313,8 @@ function GoalRow({
       </div>
       {(goal.this_month_allocation > 0 ||
         goal.utilized > 0 ||
-        goal.clawed_back > 0) && (
+        goal.clawed_back > 0 ||
+        goal.investment_backed > 0) && (
         <div className="flex flex-wrap gap-x-3 gap-y-1 mt-1.5 text-[10px] md:text-xs text-[var(--text-muted)]">
           {goal.this_month_allocation > 0 && (
             <span>
@@ -308,6 +335,13 @@ function GoalRow({
             <span className="text-amber-400">
               {t("dashboard.goals.clawedBack", {
                 amount: formatCurrency(goal.clawed_back),
+              })}
+            </span>
+          )}
+          {goal.investment_backed > 0 && (
+            <span className="text-[var(--primary)]">
+              {t("dashboard.goals.investmentBacked", {
+                amount: formatCurrency(goal.investment_backed),
               })}
             </span>
           )}
@@ -433,6 +467,196 @@ function RedistributeModal({ onClose }: { onClose: () => void }) {
         </div>
       </div>
     </Modal>
+  );
+}
+
+/**
+ * Earmark investment holdings against one goal.
+ *
+ * Backing a goal with a holding the user already means to sell (bonds for a
+ * car) lets the goal show honest progress without pretending the money is in
+ * the bank. Amounts are optional: leaving one blank earmarks whatever is left
+ * of the holding, so the goal tracks its value instead of a typed-in number.
+ *
+ * Earmarks are their own resources rather than fields on the goal, so this
+ * mutates immediately instead of staging behind a Save — there is no
+ * half-finished state for the user to be in, unlike a multi-field editor.
+ */
+function InvestmentBackingModal({
+  goal,
+  onClose,
+}: {
+  goal: SavingsGoal;
+  onClose: () => void;
+}) {
+  const { t } = useTranslation();
+  const qk = useQueryKeys();
+  const queryClient = useQueryClient();
+  const [investmentId, setInvestmentId] = useState("");
+  const [amount, setAmount] = useState("");
+
+  const { data: backings } = useQuery({
+    queryKey: qk.savingsGoals.investments(goal.id),
+    queryFn: async () => (await savingsGoalsApi.getInvestments(goal.id)).data,
+  });
+
+  const { data: available } = useQuery({
+    queryKey: qk.savingsGoals.availableInvestments(),
+    queryFn: async () => (await savingsGoalsApi.getAvailableInvestments()).data,
+  });
+
+  const invalidate = () =>
+    queryClient.invalidateQueries({ queryKey: qkPrefix.savingsGoals });
+
+  const link = useMutation({
+    mutationFn: (payload: { investment_id: number; amount?: number | null }) =>
+      savingsGoalsApi.linkInvestment(goal.id, payload),
+    onSuccess: () => {
+      setInvestmentId("");
+      setAmount("");
+      invalidate();
+    },
+  });
+
+  const unlink = useMutation({
+    mutationFn: (backingId: number) => savingsGoalsApi.unlinkInvestment(backingId),
+    onSuccess: invalidate,
+  });
+
+  const rows = backings ?? [];
+  const backed = new Set(rows.map((row) => row.investment_id));
+  // A holding already earmarked by this goal, or fully claimed elsewhere, has
+  // nothing left to offer here.
+  const options = (available ?? []).filter(
+    (option) => !backed.has(option.id) && option.available > 0,
+  );
+
+  const field =
+    "w-full bg-[var(--surface-light)] border border-[var(--surface-light)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[var(--primary)]";
+  const label = "block text-xs font-medium text-[var(--text-muted)] mb-1";
+
+  return (
+    <Modal
+      isOpen
+      onClose={onClose}
+      title={t("dashboard.goals.backingTitle", { name: goal.name })}
+      titleIcon={<Landmark size={18} />}
+      maxWidth="md"
+    >
+      <div className="space-y-4 p-4 md:p-6">
+        <p className="text-xs text-[var(--text-muted)]">
+          {t("dashboard.goals.backingExplainer")}
+        </p>
+
+        {rows.length > 0 && (
+          <div className="space-y-2">
+            {rows.map((row) => (
+              <BackingRow
+                key={row.id}
+                row={row}
+                onRemove={() => unlink.mutate(row.id)}
+              />
+            ))}
+          </div>
+        )}
+
+        <div className="border-t border-[var(--surface-light)] pt-4 space-y-3">
+          <div>
+            <label className={label} htmlFor="backing-investment">
+              {t("dashboard.goals.backingPickLabel")}
+            </label>
+            <select
+              id="backing-investment"
+              value={investmentId}
+              onChange={(e) => setInvestmentId(e.target.value)}
+              className={field}
+            >
+              <option value="">{t("dashboard.goals.backingPickPlaceholder")}</option>
+              {options.map((option) => (
+                <option key={option.id} value={option.id}>
+                  {option.name} · {formatCurrency(option.available)}
+                </option>
+              ))}
+            </select>
+            {options.length === 0 && (
+              <p className="text-[10px] text-[var(--text-muted)] mt-1">
+                {t("dashboard.goals.backingNoneAvailable")}
+              </p>
+            )}
+          </div>
+          <div>
+            <label className={label} htmlFor="backing-amount">
+              {t("dashboard.goals.backingAmountLabel")}
+            </label>
+            <input
+              id="backing-amount"
+              type="number"
+              inputMode="decimal"
+              value={amount}
+              onChange={(e) => setAmount(e.target.value)}
+              placeholder={t("dashboard.goals.backingAmountPlaceholder")}
+              className={field}
+              dir="ltr"
+            />
+            <p className="text-[10px] text-[var(--text-muted)] mt-1">
+              {t("dashboard.goals.backingAmountHint")}
+            </p>
+          </div>
+          {!!link.isError && (
+            <p className="text-xs text-rose-400">
+              {t("dashboard.goals.backingFailed")}
+            </p>
+          )}
+          <button
+            onClick={() =>
+              link.mutate({
+                investment_id: Number(investmentId),
+                amount: amount.trim() === "" ? null : Number(amount),
+              })
+            }
+            disabled={!investmentId || link.isPending}
+            className="w-full bg-[var(--primary)] text-white rounded-lg px-4 py-2 text-sm font-medium disabled:opacity-40 transition-opacity"
+          >
+            {t("dashboard.goals.backingAdd")}
+          </button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+/** One earmark: which holding, how much of it, and a release button. */
+function BackingRow({
+  row,
+  onRemove,
+}: {
+  row: SavingsGoalInvestment;
+  onRemove: () => void;
+}) {
+  const { t } = useTranslation();
+
+  return (
+    <div className="flex items-center justify-between gap-2 border border-[var(--surface-light)] rounded-lg px-3 py-2">
+      <div className="min-w-0">
+        <p className="text-sm truncate" dir="auto" title={row.investment_name ?? ""}>
+          {row.investment_name}
+        </p>
+        <p className="text-[10px] text-[var(--text-muted)]">
+          {row.amount == null
+            ? t("dashboard.goals.backingWhole")
+            : t("dashboard.goals.backingPartial", {
+                amount: formatCurrency(row.amount),
+              })}
+        </p>
+      </div>
+      <button
+        onClick={onRemove}
+        aria-label={t("dashboard.goals.backingRemove")}
+        className="p-1.5 rounded-lg text-[var(--text-muted)] hover:text-rose-400 hover:bg-[var(--surface-light)] transition-colors shrink-0"
+      >
+        <X size={14} />
+      </button>
+    </div>
   );
 }
 

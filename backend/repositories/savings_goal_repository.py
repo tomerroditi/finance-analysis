@@ -1,4 +1,4 @@
-"""Data access for savings goals, their monthly allocations, and transaction links."""
+"""Data access for savings goals: allocations, transaction links, investment earmarks."""
 
 import pandas as pd
 from sqlalchemy import select
@@ -8,6 +8,7 @@ from backend.models.savings_goal import (
     GOAL_STATUS_ACTIVE,
     SavingsGoal,
     SavingsGoalAllocation,
+    SavingsGoalInvestment,
     SavingsGoalLink,
 )
 
@@ -30,6 +31,8 @@ GOAL_COLUMNS = [
 ALLOCATION_COLUMNS = ["id", "goal_id", "year", "month", "amount", "source"]
 
 LINK_COLUMNS = ["id", "goal_id", "source_type", "source_id", "source_table", "link_type"]
+
+BACKING_COLUMNS = ["id", "goal_id", "investment_id", "amount"]
 
 
 def _to_frame(records: list, columns: list[str]) -> pd.DataFrame:
@@ -234,6 +237,56 @@ class SavingsGoalRepository:
         if not link:
             raise ValueError(f"No savings goal link with id {link_id}")
         self.db.delete(link)
+        self.db.commit()
+
+    # ------------------------------------------------------------------
+    # Investment earmarks
+    # ------------------------------------------------------------------
+
+    def get_backings(self, goal_id: int | None = None) -> pd.DataFrame:
+        """Return investment earmarks, optionally scoped to a single goal.
+
+        Ordered by id so that when a holding loses value, the earlier earmark
+        keeps its claim and the later one absorbs the shortfall.
+        """
+        stmt = select(SavingsGoalInvestment).order_by(SavingsGoalInvestment.id)
+        if goal_id is not None:
+            stmt = stmt.where(SavingsGoalInvestment.goal_id == goal_id)
+        return _to_frame(self.db.execute(stmt).scalars().all(), BACKING_COLUMNS)
+
+    def get_backing(
+        self, goal_id: int, investment_id: int
+    ) -> SavingsGoalInvestment | None:
+        """Return one goal's earmark against one investment, or None."""
+        return self.db.execute(
+            select(SavingsGoalInvestment).where(
+                SavingsGoalInvestment.goal_id == goal_id,
+                SavingsGoalInvestment.investment_id == investment_id,
+            )
+        ).scalar_one_or_none()
+
+    def upsert_backing(
+        self, goal_id: int, investment_id: int, amount: float | None
+    ) -> SavingsGoalInvestment:
+        """Earmark an investment for a goal, replacing any existing earmark."""
+        backing = self.get_backing(goal_id, investment_id)
+        if backing is None:
+            backing = SavingsGoalInvestment(
+                goal_id=goal_id, investment_id=investment_id, amount=amount
+            )
+            self.db.add(backing)
+        else:
+            backing.amount = amount
+        self.db.commit()
+        self.db.refresh(backing)
+        return backing
+
+    def delete_backing(self, backing_id: int) -> None:
+        """Delete an investment earmark by id."""
+        backing = self.db.get(SavingsGoalInvestment, backing_id)
+        if not backing:
+            raise ValueError(f"No savings goal investment with id {backing_id}")
+        self.db.delete(backing)
         self.db.commit()
 
     def active_goals(self) -> list[SavingsGoal]:

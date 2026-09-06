@@ -542,6 +542,7 @@ class TestFreeCashPool:
             "free_cash": 0.0,
             "earmarked": 0.0,
             "liquid": 0.0,
+            "investment_backed": 0.0,
             "clawed_back_this_month": 0.0,
             "has_goals": False,
         }

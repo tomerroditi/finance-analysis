@@ -108,6 +108,56 @@ matters most is drained last.
   It hands money back to `free_cash`, not to the waterfall; getting this wrong
   lets a deficit month fund a goal that had no row there yet.
 
+## Backed by an investment, not by cash
+
+Some goals are not funded from cash at all: bonds the user already means to
+sell, a savings plan maturing into a down payment. `savings_goal_investments`
+earmarks a holding against a goal, and the earmark is **valued live** from
+`InvestmentsService.calculate_current_balance`, so it tracks the market and
+falls to zero the moment the holding is closed.
+
+It is the same kind of label a cash earmark is — over an asset that already
+sits in net worth — so the rules follow from that:
+
+- **It counts toward `funded` and `progress_pct`**, and shrinks what the goal
+  still needs from surplus: `need = target - funded - backed`. A 60k goal
+  backed by a 40k bond draws only the last 20k out of the waterfall.
+- **It never enters the free-cash pool.** A bond is not spendable cash, so
+  `get_free_cash` reports it as `investment_backed`, apart from `earmarked`
+  (which stays the goals' *cash*) and out of `liquid`. Putting it in either
+  would claim money the bank does not hold.
+- **A deficit month can never claw it back.** Overspending drains the bank; it
+  cannot reach into the holding. The clawback cap stays `funded_cash -
+  utilized`, which is why the two are tracked apart in `_simulate`.
+- **It is present tense, not a dated event.** Today's backing steers only the
+  months a pass computes; history on record keeps its rows, exactly as it does
+  when a priority changes. A `rebuild` restates the past under today's
+  backing — the same caveat rebuild already carries.
+
+### Sharing one holding
+
+`amount` is optional. `NULL` earmarks *whatever is left* of the holding, which
+is what lets a whole-holding earmark track its value without the user retyping
+a number. Several goals may share one holding, but never beyond what it is
+worth — otherwise two goals would both count the same bond and progress would
+be fiction. `_validate_backing_capacity` enforces that: explicit amounts must
+fit in the headroom, and at most one goal may take the `NULL` remainder.
+
+When the holding loses value, claims are honoured **oldest first**
+(`get_backings` orders by id), so a shrunken holding shortchanges the most
+recent claim rather than silently over-earmarking itself.
+
+### Selling the holding
+
+Closing the investment drops its backing to zero on its own, and the sale
+proceeds re-enter the surplus as cash — so the goal's funding moves from backed
+to allocated by itself. That handover is not atomic, though: the proceeds land
+in the pool and the waterfall redistributes them by priority, so a
+higher-priority goal can take them first. To keep the money with the goal that
+was waiting for it, **link the sale's bank transaction to the goal as a
+contribution** — contributions bypass the waterfall and consume the pool
+directly.
+
 ## Every shekel is counted once
 
 Transactions linked to a goal are **pulled out of the surplus calculation**
@@ -161,8 +211,12 @@ not closed.
 
 - **Dashboard** (`GoalsSection.tsx`) — the waterfall in priority order, with
   reorder arrows, `this_month_allocation`, `utilized`/`available`,
-  `clawed_back`, the redistribute preview, and the free-cash pool on a dashed
-  row below the goals (`GET /savings-goals/free-cash`, its own query key).
+  `clawed_back`, `investment_backed`, the redistribute preview, and the
+  free-cash pool on a dashed row below the goals (`GET
+  /savings-goals/free-cash`, its own query key). The bank icon on a row opens
+  `InvestmentBackingModal`, which mutates earmarks immediately rather than
+  staging behind a Save — they are their own resources, not fields on the
+  goal, so there is no half-finished state to be in.
 - **Monthly budget** (`SavingsGoalsBudgetSection.tsx`) — what each goal
   received that month, below the ledger rows. A deficit month reads in
   reverse: an amber banner explains the clawback and the per-goal rows go

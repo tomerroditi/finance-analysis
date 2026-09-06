@@ -18,6 +18,12 @@ never an addition to net worth. Progress is derived rather than typed:
    that pool first, and only claws money back out of goals (lowest priority
    first, never below what a goal has already spent) once the pool is empty.
 
+A goal can also be backed by an **investment** the user means to liquidate
+(bonds earmarked for a car). That backing is valued live from the holding, so
+it counts toward the goal's progress and shrinks what the goal still needs from
+surplus — but it is not cash: it never enters the free-cash pool and a deficit
+month can never claw it back.
+
 Results are persisted per (goal, month) in ``savings_goal_allocations``. Past
 months are never silently restated: a priority change applies going forward,
 and rewriting history is an explicit ``rebuild`` the user previews first. Goals
@@ -46,6 +52,7 @@ from backend.models.savings_goal import (
 from backend.repositories.savings_goal_repository import SavingsGoalRepository
 from backend.services.bank_balance_service import BankBalanceService
 from backend.services.cash_balance_service import CashBalanceService
+from backend.services.investments import InvestmentsService
 from backend.services.transaction_classification import transactions_masks
 from backend.services.transactions_service import TransactionsService
 
@@ -131,6 +138,9 @@ class SavingsGoalService:
         # per-month deficit figures can be read back without walking the
         # whole timeline a second time.
         self._last_plan: _Plan | None = None
+        # Investment earmarks are valued live off each holding's balance, and
+        # one request needs them repeatedly (allocating, then enriching).
+        self._backing_cache: dict[int, float] | None = None
 
     # ------------------------------------------------------------------
     # Public API
@@ -246,16 +256,20 @@ class SavingsGoalService:
         Returns
         -------
         dict
-            ``free_cash`` (the unearmarked pool), ``earmarked`` (the sum of
-            every goal's available balance), ``liquid`` (the two together),
-            ``clawed_back_this_month`` and ``has_goals``. With no goals the
-            figures are zero and no transaction scan happens — the pool only
-            means something relative to goals.
+            ``free_cash`` (the unearmarked pool), ``earmarked`` (the *cash*
+            every goal still holds), ``liquid`` (the two together),
+            ``investment_backed`` (goal progress that sits in holdings rather
+            than cash, reported separately because it is not liquid and never
+            belonged to this pool), ``clawed_back_this_month`` and
+            ``has_goals``. With no goals the figures are zero and no
+            transaction scan happens — the pool only means something relative
+            to goals.
         """
         empty = {
             "free_cash": 0.0,
             "earmarked": 0.0,
             "liquid": 0.0,
+            "investment_backed": 0.0,
             "clawed_back_this_month": 0.0,
             "has_goals": False,
         }
@@ -267,7 +281,12 @@ class SavingsGoalService:
         today = date.today()
         current = (today.year, today.month)
         free_cash = float(plan.free_cash.get(current, 0.0)) if plan else 0.0
-        earmarked = sum(max(0.0, g["available"]) for g in goals)
+        # Only the cash half of a goal was ever taken out of this pool, so an
+        # investment-backed goal must not inflate the liquid total.
+        earmarked = sum(
+            max(0.0, g["available"] - g["investment_backed"]) for g in goals
+        )
+        backed = sum(g["investment_backed"] for g in goals)
         this_month = self.repo.get_month_allocations(*current)
         clawed = (
             -float(this_month.loc[this_month["amount"] < 0, "amount"].sum())
@@ -278,6 +297,7 @@ class SavingsGoalService:
             "free_cash": round(free_cash, 2),
             "earmarked": round(earmarked, 2),
             "liquid": round(free_cash + earmarked, 2),
+            "investment_backed": round(backed, 2),
             "clawed_back_this_month": round(clawed, 2),
             "has_goals": True,
         }
@@ -386,6 +406,226 @@ class SavingsGoalService:
             return []
         links = links.replace({np.nan: None})
         return links.to_dict("records")
+
+    # ------------------------------------------------------------------
+    # Investment earmarks
+    # ------------------------------------------------------------------
+
+    def link_investment(
+        self, goal_id: int, investment_id: int, amount: float | None = None
+    ) -> list[dict]:
+        """Earmark an investment holding against a goal.
+
+        Parameters
+        ----------
+        goal_id : int
+            Goal to back.
+        investment_id : int
+            Open investment whose value backs it.
+        amount : float or None, optional
+            How much of the holding to earmark. ``None`` earmarks whatever is
+            left of it, which keeps the goal tracking the holding's value
+            without the user retyping a number.
+
+        Returns
+        -------
+        list[dict]
+            The refreshed goals.
+
+        Raises
+        ------
+        EntityNotFoundException
+            The goal or the investment does not exist.
+        ValidationException
+            The investment is closed, the amount is not positive, or the
+            earmarks against that holding would exceed what it is worth.
+        """
+        if not self.repo.get(goal_id):
+            raise EntityNotFoundException(f"Savings goal {goal_id} not found")
+        if amount is not None and amount <= 0:
+            raise ValidationException("amount must be greater than zero")
+
+        investment = self._require_open_investment(investment_id)
+        self._validate_backing_capacity(
+            investment_id, investment["balance"], goal_id, amount
+        )
+
+        self.repo.upsert_backing(goal_id, investment_id, amount)
+        self._backing_cache = None
+        return self._after_write()
+
+    def unlink_investment(self, backing_id: int) -> list[dict]:
+        """Release an investment earmark."""
+        try:
+            self.repo.delete_backing(backing_id)
+        except ValueError:
+            raise EntityNotFoundException(
+                f"Savings goal investment {backing_id} not found"
+            )
+        self._backing_cache = None
+        return self._after_write()
+
+    def get_investment_backings(self, goal_id: int | None = None) -> list[dict]:
+        """Return investment earmarks, each with the holding's live value.
+
+        Parameters
+        ----------
+        goal_id : int or None, optional
+            Restrict to one goal. ``None`` returns every earmark.
+
+        Returns
+        -------
+        list[dict]
+            Rows carrying the investment's ``name``/``type``, the requested
+            ``amount`` (``None`` for a whole-holding earmark) and the
+            ``value`` actually backing the goal right now.
+        """
+        backings = self.repo.get_backings(goal_id)
+        if backings.empty:
+            return []
+
+        investments = {
+            record["id"]: record
+            for record in InvestmentsService(self.db).get_all_investments(
+                include_closed=True
+            )
+        }
+        # Resolve values through the same waterfall the engine uses, so a
+        # shrunken holding reports the same split here as it funds with.
+        per_goal_totals = self._investment_backing()
+
+        rows = []
+        for row in backings.itertuples(index=False):
+            investment = investments.get(int(row.investment_id), {})
+            rows.append(
+                {
+                    "id": int(row.id),
+                    "goal_id": int(row.goal_id),
+                    "investment_id": int(row.investment_id),
+                    "investment_name": investment.get("name"),
+                    "investment_type": investment.get("type"),
+                    "is_closed": bool(investment.get("is_closed")),
+                    "amount": None if pd.isna(row.amount) else float(row.amount),
+                    "goal_backed_total": round(
+                        per_goal_totals.get(int(row.goal_id), 0.0), 2
+                    ),
+                }
+            )
+        return rows
+
+    def get_available_investments(self) -> list[dict]:
+        """Return open investments with how much of each is still unearmarked.
+
+        Backs the picker: a holding already fully spoken for should not look
+        available, and one partly earmarked should show only its headroom.
+        """
+        backings = self.repo.get_backings()
+        claimed: dict[int, float] = {}
+        whole: set[int] = set()
+        if not backings.empty:
+            for row in backings.itertuples(index=False):
+                investment_id = int(row.investment_id)
+                if pd.isna(row.amount):
+                    whole.add(investment_id)
+                else:
+                    claimed[investment_id] = claimed.get(investment_id, 0.0) + float(
+                        row.amount
+                    )
+
+        investments = InvestmentsService(self.db)
+        rows = []
+        for record in investments.get_all_investments(include_closed=False):
+            investment_id = int(record["id"])
+            value = float(investments.calculate_current_balance(investment_id))
+            spoken_for = claimed.get(investment_id, 0.0)
+            rows.append(
+                {
+                    "id": investment_id,
+                    "name": record.get("name"),
+                    "type": record.get("type"),
+                    "value": round(value, 2),
+                    "earmarked": round(spoken_for, 2),
+                    "available": 0.0
+                    if investment_id in whole
+                    else round(max(0.0, value - spoken_for), 2),
+                    "fully_claimed": investment_id in whole,
+                }
+            )
+        return rows
+
+    def _require_open_investment(self, investment_id: int) -> dict:
+        """Return an open investment's record plus its live balance.
+
+        Looked up through the full listing rather than ``get_investment``,
+        which indexes straight into an empty frame for an unknown id and
+        raises ``IndexError`` instead of a domain error.
+        """
+        investments = InvestmentsService(self.db)
+        record = next(
+            (
+                candidate
+                for candidate in investments.get_all_investments(include_closed=True)
+                if int(candidate["id"]) == investment_id
+            ),
+            None,
+        )
+        if record is None:
+            raise EntityNotFoundException(f"Investment {investment_id} not found")
+        if record.get("is_closed"):
+            raise ValidationException(
+                f"Investment {investment_id} is closed and cannot back a goal"
+            )
+        record["balance"] = float(
+            investments.calculate_current_balance(investment_id)
+        )
+        return record
+
+    def _validate_backing_capacity(
+        self,
+        investment_id: int,
+        value: float,
+        goal_id: int,
+        amount: float | None,
+    ) -> None:
+        """Reject an earmark that would claim more of a holding than it holds.
+
+        A holding can back several goals, but only up to what it is worth —
+        otherwise two goals would both count the same bond and progress would
+        be fiction. At most one goal may take the "whatever is left" earmark.
+        """
+        existing = self.repo.get_backings()
+        others = (
+            existing[
+                (existing["investment_id"] == investment_id)
+                & (existing["goal_id"] != goal_id)
+            ]
+            if not existing.empty
+            else existing
+        )
+        if others.empty:
+            claimed, has_whole = 0.0, False
+        else:
+            claimed = float(others["amount"].sum(skipna=True))
+            has_whole = bool(others["amount"].isna().any())
+
+        if amount is None:
+            if has_whole:
+                raise ValidationException(
+                    "Another goal already earmarks the remainder of this "
+                    "investment; give this one an explicit amount"
+                )
+            if claimed >= value:
+                raise ValidationException(
+                    "This investment is already fully earmarked by other goals"
+                )
+            return
+
+        headroom = value - claimed
+        if amount > headroom + 0.005:
+            raise ValidationException(
+                f"Only {round(max(0.0, headroom), 2)} of this investment is "
+                f"still unearmarked"
+            )
 
     # ------------------------------------------------------------------
     # Allocation engine
@@ -500,6 +740,12 @@ class SavingsGoalService:
 
         funded = {g.id: float(g.opening_balance or 0.0) for g in goals}
         utilized = {g.id: 0.0 for g in goals}
+        # Investment backing is a present-tense fact about a holding, not a
+        # dated event, so it is applied as it stands today. That means it only
+        # steers months this pass computes — history already on record keeps
+        # its rows, exactly as it does when a priority changes.
+        backing = self._investment_backing()
+        backed = {g.id: float(backing.get(g.id, 0.0)) for g in goals}
         # The pool opens at the spendable money the user had when the first
         # goal started: the capital that predates tracking, plus every month
         # of realized cash flow before the walk begins, less whatever the
@@ -587,7 +833,11 @@ class SavingsGoalService:
                 # say — only newcomers may take what is still unallocated.
                 if not recompute and stored.get((goal.id, year, month)) is not None:
                     continue
-                need = float(goal.target_amount or 0.0) - funded[goal.id]
+                # An earmarked holding already covers part of the goal, so
+                # only the uncovered remainder draws on the month's surplus.
+                need = (
+                    float(goal.target_amount or 0.0) - funded[goal.id] - backed[goal.id]
+                )
                 if need <= 0:
                     continue
                 take = min(need, pool)
@@ -617,8 +867,10 @@ class SavingsGoalService:
                     # do for funding — only an explicit rebuild restates them.
                     if not recompute and stored.get((goal.id, year, month)) is not None:
                         continue
-                    # Money already spent out of a goal is gone; only what is
-                    # still available can be handed back.
+                    # Money already spent out of a goal is gone, and an
+                    # earmarked holding is not cash — an overspend drains the
+                    # bank, it cannot reach into the bond. Only the goal's
+                    # unspent *cash* can be handed back.
                     give_back = round(
                         min(funded[goal.id] - utilized[goal.id], shortfall), 2
                     )
@@ -643,8 +895,9 @@ class SavingsGoalService:
                 if frozen[goal.id]:
                     continue
                 target = float(goal.target_amount or 0.0)
-                achieved = target > 0 and funded[goal.id] >= target
-                if achieved and (funded[goal.id] - utilized[goal.id]) <= 0:
+                total = funded[goal.id] + backed[goal.id]
+                achieved = target > 0 and total >= target
+                if achieved and (total - utilized[goal.id]) <= 0:
                     frozen[goal.id] = True
                     plan.closed_month[goal.id] = _month_str(key)
 
@@ -666,6 +919,53 @@ class SavingsGoalService:
     # ------------------------------------------------------------------
     # Inputs
     # ------------------------------------------------------------------
+
+    def _investment_backing(self) -> dict[int, float]:
+        """Value every goal's investment earmarks, as ``{goal_id: amount}``.
+
+        A holding is valued live (``calculate_current_balance``), so an earmark
+        tracks the market and falls to zero the moment the investment is
+        closed — which is exactly what should happen when the user finally
+        sells it and the proceeds show up as cash instead.
+
+        Earmarks against one holding are resolved oldest first: explicit
+        amounts take their share in creation order, and an earmark with no
+        amount claims whatever is left. A holding that loses value therefore
+        shortchanges the most recent claim rather than silently over-earmarking
+        itself.
+
+        Returns
+        -------
+        dict[int, float]
+            Backing per goal. Goals with no earmarks are absent.
+        """
+        if self._backing_cache is not None:
+            return self._backing_cache
+
+        backings = self.repo.get_backings()
+        totals: dict[int, float] = {}
+        if backings.empty:
+            self._backing_cache = totals
+            return totals
+
+        investments = InvestmentsService(self.db)
+        for investment_id, group in backings.groupby("investment_id"):
+            remaining = float(
+                investments.calculate_current_balance(int(investment_id))
+            )
+            explicit = group[group["amount"].notna()]
+            whole = group[group["amount"].isna()]
+            for row in explicit.itertuples(index=False):
+                take = min(float(row.amount), max(0.0, remaining))
+                totals[int(row.goal_id)] = totals.get(int(row.goal_id), 0.0) + take
+                remaining -= take
+            for row in whole.itertuples(index=False):
+                take = max(0.0, remaining)
+                totals[int(row.goal_id)] = totals.get(int(row.goal_id), 0.0) + take
+                remaining = 0.0
+
+        self._backing_cache = totals
+        return totals
 
     def _opening_free_cash(self) -> float:
         """Liquid money that existed before any transaction was tracked.
@@ -927,9 +1227,18 @@ class SavingsGoalService:
             for goal_id, rows in history.items()
         }
 
+        backing = self._investment_backing()
+
         return [
             self._enrich(
-                goal, totals, contributed, utilized, history, provisional, reclaimed
+                goal,
+                totals,
+                contributed,
+                utilized,
+                history,
+                provisional,
+                reclaimed,
+                backing,
             )
             for goal in goals
         ]
@@ -943,6 +1252,7 @@ class SavingsGoalService:
         history: dict,
         provisional: dict,
         reclaimed: dict,
+        backing: dict,
     ) -> dict:
         """Assemble one goal's derived progress metrics."""
         target = float(goal.target_amount or 0.0)
@@ -950,8 +1260,11 @@ class SavingsGoalService:
         allocated = float(totals.get(goal.id, 0.0))
         contributions = float(contributed.get(goal.id, 0.0))
         spent = float(utilized.get(goal.id, 0.0))
+        backed = float(backing.get(goal.id, 0.0))
 
-        funded = opening + allocated + contributions
+        # Cash and earmarked holdings both count toward the goal, but only the
+        # cash half can be spent out of it or clawed back by a deficit.
+        funded = opening + allocated + contributions + backed
         available = funded - spent
         remaining = max(0.0, target - funded)
         progress_pct = round(min(100.0, (funded / target * 100) if target > 0 else 0.0), 1)
@@ -995,6 +1308,7 @@ class SavingsGoalService:
             "contributed": round(contributions, 2),
             "utilized": round(spent, 2),
             "clawed_back": round(float(reclaimed.get(goal.id, 0.0)), 2),
+            "investment_backed": round(backed, 2),
             "funded": round(funded, 2),
             "available": round(available, 2),
             "remaining": round(remaining, 2),

@@ -50,6 +50,8 @@ class Tables(Enum):
         Name of the table storing per-month surplus allocations to savings goals.
     SAVINGS_GOAL_LINKS : str
         Name of the table storing transaction-to-savings-goal links.
+    SAVINGS_GOAL_INVESTMENTS : str
+        Name of the table storing investment-to-savings-goal earmarks.
     """
 
     CREDIT_CARD = "credit_card_transactions"
@@ -79,6 +81,7 @@ class Tables(Enum):
     SAVINGS_GOALS = "savings_goals"
     SAVINGS_GOAL_ALLOCATIONS = "savings_goal_allocations"
     SAVINGS_GOAL_LINKS = "savings_goal_links"
+    SAVINGS_GOAL_INVESTMENTS = "savings_goal_investments"
 
 
 def _create_enum(name: str, fields: list[tuple[str, str]]) -> Type[Enum]:
