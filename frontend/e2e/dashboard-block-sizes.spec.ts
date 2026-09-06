@@ -11,6 +11,7 @@ import { enableDemoMode } from "./helpers";
  *   full-width and spans the row. Fill order is start->end and flips under
  *   RTL (Hebrew).
  * - Blocks are capped at `--dash-card-h` (39rem) and scroll overflow inside.
+ * - Card gutters are compact (gap-4 = 16px at >=md).
  * - The Spending Calendar (`heatmap`) card shows two months at half-row width
  *   (>=lg) and a single month in the single-column mobile layout.
  * - Expanding the KPI grid reveals the Net Worth card's last-3-months change
@@ -87,6 +88,26 @@ test.describe("Dashboard half-width blocks", () => {
     expect(boxes.income_expenses.width).toBeGreaterThan(
       boxes.budget.width * 1.8,
     );
+
+    // --- Gutters between cards are compact (gap-4 = 16px at >=md) ---
+    // The customizable region used to sit at gap-8 (32px), which read as an
+    // over-airy dashboard. Assert both bounds so neither a regression back to
+    // the wide gutter nor a collapse to zero slips through.
+    const GUTTER = 16;
+    const columnGutter = boxes.recent.x - (boxes.budget.x + boxes.budget.width);
+    const rowGutter = boxes.heatmap.y - (boxes.budget.y + boxes.budget.height);
+    expect(
+      columnGutter,
+      "column gutter between paired half cards",
+    ).toBeGreaterThan(GUTTER - 2);
+    expect(
+      columnGutter,
+      "column gutter between paired half cards",
+    ).toBeLessThan(GUTTER + 2);
+    expect(rowGutter, "row gutter between card rows").toBeGreaterThan(
+      GUTTER - 2,
+    );
+    expect(rowGutter, "row gutter between card rows").toBeLessThan(GUTTER + 2);
 
     // --- No block grows past the cap — taller content scrolls inside instead ---
     for (const id of ids) {

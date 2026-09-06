@@ -106,6 +106,9 @@ const ROUTE_PREFETCH: Record<string, RoutePrefetch> = {
       taggingApi.getCategories().then((r) => r.data),
     );
     warm(qc, k.tagging.icons(), () => taggingApi.getIcons().then((r) => r.data));
+    warm(qc, k.tagging.categoryUsage(), () =>
+      taggingApi.getCategoryUsage().then((r) => r.data),
+    );
   },
   "/investments": (qc, { isDemoMode }) => {
     const k = makeQueryKeys(isDemoMode);

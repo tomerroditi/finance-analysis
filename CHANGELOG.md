@@ -1,3 +1,19 @@
+## v1.57.1 (2026-09-06)
+
+### Fix
+
+- **insurance**: report real pension risk cost and stop the covers list bloating the card (#256)
+
+## v1.57.0 (2026-09-06)
+
+### Feat
+
+- **categories**: collapse unused categories into their own section (#257)
+
+### Fix
+
+- **release**: sync frontend/package-lock.json version on every bump (#253)
+
 ## v1.56.3 (2026-09-05)
 
 ### Fix

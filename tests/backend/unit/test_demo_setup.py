@@ -116,6 +116,67 @@ class TestShiftBudgetMonthOverrides:
         assert om == expected_index % 12 + 1
 
 
+class TestShiftCategoriesCreatedAt:
+    """``_shift_dates`` keeps ``categories.created_at`` anchored to today.
+
+    ``created_at`` is a full DateTime, not a plain date string, so the shift
+    must use SQLite's ``datetime()`` (which preserves the time-of-day) rather
+    than ``date()`` (which would truncate it to midnight). Left unshifted, a
+    demo category's age relative to "today" would grow every day the demo
+    snapshot ages, eventually pushing it past the unused-category cutoff.
+    """
+
+    def _seed_category(self, engine, created_at: str):
+        """Insert one category row with the given ``created_at`` timestamp."""
+        with engine.connect() as conn:
+            conn.execute(
+                text(
+                    "INSERT INTO categories (id, name, tags, created_at, updated_at) "
+                    "VALUES (1, 'Food', '[]', :ts, :ts)"
+                ),
+                {"ts": created_at},
+            )
+            conn.commit()
+
+    def _read_created_at(self, engine) -> str:
+        """Return the raw stored ``created_at`` string for the seeded category."""
+        with engine.connect() as conn:
+            return conn.execute(
+                text("SELECT created_at FROM categories WHERE id = 1")
+            ).scalar()
+
+    def test_created_at_shifts_by_offset_days(self):
+        """A positive offset moves ``created_at`` forward by exactly that many days."""
+        engine = _make_engine()
+        self._seed_category(engine, "2026-02-25 10:23:45")
+
+        _shift_dates(engine, 30)
+
+        shifted = self._read_created_at(engine)
+        assert date.fromisoformat(shifted[:10]) == date(2026, 2, 25) + timedelta(
+            days=30
+        )
+
+    def test_created_at_preserves_time_of_day(self):
+        """The time-of-day component survives the shift (datetime(), not date())."""
+        engine = _make_engine()
+        self._seed_category(engine, "2026-02-25 10:23:45")
+
+        _shift_dates(engine, 30)
+
+        shifted = self._read_created_at(engine)
+        assert shifted[11:19] == "10:23:45"
+
+    def test_zero_offset_leaves_created_at_untouched(self):
+        """A zero-day offset is a no-op for categories, same as other tables."""
+        engine = _make_engine()
+        self._seed_category(engine, "2026-02-25 10:23:45")
+
+        _shift_dates(engine, 0)
+
+        assert self._read_created_at(engine) == "2026-02-25 10:23:45"
+
+
 class TestBackfillBudgetRulePeriodType:
     """``_backfill_budget_rule_period_type`` classifies legacy rows and never
     overwrites an already-set ``period_type`` (mirrors alembic ``a7c9e1b3d5f7``)."""

@@ -229,3 +229,149 @@ class TestCategoriesTagsServiceTags:
         # The tag format is "provider - account_name - last4digits"
         # add_tag normalizes to title case, so "isracard" becomes "Isracard"
         assert any("Isracard" in tag for tag in cc_tags)
+
+
+# ---------------------------------------------------------------------------
+# Class N: Unused category detection
+# ---------------------------------------------------------------------------
+
+
+class TestGetCategoryUsage:
+    """Tests for CategoriesTagsService.get_category_usage."""
+
+    @staticmethod
+    def _age_all_categories(db_session):
+        """Backdate every category so the creation grace never applies."""
+        from datetime import datetime
+
+        from backend.models.category import Category
+
+        old = datetime(2020, 1, 1)
+        for cat in db_session.query(Category).all():
+            cat.created_at = old
+        db_session.commit()
+
+    @staticmethod
+    def _add_bank_txn(db_session, category, date_str):
+        """Insert one categorized bank transaction."""
+        from backend.models.transaction import BankTransaction
+
+        db_session.add(
+            BankTransaction(
+                id=f"txn-{category}-{date_str}",
+                date=date_str,
+                provider="hapoalim",
+                account_name="Main",
+                description="x",
+                amount=-10.0,
+                category=category,
+                tag=None,
+                source="bank_transactions",
+                type=None,
+                status="completed",
+            )
+        )
+        db_session.commit()
+
+    @staticmethod
+    def _iso_months_ago(months):
+        """Return an ISO date string that many months in the past."""
+        import pandas as pd
+
+        return (
+            pd.Timestamp.today().normalize() - pd.DateOffset(months=months)
+        ).strftime("%Y-%m-%d")
+
+    def test_every_category_is_present(self, categories_service, db_session):
+        """The result covers every category, used or not."""
+        self._age_all_categories(db_session)
+        result = categories_service.get_category_usage()
+        assert set(result) == set(categories_service.get_categories_and_tags())
+
+    def test_stale_category_is_unused(self, categories_service, db_session):
+        """A category whose only transaction is older than the window is unused."""
+        self._age_all_categories(db_session)
+        self._add_bank_txn(db_session, "Food", self._iso_months_ago(9))
+        result = categories_service.get_category_usage()
+        assert result["Food"]["unused"] is True
+        assert result["Food"]["last_used"] == self._iso_months_ago(9)
+
+    def test_recent_transaction_keeps_category_active(
+        self, categories_service, db_session
+    ):
+        """A transaction inside the window keeps the category active."""
+        self._age_all_categories(db_session)
+        self._add_bank_txn(db_session, "Food", self._iso_months_ago(1))
+        result = categories_service.get_category_usage()
+        assert result["Food"]["unused"] is False
+
+    def test_never_used_old_category_is_unused(
+        self, categories_service, db_session
+    ):
+        """An old category with no transactions at all is unused."""
+        self._age_all_categories(db_session)
+        result = categories_service.get_category_usage()
+        assert result["Food"]["unused"] is True
+        assert result["Food"]["last_used"] is None
+
+    def test_protected_category_is_never_unused(
+        self, categories_service, db_session
+    ):
+        """Protected categories are exempt even with no transactions."""
+        self._age_all_categories(db_session)
+        result = categories_service.get_category_usage()
+        for name in PROTECTED_CATEGORIES:
+            if name in result:
+                assert result[name]["unused"] is False
+
+    def test_recently_created_category_is_exempt(
+        self, categories_service, db_session
+    ):
+        """A category created inside the window is exempt despite no usage."""
+        self._age_all_categories(db_session)
+        from datetime import datetime
+
+        from backend.models.category import Category
+
+        fresh = db_session.query(Category).filter_by(name="Food").one()
+        fresh.created_at = datetime.now()
+        db_session.commit()
+        result = categories_service.get_category_usage()
+        assert result["Food"]["unused"] is False
+
+    def test_transaction_exactly_at_cutoff_keeps_category_active(
+        self, categories_service, db_session
+    ):
+        """A transaction dated exactly on the cutoff boundary is "recent"
+        (``used_recently`` uses ``>=``), so the category stays active."""
+        from backend.constants.categories import UNUSED_CATEGORY_MONTHS
+
+        self._age_all_categories(db_session)
+        self._add_bank_txn(
+            db_session, "Food", self._iso_months_ago(UNUSED_CATEGORY_MONTHS)
+        )
+        result = categories_service.get_category_usage()
+        assert result["Food"]["unused"] is False
+
+    def test_category_created_exactly_at_cutoff_stays_in_creation_grace(
+        self, categories_service, db_session
+    ):
+        """A category created exactly on the cutoff boundary is NOT considered
+        "created before the cutoff" (``created_before_cutoff`` uses ``<``), so
+        it keeps its creation grace despite having no transactions."""
+        import pandas as pd
+        from datetime import datetime
+
+        from backend.constants.categories import UNUSED_CATEGORY_MONTHS
+        from backend.models.category import Category
+
+        self._age_all_categories(db_session)
+        cutoff = (
+            pd.Timestamp.today().normalize()
+            - pd.DateOffset(months=UNUSED_CATEGORY_MONTHS)
+        ).date()
+        fresh = db_session.query(Category).filter_by(name="Food").one()
+        fresh.created_at = datetime(cutoff.year, cutoff.month, cutoff.day)
+        db_session.commit()
+        result = categories_service.get_category_usage()
+        assert result["Food"]["unused"] is False

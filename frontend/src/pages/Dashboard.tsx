@@ -434,7 +434,7 @@ export function Dashboard() {
   };
 
   return (
-    <div className="space-y-4 md:space-y-8 animate-in fade-in duration-500">
+    <div className="space-y-3 md:space-y-4 animate-in fade-in duration-500">
       {/* Pinned: Financial Health Header (KPI cards) */}
       <FinancialHealthHeader
         netWorthData={netWorthData}
@@ -461,7 +461,7 @@ export function Dashboard() {
           `align-items: stretch` plus `[&>*]:h-full` makes both as tall as the
           taller card (still capped). On mobile the grid is a single column with
           natural, uncapped heights. */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-8 [--dash-card-h:39rem]">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 md:gap-4 [--dash-card-h:39rem]">
         {layout.order.map((id, index) => (
           <div
             key={id}

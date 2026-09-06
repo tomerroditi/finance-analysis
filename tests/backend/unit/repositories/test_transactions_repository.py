@@ -983,3 +983,165 @@ class TestCountUncategorized:
         )
         assert expected > 0
         assert repo.count_uncategorized() == expected
+
+
+class TestGetCategoryLastUsed:
+    """Tests for TransactionsRepository.get_category_last_used."""
+
+    def test_empty_db_returns_empty_dict(self, db_session):
+        """A database with no transactions yields no last-used entries."""
+        repo = TransactionsRepository(db_session)
+        assert repo.get_category_last_used() == {}
+
+    def test_max_date_taken_across_tables(self, db_session):
+        """The latest date wins even when it lives in a different table."""
+        db_session.add(
+            BankTransaction(
+                id="bank-1",
+                date="2025-01-10",
+                provider="hapoalim",
+                account_name="Main",
+                description="old food",
+                amount=-50.0,
+                category="Food",
+                tag="Groceries",
+                source="bank_transactions",
+                type=None,
+                status="completed",
+            )
+        )
+        db_session.add(
+            CreditCardTransaction(
+                id="cc-1",
+                date="2025-06-20",
+                provider="isracard",
+                account_name="Main Card",
+                description="new food",
+                amount=-30.0,
+                category="Food",
+                tag="Restaurants",
+                source="credit_card_transactions",
+                type=None,
+                status="completed",
+            )
+        )
+        db_session.commit()
+        repo = TransactionsRepository(db_session)
+        assert repo.get_category_last_used()["Food"] == "2025-06-20"
+
+    def test_null_category_is_excluded(self, db_session):
+        """Rows with no category contribute no entry."""
+        db_session.add(
+            BankTransaction(
+                id="bank-2",
+                date="2025-01-10",
+                provider="hapoalim",
+                account_name="Main",
+                description="untagged",
+                amount=-50.0,
+                category=None,
+                tag=None,
+                source="bank_transactions",
+                type=None,
+                status="completed",
+            )
+        )
+        db_session.commit()
+        repo = TransactionsRepository(db_session)
+        assert repo.get_category_last_used() == {}
+
+    def test_split_parent_row_is_ignored(self, db_session):
+        """A split-parent row's own date does not count as usage."""
+        db_session.add(
+            CreditCardTransaction(
+                id="cc-parent-1",
+                date="2025-03-04",
+                provider="isracard",
+                account_name="Main Card",
+                description="split parent",
+                amount=-100.0,
+                category="Food",
+                tag=None,
+                source="credit_card_transactions",
+                type="split_parent",
+                status="completed",
+            )
+        )
+        db_session.commit()
+        repo = TransactionsRepository(db_session)
+        assert "Food" not in repo.get_category_last_used()
+
+    def test_split_child_counts_with_parent_date(self, db_session):
+        """A split child has no date of its own; its parent's date is used."""
+        parent = CreditCardTransaction(
+            id="cc-parent-2",
+            date="2025-03-04",
+            provider="isracard",
+            account_name="Main Card",
+            description="split parent",
+            amount=-100.0,
+            category="Food",
+            tag=None,
+            source="credit_card_transactions",
+            type="split_parent",
+            status="completed",
+        )
+        db_session.add(parent)
+        db_session.commit()
+        db_session.add(
+            SplitTransaction(
+                transaction_id=parent.unique_id,
+                source="credit_card_transactions",
+                amount=-10.0,
+                category="Transport",
+                tag="Gas",
+            )
+        )
+        db_session.commit()
+        repo = TransactionsRepository(db_session)
+        assert repo.get_category_last_used()["Transport"] == "2025-03-04"
+
+    def test_orphaned_split_is_ignored(self, db_session):
+        """A split whose parent row is gone contributes nothing."""
+        db_session.add(
+            SplitTransaction(
+                transaction_id=999999,
+                source="credit_card_transactions",
+                amount=-10.0,
+                category="Transport",
+                tag="Gas",
+            )
+        )
+        db_session.commit()
+        repo = TransactionsRepository(db_session)
+        assert repo.get_category_last_used() == {}
+
+    def test_split_id_is_not_matched_across_tables(self, db_session):
+        """unique_id is per-table: a bank row must not satisfy a cc-sourced split."""
+        bank = BankTransaction(
+            id="bank-3",
+            date="2025-05-05",
+            provider="hapoalim",
+            account_name="Main",
+            description="unrelated",
+            amount=-50.0,
+            category="Food",
+            tag=None,
+            source="bank_transactions",
+            type=None,
+            status="completed",
+        )
+        db_session.add(bank)
+        db_session.commit()
+        db_session.add(
+            SplitTransaction(
+                transaction_id=bank.unique_id,
+                source="credit_card_transactions",
+                amount=-10.0,
+                category="Transport",
+                tag="Gas",
+            )
+        )
+        db_session.commit()
+        repo = TransactionsRepository(db_session)
+        assert "Transport" not in repo.get_category_last_used()

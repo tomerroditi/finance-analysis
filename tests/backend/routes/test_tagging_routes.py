@@ -142,3 +142,36 @@ class TestTaggingRoutes:
         data = response.json()
         assert data["status"] == "success"
         assert data["changed"] is True
+
+
+class TestCategoryUsageRoute:
+    """Tests for GET /tagging/categories/usage.
+
+    The file-level ``seed_route_categories`` fixture (autouse) already seeds
+    categories for every test here, so these don't request the brief's
+    ``seed_categories`` fixture on top -- doing so double-inserts and trips
+    the ``categories.name`` unique constraint.
+    """
+
+    def test_returns_an_entry_per_category(self, test_client):
+        """Every category appears in the usage response."""
+        response = test_client.get("/api/tagging/categories/usage")
+
+        assert response.status_code == 200
+        body = response.json()
+        categories = test_client.get("/api/tagging/categories").json()
+        assert set(body) == set(categories)
+
+    def test_entry_shape(self, test_client):
+        """Each entry carries last_used and unused."""
+        response = test_client.get("/api/tagging/categories/usage")
+
+        entry = next(iter(response.json().values()))
+        assert set(entry) == {"last_used", "unused"}
+        assert isinstance(entry["unused"], bool)
+
+    def test_freshly_seeded_categories_are_not_unused(self, test_client):
+        """Categories created just now are inside the creation grace."""
+        body = test_client.get("/api/tagging/categories/usage").json()
+
+        assert all(entry["unused"] is False for entry in body.values())
