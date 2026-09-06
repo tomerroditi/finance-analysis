@@ -62,6 +62,15 @@ class SavingsGoalLinkCreate(ApiRequestModel):
     link_type: Literal["contribution", "utilization"]
 
 
+class SavingsGoalInvestmentCreate(ApiRequestModel):
+    """Request body for earmarking an investment against a goal."""
+
+    investment_id: int
+    #: ``None`` earmarks whatever is left of the holding, so the goal keeps
+    #: tracking its value without the user retyping a number.
+    amount: Optional[float] = Field(None, gt=0)
+
+
 class SavingsGoalRebuild(BaseModel):
     """Request body for restating allocation history."""
 
@@ -114,6 +123,12 @@ def reopen_goal(goal_id: int, db: Session = Depends(get_database)):
     return SavingsGoalService(db).reopen(goal_id)
 
 
+@router.get("/free-cash")
+def get_free_cash(db: Session = Depends(get_database)):
+    """Return the pool of tracked money no goal has earmarked."""
+    return SavingsGoalService(db).get_free_cash()
+
+
 @router.get("/allocations/{year}/{month}")
 def get_month_allocations(year: int, month: int, db: Session = Depends(get_database)):
     """Return how much each goal received in one month, for the budget view."""
@@ -150,3 +165,33 @@ def link_transaction(
 def unlink_transaction(link_id: int, db: Session = Depends(get_database)):
     """Detach a transaction from its goal."""
     return SavingsGoalService(db).unlink_transaction(link_id)
+
+
+@router.get("/investments/available")
+def list_available_investments(db: Session = Depends(get_database)):
+    """Return open investments with how much of each is still unearmarked."""
+    return SavingsGoalService(db).get_available_investments()
+
+
+@router.get("/investments")
+def list_investment_backings(
+    goal_id: Optional[int] = None, db: Session = Depends(get_database)
+):
+    """Return investment earmarks, optionally scoped to one goal."""
+    return SavingsGoalService(db).get_investment_backings(goal_id)
+
+
+@router.post("/{goal_id}/investments")
+def link_investment(
+    goal_id: int,
+    data: SavingsGoalInvestmentCreate,
+    db: Session = Depends(get_database),
+):
+    """Earmark an investment holding against a goal."""
+    return SavingsGoalService(db).link_investment(goal_id=goal_id, **data.model_dump())
+
+
+@router.delete("/investments/{backing_id}")
+def unlink_investment(backing_id: int, db: Session = Depends(get_database)):
+    """Release an investment earmark."""
+    return SavingsGoalService(db).unlink_investment(backing_id)

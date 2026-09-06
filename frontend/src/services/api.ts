@@ -944,7 +944,11 @@ export interface SavingsGoal {
   contributed: number;
   /** Money spent back out of the goal. Never reduces `target_amount`. */
   utilized: number;
-  /** opening_balance + allocated + contributed. */
+  /** Money deficit months pulled back out, once the free-cash pool ran dry. */
+  clawed_back: number;
+  /** Goal progress held in earmarked investments rather than cash. */
+  investment_backed: number;
+  /** opening_balance + allocated + contributed + investment_backed, net of any clawback. */
   funded: number;
   /** funded - utilized: what is still earmarked and unspent. */
   available: number;
@@ -988,6 +992,10 @@ export interface SavingsGoalMonthAllocations {
   total_allocated: number;
   surplus: number;
   unallocated: number;
+  /** Unearmarked money left in the pool at the end of this month. */
+  free_cash: number;
+  /** Money this month's deficit pulled back out of goals (positive). */
+  clawed_back: number;
   is_provisional: boolean;
 }
 
@@ -1004,6 +1012,42 @@ export interface SavingsGoalRebuildResult {
   dry_run: boolean;
   changes: SavingsGoalRebuildChange[];
   goals: SavingsGoal[];
+}
+
+/** The pool of tracked money that no goal has earmarked. */
+export interface SavingsGoalFreeCash {
+  free_cash: number;
+  /** The *cash* goals still hold — investment backing is reported apart. */
+  earmarked: number;
+  liquid: number;
+  /** Goal progress sitting in holdings, which was never part of this pool. */
+  investment_backed: number;
+  clawed_back_this_month: number;
+  has_goals: boolean;
+}
+
+/** An investment holding earmarked against a goal. */
+export interface SavingsGoalInvestment {
+  id: number;
+  goal_id: number;
+  investment_id: number;
+  investment_name: string | null;
+  investment_type: string | null;
+  is_closed: boolean;
+  /** `null` earmarks whatever is left of the holding. */
+  amount: number | null;
+  goal_backed_total: number;
+}
+
+/** An open investment and how much of it is still free to earmark. */
+export interface SavingsGoalAvailableInvestment {
+  id: number;
+  name: string | null;
+  type: string | null;
+  value: number;
+  earmarked: number;
+  available: number;
+  fully_claimed: boolean;
 }
 
 export type SavingsGoalLinkType = "contribution" | "utilization";
@@ -1032,6 +1076,21 @@ export const savingsGoalsApi = {
       from_month: fromMonth,
       dry_run: dryRun,
     }),
+  getFreeCash: () => api.get<SavingsGoalFreeCash>("/savings-goals/free-cash"),
+  getInvestments: (goalId?: number) =>
+    api.get<SavingsGoalInvestment[]>("/savings-goals/investments", {
+      params: goalId ? { goal_id: goalId } : undefined,
+    }),
+  getAvailableInvestments: () =>
+    api.get<SavingsGoalAvailableInvestment[]>(
+      "/savings-goals/investments/available",
+    ),
+  linkInvestment: (
+    goalId: number,
+    payload: { investment_id: number; amount?: number | null },
+  ) => api.post<SavingsGoal[]>(`/savings-goals/${goalId}/investments`, payload),
+  unlinkInvestment: (backingId: number) =>
+    api.delete(`/savings-goals/investments/${backingId}`),
   getLinks: (goalId?: number) =>
     api.get<SavingsGoalLink[]>("/savings-goals/links", {
       params: goalId ? { goal_id: goalId } : undefined,

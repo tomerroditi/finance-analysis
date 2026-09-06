@@ -49,6 +49,37 @@ The dataset models **the Cohens**, a dual-income Israeli couple with two kids (o
 - **Wedding planning** in the last ~10 months (project budget: `Our Wedding`, 120,000 ILS across 7 tags — Venue, Catering, Photography, Attire, Rings, Invitations, Honeymoon). Small/medium vendor payments on the Max CC; large deposits (venue, catering) via bank transfer.
 - **Paid-off Personal Loan** earlier in the window + active Mortgage + active Car Loan — exercises all three liability states.
 
+### Savings goals
+
+Three goals demonstrate every way a goal can be funded, in one waterfall:
+
+| # | Goal | Funded by | Demonstrates |
+|---|---|---|---|
+| 1 | Emergency Fund | cash only, capped 2,500/mo | a goal that filled — "Achieved 🎉" |
+| 2 | Kids' Education Fund | cash + the **Savings Plan** investment | investment backing, and `monthly_needed` off a long `target_date` |
+| 3 | Wedding Fund | cash, with two wedding bank transfers linked as **utilizations** | money set aside *and* since spent, without the target shrinking |
+
+Whatever the three leave unclaimed each month is the **free-cash pool**, which
+a negative month drains before any goal is touched (see
+`.claude/rules/savings_goals.md`).
+
+Two constraints on anything you add here:
+
+- **Never seed `savings_goal_allocations`.** The engine derives the whole
+  ledger on first read. Rows written by the generator would be anchored to
+  `REFERENCE_DATE` instead of the date-shifted months Demo Mode actually
+  serves, and `_shift_dates` deliberately does not move them.
+- **Only bank/cash transactions can be linked.** Credit-card and insurance
+  rows are filtered out of the surplus *before* links are resolved, so a
+  `savings_goal_links` row pointing at a CC transaction is silently inert.
+  The wedding utilizations use the bank-side venue/catering deposits for
+  exactly this reason.
+
+`savings_goals.start_month` / `closed_month` (YYYY-MM strings) and
+`target_date` are shifted by `_shift_dates` in `backend/demo_setup.py`. A new
+date-ish column on these tables needs adding there too, or it freezes at the
+snapshot's build date while everything around it moves.
+
 ### Other coverage guaranteed by the script
 - Multiple bank accounts (hapoalim Main + leumi Savings) and multiple cash envelopes (Petty Cash + Kids Envelope)
 - Untagged CC transactions so auto-tagging and manual-tagging flows can be demoed
@@ -183,6 +214,7 @@ scripts/generate_demo_data.py
 ├── create_pending_refunds          ← 7 refunds covering all statuses + split source
 ├── create_liabilities              ← Mortgage, Car Loan, paid-off Personal Loan
 ├── create_retirement_goal          ← derives KH totals from insurance-account constants
+├── create_savings_goals            ← 3-goal waterfall + investment backing + utilizations
 ├── create_scraping_history
 ├── generate_insurance_data         ← pension + KH per Israeli law (see rules above)
 └── main()                          ← orchestrates, drops+recreates the DB, prints row counts

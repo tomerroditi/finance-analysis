@@ -77,6 +77,15 @@ test.describe("Savings goals", () => {
     });
     await ctx.post(`${API_BASE}/testing/demo/reset`);
 
+    // Demo data now ships the Cohens' own three goals. This spec asserts
+    // absolute waterfall positions, so clear them first — otherwise the
+    // goals created below land at #4 and #5. The teardown restores the
+    // snapshot, so the demo's goals come back for the next run.
+    const seeded = await (await ctx.get(`${API_BASE}/savings-goals/`)).json();
+    for (const goal of seeded as { id: number }[]) {
+      await ctx.delete(`${API_BASE}/savings-goals/${goal.id}`);
+    }
+
     // Both goals start far enough back to have accrued real allocations, so
     // the budget-page assertion below has something to find. The 1-per-month
     // cap keeps `funded` dominated by `opening_balance`, which is what makes
@@ -151,6 +160,26 @@ test.describe("Savings goals", () => {
     // in-progress row's header must read exactly rank + name.
     const header = inProgressRow.locator("xpath=.//p[1]/..");
     await expect(header).toHaveText("#1E2E In Progress Goal");
+
+    // --- free-cash pool ------------------------------------------------
+    // The unearmarked remainder renders below the waterfall and outside any
+    // goal row — it is the buffer a deficit month drains before the engine
+    // reaches back into the goals themselves.
+    const pool = page.getByText("Free cash", { exact: true });
+    await expect(pool).toBeVisible();
+    await expect(
+      pool.locator("xpath=ancestor::div[contains(@class,'group')]"),
+    ).toHaveCount(0);
+
+    // What it reports must reconcile: pool + earmarked = liquid.
+    const reported = await (
+      await ctx.get(`${API_BASE}/savings-goals/free-cash`)
+    ).json();
+    expect(reported.has_goals).toBe(true);
+    expect(reported.free_cash + reported.earmarked).toBeCloseTo(
+      reported.liquid,
+      2,
+    );
   });
 
   test("reordering moves a goal up the waterfall", async ({ page }) => {
@@ -180,6 +209,62 @@ test.describe("Savings goals", () => {
     await expect(
       goalRow(page, "E2E In Progress Goal").getByText("#1"),
     ).toBeVisible();
+  });
+
+  test("an investment can back a goal without becoming cash", async ({
+    page,
+  }) => {
+    // Demo data ships open investments; earmark the first one that still has
+    // headroom, rather than assuming a particular holding exists.
+    const available = await (
+      await ctx.get(`${API_BASE}/savings-goals/investments/available`)
+    ).json();
+    const holding = available.find(
+      (row: { available: number }) => row.available > 0,
+    );
+    expect(
+      holding,
+      "demo data should ship an open investment to earmark",
+    ).toBeTruthy();
+
+    const goal = await createGoal({
+      name: "E2E Backed Goal",
+      target_amount: 500000,
+      monthly_cap: 1,
+      start_month: monthsAgo(1),
+    });
+
+    const poolBefore = await (
+      await ctx.get(`${API_BASE}/savings-goals/free-cash`)
+    ).json();
+
+    const linked = await ctx.post(
+      `${API_BASE}/savings-goals/${goal.id}/investments`,
+      { data: { investment_id: holding.id, amount: 1000 } },
+    );
+    expect(linked.ok()).toBeTruthy();
+
+    // The backing counts toward the goal but is not liquid: the free-cash
+    // pool must be untouched, and the holding shows up on its own line.
+    const poolAfter = await (
+      await ctx.get(`${API_BASE}/savings-goals/free-cash`)
+    ).json();
+    expect(poolAfter.free_cash).toBeCloseTo(poolBefore.free_cash, 2);
+    expect(poolAfter.investment_backed).toBeCloseTo(
+      poolBefore.investment_backed + 1000,
+      2,
+    );
+
+    await openDashboardWithGoals(page);
+    const row = goalRow(page, "E2E Backed Goal");
+    await expect(row).toBeVisible({ timeout: 30_000 });
+    await expect(row.getByText(/backed by investments/i)).toBeVisible();
+
+    // The earmark modal lists it and can release it again.
+    await row.getByRole("button", { name: /back with investments/i }).click();
+    await expect(page.getByText(holding.name, { exact: true })).toBeVisible();
+    await page.getByRole("button", { name: /release this earmark/i }).click();
+    await expect(row.getByText(/backed by investments/i)).toHaveCount(0);
   });
 
   test("the budget month shows what was directed into goals", async ({
@@ -225,5 +310,9 @@ test.describe("Savings goals", () => {
         page.getByText(goal.name, { exact: true }).first(),
       ).toBeVisible();
     }
+
+    // The month's footer names what the goals left behind as well as what
+    // they took, so a deficit month can explain itself.
+    await expect(page.getByText(/^Free cash:/)).toBeVisible();
   });
 });
