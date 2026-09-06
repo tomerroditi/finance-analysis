@@ -56,15 +56,14 @@ Three parts per million of a seven-figure balance: what is left after the
 reference's own one-decimal display rounding has compounded."""
 
 KNOWN_GAPS = {
-    "pf_mukeret2": (100_000, "gemel-conversion bridge (notes/15)"),
-    "pf_mukeret3_t60": (120_000, "gemel-conversion bridge (notes/15)"),
-    "pf_mukeret4_order": (170_000, "gemel-conversion bridge (notes/15)"),
+    "pf_mukeret2": (40_000, "gemel-conversion bridge (notes/15)"),
+    "pf_mukeret3_t60": (60_000, "gemel-conversion bridge (notes/15)"),
+    "pf_mukeret4_order": (20_000, "gemel-conversion bridge (notes/15)"),
     "pn_annuity_6067": (300, "interpolated bridge for a split pension claim"),
     "lot_lifo_nodep": (250, "synthetic lot history (notes/13)"),
     "pf_lifo": (120, "synthetic lot history (notes/13)"),
     "pf_fifo": (110, "synthetic lot history (notes/13)"),
     "pf_fifo_nodep": (70, "synthetic lot history (notes/13)"),
-    "pf_fifo_p90": (40, "synthetic lot history (notes/13)"),
     "pf_gemel_two": (110, "deposit order across two capped accounts"),
     "pf_deposit_caps": (110, "deposit order across two capped accounts"),
     "pf_mukeret_ref": (70, "a couple both annuitising at 60"),
@@ -199,9 +198,24 @@ class TestDerivedParity:
             f"{name}: worst asset gap {worst:,.1f} exceeds {bound:,.0f}"
             + (f" (known gap: {why})" if why else ""))
 
-    def test_every_known_gap_is_still_needed(self):
-        """A gap that has been closed must be removed from the list."""
-        assert set(KNOWN_GAPS) <= set(ALL_FIXTURES)
+    @pytest.mark.parametrize("name", sorted(KNOWN_GAPS))
+    def test_every_known_gap_is_still_needed(self, name):
+        """A gap that has closed must leave the list, or it hides a regression."""
+        assert name in ALL_FIXTURES
+        fixture = json.loads((FIXTURES / f"{name}.json").read_text(encoding="utf-8"))
+        reference = _reference_assets(fixture)
+        plan = plan_from_reference(fixture["overrides"])
+        result = Simulator(plan).run(
+            retire_index=_reference_retire_index(fixture), today=RECORDED_IN)
+        worst = 0.0
+        for label, expected in reference.items():
+            key = None if label == "age" else _asset_key(label, plan)
+            if key is None:
+                continue
+            worst = max(worst, *(abs(result.months[month].assets[key] - expected[month])
+                                 for month in range(len(result.months))))
+        assert worst >= DERIVED_TOLERANCE, (
+            f"{name} now matches to {worst:.2f} — remove it from KNOWN_GAPS")
 
 
 class TestDrawdownParity:

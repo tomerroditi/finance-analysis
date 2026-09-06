@@ -1644,7 +1644,33 @@
     "chart": {
       "netWorth": "שווי נקי",
       "assets": "התפתחות נכסים",
-      "flows": "הכנסות מול הוצאות"
+      "income": "הכנסות לפי מקור",
+      "spending": "הוצאות לפי יעד"
+    },
+    "flow": {
+      "buffer": "הפרשה לעובר ושב",
+      "capital_gains_tax": "מס על רווחי הון",
+      "cash": "משיכה מעובר ושב",
+      "deposit_portfolio": "הפקדה לתיק",
+      "entitling": "קצבה מזכה",
+      "entitling_partner": "קצבה מזכה (בן/בת זוג)",
+      "gemel": "קצבת גמל להשקעה",
+      "income_tax": "מס הכנסה",
+      "income_tax_partner": "מס הכנסה (בן/בת זוג)",
+      "keren": "משיכה מקרן השתלמות",
+      "living": "הוצאות שוטפות",
+      "loans": "הלוואות",
+      "national_insurance": "ביטוח לאומי",
+      "national_insurance_partner": "ביטוח לאומי (בן/בת זוג)",
+      "one_time": "חד פעמי",
+      "portfolio": "משיכה מתיק",
+      "recognised": "קצבה מוכרת",
+      "recognised_partner": "קצבה מוכרת (בן/בת זוג)",
+      "shortfall": "החתיכה החסרה",
+      "state_pension": "קצבת זקנה",
+      "state_pension_partner": "קצבת זקנה (בן/בת זוג)",
+      "unplanned": "הוצאה לא מתוכננת",
+      "work": "עבודה"
     }
   }
 }

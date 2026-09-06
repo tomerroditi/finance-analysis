@@ -6,8 +6,6 @@ import {
   AreaChart,
   CartesianGrid,
   Legend,
-  Line,
-  LineChart,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -39,9 +37,20 @@ function yearly<T extends { age: number }>(rows: T[]): T[] {
   return rows.filter((_, index) => index % 12 === 0);
 }
 
-function ChartCard({ title, children }: { title: string; children: React.ReactNode }) {
+function ChartCard({
+  id,
+  title,
+  children,
+}: {
+  id: string;
+  title: string;
+  children: React.ReactNode;
+}) {
   return (
-    <div className="p-4 rounded-xl bg-[var(--surface)] border border-[var(--surface-light)]">
+    <div
+      data-testid={`fire-chart-${id}`}
+      className="p-4 rounded-xl bg-[var(--surface)] border border-[var(--surface-light)]"
+    >
       <h4 className="mb-3 text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wider">
         {title}
       </h4>
@@ -52,6 +61,34 @@ function ChartCard({ title, children }: { title: string; children: React.ReactNo
       </div>
     </div>
   );
+}
+
+/** Name a cash-flow row. Indexed rows (`portfolio2`, `keren0`) keep their number. */
+function flowLabel(key: string, t: (k: string) => string): string {
+  const match = /^([a-z_]+?)(\d+)$/.exec(key);
+  const stem = match ? match[1] : key;
+  const label = t(`fire.flow.${stem}`);
+  return match ? `${label} ${Number(match[2]) + 1}` : label;
+}
+
+/** The rows of one cash-flow chart, and the keys that actually carry money. */
+function useFlowSeries(projection: FireProjection, side: "incomes" | "expenses") {
+  return useMemo(() => {
+    const keys = new Set<string>();
+    for (const month of projection.months) {
+      for (const [key, value] of Object.entries(month[side])) if (value !== 0) keys.add(key);
+    }
+    const ordered = [...keys];
+    return {
+      keys: ordered,
+      rows: yearly(
+        projection.months.map((m) => ({
+          age: Number(m.age.toFixed(2)),
+          ...Object.fromEntries(ordered.map((key) => [key, m[side][key] ?? 0])),
+        })),
+      ),
+    };
+  }, [projection.months, side]);
 }
 
 export function ProjectionResults({ projection }: Props) {
@@ -82,17 +119,8 @@ export function ProjectionResults({ projection }: Props) {
     [projection.months, assetKeys],
   );
 
-  const flows = useMemo(
-    () =>
-      yearly(
-        projection.months.map((m) => ({
-          age: Number(m.age.toFixed(2)),
-          income: Object.values(m.incomes).reduce((a, b) => a + b, 0),
-          expenses: Object.values(m.expenses).reduce((a, b) => a + b, 0),
-        })),
-      ),
-    [projection.months],
-  );
+  const income = useFlowSeries(projection, "incomes");
+  const spending = useFlowSeries(projection, "expenses");
 
   if (projection.status === "no_result") {
     return (
@@ -171,7 +199,7 @@ export function ProjectionResults({ projection }: Props) {
         </div>
       )}
 
-      <ChartCard title={t("fire.chart.netWorth")}>
+      <ChartCard id="net-worth" title={t("fire.chart.netWorth")}>
         <AreaChart data={netWorth}>
           <CartesianGrid strokeDasharray="3 3" stroke="var(--surface-light)" />
           <XAxis dataKey="age" tick={{ fontSize: 11 }} stroke="var(--text-muted)" />
@@ -181,7 +209,7 @@ export function ProjectionResults({ projection }: Props) {
         </AreaChart>
       </ChartCard>
 
-      <ChartCard title={t("fire.chart.assets")}>
+      <ChartCard id="assets" title={t("fire.chart.assets")}>
         <AreaChart data={assets}>
           <CartesianGrid strokeDasharray="3 3" stroke="var(--surface-light)" />
           <XAxis dataKey="age" tick={{ fontSize: 11 }} stroke="var(--text-muted)" />
@@ -202,16 +230,48 @@ export function ProjectionResults({ projection }: Props) {
         </AreaChart>
       </ChartCard>
 
-      <ChartCard title={t("fire.chart.flows")}>
-        <LineChart data={flows}>
+      <ChartCard id="income" title={t("fire.chart.income")}>
+        <AreaChart data={income.rows}>
           <CartesianGrid strokeDasharray="3 3" stroke="var(--surface-light)" />
           <XAxis dataKey="age" tick={{ fontSize: 11 }} stroke="var(--text-muted)" />
           <YAxis tick={{ fontSize: 11 }} stroke="var(--text-muted)" width={70} />
           <Tooltip formatter={(value) => money.format(Number(value ?? 0))} />
           <Legend wrapperStyle={{ fontSize: 11 }} />
-          <Line type="monotone" dataKey="income" stroke={SERIES_COLORS[1]} dot={false} />
-          <Line type="monotone" dataKey="expenses" stroke={SERIES_COLORS[4]} dot={false} />
-        </LineChart>
+          {income.keys.map((key, index) => (
+            <Area
+              key={key}
+              type="monotone"
+              dataKey={key}
+              name={flowLabel(key, t)}
+              stackId="income"
+              stroke={SERIES_COLORS[index % SERIES_COLORS.length]}
+              fill={SERIES_COLORS[index % SERIES_COLORS.length]}
+              fillOpacity={0.25}
+            />
+          ))}
+        </AreaChart>
+      </ChartCard>
+
+      <ChartCard id="spending" title={t("fire.chart.spending")}>
+        <AreaChart data={spending.rows}>
+          <CartesianGrid strokeDasharray="3 3" stroke="var(--surface-light)" />
+          <XAxis dataKey="age" tick={{ fontSize: 11 }} stroke="var(--text-muted)" />
+          <YAxis tick={{ fontSize: 11 }} stroke="var(--text-muted)" width={70} />
+          <Tooltip formatter={(value) => money.format(Number(value ?? 0))} />
+          <Legend wrapperStyle={{ fontSize: 11 }} />
+          {spending.keys.map((key, index) => (
+            <Area
+              key={key}
+              type="monotone"
+              dataKey={key}
+              name={flowLabel(key, t)}
+              stackId="spending"
+              stroke={SERIES_COLORS[index % SERIES_COLORS.length]}
+              fill={SERIES_COLORS[index % SERIES_COLORS.length]}
+              fillOpacity={0.25}
+            />
+          ))}
+        </AreaChart>
       </ChartCard>
     </div>
   );

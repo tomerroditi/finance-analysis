@@ -78,6 +78,8 @@ class PensionAccount:
     annuitised: set[int] = field(default_factory=set)
     severance: SeveranceRedemption | None = None
     severance_start_month: int | None = None
+    recognised_share: float | None = None
+    """Recognised share of the balance, once a severance redemption has moved it."""
 
     def __post_init__(self):
         self.balance = self.plan_pension.balance
@@ -101,13 +103,22 @@ class PensionAccount:
         The redeemed component leaves the pension, so the annuity that would
         have been paid on it disappears; the tax is billed separately over a
         spread (notes/05).
+
+        Only the *entitling* side shrinks. The recognised annuity is still
+        `mukeret_pct` of the balance the fund had **before** the redemption, so
+        its share of what is left grows — verified in `pn_pizuim_2010`, where
+        the reference pays 1,819.8 recognised against 1,310.3 if the percentage
+        were re-applied to the reduced balance (notes/16).
         """
         if self.severance is not None:
             return 0.0
-        self.severance = redeem(self.balance, self.plan_pension.mukeret_pct,
+        before = self.balance
+        self.severance = redeem(before, self.plan_pension.mukeret_pct,
                                 year, self.plan_pension.work_start_year)
         self.severance_start_month = month_index
         self.balance -= self.severance.gross
+        if self.balance > 0:
+            self.recognised_share = (self.plan_pension.mukeret_pct / 100) * before / self.balance
         return self.severance.gross
 
     def _claim(self, share: float, claim_age: int, recognised: bool, age: float) -> None:
@@ -125,7 +136,8 @@ class PensionAccount:
         everything at the statutory age, or the recognised share at 60 and the
         entitling share at the statutory age (notes/05).
         """
-        mukeret = self.plan_pension.mukeret_pct / 100
+        mukeret = (self.recognised_share if self.recognised_share is not None
+                   else self.plan_pension.mukeret_pct / 100)
         tactic = self.plan_pension.tactic
 
         def due(claim_age: int) -> bool:
@@ -157,9 +169,18 @@ class PensionAccount:
         entitling = sum(s.monthly for s in self.streams if not s.recognised and age >= s.start_age)
         return recognised, entitling
 
-    def deductions_at(self, age: float, month_index: int | None = None) -> tuple[float, float]:
-        """`(income_tax, national_insurance)` on the annuity at `age`."""
+    def deductions_at(self, age: float, month_index: int | None = None,
+                      also_drawing: float = 0.0) -> tuple[float, float]:
+        """`(income_tax, national_insurance)` on the annuity at `age`.
+
+        `also_drawing` is recognised annuity this person draws from outside the
+        pension fund — a gemel converted at 60. It is tax-free like any
+        recognised annuity, but national insurance is charged on the **whole**
+        annuity a person draws before their statutory age, so it belongs in that
+        base (notes/16: leaving it out cost `pf_mukeret2` 1,103.9 a month).
+        """
         recognised, entitling = self.income_at(age)
+        recognised += also_drawing
         exemption = (israeli_tax.STATUTORY_AGE_MONTHLY_EXEMPTION
                      if age > self.statutory_age else 0.0)
         if self.severance is not None:

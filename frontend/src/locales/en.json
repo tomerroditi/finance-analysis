@@ -1642,7 +1642,33 @@
     "chart": {
       "netWorth": "Net worth",
       "assets": "Assets over time",
-      "flows": "Income vs expenses"
+      "income": "Income by source",
+      "spending": "Spending by destination"
+    },
+    "flow": {
+      "buffer": "To cash buffer",
+      "capital_gains_tax": "Capital-gains tax",
+      "cash": "From checking",
+      "deposit_portfolio": "Into portfolio",
+      "entitling": "Entitling annuity",
+      "entitling_partner": "Entitling annuity (partner)",
+      "gemel": "Gemel annuity",
+      "income_tax": "Income tax",
+      "income_tax_partner": "Income tax (partner)",
+      "keren": "From study fund",
+      "living": "Living costs",
+      "loans": "Debt service",
+      "national_insurance": "National insurance",
+      "national_insurance_partner": "National insurance (partner)",
+      "one_time": "One-off",
+      "portfolio": "From portfolio",
+      "recognised": "Recognised annuity",
+      "recognised_partner": "Recognised annuity (partner)",
+      "shortfall": "Unfunded",
+      "state_pension": "State pension",
+      "state_pension_partner": "State pension (partner)",
+      "unplanned": "Left in checking",
+      "work": "Work"
     }
   }
 }

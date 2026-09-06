@@ -72,5 +72,16 @@ test.describe("Early-retirement calculator", () => {
 
     // Charts render as SVG (Recharts), one surface per chart at minimum.
     await expect(results.locator("svg.recharts-surface").first()).toBeVisible();
+
+    // --- all four charts, including the two cash-flow decompositions -----
+    // The reference charts income by source and spending by destination, and
+    // the two balance each other every month; both have to be here.
+    for (const id of ["net-worth", "assets", "income", "spending"]) {
+      await expect(page.getByTestId(`fire-chart-${id}`)).toBeVisible();
+    }
+    // Legends name each row rather than leaking the engine's keys.
+    const incomeChart = page.getByTestId("fire-chart-income");
+    await expect(incomeChart.locator(".recharts-legend-item-text").first()).toBeVisible();
+    await expect(incomeChart.getByText(/portfolio\d|keren\d|state_pension/)).toHaveCount(0);
   });
 });

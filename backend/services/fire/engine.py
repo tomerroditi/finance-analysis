@@ -50,7 +50,22 @@ class MonthRecord:
     month: int
     age: float
     incomes: dict[str, float] = field(default_factory=dict)
+    """Every shekel that came in this month, by source.
+
+    A closed decomposition, exactly as the reference charts it: pay and one-off
+    income, each annuity, the state pension, and every withdrawal — from the
+    checking account, from each portfolio (gross of the tax on the sale), and
+    from each study fund. `shortfall` is the reference's "missing piece": what
+    the plan needed and could not fund."""
+
     expenses: dict[str, float] = field(default_factory=dict)
+    """Every shekel that went out this month, by destination.
+
+    Balances `incomes` to the agora, because the reference's own two charts do:
+    living costs and one-off spending, debt service, the tax on each portfolio
+    sale, income tax and national insurance on each annuity, every deposit
+    routed into a portfolio, the top-up of the cash buffer, and finally
+    `unplanned` — surplus that found no destination and stayed in checking."""
     assets: dict[str, float] = field(default_factory=dict)
     liabilities: float = 0.0
     cash: float = 0.0
@@ -176,9 +191,18 @@ class Simulator:
             return flow.amount
         return flow.amount * (1 + flow.annual_rise_pct / 100) ** ((index - first) / 12)
 
-    def _flow_total(self, flows, index, retire_index, today) -> float:
+    def _flow_total(self, flows, index, retire_index, today, one_time=None) -> float:
+        """Total of the flows live in `index`.
+
+        `one_time=True` keeps only the single-month rows, `False` only the
+        recurring ones. The reference charts the two separately — recurring
+        income as `עבודה` and one-off income as `הכנסות חד פעמיות`, recurring
+        spending as `הוצאות שוטפות` and one-off spending as `יעדים` (notes/16).
+        """
         total = 0.0
         for flow in flows:
+            if one_time is not None and (flow.start_type == StartType.ONE_TIME) != one_time:
+                continue
             first, last = self._window(flow, retire_index, today)
             if first <= index <= last:
                 total += self._amount(flow, index, first)
@@ -274,6 +298,7 @@ class Simulator:
         funds = [KerenAccount.from_fund(f) for f in plan.kranot_hishtalmut]
         pensions = self._pension_accounts()
         gemel_annuities: dict[int, float] = {}
+        gemel_owner: dict[int, str] = {}
         converted: set[int] = set()
         loan_starts = [
             self._index_of(loan.start_date, today) if loan.start_date else 0
@@ -284,9 +309,16 @@ class Simulator:
 
         for t in range(total_months):
             age = self.age_at(t, today)
+            cash_in: dict[str, float] = {}
+            cash_out: dict[str, float] = {}
             income = self._flow_total(plan.incomes, t, retire_index, today)
+            cash_in["work"] = self._flow_total(
+                plan.incomes, t, retire_index, today, one_time=False)
+            cash_in["one_time"] = self._flow_total(
+                plan.incomes, t, retire_index, today, one_time=True)
             if t < retire_index:
                 income += plan.monthly_cash_improvement
+                cash_in["work"] += plan.monthly_cash_improvement
             partner_age = (self._partner_age(t, today)
                            if plan.partner is not None else None)
             state_pension = national_insurance.monthly_amount(
@@ -294,12 +326,44 @@ class Simulator:
             if plan.partner is not None:
                 state_pension += national_insurance.monthly_amount(
                     plan.partner, partner_age, plan.person, age)
+            cash_in["state_pension"] = national_insurance.monthly_amount(
+                plan.person, age, plan.partner, partner_age)
+            if plan.partner is not None:
+                cash_in["state_pension_partner"] = national_insurance.monthly_amount(
+                    plan.partner, partner_age, plan.person, age)
             expense = self._flow_total(plan.expenses, t, retire_index, today)
+            cash_out["living"] = self._flow_total(
+                plan.expenses, t, retire_index, today, one_time=False)
+            cash_out["one_time"] = self._flow_total(
+                plan.expenses, t, retire_index, today, one_time=True)
             debt_service = sum(
                 loan_math.payment_at(loan, t - start)
                 for loan, start in zip(plan.loans, loan_starts)
             )
             surplus = income + state_pension - expense - debt_service
+
+            # A gemel portfolio earmarked as a recognised annuity converts in
+            # full at 60 into a tax-free stream (notes/03). This runs *before*
+            # the pension loop because national insurance is charged on the
+            # whole annuity a person draws, this one included, from the month it
+            # starts (notes/16).
+            for index, portfolio in enumerate(plan.portfolios):
+                claim_age = self._mukeret_claim_age(portfolio, t, today)
+                if claim_age is not None and index not in converted:
+                    owner = (plan.partner if portfolio.designation
+                             == PortfolioDesignation.MUKERET_PARTNER and plan.partner
+                             else plan.person)
+                    gemel_annuities[index] = (
+                        accounts[index].balance / annuity_factor(owner.gender, 60))
+                    annuity_streams.append((gemel_annuities[index], t))
+                    gemel_owner[index] = "" if owner is plan.person else "_partner"
+                    accounts[index].balance = 0.0
+                    accounts[index].basis = 0.0
+                    converted.add(index)
+            gemel_by_owner: dict[str, float] = {}
+            for index, amount in gemel_annuities.items():
+                gemel_by_owner[gemel_owner[index]] = (
+                    gemel_by_owner.get(gemel_owner[index], 0.0) + amount)
 
             # Pension: contribute, convert what is due, then collect the annuity.
             annuity_income = 0.0
@@ -326,25 +390,22 @@ class Simulator:
                 account.annuitise_due(owner_age)
                 annuity_streams.extend(
                     (stream.monthly, t) for stream in account.streams[started:])
+                who = "" if owner is plan.person else "_partner"
                 recognised, entitling = account.income_at(owner_age)
-                tax, insurance = account.deductions_at(owner_age, t)
+                tax, insurance = account.deductions_at(
+                    owner_age, t, also_drawing=gemel_by_owner.get(who, 0.0))
                 annuity_income += recognised + entitling
                 annuity_deductions += tax + insurance
-            # A gemel portfolio earmarked as a recognised annuity converts in
-            # full at 60 into a tax-free stream (notes/03).
-            for index, portfolio in enumerate(plan.portfolios):
-                claim_age = self._mukeret_claim_age(portfolio, t, today)
-                if claim_age is not None and index not in converted:
-                    owner = (plan.partner if portfolio.designation
-                             == PortfolioDesignation.MUKERET_PARTNER and plan.partner
-                             else plan.person)
-                    gemel_annuities[index] = (
-                        accounts[index].balance / annuity_factor(owner.gender, 60))
-                    annuity_streams.append((gemel_annuities[index], t))
-                    accounts[index].balance = 0.0
-                    accounts[index].basis = 0.0
-                    converted.add(index)
+                cash_in[f"recognised{who}"] = recognised
+                cash_in[f"entitling{who}"] = entitling
+                cash_out[f"income_tax{who}"] = tax
+                cash_out[f"national_insurance{who}"] = insurance
             annuity_income += sum(gemel_annuities.values())
+            for index, amount in gemel_annuities.items():
+                cash_in[f"gemel{index}"] = amount
+            # The reference charts a severance redemption as one-off income,
+            # alongside any one-time income row the user typed (notes/16).
+            cash_in["one_time"] += severance_cash
             surplus += annuity_income - annuity_deductions + severance_cash
 
             # Study-fund deposits are funded outside the modelled surplus.
@@ -357,13 +418,15 @@ class Simulator:
 
             shortfall = 0.0
             tax_paid = 0.0
+            cash_out["loans"] = debt_service
             if surplus >= 0:
-                cash = self._deposit(surplus, cash, accounts)
+                cash = self._deposit(surplus, cash, accounts, cash_out)
             else:
                 cash, shortfall, tax_paid = self._withdraw(
-                    -surplus, cash, accounts, funds, age)
+                    -surplus, cash, accounts, funds, age, cash_in, cash_out)
                 if shortfall > 0:
                     solvent = False
+                    cash_in["shortfall"] = shortfall
 
             for i, portfolio in enumerate(plan.portfolios):
                 accounts[i].grow(self._monthly_factor(portfolio, t, retire_index))
@@ -395,11 +458,8 @@ class Simulator:
                     year=today.year + (month_number - 1) // 12,
                     month=(month_number - 1) % 12 + 1,
                     age=age,
-                    incomes={"work": income, "state_pension": state_pension,
-                             "annuity": annuity_income},
-                    expenses={"living": expense, "debt": debt_service,
-                              "capital_gains_tax": tax_paid,
-                              "annuity_deductions": annuity_deductions},
+                    incomes={k: v for k, v in cash_in.items() if v},
+                    expenses={k: v for k, v in cash_out.items() if v},
                     assets=assets,
                     liabilities=liabilities,
                     cash=cash,
@@ -412,20 +472,22 @@ class Simulator:
 
     # -- routing -----------------------------------------------------------
 
-    def _deposit(self, surplus, cash, accounts):
-        """Route a monthly surplus.
+    def _deposit(self, surplus, cash, accounts, cash_out=None):
+        """Route a monthly surplus, recording where each shekel went.
 
         Verified order (notes/01): repay any overdraft and top the buffer up,
         then fill portfolios in list order capped by the monthly deposit cap and
         by the goal balance, then leave the remainder in the checking account.
         """
         plan = self.plan
+        record = cash_out if cash_out is not None else {}
         if cash < plan.cash_buffer:
             take = min(surplus, plan.cash_buffer - cash)
             cash += take
             surplus -= take
+            record["buffer"] = take
 
-        for portfolio, account in zip(plan.portfolios, accounts):
+        for index, (portfolio, account) in enumerate(zip(plan.portfolios, accounts)):
             if surplus <= 0:
                 break
             room = portfolio.goal - account.balance
@@ -437,7 +499,9 @@ class Simulator:
                 take = min(take, cap)
             account.deposit(take)
             surplus -= take
+            record[f"deposit_portfolio{index}"] = take
 
+        record["unplanned"] = surplus
         return cash + surplus
 
     def _mukeret_claim_age(self, portfolio, index: int, today: date) -> int | None:
@@ -472,26 +536,31 @@ class Simulator:
         months = (today.year - dob.year) * 12 + (today.month - dob.month)
         return (months + index) / 12
 
-    def _withdraw(self, need, cash, accounts, funds, age):
+    def _withdraw(self, need, cash, accounts, funds, age, cash_in=None, cash_out=None):
         """Fund a monthly deficit, returning any unmet shortfall.
 
         Verified order (notes/08): free cash above the buffer, then withdrawal
         portfolios in list order, then the buffer itself, and finally the
         overdraft down to a hard floor of `-credit_limit` (notes/04).
 
-        Portfolio sales are grossed up for capital-gains tax (taxation.py).
+        Portfolio sales are grossed up for capital-gains tax (taxation.py); the
+        reference charts the **gross** sale as income and the tax as its own
+        expense row, so that is how both are recorded here.
         """
         plan = self.plan
+        drawn = cash_in if cash_in is not None else {}
+        taxes = cash_out if cash_out is not None else {}
 
         take = min(need, max(cash - plan.cash_buffer, 0.0))
         cash -= take
         need -= take
+        from_cash = take
 
         tax_paid = 0.0
 
         def draw_portfolios(remaining):
             nonlocal tax_paid
-            for portfolio, account in zip(plan.portfolios, accounts):
+            for index, (portfolio, account) in enumerate(zip(plan.portfolios, accounts)):
                 if remaining <= 1e-9:
                     break
                 if portfolio.designation != PortfolioDesignation.WITHDRAW:
@@ -501,13 +570,19 @@ class Simulator:
                     statutory_age=national_insurance.STATUTORY_AGE[plan.person.gender])
                 remaining -= net
                 tax_paid += tax
+                drawn[f"portfolio{index}"] = drawn.get(f"portfolio{index}", 0.0) + net + tax
+                if tax:
+                    taxes[f"capital_gains_tax{index}"] = (
+                        taxes.get(f"capital_gains_tax{index}", 0.0) + tax)
             return remaining
 
         def draw_funds(remaining):
-            for account in funds:
+            for index, account in enumerate(funds):
                 if remaining <= 1e-9:
                     break
-                remaining -= account.withdraw_net(remaining)
+                took = account.withdraw_net(remaining)
+                remaining -= took
+                drawn[f"keren{index}"] = drawn.get(f"keren{index}", 0.0) + took
             return remaining
 
         # `prati_hishtalmut_order` picks which bucket is emptied first.
@@ -520,5 +595,8 @@ class Simulator:
         take = min(need, max(cash - floor, 0.0))
         cash -= take
         need -= take
+        from_cash += take
+        if from_cash:
+            drawn["cash"] = drawn.get("cash", 0.0) + from_cash
 
         return cash, max(need, 0.0), tax_paid
