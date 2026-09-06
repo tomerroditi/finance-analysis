@@ -1,3 +1,9 @@
+## v1.57.1 (2026-09-06)
+
+### Fix
+
+- **insurance**: report real pension risk cost and stop the covers list bloating the card (#256)
+
 ## v1.57.0 (2026-09-06)
 
 ### Feat
