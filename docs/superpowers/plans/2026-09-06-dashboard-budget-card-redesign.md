@@ -1585,6 +1585,13 @@ git commit -m "feat(dashboard): add the yearly budget tab to the dashboard card"
 **Files:**
 - Modify: `frontend/e2e/dashboard.spec.ts`
 
+**Amended after browser verification:** the demo database contains **no yearly
+budget rules in any year** (verified against `/api/budget/yearly/{2023..2027}/analysis`
+— every year returns zero rules). The Yearly tab therefore renders
+`budget.yearly.empty` in Demo Mode, and an assertion on `budget-rule-grid`
+would fail. The spec below asserts on the year nav instead, which renders in
+both the empty and populated states.
+
 Per CLAUDE.md, these are read-only checks, so they extend the existing journey
 test as a labeled block rather than adding a `test()` that would pay another
 ~30 s cold dashboard boot. `dashboard.spec.ts` is not in `READ_ONLY_SPECS`, so
@@ -1621,11 +1628,14 @@ with:
       timeout: 20_000,
     });
 
+    // The demo DB ships no yearly rules, so this tab renders its empty state:
+    // assert on the year nav, which is present either way, rather than on the
+    // rule grid, which only exists once rules do.
     await yearlyTab.click();
     await expect(yearlyTab).toHaveAttribute("aria-pressed", "true");
-    await expect(budgetCard.getByTestId("budget-rule-grid")).toBeVisible({
-      timeout: 20_000,
-    });
+    await expect(
+      budgetCard.getByText(String(new Date().getFullYear()), { exact: true }),
+    ).toBeVisible({ timeout: 20_000 });
 
     await projectsTab.click();
     await expect(projectsTab).toHaveAttribute("aria-pressed", "true");
