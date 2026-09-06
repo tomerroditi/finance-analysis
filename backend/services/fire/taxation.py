@@ -84,8 +84,10 @@ class TaxableAccount:
                      statutory_age: int = 67) -> tuple[float, float]:
         """Sell enough to net `need`. Returns `(net_received, tax_paid)`.
 
-        Below 60 the tax is a flat share of the sale, so the gross-up is closed
-        form. From 60 the gain is taxed on the progressive brackets instead, so
+        Below 60 the tax is a flat share of the realised gain, so the gross-up
+        is closed form: pooled under `flat`, and a walk down the lot ladder
+        under FIFO or LIFO (lots.py). From 60 the gain is taxed on the
+        progressive brackets instead, which no longer decomposes lot by lot, so
         the gross-up is solved numerically — the tax is monotone in the gross,
         which makes bisection safe.
         """
@@ -103,8 +105,10 @@ class TaxableAccount:
             return israeli_tax.capital_gains_tax(gain_on(gross), age, statutory_age)
 
         ceiling = need / max(1 - CAPITAL_GAINS_RATE * gain_share, 1e-9)
-        if age <= israeli_tax.MARGINAL_TREATMENT_AGE and self.method is LotMethod.FLAT:
-            gross = ceiling
+        if age <= israeli_tax.MARGINAL_TREATMENT_AGE:
+            gross = (ceiling if self.method is LotMethod.FLAT
+                     else lot_math.gross_for_net(self.lots, self.method, need,
+                                                 CAPITAL_GAINS_RATE))
         else:
             ceiling = max(ceiling, need / max(1 - CAPITAL_GAINS_RATE, 1e-9))
             low, high = need, ceiling

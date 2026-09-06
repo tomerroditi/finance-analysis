@@ -101,6 +101,43 @@ def opening_lots(balance: float, profit_fraction: float,
     return lots
 
 
+def gross_for_net(lots: list[Lot], method: LotMethod, net: float,
+                  rate: float) -> float:
+    """Smallest sale that nets `net` after a flat `rate` on the realised gain.
+
+    Below 60 the tax is a fixed share of the gain, so this inverse is closed
+    form rather than a search: selling `t` out of a lot whose embedded gain
+    fraction is `g` hands over `t * (1 - rate * g)`, so walk the lots in the
+    method's own order, take each in full while it is not enough, and finish
+    inside the one that covers the remainder.
+
+    Bisecting instead — which is what the progressive-rate case above 60 still
+    has to do — costs sixty passes over a pool that can hold nine hundred lots,
+    every month of the horizon, for the same answer to fifteen decimals.
+
+    A pool too small to cover `net` returns more than it holds; the caller
+    clamps to the balance and books the difference as a shortfall.
+    """
+    if net <= 0 or not lots:
+        return 0.0
+    order = (range(len(lots)) if method is LotMethod.FIFO
+             else range(len(lots) - 1, -1, -1))
+    remaining = net
+    gross = 0.0
+    for index in order:
+        lot = lots[index]
+        if lot.value <= 0:
+            continue
+        per_shekel = 1 - rate * lot.gain_fraction
+        if per_shekel <= 0:
+            return gross + lot.value
+        if lot.value * per_shekel >= remaining:
+            return gross + remaining / per_shekel
+        gross += lot.value
+        remaining -= lot.value * per_shekel
+    return gross + remaining
+
+
 def realised_gain(lots: list[Lot], method: LotMethod, gross: float,
                   commit: bool = True) -> float:
     """Gain realised by selling `gross`, oldest- or newest-first.

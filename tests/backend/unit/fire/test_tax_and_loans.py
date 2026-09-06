@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import pytest
 
+from backend.services.fire import lots as lot_math
 from backend.services.fire.loans import balance_at, payment_at, spitzer_payment
 from backend.services.fire.models import Loan, LoanType, LotMethod, Portfolio
 from backend.services.fire.taxation import TaxableAccount
@@ -135,3 +136,60 @@ class TestCapitalGainsTax:
             Portfolio(balance=200_000, profit_fraction_pct=90))
         assert account.basis == pytest.approx(20_000)
         assert account.gain_fraction == pytest.approx(0.9)
+
+
+class TestClosedFormGrossUp:
+    """`lots.gross_for_net` replaces a bisection; it must agree with it."""
+
+    @staticmethod
+    def _pool():
+        """A ladder whose lots carry very different embedded gains."""
+        return [lot_math.Lot(basis=basis, value=value)
+                for basis, value in ((100.0, 1_000.0),   # 90% gain
+                                     (600.0, 1_000.0),   # 40% gain
+                                     (1_000.0, 1_000.0))]  # at par
+
+    @staticmethod
+    def _by_bisection(lots, method, net, rate):
+        low, high = net, net / (1 - rate)
+        for _ in range(200):
+            mid = (low + high) / 2
+            taxed = mid - rate * lot_math.realised_gain(lots, method, mid, commit=False)
+            if taxed < net:
+                low = mid
+            else:
+                high = mid
+        return (low + high) / 2
+
+    @pytest.mark.parametrize("method", [LotMethod.FIFO, LotMethod.LIFO])
+    @pytest.mark.parametrize("net", [50.0, 900.0, 1_500.0, 2_400.0])
+    def test_it_agrees_with_the_search_it_replaces(self, method, net):
+        """Same answer to a millionth, whether the sale spans one lot or all three."""
+        pool = self._pool()
+        assert lot_math.gross_for_net(pool, method, net, 0.25) == pytest.approx(
+            self._by_bisection(pool, method, net, 0.25), abs=1e-6)
+
+    @pytest.mark.parametrize("method", [LotMethod.FIFO, LotMethod.LIFO])
+    def test_the_sale_it_returns_nets_exactly_what_was_asked(self, method):
+        """The point of the gross-up: what is left after tax is the need."""
+        pool = self._pool()
+        gross = lot_math.gross_for_net(pool, method, 1_800.0, 0.25)
+        realised = lot_math.realised_gain(pool, method, gross, commit=False)
+        assert gross - 0.25 * realised == pytest.approx(1_800.0)
+
+    def test_a_pool_too_small_asks_for_more_than_it_holds(self):
+        """The caller clamps to the balance, so the overshoot is the shortfall."""
+        pool = self._pool()
+        assert lot_math.gross_for_net(pool, LotMethod.FIFO, 10_000.0, 0.25) > 3_000.0
+
+    def test_nothing_is_sold_for_nothing(self):
+        """A zero need, or an empty pool, sells nothing."""
+        assert lot_math.gross_for_net(self._pool(), LotMethod.FIFO, 0.0, 0.25) == 0.0
+        assert lot_math.gross_for_net([], LotMethod.LIFO, 500.0, 0.25) == 0.0
+
+    def test_it_leaves_the_pool_untouched(self):
+        """It is a query, not a sale — the lots are only consumed by the caller."""
+        pool = self._pool()
+        before = [(lot.basis, lot.value) for lot in pool]
+        lot_math.gross_for_net(pool, LotMethod.LIFO, 1_500.0, 0.25)
+        assert [(lot.basis, lot.value) for lot in pool] == before
