@@ -1125,6 +1125,8 @@
     "totalDepositsCount": "Total Deposits",
     "riskCost": "Risk cost",
     "managementFeeAmount": "Mgmt fee",
+    "unclassifiedDeductions": "Unclassified deductions",
+    "unclassifiedDeductionsHint": "Deductions in the provider's statement that we could not identify — the provider may have renamed a row, so the risk cost and management fee above may be understated.",
     "thisYear": "this year",
     "hideDepositHistory": "Hide Deposit History",
     "showDepositHistory": "Show Deposit History",
