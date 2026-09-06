@@ -90,14 +90,20 @@ Routes (FastAPI) -> Services (Business Logic) -> Repositories (Data Access) -> S
   `((1+return)(1-fee))**(1/12)` with the fee **multiplicative**, and the model is
   **two-phase** — at retirement a withdrawal portfolio (and any study fund)
   stops earning the user's return and switches to a confidence-derived
-  "decumulation return" from a measured table (`decumulation_table.json`), which
-  collapses to ~0 between ages 54 and 60 and jumps back after 60. Exposed at
-  `POST /api/fire/calculate` and the `/fire-calculator` page. Every rule is
-  evidence-backed in `research/zeke_retire_calc/notes/` (14 notes, 89 recorded
-  fixtures); parity tests replay those fixtures month by month. **Read the notes
-  before changing any constant** — several are counter-intuitive (there is no
-  age-60 capital-gains exemption; the gemel ceiling is 76,449/yr; Bituach Leumi
-  is a flat 2,757 stepping to 2,911.5 at 80).
+  "decumulation return" from a measured surface (`decumulation_table.json`),
+  which collapses to ~0 between ages 54 and 60 and jumps back after 60. That
+  surface is read on the **bridge** — the wait from retirement to the pension,
+  ending at the statutory age (67 male / 65 female) and moving earlier when the
+  plan claims a pension before it, weighted by what each annuity pays. Exposed
+  at `POST /api/fire/calculate` and the `/fire-calculator` page. Every rule is
+  evidence-backed in `research/zeke_retire_calc/notes/` (15 notes, 140 recorded
+  fixtures); parity tests replay all 134 that carry charts month by month, with
+  **no fitted input** — regenerate the surface with
+  `python research/zeke_retire_calc/build_decumulation_table.py`. **Read the
+  notes before changing any constant** — several are counter-intuitive (there is
+  no age-60 capital-gains exemption; the gemel ceiling is 76,449/yr; Bituach
+  Leumi is a flat 2,757 stepping to 2,911.5 at 80, plus a 1,386 spouse
+  increment while one partner is eligible and the other is not).
 - **Retirement calculator:** all-real-terms model (today's shekels; nominal return converted via inflation). Scraped Keren Hishtalmut policies are auto-synced into `type='hishtalmut'` investments (with scraped snapshots) and are therefore **already inside tracked net worth** — retirement math swaps them out via `status["tracked_kh_value"]` before adding the goal's KH bucket, so KH counts exactly once for both scraped and typed-only users. Full rules: `.claude/rules/retirement_calculations.md`
 
 ## Code Style

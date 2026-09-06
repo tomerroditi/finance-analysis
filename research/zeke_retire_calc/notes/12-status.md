@@ -2,9 +2,18 @@
 
 ## Verified
 
-**58 recorded reference runs replay the full 533-month horizon exactly**, each
-with a single free scalar (the unmapped Trinity decumulation rate). 72 unit
-tests pass. What that covers:
+**Every one of the 134 recorded reference runs replays the full 533-month
+horizon with nothing fed in** — the engine derives its own decumulation return.
+121 of them land within 30 shekels over 533 months (three parts per million of
+a seven-figure balance, which is what the reference's one-decimal display
+rounding compounds to), and 37 are exact to the agora.
+
+`test_reference_parity` asserts this two ways: `TestDerivedParity` replays all
+134 with no input, and `TestFullHorizonParity` replays the 119 that pin their
+own rate to a two-shekel tolerance with that rate supplied — the tighter
+statement about everything other than the surface.
+
+What that covers:
 
 - the monthly grid, the fixed age-81 horizon, month-granular dates
 - portfolio growth with the multiplicative fee convention
@@ -18,23 +27,27 @@ tests pass. What that covers:
   anchored per row
 - spitzer / balloon / grace loans and their effect on net worth
 - real estate, the credit-limit floor, cash-buffer rules
-- Bituach Leumi with its age-80 step-up
+- Bituach Leumi: the flat amount, the age-80 step-up, and the spouse increment
+  paid while one partner is eligible and the other is not (notes/15)
 - pension accumulation, annuity factors, the four-way mukeret/mezake split,
   all three `pension_tactics`, income tax on the annuity, and national-insurance
   contributions — for a couple as well as a single retiree
 - Keren Hishtalmut growth, its hidden maslulit fee, and its tax-free withdrawals
 - gemel annuitisation under the `mukeret_*` designations
+- severance redemption — both recorded cases exact
+- FIFO / LIFO lots, including the manufactured purchase history (notes/13)
+- all four solver modes; `retire_asap` reaches the reference's own published
+  retirement month on 47 of 47 applicable fixtures
+- the smart-advice optimiser
+- the API (`POST /api/fire/calculate`) and the whole UI
 
-Since first writing this, the following also landed and are verified:
+## The decumulation surface has no free parameters
 
-- **severance redemption** — both recorded cases exact (gross, exemption
-  ceiling, the 1.35/180 offset, and 281.7/month for exactly 24 months)
-- **all four solver modes**, with the goal checklist. Our `retire_asap` search
-  reaches the reference's own published retirement month on **47 of 47**
-  applicable fixtures
-- **the smart-advice optimiser** — same diagnosis, action, token shape and
-  outcome as the reference on the recorded case
-- **the API** (`POST /api/fire/calculate`) and **the whole UI**
+The engine reads it on the **bridge** to the pension, gender-aware and weighted
+by the annuities the plan actually starts (notes/15). Every cell is measured
+off a recorded run that pins it to within 0.0005 points
+(`build_decumulation_table.py` re-derives the whole table and re-checks that
+pinning on each build).
 
 ## Not yet done
 
@@ -42,26 +55,17 @@ Since first writing this, the following also landed and are verified:
 |---|---|---|
 | Wiring to the user's own tracked data | medium | deliberately deferred by the user |
 
-Both former blockers are now closed:
+## The one open question
 
-- **The decumulation table is measured**, not fitted (notes/14). The engine has
-  no free parameters left; all 63 recorded runs replay from the table alone,
-  62 of them inside 2% and the median inside 0.1%.
-- **FIFO / LIFO are solved** (notes/13), verified across seven scenarios
-  including two with a known deposit history and no synthetic part at all.
+Three fixtures — `pf_mukeret2`, `pf_mukeret3_t60`, `pf_mukeret4_order` — miss by
+93k–158k. All three hold a **gemel portfolio earmarked `mukeret_*`**, and the
+bridge such a conversion implies does not follow the rule the other 131 obey.
+Fully characterised, with the disproved alternatives, in notes/15. It needs
+fresh probes of the live reference to settle; the bounds are asserted meanwhile
+so it cannot silently drift.
 
-## Residual gaps, all bounded and understood
-
-19 fixtures still miss. Eleven miss by **under 14 shekels over 533 months**
-(≈1e-5 relative) and are precision limits, not modelling errors — chiefly the
-annuity factors, which the reference only ever prints to one decimal. The
-female factors are the least precise because the only fixtures using them have
-small balances.
-
-Eight miss by more (32k–131k), all in scenarios combining a couple, a study
-fund and a `mukeret_*` gemel. The annuity arithmetic in those is confirmed
-correct to the shekel — at age 60.08 of `pf_mukeret_ref` the reference's four
-annuity rows total 47,801.5 against our 47,801.2, and its four deduction rows
-total 8,472.8 against our 8,472.6. The drift is in the withdrawal portfolio's
-path, and is at least partly the missing Trinity rate; a rate-independent
-component of roughly 3,175 remains and is not yet explained.
+Everything else outside 30 shekels is a named, bounded approximation: the
+synthetic lot history (notes/13) costs up to 200 shekels on the five
+`pf_fifo`/`pf_lifo` fixtures, a split pension claim costs 259 on
+`pn_annuity_6067`, and the deposit order across two capped accounts costs 90 on
+`pf_gemel_two` and `pf_deposit_caps`.

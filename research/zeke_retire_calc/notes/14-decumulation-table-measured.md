@@ -54,14 +54,31 @@ study-fund fixtures for the implied return recovers the table to within 0.09 pp
 under this rule, versus 0.7 pp if the hidden fee is kept — and it takes those
 fixtures from the worst in the corpus (16% relative error) to inside 2%.
 
+## Superseded in two ways — see notes/15
+
+The surface described here is right, but this note gets two things about it
+wrong, both fixed since:
+
+- **It is keyed on the bridge to the pension, not on the retirement age**, and
+  the bridge is gender-aware and moves with `pension_tactics`. The post-60
+  branch is the same curve at `bridge + 23.45`, not a separate one.
+- **The 47 probed cells are no longer the whole table.** Every recorded run
+  that pins its own rate is a measurement of the same surface, which brings it
+  to 81 cells — 45 of them at confidence 85, dense enough to lend its shape to
+  the four sparse levels (interpolation runs in the 85 curve's coordinate, not
+  in years). `build_decumulation_table.py` rebuilds the whole thing from the
+  fixtures and re-checks the pinning of every cell it emits.
+
 ## Accuracy with no fitted input
 
-Replaying all 63 recorded runs using the table alone:
+With those two fixes, all 134 recorded runs replay from the surface alone:
 
-- median relative error **0.083%**
-- 46 of 63 inside 0.5%
-- **62 of 63 inside 2%**
+- 121 inside **30 shekels** over 533 months, 37 exact to the agora
+- median relative error **0.0004%**, 200× tighter than the 0.083% below, and
+  the worst outside the three open fixtures is 0.13%
+- the only fixtures outside a few hundred shekels are the three whose bridge
+  is genuinely not understood (notes/15)
 
-The residual is interpolation error: the table is sampled at five confidence
-levels and a dozen ages, and real scenarios land between grid points. Denser
-sampling would shrink it further; the shape is settled.
+For the record, the numbers this note originally reported, from the 47-cell
+age-keyed table over the 63 runs then recorded: median relative error 0.083%,
+46 of 63 inside 0.5%, 62 of 63 inside 2%.

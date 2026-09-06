@@ -97,6 +97,13 @@
   "residual": 0.05,
   "rule": 85.0
  },
+ "cf_rise": {
+  "rule": 85.0,
+  "fire_age": 60.08,
+  "bridge_years": 6.92,
+  "decumulation_return_pct": 2.25e-05,
+  "residual": 1.53
+ },
  "cf_timing_bits": {
   "bridge_years": 13.67,
   "decumulation_return_pct": 0.01854213,
@@ -216,6 +223,13 @@
   "residual": 0.05,
   "rule": 85.0
  },
+ "lot_lifo_nodep": {
+  "rule": 85.0,
+  "fire_age": 38.08,
+  "bridge_years": 28.92,
+  "decumulation_return_pct": 2.71840434,
+  "residual": 112.94
+ },
  "pf_american": {
   "bridge_years": 30.25,
   "decumulation_return_pct": 2.77477984,
@@ -236,6 +250,27 @@
   "fire_age": 36.75,
   "residual": 0.05,
   "rule": 85.0
+ },
+ "pf_fifo": {
+  "rule": 85.0,
+  "fire_age": 41.08,
+  "bridge_years": 25.92,
+  "decumulation_return_pct": 2.5406553,
+  "residual": 63.24
+ },
+ "pf_fifo_nodep": {
+  "rule": 85.0,
+  "fire_age": 38.0,
+  "bridge_years": 29.0,
+  "decumulation_return_pct": 2.72380581,
+  "residual": 53.2
+ },
+ "pf_fifo_p90": {
+  "rule": 85.0,
+  "fire_age": 39.0,
+  "bridge_years": 28.0,
+  "decumulation_return_pct": 2.67204255,
+  "residual": 2.09
  },
  "pf_gemel_two": {
   "bridge_years": 30.25,
@@ -265,6 +300,34 @@
   "residual": 0.05,
   "rule": 85.0
  },
+ "pf_lifo": {
+  "rule": 85.0,
+  "fire_age": 40.67,
+  "bridge_years": 26.33,
+  "decumulation_return_pct": 2.56943097,
+  "residual": 80.33
+ },
+ "pf_mukeret_main": {
+  "rule": 85.0,
+  "fire_age": 40.5,
+  "bridge_years": 26.5,
+  "decumulation_return_pct": 1.72386362,
+  "residual": 50.59
+ },
+ "pf_mukeret_partner": {
+  "rule": 85.0,
+  "fire_age": 40.5,
+  "bridge_years": 26.5,
+  "decumulation_return_pct": 1.72386362,
+  "residual": 50.59
+ },
+ "pf_mukeret_ref": {
+  "rule": 85.0,
+  "fire_age": 40.5,
+  "bridge_years": 26.5,
+  "decumulation_return_pct": 1.72386362,
+  "residual": 50.59
+ },
  "pf_tactics67": {
   "bridge_years": 26.17,
   "decumulation_return_pct": 2.55750713,
@@ -286,12 +349,54 @@
   "residual": 0.05,
   "rule": 85.0
  },
+ "pn_accum": {
+  "rule": 85.0,
+  "fire_age": 50.08,
+  "bridge_years": 16.92,
+  "decumulation_return_pct": 1.07115096,
+  "residual": 4.47
+ },
+ "pn_annuity_60": {
+  "rule": 85.0,
+  "fire_age": 47.17,
+  "bridge_years": 19.83,
+  "decumulation_return_pct": 0.00068545,
+  "residual": 1.13
+ },
  "pn_annuity_6067": {
   "bridge_years": 17.92,
   "decumulation_return_pct": 0.97710461,
   "fire_age": 49.08,
   "residual": 0.53,
   "rule": 85.0
+ },
+ "pn_annuity_60_f": {
+  "rule": 85.0,
+  "fire_age": 47.17,
+  "bridge_years": 17.83,
+  "decumulation_return_pct": 0.00141821,
+  "residual": 13.79
+ },
+ "pn_annuity_67": {
+  "rule": 85.0,
+  "fire_age": 50.08,
+  "bridge_years": 16.92,
+  "decumulation_return_pct": 1.07106422,
+  "residual": 1.08
+ },
+ "pn_annuity_67_f": {
+  "rule": 85.0,
+  "fire_age": 49.25,
+  "bridge_years": 15.75,
+  "decumulation_return_pct": 0.65500089,
+  "residual": 11.71
+ },
+ "pn_bl_contrib_mid": {
+  "rule": 85.0,
+  "fire_age": 47.17,
+  "bridge_years": 19.83,
+  "decumulation_return_pct": 0.00072845,
+  "residual": 1.88
  },
  "pn_bl_income_work": {
   "bridge_years": 26.33,
@@ -335,6 +440,20 @@
   "residual": 0.05,
   "rule": 85.0
  },
+ "pn_muk0": {
+  "rule": 85.0,
+  "fire_age": 47.17,
+  "bridge_years": 19.83,
+  "decumulation_return_pct": 0.00071321,
+  "residual": 1.61
+ },
+ "pn_muk100": {
+  "rule": 85.0,
+  "fire_age": 47.17,
+  "bridge_years": 19.83,
+  "decumulation_return_pct": 0.00078256,
+  "residual": 2.81
+ },
  "pn_pizuim_2010": {
   "bridge_years": 19.75,
   "decumulation_return_pct": 1.77328636,
@@ -349,12 +468,26 @@
   "residual": 0.79,
   "rule": 85.0
  },
+ "pn_rule100_flat": {
+  "rule": 100.0,
+  "fire_age": 51.08,
+  "bridge_years": 15.92,
+  "decumulation_return_pct": 0.05903272,
+  "residual": 1.08
+ },
  "pn_rule100_pf": {
   "bridge_years": 18.42,
   "decumulation_return_pct": 0.32570365,
   "fire_age": 48.58,
   "residual": 0.46,
   "rule": 100.0
+ },
+ "pn_rule80_flat": {
+  "rule": 80.0,
+  "fire_age": 51.08,
+  "bridge_years": 15.92,
+  "decumulation_return_pct": 0.58447106,
+  "residual": 1.08
  },
  "pn_rule80_i10": {
   "bridge_years": 21.17,
@@ -390,6 +523,13 @@
   "fire_age": 48.42,
   "residual": 0.47,
   "rule": 95.0
+ },
+ "pn_rule_100": {
+  "rule": 100.0,
+  "fire_age": 50.33,
+  "bridge_years": 16.67,
+  "decumulation_return_pct": 0.00409056,
+  "residual": 1.08
  },
  "rule_100": {
   "bridge_years": 13.75,

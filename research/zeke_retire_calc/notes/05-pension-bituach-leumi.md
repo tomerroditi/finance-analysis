@@ -21,10 +21,16 @@ Reference scenario is `probe.BASE` (male, DOB 1990-01-01, income 10,000, expense
 | `pn_bl_income_work` | `incomeSum1=40000`, `work_start_year=2026` | `מגיל 67 בגובה 2,757.0` |
 | `pn_bl_partner` | partner P, DOB 1992, female | T: `מגיל 67 … 2,757.0`; P: `מגיל 65 … 2,757.0` |
 
-So the amount is invariant to **gender, date of birth, income level,
-`work_start_year`, and the presence of a partner**. Each person gets their own
-full 2,757.0 — there is **no spouse increment** and no seniority/deferral
-modelling (`pn_bl_partner`).
+So the amount is invariant to **gender, date of birth, income level and
+`work_start_year`**. Each person gets their own full 2,757.0.
+
+**Correction (notes/15): there *is* a spouse increment.** `pn_bl_partner` hid
+it — its couple (a man born 1990, a woman born 1992) reach their claim ages in
+the same month, so the window never opens. In `pf_mukeret_ref`, where both were
+born in 1990, the wife draws **4,143.0** from her 65th birthday and 2,757.0
+from his 67th: 1,386.0 extra for exactly the 24 months in which she is eligible
+and he is not. It is not means-tested — he is drawing a 24,000/month pension
+throughout. Missing it cost that fixture 33,314 shekels.
 
 Start age: **67 for men, 65 for women** born 1990 / 1992 (`baseline`,
 `female`, `pn_bl_partner`). This matches Israeli law for women born 1970+.
