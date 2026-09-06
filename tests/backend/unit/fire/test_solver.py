@@ -19,6 +19,7 @@ from backend.services.fire.reference_form import plan_from_reference
 from backend.services.fire.solver import (
     evaluate_goals,
     search_limit,
+    solve,
     solve_improve_cash,
     solve_increase_risk,
     solve_retire_asap,
@@ -66,6 +67,25 @@ class TestRetireAsapParity:
         plan = plan_from_reference(fixture["overrides"])
         assert search_limit(plan, RECORDED_IN) == 280
         assert "280" in fixture["summary"]
+
+    def test_a_person_past_the_search_window_gets_no_result(self):
+        """`old_66`: a 66-year-old searching up to 60 has no month to try.
+
+        The reference answers `אין תוצאות להצגה` and publishes no charts at
+        all — not a failed plan, no plan. The same holds for someone already
+        past the age-81 horizon, where there is no simulation to run either.
+        """
+        fixture = json.loads((FIXTURES / "old_66.json").read_text(encoding="utf-8"))
+        assert "אין תוצאות להצגה" in fixture["summary"]
+        assert not fixture.get("charts")
+
+        plan = plan_from_reference(fixture["overrides"])
+        outcome = solve(plan, RECORDED_IN)
+        assert outcome.simulation is None
+        assert outcome.retire_index is None
+
+        plan.person.date_of_birth = date(1930, 1, 1)
+        assert solve(plan, RECORDED_IN).simulation is None
 
     def test_cannot_retire_before_working_a_month(self):
         """The earliest retirement the reference will report is month 1."""

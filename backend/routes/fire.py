@@ -35,9 +35,9 @@ class FireScenario(ApiRequestModel):
     decumulation_return_pct: Optional[float] = Field(
         None,
         description=(
-            "Real return applied to withdrawal portfolios after retirement. The "
-            "reference derives this from the confidence level and the horizon via "
-            "a table we have not mapped; supply it to reproduce a specific run."
+            "Override for the return withdrawal portfolios earn after retirement. "
+            "Leave it out: the engine reads the measured surface itself, on the "
+            "bridge from retirement to this plan's own pension."
         ),
     )
 

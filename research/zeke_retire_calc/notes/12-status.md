@@ -8,10 +8,16 @@ horizon with nothing fed in** — the engine derives its own decumulation return
 a seven-figure balance, which is what the reference's one-decimal display
 rounding compounds to), and 37 are exact to the agora.
 
-`test_reference_parity` asserts this two ways: `TestDerivedParity` replays all
-134 with no input, and `TestFullHorizonParity` replays the 119 that pin their
-own rate to a two-shekel tolerance with that rate supplied — the tighter
-statement about everything other than the surface.
+Three suites assert it. `test_reference_parity` replays all 134 balance series
+with no input, and separately replays the 119 runs that pin their own rate to a
+two-shekel tolerance with that rate supplied — the tighter statement about
+everything other than the surface. `test_cashflow_parity` asserts the
+reference's other two charts, `income_plot` and `expense_plot`, row by row and
+month by month: a *closed* decomposition of every shekel in and out, which is
+what pins the withdrawal order, the deposit routing, the tax on each individual
+sale and each person's national-insurance base (notes/16). And
+`test_feature_combinations` runs plans nobody recorded — every instrument at
+once — against identities rather than fixtures.
 
 What that covers:
 
@@ -64,8 +70,26 @@ Fully characterised, with the disproved alternatives, in notes/15. It needs
 fresh probes of the live reference to settle; the bounds are asserted meanwhile
 so it cannot silently drift.
 
+## Also covered, since the cash-flow surface landed
+
+- every input field the reference's form has is parsed, and a value that cannot
+  be is a 400 naming the field rather than a 500
+- `אין תוצאות להצגה` — a person past the search window or past the horizon gets
+  no plan at all, as in `old_66`
+- the API itself (`tests/backend/routes/test_fire_routes.py`), including that a
+  scenario using every instrument comes back with every row intact
+- degenerate inputs the recorded runs never cover: a portfolio that does not
+  grow, a balance declared 100% profit, a fee that takes everything, no income,
+  no spending, a loan starting past the horizon
+
+## The residuals
+
 Everything else outside 30 shekels is a named, bounded approximation: the
 synthetic lot history (notes/13) costs up to 200 shekels on the five
 `pf_fifo`/`pf_lifo` fixtures, a split pension claim costs 259 on
 `pn_annuity_6067`, and the deposit order across two capped accounts costs 90 on
 `pf_gemel_two` and `pf_deposit_caps`.
+
+The three `pf_mukeret*` runs are now exact *given* their rate — supply it and
+they replay to 2.4-7.1 shekels over 533 months — so what is left in them is one
+scalar each, nothing more.

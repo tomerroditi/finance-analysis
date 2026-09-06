@@ -88,9 +88,23 @@ def _feasible(plan: Plan, candidate: int, today: date) -> tuple[bool, Simulation
     return all(g.met for g in goals), result
 
 
+def has_no_result(plan: Plan, today: date) -> bool:
+    """Whether the reference would answer "no results to show" (notes/01).
+
+    Two degenerate cases: the person is already past the retirement age the plan
+    is searching up to, so there is no candidate month to try, or they are past
+    the age-81 horizon, so there is no simulation to run at all. `old_66` is the
+    recorded example — a 66-year-old searching up to 60.
+    """
+    return search_limit(plan, today) <= 0 or Simulator(plan).month_count(today) <= 0
+
+
 def solve(plan: Plan, today: date | None = None) -> SolveResult:
     """Dispatch on the plan's base problem."""
     today = today or date.today()
+    if has_no_result(plan, today):
+        return SolveResult(problem=plan.base_problem, retire_index=None,
+                           retire_age=None, search_limit=search_limit(plan, today))
     if plan.base_problem == BaseProblem.RETIRE_ASAP:
         return solve_retire_asap(plan, today)
     if plan.base_problem == BaseProblem.RETIRE_AT_AGE:
