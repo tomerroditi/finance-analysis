@@ -2684,11 +2684,22 @@ def generate_insurance_data(session):
         commission_savings_pct=0.22,
         insurance_covers=json.dumps([
             {"title": "Disability Insurance", "desc": "75% of salary (up to cap)", "sum": 18750},
-            {"title": "Life Insurance", "desc": "Lump sum to beneficiaries", "sum": 500000},
+            {"title": "Survivors Annuity", "desc": "60% of salary to spouse and children", "sum": 15000},
         ]),
+        # HaPhoenix reports a year-to-date movement statement, not a cost list:
+        # opening balance, deposits and gains sit alongside the deductions. The
+        # closing balance is not a separate figure to reconcile against — it IS
+        # the sum of every other (movement) row. Mirroring that shape here keeps
+        # the frontend classifier honest — a naive Σ|amount| would read 666,140.
         insurance_costs=json.dumps([
-            {"title": "Life insurance premium", "amount": 85},
-            {"title": "Disability premium", "amount": 120},
+            {"title": "Opening balance", "amount": 268470},
+            {"title": "Deposits", "amount": 55500},
+            {"title": "Gains", "amount": 9100},
+            {"title": "Management fee", "amount": -820},
+            {"title": "Disability risk cost", "amount": -1440},
+            {"title": "Death risk cost", "amount": -690},
+            {"title": "Actuarial balance", "amount": -120},
+            {"title": "Closing balance", "amount": 330000},
         ]),
     )
     session.add(pension_tech_makifa)
@@ -2733,10 +2744,19 @@ def generate_insurance_data(session):
         commission_savings_pct=0.18,
         insurance_covers=json.dumps([
             {"title": "Disability Insurance", "desc": "75% of salary (up to cap)", "sum": 10500},
-            {"title": "Life Insurance", "desc": "Lump sum to beneficiaries", "sum": 250000},
+            {"title": "Survivors Annuity", "desc": "60% of salary to spouse and children", "sum": 8400},
         ]),
+        # Positive actuarial balance here (negative on PN-DEMO-001) — the sign
+        # genuinely varies between policies, so it is the one signed bucket.
         insurance_costs=json.dumps([
-            {"title": "Disability premium", "amount": 55},
+            {"title": "Opening balance", "amount": 143860},
+            {"title": "Deposits", "amount": 30000},
+            {"title": "Gains", "amount": 2000},
+            {"title": "Management fee", "amount": -420},
+            {"title": "Disability risk cost", "amount": -390},
+            {"title": "Death risk cost", "amount": -180},
+            {"title": "Actuarial balance", "amount": 130},
+            {"title": "Closing balance", "amount": 175000},
         ]),
     )
     session.add(pension_teacher_makifa)
