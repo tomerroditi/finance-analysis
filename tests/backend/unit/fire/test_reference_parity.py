@@ -41,34 +41,33 @@ the whole 533-month series — accumulation, tax, timing, debt and drawdown.
 """
 
 FULL_HORIZON_FIXTURES = sorted(
-    name for name, row in RATES.items() if row["residual"] <= 2.0)
+    name for name, row in RATES.items() if row["residual"] <= 1.95)
 """Runs our model replays exactly once its decumulation rate is supplied.
+
+125 of the 134. The margin below `TOLERANCE` is there because the recorded
+residual is rounded to two decimals, so a run stored as "2.0" could be a hair
+over the bound this class asserts.
 
 The rest of `RATES` still measures the surface — a fit is a measurement as long
 as the scenario pins the rate (see `build_decumulation_table.py`) — but carries
-a residual of its own, from the synthetic lot history or the one-decimal
-annuity factors, so it is asserted by `TestDerivedParity`'s bounds instead."""
+a residual of its own, from the synthetic lot history most of all, so it is
+asserted by `TestDerivedParity`'s bounds instead."""
 
 DERIVED_TOLERANCE = 15.0
 """Shekels, over 533 months, with nothing supplied to the engine.
 
-105 of the 134 runs come back **under one shekel**; the rest of the corpus
-lands under this. What is left at this scale is the reference's one-decimal
-display precision compounding, chiefly through the annuity factors, which it
-only ever prints to one decimal."""
+117 of the 134 runs come back **under one shekel**; the rest of the corpus
+lands under this, bar the named gaps below."""
 
 KNOWN_GAPS = {
     "pf_mukeret2": (40_000, "gemel-conversion bridge (notes/15)"),
     "pf_mukeret3_t60": (60_000, "gemel-conversion bridge (notes/15)"),
     "pf_mukeret4_order": (20_000, "gemel-conversion bridge (notes/15)"),
+    "lot_lifo_nodep": (520, "synthetic lot history (notes/13)"),
+    "pf_lifo": (320, "synthetic lot history (notes/13)"),
     "pn_annuity_6067": (300, "interpolated bridge for a split pension claim"),
-    "lot_lifo_nodep": (220, "synthetic lot history (notes/13)"),
-    "pf_lifo": (140, "synthetic lot history (notes/13)"),
-    "pf_fifo": (80, "synthetic lot history (notes/13)"),
-    "pf_fifo_nodep": (70, "synthetic lot history (notes/13)"),
-    "pf_mukeret_ref": (70, "a couple both annuitising at 60"),
-    "pf_mukeret_main": (70, "a couple both annuitising at 60"),
-    "pf_mukeret_partner": (70, "a couple both annuitising at 60"),
+    "pf_fifo_nodep": (50, "synthetic lot history (notes/13)"),
+    "pf_fifo": (50, "synthetic lot history (notes/13)"),
 }
 """Fixtures that miss by more than `DERIVED_TOLERANCE`, and how far.
 

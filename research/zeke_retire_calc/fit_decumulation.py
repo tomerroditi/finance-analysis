@@ -73,11 +73,19 @@ def fit(name):
 
 
 def write_table(rows, path):
-    """Freeze the fitted rates so the parity tests can assert against them."""
+    """Freeze the fitted rates so the parity tests can assert against them.
+
+    Every fitted row is kept, whatever its residual: a scenario whose replay is
+    a hundred shekels short over 533 months still pins its rate to one part in
+    ten thousand, and `build_decumulation_table.py` re-checks that pinning
+    itself rather than trusting a residual threshold here. Each row carries its
+    own residual so the consumers that do want a clean subset — the
+    full-horizon parity class, say — can pick one.
+    """
     json.dump({r["name"]: {"rule": r["rule"], "fire_age": r["fire"],
                            "bridge_years": r["bridge"], "decumulation_return_pct": r["rate"],
                            "residual": r["residual"]}
-               for r in rows if r["residual"] < 1.0},
+               for r in rows},
               open(path, "w"), indent=1, sort_keys=True)
 
 

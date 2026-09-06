@@ -12,16 +12,32 @@ from backend.services.fire.models import Gender, Pension, PensionTactic
 from backend.services.fire.severance import SeveranceRedemption, redeem
 
 ANNUITY_FACTORS: dict[Gender, dict[int, float]] = {
-    Gender.MALE: {60: 224.41736, 67: 197.82330},
-    Gender.FEMALE: {60: 227.34593, 65: 209.71688},
+    Gender.MALE: {60: 224.417310, 67: 197.823505},
+    Gender.FEMALE: {60: 227.343724, 65: 209.719059},
 }
 """Divisor turning an accrued balance into a monthly annuity (מקדם קצבה).
 
-Recovered by dividing the balance at annuitisation by the annuity the reference
-reports. Precision is limited by that report carrying one decimal, so each
-figure is good to roughly ±0.0005 — the male values come from the largest
-available balances (6.0M and 6.5M), where the relative rounding error is
-smallest.
+Measured twice, against two different observables.
+
+`research/zeke_retire_calc/measure_annuity_factors.py` **brackets** each
+factor: our engine computes the balance at annuitisation without reference to
+any factor, and the reference prints the resulting annuity to one decimal, so
+each recorded run pins its factor to a thousandth. Intersecting every bracket
+in the corpus gives the hard constraint:
+
+| gender | claim age | runs | interval                   |
+|--------|-----------|------|----------------------------|
+| male   | 60        | 7    | [224.417054, 224.417342]   |
+| male   | 67        | 13   | [197.823056, 197.823655]   |
+| female | 60        | 4    | [227.343006, 227.343772]   |
+| female | 65        | 1    | [209.718715, 209.722380]   |
+
+`tune_annuity_factors.py` then walks each factor across its own interval and
+picks the point that replays the corpus best over all 533 months — an
+observable a thousand times finer than the printed annuity, and the reason
+these carry six decimals. The values above are that point; every one lies
+inside its bracket. The 14 runs annuitising at male 67 replay to a combined
+0.95 shekels, and the female-65 run to 0.32.
 
 Only the two claim ages the UI can request are known per gender; the curve
 between them is unmapped, and the genders do not share a table (notes/05)."""

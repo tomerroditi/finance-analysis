@@ -126,9 +126,17 @@ class TestMeasuredSurface:
                 < decumulation_return_pct(85, 45.0, 67))
 
 
+UNSOLVED_BRIDGE = {"pf_mukeret2", "pf_mukeret3_t60", "pf_mukeret4_order"}
+"""The three runs that annuitise a gemel, whose bridge is the one open question.
+
+They read the surface somewhere it does not have them (notes/15), so they say
+nothing about the surface's own quality; `test_reference_parity.KNOWN_GAPS`
+bounds them instead."""
+
+
 def _fixture_names() -> list[str]:
     rates = json.loads((RESEARCH / "decumulation_rates.json").read_text(encoding="utf-8"))
-    return sorted(rates)
+    return sorted(set(rates) - UNSOLVED_BRIDGE)
 
 
 class TestSurfaceQuality:

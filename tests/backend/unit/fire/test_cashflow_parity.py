@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import json
 from datetime import date
+from functools import lru_cache
 from pathlib import Path
 
 import pytest
@@ -33,17 +34,17 @@ RECORDED_IN = date(2026, 9, 1)
 TOLERANCE = 0.5
 """Shekels, over 533 months. The reference prints every row to one decimal, and
 a row that is a residual of several others — `unplanned` most of all — carries a
-rounding step from each. 123 of the 134 runs match every row inside 0.15."""
+rounding step from each. 126 of the 134 runs match every row inside 0.15."""
 
 KNOWN_GAPS = {
     "pf_mukeret2": (6_200, "gemel-conversion bridge (notes/15)"),
     "pf_mukeret3_t60": (6_200, "gemel-conversion bridge (notes/15)"),
     "pf_mukeret4_order": (6_200, "gemel-conversion bridge (notes/15)"),
-    "lot_lifo_nodep": (5, "synthetic lot history (notes/13)"),
-    "pf_lifo": (4, "synthetic lot history (notes/13)"),
-    "pf_fifo_nodep": (3, "synthetic lot history (notes/13)"),
-    "pf_fifo": (3, "synthetic lot history (notes/13)"),
-    "cf_rise": (3, "which bucket funds the month the plan runs dry"),
+    "cf_rise": (4, "which bucket funds the month the plan runs dry"),
+    "lot_lifo_nodep": (2, "synthetic lot history (notes/13)"),
+    "pf_lifo": (2, "synthetic lot history (notes/13)"),
+    "pf_fifo_nodep": (2, "synthetic lot history (notes/13)"),
+    "pf_fifo": (2, "synthetic lot history (notes/13)"),
 }
 """Runs with a row outside `TOLERANCE`, bounded and named.
 
@@ -144,6 +145,15 @@ def _expense_keys(label: str, plan) -> list[str] | None:
     return None
 
 
+@lru_cache(maxsize=None)
+def _replay(name: str):
+    """Fixture and its replay, once per fixture for the whole module."""
+    fixture = json.loads((FIXTURES / f"{name}.json").read_text(encoding="utf-8"))
+    plan = plan_from_reference(fixture["overrides"])
+    return fixture, plan, Simulator(plan).run(
+        retire_index=_retire_index(fixture), today=RECORDED_IN)
+
+
 def _retire_index(fixture: dict) -> int:
     """First fully retired month, read from the reference's own output.
 
@@ -169,10 +179,7 @@ class TestCashFlowParity:
     @pytest.mark.parametrize("name", _fixtures())
     def test_every_row_matches(self, name):
         """Each charted row equals the sum of the keys our engine files under it."""
-        fixture = json.loads((FIXTURES / f"{name}.json").read_text(encoding="utf-8"))
-        plan = plan_from_reference(fixture["overrides"])
-        result = Simulator(plan).run(
-            retire_index=_retire_index(fixture), today=RECORDED_IN)
+        fixture, plan, result = _replay(name)
         bound, why = KNOWN_GAPS.get(name, (TOLERANCE, ""))
 
         for chart, mapper, attribute in (
@@ -193,10 +200,7 @@ class TestCashFlowParity:
     @pytest.mark.parametrize("name", sorted(KNOWN_GAPS))
     def test_every_known_gap_is_still_needed(self, name):
         """A gap that has closed must leave the list, or it hides a regression."""
-        fixture = json.loads((FIXTURES / f"{name}.json").read_text(encoding="utf-8"))
-        plan = plan_from_reference(fixture["overrides"])
-        result = Simulator(plan).run(
-            retire_index=_retire_index(fixture), today=RECORDED_IN)
+        fixture, plan, result = _replay(name)
         worst = 0.0
         for chart, mapper, attribute in (
                 ("income_plot", _income_keys, "incomes"),
@@ -219,10 +223,7 @@ class TestCashFlowParity:
         as a mismatch rather than quietly vanishing.
         """
         for name in _fixtures():
-            fixture = json.loads((FIXTURES / f"{name}.json").read_text(encoding="utf-8"))
-            plan = plan_from_reference(fixture["overrides"])
-            result = Simulator(plan).run(
-                retire_index=_retire_index(fixture), today=RECORDED_IN)
+            _, _, result = _replay(name)
             for record in result.months:
                 assert sum(record.incomes.values()) == pytest.approx(
                     sum(record.expenses.values()), abs=1e-6), (

@@ -149,12 +149,34 @@ def cells() -> dict[float, dict[float, float]]:
             print(f"  skip {name}: {skip}")
             continue
         grouped[row["rule"]][bridge_of(name, overrides)].append(
-            row["decumulation_return_pct"])
+            (row["decumulation_return_pct"], row["residual"]))
     # Keep the fit's own precision. Rounding a cell to four decimals moves the
     # monthly growth factor by ~4e-9, which is invisible in a month and worth
     # tens of shekels once compounded over 533 of them.
-    return {rule: {bridge: round(sum(v) / len(v), 8) for bridge, v in sorted(cell.items())}
+    return {rule: {bridge: round(consensus(votes), 8)
+                   for bridge, votes in sorted(cell.items())}
             for rule, cell in sorted(grouped.items())}
+
+
+def consensus(votes: list[tuple[float, float]]) -> float:
+    """The rate a cell's voters agree on, weighting evidence over headcount.
+
+    Most cells are voted on by scenarios that replay to the reference's display
+    precision, and those agree to the eighth decimal — the mean is the mean of
+    one number. Two cells are shared between such a scenario and one carrying a
+    synthetic lot history, whose replay is fifty shekels short over the horizon
+    and whose fitted rate is therefore pulled with it. Averaging the two splits
+    the difference and hands the *clean* fixture a rate it cannot replay: it
+    cost `pn_bl_income_work` 24 shekels and `tri_r85_a38` 38.
+
+    So a vote is dropped when another vote on the same cell replays an order of
+    magnitude better. Where nothing separates them, every vote is kept and this
+    is the plain mean.
+    """
+    best = min(residual for _, residual in votes)
+    kept = [rate for rate, residual in votes
+            if residual <= max(10 * best, best + 0.5)]
+    return sum(kept) / len(kept)
 
 
 def main() -> None:

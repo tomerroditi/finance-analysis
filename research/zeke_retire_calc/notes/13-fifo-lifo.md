@@ -11,17 +11,42 @@
 
 The reference has no real purchase history — the user types a balance and a
 profit fraction — so it manufactures one: the opening balance is a run of
-**equal-basis monthly purchases**, newest bought today and oldest `N − 1`
-months ago, each grown at the portfolio's own rate since. `N` solves
+**equal-basis monthly purchases**, the newest bought *last* month and the
+oldest `N` months ago, each grown at the portfolio's own rate since. `N` solves
 
 ```
-sum(f**a for a in range(N)) == N / (1 - profit_fraction)
+sum(f**a for a in range(1, N + 1)) == N / (1 - profit_fraction)
 ```
 
-giving ~316 lots at 50% profit and ~908 at 90% (5% portfolio). Deposits append
+giving 315 lots at 50% profit and 907 at 90% (5% portfolio). Deposits append
 lots bought at par. FIFO sells from the front, LIFO from the back, and the
 realised gain is taxed by the same age-aware rules as everything else
 (notes/11).
+
+## Where the ladder starts is unobservable; how long it is, is not
+
+The lots are rescaled to the stated opening balance, and shifting every age by
+a constant is exactly undone by that rescale — so no observable distinguishes
+"newest bought today" from "newest bought a year ago". Sweeping a constant
+offset confirms it: the replay does not move by an agora.
+
+`N` is a different matter, and the corpus reads it directly. Sweeping the
+ladder length against the reference's own monthly tax rows:
+
+| ladder | `pf_fifo` | `pf_fifo_nodep` | `pf_fifo_p90` | `pf_lifo` | `lot_lifo_nodep` |
+|---|---|---|---|---|---|
+| `N − 2` | 1.26 | 1.21 | 0.11 | 1.68 | 1.87 |
+| **`N − 1` (`a` from 1)** | **1.50** | **1.83** | **0.06** | **1.32** | **1.72** |
+| `N` (`a` from 0) | 2.15 | 2.58 | 0.14 | 3.32 | 3.77 |
+| `N + 1` | 2.82 | 3.31 | 0.22 | 5.83 | 6.60 |
+
+Summing the ladder from `a = 1` rather than `a = 0` is one lot shorter at 50%
+profit and one shorter at 90%, and it halves the worst tax disagreement on
+every fixture with a synthetic history — while leaving the two `*_known`
+fixtures, which have none, at the reference's display precision either way.
+`N − 2` splits the difference and has no derivation behind it, so the sum from
+1 is what ships. Over the full horizon the change takes the four worst asset
+residuals from 63/53/80/113 shekels down to 36/39/49/54.
 
 ## Evidence
 

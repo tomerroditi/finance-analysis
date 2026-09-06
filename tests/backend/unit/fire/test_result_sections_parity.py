@@ -17,6 +17,7 @@ from __future__ import annotations
 import json
 import re
 from datetime import date
+from functools import lru_cache
 from pathlib import Path
 
 import pytest
@@ -38,6 +39,13 @@ SHORTFALL_SLICE = "חוסר"
 """What the plan is short, as capital — a slice beside the assets."""
 NOTHING_YET = "אין עדיין נכסים"
 """The placeholder the reference draws when the plan owns nothing at all."""
+
+SHORTFALL_TOLERANCE = 2.0
+"""Shekels on the shortfall slice.
+
+Looser than the 0.6 the asset classes hold to, because the slice is not a
+balance: it is the discounted sum of every month the plan cannot fund, so it
+inherits a rounding step from each of them (notes/16)."""
 
 KNOWN_GAPS = {
     "pf_mukeret2": "gemel-conversion bridge (notes/15)",
@@ -83,7 +91,9 @@ def _retire_index(fixture: dict) -> int:
                 10 ** 9)
 
 
+@lru_cache(maxsize=None)
 def _run(name):
+    """Fixture and its replay. Cached: five classes assert on the same run."""
     fixture = json.loads((FIXTURES / f"{name}.json").read_text(encoding="utf-8"))
     plan = plan_from_reference(fixture["overrides"])
     return fixture, Simulator(plan).run(
@@ -152,7 +162,7 @@ class TestAssetCards:
                 continue
             assert snapshot.shortfall_capital == pytest.approx(
                 drawn.pop(SHORTFALL_SLICE, 0.0),
-                abs=20_000 if name in KNOWN_GAPS else 1.0), (
+                abs=20_000 if name in KNOWN_GAPS else SHORTFALL_TOLERANCE), (
                 f"{name}: {key} shortfall slice")
             expected = {PIE_CATEGORIES[label_]: value for label_, value in drawn.items()}
             assert set(snapshot.breakdown) == set(expected), f"{name}: {key} classes differ"

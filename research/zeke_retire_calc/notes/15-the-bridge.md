@@ -90,7 +90,7 @@ paid. It matched before this change and still does.
 ## What is still open: a gemel converted at 60
 
 Three fixtures — `pf_mukeret2`, `pf_mukeret3_t60`, `pf_mukeret4_order` — miss by
-93k–158k. All three, and only they, hold a **gemel portfolio earmarked
+15k–57k. All three, and only they, hold a **gemel portfolio earmarked
 `mukeret_*`**, which converts to a recognised annuity at 60.
 
 The rate each one needs, fitted against its own withdrawal portfolio to five
@@ -98,9 +98,9 @@ agorot, does not follow rule 3:
 
 | fixture | streams | rate needed | rule 3 gives |
 |---|---|---|---|
-| `pf_mukeret2` | 5,153.9@60, 10,915.4@60 (gemel), 21,830.3@67 | 2.7182 | 2.5319 |
-| `pf_mukeret3_t60` | 5,153.9@60, 12,025.8@60, 10,915.4@60 (gemel) | 2.5201 | 2.2104 |
-| `pf_mukeret4_order` | couple, four at 60 (two gemel), 18,004.1@65, 21,830.3@67 | 2.5615 | 2.4831 |
+| `pf_mukeret2` | 5,153.9@60, 10,915.5@60 (gemel), 21,830.3@67 | 2.7182 | 2.5319 |
+| `pf_mukeret3_t60` | 5,153.9@60, 12,025.8@60, 10,915.5@60 (gemel) | 2.5201 | 2.2104 |
+| `pf_mukeret4_order` | couple, four at 60 (two gemel), 18,003.8@65, 21,830.3@67 | 2.5615 | 2.4831 |
 
 `pf_mukeret3_t60` is the sharpest statement of the problem: **every** annuity in
 it starts at 60, yet the rate it needs is the one a bridge of 25.7 years buys,
@@ -126,6 +126,44 @@ The two runs differ *only* in `pension_tactics`, so whatever the gemel
 contributes has to depend on how the pension is claimed, which rules out
 treating it as one more stream at a fixed age.
 
+`pf_mukeret3_t60` also rules out every *subset* rule at once. Each of its
+annuities — the four pension components and the gemel — starts in the same
+month, so any weighting of any selection of them reads the surface at the one
+bridge of 22.67 years and returns 2.2104. Reaching the 2.5201 it needs requires
+weight on something that starts **after** 60, and the only such thing in the run
+is its own Bituach Leumi at 67 — which would have to carry 38,400 of weight
+against a 2,757 payment, and is excluded outright by `pn_annuity_60` (§3).
+
+Three further rules were fitted against all three runs and rejected:
+
+| rule | `pf_mukeret2` | `pf_mukeret3_t60` | `pf_mukeret4_order` |
+|---|---|---|---|
+| needed | 2.7182 | 2.5201 | 2.5615 |
+| gemel dropped from the weights entirely | 2.6541 | 2.2104 | 2.6012 |
+| every gemel *and polisa* account weighted as if annuitised at the statutory age | **2.7160** | 2.5951 | 2.6456 |
+| pension weighted at 67 whatever `pension_tactics` says, gemel at 60 | 2.6032 | **2.5383** | — |
+
+Each nails one run and misses the others, and the last two miss in opposite
+directions — `pf_mukeret4_order` needs its extra streams to pull the rate
+*down* (its pension alone already averages 2.6012) while `pf_mukeret3_t60`
+needs them to pull it *up*. No monotone parameter reconciles that. Sweeping the
+two free parameters directly — an effective claim age for the gemel money and a
+weight multiplier on it — the same way: `pf_mukeret3_t60` and
+`pf_mukeret4_order` share a retirement age, so a fixed claim age forces them to
+the same bridge, and they only agree near a multiplier of 13, which then puts
+`pf_mukeret2` 2.9 years out.
+
+One more shape was tried and rejected: that a gemel conversion moves the run to
+a *different confidence level* rather than a different bridge. The three needed
+rates do all sit between the rule-80 and rule-85 curves at their own bridges —
+but at 82.2, 80.9 and 83.8, which is neither constant nor ordered by how much
+of the annuity the gemel pays.
+
+One rule that would have been elegant is disproved outright by the corpus: that
+the bridge ends when the annuities first cover the spending. It reads
+`pn_annuity_6067` at the full 18 years to 67, where the surface is 1.3559 —
+against 0.9771 measured, and against the blend's 0.9841.
+
 Counting the gemel conversions at the statutory age instead of at 60 fits two
 of the three much better (2.6830 and 2.4188, and the total absolute error over
 the corpus drops from 0.58 to 0.23 points) but pushes `pf_mukeret4_order` past
@@ -143,7 +181,7 @@ than 60 — but the condition is *met* at 60 in `pf_mukeret3_t60`, where the
 pension pays 17,179.7 from that age, and that is the run which needs the
 longest bridge of the three. Whatever the rule is, it is not this test.
 
-Given the right rate, all three now replay to 2.4-7.1 shekels over 533 months,
+Given the right rate, all three now replay to 1.5-2.8 shekels over 533 months,
 so what is unexplained in them is exactly one scalar each — no other part of
 those scenarios is in doubt.
 
