@@ -2687,8 +2687,9 @@ def generate_insurance_data(session):
             {"title": "Survivors Annuity", "desc": "60% of salary to spouse and children", "sum": 15000},
         ]),
         # HaPhoenix reports a year-to-date movement statement, not a cost list:
-        # opening balance, deposits and gains sit alongside the deductions, and
-        # the rows sum to the closing balance. Mirroring that shape here keeps
+        # opening balance, deposits and gains sit alongside the deductions. The
+        # closing balance is not a separate figure to reconcile against — it IS
+        # the sum of every other (movement) row. Mirroring that shape here keeps
         # the frontend classifier honest — a naive Σ|amount| would read 666,140.
         insurance_costs=json.dumps([
             {"title": "Opening balance", "amount": 268470},
