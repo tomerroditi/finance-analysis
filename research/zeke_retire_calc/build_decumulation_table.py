@@ -56,6 +56,40 @@ a hundred shekels short — the synthetic-lot fixtures — can still vote.
 """
 
 
+def bridge_of(name: str, overrides: dict) -> float | None:
+    """The single bridge this run reads the surface on, or None if it is a blend.
+
+    Taken from the simulator rather than the chart label: the engine looks the
+    rate up on the age in the last *working* month, in whole months since birth,
+    and the label is that rounded to two decimals. Three thousandths of a year
+    is a couple of hundred shekels over the horizon, so the two conventions have
+    to agree exactly.
+
+    A plan whose annuities all start in the same month has one bridge, whatever
+    age that is — `pf_mukeret_ref`'s couple both claim at 60, and that is a
+    perfectly good measurement of the surface 19.58 years out. A plan that
+    claims different components at different ages measures a weighted blend of
+    several bridges instead, and cannot place a cell.
+    """
+    fixture = json.loads((HERE / "fixtures" / f"{name}.json").read_text(encoding="utf-8"))
+    plan = plan_from_reference(overrides)
+    index = retire_index(fixture)
+    simulator = Simulator(plan)
+    simulator.run(retire_index=index, today=TODAY)
+    starts = {month for _, month in simulator._streams}
+    if len(starts) > 1:
+        return None
+
+    age = simulator.age_at(max(index - 1, 0), TODAY)
+    if starts:
+        bridge = (starts.pop() - index) / 12
+    else:
+        bridge = STATUTORY[overrides.get("gender", "male")] - age
+    if age > BRANCH_AGE:
+        bridge += POST_60_SHIFT
+    return round(bridge, 6)
+
+
 def replay_error(plan, fixture, index, rate) -> float:
     plan.decumulation_return_pct = rate
     result = Simulator(plan).run(retire_index=index, today=TODAY)
@@ -87,13 +121,18 @@ def usable(name: str, row: dict, overrides: dict) -> str | None:
         return "no rate fitted"
     if float(overrides.get("portfolioInterest1", 0) or 0) <= 0:
         return "portfolio earns nothing, so min(table, return) hides the rate"
-    if "60" in str(overrides.get("pension_tactics", "")) or any(
-            value.startswith("mukeret") for key, value in overrides.items()
-            if key.startswith("portfolioDesignation")):
-        # An annuity claimed before the statutory age splits the bridge across
-        # several waits, so this fixture measures a blend rather than one cell
-        # (notes/15).
-        return "annuity claimed before the statutory age"
+    if any(overrides.get(f"portfolioDesignation{i}", "").startswith("mukeret")
+           and overrides.get(f"portfolio_type{i}") == "gemel"
+           for i in range(1, 9)):
+        # Only a *gemel* earmarked mukeret actually annuitises (notes/03), and
+        # the bridge that implies is the one open question (notes/15), so those
+        # runs cannot place a cell. On any other instrument the designation
+        # behaves like `goal` and the run is ordinary.
+        return "annuitised gemel — bridge unknown"
+    if bridge_of(name, overrides) is None:
+        # Annuities claimed at different ages measure a blend of bridges rather
+        # than one cell (notes/15).
+        return "annuities claimed at different ages"
     if not pins_the_rate(name, row["decumulation_return_pct"]):
         return "rate not pinned by this scenario"
     return None
@@ -109,19 +148,8 @@ def cells() -> dict[float, dict[float, float]]:
         if skip:
             print(f"  skip {name}: {skip}")
             continue
-        # Take the age from the simulator rather than the chart label: the
-        # engine looks the rate up on the age in the last *working* month, in
-        # whole months since birth, and the label is that rounded to two
-        # decimals. Three thousandths of a year is a couple of hundred shekels
-        # over the horizon, so the two conventions have to agree exactly.
-        fixture = json.loads(
-            (HERE / "fixtures" / f"{name}.json").read_text(encoding="utf-8"))
-        plan = plan_from_reference(overrides)
-        age = Simulator(plan).age_at(max(retire_index(fixture) - 1, 0), TODAY)
-        bridge = STATUTORY[overrides.get("gender", "male")] - age
-        if age > BRANCH_AGE:
-            bridge += POST_60_SHIFT
-        grouped[row["rule"]][round(bridge, 6)].append(row["decumulation_return_pct"])
+        grouped[row["rule"]][bridge_of(name, overrides)].append(
+            row["decumulation_return_pct"])
     # Keep the fit's own precision. Rounding a cell to four decimals moves the
     # monthly growth factor by ~4e-9, which is invisible in a month and worth
     # tens of shekels once compounded over 533 of them.

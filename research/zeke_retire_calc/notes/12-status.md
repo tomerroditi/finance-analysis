@@ -89,11 +89,17 @@ so it cannot silently drift.
 
 ## The residuals
 
-Everything else outside 30 shekels is a named, bounded approximation: the
-synthetic lot history (notes/13) costs up to 200 shekels on the five
-`pf_fifo`/`pf_lifo` fixtures, a split pension claim costs 259 on
-`pn_annuity_6067`, and the deposit order across two capped accounts costs 90 on
-`pf_gemel_two` and `pf_deposit_caps`.
+The smallest residual worth naming is in `pf_mukeret_ref` and its two siblings:
+the gross-up on each sale runs about 4 parts in 100,000 small — 0.24 shekels on
+a 5,855 shekel sale — which is 50 shekels once accumulated over 486 months. It
+is constant, well above the display noise, and it appears only in that couple's
+scenario; the `tax_profit_*` family, which sells from 0%, 50% and 90% profit
+portfolios, is exact.
+
+Everything else outside 15 shekels is a named, bounded approximation: the
+synthetic lot history (notes/13) costs up to 186 shekels on four
+`pf_fifo`/`pf_lifo` fixtures, and interpolating the surface for a split pension
+claim costs 260 on `pn_annuity_6067`.
 
 The three `pf_mukeret*` runs are now exact *given* their rate — supply it and
 they replay to 2.4-7.1 shekels over 533 months — so what is left in them is one
