@@ -1,3 +1,13 @@
+## v1.57.0 (2026-09-06)
+
+### Feat
+
+- **categories**: collapse unused categories into their own section (#257)
+
+### Fix
+
+- **release**: sync frontend/package-lock.json version on every bump (#253)
+
 ## v1.56.3 (2026-09-05)
 
 ### Fix
