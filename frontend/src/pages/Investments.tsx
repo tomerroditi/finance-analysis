@@ -123,8 +123,19 @@ const EDIT_FORM_RESET: InvestmentEditFormState & { investmentId: number | null }
   commission_management: "",
 };
 
-/** Seed the edit form from an investment when the edit modal is opened. */
-function seedEditForm(
+/**
+ * Seed the edit form from an investment when the edit modal is opened.
+ *
+ * `commission_deposit`/`commission_management` use an emptiness check
+ * (`!= null`), not truthiness, so a stored genuine `0` seeds as the string
+ * `"0"` rather than `""` — mirroring `khFields`' distinction between "the
+ * user set this to 0%" and "this was never set". A truthiness-based seed
+ * (`inv.commission_deposit || ""`) would silently turn a stored `0` back
+ * into `""`, and the next save would omit the field entirely, reverting
+ * the fee to whatever the backend previously had for it.
+ */
+// eslint-disable-next-line react-refresh/only-export-components
+export function seedEditForm(
   inv: Investment,
 ): InvestmentEditFormState & { investmentId: number } {
   return {
@@ -655,11 +666,6 @@ export function Investments() {
                   placeholder={t("investments.selectType")}
                   disabled={editForm.insurancePolicyId != null}
                 />
-                {editForm.insurancePolicyId != null && (
-                  <p className="mt-2 text-[10px] text-[var(--text-muted)] font-medium">
-                    {t("investments.typeLockedByPolicy")}
-                  </p>
-                )}
               </div>
               {KH_TYPES.has(editForm.type) && (
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -669,7 +675,8 @@ export function Investments() {
                     </label>
                     <input
                       type="date"
-                      className="w-full bg-[var(--surface-base)] border border-[var(--surface-light)] rounded-xl px-4 py-3 outline-none focus:border-[var(--primary)] transition-all font-medium"
+                      disabled={editForm.insurancePolicyId != null}
+                      className="w-full bg-[var(--surface-base)] border border-[var(--surface-light)] rounded-xl px-4 py-3 outline-none focus:border-[var(--primary)] transition-all font-medium disabled:opacity-60 disabled:cursor-not-allowed"
                       value={editForm.liquidity_date}
                       onChange={(e) =>
                         setEditForm({ ...editForm, liquidity_date: e.target.value })
@@ -684,7 +691,8 @@ export function Investments() {
                       type="number"
                       step="0.01"
                       dir="ltr"
-                      className="w-full bg-[var(--surface-base)] border border-[var(--surface-light)] rounded-xl px-4 py-3 outline-none focus:border-[var(--primary)] transition-all font-medium"
+                      disabled={editForm.insurancePolicyId != null}
+                      className="w-full bg-[var(--surface-base)] border border-[var(--surface-light)] rounded-xl px-4 py-3 outline-none focus:border-[var(--primary)] transition-all font-medium disabled:opacity-60 disabled:cursor-not-allowed"
                       value={editForm.commission_deposit}
                       onChange={(e) =>
                         setEditForm({
@@ -702,7 +710,8 @@ export function Investments() {
                       type="number"
                       step="0.01"
                       dir="ltr"
-                      className="w-full bg-[var(--surface-base)] border border-[var(--surface-light)] rounded-xl px-4 py-3 outline-none focus:border-[var(--primary)] transition-all font-medium"
+                      disabled={editForm.insurancePolicyId != null}
+                      className="w-full bg-[var(--surface-base)] border border-[var(--surface-light)] rounded-xl px-4 py-3 outline-none focus:border-[var(--primary)] transition-all font-medium disabled:opacity-60 disabled:cursor-not-allowed"
                       value={editForm.commission_management}
                       onChange={(e) =>
                         setEditForm({
@@ -713,6 +722,11 @@ export function Investments() {
                     />
                   </div>
                 </div>
+              )}
+              {editForm.insurancePolicyId != null && (
+                <p className="text-[10px] text-[var(--text-muted)] font-medium">
+                  {t("investments.typeLockedByPolicy")}
+                </p>
               )}
               {RATE_TYPES.has(editForm.type) && (
                 <>

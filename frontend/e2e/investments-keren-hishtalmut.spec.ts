@@ -176,5 +176,28 @@ test.describe("Investments — Keren Hishtalmut", () => {
     // attribute, so behavior (not the attribute) is what to verify.
     await typeButton.click();
     await expect(page.getByRole("option", { name: "Stocks" })).toHaveCount(0);
+
+    // The KH-only fields (liquidity date, both fee inputs) are plain native
+    // <input> elements, not the SelectDropdown's JS-guarded trigger — a
+    // real `disabled` attribute is what the DOM exposes here, so assert on
+    // that directly rather than on click-behavior.
+    const liquidityDateInput = modal
+      .getByText("Liquid", { exact: true })
+      .locator("xpath=following-sibling::input");
+    const depositFeeInput = modal
+      .getByText("Deposit fee", { exact: true })
+      .locator("xpath=following-sibling::input");
+    const managementFeeInput = modal
+      .getByText("Management fee", { exact: true })
+      .locator("xpath=following-sibling::input");
+    await expect(liquidityDateInput).toBeDisabled();
+    await expect(depositFeeInput).toBeDisabled();
+    await expect(managementFeeInput).toBeDisabled();
+
+    // Demo KH policies are seeded with a genuine 0% deposit fee
+    // (scripts/generate_demo_data.py) — a disabled input still exposes its
+    // value, so this pins the "0" vs "" distinction from seedEditForm
+    // (Investments.tsx) even while the field is locked.
+    await expect(depositFeeInput).toHaveValue("0");
   });
 });

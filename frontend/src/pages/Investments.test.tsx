@@ -1,11 +1,22 @@
 import { describe, it, expect } from "vitest";
 import { screen, waitFor } from "@testing-library/react";
 import { renderWithProviders } from "../test-utils";
+import type { Investment } from "../services/api";
 import {
   Investments,
   buildInvestmentPayload,
   buildInvestmentUpdatePayload,
+  seedEditForm,
 } from "./Investments";
+
+const BASE_INVESTMENT: Investment = {
+  id: 1,
+  name: "Migdal Keren Hishtalmut",
+  category: "Investments",
+  tag: "KH",
+  type: "hishtalmut",
+  is_closed: false,
+};
 
 describe("Investments", () => {
   describe("rendering", () => {
@@ -230,6 +241,30 @@ describe("Investments", () => {
       expect(payload).not.toHaveProperty("liquidity_date");
       expect(payload).not.toHaveProperty("commission_deposit");
       expect(payload).not.toHaveProperty("commission_management");
+    });
+  });
+
+  describe("seedEditForm", () => {
+    it("seeds a genuine 0% deposit fee as the string \"0\", not empty", () => {
+      const form = seedEditForm({
+        ...BASE_INVESTMENT,
+        commission_deposit: 0,
+        commission_management: 1.5,
+      });
+
+      expect(form.commission_deposit).toBe("0");
+      expect(form.commission_management).toBe("1.5");
+    });
+
+    it("seeds an unset commission field as an empty string", () => {
+      const form = seedEditForm({
+        ...BASE_INVESTMENT,
+        commission_deposit: null,
+        commission_management: undefined,
+      });
+
+      expect(form.commission_deposit).toBe("");
+      expect(form.commission_management).toBe("");
     });
   });
 });

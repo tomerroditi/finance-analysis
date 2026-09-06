@@ -89,12 +89,16 @@ class RetirementService:
         return self.get_goal()
 
     def get_keren_hishtalmut_scraped_balance(self) -> float | None:
-        """Get total Keren Hishtalmut balance from scraped insurance data.
+        """Get total Keren Hishtalmut balance from tracked investments.
+
+        Covers both scraped policies and manually-created KH investments —
+        the name is a legacy misnomer kept for route-contract stability.
 
         Returns
         -------
         float or None
-            Sum of all hishtalmut account balances, or None if no data.
+            Sum of all open ``type='hishtalmut'`` investment balances, or
+            None if no data.
         """
         return self.investments_service.get_hishtalmut_total_balance()
 

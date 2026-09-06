@@ -135,6 +135,33 @@ class TestInvestmentsRoutes:
         assert updated["commission_management"] == 0.4
         assert updated["liquidity_date"] == "2030-01-01"
 
+    def test_update_investment_accepts_genuine_zero_commission_deposit(
+        self, test_client, seed_investments
+    ):
+        """Verify a PUT with commission_deposit=0 persists 0, not omitted.
+
+        The route filters ``investment.model_dump()`` with
+        ``if v is not None`` (not truthiness) specifically so a genuine 0%
+        fee survives — a truthiness filter would silently drop it.
+        """
+        list_resp = test_client.get("/api/investments/")
+        inv_id = list_resp.json()[0]["id"]
+
+        response = test_client.put(
+            f"/api/investments/{inv_id}",
+            json={
+                "type": "hishtalmut",
+                "commission_deposit": 0,
+                "commission_management": 0.4,
+                "liquidity_date": "2030-01-01",
+            },
+        )
+
+        assert response.status_code == 200
+        updated = test_client.get(f"/api/investments/{inv_id}").json()
+        assert updated["commission_deposit"] == 0
+        assert updated["commission_management"] == 0.4
+
     def test_update_investment_rejects_malformed_liquidity_date(
         self, test_client, seed_investments
     ):
