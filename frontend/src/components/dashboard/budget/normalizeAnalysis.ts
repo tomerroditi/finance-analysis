@@ -19,6 +19,12 @@ const TOTAL_BUDGET_RULE = "Total Budget";
  * Both carry a synthetic "Total Budget" row that supplies the totals and must
  * not appear as a tile. Yearly analysis has no such row and does not use this —
  * its totals come from the server's roll-up instead.
+ *
+ * Matched by name here, unlike the Budget page's `ProjectBudgetView`, which
+ * matches the same row via `isAllTagsRule`. Both hold because
+ * `backend/services/budget/project.py` creates the anchor with
+ * `name=TOTAL_BUDGET` and `tags=[ALL_TAGS]` together — the name check is used
+ * here only because this mapped shape drops `tags`.
  */
 export function normalizeAnalysis(
   entries: AnalysisEntry[],

@@ -93,7 +93,7 @@ export const YearlyBudgetTab: React.FC<YearlyBudgetTabProps> = ({
             className="flex items-center gap-2 text-sm font-medium text-[var(--primary)] hover:text-[var(--primary-dark)] transition-colors cursor-pointer"
           >
             <Plus size={16} />
-            {t("budget.addRule")}
+            {t("budget.yearly.addRule")}
           </Link>
         </div>
       </div>

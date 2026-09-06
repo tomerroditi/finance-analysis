@@ -29,7 +29,7 @@ export const ProjectBudgetTab: React.FC<ProjectBudgetTabProps> = ({
   const queryClient = useQueryClient();
   const [isModalOpen, setIsModalOpen] = useState(false);
 
-  const { data: projects } = useQuery({
+  const { data: projects, isLoading: isProjectsLoading } = useQuery({
     queryKey: qk.budget.projects(),
     queryFn: async () => {
       const res = await budgetApi.getProjects();
@@ -52,7 +52,7 @@ export const ProjectBudgetTab: React.FC<ProjectBudgetTabProps> = ({
     }
   }, [projects, selectedProject, onSelectProject]);
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading: isDetailsLoading } = useQuery({
     queryKey: qk.budget.projectDetails(selectedProject ?? "", false),
     queryFn: async () => {
       const res = await budgetApi.getProjectDetails(selectedProject!, false);
@@ -75,6 +75,14 @@ export const ProjectBudgetTab: React.FC<ProjectBudgetTabProps> = ({
       onSubmit={(payload) => createProject.mutate(payload)}
     />
   );
+
+  if (isProjectsLoading) {
+    return (
+      <div className="flex flex-1 flex-col min-h-0">
+        <Skeleton variant="chart" className="h-16" />
+      </div>
+    );
+  }
 
   if (!projects || projects.length === 0) {
     return (
@@ -120,7 +128,7 @@ export const ProjectBudgetTab: React.FC<ProjectBudgetTabProps> = ({
   return (
     <div className="flex flex-1 flex-col min-h-0">
       {selector}
-      {isLoading || !analysis ? (
+      {isDetailsLoading || !analysis ? (
         <Skeleton variant="chart" className="h-16" />
       ) : (
         <>

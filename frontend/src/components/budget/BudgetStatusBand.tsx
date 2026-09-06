@@ -25,7 +25,7 @@ interface BudgetStatusBandProps {
   stats: BandStat[];
   /**
    * Secondary control (e.g. "View month transactions"). Rides on the heading
-   * line rather than claiming a row of its own under the gauge.
+   * line rather than claiming a row of its own under the total bar.
    */
   footer?: React.ReactNode;
   /** Figures are provisional because the underlying scrape is stale. */
@@ -37,9 +37,9 @@ interface BudgetStatusBandProps {
  * The one place the page answers "how am I doing".
  *
  * Merges three blocks that each answered it differently: the Total Budget
- * gauge card, the three-tile summary strip, and the always-mounted trend
- * chart. Left side carries the gauge, right side the stats — including the
- * period trend, which used to be a ~300px chart block of its own.
+ * bar card, the three-tile summary strip, and the always-mounted trend
+ * chart. Left side carries the total bar, right side the stats — including
+ * the period trend, which used to be a ~300px chart block of its own.
  */
 export const BudgetStatusBand: React.FC<BudgetStatusBandProps> = ({
   label,
@@ -74,13 +74,14 @@ export const BudgetStatusBand: React.FC<BudgetStatusBandProps> = ({
       data-testid="budget-status-band"
       className="bg-[var(--surface)] rounded-2xl border border-[var(--surface-light)] shadow-sm p-3 md:p-4"
     >
-      {/* Side by side only from `xl:`. At 1024 the gauge plus four stats left
-          the trend figure a ~50px sliver and truncated its label to "BUDG…";
-          stacked, the stats row gets the card's full width instead. */}
+      {/* Side by side only from `xl:`. At 1024 the total bar plus four stats
+          left the trend figure a ~50px sliver and truncated its label to
+          "BUDG…"; stacked, the stats row gets the card's full width instead. */}
       <div className="flex flex-col xl:flex-row xl:items-stretch gap-3 xl:gap-5">
-        {/* The gauge is capped rather than greedy: a full-width bar spent the
-            row's whole width restating a number already spelled out above it,
-            leaving the stats — and the trend figure in particular — squeezed. */}
+        {/* The total bar is capped rather than greedy: letting it span the
+            row's whole width would restate a number already spelled out
+            above it, leaving the stats — and the trend figure in particular
+            — squeezed. */}
         <div className="w-full xl:w-[32%] xl:shrink-0 min-w-0">
           {/* Top-aligned, not centred: the heading has to sit on the same line as
               the stat labels across the divider, and the footer control is
