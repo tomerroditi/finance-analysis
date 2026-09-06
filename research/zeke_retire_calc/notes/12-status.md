@@ -18,9 +18,13 @@ with no input, and separately replays the 119 runs that pin their own rate to a
 two-shekel tolerance with that rate supplied — the tighter statement about
 everything other than the surface. `test_cashflow_parity` asserts the
 reference's other two charts, `income_plot` and `expense_plot`, row by row and
-month by month — 123 of the 134 match every row inside 0.15 shekels: a *closed* decomposition of every shekel in and out, which is
+month by month: a *closed* decomposition of every shekel in and out, which is
 what pins the withdrawal order, the deposit routing, the tax on each individual
-sale and each person's national-insurance base (notes/16). And
+sale and each person's national-insurance base — 123 of the 134 match every row
+inside 0.15 shekels (notes/16). `test_result_sections_parity` covers the rest of
+the result page against the reference's own prose and doughnuts: the goal
+checklist, the annuity list, the drawdown plan, both asset cards, and the
+closing pension line. And
 `test_feature_combinations` runs plans nobody recorded — every instrument at
 once — against identities rather than fixtures.
 
