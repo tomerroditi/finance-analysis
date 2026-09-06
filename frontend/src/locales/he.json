@@ -1127,6 +1127,8 @@
     "totalDepositsCount": "סה\"כ הפקדות",
     "riskCost": "עלות ביטוח",
     "managementFeeAmount": "דמי ניהול",
+    "unclassifiedDeductions": "ניכויים לא מזוהים",
+    "unclassifiedDeductionsHint": "ניכויים בדוח התנועות שלא הצלחנו לזהות — ייתכן שהחברה שינתה שם של שורה, ולכן עלות הביטוח ודמי הניהול שלמעלה עשויים להיות נמוכים מהאמת.",
     "thisYear": "השנה",
     "hideDepositHistory": "הסתר היסטוריית הפקדות",
     "showDepositHistory": "הצג היסטוריית הפקדות",

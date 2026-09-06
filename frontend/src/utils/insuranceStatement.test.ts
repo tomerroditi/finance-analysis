@@ -48,6 +48,7 @@ describe("classifyStatement", () => {
       riskCost: 2130,
       managementFee: 820,
       actuarial: -120,
+      unclassified: 0,
     });
   });
 
@@ -60,6 +61,30 @@ describe("classifyStatement", () => {
     expect(classifyStatement(withNewRow).managementFee).toBe(0);
   });
 
+  it("reports a renamed risk-cost row as unclassified instead of a silent zero", () => {
+    // The detector's whole reason to exist: HaPhoenix drops the definite
+    // article from `עלות הביטוח` and every risk key stops matching. Without
+    // `unclassified` the card loses its red line and the page KPI reads 0 —
+    // a user would reasonably read that as "my pension has no risk cost".
+    const renamed = JSON.stringify([
+      { title: "יתרה לתחילת שנה", amount: 200000 },
+      { title: "דמי ניהול", amount: -600 },
+      { title: "עלות ביטוח לסיכוני נכות", amount: -1000 },
+      { title: "עלות ביטוח למקרה מוות", amount: -500 },
+    ]);
+    const breakdown = classifyStatement(renamed);
+    expect(breakdown.riskCost).toBe(0);
+    expect(breakdown.managementFee).toBe(600);
+    expect(breakdown.unclassified).toBe(1500);
+  });
+
+  it("keeps unmatched positive rows out of unclassified — they are not deductions", () => {
+    // Opening balance, deposits, gains and closing balance all match no key.
+    // Counting them would resurrect the 514,082 bug under a new name.
+    expect(classifyStatement(HEBREW_STATEMENT).unclassified).toBe(0);
+    expect(classifyStatement(DEMO_STATEMENT).unclassified).toBe(0);
+  });
+
   it("ignores a positive-signed cost row — a cost is always a deduction", () => {
     const positiveCost = JSON.stringify([
       { title: "דמי ניהול", amount: 820 },
@@ -69,11 +94,12 @@ describe("classifyStatement", () => {
       riskCost: 0,
       managementFee: 0,
       actuarial: 0,
+      unclassified: 0,
     });
   });
 
   it("returns zeroed buckets for null, malformed JSON and non-array JSON", () => {
-    const zero = { riskCost: 0, managementFee: 0, actuarial: 0 };
+    const zero = { riskCost: 0, managementFee: 0, actuarial: 0, unclassified: 0 };
     expect(classifyStatement(null)).toEqual(zero);
     expect(classifyStatement("not json")).toEqual(zero);
     expect(classifyStatement('{"title":"x"}')).toEqual(zero);

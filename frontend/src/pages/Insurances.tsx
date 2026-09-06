@@ -425,6 +425,22 @@ function AccountCardFull({
               {t("insurance.thisYear")}
             </p>
           )}
+          {/* Deductions we saw but could not name. Rendered beside the two
+              classified lines because that is exactly where a renamed
+              provider row goes missing: the red risk-cost line vanishes and
+              a ₪0 takes its place, which reads as "no risk cost" rather
+              than "we stopped recognising the row". */}
+          {statement.unclassified > 0 && (
+            <p
+              data-testid="insurance-unclassified"
+              title={t("insurance.unclassifiedDeductionsHint")}
+              className="text-amber-400 text-[10px] font-bold"
+            >
+              {t("insurance.unclassifiedDeductions")}{" "}
+              <span dir="ltr">{formatCurrency(-statement.unclassified)}</span> ·{" "}
+              {t("insurance.thisYear")}
+            </p>
+          )}
         </div>
 
         {/* Insurance Covers / Liquidity / Activity (last column — variable content) */}
