@@ -41,7 +41,7 @@ export function CategoryCard({
       <h3 className="font-bold text-xs sm:text-sm truncate w-full" dir="auto">
         {category}
       </h3>
-      <span className="text-[10px] sm:text-xs text-[var(--text-muted)]" dir="ltr">
+      <span className="text-[10px] sm:text-xs text-[var(--text-muted)]">
         {subtitle}
       </span>
     </button>

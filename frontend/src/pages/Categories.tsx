@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef, useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Plus, Search } from "lucide-react";
@@ -22,6 +22,19 @@ export function Categories() {
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [isAddCategoryOpen, setIsAddCategoryOpen] = useState(false);
   const [unusedExpanded, setUnusedExpanded] = useState(false);
+  // A *new* search (the query going from empty to non-empty) always forces
+  // the unused section open, so a match is never silently unfindable. Once
+  // open, the user's own chevron click is authoritative — continuing to
+  // edit the same search must not re-force it back open and override a
+  // manual collapse.
+  const previousSearchRef = useRef("");
+  useEffect(() => {
+    const trimmed = searchQuery.trim();
+    if (trimmed && !previousSearchRef.current) {
+      setUnusedExpanded(true);
+    }
+    previousSearchRef.current = trimmed;
+  }, [searchQuery]);
 
   const { data: categories, isLoading } = useCategories();
   const { data: icons } = useQuery({
@@ -130,7 +143,7 @@ export function Categories() {
         entries={unusedEntries}
         icons={icons ?? {}}
         usage={usage ?? {}}
-        expanded={unusedExpanded || searchQuery.trim().length > 0}
+        expanded={unusedExpanded}
         onToggle={() => setUnusedExpanded((prev) => !prev)}
         onSelect={setSelectedCategory}
       />

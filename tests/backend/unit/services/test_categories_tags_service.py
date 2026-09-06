@@ -338,3 +338,40 @@ class TestGetCategoryUsage:
         db_session.commit()
         result = categories_service.get_category_usage()
         assert result["Food"]["unused"] is False
+
+    def test_transaction_exactly_at_cutoff_keeps_category_active(
+        self, categories_service, db_session
+    ):
+        """A transaction dated exactly on the cutoff boundary is "recent"
+        (``used_recently`` uses ``>=``), so the category stays active."""
+        from backend.constants.categories import UNUSED_CATEGORY_MONTHS
+
+        self._age_all_categories(db_session)
+        self._add_bank_txn(
+            db_session, "Food", self._iso_months_ago(UNUSED_CATEGORY_MONTHS)
+        )
+        result = categories_service.get_category_usage()
+        assert result["Food"]["unused"] is False
+
+    def test_category_created_exactly_at_cutoff_stays_in_creation_grace(
+        self, categories_service, db_session
+    ):
+        """A category created exactly on the cutoff boundary is NOT considered
+        "created before the cutoff" (``created_before_cutoff`` uses ``<``), so
+        it keeps its creation grace despite having no transactions."""
+        import pandas as pd
+        from datetime import datetime
+
+        from backend.constants.categories import UNUSED_CATEGORY_MONTHS
+        from backend.models.category import Category
+
+        self._age_all_categories(db_session)
+        cutoff = (
+            pd.Timestamp.today().normalize()
+            - pd.DateOffset(months=UNUSED_CATEGORY_MONTHS)
+        ).date()
+        fresh = db_session.query(Category).filter_by(name="Food").one()
+        fresh.created_at = datetime(cutoff.year, cutoff.month, cutoff.day)
+        db_session.commit()
+        result = categories_service.get_category_usage()
+        assert result["Food"]["unused"] is False
