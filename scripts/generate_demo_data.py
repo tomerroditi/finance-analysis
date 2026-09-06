@@ -2684,7 +2684,7 @@ def generate_insurance_data(session):
         commission_savings_pct=0.22,
         insurance_covers=json.dumps([
             {"title": "Disability Insurance", "desc": "75% of salary (up to cap)", "sum": 18750},
-            {"title": "Life Insurance", "desc": "Lump sum to beneficiaries", "sum": 500000},
+            {"title": "Survivors Annuity", "desc": "60% of salary to spouse and children", "sum": 15000},
         ]),
         # HaPhoenix reports a year-to-date movement statement, not a cost list:
         # opening balance, deposits and gains sit alongside the deductions, and
@@ -2743,7 +2743,7 @@ def generate_insurance_data(session):
         commission_savings_pct=0.18,
         insurance_covers=json.dumps([
             {"title": "Disability Insurance", "desc": "75% of salary (up to cap)", "sum": 10500},
-            {"title": "Life Insurance", "desc": "Lump sum to beneficiaries", "sum": 250000},
+            {"title": "Survivors Annuity", "desc": "60% of salary to spouse and children", "sum": 8400},
         ]),
         # Positive actuarial balance here (negative on PN-DEMO-001) — the sign
         # genuinely varies between policies, so it is the one signed bucket.

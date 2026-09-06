@@ -159,10 +159,10 @@ function StatCard({
   );
 }
 
-function CoversSection({ covers }: { covers: Cover[] }) {
+function CoversSection({ id, covers }: { id: string; covers: Cover[] }) {
   const { t } = useTranslation();
   return (
-    <div className="px-4 sm:px-6 pb-4">
+    <div id={id} className="px-4 sm:px-6 pb-4">
       <p className="text-[var(--text-muted)] text-[10px] uppercase tracking-widest font-bold mb-2">
         {t("insurance.monthlyAmounts")}
       </p>
@@ -211,6 +211,8 @@ function AccountCardFull({
   const [expandedSection, setExpandedSection] = useState<"covers" | "deposits" | null>(null);
   const toggleSection = (section: "covers" | "deposits") =>
     setExpandedSection((current) => (current === section ? null : section));
+  const coversSectionId = `covers-${account.policy_id}`;
+  const depositsSectionId = `deposits-${account.policy_id}`;
   const [isEditingName, setIsEditingName] = useState(false);
   const [draftName, setDraftName] = useState("");
   const tracks = parseTracks(account.investment_tracks);
@@ -453,6 +455,9 @@ function AccountCardFull({
             </p>
             <button
               type="button"
+              data-testid="insurance-covers-count"
+              aria-expanded={expandedSection === "covers"}
+              aria-controls={coversSectionId}
               onClick={() => toggleSection("covers")}
               className="mt-1 text-[10px] font-bold text-blue-400 hover:text-blue-300"
             >
@@ -488,6 +493,8 @@ function AccountCardFull({
             <button
               type="button"
               data-testid="insurance-covers-toggle"
+              aria-expanded={expandedSection === "covers"}
+              aria-controls={coversSectionId}
               onClick={() => toggleSection("covers")}
               className="flex-1 px-6 py-3 flex items-center justify-between text-sm text-[var(--text-muted)] hover:text-white transition-colors"
             >
@@ -503,6 +510,8 @@ function AccountCardFull({
           <button
             type="button"
             data-testid="insurance-deposits-toggle"
+            aria-expanded={expandedSection === "deposits"}
+            aria-controls={depositsSectionId}
             onClick={() => toggleSection("deposits")}
             className="flex-1 px-6 py-3 flex items-center justify-between text-sm text-[var(--text-muted)] hover:text-white transition-colors"
           >
@@ -515,9 +524,9 @@ function AccountCardFull({
             {expandedSection === "deposits" ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
           </button>
         </div>
-        {expandedSection === "covers" && <CoversSection covers={covers} />}
+        {expandedSection === "covers" && <CoversSection id={coversSectionId} covers={covers} />}
         {expandedSection === "deposits" && (
-          <div className="overflow-x-auto max-h-80 overflow-y-auto">
+          <div id={depositsSectionId} className="overflow-x-auto max-h-80 overflow-y-auto">
             <table className="w-full text-sm">
               <thead className="sticky top-0 bg-[var(--surface)]">
                 <tr className="text-[var(--text-muted)] text-[10px] uppercase tracking-widest border-b border-[var(--surface-light)]">

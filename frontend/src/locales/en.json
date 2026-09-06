@@ -1126,6 +1126,8 @@
     "hideDepositHistory": "Hide Deposit History",
     "showDepositHistory": "Show Deposit History",
     "coversCount": "{{count}} covers",
+    "coversCount_one": "{{count}} cover",
+    "coversCount_other": "{{count}} covers",
     "monthlyAmounts": "Monthly amounts",
     "perMonth": "/ mo",
     "showInsuranceCovers": "Show Insurance Covers",

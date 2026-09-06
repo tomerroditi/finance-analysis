@@ -414,6 +414,7 @@ export interface InsuranceAccount {
   commission_deposits_pct: number | null;
   commission_savings_pct: number | null;
   insurance_covers: string | null;
+  /** Provider's year-to-date movement statement, not a cost list — read only via `utils/insuranceStatement.ts`. */
   insurance_costs: string | null;
   liquidity_date: string | null;
 }

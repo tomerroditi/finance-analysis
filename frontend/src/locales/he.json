@@ -1128,6 +1128,8 @@
     "hideDepositHistory": "הסתר היסטוריית הפקדות",
     "showDepositHistory": "הצג היסטוריית הפקדות",
     "coversCount": "{{count}} כיסויים",
+    "coversCount_one": "כיסוי אחד",
+    "coversCount_other": "{{count}} כיסויים",
     "monthlyAmounts": "סכומים חודשיים",
     "perMonth": "לחודש",
     "showInsuranceCovers": "הצג כיסויים ביטוחיים",

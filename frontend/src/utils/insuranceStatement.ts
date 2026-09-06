@@ -24,7 +24,7 @@ export interface StatementBreakdown {
   actuarial: number;
 }
 
-const RISK_KEYS = ["עלות הביטוח", "risk cost", "premium"];
+const RISK_KEYS = ["עלות הביטוח", "risk cost"];
 const FEE_KEYS = ["דמי ניהול", "management fee"];
 const ACTUARIAL_KEYS = ["איזון אקטוארי", "actuarial"];
 
