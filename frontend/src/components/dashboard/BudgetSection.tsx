@@ -1,9 +1,10 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { MonthlyBudgetTab } from "./budget/MonthlyBudgetTab";
+import { YearlyBudgetTab } from "./budget/YearlyBudgetTab";
 import { ProjectBudgetTab } from "./budget/ProjectBudgetTab";
 
-type BudgetTab = "monthly" | "projects";
+type BudgetTab = "monthly" | "yearly" | "projects";
 
 interface BudgetSectionProps {
   categoryIcons: Record<string, string> | undefined;
@@ -22,6 +23,7 @@ export function BudgetSection({ categoryIcons }: BudgetSectionProps) {
   const [activeTab, setActiveTab] = useState<BudgetTab>("monthly");
   const [year, setYear] = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth() + 1);
+  const [yearlyYear, setYearlyYear] = useState(now.getFullYear());
   const [selectedProject, setSelectedProject] = useState<string | null>(null);
 
   const tabClass = (tab: BudgetTab) =>
@@ -46,6 +48,13 @@ export function BudgetSection({ categoryIcons }: BudgetSectionProps) {
             {t("budget.monthlyBudget")}
           </button>
           <button
+            onClick={() => setActiveTab("yearly")}
+            className={tabClass("yearly")}
+            aria-pressed={activeTab === "yearly"}
+          >
+            {t("budget.yearly.tab")}
+          </button>
+          <button
             onClick={() => setActiveTab("projects")}
             className={tabClass("projects")}
             aria-pressed={activeTab === "projects"}
@@ -61,6 +70,13 @@ export function BudgetSection({ categoryIcons }: BudgetSectionProps) {
           month={month}
           onYearChange={setYear}
           onMonthChange={setMonth}
+          categoryIcons={categoryIcons}
+        />
+      )}
+      {activeTab === "yearly" && (
+        <YearlyBudgetTab
+          year={yearlyYear}
+          onYearChange={setYearlyYear}
           categoryIcons={categoryIcons}
         />
       )}
