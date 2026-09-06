@@ -1149,6 +1149,34 @@ export interface FireRecommendation {
   token: string;
 }
 
+export interface FireAnnuity {
+  owner: string;
+  source: string;
+  component: string;
+  recognised: boolean;
+  claim_age: number;
+  monthly: number;
+  factor: number | null;
+  description: string;
+}
+
+export interface FireWithdrawal {
+  source: string;
+  description: string;
+  from_age: number;
+  to_age: number;
+  monthly_average: number;
+}
+
+export interface FireSnapshot {
+  label: string;
+  year: number;
+  month: number;
+  net_worth: number;
+  breakdown: Record<string, number>;
+  shortfall_capital: number;
+}
+
 export interface FireProjection {
   status: "success" | "goals_not_met" | "no_result";
   retire_index: number | null;
@@ -1160,6 +1188,9 @@ export interface FireProjection {
   goals: FireGoal[];
   months: FireMonth[];
   recommendation: FireRecommendation | null;
+  annuities: FireAnnuity[];
+  withdrawal_plan: FireWithdrawal[];
+  snapshots: FireSnapshot[];
 }
 
 export const fireApi = {

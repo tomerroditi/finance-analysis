@@ -71,6 +71,40 @@ class RecommendationRow(BaseModel):
     token: str
 
 
+class AnnuityRow(BaseModel):
+    """One line of the reference's annuity list."""
+
+    owner: str
+    source: str
+    component: str
+    recognised: bool
+    claim_age: float
+    monthly: float
+    factor: Optional[float]
+    description: str
+
+
+class WithdrawalRow(BaseModel):
+    """One stretch of the drawdown plan: which bucket funded which years."""
+
+    source: str
+    description: str
+    from_age: float
+    to_age: float
+    monthly_average: float
+
+
+class SnapshotRow(BaseModel):
+    """An asset card: what the plan holds now, and at retirement."""
+
+    label: str
+    year: int
+    month: int
+    net_worth: float
+    breakdown: dict[str, float]
+    shortfall_capital: float
+
+
 class FireProjection(BaseModel):
     """Everything the results view needs."""
 
@@ -84,6 +118,9 @@ class FireProjection(BaseModel):
     goals: list[GoalRow]
     months: list[MonthRow]
     recommendation: Optional[RecommendationRow]
+    annuities: list[AnnuityRow]
+    withdrawal_plan: list[WithdrawalRow]
+    snapshots: list[SnapshotRow]
 
 
 @router.post("/calculate", response_model=FireProjection)
@@ -102,6 +139,7 @@ def calculate(scenario: FireScenario) -> FireProjection:
             retire_year=None, retire_month=None,
             search_limit_months=result.search_limit, inferred=result.inferred,
             goals=[], months=[], recommendation=None,
+            annuities=[], withdrawal_plan=[], snapshots=[],
         )
 
     recommendation = advise(plan, result, today)
@@ -122,6 +160,24 @@ def calculate(scenario: FireScenario) -> FireProjection:
                      net_worth=m.net_worth, cash=m.cash, assets=m.assets,
                      incomes=m.incomes, expenses=m.expenses, liabilities=m.liabilities)
             for m in result.simulation.months
+        ],
+        annuities=[
+            AnnuityRow(owner=a.owner, source=a.source, component=a.component,
+                       recognised=a.recognised, claim_age=a.claim_age,
+                       monthly=a.monthly, factor=a.factor, description=a.description)
+            for a in result.simulation.annuities
+        ],
+        withdrawal_plan=[
+            WithdrawalRow(source=w.source, description=w.description,
+                          from_age=w.from_age, to_age=w.to_age,
+                          monthly_average=w.monthly_average)
+            for w in result.simulation.withdrawal_plan()
+        ],
+        snapshots=[
+            SnapshotRow(label=s.label, year=s.year, month=s.month,
+                        net_worth=s.net_worth, breakdown=s.breakdown,
+                        shortfall_capital=s.shortfall_capital)
+            for s in result.simulation.snapshots()
         ],
         recommendation=(
             RecommendationRow(

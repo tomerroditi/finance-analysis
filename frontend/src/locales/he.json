@@ -1478,19 +1478,21 @@
     "calculate": "חשב",
     "calculating": "מחשב…",
     "section": {
-      "problem": "מה אנחנו פותרים?",
-      "person": "הפורש",
-      "partner": "בן/בת הזוג",
-      "withdrawal": "הגדרות משיכה",
+      "annuities": "קצבאות לאורך השנים",
       "cash": "עובר ושב",
       "expenses": "הוצאות",
       "incomes": "הכנסות",
-      "portfolios": "תיקי השקעות ממוסים",
-      "pension": "קרן פנסיה",
-      "partnerPension": "קרן פנסיה של בן/בת הזוג",
       "keren": "קרנות השתלמות",
       "loans": "הלוואות",
-      "realEstate": "נדל\"ן"
+      "partner": "בן/בת הזוג",
+      "partnerPension": "קרן פנסיה של בן/בת הזוג",
+      "pension": "קרן פנסיה",
+      "person": "הפורש",
+      "portfolios": "תיקי השקעות ממוסים",
+      "problem": "מה אנחנו פותרים?",
+      "realEstate": "נדל\"ן",
+      "withdrawal": "הגדרות משיכה",
+      "withdrawalPlan": "תוכנית המשיכה מהתיקים"
     },
     "hint": {
       "problem": "\"פרישה מוקדמת\" מחפשת את מועד הפרישה המוקדם ביותר האפשרי, עד לגיל המירבי שתגדירו.",
@@ -1671,6 +1673,39 @@
       "state_pension_partner": "קצבת זקנה (בן/בת זוג)",
       "unplanned": "הוצאה לא מתוכננת",
       "work": "עבודה"
+    },
+    "snapshot": {
+      "nothingYet": "אין עדיין נכסים",
+      "now": "מצב נכסים היום ({{month}}/{{year}})",
+      "retirement": "מצב נכסים בפרישה ({{month}}/{{year}})",
+      "shortfall": "חוסר"
+    },
+    "assetClass": {
+      "cash": "עובר ושב",
+      "keren": "השתלמות",
+      "pension": "פנסיה",
+      "portfolios": "תיקים",
+      "realestate": "נדלן"
+    },
+    "annuity": {
+      "entitling": "מזכה",
+      "recognised": "מוכרת",
+      "row": "{{owner}} — {{source}} {{component}} {{kind}}, קצבה מגיל {{age}}",
+      "rowUnnamed": "{{source}} {{component}} {{kind}}, קצבה מגיל {{age}}"
+    },
+    "annuitySource": {
+      "gemel": "גמל להשקעה",
+      "national_insurance": "ביטוח לאומי",
+      "pension": "קרן פנסיה"
+    },
+    "annuityComponent": {
+      "gemel": "קצבה",
+      "old_age": "זיקנה",
+      "pitzuim": "פיצויים",
+      "tagmulim": "תגמולים"
+    },
+    "withdrawal": {
+      "row": "{{source}}, מגיל {{from}} עד גיל {{to}}"
     }
   }
 }

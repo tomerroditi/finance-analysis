@@ -78,6 +78,58 @@ class MonthRecord:
 
 
 @dataclass
+class Annuity:
+    """One row of the reference's annuity list (`רשימת הקצבאות`)."""
+
+    owner: str
+    source: str
+    """`pension`, `gemel` or `national_insurance`."""
+    component: str
+    """`tagmulim` / `pitzuim` for a pension, else the source's own name."""
+    recognised: bool
+    claim_age: float
+    monthly: float
+    factor: float | None
+    description: str = ""
+    """The account's name, where the user gave one."""
+
+
+@dataclass
+class Withdrawal:
+    """One segment of the reference's drawdown plan (`תוכנית המשיכה מהתיקים`)."""
+
+    source: str
+    description: str
+    from_age: float
+    to_age: float
+    monthly_average: float
+
+
+@dataclass
+class Snapshot:
+    """One of the reference's two asset cards, with its doughnut breakdown."""
+
+    label: str
+    """`now` or `retirement`."""
+    year: int
+    month: int
+    net_worth: float
+    breakdown: dict[str, float]
+    """Totals by asset class: `portfolios`, `cash`, `keren`, `pension`,
+    `realestate` — the categories the reference's doughnut uses. Empty classes
+    are dropped, as it drops them; an entirely empty breakdown is a plan that
+    owns nothing yet, which the reference draws as a single placeholder slice."""
+
+    shortfall_capital: float = 0.0
+    """The reference's `חוסר` slice: what the plan is short, as capital.
+
+    The present value of every unfunded month, discounted at the first
+    portfolio's **gross** return — the fee is not deducted for this one figure.
+    Recovered from six recorded runs, exact to 0.2 shekels on the first card
+    (notes/16)."""
+
+
+@dataclass
 class SimulationResult:
     months: list[MonthRecord]
     retire_index: int
@@ -86,6 +138,96 @@ class SimulationResult:
     """Every annuity this run started: `(monthly amount, month it began)`.
 
     Feeds the decumulation bridge, which is weighted by these (notes/15)."""
+
+    annuities: list[Annuity] = field(default_factory=list)
+    """The annuity list the reference prints, one row per component."""
+
+    def withdrawal_plan(self) -> list["Withdrawal"]:
+        """Where the money came from, as the reference's drawdown plan.
+
+        One segment per bucket ever drawn: the ages of its first and last draw,
+        and the average over that span. Verified against the reference's own
+        prose — `baseline` draws from checking between 53.2 and 73.2 averaging
+        4,145.8, then from the broker account to 81.0 averaging 2,210.2.
+        """
+        segments: list[Withdrawal] = []
+        keys = {key for record in self.months for key, value in record.incomes.items()
+                if value and (key == "cash" or key.startswith(("portfolio", "keren")))}
+        for key in sorted(keys):
+            run: list[MonthRecord] = []
+            for record in self.months + [None]:
+                if record is not None and record.incomes.get(key):
+                    run.append(record)
+                    continue
+                # A gap closes the segment: the reference reports each unbroken
+                # stretch a bucket funded, not the span from first draw to last.
+                if run and sum(r.incomes[key] for r in run) / len(run) >= 0.05:
+                    segments.append(Withdrawal(
+                        source=key, description=self.labels.get(key, ""),
+                        from_age=run[0].age, to_age=run[-1].age,
+                        monthly_average=sum(r.incomes[key] for r in run) / len(run)))
+                run = []
+        return sorted(segments, key=lambda s: (s.from_age, s.source))
+
+    labels: dict[str, str] = field(default_factory=dict)
+    """Display name per asset key, where the user named the account."""
+
+    opening: dict[str, float] = field(default_factory=dict)
+    """Balances before the first month's growth — the reference's "today" card."""
+
+    def snapshots(self) -> list["Snapshot"]:
+        """The two asset cards: today, and the last working month.
+
+        The shortfall slice is discounted to month 0 on the first card and to
+        the first *retired* month on the second — one month past the balances
+        beside it, which is the reference's own convention.
+        """
+        cards = [("now", -1, self.opening, 0)]
+        if 0 < self.retire_index <= len(self.months):
+            record = self.months[self.retire_index - 1]
+            cards.append(("retirement", self.retire_index - 1, record.assets,
+                          self.retire_index))
+        out = []
+        for label, index, assets, as_of in cards:
+            record = self.months[max(index, 0)]
+            out.append(Snapshot(
+                label=label,
+                year=record.year, month=record.month,
+                shortfall_capital=self._shortfall_capital(as_of),
+                net_worth=sum(assets.values()) - (record.liabilities if index >= 0 else 0.0),
+                breakdown={group: total for group, total in (
+                    (group, sum(value for key, value in assets.items()
+                                if key.startswith(prefix)))
+                    for group, prefix in (("cash", "cash"), ("portfolios", "portfolio"),
+                                          ("keren", "keren"), ("pension", "pension"),
+                                          ("realestate", "realestate")))
+                    if total}))
+        return out
+
+    def _shortfall_capital(self, as_of: int) -> float:
+        """Present value at month `as_of` of everything the plan cannot fund.
+
+        Two parts, both discounted the same way. Every unfunded month, and —
+        for a plan that misses a portfolio's goal — the gap at the retirement
+        month, since that is the last month the search tried. `desig_goal` is
+        the recorded example: 9,000,000 wanted, 2,900,229.1 there, and the
+        reference's slice is exactly that difference (notes/16).
+        """
+        factor = self.gross_monthly_factor
+        total = sum(record.incomes.get("shortfall", 0.0) / factor ** (record.index + 1 - as_of)
+                    for record in self.months)
+        if 0 < self.retire_index <= len(self.months):
+            assets = self.months[self.retire_index - 1].assets
+            for key, goal in self.goals.items():
+                total += (max(goal - assets.get(key, 0.0), 0.0)
+                          / factor ** (self.retire_index - as_of))
+        return total
+
+    goals: dict[str, float] = field(default_factory=dict)
+    """Target balance per asset key, for the accounts the plan has one for."""
+
+    gross_monthly_factor: float = 1.0
+    """Discount rate for the shortfall slice — gross of the management fee."""
 
     def unallocated_surplus(self) -> list[float]:
         """The reference's puzzling "unplanned expense" series.
@@ -467,8 +609,87 @@ class Simulator:
                 )
             )
 
-        return SimulationResult(months=months, retire_index=retire_index,
-                                solvent=solvent, annuity_streams=annuity_streams)
+        return SimulationResult(
+            months=months, retire_index=retire_index, solvent=solvent,
+            annuity_streams=annuity_streams, labels=self._labels(),
+            goals={f"portfolio{index}": portfolio.goal
+                   for index, portfolio in enumerate(plan.portfolios)
+                   if portfolio.goal > 0
+                   and portfolio.designation is not PortfolioDesignation.WITHDRAW},
+            gross_monthly_factor=(
+                (1 + plan.portfolios[0].annual_return_pct / 100) ** (1 / 12)
+                if plan.portfolios else 1.0),
+            opening=self._opening_assets(),
+            annuities=self._annuity_list(pensions, gemel_annuities, gemel_owner, today))
+
+    # -- the reference's other result sections -----------------------------
+
+    def _labels(self) -> dict[str, float]:
+        """Display name per asset key, where the user named the account."""
+        return {f"portfolio{index}": portfolio.description
+                for index, portfolio in enumerate(self.plan.portfolios)
+                if portfolio.description}
+
+    def _opening_assets(self) -> dict[str, float]:
+        """What the plan starts with, before the first month's growth."""
+        plan = self.plan
+        assets = {"cash": plan.cash_balance}
+        assets.update({f"portfolio{i}": p.balance for i, p in enumerate(plan.portfolios)})
+        assets.update({f"keren{i}": f.balance for i, f in enumerate(plan.kranot_hishtalmut)})
+        assets.update({f"pension{i}": f.balance for i, (_, f) in
+                       enumerate(self._pension_accounts())})
+        assets.update({f"realestate{i}": r.value for i, r in enumerate(plan.real_estate)})
+        return {key: value for key, value in assets.items() if value}
+
+    def _annuity_list(self, pensions, gemel_annuities, gemel_owner, today) -> list[Annuity]:
+        """Every annuity the plan ends up drawing, as the reference lists them.
+
+        One row per component — the four-way pension split, each annuitised
+        gemel, and each person's state pension — with the claim age and the
+        annuity factor beside it. Components worth nothing are dropped, as the
+        reference drops them.
+        """
+        plan = self.plan
+        rows: list[Annuity] = []
+        for owner, account in pensions:
+            for stream in account.streams:
+                if stream.monthly <= 0:
+                    continue
+                rows.append(Annuity(
+                    owner=owner.name, source="pension", component=stream.component,
+                    recognised=stream.recognised, claim_age=float(stream.claim_age),
+                    monthly=stream.monthly, factor=stream.factor))
+        for index, monthly in gemel_annuities.items():
+            if monthly <= 0:
+                continue
+            owner = (plan.partner if gemel_owner[index] == "_partner" and plan.partner
+                     else plan.person)
+            rows.append(Annuity(
+                owner=owner.name, source="gemel", component="gemel", recognised=True,
+                claim_age=60.0, monthly=monthly,
+                factor=annuity_factor(owner.gender, 60),
+                description=plan.portfolios[index].description))
+        for person, spouse in ((plan.person, plan.partner), (plan.partner, plan.person)):
+            if person is None:
+                continue
+            claim = national_insurance.STATUTORY_AGE[person.gender]
+            spouse_age = None
+            if spouse is not None:
+                # The increment depends on whether the spouse is eligible in the
+                # month this pension starts, so read their age in exactly that
+                # month — the first whose age is past the claim age.
+                own_age = (self.age_at(0, today) if person is plan.person
+                           else self._partner_age(0, today))
+                start = int(claim * 12 - own_age * 12) + 1
+                spouse_age = (self._partner_age(start, today) if spouse is plan.partner
+                              else self.age_at(start, today))
+            rows.append(Annuity(
+                owner=person.name, source="national_insurance", component="old_age",
+                recognised=True, claim_age=float(claim),
+                monthly=national_insurance.monthly_amount(
+                    person, claim + 1 / 12, spouse, spouse_age),
+                factor=None))
+        return rows
 
     # -- routing -----------------------------------------------------------
 

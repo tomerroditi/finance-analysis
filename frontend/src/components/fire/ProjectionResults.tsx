@@ -199,6 +199,103 @@ export function ProjectionResults({ projection }: Props) {
         </div>
       )}
 
+      {projection.snapshots.length > 0 && (
+        <div className="grid gap-4 md:grid-cols-2" data-testid="fire-snapshots">
+          {projection.snapshots.map((snapshot) => (
+            <div
+              key={snapshot.label}
+              data-testid={`fire-snapshot-${snapshot.label}`}
+              className="p-4 rounded-xl bg-[var(--surface)] border border-[var(--surface-light)]"
+            >
+              <h4 className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wider">
+                {t(`fire.snapshot.${snapshot.label}`, {
+                  month: String(snapshot.month).padStart(2, "0"),
+                  year: snapshot.year,
+                })}
+              </h4>
+              <p className="mt-1 text-xl font-semibold text-[var(--text-primary)]" dir="ltr">
+                {money.format(snapshot.net_worth)}
+              </p>
+              <ul className="mt-2 space-y-1 text-xs text-[var(--text-secondary)]">
+                {Object.keys(snapshot.breakdown).length === 0 && (
+                  <li>{t("fire.snapshot.nothingYet")}</li>
+                )}
+                {Object.entries(snapshot.breakdown).map(([group, value]) => (
+                  <li key={group} className="flex justify-between gap-4">
+                    <span>{t(`fire.assetClass.${group}`)}</span>
+                    <span dir="ltr">{money.format(value)}</span>
+                  </li>
+                ))}
+                {snapshot.shortfall_capital > 0.5 && (
+                  <li className="flex justify-between gap-4 text-amber-400">
+                    <span>{t("fire.snapshot.shortfall")}</span>
+                    <span dir="ltr">{money.format(snapshot.shortfall_capital)}</span>
+                  </li>
+                )}
+              </ul>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {projection.annuities.length > 0 && (
+        <div
+          data-testid="fire-annuities"
+          className="p-4 rounded-xl bg-[var(--surface)] border border-[var(--surface-light)]"
+        >
+          <h4 className="mb-3 text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wider">
+            {t("fire.section.annuities")}
+          </h4>
+          <ul className="space-y-1 text-sm text-[var(--text-secondary)]">
+            {projection.annuities.map((annuity, index) => (
+              <li key={index} className="flex justify-between gap-4">
+                <span>
+                  {t(annuity.owner ? "fire.annuity.row" : "fire.annuity.rowUnnamed", {
+                    owner: annuity.owner,
+                    source: annuity.description
+                      || t(`fire.annuitySource.${annuity.source}`),
+                    component: t(`fire.annuityComponent.${annuity.component}`),
+                    kind: t(annuity.recognised ? "fire.annuity.recognised" : "fire.annuity.entitling"),
+                    age: annuity.claim_age.toFixed(0),
+                  })}
+                </span>
+                <span dir="ltr" className="whitespace-nowrap">
+                  {money.format(annuity.monthly)}
+                  {annuity.factor ? ` (${annuity.factor.toFixed(1)})` : ""}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {projection.withdrawal_plan.length > 0 && (
+        <div
+          data-testid="fire-withdrawal-plan"
+          className="p-4 rounded-xl bg-[var(--surface)] border border-[var(--surface-light)]"
+        >
+          <h4 className="mb-3 text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wider">
+            {t("fire.section.withdrawalPlan")}
+          </h4>
+          <ul className="space-y-1 text-sm text-[var(--text-secondary)]">
+            {projection.withdrawal_plan.map((segment, index) => (
+              <li key={index} className="flex justify-between gap-4">
+                <span>
+                  {t("fire.withdrawal.row", {
+                    source: segment.description || flowLabel(segment.source, t),
+                    from: segment.from_age.toFixed(1),
+                    to: segment.to_age.toFixed(1),
+                  })}
+                </span>
+                <span dir="ltr" className="whitespace-nowrap">
+                  {money.format(segment.monthly_average)}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       <ChartCard id="net-worth" title={t("fire.chart.netWorth")}>
         <AreaChart data={netWorth}>
           <CartesianGrid strokeDasharray="3 3" stroke="var(--surface-light)" />

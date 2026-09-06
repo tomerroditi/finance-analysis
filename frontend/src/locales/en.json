@@ -1476,19 +1476,21 @@
     "calculate": "Calculate",
     "calculating": "Calculating…",
     "section": {
-      "problem": "What are we solving?",
-      "person": "Retiree",
-      "partner": "Partner",
-      "withdrawal": "Withdrawal settings",
+      "annuities": "Annuities over the years",
       "cash": "Checking account",
       "expenses": "Expenses",
       "incomes": "Income",
-      "portfolios": "Taxable portfolios",
-      "pension": "Pension fund",
-      "partnerPension": "Partner's pension fund",
       "keren": "Keren Hishtalmut",
       "loans": "Loans",
-      "realEstate": "Real estate"
+      "partner": "Partner",
+      "partnerPension": "Partner's pension fund",
+      "pension": "Pension fund",
+      "person": "Retiree",
+      "portfolios": "Taxable portfolios",
+      "problem": "What are we solving?",
+      "realEstate": "Real estate",
+      "withdrawal": "Withdrawal settings",
+      "withdrawalPlan": "Drawdown plan"
     },
     "hint": {
       "problem": "\"Retire ASAP\" searches for the earliest workable retirement month, up to the maximum age you allow.",
@@ -1669,6 +1671,39 @@
       "state_pension_partner": "State pension (partner)",
       "unplanned": "Left in checking",
       "work": "Work"
+    },
+    "snapshot": {
+      "nothingYet": "No assets yet",
+      "now": "Assets today ({{month}}/{{year}})",
+      "retirement": "Assets at retirement ({{month}}/{{year}})",
+      "shortfall": "Shortfall"
+    },
+    "assetClass": {
+      "cash": "Checking",
+      "keren": "Study funds",
+      "pension": "Pension",
+      "portfolios": "Portfolios",
+      "realestate": "Property"
+    },
+    "annuity": {
+      "entitling": "entitling",
+      "recognised": "recognised",
+      "row": "{{owner}} — {{source}} {{component}} {{kind}}, from age {{age}}",
+      "rowUnnamed": "{{source}} {{component}} {{kind}}, from age {{age}}"
+    },
+    "annuitySource": {
+      "gemel": "gemel le'hashkaa",
+      "national_insurance": "Bituach Leumi",
+      "pension": "pension fund"
+    },
+    "annuityComponent": {
+      "gemel": "annuity",
+      "old_age": "old-age",
+      "pitzuim": "severance",
+      "tagmulim": "contributions"
+    },
+    "withdrawal": {
+      "row": "{{source}}, from age {{from}} to {{to}}"
     }
   }
 }

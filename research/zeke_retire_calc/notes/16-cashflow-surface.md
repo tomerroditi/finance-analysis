@@ -75,3 +75,38 @@ month a plan runs dry, or which of two portfolios empties first.
 It also asserts the identity itself on our side: our two dicts balance to
 1e-6 every month of every run, so a row that goes missing shows up as a
 mismatch instead of quietly vanishing into another.
+
+
+## The other three result sections
+
+The same pass added the rest of the result page, all of it checkable against
+the reference's own output.
+
+**The annuity list** (`רשימת הקצבאות`) prints one row per *component*, not per
+annuity: each pension splits into contributions and severance, each of those
+into recognised and entitling, with the claim age and the annuity factor beside
+it. That makes it the sharpest single check in the corpus — it pins the 60/40
+split, both annuity-factor tables, the statutory ages, what a severance
+redemption removes (three rows, not four), and the Bituach Leumi spouse
+increment, which it prints as the wife's *initial* 4,143.0.
+
+**The drawdown plan** (`תוכנית המשיכה מהתיקים`) lists each unbroken stretch a
+bucket funded, with its age range and monthly average. Segments break on a gap:
+a bucket drawn, left alone, then drawn again is two rows, not one spanning
+both.
+
+**The two asset cards** are the `assetspie0` / `assetspie1` doughnuts —
+balances by asset class at month 0 and at the retirement month — plus a
+`חוסר` slice, which is what the plan is short **as capital**:
+
+```
+shortfall_capital(as_of) = Σ unfunded[t] / f^(t + 1 - as_of)
+                         + Σ max(goal - balance[retirement], 0) / f^(retire - as_of)
+```
+
+with `f` the first portfolio's **gross** monthly return — the management fee is
+not deducted for this one figure. It is discounted to month 0 on the first card
+and to the first *retired* month on the second, one month past the balances
+printed beside it. Recovered from seven recorded runs and exact on every one,
+including `desig_goal`, where the goal component is 9,000,000 wanted against
+2,900,229.1 held.

@@ -79,6 +79,14 @@ test.describe("Early-retirement calculator", () => {
     for (const id of ["net-worth", "assets", "income", "spending"]) {
       await expect(page.getByTestId(`fire-chart-${id}`)).toBeVisible();
     }
+    // --- the reference's other three result sections ---------------------
+    // Two asset cards, the annuity list and the drawdown plan all come from
+    // the same projection and must render alongside the charts.
+    await expect(page.getByTestId("fire-snapshot-now")).toBeVisible();
+    await expect(page.getByTestId("fire-snapshot-retirement")).toBeVisible();
+    await expect(page.getByTestId("fire-annuities")).toContainText(/67/);
+    await expect(page.getByTestId("fire-withdrawal-plan")).toBeVisible();
+
     // Legends name each row rather than leaking the engine's keys.
     const incomeChart = page.getByTestId("fire-chart-income");
     await expect(incomeChart.locator(".recharts-legend-item-text").first()).toBeVisible();

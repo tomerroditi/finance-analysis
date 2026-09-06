@@ -65,6 +65,15 @@ class AnnuityStream:
     recognised: bool
     """Recognised (מוכרת) annuity is income-tax free; entitling (מזכה) is not."""
 
+    component: str = "tagmulim"
+    """`tagmulim` (contributions) or `pitzuim` (severance). The reference lists
+    the four combinations of this with `recognised` separately, and the split
+    between them is a fixed 60/40 (notes/05)."""
+
+    claim_age: int = 0
+    factor: float = 0.0
+    """The claim age, and the annuity factor the reference prints beside it."""
+
 
 @dataclass
 class PensionAccount:
@@ -122,12 +131,26 @@ class PensionAccount:
         return self.severance.gross
 
     def _claim(self, share: float, claim_age: int, recognised: bool, age: float) -> None:
+        """Convert `share` of the balance, as the two components the reference lists.
+
+        Each claim splits 60/40 into contributions and severance. The one
+        exception is the entitling side after a severance redemption: that
+        component has left the fund, so what is annuitised is all
+        contributions — `pn_pizuim_2010` lists exactly three pension rows, not
+        four (notes/16).
+        """
         amount = self.balance * share
         if amount <= 0:
             return
-        self.streams.append(AnnuityStream(
-            monthly=amount / annuity_factor(self.gender, claim_age),
-            start_age=age, recognised=recognised))
+        factor = annuity_factor(self.gender, claim_age)
+        redeemed = self.severance is not None and not recognised
+        splits = ({"tagmulim": 1.0} if redeemed
+                  else {"tagmulim": TAGMULIM_SHARE, "pitzuim": 1 - TAGMULIM_SHARE})
+        for component, part in splits.items():
+            self.streams.append(AnnuityStream(
+                monthly=amount * part / factor, recognised=recognised,
+                start_age=age, component=component, claim_age=claim_age,
+                factor=factor))
 
     def annuitise_due(self, age: float) -> None:
         """Convert whatever is due at this age into annuity streams.
