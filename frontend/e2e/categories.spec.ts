@@ -125,10 +125,10 @@ test.describe("Categories", () => {
   });
 
   // Separate test (not folded into the journey above) because it needs a
-  // page.route() stub installed before the page boots. The demo DB stamps
-  // every category's created_at at snapshot-build time and demo_setup's
-  // date shift does not touch the categories table, so no demo category is
-  // ever old enough to be unused — the stub is what makes this assertable.
+  // page.route() stub installed before the page boots. demo_setup's date
+  // shift keeps categories.created_at pinned inside the six-month creation
+  // grace on every prepare, so no demo category is ever old enough to be
+  // classified unused — the stub is what makes this assertable.
   test("unused categories collapse into their own section", async ({ page }) => {
     await page.route("**/api/tagging/categories/usage", async (route) => {
       const response = await route.fetch();

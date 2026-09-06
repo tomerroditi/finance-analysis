@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef, useEffect } from "react";
+import { useState, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Plus, Search } from "lucide-react";
@@ -22,20 +22,6 @@ export function Categories() {
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [isAddCategoryOpen, setIsAddCategoryOpen] = useState(false);
   const [unusedExpanded, setUnusedExpanded] = useState(false);
-  // A *new* search (the query going from empty to non-empty) always forces
-  // the unused section open, so a match is never silently unfindable. Once
-  // open, the user's own chevron click is authoritative — continuing to
-  // edit the same search must not re-force it back open and override a
-  // manual collapse.
-  const previousSearchRef = useRef("");
-  useEffect(() => {
-    const trimmed = searchQuery.trim();
-    if (trimmed && !previousSearchRef.current) {
-      setUnusedExpanded(true);
-    }
-    previousSearchRef.current = trimmed;
-  }, [searchQuery]);
-
   const { data: categories, isLoading } = useCategories();
   const { data: icons } = useQuery({
     queryKey: qk.tagging.icons(),
@@ -102,7 +88,16 @@ export function Categories() {
             type="text"
             placeholder={t("categories.searchPlaceholder")}
             value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
+            onChange={(e) => {
+              // A *new* search (the query going from empty to non-empty) always
+              // forces the unused section open, so a match is never silently
+              // unfindable. Once open, the user's own chevron click is
+              // authoritative — continuing to edit the same search must not
+              // re-force it back open and override a manual collapse.
+              const next = e.target.value;
+              if (next.trim() && !searchQuery.trim()) setUnusedExpanded(true);
+              setSearchQuery(next);
+            }}
             className="w-full bg-[var(--surface)] border border-[var(--surface-light)] rounded-xl ps-11 pe-4 py-2 text-sm outline-none focus:border-[var(--primary)] transition-all"
           />
         </div>
