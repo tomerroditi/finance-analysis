@@ -4,11 +4,17 @@ This module provides business logic for category and tag management.
 """
 
 from copy import deepcopy
+from datetime import date
 
+import pandas as pd
 from sqlalchemy.orm import Session
 
 from backend.config import AppConfig
-from backend.constants.categories import PROTECTED_CATEGORIES, PROTECTED_TAGS
+from backend.constants.categories import (
+    PROTECTED_CATEGORIES,
+    PROTECTED_TAGS,
+    UNUSED_CATEGORY_MONTHS,
+)
 from backend.repositories.split_transactions_repository import (
     SplitTransactionsRepository,
 )
@@ -102,6 +108,50 @@ class CategoriesTagsService:
             Mapping of category name to emoji icon string.
         """
         return self.tagging_repo.get_categories_icons()
+
+    def get_category_usage(self) -> dict[str, dict]:
+        """Return per-category usage info and the unused verdict.
+
+        A category is unused when it has had no transaction for
+        ``UNUSED_CATEGORY_MONTHS`` months, was itself created longer ago than
+        that, and is not protected. The creation grace stops a freshly added
+        category — which has no transactions by definition — from being
+        demoted the moment it is created.
+
+        Returns
+        -------
+        dict[str, dict]
+            Mapping of category name to ``{"last_used": str | None,
+            "unused": bool}``. ``last_used`` is a ``YYYY-MM-DD`` string, or
+            ``None`` when the category has never been used.
+        """
+        cutoff = (
+            pd.Timestamp.today().normalize()
+            - pd.DateOffset(months=UNUSED_CATEGORY_MONTHS)
+        ).date()
+
+        last_used_map = self.transactions_repo.get_category_last_used()
+        created_at_map = self.tagging_repo.get_categories_created_at()
+
+        usage: dict[str, dict] = {}
+        for name in self.get_categories_and_tags():
+            last_used = last_used_map.get(name)
+            created_at = created_at_map.get(name)
+            created_before_cutoff = (
+                created_at is not None and created_at.date() < cutoff
+            )
+            used_recently = (
+                last_used is not None and date.fromisoformat(last_used) >= cutoff
+            )
+            usage[name] = {
+                "last_used": last_used,
+                "unused": (
+                    name not in PROTECTED_CATEGORIES
+                    and created_before_cutoff
+                    and not used_recently
+                ),
+            }
+        return usage
 
     def update_category_icon(self, category: str, icon: str) -> bool:
         """

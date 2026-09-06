@@ -55,6 +55,17 @@ def get_categories(db: Session = Depends(get_database)):
     return CategoriesTagsService(db).get_categories_and_tags()
 
 
+@router.get("/categories/usage")
+def get_category_usage(db: Session = Depends(get_database)):
+    """Get per-category last-used date and whether the category is unused.
+
+    A category is unused when it has had no transactions for six months, was
+    created longer ago than that, and is not protected. Display-only — no
+    other endpoint filters on this.
+    """
+    return CategoriesTagsService(db).get_category_usage()
+
+
 @router.post("/categories")
 def add_category(category: CategoryCreate, db: Session = Depends(get_database)):
     """Add a new category."""

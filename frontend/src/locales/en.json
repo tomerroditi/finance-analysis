@@ -692,6 +692,10 @@
   "categories": {
     "title": "Categories",
     "subtitle": "Manage your categories and tags",
+    "unusedSection": "Unused categories",
+    "unusedHint": "No transactions in the last 6 months",
+    "lastUsed": "Last used {{date}}",
+    "neverUsed": "Never used",
     "rules": {
       "title": "Auto-Tagging Rules",
       "subtitle": "Automatically categorize transactions as they come in",

@@ -1,13 +1,15 @@
 import { useState, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Plus, Search, Wallet } from "lucide-react";
+import { Plus, Search } from "lucide-react";
 import { taggingApi } from "../services/api";
 import { Skeleton } from "../components/common/Skeleton";
 import { Modal } from "../components/common/Modal";
-import { useCategories } from "../hooks/useCategories";
+import { useCategories, useCategoryUsage } from "../hooks/useCategories";
 import { CategoryDetailPanel } from "../components/categories/CategoryDetailPanel";
 import { RulesSection } from "../components/categories/RulesSection";
+import { CategoryCard } from "../components/categories/CategoryCard";
+import { UnusedCategoriesSection } from "../components/categories/UnusedCategoriesSection";
 import { useQueryKeys } from "../hooks/useQueryKeys";
 import { qkPrefix } from "../services/queryKeys";
 
@@ -19,12 +21,13 @@ export function Categories() {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [isAddCategoryOpen, setIsAddCategoryOpen] = useState(false);
-
+  const [unusedExpanded, setUnusedExpanded] = useState(false);
   const { data: categories, isLoading } = useCategories();
   const { data: icons } = useQuery({
     queryKey: qk.tagging.icons(),
     queryFn: () => taggingApi.getIcons().then((res) => res.data),
   });
+  const { data: usage } = useCategoryUsage();
 
   const createCategoryMutation = useMutation({
     mutationFn: (name: string) => taggingApi.createCategory(name),
@@ -36,17 +39,27 @@ export function Categories() {
 
   const categoriesRecord = categories as Record<string, string[]> | undefined;
 
-  const filteredEntries = useMemo(() => {
-    if (!categoriesRecord) return [];
-    const allEntries = Object.entries(categoriesRecord).sort(([a], [b]) => a.localeCompare(b));
-    const query = searchQuery.toLowerCase().trim();
-    if (!query) return allEntries;
-    return allEntries.filter(
-      ([category, tags]) =>
-        category.toLowerCase().includes(query) ||
-        tags.some((tagName) => tagName.toLowerCase().includes(query)),
+  const { activeEntries, unusedEntries } = useMemo(() => {
+    if (!categoriesRecord) return { activeEntries: [], unusedEntries: [] };
+    const allEntries = Object.entries(categoriesRecord).sort(([a], [b]) =>
+      a.localeCompare(b),
     );
-  }, [categoriesRecord, searchQuery]);
+    const query = searchQuery.toLowerCase().trim();
+    const matching = query
+      ? allEntries.filter(
+          ([category, tags]) =>
+            category.toLowerCase().includes(query) ||
+            tags.some((tagName) => tagName.toLowerCase().includes(query)),
+        )
+      : allEntries;
+    // Until the usage query resolves, every category renders in the main grid
+    // — the page degrades to its previous behavior rather than flashing cards
+    // in and out of the collapsed section.
+    return {
+      activeEntries: matching.filter(([category]) => !usage?.[category]?.unused),
+      unusedEntries: matching.filter(([category]) => usage?.[category]?.unused),
+    };
+  }, [categoriesRecord, searchQuery, usage]);
 
   if (isLoading)
     return (
@@ -75,7 +88,16 @@ export function Categories() {
             type="text"
             placeholder={t("categories.searchPlaceholder")}
             value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
+            onChange={(e) => {
+              // A *new* search (the query going from empty to non-empty) always
+              // forces the unused section open, so a match is never silently
+              // unfindable. Once open, the user's own chevron click is
+              // authoritative — continuing to edit the same search must not
+              // re-force it back open and override a manual collapse.
+              const next = e.target.value;
+              if (next.trim() && !searchQuery.trim()) setUnusedExpanded(true);
+              setSearchQuery(next);
+            }}
             className="w-full bg-[var(--surface)] border border-[var(--surface-light)] rounded-xl ps-11 pe-4 py-2 text-sm outline-none focus:border-[var(--primary)] transition-all"
           />
         </div>
@@ -88,36 +110,22 @@ export function Categories() {
       </div>
 
       {/* Category Grid */}
-      {filteredEntries.length > 0 ? (
+      {activeEntries.length > 0 ? (
         <div className="grid grid-cols-4 lg:grid-cols-5 gap-2 sm:gap-3">
-          {filteredEntries.map(([category, tags]) => {
-            const icon = icons?.[category];
-            return (
-              <button
-                key={category}
-                data-testid={`category-card-${category}`}
-                onClick={() => setSelectedCategory(category)}
-                className="flex flex-col items-center gap-1.5 sm:gap-2 p-2 sm:p-4 bg-[var(--surface)] rounded-xl sm:rounded-2xl border border-[var(--surface-light)] hover:border-[var(--primary)]/50 hover:bg-[var(--surface-light)]/30 transition-all text-center group"
-              >
-                <div className="w-9 h-9 sm:w-12 sm:h-12 flex items-center justify-center rounded-lg sm:rounded-xl bg-blue-500/10 border border-blue-500/20 text-lg sm:text-2xl shrink-0">
-                  {icon ? (
-                    <span>{icon}</span>
-                  ) : (
-                    <Wallet className="text-blue-400 w-[18px] h-[18px] sm:w-[22px] sm:h-[22px]" />
-                  )}
-                </div>
-                <h3 className="font-bold text-xs sm:text-sm truncate w-full" dir="auto">
-                  {category}
-                </h3>
-                <span className="text-[10px] sm:text-xs text-[var(--text-muted)]" dir="ltr">
-                  {t("categories.tagsCount", { count: tags.length })}
-                </span>
-              </button>
-            );
-          })}
+          {activeEntries.map(([category, tags]) => (
+            <CategoryCard
+              key={category}
+              category={category}
+              icon={icons?.[category]}
+              subtitle={t("categories.tagsCount", { count: tags.length })}
+              onClick={() => setSelectedCategory(category)}
+            />
+          ))}
         </div>
       ) : (
-        searchQuery.trim() && (
+        searchQuery.trim() &&
+        activeEntries.length === 0 &&
+        unusedEntries.length === 0 && (
           <div className="text-center py-12 text-[var(--text-muted)]">
             <Search size={40} className="mx-auto mb-3 opacity-30" />
             <p className="font-bold">{t("categories.noResults")}</p>
@@ -125,6 +133,15 @@ export function Categories() {
           </div>
         )
       )}
+
+      <UnusedCategoriesSection
+        entries={unusedEntries}
+        icons={icons ?? {}}
+        usage={usage ?? {}}
+        expanded={unusedExpanded}
+        onToggle={() => setUnusedExpanded((prev) => !prev)}
+        onSelect={setSelectedCategory}
+      />
 
       {/* Detail Panel */}
       {selectedCategory && (

@@ -337,6 +337,19 @@ def _shift_dates(engine: Engine, offset_days: int) -> None:
                 {"offset": offset_str},
             )
 
+        # categories.created_at is a full DateTime (not a YYYY-MM-DD date
+        # string), so it needs SQLite's datetime() rather than date() —
+        # date() would truncate the time-of-day component. Categories carry
+        # no other shiftable dates, but get_category_usage() compares
+        # created_at against a today-relative cutoff to grant new categories
+        # a creation grace; leaving it frozen at the snapshot's build date
+        # would let demo categories silently drift into the unused section
+        # once wall-clock time passes six months past that date.
+        conn.execute(
+            text("UPDATE categories SET created_at = datetime(created_at, :offset)"),
+            {"offset": offset_str},
+        )
+
         rows = conn.execute(
             text(
                 "SELECT DISTINCT id, year, month FROM budget_rules WHERE year IS NOT NULL"
