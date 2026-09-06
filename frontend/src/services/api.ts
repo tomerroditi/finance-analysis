@@ -1121,3 +1121,95 @@ export const uninstallApi = {
 };
 
 export default api;
+
+// ---------------------------------------------------------------------------
+// Early-retirement calculator (reverse-engineered reference model)
+// ---------------------------------------------------------------------------
+
+export interface FireGoal {
+  key: string;
+  label: string;
+  met: boolean;
+  shortfall: number;
+}
+
+export interface FireMonth {
+  index: number;
+  year: number;
+  month: number;
+  age: number;
+  net_worth: number;
+  cash: number;
+  assets: Record<string, number>;
+  incomes: Record<string, number>;
+  expenses: Record<string, number>;
+  liabilities: number;
+}
+
+export interface FireRecommendation {
+  action: string;
+  reason: string;
+  outcome: string;
+  months_saved: number;
+  missing_piece: number;
+  token: string;
+}
+
+export interface FireAnnuity {
+  owner: string;
+  source: string;
+  component: string;
+  recognised: boolean;
+  claim_age: number;
+  monthly: number;
+  factor: number | null;
+  description: string;
+}
+
+export interface FireWithdrawal {
+  source: string;
+  description: string;
+  from_age: number;
+  to_age: number;
+  monthly_average: number;
+}
+
+export interface FireSnapshot {
+  label: string;
+  year: number;
+  month: number;
+  net_worth: number;
+  breakdown: Record<string, number>;
+  shortfall_capital: number;
+}
+
+export interface FirePensionIncome {
+  owner: string;
+  age: number;
+  monthly: number;
+}
+
+export interface FireProjection {
+  status: "success" | "goals_not_met" | "no_result";
+  retire_index: number | null;
+  retire_age: number | null;
+  retire_year: number | null;
+  retire_month: number | null;
+  search_limit_months: number;
+  inferred: boolean;
+  goals: FireGoal[];
+  months: FireMonth[];
+  recommendation: FireRecommendation | null;
+  annuities: FireAnnuity[];
+  withdrawal_plan: FireWithdrawal[];
+  snapshots: FireSnapshot[];
+  pension_income: FirePensionIncome[];
+}
+
+export const fireApi = {
+  calculate: (fields: Record<string, string>, decumulationReturnPct?: number) =>
+    api.post<FireProjection>("/fire/calculate", {
+      fields,
+      decumulation_return_pct: decumulationReturnPct ?? null,
+    }),
+};

@@ -1,0 +1,940 @@
+{
+ "baseline": {
+  "bridge_years": 13.75,
+  "decumulation_return_pct": 0.02458875,
+  "fire_age": 53.25,
+  "residual": 0.05,
+  "rule": 85.0
+ },
+ "buffer_20k": {
+  "bridge_years": 17.17,
+  "decumulation_return_pct": 1.14663453,
+  "fire_age": 49.83,
+  "residual": 0.05,
+  "rule": 85.0
+ },
+ "cf_credit_0": {
+  "bridge_years": 6.92,
+  "decumulation_return_pct": -0.95,
+  "fire_age": 60.08,
+  "residual": 0.04,
+  "rule": 85.0
+ },
+ "cf_credit_100k": {
+  "bridge_years": 9.67,
+  "decumulation_return_pct": -0.95,
+  "fire_age": 57.33,
+  "residual": 0.05,
+  "rule": 85.0
+ },
+ "cf_credit_30k": {
+  "bridge_years": 6.92,
+  "decumulation_return_pct": -0.95,
+  "fire_age": 60.08,
+  "residual": 0.05,
+  "rule": 85.0
+ },
+ "cf_dob_midmonth": {
+  "bridge_years": 13.75,
+  "decumulation_return_pct": 0.02458875,
+  "fire_age": 53.25,
+  "residual": 0.05,
+  "rule": 85.0
+ },
+ "cf_fire_split": {
+  "bridge_years": 13.75,
+  "decumulation_return_pct": 0.02458875,
+  "fire_age": 53.25,
+  "residual": 0.05,
+  "rule": 85.0
+ },
+ "cf_loan_baloon_grace": {
+  "bridge_years": 9.42,
+  "decumulation_return_pct": 0.00213199,
+  "fire_age": 57.58,
+  "residual": 0.05,
+  "rule": 85.0
+ },
+ "cf_loan_edge": {
+  "bridge_years": 12.58,
+  "decumulation_return_pct": 0.00019111,
+  "fire_age": 54.42,
+  "residual": 0.05,
+  "rule": 85.0
+ },
+ "cf_loan_over_fire": {
+  "bridge_years": 6.92,
+  "decumulation_return_pct": 9.48e-06,
+  "fire_age": 60.08,
+  "residual": 0.05,
+  "rule": 85.0
+ },
+ "cf_loan_spitzer": {
+  "bridge_years": 9.5,
+  "decumulation_return_pct": 0.00246124,
+  "fire_age": 57.5,
+  "residual": 0.05,
+  "rule": 85.0
+ },
+ "cf_postfire_surplus": {
+  "bridge_years": 30.25,
+  "decumulation_return_pct": 2.77477984,
+  "fire_age": 36.75,
+  "residual": 0.05,
+  "rule": 85.0
+ },
+ "cf_re_no_rescue": {
+  "bridge_years": 6.92,
+  "decumulation_return_pct": -0.95,
+  "fire_age": 60.08,
+  "residual": 0.04,
+  "rule": 85.0
+ },
+ "cf_realestate": {
+  "bridge_years": 13.75,
+  "decumulation_return_pct": 0.02458875,
+  "fire_age": 53.25,
+  "residual": 0.05,
+  "rule": 85.0
+ },
+ "cf_rise": {
+  "bridge_years": 6.92,
+  "decumulation_return_pct": 2.252e-05,
+  "fire_age": 60.08,
+  "residual": 1.53,
+  "rule": 85.0
+ },
+ "cf_timing_bits": {
+  "bridge_years": 13.67,
+  "decumulation_return_pct": 0.01854213,
+  "fire_age": 53.33,
+  "residual": 0.05,
+  "rule": 85.0
+ },
+ "compound_precise": {
+  "bridge_years": 19.67,
+  "decumulation_return_pct": 1.75693915,
+  "fire_age": 47.33,
+  "residual": 0.05,
+  "rule": 85.0
+ },
+ "desig_goal": {
+  "bridge_years": 6.92,
+  "decumulation_return_pct": -0.95,
+  "fire_age": 60.08,
+  "residual": 0.05,
+  "rule": 85.0
+ },
+ "dob_1980": {
+  "bridge_years": 8.42,
+  "decumulation_return_pct": 0.00032124,
+  "fire_age": 58.58,
+  "residual": 0.05,
+  "rule": 85.0
+ },
+ "eng_fixedage_i12": {
+  "bridge_years": 11.92,
+  "decumulation_return_pct": 0.00298698,
+  "fire_age": 55.08,
+  "residual": 0.05,
+  "rule": 85.0
+ },
+ "eng_fixedage_i5": {
+  "bridge_years": 11.92,
+  "decumulation_return_pct": 0.00298698,
+  "fire_age": 55.08,
+  "residual": 0.05,
+  "rule": 85.0
+ },
+ "eng_idle_fee1": {
+  "bridge_years": 11.92,
+  "decumulation_return_pct": 0.00298698,
+  "fire_age": 55.08,
+  "residual": 0.05,
+  "rule": 85.0
+ },
+ "eng_idle_goaldesig": {
+  "bridge_years": 11.92,
+  "decumulation_return_pct": -0.95,
+  "fire_age": 55.08,
+  "residual": 0.05,
+  "rule": 85.0
+ },
+ "eng_idle_i20": {
+  "bridge_years": 11.92,
+  "decumulation_return_pct": 0.00298698,
+  "fire_age": 55.08,
+  "residual": 0.05,
+  "rule": 85.0
+ },
+ "eng_idle_i5": {
+  "bridge_years": 11.92,
+  "decumulation_return_pct": 0.00298699,
+  "fire_age": 55.08,
+  "residual": 0.05,
+  "rule": 85.0
+ },
+ "female": {
+  "bridge_years": 12.25,
+  "decumulation_return_pct": 0.00665664,
+  "fire_age": 52.75,
+  "residual": 0.05,
+  "rule": 85.0
+ },
+ "goal_big": {
+  "bridge_years": 17.08,
+  "decumulation_return_pct": 1.12174662,
+  "fire_age": 49.92,
+  "residual": 0.05,
+  "rule": 85.0
+ },
+ "goal_big_cap": {
+  "bridge_years": 15.5,
+  "decumulation_return_pct": 0.55618671,
+  "fire_age": 51.5,
+  "residual": 0.05,
+  "rule": 85.0
+ },
+ "kh_deposit": {
+  "bridge_years": 15.83,
+  "decumulation_return_pct": 0.68668506,
+  "fire_age": 51.17,
+  "residual": 0.05,
+  "rule": 85.0
+ },
+ "lot_fifo_known": {
+  "bridge_years": 21.92,
+  "decumulation_return_pct": 2.12916738,
+  "fire_age": 45.08,
+  "residual": 0.05,
+  "rule": 85.0
+ },
+ "lot_flat_known": {
+  "bridge_years": 21.92,
+  "decumulation_return_pct": 2.12916738,
+  "fire_age": 45.08,
+  "residual": 0.05,
+  "rule": 85.0
+ },
+ "lot_lifo_known": {
+  "bridge_years": 21.92,
+  "decumulation_return_pct": 2.12916738,
+  "fire_age": 45.08,
+  "residual": 0.05,
+  "rule": 85.0
+ },
+ "lot_lifo_nodep": {
+  "bridge_years": 28.92,
+  "decumulation_return_pct": 2.71879492,
+  "fire_age": 38.08,
+  "residual": 53.92,
+  "rule": 85.0
+ },
+ "pf_american": {
+  "bridge_years": 30.25,
+  "decumulation_return_pct": 2.77477984,
+  "fire_age": 36.75,
+  "residual": 0.05,
+  "rule": 85.0
+ },
+ "pf_american_kh": {
+  "bridge_years": 30.25,
+  "decumulation_return_pct": 2.77477984,
+  "fire_age": 36.75,
+  "residual": 0.05,
+  "rule": 85.0
+ },
+ "pf_deposit_caps": {
+  "bridge_years": 30.25,
+  "decumulation_return_pct": 2.77477984,
+  "fire_age": 36.75,
+  "residual": 0.05,
+  "rule": 85.0
+ },
+ "pf_fifo": {
+  "bridge_years": 25.92,
+  "decumulation_return_pct": 2.54036011,
+  "fire_age": 41.08,
+  "residual": 35.54,
+  "rule": 85.0
+ },
+ "pf_fifo_nodep": {
+  "bridge_years": 29.0,
+  "decumulation_return_pct": 2.72337496,
+  "fire_age": 38.0,
+  "residual": 38.91,
+  "rule": 85.0
+ },
+ "pf_fifo_p90": {
+  "bridge_years": 28.0,
+  "decumulation_return_pct": 2.67198491,
+  "fire_age": 39.0,
+  "residual": 0.4,
+  "rule": 85.0
+ },
+ "pf_gemel_two": {
+  "bridge_years": 30.25,
+  "decumulation_return_pct": 2.77477984,
+  "fire_age": 36.75,
+  "residual": 0.05,
+  "rule": 85.0
+ },
+ "pf_kaspit_pikadon": {
+  "bridge_years": 30.25,
+  "decumulation_return_pct": 2.77477984,
+  "fire_age": 36.75,
+  "residual": 0.05,
+  "rule": 85.0
+ },
+ "pf_kh_hishtalmut": {
+  "bridge_years": 30.25,
+  "decumulation_return_pct": 2.77477984,
+  "fire_age": 36.75,
+  "residual": 0.05,
+  "rule": 85.0
+ },
+ "pf_kh_prati": {
+  "bridge_years": 30.25,
+  "decumulation_return_pct": 2.77477984,
+  "fire_age": 36.75,
+  "residual": 0.05,
+  "rule": 85.0
+ },
+ "pf_lifo": {
+  "bridge_years": 26.33,
+  "decumulation_return_pct": 2.56971793,
+  "fire_age": 40.67,
+  "residual": 48.59,
+  "rule": 85.0
+ },
+ "pf_mukeret2": {
+  "bridge_years": 29.75,
+  "decumulation_return_pct": 2.71819456,
+  "fire_age": 37.25,
+  "residual": 1.87,
+  "rule": 85.0
+ },
+ "pf_mukeret3_t60": {
+  "bridge_years": 29.58,
+  "decumulation_return_pct": 2.52009843,
+  "fire_age": 37.42,
+  "residual": 1.47,
+  "rule": 85.0
+ },
+ "pf_mukeret4_order": {
+  "bridge_years": 29.58,
+  "decumulation_return_pct": 2.56146462,
+  "fire_age": 37.42,
+  "residual": 2.83,
+  "rule": 85.0
+ },
+ "pf_mukeret_main": {
+  "bridge_years": 26.5,
+  "decumulation_return_pct": 1.72360985,
+  "fire_age": 40.5,
+  "residual": 2.51,
+  "rule": 85.0
+ },
+ "pf_mukeret_partner": {
+  "bridge_years": 26.5,
+  "decumulation_return_pct": 1.72360985,
+  "fire_age": 40.5,
+  "residual": 2.51,
+  "rule": 85.0
+ },
+ "pf_mukeret_ref": {
+  "bridge_years": 26.5,
+  "decumulation_return_pct": 1.72360985,
+  "fire_age": 40.5,
+  "residual": 2.51,
+  "rule": 85.0
+ },
+ "pf_tactics67": {
+  "bridge_years": 26.17,
+  "decumulation_return_pct": 2.55750713,
+  "fire_age": 40.83,
+  "residual": 0.05,
+  "rule": 85.0
+ },
+ "pf_two_same": {
+  "bridge_years": 26.17,
+  "decumulation_return_pct": 2.55750713,
+  "fire_age": 40.83,
+  "residual": 0.05,
+  "rule": 85.0
+ },
+ "pf_types_all": {
+  "bridge_years": 30.25,
+  "decumulation_return_pct": 2.77477984,
+  "fire_age": 36.75,
+  "residual": 0.05,
+  "rule": 85.0
+ },
+ "pn_accum": {
+  "bridge_years": 16.92,
+  "decumulation_return_pct": 1.07103842,
+  "fire_age": 50.08,
+  "residual": 0.08,
+  "rule": 85.0
+ },
+ "pn_annuity_60": {
+  "bridge_years": 19.83,
+  "decumulation_return_pct": 0.00066853,
+  "fire_age": 47.17,
+  "residual": 0.84,
+  "rule": 85.0
+ },
+ "pn_annuity_6067": {
+  "bridge_years": 17.92,
+  "decumulation_return_pct": 0.97709473,
+  "fire_age": 49.08,
+  "residual": 0.22,
+  "rule": 85.0
+ },
+ "pn_annuity_60_f": {
+  "bridge_years": 17.83,
+  "decumulation_return_pct": 0.00068147,
+  "fire_age": 47.17,
+  "residual": 1.06,
+  "rule": 85.0
+ },
+ "pn_annuity_67": {
+  "bridge_years": 16.92,
+  "decumulation_return_pct": 1.07103782,
+  "fire_age": 50.08,
+  "residual": 0.06,
+  "rule": 85.0
+ },
+ "pn_annuity_67_f": {
+  "bridge_years": 15.75,
+  "decumulation_return_pct": 0.6546331,
+  "fire_age": 49.25,
+  "residual": 0.32,
+  "rule": 85.0
+ },
+ "pn_bl_contrib_mid": {
+  "bridge_years": 19.83,
+  "decumulation_return_pct": 0.00073993,
+  "fire_age": 47.17,
+  "residual": 2.07,
+  "rule": 85.0
+ },
+ "pn_bl_income_work": {
+  "bridge_years": 26.33,
+  "decumulation_return_pct": 2.56928334,
+  "fire_age": 40.67,
+  "residual": 0.05,
+  "rule": 85.0
+ },
+ "pn_bl_partner": {
+  "bridge_years": 16.92,
+  "decumulation_return_pct": 1.07103765,
+  "fire_age": 50.08,
+  "residual": 0.05,
+  "rule": 85.0
+ },
+ "pn_keren_ira": {
+  "bridge_years": 20.17,
+  "decumulation_return_pct": 1.85168517,
+  "fire_age": 46.83,
+  "residual": 0.05,
+  "rule": 85.0
+ },
+ "pn_keren_masl_fee0": {
+  "bridge_years": 21.0,
+  "decumulation_return_pct": 1.9935004,
+  "fire_age": 46.0,
+  "residual": 0.05,
+  "rule": 85.0
+ },
+ "pn_keren_masl_fee12": {
+  "bridge_years": 18.25,
+  "decumulation_return_pct": 1.4420428,
+  "fire_age": 48.75,
+  "residual": 0.05,
+  "rule": 85.0
+ },
+ "pn_keren_maslulit": {
+  "bridge_years": 19.67,
+  "decumulation_return_pct": 1.75693915,
+  "fire_age": 47.33,
+  "residual": 0.05,
+  "rule": 85.0
+ },
+ "pn_muk0": {
+  "bridge_years": 19.83,
+  "decumulation_return_pct": 0.00072862,
+  "fire_age": 47.17,
+  "residual": 1.88,
+  "rule": 85.0
+ },
+ "pn_muk100": {
+  "bridge_years": 19.83,
+  "decumulation_return_pct": 0.0007013,
+  "fire_age": 47.17,
+  "residual": 1.41,
+  "rule": 85.0
+ },
+ "pn_pizuim_2010": {
+  "bridge_years": 19.75,
+  "decumulation_return_pct": 1.77327207,
+  "fire_age": 47.25,
+  "residual": 0.05,
+  "rule": 85.0
+ },
+ "pn_pizuim_2026": {
+  "bridge_years": 19.67,
+  "decumulation_return_pct": 1.75693924,
+  "fire_age": 47.33,
+  "residual": 0.05,
+  "rule": 85.0
+ },
+ "pn_rule100_flat": {
+  "bridge_years": 15.92,
+  "decumulation_return_pct": 0.05,
+  "fire_age": 51.08,
+  "residual": 0.06,
+  "rule": 100.0
+ },
+ "pn_rule100_pf": {
+  "bridge_years": 18.42,
+  "decumulation_return_pct": 0.32570789,
+  "fire_age": 48.58,
+  "residual": 0.05,
+  "rule": 100.0
+ },
+ "pn_rule80_flat": {
+  "bridge_years": 15.92,
+  "decumulation_return_pct": 0.05,
+  "fire_age": 51.08,
+  "residual": 0.06,
+  "rule": 80.0
+ },
+ "pn_rule80_i10": {
+  "bridge_years": 21.17,
+  "decumulation_return_pct": 2.41925243,
+  "fire_age": 45.83,
+  "residual": 0.05,
+  "rule": 80.0
+ },
+ "pn_rule80_pf": {
+  "bridge_years": 19.33,
+  "decumulation_return_pct": 2.11912135,
+  "fire_age": 47.67,
+  "residual": 0.05,
+  "rule": 80.0
+ },
+ "pn_rule85_pf": {
+  "bridge_years": 19.08,
+  "decumulation_return_pct": 1.63613097,
+  "fire_age": 47.92,
+  "residual": 0.05,
+  "rule": 85.0
+ },
+ "pn_rule90_pf": {
+  "bridge_years": 18.83,
+  "decumulation_return_pct": 1.17364967,
+  "fire_age": 48.17,
+  "residual": 0.05,
+  "rule": 90.0
+ },
+ "pn_rule95_pf": {
+  "bridge_years": 18.58,
+  "decumulation_return_pct": 0.73050675,
+  "fire_age": 48.42,
+  "residual": 0.05,
+  "rule": 95.0
+ },
+ "pn_rule_100": {
+  "bridge_years": 16.67,
+  "decumulation_return_pct": 0.0040552,
+  "fire_age": 50.33,
+  "residual": 0.06,
+  "rule": 100.0
+ },
+ "rule_100": {
+  "bridge_years": 13.75,
+  "decumulation_return_pct": 0.00295165,
+  "fire_age": 53.25,
+  "residual": 0.05,
+  "rule": 100.0
+ },
+ "rule_95": {
+  "bridge_years": 13.75,
+  "decumulation_return_pct": 6.603e-05,
+  "fire_age": 53.25,
+  "residual": 0.05,
+  "rule": 95.0
+ },
+ "sol_at_age_45": {
+  "bridge_years": 21.92,
+  "decumulation_return_pct": 2.12916734,
+  "fire_age": 45.08,
+  "residual": 0.05,
+  "rule": 85.0
+ },
+ "sol_at_age_58": {
+  "bridge_years": 8.92,
+  "decumulation_return_pct": 0.00086148,
+  "fire_age": 58.08,
+  "residual": 0.05,
+  "rule": 85.0
+ },
+ "tax_profit_0": {
+  "bridge_years": 26.67,
+  "decumulation_return_pct": 2.59195909,
+  "fire_age": 40.33,
+  "residual": 0.05,
+  "rule": 85.0
+ },
+ "tax_profit_50": {
+  "bridge_years": 26.17,
+  "decumulation_return_pct": 2.55750713,
+  "fire_age": 40.83,
+  "residual": 0.05,
+  "rule": 85.0
+ },
+ "tax_profit_90": {
+  "bridge_years": 25.67,
+  "decumulation_return_pct": 2.52033422,
+  "fire_age": 41.33,
+  "residual": 0.05,
+  "rule": 85.0
+ },
+ "tri_r100_a37": {
+  "bridge_years": 29.92,
+  "decumulation_return_pct": 1.9798042,
+  "fire_age": 37.08,
+  "residual": 0.05,
+  "rule": 100.0
+ },
+ "tri_r100_a40": {
+  "bridge_years": 26.92,
+  "decumulation_return_pct": 1.75731797,
+  "fire_age": 40.08,
+  "residual": 0.05,
+  "rule": 100.0
+ },
+ "tri_r100_a45": {
+  "bridge_years": 21.92,
+  "decumulation_return_pct": 1.12344407,
+  "fire_age": 45.08,
+  "residual": 0.05,
+  "rule": 100.0
+ },
+ "tri_r100_a50": {
+  "bridge_years": 16.92,
+  "decumulation_return_pct": 0.01206255,
+  "fire_age": 50.08,
+  "residual": 0.05,
+  "rule": 100.0
+ },
+ "tri_r100_a55": {
+  "bridge_years": 11.92,
+  "decumulation_return_pct": 6.286e-05,
+  "fire_age": 55.08,
+  "residual": 0.05,
+  "rule": 100.0
+ },
+ "tri_r100_a58": {
+  "bridge_years": 8.92,
+  "decumulation_return_pct": 0.00019033,
+  "fire_age": 58.08,
+  "residual": 0.05,
+  "rule": 100.0
+ },
+ "tri_r100_a62": {
+  "bridge_years": 4.92,
+  "decumulation_return_pct": 1.87284528,
+  "fire_age": 62.08,
+  "residual": 0.05,
+  "rule": 100.0
+ },
+ "tri_r80_a37": {
+  "bridge_years": 29.92,
+  "decumulation_return_pct": 3.06449319,
+  "fire_age": 37.08,
+  "residual": 0.05,
+  "rule": 80.0
+ },
+ "tri_r80_a40": {
+  "bridge_years": 26.92,
+  "decumulation_return_pct": 2.93777851,
+  "fire_age": 40.08,
+  "residual": 0.05,
+  "rule": 80.0
+ },
+ "tri_r80_a45": {
+  "bridge_years": 21.92,
+  "decumulation_return_pct": 2.51905547,
+  "fire_age": 45.08,
+  "residual": 0.05,
+  "rule": 80.0
+ },
+ "tri_r80_a50": {
+  "bridge_years": 16.92,
+  "decumulation_return_pct": 1.54440883,
+  "fire_age": 50.08,
+  "residual": 0.05,
+  "rule": 80.0
+ },
+ "tri_r80_a55": {
+  "bridge_years": 11.92,
+  "decumulation_return_pct": 0.0002957,
+  "fire_age": 55.08,
+  "residual": 0.05,
+  "rule": 80.0
+ },
+ "tri_r80_a58": {
+  "bridge_years": 8.92,
+  "decumulation_return_pct": 0.00171966,
+  "fire_age": 58.08,
+  "residual": 0.05,
+  "rule": 80.0
+ },
+ "tri_r80_a62": {
+  "bridge_years": 4.92,
+  "decumulation_return_pct": 3.00578755,
+  "fire_age": 62.08,
+  "residual": 0.05,
+  "rule": 80.0
+ },
+ "tri_r85_a37": {
+  "bridge_years": 29.92,
+  "decumulation_return_pct": 2.761733,
+  "fire_age": 37.08,
+  "residual": 0.05,
+  "rule": 85.0
+ },
+ "tri_r85_a38": {
+  "bridge_years": 28.92,
+  "decumulation_return_pct": 2.71823333,
+  "fire_age": 38.08,
+  "residual": 0.05,
+  "rule": 85.0
+ },
+ "tri_r85_a40": {
+  "bridge_years": 26.92,
+  "decumulation_return_pct": 2.60822698,
+  "fire_age": 40.08,
+  "residual": 0.05,
+  "rule": 85.0
+ },
+ "tri_r85_a45": {
+  "bridge_years": 21.92,
+  "decumulation_return_pct": 2.12916738,
+  "fire_age": 45.08,
+  "residual": 0.05,
+  "rule": 85.0
+ },
+ "tri_r85_a50": {
+  "bridge_years": 16.92,
+  "decumulation_return_pct": 1.07103763,
+  "fire_age": 50.08,
+  "residual": 0.05,
+  "rule": 85.0
+ },
+ "tri_r85_a51": {
+  "bridge_years": 15.92,
+  "decumulation_return_pct": 0.71833327,
+  "fire_age": 51.08,
+  "residual": 0.05,
+  "rule": 85.0
+ },
+ "tri_r85_a52": {
+  "bridge_years": 14.92,
+  "decumulation_return_pct": 0.32106205,
+  "fire_age": 52.08,
+  "residual": 0.05,
+  "rule": 85.0
+ },
+ "tri_r85_a53": {
+  "bridge_years": 13.92,
+  "decumulation_return_pct": 0.04161325,
+  "fire_age": 53.08,
+  "residual": 0.05,
+  "rule": 85.0
+ },
+ "tri_r85_a54": {
+  "bridge_years": 12.92,
+  "decumulation_return_pct": 0.00090893,
+  "fire_age": 54.08,
+  "residual": 0.05,
+  "rule": 85.0
+ },
+ "tri_r85_a55": {
+  "bridge_years": 11.92,
+  "decumulation_return_pct": 0.00298699,
+  "fire_age": 55.08,
+  "residual": 0.05,
+  "rule": 85.0
+ },
+ "tri_r85_a56": {
+  "bridge_years": 10.92,
+  "decumulation_return_pct": 0.00019279,
+  "fire_age": 56.08,
+  "residual": 0.05,
+  "rule": 85.0
+ },
+ "tri_r85_a57": {
+  "bridge_years": 9.92,
+  "decumulation_return_pct": 0.00489491,
+  "fire_age": 57.08,
+  "residual": 0.05,
+  "rule": 85.0
+ },
+ "tri_r85_a58": {
+  "bridge_years": 8.92,
+  "decumulation_return_pct": 0.00086148,
+  "fire_age": 58.08,
+  "residual": 0.05,
+  "rule": 85.0
+ },
+ "tri_r85_a59": {
+  "bridge_years": 7.92,
+  "decumulation_return_pct": 0.00010972,
+  "fire_age": 59.08,
+  "residual": 0.05,
+  "rule": 85.0
+ },
+ "tri_r85_a60": {
+  "bridge_years": 6.92,
+  "decumulation_return_pct": 9.47e-06,
+  "fire_age": 60.08,
+  "residual": 0.05,
+  "rule": 85.0
+ },
+ "tri_r85_a61": {
+  "bridge_years": 5.92,
+  "decumulation_return_pct": 2.7371869,
+  "fire_age": 61.08,
+  "residual": 0.05,
+  "rule": 85.0
+ },
+ "tri_r85_a62": {
+  "bridge_years": 4.92,
+  "decumulation_return_pct": 2.68955674,
+  "fire_age": 62.08,
+  "residual": 0.05,
+  "rule": 85.0
+ },
+ "tri_r85_a63": {
+  "bridge_years": 3.92,
+  "decumulation_return_pct": 2.63400071,
+  "fire_age": 63.08,
+  "residual": 0.05,
+  "rule": 85.0
+ },
+ "tri_r85_a64": {
+  "bridge_years": 2.92,
+  "decumulation_return_pct": 2.56928337,
+  "fire_age": 64.08,
+  "residual": 0.05,
+  "rule": 85.0
+ },
+ "tri_r90_a37": {
+  "bridge_years": 29.92,
+  "decumulation_return_pct": 2.4819902,
+  "fire_age": 37.08,
+  "residual": 0.05,
+  "rule": 90.0
+ },
+ "tri_r90_a40": {
+  "bridge_years": 26.92,
+  "decumulation_return_pct": 2.30372801,
+  "fire_age": 40.08,
+  "residual": 0.05,
+  "rule": 90.0
+ },
+ "tri_r90_a45": {
+  "bridge_years": 21.92,
+  "decumulation_return_pct": 1.76993539,
+  "fire_age": 45.08,
+  "residual": 0.05,
+  "rule": 90.0
+ },
+ "tri_r90_a50": {
+  "bridge_years": 16.92,
+  "decumulation_return_pct": 0.62379685,
+  "fire_age": 50.08,
+  "residual": 0.05,
+  "rule": 90.0
+ },
+ "tri_r90_a55": {
+  "bridge_years": 11.92,
+  "decumulation_return_pct": 0.00067383,
+  "fire_age": 55.08,
+  "residual": 0.05,
+  "rule": 90.0
+ },
+ "tri_r90_a58": {
+  "bridge_years": 8.92,
+  "decumulation_return_pct": 0.00048121,
+  "fire_age": 58.08,
+  "residual": 0.05,
+  "rule": 90.0
+ },
+ "tri_r90_a62": {
+  "bridge_years": 4.92,
+  "decumulation_return_pct": 2.39735195,
+  "fire_age": 62.08,
+  "residual": 0.05,
+  "rule": 90.0
+ },
+ "tri_r95_a37": {
+  "bridge_years": 29.92,
+  "decumulation_return_pct": 2.22209772,
+  "fire_age": 37.08,
+  "residual": 0.05,
+  "rule": 95.0
+ },
+ "tri_r95_a40": {
+  "bridge_years": 26.92,
+  "decumulation_return_pct": 2.02083928,
+  "fire_age": 40.08,
+  "residual": 0.05,
+  "rule": 95.0
+ },
+ "tri_r95_a45": {
+  "bridge_years": 21.92,
+  "decumulation_return_pct": 1.43744474,
+  "fire_age": 45.08,
+  "residual": 0.05,
+  "rule": 95.0
+ },
+ "tri_r95_a50": {
+  "bridge_years": 16.92,
+  "decumulation_return_pct": 0.21579376,
+  "fire_age": 50.08,
+  "residual": 0.05,
+  "rule": 95.0
+ },
+ "tri_r95_a55": {
+  "bridge_years": 11.92,
+  "decumulation_return_pct": 0.00018829,
+  "fire_age": 55.08,
+  "residual": 0.05,
+  "rule": 95.0
+ },
+ "tri_r95_a58": {
+  "bridge_years": 8.92,
+  "decumulation_return_pct": 0.00029262,
+  "fire_age": 58.08,
+  "residual": 0.05,
+  "rule": 95.0
+ },
+ "tri_r95_a62": {
+  "bridge_years": 4.92,
+  "decumulation_return_pct": 2.1258731,
+  "fire_age": 62.08,
+  "residual": 0.05,
+  "rule": 95.0
+ },
+ "zero_return": {
+  "bridge_years": 12.83,
+  "decumulation_return_pct": 0.05,
+  "fire_age": 54.17,
+  "residual": 0.0,
+  "rule": 85.0
+ }
+}

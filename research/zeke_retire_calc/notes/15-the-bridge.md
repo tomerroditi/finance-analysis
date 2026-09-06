@@ -1,0 +1,222 @@
+# The bridge — what the decumulation surface is actually read on
+
+> **Confirmed by the author.** Everything below was recovered from the outside,
+> before finding that the reference's own guide states it. Its wording, via
+> search snippets (the site itself is unreachable from here):
+>
+> - *"תקופת הגישור היא המשך מנקודת הפרישה המוקדמת עד לנקודת קבלת הקצבה מקרן
+>   הפנסיה"* — the bridge period runs from early retirement to the point the
+>   annuity **from the pension fund** is received. Note which annuity: the
+>   pension fund's, which is why Bituach Leumi is not in the weights.
+> - *"מחקר טריניטי נותן סיכויי הצלחה בתלות בהקצאה מנייתית, אופק ההשקעה ואחוז
+>   המשיכה, והמחשבון מבצע חישוב הפוך ומתוך סיכויי הצלחה מחפש פיתרון שיקיים את
+>   השרדות התיק לפרק זמן דרוש"* — Trinity gives a success probability from the
+>   equity allocation, the horizon and the withdrawal rate; the calculator runs
+>   it backwards, and from the success probability finds what sustains the
+>   portfolio for the period required. So `retireRule` is a success
+>   probability, the horizon is the bridge, and the surface is the return that
+>   inversion yields.
+
+
+notes/14 measured the surface as a function of `(retireRule, retirement age)`.
+That was the right shape but the wrong key. The surface is read on the
+**bridge**: how long the withdrawal portfolio must last before pension money
+starts arriving. Four facts, each from a decisive fixture.
+
+## 1. The bridge ends at the statutory age, not at a fixed one
+
+`female` — a woman retiring at 52.75 — is reproduced only if she reads the
+curve at `65 - 52.75`, not `67 - 52.75`. Under the old age-keyed table it was
+the fourth-worst fixture in the corpus (3.7% out); on the bridge it is exact.
+Everything else in the corpus is male, which is why this went unnoticed: for a
+man the two keys differ by a constant and the table absorbed it.
+
+## 2. Retiring past 60 lands on the same curve, shifted
+
+The rate collapses to zero by 54 and stays there to 60, then jumps back to
+~2.7% at 61 (notes/14). Those post-60 points are not a second surface: invert
+the pre-60 curve on them and they sit at `bridge + 23.45` years, with the shift
+constant to ±0.035 across all four measured ages, and the same shift reproduces
+the 62.08 point at every one of the five confidence levels. So the whole
+surface is one curve per confidence, sampled twice.
+
+The switch happens between 60.08 (still collapsed) and 61.08 (already back), a
+gap the fixtures cannot narrow; `BRANCH_AGE` sits at the midpoint.
+
+## 3. A pension claimed early shortens the bridge — weighted by what it pays
+
+`pension_tactics` moves the claim age, and the surface follows:
+
+| fixture | claim structure | measured rate | plain statutory bridge |
+|---|---|---|---|
+| `pn_annuity_60` | all at 60 | 0.0007 | would give 1.85 |
+| `pn_annuity_6067` | 30% at 60, rest at 67 | 0.9776 | would give 1.356 |
+| `pf_mukeret_ref` | couple, both all at 60 | 1.7239 | would give 2.60 |
+
+The rule that fits all three is a **weighted average of the rate each stream's
+own bridge implies**, weighted by the monthly annuity each pays:
+
+```
+rate = Σ pay_i · surface(start_i - retirement) / Σ pay_i
+```
+
+- `pn_annuity_60`: one wait, to 60 → 0.0006 against 0.0007 measured.
+- `pf_mukeret_ref`: four streams, all at 60 → 1.7233 against 1.7239.
+- `pn_annuity_6067`: 1,604.2/month from 60 and 4,246.2/month from 67 → 0.9841
+  against 0.9776. That last miss is the surface's own interpolation, not the
+  rule — see below.
+
+### The one two-bridge run pins the rule, and blames the interpolation
+
+`pn_annuity_6067` is the only run in the corpus that genuinely reads two
+bridges, so the whole weighting rule rests on it, and it is worth being exact
+about what its 0.0065 miss is.
+
+Its shorter bridge is 11 years, which lands in the collapsed stretch of the
+curve: the surface there is 0.000193. So the blend is, to four decimals, just
+the longer stream's weight times the surface at 18 years —
+
+```
+0.9771 = (1,604.2 x 0.000193 + 4,246.2 x S(18)) / 5,850.4   =>   S(18) = 1.3462
+```
+
+— and the rule is not being tested against a free parameter at all: given
+`S(18)`, it reproduces the measured rate exactly. What the run actually
+measures is `S(18) = 1.3462`, and the shipped surface interpolates **1.3559**
+there, 0.7% high.
+
+That is a sparsity, not a modelling gap. Rule 85 has measured cells at 17.25
+(1.1466) and 18.333 (1.4420) and nothing between, and the curve climbs 26% over
+that gap, so a monotone cubic across it is doing real work. **Whoever probes the
+reference next should sample rule 85 at a bridge of 18.0** — a single cell there
+closes the last 260 shekels in the corpus, and confirms `S(18) = 1.3462`
+independently of the weighting rule.
+
+The cell is not being derived from the equation above and added to the table:
+every other cell is measured off a run that reads one bridge, and a cell
+back-solved from the blend would make the surface depend on the rule that reads
+it.
+
+Two variants are ruled out by the same three runs. Averaging the *ages* and
+reading the surface once gives 0.748 for `pn_annuity_6067` against 0.9776 — the
+curve is far too convex for that. Including the state pension in the weights
+gives 0.61 for `pn_annuity_60` against 0.0007: Bituach Leumi does not count,
+only the annuities the plan itself converts.
+
+## 4. Bituach Leumi pays a spouse increment
+
+Not a bridge fact, but it surfaced while chasing one. In `pf_mukeret_ref` the
+wife's old-age pension is **4,143.0** from her 65th birthday and **2,757.0**
+from his 67th — she is paid for two people for exactly the 24 months in
+between. The increment is 1,386.0, and it is not means-tested: her husband is
+drawing a 24,000/month pension throughout that window.
+
+Missing it left a 33,314 shekel hole in that fixture — 1,386.2 a month for 24
+months, riding along in the checking account to the end of the horizon. With it
+the fixture replays to 50 shekels.
+
+`pn_bl_partner` is the control: a man born 1990 and a woman born 1992 reach
+their claim ages in the same month, so no window opens and no increment is
+paid. It matched before this change and still does.
+
+## What is still open: a gemel converted at 60
+
+Three fixtures — `pf_mukeret2`, `pf_mukeret3_t60`, `pf_mukeret4_order` — miss by
+15k–57k. All three, and only they, hold a **gemel portfolio earmarked
+`mukeret_*`**, which converts to a recognised annuity at 60.
+
+The rate each one needs, fitted against its own withdrawal portfolio to five
+agorot, does not follow rule 3:
+
+| fixture | streams | rate needed | rule 3 gives |
+|---|---|---|---|
+| `pf_mukeret2` | 5,153.9@60, 10,915.5@60 (gemel), 21,830.3@67 | 2.7182 | 2.5319 |
+| `pf_mukeret3_t60` | 5,153.9@60, 12,025.8@60, 10,915.5@60 (gemel) | 2.5201 | 2.2104 |
+| `pf_mukeret4_order` | couple, four at 60 (two gemel), 18,003.8@65, 21,830.3@67 | 2.5615 | 2.4831 |
+
+`pf_mukeret3_t60` is the sharpest statement of the problem: **every** annuity in
+it starts at 60, yet the rate it needs is the one a bridge of 25.7 years buys,
+not the 22.7 years to its own 60th birthday. Something in the plan is still
+being waited for. `pf_mukeret_ref` is the control — same couple, same
+all-at-60 claim, no gemel — and it is exact.
+
+### What it cannot be
+
+Under the rate blend, with the pension streams at their stated ages, **no single
+(age, weight) for the gemel money can satisfy both `pf_mukeret2` and
+`pf_mukeret3_t60`**. Solving each for the total locked weight `L` at a common
+surface value `G`:
+
+```
+pf_mukeret2:      G = 2.7182 + 1694.6 / L
+pf_mukeret3_t60:  G = 2.5201 + 5320.6 / L
+```
+
+which meet at `L = 18,304` and `G = 2.8108` — above the rule-85 curve's
+maximum of 2.7748, so there is no bridge at which the surface takes that value.
+The two runs differ *only* in `pension_tactics`, so whatever the gemel
+contributes has to depend on how the pension is claimed, which rules out
+treating it as one more stream at a fixed age.
+
+`pf_mukeret3_t60` also rules out every *subset* rule at once. Each of its
+annuities — the four pension components and the gemel — starts in the same
+month, so any weighting of any selection of them reads the surface at the one
+bridge of 22.67 years and returns 2.2104. Reaching the 2.5201 it needs requires
+weight on something that starts **after** 60, and the only such thing in the run
+is its own Bituach Leumi at 67 — which would have to carry 38,400 of weight
+against a 2,757 payment, and is excluded outright by `pn_annuity_60` (§3).
+
+Three further rules were fitted against all three runs and rejected:
+
+| rule | `pf_mukeret2` | `pf_mukeret3_t60` | `pf_mukeret4_order` |
+|---|---|---|---|
+| needed | 2.7182 | 2.5201 | 2.5615 |
+| gemel dropped from the weights entirely | 2.6541 | 2.2104 | 2.6012 |
+| every gemel *and polisa* account weighted as if annuitised at the statutory age | **2.7160** | 2.5951 | 2.6456 |
+| pension weighted at 67 whatever `pension_tactics` says, gemel at 60 | 2.6032 | **2.5383** | — |
+
+Each nails one run and misses the others, and the last two miss in opposite
+directions — `pf_mukeret4_order` needs its extra streams to pull the rate
+*down* (its pension alone already averages 2.6012) while `pf_mukeret3_t60`
+needs them to pull it *up*. No monotone parameter reconciles that. Sweeping the
+two free parameters directly — an effective claim age for the gemel money and a
+weight multiplier on it — the same way: `pf_mukeret3_t60` and
+`pf_mukeret4_order` share a retirement age, so a fixed claim age forces them to
+the same bridge, and they only agree near a multiplier of 13, which then puts
+`pf_mukeret2` 2.9 years out.
+
+One more shape was tried and rejected: that a gemel conversion moves the run to
+a *different confidence level* rather than a different bridge. The three needed
+rates do all sit between the rule-80 and rule-85 curves at their own bridges —
+but at 82.2, 80.9 and 83.8, which is neither constant nor ordered by how much
+of the annuity the gemel pays.
+
+One rule that would have been elegant is disproved outright by the corpus: that
+the bridge ends when the annuities first cover the spending. It reads
+`pn_annuity_6067` at the full 18 years to 67, where the surface is 1.3559 —
+against 0.9771 measured, and against the blend's 0.9841.
+
+Counting the gemel conversions at the statutory age instead of at 60 fits two
+of the three much better (2.6830 and 2.4188, and the total absolute error over
+the corpus drops from 0.58 to 0.23 points) but pushes `pf_mukeret4_order` past
+the truth in the other direction, so it is not the rule either. It is recorded
+here because it is the best lead: whoever probes the reference next should
+sweep gemel balance against the implied rate at a fixed retirement age, which
+separates "the gemel is weighted differently" from "the gemel is waited for".
+
+Domain knowledge sharpens the question rather than answering it. A gemel
+le'hashkaa may only pay a **tax-free recognised annuity** once the saver is
+already drawing a qualifying old-age pension of at least ~4,849 a month; below
+that the withdrawal is "not according to the rules" and taxed at 35%. So there
+is a real-world reason a gemel's annuity might be treated as arriving later
+than 60 — but the condition is *met* at 60 in `pf_mukeret3_t60`, where the
+pension pays 17,179.7 from that age, and that is the run which needs the
+longest bridge of the three. Whatever the rule is, it is not this test.
+
+Given the right rate, all three now replay to 1.5-2.8 shekels over 533 months,
+so what is unexplained in them is exactly one scalar each — no other part of
+those scenarios is in doubt.
+
+Until then the engine uses rule 3 — the reading the annuity chart supports,
+since those annuities really are paid from 60 — and the three fixtures carry
+explicit bounds in `test_reference_parity.KNOWN_GAPS`.
