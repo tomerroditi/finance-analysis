@@ -74,6 +74,9 @@ test.describe("Dashboard", () => {
 
     await projectsTab.click();
     await expect(projectsTab).toHaveAttribute("aria-pressed", "true");
+    await expect(budgetCard.getByTestId("budget-total-bar")).toBeVisible({
+      timeout: 20_000,
+    });
 
     // Back to monthly so the rest of the journey sees the default view.
     await monthlyTab.click();
