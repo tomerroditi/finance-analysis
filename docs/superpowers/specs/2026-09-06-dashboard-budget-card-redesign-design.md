@@ -50,7 +50,7 @@ Each tab element owns everything below the header:
 ```
 nav row (period navigation / project selector)
 BudgetTotalBar
-rule grid            ← flex-1 min-h-0 overflow-y-auto, min-h-[16rem]
+rule grid            ← flex-1 min-h-[16rem] max-h-[16rem] lg:max-h-none, overflow-y-auto
 "View All Budget Rules →"
 ```
 
@@ -68,7 +68,7 @@ the *card* — it leaves dead space at the bottom. Any hard-coded tile height
 (the original "grow the box to 340px" idea) inherits that problem and is also a
 magic number that drifts as the row-mate changes.
 
-Making the tile grid `flex-1 min-h-0 overflow-y-auto` inside a
+Making the tile grid `flex-1 min-h-[16rem] overflow-y-auto` inside a
 `flex flex-col h-full` chain resolves both cases from one rule:
 
 - **Desktop** — the card height is fixed by the row regardless, so the ~195px the
@@ -95,7 +95,8 @@ on mobile (vs ~684px before), 624px on desktop with a 374px grid (vs 260px).
 
 The full chain must be unbroken: dashboard grid child (`h-full`, already
 present) → `BudgetSection` root (`flex flex-col h-full`) → tab root
-(`flex flex-1 flex-col min-h-0`) → grid (`flex-1 min-h-0 overflow-y-auto`).
+(`flex flex-1 flex-col min-h-0`) → grid (`flex-1 min-h-[16rem]`, plus the
+`max-h-[16rem] lg:max-h-none` ceiling described above).
 `Dashboard.tsx:470` also puts `overflow-y-auto` on the card root; with an inner
 scroller that outer scroller should never engage, which is worth confirming
 visually rather than assuming.
