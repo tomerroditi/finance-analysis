@@ -122,6 +122,27 @@ export const mockInvestments = [
     profit_loss: 0,
     roi: 0,
   },
+  {
+    id: 3,
+    name: "Migdal 007-916-407357",
+    type: "hishtalmut",
+    category: "Investments",
+    tag: null,
+    is_closed: 0,
+    closed_date: null,
+    interest_rate: null,
+    interest_rate_type: null,
+    notes: null,
+    insurance_policy_id: "007-916-407357",
+    liquidity_date: "2030-01-01",
+    commission_deposit: 1.5,
+    commission_management: 0.4,
+    current_balance: 15000,
+    total_deposits: 14000,
+    total_withdrawals: 0,
+    profit_loss: 1000,
+    roi: 7.14,
+  },
 ];
 
 export const mockLiabilities = [

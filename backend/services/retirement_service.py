@@ -89,14 +89,18 @@ class RetirementService:
         return self.get_goal()
 
     def get_keren_hishtalmut_scraped_balance(self) -> float | None:
-        """Get total Keren Hishtalmut balance from scraped insurance data.
+        """Get total Keren Hishtalmut balance from tracked investments.
+
+        Covers both scraped policies and manually-created KH investments —
+        the name is a legacy misnomer kept for route-contract stability.
 
         Returns
         -------
         float or None
-            Sum of all hishtalmut account balances, or None if no data.
+            Sum of all open ``type='hishtalmut'`` investment balances, or
+            None if no data.
         """
-        return self.insurance_account_service.get_keren_hishtalmut_balance()
+        return self.investments_service.get_hishtalmut_total_balance()
 
     def get_scraped_defaults(self) -> dict:
         """Get all auto-fillable values from scraped insurance data.
@@ -114,7 +118,7 @@ class RetirementService:
         """
         return {
             "keren_hishtalmut_balance": (
-                self.insurance_account_service.get_keren_hishtalmut_balance()
+                self.investments_service.get_hishtalmut_total_balance()
             ),
             "keren_hishtalmut_monthly_contribution": (
                 self.insurance_account_service.get_monthly_contribution_by_type(
@@ -195,14 +199,9 @@ class RetirementService:
         # net worth series values investments snapshot-first. The FIRE
         # projection models KH as its own bucket (goal field), so this
         # amount must be moved out of the base portfolio to avoid double
-        # counting. For users who only typed a KH balance (nothing synced),
-        # this is 0 and their KH counts on top of net worth.
-        tracked_kh_value = 0.0
-        for inv in self.investments_service.get_all_investments():
-            if inv.get("type") == "hishtalmut":
-                tracked_kh_value += self.investments_service.calculate_current_balance(
-                    int(inv["id"])
-                )
+        # counting. For users with no KH investment at all this is 0 and
+        # their typed KH balance counts on top of net worth.
+        tracked_kh_value = self.investments_service.get_hishtalmut_total_balance() or 0.0
 
         return {
             "net_worth": current_net_worth,

@@ -830,6 +830,10 @@
     "allTagsInUse": "All tags in use",
     "balance": "Balance",
     "source": "Source",
+    "liquidityDate": "Liquid",
+    "depositFee": "Deposit fee",
+    "managementFee": "Management fee",
+    "typeLockedByPolicy": "Set by the scraped policy",
     "types": {
       "stocks": "Stocks",
       "crypto": "Crypto",
@@ -838,6 +842,7 @@
       "pension": "Pension",
       "brokerageAccount": "Brokerage Account",
       "p2pLending": "P2P Lending",
+      "kerenHishtalmut": "Keren Hishtalmut",
       "other": "Other"
     },
     "primeLinkedRate": "Prime-Linked",
@@ -1426,7 +1431,7 @@
       "bituachLeumi": "National Insurance old-age pension. Starts at full pension age (67 for men, 65 for women).",
       "netWorthChart": "Baseline uses your expected return rate adjusted for your inflation rate — all amounts are in today's shekels. Optimistic and conservative show ±1% annual return to illustrate market sensitivity. Includes Keren Hishtalmut as a separate tax-free component.",
       "incomeChart": "Income sources by age, in today's shekels. Before retirement: salary covers expenses. After retirement: portfolio withdrawals + pension and Bituach Leumi (from full pension age) + passive income.",
-      "kerenHishtalmutBalance": "Your total Keren Hishtalmut balance across all funds (auto-fillable from scraped insurance data). Modelled as a separate tax-free bucket that is drawn first in retirement — and counted exactly once, even when your scraped funds already appear inside your net worth.",
+      "kerenHishtalmutBalance": "Your total Keren Hishtalmut balance across all funds (auto-fillable from scraped policies and manually-added KH investments alike). Modelled as a separate tax-free bucket that is drawn first in retirement — and counted exactly once, even when those funds already appear inside your net worth.",
       "kerenHishtalmutMonthly": "Total monthly deposits into your Keren Hishtalmut (employee + employer). These are deducted from your salary before it reaches the bank, so they count on top of your regular monthly savings.",
       "otherPassiveIncome": "Monthly income you expect to keep receiving in retirement independent of your portfolio — rent, royalties, a side business. Held constant in today's shekels."
     }

@@ -1,7 +1,22 @@
 import { describe, it, expect } from "vitest";
 import { screen, waitFor } from "@testing-library/react";
 import { renderWithProviders } from "../test-utils";
-import { Investments } from "./Investments";
+import type { Investment } from "../services/api";
+import {
+  Investments,
+  buildInvestmentPayload,
+  buildInvestmentUpdatePayload,
+  seedEditForm,
+} from "./Investments";
+
+const BASE_INVESTMENT: Investment = {
+  id: 1,
+  name: "Migdal Keren Hishtalmut",
+  category: "Investments",
+  tag: "KH",
+  type: "hishtalmut",
+  is_closed: false,
+};
 
 describe("Investments", () => {
   describe("rendering", () => {
@@ -40,6 +55,18 @@ describe("Investments", () => {
         expect(buttons.length).toBeGreaterThan(0);
       });
     });
+
+    it("labels hishtalmut investments as Keren Hishtalmut, not Other", async () => {
+      renderWithProviders(<Investments />);
+      await waitFor(() => {
+        // The fixture's own name ("Migdal 007-916-407357") never contains
+        // "Keren Hishtalmut", so this can only match the type badge —
+        // proving TYPE_KEY_MAP maps "hishtalmut" instead of falling through
+        // to "Other".
+        expect(screen.getAllByText(/Keren Hishtalmut/i).length).toBeGreaterThan(0);
+        expect(screen.queryAllByText(/^Other$/i).length).toBe(0);
+      });
+    });
   });
 
   describe("portfolio overview", () => {
@@ -49,6 +76,195 @@ describe("Investments", () => {
         // Portfolio section renders with total value, profit, ROI
         expect(screen.getAllByText(/Portfolio/i).length).toBeGreaterThan(0);
       });
+    });
+  });
+
+  describe("create payload", () => {
+    it("omits Keren Hishtalmut fields for non-KH types", () => {
+      const payload = buildInvestmentPayload({
+        name: "S&P 500",
+        category: "Investments",
+        tag: "Stock Fund",
+        type: "stocks",
+        interest_rate: 0,
+        interest_rate_type: "fixed",
+        rate_spread: 0,
+        notes: "",
+        liquidity_date: "",
+        commission_deposit: "",
+        commission_management: "",
+      });
+
+      expect(payload).not.toHaveProperty("liquidity_date");
+      expect(payload).not.toHaveProperty("commission_deposit");
+      expect(payload).not.toHaveProperty("commission_management");
+    });
+
+    it("includes Keren Hishtalmut fields when the type is hishtalmut", () => {
+      const payload = buildInvestmentPayload({
+        name: "Keren Hishtalmut",
+        category: "Investments",
+        tag: "KH",
+        type: "hishtalmut",
+        interest_rate: 0,
+        interest_rate_type: "variable",
+        rate_spread: 0,
+        notes: "",
+        liquidity_date: "2030-01-01",
+        commission_deposit: "1.5",
+        commission_management: "0.4",
+      });
+
+      expect(payload).toMatchObject({
+        liquidity_date: "2030-01-01",
+        commission_deposit: 1.5,
+        commission_management: 0.4,
+      });
+    });
+
+    it("omits an empty liquidity date even for hishtalmut", () => {
+      const payload = buildInvestmentPayload({
+        name: "Keren Hishtalmut",
+        category: "Investments",
+        tag: "KH",
+        type: "hishtalmut",
+        interest_rate: 0,
+        interest_rate_type: "variable",
+        rate_spread: 0,
+        notes: "",
+        liquidity_date: "",
+        commission_deposit: "",
+        commission_management: "",
+      });
+
+      expect(payload).not.toHaveProperty("liquidity_date");
+    });
+
+    it("includes a genuine 0% deposit fee as the number zero, not omitted", () => {
+      const payload = buildInvestmentPayload({
+        name: "Keren Hishtalmut",
+        category: "Investments",
+        tag: "KH",
+        type: "hishtalmut",
+        interest_rate: 0,
+        interest_rate_type: "variable",
+        rate_spread: 0,
+        notes: "",
+        liquidity_date: "2030-01-01",
+        commission_deposit: "0",
+        commission_management: "",
+      });
+
+      expect(payload.commission_deposit).toBe(0);
+      expect(typeof payload.commission_deposit).toBe("number");
+    });
+
+    it("omits commission_deposit entirely when the input was left empty", () => {
+      const payload = buildInvestmentPayload({
+        name: "Keren Hishtalmut",
+        category: "Investments",
+        tag: "KH",
+        type: "hishtalmut",
+        interest_rate: 0,
+        interest_rate_type: "variable",
+        rate_spread: 0,
+        notes: "",
+        liquidity_date: "2030-01-01",
+        commission_deposit: "",
+        commission_management: "0.4",
+      });
+
+      expect(payload).not.toHaveProperty("commission_deposit");
+    });
+  });
+
+  describe("edit payload", () => {
+    const baseEditForm = {
+      name: "Migdal Keren Hishtalmut",
+      type: "hishtalmut",
+      interest_rate: 0,
+      interest_rate_type: "variable",
+      rate_spread: 0,
+      notes: "",
+      insurancePolicyId: null as string | null,
+      liquidity_date: "2030-01-01",
+      commission_deposit: "",
+      commission_management: "",
+    };
+
+    it("omits type for a scraped investment (non-null insurance_policy_id)", () => {
+      const payload = buildInvestmentUpdatePayload({
+        ...baseEditForm,
+        insurancePolicyId: "007-916-407357 (8296857)",
+      });
+
+      expect(payload).not.toHaveProperty("type");
+    });
+
+    it("includes type for a manually-created investment (null insurance_policy_id)", () => {
+      const payload = buildInvestmentUpdatePayload({
+        ...baseEditForm,
+        insurancePolicyId: null,
+      });
+
+      expect(payload).toMatchObject({ type: "hishtalmut" });
+    });
+
+    it("sends a genuine 0% deposit fee as the number zero, not omitted", () => {
+      const payload = buildInvestmentUpdatePayload({
+        ...baseEditForm,
+        commission_deposit: "0",
+      });
+
+      expect(payload.commission_deposit).toBe(0);
+      expect(typeof payload.commission_deposit).toBe("number");
+    });
+
+    it("omits commission_deposit entirely when the input was left empty", () => {
+      const payload = buildInvestmentUpdatePayload({
+        ...baseEditForm,
+        commission_deposit: "",
+      });
+
+      expect(payload).not.toHaveProperty("commission_deposit");
+    });
+
+    it("omits liquidity_date and commission fields for non-KH types", () => {
+      const payload = buildInvestmentUpdatePayload({
+        ...baseEditForm,
+        type: "stocks",
+        insurancePolicyId: null,
+        commission_deposit: "1.5",
+        commission_management: "0.4",
+      });
+
+      expect(payload).not.toHaveProperty("liquidity_date");
+      expect(payload).not.toHaveProperty("commission_deposit");
+      expect(payload).not.toHaveProperty("commission_management");
+    });
+  });
+
+  describe("seedEditForm", () => {
+    it("seeds a genuine 0% deposit fee as the string \"0\", not empty", () => {
+      const form = seedEditForm({
+        ...BASE_INVESTMENT,
+        commission_deposit: 0,
+        commission_management: 1.5,
+      });
+
+      expect(form.commission_deposit).toBe("0");
+      expect(form.commission_management).toBe("1.5");
+    });
+
+    it("seeds an unset commission field as an empty string", () => {
+      const form = seedEditForm({
+        ...BASE_INVESTMENT,
+        commission_deposit: null,
+        commission_management: undefined,
+      });
+
+      expect(form.commission_deposit).toBe("");
+      expect(form.commission_management).toBe("");
     });
   });
 });
