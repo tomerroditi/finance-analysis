@@ -3,10 +3,12 @@
 from datetime import date
 from unittest.mock import patch
 
+import pandas as pd
 from sqlalchemy import select
 
-from backend.models.liability import LiabilityTransaction
-from backend.services.liabilities_service import LiabilitiesService
+from backend.models.liability import Liability, LiabilityTransaction
+from backend.models.transaction import BankTransaction
+from backend.services.liabilities_service import LiabilitiesService, _optional_number
 
 
 class _FakeDate(date):
@@ -508,3 +510,148 @@ class TestPrimeBasedLoans:
             # Flat fallback: every entry runs at the stored 5.0%
             analysis = service.get_liability_analysis(record["id"])
             assert all(e["annual_rate"] == 5.0 for e in analysis["schedule"])
+
+
+class TestOptionalNumber:
+    """Tests for the NaN-tolerant ``_optional_number`` coercion helper."""
+
+    def test_none_stays_none(self):
+        """``None`` is passed through untouched."""
+        assert _optional_number(None) is None
+
+    def test_nan_becomes_none(self):
+        """A pandas/NumPy NaN (a NULL read from a DataFrame) is treated as missing."""
+        assert _optional_number(float("nan")) is None
+        assert _optional_number(pd.NA) is None
+
+    def test_numeric_values_are_coerced_to_float(self):
+        """Ints, floats and numeric strings all become plain floats."""
+        assert _optional_number(7) == 7.0
+        assert _optional_number(2.5) == 2.5
+        assert _optional_number("4.5") == 4.5
+        assert isinstance(_optional_number(7), float)
+
+    def test_zero_is_preserved(self):
+        """Zero is a real value, not a missing one."""
+        assert _optional_number(0) == 0.0
+
+
+class TestDebtOverTime:
+    """Tests for ``get_debt_over_time`` using actual payment transactions."""
+
+    def test_empty_when_no_active_liabilities(self, db_session):
+        """No liabilities at all yields empty series and total."""
+        service = LiabilitiesService(db_session)
+        assert service.get_debt_over_time() == {"series": [], "total": []}
+
+    def test_paid_off_liabilities_are_excluded(self, db_session, seed_liabilities):
+        """Only the active Car Loan appears; the paid-off Student Loan is skipped."""
+        service = LiabilitiesService(db_session)
+        result = service.get_debt_over_time()
+
+        assert [s["name"] for s in result["series"]] == ["Car Loan"]
+
+    def test_balance_follows_the_schedule_after_each_payment(self, db_session, seed_liabilities):
+        """Each negative payment moves the balance to the schedule's next remaining balance."""
+        service = LiabilitiesService(db_session)
+        result = service.get_debt_over_time()
+        points = result["series"][0]["points"]
+        schedule = service.calculate_amortization_schedule(
+            principal=50000.0, annual_rate=4.5, term_months=48, start_date=date(2023, 6, 1)
+        )
+
+        # Start point + 3 payments; the positive disbursement is not a payment.
+        assert points[0] == {"date": "2023-06-01", "balance": 50000.0}
+        assert [p["date"] for p in points[1:]] == ["2023-07-01", "2023-08-01", "2023-09-01"]
+        for k, point in enumerate(points[1:], start=1):
+            assert point["balance"] == schedule[k - 1]["remaining_balance"]
+        balances = [p["balance"] for p in points]
+        assert balances == sorted(balances, reverse=True)
+
+    def test_payments_beyond_the_term_are_clamped_to_the_final_balance(self, db_session):
+        """More payments than schedule entries keep reading the last schedule row."""
+        db_session.add(
+            Liability(
+                name="Short Loan",
+                category="Liabilities",
+                tag="Short Loan",
+                principal_amount=1000.0,
+                interest_rate=0.0,
+                term_months=2,
+                start_date="2024-01-01",
+                is_paid_off=0,
+                created_date="2024-01-01",
+            )
+        )
+        for i, d in enumerate(["2024-02-01", "2024-03-01", "2024-04-01"]):
+            db_session.add(
+                BankTransaction(
+                    id=f"short_{i}",
+                    date=d,
+                    provider="leumi",
+                    account_name="Checking",
+                    description="payment",
+                    amount=-500.0,
+                    category="Liabilities",
+                    tag="Short Loan",
+                    source="bank_transactions",
+                    type="normal",
+                    status="completed",
+                )
+            )
+        db_session.commit()
+
+        points = LiabilitiesService(db_session).get_debt_over_time()["series"][0]["points"]
+
+        assert [round(p["balance"], 2) for p in points] == [1000.0, 500.0, 0.0, 0.0]
+
+    def test_total_line_sums_last_known_balance_per_liability(self, db_session, seed_liabilities):
+        """The total at each date is the sum of each liability's most recent balance."""
+        db_session.add(
+            Liability(
+                name="Second Loan",
+                category="Liabilities",
+                tag="Second Loan",
+                principal_amount=10000.0,
+                interest_rate=0.0,
+                term_months=10,
+                start_date="2023-08-01",
+                is_paid_off=0,
+                created_date="2023-08-01",
+            )
+        )
+        db_session.commit()
+
+        result = LiabilitiesService(db_session).get_debt_over_time()
+        total_by_date = {t["date"]: t["balance"] for t in result["total"]}
+        car = {p["date"]: p["balance"] for p in next(s for s in result["series"] if s["name"] == "Car Loan")["points"]}
+
+        # Before the second loan starts only the car loan contributes.
+        assert total_by_date["2023-06-01"] == 50000.0
+        assert total_by_date["2023-07-01"] == round(car["2023-07-01"], 2)
+        # From its start date the second loan's principal is added on top.
+        assert total_by_date["2023-08-01"] == round(car["2023-08-01"] + 10000.0, 2)
+        assert total_by_date["2023-09-01"] == round(car["2023-09-01"] + 10000.0, 2)
+        assert [t["date"] for t in result["total"]] == sorted(total_by_date)
+
+    def test_liability_without_payments_has_only_its_start_point(self, db_session):
+        """A loan with no transactions yet is a flat line at its principal."""
+        db_session.add(
+            Liability(
+                name="Fresh Loan",
+                category="Liabilities",
+                tag="Fresh Loan",
+                principal_amount=8000.0,
+                interest_rate=3.0,
+                term_months=12,
+                start_date="2024-05-01",
+                is_paid_off=0,
+                created_date="2024-05-01",
+            )
+        )
+        db_session.commit()
+
+        result = LiabilitiesService(db_session).get_debt_over_time()
+
+        assert result["series"][0]["points"] == [{"date": "2024-05-01", "balance": 8000.0}]
+        assert result["total"] == [{"date": "2024-05-01", "balance": 8000.0}]
