@@ -28,9 +28,17 @@ from backend.repositories.transactions_repository import (
 from backend.utils.text_utils import to_title_case
 
 
-# In-memory categories cache, partitioned by demo mode — demo and real
-# categories live in different databases and must not evict each other.
-_categories_cache: dict[bool, dict] = {}
+# In-memory categories cache, partitioned by the resolved database path.
+# Real mode, demo mode and every per-visitor demo sandbox (see
+# backend/demo_sessions.py) each resolve to a different file, so keying by
+# path keeps them from ever serving each other's categories.
+_categories_cache: dict[str, dict] = {}
+
+
+def cache_key() -> str:
+    """Return the cache partition for the current context (its DB path)."""
+    return AppConfig().get_db_path()
+
 
 
 class CategoriesTagsService:
@@ -76,27 +84,28 @@ class CategoriesTagsService:
         dict[str, list[str]]
             Mapping of category name to list of tag names.
         """
-        global _categories_cache
-
-        mode = AppConfig().is_demo_mode
-        if mode not in _categories_cache:
-            _categories_cache[mode] = self.tagging_repo.get_categories()
+        key = cache_key()
+        if key not in _categories_cache:
+            _categories_cache[key] = self.tagging_repo.get_categories()
 
         if copy:
-            return deepcopy(_categories_cache[mode])
-        return _categories_cache[mode]
+            return deepcopy(_categories_cache[key])
+        return _categories_cache[key]
 
     def _invalidate_cache(self) -> None:
-        """Clear the current mode's cache entry and reload from the DB."""
-        global _categories_cache
-        _categories_cache.pop(AppConfig().is_demo_mode, None)
+        """Clear the current context's cache entry and reload from the DB."""
+        _categories_cache.pop(cache_key(), None)
         self.categories_and_tags = self.get_categories_and_tags()
 
     @staticmethod
     def clear_cache() -> None:
-        """Clear the in-memory categories cache for every mode."""
-        global _categories_cache
+        """Clear the in-memory categories cache for every partition."""
         _categories_cache.clear()
+
+    @staticmethod
+    def clear_cache_for(db_path: str) -> None:
+        """Drop the cache entry of one database file (replaced on disk)."""
+        _categories_cache.pop(db_path, None)
 
     def get_categories_icons(self) -> dict[str, str]:
         """

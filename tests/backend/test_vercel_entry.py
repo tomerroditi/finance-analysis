@@ -61,7 +61,11 @@ class TestVercelForcesDemoMode:
             "    target=lambda: seen.append(AppConfig().is_demo_mode)); "
             "t.start(); t.join(); "
             "assert seen == [True], seen; "
-            "assert AppConfig._forced_mode is True, AppConfig._forced_mode"
+            "assert AppConfig._forced_mode is True, AppConfig._forced_mode; "
+            "import os; from backend import demo_sessions; "
+            "assert demo_sessions.sessions_enabled(), 'sandboxes off'; "
+            "assert os.path.exists(demo_sessions.DemoSessionStore.template_path()), "
+            "'template missing'"
         )
         result = subprocess.run(
             [sys.executable, "-c", script],

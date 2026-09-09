@@ -1,5 +1,5 @@
 import axios from "axios";
-import { readStoredDemoMode } from "./demoMode";
+import { readOrCreateDemoSessionId, readStoredDemoMode } from "./demoMode";
 
 const api = axios.create({
   baseURL: "/api",
@@ -42,6 +42,14 @@ api.interceptors.request.use((config) => {
   // curl, the desktop app, and Playwright's request context.
   if (readStoredDemoMode()) {
     config.headers["X-FAD-Demo"] = "1";
+  }
+  // Sent unconditionally rather than only in Demo Mode: on the shared
+  // Vercel deployment the mode is forced server-side, so the stored flag is
+  // off there even though every request is a demo request. The backend
+  // ignores the id unless it serves per-visitor sandboxes.
+  const demoSessionId = readOrCreateDemoSessionId();
+  if (demoSessionId) {
+    config.headers["X-FAD-Demo-Session"] = demoSessionId;
   }
   return config;
 });
@@ -1127,7 +1135,7 @@ export const testingApi = {
     api.post<{ status: string; created: boolean }>("/testing/demo/prepare"),
   resetDemo: () => api.post<{ status: string }>("/testing/demo/reset"),
   getDemoModeStatus: () =>
-    api.get<{ demo_mode: boolean; forced: boolean }>(
+    api.get<{ demo_mode: boolean; forced: boolean; sandboxed: boolean }>(
       "/testing/demo_mode_status",
     ),
 };

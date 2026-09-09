@@ -33,6 +33,10 @@ os.environ.setdefault("VERCEL", "1")
 # the forced-mode pin.
 os.environ.setdefault("ENVIRONMENT", "production")
 os.environ.setdefault("ENABLE_TESTING_ROUTES", "1")
+# Per-visitor demo sandboxes: each browser gets its own copy of the demo DB
+# (keyed by X-FAD-Demo-Session) that is mirrored to Vercel Blob after every
+# write when BLOB_READ_WRITE_TOKEN is configured. See backend/demo_sessions.py.
+os.environ.setdefault("FAD_DEMO_SESSIONS", "1")
 
 from backend.config import AppConfig  # noqa: E402
 from backend.demo_setup import prepare_demo_database  # noqa: E402
@@ -59,6 +63,13 @@ from backend.services.investments_service import InvestmentsService  # noqa: E40
 
 with get_db_context() as _db:
     InvestmentsService(_db).backfill_from_insurance_accounts()
+
+# Freeze the prepared shared DB as the template every visitor sandbox is
+# cloned from. Must happen before the first request: the shared copy is
+# still writable by header-less clients (curl), the template is not.
+from backend.demo_sessions import snapshot_template  # noqa: E402
+
+snapshot_template()
 
 # Vercel auto-detects this `app` variable as the FastAPI application.
 # lifespan is skipped (VERCEL env var guard) because it imports keyring.
