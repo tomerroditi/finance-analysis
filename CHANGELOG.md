@@ -1,3 +1,9 @@
+## v1.60.0 (2026-09-09)
+
+### Feat
+
+- **savings-goals**: free-cash pool for deficit months, and investment-backed goals (#262)
+
 ## v1.59.0 (2026-09-06)
 
 ### Feat
