@@ -7,7 +7,6 @@ from backend.errors import EntityAlreadyExistsException, EntityNotFoundException
 from backend.models.category import Category
 from backend.repositories.tagging_repository import TaggingRepository
 
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
@@ -274,3 +273,71 @@ class TestTaggingRepositorySeeding:
         result = seeded_repo.get_categories()
         assert "NewCat" not in result
         assert "Food" in result
+
+
+# ---------------------------------------------------------------------------
+# Class 7: Renames
+# ---------------------------------------------------------------------------
+
+
+class TestTaggingRepositoryRename:
+    """Tests for renaming categories and tags in place."""
+
+    def test_rename_category_keeps_tags(self, seeded_repo):
+        """The renamed category carries its tag list; the old name is gone."""
+        seeded_repo.rename_category("Food", "Dining")
+
+        categories = seeded_repo.get_categories()
+        assert "Food" not in categories
+        assert categories["Dining"] == ["Groceries", "Restaurants"]
+
+    def test_rename_category_not_found(self, seeded_repo):
+        """Renaming a missing category raises EntityNotFoundException."""
+        with pytest.raises(EntityNotFoundException):
+            seeded_repo.rename_category("Nope", "Whatever")
+
+    def test_rename_category_to_existing_name(self, seeded_repo):
+        """Renaming onto another category's name raises before anything changes."""
+        with pytest.raises(EntityAlreadyExistsException):
+            seeded_repo.rename_category("Food", "Transport")
+        assert set(seeded_repo.get_categories()) == {"Food", "Transport"}
+
+    def test_rename_category_to_its_own_name_is_a_collision(self, seeded_repo):
+        """The uniqueness check is exact: a no-op rename is still refused."""
+        with pytest.raises(EntityAlreadyExistsException):
+            seeded_repo.rename_category("Food", "Food")
+
+    def test_rename_tag_preserves_position(self, seeded_repo):
+        """The new tag replaces the old one at the same index."""
+        seeded_repo.rename_tag("Food", "Groceries", "Supermarket")
+
+        assert seeded_repo.get_categories()["Food"] == ["Supermarket", "Restaurants"]
+
+    def test_rename_tag_only_touches_the_named_category(self, db_session):
+        """A tag name shared by two categories is renamed in one of them only."""
+        db_session.add(Category(name="A", tags=["Shared", "OnlyA"]))
+        db_session.add(Category(name="B", tags=["Shared"]))
+        db_session.commit()
+        repo = TaggingRepository(db_session)
+
+        repo.rename_tag("A", "Shared", "Renamed")
+
+        categories = repo.get_categories()
+        assert categories["A"] == ["Renamed", "OnlyA"]
+        assert categories["B"] == ["Shared"]
+
+    def test_rename_tag_category_not_found(self, seeded_repo):
+        """A missing category raises EntityNotFoundException."""
+        with pytest.raises(EntityNotFoundException):
+            seeded_repo.rename_tag("Nope", "Groceries", "X")
+
+    def test_rename_tag_not_found(self, seeded_repo):
+        """A tag the category does not have raises EntityNotFoundException."""
+        with pytest.raises(EntityNotFoundException, match="Tag 'Nope' not found"):
+            seeded_repo.rename_tag("Food", "Nope", "X")
+
+    def test_rename_tag_to_existing_tag(self, seeded_repo):
+        """Renaming onto a sibling tag raises and leaves the list intact."""
+        with pytest.raises(EntityAlreadyExistsException):
+            seeded_repo.rename_tag("Food", "Groceries", "Restaurants")
+        assert seeded_repo.get_categories()["Food"] == ["Groceries", "Restaurants"]
