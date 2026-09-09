@@ -97,10 +97,15 @@ def _forget_database(db_path: str) -> None:
     wiped must not be served from state belonging to the previous file.
     """
     database.reset_engine_for(db_path)
-    from backend.services.credentials_service import CredentialsService
     from backend.services.tagging_service import CategoriesTagsService
 
     CategoriesTagsService.clear_cache_for(db_path)
+    try:
+        from backend.services.credentials_service import CredentialsService
+    except ImportError:
+        # The Vercel runtime ships no keyring, so credentials_service cannot
+        # import there — and then its cache cannot hold anything either.
+        return
     CredentialsService.clear_cache_for(db_path)
 
 

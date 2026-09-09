@@ -16,7 +16,6 @@ from backend import database, demo_sessions
 from backend.config import AppConfig
 from backend.database import get_db_context
 from backend.demo_setup import DEMO_REFERENCE_DATE, prepare_demo_database
-from backend.services.credentials_service import CredentialsService
 from backend.services.tagging_service import CategoriesTagsService
 
 router = APIRouter()
@@ -49,6 +48,12 @@ def _build_demo_database() -> None:
     caller's header, so the snapshot can never be copied over the real
     database.
     """
+    # Imported here, not at module level: credentials_service pulls in
+    # keyring, which the Vercel runtime does not ship. A top-level import
+    # made this whole router silently fail to mount there (main.py wraps
+    # the include in ``except ImportError``), taking demo reset with it.
+    from backend.services.credentials_service import CredentialsService
+
     config = AppConfig()
     token = config.set_demo_mode(True)
     try:
