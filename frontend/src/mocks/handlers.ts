@@ -406,6 +406,20 @@ export const handlers = [
   // fails the whole vitest run with an EnvironmentTeardownError.
   http.get("/api/savings-goals/", () => HttpResponse.json([])),
   http.get("/api/savings-goals/links", () => HttpResponse.json([])),
+  http.get("/api/savings-goals/free-cash", () =>
+    HttpResponse.json({
+      free_cash: 0,
+      earmarked: 0,
+      liquid: 0,
+      investment_backed: 0,
+      clawed_back_this_month: 0,
+      has_goals: false,
+    }),
+  ),
+  http.get("/api/savings-goals/investments", () => HttpResponse.json([])),
+  http.get("/api/savings-goals/investments/available", () =>
+    HttpResponse.json([]),
+  ),
   http.get("/api/budget/category-conflicts", () =>
     HttpResponse.json({ conflicts: [] }),
   ),
