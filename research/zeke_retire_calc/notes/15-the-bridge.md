@@ -220,3 +220,26 @@ those scenarios is in doubt.
 Until then the engine uses rule 3 — the reading the annuity chart supports,
 since those annuities really are paid from 60 — and the three fixtures carry
 explicit bounds in `test_reference_parity.KNOWN_GAPS`.
+
+### The probe that would settle it
+
+`probe_open_questions.py` holds the sweep, ready to run from anywhere with a
+route to the site. The decisive family is `gb_t60_*`: a fixed retirement age,
+`pension_tactics=60`, and nothing varying but the balance of one gemel
+earmarked `mukeret_main`.
+
+Every annuity in those runs starts in the same month, so all of them read the
+surface at one bridge of 15.0 years — and the weighting rule therefore predicts
+**the same rate for all five rungs, whatever the gemel is worth**. The recorded
+corpus cannot make that statement, because its three gemel runs each move the
+retirement age and the claim structure together.
+
+So the reading is direct. A rate that does not move across the ladder says the
+gemel is one more annuity and `pf_mukeret3_t60`'s anomaly comes from somewhere
+else entirely. A rate that climbs with the balance says the gemel money is
+waited for, and the script solves each rung for the surface value that money
+must carry — constant across the ladder if it sits at a fixed age of its own,
+drifting if the wait depends on the balance. The `_0k` rung is the control that
+has to reproduce the plain blend. The ladder repeats at all three
+`pension_tactics` because the two runs that pin the contradiction
+(`pf_mukeret2`, `pf_mukeret3_t60`) differ in nothing else.
