@@ -243,3 +243,13 @@ drifting if the wait depends on the balance. The `_0k` rung is the control that
 has to reproduce the plain blend. The ladder repeats at all three
 `pension_tactics` because the two runs that pin the contradiction
 (`pf_mukeret2`, `pf_mukeret3_t60`) differ in nothing else.
+
+**Mind the month.** An annuity starts the month *after* the claim birthday, so
+a plan retiring at an integer age reads the surface at `X + 1/12`, never at `X`
+— the `gb_*` ladder sits at 15.083 years, not 15. Deriving a bridge by asking
+which month the series first reaches the claim age lands one month early, and
+that 1/12 of a year moves the solved gemel value in the third decimal. The
+script takes its bridges from the engine's own stream months for exactly that
+reason; `build_decumulation_table.bridge_of()` has the same care in it, and the
+cells sitting at round numbers came from `retire_asap` runs whose retirement
+month was not chosen by an age at all.

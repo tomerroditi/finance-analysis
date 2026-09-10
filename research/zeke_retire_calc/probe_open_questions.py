@@ -36,6 +36,7 @@ import probe                                                          # noqa: E4
 from backend.services.fire import decumulation as D                    # noqa: E402
 from backend.services.fire.engine import Simulator                     # noqa: E402
 from backend.services.fire.reference_form import plan_from_reference    # noqa: E402
+from backend.services.fire.solver import solve                          # noqa: E402
 from validate import our_key, retire_index                             # noqa: E402
 
 TODAY = date(2026, 9, 1)
@@ -92,10 +93,16 @@ def bridge_cells() -> dict[str, dict]:
     between, over a stretch where the curve climbs 26%. `pn_annuity_6067` reads
     it at 18.0 and pays 260 shekels for the interpolation (notes/15).
 
-    One claim age means one bridge, so `pension_tactics=67` and a pinned
-    retirement age put the bridge exactly at `67 - age`. Age 50 is the control:
-    the table already holds a measured cell at a bridge of 17.0, so this run has
-    to reproduce 1.07103788 or the setup is wrong. 49 and 48 are the new cells.
+    Nothing is claimed early here, so the bridge is the plain statutory wait,
+    `67 - age at the last working month` — and a retirement pinned to an integer
+    age lands that one month short of the integer. Ages 50, 49.5, 49 and 48 give
+    bridges of 17.083, 17.583, 18.083 and 19.083.
+
+    18.083 is the one that matters: it sits inside the 17.25-18.33 gap, close to
+    the 18.0 that `pn_annuity_6067` reads and cannot get right. 17.083 is the
+    consistency check — a measured cell sits a month away at 17.0, so a reading
+    far from 1.0968 would mean the surface is wrong in this whole stretch rather
+    than merely sparse.
     """
     out = {}
     for age in (48, 49, 50, 49.5):
@@ -188,31 +195,50 @@ def implied_gemel_surface(name: str, rate: float) -> str:
     fixture = json.loads((FIXTURES / f"{name}.json").read_text(encoding="utf-8"))
     plan = plan_from_reference(fixture["overrides"])
     index = retire_index(fixture)
-    result = Simulator(plan).run(retire_index=index, today=TODAY)
+    simulator = Simulator(plan)
+    result = simulator.run(retire_index=index, today=TODAY)
 
-    def bridge_of(claim_age: float) -> float:
-        """Years from retirement to the month that age is reached.
-
-        Taken from the simulated months rather than by matching annuity
-        amounts: two components can pay the identical monthly sum, and the
-        engine's own age convention is whole months since birth.
-        """
-        start = next((r.index for r in result.months if r.age >= claim_age),
-                     len(result.months))
-        return (start - index) / 12
-
-    gemel = [a for a in result.annuities if a.source == "gemel"]
+    annuities = [a for a in result.annuities if a.source in ("pension", "gemel")]
+    gemel = [a for a in annuities if a.source == "gemel"]
     if not gemel:
         return ""
+
+    # Bridges come from the engine's own stream months, never re-derived. An
+    # annuity starts the month *after* the claim birthday, so reading "the
+    # first month at that age" off the series lands one month early — 1/12 of
+    # a year, and enough to move the solved value in the third decimal.
+    # Distinct claim ages and distinct stream months are both ascending, so
+    # zipping them pairs each age with the month the engine actually used.
+    ages = sorted({a.claim_age for a in annuities})
+    months = sorted({month for _, month in simulator._streams})
+    if len(ages) != len(months):
+        return "  (streams and claim ages do not line up)"
+    bridge = {age: (month - index) / 12 for age, month in zip(ages, months)}
+
     rule = plan.retire_rule_confidence
     locked = sum(a.monthly for a in gemel)
-    pension = [a for a in result.annuities if a.source == "pension"]
+    pension = [a for a in annuities if a.source == "pension"]
     paid = sum(a.monthly for a in pension)
-    weighted = sum(a.monthly * D._for_rule(rule, bridge_of(a.claim_age)) for a in pension)
+    weighted = sum(a.monthly * D._for_rule(rule, bridge[a.claim_age]) for a in pension)
     value = (rate * (paid + locked) - weighted) / locked
     inside = D._for_rule(rule, 7.0) <= value <= D._for_rule(rule, 30.333333)
     return (f"  gemel carries {value:.4f}"
             + ("" if inside else "  <- off the curve entirely"))
+
+
+def predicted_rate(overrides: dict) -> float:
+    """The decumulation return our engine will read for a scenario.
+
+    Computed before the reference is asked anything, which is what makes the
+    sweep a test rather than a fit. The `gb_t60_*` ladder is the one to watch:
+    every annuity in those runs starts in the same month, so our rule has no
+    way to return five different numbers for five different gemel balances.
+    """
+    plan = plan_from_reference(overrides)
+    outcome = solve(plan, TODAY)
+    simulator = Simulator(plan)
+    simulator.run(retire_index=outcome.retire_index, today=TODAY)
+    return simulator._decumulation_return(outcome.retire_index)
 
 
 def main() -> None:
@@ -221,12 +247,19 @@ def main() -> None:
                         help="only scenarios whose name starts with this")
     parser.add_argument("--report", action="store_true",
                         help="replay what is already recorded; no network")
+    parser.add_argument("--predict", action="store_true",
+                        help="print what our engine expects, before asking; no network")
     parser.add_argument("--force", action="store_true", help="re-record even if present")
     parser.add_argument("--sleep", type=float, default=2.0, help="seconds between probes")
     args = parser.parse_args()
 
     wanted = {n: o for n, o in SCENARIOS.items() if n.startswith(args.prefix)}
     print(f"{len(wanted)} scenario(s)\n")
+
+    if args.predict:
+        for name, overrides in wanted.items():
+            print(f"{name:22s} {predicted_rate(overrides):.8f}")
+        return
 
     session = None
     if not args.report:
