@@ -1,3 +1,9 @@
+## v1.61.0 (2026-09-10)
+
+### Feat
+
+- **demo**: per-visitor Vercel demo sandboxes persisted to Vercel Blob (#267)
+
 ## v1.60.0 (2026-09-09)
 
 ### Feat
