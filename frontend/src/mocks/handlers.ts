@@ -765,6 +765,7 @@ export const handlers = [
       forced: false,
       sandboxed: false,
       durable: false,
+      blob_configured: false,
     }),
   ),
   http.post("/api/testing/demo/prepare", () =>

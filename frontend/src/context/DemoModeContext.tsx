@@ -25,6 +25,13 @@ interface DemoModeContextType {
   isDemoMode: boolean;
   toggleDemoMode: (enabled: boolean) => Promise<void>;
   isLoading: boolean;
+  /**
+   * True when the server serves this browser a private demo sandbox that is
+   * NOT mirrored to durable storage (a Vercel deployment without a Blob
+   * store). Edits then live only on the instance that handled them, so the
+   * layout shows a warning instead of letting visitors believe they saved.
+   */
+  sandboxEphemeral: boolean;
 }
 
 const DemoModeContext = createContext<DemoModeContextType | undefined>(
@@ -51,6 +58,7 @@ export function DemoModeProvider({
   const [isDemoMode, setIsDemoMode] = useState(
     initialDemoMode ?? readStoredDemoMode(),
   );
+  const [sandboxEphemeral, setSandboxEphemeral] = useState(false);
   const queryClient = useQueryClient();
   // Tracks the current flag for the status-check effect below, which only
   // runs once on mount ([queryClient] deps) — a closed-over `isDemoMode`
@@ -69,6 +77,7 @@ export function DemoModeProvider({
     testingApi
       .getDemoModeStatus()
       .then((res) => {
+        setSandboxEphemeral(res.data.sandboxed && !res.data.durable);
         if (!res.data.forced) return;
         // Side effects live outside the updater on purpose: React
         // double-invokes functional `setState` updaters under StrictMode
@@ -105,7 +114,7 @@ export function DemoModeProvider({
 
   return (
     <DemoModeContext.Provider
-      value={{ isDemoMode, toggleDemoMode, isLoading: false }}
+      value={{ isDemoMode, toggleDemoMode, isLoading: false, sandboxEphemeral }}
     >
       {children}
     </DemoModeContext.Provider>
