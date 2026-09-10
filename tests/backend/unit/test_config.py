@@ -19,11 +19,14 @@ def reset_config():
     # For the new contextvar-based system, capture the current value
     # and reset it after the test
     token = _demo_mode_ctx.set(_demo_mode_ctx.get())
-    original_base_dir = config._base_user_dir
+    # Restore the *override* rather than the resolved path: assigning the
+    # resolved string back would pin the singleton to whatever FAD_USER_DIR
+    # happened to be, and every later test's env override would be ignored.
+    original_override = config._base_user_dir_override
     original_forced_mode = AppConfig._forced_mode
     yield
     _demo_mode_ctx.reset(token)
-    config._base_user_dir = original_base_dir
+    config._base_user_dir_override = original_override
     AppConfig._forced_mode = original_forced_mode
 
 
