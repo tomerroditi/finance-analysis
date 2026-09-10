@@ -1135,7 +1135,12 @@ export const testingApi = {
     api.post<{ status: string; created: boolean }>("/testing/demo/prepare"),
   resetDemo: () => api.post<{ status: string }>("/testing/demo/reset"),
   getDemoModeStatus: () =>
-    api.get<{ demo_mode: boolean; forced: boolean; sandboxed: boolean }>(
+    api.get<{
+      demo_mode: boolean;
+      forced: boolean;
+      sandboxed: boolean;
+      durable: boolean;
+    }>(
       "/testing/demo_mode_status",
     ),
 };

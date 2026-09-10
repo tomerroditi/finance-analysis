@@ -34,13 +34,29 @@ is what `backend/demo_sessions.py` fixes.
   it as `demo_env/demo_template.db`. A first-seen visitor is a `copy2` of
   that template (milliseconds). Without a template (local dev, tests) the
   store builds from the frozen snapshot straight into the sandbox dir.
-- **Durability.** When `BLOB_READ_WRITE_TOKEN` is set, every successful
-  mutating `/api` request (`POST/PUT/PATCH/DELETE`, 2xx/3xx) uploads the
-  whole sandbox file to Vercel Blob at `demo-sessions/<id>.db`, and a
-  visitor's first request on an instance that has never seen them
-  downloads it back. The file is ~1.3 MB, so the whole-file approach costs
-  one upload per write and keeps the backend SQLite-only. Upload/download
-  failures are logged and degrade to "instance-local sandbox", never a 500.
+- **Durability and consistency.** Blob is the source of truth, not `/tmp`.
+  A serverless page load fans a dozen requests out over several instances,
+  each with its own `/tmp`, so a local copy can never be trusted for the
+  instance's lifetime: **every sandboxed request first revalidates its local
+  file against the blob** (`GET <blob-url>?cache=0` with `If-None-Match`; a
+  304 costs no transfer, a 200 replaces the file, a 404 means nothing was
+  persisted yet). Concurrent requests of one visitor share a single
+  revalidation per 250 ms. Every successful mutating `/api` request
+  (`POST/PUT/PATCH/DELETE`, 2xx/3xx) uploads the whole sandbox file
+  (~1.3 MB) to `demo-sessions/<id>.db` and records the returned etag, so the
+  writing instance does not re-download its own write. Blob failures are
+  logged and degrade to the local copy, never a 500. **Without
+  `BLOB_READ_WRITE_TOKEN` the feature is not usable on Vercel**: sandboxes
+  are instance-local, so a write served by one instance is invisible to a
+  read served by another and everything vanishes on recycle. Connecting the
+  store is step 1 of the setup below, not optional.
+- **Read-time writes.** The savings-goal allocation ledger is materialized
+  lazily by budget GETs. It is pre-computed into the template at cold start
+  (`index.py`) so a fresh sandbox reads instead of racing a dozen parallel
+  inserts, and `upsert_allocation` is a single `INSERT ... ON CONFLICT DO
+  UPDATE` so the race is harmless when it does happen. Read-time writes are
+  not uploaded (GETs never persist); they are deterministic and get
+  recomputed identically on any instance.
 - **Reset.** `POST /api/testing/demo/reset` with a bound id wipes only that
   visitor's copy (local + blob) and re-clones the template; the middleware
   then persists the fresh copy. The Settings "Reset demo data" button now
@@ -70,19 +86,22 @@ is what `backend/demo_sessions.py` fixes.
 | put | `PUT https://vercel.com/api/blob/?pathname=<p>` + `x-api-version: 12`, `x-vercel-blob-access`, `x-allow-overwrite: 1`, `x-add-random-suffix: 0` |
 | list | `GET https://vercel.com/api/blob/?prefix=&limit=&cursor=` → `{blobs, cursor, hasMore}` |
 | delete | `POST https://vercel.com/api/blob/delete` body `{"urls": [...]}` |
-| get | `GET <blob.url>?cache=0` with `authorization: Bearer <token>` |
+| get | `GET https://<store>.<access>.blob.vercel-storage.com/<p>?cache=0` with `authorization: Bearer <token>`, optional `If-None-Match` (304 on hit) |
 
-Downloads use the URL from a listing rather than a constructed one so the
-host is right whatever access mode the store has, and `cache=0` bypasses
-the CDN so a re-uploaded pathname is never served stale. If Vercel bumps
+Downloads build the blob URL from the store id (parsed from the token) and
+the access mode; the first successful upload reveals the store's real mode
+in the returned URL and the client corrects itself if it was configured
+wrong. `cache=0` bypasses the CDN so a re-uploaded pathname is never served
+stale. If Vercel bumps
 the API version in a way that breaks these shapes, the symptom is silent:
 sandboxes stop persisting (warnings in the function logs), nothing 500s.
 `tests/backend/unit/utils/test_vercel_blob.py` pins the request shapes.
 
 ## Known limits
 
-- Two tabs of one visitor landing on different instances are
-  last-writer-wins. Acceptable for a demo; Hobby concurrency is low.
+- Two instances writing the same sandbox at the same instant are
+  last-writer-wins on the upload. Reads converge on the next revalidation.
+  Acceptable for a demo; Hobby concurrency is low.
 - A sandbox's dates are anchored to the day it was seeded; the prune TTL
   bounds how stale a returning visitor's data can get.
 - Local dev and the e2e suite keep the single shared demo DB —

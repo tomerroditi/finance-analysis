@@ -65,7 +65,11 @@ class TestVercelForcesDemoMode:
             "import os; from backend import demo_sessions; "
             "assert demo_sessions.sessions_enabled(), 'sandboxes off'; "
             "assert os.path.exists(demo_sessions.DemoSessionStore.template_path()), "
-            "'template missing'"
+            "'template missing'; "
+            "import sqlite3; "
+            "c = sqlite3.connect(demo_sessions.DemoSessionStore.template_path()); "
+            "n = c.execute('SELECT COUNT(*) FROM savings_goal_allocations').fetchone()[0]; "
+            "assert n > 0, 'template has no pre-computed allocations'"
         )
         result = subprocess.run(
             [sys.executable, "-c", script],

@@ -64,6 +64,21 @@ from backend.services.investments_service import InvestmentsService  # noqa: E40
 with get_db_context() as _db:
     InvestmentsService(_db).backfill_from_insurance_accounts()
 
+# Materialize the savings-goal allocation ledger once, here, so every
+# sandbox cloned below already carries it. Otherwise each new visitor's
+# first budget load (a dozen parallel month requests) would rebuild it
+# concurrently on a fresh file. Best-effort: a failure here must never
+# take the whole function down.
+from backend.services.savings_goal_service import SavingsGoalService  # noqa: E402
+
+try:
+    with get_db_context() as _db:
+        SavingsGoalService(_db).ensure_allocations()
+except Exception:  # pragma: no cover - defensive at cold start
+    import logging
+
+    logging.getLogger(__name__).exception("Could not pre-compute demo allocations")
+
 # Freeze the prepared shared DB as the template every visitor sandbox is
 # cloned from. Must happen before the first request: the shared copy is
 # still writable by header-less clients (curl), the template is not.

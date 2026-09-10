@@ -2,8 +2,9 @@
 
 There is no Python SDK, so the request shapes below pin the contract the
 official ``@vercel/blob`` package speaks (API version, header names, the
-``pathname`` query parameter, the JSON delete body). A drift here would only
-surface on the live deployment, silently, as sandboxes that never persist.
+``pathname`` query parameter, the JSON delete body, the blob URL layout). A
+drift here would only surface on the live deployment, silently, as sandboxes
+that never persist.
 """
 
 import json
@@ -14,16 +15,18 @@ import pytest
 from backend.utils import vercel_blob
 from backend.utils.vercel_blob import (
     API_VERSION,
+    BlobObject,
     VercelBlobClient,
     parse_store_id,
     parse_uploaded_at,
 )
 
-TOKEN = "vercel_blob_rw_StOrE123_secretsecret"
+TOKEN = "vercel_blob_rw_store123_secretsecret"
+BLOB_URL = "https://store123.private.blob.vercel-storage.com/demo-sessions/a.db"
 
 
-def _client(handler) -> VercelBlobClient:
-    return VercelBlobClient(TOKEN, transport=httpx.MockTransport(handler))
+def _client(handler, **kwargs) -> VercelBlobClient:
+    return VercelBlobClient(TOKEN, transport=httpx.MockTransport(handler), **kwargs)
 
 
 class TestTokenParsing:
@@ -31,7 +34,7 @@ class TestTokenParsing:
 
     def test_extracts_fourth_underscore_segment(self):
         """Verify the store id is the segment after ``vercel_blob_rw``."""
-        assert parse_store_id(TOKEN) == "StOrE123"
+        assert parse_store_id(TOKEN) == "store123"
 
     def test_malformed_token_yields_empty_store_id(self):
         """Verify a token without enough segments does not raise."""
@@ -51,12 +54,28 @@ class TestFromEnv:
         monkeypatch.setenv(vercel_blob.TOKEN_ENV, TOKEN)
         client = VercelBlobClient.from_env()
         assert client is not None
-        assert client.store_id == "StOrE123"
+        assert client.store_id == "store123"
 
     def test_rejects_unknown_access_mode(self):
         """Verify a typo in the access mode fails loudly at construction."""
         with pytest.raises(ValueError):
             VercelBlobClient(TOKEN, access="secret")
+
+
+class TestUrlFor:
+    """Tests for the blob URL layout."""
+
+    def test_private_and_public_hosts(self):
+        """Verify the host encodes store id and access mode like the SDK."""
+
+        def handler(request):  # pragma: no cover - never called
+            raise AssertionError
+
+        assert _client(handler).url_for("demo-sessions/a.db") == BLOB_URL
+        assert (
+            _client(handler, access="public").url_for("x.db")
+            == "https://store123.public.blob.vercel-storage.com/x.db"
+        )
 
 
 class TestPut:
@@ -71,23 +90,42 @@ class TestPut:
             seen["url"] = str(request.url)
             seen["headers"] = dict(request.headers)
             seen["body"] = request.content
-            return httpx.Response(
-                200, json={"url": "https://s.private.blob.vercel-storage.com/a.db"}
-            )
+            return httpx.Response(200, json={"url": BLOB_URL, "etag": '"v1"'})
 
-        url = _client(handler).put("demo-sessions/a.db", b"sqlite")
+        result = _client(handler).put("demo-sessions/a.db", b"sqlite")
 
-        assert url == "https://s.private.blob.vercel-storage.com/a.db"
+        assert result.url == BLOB_URL
+        assert result.etag == '"v1"'
         assert seen["method"] == "PUT"
         assert seen["url"] == "https://vercel.com/api/blob/?pathname=demo-sessions%2Fa.db"
         assert seen["body"] == b"sqlite"
         headers = seen["headers"]
         assert headers["authorization"] == f"Bearer {TOKEN}"
         assert headers["x-api-version"] == API_VERSION
-        assert headers["x-vercel-blob-store-id"] == "StOrE123"
+        assert headers["x-vercel-blob-store-id"] == "store123"
         assert headers["x-vercel-blob-access"] == "private"
         assert headers["x-allow-overwrite"] == "1"
         assert headers["x-add-random-suffix"] == "0"
+
+    def test_learns_real_access_mode_from_returned_url(self):
+        """Verify a store created public corrects a client configured private.
+
+        Downloads build the URL from the access mode, so a mismatch would
+        make every restore 404 while uploads kept succeeding — silent
+        non-persistence. The upload response reveals the truth.
+        """
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(
+                200,
+                json={"url": "https://store123.public.blob.vercel-storage.com/p/a.db"},
+            )
+
+        client = _client(handler)
+        client.put("p/a.db", b"x")
+
+        assert client.access == "public"
+        assert client.url_for("p/a.db") == "https://store123.public.blob.vercel-storage.com/p/a.db"
 
     def test_raises_on_api_error(self):
         """Verify a rejected upload surfaces as an exception, not a bad URL."""
@@ -127,56 +165,55 @@ class TestList:
 class TestGet:
     """Tests for downloads."""
 
-    def test_downloads_listed_url_bypassing_cache_with_auth(self):
-        """Verify the blob's own URL is fetched with the token and ``cache=0``."""
-        blob_url = "https://s.private.blob.vercel-storage.com/demo-sessions/a.db"
+    def test_downloads_blob_url_bypassing_cache_with_auth(self):
+        """Verify the blob's URL is fetched with the token and ``cache=0``."""
         seen = {}
 
         def handler(request: httpx.Request) -> httpx.Response:
-            if request.url.host == "vercel.com":
-                return httpx.Response(
-                    200,
-                    json={
-                        "blobs": [
-                            {"pathname": "demo-sessions/ab.db", "url": "x"},
-                            {"pathname": "demo-sessions/a.db", "url": blob_url},
-                        ],
-                        "hasMore": False,
-                    },
-                )
             seen["url"] = str(request.url)
             seen["auth"] = request.headers.get("authorization")
-            return httpx.Response(200, content=b"sqlite-bytes")
+            seen["inm"] = request.headers.get("if-none-match")
+            return httpx.Response(200, content=b"sqlite-bytes", headers={"etag": '"v2"'})
 
-        data = _client(handler).get("demo-sessions/a.db")
+        result = _client(handler).get("demo-sessions/a.db")
 
-        assert data == b"sqlite-bytes"
-        assert seen["url"] == f"{blob_url}?cache=0"
+        assert result == BlobObject(data=b"sqlite-bytes", etag='"v2"')
+        assert seen["url"] == f"{BLOB_URL}?cache=0"
         assert seen["auth"] == f"Bearer {TOKEN}"
+        assert seen["inm"] is None
 
-    def test_returns_none_when_not_listed(self):
+    def test_sends_if_none_match_and_reports_304(self):
+        """Verify a held etag is offered and a 304 comes back as not_modified."""
+        seen = {}
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            seen["inm"] = request.headers.get("if-none-match")
+            return httpx.Response(304)
+
+        result = _client(handler).get("demo-sessions/a.db", if_none_match='"v2"')
+
+        assert seen["inm"] == '"v2"'
+        assert result is not None
+        assert result.not_modified is True
+        assert result.data is None
+        assert result.etag == '"v2"'
+
+    def test_returns_none_on_404(self):
         """Verify a pathname the store does not hold yields ``None``."""
 
         def handler(request: httpx.Request) -> httpx.Response:
-            return httpx.Response(200, json={"blobs": [], "hasMore": False})
+            return httpx.Response(404)
 
         assert _client(handler).get("demo-sessions/missing.db") is None
 
-    def test_returns_none_on_404_download(self):
-        """Verify a listing/download race (deleted in between) yields ``None``."""
+    def test_raises_on_other_errors(self):
+        """Verify auth or server failures are not mistaken for 'absent'."""
 
         def handler(request: httpx.Request) -> httpx.Response:
-            if request.url.host == "vercel.com":
-                return httpx.Response(
-                    200,
-                    json={
-                        "blobs": [{"pathname": "p/a.db", "url": "https://s.private.blob.vercel-storage.com/p/a.db"}],
-                        "hasMore": False,
-                    },
-                )
-            return httpx.Response(404)
+            return httpx.Response(403)
 
-        assert _client(handler).get("p/a.db") is None
+        with pytest.raises(httpx.HTTPStatusError):
+            _client(handler).get("demo-sessions/a.db")
 
 
 class TestDelete:

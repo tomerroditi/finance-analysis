@@ -151,15 +151,19 @@ def get_demo_mode_status() -> dict[str, bool]:
     Returns
     -------
     dict
-        ``{"demo_mode": bool, "forced": bool, "sandboxed": bool}``. When
-        ``forced`` is true the deployment ignores ``X-FAD-Demo`` and the
-        client cannot opt out — this is how the shared Vercel instance
-        advertises itself. ``sandboxed`` is true when this request was
-        served from the caller's private per-visitor copy of the demo
-        database (see :mod:`backend.demo_sessions`).
+        ``{"demo_mode": bool, "forced": bool, "sandboxed": bool, "durable":
+        bool}``. When ``forced`` is true the deployment ignores
+        ``X-FAD-Demo`` and the client cannot opt out — this is how the
+        shared Vercel instance advertises itself. ``sandboxed`` is true when
+        this request was served from the caller's private per-visitor copy
+        of the demo database, and ``durable`` when that copy is mirrored to
+        Blob storage rather than living only on this instance (see
+        :mod:`backend.demo_sessions`).
     """
+    sandboxed = AppConfig().get_demo_session() is not None
     return {
         "demo_mode": AppConfig().is_demo_mode,
         "forced": AppConfig._forced_mode is not None,
-        "sandboxed": AppConfig().get_demo_session() is not None,
+        "sandboxed": sandboxed,
+        "durable": sandboxed and demo_sessions.get_store().durable,
     }

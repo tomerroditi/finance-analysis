@@ -15,32 +15,48 @@ import pytest
 from backend import database, demo_sessions
 from backend.config import AppConfig
 from backend.demo_sessions import DemoSessionStore, blob_pathname, parse_session_id
+from backend.utils.vercel_blob import BlobObject, BlobPutResult
 
 SID_A = "visitor-aaaaaaaaaaaaaaaa"
 SID_B = "visitor-bbbbbbbbbbbbbbbb"
 
 
 class FakeBlobBackend:
-    """Dict-backed stand-in for Vercel Blob with the same four operations."""
+    """Dict-backed stand-in for Vercel Blob with etag semantics.
+
+    Every ``put`` mints a new etag; ``get`` honours ``If-None-Match`` the way
+    the real store does (304 → ``not_modified``), so the store's
+    revalidation logic is exercised for real.
+    """
 
     def __init__(self):
         self.blobs: dict[str, dict] = {}
         self.puts = 0
+        self.gets = 0
+
+    def url_for(self, pathname):
+        return f"https://fake.blob/{pathname}"
 
     def put(self, pathname, data):
         self.puts += 1
-        url = f"https://fake.blob/{pathname}"
+        etag = f'"v{self.puts}"'
         self.blobs[pathname] = {
-            "url": url,
+            "url": self.url_for(pathname),
             "pathname": pathname,
             "data": data,
+            "etag": etag,
             "uploadedAt": datetime.now(timezone.utc).isoformat(),
         }
-        return url
+        return BlobPutResult(url=self.url_for(pathname), etag=etag)
 
-    def get(self, pathname):
+    def get(self, pathname, if_none_match=None):
+        self.gets += 1
         record = self.blobs.get(pathname)
-        return None if record is None else record["data"]
+        if record is None:
+            return None
+        if if_none_match and if_none_match == record["etag"]:
+            return BlobObject(data=None, etag=if_none_match, not_modified=True)
+        return BlobObject(data=record["data"], etag=record["etag"])
 
     def delete(self, urls):
         for pathname, record in list(self.blobs.items()):
@@ -227,6 +243,96 @@ class TestEnsureLocal:
         assert _read_marker(store.local_db_path(SID_A)) == "template"
 
 
+class TestSync:
+    """Tests for per-request revalidation against the persisted copy.
+
+    A serverless page load fans out over several instances; these tests
+    play two instances as two stores sharing one backend.
+    """
+
+    def _edit(self, path: str, value: str) -> None:
+        conn = sqlite3.connect(path)
+        conn.execute("UPDATE marker SET value = ?", (value,))
+        conn.commit()
+        conn.close()
+
+    def test_other_instance_sees_a_write_after_persist(self, user_dir, template, monkeypatch):
+        """Verify instance B replaces its local copy once A has persisted a newer one."""
+        backend = FakeBlobBackend()
+        a, b = DemoSessionStore(backend), DemoSessionStore(backend)
+        a.sync(SID_A)
+        b_dir = user_dir / "b"
+        # Give B its own "/tmp" by resolving its paths under another user dir.
+        monkeypatch.setenv("FAD_USER_DIR", str(b_dir))
+        b_template = DemoSessionStore.template_path()
+        _make_sqlite(b_template, "template")
+        b.sync(SID_A)
+        assert _read_marker(b.local_db_path(SID_A)) == "template"
+        monkeypatch.setenv("FAD_USER_DIR", str(user_dir))
+
+        self._edit(a.local_db_path(SID_A), "written-on-a")
+        assert a.persist(SID_A) is True
+
+        monkeypatch.setenv("FAD_USER_DIR", str(b_dir))
+        b._checked_at.clear()
+        b.sync(SID_A)
+        assert _read_marker(b.local_db_path(SID_A)) == "written-on-a"
+
+    def test_not_modified_keeps_local_file(self, user_dir, template):
+        """Verify a 304 leaves the local file (and its read-time writes) alone."""
+        backend = FakeBlobBackend()
+        store = DemoSessionStore(backend)
+        store.sync(SID_A)
+        store.persist(SID_A)
+        self._edit(store.local_db_path(SID_A), "local-derived-rows")
+        store._checked_at.clear()
+
+        store.sync(SID_A)
+
+        assert _read_marker(store.local_db_path(SID_A)) == "local-derived-rows"
+        assert backend.gets == 2
+
+    def test_burst_shares_one_revalidation(self, user_dir, template):
+        """Verify a dozen near-simultaneous requests cost one download check."""
+        backend = FakeBlobBackend()
+        store = DemoSessionStore(backend)
+        store.sync(SID_A)
+        store.persist(SID_A)
+        store._checked_at.clear()
+
+        for _ in range(12):
+            store.sync(SID_A)
+
+        assert backend.gets == 2
+
+    def test_revalidation_failure_serves_local_copy(self, user_dir, template):
+        """Verify a Blob outage degrades to the local copy, never a 500."""
+
+        class Flaky(FakeBlobBackend):
+            def get(self, pathname, if_none_match=None):
+                raise RuntimeError("blob down")
+
+        store = DemoSessionStore(Flaky())
+
+        store.sync(SID_A)
+
+        assert _read_marker(store.local_db_path(SID_A)) == "template"
+
+    def test_persist_records_etag_so_next_sync_is_a_304(self, user_dir, template):
+        """Verify the uploading instance does not re-download its own write."""
+        backend = FakeBlobBackend()
+        store = DemoSessionStore(backend)
+        store.sync(SID_A)
+        self._edit(store.local_db_path(SID_A), "mine")
+        store.persist(SID_A)
+        store._checked_at.clear()
+
+        store.sync(SID_A)
+
+        assert _read_marker(store.local_db_path(SID_A)) == "mine"
+        assert store._etags[SID_A] == backend.blobs[blob_pathname(SID_A)]["etag"]
+
+
 class TestPersist:
     """Tests for mirroring a sandbox to the backend."""
 
@@ -239,7 +345,7 @@ class TestPersist:
         assert store.persist(SID_A) is True
 
         with open(store.local_db_path(SID_A), "rb") as fh:
-            assert backend.get(blob_pathname(SID_A)) == fh.read()
+            assert backend.blobs[blob_pathname(SID_A)]["data"] == fh.read()
 
     def test_noop_without_backend_or_file(self, user_dir, template):
         """Verify persist is a no-op when there is nowhere or nothing to upload."""

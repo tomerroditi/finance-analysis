@@ -19,17 +19,15 @@ STATUS = "/api/testing/demo_mode_status"
 class RecordingStore:
     """Store double that records which sandbox each hook was called for."""
 
-    def __init__(self, ready: bool = True):
-        self.ready = ready
-        self.ensured: list[str] = []
+    durable = False
+
+    def __init__(self):
+        self.synced: list[str] = []
         self.persisted: list[str] = []
         self.seen_paths: list[str] = []
 
-    def is_ready(self, session_id):
-        return self.ready
-
-    def ensure_local(self, session_id):
-        self.ensured.append(session_id)
+    def sync(self, session_id):
+        self.synced.append(session_id)
         self.seen_paths.append(AppConfig().get_db_path())
 
     def persist(self, session_id):
@@ -65,12 +63,22 @@ class TestGate:
         """Verify the pinned Vercel deployment honours the id without X-FAD-Demo."""
         AppConfig._forced_mode = True
         response = test_client.get(STATUS, headers={demo_sessions.SESSION_HEADER: SID})
-        assert response.json() == {"demo_mode": True, "forced": True, "sandboxed": True}
+        assert response.json() == {
+            "demo_mode": True,
+            "forced": True,
+            "sandboxed": True,
+            "durable": False,
+        }
 
     def test_real_mode_ignores_header(self, test_client, store):
         """Verify a real-mode request is never redirected into a sandbox."""
         response = test_client.get(STATUS, headers={demo_sessions.SESSION_HEADER: SID})
-        assert response.json() == {"demo_mode": False, "forced": False, "sandboxed": False}
+        assert response.json() == {
+            "demo_mode": False,
+            "forced": False,
+            "sandboxed": False,
+            "durable": False,
+        }
 
     def test_disabled_feature_ignores_header(self, test_client, store, monkeypatch):
         """Verify a local backend keeps the shared demo DB even with the header."""
@@ -87,7 +95,7 @@ class TestGate:
             STATUS, headers={"X-FAD-Demo": "1", demo_sessions.SESSION_HEADER: bad}
         )
         assert response.json()["sandboxed"] is False
-        assert store.ensured == []
+        assert store.synced == []
 
     def test_session_does_not_leak_between_requests(self, test_client, store):
         """Verify the bound id is reset once the request finishes."""
@@ -101,23 +109,21 @@ class TestGate:
 class TestMaterializeAndPersist:
     """Tests for the ensure-before / persist-after contract."""
 
-    def test_materializes_unseen_sandbox_in_session_context(self, test_client, store, tmp_path):
-        """Verify the store is asked to build the sandbox with the id bound."""
-        store.ready = False
-        test_client.get(
-            STATUS, headers={"X-FAD-Demo": "1", demo_sessions.SESSION_HEADER: SID}
-        )
-        assert store.ensured == [SID]
-        assert store.seen_paths == [
-            str(tmp_path / "demo_env" / "sessions" / SID / "demo_data.db")
-        ]
+    def test_syncs_sandbox_in_session_context_on_every_request(self, test_client, store, tmp_path):
+        """Verify each request revalidates the sandbox with the id bound.
 
-    def test_skips_materialize_when_ready(self, test_client, store):
-        """Verify the warm path does not pay for a threadpool hop."""
-        test_client.get(
-            STATUS, headers={"X-FAD-Demo": "1", demo_sessions.SESSION_HEADER: SID}
-        )
-        assert store.ensured == []
+        Revalidating every time (not just the first time an instance sees a
+        visitor) is what makes a write on one serverless instance visible
+        to the reads another instance serves a moment later.
+        """
+        for _ in range(2):
+            test_client.get(
+                STATUS, headers={"X-FAD-Demo": "1", demo_sessions.SESSION_HEADER: SID}
+            )
+        assert store.synced == [SID, SID]
+        assert set(store.seen_paths) == {
+            str(tmp_path / "demo_env" / "sessions" / SID / "demo_data.db")
+        }
 
     def test_persists_after_successful_write(self, test_client, store):
         """Verify a 2xx mutating /api request uploads the sandbox."""
@@ -147,12 +153,11 @@ class TestMaterializeAndPersist:
 
     def test_materialize_failure_returns_503(self, test_client_no_raise, store):
         """Verify a sandbox that cannot be built fails closed with a clear 503."""
-        store.ready = False
 
         def boom(session_id):
             raise RuntimeError("disk full")
 
-        store.ensure_local = boom
+        store.sync = boom
         response = test_client_no_raise.get(
             STATUS, headers={"X-FAD-Demo": "1", demo_sessions.SESSION_HEADER: SID}
         )

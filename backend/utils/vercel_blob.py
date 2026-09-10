@@ -4,14 +4,17 @@ Vercel ships no Python SDK for Blob, so this module speaks the same HTTP the
 official ``@vercel/blob`` package does: uploads and listings go through
 ``https://vercel.com/api/blob`` with the read-write token as a bearer, and
 downloads fetch the blob's own URL with that token (required for private
-stores, harmless for public ones). Only the four operations the per-visitor
-demo sandboxes need are implemented — put, get, delete, list.
+stores, harmless for public ones). Only the operations the per-visitor demo
+sandboxes need are implemented — put, get (with ``If-None-Match``), delete,
+list.
 """
 
 from __future__ import annotations
 
 import logging
 import os
+import re
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Protocol
 
@@ -28,21 +31,48 @@ API_VERSION = "12"
 #: pathname to a reader that bypasses this client.
 MIN_CACHE_MAX_AGE = 60
 
+_BLOB_HOST_RE = re.compile(r"^([^.]+)\.(public|private)\.blob\.vercel-storage\.com$")
+
+
+@dataclass(frozen=True)
+class BlobPutResult:
+    """What an upload reports back: where the blob lives and its version."""
+
+    url: str
+    etag: str | None
+
+
+@dataclass(frozen=True)
+class BlobObject:
+    """A download result.
+
+    ``not_modified`` is set when the server answered 304 to an
+    ``If-None-Match`` — ``data`` is then ``None`` and ``etag`` echoes the
+    caller's. Otherwise ``data`` holds the bytes and ``etag`` their version.
+    """
+
+    data: bytes | None
+    etag: str | None
+    not_modified: bool = False
+
 
 class BlobBackend(Protocol):
     """The subset of blob operations :mod:`backend.demo_sessions` relies on."""
 
-    def put(self, pathname: str, data: bytes) -> str:
-        """Upload ``data`` under ``pathname`` and return the blob URL."""
+    def put(self, pathname: str, data: bytes) -> BlobPutResult:
+        """Upload ``data`` under ``pathname``, overwriting any previous version."""
 
-    def get(self, pathname: str) -> bytes | None:
-        """Return the bytes stored under ``pathname``, or ``None`` if absent."""
+    def get(self, pathname: str, if_none_match: str | None = None) -> BlobObject | None:
+        """Fetch ``pathname``; ``None`` if absent, ``not_modified`` on an etag hit."""
 
     def delete(self, urls: list[str]) -> None:
         """Delete every blob in ``urls``. Unknown URLs are ignored."""
 
     def list(self, prefix: str) -> list[dict]:
         """Return metadata (``url``, ``pathname``, ``uploadedAt``) under ``prefix``."""
+
+    def url_for(self, pathname: str) -> str:
+        """Return the URL a blob at ``pathname`` is served from."""
 
 
 def parse_store_id(token: str) -> str:
@@ -70,7 +100,9 @@ class VercelBlobClient:
     token : str
         Blob read-write token (``BLOB_READ_WRITE_TOKEN``).
     access : str
-        ``"private"`` (default) or ``"public"`` — must match the store.
+        ``"private"`` (default) or ``"public"``. Should match the store; if
+        it does not, the first successful upload reveals the real mode from
+        the returned URL and the client corrects itself.
     api_url : str, optional
         Override of the Blob API base URL (tests, proxies).
     transport : httpx.BaseTransport, optional
@@ -91,7 +123,7 @@ class VercelBlobClient:
         if access not in ("private", "public"):
             raise ValueError(f"access must be 'private' or 'public', got {access!r}")
         self._token = token
-        self._access = access
+        self.access = access
         self._api_url = (api_url or DEFAULT_API_URL).rstrip("/")
         self.store_id = parse_store_id(token)
         self._client = httpx.Client(transport=transport, timeout=timeout)
@@ -112,6 +144,29 @@ class VercelBlobClient:
         access = os.environ.get("FAD_DEMO_BLOB_ACCESS", "private").strip() or "private"
         return cls(token, access=access)
 
+    def url_for(self, pathname: str) -> str:
+        """Return the URL a blob at ``pathname`` is served from.
+
+        Mirrors the SDK's ``constructBlobUrl``: the host encodes the store id
+        and the access mode.
+        """
+        return f"https://{self.store_id}.{self.access}.blob.vercel-storage.com/{pathname}"
+
+    def _learn_access_from_url(self, url: str) -> None:
+        """Adopt the access mode the server reports, if it differs from ours."""
+        try:
+            host = httpx.URL(url).host
+        except (httpx.InvalidURL, TypeError, ValueError):
+            return
+        match = _BLOB_HOST_RE.match(host or "")
+        if match and match.group(2) != self.access:
+            logger.warning(
+                "Blob store is %s but client was configured %s; switching",
+                match.group(2),
+                self.access,
+            )
+            self.access = match.group(2)
+
     def _api_headers(self) -> dict[str, str]:
         return {
             "authorization": f"Bearer {self._token}",
@@ -119,7 +174,7 @@ class VercelBlobClient:
             "x-vercel-blob-store-id": self.store_id,
         }
 
-    def put(self, pathname: str, data: bytes) -> str:
+    def put(self, pathname: str, data: bytes) -> BlobPutResult:
         """Upload ``data`` to ``pathname``, overwriting any existing blob.
 
         Parameters
@@ -131,8 +186,8 @@ class VercelBlobClient:
 
         Returns
         -------
-        str
-            The blob's URL as reported by the API.
+        BlobPutResult
+            The blob's URL and the etag of the version just written.
         """
         response = self._client.put(
             f"{self._api_url}/",
@@ -140,7 +195,7 @@ class VercelBlobClient:
             content=data,
             headers={
                 **self._api_headers(),
-                "x-vercel-blob-access": self._access,
+                "x-vercel-blob-access": self.access,
                 "x-add-random-suffix": "0",
                 "x-allow-overwrite": "1",
                 "x-content-type": "application/octet-stream",
@@ -148,7 +203,10 @@ class VercelBlobClient:
             },
         )
         response.raise_for_status()
-        return response.json()["url"]
+        payload = response.json()
+        url = payload["url"]
+        self._learn_access_from_url(url)
+        return BlobPutResult(url=url, etag=payload.get("etag"))
 
     def list(self, prefix: str) -> list[dict]:
         """List every blob whose pathname starts with ``prefix``.
@@ -179,38 +237,37 @@ class VercelBlobClient:
             if not payload.get("hasMore") or not cursor:
                 return blobs
 
-    def get(self, pathname: str) -> bytes | None:
+    def get(self, pathname: str, if_none_match: str | None = None) -> BlobObject | None:
         """Download the blob stored at ``pathname``.
 
-        The blob URL comes from a listing rather than being constructed, so
-        the host is right whichever access mode the store was created with.
         ``cache=0`` bypasses the CDN so a freshly re-uploaded pathname is
-        never served stale.
+        never served stale; ``If-None-Match`` lets a caller that already
+        holds a version pay only for a 304 when nothing changed.
 
         Parameters
         ----------
         pathname : str
             Blob pathname.
+        if_none_match : str, optional
+            Etag the caller already has.
 
         Returns
         -------
-        bytes | None
-            The contents, or ``None`` when no such blob exists.
+        BlobObject | None
+            ``None`` when no such blob exists.
         """
-        match = next(
-            (b for b in self.list(pathname) if b.get("pathname") == pathname), None
-        )
-        if match is None:
-            return None
+        headers = {"authorization": f"Bearer {self._token}"}
+        if if_none_match:
+            headers["if-none-match"] = if_none_match
         response = self._client.get(
-            match["url"],
-            params={"cache": "0"},
-            headers={"authorization": f"Bearer {self._token}"},
+            self.url_for(pathname), params={"cache": "0"}, headers=headers
         )
         if response.status_code == 404:
             return None
+        if response.status_code == 304:
+            return BlobObject(data=None, etag=if_none_match, not_modified=True)
         response.raise_for_status()
-        return response.content
+        return BlobObject(data=response.content, etag=response.headers.get("etag"))
 
     def delete(self, urls: list[str]) -> None:
         """Delete the blobs at ``urls``.
@@ -218,7 +275,7 @@ class VercelBlobClient:
         Parameters
         ----------
         urls : list[str]
-            Blob URLs (as returned by :meth:`put` / :meth:`list`).
+            Blob URLs (as returned by :meth:`put` / :meth:`list` / :meth:`url_for`).
         """
         if not urls:
             return

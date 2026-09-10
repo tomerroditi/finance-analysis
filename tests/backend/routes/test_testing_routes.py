@@ -48,6 +48,7 @@ class TestDemoModeStatus:
             "demo_mode": True,
             "forced": False,
             "sandboxed": False,
+            "durable": False,
         }
 
     def test_reports_forced_when_pinned(self, test_client):
@@ -58,6 +59,7 @@ class TestDemoModeStatus:
             "demo_mode": True,
             "forced": True,
             "sandboxed": False,
+            "durable": False,
         }
 
 
@@ -135,12 +137,14 @@ class TestDemoReset:
         AppConfig._forced_mode = True
 
         class RecordingStore:
+            durable = False
+
             def __init__(self):
                 self.reset_ids = []
                 self.persisted = []
 
-            def is_ready(self, session_id):
-                return True
+            def sync(self, session_id):
+                return None
 
             def reset(self, session_id):
                 self.reset_ids.append(session_id)

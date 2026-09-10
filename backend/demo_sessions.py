@@ -3,14 +3,20 @@
 The Vercel demo used to be one SQLite file in ``/tmp``: every visitor wrote
 to the same copy and every cold start threw it away. This module gives each
 browser its own copy — keyed by the ``X-FAD-Demo-Session`` header, a random
-id the frontend mints once and keeps in localStorage — and mirrors that copy
-to Vercel Blob after every successful write, so the sandbox survives
-instance recycling and follows the visitor across instances.
+id the frontend mints once and keeps in localStorage — and keeps that copy
+in Vercel Blob, so the sandbox survives instance recycling and is the same
+whichever instance happens to serve a request.
 
-The whole database file is the unit of persistence (it is ~1.3 MB), which
-keeps the backend SQLite-only: no second dialect, no per-row sync. Cost per
-write request is one upload; a session's first request on a fresh instance
-is one download, or a copy of the pristine template when nothing is stored.
+**Blob is the source of truth.** A serverless deployment fans a single page
+load out over several instances, each with its own ``/tmp``; trusting a
+local copy for the instance's lifetime would make a write on one instance
+invisible to the reads served by another. So every sandboxed request first
+revalidates its local file against the blob with ``If-None-Match`` — a 304
+costs no transfer — and every successful write uploads the file back. The
+whole database file (~1.3 MB) is the unit of persistence, which keeps the
+backend SQLite-only. Without ``BLOB_READ_WRITE_TOKEN`` the sandboxes are
+instance-local: still isolated per visitor, but not consistent across
+instances and not durable.
 
 Nothing here is active unless ``FAD_DEMO_SESSIONS=1`` — the local app and
 the e2e suite keep the single shared demo database.
@@ -23,6 +29,7 @@ import os
 import re
 import shutil
 import threading
+import time
 from datetime import datetime, timedelta, timezone
 
 from fastapi import Request, Response
@@ -48,6 +55,10 @@ BLOB_PREFIX = "demo-sessions/"
 #: Pristine, date-shifted copy of the demo DB that new sandboxes are cloned
 #: from. Lives beside the shared demo DB; written once per cold start.
 TEMPLATE_FILENAME = "demo_template.db"
+#: A page load fires a dozen requests within a few milliseconds; one
+#: revalidation covers all of them. Short enough that a write on another
+#: instance is visible by the time its client refetches.
+REVALIDATE_WINDOW_SECONDS = 0.25
 
 #: Path-safe, unguessable, and long enough that a client cannot collide with
 #: another visitor by accident. UUIDs (with or without dashes) fit.
@@ -110,19 +121,26 @@ def _forget_database(db_path: str) -> None:
 
 
 class DemoSessionStore:
-    """Materializes, persists and resets per-visitor demo databases.
+    """Materializes, revalidates, persists and resets per-visitor demo DBs.
 
     Parameters
     ----------
     backend : BlobBackend | None
         Remote store for sandbox files. ``None`` keeps sandboxes
-        instance-local (still isolated per visitor, but not durable).
+        instance-local (isolated per visitor, but neither durable nor
+        consistent across instances).
     """
 
     def __init__(self, backend: BlobBackend | None) -> None:
         self.backend = backend
         self._locks: dict[str, threading.Lock] = {}
         self._locks_guard = threading.Lock()
+        #: Etag of the blob version each local sandbox file was last synced
+        #: with. Absent or ``None`` means "never synced" — the next
+        #: revalidation downloads unconditionally.
+        self._etags: dict[str, str | None] = {}
+        #: Monotonic time of each sandbox's last successful revalidation.
+        self._checked_at: dict[str, float] = {}
 
     @property
     def durable(self) -> bool:
@@ -150,46 +168,69 @@ class DemoSessionStore:
             config.reset_demo_session(session_token)
             config.reset_demo_mode(mode_token)
 
-    def is_ready(self, session_id: str) -> bool:
-        """Return whether the sandbox already exists on this instance."""
-        return os.path.exists(self.local_db_path(session_id))
+    # ------------------------------------------------------------------
+    # Materialization
+    # ------------------------------------------------------------------
 
-    def ensure_local(self, session_id: str) -> None:
-        """Make sure the sandbox database exists on this instance.
+    def sync(self, session_id: str) -> None:
+        """Make the local sandbox match the persisted copy before serving.
 
-        Restores the persisted copy when the backend has one, otherwise
-        clones the template (or, lacking a template, builds the demo
-        database from the frozen snapshot directly into the sandbox).
+        With a backend: revalidate the local file against the blob (a 304
+        keeps it; a 200 replaces it; a 404 means nothing was persisted yet,
+        so a missing local file is cloned from the template). Concurrent
+        requests of the same visitor share one revalidation per
+        ``REVALIDATE_WINDOW_SECONDS``. Without a backend: just make sure the
+        local file exists. Storage errors never fail the request — they are
+        logged and the local copy (or a fresh clone) is served instead.
         """
         path = self.local_db_path(session_id)
-        if os.path.exists(path):
-            return
         with self._lock_for(session_id):
-            if os.path.exists(path):
+            if self.backend is None:
+                if not os.path.exists(path):
+                    self._seed(session_id, path)
                 return
-            os.makedirs(os.path.dirname(path), exist_ok=True)
-            data = self._download(session_id)
-            if data is not None:
-                self._write_atomically(path, data)
-                logger.info("Restored demo sandbox %s from blob storage", session_id)
-                return
-            self._seed(session_id, path)
 
-    def _download(self, session_id: str) -> bytes | None:
-        if self.backend is None:
-            return None
-        try:
-            return self.backend.get(blob_pathname(session_id))
-        except Exception:  # never let a storage hiccup 500 the demo
-            logger.warning(
-                "Could not fetch demo sandbox %s; seeding a fresh one",
-                session_id,
-                exc_info=True,
-            )
-            return None
+            now = time.monotonic()
+            fresh = now - self._checked_at.get(session_id, -1.0) < REVALIDATE_WINDOW_SECONDS
+            if fresh and os.path.exists(path):
+                return
+
+            local_etag = self._etags.get(session_id) if os.path.exists(path) else None
+            try:
+                remote = self.backend.get(blob_pathname(session_id), if_none_match=local_etag)
+            except Exception:
+                logger.warning(
+                    "Could not revalidate demo sandbox %s; serving local copy",
+                    session_id,
+                    exc_info=True,
+                )
+                if not os.path.exists(path):
+                    self._seed(session_id, path)
+                return
+
+            self._checked_at[session_id] = now
+            if remote is None:
+                if not os.path.exists(path):
+                    self._seed(session_id, path)
+                self._etags[session_id] = None
+            elif remote.not_modified:
+                return
+            else:
+                self._write_atomically(path, remote.data or b"")
+                self._etags[session_id] = remote.etag
+                logger.info("Restored demo sandbox %s from blob storage", session_id)
+
+    def ensure_local(self, session_id: str) -> None:
+        """Make sure the sandbox exists locally, restoring it if persisted.
+
+        Equivalent to :meth:`sync`; kept as the explicit name for callers
+        that only care about existence (tests, tooling).
+        """
+        self.sync(session_id)
 
     @staticmethod
     def _write_atomically(path: str, data: bytes) -> None:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
         tmp = f"{path}.tmp"
         with open(tmp, "wb") as fh:
             fh.write(data)
@@ -197,6 +238,7 @@ class DemoSessionStore:
         _forget_database(path)
 
     def _seed(self, session_id: str, path: str) -> None:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
         template = self.template_path()
         if os.path.exists(template):
             shutil.copy2(template, path)
@@ -215,6 +257,10 @@ class DemoSessionStore:
             config.reset_demo_session(session_token)
         _forget_database(path)
 
+    # ------------------------------------------------------------------
+    # Persistence
+    # ------------------------------------------------------------------
+
     def persist(self, session_id: str) -> bool:
         """Upload the sandbox database to the backend.
 
@@ -232,13 +278,16 @@ class DemoSessionStore:
         try:
             with open(path, "rb") as fh:
                 data = fh.read()
-            self.backend.put(blob_pathname(session_id), data)
-            return True
+            result = self.backend.put(blob_pathname(session_id), data)
         except Exception:
             logger.warning(
                 "Could not persist demo sandbox %s", session_id, exc_info=True
             )
             return False
+        with self._lock_for(session_id):
+            self._etags[session_id] = result.etag
+            self._checked_at[session_id] = time.monotonic()
+        return True
 
     def reset(self, session_id: str) -> None:
         """Discard the sandbox everywhere and re-seed it from the template.
@@ -254,19 +303,15 @@ class DemoSessionStore:
                     os.remove(stale)
             if self.backend is not None:
                 try:
-                    urls = [
-                        b["url"]
-                        for b in self.backend.list(blob_pathname(session_id))
-                        if b.get("pathname") == blob_pathname(session_id)
-                    ]
-                    self.backend.delete(urls)
+                    self.backend.delete([self.backend.url_for(blob_pathname(session_id))])
                 except Exception:
                     logger.warning(
                         "Could not delete persisted demo sandbox %s",
                         session_id,
                         exc_info=True,
                     )
-            os.makedirs(os.path.dirname(path), exist_ok=True)
+            self._etags[session_id] = None
+            self._checked_at.pop(session_id, None)
             self._seed(session_id, path)
 
     def prune(self, max_age_days: int | None = None) -> int:
@@ -338,25 +383,23 @@ def snapshot_template() -> None:
 async def serve_in_session(request: Request, call_next, session_id: str) -> Response:
     """Run ``request`` against ``session_id``'s sandbox and persist writes.
 
-    Binds the sandbox id for the request's context, materializes the
-    database first if this instance has not seen the visitor yet, and — for
-    a successful mutating ``/api`` request — uploads the file afterwards.
-    Blocking file and network work runs in the threadpool so the event loop
-    stays free.
+    Binds the sandbox id for the request's context, syncs the local database
+    with the persisted copy first, and — for a successful mutating ``/api``
+    request — uploads the file afterwards. Blocking file and network work
+    runs in the threadpool so the event loop stays free.
     """
     store = get_store()
     config = AppConfig()
     token = config.set_demo_session(session_id)
     try:
-        if not store.is_ready(session_id):
-            try:
-                await run_in_threadpool(store.ensure_local, session_id)
-            except Exception:
-                logger.exception("Could not materialize demo sandbox %s", session_id)
-                return JSONResponse(
-                    status_code=503,
-                    content={"detail": "Demo sandbox is temporarily unavailable"},
-                )
+        try:
+            await run_in_threadpool(store.sync, session_id)
+        except Exception:
+            logger.exception("Could not materialize demo sandbox %s", session_id)
+            return JSONResponse(
+                status_code=503,
+                content={"detail": "Demo sandbox is temporarily unavailable"},
+            )
         response = await call_next(request)
         if (
             request.method in _MUTATING_METHODS
