@@ -2655,3 +2655,117 @@ class TestPendingRefundOnSplitSlice:
 
         expenses = BudgetService(db_session).get_filtered_expenses()
         assert expenses["amount"].sum() == -40.0
+
+
+class TestMonthlyBudgetViewOverlappingRules:
+    """Tests for apportioning spend between overlapping rules in one category.
+
+    Jan 2024 Food in ``seed_base_transactions`` is Groceries 150, Restaurants 80
+    and Coffee 15 — 245 in total.
+    """
+
+    @staticmethod
+    def _add(service, name, amount, category, tags):
+        service.add_rule(
+            name=name, amount=amount, category=category, tags=tags, month=1, year=2024
+        )
+
+    @staticmethod
+    def _by_name(view):
+        return {entry["rule"][NAME]: entry for entry in view}
+
+    def test_view_tag_rules_claim_their_tags_before_all_tags(
+        self, db_session, seed_base_transactions
+    ):
+        """Verify sibling tag rules keep their spend and all_tags covers only the rest."""
+        service = MonthlyBudgetService(db_session)
+        self._add(service, "Food", 1000.0, "Food", [ALL_TAGS])
+        self._add(service, "Groceries", 500.0, "Food", ["Groceries"])
+        self._add(service, "Restaurants", 500.0, "Food", ["Restaurants"])
+
+        rows = self._by_name(service.get_monthly_budget_view(2024, 1))
+
+        assert rows["Groceries"]["current_amount"] == 150.0
+        assert [tx["tag"] for tx in rows["Groceries"]["data"]] == ["Groceries"]
+        assert rows["Restaurants"]["current_amount"] == 80.0
+        assert [tx["tag"] for tx in rows["Restaurants"]["data"]] == ["Restaurants"]
+        assert rows["Food"]["current_amount"] == 15.0
+        assert [tx["tag"] for tx in rows["Food"]["data"]] == ["Coffee"]
+
+    def test_view_overlapping_rows_are_disjoint_and_sum_to_category_spend(
+        self, db_session, seed_base_transactions
+    ):
+        """Verify no transaction lands in two rows and the rows add up to the category."""
+        service = MonthlyBudgetService(db_session)
+        self._add(service, TOTAL_BUDGET, 10000.0, TOTAL_BUDGET, [ALL_TAGS])
+        self._add(service, "Food", 1000.0, "Food", [ALL_TAGS])
+        self._add(service, "Groceries", 500.0, "Food", ["Groceries"])
+
+        rows = self._by_name(service.get_monthly_budget_view(2024, 1))
+        food_rows = [rows["Food"], rows["Groceries"]]
+        keys = [
+            {(tx["source"], tx["unique_id"]) for tx in row["data"]} for row in food_rows
+        ]
+
+        assert keys[0].isdisjoint(keys[1])
+        assert len(keys[0] | keys[1]) == 3
+        assert sum(row["current_amount"] for row in food_rows) == 245.0
+        # Other Expenses: Transport(60+10) + Entertainment(40) + Home(3000) + Other(250)
+        assert rows["Other Expenses"]["current_amount"] == 3360.0
+
+    def test_view_apportioning_is_independent_of_rule_creation_order(
+        self, db_session, seed_base_transactions
+    ):
+        """Verify an all_tags rule created after its tag rule still yields the tagged spend."""
+        service = MonthlyBudgetService(db_session)
+        self._add(service, "Groceries", 500.0, "Food", ["Groceries"])
+        self._add(service, "Food", 1000.0, "Food", [ALL_TAGS])
+
+        rows = self._by_name(service.get_monthly_budget_view(2024, 1))
+
+        assert rows["Groceries"]["current_amount"] == 150.0
+        assert rows["Food"]["current_amount"] == 95.0
+
+    def test_view_narrower_tag_rule_wins_over_broader_tag_rule(
+        self, db_session, seed_base_transactions
+    ):
+        """Verify a single-tag rule claims its tag from an earlier multi-tag rule."""
+        service = MonthlyBudgetService(db_session)
+        self._add(
+            service, "All Food Tags", 1000.0, "Food", ["Groceries", "Restaurants", "Coffee"]
+        )
+        self._add(service, "Groceries", 500.0, "Food", ["Groceries"])
+
+        rows = self._by_name(service.get_monthly_budget_view(2024, 1))
+
+        assert rows["Groceries"]["current_amount"] == 150.0
+        assert rows["All Food Tags"]["current_amount"] == 95.0
+
+    def test_view_keeps_rules_in_creation_order(
+        self, db_session, seed_base_transactions
+    ):
+        """Verify claim priority does not reorder the rows the page renders."""
+        service = MonthlyBudgetService(db_session)
+        self._add(service, "Food", 1000.0, "Food", [ALL_TAGS])
+        self._add(service, "Groceries", 500.0, "Food", ["Groceries"])
+        self._add(service, "Restaurants", 500.0, "Food", ["Restaurants"])
+
+        view = service.get_monthly_budget_view(2024, 1)
+
+        assert [entry["rule"][NAME] for entry in view] == [
+            "Food",
+            "Groceries",
+            "Restaurants",
+        ]
+
+    def test_alerts_use_apportioned_spend(self, db_session, seed_base_transactions):
+        """Verify alerts fire on the tag rule's own spend, not the all_tags row's total."""
+        service = MonthlyBudgetService(db_session)
+        self._add(service, "Food", 300.0, "Food", [ALL_TAGS])
+        self._add(service, "Groceries", 100.0, "Food", ["Groceries"])
+
+        alerts = service.get_alerts(2024, 1)
+
+        assert [a["name"] for a in alerts] == ["Groceries"]
+        assert alerts[0]["spent"] == 150.0
+        assert alerts[0]["severity"] == "critical"
