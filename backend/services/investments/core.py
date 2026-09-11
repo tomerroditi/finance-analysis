@@ -332,9 +332,75 @@ class InvestmentsService(SnapshotsMixin, ValuationMixin, InsuranceSyncMixin):
                 f"Investment {investment_id} is already closed"
             )
         self.investments_repo.close_investment(investment_id, closed_date)
+        zero_date = self._closing_snapshot_date(
+            investment_id, inv["category"], inv["tag"], closed_date
+        )
+        self.create_balance_snapshot(investment_id, zero_date, 0.0, source=CLOSED_SOURCE)
 
+    def realign_closing_snapshots(self) -> None:
+        """Move every closed investment's zero snapshot onto where it belongs now.
+
+        Closing pins the zero to the last transaction that exists at that
+        moment. A transaction that lands later — the transfer settling a sale
+        days after it, a scraped row re-dated, a row tagged onto the investment
+        after it closed — would otherwise sit past the zero and be carried
+        forward, valuing the closed holding below zero in net worth. Every
+        write path that can change an investment's transactions calls this, so
+        the zero follows them in both directions. Only snapshots written by
+        closing (``source="closed"``) move; nothing else is touched.
+        """
+        investments = self.investments_repo.get_all_investments(include_closed=True)
+        if investments.empty:
+            return
+        for _, inv in investments[investments["is_closed"].astype(bool)].iterrows():
+            investment_id = int(inv["id"])
+            snapshots = self.snapshots_repo.get_snapshots_for_investment(investment_id)
+            if snapshots.empty:
+                continue
+            closing_dates = snapshots.loc[
+                snapshots["source"] == CLOSED_SOURCE, "date"
+            ].tolist()
+            if not closing_dates:
+                continue
+            zero_date = self._closing_snapshot_date(
+                investment_id, inv["category"], inv["tag"], inv["closed_date"]
+            )
+            if closing_dates == [zero_date]:
+                continue
+            self.snapshots_repo.delete_snapshots_for_investment(
+                investment_id, source=CLOSED_SOURCE
+            )
+            self.create_balance_snapshot(
+                investment_id, zero_date, 0.0, source=CLOSED_SOURCE
+            )
+
+    def _closing_snapshot_date(
+        self, investment_id: int, category: str, tag: str, closed_date: str
+    ) -> str:
+        """Date the zero written by closing belongs on.
+
+        The last transaction date (the closure date when there are none),
+        pushed forward to the newest other snapshot if one is later —
+        otherwise that snapshot would keep valuing the closed holding.
+
+        Parameters
+        ----------
+        investment_id : int
+            ID of the closed investment.
+        category : str
+            Investment category.
+        tag : str
+            Investment tag.
+        closed_date : str
+            Closure date in ``YYYY-MM-DD`` format.
+
+        Returns
+        -------
+        str
+            The zero snapshot's date in ``YYYY-MM-DD`` format.
+        """
         txns = self._get_all_transactions_for_investment(
-            inv["category"], inv["tag"], investment_id=investment_id
+            category, tag, investment_id=investment_id
         )
         if not txns.empty:
             zero_date = pd.to_datetime(txns["date"]).max().strftime("%Y-%m-%d")
@@ -342,8 +408,10 @@ class InvestmentsService(SnapshotsMixin, ValuationMixin, InsuranceSyncMixin):
             zero_date = closed_date
         snapshots = self.snapshots_repo.get_snapshots_for_investment(investment_id)
         if not snapshots.empty:
-            zero_date = max(zero_date, str(snapshots["date"].max()))
-        self.create_balance_snapshot(investment_id, zero_date, 0.0, source=CLOSED_SOURCE)
+            others = snapshots[snapshots["source"] != CLOSED_SOURCE]
+            if not others.empty:
+                zero_date = max(zero_date, str(others["date"].max()))
+        return zero_date
 
     def reopen_investment(self, investment_id: int) -> None:
         """
