@@ -627,6 +627,15 @@ class TestApplyRulesPrecedence:
         assert "WARNING forged entry" not in caplog.text
         assert "Evil" not in caplog.text
 
+    def test_broken_rule_without_an_id_still_reads_clearly(
+        self, service, caplog
+    ):
+        """A row carrying no id logs a readable phrase, not a bare ``None``."""
+        with caplog.at_level("WARNING"):
+            assert service._stored_conditions({"conditions": "not json {{{"}) is None
+
+        assert "of unknown id" in caplog.text
+
 
 class TestNormalizeConditions:
     """Tests for _normalize_conditions handling legacy and edge-case formats."""

@@ -655,13 +655,16 @@ class TaggingRulesService:
         try:
             return self._normalize_conditions(rule["conditions"])
         except ValueError:
-            # The rule's name is user-typed and deliberately not logged: the
-            # id identifies the row on its own, and keeping user text out of
-            # the record removes the log-injection surface rather than
-            # relying on a scrub the scanner cannot see through.
+            # Only the row's own primary key goes into the record. The
+            # rule's name is user-typed, so keeping it out removes the
+            # log-injection surface (CWE-117) instead of relying on a scrub
+            # a scanner cannot see through. The id is coerced to an int so
+            # the logged value is provably numeric, and the absent case is
+            # explicit rather than rendering a bare ``None``.
+            rule_id = rule.get("id")
             logger.warning(
                 "Skipping tagging rule %s: stored conditions are not valid JSON",
-                rule.get("id"),
+                int(rule_id) if rule_id is not None else "of unknown id",
             )
             return None
 
