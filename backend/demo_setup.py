@@ -249,25 +249,45 @@ def _shift_budget_month_overrides(conn, offset_days: int) -> None:
         )
 
 
+def _shift_month(year: int, month: int, month_offset: int) -> tuple[int, int]:
+    """Return ``(year, month)`` moved by ``month_offset`` calendar months."""
+    new_year, new_month0 = divmod(year * 12 + (month - 1) + month_offset, 12)
+    return new_year, new_month0 + 1
+
+
 def _shift_dates(engine: Engine, offset_days: int) -> None:
-    """Shift every shiftable date column by ``offset_days`` days."""
+    """Shift every shiftable date column by ``offset_days`` days.
+
+    Date columns move by the raw day offset. Period columns stored as a
+    calendar month (``budget_rules.year``/``month``, savings-goal
+    ``start_month``/``closed_month``) move by the whole-month distance
+    between ``DEMO_REFERENCE_DATE``'s month and the shifted reference's
+    month, so the snapshot's reference month always lands on today's month.
+    Anchoring those to day 1 and adding the day offset instead put them a
+    month behind whenever today's day-of-month was earlier than the
+    reference day — leaving the current month without a Total Budget rule.
+    """
     if offset_days == 0:
         return
 
     offset_str = (
         f"+{offset_days} days" if offset_days > 0 else f"{offset_days} days"
     )
+    shifted_reference = DEMO_REFERENCE_DATE + timedelta(days=offset_days)
+    year_offset = shifted_reference.year - DEMO_REFERENCE_DATE.year
+    month_offset = year_offset * 12 + (
+        shifted_reference.month - DEMO_REFERENCE_DATE.month
+    )
 
     with engine.connect() as conn:
         # Budget month overrides must move in lockstep with the transactions
         # they point at. Each override sits exactly one calendar month before
-        # or after its transaction's month; shifting the stored (year, month)
-        # by raw days — the way budget_rules are shifted — can drift it a month
-        # relative to the transaction (the rule anchors to day 1, the
-        # transaction to its real day). Instead, anchor each override to its
-        # transaction's *new* month plus the original +/-1 direction. This runs
-        # before the transaction dates below are shifted, so the lookups still
-        # see the original (pre-shift) transaction dates.
+        # or after its transaction's month, and transactions move by raw days,
+        # so a whole-month shift like budget_rules get can drift an override a
+        # month relative to its transaction. Instead, anchor each override to
+        # its transaction's *new* month plus the original +/-1 direction. This
+        # runs before the transaction dates below are shifted, so the lookups
+        # still see the original (pre-shift) transaction dates.
         _shift_budget_month_overrides(conn, offset_days)
 
         for table in [
@@ -359,11 +379,10 @@ def _shift_dates(engine: Engine, offset_days: int) -> None:
             {"offset": offset_str},
         )
 
-        # Savings-goal months are "YYYY-MM" strings, so they shift the same
-        # way budget_rules do: anchor to day 1, move by the offset, keep the
-        # resulting month. Allocation rows are deliberately NOT shifted — the
-        # snapshot ships none, and the engine recomputes the whole ledger on
-        # first read from the already-shifted transactions.
+        # Savings-goal months are "YYYY-MM" strings and move by whole calendar
+        # months, like budget_rules below. Allocation rows are deliberately NOT
+        # shifted — the snapshot ships none, and the engine recomputes the
+        # whole ledger on first read from the already-shifted transactions.
         for column in ("start_month", "closed_month"):
             months = conn.execute(
                 text(
@@ -373,33 +392,33 @@ def _shift_dates(engine: Engine, offset_days: int) -> None:
             ).fetchall()
             for goal_id, value in months:
                 try:
-                    anchor = date(int(value[:4]), int(value[5:7]), 1)
+                    year, month = _shift_month(
+                        int(value[:4]), int(value[5:7]), month_offset
+                    )
                 except (TypeError, ValueError):
                     continue
-                shifted = anchor + timedelta(days=offset_days)
                 conn.execute(
                     text(
                         f"UPDATE savings_goals SET {column} = :value WHERE id = :id"
                     ),
-                    {
-                        "value": f"{shifted.year:04d}-{shifted.month:02d}",
-                        "id": goal_id,
-                    },
+                    {"value": f"{year:04d}-{month:02d}", "id": goal_id},
                 )
 
-        rows = conn.execute(
-            text(
-                "SELECT DISTINCT id, year, month FROM budget_rules WHERE year IS NOT NULL"
-            )
+        # Monthly rules move by whole calendar months, yearly rules (month
+        # NULL) by whole years; project rules carry no period.
+        rules = conn.execute(
+            text("SELECT id, year, month FROM budget_rules WHERE year IS NOT NULL")
         ).fetchall()
-        for row in rows:
-            old_date = date(row[1], row[2], 1)
-            new_date = old_date + timedelta(days=offset_days)
+        for rule_id, year, month in rules:
+            if month is None:
+                new_year, new_month = year + year_offset, None
+            else:
+                new_year, new_month = _shift_month(year, month, month_offset)
             conn.execute(
                 text(
                     "UPDATE budget_rules SET year = :year, month = :month WHERE id = :id"
                 ),
-                {"year": new_date.year, "month": new_date.month, "id": row[0]},
+                {"year": new_year, "month": new_month, "id": rule_id},
             )
 
         conn.commit()

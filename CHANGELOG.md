@@ -1,3 +1,9 @@
+## v1.61.2 (2026-09-11)
+
+### Fix
+
+- **demo**: shift budget and savings-goal months by whole calendar months (#270)
+
 ## v1.61.1 (2026-09-11)
 
 ### Fix

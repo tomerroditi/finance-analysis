@@ -76,9 +76,39 @@ Two constraints on anything you add here:
   exactly this reason.
 
 `savings_goals.start_month` / `closed_month` (YYYY-MM strings) and
-`target_date` are shifted by `_shift_dates` in `backend/demo_setup.py`. A new
-date-ish column on these tables needs adding there too, or it freezes at the
-snapshot's build date while everything around it moves.
+`target_date` are shifted by `_shift_dates` in `backend/demo_setup.py` (see
+"How Demo Mode re-anchors the data" below). A new date-ish column on these
+tables needs adding there too, or it freezes at the snapshot's build date
+while everything around it moves.
+
+### How Demo Mode re-anchors the data
+
+Demo Mode never serves the snapshot as generated. `prepare_demo_database`
+copies it and `_shift_dates` moves it forward by
+`date.today() − DEMO_REFERENCE_DATE`, so the story always ends today.
+`DEMO_REFERENCE_DATE` in `backend/demo_setup.py` must equal the generator's
+`REFERENCE_DATE`. Columns move in one of three ways:
+
+| Column kind | Examples | Moves by |
+|---|---|---|
+| Real dates | transaction `date`, balance-snapshot `date`, `target_date`, investment/liability dates, `categories.created_at` | the raw day offset |
+| Calendar-month periods | `budget_rules.year`/`month`, `savings_goals.start_month`/`closed_month` | whole months, `REFERENCE_DATE`'s month → today's month (yearly rules: whole years) |
+| Month relative to a transaction | `budget_month_overrides` | the shifted transaction's month ± its original direction |
+
+Month periods must **not** move by the day offset. Anchoring them to day 1 and
+adding days put them a month behind on every day before the 25th (the
+reference day). The snapshot's newest budget month then landed on *last*
+month, the current month had no Total Budget rule, and every category-rule
+create was rejected. Consequences for the generator:
+
+- **The newest monthly budget rules must sit in `REFERENCE_DATE`'s month** —
+  that is the month Demo Mode shows as current. `create_budget_rules` builds
+  the 6 months ending there; keep it that way.
+- **Classify a new column by what it means, not its SQL type.** A calendar
+  month goes in the month-shift group; a moment in time goes in the day-shift
+  group.
+- Regression tests for both groups, including the shipped snapshot checked on
+  a spread of "today" dates, live in `tests/backend/unit/test_demo_setup.py`.
 
 ### Other coverage guaranteed by the script
 - Multiple bank accounts (hapoalim Main + leumi Savings) and multiple cash envelopes (Petty Cash + Kids Envelope)
@@ -86,7 +116,7 @@ snapshot's build date while everything around it moves.
 - Splits across 2 sources (CC + cash) — a couple of CC parents converted into different categories
 - 7 pending refunds covering all statuses (pending / partial / resolved / closed) + multi-link + a 150 ILS refund txn with leftover money available for other refunds + one `source_type='split'`
 - Tagging rules exercising 5 different operators (`contains`, `equals`, `starts_with`, `less_than`, `between`)
-- Budget rules: category-only, tag-level, and two project budgets (Home Renovation + Our Wedding) over the last 6 months
+- Budget rules: category-only, tag-level, and two project budgets (Home Renovation + Our Wedding) over the 6 months ending in the `REFERENCE_DATE` month (the month Demo Mode shows as current)
 - 5 insurance accounts (see next section) + a `RetirementGoal` tied to them
 
 ---
