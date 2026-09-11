@@ -1,11 +1,12 @@
 import React, { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Layers, Calendar, CalendarRange } from "lucide-react";
+import { Layers, Calendar, CalendarRange, Gauge } from "lucide-react";
+import { OverviewBudgetView } from "../components/budget/OverviewBudgetView";
 import { MonthlyBudgetView } from "../components/budget/MonthlyBudgetView";
 import { YearlyBudgetView } from "../components/budget/YearlyBudgetView";
 import { ProjectBudgetView } from "../components/budget/ProjectBudgetView";
 
-type BudgetTab = "monthly" | "yearly" | "projects";
+type BudgetTab = "overview" | "monthly" | "yearly" | "projects";
 
 /**
  * The page owns only the tab state. Each view renders the shared command bar
@@ -28,6 +29,14 @@ export const Budget: React.FC = () => {
 
   const tabs = (
     <>
+      <button
+        onClick={() => setActiveTab("overview")}
+        className={tabClass("overview")}
+        aria-pressed={activeTab === "overview"}
+      >
+        <Gauge size={16} />
+        {t("budget.overview.tab")}
+      </button>
       <button
         onClick={() => setActiveTab("monthly")}
         className={tabClass("monthly")}
@@ -58,6 +67,7 @@ export const Budget: React.FC = () => {
   return (
     <div className="container mx-auto max-w-7xl animate-in fade-in duration-500">
       <div className="min-h-[600px]">
+        {activeTab === "overview" && <OverviewBudgetView tabs={tabs} />}
         {activeTab === "monthly" && (
           <MonthlyBudgetView tabs={tabs} onViewProjects={() => setActiveTab("projects")} />
         )}

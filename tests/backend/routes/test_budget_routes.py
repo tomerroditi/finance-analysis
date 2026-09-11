@@ -346,3 +346,60 @@ class TestCategoryConflictsRoutes:
         unchanged = test_client.get("/api/budget/rules").json()
         unchanged_rule = next(r for r in unchanged if r["id"] == project_rule["id"])
         assert unchanged_rule["category"] == "Renovation"
+
+
+class TestBudgetOverviewRoute:
+    """Tests for GET /api/budget/overview/{year}/{month}."""
+
+    def test_overview_returns_the_cross_kind_shape(self, test_client):
+        """The endpoint answers with every key the Overview tab reads."""
+        response = test_client.get("/api/budget/overview/2026/3")
+        assert response.status_code == 200
+        body = response.json()
+        for key in (
+            "monthly_budget",
+            "monthly_spent",
+            "fixed_spent",
+            "variable_spent",
+            "committed_remaining",
+            "free_to_spend",
+            "projected",
+            "charges_due",
+            "projects_month_spent",
+            "yearly_month_spent",
+            "total_out",
+            "long_envelopes",
+        ):
+            assert key in body
+
+    def test_overview_on_an_empty_month_is_not_an_error(self, test_client):
+        """A month with no rules and no spend answers with zeroes."""
+        response = test_client.get("/api/budget/overview/2026/3")
+        assert response.status_code == 200
+        body = response.json()
+        assert body["monthly_spent"] == 0.0
+        assert body["long_envelopes"] == []
+
+    def test_overview_reports_the_total_budget_rule(self, test_client, db_session):
+        """A Total Budget rule created through the service sets the month's budget.
+
+        Matched on category, exactly as ``get_monthly_budget_view`` does, so the
+        Overview can never claim a budget the Monthly tab does not show.
+        """
+        from backend.services.budget_service import MonthlyBudgetService
+
+        MonthlyBudgetService(db_session).create_rule(
+            "Total Budget", 12345.0, "Total Budget", ["all_tags"], 4, 2026
+        )
+        response = test_client.get("/api/budget/overview/2026/4")
+        assert response.status_code == 200
+        assert response.json()["monthly_budget"] == 12345.0
+
+    def test_overview_rejects_an_impossible_month(self, test_client):
+        """An out-of-range month is a bad request, not a server error.
+
+        The month sizes a calendar via ``monthrange``, which raises outside
+        1-12, so the bound has to be enforced before the service sees it.
+        """
+        assert test_client.get("/api/budget/overview/2026/13").status_code == 422
+        assert test_client.get("/api/budget/overview/2026/0").status_code == 422
