@@ -25,21 +25,6 @@ def _make_conditions(field: str, operator: str, value: str) -> dict:
 class TestTaggingRulesRepository:
     """Tests for TaggingRulesRepository operations."""
 
-    def test_add_rule(self, db_session: Session):
-        """Verify adding a tagging rule returns its ID."""
-        repo = TaggingRulesRepository(db_session)
-        conditions = _make_conditions("description", "contains", "SUPERMARKET")
-
-        rule_id = repo.add_rule(
-            name="Supermarket Rule",
-            conditions=conditions,
-            category="Food",
-            tag="Groceries",
-        )
-
-        assert isinstance(rule_id, int)
-        assert rule_id > 0
-
     def test_get_all_rules_empty(self, db_session: Session):
         """Verify get_all_rules returns empty DataFrame when no rules exist."""
         repo = TaggingRulesRepository(db_session)
@@ -78,12 +63,13 @@ class TestTaggingRulesRepository:
         result = repo.get_all_rules()
 
         assert len(result) == 3
-        assert set(result["name"].tolist()) == {
+        # Creation order (id ASC) is load-bearing: it is the order rules are
+        # applied in, and the first match wins.
+        assert result["name"].tolist() == [
             "Supermarket Rule", "Uber Rule", "Netflix Rule",
-        }
-        assert set(result["category"].tolist()) == {
-            "Food", "Transport", "Entertainment",
-        }
+        ]
+        assert result["id"].tolist() == sorted(result["id"].tolist())
+        assert result["category"].tolist() == ["Food", "Transport", "Entertainment"]
         # Verify conditions are stored as dicts (deserialized JSON)
         for _, row in result.iterrows():
             assert isinstance(row["conditions"], dict)
@@ -300,3 +286,73 @@ class TestTaggingRulesRepository:
         result = repo.update_category_for_tag("NonExistent", "NewCategory", "NoTag")
 
         assert result is False
+
+
+class TestTaggingRulesRepositoryRenames:
+    """Renaming a category/tag cascades into the rules that reference it."""
+
+    @staticmethod
+    def _seed(db_session: Session) -> TaggingRulesRepository:
+        """Seed three rules across two categories that share a tag name."""
+        repo = TaggingRulesRepository(db_session)
+        repo.add_rule(
+            name="Food groceries",
+            conditions=_make_conditions("description", "contains", "SUPERMARKET"),
+            category="Food",
+            tag="Groceries",
+        )
+        repo.add_rule(
+            name="Food restaurants",
+            conditions=_make_conditions("description", "contains", "RESTAURANT"),
+            category="Food",
+            tag="Restaurants",
+        )
+        repo.add_rule(
+            name="Home groceries",
+            conditions=_make_conditions("description", "contains", "CLEANING"),
+            category="Home",
+            tag="Groceries",
+        )
+        return repo
+
+    @staticmethod
+    def _pairs(repo: TaggingRulesRepository) -> dict:
+        """Return ``{rule name: (category, tag)}`` for every stored rule."""
+        rules = repo.get_all_rules()
+        return {
+            row["name"]: (row["category"], row["tag"])
+            for _, row in rules.iterrows()
+        }
+
+    def test_rename_category_touches_every_rule_in_it(self, db_session: Session):
+        """Both Food rules move to the new category; the Home rule does not."""
+        repo = self._seed(db_session)
+
+        repo.rename_category("Food", "Dining")
+
+        assert self._pairs(repo) == {
+            "Food groceries": ("Dining", "Groceries"),
+            "Food restaurants": ("Dining", "Restaurants"),
+            "Home groceries": ("Home", "Groceries"),
+        }
+
+    def test_rename_tag_is_scoped_to_its_category(self, db_session: Session):
+        """Only the Food/Groceries rule is renamed, not Home's same-named tag."""
+        repo = self._seed(db_session)
+
+        repo.rename_tag("Food", "Groceries", "Supermarket")
+
+        assert self._pairs(repo) == {
+            "Food groceries": ("Food", "Supermarket"),
+            "Food restaurants": ("Food", "Restaurants"),
+            "Home groceries": ("Home", "Groceries"),
+        }
+
+    def test_rename_tag_with_no_matching_rule_is_a_no_op(self, db_session: Session):
+        """A tag no rule uses leaves every rule untouched."""
+        repo = self._seed(db_session)
+        before = self._pairs(repo)
+
+        repo.rename_tag("Food", "Coffee", "Espresso")
+
+        assert self._pairs(repo) == before

@@ -33,6 +33,28 @@ from backend.utils.text_utils import to_title_case
 _categories_cache: dict[bool, dict] = {}
 
 
+def _clean_name(name: object) -> str | None:
+    """Normalise a category/tag name, or return ``None`` if it is unusable.
+
+    A usable name is a non-blank string without ``;`` — budget rules store
+    tag lists as ``"tag1;tag2"``, so a semicolon inside a name would split
+    into two tags the moment it reached a budget.
+
+    Parameters
+    ----------
+    name : object
+        Raw user-supplied name.
+
+    Returns
+    -------
+    str or None
+        The stripped, title-cased name, or ``None`` when rejected.
+    """
+    if not isinstance(name, str) or not name.strip() or ";" in name:
+        return None
+    return to_title_case(name.strip())
+
+
 class CategoriesTagsService:
     """
     Service for managing the categories and tags hierarchy.
@@ -188,14 +210,23 @@ class CategoriesTagsService:
         Returns
         -------
         bool
-            ``True`` if the category was created, ``False`` if rejected.
+            ``True`` if the category was created, ``False`` if rejected —
+            blank or ``;``-containing names (category or any tag), or a
+            category that already exists.
         """
-        if not category or not isinstance(category, str) or not category.strip():
+        category = _clean_name(category)
+        if category is None:
             return False
-        category = to_title_case(category.strip())
         if category.lower() in [k.lower() for k in self.categories_and_tags.keys()]:
             return False
-        self.tagging_repo.add_category(category, tags)
+        clean_tags: list[str] = []
+        for tag in tags or []:
+            tag = _clean_name(tag)
+            if tag is None:
+                return False
+            if tag not in clean_tags:
+                clean_tags.append(tag)
+        self.tagging_repo.add_category(category, clean_tags)
         self._invalidate_cache()
         return True
 
@@ -217,17 +248,16 @@ class CategoriesTagsService:
         -------
         bool
             ``True`` if the category was deleted, ``False`` if it is protected
-            or not found in the YAML config.
+            or not found. Nothing is touched when ``False`` is returned.
         """
         if category in PROTECTED_CATEGORIES:
+            return False
+        if category not in self.categories_and_tags:
             return False
 
         self.transactions_repo.nullify_category(category)
         self.split_transactions_repo.nullify_category(category)
         self.tagging_rules_repo.delete_rules_by_category(category)
-
-        if category not in self.categories_and_tags:
-            return False
         self.tagging_repo.delete_category(category)
         self._invalidate_cache()
         return True
@@ -245,16 +275,20 @@ class CategoriesTagsService:
         Returns
         -------
         bool
-            True if renamed, False if protected or not found.
+            True if renamed, False if protected, not found, blank/invalid,
+            or colliding with another category. Renaming a category to its
+            own name is a no-op that returns True.
         """
         if old_name in PROTECTED_CATEGORIES:
             return False
         if old_name not in self.categories_and_tags:
             return False
 
-        new_name = to_title_case(new_name.strip()) if new_name else new_name
-        if not new_name:
+        new_name = _clean_name(new_name)
+        if new_name is None:
             return False
+        if new_name == old_name:
+            return True
         if new_name.lower() in [k.lower() for k in self.categories_and_tags.keys()]:
             if new_name.lower() != old_name.lower():
                 return False
@@ -282,7 +316,9 @@ class CategoriesTagsService:
         Returns
         -------
         bool
-            True if renamed, False if protected, not found, or collision.
+            True if renamed, False if protected, not found, blank/invalid, or
+            colliding with a sibling tag. Renaming a tag to its own name is a
+            no-op that returns True.
         """
         if old_tag in PROTECTED_TAGS:
             return False
@@ -291,17 +327,18 @@ class CategoriesTagsService:
         if old_tag not in self.categories_and_tags[category]:
             return False
 
-        new_tag = to_title_case(new_tag.strip()) if new_tag else new_tag
-        if not new_tag:
+        new_tag = _clean_name(new_tag)
+        if new_tag is None:
             return False
+        if new_tag == old_tag:
+            return True
         if new_tag in self.categories_and_tags[category]:
-            if new_tag != old_tag:
-                return False
+            return False
 
         self.transactions_repo.rename_tag(category, old_tag, new_tag)
         self.split_transactions_repo.rename_tag(category, old_tag, new_tag)
         self.tagging_rules_repo.rename_tag(category, old_tag, new_tag)
-        self.budget_repo.rename_tag(old_tag, new_tag)
+        self.budget_repo.rename_tag(category, old_tag, new_tag)
         self.tagging_repo.rename_tag(category, old_tag, new_tag)
         self._invalidate_cache()
         return True
@@ -310,8 +347,8 @@ class CategoriesTagsService:
         """
         Move a tag from one category to another.
 
-        Updates transactions, split transactions, and tagging rules to use
-        the new category, then moves the tag in the YAML config.
+        Updates transactions, split transactions, tagging rules and budget
+        rules to use the new category, then moves the tag itself.
 
         Parameters
         ----------
@@ -326,11 +363,14 @@ class CategoriesTagsService:
         -------
         bool
             ``True`` if the tag was moved, ``False`` if either category does
-            not exist in the current config.
+            not exist, the tag is not in ``old_category``, or both categories
+            are the same. Nothing is touched when ``False`` is returned.
         """
         if (
             old_category not in self.categories_and_tags
             or new_category not in self.categories_and_tags
+            or old_category == new_category
+            or tag not in self.categories_and_tags[old_category]
         ):
             return False
 
@@ -343,6 +383,7 @@ class CategoriesTagsService:
         self.tagging_rules_repo.update_category_for_tag(
             old_category, new_category, tag
         )
+        self.budget_repo.reallocate_tag(old_category, new_category, tag)
 
         self.tagging_repo.relocate_tag(tag, old_category, new_category)
         self._invalidate_cache()
@@ -365,12 +406,13 @@ class CategoriesTagsService:
         Returns
         -------
         bool
-            ``True`` if the tag was added, ``False`` if rejected.
+            ``True`` if the tag was added, ``False`` if rejected — unknown
+            category, blank or ``;``-containing name, or a duplicate tag.
         """
         if category not in self.categories_and_tags:
             return False
-        tag = to_title_case(tag.strip()) if tag else tag
-        if tag in self.categories_and_tags[category]:
+        tag = _clean_name(tag)
+        if tag is None or tag in self.categories_and_tags[category]:
             return False
         self.tagging_repo.add_tag(category, tag)
         self._invalidate_cache()
@@ -394,16 +436,16 @@ class CategoriesTagsService:
         -------
         bool
             ``True`` if the tag was deleted, ``False`` if the category or tag
-            does not exist in the current config.
+            does not exist. Nothing is touched when ``False`` is returned.
         """
-        self.transactions_repo.nullify_category_and_tag(category, tag)
-        self.split_transactions_repo.nullify_category_and_tag(category, tag)
-        self.tagging_rules_repo.delete_rules_by_category_and_tag(category, tag)
-
         if category not in self.categories_and_tags:
             return False
         if tag not in self.categories_and_tags[category]:
             return False
+
+        self.transactions_repo.nullify_category_and_tag(category, tag)
+        self.split_transactions_repo.nullify_category_and_tag(category, tag)
+        self.tagging_rules_repo.delete_rules_by_category_and_tag(category, tag)
         self.tagging_repo.delete_tag(category, tag)
         self._invalidate_cache()
         return True
@@ -415,13 +457,20 @@ class CategoriesTagsService:
         Queries unique ``provider - account_name - account_number`` combinations
         from credit card transactions and adds any that are not already present
         as tags under ``Credit Cards``. Creates the category if it does not exist.
+        Tags are title-cased on both paths (``"isracard - main - 1234"`` becomes
+        ``"Isracard - Main - 1234"``) so a second discovery never adds a
+        case-variant duplicate; ``auto_tag_credit_cards_bills`` matches them
+        back to the raw rows case-insensitively.
 
         Returns
         -------
         bool
             Always ``True``.
         """
-        cc_accounts = self.credit_card_repo.get_unique_accounts_tags()
+        cc_accounts = [
+            to_title_case(account)
+            for account in self.credit_card_repo.get_unique_accounts_tags()
+        ]
         if "Credit Cards" not in self.categories_and_tags:
             self.add_category("Credit Cards", cc_accounts)
             return True

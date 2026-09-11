@@ -1,4 +1,5 @@
 import json
+import logging
 from typing import Any, Dict, List, Optional, Set, Tuple, Type
 
 import pandas as pd
@@ -33,6 +34,14 @@ TEXT_CONDITION_FIELDS: List[str] = [
 NUMERIC_CONDITION_FIELDS: List[str] = ["amount"]
 VALID_TEXT_OPERATORS: List[str] = ["contains", "equals", "starts_with", "ends_with"]
 VALID_NUMERIC_OPERATORS: List[str] = ["gt", "lt", "gte", "lte", "equals", "between"]
+# ``service`` is not a column: it selects which transaction table(s) a rule
+# runs against, so it only makes sense with ``equals`` and one of these values.
+VALID_SERVICE_VALUES: Set[str] = {"bank", "credit_card"}
+
+# SQLite caps bound parameters per statement; keep ``IN (...)`` lists under it.
+_SQL_IN_BATCH_SIZE = 900
+
+logger = logging.getLogger(__name__)
 
 
 def _escape_like(value: Any) -> str:
@@ -69,6 +78,12 @@ class TaggingRulesService:
     applying, and previewing rules across ``credit_card_transactions`` and
     ``bank_transactions`` tables. Conflict detection prevents overlapping rules
     that would assign different category/tag pairs to the same transactions.
+
+    Rules have no priority: they are evaluated in creation order (``id``
+    ascending) and the first rule that matches a transaction wins. Overlaps
+    are blocked at creation time by ``check_conflicts``, so ordering only
+    matters for transactions that arrive later and happen to match several
+    rules.
     """
 
     def __init__(self, db: Session):
@@ -93,10 +108,44 @@ class TaggingRulesService:
         Returns
         -------
         pd.DataFrame
-            All rules with columns including ``id``, ``name``, ``conditions``,
-            ``category``, ``tag``, and ``priority``.
+            All rules in creation order (``id`` ascending) with columns
+            ``id``, ``name``, ``conditions``, ``category``, ``tag``,
+            ``created_at`` and ``updated_at``.
         """
         return self.rules_repo.get_all_rules()
+
+    def _validate_target(self, category: Any, tag: Any) -> None:
+        """
+        Ensure a rule's target category/tag pair exists.
+
+        A rule that assigns a category or tag the categories table does not
+        know about would tag transactions with values no UI can display or
+        budget, so the pair must already exist before a rule may use it.
+
+        Parameters
+        ----------
+        category : Any
+            Category the rule assigns.
+        tag : Any
+            Tag the rule assigns; must belong to ``category``.
+
+        Raises
+        ------
+        BadRequestException
+            If either value is blank or the pair is not a known category/tag.
+        """
+        if not isinstance(category, str) or not category.strip():
+            raise BadRequestException("Rule category must not be blank")
+        if not isinstance(tag, str) or not tag.strip():
+            raise BadRequestException("Rule tag must not be blank")
+
+        categories = self.categories_tags_service.get_categories_and_tags()
+        if category not in categories:
+            raise BadRequestException(f"Unknown category '{category}'")
+        if tag not in categories[category]:
+            raise BadRequestException(
+                f"Tag '{tag}' does not exist under category '{category}'"
+            )
 
     def add_rule(
         self,
@@ -132,10 +181,12 @@ class TaggingRulesService:
         Raises
         ------
         BadRequestException
-            If condition validation or conflict checking fails.
+            If condition validation or conflict checking fails, or the
+            category/tag pair does not exist.
         """
         # 1. Integrity Check
         self.validate_rule_integrity(conditions)
+        self._validate_target(category, tag)
 
         # 2. Conflict Check
         self.check_conflicts(conditions, category, tag)
@@ -158,18 +209,22 @@ class TaggingRulesService:
         - List format: [...] -> {"type": "AND", "subconditions": [...]}
         - Simple dict: {"field": ...} -> {"type": "CONDITION", ...}
         - Recursive dict: {"type": "AND", "subconditions": [...]} (unchanged)
+
+        Raises
+        ------
+        ValueError
+            If ``conditions`` is a string that is not valid JSON. Such a rule
+            is broken; callers that iterate stored rules skip it rather than
+            guess at what it meant (it used to be silently rewritten into a
+            ``description contains "<garbage>"`` match).
         """
         if isinstance(conditions, str):
             try:
                 conditions = json.loads(conditions)
-            except (ValueError, TypeError):
-                # Fallback if invalid JSON string (shouldn't happen with JSON column)
-                return {
-                    "type": "CONDITION",
-                    "field": "description",
-                    "operator": "contains",
-                    "value": str(conditions),
-                }
+            except (ValueError, TypeError) as exc:
+                raise ValueError(
+                    f"Rule conditions are not valid JSON: {conditions!r}"
+                ) from exc
 
         if isinstance(conditions, list):
             # Legacy list of conditions -> AND group
@@ -208,7 +263,11 @@ class TaggingRulesService:
         """
         Update an existing tagging rule with validation and conflict checks.
 
-        After updating, the rule is immediately re-applied to matching transactions.
+        After updating, the rule is re-applied: untagged transactions that
+        match it are tagged, and — when the rule's category or tag changed —
+        transactions that still carry the rule's *previous* category/tag and
+        match the (possibly new) conditions are moved to the new pair.
+        Transactions tagged with anything else are never touched.
 
         Parameters
         ----------
@@ -220,39 +279,50 @@ class TaggingRulesService:
         Returns
         -------
         int
-            Number of transactions tagged by the updated rule.
+            Number of transactions tagged or re-tagged by the updated rule.
 
         Raises
         ------
         EntityNotFoundException
             If no rule with ``rule_id`` exists.
         BadRequestException
-            If condition validation or conflict checking fails.
+            If condition validation or conflict checking fails, or the new
+            category/tag pair does not exist.
         """
         rule = self.rules_repo.get_rule_by_id(rule_id)
         if not rule:
             raise EntityNotFoundException(f"Rule {rule_id} not found")
 
+        old_category, old_tag = rule.category, rule.tag
+
         # Determine new values or keep existing
         new_conditions = kwargs.get("conditions", rule.conditions)
-        new_category = kwargs.get("category", rule.category)
-        new_tag = kwargs.get("tag", rule.tag)
+        new_category = kwargs.get("category", old_category)
+        new_tag = kwargs.get("tag", old_tag)
 
         if "conditions" in kwargs:
             self.validate_rule_integrity(new_conditions)
+        if "category" in kwargs or "tag" in kwargs:
+            self._validate_target(new_category, new_tag)
 
         # Check conflicts excluding self (pass rule_id to exclude)
         self.check_conflicts(
             new_conditions, new_category, new_tag, exclude_rule_id=rule_id
         )
 
-        updated = self.rules_repo.update_rule(rule_id, **kwargs)
+        if not self.rules_repo.update_rule(rule_id, **kwargs):
+            return 0
 
-        n_tagged = 0
-        if updated:
-            n_tagged = self.apply_rule_by_id(rule_id)
-
-        return n_tagged
+        previous = None
+        if (new_category, new_tag) != (old_category, old_tag):
+            previous = (old_category, old_tag)
+        rule_dict = {
+            "id": rule_id,
+            "conditions": new_conditions,
+            "category": new_category,
+            "tag": new_tag,
+        }
+        return len(self._apply_single_rule_returning_ids(rule_dict, previous=previous))
 
     def delete_rule(self, rule_id: int) -> bool:
         """
@@ -282,30 +352,40 @@ class TaggingRulesService:
         """
         Apply all tagging rules to matching transactions.
 
-        Rules are applied in the order returned by the repository (priority DESC).
-        Counts unique ``(table, unique_id)`` pairs modified to avoid double-counting.
+        Rules are applied in creation order (``id`` ascending) and the first
+        rule to claim a transaction wins: a transaction tagged by an earlier
+        rule in this run is skipped by every later rule, in both modes.
+        Rules whose stored conditions cannot be parsed are skipped and logged.
 
         Parameters
         ----------
         overwrite : bool, optional
-            When ``True``, re-tags already-tagged transactions that currently have
-            a different category/tag. Default is ``False`` (only tags untagged rows).
+            When ``True``, every transaction matching a rule is (re)tagged
+            with that rule's category/tag, whatever it carried before — the
+            tables keep no record of whether a tag was set by a rule or by
+            hand, so ``overwrite`` means "reset every matching transaction to
+            what the rules say". Default is ``False`` (only untagged rows).
 
         Returns
         -------
         int
             Total number of unique transactions that were tagged or re-tagged.
         """
-        result = self.rules_repo.get_all_rules()
-        rules = result.to_dict(orient="records")
+        rules = self.rules_repo.get_all_rules().to_dict(orient="records")
 
-        # Use a set to track unique (table, id) pairs for accurate counting
-        modified_transactions = set()
+        # ``claimed`` is every pair some rule *matched* — a rule owns a
+        # transaction even when it had nothing to change about it, otherwise a
+        # later overlapping rule would steal the rows the first rule already
+        # agrees with. ``modified`` is the subset actually written, which is
+        # what the caller counts.
+        claimed: Set[Tuple[str, int]] = set()
+        modified: Set[Tuple[str, int]] = set()
         for rule in rules:
-            modified = self._apply_single_rule_returning_ids(rule, overwrite=overwrite)
-            modified_transactions.update(modified)
+            modified |= self._apply_single_rule_returning_ids(
+                rule, overwrite=overwrite, claimed=claimed
+            )
 
-        return len(modified_transactions)
+        return len(modified)
 
     def apply_rule_by_id(self, rule_id: int, overwrite: bool = False) -> int:
         """
@@ -333,6 +413,7 @@ class TaggingRulesService:
         if not rule:
             raise EntityNotFoundException(f"Rule {rule_id} not found")
         rule_dict = {
+            "id": rule.id,
             "conditions": rule.conditions,
             "category": rule.category,
             "tag": rule.tag,
@@ -441,10 +522,29 @@ class TaggingRulesService:
                             f"Value '{value}' must be a number for field '{field}'"
                         )
 
-            if field in text_fields:
+            if field == "service":
+                # The table selector only honours ``equals`` with a known
+                # service; anything else would silently match nothing.
+                if operator != "equals":
+                    raise BadRequestException(
+                        "Field 'service' only supports the 'equals' operator"
+                    )
+                normalized = str(value).strip().lower().replace(" ", "_")
+                if normalized not in VALID_SERVICE_VALUES:
+                    raise BadRequestException(
+                        f"Unknown service '{value}'. Valid services: "
+                        + ", ".join(sorted(VALID_SERVICE_VALUES))
+                    )
+            elif field in text_fields:
                 if operator not in valid_text_ops:
                     raise BadRequestException(
                         f"Operator '{operator}' not valid for text field '{field}'"
+                    )
+                # A blank pattern is a catch-all: ``contains ""`` matches
+                # every transaction, which is never what a rule means.
+                if not isinstance(value, str) or not value.strip():
+                    raise BadRequestException(
+                        f"Value for text field '{field}' must not be blank"
                     )
 
     def check_conflicts(
@@ -484,12 +584,9 @@ class TaggingRulesService:
             if rule["category"] == category and rule["tag"] == tag:
                 continue
 
-            rule_conds = rule["conditions"]
-            if isinstance(rule_conds, str):
-                try:
-                    rule_conds = json.loads(rule_conds)
-                except Exception:
-                    continue
+            rule_conds = self._stored_conditions(rule)
+            if rule_conds is None:
+                continue
 
             r_tables = self._get_tables_names_for_conditions(rule_conds)
 
@@ -538,61 +635,142 @@ class TaggingRulesService:
         ids = self._apply_single_rule_returning_ids(rule, overwrite=overwrite)
         return len(ids)
 
+    def _stored_conditions(self, rule: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """
+        Normalize a stored rule's conditions, or ``None`` if they are broken.
+
+        Parameters
+        ----------
+        rule : dict
+            Rule record with at least ``conditions``; ``id``/``name`` are used
+            for the log line when present.
+
+        Returns
+        -------
+        dict or None
+            The normalized condition tree, or ``None`` when the stored value
+            cannot be parsed. Broken rules are skipped everywhere (apply and
+            conflict detection alike) so they never tag anything.
+        """
+        try:
+            return self._normalize_conditions(rule["conditions"])
+        except ValueError:
+            logger.warning(
+                "Skipping tagging rule %s (%r): stored conditions are not valid JSON",
+                rule.get("id"),
+                rule.get("name"),
+            )
+            return None
+
     def _apply_single_rule_returning_ids(
-        self, rule: Dict[str, Any], overwrite: bool = False
+        self,
+        rule: Dict[str, Any],
+        overwrite: bool = False,
+        claimed: Optional[Set[Tuple[str, int]]] = None,
+        previous: Optional[Tuple[str, str]] = None,
     ) -> Set[Tuple[str, int]]:
         """
-        Apply a single rule to transactions and return set of (table, unique_id) pairs updated.
+        Apply a single rule and return the ``(table, unique_id)`` pairs it updated.
+
+        Parameters
+        ----------
+        rule : dict
+            Rule dict with ``conditions``, ``category`` and ``tag`` keys.
+        overwrite : bool, optional
+            When ``True``, matching rows are re-tagged whatever they carry;
+            otherwise only untagged rows (``category IS NULL``) are touched.
+        claimed : set of (str, int), optional
+            In/out. Pairs already claimed by an earlier rule in the same run
+            are skipped, and every pair this rule matches is added — matched,
+            not merely written, so a rule owns the rows it already agrees with
+            and a later overlapping rule cannot steal them. The first matching
+            rule therefore wins regardless of mode.
+        previous : (str, str), optional
+            The rule's former ``(category, tag)``. Rows still carrying it and
+            matching the conditions are moved to the new pair even when
+            ``overwrite`` is ``False`` — used when a rule is edited.
+
+        Returns
+        -------
+        set of (str, int)
+            Pairs actually written. Empty when the rule's conditions are
+            broken, or when every matching row already says what it says.
         """
-        conditions = self._normalize_conditions(rule["conditions"])
+        conditions = self._stored_conditions(rule)
+        if conditions is None:
+            return set()
         tables = self._get_tables_names_for_conditions(conditions)
 
-        modified_pairs = set()
+        modified_pairs: Set[Tuple[str, int]] = set()
         for table in tables:
             model = TABLE_TO_MODEL[table]
             base_filter = self._build_recursive_filter(conditions, model)
 
-            if not overwrite:
-                extra_filter = model.category.is_(None)
-            else:
+            if overwrite:
                 extra_filter = or_(
+                    model.category.is_(None),
                     model.category.isnot(rule["category"]),
                     model.tag.isnot(rule["tag"]),
-                    model.category.is_(None),
                 )
+            elif previous is not None:
+                extra_filter = or_(
+                    model.category.is_(None),
+                    and_(model.category == previous[0], model.tag == previous[1]),
+                )
+            else:
+                extra_filter = model.category.is_(None)
 
-            # Find IDs first
-            stmt = select(model.unique_id).where(and_(base_filter, extra_filter))
-            ids_df = pd.read_sql(stmt, self.db.bind)
-            if ids_df.empty:
+            # Claim first, then narrow to the rows that need writing: a row
+            # already carrying this rule's pair is still this rule's.
+            matched = {
+                uid
+                for uid in pd.read_sql(
+                    select(model.unique_id).where(base_filter), self.db.bind
+                )["unique_id"].tolist()
+                if claimed is None or (table, uid) not in claimed
+            }
+            if claimed is not None:
+                claimed.update((table, uid) for uid in matched)
+            if not matched:
                 continue
 
-            ids_to_update = ids_df["unique_id"].tolist()
+            stmt = select(model.unique_id).where(and_(base_filter, extra_filter))
+            ids_to_update = [
+                uid
+                for uid in pd.read_sql(stmt, self.db.bind)["unique_id"].tolist()
+                if uid in matched
+            ]
+            if not ids_to_update:
+                continue
 
-            # Perform the update
-            update_stmt = (
-                update(model)
-                .where(model.unique_id.in_(ids_to_update))
-                .values(category=rule["category"], tag=rule["tag"])
-            )
-            self.db.execute(update_stmt)
+            for start in range(0, len(ids_to_update), _SQL_IN_BATCH_SIZE):
+                batch = ids_to_update[start : start + _SQL_IN_BATCH_SIZE]
+                self.db.execute(
+                    update(model)
+                    .where(model.unique_id.in_(batch))
+                    .values(category=rule["category"], tag=rule["tag"])
+                )
             self.db.commit()
 
-            for uid in ids_to_update:
-                modified_pairs.add((table, uid))
+            modified_pairs.update((table, uid) for uid in ids_to_update)
 
         return modified_pairs
 
     def _build_recursive_filter(self, condition_node: Dict[str, Any], model: Type[TransactionBase]):
         """
         Recursively builds a SQLAlchemy filter expression from a condition tree.
+
+        Fails closed: an empty group or an unknown node type matches nothing.
+        ``validate_rule_integrity`` rejects both before a rule is stored, so
+        reaching them here means the stored rule is malformed — matching
+        every transaction would be the worst possible interpretation.
         """
         c_type = condition_node.get("type")
 
         if c_type in ("AND", "OR"):
             subconditions = condition_node.get("subconditions", [])
             if not subconditions:
-                return True  # Empty group matches all
+                return False
 
             clauses = [self._build_recursive_filter(sub, model) for sub in subconditions]
             return and_(*clauses) if c_type == "AND" else or_(*clauses)
@@ -600,7 +778,7 @@ class TaggingRulesService:
         elif c_type == "CONDITION":
             return self._build_single_filter(condition_node, model)
 
-        return False  # Fallback: match nothing
+        return False
 
     def _build_single_filter(self, condition: Dict[str, Any], model: Type[TransactionBase]):
         """
@@ -616,7 +794,9 @@ class TaggingRulesService:
         Returns
         -------
         SQLAlchemy expression
-            Filter clause, or ``True`` if the field is unrecognised.
+            Filter clause. ``True`` for the ``service`` pseudo-field (handled
+            by table selection); ``False`` for an unknown field or operator
+            so a malformed rule matches nothing rather than everything.
         """
         field = condition.get("field")
         operator = condition.get("operator")
@@ -651,7 +831,7 @@ class TaggingRulesService:
         elif operator == "between":
             return column.between(float(value[0]), float(value[1]))
 
-        return True
+        return False
 
     def _get_model_column(self, field: str, model: Type[TransactionBase]):
         """
@@ -763,7 +943,20 @@ class TaggingRulesService:
             return 0
 
         count = 0
-        cc_tags = self.categories_tags_service.categories_and_tags["Credit Cards"]
+        cc_tags = self.categories_tags_service.categories_and_tags.get(
+            "Credit Cards", []
+        )
+        # Tags are title-cased on creation ("Isracard - Main Card - 1234")
+        # while the scraped rows keep the provider's own casing ("isracard"),
+        # so provider and account name must be compared case-insensitively.
+        cc_data["_provider_key"] = (
+            cc_data[TransactionsTableFields.PROVIDER.value].astype("string").str.lower()
+        )
+        cc_data["_account_key"] = (
+            cc_data[TransactionsTableFields.ACCOUNT_NAME.value]
+            .astype("string")
+            .str.lower()
+        )
         for bank_month, bank_month_data in bank_data.sort_values("month").groupby(
             "month"
         ):
@@ -774,11 +967,8 @@ class TaggingRulesService:
                     continue
                 provider, account_name, account_number = parts
                 cc_tag_month_data_amount = cc_month_data[
-                    (cc_month_data[TransactionsTableFields.PROVIDER.value] == provider)
-                    & (
-                        cc_month_data[TransactionsTableFields.ACCOUNT_NAME.value]
-                        == account_name
-                    )
+                    (cc_month_data["_provider_key"] == provider.lower())
+                    & (cc_month_data["_account_key"] == account_name.lower())
                     & (
                         cc_month_data[TransactionsTableFields.ACCOUNT_NUMBER.value]
                         .astype("string")

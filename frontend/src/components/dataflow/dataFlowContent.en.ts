@@ -19,7 +19,7 @@ const content: DataFlowContent = {
     scraper: { title: "Scraper Framework", desc: "BrowserScraper (Playwright) & ApiScraper (httpx). Login, 2FA, stealth, data fetch." },
     adapter: { title: "ScraperAdapter", desc: "Result \u2192 DataFrame. Generates unique_id, normalizes fields, triggers pipeline." },
     "api-routes": { title: "API Routes", desc: "POST /transactions, /investments, /cash_balances, /bank_balances" },
-    "auto-tag": { title: "Auto-Tagging", desc: "Recursive AND/OR rule engine. Priority-based, first match wins. CC bill matching." },
+    "auto-tag": { title: "Auto-Tagging", desc: "Recursive AND/OR rule engine. Creation order, first match wins. CC bill matching." },
     "balance-recalc": { title: "Balance Recalculation", desc: "Recomputes running bank balance from transaction history after each scrape." },
     "prior-wealth": { title: "Prior Wealth", desc: "Bridges pre-tracking capital. entered_balance \u2212 sum(transactions). Injected as synthetic rows." },
     "txn-tables": { title: "Transaction Tables", desc: "5 parallel tables: bank, credit_card, cash, manual_investment, insurance + split_transactions." },
@@ -111,7 +111,7 @@ const content: DataFlowContent = {
     "auto-tag": {
       title: "Auto-Tagging Engine", tag: "Rules Engine",
       sections: [
-        { heading: "How It Works", items: ["Rules evaluated in priority order (DESC) \u2014 first match wins", "Conditions are recursive AND/OR trees", "Fields: description, account_name, provider, amount", "Operators: contains, equals, starts_with, gt, lt, between"] },
+        { heading: "How It Works", items: ["Rules evaluated in creation order \u2014 first match wins; overlapping rules are rejected on save", "Conditions are recursive AND/OR trees", "Fields: description, account_name, provider, amount", "Operators: contains, equals, starts_with, gt, lt, between"] },
         { heading: "CC Bill Matching", text: "Matches bank debit amounts to CC monthly totals (shifted +1 month, \u00b10.01 tolerance). Tags as Credit Cards category." },
         { heading: "Conflict Detection", text: "Checks for overlapping rules assigning different tags before creating." },
       ],
@@ -228,7 +228,7 @@ const content: DataFlowContent = {
     "meta-tables": {
       title: "Metadata Tables", tag: "Configuration",
       sections: [
-        { heading: "Tables", items: ["categories \u2014 name, tags (JSON), icon", "tagging_rules \u2014 conditions (recursive JSON), priority", "budget_rules \u2014 amount, category, tags (semicolon-sep)", "investments \u2014 type, rates, commissions, dates", "liabilities \u2014 principal, rate, term, dates", "pending_refunds \u2014 source tracking, resolution"] },
+        { heading: "Tables", items: ["categories \u2014 name, tags (JSON), icon", "tagging_rules \u2014 name, conditions (recursive JSON), category, tag", "budget_rules \u2014 amount, category, tags (semicolon-sep)", "investments \u2014 type, rates, commissions, dates", "liabilities \u2014 principal, rate, term, dates", "pending_refunds \u2014 source tracking, resolution"] },
       ],
     },
     "analysis-svc": {
@@ -354,7 +354,7 @@ const content: DataFlowContent = {
       desc: "Categorize once and forget it. Custom rules quietly tag every new transaction the moment it arrives.",
       highlights: [
         "Build rules from description, account, amount, or any combination",
-        "Priority order \u2014 first match wins, conflicts are flagged before you save",
+        "Creation order \u2014 first match wins, conflicts are flagged before you save",
         "Manual override anytime, single transaction or in bulk",
       ],
     },

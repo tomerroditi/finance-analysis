@@ -6,11 +6,12 @@ Provides endpoints for category and tag management.
 
 from typing import List
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from backend.dependencies import get_database
+from backend.errors import EntityNotFoundException, ValidationException
 from backend.services.tagging_service import CategoriesTagsService
 
 router = APIRouter()
@@ -68,12 +69,20 @@ def get_category_usage(db: Session = Depends(get_database)):
 
 @router.post("/categories")
 def add_category(category: CategoryCreate, db: Session = Depends(get_database)):
-    """Add a new category."""
-    try:
-        CategoriesTagsService(db).add_category(category.name, category.tags)
-        return {"status": "success"}
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    """Add a new category.
+
+    Raises
+    ------
+    ValidationException
+        400 if the name (or any tag) is blank or invalid, or the category
+        already exists.
+    """
+    if not CategoriesTagsService(db).add_category(category.name, category.tags):
+        raise ValidationException(
+            f"Cannot add category '{category.name}'. The name may be blank or "
+            "invalid, or the category may already exist."
+        )
+    return {"status": "success"}
 
 
 @router.delete("/categories/{name}")
@@ -82,59 +91,94 @@ def delete_category(name: str, db: Session = Depends(get_database)):
 
     Transactions that were assigned to this category or any of its tags
     have their ``category`` and ``tag`` fields set to ``NULL`` in the DB.
+
+    Raises
+    ------
+    EntityNotFoundException
+        404 if no such category exists.
+    ValidationException
+        400 if the category is protected.
     """
-    try:
-        CategoriesTagsService(db).delete_category(name)
-        return {"status": "success"}
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    service = CategoriesTagsService(db)
+    if not service.delete_category(name):
+        if name not in service.categories_and_tags:
+            raise EntityNotFoundException(f"Category '{name}' not found")
+        raise ValidationException(f"Category '{name}' is protected and cannot be deleted")
+    return {"status": "success"}
 
 
 @router.post("/tags")
 def create_tag(tag: TagCreate, db: Session = Depends(get_database)):
-    """Add a tag to a category."""
-    try:
-        CategoriesTagsService(db).add_tag(tag.category, tag.name)
-        return {"status": "success"}
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    """Add a tag to a category.
+
+    Raises
+    ------
+    EntityNotFoundException
+        404 if the category does not exist.
+    ValidationException
+        400 if the tag name is blank or invalid, or already exists.
+    """
+    service = CategoriesTagsService(db)
+    if not service.add_tag(tag.category, tag.name):
+        if tag.category not in service.categories_and_tags:
+            raise EntityNotFoundException(f"Category '{tag.category}' not found")
+        raise ValidationException(
+            f"Cannot add tag '{tag.name}' to '{tag.category}'. The name may be "
+            "blank or invalid, or the tag may already exist."
+        )
+    return {"status": "success"}
 
 
 @router.delete("/tags/{category}/{name}")
 def delete_tag(category: str, name: str, db: Session = Depends(get_database)):
     """Delete a tag from a category.
 
-    Transactions tagged with this tag have their ``tag`` field (and optionally
-    ``category``) set to ``NULL`` in the DB.
+    Transactions tagged with this tag have their ``category`` and ``tag``
+    fields set to ``NULL`` in the DB.
+
+    Raises
+    ------
+    EntityNotFoundException
+        404 if the category or tag does not exist.
     """
-    try:
-        CategoriesTagsService(db).delete_tag(category, name)
-        return {"status": "success"}
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    if not CategoriesTagsService(db).delete_tag(category, name):
+        raise EntityNotFoundException(f"Tag '{name}' not found in category '{category}'")
+    return {"status": "success"}
 
 
 @router.post("/tags/relocate")
 def relocate_tag(data: TagRelocate, db: Session = Depends(get_database)):
     """Move a tag from one category to another.
 
-    Updates the YAML config and re-categorises transactions that carry this
-    tag so their ``category`` field reflects the new parent category.
+    Re-categorises transactions, tagging rules and budget rules that carry
+    this tag so their ``category`` reflects the new parent category.
+
+    Raises
+    ------
+    EntityNotFoundException
+        404 if either category, or the tag under ``old_category``, does not
+        exist.
+    ValidationException
+        400 if both categories are the same.
     """
-    try:
-        CategoriesTagsService(db).reallocate_tag(
-            data.old_category, data.new_category, data.tag
+    service = CategoriesTagsService(db)
+    if not service.reallocate_tag(data.old_category, data.new_category, data.tag):
+        categories = service.categories_and_tags
+        if data.old_category not in categories or data.new_category not in categories:
+            raise EntityNotFoundException("Category not found")
+        if data.tag not in categories[data.old_category]:
+            raise EntityNotFoundException(
+                f"Tag '{data.tag}' not found in category '{data.old_category}'"
+            )
+        raise ValidationException(
+            f"Cannot move tag '{data.tag}' from '{data.old_category}' to itself"
         )
-        return {"status": "success"}
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    return {"status": "success"}
 
 
 @router.put("/categories/{name}")
 def rename_category(name: str, data: CategoryRename, db: Session = Depends(get_database)):
     """Rename a category and cascade the change across all tables."""
-    from backend.errors import ValidationException
-
     success = CategoriesTagsService(db).rename_category(name, data.new_name)
     if not success:
         raise ValidationException(
@@ -146,8 +190,6 @@ def rename_category(name: str, data: CategoryRename, db: Session = Depends(get_d
 @router.put("/tags/{category}/{name}")
 def rename_tag(category: str, name: str, data: TagRename, db: Session = Depends(get_database)):
     """Rename a tag and cascade the change across all tables."""
-    from backend.errors import ValidationException
-
     success = CategoriesTagsService(db).rename_tag(category, name, data.new_name)
     if not success:
         raise ValidationException(
