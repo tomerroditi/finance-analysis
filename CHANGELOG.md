@@ -1,3 +1,9 @@
+## v1.62.0 (2026-09-11)
+
+### Feat
+
+- **budget**: land on the Overview tab on the page and the card (#274)
+
 ## v1.61.4 (2026-09-11)
 
 ### Fix
