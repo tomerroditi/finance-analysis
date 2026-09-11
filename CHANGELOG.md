@@ -1,3 +1,9 @@
+## v1.61.1 (2026-09-11)
+
+### Fix
+
+- **demo**: enable Fluid compute and surface a missing Blob store loudly (#268)
+
 ## v1.61.0 (2026-09-10)
 
 ### Feat
