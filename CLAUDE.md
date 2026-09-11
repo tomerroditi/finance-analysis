@@ -82,6 +82,22 @@ Routes (FastAPI) -> Services (Business Logic) -> Repositories (Data Access) -> S
 - **Tagging rules:** no priority column — rules run in creation order (`id` ASC), first match wins; overlapping rules that would assign different category/tag pairs are rejected at creation by conflict detection. `apply?overwrite=true` resets every matching transaction (hand-tagged included — the tables don't record who set a tag)
 - **Split transactions:** original stays in main table, splits in `split_transactions`, merged in service layer
 - **Savings goals:** a goal is a **virtual earmark** over money already in tracked accounts — never added to net worth. Progress is derived, not typed: each month's realized surplus (`income - expenses - investments`, CC-deduped) flows down goals by `priority`, each taking up to `min(remaining need, monthly_cap)`. Linked transactions are pulled out of the surplus and reintroduced explicitly (a *contribution* consumes the pool; a *utilization* draws the goal down without ever reducing its target), so no shekel counts twice. What no goal claims stays in the **free-cash pool** (`GET /savings-goals/free-cash`) — the tracked liquid money that is not earmarked. A month that spends more than it earns drains that pool first; only once it is empty does the shortfall come back out of the goals, **lowest priority first**, each giving back at most `funded - utilized` (money already spent can never be reclaimed) as a negative allocation row. A goal can also be **backed by an investment** the user means to liquidate (`savings_goal_investments`, valued live off the holding): it counts toward `funded` and shrinks what the goal needs from surplus, but it is not cash — never in the free-cash pool, never clawed back, and reported separately as `investment_backed`. Allocations persist per `(goal, month)`; priority changes apply forward and rewriting history is an explicit previewed `rebuild`. Closed goals are frozen — their allocations can never be reclaimed or clawed back. Full rules: `.claude/rules/savings_goals.md`
+- **Early-retirement calculator (`backend/services/fire/`):** a *second*,
+  standalone engine — a reverse-engineered clone of the zekestories reference
+  calculator, unrelated to `retirement_service.py` and not wired to the user's
+  tracked data. Monthly simulation in real shekels from the current month to a
+  hard-coded **age 81**. Two rules dominate: growth is
+  `((1+return)(1-fee))**(1/12)` with the fee **multiplicative**, and the model is
+  **two-phase** — at retirement a withdrawal portfolio (and any study fund)
+  stops earning the user's return and switches to a confidence-derived
+  "decumulation return" from a measured table (`decumulation_table.json`), which
+  collapses to ~0 between ages 54 and 60 and jumps back after 60. Exposed at
+  `POST /api/fire/calculate` and the `/fire-calculator` page. Every rule is
+  evidence-backed in `research/zeke_retire_calc/notes/` (14 notes, 140 recorded
+  fixtures); parity tests replay those fixtures month by month. **Read the notes
+  before changing any constant** — several are counter-intuitive (there is no
+  age-60 capital-gains exemption; the gemel ceiling is 76,449/yr; Bituach Leumi
+  is a flat 2,757 stepping to 2,911.5 at 80).
 - **Retirement calculator:** all-real-terms model (today's shekels; nominal return converted via inflation). Scraped Keren Hishtalmut policies are auto-synced into `type='hishtalmut'` investments (with scraped snapshots) and are therefore **already inside tracked net worth** — retirement math swaps them out via `status["tracked_kh_value"]` before adding the goal's KH bucket, so KH counts exactly once for both scraped and typed-only users. Full rules: `.claude/rules/retirement_calculations.md`
 
 ## Code Style
