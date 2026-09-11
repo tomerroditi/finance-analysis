@@ -186,13 +186,11 @@ class TestVercelCronDeclarations:
         project_root = Path(__file__).resolve().parents[2]
         config = json.loads((project_root / "vercel.json").read_text())
         declared = [cron["path"] for cron in config.get("crons", [])]
-        mounted = {
-            route.path: route.methods
-            for route in app.routes
-            if hasattr(route, "methods")
-        }
+        # The OpenAPI schema is the flattened view of what is actually
+        # mounted (``app.routes`` holds un-expanded router wrappers).
+        mounted = app.openapi()["paths"]
 
         assert declared, "vercel.json declares no crons"
         for path in declared:
             assert path in mounted, f"{path} is not a mounted route"
-            assert "GET" in mounted[path], f"{path} does not answer GET"
+            assert "get" in mounted[path], f"{path} does not answer GET"
