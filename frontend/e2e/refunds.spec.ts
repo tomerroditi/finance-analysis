@@ -109,12 +109,22 @@ test.describe("Refunds redesign", () => {
         (!t.date || !income2.date || t.date <= income2.date),
     );
     expense1 = expenses[0];
-    expense2 = expenses.find((t) => descOf(t) !== descOf(expense1))!;
+    // p2's expectation is income2's exact amount, and a pending refund may
+    // not expect back more than its source transaction was worth, so
+    // expense2 has to be at least that large.
+    expense2 = expenses.find(
+      (t) =>
+        descOf(t) !== descOf(expense1) &&
+        Math.abs(t.amount) >= income2.amount,
+    )!;
     expect(
       expense1,
       "demo data must contain expense transactions",
     ).toBeTruthy();
-    expect(expense2, "demo data must contain a second expense").toBeTruthy();
+    expect(
+      expense2,
+      "demo data must contain a second expense at least as large as income2",
+    ).toBeTruthy();
 
     const r1 = await request.post(`${API_BASE}/pending-refunds/`, {
       data: {
