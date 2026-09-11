@@ -15,6 +15,7 @@ import pytest
 from backend import database, demo_sessions
 from backend.config import AppConfig
 from backend.demo_sessions import DemoSessionStore, blob_pathname, parse_session_id
+from backend.utils import vercel_blob
 from backend.utils.vercel_blob import BlobObject, BlobPutResult
 
 SID_A = "visitor-aaaaaaaaaaaaaaaa"
@@ -33,6 +34,8 @@ class FakeBlobBackend:
         self.blobs: dict[str, dict] = {}
         self.puts = 0
         self.gets = 0
+        #: Downloads that actually transferred bytes (a 200, not a 304/404).
+        self.transfers = 0
 
     def url_for(self, pathname):
         return f"https://fake.blob/{pathname}"
@@ -56,6 +59,7 @@ class FakeBlobBackend:
             return None
         if if_none_match and if_none_match == record["etag"]:
             return BlobObject(data=None, etag=if_none_match, not_modified=True)
+        self.transfers += 1
         return BlobObject(data=record["data"], etag=record["etag"])
 
     def delete(self, urls):
@@ -229,19 +233,6 @@ class TestEnsureLocal:
 
         assert _read_marker(path) == "edited"
 
-    def test_download_failure_falls_back_to_template(self, user_dir, template):
-        """Verify a Blob outage degrades to a fresh sandbox, not a 500."""
-
-        class BrokenBackend(FakeBlobBackend):
-            def get(self, pathname):
-                raise RuntimeError("blob down")
-
-        store = DemoSessionStore(BrokenBackend())
-
-        store.ensure_local(SID_A)
-
-        assert _read_marker(store.local_db_path(SID_A)) == "template"
-
 
 class TestSync:
     """Tests for per-request revalidation against the persisted copy.
@@ -327,10 +318,47 @@ class TestSync:
         store.persist(SID_A)
         store._checked_at.clear()
 
+        transfers_before = backend.transfers
+
         store.sync(SID_A)
 
         assert _read_marker(store.local_db_path(SID_A)) == "mine"
         assert store._etags[SID_A] == backend.blobs[blob_pathname(SID_A)]["etag"]
+        # The revalidation happened (the window was cleared) but answered 304.
+        assert backend.gets == 2
+        assert backend.transfers == transfers_before
+
+
+    def test_corrupt_download_does_not_clobber_the_local_copy(self, user_dir, template):
+        """Verify a payload that is not a SQLite file leaves the sandbox alone.
+
+        The whole database is the unit of persistence, so a truncated upload
+        or an error page served with a 200 would otherwise be written over a
+        working sandbox and turn every query into "no such table" — with a
+        manual reset the visitor's only way out.
+        """
+        backend = FakeBlobBackend()
+        store = DemoSessionStore(backend)
+        store.sync(SID_A)
+        self._edit(store.local_db_path(SID_A), "still-good")
+        backend.put(blob_pathname(SID_A), b"<html>Attention Required</html>")
+        store._checked_at.clear()
+
+        store.sync(SID_A)
+
+        assert _read_marker(store.local_db_path(SID_A)) == "still-good"
+        # No etag recorded, so a repaired blob is picked up on the next check.
+        assert store._etags.get(SID_A) is None
+
+    def test_corrupt_download_still_seeds_a_missing_sandbox(self, user_dir, template):
+        """Verify a visitor with no local copy gets a fresh one, not a broken file."""
+        backend = FakeBlobBackend()
+        backend.put(blob_pathname(SID_A), b"")
+        store = DemoSessionStore(backend)
+
+        store.sync(SID_A)
+
+        assert _read_marker(store.local_db_path(SID_A)) == "template"
 
 
 class TestPersist:
@@ -457,3 +485,56 @@ class TestSnapshotTemplate:
         """Verify a missing shared DB does not raise or create a template."""
         demo_sessions.snapshot_template()
         assert not os.path.exists(DemoSessionStore.template_path())
+
+
+class TestNonDurableMode:
+    """Tests for the documented no-``BLOB_READ_WRITE_TOKEN`` deployment."""
+
+    @pytest.fixture(autouse=True)
+    def _clear_process_store(self):
+        """Drop the memoized process-wide store around each test."""
+        demo_sessions.set_store(None)
+        yield
+        demo_sessions.set_store(None)
+
+    def test_store_is_not_durable_without_a_token(self, user_dir, monkeypatch):
+        """Verify a deployment with no Blob store reports itself non-durable.
+
+        ``blob_configured`` in ``demo_mode_status`` and the cold-start
+        warning in ``index.py`` both read this flag, so it is what makes a
+        missing Blob store visible instead of silent.
+        """
+        monkeypatch.delenv(vercel_blob.TOKEN_ENV, raising=False)
+
+        assert demo_sessions.get_store().durable is False
+
+    def test_store_is_durable_with_a_token(self, user_dir, monkeypatch):
+        """Verify a configured token produces a store that claims durability."""
+        monkeypatch.setenv(vercel_blob.TOKEN_ENV, "vercel_blob_rw_store123_secret")
+
+        store = demo_sessions.get_store()
+
+        assert store.durable is True
+        assert store.backend.store_id == "store123"
+
+    def test_store_is_built_once_per_process(self, user_dir, monkeypatch):
+        """Verify the store is memoized rather than rebuilt per request."""
+        monkeypatch.delenv(vercel_blob.TOKEN_ENV, raising=False)
+
+        first = demo_sessions.get_store()
+        monkeypatch.setenv(vercel_blob.TOKEN_ENV, "vercel_blob_rw_store123_secret")
+
+        assert demo_sessions.get_store() is first
+
+    def test_reset_reseeds_without_a_backend(self, user_dir, template):
+        """Verify "Reset demo data" works on a deployment with no Blob store."""
+        store = DemoSessionStore(None)
+        store.ensure_local(SID_A)
+        conn = sqlite3.connect(store.local_db_path(SID_A))
+        conn.execute("UPDATE marker SET value = 'edited'")
+        conn.commit()
+        conn.close()
+
+        store.reset(SID_A)
+
+        assert _read_marker(store.local_db_path(SID_A)) == "template"

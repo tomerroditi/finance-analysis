@@ -141,6 +141,18 @@ class VercelBlobClient:
         token = os.environ.get(TOKEN_ENV, "").strip()
         if not token:
             return None
+        if not parse_store_id(token):
+            # Downloads address the store by id, so a token we cannot parse
+            # yields a client that can never read a blob back. Report it as
+            # "no Blob store" instead: the cold-start warning and
+            # ``blob_configured`` then say so, rather than advertising
+            # durability the deployment does not have.
+            logger.warning(
+                "%s is set but carries no store id; demo sandboxes will not "
+                "be durable. Re-connect the Blob store to the project.",
+                TOKEN_ENV,
+            )
+            return None
         access = os.environ.get("FAD_DEMO_BLOB_ACCESS", "private").strip() or "private"
         return cls(token, access=access)
 

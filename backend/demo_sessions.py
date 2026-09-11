@@ -64,6 +64,12 @@ REVALIDATE_WINDOW_SECONDS = 0.25
 #: another visitor by accident. UUIDs (with or without dashes) fit.
 _SESSION_ID_RE = re.compile(r"^[A-Za-z0-9_-]{16,64}$")
 _MUTATING_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
+#: Every SQLite database file starts with this header. A download that does
+#: not (an empty body, a truncated upload, an error page served with a 200)
+#: must never be written over a working sandbox — SQLite would then answer
+#: every query with "no such table" and the visitor's only way out would be
+#: a manual reset.
+_SQLITE_MAGIC = b"SQLite format 3\x00"
 
 
 def sessions_enabled() -> bool:
@@ -88,6 +94,22 @@ def parse_session_id(raw: str | None) -> str | None:
         return None
     value = raw.strip()
     return value if _SESSION_ID_RE.fullmatch(value) else None
+
+
+def looks_like_sqlite(data: bytes | None) -> bool:
+    """Return whether ``data`` begins with SQLite's file header.
+
+    Parameters
+    ----------
+    data : bytes | None
+        Bytes downloaded for a sandbox.
+
+    Returns
+    -------
+    bool
+        ``True`` when the payload can plausibly be a database file.
+    """
+    return bool(data) and data.startswith(_SQLITE_MAGIC)
 
 
 def blob_pathname(session_id: str) -> str:
@@ -215,6 +237,17 @@ class DemoSessionStore:
                 self._etags[session_id] = None
             elif remote.not_modified:
                 return
+            elif not looks_like_sqlite(remote.data):
+                # Keep the etag unrecorded so the next revalidation tries
+                # again instead of trusting this payload.
+                logger.warning(
+                    "Persisted demo sandbox %s is not a SQLite database "
+                    "(%d bytes); keeping the local copy",
+                    session_id,
+                    len(remote.data or b""),
+                )
+                if not os.path.exists(path):
+                    self._seed(session_id, path)
             else:
                 self._write_atomically(path, remote.data or b"")
                 self._etags[session_id] = remote.etag
