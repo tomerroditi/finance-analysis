@@ -136,7 +136,9 @@ class VercelBlobClient:
         -------
         VercelBlobClient | None
             ``None`` means "no remote persistence" — callers fall back to
-            instance-local storage rather than failing.
+            instance-local storage rather than failing. Returned both when
+            the variable is unset and when its value carries no store id,
+            since such a token can never address a blob.
         """
         token = os.environ.get(TOKEN_ENV, "").strip()
         if not token:

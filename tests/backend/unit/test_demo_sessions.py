@@ -329,6 +329,29 @@ class TestSync:
         assert backend.transfers == transfers_before
 
 
+    def test_revalidation_holds_the_sandbox_lock(self, user_dir, template):
+        """Verify the download happens under the per-visitor lock.
+
+        A page load fires its requests concurrently; two threads downloading
+        and rewriting the same file at once could serve a half-written
+        database. The lock (not the freshness window, which a cleared
+        ``_checked_at`` bypasses) is what serializes them.
+        """
+        store = DemoSessionStore(FakeBlobBackend())
+        held: list[bool] = []
+
+        class LockProbing(FakeBlobBackend):
+            def get(self, pathname, if_none_match=None):
+                # Not re-entrant: failing to take it means we hold it.
+                held.append(not store._lock_for(SID_A).acquire(blocking=False))
+                return super().get(pathname, if_none_match)
+
+        store.backend = LockProbing()
+
+        store.sync(SID_A)
+
+        assert held == [True]
+
     def test_corrupt_download_does_not_clobber_the_local_copy(self, user_dir, template):
         """Verify a payload that is not a SQLite file leaves the sandbox alone.
 
