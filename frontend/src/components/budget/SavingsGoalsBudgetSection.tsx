@@ -1,5 +1,5 @@
 import { useTranslation } from "react-i18next";
-import { Target, Info } from "lucide-react";
+import { Target, Info, TrendingDown } from "lucide-react";
 import type { SavingsGoalMonthAllocations } from "../../services/api";
 import { formatCurrency } from "../../utils/numberFormatting";
 
@@ -13,6 +13,10 @@ import { formatCurrency } from "../../utils/numberFormatting";
  * The data arrives on the monthly analysis payload instead of a query of its
  * own — the budget page already refetches that analysis on every change, and
  * a second per-month request only added another straggler to each refresh.
+ *
+ * A month that spent more than it earned reads in reverse: the free-cash pool
+ * absorbs the deficit first, and anything it could not cover shows here as a
+ * negative row against the goals it was taken back out of.
  */
 export function SavingsGoalsBudgetSection({
   allocations,
@@ -42,10 +46,26 @@ export function SavingsGoalsBudgetSection({
             </span>
           )}
         </div>
-        <span dir="ltr" className="text-xs md:text-sm font-bold tabular-nums">
+        <span
+          dir="ltr"
+          className={`text-xs md:text-sm font-bold tabular-nums ${
+            allocations.total_allocated < 0 ? "text-amber-400" : ""
+          }`}
+        >
           {formatCurrency(allocations.total_allocated)}
         </span>
       </div>
+
+      {allocations.clawed_back > 0 && (
+        <div className="flex items-start gap-2 mb-3 text-xs text-amber-400 bg-amber-400/10 rounded-lg px-3 py-2">
+          <TrendingDown size={13} className="mt-0.5 shrink-0" />
+          <span>
+            {t("budget.goals.clawedBack", {
+              amount: formatCurrency(allocations.clawed_back),
+            })}
+          </span>
+        </div>
+      )}
 
       <div className="space-y-2">
         {allocations.goals.map((row) => (
@@ -67,7 +87,12 @@ export function SavingsGoalsBudgetSection({
                   })}
                 </span>
               )}
-              <span dir="ltr" className="font-semibold tabular-nums">
+              <span
+                dir="ltr"
+                className={`font-semibold tabular-nums ${
+                  row.total < 0 ? "text-amber-400" : ""
+                }`}
+              >
                 {formatCurrency(row.total)}
               </span>
             </div>
@@ -82,6 +107,11 @@ export function SavingsGoalsBudgetSection({
         <span>
           {t("budget.goals.unallocated", {
             amount: formatCurrency(allocations.unallocated),
+          })}
+        </span>
+        <span>
+          {t("budget.goals.freeCash", {
+            amount: formatCurrency(allocations.free_cash),
           })}
         </span>
       </div>

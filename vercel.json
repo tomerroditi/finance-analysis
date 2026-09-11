@@ -1,5 +1,12 @@
 {
+  "fluid": true,
   "buildCommand": "cd frontend && npm ci && npm run build",
   "outputDirectory": "frontend/dist",
-  "installCommand": "pip install -r requirements.txt"
+  "installCommand": "pip install -r requirements.txt",
+  "crons": [
+    {
+      "path": "/api/testing/demo/prune",
+      "schedule": "0 4 * * *"
+    }
+  ]
 }

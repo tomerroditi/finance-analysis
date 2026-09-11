@@ -49,13 +49,74 @@ The dataset models **the Cohens**, a dual-income Israeli couple with two kids (o
 - **Wedding planning** in the last ~10 months (project budget: `Our Wedding`, 120,000 ILS across 7 tags — Venue, Catering, Photography, Attire, Rings, Invitations, Honeymoon). Small/medium vendor payments on the Max CC; large deposits (venue, catering) via bank transfer.
 - **Paid-off Personal Loan** earlier in the window + active Mortgage + active Car Loan — exercises all three liability states.
 
+### Savings goals
+
+Three goals demonstrate every way a goal can be funded, in one waterfall:
+
+| # | Goal | Funded by | Demonstrates |
+|---|---|---|---|
+| 1 | Emergency Fund | cash only, capped 2,500/mo | a goal that filled — "Achieved 🎉" |
+| 2 | Kids' Education Fund | cash + the **Savings Plan** investment | investment backing, and `monthly_needed` off a long `target_date` |
+| 3 | Wedding Fund | cash, with two wedding bank transfers linked as **utilizations** | money set aside *and* since spent, without the target shrinking |
+
+Whatever the three leave unclaimed each month is the **free-cash pool**, which
+a negative month drains before any goal is touched (see
+`.claude/rules/savings_goals.md`).
+
+Two constraints on anything you add here:
+
+- **Never seed `savings_goal_allocations`.** The engine derives the whole
+  ledger on first read. Rows written by the generator would be anchored to
+  `REFERENCE_DATE` instead of the date-shifted months Demo Mode actually
+  serves, and `_shift_dates` deliberately does not move them.
+- **Only bank/cash transactions can be linked.** Credit-card and insurance
+  rows are filtered out of the surplus *before* links are resolved, so a
+  `savings_goal_links` row pointing at a CC transaction is silently inert.
+  The wedding utilizations use the bank-side venue/catering deposits for
+  exactly this reason.
+
+`savings_goals.start_month` / `closed_month` (YYYY-MM strings) and
+`target_date` are shifted by `_shift_dates` in `backend/demo_setup.py` (see
+"How Demo Mode re-anchors the data" below). A new date-ish column on these
+tables needs adding there too, or it freezes at the snapshot's build date
+while everything around it moves.
+
+### How Demo Mode re-anchors the data
+
+Demo Mode never serves the snapshot as generated. `prepare_demo_database`
+copies it and `_shift_dates` moves it forward by
+`date.today() − DEMO_REFERENCE_DATE`, so the story always ends today.
+`DEMO_REFERENCE_DATE` in `backend/demo_setup.py` must equal the generator's
+`REFERENCE_DATE`. Columns move in one of three ways:
+
+| Column kind | Examples | Moves by |
+|---|---|---|
+| Real dates | transaction `date`, balance-snapshot `date`, `target_date`, investment/liability dates, `categories.created_at` | the raw day offset |
+| Calendar-month periods | `budget_rules.year`/`month`, `savings_goals.start_month`/`closed_month` | whole months, `REFERENCE_DATE`'s month → today's month (yearly rules: whole years) |
+| Month relative to a transaction | `budget_month_overrides` | the shifted transaction's month ± its original direction |
+
+Month periods must **not** move by the day offset. Anchoring them to day 1 and
+adding days put them a month behind on every day before the 25th (the
+reference day). The snapshot's newest budget month then landed on *last*
+month, the current month had no Total Budget rule, and every category-rule
+create was rejected. Consequences for the generator:
+
+- **The newest monthly budget rules must sit in `REFERENCE_DATE`'s month** —
+  that is the month Demo Mode shows as current. `create_budget_rules` builds
+  the 6 months ending there; keep it that way.
+- **Classify a new column by what it means, not its SQL type.** A calendar
+  month goes in the month-shift group; a moment in time goes in the day-shift
+  group.
+- Regression tests for both groups, including the shipped snapshot checked on
+  a spread of "today" dates, live in `tests/backend/unit/test_demo_setup.py`.
+
 ### Other coverage guaranteed by the script
 - Multiple bank accounts (hapoalim Main + leumi Savings) and multiple cash envelopes (Petty Cash + Kids Envelope)
 - Untagged CC transactions so auto-tagging and manual-tagging flows can be demoed
 - Splits across 2 sources (CC + cash) — a couple of CC parents converted into different categories
 - 7 pending refunds covering all statuses (pending / partial / resolved / closed) + multi-link + a 150 ILS refund txn with leftover money available for other refunds + one `source_type='split'`
 - Tagging rules exercising 5 different operators (`contains`, `equals`, `starts_with`, `less_than`, `between`)
-- Budget rules: category-only, tag-level, and two project budgets (Home Renovation + Our Wedding) over the last 6 months
+- Budget rules: category-only, tag-level, and two project budgets (Home Renovation + Our Wedding) over the 6 months ending in the `REFERENCE_DATE` month (the month Demo Mode shows as current)
 - 5 insurance accounts (see next section) + a `RetirementGoal` tied to them
 
 ---
@@ -183,6 +244,7 @@ scripts/generate_demo_data.py
 ├── create_pending_refunds          ← 7 refunds covering all statuses + split source
 ├── create_liabilities              ← Mortgage, Car Loan, paid-off Personal Loan
 ├── create_retirement_goal          ← derives KH totals from insurance-account constants
+├── create_savings_goals            ← 3-goal waterfall + investment backing + utilizations
 ├── create_scraping_history
 ├── generate_insurance_data         ← pension + KH per Israeli law (see rules above)
 └── main()                          ← orchestrates, drops+recreates the DB, prints row counts

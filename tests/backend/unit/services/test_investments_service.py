@@ -1089,3 +1089,180 @@ class TestScrapedInvestmentTypeGuard:
         service.update_investment(inv_id, type="hishtalmut")
 
         assert service.investments_repo.get_by_id(inv_id).iloc[0]["type"] == "hishtalmut"
+
+
+class TestBalanceOverTimeSnapshotEdges:
+    """Edge cases of snapshot-aware balance history."""
+
+    def test_dates_before_first_snapshot_fall_back_to_transactions(self, db_session, seed_investments):
+        """Before any snapshot exists the balance is rebuilt from transactions."""
+        service = InvestmentsService(db_session)
+        stock_fund = seed_investments["investments"][0]
+        service.create_balance_snapshot(stock_fund.id, "2023-09-01", 12000.0)
+
+        history = service.calculate_balance_over_time(stock_fund.id, "2023-06-15", "2023-09-01")
+        balance_by_date = {e["date"]: e["balance"] for e in history}
+
+        # Only the 10,000 deposit has happened by mid-June/July.
+        assert balance_by_date["2023-06-15"] == 10000.0
+        assert balance_by_date["2023-07-01"] == 10000.0
+        assert balance_by_date["2023-09-01"] == 12000.0
+
+    def test_dates_after_last_snapshot_hold_the_last_snapshot(self, db_session, seed_investments):
+        """Past the newest snapshot the balance is carried forward flat, not re-derived."""
+        service = InvestmentsService(db_session)
+        stock_fund = seed_investments["investments"][0]
+        service.create_balance_snapshot(stock_fund.id, "2023-07-01", 10500.0)
+
+        history = service.calculate_balance_over_time(stock_fund.id, "2023-07-01", "2023-10-01")
+        balances = [e["balance"] for e in history]
+
+        assert balances and all(b == 10500.0 for b in balances)
+
+    def test_sample_on_a_snapshot_date_returns_it_exactly(self, db_session, seed_investments):
+        """A sample that coincides with a snapshot reads that snapshot, no interpolation."""
+        service = InvestmentsService(db_session)
+        stock_fund = seed_investments["investments"][0]
+        service.create_balance_snapshot(stock_fund.id, "2023-07-01", 10500.0)
+        service.create_balance_snapshot(stock_fund.id, "2023-08-01", 11000.0)
+        service.create_balance_snapshot(stock_fund.id, "2023-09-01", 11500.0)
+
+        history = service.calculate_balance_over_time(stock_fund.id, "2023-06-01", "2023-10-01")
+        balance_by_date = {e["date"]: e["balance"] for e in history}
+
+        assert balance_by_date["2023-08-01"] == 11000.0
+        assert balance_by_date["2023-09-01"] == 11500.0
+
+    def test_interpolation_is_linear_between_snapshots(self, db_session, seed_investments):
+        """A mid-interval sample lies on the straight line between the two snapshots."""
+        service = InvestmentsService(db_session)
+        stock_fund = seed_investments["investments"][0]
+        service.create_balance_snapshot(stock_fund.id, "2023-07-01", 10000.0)
+        service.create_balance_snapshot(stock_fund.id, "2023-07-31", 13000.0)
+
+        # 2023-07-16 is 15 of the 30 days in → exactly halfway.
+        history = service.calculate_balance_over_time(stock_fund.id, "2023-07-16", "2023-07-16")
+
+        assert {(e["date"], e["balance"]) for e in history} == {("2023-07-16", 11500.0)}
+
+
+class TestProfitLossWithoutTransactions:
+    """An investment that only has a snapshot (e.g. freshly synced from insurance)."""
+
+    def test_open_investment_reports_snapshot_as_current_balance(self, db_session):
+        """With no transactions the latest snapshot is the balance and P/L equals it."""
+        service = InvestmentsService(db_session)
+        service.create_investment(category="Investments", tag="Snapshot Only", type_="hishtalmut", name="KH")
+        inv_id = service.get_all_investments()[0]["id"]
+        service.create_balance_snapshot(inv_id, "2025-01-01", 4321.0)
+
+        metrics = service.calculate_profit_loss(inv_id)
+
+        assert metrics["total_deposits"] == 0.0
+        assert metrics["total_withdrawals"] == 0.0
+        assert metrics["net_invested"] == 0.0
+        assert metrics["current_balance"] == 4321.0
+        assert metrics["first_transaction_date"] is None
+
+    def test_open_investment_without_snapshot_is_all_zero(self, db_session):
+        """No transactions and no snapshot is a zero-valued record."""
+        service = InvestmentsService(db_session)
+        service.create_investment(category="Investments", tag="Empty", type_="stock", name="Nothing yet")
+        inv_id = service.get_all_investments()[0]["id"]
+
+        metrics = service.calculate_profit_loss(inv_id)
+
+        assert metrics["current_balance"] == 0.0
+        assert metrics["total_deposits"] == 0.0
+
+
+class TestCombinedInvestmentTransactions:
+    """``get_all_investment_transactions_combined`` across every investment."""
+
+    def test_empty_when_there_are_no_investments(self, db_session):
+        """No investments yields an empty frame."""
+        assert InvestmentsService(db_session).get_all_investment_transactions_combined().empty
+
+    def test_empty_when_investments_have_no_transactions(self, db_session):
+        """Investments without any transactions contribute nothing."""
+        service = InvestmentsService(db_session)
+        service.create_investment(category="Investments", tag="Idle", type_="stock", name="Idle")
+
+        assert service.get_all_investment_transactions_combined().empty
+
+    def test_combines_all_investments_with_parsed_columns(self, db_session, seed_investments):
+        """Rows from every investment are stacked and numeric/date helper columns added."""
+        service = InvestmentsService(db_session)
+
+        combined = service.get_all_investment_transactions_combined(include_closed=True)
+
+        assert set(combined["tag"]) == {"Stock Fund", "Bond Fund"}
+        assert "date_parsed" in combined.columns and "amount" in combined.columns
+        assert pd.api.types.is_datetime64_any_dtype(combined["date_parsed"])
+        assert pd.api.types.is_float_dtype(combined["amount"])
+
+    def test_excludes_closed_investments_when_asked(self, db_session, seed_investments):
+        """``include_closed=False`` drops the closed Bond Fund's rows."""
+        combined = InvestmentsService(db_session).get_all_investment_transactions_combined(include_closed=False)
+        assert set(combined["tag"]) == {"Stock Fund"}
+
+
+class TestInsuranceAndManualTransactionMerge:
+    """Insurance deposits are merged with manual rows for a linked investment."""
+
+    def _seed_linked_investment(self, service, policy_id):
+        service.sync_from_insurance({
+            "policy_id": policy_id,
+            "policy_type": "hishtalmut",
+            "provider": "hafenix",
+            "account_name": "Linked Fund",
+            "balance": None,
+            "balance_date": None,
+            "commission_deposits_pct": 1.0,
+            "commission_savings_pct": 0.5,
+            "liquidity_date": "2030-01-01",
+        })
+        return service.get_all_investments()[0]
+
+    def test_manual_and_insurance_rows_are_both_counted(self, db_session):
+        """Manual deposits and negated insurance deposits stack into one history."""
+        service = InvestmentsService(db_session)
+        inv = self._seed_linked_investment(service, "POL-MERGE")
+        db_session.add_all([
+            ManualInvestmentTransaction(
+                id="manual-1", date="2025-01-10", provider="manual", account_name="Investment Account",
+                description="Manual top-up", amount=-500.0, category=inv["category"], tag=inv["tag"],
+                source="manual_investment_transactions", type="normal", status="completed",
+            ),
+            InsuranceTransaction(
+                id="ins-merge", date="2025-02-15", provider="hafenix", account_name="Linked Fund",
+                account_number="POL-MERGE", description="Employer deposit", amount=1000.0,
+                source="insurance_transactions",
+            ),
+        ])
+        db_session.commit()
+
+        txns = service._get_all_transactions_for_investment(inv["category"], inv["tag"], investment_id=inv["id"])
+        metrics = service.calculate_profit_loss(inv["id"])
+
+        assert len(txns) == 2
+        assert sorted(txns["amount"].tolist()) == [-1000.0, -500.0]
+        assert metrics["total_deposits"] == 1500.0
+        assert metrics["first_transaction_date"] == "2025-01-10"
+
+    def test_linked_investment_with_no_insurance_rows_uses_manual_only(self, db_session):
+        """A policy link with no insurance transactions yet falls back to manual rows."""
+        service = InvestmentsService(db_session)
+        inv = self._seed_linked_investment(service, "POL-EMPTY")
+        db_session.add(
+            ManualInvestmentTransaction(
+                id="manual-only", date="2025-01-10", provider="manual", account_name="Investment Account",
+                description="Manual", amount=-250.0, category=inv["category"], tag=inv["tag"],
+                source="manual_investment_transactions", type="normal", status="completed",
+            )
+        )
+        db_session.commit()
+
+        txns = service._get_all_transactions_for_investment(inv["category"], inv["tag"], investment_id=inv["id"])
+
+        assert txns["amount"].tolist() == [-250.0]

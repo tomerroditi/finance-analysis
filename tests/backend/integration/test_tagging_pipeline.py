@@ -39,9 +39,11 @@ def _get_transaction_by_id(db_session, table: str, tx_id: str) -> dict:
 @pytest.fixture(autouse=True)
 def _patch_categories_cache(sample_categories_yaml, monkeypatch):
     """Inject the sample categories dict into the module-level cache."""
+    from backend.services.tagging_service import cache_key
+
     monkeypatch.setattr(
         "backend.services.tagging_service._categories_cache",
-        {False: sample_categories_yaml},
+        {cache_key(): sample_categories_yaml},
     )
 
 

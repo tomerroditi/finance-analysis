@@ -136,7 +136,7 @@ def restore_backup(filename: str) -> None:
     """
     # Reject anything that isn't a plain backup filename — no slashes, no
     # traversal, no symlinks pointing elsewhere.
-    if not _BACKUP_FILENAME_RE.match(filename):
+    if not _BACKUP_FILENAME_RE.fullmatch(filename):
         raise ValueError(f"Invalid backup filename: {filename}")
 
     backup_dir = get_backup_dir().resolve()

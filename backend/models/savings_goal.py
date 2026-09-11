@@ -100,7 +100,9 @@ class SavingsGoalAllocation(Base, TimestampMixin):
 
     Rows are written by the allocation engine, one per (goal, month). Past
     months are left untouched on subsequent runs — only an explicit rebuild
-    rewrites them — so a priority change never silently restates history.
+    rewrites them — so a priority change never silently restates history. The
+    single row per month carries the net movement: funding is positive, a
+    deficit month's clawback is negative.
 
     Attributes
     ----------
@@ -109,7 +111,10 @@ class SavingsGoalAllocation(Base, TimestampMixin):
     year, month : int
         Calendar month this allocation belongs to.
     amount : float
-        Money directed into the goal that month (never negative).
+        Money directed into the goal that month. Normally positive; a month
+        that spent more than it earned, and drained the free-cash pool dry,
+        writes a **negative** row for the amount it had to take back out of
+        the goal (never more than the goal still had available).
     source : str
         ``"auto"`` for engine-computed rows, ``"manual"`` for user overrides.
     """
@@ -180,4 +185,52 @@ class SavingsGoalLink(Base, TimestampMixin):
         return (
             f"<SavingsGoalLink(goal_id={self.goal_id}, {self.link_type}, "
             f"{self.source_table}#{self.source_id})>"
+        )
+
+
+class SavingsGoalInvestment(Base, TimestampMixin):
+    """An investment holding earmarked against a savings goal.
+
+    Some goals are not backed by cash at all: bonds the user already intends to
+    sell, a savings plan maturing into a down payment. Earmarking the holding
+    lets the goal show real progress without pretending the money is liquid.
+
+    The backing is **valued live** from the investment's current balance, so it
+    tracks the market and drops to zero the moment the holding is closed. It is
+    a label over an asset that already sits in net worth, exactly as a cash
+    earmark is a label over money already in the bank — so it is never added to
+    net worth, never drawn from the free-cash pool, and never clawed back by a
+    deficit month (an overspend drains cash; it cannot touch the bond).
+
+    Attributes
+    ----------
+    goal_id : int
+        Owning ``savings_goals.id``.
+    investment_id : int
+        Earmarked ``investments.id``.
+    amount : float or None
+        How much of the holding is earmarked. ``None`` means "whatever is left
+        of it" — the balance not already claimed by another goal's explicit
+        amount — which is what makes a whole-holding earmark track the market
+        without the user retyping a number.
+    """
+
+    __tablename__ = Tables.SAVINGS_GOAL_INVESTMENTS.value
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    goal_id = Column(Integer, nullable=False, index=True)
+    investment_id = Column(Integer, nullable=False, index=True)
+    amount = Column(Float, nullable=True)
+
+    # One earmark per (goal, investment) — re-earmarking updates the amount.
+    __table_args__ = (
+        UniqueConstraint(
+            "goal_id", "investment_id", name="uq_savings_goal_investment"
+        ),
+    )
+
+    def __repr__(self):
+        return (
+            f"<SavingsGoalInvestment(goal_id={self.goal_id}, "
+            f"investment_id={self.investment_id}, amount={self.amount})>"
         )

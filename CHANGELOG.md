@@ -1,3 +1,27 @@
+## v1.61.2 (2026-09-11)
+
+### Fix
+
+- **demo**: shift budget and savings-goal months by whole calendar months (#270)
+
+## v1.61.1 (2026-09-11)
+
+### Fix
+
+- **demo**: enable Fluid compute and surface a missing Blob store loudly (#268)
+
+## v1.61.0 (2026-09-10)
+
+### Feat
+
+- **demo**: per-visitor Vercel demo sandboxes persisted to Vercel Blob (#267)
+
+## v1.60.0 (2026-09-09)
+
+### Feat
+
+- **savings-goals**: free-cash pool for deficit months, and investment-backed goals (#262)
+
 ## v1.59.0 (2026-09-06)
 
 ### Feat
