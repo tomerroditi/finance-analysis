@@ -64,10 +64,17 @@ engine starts taking money back out of the goals.
 
 - **It opens at the spendable money that existed when the first goal started** —
   bank + cash *prior wealth* (`_opening_free_cash`, investment prior wealth
-  deliberately excluded: money in an investment is not free cash), plus every
-  month of realized surplus that predates the walk, less the goals' opening
-  balances. Anchoring on prior wealth alone would ignore all the history the
-  goals never saw.
+  deliberately excluded: money in an investment is not free cash), walked
+  forward through every month of realized surplus that predates the walk, less
+  the goals' opening balances. Anchoring on prior wealth alone would ignore all
+  the history the goals never saw.
+- **That pre-goal history floors at zero month by month**, just like the walk.
+  Summing it and flooring once put the floor at the earliest goal's start, so
+  deleting that goal moved the floor and changed how much it absorbed. Free
+  cash then rose by far less than the deleted earmark (a 120K goal once
+  released only ~34K). Deleting a goal must hand back exactly what it held and
+  leave `liquid` unchanged; `test_deleting_the_earliest_goal_releases_its_earmark`
+  pins that.
 - **It moves with the whole month, not just the positive part.** The waterfall
   still only distributes `max(0, surplus)`, but the pool is credited with the
   surplus itself and debited for every shekel a goal takes out of it. What the

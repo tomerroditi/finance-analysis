@@ -755,23 +755,24 @@ class SavingsGoalService:
         backing = self._investment_backing()
         backed = {g.id: float(backing.get(g.id, 0.0)) for g in goals}
         # The pool opens at the spendable money the user had when the first
-        # goal started: the capital that predates tracking, plus every month
-        # of realized cash flow before the walk begins, less whatever the
-        # goals already earmark of it. Anchoring on prior wealth alone would
-        # ignore years of history the goals never saw.
+        # goal started: the capital that predates tracking, walked forward
+        # through every month of realized cash flow before the walk begins,
+        # less whatever the goals already earmark of it. Anchoring on prior
+        # wealth alone would ignore years of history the goals never saw.
         #
-        # It can only go negative if the goals claim more than that, which is
-        # a bookkeeping artefact rather than real debt — floor it at zero so
-        # the first deficit month does not raid goals over a phantom hole.
-        earlier_flow = sum(
-            amount
-            for month_key, amount in context["surplus"].items()
-            if month_key < first_month
-        )
-        free_cash = max(
-            0.0,
-            self._opening_free_cash() + earlier_flow - sum(funded.values()),
-        )
+        # That history floors at zero month by month, exactly as the walk
+        # below does. Summing it and flooring once would put the floor at the
+        # earliest goal's start month, so deleting that goal moved the floor,
+        # changed how much the floor absorbed, and lost free cash with it.
+        free_cash = self._opening_free_cash()
+        for month_key in sorted(context["surplus"]):
+            if month_key >= first_month:
+                break
+            free_cash = max(0.0, free_cash + context["surplus"][month_key])
+        # The goals can claim more than that, which is a bookkeeping artefact
+        # rather than real debt — floor it at zero so the first deficit month
+        # does not raid goals over a phantom hole.
+        free_cash = max(0.0, free_cash - sum(funded.values()))
         # A goal closed by the user is frozen from the outset; one that fills
         # and is fully spent closes partway through the walk.
         frozen = {g.id: g.status == GOAL_STATUS_CLOSED for g in goals}

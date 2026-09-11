@@ -591,3 +591,28 @@ class TestFreeCashPool:
         assert view["clawed_back"] == 1000
         assert view["free_cash"] == 0
         assert view["goals"][0]["allocated"] == -1000
+
+    def test_deleting_the_earliest_goal_releases_its_earmark(self, db_session, service):
+        """Deleting a goal hands exactly its earmark back to the pool.
+
+        The history before the goals dips below zero, so the pool has to floor
+        somewhere. Where it floors must not depend on which goal starts first,
+        or deleting that goal moves the floor and quietly destroys free cash.
+        """
+        overspent, early, middle, late = (_month_str(n) for n in (4, 3, 2, 1))
+        _seed_free_cash(db_session, 1000)
+        _seed_surplus(db_session, overspent, income=1000, expenses=6000)
+        for month in (early, middle, late):
+            _seed_surplus(db_session, month, income=10000, expenses=7000)
+
+        service.create(name="Early", target_amount=3000, priority=0, start_month=early)
+        service.create(name="Late", target_amount=1000, priority=1, start_month=late)
+        before = service.get_free_cash()
+        early_id = next(g["id"] for g in service.get_all() if g["name"] == "Early")
+
+        service.delete(early_id)
+        after = service.get_free_cash()
+
+        assert before["free_cash"] == 5000
+        assert after["free_cash"] == before["free_cash"] + 3000
+        assert after["liquid"] == before["liquid"]
