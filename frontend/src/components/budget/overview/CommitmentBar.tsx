@@ -86,6 +86,7 @@ export const CommitmentBar: React.FC<CommitmentBarProps> = ({
   const {
     is_current_month: isCurrent,
     fixed_spent: fixed,
+    fixed_charge_count: fixedCount,
     variable_spent: variable,
     committed_remaining: committed,
     free_to_spend: free,
@@ -110,7 +111,7 @@ export const CommitmentBar: React.FC<CommitmentBarProps> = ({
       style: FIXED_FILL,
       label: t("budget.overview.fixedCharged"),
       amount: fixed,
-      sub: t("budget.overview.recurringCount", { count: chargesDue.length }),
+      sub: t("budget.overview.recurringCount", { count: fixedCount }),
     },
     {
       key: "variable",
@@ -146,7 +147,6 @@ export const CommitmentBar: React.FC<CommitmentBarProps> = ({
       amount: free,
       sub: t("budget.overview.perDay", {
         amount: formatCurrency(daysLeft > 0 ? free / daysLeft : free),
-        count: daysLeft,
       }),
     });
   } else if (over > 0) {

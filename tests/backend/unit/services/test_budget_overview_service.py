@@ -433,3 +433,30 @@ class TestRuleShapesInTheWild:
         )
         result = BudgetOverviewService(db_session).get_overview(2026, 3)
         assert result["monthly_budget"] == 20000.0
+
+    def test_fixed_charge_count_counts_what_landed_not_what_is_due(
+        self, db_session, frozen_today
+    ):
+        """The fixed count describes charges already taken, not ones still owed.
+
+        A caption about what has been charged must not be handed the number of
+        charges still pending — they are different figures and were briefly
+        conflated.
+        """
+        MonthlyBudgetService(db_session).create_rule(
+            "Total Budget", 20000.0, "Total Budget", ["all_tags"], 3, 2026
+        )
+        for month in range(1, 7):
+            _seed(
+                db_session,
+                f"2026-0{month}-02",
+                "Household",
+                "Rent",
+                -6000.0,
+                description="MORTGAGE 4471",
+            )
+        _seed(db_session, "2026-03-11", "Food", "Groceries", -400.0, description="SUPER A")
+
+        result = BudgetOverviewService(db_session).get_overview(2026, 3)
+        assert result["fixed_charge_count"] == 1
+        assert result["charges_due"] == []

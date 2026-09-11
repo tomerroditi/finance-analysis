@@ -205,6 +205,8 @@ export interface BudgetOverview {
   monthly_budget: number;
   monthly_spent: number;
   fixed_spent: number;
+  /** Transactions on the fixed side. Not ``charges_due.length``, which is what is still owed. */
+  fixed_charge_count: number;
   variable_spent: number;
   committed_remaining: number;
   free_to_spend: number;

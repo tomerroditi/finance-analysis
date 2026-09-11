@@ -80,6 +80,9 @@ class BudgetOverviewService(BudgetService):
               spend against it. Both ``0.0`` when no Total Budget rule exists.
             - ``fixed_spent``, ``variable_spent`` — the split of
               ``monthly_spent``. They always sum to it.
+            - ``fixed_charge_count`` — how many of the month's transactions fell
+              on the fixed side. Distinct from ``len(charges_due)``, which counts
+              what has not happened yet.
             - ``committed_remaining`` — recurring charges still due this month.
               ``0.0`` for any month that is not current.
             - ``free_to_spend`` — budget less spend less commitments. Negative
@@ -115,7 +118,9 @@ class BudgetOverviewService(BudgetService):
 
         recurring = RecurringService(self.db).get_recurring().get("items", [])
 
-        fixed_spent, variable_spent = self._split_fixed_variable(month_data, recurring)
+        fixed_spent, variable_spent, fixed_charge_count = self._split_fixed_variable(
+            month_data, recurring
+        )
         charges_due = (
             self._charges_due(recurring, year, month, today.isoformat())
             if is_current
@@ -150,6 +155,7 @@ class BudgetOverviewService(BudgetService):
             "monthly_budget": round(monthly_budget, 2),
             "monthly_spent": round(monthly_spent, 2),
             "fixed_spent": round(fixed_spent, 2),
+            "fixed_charge_count": fixed_charge_count,
             "variable_spent": round(variable_spent, 2),
             "committed_remaining": round(committed_remaining, 2),
             "free_to_spend": round(
@@ -206,7 +212,7 @@ class BudgetOverviewService(BudgetService):
     @staticmethod
     def _split_fixed_variable(
         month_data: list[dict], recurring: list[dict]
-    ) -> tuple[float, float]:
+    ) -> tuple[float, float, int]:
         """Split a month's transactions into recurring and day-to-day spend.
 
         A transaction counts as fixed when its description normalises onto a
@@ -216,21 +222,27 @@ class BudgetOverviewService(BudgetService):
         live today. Everything else is day-to-day. Refunds inside a month can
         make either side negative; both are left signed so the two always sum
         back to the month's total.
+
+        Also returns how many of the month's transactions landed on the fixed
+        side, which is what a caption about charges *already taken* needs — not
+        the number still due, which is a different figure entirely.
         """
         if not month_data:
-            return 0.0, 0.0
+            return 0.0, 0.0, 0
         keys = {item["normalized"] for item in recurring if item.get("normalized")}
         description = TransactionsTableFields.DESCRIPTION.value
         amount = TransactionsTableFields.AMOUNT.value
         fixed = 0.0
         variable = 0.0
+        fixed_count = 0
         for txn in month_data:
             value = float(txn.get(amount) or 0.0) * -1
             if RecurringService.normalize_description(txn.get(description)) in keys:
                 fixed += value
+                fixed_count += 1
             else:
                 variable += value
-        return fixed, variable
+        return fixed, variable, fixed_count
 
     @staticmethod
     def _charges_due(

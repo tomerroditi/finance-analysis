@@ -314,7 +314,6 @@ export const OverviewBudgetView: React.FC<OverviewBudgetViewProps> = ({ tabs }) 
             value={formatCurrency(free)}
             sub={t("budget.overview.perDay", {
               amount: formatCurrency(daysLeft > 0 ? free / daysLeft : free),
-              count: daysLeft,
             })}
             tone={free < 0 ? "bad" : "good"}
           />
@@ -388,9 +387,7 @@ export const OverviewBudgetView: React.FC<OverviewBudgetViewProps> = ({ tabs }) 
               />
               <LooseEnd
                 icon={HelpCircle}
-                figure={t("budget.overview.transactionCount", {
-                  count: uncategorized.length,
-                })}
+                figure={String(uncategorized.length)}
                 caption={`${t("budget.overview.uncategorized")} · ${t("budget.overview.notCounted", { amount: formatCurrency(uncategorizedAmount) })}`}
                 tone={uncategorized.length > 0 ? "warn" : undefined}
               />
