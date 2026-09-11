@@ -208,8 +208,6 @@ Balance snapshots (`investment_balance_snapshots` table) store timestamped marke
 - For dates after the last snapshot: last snapshot value carried forward over the transactions between it and the date
 - When no snapshots: daily transaction-based cumulative balance
 
-**Closed investments are never carried forward.** A closed holding's newest snapshot is its closing valuation, in `calculate_balance_over_time` and in `get_total_values_at_dates` (the net-worth chart) alike. The liquidation withdrawal can be dated *after* that zero — a bank row re-imported a day later, or a close written before the rule below pushed the zero onto the last transaction — and carrying it forward values the closed fund below zero. That is how two old closed holdings once knocked ~94K off a user's net worth the day carry-forward shipped.
-
 **Snapshot sources:**
 - `manual` — user-entered via UI
 - `calculated` — auto-generated for fixed-rate investments (daily compounding)

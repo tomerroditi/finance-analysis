@@ -159,25 +159,15 @@ class ValuationMixin:
             txns = self._get_all_transactions_for_investment(
                 inv["category"], inv["tag"], investment_id=inv_id
             )
-            # A closed holding's newest snapshot is its closing valuation. The
-            # liquidation it records can be dated after it (a re-imported bank
-            # row shifts by a day), and carrying that withdrawal forward would
-            # value the closed fund below zero in net worth.
-            closing_date = (
-                snapshot_dates[-1] if inv["is_closed"] and snapshot_dates else None
-            )
             for target_date in target_dates:
                 idx = bisect_right(snapshot_dates, target_date) - 1
                 if idx >= 0:
-                    balance = float(snapshot_balances[idx])
-                    if snapshot_dates[idx] != closing_date:
-                        balance = self._carry_snapshot_forward(
-                            balance,
-                            str(snapshot_dates[idx]),
-                            txns,
-                            as_of_date=target_date,
-                        )
-                    totals[target_date] += balance
+                    totals[target_date] += self._carry_snapshot_forward(
+                        float(snapshot_balances[idx]),
+                        str(snapshot_dates[idx]),
+                        txns,
+                        as_of_date=target_date,
+                    )
                     continue
                 totals[target_date] += self._calculate_balance_from_transactions(
                     txns, as_of_date=target_date
@@ -291,17 +281,11 @@ class ValuationMixin:
                         )
                 elif not before.empty:
                     prev = before.iloc[-1]
-                    # Past a closed holding's closing snapshot there is nothing
-                    # left to carry forward — see get_total_values_at_dates.
-                    balance = (
-                        float(prev["balance"])
-                        if inv["is_closed"]
-                        else self._carry_snapshot_forward(
-                            float(prev["balance"]),
-                            prev["date"].strftime("%Y-%m-%d"),
-                            transactions_df,
-                            as_of_date=d_str,
-                        )
+                    balance = self._carry_snapshot_forward(
+                        float(prev["balance"]),
+                        prev["date"].strftime("%Y-%m-%d"),
+                        transactions_df,
+                        as_of_date=d_str,
                     )
                 else:
                     balance = self._calculate_balance_from_transactions(

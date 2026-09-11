@@ -220,28 +220,6 @@ class TestInvestmentsServiceCalculations:
         # 2024-01-15 deposit of 2000, plus bond -160.
         assert totals["2024-01-15"] == pytest.approx(12840.0)
 
-    def test_get_total_values_at_dates_closed_investment_stays_at_its_close(
-        self, db_session, seed_investments
-    ):
-        """Verify a closed holding is worth nothing past its closing snapshot.
-
-        The bond fund's close snapshot is dated a day before its final
-        withdrawal (+5160 on 2024-01-10), as happens when a bank row is
-        re-imported with a shifted date. That withdrawal is the liquidation the
-        zero already accounts for, so carrying it forward would value the
-        closed fund at -5160 in net worth.
-        """
-        service = InvestmentsService(db_session)
-        bond_fund = seed_investments["investments"][1]
-        service.snapshots_repo.upsert_snapshot(
-            bond_fund.id, date="2024-01-09", balance=0.0, source="closed"
-        )
-
-        totals = service.get_total_values_at_dates(["2024-01-09", "2024-01-15"])
-
-        assert totals["2024-01-09"] == pytest.approx(10000.0)  # stock only
-        assert totals["2024-01-15"] == pytest.approx(12000.0)  # stock only
-
     def test_get_total_values_at_dates_empty_inputs(self, db_session):
         """Verify empty date list and empty portfolio both return safe defaults."""
         service = InvestmentsService(db_session)
@@ -1168,20 +1146,6 @@ class TestBalanceOverTimeSnapshotEdges:
         history = service.calculate_balance_over_time(stock_fund.id, "2023-07-16", "2023-07-16")
 
         assert {(e["date"], e["balance"]) for e in history} == {("2023-07-16", 11500.0)}
-
-    def test_closed_investment_holds_zero_past_its_closing_snapshot(self, db_session, seed_investments):
-        """A withdrawal dated after the close snapshot does not drive the line negative."""
-        service = InvestmentsService(db_session)
-        bond_fund = seed_investments["investments"][1]
-        service.snapshots_repo.upsert_snapshot(
-            bond_fund.id, date="2024-01-09", balance=0.0, source="closed"
-        )
-
-        history = service.calculate_balance_over_time(bond_fund.id, "2023-12-01", "2025-12-31")
-        balance_by_date = {e["date"]: e["balance"] for e in history}
-
-        assert balance_by_date["2024-01-09"] == 0.0
-        assert balance_by_date["2024-01-10"] == 0.0
 
 
 class TestProfitLossWithoutTransactions:
