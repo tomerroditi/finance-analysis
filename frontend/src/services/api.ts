@@ -167,7 +167,58 @@ export const budgetApi = {
   deleteYearlyRule: (id: number) => api.delete(`/budget/yearly/rules/${id}`),
   copyYearlyRules: (year: number) => api.post(`/budget/yearly/${year}/copy`),
   getCategoryConflicts: () => api.get("/budget/category-conflicts"),
+  getOverview: (year: number, month: number, includeSplitParents = false) =>
+    api.get<BudgetOverview>(`/budget/overview/${year}/${month}`, {
+      params: { include_split_parents: includeSplitParents },
+    }),
 };
+
+/** One recurring charge the month still owes. */
+export interface BudgetChargeDue {
+  label: string;
+  amount: number;
+  expected_date: string;
+}
+
+/**
+ * A yearly or project envelope: what the viewed month put in, and where the
+ * envelope stands overall. The two are never interchangeable — ``spent`` always
+ * describes today, whichever month is being viewed.
+ */
+export interface BudgetLongEnvelope {
+  name: string;
+  kind: "yearly" | "project";
+  category: string;
+  month_contribution: number;
+  spent: number;
+  budget: number;
+}
+
+/** Cross-kind roll-up of one month — see ``GET /budget/overview``. */
+export interface BudgetOverview {
+  year: number;
+  month: number;
+  is_current_month: boolean;
+  days_in_month: number;
+  days_elapsed: number;
+  days_left: number;
+  monthly_budget: number;
+  monthly_spent: number;
+  fixed_spent: number;
+  /** Transactions on the fixed side. Not ``charges_due.length``, which is what is still owed. */
+  fixed_charge_count: number;
+  variable_spent: number;
+  committed_remaining: number;
+  free_to_spend: number;
+  variable_per_day: number;
+  /** ``null`` once the month is settled — then there is a final figure, not a projection. */
+  projected: number | null;
+  charges_due: BudgetChargeDue[];
+  projects_month_spent: number;
+  yearly_month_spent: number;
+  total_out: number;
+  long_envelopes: BudgetLongEnvelope[];
+}
 
 export interface CategoryConflict {
   category: string;

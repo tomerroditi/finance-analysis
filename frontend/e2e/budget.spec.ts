@@ -196,6 +196,56 @@ test.describe("Budget", () => {
   // The tab bar previously used `flex-1` + `whitespace-nowrap`, so the three
   // tabs could not shrink below their text and pushed the document 53px past
   // the viewport — the whole page scrolled sideways on a phone.
+  test("overview tab: the month splits four ways, and a long envelope's standing never moves with the month", async ({
+    page,
+  }) => {
+    await navigateTo(page, "/budget");
+    await page.getByRole("button", { name: "Overview" }).first().click();
+
+    // --- The month is decomposed, not paced ---
+    const bar = page.getByTestId("budget-commitment-bar").first();
+    await expect(bar).toBeVisible();
+    // A live month owes money it has not yet spent, so all four parts exist.
+    await expect(page.getByTestId("commitment-segment-fixed").first()).toBeVisible();
+    await expect(page.getByTestId("commitment-segment-variable").first()).toBeVisible();
+    await expect(page.getByTestId("commitment-segment-committed").first()).toBeVisible();
+    await expect(page.getByTestId("commitment-segment-free").first()).toBeVisible();
+
+    // --- Three pools, stated as three pools ---
+    await expect(page.getByTestId("budget-across-all-three")).toBeVisible();
+
+    // --- Long envelopes carry both figures, under separate headings ---
+    const rows = page.getByTestId("long-envelope-row");
+    await expect(rows.first()).toBeVisible();
+    const liveStanding = await page
+      .getByTestId("long-envelope-standing")
+      .first()
+      .textContent();
+    const liveContribution = await page
+      .getByTestId("long-envelope-contribution")
+      .first()
+      .textContent();
+
+    // --- Stepping back closes the month: nothing is still committed ---
+    await page.getByRole("button", { name: /previous/i }).first().click();
+    await expect(bar).toBeVisible();
+    await expect(page.getByTestId("commitment-segment-committed")).toHaveCount(0);
+
+    // --- ...but the envelope's standing is a fact about today, so it must not
+    // move with the month. Only the contribution is scoped to the month. This
+    // is the whole reason the card shows two columns. ---
+    const pastStanding = await page
+      .getByTestId("long-envelope-standing")
+      .first()
+      .textContent();
+    const pastContribution = await page
+      .getByTestId("long-envelope-contribution")
+      .first()
+      .textContent();
+    expect(pastStanding).toBe(liveStanding);
+    expect(pastContribution).not.toBe(liveContribution);
+  });
+
   test("does not scroll horizontally at mobile width", async ({ page }) => {
     await navigateTo(page, "/budget");
     await expect(page.getByRole("navigation").first()).toBeVisible();
