@@ -15,7 +15,7 @@ type BudgetTab = "overview" | "monthly" | "yearly" | "projects";
  */
 export const Budget: React.FC = () => {
   const { t } = useTranslation();
-  const [activeTab, setActiveTab] = useState<BudgetTab>("monthly");
+  const [activeTab, setActiveTab] = useState<BudgetTab>("overview");
 
   // `shrink-0` + `whitespace-nowrap`: on mobile the tabs keep their natural
   // width and the bar scrolls, instead of the widest tab forcing the page

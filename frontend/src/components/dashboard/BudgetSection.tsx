@@ -21,7 +21,7 @@ interface BudgetSectionProps {
 export function BudgetSection({ categoryIcons }: BudgetSectionProps) {
   const { t } = useTranslation();
   const now = new Date();
-  const [activeTab, setActiveTab] = useState<BudgetTab>("monthly");
+  const [activeTab, setActiveTab] = useState<BudgetTab>("overview");
   const [year, setYear] = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth() + 1);
   const [yearlyYear, setYearlyYear] = useState(now.getFullYear());
