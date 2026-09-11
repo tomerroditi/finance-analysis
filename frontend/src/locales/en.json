@@ -90,6 +90,8 @@
     "hebrew": "עברית",
     "demoMode": "Demo Mode",
     "demoModeToggleFailed": "Could not change demo mode. Please try again.",
+    "demoSandboxEphemeralTitle": "Demo changes are not being saved.",
+    "demoSandboxEphemeral": "This deployment has no storage connected, so edits live only on the server instance that handled them and vanish when it recycles. Connect a Vercel Blob store to the project to keep them.",
     "resetDemoData": "Reset demo data",
     "resettingDemoData": "Resetting...",
     "resetDemoDataConfirmMessage": "This rebuilds the demo database from scratch, discarding every change made in demo mode by any client. This cannot be undone.",

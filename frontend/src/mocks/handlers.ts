@@ -760,7 +760,13 @@ export const handlers = [
 
   // ── Testing/Demo Mode API ──
   http.get("/api/testing/demo_mode_status", () =>
-    HttpResponse.json({ demo_mode: false, forced: false }),
+    HttpResponse.json({
+      demo_mode: false,
+      forced: false,
+      sandboxed: false,
+      durable: false,
+      blob_configured: false,
+    }),
   ),
   http.post("/api/testing/demo/prepare", () =>
     HttpResponse.json({ status: "success", created: false }),

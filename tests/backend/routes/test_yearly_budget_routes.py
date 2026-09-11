@@ -1,5 +1,7 @@
 """Tests for the /api/budget/yearly API endpoints."""
 
+from backend.services.tagging_service import cache_key as categories_cache_key
+
 
 class TestYearlyBudgetRoutes:
     """Yearly budget HTTP endpoints."""
@@ -159,7 +161,7 @@ class TestMonthlyEditYearlyConflictRoute:
         """
         monkeypatch.setattr(
             "backend.services.tagging_service._categories_cache",
-            {False: {"Wedding": ["Venue", "Catering"]}},
+            {categories_cache_key(): {"Wedding": ["Venue", "Catering"]}},
         )
         test_client.post(
             "/api/budget/projects", json={"category": "Wedding", "total_budget": 10000.0}

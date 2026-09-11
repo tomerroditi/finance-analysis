@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { Outlet, useLocation } from "react-router";
 import { Sidebar } from "./Sidebar";
+import { DemoSandboxNotice } from "./DemoSandboxNotice";
 import { useAppStore } from "../../stores/appStore";
 
 export function Layout() {
@@ -20,6 +21,7 @@ export function Layout() {
         } ms-0 pt-10 md:pt-0`}
       >
         <div className="p-2 pt-2 sm:p-4 sm:pt-4 md:p-8 md:pt-6">
+          <DemoSandboxNotice />
           <Outlet />
         </div>
       </main>

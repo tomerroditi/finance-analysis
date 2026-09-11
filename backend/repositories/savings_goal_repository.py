@@ -1,7 +1,8 @@
 """Data access for savings goals: allocations, transaction links, investment earmarks."""
 
 import pandas as pd
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.orm import Session
 
 from backend.models.savings_goal import (
@@ -146,25 +147,35 @@ class SavingsGoalRepository:
     def upsert_allocation(
         self, goal_id: int, year: int, month: int, amount: float, source: str
     ) -> SavingsGoalAllocation:
-        """Insert or update the single allocation row for a (goal, month)."""
-        row = self.db.execute(
+        """Insert or update the single allocation row for a (goal, month).
+
+        A single ``INSERT ... ON CONFLICT DO UPDATE`` rather than
+        select-then-insert: the allocation engine runs from read paths
+        (``ensure_allocations`` on every budget-month GET), so two parallel
+        requests against a fresh database used to race between the SELECT
+        and the INSERT and one of them died on the unique constraint.
+        """
+        stmt = sqlite_insert(SavingsGoalAllocation).values(
+            goal_id=goal_id, year=year, month=month, amount=amount, source=source
+        )
+        stmt = stmt.on_conflict_do_update(
+            index_elements=["goal_id", "year", "month"],
+            set_={
+                "amount": stmt.excluded.amount,
+                "source": stmt.excluded.source,
+                "updated_at": func.now(),
+            },
+        )
+        self.db.execute(stmt)
+        self.db.commit()
+        self.db.expire_all()
+        return self.db.execute(
             select(SavingsGoalAllocation).where(
                 SavingsGoalAllocation.goal_id == goal_id,
                 SavingsGoalAllocation.year == year,
                 SavingsGoalAllocation.month == month,
             )
-        ).scalar_one_or_none()
-        if row is None:
-            row = SavingsGoalAllocation(
-                goal_id=goal_id, year=year, month=month, amount=amount, source=source
-            )
-            self.db.add(row)
-        else:
-            row.amount = amount
-            row.source = source
-        self.db.commit()
-        self.db.refresh(row)
-        return row
+        ).scalar_one()
 
     def delete_allocations(
         self, goal_ids: list[int], from_year: int, from_month: int

@@ -70,6 +70,7 @@ import { defineConfig, devices } from "@playwright/test";
  * listed here, MOVE IT OUT of this list in the same change.
  */
 const READ_ONLY_SPECS = [
+  "**/demo-sandbox-notice.spec.ts",
   "**/budget-net-refund.spec.ts",
   "**/categories.spec.ts",
   "**/dashboard-block-sizes.spec.ts",

@@ -38,8 +38,13 @@ RULE_CATEGORIES = {
 
 @pytest.fixture(autouse=True)
 def _rule_categories(monkeypatch):
-    """Serve ``RULE_CATEGORIES`` from the categories cache for every test."""
-    monkeypatch.setattr(ts, "_categories_cache", {False: RULE_CATEGORIES})
+    """Serve ``RULE_CATEGORIES`` from the categories cache for every test.
+
+    The cache is partitioned by resolved database path, not by demo-mode
+    flag, so the entry has to be keyed with ``cache_key()`` or the service
+    falls through to the (empty) repository.
+    """
+    monkeypatch.setattr(ts, "_categories_cache", {ts.cache_key(): RULE_CATEGORIES})
 
 
 def _condition(field: str, operator: str, value) -> dict:
