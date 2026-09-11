@@ -912,10 +912,15 @@ class TestBudgetServiceValidation:
         assert valid is False
         assert msg == "Please enter a name"
 
-    def test_validate_specific_tag_under_all_tags_rule_rejected(self, db_session):
-        """Verify a specific-tag rule is rejected when the category already has an
-        all_tags rule for the month — the mirror of the all_tags-over-specific
-        check, since the tag's spend would otherwise count twice."""
+    def test_validate_specific_tag_under_all_tags_rule_allowed(self, db_session):
+        """Verify a specific-tag rule may sit under the category's all_tags rule.
+
+        This is how a sub-budget inside a broader category is expressed, and
+        the shipped demo data is shaped that way: Food carries an all_tags
+        rule alongside Groceries and Restaurants. The monthly view does not
+        yet split spend between the two, but that is a bug in the view rather
+        than a reason to refuse the rule.
+        """
         service = BudgetService(db_session)
         service.add_rule(TOTAL_BUDGET, 10000.0, TOTAL_BUDGET, [ALL_TAGS], 3, 2024)
         service.add_rule("Food All", 500.0, "Food", [ALL_TAGS], 3, 2024)
@@ -930,8 +935,8 @@ class TestBudgetServiceValidation:
             month=3,
             id_=None,
         )
-        assert valid is False
-        assert ALL_TAGS in msg and "Food" in msg
+        assert valid is True
+        assert msg == ""
 
     def test_validate_total_budget_below_sum_rejected(self, db_session):
         """Verify Total Budget cannot be set below sum of existing rules."""

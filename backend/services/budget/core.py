@@ -667,24 +667,24 @@ class BudgetService:
         if new_total_rules_amount > total_budget:
             return False, "The total budget is exceeded"
 
-        # all_tags and specific-tag rules are mutually exclusive within a
-        # category for the month, in both directions: an all_tags rule can't
-        # join existing specific rules, and a specific rule can't sit under an
-        # existing all_tags rule (its spend would be counted twice).
+        # An all_tags rule cannot join existing specific-tag rules in the same
+        # category: it would budget the whole category on top of rules that
+        # already budget parts of it.
+        #
+        # The reverse is deliberately allowed. A specific-tag rule under an
+        # existing all_tags rule is how a sub-budget inside a broader category
+        # is expressed, and the shipped demo data is shaped that way (Food
+        # carries an all_tags rule alongside Groceries and Restaurants). The
+        # monthly view does not yet split spend between the two, which is a
+        # bug in the view rather than a reason to refuse the rule.
         same_category = budget_rules[CATEGORY] == category
         if id_ is not None:
             same_category &= budget_rules[ID] != id_
         siblings = budget_rules.loc[same_category]
-        if BudgetService._is_all_tags(tags):
-            if not siblings.empty:
-                return (
-                    False,
-                    f"Cannot have {ALL_TAGS} for a category with existing specific tag rules",
-                )
-        elif siblings[TAGS].apply(BudgetService._is_all_tags).any():
+        if BudgetService._is_all_tags(tags) and not siblings.empty:
             return (
                 False,
-                f"The '{category}' category already has an {ALL_TAGS} rule for this month",
+                f"Cannot have {ALL_TAGS} for a category with existing specific tag rules",
             )
 
         return True, ""

@@ -122,11 +122,16 @@ class TestBudgetRuleValidationErrors:
         assert response.status_code == 400
         assert response.json()["detail"] == "Please enter a name"
 
-    def test_create_specific_tag_under_all_tags_rule_returns_400(
+    def test_create_specific_tag_under_all_tags_rule_is_allowed(
         self, test_client, seed_budget_rules
     ):
-        """POST /api/budget/rules for Food/Groceries is 400 while a Food all_tags
-        rule exists for the month (the mirror of the all_tags-over-specific check)."""
+        """POST /api/budget/rules for Food/Groceries succeeds under a Food all_tags rule.
+
+        A sub-budget inside a category the user already budgets as a whole is
+        a legitimate shape, and the shipped demo data uses it. The monthly
+        view does not yet split spend between the two rules, but refusing the
+        rule would remove the feature rather than fix the view.
+        """
         response = test_client.post(
             "/api/budget/rules",
             json={
@@ -134,8 +139,7 @@ class TestBudgetRuleValidationErrors:
                 "tags": ["Groceries"], "month": 1, "year": 2024,
             },
         )
-        assert response.status_code == 400
-        assert "all_tags" in response.json()["detail"]
+        assert response.status_code == 200
 
     @pytest.mark.parametrize(
         "payload, expected",
