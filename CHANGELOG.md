@@ -1,3 +1,9 @@
+## v1.61.4 (2026-09-11)
+
+### Fix
+
+- **savings-goals,investments**: free a deleted goal's earmark and keep a closed investment's zero on its last transaction (#273)
+
 ## v1.61.3 (2026-09-11)
 
 ### Fix
