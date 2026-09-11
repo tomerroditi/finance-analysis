@@ -7,7 +7,7 @@ Provides endpoints for budget rule management, analysis, and project management.
 from datetime import date
 from typing import Any, List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Path, Query
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -199,8 +199,8 @@ def get_monthly_analysis(
 
 @router.get("/overview/{year}/{month}")
 def get_budget_overview(
-    year: int,
-    month: int,
+    year: int = Path(ge=1900, le=2999),
+    month: int = Path(ge=1, le=12),
     include_split_parents: bool = Query(False),
     db: Session = Depends(get_database),
 ) -> dict[str, Any]:
@@ -216,7 +216,10 @@ def get_budget_overview(
     year : int
         Calendar year of the month to summarise.
     month : int
-        Calendar month (1-12).
+        Calendar month. Bounded at the route rather than left open like the
+        sibling analysis endpoints: this one sizes the month with
+        ``calendar.monthrange``, which raises on anything outside 1-12, so an
+        unbounded parameter turns a bad request into a 500.
     include_split_parents : bool, optional
         When ``True``, include the original parent transactions of splits
         alongside the individual split rows. Defaults to ``False``.

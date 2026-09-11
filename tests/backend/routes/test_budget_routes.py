@@ -435,3 +435,12 @@ class TestBudgetOverviewRoute:
         response = test_client.get("/api/budget/overview/2026/4")
         assert response.status_code == 200
         assert response.json()["monthly_budget"] == 12345.0
+
+    def test_overview_rejects_an_impossible_month(self, test_client):
+        """An out-of-range month is a bad request, not a server error.
+
+        The month sizes a calendar via ``monthrange``, which raises outside
+        1-12, so the bound has to be enforced before the service sees it.
+        """
+        assert test_client.get("/api/budget/overview/2026/13").status_code == 422
+        assert test_client.get("/api/budget/overview/2026/0").status_code == 422
