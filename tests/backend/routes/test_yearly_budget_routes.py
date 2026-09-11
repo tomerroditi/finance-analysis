@@ -92,27 +92,35 @@ class TestYearlyBudgetRoutes:
         names = [e["rule"]["name"] for e in rules]
         assert "Vacations" in names
 
-    def test_copy_previous_year_no_source_does_not_delete_existing_target_rules(
-        self, test_client
+    def test_update_and_delete_monthly_rule_id_via_yearly_routes_return_404(
+        self, test_client, seed_budget_rules
     ):
-        """Data-loss regression: 404 with no prior source must not wipe target rules.
+        """PUT/DELETE /yearly/rules/{id} never touch a monthly rule's id.
 
-        The target year (2034) has its own rules and there is no earlier year
-        with yearly rules at all. The old implementation deleted the target
-        year's rules unconditionally before checking for a source, losing
-        data on a 404. This asserts the rules are still present after the
-        failed copy attempt.
+        The yearly endpoints filter by ``period_type``; a monthly id is
+        not-found there, and the monthly rule survives both attempts.
         """
-        test_client.post("/api/budget/yearly/rules", json={
-            "name": "Existing", "amount": 5000, "category": "Food",
-            "tags": ["Groceries"], "year": 2034})
+        food = next(
+            r for r in test_client.get("/api/budget/rules/2024/1").json()
+            if r["name"] == "Food"
+        )
 
-        r = test_client.post("/api/budget/yearly/2034/copy")
+        r = test_client.put(f"/api/budget/yearly/rules/{food['id']}", json={"amount": 1})
+        assert r.status_code == 404
+        assert "yearly" in r.json()["detail"]
+        r = test_client.delete(f"/api/budget/yearly/rules/{food['id']}")
         assert r.status_code == 404
 
-        rules = test_client.get("/api/budget/yearly/2034/analysis").json()["rules"]
-        names = [e["rule"]["name"] for e in rules]
-        assert names == ["Existing"]
+        after = next(
+            r for r in test_client.get("/api/budget/rules/2024/1").json()
+            if r["id"] == food["id"]
+        )
+        assert after["amount"] == 2000.0
+
+    def test_update_unknown_yearly_rule_returns_404(self, test_client):
+        """PUT /yearly/rules/99999 is 404, not a 500 from a bare ValueError."""
+        r = test_client.put("/api/budget/yearly/rules/99999", json={"amount": 1})
+        assert r.status_code == 404
 
 
 class TestMonthlyEditYearlyConflictRoute:

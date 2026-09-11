@@ -7,6 +7,7 @@ class ErrorType(str, Enum):
     CHANGE_PASSWORD = "CHANGE_PASSWORD"
     ACCOUNT_BLOCKED = "ACCOUNT_BLOCKED"
     TWO_FACTOR_RETRIEVER_MISSING = "TWO_FACTOR_RETRIEVER_MISSING"
+    INVALID_OTP = "INVALID_OTP"
     TIMEOUT = "TIMEOUT"
     AUTOMATION_BLOCKED = "AUTOMATION_BLOCKED"
     GENERIC = "GENERIC"
@@ -37,6 +38,18 @@ class AccountBlockedError(ScraperError):
 
 class TwoFactorError(ScraperError):
     error_type = ErrorType.TWO_FACTOR_RETRIEVER_MISSING
+
+
+class InvalidOtpError(ScraperError):
+    """The provider rejected the one-time code the user typed.
+
+    Nothing is wrong with the stored credentials and the SMS was delivered —
+    the user simply mistyped (or used a stale) code. Kept apart from
+    ``GENERAL_ERROR`` so the UI can say "wrong code, try again" instead of
+    "something went wrong".
+    """
+
+    error_type = ErrorType.INVALID_OTP
 
 
 class TimeoutError(ScraperError):

@@ -168,6 +168,41 @@ def hostname_from_host_header(host_header: Optional[str]) -> str:
     return host_header
 
 
+def port_from_host_header(host_header: Optional[str]) -> Optional[int]:
+    """Extract the port from a ``Host`` header, or None when it omits one.
+
+    Handles bracketed IPv6 literals (``[::1]:8000`` -> 8000). A malformed
+    port is reported as None rather than raising, so callers treat it the
+    same as an absent one.
+
+    Parameters
+    ----------
+    host_header : Optional[str]
+        The request's ``Host`` header.
+
+    Returns
+    -------
+    int or None
+        The port, or None when the header carries no parsable port.
+    """
+    if not host_header:
+        return None
+    host_header = host_header.strip()
+    if host_header.startswith("["):
+        end = host_header.find("]")
+        if end == -1 or not host_header[end + 1 :].startswith(":"):
+            return None
+        raw = host_header[end + 2 :]
+    elif host_header.count(":") == 1:
+        raw = host_header.rsplit(":", 1)[1]
+    else:
+        return None
+    try:
+        return int(raw)
+    except ValueError:
+        return None
+
+
 def host_allowed(host_header: Optional[str], allowed: Iterable[str]) -> bool:
     """Return True when the request's Host header is on the allowlist."""
     allowed_set = set(allowed)
@@ -215,9 +250,11 @@ def origin_allowed(
         ``changeOrigin``, so its ``Origin`` (``http://localhost:5173``)
         never matches ``Host`` and must be allowlisted explicitly.
     allowed_hosts : Iterable[str]
-        The ``Host`` allowlist. An origin whose hostname is already trusted
-        there (the tailnet address in ``./start.sh remote``) is accepted on
-        any port.
+        The ``Host`` allowlist, consulted only for the ``*`` wildcard that
+        disables the guard. A trusted hostname alone is no longer enough:
+        the tailnet frontend in ``./start.sh remote`` is accepted through
+        ``CORS_ORIGINS``, which that script sets, so a hostile page on
+        another port of a trusted host cannot issue writes.
 
     Returns
     -------
@@ -245,9 +282,26 @@ def origin_allowed(
     if not origin_hostname:
         return False
 
-    # Same-origin: the page was served by this very backend (any port the
-    # packaged app happened to pick).
-    if origin_hostname == hostname_from_host_header(host_header).strip("[]"):
+    # Same-origin: the page was served by this very backend, on the very
+    # port it is listening on. Comparing the whole authority still lets the
+    # packaged app work on whatever port it picked at launch (the browser
+    # reports that same port in both headers), while a hostile page on
+    # another loopback port no longer counts as same-origin.
+    # The app is always served over plain HTTP (uvicorn is never given a
+    # certificate), so a ``Host`` header with no port means port 80. Pinning
+    # it that way keeps ``https://localhost`` -- a different origin the
+    # backend cannot have served -- from passing as same-origin.
+    origin_scheme = (parts.scheme or "").lower()
+    origin_port = parts.port
+    if origin_port is None:
+        origin_port = 443 if origin_scheme == "https" else 80
+    host_port = port_from_host_header(host_header)
+    if host_port is None:
+        host_port = 80
+    if (
+        origin_hostname == hostname_from_host_header(host_header).strip("[]")
+        and origin_port == host_port
+    ):
         return True
 
-    return origin_hostname in allowed_host_set
+    return False

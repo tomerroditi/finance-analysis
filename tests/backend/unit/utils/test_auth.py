@@ -165,19 +165,59 @@ class TestOriginAllowed:
         assert self._check("null") is False
         assert self._check("NULL") is False
 
-    def test_same_origin_is_allowed_on_any_port(self):
-        """Verify the packaged app works on whatever port it picked."""
+    def test_same_origin_is_allowed_on_whatever_port_it_serves(self):
+        """Verify the packaged app works on whatever port it picked.
+
+        The browser reports that same port in both ``Origin`` and ``Host``,
+        so comparing the whole authority costs the packaged app nothing.
+        """
         assert self._check("http://localhost:8000", host="localhost:8000") is True
         assert self._check("http://localhost:49821", host="localhost:49821") is True
+
+    def test_same_host_on_another_port_is_rejected(self):
+        """Verify a page on a different loopback port is not same-origin.
+
+        Loopback trust is per connection, so any other local server -- a
+        second dev server, an unrelated desktop app -- is exactly the
+        attacker this guard exists to stop. Same hostname is not same
+        origin.
+        """
+        assert self._check("http://localhost:9999", host="localhost:8000") is False
+        assert self._check("http://127.0.0.1:5555", host="127.0.0.1:8000") is False
+
+    def test_default_port_origin_matches_portless_host(self):
+        """Verify an implicit port 80 matches a Host header with no port."""
+        assert self._check("http://localhost", host="localhost") is True
+        assert self._check("https://localhost", host="localhost") is False
 
     def test_dev_proxy_origin_is_allowed(self):
         """Verify the Vite dev server origin survives changeOrigin proxying."""
         assert self._check("http://localhost:5173", host="127.0.0.1:8000") is True
 
-    def test_allowlisted_host_origin_is_allowed(self):
-        """Verify a tailnet address trusted for Host is trusted as Origin."""
+    def test_allowlisted_host_alone_does_not_authorise_an_origin(self):
+        """Verify Host-allowlisting a tailnet IP does not trust every port on it.
+
+        ``./start.sh remote`` puts the tailnet *frontend* origin into
+        ``CORS_ORIGINS``, which is what authorises it. Trusting the bare
+        hostname on any port would hand every other service on that host a
+        write channel.
+        """
         hosts = self.HOSTS | {"100.64.0.7"}
-        assert self._check("http://100.64.0.7:5174", hosts=hosts) is True
+        assert self._check("http://100.64.0.7:5174", hosts=hosts) is False
+
+    def test_tailnet_frontend_is_allowed_through_cors_origins(self):
+        """Verify the remote-mode tailnet frontend still reaches the API.
+
+        This is the path ``./start.sh remote`` configures, and it is how the
+        origin above is meant to be authorised.
+        """
+        cors = self.CORS + ["http://100.64.0.7:5174"]
+        assert (
+            self._check(
+                "http://100.64.0.7:5174", host="100.64.0.7:8001", cors=cors
+            )
+            is True
+        )
 
     def test_ipv6_same_origin_is_allowed(self):
         """Verify bracketed IPv6 Host literals match their Origin form."""

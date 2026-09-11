@@ -196,16 +196,16 @@ Known structural residual: **net cash position** from cash transactions. Cash in
 
 ### Balance Snapshots
 
-Balance snapshots (`investment_balance_snapshots` table) store timestamped market-value observations per investment. They override the transaction-based balance calculation when present.
+Balance snapshots (`investment_balance_snapshots` table) store timestamped market-value observations per investment. They replace the transaction-based balance calculation up to the snapshot date, and transactions after the snapshot are then applied on top of it.
 
 **Resolution order for `current_balance`:**
-1. Latest snapshot on or before today → use snapshot balance
+1. Latest snapshot on or before today → snapshot balance **plus the transactions recorded after that snapshot** (a deposit made after a valuation still moves the balance)
 2. No snapshots → fall back to `-(sum of all transactions)`
 
 **Balance history chart (`calculate_balance_over_time`):**
 - When snapshots exist: linear interpolation between snapshot points
 - For dates before the first snapshot: transaction-based calculation
-- For dates after the last snapshot: holds last snapshot value
+- For dates after the last snapshot: last snapshot value carried forward over the transactions between it and the date
 - When no snapshots: daily transaction-based cumulative balance
 
 **Snapshot sources:**
@@ -222,7 +222,7 @@ Balance snapshots (`investment_balance_snapshots` table) store timestamped marke
 total_deposits    = abs(sum of negative amounts)
 total_withdrawals = sum of positive amounts
 net_invested      = total_deposits - total_withdrawals
-current_balance   = snapshot_balance OR -(sum of all amounts)  [0 if closed]
+current_balance   = (snapshot_balance - sum(amounts after snapshot)) OR -(sum of all amounts)  [0 if closed]
 profit_loss       = current_balance - net_invested  [withdrawals - deposits if closed]
 roi               = (final_value / total_deposits - 1) * 100
 ```

@@ -39,12 +39,12 @@ class TestBudgetServiceBase:
         service = BudgetService(db_session)
         rules = service.get_all_rules()
 
-        # The Food rule has tags="All Tags" which should become ["All Tags"]
+        # The Food rule is stored as the raw "all_tags" sentinel string.
         food_rule = rules.loc[rules[NAME] == "Food"]
         assert not food_rule.empty
         parsed_tags = food_rule.iloc[0][TAGS]
         assert isinstance(parsed_tags, list)
-        assert parsed_tags == ["All Tags"]
+        assert parsed_tags == [ALL_TAGS]
 
     def test_add_rule_converts_tags_list(self, db_session):
         """Verify tags list is joined with semicolons before storage."""
@@ -214,10 +214,10 @@ class TestMonthlyBudgetService:
         assert rules[YEAR].notna().all()
         assert rules[MONTH].notna().all()
 
-        # Project rules (Wedding Budget, Renovation Budget) should not appear
-        names = rules[NAME].tolist()
-        assert "Wedding Budget" not in names
-        assert "Renovation Budget" not in names
+        # Project rules (Wedding, Renovation categories) should not appear
+        categories = set(rules[CATEGORY].tolist())
+        assert "Wedding" not in categories
+        assert "Renovation" not in categories
 
     def test_get_month_rules(self, db_session, seed_budget_rules):
         """Verify filtering rules by year and month."""
@@ -304,50 +304,39 @@ class TestMonthlyBudgetService:
         assert result is None
 
     def test_get_monthly_budget_view(self, db_session, seed_base_transactions):
-        """Verify budget view computes current_amount per rule."""
+        """Verify budget view computes current_amount per rule and for the total."""
         service = MonthlyBudgetService(db_session)
 
-        # Create budget rules with category="Total Budget" for the Total Budget rule
-        service.add_rule(
-            name=TOTAL_BUDGET,
-            amount=10000.0,
-            category=TOTAL_BUDGET,
-            tags=[ALL_TAGS],
-            month=1,
-            year=2024,
-        )
-        service.add_rule(
-            name="Food",
-            amount=2000.0,
-            category="Food",
-            tags=[ALL_TAGS],
-            month=1,
-            year=2024,
-        )
+        service.add_rule(TOTAL_BUDGET, 10000.0, TOTAL_BUDGET, [ALL_TAGS], 1, 2024)
+        service.add_rule("Food", 2000.0, "Food", [ALL_TAGS], 1, 2024)
+        service.add_rule("Transport", 500.0, "Transport", [ALL_TAGS], 1, 2024)
+        service.add_rule("Entertainment", 300.0, "Entertainment", [ALL_TAGS], 1, 2024)
 
         view = service.get_monthly_budget_view(2024, 1)
         assert view is not None
-        assert len(view) == 3  # Total Budget + Food + Other Expenses
+        # Total Budget + 3 category rules + Other Expenses
+        assert len(view) == 5
 
-        # Total Budget should be the first entry
+        # Total Budget is always the first entry and sums every expense row:
+        # cc_jan_1(-150) + cc_jan_2(-80) + cc_jan_3(-60) + cc_jan_4(-40)
+        # + cc_jan_5(-250) + bank_jan_2(-3000) + cash_jan_1(-15) + cash_jan_2(-10).
+        # Salary is excluded and the two Ignore transfers net to 0.
         total_entry = view[0]
         assert total_entry["rule"][NAME] == TOTAL_BUDGET
-        # Jan 2024 expenses (non-Ignore/Salary/Other Income/Investments/Liabilities/CC):
-        # cc_jan_1(-150) + cc_jan_2(-80) + cc_jan_3(-60) + cc_jan_4(-40) + cc_jan_5(-250)
-        # + bank_jan_2(-3000) + cash_jan_1(-15) + cash_jan_2(-10)
-        # Ignore transactions net to 0. Total = 3605.0
         assert total_entry["current_amount"] == 3605.0
         assert total_entry["allow_delete"] is False
 
-        # Food rule
-        food_entry = next(
-            (v for v in view if v["rule"][NAME] == "Food"), None
-        )
-        assert food_entry is not None
-        # Jan 2024 food: cc_jan_1(-150) + cc_jan_2(-80) + cash_jan_1(-15) = 245
-        assert food_entry["current_amount"] == 245.0
-        assert food_entry["allow_edit"] is True
-        assert food_entry["allow_delete"] is True
+        by_name = {v["rule"][NAME]: v for v in view}
+        # Food: cc_jan_1(-150) + cc_jan_2(-80) + cash_jan_1(-15)
+        assert by_name["Food"]["current_amount"] == 245.0
+        assert by_name["Food"]["allow_edit"] is True
+        assert by_name["Food"]["allow_delete"] is True
+        # Transport: cc_jan_3(-60) + cash_jan_2(-10)
+        assert by_name["Transport"]["current_amount"] == 70.0
+        # Entertainment: cc_jan_4(-40)
+        assert by_name["Entertainment"]["current_amount"] == 40.0
+        # Other Expenses picks up Home rent (3000) + Other (250)
+        assert by_name["Other Expenses"]["current_amount"] == 3250.0
 
     def test_get_monthly_budget_view_other_expenses(
         self, db_session, seed_base_transactions
@@ -534,28 +523,23 @@ class TestMonthlyBudgetServiceAlerts:
         """Verify Total Budget and the 'Other Expenses' pseudo-rule are excluded.
 
         Total Budget rolls up other categories (would double-count) and
-        Other Expenses has no user-set amount.
+        Other Expenses has no user-set amount. Both are set up so they
+        *would* trip on their own numbers: Total Budget 1000 against 3605
+        spent, and Other Expenses with 900 of headroom against the 3360 of
+        unmatched spend — only the genuinely tripped Food rule may surface.
         """
         service = MonthlyBudgetService(db_session)
-        # Tiny Total Budget so it would otherwise be tripped.
-        service.add_rule(
-            name=TOTAL_BUDGET,
-            amount=100.0,
-            category=TOTAL_BUDGET,
-            tags=[ALL_TAGS],
-            month=1,
-            year=2024,
-        )
-        service.add_rule(
-            name="Food",
-            amount=10000.0,  # well under threshold so Food is not tripped
-            category="Food",
-            tags=[ALL_TAGS],
-            month=1,
-            year=2024,
-        )
+        service.add_rule(TOTAL_BUDGET, 1000.0, TOTAL_BUDGET, [ALL_TAGS], 1, 2024)
+        # Food spend 245 / 100 = 245% -> critical
+        service.add_rule("Food", 100.0, "Food", [ALL_TAGS], 1, 2024)
+
+        view = service.get_monthly_budget_view(2024, 1)
+        other = next(v for v in view if v["rule"][NAME] == "Other Expenses")
+        assert other["current_amount"] > other["rule"][AMOUNT] > 0
+
         alerts = service.get_alerts(2024, 1)
-        assert all(a["category"] not in (TOTAL_BUDGET, "Other Expenses") for a in alerts)
+        assert [a["category"] for a in alerts] == ["Food"]
+        assert alerts[0]["severity"] == "critical"
 
     def test_get_alerts_sorted_by_percentage_desc(
         self, db_session, seed_base_transactions
@@ -877,44 +861,75 @@ class TestBudgetServiceValidation:
         assert valid is False
         assert "tag" in msg.lower()
 
-    def test_validate_all_tags_with_existing_specific_tag_rules(self, db_session):
-        """Verify ALL_TAGS rejected when specific tag rules already exist for category."""
-        service = BudgetService(db_session)
+    @pytest.mark.parametrize(
+        "tags, expected",
+        [
+            ([""], "empty"),
+            (["   "], "empty"),
+            (["Groceries", ""], "empty"),
+            (["Groceries;Restaurants"], ";"),
+        ],
+        ids=["empty", "whitespace", "mixed-empty", "semicolon"],
+    )
+    def test_validate_malformed_tags_rejected(
+        self, db_session, seed_budget_rules, tags, expected
+    ):
+        """Verify blank tags and tags containing the ';' separator are rejected.
 
-        # Create Total Budget
-        service.add_rule(
-            name=TOTAL_BUDGET,
-            amount=10000.0,
-            category=TOTAL_BUDGET,
-            tags=[ALL_TAGS],
-            month=3,
+        Tags persist as a ``;``-joined string, so a ';' inside one tag would
+        silently become two tags on the next read.
+        """
+        service = BudgetService(db_session)
+        valid, msg = BudgetService.validate_rule_inputs(
+            budget_rules=service.get_all_rules(),
+            name="New Rule",
+            category="Food",
+            tags=tags,
+            amount=100.0,
             year=2024,
+            month=1,
+            id_=None,
         )
-        # Create a specific tag rule for Food/Groceries
-        service.add_rule(
-            name="Food Groceries",
-            amount=500.0,
+        assert valid is False
+        assert expected in msg.lower()
+
+    def test_validate_whitespace_only_name_rejected(self, db_session, seed_budget_rules):
+        """Verify a name made only of whitespace is treated as empty, before any
+        duplicate-name lookup (a blank name must never be reported as a duplicate)."""
+        service = BudgetService(db_session)
+        valid, msg = BudgetService.validate_rule_inputs(
+            budget_rules=service.get_all_rules(),
+            name="   ",
             category="Food",
             tags=["Groceries"],
-            month=3,
+            amount=100.0,
             year=2024,
+            month=1,
+            id_=None,
         )
+        assert valid is False
+        assert msg == "Please enter a name"
 
-        rules = service.get_all_rules()
+    def test_validate_specific_tag_under_all_tags_rule_rejected(self, db_session):
+        """Verify a specific-tag rule is rejected when the category already has an
+        all_tags rule for the month — the mirror of the all_tags-over-specific
+        check, since the tag's spend would otherwise count twice."""
+        service = BudgetService(db_session)
+        service.add_rule(TOTAL_BUDGET, 10000.0, TOTAL_BUDGET, [ALL_TAGS], 3, 2024)
+        service.add_rule("Food All", 500.0, "Food", [ALL_TAGS], 3, 2024)
 
-        # Try to add ALL_TAGS for Food, which already has a specific tag rule
         valid, msg = BudgetService.validate_rule_inputs(
-            budget_rules=rules,
-            name="Food All",
+            budget_rules=service.get_all_rules(),
+            name="Food Groceries",
             category="Food",
-            tags=[ALL_TAGS],
-            amount=1000.0,
+            tags=["Groceries"],
+            amount=100.0,
             year=2024,
             month=3,
             id_=None,
         )
         assert valid is False
-        assert "all_tags" in msg.lower() or ALL_TAGS in msg
+        assert ALL_TAGS in msg and "Food" in msg
 
     def test_validate_total_budget_below_sum_rejected(self, db_session):
         """Verify Total Budget cannot be set below sum of existing rules."""
@@ -1132,62 +1147,51 @@ class TestProjectBudgetServiceExtended:
         with pytest.raises(ValueError, match="not found"):
             service.get_rules_for_project("Nonexistent Project")
 
-    def test_update_project_total_budget_via_rule(self, db_session):
-        """Verify updating the total budget for an existing project via update_rule."""
-        service = ProjectBudgetService(db_session)
-        service.create_project("Wedding", 50000.0)
-
-        # Find the Total Budget rule and update it directly via update_rule
-        rules = service.get_rules_for_project("Wedding")
-        total_rule = rules.loc[
-            rules[TAGS].apply(
-                lambda x: [t.lower() for t in x] == [ALL_TAGS.lower()]
-            )
-        ]
-        assert not total_rule.empty
-        rule_id = int(total_rule.iloc[0][ID])
-
-        service.update_rule(rule_id, amount=75000.0)
-
-        updated_rules = service.get_rules_for_project("Wedding")
-        updated_total = updated_rules.loc[
-            updated_rules[TAGS].apply(
-                lambda x: [t.lower() for t in x] == [ALL_TAGS.lower()]
-            )
-        ]
-        assert not updated_total.empty
-        assert updated_total.iloc[0][AMOUNT] == 75000.0
-
     def test_get_available_categories_for_new_project(self, db_session):
-        """Verify available categories exclude existing projects."""
+        """Verify every existing project's category drops out of the picker."""
         service = ProjectBudgetService(db_session)
 
-        # Before any projects, all categories should be available
         available_before = service.get_available_categories_for_new_project()
         assert "Wedding" in available_before
         assert "Renovation" in available_before
 
-        # Create a project
-        service.create_project("Wedding", 50000.0)
-
-        # Now Wedding should no longer be available
-        available_after = service.get_available_categories_for_new_project()
-        assert "Wedding" not in available_after
-        assert "Renovation" in available_after
-
-    def test_get_available_categories_excludes_all_projects(self, db_session):
-        """Verify multiple created projects are all excluded from available list."""
-        service = ProjectBudgetService(db_session)
-
         service.create_project("Wedding", 50000.0)
         service.create_project("Renovation", 25000.0)
 
-        available = service.get_available_categories_for_new_project()
-        assert "Wedding" not in available
-        assert "Renovation" not in available
-        # Other categories should still be available
-        assert "Food" in available
-        assert "Transport" in available
+        available_after = service.get_available_categories_for_new_project()
+        assert "Wedding" not in available_after
+        assert "Renovation" not in available_after
+        # Untouched categories stay available
+        assert "Food" in available_after
+        assert "Transport" in available_after
+
+    def test_create_project_duplicate_raises_already_exists(self, db_session):
+        """Verify a second project on the same category is rejected with 409
+        semantics and leaves the original rule set untouched."""
+        from backend.errors import EntityAlreadyExistsException
+
+        service = ProjectBudgetService(db_session)
+        service.create_project("Wedding", 50000.0)
+        before = len(service.get_rules_for_project("Wedding"))
+
+        with pytest.raises(EntityAlreadyExistsException, match="Wedding"):
+            service.create_project("Wedding", 1000.0)
+
+        assert len(service.get_rules_for_project("Wedding")) == before
+
+    def test_create_project_unknown_category_raises_validation(self, db_session):
+        """Verify an unknown category is a validation error and writes nothing.
+
+        The total rule used to be persisted before the tag lookup raised
+        ``KeyError``, leaving a half-created project behind a 500.
+        """
+        from backend.errors import ValidationException
+
+        service = ProjectBudgetService(db_session)
+        with pytest.raises(ValidationException, match="Nope"):
+            service.create_project("Nope", 1000.0)
+
+        assert service.get_all_projects_names() == []
 
 
 class TestAutoFillEmptyMonths:
@@ -1316,9 +1320,41 @@ class TestAutoFillEmptyMonths:
         assert len(service.get_month_rules(2026, 2)) == 2
         assert len(service.get_month_rules(2026, 3)) == 2
 
+    def test_far_future_gap_fills_only_requested_month(self, db_session):
+        """Verify a gap wider than the cap fills the viewed month alone.
+
+        Viewing a mistyped far-future month used to copy the source rules into
+        every month in between (hundreds of rows for a typo). Beyond
+        ``MAX_AUTO_FILL_GAP_MONTHS`` only the requested month is filled.
+        """
+        service = MonthlyBudgetService(db_session)
+        service.add_rule(TOTAL_BUDGET, 5000.0, TOTAL_BUDGET, [ALL_TAGS], 1, 2026)
+        service.add_rule("Food", 1500.0, "Food", [ALL_TAGS], 1, 2026)
+
+        result = service.auto_fill_empty_months(2030, 1, service.get_all_rules())
+
+        assert result == "January 2026"
+        assert len(service.get_month_rules(2030, 1)) == 2
+        # Nothing in between was minted: source + target only.
+        assert len(service.get_all_rules()) == 4
+        assert service.get_month_rules(2026, 2).empty
+        assert service.get_month_rules(2029, 12).empty
+
+    def test_gap_at_cap_still_fills_contiguously(self, db_session):
+        """Verify a gap of exactly the cap keeps the contiguous fill behaviour."""
+        service = MonthlyBudgetService(db_session)
+        service.add_rule(TOTAL_BUDGET, 5000.0, TOTAL_BUDGET, [ALL_TAGS], 1, 2026)
+
+        result = service.auto_fill_empty_months(2027, 1, service.get_all_rules())
+
+        assert result == "January 2026"
+        # Feb 2026 .. Jan 2027 = 12 months, each with the one copied rule.
+        assert len(service.get_all_rules()) == 13
+        assert len(service.get_month_rules(2026, 7)) == 1
+
 
 class TestUpdateRuleTagConversion:
-    """Tests for update_rule tag list-to-string conversion (line 128)."""
+    """Tests for update_rule tag list-to-string conversion."""
 
     def test_update_rule_converts_tags_list_to_string(self, db_session, seed_budget_rules):
         """Verify update_rule joins a tags list with semicolons before storage."""
@@ -1333,8 +1369,171 @@ class TestUpdateRuleTagConversion:
         assert stored_tags == "Groceries;Restaurants"
 
 
+class TestUpdateRuleValidation:
+    """update_rule enforces the same rules as create — an edit can't sneak past
+    validation by changing one field at a time."""
+
+    def _food_id(self, service) -> int:
+        rules = service.get_all_rules()
+        return int(rules.loc[rules[NAME] == "Food"].iloc[0][ID])
+
+    def _total_id(self, service) -> int:
+        rules = service.get_all_rules()
+        return int(rules.loc[rules[NAME] == TOTAL_BUDGET].iloc[0][ID])
+
+    @pytest.mark.parametrize("amount", [0, -50.0])
+    def test_update_non_positive_amount_rejected(
+        self, db_session, seed_budget_rules, amount
+    ):
+        """Verify an update to a zero or negative amount is rejected and not applied."""
+        service = MonthlyBudgetService(db_session)
+        food_id = self._food_id(service)
+
+        with pytest.raises(ValueError, match="positive"):
+            service.update_rule(food_id, amount=amount)
+
+        rules = service.get_all_rules()
+        assert rules.loc[rules[ID] == food_id].iloc[0][AMOUNT] == 2000.0
+
+    @pytest.mark.parametrize("name", ["", "   "])
+    def test_update_blank_name_rejected(self, db_session, seed_budget_rules, name):
+        """Verify an empty or whitespace-only name is rejected on update."""
+        service = MonthlyBudgetService(db_session)
+        with pytest.raises(ValueError, match="name"):
+            service.update_rule(self._food_id(service), name=name)
+
+    def test_update_duplicate_name_rejected(self, db_session, seed_budget_rules):
+        """Verify renaming a rule to a sibling's name in the same month is rejected."""
+        service = MonthlyBudgetService(db_session)
+        with pytest.raises(ValueError, match="already exists"):
+            service.update_rule(self._food_id(service), name="Transport")
+
+    def test_update_name_is_stripped(self, db_session, seed_budget_rules):
+        """Verify surrounding whitespace is stripped from the stored name."""
+        service = MonthlyBudgetService(db_session)
+        food_id = self._food_id(service)
+        service.update_rule(food_id, name="  Food & Drink  ")
+        rules = service.get_all_rules()
+        assert rules.loc[rules[ID] == food_id].iloc[0][NAME] == "Food & Drink"
+
+    def test_update_category_rule_over_total_cap_rejected(
+        self, db_session, seed_budget_rules
+    ):
+        """Verify raising a category rule past the month's Total Budget is rejected.
+
+        Food 2000 -> 9500 with Transport 500 + Entertainment 300 would put
+        the month at 10300 against a 10000 cap.
+        """
+        service = MonthlyBudgetService(db_session)
+        with pytest.raises(ValueError, match="exceeded"):
+            service.update_rule(self._food_id(service), amount=9500.0)
+
+    def test_update_category_rule_within_cap_allowed(
+        self, db_session, seed_budget_rules
+    ):
+        """Verify the cap check subtracts the rule's own old amount first."""
+        service = MonthlyBudgetService(db_session)
+        food_id = self._food_id(service)
+        service.update_rule(food_id, amount=9200.0)  # 9200 + 500 + 300 = 10000
+        rules = service.get_all_rules()
+        assert rules.loc[rules[ID] == food_id].iloc[0][AMOUNT] == 9200.0
+
+    def test_update_total_budget_below_rules_sum_rejected(
+        self, db_session, seed_budget_rules
+    ):
+        """Verify the Total Budget can't be lowered under the sum of its rules (2800)."""
+        service = MonthlyBudgetService(db_session)
+        with pytest.raises(ValueError, match="greater"):
+            service.update_rule(self._total_id(service), amount=2000.0)
+
+    @pytest.mark.parametrize(
+        "tags", [[], ["Groceries;Restaurants"], [""], ["Groceries", " "]],
+        ids=["empty-list", "semicolon", "blank", "mixed-blank"],
+    )
+    def test_update_malformed_tags_rejected(self, db_session, seed_budget_rules, tags):
+        """Verify empty tag lists, blank tags and ';'-containing tags are rejected."""
+        service = MonthlyBudgetService(db_session)
+        with pytest.raises(ValueError, match="(?i)tag"):
+            service.update_rule(self._food_id(service), tags=tags)
+
+    def test_update_unknown_id_raises_not_found(self, db_session, seed_budget_rules):
+        """Verify an unknown id is not-found even with no fields to change."""
+        from backend.errors import EntityNotFoundException
+
+        service = MonthlyBudgetService(db_session)
+        with pytest.raises(EntityNotFoundException, match="No rule found"):
+            service.update_rule(99999)
+
+    def test_update_project_total_with_two_projects_allowed(self, db_session):
+        """Verify duplicate-name checks are scoped to the project.
+
+        Every project's cap rule is named ``Total Budget``, so a cross-project
+        uniqueness check would make ``update_project`` fail for any user with
+        two projects.
+        """
+        service = ProjectBudgetService(db_session)
+        service.create_project("Wedding", 50000.0)
+        service.create_project("Renovation", 25000.0)
+
+        service.update_project("Renovation", 30000.0)
+
+        rules = service.get_rules_for_project("Renovation")
+        total = rules.loc[rules[TAGS].apply(lambda x: x == [ALL_TAGS])]
+        assert total.iloc[0][AMOUNT] == 30000.0
+
+
+class TestDeleteRuleProtectsTotals:
+    """A month's or project's Total Budget rule can't be deleted on its own."""
+
+    def test_delete_monthly_total_budget_rule_refused(
+        self, db_session, seed_budget_rules
+    ):
+        """Verify deleting the monthly Total Budget rule is refused and the row stays.
+
+        The views already report it with ``allow_delete=False``; the service
+        now enforces the same so a raw DELETE can't orphan the month's rules.
+        """
+        from backend.errors import ValidationException
+
+        service = BudgetService(db_session)
+        rules = service.get_all_rules()
+        total_id = int(rules.loc[rules[NAME] == TOTAL_BUDGET].iloc[0][ID])
+
+        with pytest.raises(ValidationException, match="Total Budget"):
+            service.delete_rule(total_id)
+
+        assert len(service.get_all_rules()) == 4
+
+    def test_delete_project_total_rule_refused(self, db_session):
+        """Verify a project's all_tags total rule is refused, tag rules are not."""
+        from backend.errors import ValidationException
+
+        service = ProjectBudgetService(db_session)
+        service.create_project("Wedding", 50000.0)
+        rules = service.get_rules_for_project("Wedding")
+        total_id = int(rules.loc[rules[TAGS].apply(lambda x: x == [ALL_TAGS])].iloc[0][ID])
+        venue_id = int(rules.loc[rules[NAME] == "Venue"].iloc[0][ID])
+
+        with pytest.raises(ValidationException, match="Total Budget"):
+            service.delete_rule(total_id)
+        service.delete_rule(venue_id)
+
+        remaining = service.get_rules_for_project("Wedding")
+        assert set(remaining[NAME]) == {TOTAL_BUDGET, "Catering"}
+
+    def test_delete_category_rule_allowed(self, db_session, seed_budget_rules):
+        """Verify an ordinary category rule still deletes."""
+        service = BudgetService(db_session)
+        rules = service.get_all_rules()
+        food_id = int(rules.loc[rules[NAME] == "Food"].iloc[0][ID])
+
+        service.delete_rule(food_id)
+
+        assert "Food" not in set(service.get_all_rules()[NAME])
+
+
 class TestValidateProjectRuleNameUniqueness:
-    """Tests for project rule name uniqueness check (lines 198-206)."""
+    """Tests for the project-scoped rule name uniqueness check."""
 
     def test_duplicate_project_rule_name_rejected(self, db_session):
         """Verify validation rejects duplicate names among project rules."""
@@ -1400,9 +1599,28 @@ class TestValidateProjectRuleNameUniqueness:
         )
         assert valid is True
 
+    def test_same_rule_name_allowed_across_projects(self, db_session):
+        """Verify a name only has to be unique within its own project."""
+        service = BudgetService(db_session)
+        service.add_rule(TOTAL_BUDGET, 50000.0, "Wedding", [ALL_TAGS], None, None)
+        service.add_rule(TOTAL_BUDGET, 25000.0, "Renovation", [ALL_TAGS], None, None)
+        service.add_rule("Deposit", 500.0, "Wedding", ["Venue"], None, None)
+
+        valid, msg = BudgetService.validate_rule_inputs(
+            budget_rules=service.get_all_rules(),
+            name="Deposit",
+            category="Renovation",
+            tags=["Materials"],
+            amount=300.0,
+            year=None,
+            month=None,
+            id_=None,
+        )
+        assert (valid, msg) == (True, "")
+
 
 class TestValidateProjectBudgetHierarchy:
-    """Tests for project budget hierarchy validation (lines 231-253)."""
+    """Tests for project budget hierarchy validation (total vs tag rules)."""
 
     def test_project_total_budget_below_tag_rules_sum_rejected(self, db_session):
         """Verify project total budget cannot be set below sum of tag rules."""
@@ -1496,7 +1714,7 @@ class TestValidateProjectBudgetHierarchy:
 
 
 class TestValidateMonthlyBudgetHierarchyAndCap:
-    """Tests for monthly budget hierarchy and cap checks (lines 271, 284)."""
+    """Tests for monthly budget hierarchy and cap checks."""
 
     def test_update_monthly_rule_subtracts_old_amount(self, db_session):
         """Verify updating a monthly rule subtracts old amount before checking cap."""
@@ -1624,7 +1842,7 @@ class TestValidateMonthlyBudgetHierarchyAndCap:
 
 
 class TestGetAvailableTagsCategoryRemoval:
-    """Tests for category removal when all tags used (line 351)."""
+    """Tests for category removal when all of its tags are already allocated."""
 
     def test_category_removed_when_all_specific_tags_used(self, db_session):
         """Verify category is removed when all its specific tags are allocated to rules."""
@@ -1644,10 +1862,10 @@ class TestGetAvailableTagsCategoryRemoval:
 
 
 class TestGetMonthlyAnalysisAutoFill:
-    """Tests for get_monthly_analysis auto-fill empty months (lines 599-602)."""
+    """Tests for the auto-fill of empty months on get_monthly_analysis."""
 
     def test_monthly_analysis_auto_fills_current_month(
-        self, db_session, seed_base_transactions, monkeypatch
+        self, db_session, seed_base_transactions
     ):
         """Verify get_monthly_analysis auto-fills the current calendar month."""
         from datetime import date as date_cls
@@ -1667,14 +1885,16 @@ class TestGetMonthlyAnalysisAutoFill:
 
             analysis = service.get_monthly_analysis(2026, 3)
 
-        assert analysis["copied_from"] is not None
-        assert "February 2026" in analysis["copied_from"]
-        assert analysis["rules"] is not None
+        assert analysis["copied_from"] == "February 2026"
+        # The view now reflects the two copied rules (no Other Expenses: the
+        # only seeded spend is in 2024).
+        assert {e["rule"][NAME] for e in analysis["rules"]} == {TOTAL_BUDGET, "Food"}
+        assert len(service.get_month_rules(2026, 3)) == 2
 
     def test_monthly_analysis_auto_fills_future_month(
         self, db_session, seed_base_transactions
     ):
-        """Verify get_monthly_analysis auto-fills a future month from prior rules."""
+        """Verify a future month is filled contiguously from the prior rules."""
         from datetime import date as date_cls
         from unittest.mock import patch
 
@@ -1689,8 +1909,11 @@ class TestGetMonthlyAnalysisAutoFill:
             # A month later than "today" should still auto-fill from prior rules.
             analysis = service.get_monthly_analysis(2026, 5)
 
-        assert analysis["copied_from"] is not None
-        assert analysis["rules"] is not None
+        assert analysis["copied_from"] == "February 2026"
+        assert len(analysis["rules"]) == 2
+        # Every month between the source and the target was filled too.
+        for month in (3, 4, 5):
+            assert len(service.get_month_rules(2026, month)) == 2
 
     def test_monthly_analysis_does_not_fill_past_month(
         self, db_session, seed_base_transactions
@@ -1713,7 +1936,7 @@ class TestGetMonthlyAnalysisAutoFill:
 
 
 class TestGetFilteredExpensesDateConversion:
-    """Tests for get_filtered_expenses date conversion (line 657)."""
+    """Tests for get_filtered_expenses date conversion."""
 
     def test_expense_dates_are_converted_to_datetime(self, db_session, seed_base_transactions):
         """Verify get_filtered_expenses returns dates as pandas Timestamps."""
@@ -1726,7 +1949,7 @@ class TestGetFilteredExpensesDateConversion:
 
 
 class TestGetMonthlyBudgetViewNoRulesExit:
-    """Tests for no rules early exit in get_monthly_budget_view (line 744)."""
+    """Tests for the no-rules early exit in get_monthly_budget_view."""
 
     def test_returns_none_when_no_rules_for_month(self, db_session, seed_base_transactions):
         """Verify get_monthly_budget_view returns None when no rules exist for the month."""
@@ -1736,17 +1959,37 @@ class TestGetMonthlyBudgetViewNoRulesExit:
         result = service.get_monthly_budget_view(2024, 2)
         assert result is None
 
+    def test_refund_nets_against_spend_in_same_rule(self, db_session):
+        """Verify a positive refund row reduces the rule's spend (-100 + 30 -> 70).
 
-class TestGetMonthlyProjectTransactionsNoProjects:
-    """Tests for no projects early exit (lines 858-864)."""
+        Amounts are signed (negative = expense, positive = refund), so a
+        refund tagged like its purchase nets against it rather than being
+        dropped as income.
+        """
+        from backend.models.transaction import BankTransaction
 
-    def test_returns_none_when_no_project_categories(self, db_session, seed_base_transactions):
-        """Verify get_monthly_project_transactions returns None without project rules."""
+        for suffix, amount in (("buy", -100.0), ("refund", 30.0)):
+            db_session.add(
+                BankTransaction(
+                    id=f"net-{suffix}", date="2026-03-10", provider="p",
+                    account_name="a", description=suffix, amount=amount,
+                    category="Food", tag="Groceries", source="bank_transactions",
+                    type="normal", status="completed",
+                )
+            )
+        db_session.commit()
         service = MonthlyBudgetService(db_session)
+        service.add_rule(TOTAL_BUDGET, 5000.0, TOTAL_BUDGET, [ALL_TAGS], 3, 2026)
+        service.add_rule("Food", 500.0, "Food", ["Groceries"], 3, 2026)
 
-        # No project rules exist (seed_base_transactions has no project budget rules)
-        result = service.get_monthly_project_transactions(2024, 1)
-        assert result is None
+        view = service.get_monthly_budget_view(2026, 3)
+        by_name = {e["rule"][NAME]: e for e in view}
+        assert by_name["Food"]["current_amount"] == 70.0
+        assert by_name[TOTAL_BUDGET]["current_amount"] == 70.0
+
+
+class TestGetMonthlyProjectTransactions:
+    """Tests for get_monthly_project_transactions."""
 
     def test_returns_transactions_when_projects_exist(
         self, db_session, seed_base_transactions, seed_project_transactions
@@ -1761,7 +2004,7 @@ class TestGetMonthlyProjectTransactionsNoProjects:
 
 
 class TestGetMonthlyProjectSpendingSummary:
-    """Tests for project summary construction (lines 897-913)."""
+    """Tests for project spending summary construction."""
 
     def test_project_spending_summary_groups_by_category(
         self, db_session, seed_base_transactions, seed_project_transactions
@@ -1801,16 +2044,9 @@ class TestGetMonthlyProjectSpendingSummary:
         summary = service.get_monthly_project_spending_summary(2024, 1)
         assert summary == {"projects": []}
 
-    def test_get_monthly_project_transactions_empty_db_returns_none(self, db_session):
-        """Verify ``get_monthly_project_transactions`` short-circuits to ``None`` on empty DB."""
-        service = MonthlyBudgetService(db_session)
-
-        result = service.get_monthly_project_transactions(2024, 1)
-        assert result is None
-
 
 class TestUpdateProject:
-    """Tests for update_project total rule lookup and update (lines 1004-1007)."""
+    """Tests for update_project's total-rule lookup and update."""
 
     def test_update_project_changes_total_budget(self, db_session):
         """Verify update_project finds and updates the total budget rule amount."""
@@ -1825,27 +2061,8 @@ class TestUpdateProject:
         assert total_rule.iloc[0]["amount"] == 75000.0
 
 
-class TestGetAvailableCategoriesFiltering:
-    """Tests for available categories filtering (line 1136)."""
-
-    def test_available_categories_excludes_existing_projects(self, db_session):
-        """Verify categories used by existing projects are filtered out."""
-        service = ProjectBudgetService(db_session)
-
-        all_cats = service.get_available_categories_for_new_project()
-        assert "Wedding" in all_cats
-
-        service.create_project("Wedding", 50000.0)
-
-        filtered_cats = service.get_available_categories_for_new_project()
-        assert "Wedding" not in filtered_cats
-        # Other categories remain
-        assert "Renovation" in filtered_cats
-        assert "Food" in filtered_cats
-
-
 class TestGetProjectBudgetViewConstruction:
-    """Tests for project budget rule view construction (lines 1171, 1208, 1229)."""
+    """Tests for project budget rule view construction."""
 
     def test_project_view_constructs_tag_rule_entries(self, db_session):
         """Verify project budget view includes per-tag rule entries with correct amounts."""
@@ -1900,7 +2117,7 @@ class TestGetProjectBudgetViewConstruction:
         service = ProjectBudgetService(db_session)
         service.create_project("Wedding", 50000.0)
 
-        # Create test transactions without 'type' column (line 1171, 1208)
+        # Transactions without a 'type' column (no split-parent filtering possible)
         test_transactions = pd.DataFrame(
             [
                 {
@@ -2068,22 +2285,26 @@ class TestMonthlyYearlyIntegration:
         YearlyBudgetService(db_session).create_rule("Vacations", 20000.0, "Travel", ["Hotels"], 2026)
 
         all_rules = service.get_all_rules()
-        service.copy_last_month_rules(2026, 1, all_rules)
+        message = service.copy_last_month_rules(2026, 1, all_rules)
 
+        assert message == "Copied 1 rules from 2025-12"
         jan_rules = service.get_month_rules(2026, 1)
         travel_rule = jan_rules.loc[jan_rules[NAME] == "Travel M"].iloc[0]
         assert travel_rule[TAGS] == ["Flights"]
         assert service._last_copy_skipped == ["Hotels"]
 
     def test_copy_last_month_rules_skips_whole_rule_when_all_tags_conflict(self, db_session):
-        """If every copied tag conflicts, the rule is skipped entirely (not created empty)."""
+        """If every copied tag conflicts, the rule is skipped entirely (not created
+        empty) and the message reports the rules actually created, not the
+        source month's count."""
         service = MonthlyBudgetService(db_session)
         service.add_rule("Travel M", 1000.0, "Travel", ["Hotels"], month=12, year=2025)
         YearlyBudgetService(db_session).create_rule("Vacations", 20000.0, "Travel", ["Hotels"], 2026)
 
         all_rules = service.get_all_rules()
-        service.copy_last_month_rules(2026, 1, all_rules)
+        message = service.copy_last_month_rules(2026, 1, all_rules)
 
+        assert message == "Copied 0 rules from 2025-12"
         jan_rules = service.get_month_rules(2026, 1)
         assert "Travel M" not in list(jan_rules[NAME])
         assert service._last_copy_skipped == ["Hotels"]
@@ -2234,7 +2455,7 @@ class TestMonthlyUpdateRuleYearlyConflict:
 class TestMonthlySkippedYearlyConflictsDedup:
     """skipped_yearly_conflicts must not repeat a tag skipped across multiple months."""
 
-    def test_auto_fill_skip_deduped_across_gap_months(self, db_session, monkeypatch):
+    def test_auto_fill_skip_deduped_across_gap_months(self, db_session):
         """A tag stripped in two separate auto-filled months appears only once."""
         from datetime import date as date_cls
         from unittest.mock import patch
@@ -2338,22 +2559,6 @@ class TestProjectCategoryExclusion:
         unchanged = ProjectBudgetService(db_session).get_all_rules()
         unchanged_rule = unchanged.loc[unchanged[ID] == project_rule_id].iloc[0]
         assert unchanged_rule[CATEGORY] == "Renovation"
-
-    def test_shared_put_route_allows_project_edit_without_category_change(self, db_session):
-        """A legitimate project-rule edit that doesn't touch category (e.g. amount
-        only) is unaffected by the new NaN-year guard — it must remain a no-op."""
-        self._make_project(db_session, "Renovation")
-        project_rules = ProjectBudgetService(db_session).get_all_rules()
-        project_rule_id = int(
-            project_rules.loc[project_rules[CATEGORY] == "Renovation"].iloc[0][ID]
-        )
-
-        MonthlyBudgetService(db_session).update_rule(project_rule_id, amount=7500.0)
-
-        updated = ProjectBudgetService(db_session).get_all_rules()
-        updated_rule = updated.loc[updated[ID] == project_rule_id].iloc[0]
-        assert updated_rule[AMOUNT] == 7500.0
-        assert updated_rule[CATEGORY] == "Renovation"
 
 
 class TestIgnoreCategoryExcludedFromBudget:

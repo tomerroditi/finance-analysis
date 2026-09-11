@@ -2,7 +2,10 @@
 Insurance account business logic.
 
 Provides access to insurance account metadata (pension, keren hishtalmut)
-and derived calculations like total balances.
+and derived calculations such as monthly contribution estimates. Keren
+Hishtalmut *balances* are not aggregated here: scraped policies are synced
+into ``type='hishtalmut'`` investments, and
+``InvestmentsService.get_hishtalmut_total_balance`` is the single source.
 """
 
 from datetime import date, timedelta
@@ -82,20 +85,6 @@ class InsuranceAccountService:
                     name=normalized or account.account_name,
                 )
         return account
-
-    def get_keren_hishtalmut_balance(self) -> float | None:
-        """Get total Keren Hishtalmut balance from scraped insurance data.
-
-        Returns
-        -------
-        float or None
-            Sum of all hishtalmut account balances, or None if no data.
-        """
-        accounts = self.repo.get_by_policy_type("hishtalmut")
-        if not accounts:
-            return None
-        total = sum(a.balance for a in accounts if a.balance is not None)
-        return total if total > 0 else None
 
     def get_monthly_contribution_by_type(
         self, policy_type: str

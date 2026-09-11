@@ -65,10 +65,77 @@ class TestYearSummary:
         assert s["total_spent"] == 0.0
         assert s["remaining"] == 35000.0
         assert s["on_track"] == 2 and s["over"] == 0
+        assert s["biggest_overspend"] is None
+
+    def test_summary_overspend(self, db_session):
+        """An over-budget rule is counted in ``over``, names the biggest overspend,
+        and drives ``remaining`` negative once total spend exceeds allocation."""
+        from backend.models.transaction import BankTransaction
+        from backend.services.budget_service import YearlyBudgetService
+
+        svc = YearlyBudgetService(db_session)
+        svc.create_rule("Vacations", 1000.0, "Travel", ["Hotels"], 2026)
+        svc.create_rule("Car", 500.0, "Transport", ["Insurance"], 2026)
+        for uid, category, tag, amount in (
+            ("o1", "Travel", "Hotels", -1500.0),  # 150 % -> over
+            ("o2", "Transport", "Insurance", -600.0),  # 120 % -> over
+        ):
+            db_session.add(
+                BankTransaction(
+                    id=uid, date="2026-04-01", provider="hapoalim",
+                    account_name="Checking", description="x", amount=amount,
+                    category=category, tag=tag, source="bank_transactions",
+                    type="normal", status="completed",
+                )
+            )
+        db_session.commit()
+
+        s = svc.get_year_summary(2026)
+        assert s["total_allocated"] == 1500.0
+        assert s["total_spent"] == 2100.0
+        assert s["remaining"] == -600.0
+        assert s["on_track"] == 0 and s["over"] == 2
+        assert s["biggest_overspend"] == {"name": "Vacations", "percentage": 1.5}
 
 
 class TestYearlyValidation:
     """Manual create/edit hard-blocks conflicts with monthly budgets."""
+
+    @pytest.mark.parametrize(
+        "name, category, tags, amount, expected",
+        [
+            ("", "Travel", ["Hotels"], 100.0, "name"),
+            ("   ", "Travel", ["Hotels"], 100.0, "name"),
+            ("Vacations", "", ["Hotels"], 100.0, "category"),
+            ("Vacations", "Travel", [], 100.0, "at least one tag"),
+            ("Vacations", "Travel", [""], 100.0, "empty"),
+            ("Vacations", "Travel", ["Hotels;Flights"], 100.0, ";"),
+            ("Vacations", "Travel", ["Hotels"], 0, "positive"),
+            ("Vacations", "Travel", ["Hotels"], -5.0, "positive"),
+        ],
+        ids=[
+            "empty-name", "blank-name", "empty-category", "no-tags",
+            "blank-tag", "semicolon-tag", "zero-amount", "negative-amount",
+        ],
+    )
+    def test_validate_scalar_branches(
+        self, db_session, name, category, tags, amount, expected
+    ):
+        """Each scalar precondition of ``_validate`` raises its own message."""
+        from backend.services.budget_service import YearlyBudgetService
+
+        svc = YearlyBudgetService(db_session)
+        with pytest.raises(ValueError, match=f"(?i){expected}"):
+            svc._validate(name, category, tags, amount, 2026, None)
+        assert svc.get_year_rules(2026).empty
+
+    def test_create_strips_name(self, db_session):
+        """Surrounding whitespace is stripped from the stored rule name."""
+        from backend.services.budget_service import YearlyBudgetService
+
+        svc = YearlyBudgetService(db_session)
+        svc.create_rule("  Vacations ", 100.0, "Travel", ["Hotels"], 2026)
+        assert list(svc.get_year_rules(2026)["name"]) == ["Vacations"]
 
     def test_create_conflict_with_monthly_raises(self, db_session):
         """A yearly rule reusing a monthly tag for the same year is rejected."""
@@ -328,6 +395,48 @@ class TestYearlyVsYearlyExclusion:
         rid_b = int(rules.loc[rules["name"] == "VacB"].iloc[0]["id"])
         with pytest.raises(ValueError, match="Hotels"):
             svc.update_rule(rid_b, tags=["Flights", "Hotels"])
+
+
+class TestYearlyIdScoping:
+    """The yearly update/delete paths only ever touch yearly rules."""
+
+    def _monthly_rule_id(self, db_session) -> int:
+        from backend.services.budget_service import MonthlyBudgetService
+
+        svc = MonthlyBudgetService(db_session)
+        svc.create_rule("Total Budget", 9999.0, "Total Budget", ["all_tags"], 5, 2026)
+        svc.create_rule("Food M", 500.0, "Food", ["Groceries"], 5, 2026)
+        rules = svc.get_month_rules(2026, 5)
+        return int(rules.loc[rules["name"] == "Food M"].iloc[0]["id"])
+
+    def test_update_unknown_id_raises_not_found(self, db_session):
+        """An id that matches no rule at all is not-found (404), not a 500."""
+        from backend.errors import EntityNotFoundException
+        from backend.services.budget_service import YearlyBudgetService
+
+        with pytest.raises(EntityNotFoundException, match="99999"):
+            YearlyBudgetService(db_session).update_rule(99999, amount=10.0)
+
+    def test_update_monthly_id_raises_not_found(self, db_session):
+        """A monthly rule's id is invisible to the yearly update path."""
+        from backend.errors import EntityNotFoundException
+        from backend.services.budget_service import MonthlyBudgetService, YearlyBudgetService
+
+        rid = self._monthly_rule_id(db_session)
+        with pytest.raises(EntityNotFoundException, match="yearly"):
+            YearlyBudgetService(db_session).update_rule(rid, amount=10.0)
+        rules = MonthlyBudgetService(db_session).get_month_rules(2026, 5)
+        assert float(rules.loc[rules["id"] == rid].iloc[0]["amount"]) == 500.0
+
+    def test_delete_monthly_id_raises_not_found_and_keeps_rule(self, db_session):
+        """Deleting through the yearly service can't remove a monthly rule."""
+        from backend.errors import EntityNotFoundException
+        from backend.services.budget_service import MonthlyBudgetService, YearlyBudgetService
+
+        rid = self._monthly_rule_id(db_session)
+        with pytest.raises(EntityNotFoundException, match="yearly"):
+            YearlyBudgetService(db_session).delete_rule(rid)
+        assert len(MonthlyBudgetService(db_session).get_month_rules(2026, 5)) == 2
 
 
 class TestYearlyProjectCategoryExclusion:

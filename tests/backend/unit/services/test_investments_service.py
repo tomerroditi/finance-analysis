@@ -195,11 +195,12 @@ class TestInvestmentsServiceCalculations:
     def test_get_total_values_at_dates_snapshot_first(
         self, db_session, seed_investments
     ):
-        """Verify batch valuation is snapshot-first with transaction fallback.
+        """Verify batch valuation carries a snapshot forward over later deposits.
 
-        A snapshot on 2023-12-31 overrides the stock fund's transaction-based
-        balance for dates on or after it; dates before it still fall back to
-        the transaction calculation.
+        A snapshot on 2023-12-31 replaces the stock fund's transaction-based
+        balance and is then carried forward by the transactions recorded
+        after it; dates before the snapshot still fall back to the
+        transaction calculation.
         """
         service = InvestmentsService(db_session)
         stock_fund = seed_investments["investments"][0]
@@ -215,8 +216,9 @@ class TestInvestmentsServiceCalculations:
         assert totals["2023-06-15"] == 15000.0
         # On the snapshot date: stock snapshot 11000 + bond txns 5000.
         assert totals["2023-12-31"] == pytest.approx(16000.0)
-        # After the snapshot: stock snapshot 11000 + bond -160.
-        assert totals["2024-01-15"] == pytest.approx(10840.0)
+        # After the snapshot: stock snapshot 11000 carried forward over the
+        # 2024-01-15 deposit of 2000, plus bond -160.
+        assert totals["2024-01-15"] == pytest.approx(12840.0)
 
     def test_get_total_values_at_dates_empty_inputs(self, db_session):
         """Verify empty date list and empty portfolio both return safe defaults."""

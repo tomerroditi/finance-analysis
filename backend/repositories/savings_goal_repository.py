@@ -1,7 +1,7 @@
 """Data access for savings goals: allocations, transaction links, investment earmarks."""
 
 import pandas as pd
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from backend.models.savings_goal import (
@@ -296,6 +296,30 @@ class SavingsGoalRepository:
             raise ValueError(f"No savings goal investment with id {backing_id}")
         self.db.delete(backing)
         self.db.commit()
+
+    def delete_backings_for_investment(self, investment_id: int) -> int:
+        """Delete every earmark against one investment.
+
+        Called when the investment itself is removed, so no goal keeps a
+        claim on a holding that no longer exists.
+
+        Parameters
+        ----------
+        investment_id : int
+            The ``investments.id`` being removed.
+
+        Returns
+        -------
+        int
+            Number of earmark rows deleted.
+        """
+        result = self.db.execute(
+            delete(SavingsGoalInvestment).where(
+                SavingsGoalInvestment.investment_id == investment_id
+            )
+        )
+        self.db.commit()
+        return result.rowcount
 
     def active_goals(self) -> list[SavingsGoal]:
         """Return active goals in waterfall order (priority ascending)."""

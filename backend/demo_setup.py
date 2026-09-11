@@ -1,12 +1,13 @@
 """
 Demo database preparation helpers.
 
-Both the ``/api/testing/toggle_demo_mode`` route and the Vercel serverless
-entrypoint (``index.py``) need to copy the frozen demo SQLite, apply any
-schema deltas the ORM has accrued since the file was built, and shift every
-stored date relative to today so the demo data tracks the current month.
+Both the ``/api/testing/demo/prepare`` / ``/api/testing/demo/reset`` routes
+and the Vercel serverless entrypoint (``index.py``) need to copy the frozen
+demo SQLite, apply any schema deltas the ORM has accrued since the file was
+built, and shift every stored date relative to today so the demo data tracks
+the current month.
 
-Keeping this in one module ensures the toggle path and the cold-start path
+Keeping this in one module ensures the route path and the cold-start path
 stay in lockstep — diverging implementations were how the Vercel preview
 ended up with budget rules pinned to ``DEMO_REFERENCE_DATE``.
 """

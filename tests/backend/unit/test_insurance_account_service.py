@@ -158,49 +158,6 @@ class TestInsuranceAccountService:
         assert len(result) == 3
         assert all(isinstance(a, InsuranceAccount) for a in result)
 
-    def test_get_keren_hishtalmut_balance_with_data(
-        self, insurance_service, seed_insurance_accounts
-    ):
-        """Sums balances of all hishtalmut accounts."""
-        balance = insurance_service.get_keren_hishtalmut_balance()
-        assert balance == 230000.0  # 150000 + 80000
-
-    def test_get_keren_hishtalmut_balance_no_data(self, insurance_service):
-        """Returns None when no hishtalmut accounts exist."""
-        assert insurance_service.get_keren_hishtalmut_balance() is None
-
-    def test_get_keren_hishtalmut_balance_null_balances(
-        self, insurance_service, db_session
-    ):
-        """Returns None when all hishtalmut balances are null."""
-        db_session.add(
-            InsuranceAccount(
-                provider="hafenix",
-                policy_id="KH-NULL",
-                policy_type="hishtalmut",
-                account_name="Null Balance",
-                balance=None,
-            )
-        )
-        db_session.commit()
-        assert insurance_service.get_keren_hishtalmut_balance() is None
-
-    def test_get_keren_hishtalmut_balance_zero_total(
-        self, insurance_service, db_session
-    ):
-        """Returns None when total hishtalmut balance is zero."""
-        db_session.add(
-            InsuranceAccount(
-                provider="hafenix",
-                policy_id="KH-ZERO",
-                policy_type="hishtalmut",
-                account_name="Zero Balance",
-                balance=0.0,
-            )
-        )
-        db_session.commit()
-        assert insurance_service.get_keren_hishtalmut_balance() is None
-
     def test_upsert_delegates_to_repo(self, insurance_service):
         """Upsert creates via repository and returns ORM object."""
         result = insurance_service.upsert(

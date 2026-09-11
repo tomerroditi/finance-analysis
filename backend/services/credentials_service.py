@@ -101,9 +101,15 @@ class CredentialsService:
                         continue
                     # Fields carrying the mask sentinel mean "keep the stored
                     # value" — drop them so the repository leaves the Keyring
-                    # entry untouched.
+                    # entry untouched. An *empty* secret means the same thing:
+                    # the edit form submits every field it renders, so a user
+                    # who changed only their username sends ``password: ""``,
+                    # and writing that through would blank the stored secret.
                     cleaned = {
-                        k: v for k, v in fields.items() if v != MASK_SENTINEL
+                        k: v
+                        for k, v in fields.items()
+                        if v != MASK_SENTINEL
+                        and not (k in _SENSITIVE_FIELDS and v == "")
                     }
                     if not cleaned:
                         continue

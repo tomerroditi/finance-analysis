@@ -18,7 +18,11 @@ from backend.constants.budget import (
     YEAR,
 )
 from backend.constants.tables import TransactionsTableFields
-from backend.errors import EntityNotFoundException
+from backend.errors import (
+    EntityAlreadyExistsException,
+    EntityNotFoundException,
+    ValidationException,
+)
 from backend.services.budget.core import BudgetService
 
 
@@ -77,16 +81,30 @@ class ProjectBudgetService(BudgetService):
 
         Raises
         ------
+        EntityAlreadyExistsException
+            If a project for ``category`` already exists.
+        ValidationException
+            If ``category`` is not a known category, so no rules are written
+            for a name that can't be tagged against.
         ValueError
             If ``category`` already has a monthly or yearly budget rule. A
             category can't be in both a project and a monthly/yearly budget.
         """
+        if category in self.get_all_projects_names():
+            raise EntityAlreadyExistsException(
+                f"A project for the '{category}' category already exists."
+            )
         if self.category_used_by_monthly_or_yearly(category):
             raise ValueError(
                 f"The '{category}' category is already used by a monthly or "
                 f"yearly budget. A category can't be in both a project and a "
                 f"monthly/yearly budget."
             )
+        # Resolve the tag list before writing anything: an unknown category
+        # used to fail here *after* the total rule was persisted.
+        all_tags = self.categories_tags_service.get_categories_and_tags(copy=True)
+        if category not in all_tags:
+            raise ValidationException(f"Unknown category '{category}'.")
 
         self.add_rule(
             name=TOTAL_BUDGET,
@@ -97,9 +115,7 @@ class ProjectBudgetService(BudgetService):
             year=None,
         )
 
-        tags = self.categories_tags_service.get_categories_and_tags(copy=True)
-        tags = tags[category]
-        for tag in tags:
+        for tag in all_tags[category]:
             self.add_rule(
                 name=tag, amount=0, category=category, tags=[tag], month=None, year=None
             )
@@ -116,7 +132,7 @@ class ProjectBudgetService(BudgetService):
             New overall spending limit for the project.
         """
         rules = self.get_rules_for_project(category)
-        total_rule = rules.loc[rules[TAGS].apply(lambda x: x == [ALL_TAGS])]
+        total_rule = rules.loc[rules[TAGS].apply(self._is_all_tags)]
         if total_rule.empty:
             raise EntityNotFoundException(
                 f"No total budget rule found for project '{category}'"
@@ -250,12 +266,7 @@ class ProjectBudgetService(BudgetService):
         # Total Project Rule
         total_rule = pd.DataFrame()
         if not rules.empty:
-            # Find where tags == [ALL_TAGS] (handle case sensitivity)
-            total_rule = rules[
-                rules[TAGS].apply(
-                    lambda x: [t.lower() for t in x] == [ALL_TAGS.lower()]
-                )
-            ]
+            total_rule = rules[rules[TAGS].apply(self._is_all_tags)]
 
         # Ensure transactions is JSON serializable (handle NaNs)
         transactions_processed = transactions.where(pd.notnull(transactions), None)
@@ -351,8 +362,7 @@ class ProjectBudgetService(BudgetService):
 
                 new_rule = new_rule_df[
                     (new_rule_df[CATEGORY] == project)
-                    & (new_rule_df[YEAR].isnull())
-                    & (new_rule_df[MONTH].isnull())
+                    & (new_rule_df[PERIOD_TYPE] == PERIOD_PROJECT)
                     & (new_rule_df[NAME] == tag)
                 ]
 

@@ -15,69 +15,42 @@ class TestBudgetRule:
         """Test that table name matches Tables enum."""
         assert BudgetRule.__tablename__ == Tables.BUDGET_RULES.value
 
-    def test_monthly_budget_rule(self, db_session: Session):
-        """Test creating a monthly budget rule."""
-        rule = BudgetRule(
-            name="Total Budget",
-            amount=5000.0,
-            year=2026,
-            month=1,
-        )
-        db_session.add(rule)
-        db_session.commit()
-        db_session.refresh(rule)
+    def test_round_trip_all_columns(self, db_session: Session):
+        """Every column round-trips, and the nullable ones default to ``None``.
 
-        assert rule.id is not None
-        assert rule.name == "Total Budget"
-        assert rule.amount == 5000.0
-        assert rule.year == 2026
-        assert rule.month == 1
-
-    def test_category_budget_rule(self, db_session: Session):
-        """Test creating a category budget rule."""
-        rule = BudgetRule(
-            name="Monthly Food",
-            amount=1500.0,
-            category="Food",
-            year=2026,
-            month=1,
-        )
-        db_session.add(rule)
-        db_session.commit()
-        db_session.refresh(rule)
-
-        assert rule.category == "Food"
-        assert rule.tags is None
-
-    def test_tag_budget_rule(self, db_session: Session):
-        """Test creating a budget rule with tags."""
-        rule = BudgetRule(
+        A monthly tag rule exercises the fully-populated shape; a bare project
+        rule (no year/month/tags/period_type) exercises the nullable defaults.
+        """
+        monthly = BudgetRule(
             name="Restaurant Budget",
             amount=500.0,
             category="Food",
-            tags="Restaurants",
+            tags="Restaurants;Coffee",
             year=2026,
             month=1,
+            period_type="monthly",
         )
-        db_session.add(rule)
+        project = BudgetRule(name="Home Renovation", amount=50000.0, category="Home")
+        db_session.add_all([monthly, project])
         db_session.commit()
-        db_session.refresh(rule)
+        for rule in (monthly, project):
+            db_session.refresh(rule)
 
-        assert rule.tags == "Restaurants"
-
-    def test_project_budget_rule(self, db_session: Session):
-        """Test creating a project budget (no year/month)."""
-        rule = BudgetRule(
-            name="Home Renovation",
-            amount=50000.0,
-            category="Home",
+        assert monthly.id is not None and project.id is not None
+        assert monthly.id != project.id
+        assert (monthly.name, monthly.amount, monthly.category) == (
+            "Restaurant Budget", 500.0, "Food",
         )
-        db_session.add(rule)
-        db_session.commit()
-        db_session.refresh(rule)
+        assert monthly.tags == "Restaurants;Coffee"
+        assert (monthly.year, monthly.month, monthly.period_type) == (2026, 1, "monthly")
 
-        assert rule.year is None
-        assert rule.month is None
+        assert (project.name, project.amount, project.category) == (
+            "Home Renovation", 50000.0, "Home",
+        )
+        assert project.tags is None
+        assert project.year is None
+        assert project.month is None
+        assert project.period_type is None
 
     def test_inherits_timestamp_mixin(self, db_session: Session):
         """Test model has TimestampMixin fields."""

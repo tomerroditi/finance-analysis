@@ -112,27 +112,29 @@ class TestTaggingRepositoryLoad:
         assert "Food" in repo.get_categories()
 ```
 
-### Config tests (reset singleton between tests)
+### Config / user-dir isolation (already done for you)
 
-Demo mode lives in a `ContextVar` (`_demo_mode_ctx` in `backend/config.py`),
-not a plain class attribute — reset it via its own token, not by assigning a
-bare value:
+`tests/conftest.py` runs an autouse `_isolated_app_config` fixture around
+**every** test: it points `FAD_USER_DIR` at a per-test `tmp_path`, clears
+`AppConfig()._base_user_dir_override` and `AppConfig._forced_mode`, starts
+the demo `ContextVar` at `False`, and calls `backend.database.reset_engines()`
+before and after. A session-wide `_in_memory_keyring` fixture (emptied per
+test as `memory_keyring`) replaces the OS keyring. So:
 
-```python
-from backend.config import AppConfig, _demo_mode_ctx
-
-@pytest.fixture(autouse=True)
-def reset_config():
-    """Reset AppConfig singleton state between tests."""
-    config = AppConfig()
-    token = _demo_mode_ctx.set(_demo_mode_ctx.get())
-    original_base_dir = config._base_user_dir
-    original_forced_mode = AppConfig._forced_mode
-    yield
-    _demo_mode_ctx.reset(token)
-    config._base_user_dir = original_base_dir
-    AppConfig._forced_mode = original_forced_mode
-```
+- **Do not write per-file `reset_config` fixtures.** The old pattern saved
+  the *resolved* `config._base_user_dir` and assigned it back — that pinned
+  the singleton to the real `~/.finance-analysis` for the rest of the run
+  and every later `monkeypatch.setenv("FAD_USER_DIR", …)` was ignored.
+- Inside a test, `AppConfig()._base_user_dir = str(tmp_path)` or
+  `monkeypatch.setenv("FAD_USER_DIR", …)` are both fine and both undone.
+  Never save/restore `_base_user_dir` yourself; if you must inspect the pin,
+  read `_base_user_dir_override` (instance attribute, `None` = un-pinned).
+- Reset demo mode via the token from `config.set_demo_mode(...)` /
+  `config.reset_demo_mode(token)`, not by assigning the `ContextVar` a bare
+  value; leaks are cleaned up by the fixture anyway.
+- Need a real (file-backed) DB for the engine registry? Use the yielded
+  user dir: `def test_x(self, _isolated_app_config): ...` or simply call
+  `database.get_engine()` — it lands in the tmp dir.
 
 See "`ContextVar` does not cross the TestClient portal thread" in
 `CLAUDE.md` → Gotchas: a route test that needs demo mode active during a

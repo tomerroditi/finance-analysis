@@ -1,7 +1,10 @@
-"""Tests for the /api/budget API endpoints."""
+"""Tests for the /api/budget API endpoints (happy paths).
 
-import pytest
-from unittest.mock import patch, MagicMock
+Error and not-found paths live in ``test_budget_routes_errors.py``.
+"""
+
+from backend.constants.budget import ALL_TAGS, TOTAL_BUDGET
+from backend.models.budget import BudgetRule
 
 
 SAMPLE_CATEGORIES = {
@@ -81,19 +84,6 @@ class TestBudgetRoutes:
         data = rules_response.json()
         assert any(r["name"] == "Hobbies" for r in data)
 
-    def test_create_budget_rule_invalid(self, test_client, seed_budget_rules):
-        """POST /api/budget/rules with empty name returns 400."""
-        payload = {
-            "name": "",
-            "amount": 100.0,
-            "category": "Food",
-            "tags": "Groceries",
-            "month": 1,
-            "year": 2024,
-        }
-        response = test_client.post("/api/budget/rules", json=payload)
-        assert response.status_code == 400
-
     def test_update_budget_rule(self, test_client, seed_budget_rules):
         """PUT /api/budget/rules/{id} updates a rule."""
         # Get the rules to find an ID
@@ -134,18 +124,20 @@ class TestBudgetRoutes:
         assert response.json()["status"] == "success"
 
         # Verify the copied rules exist for February
+        assert response.json()["message"] == "Copied 4 rules from 2024-1"
         feb_rules = test_client.get("/api/budget/rules/2024/2").json()
         assert len(feb_rules) == 4
-
-    def test_copy_previous_month_rules_no_source(self, test_client):
-        """POST /api/budget/rules/2024/2/copy returns 404 when no previous month rules."""
-        response = test_client.post("/api/budget/rules/2024/2/copy")
-        assert response.status_code == 404
 
     def test_get_monthly_analysis(
         self, test_client, seed_budget_rules, seed_base_transactions, monkeypatch
     ):
-        """GET /api/budget/analysis/2024/1 returns analysis."""
+        """GET /api/budget/analysis/2024/1 returns spend per seeded rule.
+
+        January 2024 spend from ``seed_base_transactions``: Food 245,
+        Transport 70, Entertainment 40, everything 3605; the Home rent
+        (3000) and Other (250) land in Other Expenses with the
+        10000 - 2800 = 7200 of unallocated headroom.
+        """
         monkeypatch.setattr(
             "backend.services.tagging_service._categories_cache",
             {False: SAMPLE_CATEGORIES},
@@ -153,11 +145,23 @@ class TestBudgetRoutes:
         response = test_client.get("/api/budget/analysis/2024/1")
         assert response.status_code == 200
         data = response.json()
-        assert "rules" in data
-        assert "project_spending" in data
-        assert "pending_refunds" in data
-        assert isinstance(data["rules"], list)
-        assert len(data["rules"]) > 0
+        assert data["project_spending"] == {"projects": []}
+        assert data["pending_refunds"] == {"items": [], "total_expected": 0.0}
+        assert data["copied_from"] is None
+        assert data["skipped_yearly_conflicts"] == []
+
+        by_name = {e["rule"]["name"]: e for e in data["rules"]}
+        assert set(by_name) == {
+            TOTAL_BUDGET, "Food", "Transport", "Entertainment", "Other Expenses"
+        }
+        assert by_name[TOTAL_BUDGET]["current_amount"] == 3605.0
+        assert by_name[TOTAL_BUDGET]["allow_delete"] is False
+        assert by_name["Food"]["current_amount"] == 245.0
+        assert by_name["Food"]["rule"]["tags"] == [ALL_TAGS]
+        assert by_name["Transport"]["current_amount"] == 70.0
+        assert by_name["Entertainment"]["current_amount"] == 40.0
+        assert by_name["Other Expenses"]["current_amount"] == 3250.0
+        assert by_name["Other Expenses"]["rule"]["amount"] == 7200.0
 
     def test_get_month_alerts(
         self, test_client, seed_base_transactions, monkeypatch
@@ -252,78 +256,6 @@ class TestBudgetRoutes:
         assert "Wedding" not in projects
 
 
-class TestBudgetRoutesErrors:
-    """Tests for error handling in budget route endpoints."""
-
-    def test_copy_rules_returns_null_no_previous(self, test_client, seed_budget_rules):
-        """Verify 404 when copying rules and the previous month has no rules.
-
-        Seed data has rules for January 2024 only. Copying from July 2024
-        (prev month = June) should return 404 because June has no rules.
-        """
-        response = test_client.post("/api/budget/rules/2024/7/copy")
-        assert response.status_code == 404
-        assert "No rules found" in response.json()["detail"]
-
-    def test_get_project_details_error(self, test_client):
-        """Verify 500 when project budget view raises an exception.
-
-        The project detail route has no try/except, so the RuntimeError
-        propagates to FastAPI's default exception handler.
-        """
-        with patch(
-            "backend.routes.budget.ProjectBudgetService"
-        ) as mock_cls:
-            mock_svc = MagicMock()
-            mock_cls.return_value = mock_svc
-            mock_svc.get_project_budget_view.side_effect = RuntimeError(
-                "Project view failed"
-            )
-            with pytest.raises(RuntimeError, match="Project view failed"):
-                test_client.get("/api/budget/projects/NonExistent")
-
-    def test_delete_project_error(self, test_client):
-        """Verify exception propagation when project deletion raises an error.
-
-        The delete project route has no try/except, so the RuntimeError
-        propagates through the TestClient.
-        """
-        with patch(
-            "backend.routes.budget.ProjectBudgetService"
-        ) as mock_cls:
-            mock_svc = MagicMock()
-            mock_cls.return_value = mock_svc
-            # The route 404s on an unknown project before calling the service.
-            mock_svc.get_all_projects_names.return_value = ["Wedding"]
-            mock_svc.delete_project.side_effect = RuntimeError(
-                "Delete project failed"
-            )
-            with pytest.raises(RuntimeError, match="Delete project failed"):
-                test_client.delete("/api/budget/projects/Wedding")
-
-    def test_update_project_error(self, test_client):
-        """Verify exception propagation when project update raises an error.
-
-        The update project route has no try/except, so the RuntimeError
-        propagates through the TestClient.
-        """
-        with patch(
-            "backend.routes.budget.ProjectBudgetService"
-        ) as mock_cls:
-            mock_svc = MagicMock()
-            mock_cls.return_value = mock_svc
-            # The route 404s on an unknown project before calling the service.
-            mock_svc.get_all_projects_names.return_value = ["Wedding"]
-            mock_svc.update_project.side_effect = RuntimeError(
-                "Update project failed"
-            )
-            with pytest.raises(RuntimeError, match="Update project failed"):
-                test_client.put(
-                    "/api/budget/projects/Wedding",
-                    json={"total_budget": 60000.0},
-                )
-
-
 class TestCategoryConflictsRoutes:
     """Category-level project ↔ monthly/yearly conflict surfacing + block."""
 
@@ -337,11 +269,36 @@ class TestCategoryConflictsRoutes:
         assert r.status_code == 400
         assert "Food" in r.json()["detail"]
 
-    def test_category_conflicts_endpoint(self, test_client):
-        """GET /budget/category-conflicts returns the overlap list shape."""
+    def test_category_conflicts_endpoint(self, test_client, db_session):
+        """GET /budget/category-conflicts reports a category that is both
+        project-owned and monthly-budgeted, and nothing else.
+
+        The API blocks creating such an overlap, so it is seeded directly
+        (data predating the exclusion rule looks exactly like this).
+        """
+        db_session.add_all(
+            [
+                BudgetRule(
+                    name=TOTAL_BUDGET, amount=5000.0, category="Renovation",
+                    tags=ALL_TAGS, year=None, month=None, period_type="project",
+                ),
+                BudgetRule(
+                    name="Reno M", amount=500.0, category="Renovation",
+                    tags="Materials", year=2026, month=5, period_type="monthly",
+                ),
+                BudgetRule(
+                    name="Food M", amount=500.0, category="Food",
+                    tags="Groceries", year=2026, month=5, period_type="monthly",
+                ),
+            ]
+        )
+        db_session.commit()
+
         r = test_client.get("/api/budget/category-conflicts")
         assert r.status_code == 200
-        assert "conflicts" in r.json()
+        assert r.json() == {
+            "conflicts": [{"category": "Renovation", "kinds": ["monthly"]}]
+        }
 
     def test_shared_put_route_rejects_project_category_change_to_budget_used(
         self, test_client, monkeypatch

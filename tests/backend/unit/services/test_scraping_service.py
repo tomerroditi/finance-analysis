@@ -1,62 +1,95 @@
 """Tests for ScrapingService."""
 
-import asyncio
-import pytest
-from unittest.mock import MagicMock, patch
 from contextlib import contextmanager
+from datetime import date, datetime, timedelta
+from unittest.mock import MagicMock, patch
+
+import pytest
 
 import backend.services.scraping_service as ss
-from backend.scraper.adapter import scraper_registry_key
 from backend.errors import EntityNotFoundException
+from backend.scraper.adapter import ScraperAdapter, scraper_registry_key
 from backend.services.scraping_service import ScrapingService
 
 
 @pytest.fixture(autouse=True)
-def reset_tfa_waiting():
-    """Clear _tfa_scrapers_waiting between tests."""
+def reset_registries():
+    """Clear both module-level registries between tests."""
     ss._tfa_scrapers_waiting.clear()
-    yield
-    ss._tfa_scrapers_waiting.clear()
-
-
-@pytest.fixture(autouse=True)
-def reset_active_scrapers():
-    """Clear _active_scrapers between tests."""
     ss._active_scrapers.clear()
     yield
+    ss._tfa_scrapers_waiting.clear()
     ss._active_scrapers.clear()
 
 
-@pytest.fixture(autouse=True)
-def reset_credentials_singleton():
-    """Reset CredentialsRepository singleton between tests."""
-    from backend.repositories.credentials_repository import CredentialsRepository
-
-    CredentialsRepository._instance = None
-    CredentialsRepository._initialized = False
-    yield
-    CredentialsRepository._instance = None
-    CredentialsRepository._initialized = False
-
-
 @pytest.fixture
-def mock_db():
-    """Provide a mock database session."""
-    return MagicMock()
-
-
-@pytest.fixture
-def service(mock_db):
+def service():
     """Create a ScrapingService with mocked repositories."""
     with patch(
         "backend.services.scraping_service.ScrapingHistoryRepository"
     ) as MockHistoryRepo, patch(
         "backend.services.scraping_service.CredentialsRepository"
     ) as MockCredsRepo:
-        svc = ScrapingService(mock_db)
+        svc = ScrapingService(MagicMock())
         svc.scraping_history_repo = MockHistoryRepo.return_value
         svc.credentials_repo = MockCredsRepo.return_value
     return svc
+
+
+@pytest.fixture
+def launch():
+    """Stub the event-loop hand-off so no coroutine is ever scheduled.
+
+    Patching ``_launch_adapter`` (rather than the whole ``asyncio`` module)
+    keeps the rest of the service's asyncio usage real and lets a test
+    assert exactly which adapter was handed to the loop.
+    """
+    with patch("backend.services.scraping_service._launch_adapter") as mock:
+        yield mock
+
+
+@pytest.fixture
+def history_repo():
+    """Patch the history repository the service builds inside ``get_db_context``.
+
+    ``start_scraping_single`` and ``abort_scraping_process`` open their own
+    DB context rather than using the injected session, so the repository
+    they see is this one — not ``service.scraping_history_repo``.
+    """
+    repo = MagicMock()
+    repo.IN_PROGRESS = "in_progress"
+    repo.WAITING_FOR_2FA = "waiting_for_2fa"
+    repo.FAILED = "failed"
+    repo.CANCELED = "canceled"
+
+    @contextmanager
+    def fake_db_context():
+        yield MagicMock()
+
+    with patch(
+        "backend.services.scraping_service.get_db_context",
+        side_effect=fake_db_context,
+    ), patch(
+        "backend.services.scraping_service.ScrapingHistoryRepository",
+        return_value=repo,
+    ):
+        yield repo
+
+
+@pytest.fixture
+def create_adapter():
+    """Stub adapter construction so no scraper is ever built."""
+    with patch("backend.services.scraping_service.create_adapter") as mock:
+        yield mock
+
+
+@pytest.fixture
+def is_2fa_required():
+    """Stub the 2FA-provider lookup; tests set ``return_value`` as needed."""
+    with patch(
+        "backend.services.scraping_service.is_2fa_required", return_value=False
+    ) as mock:
+        yield mock
 
 
 class TestScrapingServiceStatus:
@@ -133,281 +166,86 @@ class TestScrapingServiceStatus:
 class TestScrapingServiceStart:
     """Tests for starting scraping processes."""
 
-    @patch("backend.services.scraping_service.asyncio")
-    @patch("backend.services.scraping_service.create_adapter")
-    @patch("backend.services.scraping_service.get_db_context")
-    @patch("backend.services.scraping_service.is_2fa_required")
-    def test_start_scraping_single(
-        self, mock_is_2fa, mock_get_db_ctx, mock_create_adapter, mock_asyncio, service
+    def test_start_records_history_builds_adapter_and_launches(
+        self, service, launch, history_repo, create_adapter, is_2fa_required
     ):
-        """Verify start_scraping_single returns a process_id and launches an async task."""
-        mock_is_2fa.return_value = False
+        """A launch records IN_PROGRESS, builds one adapter from the stored
+        credentials and start date, hands it to the loop and registers it as
+        the account's single-flight holder — nothing is parked for 2FA."""
         service.credentials_repo.get_credentials.return_value = {"user": "test"}
         service.scraping_history_repo.get_last_successful_scrape_date.return_value = None
+        history_repo.record_scrape_start.return_value = 7
+        adapter = create_adapter.return_value
+        adapter.process_id = 7
 
-        mock_history_repo = MagicMock()
-        mock_history_repo.IN_PROGRESS = "in_progress"
-        mock_history_repo.record_scrape_start.return_value = 7
-
-        @contextmanager
-        def fake_db_context():
-            yield MagicMock()
-
-        mock_get_db_ctx.side_effect = fake_db_context
-
-        with patch(
-            "backend.services.scraping_service.ScrapingHistoryRepository",
-            return_value=mock_history_repo,
-        ):
-            process_id = service.start_scraping_single("banks", "hapoalim", "Main")
+        process_id = service.start_scraping_single("credit_cards", "isracard", "Acc1")
 
         assert process_id == 7
-        mock_create_adapter.assert_called_once()
-        mock_asyncio.run_coroutine_threadsafe.assert_called_once()
+        expected_start = date.today() - timedelta(days=365)
+        history_repo.record_scrape_start.assert_called_once_with(
+            "credit_cards", "isracard", "Acc1", expected_start, "in_progress"
+        )
+        create_adapter.assert_called_once_with(
+            "credit_cards", "isracard", "Acc1", {"user": "test"}, expected_start, 7,
+            force_2fa=False,
+        )
+        launch.assert_called_once_with(adapter)
+        key = scraper_registry_key(False, "credit_cards", "isracard", "Acc1")
+        assert ss._active_scrapers[key] is adapter
+        assert key not in ss._tfa_scrapers_waiting
 
-    @patch("backend.services.scraping_service.asyncio")
-    @patch("backend.services.scraping_service.create_adapter")
-    @patch("backend.services.scraping_service.get_db_context")
-    @patch("backend.services.scraping_service.is_2fa_required")
-    def test_start_scraping_creates_history(
-        self, mock_is_2fa, mock_get_db_ctx, mock_create_adapter, mock_asyncio, service
+    def test_start_2fa_provider_parks_adapter_but_still_starts_in_progress(
+        self, service, launch, history_repo, create_adapter, is_2fa_required
     ):
-        """Verify that a history record is created via get_db_context."""
-        mock_is_2fa.return_value = False
+        """A 2FA-capable provider is parked for a later code, yet its row starts
+        IN_PROGRESS: the adapter's OTP callback flips it to WAITING_FOR_2FA only
+        when the scraper actually asks, so Hapoalim from a trusted device never
+        shows a spurious prompt."""
+        is_2fa_required.return_value = True
         service.credentials_repo.get_credentials.return_value = {"user": "test"}
         service.scraping_history_repo.get_last_successful_scrape_date.return_value = None
+        history_repo.record_scrape_start.return_value = 15
+        adapter = create_adapter.return_value
 
-        mock_history_repo = MagicMock()
-        mock_history_repo.IN_PROGRESS = "in_progress"
-        mock_history_repo.record_scrape_start.return_value = 10
+        service.start_scraping_single("banks", "hapoalim", "MyAcc")
 
-        @contextmanager
-        def fake_db_context():
-            yield MagicMock()
+        assert history_repo.record_scrape_start.call_args.args[4] == "in_progress"
+        key = scraper_registry_key(False, "banks", "hapoalim", "MyAcc")
+        assert ss._tfa_scrapers_waiting[key] is adapter
+        assert ss._active_scrapers[key] is adapter
 
-        mock_get_db_ctx.side_effect = fake_db_context
-
-        with patch(
-            "backend.services.scraping_service.ScrapingHistoryRepository",
-            return_value=mock_history_repo,
-        ):
-            service.start_scraping_single("credit_cards", "isracard", "Acc1")
-
-        mock_history_repo.record_scrape_start.assert_called_once()
-        call_args = mock_history_repo.record_scrape_start.call_args
-        assert call_args[0][0] == "credit_cards"
-        assert call_args[0][1] == "isracard"
-        assert call_args[0][2] == "Acc1"
-
-    @patch("backend.services.scraping_service.asyncio")
-    @patch("backend.services.scraping_service.create_adapter")
-    @patch("backend.services.scraping_service.get_db_context")
-    @patch("backend.services.scraping_service.is_2fa_required")
-    def test_start_scraping_2fa_adds_to_waiting(
-        self, mock_is_2fa, mock_get_db_ctx, mock_create_adapter, mock_asyncio, service
-    ):
-        """Verify adapter is added to _tfa_scrapers_waiting when 2FA is required."""
-        mock_is_2fa.return_value = True
-        service.credentials_repo.get_credentials.return_value = {"user": "test"}
-        service.scraping_history_repo.get_last_successful_scrape_date.return_value = None
-
-        mock_history_repo = MagicMock()
-        mock_history_repo.IN_PROGRESS = "in_progress"
-        mock_history_repo.WAITING_FOR_2FA = "waiting_for_2fa"
-        mock_history_repo.record_scrape_start.return_value = 15
-
-        mock_adapter = mock_create_adapter.return_value
-
-        @contextmanager
-        def fake_db_context():
-            yield MagicMock()
-
-        mock_get_db_ctx.side_effect = fake_db_context
-
-        with patch(
-            "backend.services.scraping_service.ScrapingHistoryRepository",
-            return_value=mock_history_repo,
-        ):
-            service.start_scraping_single("banks", "leumi", "MyAcc")
-
-        expected_key = scraper_registry_key(False, "banks", "leumi", "MyAcc")
-        assert expected_key in ss._tfa_scrapers_waiting
-        assert ss._tfa_scrapers_waiting[expected_key] is mock_adapter
-
-    @patch("backend.services.scraping_service.asyncio")
-    @patch("backend.services.scraping_service.create_adapter")
-    @patch("backend.services.scraping_service.get_db_context")
-    @patch("backend.services.scraping_service.is_2fa_required")
-    def test_start_scraping_2fa_starts_in_progress(
-        self, mock_is_2fa, mock_get_db_ctx, mock_create_adapter, mock_asyncio, service
-    ):
-        """2FA-capable scrapes start in IN_PROGRESS (status flips lazily later).
-
-        The adapter's _otp_callback transitions the status to WAITING_FOR_2FA
-        only when the scraper actually awaits the OTP — so the UI doesn't
-        show a 2FA prompt for providers like Hapoalim that don't always need
-        one.
-        """
-        mock_is_2fa.return_value = True
-        service.credentials_repo.get_credentials.return_value = {"user": "test"}
-        service.scraping_history_repo.get_last_successful_scrape_date.return_value = None
-
-        mock_history_repo = MagicMock()
-        mock_history_repo.IN_PROGRESS = "in_progress"
-        mock_history_repo.WAITING_FOR_2FA = "waiting_for_2fa"
-        mock_history_repo.record_scrape_start.return_value = 20
-
-        @contextmanager
-        def fake_db_context():
-            yield MagicMock()
-
-        mock_get_db_ctx.side_effect = fake_db_context
-
-        with patch(
-            "backend.services.scraping_service.ScrapingHistoryRepository",
-            return_value=mock_history_repo,
-        ):
-            service.start_scraping_single("banks", "hapoalim", "MyAcc")
-
-        mock_history_repo.record_scrape_start.assert_called_once()
-        # 5th positional arg of record_scrape_start is the initial status
-        call_args = mock_history_repo.record_scrape_start.call_args
-        assert call_args[0][4] == "in_progress"
-
-    @patch("backend.services.scraping_service.asyncio")
-    @patch("backend.services.scraping_service.create_adapter")
-    @patch("backend.services.scraping_service.get_db_context")
-    @patch("backend.services.scraping_service.is_2fa_required")
     def test_force_2fa_strips_token_and_forwards_flag(
-        self, mock_is_2fa, mock_get_db_ctx, mock_create_adapter, mock_asyncio, service
+        self, service, launch, history_repo, create_adapter, is_2fa_required
     ):
         """force_2fa=True drops otpLongTermToken from creds and passes the flag."""
-        mock_is_2fa.return_value = True
+        is_2fa_required.return_value = True
         service.credentials_repo.get_credentials.return_value = {
             "email": "e", "password": "p", "phoneNumber": "+1", "otpLongTermToken": "OLD",
         }
-        mock_history_repo = MagicMock()
-        mock_history_repo.record_scrape_start.return_value = 7
+        history_repo.record_scrape_start.return_value = 7
 
-        @contextmanager
-        def fake_ctx():
-            yield MagicMock()
+        service.start_scraping_single("banks", "onezero", "Acc", force_2fa=True)
 
-        mock_get_db_ctx.side_effect = fake_ctx
-        with patch(
-            "backend.services.scraping_service.ScrapingHistoryRepository",
-            return_value=mock_history_repo,
-        ):
-            service.start_scraping_single("banks", "onezero", "Acc", force_2fa=True)
-
-        creds_arg = mock_create_adapter.call_args.args[3]
+        creds_arg = create_adapter.call_args.args[3]
         assert "otpLongTermToken" not in creds_arg
         assert creds_arg["email"] == "e"
-        assert mock_create_adapter.call_args.kwargs["force_2fa"] is True
+        assert create_adapter.call_args.kwargs["force_2fa"] is True
 
-    @patch("backend.services.scraping_service.asyncio")
-    @patch("backend.services.scraping_service.create_adapter")
-    @patch("backend.services.scraping_service.get_db_context")
-    @patch("backend.services.scraping_service.is_2fa_required")
     def test_default_keeps_token_and_flag_false(
-        self, mock_is_2fa, mock_get_db_ctx, mock_create_adapter, mock_asyncio, service
+        self, service, launch, history_repo, create_adapter, is_2fa_required
     ):
         """Without force_2fa the stored token is preserved and the flag is False."""
-        mock_is_2fa.return_value = True
+        is_2fa_required.return_value = True
         service.credentials_repo.get_credentials.return_value = {
             "email": "e", "password": "p", "otpLongTermToken": "OLD",
         }
-        mock_history_repo = MagicMock()
-        mock_history_repo.record_scrape_start.return_value = 8
+        history_repo.record_scrape_start.return_value = 8
 
-        @contextmanager
-        def fake_ctx():
-            yield MagicMock()
+        service.start_scraping_single("banks", "onezero", "Acc")
 
-        mock_get_db_ctx.side_effect = fake_ctx
-        with patch(
-            "backend.services.scraping_service.ScrapingHistoryRepository",
-            return_value=mock_history_repo,
-        ):
-            service.start_scraping_single("banks", "onezero", "Acc")
-
-        creds_arg = mock_create_adapter.call_args.args[3]
+        creds_arg = create_adapter.call_args.args[3]
         assert creds_arg["otpLongTermToken"] == "OLD"
-        assert mock_create_adapter.call_args.kwargs["force_2fa"] is False
-
-
-class TestScrapingServiceLaunchFromSyncContext:
-    """The scraper launch must work from a synchronous route handler.
-
-    ``POST /api/scraping/start`` is a sync ``def`` route, which FastAPI runs
-    in a threadpool worker thread with no running event loop. The launch
-    therefore cannot use ``asyncio.create_task`` — it requires a loop in the
-    *calling* thread and raises ``RuntimeError: no running event loop``,
-    leaving ``adapter.run()`` an un-awaited coroutine (the RuntimeWarning
-    that surfaced on a real OneZero scrape). It must submit the coroutine to
-    the main loop captured at startup. Regression test for that bug.
-    """
-
-    @patch("backend.services.scraping_service.create_adapter")
-    @patch("backend.services.scraping_service.get_db_context")
-    @patch("backend.services.scraping_service.is_2fa_required")
-    def test_launch_from_threadpool_thread_actually_runs_coroutine(
-        self, mock_is_2fa, mock_get_db_ctx, mock_create_adapter, service
-    ):
-        """A launch from a no-event-loop worker thread executes adapter.run()."""
-        import threading
-        from concurrent.futures import ThreadPoolExecutor
-
-        mock_is_2fa.return_value = False
-        service.credentials_repo.get_credentials.return_value = {"user": "test"}
-
-        ran = threading.Event()
-
-        async def fake_run():
-            ran.set()
-
-        mock_adapter = MagicMock()
-        mock_adapter.process_id = 77
-        mock_adapter.run = fake_run
-        mock_create_adapter.return_value = mock_adapter
-
-        mock_history_repo = MagicMock()
-        mock_history_repo.IN_PROGRESS = "in_progress"
-        mock_history_repo.record_scrape_start.return_value = 77
-
-        @contextmanager
-        def fake_db_context():
-            yield MagicMock()
-
-        mock_get_db_ctx.side_effect = fake_db_context
-
-        # A real event loop, spinning in a background thread, stands in for
-        # the server's main uvicorn loop captured at startup.
-        loop = asyncio.new_event_loop()
-        loop_thread = threading.Thread(target=loop.run_forever, daemon=True)
-        loop_thread.start()
-        ss.set_main_loop(loop)
-
-        try:
-            with patch(
-                "backend.services.scraping_service.ScrapingHistoryRepository",
-                return_value=mock_history_repo,
-            ):
-                # Run start_scraping_single in a worker thread with no event
-                # loop, exactly as FastAPI runs a sync route. On the buggy
-                # create_task path this raises RuntimeError here.
-                with ThreadPoolExecutor(max_workers=1) as pool:
-                    process_id = pool.submit(
-                        service.start_scraping_single, "banks", "onezero", "Acc"
-                    ).result(timeout=5)
-
-            assert process_id == 77
-            assert ran.wait(timeout=5), "adapter.run() was never scheduled/executed"
-        finally:
-            loop.call_soon_threadsafe(loop.stop)
-            loop_thread.join(timeout=5)
-            loop.close()
-            ss.set_main_loop(None)
+        assert create_adapter.call_args.kwargs["force_2fa"] is False
 
 
 class TestScrapingServiceSingleFlight:
@@ -419,130 +257,96 @@ class TestScrapingServiceSingleFlight:
     and risking a provider-side fraud block from the burst.
     """
 
-    @patch("backend.services.scraping_service.asyncio")
-    @patch("backend.services.scraping_service.create_adapter")
-    @patch("backend.services.scraping_service.get_db_context")
-    @patch("backend.services.scraping_service.is_2fa_required")
     def test_second_call_returns_first_process_id_without_new_adapter(
-        self, mock_is_2fa, mock_get_db_ctx, mock_create_adapter, mock_asyncio, service
+        self, service, launch, history_repo, create_adapter, is_2fa_required
     ):
         """A duplicate call for the same account returns the existing
-        process_id and does not create a second adapter or task."""
-        mock_is_2fa.return_value = True
+        process_id and does not create a second adapter, row or task."""
+        is_2fa_required.return_value = True
         service.credentials_repo.get_credentials.return_value = {"user": "test"}
         service.scraping_history_repo.get_last_successful_scrape_date.return_value = None
+        history_repo.record_scrape_start.return_value = 30
+        create_adapter.return_value.process_id = 30
 
-        mock_history_repo = MagicMock()
-        mock_history_repo.IN_PROGRESS = "in_progress"
-        mock_history_repo.WAITING_FOR_2FA = "waiting_for_2fa"
-        mock_history_repo.record_scrape_start.return_value = 30
-
-        first_adapter = MagicMock()
-        first_adapter.process_id = 30
-        mock_create_adapter.return_value = first_adapter
-
-        @contextmanager
-        def fake_db_context():
-            yield MagicMock()
-
-        mock_get_db_ctx.side_effect = fake_db_context
-
-        with patch(
-            "backend.services.scraping_service.ScrapingHistoryRepository",
-            return_value=mock_history_repo,
-        ):
-            first_id = service.start_scraping_single("banks", "onezero", "Acc1")
-            second_id = service.start_scraping_single("banks", "onezero", "Acc1")
+        first_id = service.start_scraping_single("banks", "onezero", "Acc1")
+        second_id = service.start_scraping_single("banks", "onezero", "Acc1")
 
         assert first_id == 30
         assert second_id == 30
-        # Only the first call created an adapter / history row / task.
-        mock_create_adapter.assert_called_once()
-        mock_history_repo.record_scrape_start.assert_called_once()
-        mock_asyncio.run_coroutine_threadsafe.assert_called_once()
+        create_adapter.assert_called_once()
+        history_repo.record_scrape_start.assert_called_once()
+        launch.assert_called_once()
 
-    @patch("backend.services.scraping_service.asyncio")
-    @patch("backend.services.scraping_service.create_adapter")
-    @patch("backend.services.scraping_service.get_db_context")
-    @patch("backend.services.scraping_service.is_2fa_required")
     def test_registers_in_active_scrapers_for_non_2fa_providers_too(
-        self, mock_is_2fa, mock_get_db_ctx, mock_create_adapter, mock_asyncio, service
+        self, service, launch, history_repo, create_adapter, is_2fa_required
     ):
         """The active-scraper registry guards ALL providers, not just 2FA ones."""
-        mock_is_2fa.return_value = False
         service.credentials_repo.get_credentials.return_value = {"user": "test"}
         service.scraping_history_repo.get_last_successful_scrape_date.return_value = None
+        history_repo.record_scrape_start.return_value = 31
+        adapter = create_adapter.return_value
+        adapter.process_id = 31
 
-        mock_history_repo = MagicMock()
-        mock_history_repo.IN_PROGRESS = "in_progress"
-        mock_history_repo.record_scrape_start.return_value = 31
+        service.start_scraping_single("credit_cards", "isracard", "Card1")
 
-        mock_adapter = mock_create_adapter.return_value
-        mock_adapter.process_id = 31
+        key = scraper_registry_key(False, "credit_cards", "isracard", "Card1")
+        assert ss._active_scrapers[key] is adapter
 
-        @contextmanager
-        def fake_db_context():
-            yield MagicMock()
-
-        mock_get_db_ctx.side_effect = fake_db_context
-
-        with patch(
-            "backend.services.scraping_service.ScrapingHistoryRepository",
-            return_value=mock_history_repo,
-        ):
-            service.start_scraping_single("credit_cards", "isracard", "Card1")
-
-        expected_key = scraper_registry_key(False, "credit_cards", "isracard", "Card1")
-        assert expected_key in ss._active_scrapers
-        assert ss._active_scrapers[expected_key] is mock_adapter
-
-    @patch("backend.services.scraping_service.asyncio")
-    @patch("backend.services.scraping_service.create_adapter")
-    @patch("backend.services.scraping_service.get_db_context")
-    @patch("backend.services.scraping_service.is_2fa_required")
     def test_different_accounts_both_proceed(
-        self, mock_is_2fa, mock_get_db_ctx, mock_create_adapter, mock_asyncio, service
+        self, service, launch, history_repo, create_adapter, is_2fa_required
     ):
         """Two different accounts are unaffected by each other's registration."""
-        mock_is_2fa.return_value = False
         service.credentials_repo.get_credentials.return_value = {"user": "test"}
         service.scraping_history_repo.get_last_successful_scrape_date.return_value = None
+        history_repo.record_scrape_start.side_effect = [40, 41]
 
-        mock_history_repo = MagicMock()
-        mock_history_repo.IN_PROGRESS = "in_progress"
-        mock_history_repo.record_scrape_start.side_effect = [40, 41]
-
-        @contextmanager
-        def fake_db_context():
-            yield MagicMock()
-
-        mock_get_db_ctx.side_effect = fake_db_context
-
-        with patch(
-            "backend.services.scraping_service.ScrapingHistoryRepository",
-            return_value=mock_history_repo,
-        ):
-            first_id = service.start_scraping_single("banks", "hapoalim", "AccA")
-            second_id = service.start_scraping_single("banks", "hapoalim", "AccB")
+        first_id = service.start_scraping_single("banks", "hapoalim", "AccA")
+        second_id = service.start_scraping_single("banks", "hapoalim", "AccB")
 
         assert first_id == 40
         assert second_id == 41
-        assert mock_create_adapter.call_count == 2
-        assert mock_asyncio.run_coroutine_threadsafe.call_count == 2
+        assert create_adapter.call_count == 2
+        assert launch.call_count == 2
 
 
 class TestScrapingService2FA:
     """Tests for 2FA code submission."""
 
-    def test_submit_2fa_code(self, service):
-        """Verify set_otp_code is called on the correct adapter."""
-        mock_adapter = MagicMock()
+    def test_submit_code_wakes_adapter_and_transitions_to_in_progress(self, service):
+        """A submitted code reaches the parked adapter, un-parks it from the 2FA
+        registry (a second submit must 404, not re-wake it), keeps the
+        single-flight lock in ``_active_scrapers`` while the code is verified,
+        and flips the row back to IN_PROGRESS so the UI drops the prompt."""
+        adapter = MagicMock()
+        adapter.process_id = 12
         key = scraper_registry_key(False, "credit_cards", "isracard", "Main")
-        ss._tfa_scrapers_waiting[key] = mock_adapter
+        ss._tfa_scrapers_waiting[key] = adapter
+        ss._active_scrapers[key] = adapter
 
         service.submit_2fa_code("credit_cards", "isracard", "Main", "123456")
 
-        mock_adapter.set_otp_code.assert_called_once_with("123456")
+        adapter.set_otp_code.assert_called_once_with("123456")
+        assert key not in ss._tfa_scrapers_waiting
+        assert ss._active_scrapers[key] is adapter
+        service.scraping_history_repo.update_status.assert_called_once_with(
+            12, service.scraping_history_repo.IN_PROGRESS
+        )
+
+    def test_submit_cancel_does_not_flip_status_back_to_in_progress(self, service):
+        """The cancel sentinel is forwarded but the row is left for the adapter
+        to record as CANCELED — an IN_PROGRESS flip would show a spinner for a
+        scrape the user just killed."""
+        adapter = MagicMock()
+        adapter.process_id = 12
+        key = scraper_registry_key(False, "credit_cards", "isracard", "Main")
+        ss._tfa_scrapers_waiting[key] = adapter
+
+        service.submit_2fa_code(
+            "credit_cards", "isracard", "Main", ScraperAdapter.CANCEL
+        )
+
+        adapter.set_otp_code.assert_called_once_with(ScraperAdapter.CANCEL)
+        service.scraping_history_repo.update_status.assert_not_called()
 
     def test_submit_2fa_code_not_found(self, service):
         """Verify EntityNotFoundException raised for unknown scraper."""
@@ -553,150 +357,91 @@ class TestScrapingService2FA:
 class TestScrapingServiceAbort:
     """Tests for aborting scraping processes."""
 
-    @patch("backend.services.scraping_service.get_db_context")
-    def test_abort_scraping_process(self, mock_get_db_ctx, service):
-        """Verify CANCEL is sent and history is recorded as failed."""
-        mock_adapter = MagicMock()
-        mock_adapter.process_id = 20
-        mock_adapter.CANCEL = "cancel"
-        # abort_scraping_process now matches on mode as well as process_id.
-        mock_adapter.demo_mode = False
-        ss._tfa_scrapers_waiting[scraper_registry_key(False, "banks", "leumi", "Acc")] = mock_adapter
+    @staticmethod
+    def _adapter(process_id: int) -> MagicMock:
+        """Build a stand-in adapter matching the caller's (real) mode."""
+        adapter = MagicMock()
+        adapter.process_id = process_id
+        adapter.demo_mode = False
+        return adapter
 
-        mock_history_repo = MagicMock()
-        mock_history_repo.FAILED = "failed"
+    def test_abort_2fa_waiting_scraper_cancels_via_otp_and_records_canceled(
+        self, service, history_repo
+    ):
+        """A scraper parked on an OTP is woken with the cancel sentinel, dropped
+        from BOTH registries (so the account can relaunch immediately) and its
+        row is recorded CANCELED — not FAILED, which is a provider error."""
+        adapter = self._adapter(20)
+        key = scraper_registry_key(False, "banks", "leumi", "Acc")
+        ss._tfa_scrapers_waiting[key] = adapter
+        ss._active_scrapers[key] = adapter
 
-        @contextmanager
-        def fake_db_context():
-            yield MagicMock()
+        service.abort_scraping_process(20)
 
-        mock_get_db_ctx.side_effect = fake_db_context
+        adapter.set_otp_code.assert_called_once_with(ScraperAdapter.CANCEL)
+        adapter._run_future.cancel.assert_called_once_with()
+        assert key not in ss._tfa_scrapers_waiting
+        assert key not in ss._active_scrapers
+        history_repo.record_scrape_end.assert_called_once_with(20, "canceled")
 
-        with patch(
-            "backend.services.scraping_service.ScrapingHistoryRepository",
-            return_value=mock_history_repo,
-        ):
-            service.abort_scraping_process(20)
+    def test_abort_in_flight_non_2fa_scrape_cancels_its_future(
+        self, service, history_repo
+    ):
+        """A scraper that is NOT parked on an OTP never reads the sentinel, so
+        the abort must cancel the coroutine itself. Previously only the
+        registry entry was dropped and the browser kept scraping to completion
+        behind the user's back, then overwrote the status."""
+        adapter = self._adapter(21)
+        key = scraper_registry_key(False, "credit_cards", "max", "Card1")
+        ss._active_scrapers[key] = adapter
 
-        mock_adapter.set_otp_code.assert_called_once_with("cancel")
-        mock_history_repo.record_scrape_end.assert_called_once_with(20, "failed")
-        assert scraper_registry_key(False, "banks", "leumi", "Acc") not in ss._tfa_scrapers_waiting
+        service.abort_scraping_process(21)
 
-    @patch("backend.services.scraping_service.get_db_context")
-    def test_abort_scraping_process_pops_active_scrapers(self, mock_get_db_ctx, service):
-        """Aborting a 2FA-waiting scraper also removes it from _active_scrapers."""
-        mock_adapter = MagicMock()
-        mock_adapter.process_id = 21
-        mock_adapter.CANCEL = "cancel"
-        # abort_scraping_process now matches on mode as well as process_id.
-        mock_adapter.demo_mode = False
-        ss._tfa_scrapers_waiting[scraper_registry_key(False, "banks", "leumi", "Acc2")] = mock_adapter
-        ss._active_scrapers[scraper_registry_key(False, "banks", "leumi", "Acc2")] = mock_adapter
+        adapter._run_future.cancel.assert_called_once_with()
+        adapter.set_otp_code.assert_not_called()
+        assert key not in ss._active_scrapers
+        history_repo.record_scrape_end.assert_called_once_with(21, "canceled")
 
-        mock_history_repo = MagicMock()
-        mock_history_repo.FAILED = "failed"
+    def test_abort_adapter_without_a_future_still_records_canceled(
+        self, service, history_repo
+    ):
+        """An adapter never handed to the loop (``_run_future`` is None) is
+        simply unregistered and recorded — no AttributeError."""
+        adapter = self._adapter(22)
+        adapter._run_future = None
+        key = scraper_registry_key(False, "credit_cards", "max", "Card1")
+        ss._active_scrapers[key] = adapter
 
-        @contextmanager
-        def fake_db_context():
-            yield MagicMock()
+        service.abort_scraping_process(22)
 
-        mock_get_db_ctx.side_effect = fake_db_context
+        assert key not in ss._active_scrapers
+        history_repo.record_scrape_end.assert_called_once_with(22, "canceled")
 
-        with patch(
-            "backend.services.scraping_service.ScrapingHistoryRepository",
-            return_value=mock_history_repo,
-        ):
-            service.abort_scraping_process(21)
+    def test_abort_unknown_process_records_canceled(self, service, history_repo):
+        """An id with no live adapter (already finished, or lost to a restart)
+        still gets its row closed as CANCELED so the UI stops polling it."""
+        service.abort_scraping_process(999)
 
-        assert scraper_registry_key(False, "banks", "leumi", "Acc2") not in ss._active_scrapers
-
-    @patch("backend.services.scraping_service.get_db_context")
-    def test_abort_2fa_scraper(self, mock_get_db_ctx, service):
-        """Verify CANCEL is sent to 2FA adapter via set_otp_code."""
-        mock_adapter = MagicMock()
-        mock_adapter.process_id = 55
-        mock_adapter.CANCEL = "cancel"
-        # abort_scraping_process now matches on mode as well as process_id.
-        mock_adapter.demo_mode = False
-        ss._tfa_scrapers_waiting[scraper_registry_key(False, "credit_cards", "max", "Card1")] = mock_adapter
-
-        mock_history_repo = MagicMock()
-        mock_history_repo.FAILED = "failed"
-
-        @contextmanager
-        def fake_db_context():
-            yield MagicMock()
-
-        mock_get_db_ctx.side_effect = fake_db_context
-
-        with patch(
-            "backend.services.scraping_service.ScrapingHistoryRepository",
-            return_value=mock_history_repo,
-        ):
-            service.abort_scraping_process(55)
-
-        mock_adapter.set_otp_code.assert_called_once_with("cancel")
-        assert scraper_registry_key(False, "credit_cards", "max", "Card1") not in ss._tfa_scrapers_waiting
-
-    @patch("backend.services.scraping_service.get_db_context")
-    def test_abort_non_2fa_process_records_failure(self, mock_get_db_ctx, service):
-        """Verify abort records failure in history even when process is not in _tfa_scrapers_waiting."""
-        mock_history_repo = MagicMock()
-        mock_history_repo.FAILED = "failed"
-
-        @contextmanager
-        def fake_db_context():
-            yield MagicMock()
-
-        mock_get_db_ctx.side_effect = fake_db_context
-
-        with patch(
-            "backend.services.scraping_service.ScrapingHistoryRepository",
-            return_value=mock_history_repo,
-        ):
-            service.abort_scraping_process(999)
-
-        mock_history_repo.record_scrape_end.assert_called_once_with(999, "failed")
-        assert len(ss._tfa_scrapers_waiting) == 0
+        history_repo.record_scrape_end.assert_called_once_with(999, "canceled")
+        assert ss._tfa_scrapers_waiting == {}
 
 
 class TestScrapingServiceCustomPeriod:
     """Tests for custom scraping period date calculation."""
 
-    @patch("backend.services.scraping_service.asyncio")
-    @patch("backend.services.scraping_service.create_adapter")
-    @patch("backend.services.scraping_service.get_db_context")
-    @patch("backend.services.scraping_service.is_2fa_required")
     def test_start_scraping_single_with_custom_period(
-        self, mock_is_2fa, mock_get_db_ctx, mock_create_adapter, mock_asyncio, service
+        self, service, launch, history_repo, create_adapter, is_2fa_required
     ):
         """Verify scraping_period_days overrides automatic start date calculation."""
-        from datetime import date, timedelta
-
-        mock_is_2fa.return_value = False
         service.credentials_repo.get_credentials.return_value = {"user": "test"}
+        history_repo.record_scrape_start.return_value = 42
 
-        mock_history_repo = MagicMock()
-        mock_history_repo.IN_PROGRESS = "in_progress"
-        mock_history_repo.record_scrape_start.return_value = 42
+        service.start_scraping_single(
+            "banks", "hapoalim", "Main", scraping_period_days=30
+        )
 
-        @contextmanager
-        def fake_db_context():
-            yield MagicMock()
-
-        mock_get_db_ctx.side_effect = fake_db_context
-
-        with patch(
-            "backend.services.scraping_service.ScrapingHistoryRepository",
-            return_value=mock_history_repo,
-        ):
-            service.start_scraping_single("banks", "hapoalim", "Main", scraping_period_days=30)
-
-        call_args = mock_history_repo.record_scrape_start.call_args
         expected_start = date.today() - timedelta(days=30)
-        assert call_args[0][3] == expected_start
-
-        # _get_scraper_start_date was NOT called (custom period takes precedence)
+        assert history_repo.record_scrape_start.call_args.args[3] == expected_start
         service.scraping_history_repo.get_last_successful_scrape_date.assert_not_called()
 
 
@@ -705,8 +450,6 @@ class TestScrapingServiceStartDate:
 
     def test_get_scraper_start_date_with_iso_date(self, service):
         """Verify ISO format date string is parsed and 7-day buffer applied."""
-        from datetime import datetime, timedelta
-
         service.scraping_history_repo.get_last_successful_scrape_date.return_value = (
             "2026-02-20T10:30:00"
         )
@@ -718,77 +461,41 @@ class TestScrapingServiceStartDate:
 
     def test_get_scraper_start_date_invalid_date_falls_back(self, service):
         """Verify invalid date string falls back to 365 days ago."""
-        from datetime import date, timedelta
-
         service.scraping_history_repo.get_last_successful_scrape_date.return_value = (
             "not-a-date"
         )
 
         result = service._get_scraper_start_date("banks", "hapoalim", "Main")
 
-        expected = date.today() - timedelta(days=365)
-        assert result == expected
+        assert result == date.today() - timedelta(days=365)
 
     def test_get_scraper_start_date_no_prior_scrape(self, service):
         """Verify None last scrape falls back to 365 days ago."""
-        from datetime import date, timedelta
-
         service.scraping_history_repo.get_last_successful_scrape_date.return_value = None
 
         result = service._get_scraper_start_date("banks", "hapoalim", "Main")
 
-        expected = date.today() - timedelta(days=365)
-        assert result == expected
+        assert result == date.today() - timedelta(days=365)
 
+    def test_erased_history_yields_a_fresh_year_backfill(self, db_session):
+        """Once an account's history rows are deleted (``delete_data=True``
+        disconnect), the next start date is the fresh-account one-year window
+        rather than the old watermark minus seven days."""
+        from backend.repositories.scraping_history_repository import (
+            ScrapingHistoryRepository,
+        )
 
-class TestScrapingServiceCollectAdapters:
-    """Tests for _collect_adapters method."""
+        history = ScrapingHistoryRepository(db_session)
+        scrape_id = history.record_scrape_start(
+            "banks", "hapoalim", "Main", date.today()
+        )
+        history.record_scrape_end(scrape_id, history.SUCCESS)
+        real_service = ScrapingService(db_session)
+        assert (
+            date.today() - real_service._get_scraper_start_date("banks", "hapoalim", "Main")
+        ).days == 7
 
-    @patch("backend.services.scraping_service.create_adapter")
-    @patch("backend.services.scraping_service.is_2fa_required")
-    def test_collect_adapters_separates_normal_and_2fa(
-        self, mock_is_2fa, mock_create_adapter, service
-    ):
-        """Verify adapters are separated into normal and 2FA dicts."""
-        mock_is_2fa.side_effect = lambda svc, prov: prov == "onezero"
-        service.scraping_history_repo.get_last_successful_scrape_date.return_value = None
+        history.delete_for_account("banks", "hapoalim", "Main")
 
-        mock_adapter = MagicMock()
-        mock_create_adapter.return_value = mock_adapter
-
-        credentials = {
-            "banks": {
-                "hapoalim": {"Main": {"userCode": "test"}},
-                "onezero": {"Account1": {"email": "test@test.com"}},
-            }
-        }
-
-        normal, tfa = service._collect_adapters(credentials)
-
-        assert scraper_registry_key(False, "banks", "hapoalim", "Main") in normal
-        assert scraper_registry_key(False, "banks", "onezero", "Account1") in tfa
-        assert len(normal) == 1
-        assert len(tfa) == 1
-
-    @patch("backend.services.scraping_service.create_adapter")
-    @patch("backend.services.scraping_service.is_2fa_required")
-    def test_collect_adapters_multiple_services(
-        self, mock_is_2fa, mock_create_adapter, service
-    ):
-        """Verify adapters are created for accounts across multiple services."""
-        mock_is_2fa.return_value = False
-        service.scraping_history_repo.get_last_successful_scrape_date.return_value = None
-
-        mock_adapter = MagicMock()
-        mock_create_adapter.return_value = mock_adapter
-
-        credentials = {
-            "banks": {"hapoalim": {"Checking": {"userCode": "abc"}}},
-            "credit_cards": {"isracard": {"Card1": {"id": "123"}}},
-        }
-
-        normal, tfa = service._collect_adapters(credentials)
-
-        assert len(normal) == 2
-        assert len(tfa) == 0
-        assert mock_create_adapter.call_count == 2
+        start = real_service._get_scraper_start_date("banks", "hapoalim", "Main")
+        assert (date.today() - start).days == 365
