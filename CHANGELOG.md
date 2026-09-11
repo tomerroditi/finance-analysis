@@ -1,3 +1,9 @@
+## v1.61.3 (2026-09-11)
+
+### Fix
+
+- **budget**: apportion spend between overlapping monthly rules (#272)
+
 ## v1.61.2 (2026-09-11)
 
 ### Fix
