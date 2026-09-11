@@ -576,6 +576,21 @@ class MonthlyBudgetService(BudgetService):
                 mask |= in_cat & month_data[tag_col].isin(rule[TAGS])
         return month_data.loc[~mask]
 
+    @classmethod
+    def _claim_order(cls, rules: pd.DataFrame) -> list[int]:
+        """Positions of ``rules`` in the order they claim transactions.
+
+        The most specific rule claims first: a rule naming fewer tags beats one
+        naming more, and ``all_tags`` goes last so it covers only what no sibling
+        tag rule claimed — the category-level counterpart of "Other Expenses".
+        Ties keep the rules' own order.
+        """
+        def priority(position: int) -> tuple[bool, int, int]:
+            tags = rules.iloc[position][TAGS]
+            return cls._is_all_tags(tags), len(tags), position
+
+        return sorted(range(len(rules)), key=priority)
+
     def get_monthly_budget_view(
         self, year: int, month: int, include_split_parents: bool = False
     ) -> Optional[list[dict]]:
@@ -583,6 +598,9 @@ class MonthlyBudgetService(BudgetService):
         Compute budget rule usage view for a given month.
 
         Matches transactions to budget rules and calculates actual spend per rule.
+        Each transaction counts toward exactly one rule — the most specific one
+        that matches (see ``_claim_order``) — so a category's ``all_tags`` rule
+        reports only the spend its sibling tag rules leave unclaimed.
         Project-category transactions and pending-refund transactions are excluded.
         If spend remains after all rules are matched, an ``"Other Expenses"`` entry
         is appended using the unallocated portion of the total budget.
@@ -647,32 +665,34 @@ class MonthlyBudgetService(BudgetService):
             )
             rules = rules.loc[~rules.index.isin(total_rule.index)]
         remaining_data = month_data.copy()
-        for _, rule in rules.iterrows():
+        claimed: dict[int, pd.DataFrame] = {}
+        for position in self._claim_order(rules):
+            rule = rules.iloc[position]
             tags = rule[TAGS]
             cat_data = remaining_data[
                 remaining_data[TransactionsTableFields.CATEGORY.value] == rule[CATEGORY]
             ]
-
-            is_all_tags = [t.lower() for t in tags] == [ALL_TAGS.lower()]
-            if not is_all_tags:
+            if not self._is_all_tags(tags):
                 cat_data = cat_data[
                     cat_data[TransactionsTableFields.TAG.value].isin(tags)
                 ]
+            claimed[position] = cat_data
+            remaining_data = remaining_data.loc[
+                ~remaining_data.index.isin(cat_data.index)
+            ]
 
-            amt = cat_data[TransactionsTableFields.AMOUNT.value].sum() * -1
+        for position in range(len(rules)):
+            cat_data = claimed[position]
             view.append(
                 {
-                    "rule": rule.to_dict(),
-                    "current_amount": amt,
+                    "rule": rules.iloc[position].to_dict(),
+                    "current_amount": cat_data[TransactionsTableFields.AMOUNT.value].sum()
+                    * -1,
                     "data": cat_data.to_dict(orient="records"),
                     "allow_edit": True,
                     "allow_delete": True,
                 }
             )
-
-            remaining_data = remaining_data.loc[
-                ~remaining_data.index.isin(cat_data.index)
-            ]
 
         if not remaining_data.empty and not rules.empty and not total_rule.empty:
             total_alloc = rules[AMOUNT].sum()
