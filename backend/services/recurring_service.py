@@ -82,6 +82,27 @@ class RecurringService:
         s = re.sub(r"\s+", " ", s).strip()
         return s
 
+    @staticmethod
+    def normalize_description(desc) -> str:
+        """Public entry point to the merchant grouping key.
+
+        Callers outside this service — the budget overview, which has to decide
+        whether a transaction is one of these recurring charges — must group
+        descriptions exactly the way detection did, so they normalise through
+        here rather than reimplementing the rules.
+
+        Parameters
+        ----------
+        desc : Any
+            Raw transaction description.
+
+        Returns
+        -------
+        str
+            Normalized lowercase label, or empty string for non-strings.
+        """
+        return RecurringService._normalize(desc)
+
     def _match_cadence(self, interval_days: float) -> tuple[str, int] | None:
         """Match a median interval to the closest known cadence.
 

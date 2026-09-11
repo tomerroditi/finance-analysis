@@ -15,6 +15,7 @@ from backend.dependencies import get_database
 from backend.errors import EntityNotFoundException
 from backend.routes.schemas import ApiRequestModel
 from backend.services.budget_service import (
+    BudgetOverviewService,
     BudgetService,
     MonthlyBudgetService,
     ProjectBudgetService,
@@ -194,6 +195,38 @@ def get_monthly_analysis(
     """
     service = MonthlyBudgetService(db)
     return service.get_monthly_analysis(year, month, include_split_parents)
+
+
+@router.get("/overview/{year}/{month}")
+def get_budget_overview(
+    year: int,
+    month: int,
+    include_split_parents: bool = Query(False),
+    db: Session = Depends(get_database),
+) -> dict[str, Any]:
+    """Return one month read across monthly, yearly and project budgets.
+
+    Carries the two facts no other endpoint exposes: the split of the month's
+    monthly-pool spend into recurring and day-to-day, with the recurring charges
+    still due before month end; and, per yearly or project envelope, what this
+    month contributed alongside where that envelope stands overall.
+
+    Parameters
+    ----------
+    year : int
+        Calendar year of the month to summarise.
+    month : int
+        Calendar month (1-12).
+    include_split_parents : bool, optional
+        When ``True``, include the original parent transactions of splits
+        alongside the individual split rows. Defaults to ``False``.
+
+    Returns
+    -------
+    dict
+        See :meth:`BudgetOverviewService.get_overview` for the full shape.
+    """
+    return BudgetOverviewService(db).get_overview(year, month, include_split_parents)
 
 
 # --- Alert Endpoints ---
