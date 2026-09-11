@@ -17,6 +17,7 @@ from backend.repositories.tagging_rules_repository import TaggingRulesRepository
 from backend.repositories.transactions_repository import TransactionsRepository
 from backend.services.tagging_service import CategoriesTagsService
 from backend.services.transactions_service import TransactionsService
+from backend.utils.log_sanitize import scrub
 
 
 TABLE_TO_MODEL: Dict[str, Type[TransactionBase]] = {
@@ -656,9 +657,9 @@ class TaggingRulesService:
             return self._normalize_conditions(rule["conditions"])
         except ValueError:
             logger.warning(
-                "Skipping tagging rule %s (%r): stored conditions are not valid JSON",
+                "Skipping tagging rule %s (%s): stored conditions are not valid JSON",
                 rule.get("id"),
-                rule.get("name"),
+                scrub(rule.get("name")),
             )
             return None
 
