@@ -29,6 +29,12 @@ test.describe("Budget", () => {
     await navigateTo(page, "/budget");
     await expectPageTitle(page, /Budget/);
 
+    // Overview is the landing tab; this flow needs the monthly ledger.
+    await page.getByRole("button", { name: /^Monthly Budget$/i }).click();
+    await expect(page.getByTestId("budget-status-band")).toBeVisible({
+      timeout: 30_000,
+    });
+
     // --- Both tabs visible ---
     await expect(page.getByText(/Monthly Budget/i)).toBeVisible();
     await expect(page.getByText(/Project Budgets/i)).toBeVisible();
@@ -267,6 +273,11 @@ test.describe("Budget", () => {
     page,
   }) => {
     await navigateTo(page, "/budget");
+    // Overview is the landing tab; this flow needs the monthly ledger.
+    await page.getByRole("button", { name: /^Monthly Budget$/i }).click();
+    await expect(page.getByTestId("budget-status-band")).toBeVisible({
+      timeout: 30_000,
+    });
 
     // The budget page no longer carries an alerts banner: every rule row
     // already shows a rose dot, an over-by figure and a >100% percentage, so

@@ -295,6 +295,13 @@ test.describe("Savings goals", () => {
 
     await page.goto("/budget");
     await page.waitForLoadState("domcontentloaded");
+    // Overview is the landing tab, and it captions one of its tiles with the
+    // same "Into savings goals" string. Only the monthly ledger renders the
+    // per-goal breakdown this test reads, so switch to it before asserting.
+    await page.getByRole("button", { name: /^Monthly Budget$/i }).click();
+    await expect(page.getByTestId("budget-status-band")).toBeVisible({
+      timeout: 30_000,
+    });
     for (let i = 0; i < monthsBack; i += 1) {
       await page
         .getByRole("button", { name: /previous/i })

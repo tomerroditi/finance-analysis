@@ -9,6 +9,9 @@ import { formatShortDate } from "../../utils/dateFormatting";
 import { Skeleton } from "../common/Skeleton";
 import { useQueryKeys } from "../../hooks/useQueryKeys";
 import { useBudgetTrend } from "../../hooks/useBudgetTrend";
+import { useBudgetFreshness } from "../../hooks/useBudgetFreshness";
+import { useScraping } from "../../hooks/useScraping";
+import { DataFreshnessBadge } from "./DataFreshnessBadge";
 import { BAR_CONTROL, BudgetCommandBar, PeriodNav } from "./BudgetCommandBar";
 import { RuleSparkline } from "./RuleSparkline";
 import { CommitmentBar } from "./overview/CommitmentBar";
@@ -149,6 +152,9 @@ export const OverviewBudgetView: React.FC<OverviewBudgetViewProps> = ({ tabs }) 
     placeholderData: keepPreviousData,
   });
 
+  const freshness = useBudgetFreshness();
+  const { isAnyScraping } = useScraping();
+
   const trend = useBudgetTrend(year, month, TREND_MONTHS, false);
   const trendLabels = useMemo(
     () => trend.data.map((point) => point.key),
@@ -164,6 +170,20 @@ export const OverviewBudgetView: React.FC<OverviewBudgetViewProps> = ({ tabs }) 
   const isCurrentMonth =
     year === today.getFullYear() && month === today.getMonth() + 1;
 
+  // Same gate the Monthly tab applies: a month can only be short of data if it
+  // ends on or after the oldest sync. As the landing tab, the Overview has to
+  // carry this warning — it was the first thing the page said before, and
+  // moving the landing tab must not quietly drop it.
+  const viewedIndex = year * 12 + (month - 1);
+  const currentIndex = today.getFullYear() * 12 + today.getMonth();
+  const monthEnd = new Date(year, month, 0, 23, 59, 59, 999).getTime();
+  const monthCouldBeIncomplete =
+    viewedIndex <= currentIndex &&
+    (isCurrentMonth ||
+      (freshness.oldestSyncDate !== null &&
+        monthEnd >= new Date(freshness.oldestSyncDate).getTime()));
+  const showFreshness = freshness.hasScrapableAccounts && monthCouldBeIncomplete;
+
   const step = (delta: number) => {
     const next = new Date(year, month - 1 + delta);
     setYear(next.getFullYear());
@@ -171,7 +191,21 @@ export const OverviewBudgetView: React.FC<OverviewBudgetViewProps> = ({ tabs }) 
   };
 
   const commandBar = (
-    <BudgetCommandBar tabs={tabs}>
+    <BudgetCommandBar
+      tabs={tabs}
+      freshnessBadge={
+        showFreshness ? (
+          <DataFreshnessBadge
+            tier={freshness.tier}
+            oldestSyncDate={freshness.oldestSyncDate}
+            staleAccounts={freshness.staleAccounts}
+            isSyncing={isAnyScraping}
+            year={year}
+            month={month}
+          />
+        ) : undefined
+      }
+    >
       <PeriodNav
         label={periodLabel}
         isCurrent={isCurrentMonth}

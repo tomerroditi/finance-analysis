@@ -28,6 +28,11 @@ test.describe("Budget rule creation flow", () => {
   test("creates a new monthly budget rule", async ({ page }) => {
     const ruleName = `E2E Test Budget ${Date.now()}`;
     await gotoAndWait(page, "/budget");
+    // Overview is the landing tab; "Add Rule" lives on the monthly ledger.
+    await page.getByRole("button", { name: /^Monthly Budget$/i }).click();
+    await expect(page.getByTestId("budget-status-band")).toBeVisible({
+      timeout: 30_000,
+    });
 
     // Open the Add Rule modal.
     await page

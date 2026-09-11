@@ -28,6 +28,11 @@ test.describe("Budget — net refund rows", () => {
 
   test("a refund figure is never shown as over budget", async ({ page }) => {
     await navigateTo(page, "/budget");
+    // Overview is the landing tab; this flow needs the monthly ledger.
+    await page.getByRole("button", { name: /^Monthly Budget$/i }).click();
+    await expect(page.getByTestId("budget-status-band")).toBeVisible({
+      timeout: 30_000,
+    });
     await page.waitForLoadState("networkidle");
 
     let sampledRows = 0;
