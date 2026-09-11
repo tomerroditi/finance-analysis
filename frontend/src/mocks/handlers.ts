@@ -122,6 +122,27 @@ export const mockInvestments = [
     profit_loss: 0,
     roi: 0,
   },
+  {
+    id: 3,
+    name: "Migdal 007-916-407357",
+    type: "hishtalmut",
+    category: "Investments",
+    tag: null,
+    is_closed: 0,
+    closed_date: null,
+    interest_rate: null,
+    interest_rate_type: null,
+    notes: null,
+    insurance_policy_id: "007-916-407357",
+    liquidity_date: "2030-01-01",
+    commission_deposit: 1.5,
+    commission_management: 0.4,
+    current_balance: 15000,
+    total_deposits: 14000,
+    total_withdrawals: 0,
+    profit_loss: 1000,
+    roi: 7.14,
+  },
 ];
 
 export const mockLiabilities = [
@@ -287,6 +308,16 @@ export const mockRetirementSuggestions = {
 
 export const handlers = [
   // ── Tagging API ──
+  http.get("/api/tagging/categories/usage", () =>
+    HttpResponse.json(
+      Object.fromEntries(
+        Object.keys(mockCategories).map((name) => [
+          name,
+          { last_used: "2026-08-01", unused: false },
+        ]),
+      ),
+    ),
+  ),
   http.get("/api/tagging/categories", () =>
     HttpResponse.json(mockCategories),
   ),
@@ -375,6 +406,20 @@ export const handlers = [
   // fails the whole vitest run with an EnvironmentTeardownError.
   http.get("/api/savings-goals/", () => HttpResponse.json([])),
   http.get("/api/savings-goals/links", () => HttpResponse.json([])),
+  http.get("/api/savings-goals/free-cash", () =>
+    HttpResponse.json({
+      free_cash: 0,
+      earmarked: 0,
+      liquid: 0,
+      investment_backed: 0,
+      clawed_back_this_month: 0,
+      has_goals: false,
+    }),
+  ),
+  http.get("/api/savings-goals/investments", () => HttpResponse.json([])),
+  http.get("/api/savings-goals/investments/available", () =>
+    HttpResponse.json([]),
+  ),
   http.get("/api/budget/category-conflicts", () =>
     HttpResponse.json({ conflicts: [] }),
   ),
@@ -715,7 +760,13 @@ export const handlers = [
 
   // ── Testing/Demo Mode API ──
   http.get("/api/testing/demo_mode_status", () =>
-    HttpResponse.json({ demo_mode: false, forced: false }),
+    HttpResponse.json({
+      demo_mode: false,
+      forced: false,
+      sandboxed: false,
+      durable: false,
+      blob_configured: false,
+    }),
   ),
   http.post("/api/testing/demo/prepare", () =>
     HttpResponse.json({ status: "success", created: false }),

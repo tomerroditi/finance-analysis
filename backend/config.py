@@ -13,6 +13,16 @@ from contextvars import ContextVar, Token
 #: scripts, background work that has not explicitly opted in).
 _demo_mode_ctx: ContextVar[bool] = ContextVar("fad_demo_mode", default=False)
 
+#: Per-request demo *sandbox* id. Only meaningful in demo mode: when bound,
+#: every demo path resolves under ``demo_env/sessions/<id>/`` so each
+#: visitor of the shared Vercel deployment gets a private copy of the demo
+#: database. ``None`` (the default everywhere else) means the single shared
+#: demo database. Set by :mod:`backend.demo_sessions` from the
+#: ``X-FAD-Demo-Session`` header.
+_demo_session_ctx: ContextVar[str | None] = ContextVar(
+    "fad_demo_session", default=None
+)
+
 
 class AppConfig:
     """Singleton configuration manager for the Finance Analysis backend.
@@ -96,6 +106,36 @@ class AppConfig:
         """
         _demo_mode_ctx.reset(token)
 
+    def get_demo_session(self) -> str | None:
+        """Return the demo sandbox id bound to the current context, if any."""
+        return _demo_session_ctx.get()
+
+    def set_demo_session(self, session_id: str | None) -> Token[str | None]:
+        """Bind a demo sandbox id for the current context.
+
+        Parameters
+        ----------
+        session_id : str | None
+            Sandbox id (already validated by the caller), or ``None`` to
+            address the shared demo database.
+
+        Returns
+        -------
+        Token[str | None]
+            Token for :meth:`reset_demo_session`; bounded scopes must reset.
+        """
+        return _demo_session_ctx.set(session_id)
+
+    def reset_demo_session(self, token: Token[str | None]) -> None:
+        """Restore the sandbox id to its value before ``token`` was issued.
+
+        Parameters
+        ----------
+        token : Token[str | None]
+            The token returned by :meth:`set_demo_session`.
+        """
+        _demo_session_ctx.reset(token)
+
     @property
     def _base_user_dir(self) -> str:
         """Base user directory, resolving ``FAD_USER_DIR`` at call time.
@@ -115,10 +155,23 @@ class AppConfig:
     def _base_user_dir(self, value) -> None:
         self._base_user_dir_override = value
 
+    def get_demo_root_dir(self) -> str:
+        """Return the shared demo directory, ignoring any bound sandbox id."""
+        return os.path.join(self._base_user_dir, "demo_env")
+
     def get_user_dir(self) -> str:
-        """Get the current user directory based on mode."""
+        """Get the current user directory based on mode.
+
+        In demo mode a bound sandbox id nests the directory one level deeper
+        (``demo_env/sessions/<id>``) so per-visitor sandboxes never share a
+        database file with each other or with the shared demo copy.
+        """
         if self.is_demo_mode:
-            return os.path.join(self._base_user_dir, "demo_env")
+            demo_root = self.get_demo_root_dir()
+            session_id = _demo_session_ctx.get()
+            if session_id is not None:
+                return os.path.join(demo_root, "sessions", session_id)
+            return demo_root
         return self._base_user_dir
 
     def get_db_path(self) -> str:

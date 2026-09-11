@@ -87,5 +87,20 @@ test.describe("Investments", () => {
     await expect(modalPlot.locator("defs linearGradient")).not.toHaveCount(0, {
       timeout: 15_000,
     });
+
+    // Keren Hishtalmut investments are labelled with their own type, not
+    // the "Other" fallback. Demo data ships three synced KH policies, each
+    // rendering its type badge in the card header.
+    const khBadge = page.getByText("Keren Hishtalmut", { exact: true }).first();
+    await expect(khBadge).toBeVisible({ timeout: 15_000 });
+
+    // The KH card's metadata row carries its policy fees and liquidity
+    // date. Confirmed against the running demo data (all three synced KH
+    // policies carry a liquidity_date, a 0% deposit fee, and a non-zero
+    // management fee) before asserting, per the brief's instruction not to
+    // assert on unverified fixture values.
+    await expect(page.getByText(/Management fee/i).first()).toBeVisible();
+    await expect(page.getByText(/Deposit fee/i).first()).toBeVisible();
+    await expect(page.getByText(/^Liquid \d{4}-\d{2}-\d{2}$/).first()).toBeVisible();
   });
 });

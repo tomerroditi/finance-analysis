@@ -34,3 +34,25 @@ export function useCategories(options?: { enabled?: boolean }) {
     select: sortCategoriesMap,
   });
 }
+
+export interface CategoryUsage {
+  last_used: string | null;
+  unused: boolean;
+}
+
+/**
+ * Per-category usage info: last transaction date and whether the category has
+ * gone unused (no transactions for six months, created longer ago than that,
+ * and not protected). Display-only — used to demote quiet categories into a
+ * collapsed section on the Categories page.
+ */
+export function useCategoryUsage() {
+  const qk = useQueryKeys();
+  return useQuery({
+    queryKey: qk.tagging.categoryUsage(),
+    queryFn: () =>
+      taggingApi
+        .getCategoryUsage()
+        .then((res) => res.data as Record<string, CategoryUsage>),
+  });
+}

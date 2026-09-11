@@ -44,11 +44,43 @@ test.describe("Dashboard", () => {
       timeout: 45_000,
     });
 
-    // Budget progress section. The section's "Budget" header is too generic
-    // to locate uniquely (the sidebar nav link has the same text). Assert on
-    // the segmented control inside the section instead — those labels live
-    // only in BudgetSection.
-    await expect(page.getByText(/Monthly Budget/i).first()).toBeVisible();
+    // --- Budget card: three tabs, each rendering its own period view ---
+    // The section's "Budget" header is too generic to locate uniquely (the
+    // sidebar nav link has the same text), so anchor on the tab labels, which
+    // live only in BudgetSection.
+    const budgetCard = page.locator('[data-card-id="budget"]');
+    await budgetCard.scrollIntoViewIfNeeded();
+    const monthlyTab = budgetCard.getByRole("button", { name: /Monthly Budget/i });
+    const yearlyTab = budgetCard.getByRole("button", { name: /^Yearly$/i });
+    const projectsTab = budgetCard.getByRole("button", { name: /Project Budgets/i });
+    await expect(monthlyTab).toBeVisible();
+    await expect(yearlyTab).toBeVisible();
+    await expect(projectsTab).toBeVisible();
+
+    // Monthly is the default and shows the compact total bar, not a gauge.
+    await expect(monthlyTab).toHaveAttribute("aria-pressed", "true");
+    await expect(budgetCard.getByTestId("budget-total-bar")).toBeVisible({
+      timeout: 20_000,
+    });
+
+    // The demo DB ships no yearly rules, so this tab renders its empty state:
+    // assert on the year nav, which is present either way, rather than on the
+    // rule grid, which only exists once rules do.
+    await yearlyTab.click();
+    await expect(yearlyTab).toHaveAttribute("aria-pressed", "true");
+    await expect(
+      budgetCard.getByText(String(new Date().getFullYear()), { exact: true }),
+    ).toBeVisible({ timeout: 20_000 });
+
+    await projectsTab.click();
+    await expect(projectsTab).toHaveAttribute("aria-pressed", "true");
+    await expect(budgetCard.getByTestId("budget-total-bar")).toBeVisible({
+      timeout: 20_000,
+    });
+
+    // Back to monthly so the rest of the journey sees the default view.
+    await monthlyTab.click();
+    await expect(budgetCard.getByTestId("budget-total-bar")).toBeVisible();
 
     // --- Refunds card: KPIs + open requests render from demo data ---
     const refundsCard = page.locator('[data-card-id="refunds"]');

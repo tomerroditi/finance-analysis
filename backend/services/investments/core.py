@@ -16,6 +16,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from backend.constants.providers import Services
+from backend.errors import ValidationException
 from backend.models.transaction import InsuranceTransaction
 from backend.repositories.insurance_account_repository import InsuranceAccountRepository
 from backend.repositories.investments_repository import InvestmentsRepository
@@ -253,7 +254,25 @@ class InvestmentsService(SnapshotsMixin, ValuationMixin, InsuranceSyncMixin):
             ID of the investment to update.
         **updates
             Field names and new values forwarded to the repository.
+
+        Raises
+        ------
+        ValidationException
+            If ``type`` is among ``updates`` and the investment is
+            insurance-linked (has a non-null ``insurance_policy_id``). The
+            sync mixin owns the type of scraped Keren Hishtalmut policies;
+            reclassifying one here would silently desync it from the
+            retirement projection's KH swap.
         """
+        if "type" in updates:
+            row = self.investments_repo.get_by_id(investment_id)
+            policy_id = row.iloc[0].get("insurance_policy_id")
+            if policy_id and pd.notna(policy_id):
+                raise ValidationException(
+                    "Cannot change the type of an insurance-linked investment; "
+                    "its type is owned by the scraped policy."
+                )
+
         self.investments_repo.update_investment(investment_id, **updates)
 
         if "name" in updates:

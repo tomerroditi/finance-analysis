@@ -304,3 +304,159 @@ class TestSafeGithubUrl:
     def test_hostile_or_malformed_urls_are_dropped(self, url) -> None:
         """Verify non-HTTPS, non-GitHub, and empty URLs collapse to None."""
         assert update_service._safe_github_url(url) is None
+
+
+class TestParseSemver:
+    """Lenient version parsing used for the ``current < latest`` decision."""
+
+    @pytest.mark.parametrize(
+        "raw, expected",
+        [
+            ("1.2.3", (1, 2, 3)),
+            ("v1.2.3", (1, 2, 3)),
+            ("V1.2.3", (1, 2, 3)),
+            ("1.2.3-beta.1", (1, 2, 3)),
+            ("1.2.3+build.7", (1, 2, 3)),
+            ("1.2", (1, 2, 0)),
+            ("7", (7, 0, 0)),
+            ("1.2.3.4", (1, 2, 3)),
+        ],
+    )
+    def test_parses_common_shapes(self, raw: str, expected: tuple[int, ...]) -> None:
+        """Prefixes, pre-release/build suffixes and short forms all normalise."""
+        assert update_service._parse_semver(raw) == expected
+
+    @pytest.mark.parametrize("raw", ["", "abc", "1.x.3", "v", "1..2"])
+    def test_malformed_input_never_fakes_an_update(self, raw: str) -> None:
+        """Anything unparsable collapses to (0, 0, 0), which is never newer."""
+        assert update_service._parse_semver(raw) == (0, 0, 0)
+
+    def test_numeric_compare_not_lexical(self, tmp_path: Path) -> None:
+        """1.10.0 is newer than 1.9.0 — string comparison would say otherwise."""
+        svc = UpdateService(cache_path=tmp_path / "c.json")
+        assert svc._is_outdated("1.9.0", "1.10.0") is True
+        assert svc._is_outdated("1.10.0", "1.9.0") is False
+        assert svc._is_outdated("1.0.0", None) is False
+        assert svc._is_outdated("1.0.0", "") is False
+
+
+class TestProbePayloadEdgeCases:
+    """Odd but well-formed GitHub payloads."""
+
+    def test_missing_tag_name_means_no_latest_and_not_outdated(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A release without ``tag_name`` yields ``latest=None`` and no update toast."""
+        monkeypatch.setattr(update_service, "get_app_version", lambda: "1.15.1")
+        payload = {"html_url": "https://github.com/tomerroditi/finance-analysis/releases/tag/x", "assets": []}
+        client = _make_client(httpx.Response(200, json=payload))
+        svc = UpdateService(cache_path=tmp_path / "c.json", http_client=client)
+
+        info = svc.check()
+
+        assert info.error is None
+        assert info.latest is None
+        assert info.is_outdated is False
+        assert info.checked_at is not None
+
+    def test_non_github_html_url_falls_back_to_releases_page(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A hostile ``html_url`` is replaced by the canonical releases page."""
+        monkeypatch.setattr(update_service, "get_app_version", lambda: "1.15.1")
+        payload = {**_release_payload(), "html_url": "javascript:alert(1)"}
+        client = _make_client(httpx.Response(200, json=payload))
+        svc = UpdateService(cache_path=tmp_path / "c.json", http_client=client)
+
+        assert svc.check().html_url == update_service.RELEASES_HTML_URL
+
+    def test_invalid_json_body_collapses_to_unavailable(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A 200 with a non-JSON body is an error, not a crash."""
+        monkeypatch.setattr(update_service, "get_app_version", lambda: "1.15.1")
+        client = _make_client(httpx.Response(200, content=b"<html>rate limited</html>"))
+        svc = UpdateService(cache_path=tmp_path / "c.json", http_client=client)
+
+        info = svc.check()
+
+        assert info.error == "unavailable"
+        assert info.current == "1.15.1"
+
+    def test_error_results_are_not_cached(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A failed probe leaves no cache file so the next call retries."""
+        monkeypatch.setattr(update_service, "get_app_version", lambda: "1.15.1")
+        spy = MagicMock(return_value=httpx.Response(503))
+        svc = UpdateService(cache_path=tmp_path / "c.json", http_client=_make_client(spy))
+
+        svc.check()
+        svc.check()
+
+        assert spy.call_count == 2
+        assert not (tmp_path / "c.json").exists()
+
+
+class TestCacheRobustness:
+    """The on-disk cache degrades gracefully."""
+
+    def test_corrupt_cache_file_triggers_a_fresh_probe(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Unparsable cache content is ignored and overwritten by the new result."""
+        monkeypatch.setattr(update_service, "get_app_version", lambda: "1.15.1")
+        cache_path = tmp_path / "c.json"
+        cache_path.write_text("{not json")
+        spy = MagicMock(return_value=httpx.Response(200, json=_release_payload()))
+        svc = UpdateService(cache_path=cache_path, http_client=_make_client(spy))
+
+        info = svc.check()
+
+        assert spy.call_count == 1
+        assert info.latest == "1.16.0"
+        assert json.loads(cache_path.read_text())["latest"] == "1.16.0"
+
+    def test_cache_with_unknown_fields_is_ignored(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A cache written by a newer schema does not break the dataclass load."""
+        monkeypatch.setattr(update_service, "get_app_version", lambda: "1.15.1")
+        cache_path = tmp_path / "c.json"
+        cache_path.write_text(json.dumps({"current": "1.15.1", "latest": "9.9.9", "surprise": True}))
+        spy = MagicMock(return_value=httpx.Response(200, json=_release_payload()))
+        svc = UpdateService(cache_path=cache_path, http_client=_make_client(spy))
+
+        assert svc.check().latest == "1.16.0"
+        assert spy.call_count == 1
+
+    def test_unwritable_cache_location_does_not_break_the_check(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """When the cache cannot be written the probe result is still returned."""
+        monkeypatch.setattr(update_service, "get_app_version", lambda: "1.15.1")
+        cache_path = tmp_path / "missing-dir" / "c.json"
+        client = _make_client(httpx.Response(200, json=_release_payload()))
+        svc = UpdateService(cache_path=cache_path, http_client=client)
+
+        info = svc.check()
+
+        assert info.latest == "1.16.0"
+        assert not cache_path.exists()
+
+    def test_default_cache_path_lives_in_the_base_user_dir(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Without an explicit path the cache sits beside the real user data."""
+        from backend.config import AppConfig
+
+        config = AppConfig()
+        original = config._base_user_dir
+        config._base_user_dir = str(tmp_path / "userdir")
+        try:
+            path = update_service._cache_path()
+        finally:
+            config._base_user_dir = original
+
+        assert path == tmp_path / "userdir" / ".update_cache.json"
+        assert path.parent.is_dir()

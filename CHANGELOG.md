@@ -1,3 +1,53 @@
+## v1.61.1 (2026-09-11)
+
+### Fix
+
+- **demo**: enable Fluid compute and surface a missing Blob store loudly (#268)
+
+## v1.61.0 (2026-09-10)
+
+### Feat
+
+- **demo**: per-visitor Vercel demo sandboxes persisted to Vercel Blob (#267)
+
+## v1.60.0 (2026-09-09)
+
+### Feat
+
+- **savings-goals**: free-cash pool for deficit months, and investment-backed goals (#262)
+
+## v1.59.0 (2026-09-06)
+
+### Feat
+
+- **investments**: add a Keren Hishtalmut investment kind (#259)
+
+### Fix
+
+- **insurance**: surface statement deductions we could not classify (#261)
+
+## v1.58.0 (2026-09-06)
+
+### Feat
+
+- **dashboard**: redesign the budget card and add the yearly tab (#258)
+
+## v1.57.1 (2026-09-06)
+
+### Fix
+
+- **insurance**: report real pension risk cost and stop the covers list bloating the card (#256)
+
+## v1.57.0 (2026-09-06)
+
+### Feat
+
+- **categories**: collapse unused categories into their own section (#257)
+
+### Fix
+
+- **release**: sync frontend/package-lock.json version on every bump (#253)
+
 ## v1.56.3 (2026-09-05)
 
 ### Fix

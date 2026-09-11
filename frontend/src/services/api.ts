@@ -1,5 +1,5 @@
 import axios from "axios";
-import { readStoredDemoMode } from "./demoMode";
+import { readOrCreateDemoSessionId, readStoredDemoMode } from "./demoMode";
 
 const api = axios.create({
   baseURL: "/api",
@@ -42,6 +42,14 @@ api.interceptors.request.use((config) => {
   // curl, the desktop app, and Playwright's request context.
   if (readStoredDemoMode()) {
     config.headers["X-FAD-Demo"] = "1";
+  }
+  // Sent unconditionally rather than only in Demo Mode: on the shared
+  // Vercel deployment the mode is forced server-side, so the stored flag is
+  // off there even though every request is a demo request. The backend
+  // ignores the id unless it serves per-visitor sandboxes.
+  const demoSessionId = readOrCreateDemoSessionId();
+  if (demoSessionId) {
+    config.headers["X-FAD-Demo-Session"] = demoSessionId;
   }
   return config;
 });
@@ -246,6 +254,7 @@ export interface TaggingRule {
 export const taggingApi = {
   // Category & Tag Management (Legislated in routes/tagging.py)
   getCategories: () => api.get("/tagging/categories"),
+  getCategoryUsage: () => api.get("/tagging/categories/usage"),
   createCategory: (name: string, tags?: string[]) =>
     api.post("/tagging/categories", { name, tags }),
   deleteCategory: (name: string) =>
@@ -413,6 +422,7 @@ export interface InsuranceAccount {
   commission_deposits_pct: number | null;
   commission_savings_pct: number | null;
   insurance_covers: string | null;
+  /** Provider's year-to-date movement statement, not a cost list — read only via `utils/insuranceStatement.ts`. */
   insurance_costs: string | null;
   liquidity_date: string | null;
 }
@@ -439,6 +449,10 @@ export interface Investment {
   interest_rate_type?: string;
   rate_spread?: number | null;
   notes?: string;
+  insurance_policy_id?: string | null;
+  liquidity_date?: string | null;
+  commission_deposit?: number | null;
+  commission_management?: number | null;
   latest_snapshot_date?: string;
   latest_snapshot_balance?: number;
   current_balance?: number;
@@ -938,7 +952,11 @@ export interface SavingsGoal {
   contributed: number;
   /** Money spent back out of the goal. Never reduces `target_amount`. */
   utilized: number;
-  /** opening_balance + allocated + contributed. */
+  /** Money deficit months pulled back out, once the free-cash pool ran dry. */
+  clawed_back: number;
+  /** Goal progress held in earmarked investments rather than cash. */
+  investment_backed: number;
+  /** opening_balance + allocated + contributed + investment_backed, net of any clawback. */
   funded: number;
   /** funded - utilized: what is still earmarked and unspent. */
   available: number;
@@ -982,6 +1000,10 @@ export interface SavingsGoalMonthAllocations {
   total_allocated: number;
   surplus: number;
   unallocated: number;
+  /** Unearmarked money left in the pool at the end of this month. */
+  free_cash: number;
+  /** Money this month's deficit pulled back out of goals (positive). */
+  clawed_back: number;
   is_provisional: boolean;
 }
 
@@ -998,6 +1020,42 @@ export interface SavingsGoalRebuildResult {
   dry_run: boolean;
   changes: SavingsGoalRebuildChange[];
   goals: SavingsGoal[];
+}
+
+/** The pool of tracked money that no goal has earmarked. */
+export interface SavingsGoalFreeCash {
+  free_cash: number;
+  /** The *cash* goals still hold — investment backing is reported apart. */
+  earmarked: number;
+  liquid: number;
+  /** Goal progress sitting in holdings, which was never part of this pool. */
+  investment_backed: number;
+  clawed_back_this_month: number;
+  has_goals: boolean;
+}
+
+/** An investment holding earmarked against a goal. */
+export interface SavingsGoalInvestment {
+  id: number;
+  goal_id: number;
+  investment_id: number;
+  investment_name: string | null;
+  investment_type: string | null;
+  is_closed: boolean;
+  /** `null` earmarks whatever is left of the holding. */
+  amount: number | null;
+  goal_backed_total: number;
+}
+
+/** An open investment and how much of it is still free to earmark. */
+export interface SavingsGoalAvailableInvestment {
+  id: number;
+  name: string | null;
+  type: string | null;
+  value: number;
+  earmarked: number;
+  available: number;
+  fully_claimed: boolean;
 }
 
 export type SavingsGoalLinkType = "contribution" | "utilization";
@@ -1026,6 +1084,21 @@ export const savingsGoalsApi = {
       from_month: fromMonth,
       dry_run: dryRun,
     }),
+  getFreeCash: () => api.get<SavingsGoalFreeCash>("/savings-goals/free-cash"),
+  getInvestments: (goalId?: number) =>
+    api.get<SavingsGoalInvestment[]>("/savings-goals/investments", {
+      params: goalId ? { goal_id: goalId } : undefined,
+    }),
+  getAvailableInvestments: () =>
+    api.get<SavingsGoalAvailableInvestment[]>(
+      "/savings-goals/investments/available",
+    ),
+  linkInvestment: (
+    goalId: number,
+    payload: { investment_id: number; amount?: number | null },
+  ) => api.post<SavingsGoal[]>(`/savings-goals/${goalId}/investments`, payload),
+  unlinkInvestment: (backingId: number) =>
+    api.delete(`/savings-goals/investments/${backingId}`),
   getLinks: (goalId?: number) =>
     api.get<SavingsGoalLink[]>("/savings-goals/links", {
       params: goalId ? { goal_id: goalId } : undefined,
@@ -1062,7 +1135,13 @@ export const testingApi = {
     api.post<{ status: string; created: boolean }>("/testing/demo/prepare"),
   resetDemo: () => api.post<{ status: string }>("/testing/demo/reset"),
   getDemoModeStatus: () =>
-    api.get<{ demo_mode: boolean; forced: boolean }>(
+    api.get<{
+      demo_mode: boolean;
+      forced: boolean;
+      sandboxed: boolean;
+      durable: boolean;
+      blob_configured: boolean;
+    }>(
       "/testing/demo_mode_status",
     ),
 };

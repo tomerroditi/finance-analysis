@@ -1,13 +1,15 @@
-"""Data access for savings goals, their monthly allocations, and transaction links."""
+"""Data access for savings goals: allocations, transaction links, investment earmarks."""
 
 import pandas as pd
-from sqlalchemy import select
+from sqlalchemy import func, select
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.orm import Session
 
 from backend.models.savings_goal import (
     GOAL_STATUS_ACTIVE,
     SavingsGoal,
     SavingsGoalAllocation,
+    SavingsGoalInvestment,
     SavingsGoalLink,
 )
 
@@ -30,6 +32,8 @@ GOAL_COLUMNS = [
 ALLOCATION_COLUMNS = ["id", "goal_id", "year", "month", "amount", "source"]
 
 LINK_COLUMNS = ["id", "goal_id", "source_type", "source_id", "source_table", "link_type"]
+
+BACKING_COLUMNS = ["id", "goal_id", "investment_id", "amount"]
 
 
 def _to_frame(records: list, columns: list[str]) -> pd.DataFrame:
@@ -92,7 +96,12 @@ class SavingsGoalRepository:
         return goal
 
     def delete(self, goal_id: int) -> None:
-        """Delete a goal along with its allocations and transaction links."""
+        """Delete a goal with its allocations, transaction links and earmarks.
+
+        The investment earmarks have to go too: an orphaned row would keep
+        consuming its holding's headroom, so a deleted goal would silently
+        block anyone else from ever earmarking that investment again.
+        """
         goal = self.db.get(SavingsGoal, goal_id)
         if not goal:
             raise ValueError(f"No savings goal with id {goal_id}")
@@ -101,6 +110,9 @@ class SavingsGoalRepository:
         ).delete()
         self.db.query(SavingsGoalLink).filter(
             SavingsGoalLink.goal_id == goal_id
+        ).delete()
+        self.db.query(SavingsGoalInvestment).filter(
+            SavingsGoalInvestment.goal_id == goal_id
         ).delete()
         self.db.delete(goal)
         self.db.commit()
@@ -135,25 +147,35 @@ class SavingsGoalRepository:
     def upsert_allocation(
         self, goal_id: int, year: int, month: int, amount: float, source: str
     ) -> SavingsGoalAllocation:
-        """Insert or update the single allocation row for a (goal, month)."""
-        row = self.db.execute(
+        """Insert or update the single allocation row for a (goal, month).
+
+        A single ``INSERT ... ON CONFLICT DO UPDATE`` rather than
+        select-then-insert: the allocation engine runs from read paths
+        (``ensure_allocations`` on every budget-month GET), so two parallel
+        requests against a fresh database used to race between the SELECT
+        and the INSERT and one of them died on the unique constraint.
+        """
+        stmt = sqlite_insert(SavingsGoalAllocation).values(
+            goal_id=goal_id, year=year, month=month, amount=amount, source=source
+        )
+        stmt = stmt.on_conflict_do_update(
+            index_elements=["goal_id", "year", "month"],
+            set_={
+                "amount": stmt.excluded.amount,
+                "source": stmt.excluded.source,
+                "updated_at": func.now(),
+            },
+        )
+        self.db.execute(stmt)
+        self.db.commit()
+        self.db.expire_all()
+        return self.db.execute(
             select(SavingsGoalAllocation).where(
                 SavingsGoalAllocation.goal_id == goal_id,
                 SavingsGoalAllocation.year == year,
                 SavingsGoalAllocation.month == month,
             )
-        ).scalar_one_or_none()
-        if row is None:
-            row = SavingsGoalAllocation(
-                goal_id=goal_id, year=year, month=month, amount=amount, source=source
-            )
-            self.db.add(row)
-        else:
-            row.amount = amount
-            row.source = source
-        self.db.commit()
-        self.db.refresh(row)
-        return row
+        ).scalar_one()
 
     def delete_allocations(
         self, goal_ids: list[int], from_year: int, from_month: int
@@ -234,6 +256,56 @@ class SavingsGoalRepository:
         if not link:
             raise ValueError(f"No savings goal link with id {link_id}")
         self.db.delete(link)
+        self.db.commit()
+
+    # ------------------------------------------------------------------
+    # Investment earmarks
+    # ------------------------------------------------------------------
+
+    def get_backings(self, goal_id: int | None = None) -> pd.DataFrame:
+        """Return investment earmarks, optionally scoped to a single goal.
+
+        Ordered by id so that when a holding loses value, the earlier earmark
+        keeps its claim and the later one absorbs the shortfall.
+        """
+        stmt = select(SavingsGoalInvestment).order_by(SavingsGoalInvestment.id)
+        if goal_id is not None:
+            stmt = stmt.where(SavingsGoalInvestment.goal_id == goal_id)
+        return _to_frame(self.db.execute(stmt).scalars().all(), BACKING_COLUMNS)
+
+    def get_backing(
+        self, goal_id: int, investment_id: int
+    ) -> SavingsGoalInvestment | None:
+        """Return one goal's earmark against one investment, or None."""
+        return self.db.execute(
+            select(SavingsGoalInvestment).where(
+                SavingsGoalInvestment.goal_id == goal_id,
+                SavingsGoalInvestment.investment_id == investment_id,
+            )
+        ).scalar_one_or_none()
+
+    def upsert_backing(
+        self, goal_id: int, investment_id: int, amount: float | None
+    ) -> SavingsGoalInvestment:
+        """Earmark an investment for a goal, replacing any existing earmark."""
+        backing = self.get_backing(goal_id, investment_id)
+        if backing is None:
+            backing = SavingsGoalInvestment(
+                goal_id=goal_id, investment_id=investment_id, amount=amount
+            )
+            self.db.add(backing)
+        else:
+            backing.amount = amount
+        self.db.commit()
+        self.db.refresh(backing)
+        return backing
+
+    def delete_backing(self, backing_id: int) -> None:
+        """Delete an investment earmark by id."""
+        backing = self.db.get(SavingsGoalInvestment, backing_id)
+        if not backing:
+            raise ValueError(f"No savings goal investment with id {backing_id}")
+        self.db.delete(backing)
         self.db.commit()
 
     def active_goals(self) -> list[SavingsGoal]:

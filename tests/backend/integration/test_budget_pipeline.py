@@ -23,9 +23,11 @@ from backend.services.pending_refunds_service import PendingRefundsService
 @pytest.fixture(autouse=True)
 def _mock_categories_cache(sample_categories_yaml):
     """Mock the categories cache for all tests in this module."""
+    from backend.services.tagging_service import cache_key
+
     with patch(
         "backend.services.tagging_service._categories_cache",
-        {False: sample_categories_yaml},
+        {cache_key(): sample_categories_yaml},
     ):
         yield
 

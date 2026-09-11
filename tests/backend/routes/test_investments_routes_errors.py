@@ -318,3 +318,25 @@ class TestAnalysisDateQueryValidation:
             params={"end_date": "garbage"},
         )
         assert response.status_code == 400
+
+
+class TestInvestmentBusinessRuleErrors:
+    """Business-rule violations surfaced by the service layer as 400s."""
+
+    def test_type_change_on_scraped_investment_returns_400(
+        self, test_client, db_session
+    ):
+        """Verify the API rejects reclassifying an insurance-linked investment."""
+        from backend.services.investments_service import InvestmentsService
+
+        inv_id = InvestmentsService(db_session).investments_repo.create_investment(
+            category="Investments",
+            tag="Keren Hishtalmut - hafenix (007-916-407357)",
+            type_="hishtalmut",
+            name="Scraped KH",
+            insurance_policy_id="007-916-407357",
+        )
+
+        response = test_client.put(f"/api/investments/{inv_id}", json={"type": "stocks"})
+
+        assert response.status_code == 400

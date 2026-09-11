@@ -19,6 +19,140 @@ import { useQueryKeys } from "../hooks/useQueryKeys";
 import { qkPrefix } from "../services/queryKeys";
 
 const RATE_TYPES = new Set(["bonds", "pension", "p2p_lending"]);
+const KH_TYPES = new Set(["hishtalmut"]);
+
+export type InvestmentFormState = {
+  name: string;
+  category: string;
+  tag: string;
+  type: string;
+  interest_rate: number;
+  interest_rate_type: string;
+  rate_spread: number;
+  notes: string;
+  liquidity_date: string;
+  commission_deposit: string;
+  commission_management: string;
+};
+
+/**
+ * Shape the Keren Hishtalmut-only fields (liquidity date, commission
+ * fields) for a request body. Empty for non-KH types. `liquidity_date`
+ * omits on empty string (the backend validates it as an ISO date and
+ * rejects `""` with a 422). `commission_deposit`/`commission_management`
+ * are empty-by-default strings, not numbers, so a genuine 0% fee — a
+ * non-empty `"0"` — is distinguishable from a field the user never
+ * touched: an emptiness check (not truthiness) decides omission, and a
+ * non-empty value is sent as a number.
+ */
+function khFields(
+  type: string,
+  liquidity_date: string,
+  commission_deposit: string,
+  commission_management: string,
+): Record<string, unknown> {
+  if (!KH_TYPES.has(type)) return {};
+  return {
+    ...(liquidity_date ? { liquidity_date } : {}),
+    ...(commission_deposit !== "" ? { commission_deposit: Number(commission_deposit) } : {}),
+    ...(commission_management !== ""
+      ? { commission_management: Number(commission_management) }
+      : {}),
+  };
+}
+
+/**
+ * Build the create request body from the create form's state.
+ */
+// eslint-disable-next-line react-refresh/only-export-components
+export function buildInvestmentPayload(
+  form: InvestmentFormState,
+): Record<string, unknown> {
+  const { liquidity_date, commission_deposit, commission_management, ...rest } = form;
+  return { ...rest, ...khFields(form.type, liquidity_date, commission_deposit, commission_management) };
+}
+
+export type InvestmentEditFormState = {
+  name: string;
+  type: string;
+  interest_rate: number;
+  interest_rate_type: string;
+  rate_spread: number;
+  notes: string;
+  insurancePolicyId: string | null;
+  liquidity_date: string;
+  commission_deposit: string;
+  commission_management: string;
+};
+
+/**
+ * Build the update request body from the edit form's state.
+ *
+ * `type` is omitted entirely when the investment is owned by the scraped
+ * insurance pipeline (`insurancePolicyId != null`) — the backend rejects a
+ * `type` change on those records with a 400, and this keeps an unrelated
+ * rename from tripping that guard. The KH-only fields follow the same
+ * emptiness-based omission as the create form (see `khFields`).
+ */
+// eslint-disable-next-line react-refresh/only-export-components
+export function buildInvestmentUpdatePayload(
+  form: InvestmentEditFormState,
+): Record<string, unknown> {
+  return {
+    name: form.name,
+    interest_rate: form.interest_rate,
+    interest_rate_type: form.interest_rate_type,
+    rate_spread: form.rate_spread,
+    notes: form.notes,
+    ...(form.insurancePolicyId == null ? { type: form.type } : {}),
+    ...khFields(form.type, form.liquidity_date, form.commission_deposit, form.commission_management),
+  };
+}
+
+const EDIT_FORM_RESET: InvestmentEditFormState & { investmentId: number | null } = {
+  investmentId: null,
+  name: "",
+  type: "",
+  interest_rate: 0,
+  interest_rate_type: "variable",
+  rate_spread: 0,
+  notes: "",
+  insurancePolicyId: null,
+  liquidity_date: "",
+  commission_deposit: "",
+  commission_management: "",
+};
+
+/**
+ * Seed the edit form from an investment when the edit modal is opened.
+ *
+ * `commission_deposit`/`commission_management` use an emptiness check
+ * (`!= null`), not truthiness, so a stored genuine `0` seeds as the string
+ * `"0"` rather than `""` — mirroring `khFields`' distinction between "the
+ * user set this to 0%" and "this was never set". A truthiness-based seed
+ * (`inv.commission_deposit || ""`) would silently turn a stored `0` back
+ * into `""`, and the next save would omit the field entirely, reverting
+ * the fee to whatever the backend previously had for it.
+ */
+// eslint-disable-next-line react-refresh/only-export-components
+export function seedEditForm(
+  inv: Investment,
+): InvestmentEditFormState & { investmentId: number } {
+  return {
+    investmentId: inv.id,
+    name: inv.name,
+    type: inv.type || "",
+    interest_rate: inv.interest_rate || 0,
+    interest_rate_type: inv.interest_rate_type || "variable",
+    rate_spread: inv.rate_spread ?? 0,
+    notes: inv.notes || "",
+    insurancePolicyId: inv.insurance_policy_id ?? null,
+    liquidity_date: inv.liquidity_date ?? "",
+    commission_deposit: inv.commission_deposit != null ? String(inv.commission_deposit) : "",
+    commission_management:
+      inv.commission_management != null ? String(inv.commission_management) : "",
+  };
+}
 
 export function Investments() {
   const { t } = useTranslation();
@@ -41,17 +175,14 @@ export function Investments() {
     interest_rate_type: "fixed",
     rate_spread: 0,
     notes: "",
+    liquidity_date: "",
+    commission_deposit: "",
+    commission_management: "",
   });
 
-  const [editForm, setEditForm] = useState<{
-    investmentId: number | null;
-    name: string;
-    type: string;
-    interest_rate: number;
-    interest_rate_type: string;
-    rate_spread: number;
-    notes: string;
-  }>({ investmentId: null, name: "", type: "", interest_rate: 0, interest_rate_type: "variable", rate_spread: 0, notes: "" });
+  const [editForm, setEditForm] = useState<
+    InvestmentEditFormState & { investmentId: number | null }
+  >(EDIT_FORM_RESET);
 
   const [balanceForm, setBalanceForm] = useState<{
     investmentId: number | null;
@@ -98,7 +229,7 @@ export function Investments() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: qkPrefix.investments });
       queryClient.invalidateQueries({ queryKey: qkPrefix.insuranceAccounts });
-      setEditForm({ investmentId: null, name: "", type: "", interest_rate: 0, interest_rate_type: "variable", rate_spread: 0, notes: "" });
+      setEditForm(EDIT_FORM_RESET);
     },
   });
 
@@ -116,6 +247,9 @@ export function Investments() {
         interest_rate_type: "fixed",
         rate_spread: 0,
         notes: "",
+        liquidity_date: "",
+        commission_deposit: "",
+        commission_management: "",
       });
     },
   });
@@ -272,15 +406,7 @@ export function Investments() {
                     })
                   }
                   onEditCloseDate={() => {}}
-                  onEdit={(inv: Investment) => setEditForm({
-                    investmentId: inv.id,
-                    name: inv.name,
-                    type: inv.type || "",
-                    interest_rate: inv.interest_rate || 0,
-                    interest_rate_type: inv.interest_rate_type || "variable",
-                    rate_spread: inv.rate_spread ?? 0,
-                    notes: inv.notes || "",
-                  })}
+                  onEdit={(inv: Investment) => setEditForm(seedEditForm(inv))}
                   analysisData={getAllocationData(inv.id)}
                 />
               ))}
@@ -356,15 +482,7 @@ export function Investments() {
                 onEditCloseDate={(id: number, closedDate?: string) =>
                   setCloseForm({ investmentId: id, date: closedDate || "", mode: "edit" })
                 }
-                onEdit={(inv: Investment) => setEditForm({
-                  investmentId: inv.id,
-                  name: inv.name,
-                  type: inv.type || "",
-                  interest_rate: inv.interest_rate || 0,
-                  interest_rate_type: inv.interest_rate_type || "variable",
-                  rate_spread: inv.rate_spread ?? 0,
-                  notes: inv.notes || "",
-                })}
+                onEdit={(inv: Investment) => setEditForm(seedEditForm(inv))}
                 analysisData={getAllocationData(inv.id)}
               />
             ))}
@@ -511,9 +629,7 @@ export function Investments() {
       {/* Edit Investment Modal */}
       <Modal
         isOpen={editForm.investmentId != null}
-        onClose={() =>
-          setEditForm({ investmentId: null, name: "", type: "", interest_rate: 0, interest_rate_type: "variable", rate_spread: 0, notes: "" })
-        }
+        onClose={() => setEditForm(EDIT_FORM_RESET)}
         title={t("investments.editInvestment")}
         maxWidth="sm"
       >
@@ -530,6 +646,88 @@ export function Investments() {
                   onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
                 />
               </div>
+              <div>
+                <label className="block text-[10px] font-black uppercase tracking-widest text-[var(--text-muted)] mb-2">
+                  {t("investments.type")}
+                </label>
+                <SelectDropdown
+                  options={[
+                    { label: t("investments.types.stocks"), value: "stocks" },
+                    { label: t("investments.types.crypto"), value: "crypto" },
+                    { label: t("investments.types.bonds"), value: "bonds" },
+                    { label: t("investments.types.realEstate"), value: "real_estate" },
+                    { label: t("investments.types.pension"), value: "pension" },
+                    { label: t("investments.types.brokerageAccount"), value: "brokerage_account" },
+                    { label: t("investments.types.kerenHishtalmut"), value: "hishtalmut" },
+                    { label: t("investments.types.other"), value: "other" },
+                  ]}
+                  value={editForm.type}
+                  onChange={(val) => setEditForm({ ...editForm, type: val })}
+                  placeholder={t("investments.selectType")}
+                  disabled={editForm.insurancePolicyId != null}
+                />
+              </div>
+              {KH_TYPES.has(editForm.type) && (
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div>
+                    <label className="block text-[10px] font-black uppercase tracking-widest text-[var(--text-muted)] mb-2">
+                      {t("investments.liquidityDate")}
+                    </label>
+                    <input
+                      type="date"
+                      disabled={editForm.insurancePolicyId != null}
+                      className="w-full bg-[var(--surface-base)] border border-[var(--surface-light)] rounded-xl px-4 py-3 outline-none focus:border-[var(--primary)] transition-all font-medium disabled:opacity-60 disabled:cursor-not-allowed"
+                      value={editForm.liquidity_date}
+                      onChange={(e) =>
+                        setEditForm({ ...editForm, liquidity_date: e.target.value })
+                      }
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-black uppercase tracking-widest text-[var(--text-muted)] mb-2">
+                      {t("investments.depositFee")}
+                    </label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      dir="ltr"
+                      disabled={editForm.insurancePolicyId != null}
+                      className="w-full bg-[var(--surface-base)] border border-[var(--surface-light)] rounded-xl px-4 py-3 outline-none focus:border-[var(--primary)] transition-all font-medium disabled:opacity-60 disabled:cursor-not-allowed"
+                      value={editForm.commission_deposit}
+                      onChange={(e) =>
+                        setEditForm({
+                          ...editForm,
+                          commission_deposit: e.target.value,
+                        })
+                      }
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-black uppercase tracking-widest text-[var(--text-muted)] mb-2">
+                      {t("investments.managementFee")}
+                    </label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      dir="ltr"
+                      disabled={editForm.insurancePolicyId != null}
+                      className="w-full bg-[var(--surface-base)] border border-[var(--surface-light)] rounded-xl px-4 py-3 outline-none focus:border-[var(--primary)] transition-all font-medium disabled:opacity-60 disabled:cursor-not-allowed"
+                      value={editForm.commission_management}
+                      onChange={(e) =>
+                        setEditForm({
+                          ...editForm,
+                          commission_management: e.target.value,
+                        })
+                      }
+                    />
+                  </div>
+                </div>
+              )}
+              {editForm.insurancePolicyId != null && (
+                <p className="text-[10px] text-[var(--text-muted)] font-medium">
+                  {t("investments.typeLockedByPolicy")}
+                </p>
+              )}
               {RATE_TYPES.has(editForm.type) && (
                 <>
                   <div className="grid grid-cols-2 gap-3">
@@ -597,7 +795,7 @@ export function Investments() {
             </div>
             <div className="flex gap-3 mt-6">
               <button
-                onClick={() => setEditForm({ investmentId: null, name: "", type: "", interest_rate: 0, interest_rate_type: "variable", rate_spread: 0, notes: "" })}
+                onClick={() => setEditForm(EDIT_FORM_RESET)}
                 className="flex-1 py-3 text-sm font-bold text-[var(--text-muted)] hover:text-white transition-colors"
               >
                 {t("common.cancel")}
@@ -607,13 +805,7 @@ export function Investments() {
                 onClick={() =>
                   editMutation.mutate({
                     id: editForm.investmentId!,
-                    data: {
-                      name: editForm.name,
-                      interest_rate: editForm.interest_rate,
-                      interest_rate_type: editForm.interest_rate_type,
-                      rate_spread: editForm.rate_spread,
-                      notes: editForm.notes,
-                    },
+                    data: buildInvestmentUpdatePayload(editForm),
                   })
                 }
                 className="flex-[2] py-3 bg-[var(--primary)] rounded-xl text-white font-bold hover:opacity-90 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
@@ -702,6 +894,7 @@ export function Investments() {
                     { label: t("investments.types.realEstate"), value: "real_estate" },
                     { label: t("investments.types.pension"), value: "pension" },
                     { label: t("investments.types.brokerageAccount"), value: "brokerage_account" },
+                    { label: t("investments.types.kerenHishtalmut"), value: "hishtalmut" },
                     { label: t("investments.types.other"), value: "other" },
                   ]}
                   value={newInvestment.type}
@@ -711,6 +904,59 @@ export function Investments() {
                   placeholder={t("investments.selectType")}
                 />
               </div>
+              {KH_TYPES.has(newInvestment.type) && (
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div>
+                    <label className="block text-[10px] font-black uppercase tracking-widest text-[var(--text-muted)] mb-2">
+                      {t("investments.liquidityDate")}
+                    </label>
+                    <input
+                      type="date"
+                      className="w-full bg-[var(--surface-base)] border border-[var(--surface-light)] rounded-xl px-4 py-3.5 outline-none focus:border-[var(--primary)] transition-all font-medium"
+                      value={newInvestment.liquidity_date}
+                      onChange={(e) =>
+                        setNewInvestment({ ...newInvestment, liquidity_date: e.target.value })
+                      }
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-black uppercase tracking-widest text-[var(--text-muted)] mb-2">
+                      {t("investments.depositFee")}
+                    </label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      dir="ltr"
+                      className="w-full bg-[var(--surface-base)] border border-[var(--surface-light)] rounded-xl px-4 py-3.5 outline-none focus:border-[var(--primary)] transition-all font-medium"
+                      value={newInvestment.commission_deposit}
+                      onChange={(e) =>
+                        setNewInvestment({
+                          ...newInvestment,
+                          commission_deposit: e.target.value,
+                        })
+                      }
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-black uppercase tracking-widest text-[var(--text-muted)] mb-2">
+                      {t("investments.managementFee")}
+                    </label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      dir="ltr"
+                      className="w-full bg-[var(--surface-base)] border border-[var(--surface-light)] rounded-xl px-4 py-3.5 outline-none focus:border-[var(--primary)] transition-all font-medium"
+                      value={newInvestment.commission_management}
+                      onChange={(e) =>
+                        setNewInvestment({
+                          ...newInvestment,
+                          commission_management: e.target.value,
+                        })
+                      }
+                    />
+                  </div>
+                </div>
+              )}
               {RATE_TYPES.has(newInvestment.type) && (
               <>
               <div>
@@ -810,7 +1056,7 @@ export function Investments() {
                   !newInvestment.tag ||
                   createMutation.isPending
                 }
-                onClick={() => createMutation.mutate(newInvestment)}
+                onClick={() => createMutation.mutate(buildInvestmentPayload(newInvestment))}
                 className="flex-[2] py-4 bg-[var(--primary)] rounded-2xl text-white font-black hover:bg-[var(--primary-dark)] transition-all shadow-xl shadow-[var(--primary)]/20 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {createMutation.isPending ? t("investments.creating") : t("investments.createInvestment")}

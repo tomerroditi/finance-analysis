@@ -474,7 +474,10 @@ class HaPhoenixScraper(BrowserScraper):
         # Build deposit transactions (only deposits/withdrawals, not internal costs)
         transactions = self._build_pension_deposits(policy_key, detail)
 
-        # Extract insurance costs as metadata (not transactions — they're internal deductions)
+        # Store the provider's whole year-to-date movement statement. It is NOT
+        # a cost list — it carries opening/closing balance, deposits and gains
+        # too. The frontend classifies the rows; keeping the raw statement here
+        # means a classification change needs no re-scrape.
         insurance_costs = []
         for item in detail.get("accountTransactions", []):
             item_title = item.get("title", "")

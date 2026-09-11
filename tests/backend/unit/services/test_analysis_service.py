@@ -1427,3 +1427,188 @@ class TestMonthlyExpenseAveragesExcludePartialMonth:
 
         result = AnalysisService(db_session).get_monthly_expenses()
         assert result["avg_3_months"] == 3000.0
+
+
+class TestAvgMonthlySalary:
+    """Tests for ``get_avg_monthly_salary`` (the retirement auto-fill default)."""
+
+    def test_averages_per_month_salary_totals(self, db_session, seed_base_transactions):
+        """The three seeded salary months average to their mean."""
+        service = AnalysisService(db_session)
+        assert service.get_avg_monthly_salary() == pytest.approx((8000 + 8500 + 8200) / 3)
+
+    def test_window_keeps_only_the_most_recent_months(self, db_session, seed_base_transactions):
+        """``months`` limits the average to the latest N salary months."""
+        service = AnalysisService(db_session)
+        assert service.get_avg_monthly_salary(months=2) == pytest.approx((8500 + 8200) / 2)
+        assert service.get_avg_monthly_salary(months=1) == pytest.approx(8200)
+
+    def test_two_salary_lines_in_one_month_are_summed_first(self, db_session):
+        """Averaging happens over per-month totals, not individual transactions."""
+        for i, (d, amt) in enumerate([("2024-01-01", 5000.0), ("2024-01-15", 3000.0), ("2024-02-01", 6000.0)]):
+            db_session.add(
+                BankTransaction(
+                    id=f"sal_{i}", date=d, provider="leumi", account_name="Checking",
+                    description="Salary", amount=amt, category="Salary", source="bank_transactions",
+                )
+            )
+        db_session.commit()
+
+        assert AnalysisService(db_session).get_avg_monthly_salary() == pytest.approx(7000.0)
+
+    def test_none_when_no_transactions(self, db_session):
+        """An empty database has no salary to average."""
+        assert AnalysisService(db_session).get_avg_monthly_salary() is None
+
+    def test_none_when_no_salary_category(self, db_session):
+        """Income that is not in the Salary category does not count."""
+        db_session.add(
+            BankTransaction(
+                id="other_income", date="2024-01-01", provider="leumi", account_name="Checking",
+                description="Gift", amount=1000.0, category="Other Income", source="bank_transactions",
+            )
+        )
+        db_session.commit()
+
+        assert AnalysisService(db_session).get_avg_monthly_salary() is None
+
+
+class TestDebtPaymentsOverTime:
+    """Tests for ``get_debt_payments_over_time`` with real liability transactions."""
+
+    def test_groups_negative_liability_payments_by_month_and_tag(self, db_session, seed_liabilities):
+        """Each payment month reports its positive total and a per-tag breakdown."""
+        result = AnalysisService(db_session).get_debt_payments_over_time()
+
+        assert [r["month"] for r in result] == ["2023-07", "2023-08", "2023-09"]
+        assert all(r["amount"] == 1150.0 for r in result)
+        assert all(r["tags"] == {"Car Loan": 1150.0} for r in result)
+
+    def test_loan_receipts_are_not_payments(self, db_session, seed_liabilities):
+        """The positive disbursement month (2023-06) does not appear."""
+        months = {r["month"] for r in AnalysisService(db_session).get_debt_payments_over_time()}
+        assert "2023-06" not in months
+
+    def test_untagged_payments_fall_under_uncategorized(self, db_session):
+        """A Liabilities payment without a tag is bucketed as ``Uncategorized``."""
+        db_session.add(
+            BankTransaction(
+                id="untagged_debt", date="2024-03-05", provider="leumi", account_name="Checking",
+                description="Loan", amount=-400.0, category="Liabilities", tag=None,
+                source="bank_transactions",
+            )
+        )
+        db_session.commit()
+
+        result = AnalysisService(db_session).get_debt_payments_over_time()
+
+        assert result == [{"month": "2024-03", "amount": 400.0, "tags": {"Uncategorized": 400.0}}]
+
+    def test_credit_card_liability_rows_are_excluded(self, db_session):
+        """CC-sourced rows are outside the cashflow view and never counted."""
+        db_session.add(
+            CreditCardTransaction(
+                id="cc_debt", date="2024-03-05", provider="visa", account_name="Card",
+                description="Loan via card", amount=-400.0, category="Liabilities", tag="X",
+                source="credit_card_transactions",
+            )
+        )
+        db_session.commit()
+
+        assert AnalysisService(db_session).get_debt_payments_over_time() == []
+
+
+class TestIncomeExpensesOverTimeFlags:
+    """Tests for the exclusion flags on ``get_income_expenses_over_time``."""
+
+    @staticmethod
+    def _month(result, month):
+        return next(r for r in result if r["month"] == month)
+
+    def test_exclude_liabilities_drops_debt_from_both_sides(self, db_session, seed_liabilities):
+        """Debt payments are expenses and loan receipts are income unless liabilities are excluded."""
+        service = AnalysisService(db_session)
+
+        default = service.get_income_expenses_over_time()
+        excluded = service.get_income_expenses_over_time(exclude_liabilities=True)
+
+        assert self._month(default, "2023-07")["expenses"] == 1150.0
+        assert self._month(default, "2023-06")["income"] == 50000.0
+        # Months that held nothing but liability rows disappear altogether.
+        assert {r["month"] for r in excluded} == {"2024-01", "2024-02", "2024-03"}
+        assert self._month(excluded, "2024-01") == self._month(default, "2024-01")
+
+    def test_exclude_refunds_ignores_positive_expense_and_negative_income_rows(self, db_session):
+        """Refunds (positive expense rows) and income reversals are dropped when flagged."""
+        rows = [
+            ("rent", "2024-01-03", -3000.0, "Home", "Rent"),
+            ("refund", "2024-01-20", 200.0, "Home", "Rent"),
+            ("salary", "2024-01-01", 8000.0, "Salary", None),
+            ("reversal", "2024-01-21", -300.0, "Salary", None),
+        ]
+        for id_, d, amount, category, tag in rows:
+            db_session.add(
+                BankTransaction(
+                    id=id_, date=d, provider="leumi", account_name="Checking", description=id_,
+                    amount=amount, category=category, tag=tag, source="bank_transactions",
+                )
+            )
+        db_session.commit()
+        service = AnalysisService(db_session)
+
+        default = self._month(service.get_income_expenses_over_time(), "2024-01")
+        strict = self._month(service.get_income_expenses_over_time(exclude_refunds=True), "2024-01")
+
+        assert (default["income"], default["expenses"]) == (7700.0, 2800.0)
+        assert (strict["income"], strict["expenses"]) == (8000.0, 3000.0)
+
+    def test_exclude_projects_removes_project_category_spend(self, db_session, seed_project_transactions):
+        """Rows whose category is a project budget name vanish when ``exclude_projects`` is set."""
+        service = AnalysisService(db_session)
+
+        default = self._month(service.get_income_expenses_over_time(), "2024-02")
+        no_projects = service.get_income_expenses_over_time(exclude_projects=True)
+
+        # The 15,000 Wedding bank transfer in February is project spend.
+        assert default["expenses"] >= 15000.0
+        feb = next((r for r in no_projects if r["month"] == "2024-02"), None)
+        assert feb is None or feb["expenses"] == default["expenses"] - 15000.0
+
+    def test_exclude_projects_is_a_no_op_without_project_budgets(self, db_session, seed_base_transactions):
+        """With no project rules the flag changes nothing."""
+        service = AnalysisService(db_session)
+        assert service.get_income_expenses_over_time(exclude_projects=True) == service.get_income_expenses_over_time()
+
+
+class TestMonthlyExpensesWithProjects:
+    """Tests for ``get_monthly_expenses(include_projects=True)``."""
+
+    def test_project_expenses_are_reported_separately_per_month(
+        self, db_session, seed_base_transactions, seed_project_transactions
+    ):
+        """Each month carries a ``project_expenses`` figure alongside regular expenses."""
+        result = AnalysisService(db_session).get_monthly_expenses(include_projects=True)
+
+        by_month = {m["month"]: m for m in result["months"]}
+        assert all("project_expenses" in m for m in result["months"])
+        # Jan: Wedding 5,000 + Renovation 3,200. Feb: Wedding 800 + 15,000,
+        # Renovation 8,000 + 1,500. Project spend is never folded into the
+        # regular ``expenses`` figure.
+        assert by_month["2024-01"]["project_expenses"] == 8200.0
+        assert by_month["2024-02"]["project_expenses"] == 25300.0
+        assert by_month["2024-01"]["expenses"] < 5000.0
+
+    def test_only_project_spend_yields_no_months(self, db_session, seed_project_transactions):
+        """Project-only data has no regular expenses, so the trend is empty even with the flag."""
+        result = AnalysisService(db_session).get_monthly_expenses(include_projects=True)
+        assert result == {"months": [], "avg_3_months": 0.0, "avg_6_months": 0.0, "avg_12_months": 0.0}
+
+    def test_without_flag_project_key_is_absent(self, db_session, seed_base_transactions, seed_project_transactions):
+        """The default shape stays unchanged for callers that do not ask for projects."""
+        result = AnalysisService(db_session).get_monthly_expenses()
+        assert result["months"] and all("project_expenses" not in m for m in result["months"])
+
+    def test_flag_without_project_budgets_reports_zero(self, db_session, seed_base_transactions):
+        """When no project rules exist every month reports zero project spend."""
+        result = AnalysisService(db_session).get_monthly_expenses(include_projects=True)
+        assert result["months"] and all(m["project_expenses"] == 0.0 for m in result["months"])

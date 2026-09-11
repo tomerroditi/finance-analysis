@@ -4,6 +4,7 @@ This repository handles DB-based storage for categories, tags, and icons.
 """
 
 import os
+from datetime import datetime
 from typing import Optional
 
 import yaml
@@ -273,6 +274,21 @@ class TaggingRepository:
         """
         rows = self.db.execute(select(Category)).scalars().all()
         return {row.name: row.icon for row in rows if row.icon is not None}
+
+    def get_categories_created_at(self) -> dict[str, datetime]:
+        """Return each category's creation timestamp.
+
+        Returns
+        -------
+        dict[str, datetime]
+            Mapping of category name to its ``created_at`` value.
+        """
+        return {
+            name: created_at
+            for name, created_at in self.db.execute(
+                select(Category.name, Category.created_at)
+            ).all()
+        }
 
     def update_category_icon(self, category: str, icon: str) -> bool:
         """Update a category's icon.

@@ -213,7 +213,11 @@ def solve_for_field(field: str, db: Session = Depends(get_database)):
 
 @router.get("/keren-hishtalmut-balance", response_model=KerenHishtalmutBalanceResponse)
 def get_keren_hishtalmut_balance(db: Session = Depends(get_database)):
-    """Get auto-detected Keren Hishtalmut balance from scraped insurance data."""
+    """Get the auto-detected Keren Hishtalmut balance.
+
+    Covers both scraped insurance policies and manually-created KH
+    investments — see ``InvestmentsService.get_hishtalmut_total_balance``.
+    """
     service = RetirementService(db)
     balance = service.get_keren_hishtalmut_scraped_balance()
     return {"balance": balance}
@@ -221,11 +225,12 @@ def get_keren_hishtalmut_balance(db: Session = Depends(get_database)):
 
 @router.get("/scraped-defaults", response_model=ScrapedDefaultsResponse)
 def get_scraped_defaults(db: Session = Depends(get_database)):
-    """Get all auto-fillable values from scraped insurance data.
+    """Get all auto-fillable retirement goal values.
 
-    Returns Keren Hishtalmut balance and monthly contribution, plus
-    pension monthly deposit estimate. Values are null when no scraped
-    data is available.
+    Returns the Keren Hishtalmut balance (from scraped policies and
+    manually-created KH investments alike), plus scraped monthly
+    contribution and pension monthly deposit estimates. Values are null
+    when no underlying data is available.
     """
     service = RetirementService(db)
     return service.get_scraped_defaults()

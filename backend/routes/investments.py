@@ -79,16 +79,20 @@ class InvestmentCreate(ApiRequestModel):
 
 class InvestmentUpdate(ApiRequestModel):
     name: Optional[str] = None
+    type: Optional[str] = None
     interest_rate: Optional[float] = None
     interest_rate_type: Optional[str] = None
     rate_spread: Optional[float] = None
     closed_date: Optional[str] = None
+    commission_deposit: Optional[float] = None
+    commission_management: Optional[float] = None
+    liquidity_date: Optional[str] = None
     notes: Optional[str] = None
 
-    @field_validator("closed_date")
+    @field_validator("closed_date", "liquidity_date")
     @classmethod
-    def validate_closed_date(cls, v: Optional[str]) -> Optional[str]:
-        """Ensure closed_date is a valid ISO date string."""
+    def validate_optional_dates(cls, v: Optional[str]) -> Optional[str]:
+        """Ensure optional dates are valid ISO date strings."""
         if v is not None:
             date_type.fromisoformat(v)
         return v

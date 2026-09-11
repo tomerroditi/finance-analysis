@@ -43,7 +43,7 @@ const content: DataFlowContent = {
     "invest-svc": { title: "Investments", desc: "P&L, ROI, CAGR. Snapshot-first balance. Fixed-rate compounding." },
     "liab-svc": { title: "Liabilities", desc: "Amortization, remaining balance, total interest, payment tracking." },
     "retire-svc": { title: "Retirement", desc: "FIRE projections, savings rate, years to retirement, suggestions." },
-    dashboard: { title: "Dashboard", desc: "Overview cards, net worth chart, income/expenses, Sankey, budget gauge." },
+    dashboard: { title: "Dashboard", desc: "Overview cards, net worth chart, income/expenses, Sankey, budget progress bar." },
     "txn-page": { title: "Transactions", desc: "Filterable table, inline tagging, splits, bulk ops, refunds." },
     "budget-page": { title: "Budget", desc: "Monthly gauges, per-tag breakdown, project budgets." },
     "categories-page": { title: "Categories", desc: "Category/tag management, drag-and-drop reorder, tagging rules." },
@@ -270,7 +270,7 @@ const content: DataFlowContent = {
       title: "Dashboard", tag: "10+ Queries",
       sections: [
         { heading: "Data Sources", items: ["analyticsApi: 10 endpoints", "bankBalancesApi + cashBalancesApi", "investmentsApi.getPortfolioAnalysis()", "transactionsApi.getAll() for recent feed"] },
-        { heading: "Components", text: "Financial health header, net worth chart, income/expenses bars, Sankey flow, budget gauge, recent transactions." },
+        { heading: "Components", text: "Financial health header, net worth chart, income/expenses bars, Sankey flow, budget progress bar, recent transactions." },
       ],
     },
     "txn-page": {
@@ -364,7 +364,7 @@ const content: DataFlowContent = {
       highlights: [
         "Total monthly cap or per-category limits",
         "Copy last month's rules forward in one click",
-        "Live progress gauges across the dashboard and budget page",
+        "Live progress bar with spent/total and a remaining-or-over pill, on the dashboard and budget page",
         "Pending refunds adjust spent amounts so you don't get false 'overspent' alerts",
       ],
     },

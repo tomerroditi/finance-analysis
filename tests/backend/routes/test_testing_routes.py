@@ -44,13 +44,25 @@ class TestDemoModeStatus:
             "/api/testing/demo_mode_status", headers={"X-FAD-Demo": "1"}
         )
         assert response.status_code == 200
-        assert response.json() == {"demo_mode": True, "forced": False}
+        assert response.json() == {
+            "demo_mode": True,
+            "forced": False,
+            "sandboxed": False,
+            "durable": False,
+            "blob_configured": False,
+        }
 
     def test_reports_forced_when_pinned(self, test_client):
         """Verify a pinned deployment advertises that clients cannot opt out."""
         AppConfig._forced_mode = True
         response = test_client.get("/api/testing/demo_mode_status")
-        assert response.json() == {"demo_mode": True, "forced": True}
+        assert response.json() == {
+            "demo_mode": True,
+            "forced": True,
+            "sandboxed": False,
+            "durable": False,
+            "blob_configured": False,
+        }
 
 
 class TestDemoPrepare:
@@ -108,6 +120,55 @@ class TestDemoPrepare:
 class TestDemoReset:
     """Tests for the unconditional demo-database reset endpoint."""
 
+    def test_resets_only_the_bound_sandbox(self, test_client, monkeypatch):
+        """Verify a sandboxed request resets its own copy, never the shared DB.
+
+        With ``FAD_DEMO_SESSIONS=1`` and a well-formed session header, the
+        middleware binds the visitor's sandbox; reset must route to the
+        store for that id and leave the shared-database rebuild untouched,
+        even on a pinned deployment.
+        """
+        from backend import demo_sessions
+
+        built = []
+        monkeypatch.setattr(
+            "backend.routes.testing.prepare_demo_database",
+            lambda: built.append("built"),
+        )
+        monkeypatch.setenv(demo_sessions.SESSIONS_ENV, "1")
+        AppConfig._forced_mode = True
+
+        class RecordingStore:
+            durable = False
+
+            def __init__(self):
+                self.reset_ids = []
+                self.persisted = []
+
+            def sync(self, session_id):
+                return None
+
+            def reset(self, session_id):
+                self.reset_ids.append(session_id)
+
+            def persist(self, session_id):
+                self.persisted.append(session_id)
+                return True
+
+        store = RecordingStore()
+        demo_sessions.set_store(store)
+        try:
+            response = test_client.post(
+                "/api/testing/demo/reset",
+                headers={demo_sessions.SESSION_HEADER: "visitor-0123456789abcdef"},
+            )
+        finally:
+            demo_sessions.set_store(None)
+
+        assert response.status_code == 200
+        assert store.reset_ids == ["visitor-0123456789abcdef"]
+        assert built == []
+
     def test_rebuilds_unconditionally(self, test_client, tmp_path, monkeypatch):
         """Verify reset rebuilds even when the demo database already exists."""
         _isolate_demo_user_dir(tmp_path, monkeypatch)
@@ -138,3 +199,43 @@ class TestDemoReset:
 
         assert response.status_code == 200
         assert calls == []
+
+
+class TestDemoPrune:
+    """Tests for the cron-only sandbox pruning endpoint."""
+
+    def test_is_absent_without_cron_secret(self, test_client, monkeypatch):
+        """Verify the route 404s on deployments that never configured a secret."""
+        monkeypatch.delenv("CRON_SECRET", raising=False)
+        response = test_client.get("/api/testing/demo/prune")
+        assert response.status_code == 404
+
+    def test_rejects_wrong_bearer(self, test_client, monkeypatch):
+        """Verify a bad or missing bearer is refused before any deletion."""
+        monkeypatch.setenv("CRON_SECRET", "s3cret")
+        assert test_client.get("/api/testing/demo/prune").status_code == 401
+        response = test_client.get(
+            "/api/testing/demo/prune", headers={"Authorization": "Bearer nope"}
+        )
+        assert response.status_code == 401
+
+    def test_prunes_with_valid_bearer(self, test_client, monkeypatch):
+        """Verify the cron's bearer runs the prune and reports the count."""
+        from backend import demo_sessions
+
+        monkeypatch.setenv("CRON_SECRET", "s3cret")
+
+        class PruningStore:
+            def prune(self):
+                return 3
+
+        demo_sessions.set_store(PruningStore())
+        try:
+            response = test_client.get(
+                "/api/testing/demo/prune", headers={"Authorization": "Bearer s3cret"}
+            )
+        finally:
+            demo_sessions.set_store(None)
+
+        assert response.status_code == 200
+        assert response.json() == {"deleted": 3}

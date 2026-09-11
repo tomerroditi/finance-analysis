@@ -14,6 +14,7 @@ from backend.services.retirement_service import (
     FULL_PENSION_AGE_FEMALE,
     _get_full_pension_age,
 )
+from backend.services.investments_service import InvestmentsService
 
 
 @pytest.fixture
@@ -760,19 +761,26 @@ class TestCurrentStatus:
         assert status["savings_rate"] == 0.0
 
     def test_tracked_kh_value_sums_hishtalmut_investments(self):
-        """Status exposes the value of synced KH investments in net worth."""
+        """Status exposes the value of synced KH investments in net worth.
+
+        get_current_status now delegates entirely to
+        ``InvestmentsService.get_hishtalmut_total_balance`` (the single
+        source of truth covering both scraped and manual KH investments,
+        exercised directly in ``TestHishtalmutTotalBalance``), so this
+        test only checks that ``get_current_status`` wires its result
+        through unchanged.
+        """
         service = self._service([])
-        service.investments_service.get_all_investments.return_value = [
-            {"id": 4, "type": "hishtalmut"},
-            {"id": 5, "type": "hishtalmut"},
-            {"id": 1, "type": "mutual_fund"},
-        ]
-        service.investments_service.calculate_current_balance.side_effect = (
-            lambda inv_id: {4: 110000.0, 5: 95000.0, 1: 50000.0}[inv_id]
-        )
+        service.investments_service.get_hishtalmut_total_balance.return_value = 205000.0
         status = service.get_current_status()
-        # Only the hishtalmut investments count — the mutual fund does not.
         assert status["tracked_kh_value"] == 205000.0
+
+    def test_tracked_kh_value_defaults_to_zero_when_none(self):
+        """A None KH total (no KH investments) must not surface as None."""
+        service = self._service([])
+        service.investments_service.get_hishtalmut_total_balance.return_value = None
+        status = service.get_current_status()
+        assert status["tracked_kh_value"] == 0.0
 
 
 class TestProjectionAlignment:
@@ -1110,3 +1118,39 @@ class TestStatusExcludesPartialMonth:
         status = RetirementService(db_session).get_current_status()
         assert status["avg_monthly_income"] == 10000.0
         assert status["monthly_savings"] == 6000.0
+
+
+class TestKerenHishtalmutSingleCount:
+    """The KH swap must net to zero for scraped and manual KH alike."""
+
+    def test_tracked_value_matches_suggested_bucket(self, db_session):
+        """Verify tracked_kh_value equals the suggested KH balance default.
+
+        get_current_status subtracts tracked_kh_value from the base
+        portfolio and the projection adds the KH bucket back. If the two
+        are computed from different sources, a manually-created KH
+        investment is subtracted and never re-added.
+        """
+        investments = InvestmentsService(db_session)
+        scraped_id = investments.investments_repo.create_investment(
+            category="Investments",
+            tag="Keren Hishtalmut - hafenix (007-916-407357)",
+            type_="hishtalmut",
+            name="Scraped KH",
+            insurance_policy_id="007-916-407357",
+        )
+        manual_id = investments.investments_repo.create_investment(
+            category="Investments",
+            tag="Keren Hishtalmut - manual",
+            type_="hishtalmut",
+            name="Manual KH",
+        )
+        investments.create_balance_snapshot(scraped_id, "2026-08-30", 56957.0)
+        investments.create_balance_snapshot(manual_id, "2026-08-30", 12000.0)
+
+        service = RetirementService(db_session)
+        tracked = service.get_current_status()["tracked_kh_value"]
+        suggested = service.get_scraped_defaults()["keren_hishtalmut_balance"]
+
+        assert tracked == pytest.approx(68957.0)
+        assert suggested == pytest.approx(tracked)

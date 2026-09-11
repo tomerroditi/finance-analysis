@@ -81,6 +81,7 @@ export function makeQueryKeys(demo: boolean) {
     },
     tagging: {
       categories: () => ["categories", demo] as const,
+      categoryUsage: () => ["category-usage", demo] as const,
       icons: () => ["category-icons", demo] as const,
       rules: () => ["tagging-rules", demo] as const,
       // Head "rule-preview" is load-bearing: queryClient.ts excludes it from
@@ -130,6 +131,11 @@ export function makeQueryKeys(demo: boolean) {
     },
     savingsGoals: {
       all: () => ["savings-goals", demo] as const,
+      freeCash: () => ["savings-goals", "free-cash", demo] as const,
+      investments: (goalId?: number) =>
+        ["savings-goals", "investments", goalId ?? "all", demo] as const,
+      availableInvestments: () =>
+        ["savings-goals", "investments", "available", demo] as const,
       links: (goalId?: number) =>
         ["savings-goals", "links", goalId ?? "all", demo] as const,
     },

@@ -30,45 +30,60 @@ the `retirement/` frontend components, or the demo retirement goal.
 
 ## Keren Hishtalmut — counted exactly once (the double-count trap)
 
-**Scraped KH policies ARE part of the tracked net worth.** The data flow
-that makes this true is easy to miss because it never touches the
-analysis layer directly:
+**Both scraped AND manually-created KH investments are part of the
+tracked net worth.** The data flow that makes this true is easy to miss
+because it never touches the analysis layer directly — there are two
+paths into the same `type='hishtalmut'` investment pool:
 
 ```
-scrape → insurance_accounts (policy_type='hishtalmut')
-       → InsuranceSyncMixin.sync_from_insurance
-         (backend/services/investments/insurance_sync.py, called from
-          backend/scraper/adapter.py + the insurance backfill route)
-       → auto-creates an Investment (type='hishtalmut',
-         insurance_policy_id set) with a 'scraped' balance snapshot
-       → get_net_worth_over_time values investments snapshot-first
-       → KH balance is inside status["net_worth"]
+Path A (scraped):
+  scrape → insurance_accounts (policy_type='hishtalmut')
+         → InsuranceSyncMixin.sync_from_insurance
+           (backend/services/investments/insurance_sync.py, called from
+            backend/scraper/adapter.py + the insurance backfill route)
+         → auto-creates an Investment (type='hishtalmut',
+           insurance_policy_id set) with a 'scraped' balance snapshot
+
+Path B (manual):
+  Investments page → create Investment (type='hishtalmut',
+                      insurance_policy_id = None)
+
+Both paths converge:
+  Investment (type='hishtalmut') → get_net_worth_over_time values
+    investments snapshot-first → KH balance is inside status["net_worth"]
 ```
 
 The retirement goal ALSO stores a user-facing `keren_hishtalmut_balance`
-(auto-fillable from the same scraped data), which the projection models
-as its own tax-free bucket (drawn first in retirement).
+(auto-fillable from the same scraped/manual data), which the projection
+models as its own tax-free bucket (drawn first in retirement).
 
-To count KH exactly once for **both** user flows,
-`get_current_status` exposes `tracked_kh_value` — the current
-snapshot-resolved value of open `type='hishtalmut'` investments — and
-every wealth computation (projection base, progress %, solvers,
-required savings) uses:
+`InvestmentsService.get_hishtalmut_total_balance()` is the single source
+of truth for both halves of the swap below: it sums the current
+snapshot-resolved balance of every open `type='hishtalmut'` investment,
+scraped or manually-created alike, and backs both `get_current_status`'s
+`tracked_kh_value` and `get_scraped_defaults`'s auto-filled
+`keren_hishtalmut_balance`. To count KH exactly once for **every** user
+flow, `get_current_status` exposes `tracked_kh_value` from that method —
+the current snapshot-resolved value of open `type='hishtalmut'`
+investments — and every wealth computation (projection base, progress %,
+solvers, required savings) uses:
 
 ```
-base_portfolio = net_worth - tracked_kh_value      # remove synced KH
+base_portfolio = net_worth - tracked_kh_value      # remove tracked KH
 total_wealth   = base_portfolio + goal.keren_hishtalmut_balance
 ```
 
 - **Scraped user (designed flow, demo):** synced value ≈ goal balance →
   swap-out + bucket-in nets to `net_worth`; no double count.
-- **Manual-entry user (never scraped):** `tracked_kh_value` is 0 → the
-  typed KH balance counts on top of net worth.
+- **Manual-entry user (typed `type='hishtalmut'` investment, never
+  scraped):** `tracked_kh_value` also reflects that investment's balance
+  (via `get_hishtalmut_total_balance()`) → the same swap-out + bucket-in
+  applies, and it counts exactly once.
 
 Never subtract `goal.keren_hishtalmut_balance` from net worth directly
 (drops KH for manual users), and never add it on top without the
-`tracked_kh_value` swap (double-counts it for scraped users). Both bugs
-have shipped; regression tests pin both flows in
+`tracked_kh_value` swap (double-counts it for scraped and manual users
+alike). Both bugs have shipped; regression tests pin both flows in
 `tests/backend/unit/test_retirement_service.py` (`TestRealTermsModel`).
 
 ## Readiness and the solver predicate

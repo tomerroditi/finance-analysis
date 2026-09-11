@@ -16,6 +16,13 @@ from sqlalchemy import select
 
 from backend.models.transaction import InsuranceTransaction
 
+HISHTALMUT_TYPE = "hishtalmut"
+"""Investment ``type`` marking a Keren Hishtalmut account.
+
+Matches ``insurance_accounts.policy_type`` so scraped policies and
+manually-created KH investments share one identity.
+"""
+
 
 class ValuationMixin:
     """Valuation and profit/loss methods for ``InvestmentsService``."""
@@ -58,6 +65,26 @@ class ValuationMixin:
             inv["category"], inv["tag"], investment_id=investment_id
         )
         return self._calculate_balance_from_transactions(transactions_df)
+
+    def get_hishtalmut_total_balance(self) -> float | None:
+        """Total current balance across open Keren Hishtalmut investments.
+
+        Covers both scraped policies (auto-synced by ``InsuranceSyncMixin``)
+        and manually-created KH investments, so the retirement projection can
+        subtract exactly what it adds back as its KH bucket.
+
+        Returns
+        -------
+        float or None
+            Summed current balance, or ``None`` when no open KH investment
+            carries a positive balance.
+        """
+        total = sum(
+            self.calculate_current_balance(int(inv["id"]))
+            for inv in self.get_all_investments()
+            if inv.get("type") == HISHTALMUT_TYPE
+        )
+        return total if total > 0 else None
 
     def get_total_value_at_date(self, target_date: str) -> float:
         """Sum snapshot-resolved balances for every investment as of a date.
