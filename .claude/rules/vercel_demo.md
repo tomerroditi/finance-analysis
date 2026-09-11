@@ -66,6 +66,19 @@ is what `backend/demo_sessions.py` fixes.
   and 401s without the matching bearer (Vercel sends it automatically).
   Blobs older than `FAD_DEMO_SESSION_TTL_DAYS` (default 14) are deleted.
 
+- **When Blob is missing.** `index.py` logs a WARNING at cold start,
+  `GET /api/testing/demo_mode_status` reports `blob_configured: false`
+  (that flag needs no session header, so a bare `curl` answers it), and the
+  layout renders `DemoSandboxNotice` — an amber "Demo changes are not being
+  saved" strip — for any browser whose sandbox is not durable. The notice
+  never appears locally; `frontend/e2e/demo-sandbox-notice.spec.ts` drives
+  both states by stubbing the status endpoint.
+- **Fluid compute.** `vercel.json` sets `"fluid": true` so one warm
+  instance serves a visitor's whole request burst instead of Vercel
+  spinning a fresh instance (and a fresh `/tmp`) per concurrent request.
+  That makes a single visitor's session consistent even before Blob is
+  connected, but not durable: cold starts still wipe `/tmp`.
+
 ## Vercel project setup (one-time, not in the repo)
 
 1. Storage → create a **Blob** store, access **private**, connect it to the

@@ -68,6 +68,7 @@ class TestGate:
             "forced": True,
             "sandboxed": True,
             "durable": False,
+            "blob_configured": False,
         }
 
     def test_real_mode_ignores_header(self, test_client, store):
@@ -78,6 +79,7 @@ class TestGate:
             "forced": False,
             "sandboxed": False,
             "durable": False,
+            "blob_configured": False,
         }
 
     def test_disabled_feature_ignores_header(self, test_client, store, monkeypatch):
@@ -104,6 +106,24 @@ class TestGate:
         )
         response = test_client.get(STATUS, headers={"X-FAD-Demo": "1"})
         assert response.json()["sandboxed"] is False
+
+
+class TestBlobConfiguredFlag:
+    """Tests for the operator-facing Blob wiring flag."""
+
+    def test_reports_store_durability_without_a_session(self, test_client, store):
+        """Verify a bare (header-less) status call still reveals whether Blob is wired.
+
+        The dashboard cannot be inspected from the outside, so this flag is
+        how an operator confirms with one curl that BLOB_READ_WRITE_TOKEN
+        reached the running function.
+        """
+        store.durable = True
+        response = test_client.get(STATUS)
+        body = response.json()
+        assert body["sandboxed"] is False
+        assert body["durable"] is False
+        assert body["blob_configured"] is True
 
 
 class TestMaterializeAndPersist:

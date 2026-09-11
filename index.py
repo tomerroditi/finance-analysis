@@ -82,9 +82,19 @@ except Exception:  # pragma: no cover - defensive at cold start
 # Freeze the prepared shared DB as the template every visitor sandbox is
 # cloned from. Must happen before the first request: the shared copy is
 # still writable by header-less clients (curl), the template is not.
-from backend.demo_sessions import snapshot_template  # noqa: E402
+from backend.demo_sessions import get_store, snapshot_template  # noqa: E402
 
 snapshot_template()
+
+if not get_store().durable:
+    import logging
+
+    logging.getLogger(__name__).warning(
+        "Demo sandboxes are NOT durable: BLOB_READ_WRITE_TOKEN is not set. "
+        "Each visitor's edits live only on the instance that served them and "
+        "vanish on recycle. Connect a Vercel Blob store to the project "
+        "(Storage -> Create -> Blob, access private, all environments)."
+    )
 
 # Vercel auto-detects this `app` variable as the FastAPI application.
 # lifespan is skipped (VERCEL env var guard) because it imports keyring.

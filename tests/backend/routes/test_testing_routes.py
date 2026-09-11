@@ -49,6 +49,7 @@ class TestDemoModeStatus:
             "forced": False,
             "sandboxed": False,
             "durable": False,
+            "blob_configured": False,
         }
 
     def test_reports_forced_when_pinned(self, test_client):
@@ -60,6 +61,7 @@ class TestDemoModeStatus:
             "forced": True,
             "sandboxed": False,
             "durable": False,
+            "blob_configured": False,
         }
 
 

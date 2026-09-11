@@ -1140,6 +1140,7 @@ export const testingApi = {
       forced: boolean;
       sandboxed: boolean;
       durable: boolean;
+      blob_configured: boolean;
     }>(
       "/testing/demo_mode_status",
     ),
