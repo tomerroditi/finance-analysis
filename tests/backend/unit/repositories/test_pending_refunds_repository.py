@@ -138,3 +138,43 @@ class TestPendingRefundsRepository:
         repo = PendingRefundsRepository(db_session)
         result = repo.get_pending_for_source("transaction", 999, "banks")
         assert result is None
+
+
+class TestDeleteForSplits:
+    """Tests for purging the refunds of deleted split slices."""
+
+    def test_deletes_split_refunds_with_their_links(self, db_session):
+        """Only the listed slices' refunds go, links included.
+
+        ``split_transactions`` ids are recycled, so a refund left behind is
+        inherited by the next slice handed the same id. A transaction-sourced
+        refund that happens to carry the same integer must not be touched:
+        the two id spaces are unrelated.
+        """
+        repo = PendingRefundsRepository(db_session)
+        doomed_id = repo.create_pending_refund(
+            "split", 1, "bank_transactions", 60.0
+        ).id
+        repo.add_refund_link(doomed_id, 10, "bank_transactions", 60.0)
+        kept_split_id = repo.create_pending_refund(
+            "split", 2, "bank_transactions", 40.0
+        ).id
+        kept_txn_id = repo.create_pending_refund(
+            "transaction", 1, "bank_transactions", 30.0
+        ).id
+
+        repo.delete_for_splits([1])
+
+        assert repo.get_by_id(doomed_id) is None
+        assert repo.get_links_for_pending(doomed_id).empty
+        assert repo.get_by_id(kept_split_id) is not None
+        assert repo.get_by_id(kept_txn_id) is not None
+
+    def test_empty_list_is_a_no_op(self, db_session):
+        """An unsplit deletion passes no ids and must delete nothing."""
+        repo = PendingRefundsRepository(db_session)
+        pending = repo.create_pending_refund("split", 1, "bank_transactions", 60.0)
+
+        repo.delete_for_splits([])
+
+        assert repo.get_by_id(pending.id) is not None

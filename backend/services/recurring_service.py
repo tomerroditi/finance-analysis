@@ -8,6 +8,7 @@ insights engine with "new subscription" / "price increase" signals.
 """
 
 import re
+from datetime import date
 
 import pandas as pd
 from sqlalchemy.orm import Session
@@ -104,8 +105,15 @@ class RecurringService:
                 best = (name, days)
         return best
 
-    def get_recurring(self) -> dict:
+    def get_recurring(self, today: date | pd.Timestamp | None = None) -> dict:
         """Detect recurring charges across all itemized expense transactions.
+
+        Parameters
+        ----------
+        today : date or pd.Timestamp, optional
+            Reference day for the ``new`` / ``ended`` status and the next
+            expected date. Defaults to the current day; tests pin it so the
+            verdict does not drift with the calendar.
 
         Returns
         -------
@@ -152,7 +160,9 @@ class RecurringService:
         if df.empty:
             return empty
 
-        today = pd.Timestamp.today().normalize()
+        today = (
+            pd.Timestamp.today() if today is None else pd.Timestamp(today)
+        ).normalize()
         items: list[dict] = []
 
         for norm, group in df.groupby("norm"):
@@ -202,7 +212,7 @@ class RecurringService:
             next_expected = last_date + pd.Timedelta(days=period_days)
 
             # Status: ended if overdue past 1.5 periods, new if it only
-            # started within the last ~2 periods.
+            # started within the last 3 periods.
             age_since_last = (today - last_date).days
             age_since_first = (today - first_date).days
             status = "active"

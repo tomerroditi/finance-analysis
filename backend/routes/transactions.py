@@ -42,11 +42,6 @@ _VALID_SOURCES = frozenset(
     }
 )
 
-# Splits are money slices of one transaction, so they must add up to it. Money
-# is stored as a float, so allow a cent of accumulated rounding drift.
-_SPLIT_SUM_TOLERANCE = 0.01
-
-
 def _validate_source(source: str) -> str:
     """Reject a ``source`` the transactions repository cannot dispatch on.
 
@@ -199,7 +194,8 @@ def update_transaction(
     -------
     dict
         ``{"status": "success"}`` if any field was updated,
-        ``{"status": "no_changes"}`` if nothing changed.
+        ``{"status": "no_changes"}`` if nothing changed. A ``unique_id``
+        that does not exist in ``source`` is a 404.
     """
     _validate_source(data.source)
     service = TransactionsService(db)
@@ -236,59 +232,18 @@ def delete_transaction(
         raise HTTPException(status_code=404, detail=str(e))
 
 
-def _reject_unbalanced_splits(
-    service: TransactionsService, unique_id: int, data: "SplitRequest"
-) -> None:
-    """Raise when the split slices don't add up to the parent transaction.
-
-    Parameters
-    ----------
-    service : TransactionsService
-        Service used to look the parent transaction up.
-    unique_id : int
-        Per-table ID of the transaction being split.
-    data : SplitRequest
-        The requested split, carrying ``source`` and the slice list.
-
-    Raises
-    ------
-    ValidationException
-        If the slice amounts differ from the parent amount by more than
-        ``_SPLIT_SUM_TOLERANCE``.
-
-    Notes
-    -----
-    A parent that cannot be resolved is left to the service call, which
-    reports the missing-parent error with its own message.
-    """
-    try:
-        parent = service.get_transaction(unique_id, data.source)
-        parent_amount = float(parent["amount"])
-    except (ValueError, KeyError, TypeError):
-        return
-
-    total = sum(split.amount for split in data.splits)
-    if abs(total - parent_amount) > _SPLIT_SUM_TOLERANCE:
-        raise ValidationException(
-            f"Split amounts must sum to the transaction amount "
-            f"({parent_amount:.2f}); got {total:.2f}"
-        )
-
-
 @router.post("/{unique_id}/split", response_model=StatusResponse)
 def split_transaction(
     unique_id: int, data: SplitRequest, db: Session = Depends(get_database)
 ) -> dict[str, str]:
     """Split a transaction into multiple parts.
 
-    The slice amounts must add up to the parent amount (within a cent) —
-    the same invariant the split modal enforces client-side. Without the
-    server-side check a crafted payload silently inflated every total that
-    reads the merged view.
+    The service rejects slices that don't add up to the parent amount
+    (``ValidationException`` → 400) and a parent that doesn't exist
+    (``EntityNotFoundException`` → 404).
     """
     _validate_source(data.source)
     service = TransactionsService(db)
-    _reject_unbalanced_splits(service, unique_id, data)
     try:
         splits = [s.model_dump() for s in data.splits]
         service.split_transaction(unique_id, data.source, splits)
@@ -376,7 +331,7 @@ def update_transaction_tag(
     transaction_id: str,
     category: str,
     tag: str,
-    service: str = Query(..., description="Service: credit_card, bank, cash"),
+    service: str = Query(..., description="Source table or service alias, e.g. bank_transactions / banks"),
     db: Session = Depends(get_database),
 ) -> dict[str, str]:
     """Update the category and tag of a single transaction.
@@ -393,8 +348,8 @@ def update_transaction_tag(
     tag : str
         Tag to assign within the category.
     service : str
-        Service identifier (``credit_card``, ``bank``, ``cash``) used to
-        target the correct table.
+        Table name (``credit_card_transactions``) or service alias
+        (``credit_cards``) used to target the correct table.
     """
     tx_service = TransactionsService(db)
     try:

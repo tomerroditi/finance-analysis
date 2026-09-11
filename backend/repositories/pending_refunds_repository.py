@@ -433,6 +433,44 @@ class PendingRefundsRepository:
             )
         self.db.commit()
 
+    def delete_for_splits(self, split_ids: list[int]) -> None:
+        """
+        Purge every pending refund that was marked on a split slice.
+
+        Split ids are globally unique (``split_transactions`` is one table),
+        so no source-table filter is needed. Left behind after the slice is
+        deleted or re-split, the refund would be re-adopted by the next slice
+        SQLite hands the same id to.
+
+        Parameters
+        ----------
+        split_ids : list[int]
+            Primary keys of the deleted ``split_transactions`` rows.
+        """
+        if not split_ids:
+            return
+
+        for chunk in _chunked(split_ids):
+            orphan_ids = [
+                row_id
+                for (row_id,) in self.db.execute(
+                    select(PendingRefund.id).where(
+                        PendingRefund.source_type == "split",
+                        PendingRefund.source_id.in_(chunk),
+                    )
+                ).all()
+            ]
+            if orphan_ids:
+                self.db.execute(
+                    delete(RefundLink).where(
+                        RefundLink.pending_refund_id.in_(orphan_ids)
+                    )
+                )
+                self.db.execute(
+                    delete(PendingRefund).where(PendingRefund.id.in_(orphan_ids))
+                )
+        self.db.commit()
+
     def delete_refund_link(self, link_id: int) -> RefundLink | None:
         """
         Delete a specific refund link.

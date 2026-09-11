@@ -287,11 +287,16 @@ class TransactionsRepository(IngestionMixin, SplitsMixin):
         -------
         pd.DataFrame
             Same DataFrame with ``date`` column cast to ``"%Y-%m-%d"`` strings.
-            Returns df unchanged if empty or if ``date`` column is absent.
+            A stored value that does not parse becomes ``NaN`` rather than
+            failing the whole read — one corrupt row must not take every
+            transactions/analytics endpoint down with it. Returns df
+            unchanged if empty or if ``date`` column is absent.
         """
         if df.empty or "date" not in df.columns:
             return df
-        df["date"] = pd.to_datetime(df["date"]).dt.strftime(r"%Y-%m-%d")
+        df["date"] = pd.to_datetime(df["date"], errors="coerce").dt.strftime(
+            r"%Y-%m-%d"
+        )
         return df
 
     def get_repo_by_source(self, source: str) -> ServiceRepository | None:
@@ -393,7 +398,7 @@ class TransactionsRepository(IngestionMixin, SplitsMixin):
         Returns
         -------
         list[str]
-            Copy of the class-level ``tables`` list containing the four
+            Copy of the class-level ``tables`` list containing the five
             transaction table name strings.
         """
         return self.tables.copy()
@@ -534,8 +539,8 @@ class TransactionsRepository(IngestionMixin, SplitsMixin):
 
         Notes
         -----
-        Delegates to all four sub-repositories (credit card, bank, cash,
-        manual investments).
+        Delegates to all five sub-repositories (credit card, bank, cash,
+        manual investments, insurance).
         """
         self.cc_repo.nullify_category_and_tag(category, tag)
         self.bank_repo.nullify_category_and_tag(category, tag)
@@ -559,7 +564,7 @@ class TransactionsRepository(IngestionMixin, SplitsMixin):
 
         Notes
         -----
-        Delegates to all four sub-repositories.
+        Delegates to all five sub-repositories.
         """
         self.cc_repo.update_category_for_tag(old_category, new_category, tag)
         self.bank_repo.update_category_for_tag(old_category, new_category, tag)
@@ -579,7 +584,7 @@ class TransactionsRepository(IngestionMixin, SplitsMixin):
 
         Notes
         -----
-        Delegates to all four sub-repositories.
+        Delegates to all five sub-repositories.
         """
         self.cc_repo.nullify_category(category)
         self.bank_repo.nullify_category(category)

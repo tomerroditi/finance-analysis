@@ -4,7 +4,7 @@ Transactions service with pure SQLAlchemy (no Streamlit dependencies).
 This module provides business logic for transaction operations.
 """
 
-from datetime import datetime, timedelta
+from datetime import date, datetime
 from typing import List, Literal, Optional
 
 import pandas as pd
@@ -18,20 +18,14 @@ from backend.constants.categories import (
     IncomeCategories
 )
 from backend.constants.providers import Services
-from backend.constants.tables import (
-    SplitTransactionsTableFields,
-    Tables,
-    TransactionsTableFields,
-)
+from backend.constants.tables import Tables, TransactionsTableFields
+from backend.errors import EntityNotFoundException, ValidationException
 from backend.services.transaction_classification import (
     INCOME_CATEGORY_VALUES,
     NON_EXPENSE_BASE_CATEGORIES,
 )
 from backend.repositories.bank_balance_repository import BankBalanceRepository
 from backend.repositories.investments_repository import InvestmentsRepository
-from backend.repositories.split_transactions_repository import (
-    SplitTransactionsRepository,
-)
 from backend.repositories.transactions_repository import (
     CashTransaction,
     ManualInvestmentTransaction,
@@ -48,6 +42,10 @@ from backend.utils.session_cache import session_cache_get, session_cache_set
 # ignoring the all-NA side, but warns that it will stop doing so. Pinning every
 # synthesised column to the same dtype keeps the frames uniform.
 SPLIT_ID_DTYPE = "float64"
+
+# Splits are money slices of one transaction, so they must add up to it. Money
+# is stored as a float, so allow a cent of accumulated rounding drift.
+SPLIT_SUM_TOLERANCE = 0.01
 
 
 def _empty_split_id(index: pd.Index) -> pd.Series:
@@ -91,7 +89,6 @@ class TransactionsService:
         """
         self.db = db
         self.transactions_repository = TransactionsRepository(db)
-        self.split_transactions_repository = SplitTransactionsRepository(db)
         self.balance_repo = BankBalanceRepository(db)
         self.investments_repo = InvestmentsRepository(db)
 
@@ -251,7 +248,9 @@ class TransactionsService:
         Parameters
         ----------
         table_name : str
-            Name of the source table (e.g. ``"credit_card_transactions"``).
+            Source table name (e.g. ``"credit_card_transactions"``) or its
+            service alias (``"credit_cards"``) — every spelling the
+            repository dispatches on.
         unique_id : int
             Unique ID of the transaction to update.
         category : str or None
@@ -266,24 +265,10 @@ class TransactionsService:
         """
         category = self._normalize_empty_string(category)
         tag = self._normalize_empty_string(tag)
-        if table_name == Tables.CREDIT_CARD.value:
-            self.transactions_repository.cc_repo.update_tagging_by_unique_id(
-                unique_id, category, tag
-            )
-        elif table_name == Tables.BANK.value:
-            self.transactions_repository.bank_repo.update_tagging_by_unique_id(
-                unique_id, category, tag
-            )
-        elif table_name == Tables.CASH.value:
-            self.transactions_repository.cash_repo.update_tagging_by_unique_id(
-                unique_id, category, tag
-            )
-        elif table_name == Tables.MANUAL_INVESTMENT_TRANSACTIONS.value:
-            self.transactions_repository.manual_investments_repo.update_tagging_by_unique_id(
-                unique_id, category, tag
-            )
-        else:
+        repo = self.transactions_repository.get_repo_by_source(table_name)
+        if repo is None:
             raise ValueError(f"Invalid table name: {table_name}")
+        repo.update_tagging_by_unique_id(unique_id, category, tag)
 
     def get_transactions_by_tag(
         self, category: str, tag: Optional[str] = None
@@ -409,6 +394,38 @@ class TransactionsService:
         """Convert empty strings to None for category/tag fields."""
         return None if value == "" else value
 
+    @staticmethod
+    def _validate_date(value) -> str:
+        """Normalise a user-supplied date to the stored ``YYYY-MM-DD`` form.
+
+        Dates are stored as strings and compared lexicographically, so an
+        unparseable value written once would sort wrongly forever and break
+        every ``to_datetime`` downstream.
+
+        Parameters
+        ----------
+        value : str or date or datetime
+            The requested date.
+
+        Returns
+        -------
+        str
+            ``YYYY-MM-DD``.
+
+        Raises
+        ------
+        ValueError
+            If ``value`` is not a ``YYYY-MM-DD`` string or date object.
+        """
+        if isinstance(value, (date, datetime)):
+            return value.strftime("%Y-%m-%d")
+        try:
+            return datetime.strptime(str(value), "%Y-%m-%d").strftime("%Y-%m-%d")
+        except ValueError:
+            raise ValueError(
+                f"Invalid date '{value}': expected YYYY-MM-DD"
+            ) from None
+
     def create_transaction(self, data: dict, service: str) -> None:
         """
         Create a new manual transaction with validation and normalization.
@@ -478,6 +495,11 @@ class TransactionsService:
         -------
         dict
             The subset of ``updates`` this source is allowed to write.
+
+        Raises
+        ------
+        ValueError
+            If a manual source's ``date`` is not ``YYYY-MM-DD``.
         """
         is_manual = source in [
             Tables.CASH.value,
@@ -486,7 +508,7 @@ class TransactionsService:
         filtered_updates: dict = {}
         if is_manual:
             if updates.get("date") is not None:
-                filtered_updates["date"] = updates["date"]
+                filtered_updates["date"] = self._validate_date(updates["date"])
             if updates.get("account_name") is not None:
                 filtered_updates["account_name"] = updates["account_name"]
             if updates.get("description") is not None:
@@ -536,22 +558,33 @@ class TransactionsService:
         bool
             ``True`` if updates were applied, ``False`` if no applicable fields
             were provided.
+
+        Raises
+        ------
+        ValueError
+            If ``source`` is unknown or a manual date is malformed.
+        EntityNotFoundException
+            If no transaction with ``unique_id`` exists in ``source``.
         """
         from sqlalchemy import select
 
         target_repo = self.transactions_repository.get_repo_by_source(source)
+        if target_repo is None:
+            raise ValueError(f"Invalid source: '{source}'")
 
-        # Capture old account_name before updating — needed to recalculate the
-        # old account's balance when account_name changes on a cash transaction.
-        old_account_name: str | None = None
-        if source == Tables.CASH.value and updates.get("account_name") is not None:
-            tx_before = self.transactions_repository.db.execute(
-                select(target_repo.model).where(
-                    target_repo.model.unique_id == unique_id
-                )
-            ).scalar_one_or_none()
-            if tx_before:
-                old_account_name = getattr(tx_before, "account_name", None)
+        # The row must exist before anything is filtered: a missing row is a
+        # 404, not a silent "no_changes". Its account_name is also what the
+        # old cash account's balance is recalculated from when it changes.
+        tx_before = self.transactions_repository.db.execute(
+            select(target_repo.model).where(
+                target_repo.model.unique_id == unique_id
+            )
+        ).scalar_one_or_none()
+        if tx_before is None:
+            raise EntityNotFoundException(
+                f"Transaction {unique_id} not found in {source}"
+            )
+        old_account_name = getattr(tx_before, "account_name", None)
 
         filtered_updates = self._filter_updates_for_source(source, updates)
 
@@ -566,21 +599,10 @@ class TransactionsService:
             cash_balance_svc = CashBalanceService(self.db)
 
             new_account_name = filtered_updates.get("account_name")
-            if new_account_name and old_account_name and new_account_name != old_account_name:
-                # account_name changed: recalculate both old and new accounts.
+            if old_account_name:
                 cash_balance_svc.recalculate_current_balance(old_account_name)
+            if new_account_name and new_account_name != old_account_name:
                 cash_balance_svc.recalculate_current_balance(new_account_name)
-            else:
-                # No account change: recalculate the current account.
-                tx_record = self.transactions_repository.db.execute(
-                    select(target_repo.model).where(
-                        target_repo.model.unique_id == unique_id
-                    )
-                ).scalar_one_or_none()
-                if tx_record:
-                    account_name = getattr(tx_record, "account_name", None)
-                    if account_name:
-                        cash_balance_svc.recalculate_current_balance(account_name)
 
         return result
 
@@ -700,6 +722,11 @@ class TransactionsService:
         aliases.add(source)
         source_aliases = sorted(aliases)
 
+        # Slices are about to go too; their ids must be known before the
+        # DELETE so the records pointing at them can follow.
+        split_ids = self.transactions_repository.get_split_ids_for_transactions(
+            unique_ids, source
+        )
         self.transactions_repository.split_repo.delete_splits_for_transactions(
             unique_ids, source
         )
@@ -710,6 +737,44 @@ class TransactionsService:
 
         BudgetMonthOverrideRepository(self.db).delete_for_sources(
             "transaction", unique_ids, source_aliases
+        )
+
+        self._purge_split_dependents(split_ids)
+
+    def _purge_split_dependents(self, split_ids: list[int]) -> None:
+        """
+        Remove every record that pointed at now-deleted split slices.
+
+        A pending refund or budget month override can be scoped to a slice
+        (``source_type="split"``). ``split_transactions`` ids are recycled by
+        SQLite just like transaction ids, so an orphan would be inherited by
+        the next slice created — including the replacement slices of a
+        re-split.
+
+        Parameters
+        ----------
+        split_ids : list[int]
+            Primary keys of the deleted ``split_transactions`` rows. Empty is
+            a no-op.
+        """
+        if not split_ids:
+            return
+
+        from backend.repositories.budget_month_override_repository import (
+            BudgetMonthOverrideRepository,
+        )
+        from backend.repositories.pending_refunds_repository import (
+            PendingRefundsRepository,
+        )
+
+        PendingRefundsRepository(self.db).delete_for_splits(split_ids)
+
+        # Split ids are global, but the override table is keyed by source
+        # table as well; accept every spelling a client may have stored.
+        spellings = sorted(self.transactions_repository.repo_map)
+        spellings.append(Tables.SPLIT_TRANSACTIONS.value)
+        BudgetMonthOverrideRepository(self.db).delete_for_sources(
+            "split", split_ids, spellings
         )
 
     def delete_account_data(
@@ -757,13 +822,47 @@ class TransactionsService:
         deleted = repo.delete_transactions_for_account(provider, account_name)
         return {"transactions_deleted": deleted}
 
+    def _get_parent_for_split(self, unique_id: int, source: str) -> pd.Series:
+        """Resolve the transaction a split operation targets.
+
+        Parameters
+        ----------
+        unique_id : int
+            Per-table id of the transaction.
+        source : str
+            Source table or service name.
+
+        Returns
+        -------
+        pd.Series
+            The transaction row.
+
+        Raises
+        ------
+        ValueError
+            If ``source`` is not a known table/service name.
+        EntityNotFoundException
+            If no transaction with ``unique_id`` exists in ``source``.
+        """
+        if self.transactions_repository.get_repo_by_source(source) is None:
+            raise ValueError(f"Invalid source: '{source}'")
+        try:
+            return self.transactions_repository.get_transaction_by_id(
+                unique_id, source
+            )
+        except ValueError as exc:
+            raise EntityNotFoundException(str(exc)) from exc
+
     def split_transaction(
         self, unique_id: int, source: str, splits: list[dict]
     ) -> None:
         """Split a transaction into multiple partial amounts across categories.
 
-        Wraps the repository operation so the route layer never reaches into
-        repositories directly.
+        The slices must add up to the parent amount (within
+        ``SPLIT_SUM_TOLERANCE``) — the same invariant the split modal
+        enforces client-side. Without the server-side check a crafted
+        payload silently inflated every total that reads the merged view.
+        Slices of mixed sign are accepted as long as they balance.
 
         Parameters
         ----------
@@ -779,12 +878,36 @@ class TransactionsService:
         ------
         ValueError
             If the source is not recognized or the split fails to commit.
+        ValidationException
+            If ``splits`` is empty or its amounts don't sum to the parent.
+        EntityNotFoundException
+            If no transaction with ``unique_id`` exists in ``source``.
         """
+        if not splits:
+            # A zero-slice split flipped the parent to ``split_parent`` with
+            # no children, hiding the transaction from the merged view.
+            raise ValidationException("A split needs at least one slice")
+
+        parent = self._get_parent_for_split(unique_id, source)
+        parent_amount = float(parent["amount"])
+        total = sum(float(split["amount"]) for split in splits)
+        if abs(total - parent_amount) > SPLIT_SUM_TOLERANCE:
+            raise ValidationException(
+                f"Split amounts must sum to the transaction amount "
+                f"({parent_amount:.2f}); got {total:.2f}"
+            )
+
+        # A re-split replaces the slices; whatever pointed at the old ones
+        # must not survive onto the new (possibly id-recycled) slices.
+        old_split_ids = self.transactions_repository.get_split_ids_for_transactions(
+            [unique_id], source
+        )
         success = self.transactions_repository.split_transaction(
             unique_id, source, splits
         )
         if not success:
             raise ValueError("Failed to split transaction")
+        self._purge_split_dependents(old_split_ids)
 
     def revert_split(self, unique_id: int, source: str) -> None:
         """Revert a split transaction back to a normal transaction.
@@ -800,10 +923,23 @@ class TransactionsService:
         ------
         ValueError
             If the source is not recognized or the revert fails to commit.
+        EntityNotFoundException
+            If no transaction with ``unique_id`` exists in ``source``, or the
+            transaction is not a split parent.
         """
+        parent = self._get_parent_for_split(unique_id, source)
+        if parent.get("type") != "split_parent":
+            raise EntityNotFoundException(
+                f"Transaction {unique_id} in {source} is not split"
+            )
+
+        split_ids = self.transactions_repository.get_split_ids_for_transactions(
+            [unique_id], source
+        )
         success = self.transactions_repository.revert_split(unique_id, source)
         if not success:
             raise ValueError("Failed to revert split")
+        self._purge_split_dependents(split_ids)
 
     def bulk_tag_transactions(
         self,
@@ -821,8 +957,10 @@ class TransactionsService:
 
         For manual sources (``cash``, ``manual_investment_transactions``),
         ``description``, ``account_name``, ``date``, and ``amount`` are also
-        applied when provided. Permission checks and side effects (e.g. cash
-        balance recalculation) are handled by ``update_transaction``.
+        applied when provided; every other source keeps them. This is one
+        ``UPDATE ... WHERE unique_id IN (...)`` and one commit for the whole
+        batch — ids that do not exist are simply not matched — followed by a
+        single cash-balance recalculation per affected account.
 
         Parameters
         ----------
@@ -932,34 +1070,33 @@ class TransactionsService:
 
         return untagged
 
-    def get_latest_data_date(self) -> datetime:
+    def get_latest_data_date(self) -> datetime | None:
         """
         Get the minimum of the latest transaction dates across all tables.
 
         Returns the minimum so that the displayed "latest date" reflects the
-        most outdated source (i.e. all sources have data up to at least this date).
+        most outdated source (i.e. all sources have data up to at least this
+        date). Tables with no rows are not "outdated" — they are unused — so
+        they are ignored rather than dragging the result down to a
+        placeholder date.
 
         Returns
         -------
-        datetime
-            The minimum latest-date across all tables. Falls back to
-            365 days ago for tables with no data.
+        datetime or None
+            The minimum latest-date across the populated tables, or ``None``
+            when no table has any data.
         """
-        latest_dates = []
-        tables = self.transactions_repository.get_all_table_names()
-
-        for table in tables:
-            latest_date = self.transactions_repository.get_latest_date_from_table(table)
-            if latest_date is not None:
-                latest_dates.append(latest_date)
-            else:
-                latest_dates.append(datetime.today() - timedelta(days=365))
-
-        return (
-            min(latest_dates)
-            if latest_dates
-            else datetime.today() - timedelta(days=365)
-        )
+        latest_dates = [
+            latest
+            for table in self.transactions_repository.get_all_table_names()
+            if (
+                latest := self.transactions_repository.get_latest_date_from_table(
+                    table
+                )
+            )
+            is not None
+        ]
+        return min(latest_dates) if latest_dates else None
 
     def count_uncategorized(self) -> int:
         """Count uncategorized transactions in the merged non-insurance view.
@@ -1024,7 +1161,9 @@ class TransactionsService:
             Transactions with splits expanded, limited to the canonical
             analysis column set.
         """
-        df = self.transactions_repository.get_table(service).copy()
+        df = self.transactions_repository.get_table(
+            service, include_split_parents=include_split_parents
+        ).copy()
 
         analysis_cols = [
             TransactionsTableFields.ID.value,
@@ -1042,84 +1181,13 @@ class TransactionsService:
             TransactionsTableFields.TYPE.value,
         ]
 
-        split_df = self.split_transactions_repository.get_data()
-        if split_df.empty:
-            if TransactionsTableFields.SPLIT_ID.value not in df.columns:
-                df[TransactionsTableFields.SPLIT_ID.value] = _empty_split_id(df.index)
-            return (
-                df[analysis_cols] if all(c in df.columns for c in analysis_cols) else df
-            )
-
-        _repo = self.transactions_repository.get_repo_by_source(service)
-        source_table = _repo.model.__tablename__ if _repo is not None else ""
-        split_df = split_df[
-            (split_df[SplitTransactionsTableFields.SOURCE.value] == source_table)
-            & split_df[SplitTransactionsTableFields.TRANSACTION_ID.value].isin(
-                df[TransactionsTableFields.UNIQUE_ID.value]
-            )
-        ]
-        split_ids = set(split_df[SplitTransactionsTableFields.TRANSACTION_ID.value])
-        mask = df[TransactionsTableFields.UNIQUE_ID.value].isin(split_ids)
-
-        # NOTE: the repository already expanded splits, so `df` normally
-        # arrives holding the split children (with `split_id` set) and no
-        # parents. Blanket-assigning None here wiped that id, which silently
-        # disabled every consumer keyed on `split_id` — most visibly the
-        # pending-refund exclusion in BudgetService, so a slice marked as
-        # awaiting a refund still counted as budget spend.
-        def _ensure_split_id(frame: pd.DataFrame) -> pd.DataFrame:
-            if TransactionsTableFields.SPLIT_ID.value not in frame.columns:
-                frame[TransactionsTableFields.SPLIT_ID.value] = _empty_split_id(
-                    frame.index
-                )
-            return frame
-
-        if include_split_parents:
-            # Include parent transactions alongside split children
-            base_df = _ensure_split_id(df.copy())
-            # Mark parent transactions with type 'split_parent' for identification
-            base_df.loc[mask, "type"] = "split_parent"
-            base_df.loc[mask, TransactionsTableFields.SPLIT_ID.value] = None
-        else:
-            # Exclude parent transactions (default behavior)
-            base_df = _ensure_split_id(df[~mask].copy())
-
-        split_rows = []
-        for id_, split_group in split_df.groupby(
-            SplitTransactionsTableFields.TRANSACTION_ID.value
-        ):
-            orig_row = df[df[TransactionsTableFields.UNIQUE_ID.value] == id_]
-            if orig_row.empty:
-                continue
-            for _, split in split_group.iterrows():
-                split_row = orig_row.copy()
-                split_row[TransactionsTableFields.AMOUNT.value] = split[
-                    SplitTransactionsTableFields.AMOUNT.value
-                ]
-                split_row[TransactionsTableFields.CATEGORY.value] = split[
-                    SplitTransactionsTableFields.CATEGORY.value
-                ]
-                split_row[TransactionsTableFields.TAG.value] = split[
-                    SplitTransactionsTableFields.TAG.value
-                ]
-                split_row[TransactionsTableFields.SPLIT_ID.value] = split[
-                    SplitTransactionsTableFields.ID.value
-                ]
-                split_rows.append(split_row)
-
-        if split_rows:
-            split_rows_df = pd.concat(split_rows, ignore_index=True)
-            result_df = pd.concat([base_df, split_rows_df], ignore_index=True)
-        else:
-            result_df = base_df
-            if TransactionsTableFields.SPLIT_ID.value not in result_df.columns:
-                result_df[TransactionsTableFields.SPLIT_ID.value] = _empty_split_id(
-                    result_df.index
-                )
+        # The repository only synthesises `split_id` when split children are
+        # present; give every frame the column so callers can key on it.
+        if TransactionsTableFields.SPLIT_ID.value not in df.columns:
+            df[TransactionsTableFields.SPLIT_ID.value] = _empty_split_id(df.index)
 
         return (
-            result_df[analysis_cols].reset_index(drop=True)
-            if all(c in result_df.columns for c in analysis_cols)
-            else result_df
+            df[analysis_cols].reset_index(drop=True)
+            if all(c in df.columns for c in analysis_cols)
+            else df
         )
-
