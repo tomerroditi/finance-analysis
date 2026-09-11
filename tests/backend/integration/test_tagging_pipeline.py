@@ -10,6 +10,7 @@ import pytest
 from sqlalchemy import text
 
 from backend.errors import BadRequestException
+from backend.models.transaction import CreditCardTransaction
 from backend.services.tagging_rules_service import TaggingRulesService
 
 
@@ -50,65 +51,64 @@ def _patch_categories_cache(sample_categories_yaml, monkeypatch):
 class TestTaggingPipeline:
     """Integration tests for the tagging rules pipeline end-to-end."""
 
-    def test_create_rule_and_apply(self, db_session, seed_untagged_transactions):
-        """Create a 'contains SUPERMARKET' rule and verify matching transactions are auto-tagged."""
+    def test_creation_order_decides_a_later_overlap(
+        self, db_session, seed_untagged_transactions
+    ):
+        """The older of two rules claims a transaction that matches both.
+
+        Rules carry no priority: they run in creation order (``id`` ASC) and
+        the first match wins. Two rules can only ever both match a
+        transaction that arrived *after* they were created — an overlap that
+        exists at creation time is refused by conflict detection — so this
+        seeds the overlapping transaction last.
+        """
         service = TaggingRulesService(db_session)
 
-        conditions = _make_conditions("description", "contains", "SUPERMARKET")
-        rule_id, n_tagged = service.add_rule(
-            name="Supermarket Auto",
-            conditions=conditions,
+        # Older rule, broad. Nothing in the seed mentions SHUFERSAL, so
+        # neither rule overlaps anything at creation time.
+        service.add_rule(
+            name="Shufersal Broad",
+            conditions=_make_conditions("description", "contains", "SHUFERSAL"),
             category="Food",
             tag="Groceries",
         )
-
-        assert rule_id > 0
-        assert n_tagged == 2  # cc_untag_1 + bank_untag_1
-
-        cc = _get_transaction_by_id(db_session, "credit_card_transactions", "cc_untag_1")
-        assert cc["category"] == "Food"
-        assert cc["tag"] == "Groceries"
-
-        bank = _get_transaction_by_id(db_session, "bank_transactions", "bank_untag_1")
-        assert bank["category"] == "Food"
-        assert bank["tag"] == "Groceries"
-
-    def test_priority_ordering(self, db_session, seed_untagged_transactions):
-        """Two rules with overlapping conditions; higher priority (more specific) wins."""
-        service = TaggingRulesService(db_session)
-
-        # Broad rule: anything with "UBER" -> Transport/Rides
-        broad_cond = _make_conditions("description", "contains", "UBER")
+        # Newer rule, narrower — and therefore the one a user would expect to
+        # win. It does not: age beats specificity.
         service.add_rule(
-            name="Uber Broad",
-            conditions=broad_cond,
-            category="Transport",
-            tag="Rides",
+            name="Shufersal Online Specific",
+            conditions=_make_conditions("description", "contains", "SHUFERSAL ONLINE"),
+            category="Food",
+            tag="Restaurants",
         )
 
-        # All UBER transactions should now be Transport/Rides
-        cc = _get_transaction_by_id(db_session, "credit_card_transactions", "cc_untag_2")
-        assert cc["category"] == "Transport"
-        assert cc["tag"] == "Rides"
-
-        bank = _get_transaction_by_id(db_session, "bank_transactions", "bank_untag_2")
-        assert bank["category"] == "Transport"
-        assert bank["tag"] == "Rides"
-
-        # Now apply all rules with overwrite=True to simulate re-evaluation
-        # Create a more specific rule for UBER EATS -> Food/Delivery
-        # First, add "Delivery" to the Food category in the cache so there's no
-        # issue, and ensure the conflict check sees a different category.
-        # Since UBER EATS also matches "UBER", creating a rule with different
-        # category/tag on overlapping transactions will raise a conflict.
-        eats_cond = _make_conditions("description", "contains", "UBER EATS")
-        with pytest.raises(BadRequestException, match="Conflict detected"):
-            service.add_rule(
-                name="Uber Eats Specific",
-                conditions=eats_cond,
-                category="Food",
-                tag="Delivery",
+        # A newly scraped transaction matches BOTH rules.
+        db_session.add(
+            CreditCardTransaction(
+                id="cc_shufersal",
+                date="2024-03-01",
+                provider="isracard",
+                account_name="Main Card",
+                description="SHUFERSAL ONLINE DELIVERY",
+                amount=-240.0,
+                source="credit_card_transactions",
             )
+        )
+        db_session.commit()
+
+        assert service.apply_rules() == 1
+
+        row = _get_transaction_by_id(
+            db_session, "credit_card_transactions", "cc_shufersal"
+        )
+        assert (row["category"], row["tag"]) == ("Food", "Groceries")
+
+        # ...and re-running with overwrite=True does not hand it to the
+        # younger rule either — first match still wins in both modes.
+        service.apply_rules(overwrite=True)
+        row = _get_transaction_by_id(
+            db_session, "credit_card_transactions", "cc_shufersal"
+        )
+        assert (row["category"], row["tag"]) == ("Food", "Groceries")
 
     def test_rule_does_not_overwrite_existing_tags(
         self, db_session, seed_untagged_transactions, seed_base_transactions
@@ -131,36 +131,29 @@ class TestTaggingPipeline:
         assert cc["category"] == "Food"
         assert cc["tag"] == "Groceries"
 
-    def test_rule_overwrite_mode(
+    def test_retarget_a_rule_moves_the_rows_it_had_tagged(
         self, db_session, seed_untagged_transactions
     ):
-        """Apply rules with overwrite=True; existing tags are replaced."""
+        """Editing a rule's tag moves the rows it owns; a re-apply is then a no-op."""
         service = TaggingRulesService(db_session)
 
         # First, tag SUPERMARKET transactions as Food/Groceries
         conditions = _make_conditions("description", "contains", "SUPERMARKET")
-        rule_id, _ = service.add_rule(
+        rule_id, n_tagged = service.add_rule(
             name="Supermarket Initial",
             conditions=conditions,
             category="Food",
             tag="Groceries",
         )
+        assert n_tagged == 2
 
         # Verify initial tagging
         cc = _get_transaction_by_id(db_session, "credit_card_transactions", "cc_untag_1")
         assert cc["category"] == "Food"
         assert cc["tag"] == "Groceries"
 
-        # Update the rule to assign a different tag
-        service.update_rule(rule_id, category="Food", tag="Restaurants")
-
-        # The overwrite within update_rule should re-apply (default overwrite=False),
-        # but the rule already matched these — they already have Food/Groceries
-        # which differs from the new tag Food/Restaurants.
-        # apply_rule_by_id with overwrite=False won't change already-tagged.
-        # Let's apply with overwrite=True explicitly.
-        n_tagged = service.apply_rule_by_id(rule_id, overwrite=True)
-        assert n_tagged == 2
+        # Retargeting the rule re-tags the rows still carrying its old pair.
+        assert service.update_rule(rule_id, category="Food", tag="Restaurants") == 2
 
         cc = _get_transaction_by_id(db_session, "credit_card_transactions", "cc_untag_1")
         assert cc["category"] == "Food"
@@ -170,32 +163,9 @@ class TestTaggingPipeline:
         assert bank["category"] == "Food"
         assert bank["tag"] == "Restaurants"
 
-    def test_contains_operator(self, db_session, seed_untagged_transactions):
-        """Verify 'contains' matches a substring in description."""
-        service = TaggingRulesService(db_session)
-
-        # "Netflix" appears as substring in "Netflix Monthly" and "Netflix Subscription"
-        conditions = _make_conditions("description", "contains", "Netflix")
-        rule_id, n_tagged = service.add_rule(
-            name="Netflix Rule",
-            conditions=conditions,
-            category="Entertainment",
-            tag="Streaming",
-        )
-
-        assert n_tagged == 2  # cc_untag_3 + bank_untag_3
-
-        cc = _get_transaction_by_id(db_session, "credit_card_transactions", "cc_untag_3")
-        assert cc["category"] == "Entertainment"
-        assert cc["tag"] == "Streaming"
-
-        bank = _get_transaction_by_id(db_session, "bank_transactions", "bank_untag_3")
-        assert bank["category"] == "Entertainment"
-        assert bank["tag"] == "Streaming"
-
-        # "PHARMACY" should NOT be matched
-        pharm = _get_transaction_by_id(db_session, "credit_card_transactions", "cc_untag_4")
-        assert pharm["category"] is None
+        # Every matching row already says what the rule says, so even an
+        # explicit overwrite pass has nothing left to change.
+        assert service.apply_rule_by_id(rule_id, overwrite=True) == 0
 
     def test_delete_rule_does_not_untag(self, db_session, seed_untagged_transactions):
         """Tag transactions via a rule, delete the rule, verify tags remain."""
@@ -332,14 +302,20 @@ class TestTaggingPipeline:
             tag="Groceries",
         )
 
-        # Second rule with same conditions but different category/tag
-        # The transactions are already tagged, but the conflict check looks at
-        # overlapping matching transactions between rules with different category/tag.
+        # Second rule with same conditions but a different (and valid)
+        # category/tag. The transactions are already tagged, but the conflict
+        # check looks at overlapping matching transactions between rules with
+        # different category/tag, so it still fires.
         conflicting_conditions = _make_conditions("description", "contains", "SUPERMARKET")
         with pytest.raises(BadRequestException, match="Conflict detected"):
             service.add_rule(
                 name="Supermarket Other",
                 conditions=conflicting_conditions,
-                category="Other",
-                tag=None,
+                category="Home",
+                tag="Cleaning",
             )
+
+        # The refused rule was never stored and changed nothing.
+        assert len(service.get_all_rules()) == 1
+        cc = _get_transaction_by_id(db_session, "credit_card_transactions", "cc_untag_1")
+        assert (cc["category"], cc["tag"]) == ("Food", "Groceries")

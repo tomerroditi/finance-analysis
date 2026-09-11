@@ -1,8 +1,7 @@
 """Tests for the /api/tagging API endpoints."""
 
-from unittest.mock import patch
-
 import pytest
+from sqlalchemy import select
 
 import backend.services.tagging_service as ts
 from backend.models.category import Category
@@ -59,23 +58,51 @@ class TestTaggingRoutes:
         assert "Doctor" in data["Health"]
 
     def test_add_category_duplicate(self, test_client):
-        """POST /api/tagging/categories with existing name still returns 200."""
+        """POST /api/tagging/categories with an existing name returns 400."""
         response = test_client.post(
             "/api/tagging/categories",
             json={"name": "Food", "tags": []},
         )
-        # The route always returns success regardless of service result
-        assert response.status_code == 200
-        assert response.json()["status"] == "success"
+        assert response.status_code == 400
+        assert "Cannot add category 'Food'" in response.json()["detail"]
+        # The existing category is untouched.
+        assert test_client.get("/api/tagging/categories").json()["Food"] == [
+            "Groceries",
+            "Restaurants",
+        ]
 
-    def test_delete_category(self, test_client):
-        """DELETE /api/tagging/categories/{name} returns success."""
+    def test_delete_category(self, test_client, db_session):
+        """DELETE /api/tagging/categories/{name} deletes it and untags its rows."""
+        from backend.models.transaction import BankTransaction
+
+        db_session.add(
+            BankTransaction(
+                id="bank_del_cat",
+                date="2024-01-05",
+                provider="hapoalim",
+                account_name="Checking",
+                description="Cinema ticket",
+                amount=-40.0,
+                category="Entertainment",
+                tag="Cinema",
+                source="bank_transactions",
+            )
+        )
+        db_session.commit()
+
         response = test_client.delete("/api/tagging/categories/Entertainment")
         assert response.status_code == 200
         assert response.json()["status"] == "success"
         # Verify it was deleted
         get_resp = test_client.get("/api/tagging/categories")
         assert "Entertainment" not in get_resp.json()
+
+        db_session.expire_all()
+        row = db_session.execute(
+            select(BankTransaction).where(BankTransaction.id == "bank_del_cat")
+        ).scalar_one()
+        assert row.category is None
+        assert row.tag is None
 
     def test_create_tag(self, test_client):
         """POST /api/tagging/tags adds tag to category."""
@@ -89,8 +116,25 @@ class TestTaggingRoutes:
         get_resp = test_client.get("/api/tagging/categories")
         assert "Delivery" in get_resp.json()["Food"]
 
-    def test_delete_tag(self, test_client):
-        """DELETE /api/tagging/tags/{category}/{name} removes tag."""
+    def test_delete_tag(self, test_client, db_session):
+        """DELETE /api/tagging/tags/{category}/{name} removes tag and untags rows."""
+        from backend.models.transaction import BankTransaction
+
+        db_session.add(
+            BankTransaction(
+                id="bank_del_tag",
+                date="2024-01-05",
+                provider="hapoalim",
+                account_name="Checking",
+                description="Shufersal",
+                amount=-40.0,
+                category="Food",
+                tag="Groceries",
+                source="bank_transactions",
+            )
+        )
+        db_session.commit()
+
         response = test_client.delete("/api/tagging/tags/Food/Groceries")
         assert response.status_code == 200
         assert response.json()["status"] == "success"
@@ -98,8 +142,32 @@ class TestTaggingRoutes:
         get_resp = test_client.get("/api/tagging/categories")
         assert "Groceries" not in get_resp.json()["Food"]
 
-    def test_relocate_tag(self, test_client):
-        """POST /api/tagging/tags/relocate moves tag between categories."""
+        db_session.expire_all()
+        row = db_session.execute(
+            select(BankTransaction).where(BankTransaction.id == "bank_del_tag")
+        ).scalar_one()
+        assert row.category is None
+        assert row.tag is None
+
+    def test_relocate_tag(self, test_client, db_session):
+        """POST /api/tagging/tags/relocate moves the tag and re-categorises rows."""
+        from backend.models.transaction import BankTransaction
+
+        db_session.add(
+            BankTransaction(
+                id="bank_reloc",
+                date="2024-01-05",
+                provider="hapoalim",
+                account_name="Checking",
+                description="Dinner out",
+                amount=-120.0,
+                category="Food",
+                tag="Restaurants",
+                source="bank_transactions",
+            )
+        )
+        db_session.commit()
+
         response = test_client.post(
             "/api/tagging/tags/relocate",
             json={
@@ -115,6 +183,13 @@ class TestTaggingRoutes:
         data = get_resp.json()
         assert "Restaurants" not in data["Food"]
         assert "Restaurants" in data["Entertainment"]
+
+        db_session.expire_all()
+        row = db_session.execute(
+            select(BankTransaction).where(BankTransaction.id == "bank_reloc")
+        ).scalar_one()
+        assert row.category == "Entertainment"
+        assert row.tag == "Restaurants"
 
     def test_get_category_icons(self, test_client, db_session):
         """GET /api/tagging/icons returns icon mapping."""
@@ -180,49 +255,160 @@ class TestCategoryUsageRoute:
 
 
 class TestTaggingRoutesRejections:
-    """Service-level rejections (``False`` returns and ``ValueError``) become HTTP errors."""
+    """A service that refuses the change becomes a 4xx, never a silent 200.
 
-    def test_add_category_blank_name_creates_nothing(self, test_client):
-        """A whitespace-only category name is silently rejected by the service."""
+    The routes used to swallow every rejection and answer ``{"status":
+    "success"}``, so a duplicate name, a protected category or an unknown tag
+    all looked like they had worked. Each rejection now maps to 400
+    (validation) or 404 (missing entity), and nothing in the DB changes.
+    """
+
+    @pytest.mark.parametrize("name", ["   ", "", "Food;Drink"])
+    def test_add_category_invalid_name_is_400(self, test_client, name):
+        """A blank or ``;``-containing category name is rejected with 400."""
         before = test_client.get("/api/tagging/categories").json()
-        response = test_client.post("/api/tagging/categories", json={"name": "   ", "tags": []})
-        assert response.status_code == 200
+        response = test_client.post(
+            "/api/tagging/categories", json={"name": name, "tags": []}
+        )
+        assert response.status_code == 400
+        assert "Cannot add category" in response.json()["detail"]
         assert test_client.get("/api/tagging/categories").json() == before
 
-    @pytest.mark.parametrize(
-        "method, path, body, service_method",
-        [
-            ("post", "/api/tagging/categories", {"name": "Health", "tags": []}, "add_category"),
-            ("delete", "/api/tagging/categories/Food", None, "delete_category"),
-            ("post", "/api/tagging/tags", {"category": "Food", "name": "Snacks"}, "add_tag"),
-            ("delete", "/api/tagging/tags/Food/Groceries", None, "delete_tag"),
-            (
-                "post",
-                "/api/tagging/tags/relocate",
-                {"old_category": "Food", "new_category": "Transport", "tag": "Groceries"},
-                "reallocate_tag",
-            ),
-        ],
-    )
-    def test_value_error_from_service_is_400(self, test_client, method, path, body, service_method):
-        """A ``ValueError`` raised by the service maps to 400 with its message."""
-        with patch("backend.routes.tagging.CategoriesTagsService") as mock:
-            getattr(mock.return_value, service_method).side_effect = ValueError("nope")
-            response = getattr(test_client, method)(path, json=body) if body is not None else getattr(test_client, method)(path)
+    def test_add_category_with_invalid_tag_is_400(self, test_client):
+        """A ``;`` inside one of the tags rejects the whole category."""
+        before = test_client.get("/api/tagging/categories").json()
+        response = test_client.post(
+            "/api/tagging/categories",
+            json={"name": "Health", "tags": ["Doctor", "Dentist;Ortho"]},
+        )
         assert response.status_code == 400
-        assert response.json()["detail"] == "nope"
+        assert test_client.get("/api/tagging/categories").json() == before
 
-    def test_delete_protected_category_reports_success_but_keeps_it(self, test_client):
-        """Protected categories survive a DELETE; the endpoint stays idempotent."""
+    def test_delete_protected_category_is_400(self, test_client):
+        """A protected category cannot be deleted and survives the request."""
         response = test_client.delete("/api/tagging/categories/Salary")
-        assert response.status_code == 200
+        assert response.status_code == 400
+        assert "protected" in response.json()["detail"]
         assert "Salary" in test_client.get("/api/tagging/categories").json()
 
-    def test_delete_unknown_tag_is_a_no_op(self, test_client):
-        """Deleting a tag the category does not have leaves the category untouched."""
+    def test_delete_unknown_category_is_404(self, test_client, db_session):
+        """Deleting a category that does not exist is 404 and touches no rows."""
+        from backend.models.transaction import BankTransaction
+
+        db_session.add(
+            BankTransaction(
+                id="bank_keep",
+                date="2024-01-05",
+                provider="hapoalim",
+                account_name="Checking",
+                description="Shufersal",
+                amount=-40.0,
+                category="Food",
+                tag="Groceries",
+                source="bank_transactions",
+            )
+        )
+        db_session.commit()
+
+        response = test_client.delete("/api/tagging/categories/DoesNotExist")
+        assert response.status_code == 404
+        assert "not found" in response.json()["detail"]
+
+        db_session.expire_all()
+        row = db_session.execute(
+            select(BankTransaction).where(BankTransaction.id == "bank_keep")
+        ).scalar_one()
+        assert (row.category, row.tag) == ("Food", "Groceries")
+
+    def test_create_tag_in_unknown_category_is_404(self, test_client):
+        """Adding a tag under a category that does not exist is 404."""
+        response = test_client.post(
+            "/api/tagging/tags", json={"category": "Nope", "name": "Snacks"}
+        )
+        assert response.status_code == 404
+        assert "not found" in response.json()["detail"]
+
+    @pytest.mark.parametrize("name", ["Groceries", "  ", "Snacks;Sweets"])
+    def test_create_duplicate_or_invalid_tag_is_400(self, test_client, name):
+        """A duplicate, blank or ``;``-containing tag name is rejected with 400."""
+        response = test_client.post(
+            "/api/tagging/tags", json={"category": "Food", "name": name}
+        )
+        assert response.status_code == 400
+        assert "Cannot add tag" in response.json()["detail"]
+        assert test_client.get("/api/tagging/categories").json()["Food"] == [
+            "Groceries",
+            "Restaurants",
+        ]
+
+    def test_delete_unknown_tag_is_404(self, test_client):
+        """Deleting a tag the category does not have is 404, category untouched."""
         response = test_client.delete("/api/tagging/tags/Food/DoesNotExist")
-        assert response.status_code == 200
-        assert test_client.get("/api/tagging/categories").json()["Food"] == ["Groceries", "Restaurants"]
+        assert response.status_code == 404
+        assert "not found" in response.json()["detail"]
+        assert test_client.get("/api/tagging/categories").json()["Food"] == [
+            "Groceries",
+            "Restaurants",
+        ]
+
+    @pytest.mark.parametrize(
+        "old_category, new_category, tag",
+        [
+            ("Nope", "Transport", "Groceries"),
+            ("Food", "Nope", "Groceries"),
+            ("Food", "Transport", "DoesNotExist"),
+        ],
+        ids=["unknown-old", "unknown-new", "unknown-tag"],
+    )
+    def test_relocate_unknown_entity_is_404(
+        self, test_client, db_session, old_category, new_category, tag
+    ):
+        """A missing category or tag makes a relocate 404 and changes no row."""
+        from backend.models.transaction import BankTransaction
+
+        db_session.add(
+            BankTransaction(
+                id="bank_reloc_fail",
+                date="2024-01-05",
+                provider="hapoalim",
+                account_name="Checking",
+                description="Shufersal",
+                amount=-40.0,
+                category="Food",
+                tag="Groceries",
+                source="bank_transactions",
+            )
+        )
+        db_session.commit()
+
+        response = test_client.post(
+            "/api/tagging/tags/relocate",
+            json={
+                "old_category": old_category,
+                "new_category": new_category,
+                "tag": tag,
+            },
+        )
+        assert response.status_code == 404
+
+        db_session.expire_all()
+        row = db_session.execute(
+            select(BankTransaction).where(BankTransaction.id == "bank_reloc_fail")
+        ).scalar_one()
+        assert (row.category, row.tag) == ("Food", "Groceries")
+
+    def test_relocate_tag_to_its_own_category_is_400(self, test_client):
+        """Moving a tag to the category it already lives in is rejected."""
+        response = test_client.post(
+            "/api/tagging/tags/relocate",
+            json={
+                "old_category": "Food",
+                "new_category": "Food",
+                "tag": "Groceries",
+            },
+        )
+        assert response.status_code == 400
+        assert "itself" in response.json()["detail"]
 
 
 class TestRenameRoutes:

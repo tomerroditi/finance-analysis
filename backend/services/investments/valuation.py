@@ -30,8 +30,10 @@ class ValuationMixin:
     def calculate_current_balance(self, investment_id: int) -> float:
         """Calculate the current balance for an investment.
 
-        Uses the latest balance snapshot if available, otherwise falls back
-        to the transaction-based calculation ``-(sum of amounts)``.
+        Uses the latest balance snapshot if available — carried forward by
+        the transactions recorded after it (see
+        :meth:`_carry_snapshot_forward`) — otherwise falls back to the
+        transaction-based calculation ``-(sum of amounts)``.
         Returns ``0.0`` for closed investments.
 
         Parameters
@@ -53,17 +55,16 @@ class ValuationMixin:
         if inv["is_closed"]:
             return 0.0
 
-        # Try snapshot first
+        transactions_df = self._get_all_transactions_for_investment(
+            inv["category"], inv["tag"], investment_id=investment_id
+        )
         latest = self.snapshots_repo.get_latest_snapshot_on_or_before(
             investment_id, date.today().strftime("%Y-%m-%d")
         )
         if latest is not None:
-            return float(latest["balance"])
-
-        # Fall back to transaction-based
-        transactions_df = self._get_all_transactions_for_investment(
-            inv["category"], inv["tag"], investment_id=investment_id
-        )
+            return self._carry_snapshot_forward(
+                float(latest["balance"]), str(latest["date"]), transactions_df
+            )
         return self._calculate_balance_from_transactions(transactions_df)
 
     def get_hishtalmut_total_balance(self) -> float | None:
@@ -91,7 +92,8 @@ class ValuationMixin:
 
         Per investment, applies the same resolution as
         ``calculate_current_balance``: latest snapshot on or before
-        ``target_date`` if present, otherwise the transaction-based
+        ``target_date`` if present (plus the transactions recorded after
+        it, up to ``target_date``), otherwise the transaction-based
         ``-sum(amounts up to target_date)``. Closed investments are
         included — they auto-receive a 0-balance snapshot at close, so
         the snapshot-first logic naturally returns 0 for dates after
@@ -123,7 +125,9 @@ class ValuationMixin:
         single-date method: the latest snapshot on or before the date if one
         exists (snapshots are unique per ``(investment, date)`` and stored as
         ``YYYY-MM-DD`` strings, so an ordered lexical search is exact),
-        otherwise the transaction-based ``-sum(amounts up to the date)``.
+        carried forward by the transactions between the snapshot and the
+        date; otherwise the transaction-based ``-sum(amounts up to the
+        date)``.
 
         Parameters
         ----------
@@ -152,19 +156,19 @@ class ValuationMixin:
                 snapshots["balance"].tolist() if not snapshots.empty else []
             )
 
-            # Transactions are only needed for dates with no preceding
-            # snapshot; fetch lazily so investments fully covered by snapshots
-            # never touch the transactions table.
-            txns = None
+            txns = self._get_all_transactions_for_investment(
+                inv["category"], inv["tag"], investment_id=inv_id
+            )
             for target_date in target_dates:
                 idx = bisect_right(snapshot_dates, target_date) - 1
                 if idx >= 0:
-                    totals[target_date] += float(snapshot_balances[idx])
-                    continue
-                if txns is None:
-                    txns = self._get_all_transactions_for_investment(
-                        inv["category"], inv["tag"], investment_id=inv_id
+                    totals[target_date] += self._carry_snapshot_forward(
+                        float(snapshot_balances[idx]),
+                        str(snapshot_dates[idx]),
+                        txns,
+                        as_of_date=target_date,
                     )
+                    continue
                 totals[target_date] += self._calculate_balance_from_transactions(
                     txns, as_of_date=target_date
                 )
@@ -184,7 +188,11 @@ class ValuationMixin:
 
         When balance snapshots exist, interpolates linearly between snapshot
         points. Falls back to the transaction-based approach for dates before
-        the first snapshot or when no snapshots exist.
+        the first snapshot or when no snapshots exist. Past the newest
+        snapshot the line is that snapshot carried forward by the
+        transactions recorded after it (a deposit made after the last
+        valuation raises the balance instead of vanishing until the next
+        snapshot).
 
         Parameters
         ----------
@@ -272,7 +280,13 @@ class ValuationMixin:
                             float(nxt["balance"]) - float(prev["balance"])
                         )
                 elif not before.empty:
-                    balance = float(before.iloc[-1]["balance"])
+                    prev = before.iloc[-1]
+                    balance = self._carry_snapshot_forward(
+                        float(prev["balance"]),
+                        prev["date"].strftime("%Y-%m-%d"),
+                        transactions_df,
+                        as_of_date=d_str,
+                    )
                 else:
                     balance = self._calculate_balance_from_transactions(
                         transactions_df, as_of_date=d_str
@@ -365,12 +379,15 @@ class ValuationMixin:
             current_balance = 0.0
             absolute_profit_loss = total_withdrawals - total_deposits
         else:
-            # Try snapshot first, fall back to transaction-based
+            # Snapshot first (carried forward by later transactions), fall
+            # back to transaction-based
             latest = self.snapshots_repo.get_latest_snapshot_on_or_before(
                 investment_id, date.today().strftime("%Y-%m-%d")
             )
             if latest is not None:
-                current_balance = float(latest["balance"])
+                current_balance = self._carry_snapshot_forward(
+                    float(latest["balance"]), str(latest["date"]), transactions_df
+                )
             else:
                 current_balance = self._calculate_balance_from_transactions(transactions_df)
             absolute_profit_loss = current_balance - net_invested
@@ -671,13 +688,63 @@ class ValuationMixin:
             [manual_txns[common_cols], ins_txns[common_cols]], ignore_index=True
         )
 
+    def _carry_snapshot_forward(
+        self,
+        snapshot_balance: float,
+        snapshot_date: str,
+        transactions_df: pd.DataFrame,
+        as_of_date: Optional[str] = None,
+    ) -> float:
+        """Resolve a balance from a snapshot plus the transactions after it.
+
+        A snapshot is an observation of the whole holding on its date, so
+        transactions on or before that date are already inside it. Anything
+        recorded strictly after the snapshot (and on or before
+        ``as_of_date``) has not been observed yet and is added on top with
+        the usual sign convention (a deposit of ``-1000`` adds ``1000``).
+
+        Parameters
+        ----------
+        snapshot_balance : float
+            Balance recorded by the snapshot.
+        snapshot_date : str
+            Snapshot date in ``YYYY-MM-DD`` format.
+        transactions_df : pd.DataFrame
+            All transactions of the investment.
+        as_of_date : str, optional
+            Cut-off date (inclusive) in ``YYYY-MM-DD`` format. Defaults to
+            today.
+
+        Returns
+        -------
+        float
+            The carried-forward balance.
+        """
+        return snapshot_balance + self._calculate_balance_from_transactions(
+            transactions_df, as_of_date=as_of_date, after_date=snapshot_date
+        )
+
     def _calculate_balance_from_transactions(
-        self, transactions_df: pd.DataFrame, as_of_date: Optional[str] = None
+        self,
+        transactions_df: pd.DataFrame,
+        as_of_date: Optional[str] = None,
+        after_date: Optional[str] = None,
     ) -> float:
         """
         Calculate balance from transactions.
         Deposits are negative amounts (money leaving account to investment),
         so we negate them to get positive balance.
+
+        Parameters
+        ----------
+        transactions_df : pd.DataFrame
+            Transactions to sum.
+        as_of_date : str, optional
+            Include transactions dated on or before this ``YYYY-MM-DD`` date.
+            Defaults to today.
+        after_date : str, optional
+            When given, only transactions dated strictly after this
+            ``YYYY-MM-DD`` date are included.
         """
         if as_of_date is None:
             as_of_date = datetime.today().date()
@@ -690,7 +757,11 @@ class ValuationMixin:
         transactions_df = transactions_df.copy()
         transactions_df["date"] = pd.to_datetime(transactions_df["date"])
 
-        filtered_df = transactions_df.loc[transactions_df["date"].dt.date <= as_of_date]
+        txn_dates = transactions_df["date"].dt.date
+        mask = txn_dates <= as_of_date
+        if after_date is not None:
+            mask &= txn_dates > datetime.strptime(after_date, "%Y-%m-%d").date()
+        filtered_df = transactions_df.loc[mask]
 
         if filtered_df.empty:
             return 0.0

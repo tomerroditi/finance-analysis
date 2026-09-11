@@ -34,7 +34,8 @@ class SnapshotsMixin:
         balance : float
             Market value on this date.
         source : str
-            Origin: ``"manual"``, ``"scraped"``, or ``"calculated"``.
+            Origin: ``"manual"``, ``"scraped"``, ``"calculated"``, or
+            ``"closed"`` (the zero written by ``close_investment``).
         """
         self.snapshots_repo.upsert_snapshot(investment_id, date, balance, source)
 
@@ -50,7 +51,13 @@ class SnapshotsMixin:
         -------
         list[dict]
             Snapshot records ordered by date, with ``NaN`` replaced by ``None``.
+
+        Raises
+        ------
+        EntityNotFoundException
+            If no investment with ``investment_id`` exists.
         """
+        self.investments_repo.get_by_id(investment_id)
         df = self.snapshots_repo.get_snapshots_for_investment(investment_id)
         if df.empty:
             return []
@@ -88,7 +95,9 @@ class SnapshotsMixin:
 
         Replays the transaction timeline with daily compounding to produce
         monthly snapshots. Existing ``"calculated"`` snapshots are cleared first;
-        manual/scraped snapshots are preserved.
+        manual/scraped snapshots are preserved. The replayed balance never
+        drops below zero — an over-withdrawal empties the holding instead of
+        producing negative snapshots.
 
         Supports two rate types:
 
@@ -201,9 +210,12 @@ class SnapshotsMixin:
                 daily_rate = rate_curve[next_step][1]
                 next_step += 1
 
-            # Apply transactions for this day (negative = deposit adds to balance)
+            # Apply transactions for this day (negative = deposit adds to balance).
+            # A withdrawal larger than the holding empties it; the excess is a
+            # data-entry error, not a debt, so the balance floors at zero
+            # rather than persisting negative snapshots.
             if current in txn_by_date:
-                balance -= txn_by_date[current]  # negate: deposit(-1000) -> +1000
+                balance = max(balance - txn_by_date[current], 0.0)
 
             # Apply daily interest
             if balance > 0:

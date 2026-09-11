@@ -2,7 +2,8 @@
 Tagging Rules API routes.
 
 Provides endpoints to manage and apply auto-tagging rules. Rules are evaluated
-in priority order (highest first); the first matching rule wins.
+in creation order (oldest first) and the first matching rule wins; overlapping
+rules that would assign different category/tag pairs are rejected on save.
 """
 
 from typing import Any, Dict, Optional
@@ -59,7 +60,6 @@ class RuleUpdate(BaseModel):
     conditions: Optional[Dict[str, Any]] = None
     category: Optional[str] = None
     tag: Optional[str] = None
-    priority: Optional[int] = None
 
 
 class RuleValidate(BaseModel):
@@ -108,11 +108,15 @@ def update_tagging_rule(
 ):
     """Update an existing tagging rule and re-apply it.
 
+    Untagged transactions matching the updated rule are tagged; when the
+    rule's category or tag changed, transactions still carrying its previous
+    category/tag and matching the rule are moved to the new pair.
+
     Returns
     -------
     dict
         ``{"status": "success", "tagged_count": int}`` where ``tagged_count``
-        is the number of transactions tagged after the update.
+        is the number of transactions tagged or re-tagged after the update.
 
     Raises
     ------
@@ -142,7 +146,10 @@ def apply_tagging_rules(
     Parameters
     ----------
     overwrite : bool, optional
-        When ``True``, re-tag already-tagged transactions.
+        When ``True``, reset every transaction matching a rule to that rule's
+        category/tag — including transactions tagged by hand, since the
+        tables keep no record of how a tag was set. Rules run in creation
+        order and the first match wins in both modes.
         When ``False`` (default), only tag transactions with no category/tag.
 
     Returns

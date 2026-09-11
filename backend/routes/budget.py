@@ -8,7 +8,7 @@ from datetime import date
 from typing import Any, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, model_validator
 from sqlalchemy.orm import Session
 
 from backend.dependencies import get_database
@@ -24,14 +24,35 @@ from backend.services.budget_service import (
 
 router = APIRouter()
 
+# Calendar bounds shared by request bodies and path parameters. Years outside
+# this window are typos, not budgets, and used to reach the service layer as
+# real rows (or, for auto-fill, hundreds of them).
+MIN_YEAR = 2000
+MAX_YEAR = 2100
+
+YearPath = Path(ge=MIN_YEAR, le=MAX_YEAR)
+MonthPath = Path(ge=1, le=12)
+
 
 class BudgetRuleCreate(ApiRequestModel):
     name: str
     amount: float
     category: str
     tags: str | List[str]
-    month: Optional[int] = None
-    year: Optional[int] = None
+    month: Optional[int] = Field(None, ge=1, le=12)
+    year: Optional[int] = Field(None, ge=MIN_YEAR, le=MAX_YEAR)
+
+    @model_validator(mode="after")
+    def _month_and_year_together(self) -> "BudgetRuleCreate":
+        """A monthly rule needs both ``month`` and ``year``; a project rule neither.
+
+        ``year`` alone would mint a yearly row through the monthly endpoint
+        (bypassing the yearly service's validation), and ``month`` alone a
+        monthly row with no year.
+        """
+        if (self.month is None) != (self.year is None):
+            raise ValueError("month and year must be given together")
+        return self
 
 
 class BudgetRuleUpdate(ApiRequestModel):
@@ -46,7 +67,7 @@ class YearlyRuleCreate(ApiRequestModel):
     amount: float
     category: str
     tags: str | List[str]
-    year: int
+    year: int = Field(ge=MIN_YEAR, le=MAX_YEAR)
 
 
 class YearlyRuleUpdate(ApiRequestModel):
@@ -77,7 +98,9 @@ def get_budget_rules(
 
 @router.get("/rules/{year}/{month}")
 def get_budget_rules_by_month(
-    year: int, month: int, db: Session = Depends(get_database)
+    year: int = YearPath,
+    month: int = MonthPath,
+    db: Session = Depends(get_database),
 ) -> list[dict]:
     """Get budget rules for a specific month."""
     service = MonthlyBudgetService(db)
@@ -134,7 +157,9 @@ def delete_budget_rule(
 
 @router.post("/rules/{year}/{month}/copy")
 def copy_previous_month_rules(
-    year: int, month: int, db: Session = Depends(get_database)
+    year: int = YearPath,
+    month: int = MonthPath,
+    db: Session = Depends(get_database),
 ) -> dict[str, str]:
     """Copy budget rules from the previous calendar month into the given month.
 
@@ -170,8 +195,8 @@ def copy_previous_month_rules(
 
 @router.get("/analysis/{year}/{month}")
 def get_monthly_analysis(
-    year: int,
-    month: int,
+    year: int = YearPath,
+    month: int = MonthPath,
     include_split_parents: bool = Query(False),
     db: Session = Depends(get_database),
 ) -> dict[str, Any]:
@@ -263,8 +288,8 @@ def get_current_month_alerts(
 
 @router.get("/alerts/{year}/{month}")
 def get_month_alerts(
-    year: int,
-    month: int,
+    year: int = YearPath,
+    month: int = MonthPath,
     threshold: float = Query(0.8, ge=0.0, le=1.0),
     db: Session = Depends(get_database),
 ) -> dict[str, Any]:
@@ -294,7 +319,7 @@ def get_month_alerts(
 
 @router.get("/yearly/{year}")
 def get_yearly_view(
-    year: int,
+    year: int = YearPath,
     include_split_parents: bool = Query(False),
     db: Session = Depends(get_database),
 ) -> dict[str, Any]:
@@ -306,7 +331,7 @@ def get_yearly_view(
 
 @router.get("/yearly/{year}/analysis")
 def get_yearly_analysis(
-    year: int,
+    year: int = YearPath,
     include_split_parents: bool = Query(False),
     db: Session = Depends(get_database),
 ) -> dict[str, Any]:
@@ -352,7 +377,7 @@ def delete_yearly_rule(
 
 @router.post("/yearly/{year}/copy")
 def copy_previous_year_rules(
-    year: int, db: Session = Depends(get_database)
+    year: int = YearPath, db: Session = Depends(get_database)
 ) -> dict[str, Any]:
     """Force-copy the latest prior year's yearly rules into ``year``.
 
@@ -370,7 +395,7 @@ def copy_previous_year_rules(
 
 @router.get("/yearly/alerts/{year}")
 def get_yearly_alerts(
-    year: int,
+    year: int = YearPath,
     threshold: float = Query(0.8, ge=0.0, le=1.0),
     db: Session = Depends(get_database),
 ) -> dict[str, Any]:

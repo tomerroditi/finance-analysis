@@ -172,9 +172,14 @@ class BudgetRepository:
         Raises
         ------
         EntityNotFoundException
-            If no rule with the given ID exists.
+            If no rule with the given ID exists — even when ``fields`` is
+            empty, so an empty update never reports success for a missing row.
         """
         if not fields:
+            if self.db.get(BudgetRule, id_) is None:
+                raise EntityNotFoundException(
+                    f"No rule found with ID {id_}. Update failed."
+                )
             return
 
         stmt = update(BudgetRule).where(BudgetRule.id == id_).values(**fields)
@@ -232,12 +237,11 @@ class BudgetRepository:
 
         Notes
         -----
-        Only deletes project rules, i.e. rows where both year and month are NULL.
+        Only deletes project rules (``period_type == "project"``).
         """
         stmt = delete(BudgetRule).where(
             BudgetRule.category == category,
-            BudgetRule.year.is_(None),
-            BudgetRule.month.is_(None),
+            BudgetRule.period_type == PERIOD_PROJECT,
         )
         self.db.execute(stmt)
         self.db.commit()
@@ -254,13 +258,12 @@ class BudgetRepository:
 
         Notes
         -----
-        Only deletes project rules where both year and month are NULL.
+        Only deletes project rules (``period_type == "project"``).
         """
         stmt = delete(BudgetRule).where(
             BudgetRule.category == category,
             BudgetRule.tags == tags,
-            BudgetRule.year.is_(None),
-            BudgetRule.month.is_(None),
+            BudgetRule.period_type == PERIOD_PROJECT,
         )
         self.db.execute(stmt)
         self.db.commit()
@@ -275,21 +278,23 @@ class BudgetRepository:
         self.db.execute(stmt)
         self.db.commit()
 
-    def rename_tag(self, old_tag: str, new_tag: str) -> None:
-        """Rename tag across all budget rules.
+    def rename_tag(self, category: str, old_tag: str, new_tag: str) -> None:
+        """Rename a tag in the budget rules of one category.
 
-        Budget tags are semicolon-separated strings (``"tag1;tag2"``). A bulk
-        SQL ``REPLACE`` is unsafe here: it would corrupt substring matches
-        (renaming ``"food"`` would also hit ``"fastfood"``). So we keep the
-        per-row split/parse for correctness, but narrow the candidate set with
-        a ``LIKE`` filter so only rows whose tag string actually contains
+        Tags are scoped to their category (``Home/Rent`` and ``Other/Rent``
+        are different tags), so only rules whose ``category`` matches are
+        touched. Budget tags are semicolon-separated strings (``"tag1;tag2"``).
+        A bulk SQL ``REPLACE`` is unsafe here: it would corrupt substring
+        matches (renaming ``"food"`` would also hit ``"fastfood"``). So we keep
+        the per-row split/parse for correctness, but narrow the candidate set
+        with a ``LIKE`` filter so only rows whose tag string actually contains
         ``old_tag`` as a substring are loaded — the per-row parse then rejects
-        any false-positive substring matches. This reduces N from "every rule
-        with tags" to "every rule mentioning this tag".
+        any false-positive substring matches.
         """
         rules = (
             self.db.query(BudgetRule)
             .filter(
+                BudgetRule.category == category,
                 BudgetRule.tags.isnot(None),
                 BudgetRule.tags.like(f"%{old_tag}%"),
             )
@@ -300,6 +305,35 @@ class BudgetRepository:
             if old_tag in tags:
                 tags = [new_tag if t == old_tag else t for t in tags]
                 rule.tags = ";".join(tags)
+        self.db.commit()
+
+    def reallocate_tag(self, old_category: str, new_category: str, tag: str) -> None:
+        """Follow a tag that moved from ``old_category`` to ``new_category``.
+
+        A rule that budgets only this tag moves with it (its ``category``
+        becomes ``new_category``). A rule that budgets several tags keeps its
+        envelope under ``old_category`` and simply drops the moved tag — the
+        amount cannot be split between two categories without the user
+        deciding how, and leaving a tag the category no longer owns would
+        make the rule reference a tag that matches nothing.
+        """
+        rules = (
+            self.db.query(BudgetRule)
+            .filter(
+                BudgetRule.category == old_category,
+                BudgetRule.tags.isnot(None),
+                BudgetRule.tags.like(f"%{tag}%"),
+            )
+            .all()
+        )
+        for rule in rules:
+            tags = rule.tags.split(";") if rule.tags else []
+            if tag not in tags:
+                continue
+            if tags == [tag]:
+                rule.category = new_category
+            else:
+                rule.tags = ";".join(t for t in tags if t != tag)
         self.db.commit()
 
     def _assure_table_exists(self) -> None:

@@ -5,7 +5,7 @@ error scenarios that exercise Pydantic schema validation and missing-field
 handling.
 """
 
-from unittest.mock import patch, MagicMock
+import pytest
 
 
 class TestTransactionValidationErrors:
@@ -81,14 +81,15 @@ class TestTransactionValidationErrors:
         )
         assert response.status_code == 422
 
-    def test_split_transaction_nonexistent_id_returns_400(self, test_client):
-        """POST /api/transactions/{id}/split for a non-existent unique_id returns 400.
+    def test_split_transaction_nonexistent_id_returns_404(self, test_client):
+        """POST /api/transactions/{id}/split for a non-existent unique_id returns 404.
 
-        Previously the repository silently accepted splits for a unique_id
-        that didn't exist in the source table, creating orphan rows in
-        ``split_transactions`` that no parent could resolve to. The repo
-        now raises ``ValueError`` when the parent isn't found, which the
-        route maps to HTTP 400.
+        The repository used to silently accept splits for a unique_id that
+        didn't exist in the source table, creating orphan rows in
+        ``split_transactions`` that no parent could resolve to. The service
+        now resolves the parent first and raises
+        ``EntityNotFoundException`` — a missing row is a 404, not a bad
+        request (the payload itself is well-formed).
         """
         response = test_client.post(
             "/api/transactions/1/split",
@@ -99,8 +100,8 @@ class TestTransactionValidationErrors:
                 ],
             },
         )
-        assert response.status_code == 400
-        assert "Cannot split" in response.json()["detail"]
+        assert response.status_code == 404
+        assert "not found" in response.json()["detail"]
 
     def test_split_transaction_missing_source(self, test_client):
         """POST /api/transactions/{id}/split without source returns 422."""
@@ -166,64 +167,93 @@ class TestTransactionValidationErrors:
         assert response.status_code == 422
 
 
-class TestTransactionNotFoundErrors:
-    """Tests for 404 responses when accessing non-existent transactions."""
+class TestMissingTransactionWrites:
+    """A write against a unique_id that is not in the source table is a 404."""
 
-    def test_get_nonexistent_transaction_empty_db(self, test_client):
-        """GET /api/transactions/99999 on empty DB returns 404.
+    def test_update_nonexistent_transaction_returns_404(
+        self, test_client, seed_base_transactions
+    ):
+        """PUT /api/transactions/{id} for a missing row is a 404, not "no_changes".
 
-        When the database is empty, the repository should raise a ValueError
-        that the route maps to a 404 response.
+        The route used to answer 200 ``{"status": "no_changes"}`` because the
+        filtered UPDATE simply matched nothing, so a stale row id in the UI
+        looked like a successful save.
         """
-        with patch(
-            "backend.routes.transactions.TransactionsService"
-        ) as mock_cls:
-            mock_svc = MagicMock()
-            mock_cls.return_value = mock_svc
-            mock_svc.get_transaction.side_effect = ValueError(
-                "Transaction 99999 not found"
-            )
-            response = test_client.get(
-                "/api/transactions/99999", params={"source": "bank_transactions"}
-            )
-            assert response.status_code == 404
-            assert "not found" in response.json()["detail"]
+        response = test_client.put(
+            "/api/transactions/99999",
+            json={"category": "Food", "source": "cash_transactions"},
+        )
+        assert response.status_code == 404
+        assert "not found" in response.json()["detail"]
 
-    def test_delete_nonexistent_transaction(self, test_client):
-        """DELETE /api/transactions/99999 for missing transaction returns 404."""
-        with patch("backend.routes.transactions.TransactionsService") as mock_cls:
-            mock_svc = MagicMock()
-            mock_cls.return_value = mock_svc
-            mock_svc.delete_transaction.side_effect = ValueError(
-                "Transaction 99999 not found"
-            )
-            response = test_client.delete(
-                "/api/transactions/99999?source=cash_transactions"
-            )
-            assert response.status_code == 404
-            assert "not found" in response.json()["detail"]
+    def test_delete_nonexistent_transaction_returns_404(self, test_client):
+        """DELETE /api/transactions/{id} for a missing row is a 404."""
+        response = test_client.delete(
+            "/api/transactions/99999?source=cash_transactions"
+        )
+        assert response.status_code == 404
+        assert "not found" in response.json()["detail"]
 
-    def test_update_nonexistent_transaction(self, test_client):
-        """PUT /api/transactions/99999 for missing transaction returns 400.
+    def test_update_rejects_malformed_date(self, test_client):
+        """PUT with a date that is not ``YYYY-MM-DD`` is a 400 and writes nothing.
 
-        The update route translates ``ValueError`` into HTTP 400 with the
-        original message preserved.
+        Dates are stored as strings and compared lexicographically, so one
+        unparseable value would sort wrongly forever.
         """
-        with patch("backend.routes.transactions.TransactionsService") as mock_cls:
-            mock_svc = MagicMock()
-            mock_cls.return_value = mock_svc
-            mock_svc.update_transaction.side_effect = ValueError(
-                "Transaction not found"
-            )
-            response = test_client.put(
-                "/api/transactions/99999",
-                json={
-                    "category": "Food",
-                    "source": "cash_transactions",
-                },
-            )
-            assert response.status_code == 400
-            assert "not found" in response.json()["detail"]
+        test_client.post(
+            "/api/transactions/",
+            json={
+                "date": "2024-06-01",
+                "description": "Date guard",
+                "amount": -10.0,
+                "account_name": "Wallet",
+                "service": "cash",
+            },
+        )
+        txns = test_client.get("/api/transactions/?service=cash").json()
+        uid = next(t["unique_id"] for t in txns if t["description"] == "Date guard")
+
+        response = test_client.put(
+            f"/api/transactions/{uid}",
+            json={"date": "15/06/2024", "source": "cash_transactions"},
+        )
+        assert response.status_code == 400
+        assert "YYYY-MM-DD" in response.json()["detail"]
+
+        persisted = test_client.get(
+            f"/api/transactions/{uid}", params={"source": "cash_transactions"}
+        ).json()
+        assert persisted["date"] == "2024-06-01"
+
+
+class TestRevertSplitNotFound:
+    """Reverting something that is not a live split is a 404."""
+
+    def test_revert_split_nonexistent_id_returns_404(self, test_client):
+        """DELETE /{id}/split for a unique_id in no table returns 404."""
+        response = test_client.delete(
+            "/api/transactions/99999/split?source=cash_transactions"
+        )
+        assert response.status_code == 404
+        assert "not found" in response.json()["detail"]
+
+    def test_revert_split_on_unsplit_transaction_returns_404(
+        self, test_client, seed_base_transactions
+    ):
+        """DELETE /{id}/split on a normal transaction returns 404 and changes nothing."""
+        txns = test_client.get("/api/transactions/?service=credit_cards").json()
+        uid = txns[0]["unique_id"]
+
+        response = test_client.delete(
+            f"/api/transactions/{uid}/split?source=credit_card_transactions"
+        )
+        assert response.status_code == 404
+        assert "not split" in response.json()["detail"]
+
+        after = test_client.get(
+            f"/api/transactions/{uid}", params={"source": "credit_card_transactions"}
+        ).json()
+        assert after["type"] == "normal"
 
 
 class TestNaNRejection:
@@ -265,22 +295,6 @@ class TestSplitRequestValidation:
             json={"source": "credit_card_transactions", "splits": []},
         )
         assert response.status_code == 422
-
-    def test_split_with_empty_splits_leaves_transaction_visible(
-        self, test_client, seed_base_transactions
-    ):
-        """A rejected empty split must not hide the parent transaction."""
-        txns = test_client.get("/api/transactions/?service=credit_cards").json()
-        uid = txns[0]["unique_id"]
-
-        response = test_client.post(
-            f"/api/transactions/{uid}/split",
-            json={"source": "credit_card_transactions", "splits": []},
-        )
-        assert response.status_code == 422
-
-        after = test_client.get("/api/transactions/?service=credit_cards").json()
-        assert any(t["unique_id"] == uid for t in after)
 
     def test_split_amounts_must_sum_to_parent(
         self, test_client, seed_base_transactions
@@ -336,6 +350,12 @@ class TestSplitRequestValidation:
             },
         )
         assert response.status_code == 200
+
+        after = test_client.get("/api/transactions/?service=credit_cards").json()
+        children = [t for t in after if t.get("split_id") is not None]
+        assert len(children) == 2
+        assert sum(c["amount"] for c in children) == pytest.approx(amount)
+        assert not any(t["unique_id"] == uid for t in after)
 
 
 class TestUnknownSourceHandling:

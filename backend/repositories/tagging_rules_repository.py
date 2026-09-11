@@ -27,10 +27,12 @@ class TaggingRulesRepository:
         -------
         pd.DataFrame
             DataFrame with columns id, name, conditions, category, tag,
-            created_at, updated_at. Returns an empty DataFrame with those
-            columns if no rules exist.
+            created_at, updated_at, in creation order (``id`` ascending) —
+            the order rules are applied in, so the first match wins
+            deterministically. Returns an empty DataFrame with those columns
+            if no rules exist.
         """
-        query = select(TaggingRule)
+        query = select(TaggingRule).order_by(TaggingRule.id)
 
         rules = self.db.execute(query).scalars().all()
 

@@ -56,6 +56,18 @@ class TestFromEnv:
         assert client is not None
         assert client.store_id == "store123"
 
+    def test_returns_none_for_a_token_without_a_store_id(self, monkeypatch):
+        """Verify a truncated token reads as "no Blob store", not as durable.
+
+        Downloads address the store by the id parsed out of the token, so a
+        client built from an unparseable one could never read a sandbox back
+        while still reporting ``blob_configured: true`` — exactly the silent
+        non-persistence the status flag exists to expose.
+        """
+        monkeypatch.setenv(vercel_blob.TOKEN_ENV, "vercel_blob_rw")
+
+        assert VercelBlobClient.from_env() is None
+
     def test_rejects_unknown_access_mode(self):
         """Verify a typo in the access mode fails loudly at construction."""
         with pytest.raises(ValueError):

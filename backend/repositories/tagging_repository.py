@@ -137,7 +137,14 @@ class TaggingRepository:
             If no category with old_name exists.
         EntityAlreadyExistsException
             If a category with new_name already exists.
+
+        Notes
+        -----
+        Renaming a category to its own name is a no-op, not a collision.
         """
+        if old_name == new_name:
+            self._get_category(old_name)
+            return
         existing = self.db.execute(
             select(Category).where(Category.name == new_name)
         ).scalar_one_or_none()
@@ -173,6 +180,8 @@ class TaggingRepository:
             raise EntityNotFoundException(
                 f"Tag '{old_tag}' not found in category '{category}'"
             )
+        if old_tag == new_tag:
+            return
         if new_tag in cat.tags:
             raise EntityAlreadyExistsException(
                 f"Tag '{new_tag}' already exists in category '{category}'"

@@ -5,29 +5,12 @@ Covers singleton behavior, demo mode switching, directory resolution,
 database/credentials/categories path generation, and environment variable overrides.
 """
 
+import contextvars
 import os
 
 import pytest
 
 from backend.config import AppConfig, _demo_mode_ctx
-
-
-@pytest.fixture(autouse=True)
-def reset_config():
-    """Reset AppConfig singleton state between tests."""
-    config = AppConfig()
-    # For the new contextvar-based system, capture the current value
-    # and reset it after the test
-    token = _demo_mode_ctx.set(_demo_mode_ctx.get())
-    # Restore the *override* rather than the resolved path: assigning the
-    # resolved string back would pin the singleton to whatever FAD_USER_DIR
-    # happened to be, and every later test's env override would be ignored.
-    original_override = config._base_user_dir_override
-    original_forced_mode = AppConfig._forced_mode
-    yield
-    _demo_mode_ctx.reset(token)
-    config._base_user_dir_override = original_override
-    AppConfig._forced_mode = original_forced_mode
 
 
 class TestAppConfig:
@@ -40,10 +23,8 @@ class TestAppConfig:
         assert config_a is config_b
 
     def test_is_demo_mode_default_false(self):
-        """Verify default demo mode is False."""
-        config = AppConfig()
-        config.set_demo_mode(False)
-        assert config.is_demo_mode is False
+        """Verify a fresh context (nothing ever set) reads real mode."""
+        assert contextvars.Context().run(lambda: AppConfig().is_demo_mode) is False
 
     def test_set_demo_mode_true(self, tmp_path):
         """Verify enabling demo mode sets is_demo_mode to True."""
@@ -52,9 +33,11 @@ class TestAppConfig:
         config.set_demo_mode(True)
         assert config.is_demo_mode is True
 
-    def test_set_demo_mode_false(self):
-        """Verify disabling demo mode sets is_demo_mode to False."""
+    def test_set_demo_mode_false(self, tmp_path):
+        """Verify disabling demo mode after enabling it reads real mode again."""
         config = AppConfig()
+        config._base_user_dir = str(tmp_path)
+        config.set_demo_mode(True)
         config.set_demo_mode(False)
         assert config.is_demo_mode is False
 
@@ -199,12 +182,6 @@ class TestAppConfig:
 class TestDemoModeContextIsolation:
     """Tests that the demo flag is context-local, not process-global."""
 
-    def test_flag_defaults_to_false(self):
-        """Verify a fresh context reads real mode."""
-        from backend.config import AppConfig
-
-        assert AppConfig().is_demo_mode is False
-
     def test_set_returns_token_and_reset_restores(self, tmp_path):
         """Verify set_demo_mode returns a token that reset_demo_mode honours."""
         from backend.config import AppConfig
@@ -221,8 +198,6 @@ class TestDemoModeContextIsolation:
 
     def test_separate_contexts_do_not_leak(self, tmp_path):
         """Verify demo mode set in one context is invisible in another."""
-        import contextvars
-
         from backend.config import AppConfig
 
         def read_flag() -> bool:
@@ -257,18 +232,34 @@ class TestDemoModeContextIsolation:
             AppConfig._forced_mode = None
             config.reset_demo_mode(token)
 
-    def test_forced_mode_none_defers_to_contextvar(self, tmp_path):
-        """Verify clearing _forced_mode restores context-driven behaviour."""
-        from backend.config import AppConfig
 
+class TestBaseUserDirOverride:
+    """Tests for the singleton's base-directory override slot."""
+
+    def test_env_var_is_honoured_when_no_override_is_set(self, monkeypatch, tmp_path):
+        """Verify FAD_USER_DIR is resolved at call time while un-pinned."""
         config = AppConfig()
-        # Pinned so set_demo_mode(True)'s os.makedirs(get_user_dir()) never
-        # touches the real ~/.finance-analysis/demo_env on the dev machine
-        # running this test.
+        assert config._base_user_dir_override is None
+        monkeypatch.setenv("FAD_USER_DIR", str(tmp_path / "env-dir"))
+        assert config.get_user_dir() == str(tmp_path / "env-dir")
+
+    def test_override_wins_over_env_and_none_unpins(self, monkeypatch, tmp_path):
+        """Verify assigning a path pins the singleton and ``None`` releases it."""
+        config = AppConfig()
+        monkeypatch.setenv("FAD_USER_DIR", str(tmp_path / "env-dir"))
+        config._base_user_dir = str(tmp_path / "pinned")
+        assert config.get_user_dir() == str(tmp_path / "pinned")
+        config._base_user_dir = None
+        assert config.get_user_dir() == str(tmp_path / "env-dir")
+
+    def test_override_lives_on_the_instance_not_the_class(self, tmp_path):
+        """Verify the setter and the reader use the same (instance) slot.
+
+        The old class-level default let a caller save the class attribute,
+        assign through the setter (which wrote the instance), and "restore"
+        the class attribute — leaving the pin in place for every later test.
+        """
+        config = AppConfig()
         config._base_user_dir = str(tmp_path)
-        AppConfig._forced_mode = None
-        token = config.set_demo_mode(True)
-        try:
-            assert config.is_demo_mode is True
-        finally:
-            config.reset_demo_mode(token)
+        assert "_base_user_dir_override" in vars(config)
+        assert "_base_user_dir_override" not in vars(AppConfig)

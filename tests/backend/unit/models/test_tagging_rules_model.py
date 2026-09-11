@@ -2,10 +2,28 @@
 Unit tests for TaggingRule ORM model.
 """
 
+import pytest
+from sqlalchemy import null
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from backend.constants.tables import Tables
 from backend.models.tagging_rules import TaggingRule
+
+
+def _valid_fields() -> dict:
+    """Return a complete, valid set of TaggingRule column values."""
+    return {
+        "name": "Grocery Stores",
+        "conditions": {
+            "type": "CONDITION",
+            "field": "description",
+            "operator": "contains",
+            "value": "supermarket",
+        },
+        "category": "Food",
+        "tag": "Groceries",
+    }
 
 
 class TestTaggingRule:
@@ -15,30 +33,8 @@ class TestTaggingRule:
         """Test that table name matches Tables enum."""
         assert TaggingRule.__tablename__ == Tables.TAGGING_RULES.value
 
-    def test_model_instantiation(self, db_session: Session):
-        """Test model can be instantiated with all fields."""
-        rule = TaggingRule(
-            name="Grocery Stores",
-            conditions={
-                "type": "CONDITION",
-                "field": "description",
-                "operator": "contains",
-                "value": "supermarket",
-            },
-            category="Food",
-            tag="Groceries",
-        )
-        db_session.add(rule)
-        db_session.commit()
-        db_session.refresh(rule)
-
-        assert rule.id is not None
-        assert rule.name == "Grocery Stores"
-        assert rule.category == "Food"
-        assert rule.tag == "Groceries"
-
     def test_conditions_stored_as_json(self, db_session: Session):
-        """Test that conditions are stored and retrieved as JSON."""
+        """A nested condition tree round-trips through the JSON column."""
         conditions = {
             "type": "AND",
             "subconditions": [
@@ -56,57 +52,29 @@ class TestTaggingRule:
                 },
             ],
         }
-        rule = TaggingRule(
-            name="JSON Rule",
-            conditions=conditions,
-            category="Other",
-            tag="Misc",
-        )
+        rule = TaggingRule(**{**_valid_fields(), "conditions": conditions})
         db_session.add(rule)
         db_session.commit()
         db_session.refresh(rule)
 
-        assert rule.conditions["type"] == "AND"
-        assert len(rule.conditions["subconditions"]) == 2
-
-    def test_nullable_constraints(self, db_session: Session):
-        """Test that name, conditions, category, and tag are required."""
-        rule = TaggingRule(
-            name="Required Fields",
-            conditions={
-                "type": "CONDITION",
-                "field": "description",
-                "operator": "contains",
-                "value": "x",
-            },
-            category="Test",
-            tag="Test",
-        )
-        db_session.add(rule)
-        db_session.commit()
-        db_session.refresh(rule)
-
-        assert rule.name is not None
-        assert rule.conditions is not None
-        assert rule.category is not None
-        assert rule.tag is not None
-
-    def test_inherits_timestamp_mixin(self, db_session: Session):
-        """Test model has TimestampMixin fields."""
-        rule = TaggingRule(
-            name="Timestamp Test",
-            conditions={
-                "type": "CONDITION",
-                "field": "description",
-                "operator": "contains",
-                "value": "x",
-            },
-            category="Test",
-            tag="Test",
-        )
-        db_session.add(rule)
-        db_session.commit()
-        db_session.refresh(rule)
-
-        assert hasattr(rule, "created_at")
+        assert rule.id is not None
+        assert rule.conditions == conditions
         assert rule.created_at is not None
+
+    @pytest.mark.parametrize("column", ["name", "conditions", "category", "tag"])
+    def test_required_column_rejects_null(self, db_session: Session, column):
+        """Each NOT NULL column actually raises IntegrityError when nulled.
+
+        The previous version of this test inserted a fully valid row and then
+        asserted the fields were not None, which can never fail and proved
+        nothing about the constraints.
+
+        The null is written as SQLAlchemy's ``null()`` rather than Python
+        ``None`` because ``conditions`` is a ``JSON`` column: with the default
+        ``none_as_null=False`` a Python ``None`` is serialised to the JSON
+        document ``null``, which satisfies NOT NULL.
+        """
+        db_session.add(TaggingRule(**{**_valid_fields(), column: null()}))
+
+        with pytest.raises(IntegrityError):
+            db_session.commit()

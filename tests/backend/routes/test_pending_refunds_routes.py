@@ -1,6 +1,37 @@
 """Tests for the /api/pending-refunds API endpoints."""
 
 
+def _mark_bank_expense(test_client, expected_amount: float = 100.0):
+    """Mark the first seeded bank expense as awaiting a refund.
+
+    A pending refund only exists over money that was actually spent, so the
+    source has to be a real transaction; pick one out of the seeded bank rows
+    and return the create response.
+
+    Parameters
+    ----------
+    test_client : starlette.testclient.TestClient
+        Client bound to the seeded test database.
+    expected_amount : float, optional
+        Amount to expect back; must not exceed the transaction's amount.
+
+    Returns
+    -------
+    httpx.Response
+        The ``POST /api/pending-refunds/`` response.
+    """
+    txns = test_client.get("/api/transactions/?service=banks").json()
+    expense = next(t for t in txns if t["amount"] <= -expected_amount)
+    return test_client.post(
+        "/api/pending-refunds/",
+        json={
+            "source_type": "transaction",
+            "source_id": expense["unique_id"],
+            "source_table": "banks",
+            "expected_amount": expected_amount,
+        },
+    )
+
 
 class TestPendingRefundsRoutes:
     """Tests for pending refund API endpoints."""
@@ -113,18 +144,16 @@ class TestPendingRefundsRoutes:
 class TestCloseRefundRoute:
     """Tests for POST /pending-refunds/{id}/close endpoint."""
 
-    def test_close_pending_refund(self, test_client):
+    def test_close_pending_refund(self, test_client, seed_base_transactions):
         """Close a pending refund returns closed status."""
-        create_resp = test_client.post("/api/pending-refunds/", json={
-            "source_type": "transaction",
-            "source_id": 1,
-            "source_table": "banks",
-            "expected_amount": 100.0,
-        })
-        pending_id = create_resp.json()["id"]
+        pending_id = _mark_bank_expense(test_client).json()["id"]
         response = test_client.post(f"/api/pending-refunds/{pending_id}/close")
         assert response.status_code == 200
         assert response.json()["status"] == "closed"
+        assert (
+            test_client.get(f"/api/pending-refunds/{pending_id}").json()["status"]
+            == "closed"
+        )
 
     def test_close_nonexistent_refund(self, test_client):
         """Close nonexistent refund returns 404."""
@@ -135,15 +164,9 @@ class TestCloseRefundRoute:
 class TestUnlinkRefundRoute:
     """Tests for DELETE /pending-refunds/links/{id} endpoint."""
 
-    def test_unlink_refund(self, test_client):
+    def test_unlink_refund(self, test_client, seed_base_transactions):
         """Unlink a refund returns updated status."""
-        create_resp = test_client.post("/api/pending-refunds/", json={
-            "source_type": "transaction",
-            "source_id": 1,
-            "source_table": "banks",
-            "expected_amount": 100.0,
-        })
-        pending_id = create_resp.json()["id"]
+        pending_id = _mark_bank_expense(test_client).json()["id"]
         link_resp = test_client.post(f"/api/pending-refunds/{pending_id}/link", json={
             "refund_transaction_id": 99,
             "refund_source": "banks",
@@ -155,11 +178,51 @@ class TestUnlinkRefundRoute:
         response = test_client.delete(f"/api/pending-refunds/links/{link_id}")
         assert response.status_code == 200
         assert response.json()["status"] == "pending"
+        after = test_client.get(f"/api/pending-refunds/{pending_id}").json()
+        assert after["links"] == []
+        assert after["total_refunded"] == 0
 
     def test_unlink_nonexistent_link(self, test_client):
         """Unlink nonexistent link returns 404."""
         response = test_client.delete("/api/pending-refunds/links/9999")
         assert response.status_code == 404
+
+
+class TestCreatePendingRefundValidation:
+    """The create route refuses refunds that no spend backs."""
+
+    def test_missing_source_transaction_returns_400(self, test_client):
+        """POST for a source_id that exists in no table returns 400."""
+        response = test_client.post(
+            "/api/pending-refunds/",
+            json={
+                "source_type": "transaction",
+                "source_id": 99999,
+                "source_table": "banks",
+                "expected_amount": 100.0,
+            },
+        )
+        assert response.status_code == 400
+        assert "does not exist" in response.json()["detail"]
+        assert test_client.get("/api/pending-refunds/").json() == []
+
+    def test_expected_amount_above_source_returns_400(
+        self, test_client, seed_base_transactions
+    ):
+        """POST expecting more back than was spent returns 400."""
+        txns = test_client.get("/api/transactions/?service=banks").json()
+        expense = next(t for t in txns if t["amount"] < 0)
+        response = test_client.post(
+            "/api/pending-refunds/",
+            json={
+                "source_type": "transaction",
+                "source_id": expense["unique_id"],
+                "source_table": "banks",
+                "expected_amount": abs(expense["amount"]) + 1.0,
+            },
+        )
+        assert response.status_code == 400
+        assert "cannot exceed" in response.json()["detail"]
 
 
 class TestRefundSourcesRoute:
@@ -219,15 +282,9 @@ class TestRefundSourcesRoute:
 class TestRefundNotesRoutes:
     """Tests for the note-editing endpoints."""
 
-    def test_patch_pending_refund_notes(self, test_client):
+    def test_patch_pending_refund_notes(self, test_client, seed_base_transactions):
         """PATCH /pending-refunds/{id} updates the note."""
-        create_resp = test_client.post("/api/pending-refunds/", json={
-            "source_type": "transaction",
-            "source_id": 1,
-            "source_table": "banks",
-            "expected_amount": 100.0,
-        })
-        pending_id = create_resp.json()["id"]
+        pending_id = _mark_bank_expense(test_client).json()["id"]
 
         resp = test_client.patch(
             f"/api/pending-refunds/{pending_id}", json={"notes": "Store promised refund by Friday"}

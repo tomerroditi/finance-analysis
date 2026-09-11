@@ -7,10 +7,11 @@ from typing import Optional
 
 import pandas as pd
 from sqlalchemy import select, update, delete
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from backend.constants.categories import LIABILITIES_CATEGORY
-from backend.errors import EntityNotFoundException
+from backend.errors import EntityAlreadyExistsException, EntityNotFoundException
 from backend.models.liability import Liability, LiabilityTransaction
 
 
@@ -73,9 +74,11 @@ class LiabilitiesRepository:
         notes : str, optional
             Free-text notes about the liability.
 
-        Returns
-        -------
-        None
+        Raises
+        ------
+        EntityAlreadyExistsException
+            If a liability already uses ``tag`` — the ``(category, tag)``
+            pair is unique because it is how payments are matched.
         """
         new_liability = Liability(
             name=name,
@@ -94,7 +97,13 @@ class LiabilitiesRepository:
             created_date=datetime.today().strftime("%Y-%m-%d"),
         )
         self.db.add(new_liability)
-        self.db.commit()
+        try:
+            self.db.commit()
+        except IntegrityError:
+            self.db.rollback()
+            raise EntityAlreadyExistsException(
+                f"A liability tagged '{tag}' already exists"
+            )
 
     def get_all_liabilities(self, include_paid_off: bool = False) -> pd.DataFrame:
         """Get all liabilities, optionally including paid-off ones.

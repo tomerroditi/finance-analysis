@@ -6,10 +6,29 @@ and adding/deleting/reallocating tags.
 """
 
 import pytest
+from sqlalchemy import func, select
 
 import backend.services.tagging_service as ts
 from backend.constants.categories import PROTECTED_CATEGORIES
+from backend.models.transaction import BankTransaction, CreditCardTransaction
 from backend.services.tagging_service import CategoriesTagsService
+
+
+def _tagged_count(db_session, category, tag=None) -> int:
+    """Count transactions carrying a category (and optionally a tag).
+
+    Counts across both the credit-card and bank tables, which is where
+    ``seed_base_transactions`` puts its Food rows.
+    """
+    total = 0
+    for model in (CreditCardTransaction, BankTransaction):
+        stmt = select(func.count()).select_from(model).where(
+            model.category == category
+        )
+        if tag is not None:
+            stmt = stmt.where(model.tag == tag)
+        total += db_session.execute(stmt).scalar()
+    return total
 
 
 # ---------------------------------------------------------------------------
@@ -106,12 +125,6 @@ class TestCategoriesTagsServiceCategories:
 
         assert result is False
 
-    def test_add_category_empty_name_rejected(self, categories_service):
-        """Verify adding a category with an empty or whitespace-only name returns False."""
-        assert categories_service.add_category("", []) is False
-        assert categories_service.add_category("   ", []) is False
-        assert categories_service.add_category(None, []) is False
-
     def test_add_category_title_case(self, categories_service):
         """Verify category name is normalized to title case."""
         result = categories_service.add_category("health care", ["Doctor"])
@@ -124,14 +137,54 @@ class TestCategoriesTagsServiceCategories:
     def test_delete_category(
         self, categories_service, db_session, seed_base_transactions
     ):
-        """Verify deleting a category removes it and nullifies related transactions."""
+        """Deleting a category removes it and untags every transaction in it."""
         # "Food" category has transactions in seed_base_transactions
         assert "Food" in categories_service.categories_and_tags
+        assert _tagged_count(db_session, "Food") > 0
 
         result = categories_service.delete_category("Food")
 
         assert result is True
         assert "Food" not in categories_service.categories_and_tags
+        assert _tagged_count(db_session, "Food") == 0
+        # Other categories' rows are untouched.
+        assert _tagged_count(db_session, "Transport") > 0
+
+    def test_delete_unknown_category_touches_nothing(
+        self, categories_service, db_session, seed_base_transactions
+    ):
+        """A category that does not exist is refused before any row is cleared.
+
+        The nullify calls used to run before the existence check, so a typo
+        untagged nothing visible but still returned ``False``.
+        """
+        before = _tagged_count(db_session, "Food")
+
+        assert categories_service.delete_category("Fooood") is False
+
+        assert _tagged_count(db_session, "Food") == before
+
+    @pytest.mark.parametrize("name", ["", "   ", None, "Food;Drink"])
+    def test_add_category_invalid_name_rejected(self, categories_service, name):
+        """Blank, ``None`` and ``;``-containing category names are refused.
+
+        ``;`` is the separator budget rules use inside their ``tags`` string,
+        so a name containing one would split into two tags downstream.
+        """
+        assert categories_service.add_category(name, []) is False
+
+    def test_add_category_with_a_semicolon_tag_rejected(self, categories_service):
+        """One invalid tag rejects the whole category rather than half-creating it."""
+        assert (
+            categories_service.add_category("Health", ["Doctor", "Dentist;Ortho"])
+            is False
+        )
+        assert "Health" not in categories_service.categories_and_tags
+
+    def test_add_category_deduplicates_its_tags(self, categories_service):
+        """Tags differing only in case collapse to one title-cased entry."""
+        assert categories_service.add_category("Health", ["doctor", "Doctor"]) is True
+        assert categories_service.categories_and_tags["Health"] == ["Doctor"]
 
     def test_delete_category_protected(self, categories_service):
         """Verify protected categories cannot be deleted."""
@@ -162,39 +215,84 @@ class TestCategoriesTagsServiceTags:
 
         assert result is False
 
+    @pytest.mark.parametrize("name", ["", "   ", "Fast;Food"])
+    def test_add_tag_invalid_name_rejected(self, categories_service, name):
+        """Blank and ``;``-containing tag names are refused."""
+        before = list(categories_service.categories_and_tags["Food"])
+
+        assert categories_service.add_tag("Food", name) is False
+        assert categories_service.categories_and_tags["Food"] == before
+
+    def test_add_tag_unknown_category_rejected(self, categories_service):
+        """A tag cannot be added to a category that does not exist."""
+        assert categories_service.add_tag("Nope", "Bakery") is False
+
     def test_delete_tag(
         self, categories_service, db_session, seed_base_transactions
     ):
-        """Verify deleting a tag removes it from the category and nullifies transactions."""
+        """Deleting a tag removes it from the category and untags its transactions."""
         assert "Groceries" in categories_service.categories_and_tags["Food"]
+        assert _tagged_count(db_session, "Food", "Groceries") > 0
 
         result = categories_service.delete_tag("Food", "Groceries")
 
         assert result is True
         assert "Groceries" not in categories_service.categories_and_tags["Food"]
+        assert _tagged_count(db_session, "Food", "Groceries") == 0
+        # Sibling tags under the same category keep their rows.
+        assert _tagged_count(db_session, "Food", "Restaurants") > 0
+
+    def test_delete_unknown_tag_touches_nothing(
+        self, categories_service, db_session, seed_base_transactions
+    ):
+        """A tag the category does not have is refused before any row is cleared."""
+        before = _tagged_count(db_session, "Food")
+
+        assert categories_service.delete_tag("Food", "Grocerys") is False
+
+        assert _tagged_count(db_session, "Food") == before
 
     def test_reallocate_tag(
         self, categories_service, db_session, seed_base_transactions
     ):
-        """Verify moving a tag between categories updates the in-memory dict."""
+        """Moving a tag between categories re-categorises its transactions too."""
         assert "Groceries" in categories_service.categories_and_tags["Food"]
         assert "Groceries" not in categories_service.categories_and_tags["Home"]
+        moved = _tagged_count(db_session, "Food", "Groceries")
+        assert moved > 0
 
         result = categories_service.reallocate_tag("Food", "Home", "Groceries")
 
         assert result is True
         assert "Groceries" not in categories_service.categories_and_tags["Food"]
         assert "Groceries" in categories_service.categories_and_tags["Home"]
+        assert _tagged_count(db_session, "Food", "Groceries") == 0
+        assert _tagged_count(db_session, "Home", "Groceries") == moved
 
-    def test_reallocate_tag_invalid_category(self, categories_service):
-        """Verify reallocating a tag to a non-existent category returns False."""
-        result = categories_service.reallocate_tag(
-            "Food", "NonExistent", "Groceries"
+    @pytest.mark.parametrize(
+        "old_category, new_category, tag",
+        [
+            ("Food", "NonExistent", "Groceries"),
+            ("NonExistent", "Home", "Groceries"),
+            ("Food", "Home", "NotATag"),
+            ("Food", "Food", "Groceries"),
+        ],
+        ids=["unknown-new", "unknown-old", "unknown-tag", "same-category"],
+    )
+    def test_reallocate_tag_rejected(
+        self, categories_service, db_session, seed_base_transactions,
+        old_category, new_category, tag,
+    ):
+        """A refused reallocate leaves both the config and the rows unchanged."""
+        before = _tagged_count(db_session, "Food", "Groceries")
+
+        assert (
+            categories_service.reallocate_tag(old_category, new_category, tag)
+            is False
         )
 
-        assert result is False
-        # Tag should remain in the original category
         assert "Groceries" in categories_service.categories_and_tags["Food"]
+        assert _tagged_count(db_session, "Food", "Groceries") == before
 
     def test_add_new_credit_card_tags(self, categories_service, db_session):
         """Verify CC account tags are added to the Credit Cards category."""

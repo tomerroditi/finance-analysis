@@ -302,10 +302,26 @@ class TestTaggingRepositoryRename:
             seeded_repo.rename_category("Food", "Transport")
         assert set(seeded_repo.get_categories()) == {"Food", "Transport"}
 
-    def test_rename_category_to_its_own_name_is_a_collision(self, seeded_repo):
-        """The uniqueness check is exact: a no-op rename is still refused."""
-        with pytest.raises(EntityAlreadyExistsException):
-            seeded_repo.rename_category("Food", "Food")
+    def test_rename_category_to_its_own_name_is_a_no_op(self, seeded_repo):
+        """Renaming a category to its own name succeeds and changes nothing.
+
+        The uniqueness check used to fire on the row being renamed itself, so
+        a "rename" that only changed nothing raised a 409.
+        """
+        seeded_repo.rename_category("Food", "Food")
+
+        assert seeded_repo.get_categories()["Food"] == ["Groceries", "Restaurants"]
+
+    def test_rename_missing_category_to_its_own_name_still_raises(self, seeded_repo):
+        """The no-op shortcut does not paper over a category that is absent."""
+        with pytest.raises(EntityNotFoundException):
+            seeded_repo.rename_category("Nope", "Nope")
+
+    def test_rename_tag_to_its_own_name_is_a_no_op(self, seeded_repo):
+        """Renaming a tag to its own name succeeds and leaves the list intact."""
+        seeded_repo.rename_tag("Food", "Groceries", "Groceries")
+
+        assert seeded_repo.get_categories()["Food"] == ["Groceries", "Restaurants"]
 
     def test_rename_tag_preserves_position(self, seeded_repo):
         """The new tag replaces the old one at the same index."""

@@ -13,7 +13,7 @@ from backend.models.scraping import ScrapingHistory
 
 class ScrapingHistoryRepository:
     """
-    Repository for managing scraping history data and daily limits using ORM.
+    Repository for the scraping audit trail (one row per scrape attempt).
     """
 
     FAILED = "failed"
@@ -30,9 +30,6 @@ class ScrapingHistoryRepository:
             SQLAlchemy database session used for all ORM operations.
         """
         self.db = db
-
-    def _ensure_table_exists(self) -> None:
-        pass
 
     def record_scrape_start(
         self,
@@ -150,25 +147,6 @@ class ScrapingHistoryRepository:
             record with the given ID exists.
         """
         stmt = select(ScrapingHistory.status).where(ScrapingHistory.id == scrape_id)
-        return self.db.execute(stmt).scalar()
-
-    def get_error_message(self, scrape_id: int) -> str | None:
-        """Get the error message for a failed scraping operation.
-
-        Parameters
-        ----------
-        scrape_id : int
-            ID of the scraping record to look up.
-
-        Returns
-        -------
-        str or None
-            Error message string recorded for the operation, or None if no error
-            was recorded or no record with the given ID exists.
-        """
-        stmt = select(ScrapingHistory.error_message).where(
-            ScrapingHistory.id == scrape_id
-        )
         return self.db.execute(stmt).scalar()
 
     def get_error(self, scrape_id: int) -> tuple[str | None, str | None]:

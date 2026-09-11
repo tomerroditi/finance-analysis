@@ -42,14 +42,19 @@ class AppConfig:
     #: shared demo instance and no client may opt out.
     _forced_mode: bool | None = None
 
-    # Base user directory override (tests / callers may assign
-    # ``_base_user_dir`` directly; None means "resolve from env at call time")
-    _base_user_dir_override = None
+    #: Base user directory override. ``None`` means "resolve from
+    #: ``FAD_USER_DIR`` / the home directory at call time". Lives on the
+    #: singleton *instance* (initialised in ``__new__``), never on the class:
+    #: the ``_base_user_dir`` setter always wrote the instance slot, so a
+    #: class-level default let callers save the class attribute, assign the
+    #: instance one, and "restore" a value that never changed.
+    _base_user_dir_override: str | None
 
     def __new__(cls):
         """Return the shared singleton instance, creating it on first call."""
         if cls._instance is None:
             cls._instance = super(AppConfig, cls).__new__(cls)
+            cls._instance._base_user_dir_override = None
         return cls._instance
 
     @property
@@ -152,7 +157,16 @@ class AppConfig:
         )
 
     @_base_user_dir.setter
-    def _base_user_dir(self, value) -> None:
+    def _base_user_dir(self, value: str | None) -> None:
+        """Pin (or, with ``None``, un-pin) the base user directory.
+
+        Assign a directory to route every path this config produces under
+        it; assign ``None`` to go back to resolving ``FAD_USER_DIR`` at call
+        time. Callers that want to restore a previous state must save and
+        restore ``_base_user_dir_override`` — saving the resolved
+        ``_base_user_dir`` and assigning it back pins the singleton to a
+        concrete path, after which ``FAD_USER_DIR`` is silently ignored.
+        """
         self._base_user_dir_override = value
 
     def get_demo_root_dir(self) -> str:

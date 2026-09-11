@@ -8,6 +8,7 @@ payment structures (Shpitzer, equal principal, balloon), and payment
 comparison against actual transactions.
 """
 
+import calendar
 from datetime import date
 from typing import Any, Dict, List, Optional
 
@@ -180,7 +181,11 @@ class LiabilitiesService:
         Raises
         ------
         ValidationException
-            When the loan-type combination is invalid.
+            When the loan-type combination is invalid, ``principal_amount``
+            or ``term_months`` is not positive, or the (given or derived)
+            annual rate is negative.
+        EntityAlreadyExistsException
+            When a liability already uses ``tag`` (raised by the repository).
         """
         valid_types = {t.value for t in LoanType}
         if loan_type not in valid_types:
@@ -190,6 +195,10 @@ class LiabilitiesService:
             raise ValidationException(
                 f"Unknown amortization method: {amortization_method}"
             )
+        if principal_amount <= 0:
+            raise ValidationException("principal_amount must be positive")
+        if term_months <= 0:
+            raise ValidationException("term_months must be positive")
 
         if loan_type in PRIME_BASED_LOAN_TYPES:
             if rate_spread is None:
@@ -203,12 +212,17 @@ class LiabilitiesService:
                     "rate_reset_months (>= 1) is required for variable loans"
                 )
             if interest_rate is None:
-                prime = self.rates_service.get_prime_at(start_date)
-                interest_rate = round((prime or 0.0) + rate_spread, 4)
+                # Anchored like the schedule itself: a loan predating the
+                # rate series prices off the earliest known prime, not 0.
+                prime_steps = self.rates_service.get_prime_steps(start_date)
+                prime = prime_steps[0]["value"] if prime_steps else 0.0
+                interest_rate = round(prime + rate_spread, 4)
         elif interest_rate is None:
             raise ValidationException(
                 "interest_rate is required for fixed-rate loans"
             )
+        if interest_rate < 0:
+            raise ValidationException("interest_rate must not be negative")
 
         self.liabilities_repo.create_liability(
             name=name,
@@ -429,8 +443,39 @@ class LiabilitiesService:
             record_df = self.liabilities_repo.get_by_id(liability_id)
             tag = record_df.iloc[0]["tag"]
 
-        # Real transactions from bank/CC/cash tables
-        liab_txns = self._get_liability_category_transactions()
+        combined = self._merged_transactions(
+            liability_id, tag, self._get_liability_category_transactions()
+        )
+        if combined.empty:
+            return []
+        combined = combined.where(pd.notnull(combined), None)
+        return combined.to_dict(orient="records")
+
+    def _merged_transactions(
+        self, liability_id: int, tag: str, liab_txns: pd.DataFrame
+    ) -> pd.DataFrame:
+        """Merge a liability's real and auto-generated transactions.
+
+        Single source of truth for "what has been paid": the list view,
+        the analysis summary and the debt-over-time chart all count
+        payments off this frame, so generating missing transactions moves
+        every view together.
+
+        Parameters
+        ----------
+        liability_id : int
+            ID of the liability (owner of the generated rows).
+        tag : str
+            Tag matching the real bank/CC/cash transactions.
+        liab_txns : pd.DataFrame
+            All transactions with ``category == LIABILITIES_CATEGORY``.
+
+        Returns
+        -------
+        pd.DataFrame
+            Matching rows sorted by date with numeric ``amount``; empty
+            when there are none.
+        """
         frames = []
         if not liab_txns.empty:
             matched = liab_txns[liab_txns["tag"] == tag].copy()
@@ -438,31 +483,27 @@ class LiabilitiesService:
                 matched["amount"] = pd.to_numeric(matched["amount"], errors="coerce").fillna(0.0)
                 frames.append(matched)
 
-        # Auto-generated liability transactions
         gen_txns = self.liabilities_repo.get_liability_transactions(liability_id)
         if gen_txns:
-            gen_df = pd.DataFrame([
+            frames.append(pd.DataFrame([
                 {LTF.DATE.value: t.date, LTF.AMOUNT.value: t.amount,
                  LTF.DESCRIPTION.value: t.description,
                  "source": Tables.LIABILITY_TRANSACTIONS.value,
                  "category": LIABILITIES_CATEGORY, "tag": tag,
                  LTF.PAYMENT_NUMBER.value: t.payment_number}
                 for t in gen_txns
-            ])
-            frames.append(gen_df)
+            ]))
 
         if not frames:
-            return []
-
-        combined = pd.concat(frames, ignore_index=True).sort_values("date")
-        combined = combined.where(pd.notnull(combined), None)
-        return combined.to_dict(orient="records")
+            return pd.DataFrame()
+        return pd.concat(frames, ignore_index=True).sort_values("date")
 
     @staticmethod
     def _payment_date(start_date: date, months_ahead: int) -> date:
         """Get the payment date ``months_ahead`` months after ``start_date``.
 
-        Day-of-month is clamped to 28 so every month has a valid date.
+        Day-of-month is clamped to the target month's last day, so a loan
+        taken on the 31st pays on the 30th/28th/29th in shorter months.
 
         Parameters
         ----------
@@ -476,10 +517,10 @@ class LiabilitiesService:
         date
             The resulting payment date.
         """
-        safe_day = min(start_date.day, 28)
         month = start_date.month + months_ahead
         year = start_date.year + (month - 1) // 12
         month = ((month - 1) % 12) + 1
+        safe_day = min(start_date.day, calendar.monthrange(year, month)[1])
         return date(year, month, safe_day)
 
     @staticmethod
@@ -706,7 +747,9 @@ class LiabilitiesService:
 
         The remaining balance is read off the amortization schedule at
         the position of the last payment made, so interest portions are
-        not counted as principal reduction.
+        not counted as principal reduction. Payments are counted from the
+        same merged real + auto-generated transactions the analysis
+        summary uses, so both views report the same progress.
 
         Parameters
         ----------
@@ -730,10 +773,9 @@ class LiabilitiesService:
         total_cost = sum(e["payment"] for e in schedule)
 
         tag = record.get("tag", "")
-        if not liab_txns.empty and tag:
-            tag_txns = liab_txns[liab_txns["tag"] == tag].copy()
-            tag_txns["amount"] = pd.to_numeric(tag_txns["amount"], errors="coerce").fillna(0.0)
-            payments = tag_txns[tag_txns["amount"] < 0]
+        merged = self._merged_transactions(int(record["id"]), tag, liab_txns)
+        if not merged.empty:
+            payments = merged[merged["amount"] < 0]
             total_paid = float(abs(payments["amount"].sum()))
             payment_count = len(payments)
         else:
@@ -777,9 +819,10 @@ class LiabilitiesService:
         """Get debt-over-time data for all active liabilities using actual transactions.
 
         Returns a time series per liability showing the remaining balance after
-        each actual payment, plus a total line across all liabilities. The
-        balance after the k-th payment is read off the amortization schedule,
-        so interest portions are not counted as principal reduction.
+        each actual payment (real or auto-generated), plus a total line across
+        all liabilities. The balance after the k-th payment is read off the
+        amortization schedule, so interest portions are not counted as
+        principal reduction.
 
         Returns
         -------
@@ -791,8 +834,6 @@ class LiabilitiesService:
             return {"series": [], "total": []}
 
         liab_txns = self._get_liability_category_transactions()
-        if not liab_txns.empty:
-            liab_txns["amount"] = pd.to_numeric(liab_txns["amount"], errors="coerce").fillna(0.0)
 
         series = []
         for _, row in df.iterrows():
@@ -802,10 +843,9 @@ class LiabilitiesService:
             schedule = self._schedule_for_record(record)
             points = [{"date": record["start_date"], "balance": principal}]
 
-            if not liab_txns.empty and tag:
-                payments = liab_txns[
-                    (liab_txns["tag"] == tag) & (liab_txns["amount"] < 0)
-                ].sort_values("date")
+            merged = self._merged_transactions(int(record["id"]), tag, liab_txns)
+            if not merged.empty:
+                payments = merged[merged["amount"] < 0]
 
                 for k, (_, txn) in enumerate(payments.iterrows(), start=1):
                     pos = min(k, len(schedule))
