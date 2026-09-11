@@ -602,14 +602,15 @@ class TestApplyRulesPrecedence:
         assert "Skipping tagging rule" in caplog.text
         assert _cc_row(db_session, "b1").category is None
 
-    def test_broken_rule_name_cannot_forge_a_log_line(
+    def test_broken_rule_name_never_reaches_the_log(
         self, service, db_session, caplog
     ):
-        """The rule name reaches the log scrubbed, not verbatim.
+        """The rule name stays out of the log line entirely.
 
         The name is whatever the user typed, so a newline in it would split
         the warning into what reads as a second, legitimate log record
-        (CWE-117) — and these logs are what a user pastes into a bug report.
+        (CWE-117), and these logs are what a user pastes into a bug report.
+        The id identifies the rule without carrying user text.
         """
         self._insert_rule(
             db_session,
@@ -623,8 +624,8 @@ class TestApplyRulesPrecedence:
             assert service.apply_rules() == 0
 
         assert "Skipping tagging rule" in caplog.text
-        assert "\nWARNING forged entry" not in caplog.text
-        assert "Evil\\nWARNING forged entry" in caplog.text
+        assert "WARNING forged entry" not in caplog.text
+        assert "Evil" not in caplog.text
 
 
 class TestNormalizeConditions:

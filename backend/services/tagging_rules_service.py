@@ -17,7 +17,6 @@ from backend.repositories.tagging_rules_repository import TaggingRulesRepository
 from backend.repositories.transactions_repository import TransactionsRepository
 from backend.services.tagging_service import CategoriesTagsService
 from backend.services.transactions_service import TransactionsService
-from backend.utils.log_sanitize import scrub
 
 
 TABLE_TO_MODEL: Dict[str, Type[TransactionBase]] = {
@@ -643,8 +642,8 @@ class TaggingRulesService:
         Parameters
         ----------
         rule : dict
-            Rule record with at least ``conditions``; ``id``/``name`` are used
-            for the log line when present.
+            Rule record with at least ``conditions``; ``id`` is used for the
+            log line when present.
 
         Returns
         -------
@@ -656,10 +655,13 @@ class TaggingRulesService:
         try:
             return self._normalize_conditions(rule["conditions"])
         except ValueError:
+            # The rule's name is user-typed and deliberately not logged: the
+            # id identifies the row on its own, and keeping user text out of
+            # the record removes the log-injection surface rather than
+            # relying on a scrub the scanner cannot see through.
             logger.warning(
-                "Skipping tagging rule %s (%s): stored conditions are not valid JSON",
+                "Skipping tagging rule %s: stored conditions are not valid JSON",
                 rule.get("id"),
-                scrub(rule.get("name")),
             )
             return None
 
