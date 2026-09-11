@@ -43,6 +43,12 @@ from backend.services.budget.yearly import YearlyBudgetService
 from backend.services.recurring_service import RecurringService
 
 
+def _is_all_tags(tags: Optional[list[str]]) -> bool:
+    """Whether a rule's tags are the ``all_tags`` marker rather than real tags."""
+    parsed = list(tags or [])
+    return [str(tag).lower() for tag in parsed] == [ALL_TAGS.lower()]
+
+
 class BudgetOverviewService(BudgetService):
     """Cross-kind roll-up of a single month for the budget Overview."""
 
@@ -174,10 +180,17 @@ class BudgetOverviewService(BudgetService):
         it is both the figure the page shows and the exact set the fixed/variable
         split must run over. A month with no Total Budget rule has no monthly
         budget to speak of, and yields zeroes rather than an error.
+
+        Goes through ``get_monthly_analysis`` rather than the raw view because
+        only the analysis auto-fills an empty current month from the last month
+        that had rules. Reading the view directly made the Overview report a
+        zero budget for the live month until the user happened to open the
+        Monthly tab and trigger the fill.
         """
-        view = MonthlyBudgetService(self.db).get_monthly_budget_view(
+        analysis = MonthlyBudgetService(self.db).get_monthly_analysis(
             year, month, include_split_parents
         )
+        view = analysis.get("rules") or []
         if not view:
             return 0.0, 0.0, []
         for entry in view:
@@ -323,6 +336,7 @@ class BudgetOverviewService(BudgetService):
             return []
 
         rules = projects.get_all_rules()
+
         all_data = projects.transactions_service.get_data_for_analysis(
             include_split_parents
         )
@@ -332,10 +346,7 @@ class BudgetOverviewService(BudgetService):
         category = TransactionsTableFields.CATEGORY.value
         envelopes = []
         for name in names:
-            anchor = rules[
-                (rules[CATEGORY] == name) & (rules[NAME] == TOTAL_BUDGET)
-            ]
-            budget = float(anchor.iloc[0][AMOUNT]) if not anchor.empty else 0.0
+            budget = self._project_budget(rules[rules[CATEGORY] == name])
             rows = (
                 all_data[all_data[category] == name]
                 if not all_data.empty
@@ -354,6 +365,27 @@ class BudgetOverviewService(BudgetService):
                 }
             )
         return envelopes
+
+    @staticmethod
+    def _project_budget(project_rules: pd.DataFrame) -> float:
+        """The total budget for one project, across both rule shapes in the wild.
+
+        ``create_project`` writes an anchor rule tagged ``all_tags`` holding the
+        whole budget, with a zero-budget rule per tag beside it — that anchor is
+        what :meth:`ProjectBudgetService.get_project_budget_view` looks for.
+        Projects that predate it (the demo database among them) instead carry a
+        single rule tagged with every tag in the project, holding the budget.
+        Matching only the anchor reports those projects as having no budget at
+        all, and summing the rules would double-count a project whose per-tag
+        budgets have been filled in. So: take the anchor when there is one, and
+        otherwise the largest rule, which is the one covering the project.
+        """
+        if project_rules.empty:
+            return 0.0
+        anchor = project_rules[project_rules[TAGS].apply(_is_all_tags)]
+        if not anchor.empty:
+            return float(anchor.iloc[0][AMOUNT] or 0.0)
+        return float(project_rules[AMOUNT].max() or 0.0)
 
     # ------------------------------------------------------------------ #
     # Frame helpers
@@ -375,10 +407,9 @@ class BudgetOverviewService(BudgetService):
         if rows is None or rows.empty:
             return rows
         matched = rows[rows[TransactionsTableFields.CATEGORY.value] == category]
-        parsed = list(tags or [])
-        if [str(tag).lower() for tag in parsed] != [ALL_TAGS.lower()]:
+        if not _is_all_tags(tags):
             matched = matched[
-                matched[TransactionsTableFields.TAG.value].isin(parsed)
+                matched[TransactionsTableFields.TAG.value].isin(list(tags or []))
             ]
         return matched
 

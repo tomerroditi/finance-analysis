@@ -34,12 +34,25 @@ def _seed(db_session, date, category, tag, amount, description="x", ident=None):
 
 @pytest.fixture
 def frozen_today(monkeypatch):
-    """Pin the service's notion of today to 2026-03-19, mid-month."""
+    """Pin today to 2026-03-19, mid-month, for every module that asks.
+
+    The overview composes the monthly service, and rule auto-fill inside
+    ``get_monthly_analysis`` reads ``date.today()`` from its own module — so
+    pinning only the overview's ``_today`` leaves the two disagreeing about
+    which month is current. Patching must target the defining submodule; the
+    compatibility shim's re-exports are not consulted at call time.
+    """
     from datetime import date
+
+    class FrozenDate(date):
+        @classmethod
+        def today(cls):
+            return cls(2026, 3, 19)
 
     monkeypatch.setattr(
         "backend.services.budget.overview._today", lambda: date(2026, 3, 19)
     )
+    monkeypatch.setattr("backend.services.budget.monthly.date", FrozenDate)
     return date(2026, 3, 19)
 
 
@@ -345,3 +358,78 @@ class TestEmptyState:
         assert result["monthly_budget"] == 0.0
         assert result["monthly_spent"] == 0.0
         assert result["long_envelopes"] == []
+
+
+class TestRuleShapesInTheWild:
+    """Regressions found only against the demo database, not synthetic fixtures."""
+
+    def test_project_budget_on_a_covering_rule_is_found(self, db_session, frozen_today):
+        """A project whose budget sits on a tag-covering rule still reports it.
+
+        ``create_project`` writes an ``all_tags`` anchor, but projects that
+        predate it — the demo database included — carry a single rule tagged
+        with every tag in the project. Matching only the anchor reported every
+        such project as having no budget at all.
+        """
+        ProjectBudgetService(db_session).add_rule(
+            name="Home Renovation",
+            amount=30000.0,
+            category="Home Renovation",
+            tags=["Materials", "Labor", "Furniture"],
+            month=None,
+            year=None,
+        )
+        _seed(db_session, "2026-03-09", "Home Renovation", "Materials", -4200.0)
+
+        envelope = next(
+            e
+            for e in BudgetOverviewService(db_session).get_overview(2026, 3)[
+                "long_envelopes"
+            ]
+            if e["name"] == "Home Renovation"
+        )
+        assert envelope["budget"] == 30000.0
+
+    def test_all_tags_anchor_wins_over_a_larger_tag_rule(self, db_session, frozen_today):
+        """With an anchor present, per-tag budgets never inflate the total."""
+        projects = ProjectBudgetService(db_session)
+        projects.add_rule(
+            name="Total Budget",
+            amount=30000.0,
+            category="Home Renovation",
+            tags=["all_tags"],
+            month=None,
+            year=None,
+        )
+        projects.add_rule(
+            name="Materials",
+            amount=44000.0,
+            category="Home Renovation",
+            tags=["Materials"],
+            month=None,
+            year=None,
+        )
+
+        envelope = next(
+            e
+            for e in BudgetOverviewService(db_session).get_overview(2026, 3)[
+                "long_envelopes"
+            ]
+            if e["name"] == "Home Renovation"
+        )
+        assert envelope["budget"] == 30000.0
+
+    def test_current_month_inherits_rules_from_the_previous_month(
+        self, db_session, frozen_today
+    ):
+        """A live month with no rules yet still shows a budget.
+
+        Rules auto-fill forward, but only through ``get_monthly_analysis``.
+        Reading the raw view meant the Overview reported a zero budget for the
+        current month until the user happened to open the Monthly tab.
+        """
+        MonthlyBudgetService(db_session).create_rule(
+            "Total Budget", 20000.0, "Total Budget", ["all_tags"], 2, 2026
+        )
+        result = BudgetOverviewService(db_session).get_overview(2026, 3)
+        assert result["monthly_budget"] == 20000.0
