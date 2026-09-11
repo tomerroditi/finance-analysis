@@ -1,13 +1,20 @@
 """Tests for InvestmentsService using real in-memory SQLite database."""
 
+from datetime import date
+
 import pandas as pd
 import pytest
 
 from backend.errors import ValidationException
 from backend.models.insurance_account import InsuranceAccount
 from backend.models.investment import Investment as InvestmentModel
-from backend.models.transaction import InsuranceTransaction, ManualInvestmentTransaction
+from backend.models.transaction import (
+    BankTransaction,
+    InsuranceTransaction,
+    ManualInvestmentTransaction,
+)
 from backend.services.investments_service import InvestmentsService
+from backend.services.transactions_service import TransactionsService
 
 
 class TestInvestmentsServiceCRUD:
@@ -1146,6 +1153,120 @@ class TestBalanceOverTimeSnapshotEdges:
         history = service.calculate_balance_over_time(stock_fund.id, "2023-07-16", "2023-07-16")
 
         assert {(e["date"], e["balance"]) for e in history} == {("2023-07-16", 11500.0)}
+
+
+def _closing_dates(db_session, investment_id: int) -> list[str]:
+    """Dates of the zero snapshots written by closing an investment."""
+    snapshots = InvestmentsService(db_session).snapshots_repo.get_snapshots_for_investment(
+        investment_id
+    )
+    return snapshots.loc[snapshots["source"] == "closed", "date"].tolist()
+
+
+def _bank_row(db_session, day: str, amount: float, description: str) -> BankTransaction:
+    """Insert one untagged bank transaction and return it."""
+    row = BankTransaction(
+        id=f"bank-{day}-{amount}", date=day, provider="hapoalim",
+        account_name="Main", description=description, amount=amount,
+        source="bank_transactions", type="normal", status="completed",
+    )
+    db_session.add(row)
+    db_session.commit()
+    db_session.refresh(row)
+    return row
+
+
+class TestClosingSnapshotRealignment:
+    """The zero written at close follows the investment's last transaction.
+
+    Closing pins the zero to the last transaction that exists at that moment.
+    A transaction that lands later — the transfer settling a sale days after
+    it, a scraped row re-dated, a row tagged onto the investment after it
+    closed — would otherwise sit past the zero, be carried forward, and value
+    the closed fund below zero in net worth.
+    """
+
+    def test_withdrawal_recorded_after_close_moves_the_zero(self, db_session, seed_investments):
+        """A manual withdrawal dated after the close drags the zero onto its date."""
+        service = InvestmentsService(db_session)
+        stock_fund = seed_investments["investments"][0]
+        service.close_investment(stock_fund.id, closed_date="2024-01-20")
+        assert _closing_dates(db_session, stock_fund.id) == ["2024-01-15"]
+
+        TransactionsService(db_session).create_transaction(
+            {
+                "date": date(2024, 2, 1),
+                "account_name": "Investment Account",
+                "provider": "manual_investments",
+                "description": "Sale proceeds",
+                "amount": 12500.0,
+                "category": "Investments",
+                "tag": "Stock Fund",
+            },
+            "manual_investments",
+        )
+
+        assert _closing_dates(db_session, stock_fund.id) == ["2024-02-01"]
+        # The stock fund is worth nothing; -160 is the seeded bond fund, which
+        # was closed without a snapshot and still resolves from transactions.
+        totals = service.get_total_values_at_dates(["2024-02-29"])
+        assert totals["2024-02-29"] == pytest.approx(-160.0)
+
+    def test_tagging_a_later_bank_row_onto_a_closed_investment_moves_the_zero(
+        self, db_session, seed_investments
+    ):
+        """Retagging a scraped withdrawal onto a closed investment moves its zero."""
+        service = InvestmentsService(db_session)
+        stock_fund = seed_investments["investments"][0]
+        service.close_investment(stock_fund.id, closed_date="2024-01-20")
+        proceeds = _bank_row(db_session, "2024-03-01", 12500.0, "Stock sale")
+
+        TransactionsService(db_session).update_transaction(
+            proceeds.unique_id,
+            "bank_transactions",
+            {"category": "Investments", "tag": "Stock Fund"},
+        )
+
+        assert _closing_dates(db_session, stock_fund.id) == ["2024-03-01"]
+
+    def test_removing_the_last_transaction_moves_the_zero_back(self, db_session, seed_investments):
+        """Deleting the transaction the zero sat on returns it to the one before."""
+        service = InvestmentsService(db_session)
+        stock_fund = seed_investments["investments"][0]
+        transactions = TransactionsService(db_session)
+        transactions.create_transaction(
+            {
+                "date": date(2024, 2, 1),
+                "account_name": "Investment Account",
+                "provider": "manual_investments",
+                "description": "Sale proceeds",
+                "amount": 12500.0,
+                "category": "Investments",
+                "tag": "Stock Fund",
+            },
+            "manual_investments",
+        )
+        service.close_investment(stock_fund.id, closed_date="2024-02-01")
+        assert _closing_dates(db_session, stock_fund.id) == ["2024-02-01"]
+        proceeds = db_session.query(ManualInvestmentTransaction).filter_by(
+            description="Sale proceeds"
+        ).one()
+
+        transactions.delete_transaction(proceeds.unique_id, "manual_investment_transactions")
+
+        assert _closing_dates(db_session, stock_fund.id) == ["2024-01-15"]
+
+    def test_open_investments_are_untouched(self, db_session, seed_investments):
+        """Only a closing zero moves — an open fund's snapshots stay where they are."""
+        service = InvestmentsService(db_session)
+        stock_fund = seed_investments["investments"][0]
+        service.create_balance_snapshot(stock_fund.id, "2023-12-31", 0.0)
+        _bank_row(db_session, "2024-03-01", -500.0, "Top up")
+
+        service.realign_closing_snapshots()
+
+        snapshots = service.snapshots_repo.get_snapshots_for_investment(stock_fund.id)
+        assert snapshots[["date", "source"]].values.tolist() == [["2023-12-31", "manual"]]
 
 
 class TestProfitLossWithoutTransactions:

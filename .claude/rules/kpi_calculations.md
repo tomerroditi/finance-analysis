@@ -215,7 +215,9 @@ Balance snapshots (`investment_balance_snapshots` table) store timestamped marke
 
 **Fixed-rate auto-calculation:** For investments with `interest_rate_type = "fixed"`, the system generates monthly snapshots using daily compounding: `daily_rate = (1 + annual_rate)^(1/365) - 1`. Manual/scraped snapshots are never overwritten (protected dates).
 
-**Closing an investment:** Automatically creates a balance snapshot of 0 on the **last transaction date** for that investment (closed = no remaining value). The close date itself is user-selectable and editable after closing via the `closed_date` field on the `InvestmentUpdate` schema.
+**Closing an investment:** Automatically creates a balance snapshot of 0 (`source="closed"`) on the **last transaction date** for that investment (closed = no remaining value), never before a later snapshot. The close date itself is user-selectable and editable after closing via the `closed_date` field on the `InvestmentUpdate` schema.
+
+**The closing zero follows later transactions.** Snapshots are carried forward over the transactions after them, so a withdrawal dated past the zero — the transfer settling a sale days later, a scraped row re-dated, a row tagged onto the investment after it closed — would value the closed fund below zero. `InvestmentsService.realign_closing_snapshots()` moves every `closed` zero back onto its current last transaction, and each write path that can change an investment's transactions calls it: `TransactionsService` create/update/delete, legacy tag update, bulk tag, split/revert, account-data deletion, and `TaggingRulesService.apply_rules`/`apply_rule_by_id` (which every scrape runs). A new write path that can add, re-date or retag transactions must call `TransactionsService.realign_closed_investments()` too. Closes written before the `closed` source existed were stored as `manual`; migration `d4e6f8a0b2c4` relabels a closed investment's final zero so it follows along.
 
 ### Key Metrics (`calculate_profit_loss`)
 ```

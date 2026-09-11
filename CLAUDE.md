@@ -304,7 +304,7 @@ The frontend ships as a PWA — service worker precaches the build, persists the
 - Frontend `TransactionsTable.tsx` changes require updating all consumers: `Transactions.tsx` and `TransactionCollapsibleList.tsx`
 - Scraping has a 5-minute timeout per run and no automatic retry; there is no daily rate limit (the `scraping_history` watermark only shapes the next window)
 - CORS only allows localhost:5173 by default (configurable via `CORS_ORIGINS` env var)
-- Closing an investment auto-creates a balance snapshot of 0 on the last transaction date (not the closure date)
+- Closing an investment auto-creates a balance snapshot of 0 (`source="closed"`) on the last transaction date (not the closure date), and that zero **follows later transactions**: every write path that can add, re-date or retag transactions must call `TransactionsService.realign_closed_investments()`, or a withdrawal landing after the close is carried past the zero and values the closed fund below zero in net worth. See `.claude/rules/kpi_calculations.md` → "The closing zero follows later transactions"
 - Investment balance snapshots override transaction-based balance when present (snapshot-first, transaction fallback)
 - Alembic migrations run on startup (`backend/main.py` → `alembic upgrade head`) AFTER `Base.metadata.create_all` — they must be idempotent (fresh DBs already have current-model tables), set `down_revision` to the current head, and use `op.batch_alter_table(..., recreate="always")` to drop SQLite constraints/columns
 - **Demo Mode is per-client, not per-process.** A client declares it with the

@@ -33,6 +33,7 @@ RULE_CATEGORIES = {
     "AllExpenses": ["Catch-All"],
     "Food": ["Groceries", "Restaurants", "Delivery"],
     "Credit Cards": ["Visa - Gold - 1234"],
+    "Investments": ["Stock Fund"],
 }
 
 
@@ -1218,3 +1219,39 @@ class TestNullNumericValueIsRejected:
             TaggingRulesService(db_session).validate_rule_integrity(
                 _condition("amount", operator, value)
             )
+
+
+class TestApplyingRulesRealignsClosedInvestments:
+    """Tagging a late withdrawal onto a closed investment moves its closing zero."""
+
+    def test_apply_rules_moves_the_zero_onto_the_newly_tagged_row(
+        self, db_session, seed_investments
+    ):
+        """Every scrape ends by applying the rules, so a late bank row lands here.
+
+        The sale settles after the investment was closed; once a rule tags the
+        transfer onto the investment, the zero has to follow it or the closed
+        fund is carried below zero in net worth.
+        """
+        from backend.services.investments_service import InvestmentsService
+
+        investments = InvestmentsService(db_session)
+        stock_fund = seed_investments["investments"][0]
+        investments.close_investment(stock_fund.id, closed_date="2024-01-20")
+        service = TaggingRulesService(db_session)
+        service.add_rule("Stock sale", _contains("Stock sale"), "Investments", "Stock Fund")
+        db_session.add(
+            BankTransaction(
+                id="stock-sale", date="2024-03-01", description="Stock sale proceeds",
+                amount=12500.0, account_name="Main", provider="hapoalim",
+                source="bank_transactions",
+            )
+        )
+        db_session.commit()
+
+        service.apply_rules()
+
+        snapshots = investments.snapshots_repo.get_snapshots_for_investment(stock_fund.id)
+        assert snapshots.loc[snapshots["source"] == "closed", "date"].tolist() == [
+            "2024-03-01"
+        ]

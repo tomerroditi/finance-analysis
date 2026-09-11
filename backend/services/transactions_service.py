@@ -269,6 +269,18 @@ class TransactionsService:
         if repo is None:
             raise ValueError(f"Invalid table name: {table_name}")
         repo.update_tagging_by_unique_id(unique_id, category, tag)
+        self.realign_closed_investments()
+
+    def realign_closed_investments(self) -> None:
+        """Move closed investments' zero snapshots after their transactions change.
+
+        Every write that can add, remove, re-date or retag an investment's
+        transactions calls this — see
+        ``InvestmentsService.realign_closing_snapshots``.
+        """
+        from backend.services.investments_service import InvestmentsService
+
+        InvestmentsService(self.db).realign_closing_snapshots()
 
     def get_transactions_by_tag(
         self, category: str, tag: Optional[str] = None
@@ -475,6 +487,7 @@ class TransactionsService:
             if category and tag:
                 from backend.services.investments_service import InvestmentsService
                 InvestmentsService(self.db).recalculate_prior_wealth_by_tag(category, tag)
+        self.realign_closed_investments()
 
     def _filter_updates_for_source(self, source: str, updates: dict) -> dict:
         """Apply per-source permission rules and normalization to an update dict.
@@ -604,6 +617,8 @@ class TransactionsService:
             if new_account_name and new_account_name != old_account_name:
                 cash_balance_svc.recalculate_current_balance(new_account_name)
 
+        if result:
+            self.realign_closed_investments()
         return result
 
     def delete_transaction(self, unique_id: int, source: str) -> None:
@@ -676,6 +691,7 @@ class TransactionsService:
         elif source == Tables.MANUAL_INVESTMENT_TRANSACTIONS.value and inv_category and inv_tag:
             from backend.services.investments_service import InvestmentsService
             InvestmentsService(self.db).recalculate_prior_wealth_by_tag(inv_category, inv_tag)
+        self.realign_closed_investments()
 
     def _purge_dependent_records(
         self, unique_ids: list[int], source: str
@@ -820,6 +836,7 @@ class TransactionsService:
         self._purge_dependent_records(unique_ids, source)
 
         deleted = repo.delete_transactions_for_account(provider, account_name)
+        self.realign_closed_investments()
         return {"transactions_deleted": deleted}
 
     def _get_parent_for_split(self, unique_id: int, source: str) -> pd.Series:
@@ -908,6 +925,7 @@ class TransactionsService:
         if not success:
             raise ValueError("Failed to split transaction")
         self._purge_split_dependents(old_split_ids)
+        self.realign_closed_investments()
 
     def revert_split(self, unique_id: int, source: str) -> None:
         """Revert a split transaction back to a normal transaction.
@@ -940,6 +958,7 @@ class TransactionsService:
         if not success:
             raise ValueError("Failed to revert split")
         self._purge_split_dependents(split_ids)
+        self.realign_closed_investments()
 
     def bulk_tag_transactions(
         self,
@@ -1038,6 +1057,7 @@ class TransactionsService:
             cash_balance_svc = CashBalanceService(self.db)
             for account in sorted(affected_accounts):
                 cash_balance_svc.recalculate_current_balance(account)
+        self.realign_closed_investments()
 
     def get_untagged_transactions(
         self,
