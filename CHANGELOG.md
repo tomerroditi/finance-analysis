@@ -1,3 +1,9 @@
+## v1.63.0 (2026-09-13)
+
+### Feat
+
+- **budget**: close a finished project and drop it from the Overview (#275)
+
 ## v1.62.0 (2026-09-11)
 
 ### Feat
