@@ -24,6 +24,7 @@ import {
   Insurances,
   DataSources,
   EarlyRetirement,
+  FireCalculator,
   DataFlow,
   Onboarding,
 } from "./pages";
@@ -55,6 +56,7 @@ function App() {
                   <Route path="liabilities" element={<Liabilities />} />
                   <Route path="insurances" element={<Insurances />} />
                   <Route path="early-retirement" element={<EarlyRetirement />} />
+                  <Route path="fire-calculator" element={<FireCalculator />} />
                   <Route path="data-sources" element={<DataSources />} />
                   <Route path="data-flow" element={<DataFlow />} />
                 </Route>

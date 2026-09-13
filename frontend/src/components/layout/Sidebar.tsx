@@ -12,6 +12,7 @@ import {
   ChevronRight,
   Shield,
   Landmark,
+  Calculator,
   Sunset,
   Settings as SettingsIcon,
   Menu,
@@ -42,6 +43,7 @@ const navItems = [
   { path: "/liabilities", icon: Landmark, key: "liabilities" },
   { path: "/insurances", icon: Shield, key: "insurance" },
   { path: "/early-retirement", icon: Sunset, key: "earlyRetirement" },
+  { path: "/fire-calculator", icon: Calculator, key: "fireCalculator" },
   { path: "/data-sources", icon: Database, key: "dataSources" },
 ];
 
