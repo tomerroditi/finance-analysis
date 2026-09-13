@@ -1,5 +1,11 @@
 import { test, expect } from "@playwright/test";
-import { enableDemoMode, navigateTo, expectPageTitle, resetDemoData } from "./helpers";
+import {
+  confirmAllRecurring,
+  enableDemoMode,
+  navigateTo,
+  expectPageTitle,
+  resetDemoData,
+} from "./helpers";
 
 test.describe("Budget", () => {
   // Restore pristine demo data before this file runs. The `mutating`
@@ -8,6 +14,11 @@ test.describe("Budget", () => {
   // writes leak in and this spec asserts against data it did not set up.
   test.beforeAll(async () => {
     await resetDemoData();
+    // The Overview's fixed and committed segments count *confirmed* recurring
+    // charges only, and the reset above clears every verdict — so put the demo
+    // data's subscriptions through the gate before asserting the month splits
+    // four ways.
+    await confirmAllRecurring();
   });
 
   // Demo Mode lives in the browser context's localStorage, so it must be
