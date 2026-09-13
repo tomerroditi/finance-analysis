@@ -2,7 +2,7 @@
 
 Pure heuristic over scraped transaction history — no open-banking merchant
 feed required. Groups expense transactions by a normalized merchant label and
-looks for a stable cadence (biweekly through annual) across at least three
+looks for a stable cadence (monthly through annual) across at least three
 occurrences. This powers the dashboard subscriptions view and feeds the
 insights engine with "new subscription" / "price increase" signals.
 
@@ -47,11 +47,11 @@ class RecurringService:
     # made "monthly" mean anything from 19.5 to 40.5 days, which is where most
     # of the false positives lived. ``period_days`` stays an integer — it is
     # also the step for the next-expected date and the new/ended windows.
-    # Weekly is deliberately absent: nothing is genuinely billed every seven
-    # days, so the band only ever matched habits — the Monday coffee, the
-    # Friday supermarket run — and a seven-day rhythm is now no cadence at all.
+    # Nothing below a month is a billing cadence. Weekly and fortnightly bands
+    # only ever matched habits — the Monday coffee, the Friday supermarket run
+    # — which is the pattern most easily mistaken for a subscription, so a gap
+    # shorter than about 25 days is now no cadence at all.
     _CADENCES = [
-        ("biweekly", 14, 0.20),
         ("monthly", 30, 0.18),
         # Israeli utilities (water, electricity, arnona) bill every two months.
         # With no band of their own they landed inside the old quarterly band,
@@ -61,11 +61,10 @@ class RecurringService:
         ("semiannual", 182, 0.12),
         ("annual", 365, 0.10),
     ]
-    # Minimum sightings before a cadence is believable. Short cadences need
-    # more of them: four fortnightly charges are barely two months, while three
-    # annual renewals are three years of evidence.
-    _MIN_OCCURRENCES = {"biweekly": 4}
-    _MIN_OCCURRENCES_DEFAULT = 3
+    # Minimum sightings before a cadence is believable. Three is a full period
+    # observed twice over — and for the longest bands it is already three years
+    # of history.
+    _MIN_OCCURRENCES = 3
     # Gaps must be regular, measured with a *robust* spread — median absolute
     # deviation over the median — rather than the standard deviation. One
     # skipped period (a subscription paused for a month) no longer rejects an
@@ -78,25 +77,20 @@ class RecurringService:
     # the tightest piece of ordinary shopping scores 0.208. 0.15 sits in that
     # gap. The old standard-deviation gate at 0.5 was nowhere near it.
     _MAX_INTERVAL_MAD_CV = 0.15
-    # Biweekly charges also have to land on one weekday, which a real
-    # fortnightly commitment holds exactly. Month-scale cadences get no such
-    # gate: real bills slip by five or six days around weekends and month ends,
-    # and a tolerance wide enough to allow that covers a third of the month,
-    # which discriminates nothing. The day anchor still feeds the confidence
-    # score at every cadence.
-    _ANCHOR_TOLERANCE_DAYS = {14: 1}
-    _ANCHOR_TOLERANCE_DEFAULT = 3
-    _MIN_ANCHOR_SCORE = 0.7
-    _ANCHOR_GATED_MAX_PERIOD_DAYS = 14
+    # How near the same day of the month a charge has to land to count as
+    # anchored. This only scores a candidate, it never rejects one: real bills
+    # slip by five or six days around weekends and month ends, and a tolerance
+    # wide enough to allow that covers a third of the month, which
+    # discriminates nothing.
+    _ANCHOR_TOLERANCE_DAYS = 3
     # Acceptance path 1 — a fixed-price subscription: nearly every charge sits
     # on the same amount.
     _AMOUNT_BAND = 0.15
     _MIN_AMOUNT_CONSISTENCY = 0.75
     # Acceptance path 2 — a metered bill (electricity, water): the amount swings
     # with consumption, so it gets a much wider band, paid for with a stricter
-    # cadence and a near-perfect day anchor. Without this path, tightening path
-    # 1 enough to drop the false positives would have dropped every utility
-    # bill with them.
+    # cadence. Without this path, tightening path 1 enough to drop the false
+    # positives would have dropped every utility bill with them.
     _VARIABLE_AMOUNT_BAND = 0.50
     _MIN_VARIABLE_AMOUNT_CONSISTENCY = 0.75
     _VARIABLE_MAX_INTERVAL_MAD_CV = 0.12
@@ -261,43 +255,35 @@ class RecurringService:
         iqr = float(diffs.quantile(0.75) - diffs.quantile(0.25))
         return iqr / median_interval
 
-    @classmethod
-    def _anchor_score(cls, dates: pd.Series, period_days: int) -> float:
-        """Fraction of charges landing on the cadence's anchor day.
+    #: Days in an average month, the cycle day-of-month anchoring wraps around.
+    _MONTH_CYCLE_DAYS = 30.44
 
-        Month-scale cadences anchor on the day of the month, week-scale ones on
-        the weekday. Distance is circular — the 1st and the 30th are two days
-        apart, not twenty-nine — so a bill that slips over a month boundary
-        still reads as anchored. Every observed day is tried as the anchor and
-        the best-supported one wins, because the median day is the wrong
-        reference when the charges straddle the wrap point.
+    @classmethod
+    def _anchor_score(cls, dates: pd.Series) -> float:
+        """Fraction of charges landing on one day of the month.
+
+        Distance is circular — the 1st and the 30th are two days apart, not
+        twenty-nine — so a bill that slips over a month boundary still reads as
+        anchored. Every observed day is tried as the anchor and the
+        best-supported one wins, because the median day is the wrong reference
+        when the charges straddle the wrap point.
 
         Parameters
         ----------
         dates : pd.Series
             Charge dates, ascending.
-        period_days : int
-            The matched cadence's period.
 
         Returns
         -------
         float
             Share of charges within the anchor tolerance, 0..1.
         """
-        if period_days <= 14:
-            positions = dates.dt.dayofweek.astype(float)
-            cycle = 7.0
-        else:
-            positions = dates.dt.day.astype(float)
-            cycle = 30.44
-        tolerance = cls._ANCHOR_TOLERANCE_DAYS.get(
-            period_days, cls._ANCHOR_TOLERANCE_DEFAULT
-        )
+        positions = dates.dt.day.astype(float)
         best = 0.0
         for candidate in positions.unique():
             deviation = (positions - candidate).abs()
-            deviation = np.minimum(deviation, cycle - deviation)
-            best = max(best, float((deviation <= tolerance).mean()))
+            deviation = np.minimum(deviation, cls._MONTH_CYCLE_DAYS - deviation)
+            best = max(best, float((deviation <= cls._ANCHOR_TOLERANCE_DAYS).mean()))
         return best
 
     @staticmethod
@@ -420,7 +406,7 @@ class RecurringService:
             # drops out entirely instead of masquerading as a recurring hit.
             daily_net = group.groupby("date_parsed")["amount"].sum().sort_index()
             charges = daily_net[daily_net < 0]
-            if len(charges) < self._MIN_OCCURRENCES_DEFAULT:
+            if len(charges) < self._MIN_OCCURRENCES:
                 continue
 
             dates = charges.index.to_series().reset_index(drop=True)
@@ -437,14 +423,6 @@ class RecurringService:
                 continue
             cadence_name, period_days = cadence
 
-            # Short cadences need more sightings than long ones before the
-            # pattern means anything.
-            min_occurrences = self._MIN_OCCURRENCES.get(
-                cadence_name, self._MIN_OCCURRENCES_DEFAULT
-            )
-            if len(charges) < min_occurrences:
-                continue
-
             # Regular gaps: the intervals themselves must be consistent, not
             # just their median. A merchant visited at scattered intervals
             # (groceries, cafés) is rejected here.
@@ -452,14 +430,9 @@ class RecurringService:
             if interval_spread > self._MAX_INTERVAL_MAD_CV:
                 continue
 
-            # Anchored to a billing day. Only gated at fortnightly scale, where
-            # the weekday is a tight constraint; see the constant.
-            anchor = self._anchor_score(dates, period_days)
-            if (
-                period_days <= self._ANCHOR_GATED_MAX_PERIOD_DAYS
-                and anchor < self._MIN_ANCHOR_SCORE
-            ):
-                continue
+            # How tightly the charges hold one day of the month. Scored, never
+            # gated; see the constant.
+            anchor = self._anchor_score(dates)
 
             amount = float(amounts.median())
             if amount <= 0:
@@ -503,7 +476,7 @@ class RecurringService:
                 + weights["anchor"] * anchor
                 + weights["amount"] * amount_score
                 + weights["evidence"]
-                * min(1.0, len(charges) / (2 * min_occurrences)),
+                * min(1.0, len(charges) / (2 * self._MIN_OCCURRENCES)),
                 2,
             )
 

@@ -429,9 +429,12 @@ class TestCadenceMatching:
         assert service._match_cadence(45) is None
         assert service._match_cadence(20) is None
 
-    def test_a_seven_day_gap_belongs_to_no_band(self, db_session):
-        """Weekly was removed, so a seven-day rhythm matches nothing."""
-        assert RecurringService(db_session)._match_cadence(7) is None
+    def test_sub_monthly_gaps_belong_to_no_band(self, db_session):
+        """Nothing below a month is a billing cadence."""
+        service = RecurringService(db_session)
+        assert service._match_cadence(7) is None
+        assert service._match_cadence(14) is None
+        assert service._match_cadence(24) is None
 
     def test_bimonthly_is_no_longer_swallowed_by_quarterly(self, db_session):
         """A two-month gap matches bimonthly, not quarterly."""
@@ -444,22 +447,18 @@ class TestAnchorScore:
     def test_a_fixed_day_of_month_scores_perfectly(self, db_session):
         """Every charge on the 12th anchors completely."""
         dates = pd.Series(pd.to_datetime(["2026-01-12", "2026-02-12", "2026-03-12"]))
-        assert RecurringService(db_session)._anchor_score(dates, 30) == 1.0
+        assert RecurringService(db_session)._anchor_score(dates) == 1.0
 
     def test_the_month_wrap_is_measured_circularly(self, db_session):
         """The 1st and the 30th are two days apart, not twenty-nine."""
         dates = pd.Series(pd.to_datetime(["2026-01-30", "2026-03-01", "2026-03-31"]))
-        assert RecurringService(db_session)._anchor_score(dates, 30) == 1.0
+        assert RecurringService(db_session)._anchor_score(dates) == 1.0
 
     def test_scattered_days_score_low(self, db_session):
         """Days spread across the month do not anchor."""
         dates = pd.Series(pd.to_datetime(["2026-01-03", "2026-02-14", "2026-03-27"]))
-        assert RecurringService(db_session)._anchor_score(dates, 30) < 0.7
+        assert RecurringService(db_session)._anchor_score(dates) < 0.7
 
-    def test_week_scale_cadences_anchor_on_the_weekday(self, db_session):
-        """A fortnightly charge is judged on its weekday, not its day of month."""
-        dates = pd.Series(pd.to_datetime(["2026-01-05", "2026-01-19", "2026-02-02"]))
-        assert RecurringService(db_session)._anchor_score(dates, 14) == 1.0
 
 
 class TestFalsePositivesRejected:
@@ -487,14 +486,17 @@ class TestFalsePositivesRejected:
 
         assert RecurringService(db_session).get_recurring()["items"] == []
 
-    def test_a_seven_day_rhythm_is_not_a_cadence(self, db_session):
-        """Nothing is genuinely billed weekly, so the band does not exist.
+    def test_a_sub_monthly_rhythm_is_not_a_cadence(self, db_session):
+        """Nothing is genuinely billed weekly or fortnightly.
 
-        Eight same-weekday, same-price charges would satisfy every other gate;
-        they are rejected because no cadence claims a seven-day gap.
+        Both sets of charges hold one weekday at one price and would satisfy
+        every other gate; they are rejected because no cadence claims a gap
+        that short.
         """
         for date in _from("2026-01-05", [0, 7, 14, 21, 28, 35, 42, 49]):
             _add_charge(db_session, "MONDAY COFFEE", -15.0, date, category="Food")
+        for date in _from("2026-01-06", [0, 14, 28, 42, 56, 70]):
+            _add_charge(db_session, "TUESDAY LUNCH", -60.0, date, category="Food")
         db_session.commit()
 
         assert RecurringService(db_session).get_recurring()["items"] == []
@@ -521,20 +523,20 @@ class TestFalsePositivesRejected:
         ]
         assert labels == ["DOMAIN RENEWAL"]
 
-    def test_a_fortnightly_charge_with_enough_evidence_is_kept(self, db_session):
-        """The shortest surviving band still detects a real commitment.
+    def test_the_shortest_surviving_band_still_detects_a_commitment(self, db_session):
+        """Monthly is now the floor, and three sightings of it are enough.
 
-        Guards the biweekly floor against being read as "short cadences are
-        never recurring" now that weekly is gone.
+        Guards the removal of the sub-monthly bands against being read as
+        "short histories are never recurring".
         """
-        for date in _from("2026-01-05", [0, 14, 28, 42]):
-            _add_charge(db_session, "CLEANER", -200.0, date)
+        for date in _from("2026-01-05", [0, 30, 61]):
+            _add_charge(db_session, "CLEANER", -800.0, date)
         db_session.commit()
 
         items = RecurringService(db_session).get_recurring(
-            today=pd.Timestamp("2026-02-20")
+            today=pd.Timestamp("2026-03-10")
         )["items"]
-        assert [i["cadence"] for i in items] == ["biweekly"]
+        assert [i["cadence"] for i in items] == ["monthly"]
 
 
 class TestTruePositivesGained:
