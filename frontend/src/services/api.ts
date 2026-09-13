@@ -705,7 +705,7 @@ export interface RecurringItem {
   normalized: string;
   amount: number;
   last_amount: number;
-  cadence: "weekly" | "monthly" | "quarterly" | "annual";
+  cadence: RecurringCadence;
   period_days: number;
   monthly_equivalent: number;
   occurrences: number;
@@ -716,7 +716,20 @@ export interface RecurringItem {
   status: "active" | "new" | "price_changed" | "ended";
   price_change: number;
   confirmation: RecurringConfirmation;
+  /** How much evidence backs the detection, 0..1. */
+  confidence: number;
+  /** ``fixed`` for a flat subscription, ``metered`` for a consumption bill. */
+  amount_kind: "fixed" | "metered";
 }
+
+export type RecurringCadence =
+  | "weekly"
+  | "biweekly"
+  | "monthly"
+  | "bimonthly"
+  | "quarterly"
+  | "semiannual"
+  | "annual";
 
 /** Where a detected candidate stands with the user. */
 export type RecurringConfirmation = "confirmed" | "pending" | "dismissed";

@@ -55,7 +55,12 @@ export function RecurringSection() {
   });
 
   const items = data?.items ?? [];
-  const pending = items.filter((item) => item.confirmation === "pending");
+  // Detection is a heuristic, so the review list leads with the candidates it
+  // is most sure about — the reviewer works down from the obvious ones rather
+  // than meeting a marginal guess first.
+  const pending = items
+    .filter((item) => item.confirmation === "pending")
+    .sort((a, b) => b.confidence - a.confidence);
   const confirmed = items.filter((item) => item.confirmation === "confirmed");
   const dismissed = items.filter((item) => item.confirmation === "dismissed");
   const isEmpty = items.length === 0;
@@ -134,13 +139,33 @@ export function RecurringSection() {
                       <p className="text-xs md:text-sm font-medium truncate" dir="auto" title={item.label}>
                         {item.label}
                       </p>
-                      <p className="text-[9px] md:text-[10px] text-[var(--text-muted)]">
-                        {t("dashboard.recurring.review.evidence", {
-                          cadence: t(`dashboard.recurring.cadence.${item.cadence}`),
-                          count: item.occurrences,
-                          amount: formatCurrency(item.amount),
-                        })}
-                      </p>
+                      <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                        <span className="text-[9px] md:text-[10px] text-[var(--text-muted)]">
+                          {t(
+                            item.amount_kind === "metered"
+                              ? "dashboard.recurring.review.evidenceMetered"
+                              : "dashboard.recurring.review.evidence",
+                            {
+                              cadence: t(
+                                `dashboard.recurring.cadence.${item.cadence}`,
+                              ),
+                              count: item.occurrences,
+                              amount: formatCurrency(item.amount),
+                            },
+                          )}
+                        </span>
+                        <span
+                          className={`text-[9px] md:text-[10px] px-1.5 py-0.5 rounded ${
+                            item.confidence >= 0.85
+                              ? "bg-emerald-500/15 text-emerald-300"
+                              : "bg-[var(--surface-light)] text-[var(--text-muted)]"
+                          }`}
+                        >
+                          {t("dashboard.recurring.review.confidence", {
+                            percent: Math.round(item.confidence * 100),
+                          })}
+                        </span>
+                      </div>
                     </div>
                     <div className="flex items-center gap-1 shrink-0">
                       <button

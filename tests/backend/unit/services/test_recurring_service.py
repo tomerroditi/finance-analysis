@@ -401,3 +401,245 @@ class TestRecurringConfirmation:
         norm = self._seed_netflix(db_session)
         with pytest.raises(ValidationException):
             RecurringService(db_session).set_decision(norm, "maybe")
+
+
+def _from(base: str, offsets: list[int]) -> list[str]:
+    """Return ``base`` shifted by each offset in days, as YYYY-MM-DD strings."""
+    start = pd.Timestamp(base)
+    return [(start + pd.Timedelta(days=o)).strftime("%Y-%m-%d") for o in offsets]
+
+
+class TestCadenceMatching:
+    """The cadence bands are tight and do not overlap."""
+
+    def test_each_cadence_claims_its_own_period(self, db_session):
+        """A gap at the centre of a band is matched to that band."""
+        service = RecurringService(db_session)
+        for name, days, _tolerance in service._CADENCES:
+            assert service._match_cadence(days) == (name, days)
+
+    def test_a_gap_between_two_bands_is_not_a_cadence(self, db_session):
+        """38 and 45 days belong to nothing — they are not rounded to monthly.
+
+        The old single ±35% tolerance stretched "monthly" from 19.5 to 40.5
+        days, which is where most of the false positives lived.
+        """
+        service = RecurringService(db_session)
+        assert service._match_cadence(38) is None
+        assert service._match_cadence(45) is None
+        assert service._match_cadence(20) is None
+
+    def test_bimonthly_is_no_longer_swallowed_by_quarterly(self, db_session):
+        """A two-month gap matches bimonthly, not quarterly."""
+        assert RecurringService(db_session)._match_cadence(61) == ("bimonthly", 61)
+
+
+class TestAnchorScore:
+    """Charges are scored on how tightly they land on one billing day."""
+
+    def test_a_fixed_day_of_month_scores_perfectly(self, db_session):
+        """Every charge on the 12th anchors completely."""
+        dates = pd.Series(pd.to_datetime(["2026-01-12", "2026-02-12", "2026-03-12"]))
+        assert RecurringService(db_session)._anchor_score(dates, 30) == 1.0
+
+    def test_the_month_wrap_is_measured_circularly(self, db_session):
+        """The 1st and the 30th are two days apart, not twenty-nine."""
+        dates = pd.Series(pd.to_datetime(["2026-01-30", "2026-03-01", "2026-03-31"]))
+        assert RecurringService(db_session)._anchor_score(dates, 30) == 1.0
+
+    def test_scattered_days_score_low(self, db_session):
+        """Days spread across the month do not anchor."""
+        dates = pd.Series(pd.to_datetime(["2026-01-03", "2026-02-14", "2026-03-27"]))
+        assert RecurringService(db_session)._anchor_score(dates, 30) < 0.7
+
+    def test_week_cadences_anchor_on_the_weekday(self, db_session):
+        """A weekly charge is judged on its day of the week, not of the month."""
+        dates = pd.Series(pd.to_datetime(["2026-01-05", "2026-01-12", "2026-01-19"]))
+        assert RecurringService(db_session)._anchor_score(dates, 7) == 1.0
+
+
+class TestFalsePositivesRejected:
+    """Patterns the loosened old criteria accepted and the new ones do not."""
+
+    def test_scattered_gaps_around_a_monthly_median_are_rejected(self, db_session):
+        """Gaps of 24 and 36 days around a monthly median are not a cadence.
+
+        The old gate measured spread with a standard deviation and allowed
+        anything under 0.5, which this clears comfortably at 0.18. The measured
+        threshold — every real commitment in the demo history scores at most
+        0.133 — rejects it.
+        """
+        for date in _from("2026-01-06", [0, 30, 54, 90, 114, 150]):
+            _add_charge(db_session, "CORNER BAKERY", -60.0, date, category="Food")
+        db_session.commit()
+
+        assert RecurringService(db_session).get_recurring()["items"] == []
+
+    def test_a_38_day_rhythm_is_not_monthly(self, db_session):
+        """A perfectly even 38-day gap matches no cadence at all."""
+        for date in _from("2026-01-05", [0, 38, 76, 114, 152]):
+            _add_charge(db_session, "HAIR SALON", -180.0, date)
+        db_session.commit()
+
+        assert RecurringService(db_session).get_recurring()["items"] == []
+
+    def test_a_weekly_habit_needs_more_than_a_month_of_evidence(self, db_session):
+        """Four same-weekday charges are a routine, not yet a subscription."""
+        for date in _from("2026-01-05", [0, 7, 14, 21]):
+            _add_charge(db_session, "MONDAY COFFEE", -15.0, date, category="Food")
+        db_session.commit()
+
+        assert RecurringService(db_session).get_recurring()["items"] == []
+
+    def test_a_variable_amount_needs_more_sightings_than_a_fixed_one(self, db_session):
+        """Three evenly spaced annual charges qualify only at a steady price.
+
+        Three points are trivially "regular" whatever they cost, so a candidate
+        whose amount carries no evidence has to show the schedule more times.
+        A yearly back-to-school run and a yearly hotel booking got in as
+        subscriptions exactly this way.
+        """
+        for n, amount in enumerate([-180.0, -260.0, -210.0]):
+            _add_charge(db_session, "BACK TO SCHOOL", amount, _from("2024-08-20", [n * 365])[0])
+        for date in _from("2024-09-04", [0, 365, 730]):
+            _add_charge(db_session, "DOMAIN RENEWAL", -120.0, date)
+        db_session.commit()
+
+        labels = [
+            item["label"]
+            for item in RecurringService(db_session).get_recurring(
+                today=pd.Timestamp("2026-09-10")
+            )["items"]
+        ]
+        assert labels == ["DOMAIN RENEWAL"]
+
+    def test_a_weekly_charge_with_enough_evidence_is_kept(self, db_session):
+        """The same charge seen six times clears the weekly floor.
+
+        Guards the floor against being read as "weekly is never recurring".
+        """
+        for date in _from("2026-01-05", [0, 7, 14, 21, 28, 35]):
+            _add_charge(db_session, "CLEANER", -200.0, date)
+        db_session.commit()
+
+        items = RecurringService(db_session).get_recurring(
+            today=pd.Timestamp("2026-02-10")
+        )["items"]
+        assert [i["cadence"] for i in items] == ["weekly"]
+
+
+class TestTruePositivesGained:
+    """Real commitments the old criteria threw away."""
+
+    def test_a_metered_utility_bill_is_detected(self, db_session):
+        """A bill on the same day each month qualifies even as the amount swings.
+
+        Electricity and water move with consumption, so they could never clear
+        a fixed-price amount band. They earn their place with an exact schedule
+        instead, and are reported as ``metered`` so the reviewer knows why.
+        """
+        amounts = [-300.0, -480.0, -250.0, -420.0, -310.0, -450.0]
+        for n, amount in enumerate(amounts):
+            _add_charge(
+                db_session, "ELECTRIC CO", amount, _months_ago(5 - n), category="Home"
+            )
+        db_session.commit()
+
+        item = RecurringService(db_session).get_recurring(
+            today=_day_after_last_charge()
+        )["items"][0]
+        assert item["cadence"] == "monthly"
+        assert item["amount_kind"] == "metered"
+
+    def test_a_bimonthly_bill_is_priced_per_two_months(self, db_session):
+        """A 61-day bill is bimonthly, so its monthly cost is halved, not thirded.
+
+        It used to land in the quarterly band, which understated what it costs
+        per month by a third.
+        """
+        for date in _from("2026-01-08", [0, 61, 122, 183]):
+            _add_charge(db_session, "WATER CORP", -240.0, date, category="Home")
+        db_session.commit()
+
+        item = RecurringService(db_session).get_recurring(
+            today=pd.Timestamp("2026-07-10")
+        )["items"][0]
+        assert item["cadence"] == "bimonthly"
+        assert item["period_days"] == 61
+        assert item["monthly_equivalent"] == round(240.0 * 30 / 61, 2)
+
+    def test_a_semiannual_charge_is_detected(self, db_session):
+        """A half-yearly premium used to fall between the quarterly and annual bands."""
+        for date in _from("2026-01-15", [0, 182, 364]):
+            _add_charge(db_session, "CAR INSURANCE", -1800.0, date)
+        db_session.commit()
+
+        item = RecurringService(db_session).get_recurring(
+            today=pd.Timestamp("2027-01-20")
+        )["items"][0]
+        assert item["cadence"] == "semiannual"
+        assert item["period_days"] == 182
+
+    def test_a_skipped_period_does_not_reject_the_charge(self, db_session):
+        """One missed month is an outlying gap, and the spread measure is robust."""
+        for date in _from("2026-01-09", [0, 30, 61, 122, 152, 183]):
+            _add_charge(db_session, "MUSIC STREAM", -40.0, date)
+        db_session.commit()
+
+        item = RecurringService(db_session).get_recurring(
+            today=pd.Timestamp("2026-07-15")
+        )["items"][0]
+        assert item["cadence"] == "monthly"
+        assert item["occurrences"] == 6
+
+
+class TestConfidence:
+    """Every candidate carries how much evidence backs it."""
+
+    def test_an_alternating_rhythm_is_ranked_down_not_dropped(self, db_session):
+        """A strictly alternating 26/34-day rhythm scores below a steady one.
+
+        The robust spread reads an alternating rhythm as *perfectly* regular —
+        most gaps sit exactly on the median — so the interquartile term is what
+        notices the split. A genuine payment can alternate, so this ranks the
+        candidate down for the reviewer rather than discarding it.
+        """
+        for date in _from("2026-01-01", [0, 26, 60, 86, 120, 146]):
+            _add_charge(db_session, "CORNER BAKERY", -60.0, date, category="Food")
+        for date in _from("2026-01-03", [0, 30, 61, 91, 122, 152]):
+            _add_charge(db_session, "STEADY CLUB", -60.0, date)
+        db_session.commit()
+
+        items = RecurringService(db_session).get_recurring(
+            today=pd.Timestamp("2026-06-10")
+        )["items"]
+        scores = {item["label"]: item["confidence"] for item in items}
+        assert scores["CORNER BAKERY"] < scores["STEADY CLUB"]
+
+    def test_a_textbook_subscription_scores_high(self, db_session):
+        """Same day, same amount, eight times over: near-total confidence."""
+        for n in range(8):
+            _add_charge(db_session, "NETFLIX.COM 1234", -45.0, _months_ago(n))
+        db_session.commit()
+
+        item = RecurringService(db_session).get_recurring()["items"][0]
+        assert item["confidence"] >= 0.9
+        assert item["amount_kind"] == "fixed"
+
+    def test_thin_evidence_scores_lower_than_a_long_history(self, db_session):
+        """Two identical patterns rank by how many times each has been seen.
+
+        Confidence is what lets the review list put the obvious cases first
+        instead of hiding the marginal ones outright.
+        """
+        for n in range(12):
+            _add_charge(db_session, "LONG RUNNING", -45.0, _months_ago(n))
+        for n in range(3):
+            _add_charge(db_session, "JUST STARTED", -45.0, _months_ago(n))
+        db_session.commit()
+
+        items = RecurringService(db_session).get_recurring(
+            today=_day_after_last_charge()
+        )["items"]
+        scores = {item["label"]: item["confidence"] for item in items}
+        assert scores["JUST STARTED"] < scores["LONG RUNNING"]

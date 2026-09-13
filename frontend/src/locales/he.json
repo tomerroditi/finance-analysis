@@ -257,8 +257,11 @@
       },
       "cadence": {
         "weekly": "שבועי",
+        "biweekly": "כל שבועיים",
         "monthly": "חודשי",
+        "bimonthly": "דו-חודשי",
         "quarterly": "רבעוני",
+        "semiannual": "חצי שנתי",
         "annual": "שנתי"
       },
       "noneConfirmed": "עדיין לא אושר דבר — אשרו את החיובים שזוהו למעלה",
@@ -272,7 +275,13 @@
         "unconfirm": "החזרת {{label}} לבדיקה",
         "restore": "שחזור",
         "showDismissed": "הצגת נדחים ({{count}})",
-        "hideDismissed": "הסתרת נדחים"
+        "hideDismissed": "הסתרת נדחים",
+        "confidence": "התאמה {{percent}}%",
+        "evidenceMetered": "{{cadence}} · {{count}} חיובים · {{amount}} בממוצע"
+      },
+      "amountKind": {
+        "fixed": "מחיר קבוע",
+        "metered": "חיוב לפי צריכה"
       }
     },
     "goals": {

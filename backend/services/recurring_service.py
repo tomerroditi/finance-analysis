@@ -17,6 +17,7 @@ dismissed ones are suppressed for good.
 import re
 from datetime import date
 
+import numpy as np
 import pandas as pd
 from sqlalchemy.orm import Session
 
@@ -39,25 +40,93 @@ from backend.repositories.transactions_repository import TransactionsRepository
 class RecurringService:
     """Detect recurring charges from itemized transaction history."""
 
-    # (name, expected period in days). Ordered shortest-first.
+    # Cadences we recognise, as ``(name, period_days, tolerance)``. Tolerance is
+    # per-cadence and tight enough that the bands never touch: a gap that falls
+    # between two cadences (45 days, say) is not a cadence at all and is
+    # rejected rather than rounded to the nearer one. The old single ±35% band
+    # made "monthly" mean anything from 19.5 to 40.5 days, which is where most
+    # of the false positives lived. ``period_days`` stays an integer — it is
+    # also the step for the next-expected date and the new/ended windows.
     _CADENCES = [
-        ("weekly", 7),
-        ("monthly", 30),
-        ("quarterly", 91),
-        ("annual", 365),
+        ("weekly", 7, 0.25),
+        ("biweekly", 14, 0.20),
+        ("monthly", 30, 0.18),
+        # Israeli utilities (water, electricity, arnona) bill every two months.
+        # With no band of their own they landed inside the old quarterly band,
+        # which reported their monthly cost a third of what it really is.
+        ("bimonthly", 61, 0.15),
+        ("quarterly", 91, 0.15),
+        ("semiannual", 182, 0.12),
+        ("annual", 365, 0.10),
     ]
-    # A median interval is accepted as a cadence when within this relative band.
-    _CADENCE_TOLERANCE = 0.35
-    # Gaps between occurrences must be regular: std/median below this. Filters
-    # out frequent but irregular shopping (groceries, cafes).
-    _MAX_INTERVAL_CV = 0.5
-    # A subscription charges roughly the same amount each time. At least
-    # ``_MIN_AMOUNT_CONSISTENCY`` of the charges must fall within
-    # ``_AMOUNT_BAND`` of the median amount (robust to one legitimate price step).
-    _AMOUNT_BAND = 0.20
-    _MIN_AMOUNT_CONSISTENCY = 0.6
+    # Minimum sightings before a cadence is believable. Short cadences need
+    # more of them: three Monday coffees are a habit, three annual renewals are
+    # three years of evidence. Weekly is the noisiest band by far — it is where
+    # a routine looks most like a subscription — so it carries the highest bar
+    # and still leans on the user's confirmation.
+    _MIN_OCCURRENCES = {"weekly": 6, "biweekly": 4}
+    _MIN_OCCURRENCES_DEFAULT = 3
+    # Gaps must be regular, measured with a *robust* spread — median absolute
+    # deviation over the median — rather than the standard deviation. One
+    # skipped period (a subscription paused for a month) no longer rejects an
+    # otherwise metronomic charge, while genuinely scattered gaps still do.
+    #
+    # This is the gate that does the real work, and the threshold is measured
+    # rather than guessed: across the demo history every genuine commitment
+    # (streaming, gym, childcare, internet, electricity, water, arnona,
+    # national insurance, quarterly home insurance) scores at most 0.133, while
+    # the tightest piece of ordinary shopping scores 0.208. 0.15 sits in that
+    # gap. The old standard-deviation gate at 0.5 was nowhere near it.
+    _MAX_INTERVAL_MAD_CV = 0.15
+    # Week-scale cadences also have to land on one weekday. A habit — the
+    # Monday coffee, the Friday supermarket run — is the pattern most easily
+    # mistaken for a subscription, and a real weekly charge holds its weekday
+    # exactly. Month-scale cadences get no such gate: real bills slip by five
+    # or six days around weekends and month ends, and a tolerance wide enough
+    # to allow that covers a third of the month, which discriminates nothing.
+    # The day anchor still feeds the confidence score at every cadence.
+    _ANCHOR_TOLERANCE_DAYS = {7: 1, 14: 1}
+    _ANCHOR_TOLERANCE_DEFAULT = 3
+    _MIN_ANCHOR_SCORE = 0.7
+    _ANCHOR_GATED_MAX_PERIOD_DAYS = 14
+    # Acceptance path 1 — a fixed-price subscription: nearly every charge sits
+    # on the same amount.
+    _AMOUNT_BAND = 0.15
+    _MIN_AMOUNT_CONSISTENCY = 0.75
+    # Acceptance path 2 — a metered bill (electricity, water): the amount swings
+    # with consumption, so it gets a much wider band, paid for with a stricter
+    # cadence and a near-perfect day anchor. Without this path, tightening path
+    # 1 enough to drop the false positives would have dropped every utility
+    # bill with them.
+    _VARIABLE_AMOUNT_BAND = 0.50
+    _MIN_VARIABLE_AMOUNT_CONSISTENCY = 0.75
+    _VARIABLE_MAX_INTERVAL_MAD_CV = 0.12
+    # When the amount carries no evidence, the schedule has to be demonstrated
+    # more times. Three evenly spaced charges are trivially "regular" whatever
+    # they cost — that is how an annual back-to-school run and a yearly hotel
+    # booking got in as subscriptions. Six sightings on an exact schedule are
+    # a commitment; the fixed-price path keeps the lower floor because there
+    # the repeated amount is evidence in its own right.
+    _MIN_METERED_OCCURRENCES = 6
+    # A charge that skips most of the periods its history spans is not really on
+    # that cadence, however evenly spaced the few sightings were.
+    _MIN_COVERAGE = 0.5
     # Relative amount change that counts as a price change.
     _PRICE_CHANGE_THRESHOLD = 0.10
+    # Spread of the middle half of the gaps. A robust median absolute deviation
+    # reads a strictly alternating rhythm (26, 34, 26, 34 days) as *perfectly*
+    # regular, because most gaps sit exactly on the median — this notices the
+    # split. It is scored rather than gated: a genuine bimonthly payment can
+    # alternate too, so the candidate is ranked down, not thrown away.
+    _INTERVAL_SHAPE_REFERENCE = 0.60
+    # How the confidence score weighs the five kinds of evidence. Sums to 1.
+    _CONFIDENCE_WEIGHTS = {
+        "regularity": 0.25,
+        "shape": 0.15,
+        "anchor": 0.20,
+        "amount": 0.25,
+        "evidence": 0.15,
+    }
 
     def __init__(self, db: Session):
         """Initialize the recurring service.
@@ -119,7 +188,11 @@ class RecurringService:
         return RecurringService._normalize(desc)
 
     def _match_cadence(self, interval_days: float) -> tuple[str, int] | None:
-        """Match a median interval to the closest known cadence.
+        """Match a median interval to a known cadence, or reject it.
+
+        Each cadence carries its own tolerance and the bands do not overlap, so
+        an interval either falls inside one of them or is not a cadence. When
+        two bands could both claim it, the closer one wins.
 
         Parameters
         ----------
@@ -132,13 +205,123 @@ class RecurringService:
             ``(cadence_name, period_days)`` or None if no cadence fits.
         """
         best = None
-        best_rel = self._CADENCE_TOLERANCE
-        for name, days in self._CADENCES:
+        best_rel = None
+        for name, days, tolerance in self._CADENCES:
             rel = abs(interval_days - days) / days
-            if rel < best_rel:
+            if rel > tolerance:
+                continue
+            if best_rel is None or rel < best_rel:
                 best_rel = rel
                 best = (name, days)
         return best
+
+    @staticmethod
+    def _interval_spread(diffs: pd.Series, median_interval: float) -> float:
+        """Robust coefficient of variation of the gaps between charges.
+
+        Median absolute deviation over the median, rather than std over the
+        median: a single outlying gap — one skipped billing period — leaves
+        this near zero, while gaps that are scattered throughout push it up.
+
+        Parameters
+        ----------
+        diffs : pd.Series
+            Gaps between consecutive charges, in days.
+        median_interval : float
+            Median of those gaps.
+
+        Returns
+        -------
+        float
+            Robust spread, 0 for perfectly even gaps.
+        """
+        mad = float((diffs - median_interval).abs().median())
+        return mad / median_interval
+
+    @staticmethod
+    def _interval_shape(diffs: pd.Series, median_interval: float) -> float:
+        """Interquartile spread of the gaps, over their median.
+
+        Complements :meth:`_interval_spread`, which a strictly alternating
+        rhythm fools: with half the gaps long and half short, most still sit on
+        the median and the absolute deviation reads zero. The quartiles pull
+        apart instead.
+
+        Parameters
+        ----------
+        diffs : pd.Series
+            Gaps between consecutive charges, in days.
+        median_interval : float
+            Median of those gaps.
+
+        Returns
+        -------
+        float
+            Interquartile range over the median, 0 for identical gaps.
+        """
+        iqr = float(diffs.quantile(0.75) - diffs.quantile(0.25))
+        return iqr / median_interval
+
+    @classmethod
+    def _anchor_score(cls, dates: pd.Series, period_days: int) -> float:
+        """Fraction of charges landing on the cadence's anchor day.
+
+        Month-scale cadences anchor on the day of the month, week-scale ones on
+        the weekday. Distance is circular — the 1st and the 30th are two days
+        apart, not twenty-nine — so a bill that slips over a month boundary
+        still reads as anchored. Every observed day is tried as the anchor and
+        the best-supported one wins, because the median day is the wrong
+        reference when the charges straddle the wrap point.
+
+        Parameters
+        ----------
+        dates : pd.Series
+            Charge dates, ascending.
+        period_days : int
+            The matched cadence's period.
+
+        Returns
+        -------
+        float
+            Share of charges within the anchor tolerance, 0..1.
+        """
+        if period_days <= 14:
+            positions = dates.dt.dayofweek.astype(float)
+            cycle = 7.0
+        else:
+            positions = dates.dt.day.astype(float)
+            cycle = 30.44
+        tolerance = cls._ANCHOR_TOLERANCE_DAYS.get(
+            period_days, cls._ANCHOR_TOLERANCE_DEFAULT
+        )
+        best = 0.0
+        for candidate in positions.unique():
+            deviation = (positions - candidate).abs()
+            deviation = np.minimum(deviation, cycle - deviation)
+            best = max(best, float((deviation <= tolerance).mean()))
+        return best
+
+    @staticmethod
+    def _amount_consistency(
+        amounts: pd.Series, median_amount: float, band: float
+    ) -> float:
+        """Share of charges sitting within ``band`` of the median amount.
+
+        Parameters
+        ----------
+        amounts : pd.Series
+            Net charge magnitudes (positive).
+        median_amount : float
+            Median of those magnitudes.
+        band : float
+            Relative half-width of the accepted band.
+
+        Returns
+        -------
+        float
+            Share within the band, 0..1.
+        """
+        return float((amounts.sub(median_amount).abs() <= median_amount * band).mean())
 
     def get_recurring(
         self,
@@ -174,9 +357,12 @@ class RecurringService:
               ``monthly_equivalent``, ``occurrences``, ``category``,
               ``first_date``, ``last_date``, ``next_expected_date``,
               ``status`` (``active`` / ``new`` / ``price_changed`` /
-              ``ended``), ``price_change`` (signed, 0 if none) and
-              ``confirmation`` (``confirmed`` / ``pending`` / ``dismissed``).
-              Sorted by ``monthly_equivalent`` descending.
+              ``ended``), ``price_change`` (signed, 0 if none),
+              ``confirmation`` (``confirmed`` / ``pending`` / ``dismissed``),
+              ``confidence`` (0..1, how much evidence backs the detection) and
+              ``amount_kind`` (``fixed`` for a flat subscription, ``metered``
+              for a consumption bill). Sorted by ``monthly_equivalent``
+              descending.
             - ``total_monthly`` – sum of ``monthly_equivalent`` across
               **confirmed**, non-ended items. Pending candidates are not
               money the user has agreed is committed, so they are not in it.
@@ -235,7 +421,7 @@ class RecurringService:
             # drops out entirely instead of masquerading as a recurring hit.
             daily_net = group.groupby("date_parsed")["amount"].sum().sort_index()
             charges = daily_net[daily_net < 0]
-            if len(charges) < 3:
+            if len(charges) < self._MIN_OCCURRENCES_DEFAULT:
                 continue
 
             dates = charges.index.to_series().reset_index(drop=True)
@@ -247,27 +433,81 @@ class RecurringService:
             if median_interval <= 0:
                 continue
 
-            # Regular cadence: the gaps themselves must be consistent, not just
-            # their median. A merchant visited at random intervals (groceries)
-            # has a high spread and is rejected here.
-            interval_cv = float(diffs.std(ddof=0)) / median_interval
-            if interval_cv > self._MAX_INTERVAL_CV:
-                continue
-
             cadence = self._match_cadence(median_interval)
             if cadence is None:
                 continue
             cadence_name, period_days = cadence
 
-            # Stable price: most charges must cluster near the median net amount.
-            # Variable-amount spend (a basket of groceries, one-off vendors with
-            # wildly different invoices) is rejected here.
+            # Short cadences need more sightings than long ones before the
+            # pattern means anything.
+            min_occurrences = self._MIN_OCCURRENCES.get(
+                cadence_name, self._MIN_OCCURRENCES_DEFAULT
+            )
+            if len(charges) < min_occurrences:
+                continue
+
+            # Regular gaps: the intervals themselves must be consistent, not
+            # just their median. A merchant visited at scattered intervals
+            # (groceries, cafés) is rejected here.
+            interval_spread = self._interval_spread(diffs, median_interval)
+            if interval_spread > self._MAX_INTERVAL_MAD_CV:
+                continue
+
+            # Anchored to a billing day. Only gated at week scale, where the
+            # weekday is a tight constraint and a routine is most easily
+            # mistaken for a subscription; see the constant.
+            anchor = self._anchor_score(dates, period_days)
+            if (
+                period_days <= self._ANCHOR_GATED_MAX_PERIOD_DAYS
+                and anchor < self._MIN_ANCHOR_SCORE
+            ):
+                continue
+
             amount = float(amounts.median())
             if amount <= 0:
                 continue
-            within_band = float((amounts.sub(amount).abs() <= amount * self._AMOUNT_BAND).mean())
-            if within_band < self._MIN_AMOUNT_CONSISTENCY:
+
+            # Two ways to qualify: a fixed-price subscription, or a metered bill
+            # whose amount moves but whose schedule is exact. See the constants.
+            fixed_consistency = self._amount_consistency(
+                amounts, amount, self._AMOUNT_BAND
+            )
+            is_fixed = fixed_consistency >= self._MIN_AMOUNT_CONSISTENCY
+            metered_consistency = self._amount_consistency(
+                amounts, amount, self._VARIABLE_AMOUNT_BAND
+            )
+            is_metered = (
+                metered_consistency >= self._MIN_VARIABLE_AMOUNT_CONSISTENCY
+                and interval_spread <= self._VARIABLE_MAX_INTERVAL_MAD_CV
+                and len(charges) >= self._MIN_METERED_OCCURRENCES
+            )
+            if not (is_fixed or is_metered):
                 continue
+
+            # Coverage: how many of the periods this history spans actually
+            # carry a charge. Three sightings across two years are not monthly,
+            # however evenly spaced those three happened to be.
+            span_days = float((dates.iloc[-1] - dates.iloc[0]).days)
+            expected_periods = span_days / period_days + 1
+            coverage = len(charges) / expected_periods if expected_periods > 0 else 0.0
+            if coverage < self._MIN_COVERAGE:
+                continue
+
+            amount_kind = "fixed" if is_fixed else "metered"
+            amount_score = fixed_consistency if is_fixed else metered_consistency
+            interval_shape = self._interval_shape(diffs, median_interval)
+            weights = self._CONFIDENCE_WEIGHTS
+            confidence = round(
+                weights["regularity"]
+                * max(0.0, 1.0 - interval_spread / self._MAX_INTERVAL_MAD_CV)
+                + weights["shape"]
+                * max(0.0, 1.0 - interval_shape / self._INTERVAL_SHAPE_REFERENCE)
+                + weights["anchor"] * anchor
+                + weights["amount"] * amount_score
+                + weights["evidence"]
+                * min(1.0, len(charges) / (2 * min_occurrences)),
+                2,
+            )
 
             last_amount = float(amounts.iloc[-1])
             first_date = dates.iloc[0]
@@ -324,6 +564,8 @@ class RecurringService:
                 "status": status,
                 "price_change": price_change,
                 "confirmation": confirmation,
+                "confidence": confidence,
+                "amount_kind": amount_kind,
             })
 
         items.sort(key=lambda i: i["monthly_equivalent"], reverse=True)

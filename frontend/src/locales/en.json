@@ -257,8 +257,11 @@
       },
       "cadence": {
         "weekly": "Weekly",
+        "biweekly": "Every 2 weeks",
         "monthly": "Monthly",
+        "bimonthly": "Every 2 months",
         "quarterly": "Quarterly",
+        "semiannual": "Twice a year",
         "annual": "Annual"
       },
       "noneConfirmed": "Nothing confirmed yet — review the detected charges above",
@@ -272,7 +275,13 @@
         "unconfirm": "Send {{label}} back to review",
         "restore": "Restore",
         "showDismissed": "Show dismissed ({{count}})",
-        "hideDismissed": "Hide dismissed"
+        "hideDismissed": "Hide dismissed",
+        "confidence": "{{percent}}% match",
+        "evidenceMetered": "{{cadence}} · {{count}} bills · ~{{amount}} typical"
+      },
+      "amountKind": {
+        "fixed": "Fixed price",
+        "metered": "Usage bill"
       }
     },
     "goals": {
