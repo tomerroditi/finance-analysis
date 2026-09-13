@@ -13,7 +13,6 @@ from backend.scraper import ScraperAdapter, create_adapter, is_2fa_required
 from backend.scraper.adapter import (
     OtpRateLimitError,
     ResendNotSupportedError,
-    ScraperRegistryKey,
     _active_scrapers,
     _tfa_scrapers_waiting,
     scraper_registry_key,
@@ -426,8 +425,11 @@ class ScrapingService:
         matching entry in ``_active_scrapers`` is removed regardless of
         whether the process was 2FA-waiting, so an aborted account can be
         re-launched immediately instead of waiting for ``run()``'s
-        (now-moot) cleanup. The history record is always marked ``FAILED``
-        regardless.
+        (now-moot) cleanup, and its ``run()`` future is cancelled so a
+        scraper that is *not* parked on an OTP (a plain browser scrape mid
+        fetch) actually stops instead of running to completion behind the
+        user's back. The history record is marked ``CANCELED`` regardless —
+        the adapter's own bookkeeping never overwrites that status.
 
         Scoped to the caller's demo mode. ``process_id`` is a per-database
         autoincrement, so demo ``5`` and real ``5`` are different scrapes;
@@ -466,12 +468,20 @@ class ScrapingService:
                 active_key = candidate_key
                 break
         if active_key:
-            _active_scrapers.pop(active_key, None)
+            adapter = _active_scrapers.pop(active_key)
+            # The OTP sentinel only reaches a scraper parked on an OTP; a
+            # non-2FA scrape (or a 2FA one already past its OTP) needs the
+            # coroutine itself cancelled. The cancellation is marshalled onto
+            # the loop by the future's own callback, so this is thread-safe
+            # from the sync route.
+            run_future = getattr(adapter, "_run_future", None)
+            if run_future is not None:
+                run_future.cancel()
 
-        # Mark as failed in the database regardless
+        # Mark as canceled in the database regardless
         with get_db_context() as db:
             history_repo = ScrapingHistoryRepository(db)
-            history_repo.record_scrape_end(process_id, history_repo.FAILED)
+            history_repo.record_scrape_end(process_id, history_repo.CANCELED)
 
     def _get_scraper_start_date(
         self, service: str, provider: str, account: str
@@ -510,47 +520,3 @@ class ScrapingService:
         else:
             start_date = date.today() - timedelta(days=365)
         return start_date
-
-    def _collect_adapters(
-        self, credentials: Dict
-    ) -> tuple[
-        Dict[ScraperRegistryKey, ScraperAdapter],
-        Dict[ScraperRegistryKey, ScraperAdapter],
-    ]:
-        """
-        Build adapter instances for all accounts in a credentials dict.
-
-        Parameters
-        ----------
-        credentials : dict
-            Nested credentials dict in the form
-            ``{service: {provider: {account: creds}}}``.
-
-        Returns
-        -------
-        tuple[dict, dict]
-            A ``(normal, tfa)`` pair keyed by :func:`scraper_registry_key`,
-            where ``normal`` holds adapters that do not require 2FA and
-            ``tfa`` holds those that do.
-
-        Notes
-        -----
-        This method is not called by the current scraping flow (which creates
-        adapters one at a time via ``start_scraping_single``) and may be unused.
-        """
-        normal: Dict[ScraperRegistryKey, ScraperAdapter] = {}
-        tfa: Dict[ScraperRegistryKey, ScraperAdapter] = {}
-        demo = AppConfig().is_demo_mode
-        for service, providers in credentials.items():
-            for provider, accounts in providers.items():
-                for account, acc_creds in accounts.items():
-                    key = scraper_registry_key(demo, service, provider, account)
-                    start = self._get_scraper_start_date(service, provider, account)
-                    adapter = create_adapter(
-                        service, provider, account, acc_creds, start, 0
-                    )
-                    if is_2fa_required(service, provider):
-                        tfa[key] = adapter
-                    else:
-                        normal[key] = adapter
-        return normal, tfa

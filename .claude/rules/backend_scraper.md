@@ -61,9 +61,10 @@ the app is concerned.
 
 All inherit `ScraperError` and carry an `ErrorType` matching the upstream
 `israeli-bank-scrapers` vocabulary (`INVALID_PASSWORD`, `CHANGE_PASSWORD`,
-`ACCOUNT_BLOCKED`, `TWO_FACTOR_RETRIEVER_MISSING`, `TIMEOUT`,
+`ACCOUNT_BLOCKED`, `TWO_FACTOR_RETRIEVER_MISSING`, `INVALID_OTP`, `TIMEOUT`,
 `AUTOMATION_BLOCKED`, `GENERIC`, `GENERAL_ERROR`): `CredentialsError`,
-`PasswordChangeError`, `AccountBlockedError`, `TwoFactorError`, `TimeoutError`,
+`PasswordChangeError`, `AccountBlockedError`, `TwoFactorError`,
+`InvalidOtpError` (the bank rejected the typed code), `TimeoutError`,
 `AutomationBlockedError`, `ConnectionError`.
 
 ## 2FA / OTP
@@ -88,8 +89,11 @@ provider name lacks `test_`. Demo mode never touches a real site.
 
 ## Limits
 
-5-minute timeout, one scrape per account per day, no automatic retry.
-History in `scraping_history` (`SUCCESS` / `FAILED` / `CANCELED`).
+5-minute timeout per run, no automatic retry, no daily cap — a user can
+re-scrape an account as often as they like (the OTP prepare limiter is the
+only throttle). History in `scraping_history` (`success` / `failed` /
+`canceled`); the latest `success` row is the watermark the next window
+starts 7 days before.
 
 ## CLI
 

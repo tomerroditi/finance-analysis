@@ -14,7 +14,6 @@ branches; the build-smoke workflow covers everything else.
 
 from __future__ import annotations
 
-import importlib
 import os
 import sys
 from pathlib import Path
@@ -22,13 +21,27 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-# Add build/ to sys.path so we can import app_entry as a module. It's
-# not a Python package; PyInstaller runs it as a script, but for tests
-# we need to import it directly.
 ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(ROOT / "build"))
 
-import app_entry  # noqa: E402
+
+@pytest.fixture(scope="module")
+def app_entry():
+    """Import ``build/app_entry.py`` as a module without mutating ``sys.path``.
+
+    It is not a Python package (PyInstaller runs it as a script), so it is
+    loaded from its file path here and dropped from ``sys.modules`` again
+    when the module's tests are done.
+    """
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location(
+        "app_entry", ROOT / "build" / "app_entry.py"
+    )
+    module = importlib.util.module_from_spec(spec)
+    sys.modules["app_entry"] = module
+    spec.loader.exec_module(module)
+    yield module
+    sys.modules.pop("app_entry", None)
 
 
 @pytest.fixture
@@ -48,14 +61,14 @@ def tmp_user_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 class TestResourceRoot:
     """Tests for ``_resource_root``."""
 
-    def test_returns_meipass_when_frozen(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    def test_returns_meipass_when_frozen(self, app_entry, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
         """When ``sys.frozen`` is set, the resource root is ``sys._MEIPASS``."""
         monkeypatch.setattr(sys, "frozen", True, raising=False)
         monkeypatch.setattr(sys, "_MEIPASS", str(tmp_path), raising=False)
 
         assert app_entry._resource_root() == tmp_path
 
-    def test_returns_repo_root_when_not_frozen(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_returns_repo_root_when_not_frozen(self, app_entry, monkeypatch: pytest.MonkeyPatch) -> None:
         """When not frozen, the resource root is the project root (parent of build/)."""
         monkeypatch.delattr(sys, "frozen", raising=False)
         monkeypatch.delattr(sys, "_MEIPASS", raising=False)
@@ -67,7 +80,7 @@ class TestResourceRoot:
 class TestSetupEnv:
     """Tests for ``_setup_env``."""
 
-    def test_creates_user_dir_and_logs_subdir(self, tmp_user_dir: Path) -> None:
+    def test_creates_user_dir_and_logs_subdir(self, app_entry, tmp_user_dir: Path) -> None:
         """``_setup_env`` should create the user-data dir and its logs subdir."""
         # Pre-condition: tmp_user_dir exists (as a tmp_path fixture artifact)
         # but it's empty.
@@ -96,7 +109,7 @@ class TestSetupEnv:
 class TestPickPort:
     """Tests for ``_pick_port``."""
 
-    def test_returns_a_usable_port(self) -> None:
+    def test_returns_a_usable_port(self, app_entry) -> None:
         """``_pick_port`` returns a port we can bind to immediately afterwards."""
         import socket
 
@@ -115,7 +128,7 @@ class TestPickPort:
 class TestCli:
     """Tests for the ``main`` argv dispatcher."""
 
-    def test_default_runs_default_mode(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_default_runs_default_mode(self, app_entry, monkeypatch: pytest.MonkeyPatch) -> None:
         """No flags → ``_run_default_mode``."""
         spy = MagicMock(return_value=0)
         monkeypatch.setattr(app_entry, "_run_default_mode", spy)
@@ -123,7 +136,7 @@ class TestCli:
         assert app_entry.main([]) == 0
         spy.assert_called_once()
 
-    def test_smoke_test_runs_smoke_mode(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_smoke_test_runs_smoke_mode(self, app_entry, monkeypatch: pytest.MonkeyPatch) -> None:
         """``--smoke-test`` → ``_run_smoke_test``."""
         spy = MagicMock(return_value=0)
         monkeypatch.setattr(app_entry, "_run_smoke_test", spy)
@@ -131,7 +144,7 @@ class TestCli:
         assert app_entry.main(["--smoke-test"]) == 0
         spy.assert_called_once()
 
-    def test_uninstall_cleanup_wipe(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_uninstall_cleanup_wipe(self, app_entry, monkeypatch: pytest.MonkeyPatch) -> None:
         """``--uninstall-cleanup --wipe`` → cleanup with wipe_data=True."""
         spy = MagicMock(return_value=0)
         monkeypatch.setattr(app_entry, "_run_uninstall_cleanup", spy)
@@ -139,7 +152,7 @@ class TestCli:
         assert app_entry.main(["--uninstall-cleanup", "--wipe"]) == 0
         spy.assert_called_once_with(wipe_data=True)
 
-    def test_uninstall_cleanup_keep_data(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_uninstall_cleanup_keep_data(self, app_entry, monkeypatch: pytest.MonkeyPatch) -> None:
         """``--uninstall-cleanup --keep-data`` → cleanup with wipe_data=False."""
         spy = MagicMock(return_value=0)
         monkeypatch.setattr(app_entry, "_run_uninstall_cleanup", spy)
@@ -147,12 +160,12 @@ class TestCli:
         assert app_entry.main(["--uninstall-cleanup", "--keep-data"]) == 0
         spy.assert_called_once_with(wipe_data=False)
 
-    def test_uninstall_cleanup_requires_wipe_or_keep_data(self) -> None:
+    def test_uninstall_cleanup_requires_wipe_or_keep_data(self, app_entry) -> None:
         """``--uninstall-cleanup`` without --wipe or --keep-data must error."""
         with pytest.raises(SystemExit):
             app_entry.main(["--uninstall-cleanup"])
 
-    def test_uninstall_cleanup_rejects_both_flags(self) -> None:
+    def test_uninstall_cleanup_rejects_both_flags(self, app_entry) -> None:
         """``--uninstall-cleanup --wipe --keep-data`` is a contradiction."""
         with pytest.raises(SystemExit):
             app_entry.main(["--uninstall-cleanup", "--wipe", "--keep-data"])

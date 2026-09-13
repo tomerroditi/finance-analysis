@@ -1,98 +1,97 @@
 """Tests for TransactionsRepository delegation to sub-repositories."""
 
 from datetime import datetime
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pandas as pd
 import pytest
-from sqlalchemy.orm import Session
 
+from backend.constants.tables import Tables
 from backend.models.transaction import (
     BankTransaction,
     CashTransaction,
     CreditCardTransaction,
+    InsuranceTransaction,
+    ManualInvestmentTransaction,
     SplitTransaction,
 )
 from backend.repositories.transactions_repository import (
-    TransactionsRepository,
-    CreditCardRepository,
-    BankRepository,
     CashRepository,
-    ManualInvestmentTransactionsRepository,
     ManualTransactionDTO,
+    TransactionsRepository,
 )
 
 
-@pytest.fixture
-def mock_db():
-    """Create a mock database session."""
-    return MagicMock(spec=Session)
+class TestTransactionsRepositoryFanOut:
+    """The category-wide rewrites must reach all five transaction tables.
 
+    ``insurance_transactions`` was added after the fan-out methods were
+    written and is easy to forget: a mock-based delegation test passes while
+    the real insurance rows keep a category the user just renamed or
+    deleted. This test therefore uses the real database and seeds one row
+    per table.
+    """
 
-@pytest.fixture
-def transactions_repo(mock_db):
-    """Create a TransactionsRepository with mocked sub-repositories."""
-    repo = TransactionsRepository(mock_db)
-    repo.cc_repo = MagicMock(spec=CreditCardRepository)
-    repo.bank_repo = MagicMock(spec=BankRepository)
-    repo.cash_repo = MagicMock(spec=CashRepository)
-    repo.manual_investments_repo = MagicMock(
-        spec=ManualInvestmentTransactionsRepository
-    )
-    return repo
+    def test_category_rewrites_reach_every_table(self, db_session):
+        """Rename, tag-clear and category-clear each land on all five tables."""
+        rows = {
+            Tables.CREDIT_CARD.value: CreditCardTransaction(
+                id="fan-cc", date="2024-01-01", provider="isracard",
+                account_name="Main Card", description="cc", amount=-10.0,
+                category="Food", tag="Groceries",
+                source=Tables.CREDIT_CARD.value,
+            ),
+            Tables.BANK.value: BankTransaction(
+                id="fan-bank", date="2024-01-02", provider="hapoalim",
+                account_name="Checking", description="bank", amount=-20.0,
+                category="Food", tag="Groceries", source=Tables.BANK.value,
+            ),
+            Tables.CASH.value: CashTransaction(
+                id="fan-cash", date="2024-01-03", provider="CASH",
+                account_name="Wallet", description="cash", amount=-30.0,
+                category="Food", tag="Groceries", source=Tables.CASH.value,
+            ),
+            Tables.MANUAL_INVESTMENT_TRANSACTIONS.value: ManualInvestmentTransaction(
+                id="fan-inv", date="2024-01-04", provider="manual",
+                account_name="Brokerage", description="inv", amount=-40.0,
+                category="Food", tag="Groceries",
+                source=Tables.MANUAL_INVESTMENT_TRANSACTIONS.value,
+            ),
+            Tables.INSURANCE.value: InsuranceTransaction(
+                id="fan-ins", date="2024-01-05", provider="haphoenix",
+                account_name="KH Policy", description="ins", amount=-50.0,
+                category="Food", tag="Groceries", source=Tables.INSURANCE.value,
+            ),
+        }
+        db_session.add_all(rows.values())
+        db_session.commit()
+        repo = TransactionsRepository(db_session)
 
+        def tagging() -> dict[str, tuple]:
+            """Read (category, tag) back out of each of the five tables."""
+            db_session.expire_all()
+            return {
+                table: (seeded.category, seeded.tag)
+                for table, seeded in rows.items()
+            }
 
-class TestTransactionsRepositoryDelegation:
-    """Tests for TransactionsRepository delegating operations to all sub-repositories."""
+        # All five tables the repository knows about are represented.
+        assert set(tagging()) == set(repo.get_all_table_names())
 
-    def test_nullify_category(self, transactions_repo):
-        """Verify nullify_category delegates to all four sub-repositories."""
-        transactions_repo.nullify_category("Groceries")
+        repo.update_category_for_tag("Food", "Essentials", "Groceries")
+        assert set(tagging().values()) == {("Essentials", "Groceries")}
 
-        transactions_repo.cc_repo.nullify_category.assert_called_once_with("Groceries")
-        transactions_repo.bank_repo.nullify_category.assert_called_once_with(
-            "Groceries"
-        )
-        transactions_repo.cash_repo.nullify_category.assert_called_once_with(
-            "Groceries"
-        )
-        transactions_repo.manual_investments_repo.nullify_category.assert_called_once_with(
-            "Groceries"
-        )
+        repo.nullify_category_and_tag("Essentials", "Groceries")
+        assert set(tagging().values()) == {(None, None)}
 
-    def test_nullify_category_and_tag(self, transactions_repo):
-        """Verify nullify_category_and_tag delegates to all four sub-repositories."""
-        transactions_repo.nullify_category_and_tag("Entertainment", "Cinema")
+        # Re-tag from the top to exercise the category-only clear, which
+        # drops the tag as well.
+        for row in rows.values():
+            row.category, row.tag = "Essentials", "Restaurants"
+        db_session.commit()
 
-        transactions_repo.cc_repo.nullify_category_and_tag.assert_called_once_with(
-            "Entertainment", "Cinema"
-        )
-        transactions_repo.bank_repo.nullify_category_and_tag.assert_called_once_with(
-            "Entertainment", "Cinema"
-        )
-        transactions_repo.cash_repo.nullify_category_and_tag.assert_called_once_with(
-            "Entertainment", "Cinema"
-        )
-        transactions_repo.manual_investments_repo.nullify_category_and_tag.assert_called_once_with(
-            "Entertainment", "Cinema"
-        )
-
-    def test_update_category_for_tag(self, transactions_repo):
-        """Verify update_category_for_tag delegates to all four sub-repositories."""
-        transactions_repo.update_category_for_tag("OldCat", "NewCat", "SomeTag")
-
-        transactions_repo.cc_repo.update_category_for_tag.assert_called_once_with(
-            "OldCat", "NewCat", "SomeTag"
-        )
-        transactions_repo.bank_repo.update_category_for_tag.assert_called_once_with(
-            "OldCat", "NewCat", "SomeTag"
-        )
-        transactions_repo.cash_repo.update_category_for_tag.assert_called_once_with(
-            "OldCat", "NewCat", "SomeTag"
-        )
-        transactions_repo.manual_investments_repo.update_category_for_tag.assert_called_once_with(
-            "OldCat", "NewCat", "SomeTag"
-        )
+        repo.nullify_category("Essentials")
+        assert set(tagging().values()) == {(None, None)}
 
 
 class TestAddTransactionIdGeneration:
@@ -454,6 +453,38 @@ class TestAddScrapedTransactionsDistinctDuplicates:
 
         repo.add_scraped_transactions(self._withdrawals_df(), "bank_transactions")
         assert db_session.query(BankTransaction).count() == 2
+
+
+class TestReadsToleratePreExistingBadDates:
+    """A single unparseable stored date must not take the whole read down."""
+
+    def test_unparseable_date_becomes_nan_not_an_exception(self, db_session):
+        """The bad row reads back with a missing date; its siblings are intact.
+
+        Dates are stored as strings, so a row written by an older build (or
+        by hand) can hold something ``to_datetime`` cannot parse. Reading it
+        used to raise, which took out every transactions/analytics endpoint
+        at once rather than degrading one row.
+        """
+        db_session.add_all([
+            CashTransaction(
+                id="good-date", date="2024-02-10", provider="CASH",
+                account_name="Wallet", description="good", amount=-10.0,
+                category="Food", tag="Snacks", source=Tables.CASH.value,
+            ),
+            CashTransaction(
+                id="bad-date", date="15/06/2024", provider="CASH",
+                account_name="Wallet", description="bad", amount=-20.0,
+                category="Food", tag="Snacks", source=Tables.CASH.value,
+            ),
+        ])
+        db_session.commit()
+
+        df = TransactionsRepository(db_session).get_table("cash")
+
+        by_desc = df.set_index("description")["date"]
+        assert by_desc["good"] == "2024-02-10"
+        assert pd.isna(by_desc["bad"])
 
 
 class TestGetTransactionById:

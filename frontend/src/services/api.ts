@@ -132,6 +132,8 @@ export const budgetApi = {
       params: { include_split_parents: includeSplitParents },
     }),
   getProjects: () => api.get("/budget/projects"),
+  getProjectsStatus: () =>
+    api.get<ProjectStatus[]>("/budget/projects/status"),
   getAvailableProjects: () => api.get("/budget/projects/available"),
   createProject: (project: { category: string; total_budget: number }) =>
     api.post("/budget/projects", project),
@@ -143,6 +145,8 @@ export const budgetApi = {
     }),
   deleteProject: (name: string) =>
     api.delete(`/budget/projects/${encodeURIComponent(name)}`),
+  setProjectClosed: (name: string, closed: boolean) =>
+    api.put(`/budget/projects/${encodeURIComponent(name)}/closed`, { closed }),
   getCurrentAlerts: (threshold?: number) =>
     api.get("/budget/alerts", {
       params: threshold !== undefined ? { threshold } : undefined,
@@ -167,7 +171,69 @@ export const budgetApi = {
   deleteYearlyRule: (id: number) => api.delete(`/budget/yearly/rules/${id}`),
   copyYearlyRules: (year: number) => api.post(`/budget/yearly/${year}/copy`),
   getCategoryConflicts: () => api.get("/budget/category-conflicts"),
+  getOverview: (year: number, month: number, includeSplitParents = false) =>
+    api.get<BudgetOverview>(`/budget/overview/${year}/${month}`, {
+      params: { include_split_parents: includeSplitParents },
+    }),
 };
+
+/** One recurring charge the month still owes. */
+export interface BudgetChargeDue {
+  label: string;
+  amount: number;
+  expected_date: string;
+}
+
+/**
+ * A project budget and whether it has been closed.
+ *
+ * A closed project is finished, not deleted: it keeps its rules, its history
+ * and its own tab, and only drops out of the budget Overview.
+ */
+export interface ProjectStatus {
+  name: string;
+  closed: boolean;
+}
+
+/**
+ * A yearly or project envelope: what the viewed month put in, and where the
+ * envelope stands overall. The two are never interchangeable — ``spent`` always
+ * describes today, whichever month is being viewed.
+ */
+export interface BudgetLongEnvelope {
+  name: string;
+  kind: "yearly" | "project";
+  category: string;
+  month_contribution: number;
+  spent: number;
+  budget: number;
+}
+
+/** Cross-kind roll-up of one month — see ``GET /budget/overview``. */
+export interface BudgetOverview {
+  year: number;
+  month: number;
+  is_current_month: boolean;
+  days_in_month: number;
+  days_elapsed: number;
+  days_left: number;
+  monthly_budget: number;
+  monthly_spent: number;
+  fixed_spent: number;
+  /** Transactions on the fixed side. Not ``charges_due.length``, which is what is still owed. */
+  fixed_charge_count: number;
+  variable_spent: number;
+  committed_remaining: number;
+  free_to_spend: number;
+  variable_per_day: number;
+  /** ``null`` once the month is settled — then there is a final figure, not a projection. */
+  projected: number | null;
+  charges_due: BudgetChargeDue[];
+  projects_month_spent: number;
+  yearly_month_spent: number;
+  total_out: number;
+  long_envelopes: BudgetLongEnvelope[];
+}
 
 export interface CategoryConflict {
   category: string;
@@ -622,7 +688,15 @@ export const analyticsApi = {
     }),
   getCashFlowForecast: () =>
     api.get<CashFlowForecast>("/analytics/cash-flow-forecast"),
-  getRecurring: () => api.get<RecurringSummary>("/analytics/recurring"),
+  getRecurring: (includeDismissed = false) =>
+    api.get<RecurringSummary>("/analytics/recurring", {
+      params: { include_dismissed: includeDismissed },
+    }),
+  setRecurringDecisions: (decisions: RecurringDecisionInput[]) =>
+    api.post<{ updated: RecurringDecisionInput[] }>(
+      "/analytics/recurring/decisions",
+      { decisions },
+    ),
   getInsights: () => api.get<Insight[]>("/analytics/insights"),
 };
 
@@ -631,7 +705,7 @@ export interface RecurringItem {
   normalized: string;
   amount: number;
   last_amount: number;
-  cadence: "weekly" | "monthly" | "quarterly" | "annual";
+  cadence: RecurringCadence;
   period_days: number;
   monthly_equivalent: number;
   occurrences: number;
@@ -641,11 +715,38 @@ export interface RecurringItem {
   next_expected_date: string;
   status: "active" | "new" | "price_changed" | "ended";
   price_change: number;
+  confirmation: RecurringConfirmation;
+  /** How much evidence backs the detection, 0..1. */
+  confidence: number;
+  /** ``fixed`` for a flat subscription, ``metered`` for a consumption bill. */
+  amount_kind: "fixed" | "metered";
+}
+
+export type RecurringCadence =
+  | "monthly"
+  | "bimonthly"
+  | "quarterly"
+  | "semiannual"
+  | "annual";
+
+/** Where a detected candidate stands with the user. */
+export type RecurringConfirmation = "confirmed" | "pending" | "dismissed";
+
+/** One verdict to store; ``pending`` undoes a previous one. */
+export interface RecurringDecisionInput {
+  normalized: string;
+  decision: RecurringConfirmation;
 }
 
 export interface RecurringSummary {
   items: RecurringItem[];
+  /** Monthly equivalent of confirmed, still-running charges only. */
   total_monthly: number;
+  /** The same sum over candidates still awaiting a verdict. */
+  pending_monthly: number;
+  pending_count: number;
+  confirmed_count: number;
+  dismissed_count: number;
 }
 
 export interface Insight {

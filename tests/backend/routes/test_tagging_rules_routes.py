@@ -1,10 +1,13 @@
 """Tests for the /api/tagging-rules API endpoints."""
 
+from unittest.mock import MagicMock, patch
+
 import pytest
 
 import backend.services.tagging_service as ts
 from backend.errors import BadRequestException, EntityNotFoundException
 from backend.models.category import Category
+from backend.models.tagging_rules import TaggingRule
 
 
 @pytest.fixture(autouse=True)
@@ -70,18 +73,24 @@ class TestTaggingRulesRoutes:
         data = response.json()
         assert data["status"] == "success"
         assert "id" in data
-        assert data["tagged_count"] >= 1
+        # Exactly one seeded transaction says PHARMACY (cc_untag_4).
+        assert data["tagged_count"] == 1
 
     def test_update_tagging_rule(self, test_client, seed_tagging_rules):
-        """PUT /api/tagging-rules/rules/{id} updates a rule."""
+        """PUT /api/tagging-rules/rules/{id} persists the new field values."""
         rule_id = seed_tagging_rules[0].id
         response = test_client.put(
             f"/api/tagging-rules/rules/{rule_id}",
-            json={"name": "Updated Supermarket Rule"},
+            json={"name": "Updated Supermarket Rule", "tag": "Restaurants"},
         )
         assert response.status_code == 200
-        data = response.json()
-        assert data["status"] == "success"
+        assert response.json()["status"] == "success"
+
+        rules = test_client.get("/api/tagging-rules/rules").json()
+        updated = next(r for r in rules if r["id"] == rule_id)
+        assert updated["name"] == "Updated Supermarket Rule"
+        assert updated["tag"] == "Restaurants"
+        assert updated["category"] == "Food"
 
     def test_delete_tagging_rule(self, test_client, seed_tagging_rules):
         """DELETE /api/tagging-rules/rules/{id} deletes a rule."""
@@ -102,12 +111,17 @@ class TestTaggingRulesRoutes:
     def test_apply_all_rules(
         self, test_client, seed_tagging_rules, seed_untagged_transactions
     ):
-        """POST /api/tagging-rules/rules/apply applies all rules."""
+        """POST /api/tagging-rules/rules/apply tags every matching transaction.
+
+        The three seeded rules (SUPERMARKET, UBER, Netflix) each match one CC
+        and one bank transaction in ``seed_untagged_transactions``; the
+        PHARMACY and wire-transfer rows match nothing.
+        """
         response = test_client.post("/api/tagging-rules/rules/apply")
         assert response.status_code == 200
         data = response.json()
         assert data["status"] == "success"
-        assert data["tagged_count"] >= 1
+        assert data["tagged_count"] == 6
 
     def test_preview_rule(self, test_client, seed_untagged_transactions):
         """POST /api/tagging-rules/rules/preview shows matching transactions."""
@@ -131,14 +145,21 @@ class TestTaggingRulesRoutes:
         assert response.status_code == 200
         data = response.json()
         assert "matches" in data
-        assert "count" in data
-        assert data["count"] >= 1
+        assert data["count"] == 2
         # All matches should contain SUPERMARKET in description
         for match in data["matches"]:
             assert "SUPERMARKET" in match["description"].upper()
 
-    def test_validate_rule_no_conflict(self, test_client):
-        """POST /api/tagging-rules/rules/validate returns valid for non-conflicting rule."""
+    def test_validate_rule_no_conflict(
+        self, test_client, seed_tagging_rules, seed_untagged_transactions
+    ):
+        """POST /rules/validate accepts a rule that overlaps no existing rule.
+
+        Conflict detection returns early when the candidate matches nothing,
+        so the rule under test deliberately DOES match seeded transactions
+        (PHARMACY) — just not the same ones as any of the three seeded rules.
+        That way the whole per-rule overlap loop actually runs.
+        """
         response = test_client.post(
             "/api/tagging-rules/rules/validate",
             json={
@@ -149,7 +170,7 @@ class TestTaggingRulesRoutes:
                             "type": "CONDITION",
                             "field": "description",
                             "operator": "contains",
-                            "value": "UNIQUE_STRING_NO_MATCH",
+                            "value": "PHARMACY",
                         }
                     ],
                 },
@@ -160,369 +181,247 @@ class TestTaggingRulesRoutes:
         assert response.status_code == 200
         assert response.json()["status"] == "valid"
 
+    def test_validate_rule_reports_an_overlap(
+        self, test_client, seed_tagging_rules, seed_untagged_transactions
+    ):
+        """A rule matching another rule's transactions with a different pair is 400."""
+        response = test_client.post(
+            "/api/tagging-rules/rules/validate",
+            json={
+                "conditions": {
+                    "type": "AND",
+                    "subconditions": [
+                        {
+                            "type": "CONDITION",
+                            "field": "description",
+                            "operator": "contains",
+                            "value": "SUPERMARKET",
+                        }
+                    ],
+                },
+                "category": "Entertainment",
+                "tag": "Cinema",
+            },
+        )
+        assert response.status_code == 400
+        assert "Conflict detected" in response.json()["detail"]
+
 
 class TestTaggingRulesRoutesErrors:
-    """Tests for error handling in tagging rules route endpoints."""
+    """Service exceptions map to HTTP status codes, one endpoint at a time.
 
-    # -- POST /rules error paths --
+    Every rule endpoint goes through the same global handlers, so the
+    per-endpoint copies of "this exception becomes this status" are
+    parametrized rather than written out seven times.
+    """
 
-    def test_create_rule_bad_request(self, test_client_no_raise):
-        """Verify 400 when rule creation raises BadRequestException."""
-        from unittest.mock import patch, MagicMock
+    # (label, http method, path, body, service method the route calls)
+    ENDPOINTS = [
+        (
+            "create",
+            "post",
+            "/api/tagging-rules/rules",
+            {
+                "name": "Rule",
+                "conditions": {"type": "AND", "subconditions": []},
+                "category": "Food",
+                "tag": "Groceries",
+            },
+            "add_rule",
+        ),
+        ("update", "put", "/api/tagging-rules/rules/1", {"name": "New Name"}, "update_rule"),
+        ("apply-all", "post", "/api/tagging-rules/rules/apply", None, "apply_rules"),
+        ("apply-one", "post", "/api/tagging-rules/rules/1/apply", None, "apply_rule_by_id"),
+        (
+            "validate",
+            "post",
+            "/api/tagging-rules/rules/validate",
+            {
+                "conditions": {"type": "AND", "subconditions": []},
+                "category": "Food",
+                "tag": "Groceries",
+            },
+            "check_conflicts",
+        ),
+        (
+            "preview",
+            "post",
+            "/api/tagging-rules/rules/preview",
+            {"conditions": {"type": "AND", "subconditions": []}, "limit": 10},
+            "preview_rule",
+        ),
+        (
+            "auto-tag-cc",
+            "post",
+            "/api/tagging-rules/rules/auto-tag-credit-cards-bills",
+            None,
+            "auto_tag_credit_cards_bills",
+        ),
+    ]
 
+    @staticmethod
+    def _call(client, method, path, body, service_method, exc):
+        """Make the request with the route's service method raising ``exc``."""
         with patch("backend.routes.tagging_rules.TaggingRulesService") as mock_cls:
             mock_svc = MagicMock()
             mock_cls.return_value = mock_svc
-            mock_svc.add_rule.side_effect = BadRequestException("Invalid conditions")
-            response = test_client_no_raise.post(
-                "/api/tagging-rules/rules",
-                json={
-                    "name": "Bad Rule",
-                    "conditions": {"type": "AND", "subconditions": []},
-                    "category": "Food",
-                    "tag": "Groceries",
-                },
-            )
-            assert response.status_code == 400
-            assert "Invalid conditions" in response.json()["detail"]
+            getattr(mock_svc, service_method).side_effect = exc
+            kwargs = {"json": body} if body is not None else {}
+            return getattr(client, method)(path, **kwargs)
 
-    def test_create_rule_internal_error(self, test_client_no_raise):
-        """Verify 500 when rule creation raises an unexpected exception."""
-        from unittest.mock import patch, MagicMock
+    @pytest.mark.parametrize(
+        "method, path, body, service_method",
+        [entry[1:] for entry in ENDPOINTS],
+        ids=[entry[0] for entry in ENDPOINTS],
+    )
+    def test_unexpected_exception_is_an_opaque_500(
+        self, test_client_no_raise, method, path, body, service_method
+    ):
+        """An unexpected error becomes a 500 whose body leaks no internals."""
+        response = self._call(
+            test_client_no_raise, method, path, body, service_method,
+            RuntimeError("psycopg: relation \"secret\" does not exist"),
+        )
 
+        assert response.status_code == 500
+        assert response.json()["detail"] == "Internal server error"
+
+    @pytest.mark.parametrize(
+        "method, path, body, service_method",
+        [entry[1:] for entry in ENDPOINTS if entry[0] != "auto-tag-cc"],
+        ids=[entry[0] for entry in ENDPOINTS if entry[0] != "auto-tag-cc"],
+    )
+    def test_bad_request_is_a_400_with_its_message(
+        self, test_client_no_raise, method, path, body, service_method
+    ):
+        """``BadRequestException`` becomes a 400 carrying the service's message."""
+        response = self._call(
+            test_client_no_raise, method, path, body, service_method,
+            BadRequestException("Invalid conditions"),
+        )
+
+        assert response.status_code == 400
+        assert "Invalid conditions" in response.json()["detail"]
+
+    @pytest.mark.parametrize(
+        "method, path, body, service_method",
+        [
+            ("put", "/api/tagging-rules/rules/99999", {"name": "X"}, "update_rule"),
+            ("post", "/api/tagging-rules/rules/99999/apply", None, "apply_rule_by_id"),
+        ],
+        ids=["update", "apply-one"],
+    )
+    def test_missing_rule_is_a_404(
+        self, test_client_no_raise, method, path, body, service_method
+    ):
+        """``EntityNotFoundException`` becomes a 404."""
+        response = self._call(
+            test_client_no_raise, method, path, body, service_method,
+            EntityNotFoundException("Rule 99999 not found"),
+        )
+
+        assert response.status_code == 404
+        assert "not found" in response.json()["detail"]
+
+    @pytest.mark.parametrize("count", [5, 0])
+    def test_auto_tag_credit_cards_bills_reports_its_count(
+        self, test_client_no_raise, count
+    ):
+        """The auto-tag endpoint echoes the service's count, zero included."""
         with patch("backend.routes.tagging_rules.TaggingRulesService") as mock_cls:
             mock_svc = MagicMock()
             mock_cls.return_value = mock_svc
-            mock_svc.add_rule.side_effect = RuntimeError("Database error")
-            response = test_client_no_raise.post(
-                "/api/tagging-rules/rules",
-                json={
-                    "name": "Error Rule",
-                    "conditions": {"type": "AND", "subconditions": []},
-                    "category": "Food",
-                    "tag": "Groceries",
-                },
-            )
-            assert response.status_code == 500
-            # The global handler sanitizes internals out of the response.
-            assert response.json()["detail"] == "Internal server error"
-
-    # -- PUT /rules/{id} error paths --
-
-    def test_update_rule_not_found(self, test_client_no_raise):
-        """Verify 404 when updating a rule that does not exist."""
-        from unittest.mock import patch, MagicMock
-
-        with patch("backend.routes.tagging_rules.TaggingRulesService") as mock_cls:
-            mock_svc = MagicMock()
-            mock_cls.return_value = mock_svc
-            mock_svc.update_rule.side_effect = EntityNotFoundException(
-                "Rule 99999 not found"
-            )
-            response = test_client_no_raise.put(
-                "/api/tagging-rules/rules/99999",
-                json={"name": "Updated Rule"},
-            )
-            assert response.status_code == 404
-            assert "not found" in response.json()["detail"]
-
-    def test_update_rule_bad_request(self, test_client_no_raise):
-        """Verify 400 when update payload fails validation."""
-        from unittest.mock import patch, MagicMock
-
-        with patch("backend.routes.tagging_rules.TaggingRulesService") as mock_cls:
-            mock_svc = MagicMock()
-            mock_cls.return_value = mock_svc
-            mock_svc.update_rule.side_effect = BadRequestException(
-                "Invalid rule conditions"
-            )
-            response = test_client_no_raise.put(
-                "/api/tagging-rules/rules/1",
-                json={"conditions": {"type": "INVALID"}},
-            )
-            assert response.status_code == 400
-            assert "Invalid rule conditions" in response.json()["detail"]
-
-    def test_update_rule_internal_error(self, test_client_no_raise):
-        """Verify 500 when update raises an unexpected exception."""
-        from unittest.mock import patch, MagicMock
-
-        with patch("backend.routes.tagging_rules.TaggingRulesService") as mock_cls:
-            mock_svc = MagicMock()
-            mock_cls.return_value = mock_svc
-            mock_svc.update_rule.side_effect = RuntimeError("Unexpected failure")
-            response = test_client_no_raise.put(
-                "/api/tagging-rules/rules/1",
-                json={"name": "New Name"},
-            )
-            assert response.status_code == 500
-            # The global handler sanitizes internals out of the response.
-            assert response.json()["detail"] == "Internal server error"
-
-    # -- POST /rules/apply error path --
-
-    def test_apply_all_rules_internal_error(self, test_client_no_raise):
-        """Verify 500 when apply_rules raises an unexpected exception."""
-        from unittest.mock import patch, MagicMock
-
-        with patch("backend.routes.tagging_rules.TaggingRulesService") as mock_cls:
-            mock_svc = MagicMock()
-            mock_cls.return_value = mock_svc
-            mock_svc.apply_rules.side_effect = RuntimeError("Apply failed")
-            response = test_client_no_raise.post("/api/tagging-rules/rules/apply")
-            assert response.status_code == 500
-            # The global handler sanitizes internals out of the response.
-            assert response.json()["detail"] == "Internal server error"
-
-    # -- POST /rules/{id}/apply paths --
-
-    def test_apply_single_rule_not_found(self, test_client_no_raise):
-        """Verify 404 when applying a rule that does not exist."""
-        from unittest.mock import patch, MagicMock
-
-        with patch("backend.routes.tagging_rules.TaggingRulesService") as mock_cls:
-            mock_svc = MagicMock()
-            mock_cls.return_value = mock_svc
-            mock_svc.apply_rule_by_id.side_effect = EntityNotFoundException(
-                "Rule 99999 not found"
-            )
-            response = test_client_no_raise.post("/api/tagging-rules/rules/99999/apply")
-            assert response.status_code == 404
-            assert "not found" in response.json()["detail"]
-
-    def test_apply_single_rule_internal_error(self, test_client_no_raise):
-        """Verify 500 when applying a single rule raises an unexpected exception."""
-        from unittest.mock import patch, MagicMock
-
-        with patch("backend.routes.tagging_rules.TaggingRulesService") as mock_cls:
-            mock_svc = MagicMock()
-            mock_cls.return_value = mock_svc
-            mock_svc.apply_rule_by_id.side_effect = RuntimeError(
-                "Rule apply exploded"
-            )
-            response = test_client_no_raise.post("/api/tagging-rules/rules/1/apply")
-            assert response.status_code == 500
-            # The global handler sanitizes internals out of the response.
-            assert response.json()["detail"] == "Internal server error"
-
-    # -- POST /rules/validate error paths --
-
-    def test_validate_rule_conflict(self, test_client_no_raise):
-        """Verify 400 when validation detects a conflict."""
-        from unittest.mock import patch, MagicMock
-
-        with patch("backend.routes.tagging_rules.TaggingRulesService") as mock_cls:
-            mock_svc = MagicMock()
-            mock_cls.return_value = mock_svc
-            mock_svc.check_conflicts.side_effect = BadRequestException(
-                "Rule conflicts with existing rule"
-            )
-            response = test_client_no_raise.post(
-                "/api/tagging-rules/rules/validate",
-                json={
-                    "conditions": {"type": "AND", "subconditions": []},
-                    "category": "Food",
-                    "tag": "Groceries",
-                },
-            )
-            assert response.status_code == 400
-            assert "conflicts" in response.json()["detail"]
-
-    def test_validate_rule_internal_error(self, test_client_no_raise):
-        """Verify 500 when validation raises an unexpected exception."""
-        from unittest.mock import patch, MagicMock
-
-        with patch("backend.routes.tagging_rules.TaggingRulesService") as mock_cls:
-            mock_svc = MagicMock()
-            mock_cls.return_value = mock_svc
-            mock_svc.check_conflicts.side_effect = RuntimeError("Validation crash")
-            response = test_client_no_raise.post(
-                "/api/tagging-rules/rules/validate",
-                json={
-                    "conditions": {"type": "AND", "subconditions": []},
-                    "category": "Food",
-                    "tag": "Groceries",
-                },
-            )
-            assert response.status_code == 500
-            # The global handler sanitizes internals out of the response.
-            assert response.json()["detail"] == "Internal server error"
-
-    # -- POST /rules/preview error paths --
-
-    def test_preview_rule_bad_request(self, test_client_no_raise):
-        """Verify 400 when preview conditions are invalid."""
-        from unittest.mock import patch, MagicMock
-
-        with patch("backend.routes.tagging_rules.TaggingRulesService") as mock_cls:
-            mock_svc = MagicMock()
-            mock_cls.return_value = mock_svc
-            mock_svc.preview_rule.side_effect = BadRequestException(
-                "Invalid conditions format"
-            )
-            response = test_client_no_raise.post(
-                "/api/tagging-rules/rules/preview",
-                json={
-                    "conditions": {"type": "INVALID"},
-                    "limit": 10,
-                },
-            )
-            assert response.status_code == 400
-            assert "Invalid conditions" in response.json()["detail"]
-
-    def test_preview_rule_internal_error(self, test_client_no_raise):
-        """Verify 500 when preview raises an unexpected exception."""
-        from unittest.mock import patch, MagicMock
-
-        with patch("backend.routes.tagging_rules.TaggingRulesService") as mock_cls:
-            mock_svc = MagicMock()
-            mock_cls.return_value = mock_svc
-            mock_svc.preview_rule.side_effect = RuntimeError("Preview crashed")
-            response = test_client_no_raise.post(
-                "/api/tagging-rules/rules/preview",
-                json={
-                    "conditions": {"type": "AND", "subconditions": []},
-                    "limit": 10,
-                },
-            )
-            assert response.status_code == 500
-            # The global handler sanitizes internals out of the response.
-            assert response.json()["detail"] == "Internal server error"
-
-    # -- POST /rules/auto-tag-credit-cards-bills --
-
-    def test_auto_tag_credit_cards_bills_success(self, test_client_no_raise):
-        """Verify successful auto-tagging of credit card bills."""
-        from unittest.mock import patch, MagicMock
-
-        with patch("backend.routes.tagging_rules.TaggingRulesService") as mock_cls:
-            mock_svc = MagicMock()
-            mock_cls.return_value = mock_svc
-            mock_svc.auto_tag_credit_cards_bills.return_value = 5
+            mock_svc.auto_tag_credit_cards_bills.return_value = count
             response = test_client_no_raise.post(
                 "/api/tagging-rules/rules/auto-tag-credit-cards-bills"
             )
-            assert response.status_code == 200
-            data = response.json()
-            assert data["status"] == "success"
-            assert data["tagged_count"] == 5
 
-    def test_auto_tag_credit_cards_bills_error(self, test_client_no_raise):
-        """Verify 500 when auto-tag credit card bills raises an exception."""
-        from unittest.mock import patch, MagicMock
+        assert response.status_code == 200
+        assert response.json() == {"status": "success", "tagged_count": count}
 
-        with patch("backend.routes.tagging_rules.TaggingRulesService") as mock_cls:
-            mock_svc = MagicMock()
-            mock_cls.return_value = mock_svc
-            mock_svc.auto_tag_credit_cards_bills.side_effect = RuntimeError(
-                "Auto-tag failed"
+
+class TestApplySingleRuleOverwrite:
+    """POST /rules/{id}/apply?overwrite=true against a real DB."""
+
+    def test_overwrite_resets_a_matching_transaction(
+        self, test_client, db_session, seed_untagged_transactions
+    ):
+        """``overwrite=true`` re-tags a row that already carries another pair.
+
+        Without the flag the same call is a no-op, which is what makes the
+        two requests worth asserting back to back.
+        """
+        from backend.models.transaction import CreditCardTransaction
+        from sqlalchemy import select
+
+        row = db_session.execute(
+            select(CreditCardTransaction).where(
+                CreditCardTransaction.id == "cc_untag_1"
             )
-            response = test_client_no_raise.post(
-                "/api/tagging-rules/rules/auto-tag-credit-cards-bills"
+        ).scalar_one()
+        row.category, row.tag = "Entertainment", "Cinema"
+        db_session.add(
+            TaggingRule(
+                name="Supermarket",
+                conditions={
+                    "type": "CONDITION",
+                    "field": "description",
+                    "operator": "contains",
+                    "value": "SUPERMARKET PURCHASE",
+                },
+                category="Food",
+                tag="Groceries",
             )
-            assert response.status_code == 500
-            # The global handler sanitizes internals out of the response.
-            assert response.json()["detail"] == "Internal server error"
+        )
+        db_session.commit()
+        rule_id = test_client.get("/api/tagging-rules/rules").json()[0]["id"]
 
-    def test_auto_tag_credit_cards_bills_zero_tagged(self, test_client_no_raise):
-        """Verify success response when no transactions are auto-tagged."""
-        from unittest.mock import patch, MagicMock
+        without = test_client.post(f"/api/tagging-rules/rules/{rule_id}/apply")
+        assert without.status_code == 200
+        assert without.json()["tagged_count"] == 0
 
-        with patch("backend.routes.tagging_rules.TaggingRulesService") as mock_cls:
-            mock_svc = MagicMock()
-            mock_cls.return_value = mock_svc
-            mock_svc.auto_tag_credit_cards_bills.return_value = 0
-            response = test_client_no_raise.post(
-                "/api/tagging-rules/rules/auto-tag-credit-cards-bills"
+        response = test_client.post(
+            f"/api/tagging-rules/rules/{rule_id}/apply?overwrite=true"
+        )
+        assert response.status_code == 200
+        assert response.json() == {"status": "success", "tagged_count": 1}
+
+        db_session.expire_all()
+        row = db_session.execute(
+            select(CreditCardTransaction).where(
+                CreditCardTransaction.id == "cc_untag_1"
             )
-            assert response.status_code == 200
-            data = response.json()
-            assert data["status"] == "success"
-            assert data["tagged_count"] == 0
+        ).scalar_one()
+        assert (row.category, row.tag) == ("Food", "Groceries")
 
 
 class TestPreviewAndValidateConditionIntegrity:
-    """Tests that malformed conditions yield 400, never 500."""
+    """Malformed conditions yield 400, never 500 — on both read endpoints."""
 
-    def _numeric_condition(self, value):
-        """Build a single numeric CONDITION node with the given value."""
-        return {
-            "type": "CONDITION",
-            "field": "amount",
-            "operator": "gt",
-            "value": value,
-        }
+    BAD_CONDITIONS = [
+        ("non-numeric", {"field": "amount", "operator": "gt", "value": "abc"}),
+        ("null-numeric", {"field": "amount", "operator": "gt", "value": None}),
+        ("short-between", {"field": "amount", "operator": "between", "value": [1]}),
+        ("blank-text", {"field": "description", "operator": "contains", "value": " "}),
+        ("unknown-field", {"field": "descripton", "operator": "contains", "value": "x"}),
+    ]
 
-    def test_preview_rejects_non_numeric_amount_value(self, test_client_no_raise):
-        """POST /rules/preview with value 'abc' on a numeric field returns 400."""
+    @pytest.mark.parametrize(
+        "leaf",
+        [entry[1] for entry in BAD_CONDITIONS],
+        ids=[entry[0] for entry in BAD_CONDITIONS],
+    )
+    @pytest.mark.parametrize("endpoint", ["preview", "validate"])
+    def test_malformed_condition_is_a_400(self, test_client_no_raise, endpoint, leaf):
+        """Each malformed leaf is rejected with 400 by preview and validate."""
+        body = {"conditions": {"type": "CONDITION", **leaf}}
+        if endpoint == "validate":
+            body |= {"category": "Food", "tag": "Groceries"}
+
         response = test_client_no_raise.post(
-            "/api/tagging-rules/rules/preview",
-            json={"conditions": self._numeric_condition("abc")},
+            f"/api/tagging-rules/rules/{endpoint}", json=body
         )
-        assert response.status_code == 400
 
-    def test_preview_rejects_null_amount_value(self, test_client_no_raise):
-        """POST /rules/preview with a null numeric value returns 400."""
-        response = test_client_no_raise.post(
-            "/api/tagging-rules/rules/preview",
-            json={"conditions": self._numeric_condition(None)},
-        )
-        assert response.status_code == 400
-
-    def test_preview_rejects_short_between_value(self, test_client_no_raise):
-        """POST /rules/preview with a one-element ``between`` value returns 400."""
-        response = test_client_no_raise.post(
-            "/api/tagging-rules/rules/preview",
-            json={
-                "conditions": {
-                    "type": "CONDITION",
-                    "field": "amount",
-                    "operator": "between",
-                    "value": [1],
-                }
-            },
-        )
-        assert response.status_code == 400
-
-    def test_validate_rejects_non_numeric_amount_value(self, test_client_no_raise):
-        """POST /rules/validate with value 'abc' on a numeric field returns 400."""
-        response = test_client_no_raise.post(
-            "/api/tagging-rules/rules/validate",
-            json={
-                "conditions": self._numeric_condition("abc"),
-                "category": "Food",
-                "tag": "Groceries",
-            },
-        )
-        assert response.status_code == 400
-
-    def test_validate_rejects_null_amount_value(self, test_client_no_raise):
-        """POST /rules/validate with a null numeric value returns 400."""
-        response = test_client_no_raise.post(
-            "/api/tagging-rules/rules/validate",
-            json={
-                "conditions": self._numeric_condition(None),
-                "category": "Food",
-                "tag": "Groceries",
-            },
-        )
-        assert response.status_code == 400
-
-    def test_validate_rejects_short_between_value(self, test_client_no_raise):
-        """POST /rules/validate with a one-element ``between`` value returns 400."""
-        response = test_client_no_raise.post(
-            "/api/tagging-rules/rules/validate",
-            json={
-                "conditions": {
-                    "type": "CONDITION",
-                    "field": "amount",
-                    "operator": "between",
-                    "value": [1],
-                },
-                "category": "Food",
-                "tag": "Groceries",
-            },
-        )
         assert response.status_code == 400
 
     def test_valid_conditions_still_preview(
@@ -531,7 +430,14 @@ class TestPreviewAndValidateConditionIntegrity:
         """A well-formed numeric condition still previews successfully."""
         response = test_client.post(
             "/api/tagging-rules/rules/preview",
-            json={"conditions": self._numeric_condition(-1000000)},
+            json={
+                "conditions": {
+                    "type": "CONDITION",
+                    "field": "amount",
+                    "operator": "gt",
+                    "value": -1000000,
+                }
+            },
         )
         assert response.status_code == 200
 
@@ -540,12 +446,17 @@ class TestPreviewLimitBounds:
     """Tests for the bounded ``limit`` field on the preview endpoint."""
 
     def _conditions(self):
-        """Build a condition matching every description."""
+        """Build a condition matching every seeded description.
+
+        A blank pattern would be the natural "match everything" value but it
+        is now rejected as a catch-all, so this matches on a letter every
+        seeded description happens to contain.
+        """
         return {
             "type": "CONDITION",
             "field": "description",
             "operator": "contains",
-            "value": "",
+            "value": "e",
         }
 
     def test_negative_limit_is_rejected(self, test_client):

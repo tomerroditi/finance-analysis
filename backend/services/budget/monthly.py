@@ -7,13 +7,13 @@ from typing import Optional
 import pandas as pd
 
 from backend.constants.budget import (
-    ALL_TAGS,
     AMOUNT,
     CATEGORY,
     ID,
     MONTH,
     NAME,
     PERIOD_MONTHLY,
+    PERIOD_PROJECT,
     PERIOD_TYPE,
     PERIOD_YEARLY,
     TAGS,
@@ -24,6 +24,13 @@ from backend.constants.tables import TransactionsTableFields
 from backend.services.transaction_classification import EXPENSE_EXCLUDED_CATEGORIES
 from backend.services.budget.core import BudgetService, _auto_fill_lock
 from backend.services.budget.yearly import YearlyBudgetService
+
+
+# Auto-fill copies the newest month's rules into every empty month up to the
+# one being viewed. Past this many months of gap the target is almost
+# certainly a mistyped year (2206 for 2026), so only the requested month is
+# filled rather than minting a rule set for every month in between.
+MAX_AUTO_FILL_GAP_MONTHS = 12
 
 
 class MonthlyBudgetService(BudgetService):
@@ -71,7 +78,7 @@ class MonthlyBudgetService(BudgetService):
         cats_n_tags = self.categories_tags_service.get_categories_and_tags(copy=True)
         for _, rule in budget_rules.iterrows():
             used_tags = rule[TAGS]
-            if used_tags == [ALL_TAGS]:
+            if self._is_all_tags(used_tags):
                 cats_n_tags.pop(rule[CATEGORY], None)
                 continue
 
@@ -105,9 +112,11 @@ class MonthlyBudgetService(BudgetService):
         Returns
         -------
         str or None
-            A summary message such as ``"Copied N rules from YYYY-M"`` if
-            rules were found and copied, or ``None`` if the prior month
-            has no rules.
+            A summary message such as ``"Copied N rules from YYYY-M"`` — where
+            ``N`` counts the rules actually created in the target month, not
+            the source month's rules (a rule whose every tag is claimed by a
+            yearly rule is skipped) — or ``None`` if the prior month has no
+            rules.
         """
         self._last_copy_skipped = []
         last_month = month - 1 if month != 1 else 12
@@ -130,7 +139,8 @@ class MonthlyBudgetService(BudgetService):
             total_budget_passthrough=True,
         )
 
-        return f"Copied {len(rules_to_copy)} rules from {last_year}-{last_month}"
+        created = len(self.get_month_rules(year, month))
+        return f"Copied {created} rules from {last_year}-{last_month}"
 
     def auto_fill_empty_months(
         self, current_year: int, current_month: int, budget_rules: pd.DataFrame
@@ -141,7 +151,9 @@ class MonthlyBudgetService(BudgetService):
 
         Finds the most recent month (before or equal to *current_month*) that
         has budget rules. Then copies those rules into every empty month from
-        the source month + 1 through *current_month* inclusive.
+        the source month + 1 through *current_month* inclusive. When the gap
+        exceeds ``MAX_AUTO_FILL_GAP_MONTHS`` only *current_month* itself is
+        filled, so a mistyped far-future year can't mint hundreds of months.
 
         Parameters
         ----------
@@ -221,9 +233,16 @@ class MonthlyBudgetService(BudgetService):
         # Get the source rules
         source_rules = self.get_month_rules(source_year, source_month, budget_rules)
 
-        # Iterate from source+1 to current month, filling empty months
+        # Iterate from source+1 to current month, filling empty months. A gap
+        # wider than the cap fills only the requested month.
         skipped: list[str] = list(getattr(self, "_auto_fill_skipped", []))
-        y, m = source_year, source_month
+        gap = (current_year * 12 + current_month) - (source_year * 12 + source_month)
+        if gap > MAX_AUTO_FILL_GAP_MONTHS:
+            y, m = current_year, current_month - 1
+            if m == 0:
+                y, m = current_year - 1, 12
+        else:
+            y, m = source_year, source_month
         while True:
             # Advance one month
             if m == 12:
@@ -313,7 +332,8 @@ class MonthlyBudgetService(BudgetService):
             If validation fails (invalid inputs or budget cap exceeded), or if
             any tag is already claimed by a yearly rule for the same ``year``.
         """
-        parsed_tags = tags.split(";") if isinstance(tags, str) else tags
+        name = str(name).strip()
+        parsed_tags = self._parse_tags(tags)
         if category != TOTAL_BUDGET and self.is_category_project_owned(category):
             raise ValueError(
                 f"The '{category}' category belongs to a project budget. "
@@ -576,6 +596,21 @@ class MonthlyBudgetService(BudgetService):
                 mask |= in_cat & month_data[tag_col].isin(rule[TAGS])
         return month_data.loc[~mask]
 
+    @classmethod
+    def _claim_order(cls, rules: pd.DataFrame) -> list[int]:
+        """Positions of ``rules`` in the order they claim transactions.
+
+        The most specific rule claims first: a rule naming fewer tags beats one
+        naming more, and ``all_tags`` goes last so it covers only what no sibling
+        tag rule claimed — the category-level counterpart of "Other Expenses".
+        Ties keep the rules' own order.
+        """
+        def priority(position: int) -> tuple[bool, int, int]:
+            tags = rules.iloc[position][TAGS]
+            return cls._is_all_tags(tags), len(tags), position
+
+        return sorted(range(len(rules)), key=priority)
+
     def get_monthly_budget_view(
         self, year: int, month: int, include_split_parents: bool = False
     ) -> Optional[list[dict]]:
@@ -583,6 +618,9 @@ class MonthlyBudgetService(BudgetService):
         Compute budget rule usage view for a given month.
 
         Matches transactions to budget rules and calculates actual spend per rule.
+        Each transaction counts toward exactly one rule — the most specific one
+        that matches (see ``_claim_order``) — so a category's ``all_tags`` rule
+        reports only the spend its sibling tag rules leave unclaimed.
         Project-category transactions and pending-refund transactions are excluded.
         If spend remains after all rules are matched, an ``"Other Expenses"`` entry
         is appended using the unallocated portion of the total budget.
@@ -647,32 +685,34 @@ class MonthlyBudgetService(BudgetService):
             )
             rules = rules.loc[~rules.index.isin(total_rule.index)]
         remaining_data = month_data.copy()
-        for _, rule in rules.iterrows():
+        claimed: dict[int, pd.DataFrame] = {}
+        for position in self._claim_order(rules):
+            rule = rules.iloc[position]
             tags = rule[TAGS]
             cat_data = remaining_data[
                 remaining_data[TransactionsTableFields.CATEGORY.value] == rule[CATEGORY]
             ]
-
-            is_all_tags = [t.lower() for t in tags] == [ALL_TAGS.lower()]
-            if not is_all_tags:
+            if not self._is_all_tags(tags):
                 cat_data = cat_data[
                     cat_data[TransactionsTableFields.TAG.value].isin(tags)
                 ]
+            claimed[position] = cat_data
+            remaining_data = remaining_data.loc[
+                ~remaining_data.index.isin(cat_data.index)
+            ]
 
-            amt = cat_data[TransactionsTableFields.AMOUNT.value].sum() * -1
+        for position in range(len(rules)):
+            cat_data = claimed[position]
             view.append(
                 {
-                    "rule": rule.to_dict(),
-                    "current_amount": amt,
+                    "rule": rules.iloc[position].to_dict(),
+                    "current_amount": cat_data[TransactionsTableFields.AMOUNT.value].sum()
+                    * -1,
                     "data": cat_data.to_dict(orient="records"),
                     "allow_edit": True,
                     "allow_delete": True,
                 }
             )
-
-            remaining_data = remaining_data.loc[
-                ~remaining_data.index.isin(cat_data.index)
-            ]
 
         if not remaining_data.empty and not rules.empty and not total_rule.empty:
             total_alloc = rules[AMOUNT].sum()
@@ -741,10 +781,11 @@ class MonthlyBudgetService(BudgetService):
             expenses[TransactionsTableFields.DATE.value]
         )
 
-        # Get project categories
-        project_categories = budget_rules[
-            budget_rules[YEAR].isnull() & budget_rules[MONTH].isnull()
-        ][CATEGORY].unique()
+        # Get project categories (keyed on the explicit discriminator, not on
+        # null year/month — a yearly rule also has a null month).
+        project_categories = budget_rules.loc[
+            budget_rules[PERIOD_TYPE] == PERIOD_PROJECT, CATEGORY
+        ].unique()
 
         if len(project_categories) == 0:
             return None

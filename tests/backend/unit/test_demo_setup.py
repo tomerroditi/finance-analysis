@@ -1,12 +1,34 @@
 """Unit tests for demo database date-shifting (``backend.demo_setup``)."""
 
+import shutil
 from datetime import date, timedelta
 
+import pytest
 from sqlalchemy import create_engine, text
 from sqlalchemy.pool import StaticPool
 
-from backend.demo_setup import _backfill_budget_rule_period_type, _shift_dates
+from backend.demo_setup import (
+    DEMO_REFERENCE_DATE,
+    _backfill_budget_rule_period_type,
+    _drop_retired_columns,
+    _shift_dates,
+    _source_db_path,
+    sync_missing_columns,
+)
 from backend.models.base import Base
+
+#: "Today" values spanning early/late days of the month, a month shorter than
+#: the reference day, and a year boundary. The reference date is day 25, so
+#: any day before it is where a day-1 anchor used to fall a month behind.
+SHIFT_TODAYS = [
+    date(2026, 9, 1),
+    date(2026, 9, 11),
+    date(2026, 9, 24),
+    date(2026, 9, 30),
+    date(2027, 2, 28),
+    date(2027, 1, 3),
+    DEMO_REFERENCE_DATE,
+]
 
 
 def _make_engine():
@@ -242,3 +264,161 @@ class TestBackfillBudgetRulePeriodType:
         assert self._read_period_type(engine, 1) == "monthly"
         assert self._read_period_type(engine, 2) == "project"
         assert self._read_period_type(engine, 3) == "yearly"
+
+
+class TestShiftBudgetRuleMonths:
+    """``_shift_dates`` moves ``budget_rules`` by whole calendar months.
+
+    The snapshot's newest monthly rules sit in ``DEMO_REFERENCE_DATE``'s
+    month, so after the shift they must sit in today's month on every day of
+    the month. Anchoring each rule to day 1 and adding the raw day offset put
+    them a month behind whenever today's day-of-month was earlier than the
+    reference day, leaving the current month with no Total Budget rule.
+    """
+
+    def _seed_rule(self, engine, rule_id, year, month, period_type):
+        """Insert one ``budget_rules`` row with the given period columns."""
+        ts = "2026-01-01 00:00:00"
+        with engine.connect() as conn:
+            conn.execute(
+                text(
+                    "INSERT INTO budget_rules "
+                    "(id, name, amount, category, tags, year, month, period_type, "
+                    "created_at, updated_at) "
+                    "VALUES (:id, 'Total Budget', 100.0, 'Total Budget', 'all_tags', "
+                    ":y, :m, :pt, :ts, :ts)"
+                ),
+                {"id": rule_id, "y": year, "m": month, "pt": period_type, "ts": ts},
+            )
+            conn.commit()
+
+    def _read_period(self, engine, rule_id):
+        """Return the stored ``(year, month)`` for a given rule id."""
+        with engine.connect() as conn:
+            row = conn.execute(
+                text("SELECT year, month FROM budget_rules WHERE id = :id"),
+                {"id": rule_id},
+            ).fetchone()
+        return row[0], row[1]
+
+    @pytest.mark.parametrize("today", SHIFT_TODAYS)
+    def test_shift_reference_month_rule_lands_in_today_month(self, today):
+        """A rule in the reference month moves to the month containing today."""
+        engine = _make_engine()
+        self._seed_rule(
+            engine, 1, DEMO_REFERENCE_DATE.year, DEMO_REFERENCE_DATE.month, "monthly"
+        )
+
+        _shift_dates(engine, (today - DEMO_REFERENCE_DATE).days)
+
+        assert self._read_period(engine, 1) == (today.year, today.month)
+
+    def test_shift_preserves_month_spacing(self):
+        """Rules five months apart before the shift stay five months apart."""
+        engine = _make_engine()
+        self._seed_rule(engine, 1, 2026, 2, "monthly")
+        self._seed_rule(engine, 2, 2025, 9, "monthly")
+
+        _shift_dates(engine, (date(2026, 9, 11) - DEMO_REFERENCE_DATE).days)
+
+        assert self._read_period(engine, 1) == (2026, 9)
+        assert self._read_period(engine, 2) == (2026, 4)
+
+    def test_shift_yearly_rule_moves_by_whole_years(self):
+        """A yearly rule (``month`` NULL) shifts its year rather than crashing."""
+        engine = _make_engine()
+        self._seed_rule(engine, 1, 2026, None, "yearly")
+
+        _shift_dates(engine, (date(2027, 1, 3) - DEMO_REFERENCE_DATE).days)
+
+        assert self._read_period(engine, 1) == (2027, None)
+
+    def test_shift_leaves_project_rule_untouched(self):
+        """A project rule has no period columns, so the shift leaves it alone."""
+        engine = _make_engine()
+        self._seed_rule(engine, 1, None, None, "project")
+
+        _shift_dates(engine, (date(2026, 9, 11) - DEMO_REFERENCE_DATE).days)
+
+        assert self._read_period(engine, 1) == (None, None)
+
+
+class TestDemoSnapshotCurrentMonthBudget:
+    """The shipped demo snapshot has a Total Budget rule for today's month.
+
+    Category rules are rejected until the month has a Total Budget rule, so
+    this is what lets a Demo Mode user add a budget rule on any date without
+    relying on the monthly view's auto-fill to copy one forward first.
+    """
+
+    @pytest.mark.parametrize("today", SHIFT_TODAYS)
+    def test_snapshot_current_month_has_total_budget(self, tmp_path, today):
+        """After the demo prep steps, today's month carries the Total Budget rule."""
+        db_path = tmp_path / "demo.db"
+        shutil.copy2(_source_db_path(), db_path)
+        engine = create_engine(f"sqlite:///{db_path}")
+        Base.metadata.create_all(bind=engine)
+        sync_missing_columns(engine)
+        _drop_retired_columns(engine)
+        _backfill_budget_rule_period_type(engine)
+
+        _shift_dates(engine, (today - DEMO_REFERENCE_DATE).days)
+
+        with engine.connect() as conn:
+            names = (
+                conn.execute(
+                    text(
+                        "SELECT name FROM budget_rules WHERE period_type = 'monthly' "
+                        "AND year = :y AND month = :m"
+                    ),
+                    {"y": today.year, "m": today.month},
+                )
+                .scalars()
+                .all()
+            )
+        engine.dispose()
+        assert "Total Budget" in names
+
+
+class TestShiftSavingsGoalMonths:
+    """Savings-goal ``start_month``/``closed_month`` move by whole months.
+
+    They share the calendar-month shift with ``budget_rules``, so a goal
+    started in the reference month starts in today's month on any day.
+    """
+
+    def _seed_goal(self, engine, start_month, closed_month):
+        """Insert one ``savings_goals`` row with the given month strings."""
+        ts = "2026-01-01 00:00:00"
+        with engine.connect() as conn:
+            conn.execute(
+                text(
+                    "INSERT INTO savings_goals "
+                    "(id, name, target_amount, opening_balance, priority, status, "
+                    "start_month, closed_month, created_at, updated_at) "
+                    "VALUES (1, 'Wedding Fund', 1000.0, 0.0, 1, 'active', "
+                    ":start, :closed, :ts, :ts)"
+                ),
+                {"start": start_month, "closed": closed_month, "ts": ts},
+            )
+            conn.commit()
+
+    def _read_months(self, engine):
+        """Return the stored ``(start_month, closed_month)`` of the seeded goal."""
+        with engine.connect() as conn:
+            row = conn.execute(
+                text("SELECT start_month, closed_month FROM savings_goals WHERE id = 1")
+            ).fetchone()
+        return row[0], row[1]
+
+    @pytest.mark.parametrize("today", SHIFT_TODAYS)
+    def test_shift_reference_month_goal_lands_in_today_month(self, today):
+        """A goal started and closed in the reference month moves to today's month."""
+        engine = _make_engine()
+        reference = f"{DEMO_REFERENCE_DATE.year:04d}-{DEMO_REFERENCE_DATE.month:02d}"
+        self._seed_goal(engine, reference, reference)
+
+        _shift_dates(engine, (today - DEMO_REFERENCE_DATE).days)
+
+        expected = f"{today.year:04d}-{today.month:02d}"
+        assert self._read_months(engine) == (expected, expected)

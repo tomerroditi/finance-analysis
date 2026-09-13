@@ -7,6 +7,7 @@ from backend.constants.budget import (
     AMOUNT,
     CATEGORY,
     ID,
+    IS_CLOSED,
     MONTH,
     NAME,
     PERIOD_MONTHLY,
@@ -18,7 +19,11 @@ from backend.constants.budget import (
     YEAR,
 )
 from backend.constants.tables import TransactionsTableFields
-from backend.errors import EntityNotFoundException
+from backend.errors import (
+    EntityAlreadyExistsException,
+    EntityNotFoundException,
+    ValidationException,
+)
 from backend.services.budget.core import BudgetService
 
 
@@ -77,16 +82,30 @@ class ProjectBudgetService(BudgetService):
 
         Raises
         ------
+        EntityAlreadyExistsException
+            If a project for ``category`` already exists.
+        ValidationException
+            If ``category`` is not a known category, so no rules are written
+            for a name that can't be tagged against.
         ValueError
             If ``category`` already has a monthly or yearly budget rule. A
             category can't be in both a project and a monthly/yearly budget.
         """
+        if category in self.get_all_projects_names():
+            raise EntityAlreadyExistsException(
+                f"A project for the '{category}' category already exists."
+            )
         if self.category_used_by_monthly_or_yearly(category):
             raise ValueError(
                 f"The '{category}' category is already used by a monthly or "
                 f"yearly budget. A category can't be in both a project and a "
                 f"monthly/yearly budget."
             )
+        # Resolve the tag list before writing anything: an unknown category
+        # used to fail here *after* the total rule was persisted.
+        all_tags = self.categories_tags_service.get_categories_and_tags(copy=True)
+        if category not in all_tags:
+            raise ValidationException(f"Unknown category '{category}'.")
 
         self.add_rule(
             name=TOTAL_BUDGET,
@@ -97,9 +116,7 @@ class ProjectBudgetService(BudgetService):
             year=None,
         )
 
-        tags = self.categories_tags_service.get_categories_and_tags(copy=True)
-        tags = tags[category]
-        for tag in tags:
+        for tag in all_tags[category]:
             self.add_rule(
                 name=tag, amount=0, category=category, tags=[tag], month=None, year=None
             )
@@ -116,7 +133,7 @@ class ProjectBudgetService(BudgetService):
             New overall spending limit for the project.
         """
         rules = self.get_rules_for_project(category)
-        total_rule = rules.loc[rules[TAGS].apply(lambda x: x == [ALL_TAGS])]
+        total_rule = rules.loc[rules[TAGS].apply(self._is_all_tags)]
         if total_rule.empty:
             raise EntityNotFoundException(
                 f"No total budget rule found for project '{category}'"
@@ -147,6 +164,86 @@ class ProjectBudgetService(BudgetService):
             Tag whose budget rule should be deleted.
         """
         self.budget_repository.delete_by_category_and_tags(category, tag)
+
+    def set_project_closed(self, category: str, closed: bool) -> None:
+        """Mark a project as closed (finished) or reopen it.
+
+        Closing is deliberately not a delete: the project keeps every rule and
+        every transaction, and its own tab still shows the full history. What
+        it loses is its place in the budget Overview — a finished renovation
+        should stop being an envelope the current month is measured against.
+
+        Parameters
+        ----------
+        category : str
+            Project category name.
+        closed : bool
+            ``True`` closes the project, ``False`` reopens it.
+
+        Raises
+        ------
+        EntityNotFoundException
+            If no project budget rules exist for ``category``.
+        """
+        if category not in self.get_all_projects_names():
+            raise EntityNotFoundException(f"Project '{category}' not found")
+        self.budget_repository.set_closed_by_category(category, closed)
+
+    @staticmethod
+    def _rules_are_closed(rules: pd.DataFrame) -> bool:
+        """Whether a frame of one project's rules belongs to a closed project.
+
+        Any flagged rule closes the project rather than all of them: closing
+        writes the flag across the rules a project has at that moment, and
+        :meth:`get_project_budget_view` mints a fresh zero-amount rule whenever
+        a transaction carries a tag no rule covers yet. Requiring every rule to
+        agree would let one such late row silently reopen the project.
+        """
+        if rules.empty or IS_CLOSED not in rules.columns:
+            return False
+        return bool(rules[IS_CLOSED].fillna(0).astype(int).max() == 1)
+
+    def is_project_closed(self, category: str) -> bool:
+        """Whether ``category``'s project budget has been closed."""
+        rules = self.get_all_rules()
+        if rules.empty:
+            return False
+        return self._rules_are_closed(rules.loc[rules[CATEGORY] == category])
+
+    def get_closed_projects_names(self) -> list[str]:
+        """Names of the project categories that have been closed.
+
+        Returns
+        -------
+        list[str]
+            Category names whose project rules carry the closed flag.
+        """
+        rules = self.get_all_rules()
+        if rules.empty:
+            return []
+        return [
+            name
+            for name, group in rules.groupby(CATEGORY)
+            if self._rules_are_closed(group)
+        ]
+
+    def get_projects_status(self) -> list[dict]:
+        """All projects with their closed flag, in one read.
+
+        Returns
+        -------
+        list[dict]
+            One ``{"name": str, "closed": bool}`` entry per project, so a
+            caller listing projects does not need a second request to tell
+            the finished ones apart.
+        """
+        rules = self.get_all_rules()
+        if rules.empty:
+            return []
+        return [
+            {"name": str(name), "closed": self._rules_are_closed(group)}
+            for name, group in rules.groupby(CATEGORY)
+        ]
 
     def get_project_transactions(
         self, project: str, include_split_parents: bool = False
@@ -241,8 +338,12 @@ class ProjectBudgetService(BudgetService):
             - ``name`` – project category name.
             - ``rules`` – list of rule view dicts (same shape as ``get_monthly_budget_view``).
             - ``total_spent`` – total amount spent on the project.
+            - ``closed`` – whether the project has been marked finished.
         """
         rules = self.get_rules_for_project(project)
+        # ``rules`` is consumed below (the anchor row is dropped out of it), so
+        # the closed state is read off the full set before that happens.
+        rules_for_state = rules
         transactions = self.get_project_transactions(project, include_split_parents)
 
         view = []
@@ -250,12 +351,7 @@ class ProjectBudgetService(BudgetService):
         # Total Project Rule
         total_rule = pd.DataFrame()
         if not rules.empty:
-            # Find where tags == [ALL_TAGS] (handle case sensitivity)
-            total_rule = rules[
-                rules[TAGS].apply(
-                    lambda x: [t.lower() for t in x] == [ALL_TAGS.lower()]
-                )
-            ]
+            total_rule = rules[rules[TAGS].apply(self._is_all_tags)]
 
         # Ensure transactions is JSON serializable (handle NaNs)
         transactions_processed = transactions.where(pd.notnull(transactions), None)
@@ -351,8 +447,7 @@ class ProjectBudgetService(BudgetService):
 
                 new_rule = new_rule_df[
                     (new_rule_df[CATEGORY] == project)
-                    & (new_rule_df[YEAR].isnull())
-                    & (new_rule_df[MONTH].isnull())
+                    & (new_rule_df[PERIOD_TYPE] == PERIOD_PROJECT)
                     & (new_rule_df[NAME] == tag)
                 ]
 
@@ -381,4 +476,9 @@ class ProjectBudgetService(BudgetService):
                     }
                 )
 
-        return {"name": project, "rules": view, "total_spent": total_spent}
+        return {
+            "name": project,
+            "rules": view,
+            "total_spent": total_spent,
+            "closed": self._rules_are_closed(rules_for_state),
+        }

@@ -3,6 +3,11 @@ Unit tests for transaction ORM models and TimestampMixin.
 
 Covers BankTransaction, CreditCardTransaction, CashTransaction,
 ManualInvestmentTransaction, and SplitTransaction.
+
+The ``source`` column holds the **table** name (``bank_transactions``), not
+the service alias (``banks``) — that is what the ingestion path writes and
+what the split read-side joins on, so the fixtures here use the ``Tables``
+enum rather than a hand-written string.
 """
 
 from datetime import datetime
@@ -31,7 +36,7 @@ class TestTimestampMixin:
             account_name="main",
             description="Test transaction",
             amount=-100.0,
-            source="banks",
+            source=Tables.BANK.value,
         )
         db_session.add(txn)
         db_session.commit()
@@ -49,7 +54,7 @@ class TestTimestampMixin:
             account_name="main",
             description="Test transaction",
             amount=-50.0,
-            source="banks",
+            source=Tables.BANK.value,
         )
         db_session.add(txn)
         db_session.commit()
@@ -78,7 +83,7 @@ class TestBankTransaction:
             amount=-150.50,
             category="Food",
             tag="Groceries",
-            source="banks",
+            source=Tables.BANK.value,
             type="normal",
             status="completed",
         )
@@ -101,7 +106,7 @@ class TestBankTransaction:
             account_name="investments",
             description="Transfer",
             amount=500.0,
-            source="banks",
+            source=Tables.BANK.value,
         )
         db_session.add(txn)
         db_session.commit()
@@ -120,7 +125,7 @@ class TestBankTransaction:
             account_name="main",
             description="Payment",
             amount=-25.0,
-            source="banks",
+            source=Tables.BANK.value,
         )
         db_session.add(txn)
         db_session.commit()
@@ -147,7 +152,7 @@ class TestCreditCardTransaction:
             description="Online shopping",
             amount=-299.99,
             category="Shopping",
-            source="credit_cards",
+            source=Tables.CREDIT_CARD.value,
         )
         db_session.add(txn)
         db_session.commit()
@@ -166,7 +171,7 @@ class TestCreditCardTransaction:
             account_name="business",
             description="Office supplies",
             amount=-89.00,
-            source="credit_cards",
+            source=Tables.CREDIT_CARD.value,
         )
         db_session.add(txn)
         db_session.commit()
@@ -193,7 +198,7 @@ class TestCashTransaction:
             account_name="wallet",
             description="Coffee shop",
             amount=-15.0,
-            source="cash",
+            source=Tables.CASH.value,
         )
         db_session.add(txn)
         db_session.commit()
@@ -224,7 +229,7 @@ class TestManualInvestmentTransaction:
             amount=-1000.0,
             category="Investments",
             tag="Stocks",
-            source="manual_investments",
+            source=Tables.MANUAL_INVESTMENT_TRANSACTIONS.value,
         )
         db_session.add(txn)
         db_session.commit()
@@ -245,7 +250,7 @@ class TestSplitTransaction:
         """Test model can be instantiated with all fields."""
         split = SplitTransaction(
             transaction_id=1,
-            source="banks",
+            source=Tables.BANK.value,
             amount=-50.0,
             category="Food",
             tag="Groceries",
@@ -256,14 +261,14 @@ class TestSplitTransaction:
 
         assert split.id is not None
         assert split.transaction_id == 1
-        assert split.source == "banks"
+        assert split.source == Tables.BANK.value
         assert split.amount == -50.0
 
     def test_nullable_fields(self, db_session: Session):
         """Test nullable category and tag fields."""
         split = SplitTransaction(
             transaction_id=2,
-            source="credit_cards",
+            source=Tables.CREDIT_CARD.value,
             amount=-25.0,
         )
         db_session.add(split)
@@ -277,7 +282,7 @@ class TestSplitTransaction:
         """Test model has TimestampMixin fields."""
         split = SplitTransaction(
             transaction_id=3,
-            source="banks",
+            source=Tables.BANK.value,
             amount=-100.0,
         )
         db_session.add(split)

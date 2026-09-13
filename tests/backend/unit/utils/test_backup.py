@@ -8,7 +8,8 @@ no matching file must still raise ``FileNotFoundError``, and a filename
 that does match an existing backup must still restore successfully.
 
 Uses ``tmp_path`` + ``AppConfig._base_user_dir`` overrides exclusively —
-never the real ``~/.finance-analysis/`` directory.
+never the real ``~/.finance-analysis/`` directory. The root conftest's
+autouse ``_isolated_app_config`` fixture undoes every override.
 """
 
 import os
@@ -30,17 +31,6 @@ from backend.utils.backup import (
     list_backups,
     restore_backup,
 )
-
-
-@pytest.fixture(autouse=True)
-def reset_config():
-    """Reset AppConfig singleton state between tests."""
-    config = AppConfig()
-    original_base_dir = config._base_user_dir
-    original_forced_mode = AppConfig._forced_mode
-    yield
-    config._base_user_dir = original_base_dir
-    AppConfig._forced_mode = original_forced_mode
 
 
 def _make_sqlite_file(path: Path) -> None:

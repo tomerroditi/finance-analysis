@@ -48,15 +48,15 @@ class TestInvestmentNotFoundErrors:
         )
         assert response.status_code == 404
 
-    def test_reopen_nonexistent_investment_succeeds_silently(self, test_client):
-        """POST /api/investments/99999/reopen returns 200 even for non-existent ID.
+    def test_reopen_nonexistent_investment_returns_404(self, test_client):
+        """POST /api/investments/99999/reopen returns 404 for a non-existent ID.
 
-        The repository's ``reopen_investment`` does not validate existence
-        before issuing the UPDATE statement. A non-matching WHERE clause
-        simply updates zero rows without raising an error.
+        ``reopen_investment`` checks the affected row count and raises
+        ``EntityNotFoundException``, matching every other single-investment
+        endpoint instead of silently reporting success.
         """
         response = test_client.post("/api/investments/99999/reopen")
-        assert response.status_code == 200
+        assert response.status_code == 404
 
     def test_get_analysis_nonexistent_investment(self, test_client):
         """GET /api/investments/99999/analysis returns 404 for non-existent ID."""

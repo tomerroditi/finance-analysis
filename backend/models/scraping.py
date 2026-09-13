@@ -9,10 +9,11 @@ from backend.constants.tables import Tables
 
 
 class ScrapingHistory(Base, TimestampMixin):
-    """ORM model recording each scraping attempt for audit and rate-limiting purposes.
+    """ORM model recording each scraping attempt.
 
-    The repository enforces a daily limit of one successful scrape per account by
-    querying this table before starting a new scrape.
+    Beyond the audit trail, the most recent ``success`` row per account is
+    the watermark the next scrape window is computed from (see
+    ``ScrapingService._get_scraper_start_date``).
 
     Attributes
     ----------
@@ -25,7 +26,9 @@ class ScrapingHistory(Base, TimestampMixin):
     date : str
         ISO timestamp of when the scrape ran.
     status : str
-        Outcome: ``SUCCESS``, ``FAILED``, or ``CANCELED``.
+        Lifecycle state: ``in_progress`` / ``waiting_for_2fa`` while running,
+        then ``success``, ``failed`` or ``canceled`` (see the constants on
+        ``ScrapingHistoryRepository``).
     start_date : str, optional
         The ``start_date`` parameter passed to the scraper (oldest data to fetch).
     error_message : str, optional

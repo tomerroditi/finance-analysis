@@ -12,13 +12,14 @@ class TestBudgetRepository:
     """Tests for BudgetRepository CRUD operations."""
 
     def test_add_monthly_rule(self, db_session: Session):
-        """Verify adding a monthly budget rule persists correctly."""
+        """Verify adding a monthly budget rule persists every column, with the
+        tags kept verbatim as one semicolon-separated string."""
         repo = BudgetRepository(db_session)
         repo.add(
             name="Food",
             amount=2000.0,
             category="Food",
-            tags="Groceries;Restaurants",
+            tags="Groceries;Restaurants;Coffee",
             month=1,
             year=2024,
         )
@@ -29,7 +30,8 @@ class TestBudgetRepository:
         assert row["name"] == "Food"
         assert row["amount"] == 2000.0
         assert row["category"] == "Food"
-        assert row["tags"] == "Groceries;Restaurants"
+        assert row["tags"] == "Groceries;Restaurants;Coffee"
+        assert row["tags"].split(";") == ["Groceries", "Restaurants", "Coffee"]
         assert row["month"] == 1
         assert row["year"] == 2024
 
@@ -203,36 +205,50 @@ class TestBudgetRepository:
         assert "Wedding Catering" in names
         assert "Wedding Jan" in names
 
-    def test_tags_stored_as_semicolon_string(self, db_session: Session):
-        """Verify tags are stored as semicolon-separated string."""
+    def test_delete_by_category_spares_yearly_rule(self, db_session: Session):
+        """Verify delete_by_category keys on period_type, not null year/month.
+
+        A yearly rule also has a null month; it must survive a project delete
+        on the same category.
+        """
         repo = BudgetRepository(db_session)
-        tags = "Groceries;Restaurants;Coffee"
-        repo.add("Food", 2000.0, "Food", tags, month=1, year=2024)
+        repo.add("Wedding Project", 50000.0, "Wedding", "all_tags", month=None, year=None)
+        repo.add("Wedding Y", 5000.0, "Wedding", "Venue", month=None, year=2024)
+
+        repo.delete_by_category("Wedding")
 
         result = repo.read_all()
-        stored_tags = result.iloc[0]["tags"]
-        assert stored_tags == tags
-        assert len(stored_tags.split(";")) == 3
+        assert list(result["name"]) == ["Wedding Y"]
+        assert list(result["period_type"]) == ["yearly"]
 
 
 class TestBudgetRepositoryEmptyUpdate:
     """Tests for update with empty fields."""
 
-    def test_update_empty_fields_returns_early(self, db_session: Session):
-        """Verify update returns immediately when no fields are provided."""
+    def test_update_empty_fields_is_noop_for_existing_rule(self, db_session: Session):
+        """Verify update leaves an existing rule untouched when no fields are given."""
         repo = BudgetRepository(db_session)
         repo.add("Food", 2000.0, "Food", "Groceries", month=1, year=2024)
 
         all_rules = repo.read_all()
         rule_id = int(all_rules.iloc[0]["id"])
 
-        # Should return without raising or executing a query
         repo.update(rule_id)
 
-        # Verify no changes were made
         result = repo.read_by_id(rule_id)
         assert result.iloc[0]["amount"] == 2000.0
         assert result.iloc[0]["name"] == "Food"
+
+    def test_update_empty_fields_unknown_id_raises(self, db_session: Session):
+        """Verify an empty update on a missing id still raises EntityNotFoundException.
+
+        The early return used to skip the existence check entirely.
+        """
+        from backend.errors import EntityNotFoundException
+
+        repo = BudgetRepository(db_session)
+        with pytest.raises(EntityNotFoundException, match="No rule found with ID 999"):
+            repo.update(999)
 
 
 class TestBudgetRepositoryPeriodType:

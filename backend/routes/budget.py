@@ -7,14 +7,15 @@ Provides endpoints for budget rule management, analysis, and project management.
 from datetime import date
 from typing import Any, List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel
+from fastapi import APIRouter, Depends, HTTPException, Path, Query
+from pydantic import BaseModel, Field, model_validator
 from sqlalchemy.orm import Session
 
 from backend.dependencies import get_database
 from backend.errors import EntityNotFoundException
 from backend.routes.schemas import ApiRequestModel
 from backend.services.budget_service import (
+    BudgetOverviewService,
     BudgetService,
     MonthlyBudgetService,
     ProjectBudgetService,
@@ -23,14 +24,35 @@ from backend.services.budget_service import (
 
 router = APIRouter()
 
+# Calendar bounds shared by request bodies and path parameters. Years outside
+# this window are typos, not budgets, and used to reach the service layer as
+# real rows (or, for auto-fill, hundreds of them).
+MIN_YEAR = 2000
+MAX_YEAR = 2100
+
+YearPath = Path(ge=MIN_YEAR, le=MAX_YEAR)
+MonthPath = Path(ge=1, le=12)
+
 
 class BudgetRuleCreate(ApiRequestModel):
     name: str
     amount: float
     category: str
     tags: str | List[str]
-    month: Optional[int] = None
-    year: Optional[int] = None
+    month: Optional[int] = Field(None, ge=1, le=12)
+    year: Optional[int] = Field(None, ge=MIN_YEAR, le=MAX_YEAR)
+
+    @model_validator(mode="after")
+    def _month_and_year_together(self) -> "BudgetRuleCreate":
+        """A monthly rule needs both ``month`` and ``year``; a project rule neither.
+
+        ``year`` alone would mint a yearly row through the monthly endpoint
+        (bypassing the yearly service's validation), and ``month`` alone a
+        monthly row with no year.
+        """
+        if (self.month is None) != (self.year is None):
+            raise ValueError("month and year must be given together")
+        return self
 
 
 class BudgetRuleUpdate(ApiRequestModel):
@@ -45,7 +67,7 @@ class YearlyRuleCreate(ApiRequestModel):
     amount: float
     category: str
     tags: str | List[str]
-    year: int
+    year: int = Field(ge=MIN_YEAR, le=MAX_YEAR)
 
 
 class YearlyRuleUpdate(ApiRequestModel):
@@ -64,6 +86,10 @@ class ProjectUpdate(ApiRequestModel):
     total_budget: float
 
 
+class ProjectClosedUpdate(ApiRequestModel):
+    closed: bool
+
+
 @router.get("/rules")
 def get_budget_rules(
     db: Session = Depends(get_database),
@@ -76,7 +102,9 @@ def get_budget_rules(
 
 @router.get("/rules/{year}/{month}")
 def get_budget_rules_by_month(
-    year: int, month: int, db: Session = Depends(get_database)
+    year: int = YearPath,
+    month: int = MonthPath,
+    db: Session = Depends(get_database),
 ) -> list[dict]:
     """Get budget rules for a specific month."""
     service = MonthlyBudgetService(db)
@@ -133,7 +161,9 @@ def delete_budget_rule(
 
 @router.post("/rules/{year}/{month}/copy")
 def copy_previous_month_rules(
-    year: int, month: int, db: Session = Depends(get_database)
+    year: int = YearPath,
+    month: int = MonthPath,
+    db: Session = Depends(get_database),
 ) -> dict[str, str]:
     """Copy budget rules from the previous calendar month into the given month.
 
@@ -169,8 +199,8 @@ def copy_previous_month_rules(
 
 @router.get("/analysis/{year}/{month}")
 def get_monthly_analysis(
-    year: int,
-    month: int,
+    year: int = YearPath,
+    month: int = MonthPath,
     include_split_parents: bool = Query(False),
     db: Session = Depends(get_database),
 ) -> dict[str, Any]:
@@ -194,6 +224,41 @@ def get_monthly_analysis(
     """
     service = MonthlyBudgetService(db)
     return service.get_monthly_analysis(year, month, include_split_parents)
+
+
+@router.get("/overview/{year}/{month}")
+def get_budget_overview(
+    year: int = Path(ge=1900, le=2999),
+    month: int = Path(ge=1, le=12),
+    include_split_parents: bool = Query(False),
+    db: Session = Depends(get_database),
+) -> dict[str, Any]:
+    """Return one month read across monthly, yearly and project budgets.
+
+    Carries the two facts no other endpoint exposes: the split of the month's
+    monthly-pool spend into recurring and day-to-day, with the recurring charges
+    still due before month end; and, per yearly or project envelope, what this
+    month contributed alongside where that envelope stands overall.
+
+    Parameters
+    ----------
+    year : int
+        Calendar year of the month to summarise.
+    month : int
+        Calendar month. Bounded at the route rather than left open like the
+        sibling analysis endpoints: this one sizes the month with
+        ``calendar.monthrange``, which raises on anything outside 1-12, so an
+        unbounded parameter turns a bad request into a 500.
+    include_split_parents : bool, optional
+        When ``True``, include the original parent transactions of splits
+        alongside the individual split rows. Defaults to ``False``.
+
+    Returns
+    -------
+    dict
+        See :meth:`BudgetOverviewService.get_overview` for the full shape.
+    """
+    return BudgetOverviewService(db).get_overview(year, month, include_split_parents)
 
 
 # --- Alert Endpoints ---
@@ -227,8 +292,8 @@ def get_current_month_alerts(
 
 @router.get("/alerts/{year}/{month}")
 def get_month_alerts(
-    year: int,
-    month: int,
+    year: int = YearPath,
+    month: int = MonthPath,
     threshold: float = Query(0.8, ge=0.0, le=1.0),
     db: Session = Depends(get_database),
 ) -> dict[str, Any]:
@@ -258,7 +323,7 @@ def get_month_alerts(
 
 @router.get("/yearly/{year}")
 def get_yearly_view(
-    year: int,
+    year: int = YearPath,
     include_split_parents: bool = Query(False),
     db: Session = Depends(get_database),
 ) -> dict[str, Any]:
@@ -270,7 +335,7 @@ def get_yearly_view(
 
 @router.get("/yearly/{year}/analysis")
 def get_yearly_analysis(
-    year: int,
+    year: int = YearPath,
     include_split_parents: bool = Query(False),
     db: Session = Depends(get_database),
 ) -> dict[str, Any]:
@@ -316,7 +381,7 @@ def delete_yearly_rule(
 
 @router.post("/yearly/{year}/copy")
 def copy_previous_year_rules(
-    year: int, db: Session = Depends(get_database)
+    year: int = YearPath, db: Session = Depends(get_database)
 ) -> dict[str, Any]:
     """Force-copy the latest prior year's yearly rules into ``year``.
 
@@ -334,7 +399,7 @@ def copy_previous_year_rules(
 
 @router.get("/yearly/alerts/{year}")
 def get_yearly_alerts(
-    year: int,
+    year: int = YearPath,
     threshold: float = Query(0.8, ge=0.0, le=1.0),
     db: Session = Depends(get_database),
 ) -> dict[str, Any]:
@@ -362,6 +427,18 @@ def get_available_categories_for_new_project(
     """Get available categories for a new project."""
     service = ProjectBudgetService(db)
     return service.get_available_categories_for_new_project()
+
+
+@router.get("/projects/status")
+def get_projects_status(
+    db: Session = Depends(get_database),
+) -> list[dict[str, Any]]:
+    """Get every project with its closed flag.
+
+    Declared above ``/projects/{name}`` so the literal path wins the match.
+    """
+    service = ProjectBudgetService(db)
+    return service.get_projects_status()
 
 
 @router.post("/projects")
@@ -421,6 +498,26 @@ def update_project(
     _ensure_project_exists(service, name)
     service.update_project(name, project.total_budget)
     return {"status": "success"}
+
+
+@router.put("/projects/{name}/closed")
+def set_project_closed(
+    name: str, body: ProjectClosedUpdate, db: Session = Depends(get_database)
+) -> dict[str, Any]:
+    """Close a finished project, or reopen a closed one.
+
+    A closed project keeps every rule and transaction; it only stops appearing
+    in the budget Overview.
+
+    Raises
+    ------
+    EntityNotFoundException
+        404 if no project with ``name`` exists.
+    """
+    service = ProjectBudgetService(db)
+    _ensure_project_exists(service, name)
+    service.set_project_closed(name, body.closed)
+    return {"status": "success", "name": name, "closed": body.closed}
 
 
 @router.delete("/projects/{name}")

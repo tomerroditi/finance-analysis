@@ -44,20 +44,30 @@ test.describe("Dashboard", () => {
       timeout: 45_000,
     });
 
-    // --- Budget card: three tabs, each rendering its own period view ---
+    // --- Budget card: four tabs, each rendering its own view ---
     // The section's "Budget" header is too generic to locate uniquely (the
     // sidebar nav link has the same text), so anchor on the tab labels, which
     // live only in BudgetSection.
     const budgetCard = page.locator('[data-card-id="budget"]');
     await budgetCard.scrollIntoViewIfNeeded();
+    const overviewTab = budgetCard.getByRole("button", { name: /^Overview$/i });
     const monthlyTab = budgetCard.getByRole("button", { name: /Monthly Budget/i });
     const yearlyTab = budgetCard.getByRole("button", { name: /^Yearly$/i });
     const projectsTab = budgetCard.getByRole("button", { name: /Project Budgets/i });
+    await expect(overviewTab).toBeVisible();
     await expect(monthlyTab).toBeVisible();
     await expect(yearlyTab).toBeVisible();
     await expect(projectsTab).toBeVisible();
 
-    // Monthly is the default and shows the compact total bar, not a gauge.
+    // Overview is the landing tab: the card opens on the commitment bar, which
+    // spans all three budget kinds, rather than on one kind's ledger.
+    await expect(overviewTab).toHaveAttribute("aria-pressed", "true");
+    await expect(budgetCard.getByTestId("budget-commitment-bar")).toBeVisible({
+      timeout: 20_000,
+    });
+
+    // Monthly shows the compact total bar, not a gauge.
+    await monthlyTab.click();
     await expect(monthlyTab).toHaveAttribute("aria-pressed", "true");
     await expect(budgetCard.getByTestId("budget-total-bar")).toBeVisible({
       timeout: 20_000,
@@ -78,7 +88,7 @@ test.describe("Dashboard", () => {
       timeout: 20_000,
     });
 
-    // Back to monthly so the rest of the journey sees the default view.
+    // Back to monthly so the rest of the journey sees a single-kind ledger.
     await monthlyTab.click();
     await expect(budgetCard.getByTestId("budget-total-bar")).toBeVisible();
 

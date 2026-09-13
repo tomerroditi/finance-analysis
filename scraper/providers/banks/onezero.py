@@ -8,6 +8,7 @@ from typing import Optional
 import httpx
 
 from scraper.base import OTP_CANCEL_SENTINEL, ApiScraper, OtpCanceledError
+from scraper.exceptions import InvalidOtpError, ScraperError
 from scraper.models.account import AccountResult
 from scraper.models.result import LoginResult
 from scraper.models.transaction import Transaction, TransactionStatus, TransactionType
@@ -787,6 +788,29 @@ def _is_sms_provider_block(error: httpx.HTTPStatusError) -> bool:
     return "ErrorOtpService" in (error.response.text or "")
 
 
+def _is_invalid_otp_code(error: httpx.HTTPStatusError) -> bool:
+    """Detect whether an HTTP error is OneZero rejecting the typed OTP code.
+
+    ``/otp/verify`` answers a wrong or stale code with HTTP 401 and an
+    ``ErrorOtpCode`` marker in the body. That is a user typo, not a broken
+    account, so it gets its own category (``INVALID_OTP``) rather than being
+    folded into ``GENERAL_ERROR`` alongside parsing bugs and outages.
+
+    Parameters
+    ----------
+    error : httpx.HTTPStatusError
+        The error raised by ``fetch_post`` for the ``/otp/verify`` call.
+
+    Returns
+    -------
+    bool
+        True if the response body carries the ``ErrorOtpCode`` marker.
+    """
+    if error.response is None:
+        return False
+    return "ErrorOtpCode" in (error.response.text or "")
+
+
 class OneZeroScraper(ApiScraper):
     """Scraper for One Zero Bank (https://www.onezerbank.com).
 
@@ -960,14 +984,21 @@ class OneZeroScraper(ApiScraper):
             )
 
         logger.debug("Requesting OTP token")
-        otp_verify_response = await fetch_post(
-            f"{IDENTITY_SERVER_URL}/otp/verify",
-            {
-                "otpContext": self._otp_context,
-                "otpCode": otp_code,
-            },
-            client=self.client,
-        )
+        try:
+            otp_verify_response = await fetch_post(
+                f"{IDENTITY_SERVER_URL}/otp/verify",
+                {
+                    "otpContext": self._otp_context,
+                    "otpCode": otp_code,
+                },
+                client=self.client,
+            )
+        except httpx.HTTPStatusError as error:
+            if _is_invalid_otp_code(error):
+                raise InvalidOtpError(
+                    "the verification code was rejected by the bank"
+                ) from error
+            raise
         otp_token = _extract_result_data(otp_verify_response, "otpToken")
         return {"success": True, "long_term_token": otp_token}
 
@@ -1027,6 +1058,12 @@ class OneZeroScraper(ApiScraper):
         -------
         LoginResult
             SUCCESS on successful authentication, UNKNOWN_ERROR on failure.
+
+        Raises
+        ------
+        InvalidOtpError
+            When the bank rejects the typed verification code, so the run is
+            recorded as ``INVALID_OTP`` rather than a generic failure.
         """
         try:
             otp_token = await self._resolve_otp_token()
@@ -1036,6 +1073,10 @@ class OneZeroScraper(ApiScraper):
                 LoginResult.UNKNOWN_ERROR,
                 "two-factor authentication canceled by the user",
             )
+        except ScraperError:
+            # Already classified (e.g. InvalidOtpError) — let scrape() record
+            # its own error_type instead of flattening it to UNKNOWN_ERROR.
+            raise
         except Exception as e:
             logger.error("Failed to resolve OTP token: %s", e)
             return self._fail_login(

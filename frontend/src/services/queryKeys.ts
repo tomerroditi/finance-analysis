@@ -68,6 +68,7 @@ export function makeQueryKeys(demo: boolean) {
       analysis: (year: number, month: number, includeSplitParents: boolean) =>
         ["budget", "analysis", year, month, includeSplitParents, demo] as const,
       projects: () => ["budget", "projects", demo] as const,
+      projectsStatus: () => ["budget", "projects-status", demo] as const,
       projectDetails: (name: string, includeSplitParents: boolean) =>
         ["budget", "project-details", name, includeSplitParents, demo] as const,
       availableProjects: () => ["budget", "available-projects", demo] as const,
@@ -78,6 +79,8 @@ export function makeQueryKeys(demo: boolean) {
       monthOverrides: () => ["budget", "month-overrides", demo] as const,
       yearly: (year: number) => ["budget", "yearly", year, demo] as const,
       categoryConflicts: () => ["budget", "category-conflicts", demo] as const,
+      overview: (year: number, month: number, includeSplitParents: boolean) =>
+        ["budget", "overview", year, month, includeSplitParents, demo] as const,
     },
     tagging: {
       categories: () => ["categories", demo] as const,
@@ -155,7 +158,8 @@ export function makeQueryKeys(demo: boolean) {
         ["analytics", "income-by-source", start ?? "all", end ?? "all", demo] as const,
       monthlyExpenses: (excludePendingRefunds: boolean, includeProjects: boolean) =>
         ["analytics", "monthly-expenses", excludePendingRefunds, includeProjects, demo] as const,
-      recurring: () => ["analytics", "recurring", demo] as const,
+      recurring: (includeDismissed = false) =>
+        ["analytics", "recurring", includeDismissed, demo] as const,
       insights: () => ["analytics", "insights", demo] as const,
       cashFlowForecast: () => ["analytics", "cash-flow-forecast", demo] as const,
     },

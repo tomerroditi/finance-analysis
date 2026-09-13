@@ -45,7 +45,9 @@ is what `backend/demo_sessions.py` fixes.
   (`POST/PUT/PATCH/DELETE`, 2xx/3xx) uploads the whole sandbox file
   (~1.3 MB) to `demo-sessions/<id>.db` and records the returned etag, so the
   writing instance does not re-download its own write. Blob failures are
-  logged and degrade to the local copy, never a 500. **Without
+  logged and degrade to the local copy, never a 500 — and a 200 whose body
+  is not a SQLite file (a truncated upload, an error page) is refused rather
+  than written over a working sandbox. **Without
   `BLOB_READ_WRITE_TOKEN` the feature is not usable on Vercel**: sandboxes
   are instance-local, so a write served by one instance is invisible to a
   read served by another and everything vanishes on recycle. Connecting the

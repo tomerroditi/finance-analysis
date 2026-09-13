@@ -70,6 +70,12 @@ class TestTransactionsRoutes:
             },
         )
         assert response.status_code == 200
+        assert response.json()["status"] == "success"
+
+        persisted = test_client.get(
+            f"/api/transactions/{uid}", params={"source": "credit_card_transactions"}
+        ).json()
+        assert (persisted["category"], persisted["tag"]) == ("Entertainment", "Movies")
 
     def test_update_cash_transaction_account_name(self, test_client):
         """PUT /api/transactions/{id} updates cash transaction account_name."""
@@ -134,6 +140,12 @@ class TestTransactionsRoutes:
         )
         assert response.status_code == 200
 
+        remaining = test_client.get("/api/transactions/?service=cash").json()
+        assert not any(t["unique_id"] == uid for t in remaining)
+        assert test_client.get(
+            f"/api/transactions/{uid}", params={"source": "cash_transactions"}
+        ).status_code == 404
+
     def test_delete_scraped_transaction_forbidden(
         self, test_client, seed_base_transactions
     ):
@@ -164,12 +176,18 @@ class TestTransactionsRoutes:
         )
         assert response.status_code == 200
 
+        after = test_client.get("/api/transactions/?service=credit_cards").json()
+        children = [t for t in after if t.get("split_id") is not None]
+        assert sorted(c["amount"] for c in children) == [-(amt / 2), -(amt / 2)]
+        assert {c["category"] for c in children} == {"Food", "Transport"}
+        # The parent is out of the merged view, replaced by its slices.
+        assert not any(t["unique_id"] == uid for t in after)
+
     def test_bulk_tag(self, test_client, seed_untagged_transactions):
         """POST /api/transactions/bulk-tag tags multiple transactions."""
         txns = test_client.get("/api/transactions/?service=credit_cards").json()
         untagged = [t for t in txns if t.get("category") is None]
-        if len(untagged) < 2:
-            pytest.skip("Need at least 2 untagged transactions")
+        assert len(untagged) >= 2, "seed_untagged_transactions seeds 4 untagged CC rows"
         ids = [t["unique_id"] for t in untagged[:2]]
         response = test_client.post(
             "/api/transactions/bulk-tag",
@@ -181,6 +199,11 @@ class TestTransactionsRoutes:
             },
         )
         assert response.status_code == 200
+
+        after = test_client.get("/api/transactions/?service=credit_cards").json()
+        tagged = [t for t in after if t["unique_id"] in ids]
+        assert len(tagged) == 2
+        assert all((t["category"], t["tag"]) == ("Food", "Groceries") for t in tagged)
 
     def test_get_transaction_by_id(self, test_client, seed_base_transactions):
         """GET /api/transactions/{id} returns the row from the requested source table."""
@@ -369,9 +392,6 @@ class TestTransactionsRoutesErrors:
         ) as mock_cls:
             mock_svc = MagicMock()
             mock_cls.return_value = mock_svc
-            # Parent lookup must balance the requested slices, otherwise the
-            # route's sum check short-circuits before the service is called.
-            mock_svc.get_transaction.return_value = {"amount": -50.0}
             mock_svc.split_transaction.side_effect = ValueError(
                 "Failed to split transaction"
             )
@@ -460,67 +480,6 @@ class TestTransactionsRoutesAdditional:
             )
             assert response.status_code == 400
             assert "Bad input" in response.json()["detail"]
-
-    # -- GET /{transaction_id} error path (already tested in main class, but
-    #    we test the mock path for completeness) --
-
-    def test_get_transaction_by_id_not_found_via_mock(self, test_client):
-        """Verify 404 when repository raises ValueError for missing transaction."""
-        with patch(
-            "backend.routes.transactions.TransactionsService"
-        ) as mock_cls:
-            mock_svc = MagicMock()
-            mock_cls.return_value = mock_svc
-            mock_svc.get_transaction.side_effect = ValueError(
-                "Transaction 99999 not found"
-            )
-            response = test_client.get(
-                "/api/transactions/99999", params={"source": "bank_transactions"}
-            )
-            assert response.status_code == 404
-            assert "not found" in response.json()["detail"]
-
-    # -- POST /{unique_id}/split returns false --
-
-    def test_split_transaction_repo_returns_false(self, test_client):
-        """Verify 400 when underlying repo returns False (service raises ValueError)."""
-        with patch(
-            "backend.services.transactions_service.TransactionsRepository"
-        ) as mock_cls:
-            mock_repo = MagicMock()
-            mock_cls.return_value = mock_repo
-            # Parent lookup must balance the requested slices, otherwise the
-            # route's sum check short-circuits before the repo is reached.
-            mock_repo.get_transaction_by_id.return_value = {"amount": -50.0}
-            mock_repo.split_transaction.return_value = False
-            response = test_client.post(
-                "/api/transactions/1/split",
-                json={
-                    "source": "credit_card_transactions",
-                    "splits": [
-                        {"amount": -25.0, "category": "Food", "tag": "Groceries"},
-                        {"amount": -25.0, "category": "Transport", "tag": "Gas"},
-                    ],
-                },
-            )
-            assert response.status_code == 400
-            assert "Failed to split" in response.json()["detail"]
-
-    # -- DELETE /{unique_id}/split returns false --
-
-    def test_revert_split_repo_returns_false(self, test_client):
-        """Verify 400 when underlying repo returns False (service raises ValueError)."""
-        with patch(
-            "backend.services.transactions_service.TransactionsRepository"
-        ) as mock_cls:
-            mock_repo = MagicMock()
-            mock_cls.return_value = mock_repo
-            mock_repo.revert_split.return_value = False
-            response = test_client.delete(
-                "/api/transactions/1/split?source=credit_card_transactions"
-            )
-            assert response.status_code == 400
-            assert "Failed to revert" in response.json()["detail"]
 
     # -- GET / internal error --
 

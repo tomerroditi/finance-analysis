@@ -123,9 +123,26 @@ class InsightsService:
         return results[:2]
 
     def _recurring_insights(self) -> list[dict]:
-        """Surface newly detected subscriptions and price changes."""
+        """Surface confirmed subscriptions that are new or repriced.
+
+        Also nudges the user when candidates are waiting to be reviewed —
+        a detection nobody has ruled on yet is a question, not a finding, so
+        it gets one card asking for the ruling rather than one card each.
+        """
+        summary = self.recurring.get_recurring()
         results = []
-        for item in self.recurring.get_recurring()["items"]:
+        if summary["pending_count"]:
+            results.append({
+                "code": "recurringToReview",
+                "severity": "info",
+                "data": {
+                    "count": summary["pending_count"],
+                    "amount": summary["pending_monthly"],
+                },
+            })
+        for item in summary["items"]:
+            if item["confirmation"] != "confirmed":
+                continue
             if item["status"] == "new":
                 results.append({
                     "code": "newRecurring",

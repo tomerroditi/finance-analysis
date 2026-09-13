@@ -35,125 +35,35 @@ def _mock_categories_cache(sample_categories_yaml):
 class TestBudgetPipeline:
     """Integration tests for the full budget pipeline."""
 
-    def test_monthly_budget_vs_actual(
-        self, db_session: Session, seed_base_transactions
-    ):
-        """Verify budget view shows correct spent amounts per rule.
-
-        Creates budget rules for January 2024, then checks that the
-        budget view correctly sums expenses for each category/tag rule.
-        """
-        svc = MonthlyBudgetService(db_session)
-
-        # Create rules for Jan 2024
-        svc.add_rule("Total Budget", 10000, TOTAL_BUDGET, [ALL_TAGS], month=1, year=2024)
-        svc.add_rule("Food", 2000, "Food", [ALL_TAGS], month=1, year=2024)
-        svc.add_rule("Transport", 500, "Transport", [ALL_TAGS], month=1, year=2024)
-        svc.add_rule("Entertainment", 300, "Entertainment", [ALL_TAGS], month=1, year=2024)
-
-        view = svc.get_monthly_budget_view(2024, 1)
-
-        assert view is not None
-        assert len(view) >= 4  # 3 category rules + Total + possibly Other Expenses
-
-        # Total Budget entry
-        total_entry = next(e for e in view if e["rule"]["name"] == TOTAL_BUDGET)
-        # Jan expenses: cc_jan_1(-150) + cc_jan_2(-80) + cc_jan_3(-60) + cc_jan_4(-40)
-        #   + bank_jan_2(-3000) + cash_jan_1(-15) + cash_jan_2(-10) + cc_jan_5(-250)
-        #   Ignore/Salary excluded
-        expected_total = 150 + 80 + 60 + 40 + 3000 + 15 + 10 + 250
-        assert total_entry["current_amount"] == pytest.approx(expected_total)
-
-        # Food rule
-        food_entry = next(e for e in view if e["rule"]["name"] == "Food")
-        # cc_jan_1(-150) + cc_jan_2(-80) + cash_jan_1(-15) = 245
-        assert food_entry["current_amount"] == pytest.approx(245.0)
-
-        # Transport rule
-        transport_entry = next(e for e in view if e["rule"]["name"] == "Transport")
-        # cc_jan_3(-60) + cash_jan_2(-10) = 70
-        assert transport_entry["current_amount"] == pytest.approx(70.0)
-
-        # Entertainment rule
-        ent_entry = next(e for e in view if e["rule"]["name"] == "Entertainment")
-        # cc_jan_4(-40) = 40
-        assert ent_entry["current_amount"] == pytest.approx(40.0)
-
-    def test_total_budget_calculation(
-        self, db_session: Session, seed_base_transactions
-    ):
-        """Verify Total Budget rule sums ALL expenses for the month.
-
-        The Total Budget entry should include every expense regardless
-        of category, but exclude non-expense categories.
-        """
-        svc = MonthlyBudgetService(db_session)
-        svc.add_rule("Total Budget", 15000, TOTAL_BUDGET, [ALL_TAGS], month=1, year=2024)
-
-        view = svc.get_monthly_budget_view(2024, 1)
-
-        assert view is not None
-        total_entry = view[0]  # Total Budget is always first
-        assert total_entry["rule"]["name"] == TOTAL_BUDGET
-
-        # Sum all Jan expenses (negative amounts, excluding Salary/Ignore)
-        # cc_jan_1(-150) + cc_jan_2(-80) + cc_jan_3(-60) + cc_jan_4(-40)
-        # + bank_jan_2(-3000) + cash_jan_1(-15) + cash_jan_2(-10) + cc_jan_5(-250)
-        expected = 150 + 80 + 60 + 40 + 3000 + 15 + 10 + 250
-        assert total_entry["current_amount"] == pytest.approx(expected)
-
-    def test_other_expenses_catch_all(
-        self, db_session: Session, seed_base_transactions
-    ):
-        """Verify unmatched expenses appear in 'Other Expenses' catch-all entry.
-
-        When rules exist for some categories but not all, remaining
-        expenses should be grouped under an Other Expenses entry with
-        allow_edit=False and allow_delete=False.
-        """
-        svc = MonthlyBudgetService(db_session)
-
-        # Only create Total + Food rules, leaving Transport/Entertainment/Home/Other unmatched
-        svc.add_rule("Total Budget", 15000, TOTAL_BUDGET, [ALL_TAGS], month=1, year=2024)
-        svc.add_rule("Food", 2000, "Food", [ALL_TAGS], month=1, year=2024)
-
-        view = svc.get_monthly_budget_view(2024, 1)
-
-        assert view is not None
-
-        other_entry = next(
-            (e for e in view if e["rule"]["name"] == "Other Expenses"), None
-        )
-        assert other_entry is not None
-        assert other_entry["allow_edit"] is False
-        assert other_entry["allow_delete"] is False
-
-        # Other Expenses should contain Transport, Entertainment, Home, Other txns
-        # bank_jan_2(-3000) + cc_jan_3(-60) + cc_jan_4(-40) + cash_jan_2(-10) + cc_jan_5(-250)
-        expected_other = 3000 + 60 + 40 + 10 + 250
-        assert other_entry["current_amount"] == pytest.approx(expected_other)
-
     def test_project_budget_view(
-        self, db_session: Session, seed_project_transactions, sample_categories_yaml
+        self, db_session: Session, seed_project_transactions
     ):
-        """Verify project budget aggregation by tag using seed_project_transactions.
+        """Verify the project view aggregates seeded spend per tag rule and in total.
 
-        The project budget view should show per-tag spending and a total.
+        Wedding: Venue = cc_wedding_1(5000) + bank_wedding_1(15000)
+        + cc_wedding_3(2500) = 22500; Catering = cc_wedding_2(800)
+        + bank_wedding_2(12000) = 12800; total 35300.
         """
         svc = ProjectBudgetService(db_session)
 
         result = svc.get_project_budget_view("Wedding")
 
         assert result["name"] == "Wedding"
-        assert result["total_spent"] > 0
-
-        rules = result["rules"]
-        assert len(rules) >= 1
-
-        # The total rule should show sum of all Wedding transactions
-        # Wedding: cc_wedding_1(-5000) + cc_wedding_2(-800) + bank_wedding_1(-15000)
-        #   + bank_wedding_2(-12000) + cc_wedding_3(-2500) = 35300
         assert result["total_spent"] == pytest.approx(35300.0)
+
+        by_name = {r["rule"]["name"]: r for r in result["rules"]}
+        assert set(by_name) == {TOTAL_BUDGET, "Venue", "Catering"}
+        total = by_name[TOTAL_BUDGET]
+        assert total["rule"]["amount"] == 50000.0
+        assert total["current_amount"] == pytest.approx(35300.0)
+        assert total["allow_delete"] is False
+        assert len(total["data"]) == 5
+        assert by_name["Venue"]["current_amount"] == pytest.approx(22500.0)
+        assert len(by_name["Venue"]["data"]) == 3
+        assert by_name["Catering"]["current_amount"] == pytest.approx(12800.0)
+        assert len(by_name["Catering"]["data"]) == 2
+        # Every tag had a rule already, so nothing was auto-created.
+        assert len(svc.get_rules_for_project("Wedding")) == 3
 
     def test_project_unmatched_auto_creates_rules(
         self, db_session: Session, sample_categories_yaml
@@ -214,36 +124,6 @@ class TestBudgetPipeline:
         all_rules = svc.get_all_rules()
         project_rules = all_rules[all_rules["category"] == "TestProject"]
         assert len(project_rules) >= 3  # Total + TagA + TagB
-
-    def test_copy_month_rules(self, db_session: Session):
-        """Verify rules copied from month N to month N+1.
-
-        copy_last_month_rules should duplicate all budget rules from
-        the previous month into the target month.
-        """
-        svc = MonthlyBudgetService(db_session)
-
-        # Create rules for Jan 2024
-        svc.add_rule("Total Budget", 10000, TOTAL_BUDGET, [ALL_TAGS], month=1, year=2024)
-        svc.add_rule("Food", 2000, "Food", [ALL_TAGS], month=1, year=2024)
-        svc.add_rule("Transport", 500, "Transport", [ALL_TAGS], month=1, year=2024)
-
-        all_rules = svc.get_all_rules()
-        result = svc.copy_last_month_rules(2024, 2, all_rules)
-
-        assert result is not None
-        assert "3 rules" in result
-
-        # Verify Feb rules exist
-        feb_rules = svc.get_month_rules(2024, 2)
-        assert len(feb_rules) == 3
-
-        feb_names = set(feb_rules["name"].tolist())
-        assert feb_names == {"Total Budget", "Food", "Transport"}
-
-        # Verify amounts match
-        feb_total = feb_rules[feb_rules["name"] == "Total Budget"].iloc[0]["amount"]
-        assert feb_total == pytest.approx(10000.0)
 
     def test_budget_excludes_non_expenses(
         self, db_session: Session, seed_base_transactions

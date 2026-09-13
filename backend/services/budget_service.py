@@ -12,6 +12,7 @@ does not affect the implementation modules.
 """
 
 from backend.services.budget import (
+    BudgetOverviewService,
     BudgetService,
     MonthlyBudgetService,
     ProjectBudgetService,
@@ -21,6 +22,7 @@ from backend.services.budget import (
 )
 
 __all__ = [
+    "BudgetOverviewService",
     "BudgetService",
     "MonthlyBudgetService",
     "ProjectBudgetService",

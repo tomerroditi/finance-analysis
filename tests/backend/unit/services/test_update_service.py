@@ -450,13 +450,9 @@ class TestCacheRobustness:
         """Without an explicit path the cache sits beside the real user data."""
         from backend.config import AppConfig
 
-        config = AppConfig()
-        original = config._base_user_dir
-        config._base_user_dir = str(tmp_path / "userdir")
-        try:
-            path = update_service._cache_path()
-        finally:
-            config._base_user_dir = original
+        AppConfig()._base_user_dir = str(tmp_path / "userdir")
+
+        path = update_service._cache_path()
 
         assert path == tmp_path / "userdir" / ".update_cache.json"
         assert path.parent.is_dir()

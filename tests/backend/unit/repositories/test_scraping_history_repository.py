@@ -58,8 +58,8 @@ class TestScrapingHistoryRepository:
 
         status = repo.get_scraping_status(scrape_id)
         assert status == "failed"
-        error = repo.get_error_message(scrape_id)
-        assert error == "Connection timeout"
+        message, _error_type = repo.get_error(scrape_id)
+        assert message == "Connection timeout"
 
     def test_get_scraping_status(self, db_session: Session):
         """Verify getting status by scrape ID."""
@@ -79,22 +79,6 @@ class TestScrapingHistoryRepository:
         repo = ScrapingHistoryRepository(db_session)
         status = repo.get_scraping_status(999)
         assert status is None
-
-    def test_get_error_message(self, db_session: Session):
-        """Verify getting error message for failed scrape."""
-        repo = ScrapingHistoryRepository(db_session)
-        scrape_id = repo.record_scrape_start(
-            service_name="credit_cards",
-            provider_name="isracard",
-            account_name="Main Card",
-            start_date=date(2024, 1, 15),
-        )
-
-        # Initially no error
-        assert repo.get_error_message(scrape_id) is None
-
-        repo.record_scrape_end(scrape_id, repo.FAILED, "Invalid password")
-        assert repo.get_error_message(scrape_id) == "Invalid password"
 
     def test_get_error_returns_detail_and_category(self, db_session: Session):
         """Verify get_error returns both halves of a failure in one query."""
@@ -191,16 +175,6 @@ class TestScrapingHistoryRepository:
         result = repo.get_last_successful_scrape_date(
             "credit_cards", "isracard", "Main Card"
         )
-        assert result is None
-
-
-class TestScrapingHistoryRepositoryEnsureTable:
-    """Tests for _ensure_table_exists stub."""
-
-    def test_ensure_table_exists_is_noop(self, db_session: Session):
-        """Verify _ensure_table_exists runs without error as an empty stub."""
-        repo = ScrapingHistoryRepository(db_session)
-        result = repo._ensure_table_exists()
         assert result is None
 
 

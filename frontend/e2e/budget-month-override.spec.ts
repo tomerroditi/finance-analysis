@@ -50,6 +50,11 @@ test.describe("Budget month override", () => {
    */
   async function openMonthWithTransactions(page: Page): Promise<boolean> {
     await navigateTo(page, "/budget");
+    // Overview is the landing tab; this flow needs the monthly ledger.
+    await page.getByRole("button", { name: /^Monthly Budget$/i }).click();
+    await expect(page.getByTestId("budget-status-band")).toBeVisible({
+      timeout: 30_000,
+    });
     await page.waitForLoadState("networkidle");
 
     for (let attempt = 0; attempt < 6; attempt++) {

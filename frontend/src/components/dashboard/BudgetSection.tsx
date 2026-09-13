@@ -1,10 +1,11 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
+import { OverviewBudgetTab } from "./budget/OverviewBudgetTab";
 import { MonthlyBudgetTab } from "./budget/MonthlyBudgetTab";
 import { YearlyBudgetTab } from "./budget/YearlyBudgetTab";
 import { ProjectBudgetTab } from "./budget/ProjectBudgetTab";
 
-type BudgetTab = "monthly" | "yearly" | "projects";
+type BudgetTab = "overview" | "monthly" | "yearly" | "projects";
 
 interface BudgetSectionProps {
   categoryIcons: Record<string, string> | undefined;
@@ -20,7 +21,7 @@ interface BudgetSectionProps {
 export function BudgetSection({ categoryIcons }: BudgetSectionProps) {
   const { t } = useTranslation();
   const now = new Date();
-  const [activeTab, setActiveTab] = useState<BudgetTab>("monthly");
+  const [activeTab, setActiveTab] = useState<BudgetTab>("overview");
   const [year, setYear] = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth() + 1);
   const [yearlyYear, setYearlyYear] = useState(now.getFullYear());
@@ -40,6 +41,13 @@ export function BudgetSection({ categoryIcons }: BudgetSectionProps) {
           {t("budget.title")}
         </p>
         <div className="flex bg-[var(--surface-light)] p-0.5 rounded-lg">
+          <button
+            onClick={() => setActiveTab("overview")}
+            className={tabClass("overview")}
+            aria-pressed={activeTab === "overview"}
+          >
+            {t("budget.overview.tab")}
+          </button>
           <button
             onClick={() => setActiveTab("monthly")}
             className={tabClass("monthly")}
@@ -64,6 +72,14 @@ export function BudgetSection({ categoryIcons }: BudgetSectionProps) {
         </div>
       </div>
 
+      {activeTab === "overview" && (
+        <OverviewBudgetTab
+          year={year}
+          month={month}
+          onYearChange={setYear}
+          onMonthChange={setMonth}
+        />
+      )}
       {activeTab === "monthly" && (
         <MonthlyBudgetTab
           year={year}

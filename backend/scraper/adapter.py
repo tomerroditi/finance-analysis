@@ -9,6 +9,7 @@ to avoid the naming collision with ``backend.scraper``.
 """
 
 import asyncio
+import concurrent.futures
 import contextlib
 import datetime
 import importlib
@@ -276,6 +277,15 @@ class ScraperAdapter:
         # ``None`` until then, so a resend that races ahead of scraper
         # construction can be rejected cleanly (see ``resend_otp``).
         self._scraper = None
+        # ``concurrent.futures.Future`` for the scheduled ``run()`` coroutine,
+        # set by ``scraping_service._launch_adapter``. Cancelling it is how an
+        # abort reaches a scraper that is NOT parked on an OTP — the only
+        # other abort channel is the OTP sentinel, which a non-2FA scraper
+        # never reads.
+        self._run_future: "concurrent.futures.Future | None" = None
+        # Set when ``run()`` is cancelled mid-flight (user abort), so the
+        # history row records CANCELED rather than a synthetic failure.
+        self._canceled = False
 
         # Pipeline state
         self._data: pd.DataFrame | None = None
@@ -369,8 +379,14 @@ class ScraperAdapter:
                 if result.success:
                     self._accounts_fetched = len(result.accounts)
                     self._data = self._result_to_dataframe(result, self.service_name)
-                    if self._data is not None and not self._data.empty:
-                        self._data = self._data.sort_values(by=["date"])
+                    if self._accounts_fetched > 0:
+                        # An empty window is still an authoritative scrape of
+                        # that window: pending rows must be reconciled, the
+                        # bank balance recomputed and the insurance metadata
+                        # (balances, snapshots) refreshed even when no new
+                        # transaction arrived. Only the row insert itself is
+                        # conditional on there being rows.
+                        #
                         # TODO(perf): these are blocking sync DB writes (save,
                         # auto-tag, rebalance) that run on the event loop thread.
                         # Offloading them via run_in_executor was considered but
@@ -378,6 +394,8 @@ class ScraperAdapter:
                         # asyncio.wait_for timeout above, so an executor hop would
                         # let DB writes outlive the 5-minute ceiling. Revisit with
                         # an explicit cancellation/cleanup story before offloading.
+                        if not self._data.empty:
+                            self._data = self._data.sort_values(by=["date"])
                         self._save_scraped_transactions()
                         self._apply_auto_tagging()
                         self._recalculate_bank_balances()
@@ -409,6 +427,17 @@ class ScraperAdapter:
                 # cleanup here to avoid leaking a Playwright process on timeout.
                 if scraper is not None:
                     await scraper._safe_terminate(False)
+            except asyncio.CancelledError:
+                # The user aborted (``ScrapingService.abort_scraping_process``
+                # cancels ``_run_future``). The scraper's own terminate() was
+                # skipped by the cancellation, so release the browser here;
+                # the ``finally`` below still records the outcome and frees
+                # the registries, then the cancellation propagates.
+                self._canceled = True
+                logger.info("%s: Scraping canceled by the user", scrub(self._log_id))
+                if scraper is not None:
+                    await scraper._safe_terminate(False)
+                raise
             except Exception as exc:
                 self._error_type = "GENERAL_ERROR"
                 self._error = _describe_exception(exc)
@@ -439,11 +468,11 @@ class ScraperAdapter:
                         scrub(self._log_id),
                     )
 
-            ts = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            logger.info(
-                "[%s] %s: Scraping finished",
-                ts, scrub(self._log_id),
-            )
+                ts = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                logger.info(
+                    "[%s] %s: Scraping finished",
+                    ts, scrub(self._log_id),
+                )
 
     def _unregister_from_2fa_waiting(self) -> None:
         """Pop this adapter from the 2FA-waiting and active-scraper registries.
@@ -504,7 +533,14 @@ class ScraperAdapter:
             # same secret on every scrape.
             return
         try:
-            merged = {**self.credentials, "otpLongTermToken": token}
+            # The password is deliberately left out: ``get_credentials`` always
+            # materialises a ``password`` key (empty when none is stored), and
+            # re-sending it would rewrite — or blank — the Keyring entry on
+            # every token refresh. Omitted fields leave the Keyring untouched.
+            merged = {
+                k: v for k, v in self.credentials.items() if k != "password"
+            }
+            merged["otpLongTermToken"] = token
             with get_db_context() as db:
                 CredentialsRepository(db).save_credentials(
                     self.service_name, self.provider_name, self.account_name, merged
@@ -794,7 +830,10 @@ class ScraperAdapter:
             rows.append(row)
 
         if not rows:
-            return pd.DataFrame()
+            # Keep the canonical columns so an empty window can still be handed
+            # to the ingestion pipeline (see ``run``) without a KeyError on
+            # the dedup columns.
+            return pd.DataFrame(columns=[f.value for f in TransactionsTableFields])
 
         return pd.DataFrame(rows)
 
@@ -864,7 +903,7 @@ class ScraperAdapter:
             Scraping history record ID (same as ``process_id``).
         """
         error_type = None
-        if self._otp_code == self.CANCEL:
+        if self._canceled or self._otp_code == self.CANCEL:
             status = ScrapingHistoryRepository.CANCELED
             error_message = None
         elif self._data is not None and not self._error:
@@ -889,6 +928,20 @@ class ScraperAdapter:
 
         with get_db_context() as db:
             history_repo = ScrapingHistoryRepository(db)
+            # An abort records CANCELED synchronously from the route, but the
+            # cancellation only lands at the coroutine's next ``await`` — a
+            # scrape already past its last await finishes and would otherwise
+            # flip the user's explicit cancel back to SUCCESS or FAILED.
+            if (
+                status != ScrapingHistoryRepository.CANCELED
+                and history_repo.get_scraping_status(id_)
+                == ScrapingHistoryRepository.CANCELED
+            ):
+                logger.info(
+                    "%s: Already recorded as canceled; keeping that status",
+                    scrub(self._log_id),
+                )
+                return
             history_repo.record_scrape_end(
                 id_, status, error_message, error_type
             )

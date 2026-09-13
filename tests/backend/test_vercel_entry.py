@@ -6,8 +6,12 @@ cleanup flags the import as unused), preview and production deployments
 fail. This test enforces the contract.
 """
 
+import json
+import os
+import shutil
 import subprocess
 import sys
+import uuid
 from pathlib import Path
 
 
@@ -97,24 +101,96 @@ class TestVercelWithoutKeyring:
         like the Vercel function.
         """
         project_root = Path(__file__).resolve().parents[2]
+        # index.py hardcodes FAD_USER_DIR=/tmp/finance-analysis, so the
+        # sandbox directory outlives the test run. A fresh id per run keeps
+        # this from silently reusing (or being broken by) a sandbox an
+        # earlier run left behind, and it is removed again below.
+        session_id = f"visitor-{uuid.uuid4().hex}"
+        sandbox_dir = Path("/tmp/finance-analysis/demo_env/sessions") / session_id
         script = (
-            "import sys, tempfile, os; sys.modules['keyring'] = None; "
+            "import sys, os; sys.modules['keyring'] = None; "
             "import index; "
             "from fastapi.testclient import TestClient; "
+            f"sid = {session_id!r}; "
             "c = TestClient(index.app); "
-            "h = {'X-FAD-Demo-Session': 'visitor-0123456789abcdef'}; "
+            "h = {'X-FAD-Demo-Session': sid}; "
             "r = c.get('/api/testing/demo_mode_status', headers=h); "
             "assert r.status_code == 200, (r.status_code, r.text); "
             "assert r.json()['sandboxed'] is True, r.json(); "
             "r = c.get('/api/tagging/categories', headers=h); "
             "assert r.status_code == 200, (r.status_code, r.text); "
+            "assert r.json(), 'sandbox served no categories'; "
+            "from backend.demo_sessions import DemoSessionStore; "
+            "db = DemoSessionStore.local_db_path(sid); "
+            "assert os.path.exists(db), db; "
+            "assert 'sessions' in db and sid in db, db; "
             "r = c.post('/api/testing/demo/reset', headers=h); "
-            "assert r.status_code == 200, (r.status_code, r.text)"
+            "assert r.status_code == 200, (r.status_code, r.text); "
+            "assert os.path.exists(db), 'reset left the sandbox without a database'"
+        )
+        try:
+            result = subprocess.run(
+                [sys.executable, "-c", script],
+                cwd=project_root,
+                capture_output=True,
+                text=True,
+            )
+        finally:
+            shutil.rmtree(sandbox_dir, ignore_errors=True)
+        assert result.returncode == 0, result.stderr[-3000:]
+
+
+class TestVercelBlobWiringIsVisible:
+    """Tests that a deployment without a Blob store says so at cold start."""
+
+    def test_missing_blob_token_logs_a_warning_and_reports_not_configured(self):
+        """Verify the non-durable state is loud, not silent.
+
+        Without ``BLOB_READ_WRITE_TOKEN`` a visitor's edits live only on the
+        instance that served them. That was invisible until #268: the entry
+        point now logs a WARNING naming the remedy and
+        ``demo_mode_status.blob_configured`` answers a bare curl.
+        """
+        project_root = Path(__file__).resolve().parents[2]
+        script = (
+            "import index; "
+            "from fastapi.testclient import TestClient; "
+            "r = TestClient(index.app).get('/api/testing/demo_mode_status'); "
+            "assert r.json()['blob_configured'] is False, r.json()"
         )
         result = subprocess.run(
             [sys.executable, "-c", script],
             cwd=project_root,
             capture_output=True,
             text=True,
+            # Explicit: a developer with a real token in their shell would
+            # otherwise flip the branch under test.
+            env={**os.environ, "BLOB_READ_WRITE_TOKEN": ""},
         )
         assert result.returncode == 0, result.stderr[-3000:]
+        assert "BLOB_READ_WRITE_TOKEN is not set" in result.stderr
+
+
+class TestVercelCronDeclarations:
+    """Tests that every cron declared in ``vercel.json`` hits a real route."""
+
+    def test_declared_cron_paths_are_mounted_get_routes(self):
+        """Verify a renamed route cannot silently orphan the prune cron.
+
+        Vercel invokes a cron path with a plain GET and nothing in the
+        deployment complains when it 404s — stale visitor sandboxes would
+        just accumulate in the Blob store forever.
+        """
+        from backend.main import app
+
+        project_root = Path(__file__).resolve().parents[2]
+        config = json.loads((project_root / "vercel.json").read_text())
+        declared = [cron["path"] for cron in config.get("crons", [])]
+        # The OpenAPI schema is the flattened view of what is actually
+        # mounted (``app.routes`` holds un-expanded router wrappers).
+        mounted = app.openapi()["paths"]
+
+        assert declared, "vercel.json declares no crons"
+        for path in declared:
+            assert path in mounted, f"{path} is not a mounted route"
+            assert "get" in mounted[path], f"{path} does not answer GET"

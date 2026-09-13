@@ -99,6 +99,13 @@ class TestGate:
         assert response.json()["sandboxed"] is False
         assert store.synced == []
 
+    def test_missing_header_keeps_the_shared_demo_db(self, test_client, store):
+        """Verify a storage-less browser (no id) is served the shared copy."""
+        response = test_client.get(STATUS, headers={"X-FAD-Demo": "1"})
+
+        assert response.json()["sandboxed"] is False
+        assert store.synced == []
+
     def test_session_does_not_leak_between_requests(self, test_client, store):
         """Verify the bound id is reset once the request finishes."""
         test_client.get(
@@ -106,6 +113,8 @@ class TestGate:
         )
         response = test_client.get(STATUS, headers={"X-FAD-Demo": "1"})
         assert response.json()["sandboxed"] is False
+        # The second, id-less request must not have touched a sandbox at all.
+        assert store.synced == [SID]
 
 
 class TestBlobConfiguredFlag:

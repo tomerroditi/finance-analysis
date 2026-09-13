@@ -6,7 +6,9 @@ from typing import Literal, Optional
 from sqlalchemy.orm import Session
 
 from backend.errors import EntityNotFoundException, ValidationException
+from backend.models.transaction import SplitTransaction
 from backend.repositories.pending_refunds_repository import PendingRefundsRepository
+from backend.repositories.transactions_repository import TransactionsRepository
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +32,7 @@ class PendingRefundsService:
         """
         self.db = db
         self.repo = PendingRefundsRepository(db)
+        self.transactions_repo = TransactionsRepository(db)
 
     def mark_as_pending_refund(
         self,
@@ -63,7 +66,9 @@ class PendingRefundsService:
         Raises
         ------
         ValidationException
-            If expected_amount is not positive or source already marked.
+            If expected_amount is not positive, exceeds the source amount,
+            the source transaction/split does not exist, or the source is
+            already marked.
         """
         if expected_amount <= 0:
             raise ValidationException("Expected refund amount must be positive")
@@ -74,6 +79,17 @@ class PendingRefundsService:
         # table name — a row saved as "banks" left its transaction unprotected
         # and the refund orphaned when the row was re-scraped.
         source_table = self._canonical_source(source_table)
+
+        # A refund can only be expected on money that was actually spent: the
+        # source must resolve, and the expectation is capped at its amount.
+        source_amount = self._resolve_source_amount(
+            source_type, source_id, source_table
+        )
+        if expected_amount > abs(source_amount) + 1e-6:
+            raise ValidationException(
+                f"Expected refund amount cannot exceed the {source_type} "
+                f"amount ({abs(source_amount):.2f})"
+            )
 
         # Check if already marked
         existing = self.repo.get_pending_for_source(
@@ -102,6 +118,47 @@ class PendingRefundsService:
             "notes": pending.notes,
         }
 
+    def _resolve_source_amount(
+        self, source_type: str, source_id: int, source_table: str
+    ) -> float:
+        """
+        Look up the amount of the transaction or split a refund is marked on.
+
+        Parameters
+        ----------
+        source_type : str
+            Either 'transaction' or 'split'.
+        source_id : int
+            unique_id for transactions, split id for splits.
+        source_table : str
+            Canonical table name of the transaction (ignored for splits,
+            whose ids are global).
+
+        Returns
+        -------
+        float
+            The signed amount of the source row.
+
+        Raises
+        ------
+        ValidationException
+            If the source table is unknown or the row does not exist.
+        """
+        if source_type == "split":
+            split = self.db.get(SplitTransaction, source_id)
+            if split is None:
+                raise ValidationException(f"Split {source_id} does not exist")
+            return float(split.amount)
+
+        if self.transactions_repo.repo_map.get(source_table) is None:
+            raise ValidationException(f"Unknown source table '{source_table}'")
+        txn = self._get_refund_transaction(source_id, source_table)
+        if txn is None:
+            raise ValidationException(
+                f"Transaction {source_id} does not exist in {source_table}"
+            )
+        return float(txn.amount)
+
     def _get_refund_transaction(self, transaction_id: int, source: str):
         """
         Resolve a refund transaction ORM row from its id and source table.
@@ -121,11 +178,7 @@ class PendingRefundsService:
         """
         from sqlalchemy import select
 
-        from backend.repositories.transactions_repository import (
-            TransactionsRepository,
-        )
-
-        repo = TransactionsRepository(self.db).repo_map.get(source)
+        repo = self.transactions_repo.repo_map.get(source)
         if not repo:
             return None
         return self.db.execute(
@@ -178,11 +231,7 @@ class PendingRefundsService:
         str
             The table name when resolvable, the input otherwise.
         """
-        from backend.repositories.transactions_repository import (
-            TransactionsRepository,
-        )
-
-        repo = TransactionsRepository(self.db).repo_map.get(source)
+        repo = self.transactions_repo.repo_map.get(source)
         return repo.model.__tablename__ if repo else source
 
     def link_refund(
@@ -221,9 +270,9 @@ class PendingRefundsService:
         EntityNotFoundException
             If pending refund not found.
         ValidationException
-            If the amount is not positive, the transaction is already linked
-            to this pending refund, or the amount exceeds what's still
-            available on the transaction.
+            If the amount is not positive, ``refund_source`` is not a known
+            table, the transaction is already linked to this pending refund,
+            or the amount exceeds what's still available on the transaction.
         """
         pending = self.repo.get_by_id(pending_refund_id)
         if not pending:
@@ -238,6 +287,9 @@ class PendingRefundsService:
 
         if amount <= 0:
             raise ValidationException("Refund amount must be positive")
+
+        if self.transactions_repo.repo_map.get(refund_source) is None:
+            raise ValidationException(f"Unknown refund source '{refund_source}'")
 
         # The same transaction may fund several pending refunds, but only
         # once per pending refund.
@@ -413,17 +465,13 @@ class PendingRefundsService:
         """
         from sqlalchemy import select
 
-        from backend.repositories.transactions_repository import TransactionsRepository
-
         df = self.repo.get_all_pending_refunds(status=status)
         pending_list = df.to_dict(orient="records") if not df.empty else []
 
         if not pending_list:
             return []
 
-        # Initialize repos
-        trans_repo = TransactionsRepository(self.db)
-        # Split repo is needed if we have split sources, but we need parent transaction anyway.
+        trans_repo = self.transactions_repo
 
         # Group by source table/type to batch fetch
         # format: { (table, type): [ids] }
@@ -469,8 +517,6 @@ class PendingRefundsService:
                     # Since split repo is SQL-based/Pandas in parts, let's use the DB directly for efficiency if possible
                     # or just use the repo.
                     for split_id in ids:
-                        from backend.models.transaction import SplitTransaction
-
                         split = self.db.get(SplitTransaction, split_id)
                         if split:
                             # Get parent

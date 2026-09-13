@@ -12,6 +12,23 @@ from backend.dependencies import get_database
 from backend.models.base import Base
 
 
+@pytest.fixture(autouse=True)
+def _reset_categories_cache(monkeypatch):
+    """Start every route test with an empty categories cache.
+
+    ``tagging_service._categories_cache`` is a module-level dict filled
+    lazily from whichever DB first asked, so without a reset a test inherits
+    the categories a predecessor's in-memory DB happened to seed. Mirrors
+    the autouse fixture in ``test_budget_service.py``; tests that need a
+    specific mapping still ``monkeypatch.setattr`` it themselves.
+    """
+    import backend.services.tagging_service as ts
+
+    monkeypatch.setattr(ts, "_categories_cache", {})
+    yield
+    monkeypatch.setattr(ts, "_categories_cache", {})
+
+
 @pytest.fixture(scope="function")
 def db_engine():
     """Create an in-memory SQLite engine with StaticPool for route tests.

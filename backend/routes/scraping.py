@@ -84,6 +84,9 @@ def abort_scraping(
 ) -> dict:
     """Abort a running scraping process.
 
+    Works for a scraper parked on an OTP prompt and for one mid-fetch: the
+    history row is recorded as ``canceled`` either way.
+
     Parameters
     ----------
     data : AbortRequest
@@ -113,8 +116,11 @@ def get_scraping_status(
     Returns
     -------
     dict
-        Status dict including ``status`` (e.g. ``running``, ``done``,
-        ``failed``), and optionally ``requires_2fa`` and error details.
+        ``status`` (``in_progress``, ``waiting_for_2fa``, ``success``,
+        ``failed``, ``canceled``, or ``unknown`` for an unknown id),
+        ``process_id``, and — for failures — ``error_message`` (the
+        provider's raw text) plus ``error_type`` (the category the client
+        maps to translated copy).
     """
     service = ScrapingService(db)
     return service.get_scraping_status(scraping_process_id)

@@ -203,15 +203,16 @@ class CredentialsRepository:
 
         Notes
         -----
-        After removing the database row, also attempts to delete the password,
-        secret, otp_key, and otpLongTermToken entries from the OS Keyring.
-        Keyring entries that do not exist are silently ignored.
+        After removing the database row, also deletes every Keyring entry
+        ``save_credentials`` can have written (``_SENSITIVE_FIELDS``: the
+        password and the OTP long-term token). Entries that do not exist are
+        silently ignored.
         """
         cred = self._find_credential(service, provider, account_name)
         self.db.delete(cred)
         self.db.commit()
 
-        for field in ("password", "secret", "otp_key", "otpLongTermToken"):
+        for field in _SENSITIVE_FIELDS:
             keyring_store.delete_secret(
                 keyring_store.active_credentials_service(),
                 keyring_store.credential_secret_name(

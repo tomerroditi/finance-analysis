@@ -1,3 +1,39 @@
+## v1.64.0 (2026-09-13)
+
+### Feat
+
+- **recurring**: confirm detected subscriptions, and harden how they are detected (#276)
+
+## v1.63.0 (2026-09-13)
+
+### Feat
+
+- **budget**: close a finished project and drop it from the Overview (#275)
+
+## v1.62.0 (2026-09-11)
+
+### Feat
+
+- **budget**: land on the Overview tab on the page and the card (#274)
+
+## v1.61.4 (2026-09-11)
+
+### Fix
+
+- **savings-goals,investments**: free a deleted goal's earmark and keep a closed investment's zero on its last transaction (#273)
+
+## v1.61.3 (2026-09-11)
+
+### Fix
+
+- **budget**: apportion spend between overlapping monthly rules (#272)
+
+## v1.61.2 (2026-09-11)
+
+### Fix
+
+- **demo**: shift budget and savings-goal months by whole calendar months (#270)
+
 ## v1.61.1 (2026-09-11)
 
 ### Fix

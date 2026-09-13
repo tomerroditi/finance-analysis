@@ -6,21 +6,67 @@ from datetime import date, datetime
 import pandas as pd
 import pytest
 
-from backend.constants.categories import (
-    IncomeCategories,
-    PRIOR_WEALTH_TAG,
-    INVESTMENTS_CATEGORY,
-    LIABILITIES_CATEGORY,
-    CREDIT_CARDS,
-)
-from backend.constants.providers import Banks, CreditCards
+from backend.constants.categories import PRIOR_WEALTH_TAG, IncomeCategories
 from backend.constants.tables import Tables, TransactionsTableFields
+from backend.errors import EntityNotFoundException, ValidationException
+from backend.models.cash_balance import CashBalance
 from backend.models.transaction import (
     BankTransaction,
     CashTransaction,
-    ManualInvestmentTransaction,
+    CreditCardTransaction,
+    SplitTransaction,
 )
+from backend.repositories.split_transactions_repository import (
+    SplitTransactionsRepository,
+)
+from backend.services.budget_month_override_service import (
+    BudgetMonthOverrideService,
+)
+from backend.services.pending_refunds_service import PendingRefundsService
 from backend.services.transactions_service import TransactionsService
+
+
+def _add_cash(db_session, tx_id="cash-1", amount=-100.0, date="2024-02-10",
+              account_name="Wallet", **overrides) -> int:
+    """Insert one deletable cash transaction and return its unique_id."""
+    fields = dict(
+        id=tx_id, date=date, provider="CASH", account_name=account_name,
+        description="spend", amount=amount, category="Food", tag="Groceries",
+        source="cash_transactions", type="normal", status="completed",
+    )
+    fields.update(overrides)
+    tx = CashTransaction(**fields)
+    db_session.add(tx)
+    db_session.commit()
+    db_session.refresh(tx)
+    return tx.unique_id
+
+
+def _add_bank(db_session, tx_id, amount, date="2024-01-15", provider="hapoalim",
+              account_name="Checking", **overrides) -> int:
+    """Insert one bank transaction and return its unique_id."""
+    fields = dict(
+        id=tx_id, date=date, provider=provider, account_name=account_name,
+        description=tx_id, amount=amount, category="Food", tag="Groceries",
+        source="bank_transactions", type="normal", status="completed",
+    )
+    fields.update(overrides)
+    tx = BankTransaction(**fields)
+    db_session.add(tx)
+    db_session.commit()
+    db_session.refresh(tx)
+    return tx.unique_id
+
+
+def _split_ids(db_session, unique_id: int, source: str) -> list[int]:
+    """Return the split ids currently attached to a parent."""
+    return [
+        s.id
+        for s in db_session.query(SplitTransaction)
+        .filter_by(transaction_id=unique_id, source=source)
+        .order_by(SplitTransaction.id)
+        .all()
+    ]
 
 
 class TestTransactionsServiceDataRetrieval:
@@ -47,13 +93,6 @@ class TestTransactionsServiceDataRetrieval:
         assert result.empty
         for column in service.ANALYSIS_COLUMNS:
             assert column in result.columns
-        for required in (
-            TransactionsTableFields.DATE.value,
-            TransactionsTableFields.SOURCE.value,
-            TransactionsTableFields.CATEGORY.value,
-            TransactionsTableFields.AMOUNT.value,
-        ):
-            assert required in result.columns
 
     def test_get_data_for_analysis_merges_sources(self, db_session, seed_base_transactions):
         """Verify data from CC, bank, cash, and manual_investments are merged."""
@@ -68,38 +107,6 @@ class TestTransactionsServiceDataRetrieval:
         assert "bank_transactions" in sources
         assert "cash_transactions" in sources
 
-    def test_get_data_for_analysis_excludes_split_parents(
-        self, db_session, seed_base_transactions, seed_split_transactions
-    ):
-        """Verify split parent transactions are excluded by default."""
-        service = TransactionsService(db_session)
-        result = service.get_data_for_analysis()
-
-        type_col = TransactionsTableFields.TYPE.value
-        assert "split_parent" not in result[type_col].values
-
-    def test_get_data_for_analysis_includes_split_children(
-        self, db_session, seed_base_transactions, seed_split_transactions
-    ):
-        """Verify split children appear in analysis data."""
-        service = TransactionsService(db_session)
-        result = service.get_data_for_analysis()
-
-        # The split transactions fixture has 5 children total (3 CC + 2 bank).
-        # Verify specific split amounts are present to confirm children are included.
-        amount_col = TransactionsTableFields.AMOUNT.value
-
-        # CC splits: -150 (Food/Groceries), -100 (Home/Cleaning), -50 (Other)
-        cc_split_amounts = {-150.0, -100.0, -50.0}
-        # Bank splits: -120 (Home/Maintenance), -80 (Other)
-        bank_split_amounts = {-120.0, -80.0}
-        expected_split_amounts = cc_split_amounts | bank_split_amounts
-
-        # Check that all expected split amounts are present in the result
-        result_amounts = set(result[amount_col].values)
-        for amt in expected_split_amounts:
-            assert amt in result_amounts, f"Missing split amount {amt}"
-
     def test_get_data_for_analysis_includes_prior_wealth(
         self, db_session, seed_prior_wealth_transactions
     ):
@@ -110,13 +117,11 @@ class TestTransactionsServiceDataRetrieval:
         tag_col = TransactionsTableFields.TAG.value
         source_col = TransactionsTableFields.SOURCE.value
 
-        # There should be bank balance prior wealth rows (from _build_bank_prior_wealth_rows)
         bank_pw_rows = result[
             (result[tag_col] == PRIOR_WEALTH_TAG) & (result[source_col] == "bank_balances")
         ]
         assert len(bank_pw_rows) == 2  # hapoalim + leumi
 
-        # Plus the cash prior wealth row seeded directly
         all_pw_rows = result[result[tag_col] == PRIOR_WEALTH_TAG]
         assert len(all_pw_rows) == 3  # 2 bank balance + 1 cash
 
@@ -177,35 +182,27 @@ class TestTransactionsServiceDataRetrieval:
         category_col = TransactionsTableFields.CATEGORY.value
         assert not result.empty
         assert result[category_col].isna().all()
-        # 4 CC untagged transactions in the fixture
         assert len(result) == 4
 
     def test_get_transactions_by_tag(self, db_session, seed_base_transactions):
         """Verify filtering by category and optional tag."""
         service = TransactionsService(db_session)
 
-        # Filter by category only
         food_txns = service.get_transactions_by_tag("Food")
         category_col = TransactionsTableFields.CATEGORY.value
         assert not food_txns.empty
         assert all(food_txns[category_col] == "Food")
 
-        # Filter by category and tag
         grocery_txns = service.get_transactions_by_tag("Food", "Groceries")
         tag_col = TransactionsTableFields.TAG.value
         assert not grocery_txns.empty
         assert all(grocery_txns[tag_col] == "Groceries")
         assert len(grocery_txns) < len(food_txns)
 
-
     def test_get_data_for_analysis_includes_investment_prior_wealth(
         self, db_session, seed_investments
     ):
         """Verify investment prior wealth synthetic rows appear in analysis data."""
-        from backend.constants.tables import TransactionsTableFields
-        from backend.constants.categories import PRIOR_WEALTH_TAG, IncomeCategories
-
-        # Set prior_wealth_amount on the open investment
         stock_fund = seed_investments["investments"][0]
         stock_fund.prior_wealth_amount = 12000.0
         db_session.commit()
@@ -229,45 +226,24 @@ class TestTransactionsServiceCRUD:
     """Tests for TransactionsService create/update/delete operations."""
 
     def test_create_cash_transaction(self, db_session):
-        """Verify creating a cash transaction."""
+        """Verify creating a cash transaction persists it and forces provider CASH."""
         service = TransactionsService(db_session)
         data = {
             "date": date(2024, 4, 1),
             "account_name": "Cash Wallet",
             "description": "Test cash purchase",
             "amount": -50.0,
-            "provider": "cash",
+            "provider": "MANUAL",  # overridden to "CASH"
             "category": "Food",
             "tag": "Groceries",
         }
         service.create_transaction(data, "cash")
 
         result = service.get_all_transactions("cash")
-        assert not result.empty
-        # Filter out the auto-generated Prior Wealth offset row
         user_rows = result[result["tag"] != PRIOR_WEALTH_TAG]
         assert len(user_rows) == 1
         assert user_rows.iloc[0]["description"] == "Test cash purchase"
         assert user_rows.iloc[0]["amount"] == -50.0
-
-    def test_create_cash_transaction_always_sets_provider_cash(self, db_session):
-        """Verify creating a cash transaction always sets provider to 'CASH'.
-
-        Regardless of what provider value is passed in, cash transactions
-        should always have provider='CASH'.
-        """
-        service = TransactionsService(db_session)
-        data = {
-            "date": date(2024, 4, 1),
-            "account_name": "Cash Wallet",
-            "description": "Test provider",
-            "amount": -30.0,
-            "provider": "MANUAL",  # Should be overridden to "CASH"
-        }
-        service.create_transaction(data, "cash")
-
-        result = service.get_all_transactions("cash")
-        user_rows = result[result["tag"] != PRIOR_WEALTH_TAG]
         assert user_rows.iloc[0]["provider"] == "CASH"
 
     def test_create_manual_investments_transaction(self, db_session):
@@ -284,10 +260,7 @@ class TestTransactionsServiceCRUD:
         }
         service.create_transaction(data, "manual_investments")
 
-        # manual_investments not accessible via get_all_transactions,
-        # so use get_table_for_analysis and filter out PW offset rows
         result = service.get_table_for_analysis("manual_investments")
-        assert not result.empty
         user_rows = result[result["tag"] != PRIOR_WEALTH_TAG]
         assert len(user_rows) == 1
         assert user_rows.iloc[0]["description"] == "Monthly deposit"
@@ -305,44 +278,22 @@ class TestTransactionsServiceCRUD:
             service.create_transaction(data, "credit_cards")
 
     def test_update_transaction_manual_source(self, db_session):
-        """Verify manual sources can edit description/amount/provider.
-
-        For cash transactions, provider is always forced to "CASH" regardless of input.
-        """
+        """Verify manual sources can edit description/amount and provider stays CASH."""
         service = TransactionsService(db_session)
+        unique_id = _add_cash(db_session, description="Original description", amount=-50.0)
 
-        # Create a cash transaction first
-        data = {
-            "date": date(2024, 4, 1),
-            "account_name": "Cash Wallet",
-            "description": "Original description",
-            "amount": -50.0,
-            "provider": "cash",
-        }
-        service.create_transaction(data, "cash")
-
-        # Get the unique_id of the created transaction
-        cash_df = service.get_all_transactions("cash")
-        # Filter out any Prior Wealth offset rows
-        non_pw = cash_df[cash_df["tag"] != PRIOR_WEALTH_TAG]
-        unique_id = int(non_pw.iloc[0]["unique_id"])
-
-        # Update description, amount, and attempt to set provider to something else
-        # For cash transactions, provider is always forced to "CASH"
         updates = {
             "description": "Updated description",
             "amount": -75.0,
             "provider": "updated_provider",
         }
-        result = service.update_transaction(unique_id, "cash_transactions", updates)
-        assert result is True
+        assert service.update_transaction(unique_id, "cash_transactions", updates) is True
 
-        # Verify the update
         updated_df = service.get_all_transactions("cash")
         updated_row = updated_df[updated_df["unique_id"] == unique_id].iloc[0]
         assert updated_row["description"] == "Updated description"
         assert updated_row["amount"] == -75.0
-        assert updated_row["provider"] == "CASH"  # Always "CASH" for cash transactions
+        assert updated_row["provider"] == "CASH"
 
     def test_update_transaction_scraped_source_only_tags(
         self, db_session, seed_base_transactions
@@ -350,25 +301,19 @@ class TestTransactionsServiceCRUD:
         """Verify scraped sources can only update category/tag."""
         service = TransactionsService(db_session)
 
-        # Get a CC transaction unique_id
         cc_df = service.get_all_transactions("credit_cards")
         unique_id = int(cc_df.iloc[0]["unique_id"])
-
-        # Capture original description before update
         original_description = cc_df.iloc[0]["description"]
 
-        # Try to update description (should be filtered out for scraped source)
         updates = {
             "description": "Should not update",
             "category": "Transport",
             "tag": "Gas",
         }
-        result = service.update_transaction(
+        assert service.update_transaction(
             unique_id, "credit_card_transactions", updates
-        )
-        assert result is True
+        ) is True
 
-        # Verify only category/tag changed, description retained original value
         updated_df = service.get_all_transactions("credit_cards")
         updated_row = updated_df[updated_df["unique_id"] == unique_id].iloc[0]
         assert updated_row["description"] == original_description
@@ -378,75 +323,43 @@ class TestTransactionsServiceCRUD:
     def test_update_cash_transaction_date(self, db_session):
         """Verify updating a cash transaction's date is persisted."""
         service = TransactionsService(db_session)
+        unique_id = _add_cash(db_session)
 
-        data = {
-            "date": date(2024, 4, 1),
-            "account_name": "Cash Wallet",
-            "description": "Date update test",
-            "amount": -30.0,
-            "provider": "cash",
-        }
-        service.create_transaction(data, "cash")
-
-        cash_df = service.get_all_transactions("cash")
-        non_pw = cash_df[cash_df["tag"] != PRIOR_WEALTH_TAG]
-        unique_id = int(non_pw.iloc[0]["unique_id"])
-
-        result = service.update_transaction(unique_id, "cash_transactions", {"date": "2024-06-15"})
-        assert result is True
+        assert service.update_transaction(
+            unique_id, "cash_transactions", {"date": "2024-06-15"}
+        ) is True
 
         updated_df = service.get_all_transactions("cash")
         updated_row = updated_df[updated_df["unique_id"] == unique_id].iloc[0]
-        assert "2024-06-15" in str(updated_row["date"])
+        assert str(updated_row["date"]) == "2024-06-15"
 
     def test_update_cash_transaction_account_name_recalculates_both_balances(
         self, db_session
     ):
         """Verify changing account_name recalculates balances for old and new accounts."""
-        from backend.models.transaction import CashTransaction
         from backend.services.cash_balance_service import CashBalanceService
 
         service = TransactionsService(db_session)
         cash_balance_svc = CashBalanceService(db_session)
 
-        # Seed balance records for both accounts so recalculate_current_balance has a record to update.
+        # Order matters: the -50 must already be in the wallet when its
+        # balance is fixed at 200, so prior wealth is derived as 250.
+        unique_id = _add_cash(db_session, account_name="Wallet A", amount=-50.0)
         cash_balance_svc.set_balance("Wallet A", 200.0)
         cash_balance_svc.set_balance("Wallet B", 0.0)
 
-        # Create a cash transaction on Wallet A.
-        tx = CashTransaction(
-            id="cash_acct_change_1",
-            date="2024-05-01",
-            provider="cash",
-            account_name="Wallet A",
-            description="Account change test",
-            amount=-50.0,
-            category="Food",
-            tag="Groceries",
-            source="cash_transactions",
-            type="normal",
-            status="completed",
-        )
-        db_session.add(tx)
-        db_session.commit()
-        db_session.refresh(tx)
+        assert service.update_transaction(
+            unique_id, "cash_transactions", {"account_name": "Wallet B"}
+        ) is True
 
-        # Move the transaction from Wallet A to Wallet B.
-        result = service.update_transaction(
-            tx.unique_id, "cash_transactions", {"account_name": "Wallet B"}
-        )
-        assert result is True
-
-        # Wallet A should now reflect no transaction (balance recalculated).
         wallet_a = cash_balance_svc.get_by_account_name("Wallet A")
         wallet_b = cash_balance_svc.get_by_account_name("Wallet B")
-
-        assert wallet_a is not None
-        assert wallet_b is not None
-        # Wallet A had prior_wealth calculated from set_balance; transaction moved away,
-        # so its balance should exclude the -50 transaction.
-        # Wallet B now has the -50 transaction, balance should reflect it.
-        assert wallet_b["balance"] < wallet_a["balance"]
+        assert wallet_a is not None and wallet_b is not None
+        # Wallet A's balance was fixed at 200 with the -50 inside it, so its
+        # prior wealth is 250; moving the row out leaves 250. Wallet B (prior
+        # wealth 0) now carries the -50.
+        assert wallet_a["balance"] == pytest.approx(250.0)
+        assert wallet_b["balance"] == pytest.approx(-50.0)
 
     def test_update_transaction_date_ignored_for_scraped_source(
         self, db_session, seed_base_transactions
@@ -458,104 +371,95 @@ class TestTransactionsServiceCRUD:
         unique_id = int(cc_df.iloc[0]["unique_id"])
         original_date = cc_df.iloc[0]["date"]
 
-        # Pass date and account_name for a CC (scraped) source — should be filtered.
-        result = service.update_transaction(
+        assert service.update_transaction(
             unique_id,
             "credit_card_transactions",
             {"date": "2099-01-01", "account_name": "Hacked", "category": "Food"},
-        )
-        assert result is True
+        ) is True
 
         updated_df = service.get_all_transactions("credit_cards")
         updated_row = updated_df[updated_df["unique_id"] == unique_id].iloc[0]
-        # Date must not have changed.
         assert str(updated_row["date"]) == str(original_date)
-        # Category must have changed (it is always allowed).
+        assert updated_row["account_name"] != "Hacked"
         assert updated_row["category"] == "Food"
 
+    def test_update_transaction_nonexistent_id_raises_not_found(self, db_session):
+        """Updating a unique_id that does not exist is a 404, not a silent no-op."""
+        service = TransactionsService(db_session)
+        with pytest.raises(EntityNotFoundException, match="not found"):
+            service.update_transaction(
+                99999, "cash_transactions", {"description": "ghost"}
+            )
+
+    def test_update_transaction_invalid_date_rejected(self, db_session):
+        """A manual date that is not YYYY-MM-DD is rejected before it is stored."""
+        service = TransactionsService(db_session)
+        unique_id = _add_cash(db_session)
+
+        with pytest.raises(ValueError, match="YYYY-MM-DD"):
+            service.update_transaction(
+                unique_id, "cash_transactions", {"date": "15/06/2024"}
+            )
+
+        assert db_session.get(CashTransaction, unique_id).date == "2024-02-10"
+
     def test_delete_transaction_cash(self, db_session):
-        """Verify deleting a cash transaction."""
+        """Verify deleting a cash transaction removes the row and recalculates the balance."""
+        db_session.add(CashBalance(
+            account_name="Wallet", balance=0.0, prior_wealth_amount=0.0,
+            last_manual_update="2024-01-01",
+        ))
+        db_session.commit()
+        unique_id = _add_cash(db_session, amount=-30.0)
         service = TransactionsService(db_session)
 
-        # Create a cash transaction
-        data = {
-            "date": date(2024, 4, 1),
-            "account_name": "Cash Wallet",
-            "description": "To be deleted",
-            "amount": -30.0,
-            "provider": "cash",
-            "category": "Food",
-            "tag": "Coffee",
-        }
-        service.create_transaction(data, "cash")
-
-        cash_df = service.get_all_transactions("cash")
-        non_pw = cash_df[cash_df["tag"] != PRIOR_WEALTH_TAG]
-        unique_id = int(non_pw.iloc[0]["unique_id"])
-
-        # Delete the transaction
         service.delete_transaction(unique_id, "cash_transactions")
 
-        # Verify it's gone
-        after_df = service.get_all_transactions("cash")
-        remaining = after_df[after_df["tag"] != PRIOR_WEALTH_TAG]
-        assert remaining.empty
+        assert db_session.get(CashTransaction, unique_id) is None
+        balance = db_session.query(CashBalance).filter_by(account_name="Wallet").one()
+        assert balance.balance == pytest.approx(0.0)
 
+    @pytest.mark.parametrize(
+        ("service_name", "source"),
+        [
+            ("credit_cards", "credit_card_transactions"),
+            ("banks", "bank_transactions"),
+        ],
+    )
     def test_delete_transaction_scraped_source_forbidden(
-        self, db_session, seed_base_transactions
+        self, db_session, seed_base_transactions, service_name, source
     ):
-        """Verify PermissionError when deleting non-manual transaction."""
+        """Verify PermissionError when deleting a scraped (CC/bank) transaction."""
         service = TransactionsService(db_session)
+        uid = int(service.get_all_transactions(service_name).iloc[0]["unique_id"])
 
-        cc_df = service.get_all_transactions("credit_cards")
-        unique_id = int(cc_df.iloc[0]["unique_id"])
-
-        with pytest.raises(PermissionError, match="prohibited"):
-            service.delete_transaction(unique_id, "credit_card_transactions")
+        with pytest.raises(PermissionError, match="Deletion of .* prohibited"):
+            service.delete_transaction(uid, source)
 
     def test_delete_transaction_protected_tag(self, db_session):
-        """Verify PermissionError when deleting Prior Wealth transaction."""
+        """Verify PermissionError when deleting a system-generated Prior Wealth transaction."""
         service = TransactionsService(db_session)
-
-        # Create a cash transaction with Prior Wealth tag and account_name
-        pw_tx = CashTransaction(
-            id="pw_test_1",
-            date="2024-01-01",
-            provider="MANUAL",
-            account_name=PRIOR_WEALTH_TAG,
-            description="Prior Wealth Offset (cash)",
-            amount=100.0,
-            category="Other Income",
-            tag=PRIOR_WEALTH_TAG,
-            source="cash_transactions",
-            type="normal",
-            status="completed",
+        unique_id = _add_cash(
+            db_session, tx_id="pw_test_1", date="2024-01-01", provider="MANUAL",
+            account_name=PRIOR_WEALTH_TAG, description="Prior Wealth Offset (cash)",
+            amount=100.0, category="Other Income", tag=PRIOR_WEALTH_TAG,
         )
-        db_session.add(pw_tx)
-        db_session.commit()
-        db_session.refresh(pw_tx)
 
-        with pytest.raises(PermissionError, match="Cannot manually delete"):
-            service.delete_transaction(pw_tx.unique_id, "cash_transactions")
+        with pytest.raises(PermissionError, match="Cannot manually delete .*system-generated"):
+            service.delete_transaction(unique_id, "cash_transactions")
 
     def test_bulk_tag_transactions(self, db_session, seed_untagged_transactions):
         """Verify bulk tagging updates multiple transactions."""
         service = TransactionsService(db_session)
 
-        # Get untagged CC transactions
         untagged = service.get_untagged_transactions("credit_cards")
         unique_ids = untagged["unique_id"].astype(int).tolist()
         assert len(unique_ids) >= 2
 
-        # Bulk tag them
         service.bulk_tag_transactions(
-            unique_ids,
-            "credit_card_transactions",
-            "Food",
-            "Groceries",
+            unique_ids, "credit_card_transactions", "Food", "Groceries",
         )
 
-        # Verify all are now tagged
         cc_df = service.get_all_transactions("credit_cards")
         tagged = cc_df[cc_df["unique_id"].isin(unique_ids)]
         assert all(tagged["category"] == "Food")
@@ -569,12 +473,11 @@ class TestTransactionsServicePriorWealth:
         self, db_session, seed_investments
     ):
         """Verify creating a manual_investments transaction recalculates Investment.prior_wealth_amount."""
-        from datetime import date as date_type
         service = TransactionsService(db_session)
         stock_fund = seed_investments["investments"][0]
 
         data = {
-            "date": date_type(2024, 3, 1),
+            "date": date(2024, 3, 1),
             "description": "Extra deposit",
             "amount": -3000.0,
             "account_name": "Investment Account",
@@ -594,7 +497,6 @@ class TestTransactionsServicePriorWealth:
         service = TransactionsService(db_session)
         stock_fund = seed_investments["investments"][0]
         txns = seed_investments["transactions"]
-        # inv_txn_2 is a Stock Fund txn with amount=-2000
         inv_txn_2 = next(t for t in txns if t.id == "inv_txn_2")
 
         service.delete_transaction(inv_txn_2.unique_id, "manual_investment_transactions")
@@ -607,52 +509,43 @@ class TestTransactionsServicePriorWealth:
 class TestTransactionsServiceTaggingById:
     """Tests for update_tagging_by_id method."""
 
-    def test_update_cc_transaction_tagging(self, db_session, seed_base_transactions):
-        """Verify tagging update for a credit card transaction by table name."""
+    @pytest.mark.parametrize(
+        ("table_name", "service_name"),
+        [
+            (Tables.CREDIT_CARD.value, "credit_cards"),
+            (Tables.BANK.value, "banks"),
+            (Tables.CASH.value, "cash"),
+        ],
+    )
+    def test_update_tagging_by_table_name(
+        self, db_session, seed_base_transactions, table_name, service_name
+    ):
+        """Verify tagging update by table name lands on the right row."""
         service = TransactionsService(db_session)
-        cc_df = service.get_all_transactions("credit_cards")
-        first_uid = int(cc_df.iloc[0]["unique_id"])
+        uid = int(service.get_all_transactions(service_name).iloc[0]["unique_id"])
 
-        service.update_tagging_by_id(
-            Tables.CREDIT_CARD.value, first_uid, "Transport", "Gas"
-        )
+        service.update_tagging_by_id(table_name, uid, "Transport", "Gas")
 
-        updated = service.get_all_transactions("credit_cards")
-        row = updated[updated["unique_id"] == first_uid].iloc[0]
+        updated = service.get_all_transactions(service_name)
+        row = updated[updated["unique_id"] == uid].iloc[0]
         assert row["category"] == "Transport"
         assert row["tag"] == "Gas"
 
-    def test_update_bank_transaction_tagging(self, db_session, seed_base_transactions):
-        """Verify tagging update for a bank transaction by table name."""
+    def test_update_tagging_accepts_service_alias(
+        self, db_session, seed_base_transactions
+    ):
+        """The legacy tag endpoint's service spelling (``credit_cards``) dispatches too.
+
+        The endpoint documented ``credit_card``/``bank``/``cash`` while the
+        service only matched table names, so a documented value was a 400.
+        """
         service = TransactionsService(db_session)
-        bank_df = service.get_all_transactions("banks")
-        # Find a bank transaction with a category to update
-        expense_row = bank_df[bank_df["category"] == "Home"].iloc[0]
-        uid = int(expense_row["unique_id"])
+        uid = int(service.get_all_transactions("credit_cards").iloc[0]["unique_id"])
 
-        service.update_tagging_by_id(
-            Tables.BANK.value, uid, "Entertainment", "Cinema"
-        )
+        service.update_tagging_by_id("credit_cards", uid, "Entertainment", "Cinema")
 
-        updated = service.get_all_transactions("banks")
-        row = updated[updated["unique_id"] == uid].iloc[0]
-        assert row["category"] == "Entertainment"
-        assert row["tag"] == "Cinema"
-
-    def test_update_cash_transaction_tagging(self, db_session, seed_base_transactions):
-        """Verify tagging update for a cash transaction by table name."""
-        service = TransactionsService(db_session)
-        cash_df = service.get_all_transactions("cash")
-        first_uid = int(cash_df.iloc[0]["unique_id"])
-
-        service.update_tagging_by_id(
-            Tables.CASH.value, first_uid, "Home", "Cleaning"
-        )
-
-        updated = service.get_all_transactions("cash")
-        row = updated[updated["unique_id"] == first_uid].iloc[0]
-        assert row["category"] == "Home"
-        assert row["tag"] == "Cleaning"
+        row = db_session.get(CreditCardTransaction, uid)
+        assert (row.category, row.tag) == ("Entertainment", "Cinema")
 
     def test_update_tagging_invalid_table_raises(self, db_session):
         """Verify ValueError raised for an invalid table name."""
@@ -665,49 +558,32 @@ class TestTransactionsServiceDateMethods:
     """Tests for get_latest_data_date and get_earliest_data_date methods."""
 
     def test_get_latest_data_date_with_data(self, db_session, seed_base_transactions):
-        """Verify latest date returns earliest of the per-table max dates."""
-        service = TransactionsService(db_session)
-        latest = service.get_latest_data_date()
+        """Verify latest date is the earliest of the populated tables' max dates.
 
-        # The method returns min(latest_dates) across tables.
-        # CC latest: 2024-03-25, Bank latest: 2024-03-10, Cash latest: 2024-03-22
-        # Manual investments: no data -> fallback = today - 365
-        # min of those would be the fallback date (roughly today - 365)
-        assert isinstance(latest, datetime)
+        CC latest: 2024-03-25, bank latest: 2024-03-10, cash latest:
+        2024-03-22; manual-investment and insurance tables are empty and
+        must not drag the result to a placeholder date.
+        """
+        service = TransactionsService(db_session)
+        assert service.get_latest_data_date() == datetime(2024, 3, 10)
 
     def test_get_earliest_data_date_with_data(self, db_session, seed_base_transactions):
         """Verify earliest date returns the minimum date across all tables."""
         service = TransactionsService(db_session)
-        earliest = service.get_earliest_data_date()
-
-        # Earliest across all seeded data: bank_jan_1 = 2024-01-01
-        assert isinstance(earliest, datetime)
-        assert earliest == datetime(2024, 1, 1)
+        assert service.get_earliest_data_date() == datetime(2024, 1, 1)
 
     def test_get_latest_data_date_empty_db(self, db_session):
-        """Verify fallback date returned when no transactions exist."""
+        """Verify None is returned when no table has any data."""
         service = TransactionsService(db_session)
-        latest = service.get_latest_data_date()
-
-        # Fallback: today - 365 days for each empty table, min of those
-        expected_approx = datetime.today().replace(
-            hour=0, minute=0, second=0, microsecond=0
-        ) - __import__("datetime").timedelta(days=365)
-        assert isinstance(latest, datetime)
-        # The date should be approximately one year ago
-        diff = abs((latest - expected_approx).days)
-        assert diff <= 1
+        assert service.get_latest_data_date() is None
 
     def test_get_earliest_data_date_empty_db(self, db_session):
         """Verify fallback to current datetime when no data exists."""
         service = TransactionsService(db_session)
         earliest = service.get_earliest_data_date()
 
-        # Fallback: datetime.now()
         assert isinstance(earliest, datetime)
-        now = datetime.now()
-        # Should be within a few seconds of now
-        assert abs((now - earliest).total_seconds()) < 5
+        assert abs((datetime.now() - earliest).total_seconds()) < 5
 
 
 class TestTransactionsServiceStaticMethods:
@@ -718,54 +594,31 @@ class TestTransactionsServiceStaticMethods:
         service = TransactionsService(db_session)
         columns = service.get_table_columns_for_display()
 
-        expected_columns = [
-            "provider",
-            "account_name",
-            "account_number",
-            "date",
-            "description",
-            "amount",
-            "category",
-            "tag",
-            "id",
-            "status",
-            "type",
-            "unique_id",
+        assert columns == [
+            "provider", "account_name", "account_number", "date", "description",
+            "amount", "category", "tag", "id", "status", "type", "unique_id",
             "source",
         ]
-        assert columns == expected_columns
 
-    def test_normalize_empty_string_converts_to_none(self):
-        """Verify empty string is converted to None."""
-        result = TransactionsService._normalize_empty_string("")
-        assert result is None
-
-    def test_normalize_empty_string_preserves_value(self):
-        """Verify non-empty string is preserved as-is."""
-        result = TransactionsService._normalize_empty_string("Food")
-        assert result == "Food"
-
-    def test_normalize_empty_string_preserves_none(self):
-        """Verify None input is preserved as None."""
-        result = TransactionsService._normalize_empty_string(None)
-        assert result is None
+    @pytest.mark.parametrize(
+        ("value", "expected"), [("", None), ("Food", "Food"), (None, None)]
+    )
+    def test_normalize_empty_string(self, value, expected):
+        """Verify empty strings become None and other values pass through."""
+        assert TransactionsService._normalize_empty_string(value) is expected or (
+            TransactionsService._normalize_empty_string(value) == expected
+        )
 
     def test_update_transaction_empty_updates_returns_false(
         self, db_session, seed_base_transactions
     ):
         """Verify update_transaction returns False when no valid updates provided."""
         service = TransactionsService(db_session)
+        unique_id = int(service.get_all_transactions("credit_cards").iloc[0]["unique_id"])
 
-        # Get a CC transaction (scraped source) and pass only non-applicable updates
-        cc_df = service.get_all_transactions("credit_cards")
-        unique_id = int(cc_df.iloc[0]["unique_id"])
-
-        # For scraped source, only category/tag are allowed;
-        # pass empty dict (no valid updates at all)
-        result = service.update_transaction(
+        assert service.update_transaction(
             unique_id, "credit_card_transactions", {}
-        )
-        assert result is False
+        ) is False
 
 
 class TestBuildPriorWealthRowsEmptyData:
@@ -773,169 +626,15 @@ class TestBuildPriorWealthRowsEmptyData:
 
     def test_build_bank_prior_wealth_rows_empty_balances(self, db_session):
         """Verify empty DataFrame returned when no bank balances exist."""
-        service = TransactionsService(db_session)
-        result = service._build_bank_prior_wealth_rows()
+        result = TransactionsService(db_session)._build_bank_prior_wealth_rows()
         assert isinstance(result, pd.DataFrame)
         assert result.empty
 
     def test_build_investment_prior_wealth_rows_empty_investments(self, db_session):
         """Verify empty DataFrame returned when no investments exist."""
-        service = TransactionsService(db_session)
-        result = service._build_investment_prior_wealth_rows()
+        result = TransactionsService(db_session)._build_investment_prior_wealth_rows()
         assert isinstance(result, pd.DataFrame)
         assert result.empty
-
-
-class TestUpdateTaggingByIdInvalidTable:
-    """Tests for update_tagging_by_id with invalid table name."""
-
-    def test_update_tagging_unknown_table_raises_value_error(self, db_session):
-        """Verify ValueError raised for unknown table_name in update_tagging_by_id."""
-        service = TransactionsService(db_session)
-        with pytest.raises(ValueError, match="Invalid table name"):
-            service.update_tagging_by_id("bogus_table", 1, "Food", "Coffee")
-
-
-class TestCreateTransactionFailure:
-    """Tests for create_transaction validation and error paths."""
-
-    def test_create_transaction_invalid_service_raises(self, db_session):
-        """Verify ValueError raised for unsupported service in create_transaction."""
-        service = TransactionsService(db_session)
-        with pytest.raises(ValueError, match="Can only create cash or manual_investments"):
-            service.create_transaction(
-                {"date": date(2024, 1, 1), "description": "test", "amount": -50,
-                 "account_name": "Wallet"},
-                "credit_cards",
-            )
-
-    def test_create_cash_transaction_success(self, db_session):
-        """Verify a cash transaction can be created successfully."""
-        from backend.models.cash_balance import CashBalance
-
-        # Insert a cash balance so recalculation doesn't fail
-        db_session.add(CashBalance(
-            account_name="Wallet",
-            balance=0.0,
-            prior_wealth_amount=0.0,
-            last_manual_update="2024-01-01",
-        ))
-        db_session.commit()
-
-        service = TransactionsService(db_session)
-        service.create_transaction(
-            {"date": date(2024, 1, 5), "description": "Market", "amount": -100.0,
-             "account_name": "Wallet"},
-            "cash",
-        )
-
-        cash_df = service.get_all_transactions("cash")
-        assert not cash_df.empty
-        assert "Market" in cash_df["description"].values
-
-
-class TestUpdateTransactionCashProviderForceSet:
-    """Tests for update_transaction forcing provider to CASH for cash sources."""
-
-    def test_cash_transaction_update_forces_provider(
-        self, db_session, seed_base_transactions
-    ):
-        """Verify cash transaction update always sets provider to CASH."""
-        service = TransactionsService(db_session)
-        cash_df = service.get_all_transactions("cash")
-        uid = int(cash_df.iloc[0]["unique_id"])
-
-        # Update with description — provider should be force-set to CASH
-        result = service.update_transaction(
-            uid, "cash_transactions", {"description": "New Desc"}
-        )
-        assert result is True
-
-        updated = service.get_all_transactions("cash")
-        row = updated[updated["unique_id"] == uid].iloc[0]
-        assert row["description"] == "New Desc"
-        assert row["provider"] == "CASH"
-
-
-class TestDeleteTransactionPermissions:
-    """Tests for delete_transaction permission checks."""
-
-    def test_delete_non_deletable_source_raises(self, db_session, seed_base_transactions):
-        """Verify PermissionError raised when deleting from non-manual sources."""
-        service = TransactionsService(db_session)
-        cc_df = service.get_all_transactions("credit_cards")
-        uid = int(cc_df.iloc[0]["unique_id"])
-
-        with pytest.raises(PermissionError, match="Deletion of .* prohibited"):
-            service.delete_transaction(uid, "credit_card_transactions")
-
-    def test_delete_bank_source_raises(self, db_session, seed_base_transactions):
-        """Verify PermissionError raised when deleting from bank_transactions."""
-        service = TransactionsService(db_session)
-        bank_df = service.get_all_transactions("banks")
-        uid = int(bank_df.iloc[0]["unique_id"])
-
-        with pytest.raises(PermissionError, match="Deletion of .* prohibited"):
-            service.delete_transaction(uid, "bank_transactions")
-
-    def test_delete_protected_system_transaction_raises(self, db_session):
-        """Verify PermissionError raised when deleting a Prior Wealth system transaction."""
-        from backend.constants.categories import PRIOR_WEALTH_TAG
-
-        # Create a system-generated Prior Wealth transaction
-        pw_tx = CashTransaction(
-            id="cash_pw_sys",
-            date="2024-01-01",
-            provider="MANUAL",
-            account_name=PRIOR_WEALTH_TAG,
-            description="Prior Wealth Offset (cash)",
-            amount=5000.0,
-            category="Other Income",
-            tag=PRIOR_WEALTH_TAG,
-            source="cash_transactions",
-            type="normal",
-            status="completed",
-        )
-        db_session.add(pw_tx)
-        db_session.commit()
-        db_session.refresh(pw_tx)
-
-        service = TransactionsService(db_session)
-        with pytest.raises(PermissionError, match="system-generated"):
-            service.delete_transaction(pw_tx.unique_id, "cash_transactions")
-
-    def test_delete_cash_transaction_success(self, db_session):
-        """Verify a regular cash transaction can be deleted."""
-        from backend.models.cash_balance import CashBalance
-
-        tx = CashTransaction(
-            id="cash_del_1",
-            date="2024-02-01",
-            provider="cash",
-            account_name="Wallet",
-            description="To Delete",
-            amount=-25.0,
-            category="Food",
-            tag="Snacks",
-            source="cash_transactions",
-            type="normal",
-            status="completed",
-        )
-        db_session.add(tx)
-        db_session.add(CashBalance(
-            account_name="Wallet",
-            balance=0.0,
-            prior_wealth_amount=0.0,
-            last_manual_update="2024-01-01",
-        ))
-        db_session.commit()
-        db_session.refresh(tx)
-
-        service = TransactionsService(db_session)
-        service.delete_transaction(tx.unique_id, "cash_transactions")
-
-        cash_df = service.get_all_transactions("cash")
-        assert cash_df[cash_df["id"] == "cash_del_1"].empty
 
 
 class TestBulkTagTransactionsOptionalFields:
@@ -945,12 +644,8 @@ class TestBulkTagTransactionsOptionalFields:
         self, db_session, seed_base_transactions
     ):
         """Verify bulk_tag applies description and amount for cash transactions."""
-        from backend.models.cash_balance import CashBalance
-
         db_session.add(CashBalance(
-            account_name="Cash Wallet",
-            balance=0.0,
-            prior_wealth_amount=0.0,
+            account_name="Cash Wallet", balance=0.0, prior_wealth_amount=0.0,
             last_manual_update="2024-01-01",
         ))
         db_session.commit()
@@ -960,12 +655,8 @@ class TestBulkTagTransactionsOptionalFields:
         uids = [int(cash_df.iloc[0]["unique_id"]), int(cash_df.iloc[1]["unique_id"])]
 
         service.bulk_tag_transactions(
-            transaction_ids=uids,
-            source="cash_transactions",
-            category="Food",
-            tag="Bulk",
-            description="Bulk Updated",
-            amount=-99.0,
+            transaction_ids=uids, source="cash_transactions", category="Food",
+            tag="Bulk", description="Bulk Updated", amount=-99.0,
         )
 
         updated = service.get_all_transactions("cash")
@@ -980,39 +671,69 @@ class TestBulkTagTransactionsOptionalFields:
         self, db_session, seed_base_transactions
     ):
         """Verify bulk_tag applies account_name and date for cash transactions."""
-        from backend.models.cash_balance import CashBalance
-
-        db_session.add(CashBalance(
-            account_name="Cash Wallet",
-            balance=0.0,
-            prior_wealth_amount=0.0,
-            last_manual_update="2024-01-01",
-        ))
-        db_session.add(CashBalance(
-            account_name="New Wallet",
-            balance=0.0,
-            prior_wealth_amount=0.0,
-            last_manual_update="2024-01-01",
-        ))
+        for name in ("Cash Wallet", "New Wallet"):
+            db_session.add(CashBalance(
+                account_name=name, balance=0.0, prior_wealth_amount=0.0,
+                last_manual_update="2024-01-01",
+            ))
         db_session.commit()
 
         service = TransactionsService(db_session)
-        cash_df = service.get_all_transactions("cash")
-        uid = int(cash_df.iloc[0]["unique_id"])
+        uid = int(service.get_all_transactions("cash").iloc[0]["unique_id"])
 
         service.bulk_tag_transactions(
-            transaction_ids=[uid],
-            source="cash_transactions",
-            category="Transport",
-            tag="Bus",
-            account_name="New Wallet",
-            date="2024-06-15",
+            transaction_ids=[uid], source="cash_transactions", category="Transport",
+            tag="Bus", account_name="New Wallet", date="2024-06-15",
         )
 
-        updated = service.get_all_transactions("cash")
-        row = updated[updated["unique_id"] == uid].iloc[0]
-        assert row["tag"] == "Bus"
-        assert row["account_name"] == "New Wallet"
+        row = db_session.get(CashTransaction, uid)
+        assert (row.tag, row.account_name, row.date) == ("Bus", "New Wallet", "2024-06-15")
+
+    def test_bulk_tag_amount_and_date_dropped_for_scraped_source(
+        self, db_session, seed_base_transactions
+    ):
+        """Scraped rows take the tag but silently keep their amount and date."""
+        service = TransactionsService(db_session)
+        uid = int(service.get_all_transactions("credit_cards").iloc[0]["unique_id"])
+        before = db_session.get(CreditCardTransaction, uid)
+        original = (before.amount, before.date, before.description)
+
+        service.bulk_tag_transactions(
+            transaction_ids=[uid], source="credit_card_transactions",
+            category="Food", tag="Bulk", description="rewritten",
+            amount=-1.0, date="2030-01-01",
+        )
+
+        db_session.expire_all()
+        after = db_session.get(CreditCardTransaction, uid)
+        assert (after.category, after.tag) == ("Food", "Bulk")
+        assert (after.amount, after.date, after.description) == original
+
+    def test_bulk_tag_with_missing_and_existing_ids(self, db_session, monkeypatch):
+        """A missing id is skipped, the existing one is updated, one recalculation runs."""
+        from unittest.mock import MagicMock
+
+        from backend.services import cash_balance_service
+
+        recalc = MagicMock()
+        monkeypatch.setattr(
+            cash_balance_service.CashBalanceService,
+            "recalculate_current_balance",
+            recalc,
+        )
+        uid = _add_cash(db_session, category=None, tag=None)
+        service = TransactionsService(db_session)
+
+        service.bulk_tag_transactions(
+            [99999, uid], "cash_transactions", "Food", "Snacks"
+        )
+
+        db_session.expire_all()
+        row = db_session.get(CashTransaction, uid)
+        assert (row.category, row.tag) == ("Food", "Snacks")
+        assert db_session.get(CashTransaction, 99999) is None
+        recalc.assert_called_once()
+        assert recalc.call_args.args[-1] == "Wallet"
 
 
 class TestGetUntaggedTransactionsAccountFilter:
@@ -1024,114 +745,99 @@ class TestGetUntaggedTransactionsAccountFilter:
         """Verify untagged bank transactions filtered by account_number."""
         service = TransactionsService(db_session)
 
-        # Get all untagged bank transactions first
-        all_untagged = service.get_untagged_transactions("banks")
-        assert not all_untagged.empty
-
-        # Use a non-existent account_number to test filtering returns empty
-        filtered = service.get_untagged_transactions(
+        assert not service.get_untagged_transactions("banks").empty
+        assert service.get_untagged_transactions(
             "banks", account_number="nonexistent_account"
-        )
-        assert filtered.empty
+        ).empty
 
     def test_untagged_cc_transactions_ignores_account_filter(
         self, db_session, seed_untagged_transactions
     ):
         """Verify account_number filter is ignored for credit card transactions."""
         service = TransactionsService(db_session)
-
         untagged = service.get_untagged_transactions(
             "credit_cards", account_number="anything"
         )
-        # Should return all untagged CC transactions regardless of account_number
         assert not untagged.empty
 
 
 class TestGetTableForAnalysisSplitExpansion:
     """Tests for get_table_for_analysis split transaction expansion and concatenation."""
 
-    def test_split_expansion_with_matching_transaction_ids(
-        self, db_session
-    ):
-        """Verify split rows expand when transaction_id matches parent id column."""
-        from backend.models.transaction import CreditCardTransaction, SplitTransaction
-
-        # Create parent with a numeric string id and matching integer transaction_id
+    def test_split_expansion_replaces_parent_with_slices(self, db_session):
+        """A split parent is replaced by exactly its slices, each carrying its split id."""
         parent = CreditCardTransaction(
-            id="42",
-            date="2024-02-08",
-            provider="isracard",
-            account_name="Main Card",
-            description="Splittable Purchase",
-            amount=-300.0,
-            category=None,
-            tag=None,
-            source="credit_card_transactions",
-            type="split_parent",
-            status="completed",
+            id="42", date="2024-02-08", provider="isracard", account_name="Main Card",
+            description="Splittable Purchase", amount=-300.0, category=None, tag=None,
+            source="credit_card_transactions", type="split_parent", status="completed",
         )
         db_session.add(parent)
         db_session.flush()
-
-        # transaction_id stores unique_id per the model; use the actual unique_id
-        # here to exercise the expansion path when the filter matches
-        splits = [
+        db_session.add_all([
             SplitTransaction(
-                transaction_id=parent.unique_id,
-                source="credit_card_transactions",
-                amount=-200.0,
-                category="Food",
-                tag="Groceries",
+                transaction_id=parent.unique_id, source="credit_card_transactions",
+                amount=-200.0, category="Food", tag="Groceries",
             ),
             SplitTransaction(
-                transaction_id=parent.unique_id,
-                source="credit_card_transactions",
-                amount=-100.0,
-                category="Home",
-                tag="Cleaning",
+                transaction_id=parent.unique_id, source="credit_card_transactions",
+                amount=-100.0, category="Home", tag="Cleaning",
             ),
-        ]
-        db_session.add_all(splits)
+        ])
         db_session.commit()
 
-        service = TransactionsService(db_session)
-        result = service.get_table_for_analysis("credit_cards")
+        result = TransactionsService(db_session).get_table_for_analysis("credit_cards")
 
-        # Regardless of whether splits expanded, the split_id column must exist
         split_id_col = TransactionsTableFields.SPLIT_ID.value
-        assert split_id_col in result.columns
-        # Result should not be empty (either splits or base rows present)
-        assert not result.empty
+        assert len(result) == 2
+        assert set(result["amount"]) == {-200.0, -100.0}
+        assert -300.0 not in set(result["amount"])
+        assert result[split_id_col].notna().all()
+        assert set(result["type"]) == {"split_child"}
 
     def test_get_table_for_analysis_adds_split_id_column_when_missing(
         self, db_session, seed_base_transactions
     ):
-        """Verify split_id column is added when no splits exist."""
-        service = TransactionsService(db_session)
-        # With seed_base_transactions but no split transactions
-        result = service.get_table_for_analysis("credit_cards")
+        """Verify split_id column is added (all-NA) when no splits exist."""
+        result = TransactionsService(db_session).get_table_for_analysis("credit_cards")
 
         split_id_col = TransactionsTableFields.SPLIT_ID.value
         assert split_id_col in result.columns
-        # All values should be None since there are no splits
         assert result[split_id_col].isna().all()
 
-    def test_get_table_for_analysis_with_existing_splits_has_split_id_column(
+    def test_split_children_carry_split_id(
         self, db_session, seed_base_transactions, seed_split_transactions
     ):
-        """Verify split_id column exists when split transaction records are present."""
-        service = TransactionsService(db_session)
-        result = service.get_table_for_analysis("credit_cards")
+        """Every split child carries the id of its slice; unsplit rows carry none."""
+        result = TransactionsService(db_session).get_table_for_analysis("credit_cards")
 
         split_id_col = TransactionsTableFields.SPLIT_ID.value
-        assert split_id_col in result.columns
-        # Result should contain transactions (base non-parent rows at minimum)
-        assert not result.empty
+        children = result[result["type"] == "split_child"]
+        assert len(children) == 3
+        assert children[split_id_col].notna().all()
+        assert result[result["type"] != "split_child"][split_id_col].isna().all()
+
+    def test_include_split_parents_keeps_parent_beside_children(
+        self, db_session, seed_split_transactions
+    ):
+        """``include_split_parents=True`` yields the -300 parent plus its slices.
+
+        The flag used to be dropped on the way to the repository, so the
+        audit view was identical to the default view.
+        """
+        result = TransactionsService(db_session).get_table_for_analysis(
+            "credit_cards", include_split_parents=True
+        )
+
+        parents = result[result["type"] == "split_parent"]
+        children = result[result["type"] == "split_child"]
+        assert len(parents) == 1
+        assert parents.iloc[0]["amount"] == -300.0
+        assert pd.isna(parents.iloc[0][TransactionsTableFields.SPLIT_ID.value])
+        assert sorted(children["amount"]) == [-150.0, -100.0, -50.0]
 
     def test_get_table_for_analysis_empty_table(self, db_session):
         """Verify empty DataFrame returned for table with no transactions."""
-        service = TransactionsService(db_session)
-        result = service.get_table_for_analysis("credit_cards")
+        result = TransactionsService(db_session).get_table_for_analysis("credit_cards")
         assert isinstance(result, pd.DataFrame)
         assert result.empty
 
@@ -1140,67 +846,31 @@ class TestGetTableForAnalysisSplitExpansion:
     ):
         """Splits for a bank transaction must not attach to a CC transaction that shares the same unique_id.
 
-        Regression test: unique_id is an autoincrement per-table integer so
-        the same value can exist in both bank_transactions and
-        credit_card_transactions.  A bank split (source='bank_transactions')
-        whose transaction_id equals the unique_id of an unrelated CC row must
-        not appear in the CC analysis output.
+        unique_id is an autoincrement per-table integer so the same value
+        can exist in both bank_transactions and credit_card_transactions. A
+        bank split whose transaction_id equals the unique_id of an unrelated
+        CC row must not appear in the CC analysis output.
         """
-        from backend.models.transaction import CreditCardTransaction, SplitTransaction
-
-        # Add a CC transaction — its unique_id will be auto-assigned (e.g. 1).
         cc_tx = CreditCardTransaction(
-            id="EXT-CC-1",
-            date="2025-08-31",
-            provider="isracard",
-            account_name="Main Card",
-            description="FLUGHAFEN BERLIN BRA",
-            amount=-15.53,
-            category="USA",
-            tag="other",
-            source="credit_card_transactions",
-            type="normal",
-            status="completed",
+            id="EXT-CC-1", date="2025-08-31", provider="isracard",
+            account_name="Main Card", description="FLUGHAFEN BERLIN BRA",
+            amount=-15.53, category="USA", tag="other",
+            source="credit_card_transactions", type="normal", status="completed",
         )
         db_session.add(cc_tx)
         db_session.flush()
-        cc_unique_id = cc_tx.unique_id
-
-        # Add a bank transaction that coincidentally has the same unique_id
-        # (simulated via SplitTransaction referencing cc_unique_id but with
-        # source='bank_transactions').
-        split = SplitTransaction(
-            transaction_id=cc_unique_id,
-            source="bank_transactions",
-            amount=1000.0,
-            category="Bachelorette Party",
-            tag="DJ",
-        )
-        db_session.add(split)
+        db_session.add(SplitTransaction(
+            transaction_id=cc_tx.unique_id, source="bank_transactions",
+            amount=1000.0, category="Bachelorette Party", tag="DJ",
+        ))
         db_session.commit()
 
-        service = TransactionsService(db_session)
-        result = service.get_table_for_analysis("credit_cards")
+        result = TransactionsService(db_session).get_table_for_analysis("credit_cards")
 
-        # The FLUGHAFEN row must appear unchanged (not masked as split_parent).
-        desc_col = TransactionsTableFields.DESCRIPTION.value
-        cat_col = TransactionsTableFields.CATEGORY.value
-        flughafen_rows = result[result[desc_col] == "FLUGHAFEN BERLIN BRA"]
-        assert len(flughafen_rows) == 1, (
-            "FLUGHAFEN row must appear exactly once; bank split incorrectly "
-            "masked or duplicated it."
-        )
-        assert flughafen_rows.iloc[0][cat_col] == "USA", (
-            "FLUGHAFEN row must retain its original category, not the bank "
-            "split's category."
-        )
-
-        # No Bachelorette Party row should appear in the CC result.
-        bach_rows = result[result[cat_col] == "Bachelorette Party"]
-        assert bach_rows.empty, (
-            "Bank split must not leak into CC analysis output even when "
-            "unique_ids collide across tables."
-        )
+        flughafen_rows = result[result["description"] == "FLUGHAFEN BERLIN BRA"]
+        assert len(flughafen_rows) == 1
+        assert flughafen_rows.iloc[0]["category"] == "USA"
+        assert result[result["category"] == "Bachelorette Party"].empty
 
 
 class TestGetDataForAnalysisSessionCache:
@@ -1233,16 +903,16 @@ class TestGetDataForAnalysisSessionCache:
         )
 
     def test_split_parents_variants_cached_separately(
-        self, db_session, seed_base_transactions
+        self, db_session, seed_base_transactions, seed_split_transactions
     ):
-        """include_split_parents=True/False must not collide."""
-        from backend.services.transactions_service import TransactionsService
-
+        """include_split_parents=True/False must not collide in the cache."""
         service = TransactionsService(db_session)
         without = service.get_data_for_analysis(include_split_parents=False)
         with_parents = service.get_data_for_analysis(include_split_parents=True)
-        # Contract, not equality: the two variants are independent results.
-        assert len(with_parents) >= len(without)
+
+        assert "split_parent" not in set(without["type"])
+        assert (with_parents["type"] == "split_parent").sum() == 2
+        assert len(with_parents) > len(without)
 
 
 class TestClearCategoryAndTag:
@@ -1255,39 +925,16 @@ class TestClearCategoryAndTag:
     refactor cannot silently break the per-row / bulk clear actions.
     """
 
-    def _insert_bank_tx_with_tags(self, db_session) -> BankTransaction:
-        """Insert a BankTransaction with category='Food' and tag='Groceries'."""
-        tx = BankTransaction(
-            id="clear_tag_test_1",
-            date="2024-05-01",
-            provider="hapoalim",
-            account_name="Checking",
-            description="Tagged transaction",
-            amount=-100.0,
-            category="Food",
-            tag="Groceries",
-            source="bank_transactions",
-            type="normal",
-            status="completed",
-        )
-        db_session.add(tx)
-        db_session.commit()
-        db_session.refresh(tx)
-        return tx
-
     def test_update_transaction_clears_category_and_tag_via_empty_string(self, db_session):
         """Empty strings on both fields wipe category and tag to None."""
         service = TransactionsService(db_session)
-        tx = self._insert_bank_tx_with_tags(db_session)
+        uid = _add_bank(db_session, "clear_tag_test_1", -100.0)
 
-        updated = service.update_transaction(
-            tx.unique_id,
-            "bank_transactions",
-            {"category": "", "tag": ""},
-        )
-        assert updated is True
+        assert service.update_transaction(
+            uid, "bank_transactions", {"category": "", "tag": ""}
+        ) is True
         refreshed = service.transactions_repository.get_transaction_by_id(
-            tx.unique_id, "bank_transactions"
+            uid, "bank_transactions"
         )
         assert pd.isna(refreshed.category)
         assert pd.isna(refreshed.tag)
@@ -1295,62 +942,35 @@ class TestClearCategoryAndTag:
     def test_update_transaction_clears_only_tag_when_only_tag_is_empty(self, db_session):
         """Clearing only the tag preserves the category."""
         service = TransactionsService(db_session)
-        tx = self._insert_bank_tx_with_tags(db_session)
-        original_category = tx.category
+        uid = _add_bank(db_session, "clear_tag_test_2", -100.0)
 
-        updated = service.update_transaction(
-            tx.unique_id,
-            "bank_transactions",
-            {"tag": ""},
-        )
-        assert updated is True
+        assert service.update_transaction(uid, "bank_transactions", {"tag": ""}) is True
         refreshed = service.transactions_repository.get_transaction_by_id(
-            tx.unique_id, "bank_transactions"
+            uid, "bank_transactions"
         )
-        assert refreshed.category == original_category
+        assert refreshed.category == "Food"
         assert pd.isna(refreshed.tag)
-
-    def _insert_bank_tx_with_id(self, db_session, tx_id: str) -> BankTransaction:
-        """Insert a BankTransaction with category='Food' and tag='Groceries' using the given id."""
-        tx = BankTransaction(
-            id=tx_id,
-            date="2024-05-01",
-            provider="hapoalim",
-            account_name="Checking",
-            description="Tagged transaction",
-            amount=-100.0,
-            category="Food",
-            tag="Groceries",
-            source="bank_transactions",
-            type="normal",
-            status="completed",
-        )
-        db_session.add(tx)
-        db_session.commit()
-        db_session.refresh(tx)
-        return tx
 
     def test_bulk_tag_transactions_clears_category_and_tag_via_empty_string(self, db_session):
         """Bulk-tag with empty strings clears category and tag on all listed IDs.
 
-        ``bulk_tag_transactions`` calls ``update_transaction`` per ID. If
-        we passed ``None`` it would be filtered out by the
-        ``if updates.get('category') is not None`` guard; empty string
-        passes the guard and gets normalised to None.
+        ``bulk_tag_transactions`` runs one ``UPDATE ... WHERE unique_id IN``
+        over the filtered updates. ``None`` is dropped by the
+        ``if updates.get('category') is not None`` guard; an empty string
+        passes the guard and is normalised to None.
         """
-        tx1 = self._insert_bank_tx_with_id(db_session, "bulk_clear_1")
-        tx2 = self._insert_bank_tx_with_id(db_session, "bulk_clear_2")
-
+        ids = [
+            _add_bank(db_session, "bulk_clear_1", -100.0),
+            _add_bank(db_session, "bulk_clear_2", -100.0),
+        ]
         service = TransactionsService(db_session)
-        ids = [tx1.unique_id, tx2.unique_id]
-        service.bulk_tag_transactions(
-            ids,
-            "bank_transactions",
-            category="",
-            tag="",
-        )
-        for tx in [tx1, tx2]:
-            refreshed = service.transactions_repository.get_transaction_by_id(tx.unique_id, "bank_transactions")
+
+        service.bulk_tag_transactions(ids, "bank_transactions", category="", tag="")
+
+        for uid in ids:
+            refreshed = service.transactions_repository.get_transaction_by_id(
+                uid, "bank_transactions"
+            )
             assert pd.isna(refreshed.category)
             assert pd.isna(refreshed.tag)
 
@@ -1362,21 +982,155 @@ class TestClearCategoryAndTag:
         the frontend implementation needs to be revisited — sending None
         from the UI would suddenly become destructive.
         """
-        tx1 = self._insert_bank_tx_with_id(db_session, "bulk_none_1")
-        tx2 = self._insert_bank_tx_with_id(db_session, "bulk_none_2")
-
+        ids = [
+            _add_bank(db_session, "bulk_none_1", -100.0),
+            _add_bank(db_session, "bulk_none_2", -100.0),
+        ]
         service = TransactionsService(db_session)
-        original_categories = [tx1.category, tx2.category]
-        ids = [tx1.unique_id, tx2.unique_id]
-        service.bulk_tag_transactions(
-            ids,
-            "bank_transactions",
-            category=None,
-            tag=None,
+
+        service.bulk_tag_transactions(ids, "bank_transactions", category=None, tag=None)
+
+        for uid in ids:
+            refreshed = service.transactions_repository.get_transaction_by_id(
+                uid, "bank_transactions"
+            )
+            assert refreshed.category == "Food"
+
+
+class TestSplitTransactionValidation:
+    """Service-level guards on split_transaction and revert_split."""
+
+    def test_split_rejects_slices_that_do_not_sum_to_parent(self, db_session):
+        """Slices off by more than a cent are rejected and nothing is written."""
+        uid = _add_cash(db_session, amount=-100.0)
+        service = TransactionsService(db_session)
+
+        with pytest.raises(ValidationException, match="sum"):
+            service.split_transaction(
+                uid, "cash_transactions",
+                [{"amount": -60.0, "category": "Food", "tag": None},
+                 {"amount": -50.0, "category": "Other", "tag": None}],
+            )
+
+        assert db_session.get(CashTransaction, uid).type == "normal"
+        assert _split_ids(db_session, uid, "cash_transactions") == []
+
+    def test_split_rejects_empty_slice_list(self, db_session):
+        """An empty slice list is rejected before the parent is flipped."""
+        uid = _add_cash(db_session)
+        service = TransactionsService(db_session)
+
+        with pytest.raises(ValidationException, match="at least one"):
+            service.split_transaction(uid, "cash_transactions", [])
+
+        assert db_session.get(CashTransaction, uid).type == "normal"
+
+    def test_split_nonexistent_id_raises_not_found(self, db_session):
+        """Splitting an id that does not exist is a 404."""
+        with pytest.raises(EntityNotFoundException, match="not found"):
+            TransactionsService(db_session).split_transaction(
+                99999, "cash_transactions",
+                [{"amount": -1.0, "category": "Food", "tag": None}],
+            )
+
+    def test_split_unknown_source_raises_value_error(self, db_session):
+        """An unknown source is a bad request, not a missing row."""
+        with pytest.raises(ValueError, match="Invalid source"):
+            TransactionsService(db_session).split_transaction(
+                1, "not_a_table",
+                [{"amount": -1.0, "category": "Food", "tag": None}],
+            )
+
+    def test_revert_split_nonexistent_id_raises_not_found(self, db_session):
+        """Reverting an id that does not exist is a 404, not a silent success."""
+        with pytest.raises(EntityNotFoundException, match="not found"):
+            TransactionsService(db_session).revert_split(99999, "cash_transactions")
+
+    def test_revert_split_on_unsplit_transaction_raises_not_found(self, db_session):
+        """Reverting a transaction that was never split is a 404."""
+        uid = _add_cash(db_session)
+        with pytest.raises(EntityNotFoundException, match="not split"):
+            TransactionsService(db_session).revert_split(uid, "cash_transactions")
+        assert db_session.get(CashTransaction, uid).type == "normal"
+
+
+class TestSplitSliceRefundsArePurged:
+    """A pending refund marked on a slice must not outlive that slice.
+
+    ``split_transactions`` ids are recycled by SQLite just like transaction
+    ids, so a refund left behind attaches itself to whichever slice next
+    receives the id — including the replacement slices of a re-split.
+    """
+
+    @staticmethod
+    def _split_and_mark(db_session) -> tuple[int, int]:
+        """Split a cash row and mark its first slice; return (parent uid, slice id)."""
+        uid = _add_cash(db_session, amount=-100.0)
+        TransactionsService(db_session).split_transaction(
+            uid, "cash_transactions",
+            [{"amount": -60.0, "category": "Food", "tag": "Groceries"},
+             {"amount": -40.0, "category": "Other", "tag": "Misc"}],
         )
-        for tx, original_cat in zip([tx1, tx2], original_categories):
-            refreshed = service.transactions_repository.get_transaction_by_id(tx.unique_id, "bank_transactions")
-            assert refreshed.category == original_cat  # unchanged
+        slice_id = _split_ids(db_session, uid, "cash_transactions")[0]
+        PendingRefundsService(db_session).mark_as_pending_refund(
+            "split", slice_id, "cash_transactions", 60.0
+        )
+        return uid, slice_id
+
+    def test_purged_on_parent_delete(self, db_session):
+        """Deleting the parent removes the slice refund and its month override."""
+        uid, slice_id = self._split_and_mark(db_session)
+        overrides = BudgetMonthOverrideService(db_session)
+        overrides.set_override("split", slice_id, "cash_transactions", 2024, 3)
+
+        TransactionsService(db_session).delete_transaction(uid, "cash_transactions")
+
+        assert PendingRefundsService(db_session).get_all_pending() == []
+        assert overrides.get_all() == []
+
+    def test_purged_on_revert_split(self, db_session):
+        """Reverting the split removes the slice refund and its month override."""
+        uid, slice_id = self._split_and_mark(db_session)
+        overrides = BudgetMonthOverrideService(db_session)
+        overrides.set_override("split", slice_id, "cash_transactions", 2024, 3)
+
+        TransactionsService(db_session).revert_split(uid, "cash_transactions")
+
+        assert PendingRefundsService(db_session).get_all_pending() == []
+        assert overrides.get_all() == []
+        assert db_session.get(CashTransaction, uid).type == "normal"
+
+    def test_purged_on_resplit(self, db_session):
+        """Re-splitting replaces the slices, so the old slice's refund goes too."""
+        uid, _ = self._split_and_mark(db_session)
+
+        TransactionsService(db_session).split_transaction(
+            uid, "cash_transactions",
+            [{"amount": -100.0, "category": "Food", "tag": "Groceries"}],
+        )
+
+        assert PendingRefundsService(db_session).get_all_pending() == []
+        assert len(_split_ids(db_session, uid, "cash_transactions")) == 1
+
+    def test_recycled_split_id_does_not_inherit_refund(self, db_session):
+        """A new slice that receives a deleted slice's id starts clean."""
+        uid, slice_id = self._split_and_mark(db_session)
+        TransactionsService(db_session).revert_split(uid, "cash_transactions")
+
+        # SQLite hands the freed id straight back to the next slice.
+        TransactionsService(db_session).split_transaction(
+            uid, "cash_transactions",
+            [{"amount": -100.0, "category": "Food", "tag": "Groceries"}],
+        )
+        new_ids = _split_ids(db_session, uid, "cash_transactions")
+        assert new_ids == [slice_id]
+
+        ids = PendingRefundsService(db_session).get_active_pending_identifiers()
+        assert ids["split_ids"] == set()
+        # …and the slice can be marked afresh.
+        PendingRefundsService(db_session).mark_as_pending_refund(
+            "split", slice_id, "cash_transactions", 10.0
+        )
 
 
 class TestDeletePurgesDependentRecords:
@@ -1388,31 +1142,9 @@ class TestDeletePurgesDependentRecords:
     pending refund.
     """
 
-    @staticmethod
-    def _seed_cash(db_session, tx_id="purge-1", date="2024-02-10"):
-        """Seed one deletable cash transaction and return its unique_id."""
-        from backend.models.transaction import CashTransaction
-
-        db_session.add(
-            CashTransaction(
-                id=tx_id, date=date, account_name="Wallet",
-                description="spend", amount=-100.0, category="Food",
-                tag="Groceries", source="cash_transactions", type="expense",
-                status="completed",
-            )
-        )
-        db_session.commit()
-        return (
-            db_session.query(CashTransaction).filter_by(id=tx_id).one().unique_id
-        )
-
     def test_pending_refund_is_removed(self, db_session):
         """A pending refund does not survive its source transaction."""
-        from backend.services.pending_refunds_service import (
-            PendingRefundsService,
-        )
-
-        unique_id = self._seed_cash(db_session)
+        unique_id = _add_cash(db_session)
         PendingRefundsService(db_session).mark_as_pending_refund(
             "transaction", unique_id, "cash", 50.0
         )
@@ -1425,15 +1157,9 @@ class TestDeletePurgesDependentRecords:
 
     def test_budget_month_override_is_removed(self, db_session):
         """A budget month override does not survive its transaction."""
-        from backend.services.budget_month_override_service import (
-            BudgetMonthOverrideService,
-        )
-
-        unique_id = self._seed_cash(db_session)
+        unique_id = _add_cash(db_session)
         service = BudgetMonthOverrideService(db_session)
-        service.set_override(
-            "transaction", unique_id, "cash_transactions", 2024, 3
-        )
+        service.set_override("transaction", unique_id, "cash_transactions", 2024, 3)
 
         TransactionsService(db_session).delete_transaction(
             unique_id, "cash_transactions"
@@ -1443,22 +1169,141 @@ class TestDeletePurgesDependentRecords:
 
     def test_splits_are_removed(self, db_session):
         """Split children do not survive their parent transaction."""
-        from backend.repositories.split_transactions_repository import (
-            SplitTransactionsRepository,
-        )
-
-        unique_id = self._seed_cash(db_session)
+        unique_id = _add_cash(db_session)
         service = TransactionsService(db_session)
         service.split_transaction(
-            unique_id,
-            "cash_transactions",
-            [
-                {"amount": -60.0, "category": "Food", "tag": "Groceries"},
-                {"amount": -40.0, "category": "Other", "tag": "Misc"},
-            ],
+            unique_id, "cash_transactions",
+            [{"amount": -60.0, "category": "Food", "tag": "Groceries"},
+             {"amount": -40.0, "category": "Other", "tag": "Misc"}],
         )
 
         service.delete_transaction(unique_id, "cash_transactions")
 
+        assert SplitTransactionsRepository(db_session).get_data().empty
+
+    def test_purge_is_scoped_to_the_source_table(self, db_session):
+        """Deleting cash #N leaves bank #N's split and refund intact.
+
+        Both tables start their auto-increment at 1, so the two rows share
+        the integer; only the (table, id) pair identifies a transaction.
+        """
+        cash_uid = _add_cash(db_session, amount=-100.0)
+        bank_uid = _add_bank(db_session, "bank-collide", -100.0)
+        assert cash_uid == bank_uid
+        service = TransactionsService(db_session)
+        service.split_transaction(
+            bank_uid, "bank_transactions",
+            [{"amount": -70.0, "category": "Food", "tag": None},
+             {"amount": -30.0, "category": "Other", "tag": None}],
+        )
+        PendingRefundsService(db_session).mark_as_pending_refund(
+            "transaction", bank_uid, "bank_transactions", 40.0
+        )
+
+        service.delete_transaction(cash_uid, "cash_transactions")
+
+        assert len(_split_ids(db_session, bank_uid, "bank_transactions")) == 2
+        assert db_session.get(BankTransaction, bank_uid).type == "split_parent"
+        pending = PendingRefundsService(db_session).get_all_pending()
+        assert [(p["source_table"], p["source_id"]) for p in pending] == [
+            ("bank_transactions", bank_uid)
+        ]
+
+
+class TestDeleteAccountData:
+    """delete_account_data wipes one account's rows and everything hanging off them."""
+
+    def _seed_two_accounts(self, db_session) -> dict:
+        """Seed account A (to be deleted) with dependents and account B (kept)."""
+        a_split = _add_bank(db_session, "a-split", -100.0, date="2024-01-10")
+        a_refund_src = _add_bank(db_session, "a-refund-source", -80.0, date="2024-01-12")
+        a_refund_link = _add_bank(db_session, "a-refund-link", 50.0, date="2024-01-20")
+        a_override = _add_bank(db_session, "a-override", -50.0, date="2024-01-25")
+        b_kept = _add_bank(
+            db_session, "b-kept", -40.0, date="2024-01-11", account_name="Other"
+        )
+        b_refund = _add_bank(
+            db_session, "b-refund", -20.0, date="2024-01-13", account_name="Other"
+        )
+
+        tx_service = TransactionsService(db_session)
+        tx_service.split_transaction(
+            a_split, "bank_transactions",
+            [{"amount": -60.0, "category": "Food", "tag": None},
+             {"amount": -40.0, "category": "Other", "tag": None}],
+        )
+        a_slice = _split_ids(db_session, a_split, "bank_transactions")[0]
+        tx_service.split_transaction(
+            b_kept, "bank_transactions",
+            [{"amount": -40.0, "category": "Food", "tag": None}],
+        )
+
+        refunds = PendingRefundsService(db_session)
+        a_pending = refunds.mark_as_pending_refund(
+            "transaction", a_refund_src, "bank_transactions", 30.0
+        )
+        refunds.link_refund(a_pending["id"], a_refund_link, "bank_transactions", 30.0)
+        refunds.set_source_note("bank_transactions", a_refund_link, "store credit")
+        refunds.mark_as_pending_refund("split", a_slice, "bank_transactions", 10.0)
+        b_pending = refunds.mark_as_pending_refund(
+            "transaction", b_refund, "bank_transactions", 20.0
+        )
+        # B's refund is funded by an A transaction: the link must go, B's
+        # pending refund must stay.
+        refunds.link_refund(b_pending["id"], a_refund_link, "bank_transactions", 20.0)
+        overrides = BudgetMonthOverrideService(db_session)
+        overrides.set_override("transaction", a_override, "bank_transactions", 2024, 2)
+        overrides.set_override("split", a_slice, "bank_transactions", 2024, 2)
+        overrides.set_override("transaction", b_kept, "bank_transactions", 2024, 2)
+
+        return {
+            "a_ids": [a_split, a_refund_src, a_refund_link, a_override],
+            "b_kept": b_kept,
+            "b_refund": b_refund,
+            "b_pending_id": b_pending["id"],
+        }
+
+    @pytest.mark.parametrize("service_name", ["banks", "bank_transactions"])
+    def test_only_account_a_and_its_dependents_are_gone(self, db_session, service_name):
+        """Account A's rows, splits, refunds, links, notes and overrides go; B's stay."""
+        seeded = self._seed_two_accounts(db_session)
+        refunds = PendingRefundsService(db_session)
+        overrides = BudgetMonthOverrideService(db_session)
+
+        result = TransactionsService(db_session).delete_account_data(
+            service_name, "hapoalim", "Checking"
+        )
+
+        assert result == {"transactions_deleted": 4}
+        remaining = {t.id for t in db_session.query(BankTransaction).all()}
+        assert remaining == {"b-kept", "b-refund"}
+
         splits = SplitTransactionsRepository(db_session).get_data()
-        assert splits.empty
+        assert splits["transaction_id"].tolist() == [seeded["b_kept"]]
+
+        pending = refunds.get_all_pending()
+        assert [p["id"] for p in pending] == [seeded["b_pending_id"]]
+        assert refunds.repo.get_all_links().empty
+        assert refunds.repo.get_all_source_notes().empty
+
+        assert [(o["source_type"], o["source_id"]) for o in overrides.get_all()] == [
+            ("transaction", seeded["b_kept"])
+        ]
+
+    def test_unknown_service_raises(self, db_session):
+        """An unknown service name is rejected before anything is touched."""
+        with pytest.raises(ValueError, match="Unknown service"):
+            TransactionsService(db_session).delete_account_data(
+                "not_a_service", "hapoalim", "Checking"
+            )
+
+    def test_account_without_rows_deletes_nothing(self, db_session):
+        """An account with no transactions reports zero deletions."""
+        _add_bank(db_session, "other", -10.0, account_name="Other")
+
+        result = TransactionsService(db_session).delete_account_data(
+            "banks", "hapoalim", "Checking"
+        )
+
+        assert result == {"transactions_deleted": 0}
+        assert db_session.query(BankTransaction).count() == 1

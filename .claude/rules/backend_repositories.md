@@ -90,7 +90,7 @@ Tables auto-create on startup via `Base.metadata.create_all(engine)` in `backend
 |------------|---------|---------|
 | `TransactionsRepository` | DB (4 tables) | CRUD for bank/cc/cash/manual transactions. Composes sub-repos. |
 | `TaggingRepository` | YAML files | Category/tag definitions, icon mappings |
-| `TaggingRulesRepository` | DB | Auto-tagging rules (priority-based) |
+| `TaggingRulesRepository` | DB | Auto-tagging rules (applied in creation order, `ORDER BY id`) |
 | `BudgetRepository` | DB | Monthly & project budgets |
 | `SplitTransactionsRepository` | DB | Transaction splits across categories |
 | `ScrapingHistoryRepository` | DB | Scrape audit trail, rate limiting |

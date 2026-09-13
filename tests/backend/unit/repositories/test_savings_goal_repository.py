@@ -1,7 +1,12 @@
 """Unit tests for SavingsGoalRepository — goals, allocations, and links."""
 
-import pytest
+import threading
 
+import pytest
+from sqlalchemy.orm import sessionmaker
+
+from backend.database import create_db_engine
+from backend.models.base import Base
 from backend.models.savings_goal import (
     GOAL_STATUS_CLOSED,
     LINK_CONTRIBUTION,
@@ -175,3 +180,57 @@ class TestLinks:
         """Deleting an unknown link id raises for the service to translate."""
         with pytest.raises(ValueError):
             repo.delete_link(9999)
+
+
+class TestAllocationUpsertConcurrency:
+    """Tests that the allocation upsert tolerates parallel writers.
+
+    The ledger is materialized from *read* paths (``ensure_allocations`` runs
+    on every budget-month GET), so a fresh database's first budget load fires
+    a dozen month requests at once. Select-then-insert raced between the
+    SELECT and the INSERT and some requests died on the
+    ``(goal, year, month)`` unique constraint; a single
+    ``INSERT ... ON CONFLICT DO UPDATE`` cannot.
+    """
+
+    def test_parallel_upserts_of_one_month_all_succeed(self, tmp_path):
+        """Four threads writing the same (goal, month) leave one row, no errors.
+
+        Needs a file-backed database: the in-memory fixture session cannot
+        be shared across connections, and the constraint race only exists
+        between separate connections.
+        """
+        engine = create_db_engine(str(tmp_path / "goals.db"))
+        Base.metadata.create_all(engine)
+        factory = sessionmaker(bind=engine)
+        with factory() as session:
+            goal_id = SavingsGoalRepository(session).add(
+                name="Car", target_amount=1000
+            ).id
+
+        barrier = threading.Barrier(4)
+        errors: list[Exception] = []
+
+        def upsert(amount: float) -> None:
+            with factory() as session:
+                repo = SavingsGoalRepository(session)
+                barrier.wait(timeout=15)
+                try:
+                    repo.upsert_allocation(goal_id, 2026, 3, amount, "auto")
+                except Exception as exc:  # noqa: BLE001 - recorded, not swallowed
+                    errors.append(exc)
+
+        threads = [threading.Thread(target=upsert, args=(float(i),)) for i in range(4)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join(timeout=30)
+
+        try:
+            assert errors == []
+            with factory() as session:
+                rows = SavingsGoalRepository(session).get_allocations(goal_id)
+            assert len(rows) == 1
+            assert rows.iloc[0]["amount"] in {0.0, 1.0, 2.0, 3.0}
+        finally:
+            engine.dispose()

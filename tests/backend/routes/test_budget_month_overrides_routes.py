@@ -7,8 +7,13 @@ class TestBudgetMonthOverridesRoutes:
     """Tests for budget month override API endpoints."""
 
     def _first_cc_transaction(self, test_client):
-        """Return the first seeded credit-card transaction dict."""
-        return test_client.get("/api/transactions/?service=credit_cards").json()[0]
+        """Return the seeded ``cc_jan_1`` credit-card transaction dict (2024-01-05).
+
+        Selected by id rather than list position so the test doesn't depend
+        on the endpoint's sort order.
+        """
+        rows = test_client.get("/api/transactions/?service=credit_cards").json()
+        return next(r for r in rows if r["id"] == "cc_jan_1")
 
     def _adjacent_month(self, iso_date: str) -> tuple[int, int]:
         """Return the (year, month) one month after the given ISO date."""

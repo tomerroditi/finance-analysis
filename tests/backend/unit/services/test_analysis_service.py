@@ -1262,6 +1262,19 @@ class TestCashFlowForecast:
             )
         db_session.commit()
 
+        # The forecast acts only on confirmed charges, so a detection nobody
+        # has ruled on commits nothing.
+        from backend.services.recurring_service import RecurringService
+
+        recurring = RecurringService(db_session)
+        assert AnalysisService(db_session).get_cash_flow_forecast()[
+            "committed_remaining"
+        ] == 0.0
+
+        recurring.set_decision(
+            recurring.get_recurring()["items"][0]["normalized"], "confirmed"
+        )
+
         result = AnalysisService(db_session).get_cash_flow_forecast()
         assert result["committed_remaining"] >= 45.0
         assert result["safe_to_spend"] <= max(

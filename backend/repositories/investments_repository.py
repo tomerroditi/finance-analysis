@@ -298,14 +298,23 @@ class InvestmentsRepository:
             Primary key of the investment to close.
         closed_date : str
             Date the investment was closed, in YYYY-MM-DD format.
+
+        Raises
+        ------
+        EntityNotFoundException
+            If no investment with the given ID exists.
         """
         stmt = (
             update(Investment)
             .where(Investment.id == investment_id)
             .values(is_closed=1, closed_date=closed_date)
         )
-        self.db.execute(stmt)
+        result = self.db.execute(stmt)
         self.db.commit()
+        if result.rowcount == 0:
+            raise EntityNotFoundException(
+                f"No investment found with ID {investment_id}"
+            )
 
     def reopen_investment(self, investment_id: int) -> None:
         """Reopen a closed investment.
@@ -314,14 +323,23 @@ class InvestmentsRepository:
         ----------
         investment_id : int
             Primary key of the investment to reopen.
+
+        Raises
+        ------
+        EntityNotFoundException
+            If no investment with the given ID exists.
         """
         stmt = (
             update(Investment)
             .where(Investment.id == investment_id)
             .values(is_closed=0, closed_date=None)
         )
-        self.db.execute(stmt)
+        result = self.db.execute(stmt)
         self.db.commit()
+        if result.rowcount == 0:
+            raise EntityNotFoundException(
+                f"No investment found with ID {investment_id}"
+            )
 
     def delete_investment(self, investment_id: int) -> None:
         """Delete an investment by ID.
