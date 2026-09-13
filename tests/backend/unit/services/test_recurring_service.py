@@ -429,6 +429,10 @@ class TestCadenceMatching:
         assert service._match_cadence(45) is None
         assert service._match_cadence(20) is None
 
+    def test_a_seven_day_gap_belongs_to_no_band(self, db_session):
+        """Weekly was removed, so a seven-day rhythm matches nothing."""
+        assert RecurringService(db_session)._match_cadence(7) is None
+
     def test_bimonthly_is_no_longer_swallowed_by_quarterly(self, db_session):
         """A two-month gap matches bimonthly, not quarterly."""
         assert RecurringService(db_session)._match_cadence(61) == ("bimonthly", 61)
@@ -452,10 +456,10 @@ class TestAnchorScore:
         dates = pd.Series(pd.to_datetime(["2026-01-03", "2026-02-14", "2026-03-27"]))
         assert RecurringService(db_session)._anchor_score(dates, 30) < 0.7
 
-    def test_week_cadences_anchor_on_the_weekday(self, db_session):
-        """A weekly charge is judged on its day of the week, not of the month."""
-        dates = pd.Series(pd.to_datetime(["2026-01-05", "2026-01-12", "2026-01-19"]))
-        assert RecurringService(db_session)._anchor_score(dates, 7) == 1.0
+    def test_week_scale_cadences_anchor_on_the_weekday(self, db_session):
+        """A fortnightly charge is judged on its weekday, not its day of month."""
+        dates = pd.Series(pd.to_datetime(["2026-01-05", "2026-01-19", "2026-02-02"]))
+        assert RecurringService(db_session)._anchor_score(dates, 14) == 1.0
 
 
 class TestFalsePositivesRejected:
@@ -483,9 +487,13 @@ class TestFalsePositivesRejected:
 
         assert RecurringService(db_session).get_recurring()["items"] == []
 
-    def test_a_weekly_habit_needs_more_than_a_month_of_evidence(self, db_session):
-        """Four same-weekday charges are a routine, not yet a subscription."""
-        for date in _from("2026-01-05", [0, 7, 14, 21]):
+    def test_a_seven_day_rhythm_is_not_a_cadence(self, db_session):
+        """Nothing is genuinely billed weekly, so the band does not exist.
+
+        Eight same-weekday, same-price charges would satisfy every other gate;
+        they are rejected because no cadence claims a seven-day gap.
+        """
+        for date in _from("2026-01-05", [0, 7, 14, 21, 28, 35, 42, 49]):
             _add_charge(db_session, "MONDAY COFFEE", -15.0, date, category="Food")
         db_session.commit()
 
@@ -513,19 +521,20 @@ class TestFalsePositivesRejected:
         ]
         assert labels == ["DOMAIN RENEWAL"]
 
-    def test_a_weekly_charge_with_enough_evidence_is_kept(self, db_session):
-        """The same charge seen six times clears the weekly floor.
+    def test_a_fortnightly_charge_with_enough_evidence_is_kept(self, db_session):
+        """The shortest surviving band still detects a real commitment.
 
-        Guards the floor against being read as "weekly is never recurring".
+        Guards the biweekly floor against being read as "short cadences are
+        never recurring" now that weekly is gone.
         """
-        for date in _from("2026-01-05", [0, 7, 14, 21, 28, 35]):
+        for date in _from("2026-01-05", [0, 14, 28, 42]):
             _add_charge(db_session, "CLEANER", -200.0, date)
         db_session.commit()
 
         items = RecurringService(db_session).get_recurring(
-            today=pd.Timestamp("2026-02-10")
+            today=pd.Timestamp("2026-02-20")
         )["items"]
-        assert [i["cadence"] for i in items] == ["weekly"]
+        assert [i["cadence"] for i in items] == ["biweekly"]
 
 
 class TestTruePositivesGained:

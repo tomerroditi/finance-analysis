@@ -2,8 +2,8 @@
 
 Pure heuristic over scraped transaction history — no open-banking merchant
 feed required. Groups expense transactions by a normalized merchant label and
-looks for a stable cadence (weekly/monthly/quarterly/annual) across at least
-three occurrences. This powers the dashboard subscriptions view and feeds the
+looks for a stable cadence (biweekly through annual) across at least three
+occurrences. This powers the dashboard subscriptions view and feeds the
 insights engine with "new subscription" / "price increase" signals.
 
 Detection only ever produces a *candidate*. A candidate becomes a recurring
@@ -47,8 +47,10 @@ class RecurringService:
     # made "monthly" mean anything from 19.5 to 40.5 days, which is where most
     # of the false positives lived. ``period_days`` stays an integer — it is
     # also the step for the next-expected date and the new/ended windows.
+    # Weekly is deliberately absent: nothing is genuinely billed every seven
+    # days, so the band only ever matched habits — the Monday coffee, the
+    # Friday supermarket run — and a seven-day rhythm is now no cadence at all.
     _CADENCES = [
-        ("weekly", 7, 0.25),
         ("biweekly", 14, 0.20),
         ("monthly", 30, 0.18),
         # Israeli utilities (water, electricity, arnona) bill every two months.
@@ -60,11 +62,9 @@ class RecurringService:
         ("annual", 365, 0.10),
     ]
     # Minimum sightings before a cadence is believable. Short cadences need
-    # more of them: three Monday coffees are a habit, three annual renewals are
-    # three years of evidence. Weekly is the noisiest band by far — it is where
-    # a routine looks most like a subscription — so it carries the highest bar
-    # and still leans on the user's confirmation.
-    _MIN_OCCURRENCES = {"weekly": 6, "biweekly": 4}
+    # more of them: four fortnightly charges are barely two months, while three
+    # annual renewals are three years of evidence.
+    _MIN_OCCURRENCES = {"biweekly": 4}
     _MIN_OCCURRENCES_DEFAULT = 3
     # Gaps must be regular, measured with a *robust* spread — median absolute
     # deviation over the median — rather than the standard deviation. One
@@ -78,14 +78,13 @@ class RecurringService:
     # the tightest piece of ordinary shopping scores 0.208. 0.15 sits in that
     # gap. The old standard-deviation gate at 0.5 was nowhere near it.
     _MAX_INTERVAL_MAD_CV = 0.15
-    # Week-scale cadences also have to land on one weekday. A habit — the
-    # Monday coffee, the Friday supermarket run — is the pattern most easily
-    # mistaken for a subscription, and a real weekly charge holds its weekday
-    # exactly. Month-scale cadences get no such gate: real bills slip by five
-    # or six days around weekends and month ends, and a tolerance wide enough
-    # to allow that covers a third of the month, which discriminates nothing.
-    # The day anchor still feeds the confidence score at every cadence.
-    _ANCHOR_TOLERANCE_DAYS = {7: 1, 14: 1}
+    # Biweekly charges also have to land on one weekday, which a real
+    # fortnightly commitment holds exactly. Month-scale cadences get no such
+    # gate: real bills slip by five or six days around weekends and month ends,
+    # and a tolerance wide enough to allow that covers a third of the month,
+    # which discriminates nothing. The day anchor still feeds the confidence
+    # score at every cadence.
+    _ANCHOR_TOLERANCE_DAYS = {14: 1}
     _ANCHOR_TOLERANCE_DEFAULT = 3
     _MIN_ANCHOR_SCORE = 0.7
     _ANCHOR_GATED_MAX_PERIOD_DAYS = 14
@@ -453,9 +452,8 @@ class RecurringService:
             if interval_spread > self._MAX_INTERVAL_MAD_CV:
                 continue
 
-            # Anchored to a billing day. Only gated at week scale, where the
-            # weekday is a tight constraint and a routine is most easily
-            # mistaken for a subscription; see the constant.
+            # Anchored to a billing day. Only gated at fortnightly scale, where
+            # the weekday is a tight constraint; see the constant.
             anchor = self._anchor_score(dates, period_days)
             if (
                 period_days <= self._ANCHOR_GATED_MAX_PERIOD_DAYS

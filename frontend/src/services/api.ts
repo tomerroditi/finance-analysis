@@ -723,7 +723,6 @@ export interface RecurringItem {
 }
 
 export type RecurringCadence =
-  | "weekly"
   | "biweekly"
   | "monthly"
   | "bimonthly"
