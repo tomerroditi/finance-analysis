@@ -32,6 +32,22 @@ def _seed(db_session, date, category, tag, amount, description="x", ident=None):
     db_session.commit()
 
 
+def _confirm_recurring(db_session):
+    """Accept every detected recurring candidate.
+
+    Detection only proposes; the Overview acts on confirmed charges alone. A
+    test about the fixed/variable split or about commitments is about what
+    happens *after* the user has said yes, so it says yes here.
+    """
+    from backend.services.recurring_service import RecurringService
+
+    service = RecurringService(db_session)
+    service.set_decisions([
+        {"normalized": item["normalized"], "decision": "confirmed"}
+        for item in service.get_recurring()["items"]
+    ])
+
+
 @pytest.fixture
 def frozen_today(monkeypatch):
     """Pin today to 2026-03-19, mid-month, for every module that asks.
@@ -111,10 +127,27 @@ class TestFixedVariableSplit:
         )
         self._seed_recurring_rent(db_session)
         _seed(db_session, "2026-03-11", "Food", "Groceries", -400.0, description="SUPER A")
+        _confirm_recurring(db_session)
 
         result = BudgetOverviewService(db_session).get_overview(2026, 3)
         assert result["fixed_spent"] == 6000.0
         assert result["variable_spent"] == 400.0
+
+    def test_unconfirmed_candidate_is_still_variable(self, db_session, frozen_today):
+        """Detection alone does not move spend to the fixed side.
+
+        The whole point of the confirmation gate: until the user agrees the
+        charge is recurring, it is ordinary day-to-day spend.
+        """
+        MonthlyBudgetService(db_session).create_rule(
+            "Total Budget", 20000.0, "Total Budget", ["all_tags"], 3, 2026
+        )
+        self._seed_recurring_rent(db_session)
+        _seed(db_session, "2026-03-11", "Food", "Groceries", -400.0, description="SUPER A")
+
+        result = BudgetOverviewService(db_session).get_overview(2026, 3)
+        assert result["fixed_spent"] == 0.0
+        assert result["variable_spent"] == 6400.0
 
     def test_split_always_sums_to_the_month_total(self, db_session, frozen_today):
         """Fixed plus variable is the month's spend, whatever the detector found."""
@@ -174,11 +207,33 @@ class TestCommitments:
                 description="ELECTRIC CO",
             )
         _seed(db_session, "2026-03-05", "Food", "Groceries", -1000.0, description="SUPER A")
+        _confirm_recurring(db_session)
 
         result = BudgetOverviewService(db_session).get_overview(2026, 3)
         assert result["committed_remaining"] == 780.0
         assert [c["label"] for c in result["charges_due"]] == ["ELECTRIC CO"]
         assert result["free_to_spend"] == pytest.approx(20000.0 - 1000.0 - 780.0)
+
+    def test_unconfirmed_candidate_commits_nothing(self, db_session, frozen_today):
+        """An unreviewed guess never holds money back from free-to-spend."""
+        MonthlyBudgetService(db_session).create_rule(
+            "Total Budget", 20000.0, "Total Budget", ["all_tags"], 3, 2026
+        )
+        for seen in ("2025-12-22", "2026-01-22", "2026-02-22"):
+            _seed(
+                db_session,
+                seen,
+                "Household",
+                "Utilities",
+                -780.0,
+                description="ELECTRIC CO",
+            )
+        _seed(db_session, "2026-03-05", "Food", "Groceries", -1000.0, description="SUPER A")
+
+        result = BudgetOverviewService(db_session).get_overview(2026, 3)
+        assert result["committed_remaining"] == 0.0
+        assert result["charges_due"] == []
+        assert result["free_to_spend"] == pytest.approx(20000.0 - 1000.0)
 
     def test_closed_month_commits_nothing(self, db_session, frozen_today):
         """A settled month has nothing left to land."""
@@ -547,6 +602,7 @@ class TestRuleShapesInTheWild:
                 description="MORTGAGE 4471",
             )
         _seed(db_session, "2026-03-11", "Food", "Groceries", -400.0, description="SUPER A")
+        _confirm_recurring(db_session)
 
         result = BudgetOverviewService(db_session).get_overview(2026, 3)
         assert result["fixed_charge_count"] == 1

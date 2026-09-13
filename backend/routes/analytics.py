@@ -7,6 +7,7 @@ Provides endpoints for financial analysis and reporting.
 from datetime import date
 
 from fastapi import APIRouter, Depends, Query
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from backend.dependencies import get_database
@@ -16,6 +17,24 @@ from backend.services.insights_service import InsightsService
 
 
 router = APIRouter()
+
+
+class RecurringDecisionRequest(BaseModel):
+    """One verdict on a detected recurring-charge candidate."""
+
+    normalized: str = Field(
+        ..., description="Normalized merchant key, as detection reported it."
+    )
+    decision: str = Field(
+        ...,
+        description="'confirmed', 'dismissed', or 'pending' to undo a verdict.",
+    )
+
+
+class RecurringDecisionsRequest(BaseModel):
+    """A batch of verdicts, so "confirm all" is one round trip."""
+
+    decisions: list[RecurringDecisionRequest]
 
 
 @router.get("/overview")
@@ -202,18 +221,53 @@ def get_monthly_expenses(
 
 @router.get("/recurring")
 def get_recurring(
+    include_dismissed: bool = Query(
+        False, description="Include candidates the user dismissed."
+    ),
     db: Session = Depends(get_database),
 ):
-    """Return detected recurring charges (subscriptions, bills).
+    """Return detected recurring-charge candidates (subscriptions, bills).
+
+    Each item carries a ``confirmation`` verdict; only confirmed ones feed the
+    budget overview, the forecast and the insight cards.
+
+    Parameters
+    ----------
+    include_dismissed : bool, optional
+        When True, dismissed candidates are listed too. Default False.
 
     Returns
     -------
     dict
-        ``{items: list[dict], total_monthly: float}``. See
+        ``{items, total_monthly, pending_monthly, pending_count,
+        confirmed_count, dismissed_count}``. See
         ``RecurringService.get_recurring``.
     """
     service = RecurringService(db)
-    return service.get_recurring()
+    return service.get_recurring(include_dismissed=include_dismissed)
+
+
+@router.post("/recurring/decisions")
+def set_recurring_decisions(
+    payload: RecurringDecisionsRequest,
+    db: Session = Depends(get_database),
+):
+    """Record the user's verdicts on detected recurring-charge candidates.
+
+    Parameters
+    ----------
+    payload : RecurringDecisionsRequest
+        The verdicts to store.
+
+    Returns
+    -------
+    dict
+        ``{updated: [{normalized, decision}]}``.
+    """
+    service = RecurringService(db)
+    return service.set_decisions(
+        [entry.model_dump() for entry in payload.decisions]
+    )
 
 
 @router.get("/insights")

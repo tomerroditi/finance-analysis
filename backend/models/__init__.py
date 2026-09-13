@@ -17,6 +17,7 @@ from backend.models.investment import Investment
 from backend.models.liability import Liability, LiabilityTransaction
 from backend.models.investment_balance_snapshot import InvestmentBalanceSnapshot
 from backend.models.pending_refund import PendingRefund, RefundLink
+from backend.models.recurring_decision import RecurringDecision
 from backend.models.retirement_goal import RetirementGoal
 from backend.models.savings_goal import (
     SavingsGoal,
@@ -62,6 +63,8 @@ __all__ = [
     # Refund linking
     "PendingRefund",
     "RefundLink",
+    # Recurring charges
+    "RecurringDecision",
     # Budget month override
     "BudgetMonthOverride",
     "RetirementGoal",

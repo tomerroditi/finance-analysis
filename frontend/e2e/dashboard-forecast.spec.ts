@@ -90,4 +90,44 @@ test.describe("Dashboard — forecast, recurring, goals", () => {
     await expect(page.getByText(/New savings goal/i)).toBeVisible();
     await expect(page.getByPlaceholder(/Vacation/i)).toBeVisible();
   });
+
+  // Its own test because it writes: confirming a candidate stores a verdict
+  // in the backend, which would leak into the read-only journey above.
+  test("a detected subscription only counts once it is confirmed", async ({
+    page,
+  }) => {
+    await page.goto("/");
+    await page.waitForLoadState("domcontentloaded");
+
+    await expect(
+      page.getByText(/Subscriptions & Recurring/i).first(),
+    ).toBeVisible({ timeout: 45_000 });
+
+    // Detection alone leaves every candidate in the review block — nothing is
+    // treated as a recurring charge yet.
+    const pending = page.getByTestId("recurring-pending-item");
+    await expect(pending.first()).toBeVisible({ timeout: 45_000 });
+    const pendingBefore = await pending.count();
+    await expect(page.getByTestId("recurring-confirmed-item")).toHaveCount(0);
+    await expect(page.getByText(/Needs review/i).first()).toBeVisible();
+
+    // Confirming the first one moves it into the list of real charges.
+    await pending
+      .first()
+      .getByRole("button", { name: /Confirm .* as recurring/i })
+      .click();
+
+    await expect(page.getByTestId("recurring-confirmed-item")).toHaveCount(1);
+    await expect(pending).toHaveCount(pendingBefore - 1);
+
+    // Dismissing another one hides it behind the "show dismissed" toggle.
+    await pending
+      .first()
+      .getByRole("button", { name: /Not a recurring charge/i })
+      .click();
+
+    await expect(pending).toHaveCount(pendingBefore - 2);
+    await page.getByRole("button", { name: /Show dismissed/i }).click();
+    await expect(page.getByTestId("recurring-dismissed-item")).toHaveCount(1);
+  });
 });

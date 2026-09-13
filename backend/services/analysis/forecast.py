@@ -110,15 +110,16 @@ class ForecastMixin:
         )
 
         # --- Known upcoming recurring charges still due this month ---
-        # Detected subscriptions/bills whose next expected charge falls in the
-        # remainder of the month. Subtracted from "safe to spend" so the figure
-        # reflects money still earmarked for committed bills, not just income
-        # minus what's been spent so far.
+        # User-confirmed subscriptions/bills whose next expected charge falls in
+        # the remainder of the month. Subtracted from "safe to spend" so the
+        # figure reflects money still earmarked for committed bills, not just
+        # income minus what's been spent so far. Candidates awaiting review are
+        # excluded — a false positive would quietly shrink safe-to-spend.
         from backend.services.recurring_service import RecurringService
 
         month_end = today + pd.offsets.MonthEnd(0)
         committed_remaining = 0.0
-        for item in RecurringService(self.db).get_recurring()["items"]:
+        for item in RecurringService(self.db).get_confirmed_items():
             if item["status"] == "ended":
                 continue
             next_due = pd.Timestamp(item["next_expected_date"])

@@ -122,7 +122,9 @@ class BudgetOverviewService(BudgetService):
             year, month, include_split_parents
         )
 
-        recurring = RecurringService(self.db).get_recurring().get("items", [])
+        # Confirmed only: an unreviewed guess must never hold money back from
+        # free-to-spend or move the projection.
+        recurring = RecurringService(self.db).get_confirmed_items()
 
         fixed_spent, variable_spent, fixed_charge_count = self._split_fixed_variable(
             month_data, recurring

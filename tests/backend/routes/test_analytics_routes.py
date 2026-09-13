@@ -140,3 +140,98 @@ class TestIncomeBySourceRoute:
         data = response.json()
         assert data["start"] == "2024-01-01"
         assert data["end"] == "2024-01-31"
+
+
+class TestRecurringDecisionRoutes:
+    """Tests for the confirm / dismiss gate on detected recurring charges."""
+
+    @staticmethod
+    def _seed_subscription(test_client, db_session):
+        """Seed five monthly charges and return the detected candidate's key."""
+        import pandas as pd
+
+        from backend.constants.tables import Tables
+        from backend.models.transaction import CreditCardTransaction
+
+        today = pd.Timestamp.today().normalize()
+        day = min(10, today.day)
+        for n in range(5):
+            date = (today - pd.DateOffset(months=n)).replace(day=day).strftime(
+                "%Y-%m-%d"
+            )
+            db_session.add(
+                CreditCardTransaction(
+                    id=f"netflix-{n}",
+                    date=date,
+                    provider="visa",
+                    account_name="card-1",
+                    description="NETFLIX.COM 1234",
+                    amount=-45.0,
+                    category="Streaming",
+                    source=Tables.CREDIT_CARD.value,
+                )
+            )
+        db_session.commit()
+
+        response = test_client.get("/api/analytics/recurring")
+        assert response.status_code == 200
+        return response.json()["items"][0]["normalized"]
+
+    def test_detected_charge_starts_pending(self, test_client, db_session):
+        """GET /api/analytics/recurring reports a new candidate as pending."""
+        self._seed_subscription(test_client, db_session)
+
+        data = test_client.get("/api/analytics/recurring").json()
+        assert data["items"][0]["confirmation"] == "pending"
+        assert data["pending_count"] == 1
+        assert data["total_monthly"] == 0.0
+
+    def test_confirming_counts_it_as_recurring(self, test_client, db_session):
+        """POST /api/analytics/recurring/decisions confirms a candidate."""
+        norm = self._seed_subscription(test_client, db_session)
+
+        response = test_client.post(
+            "/api/analytics/recurring/decisions",
+            json={"decisions": [{"normalized": norm, "decision": "confirmed"}]},
+        )
+        assert response.status_code == 200
+        assert response.json()["updated"] == [
+            {"normalized": norm, "decision": "confirmed"}
+        ]
+
+        data = test_client.get("/api/analytics/recurring").json()
+        assert data["items"][0]["confirmation"] == "confirmed"
+        assert data["total_monthly"] == 45.0
+
+    def test_dismissed_charge_needs_the_flag_to_be_listed(
+        self, test_client, db_session
+    ):
+        """A dismissed candidate is hidden unless ``include_dismissed`` asks."""
+        norm = self._seed_subscription(test_client, db_session)
+        test_client.post(
+            "/api/analytics/recurring/decisions",
+            json={"decisions": [{"normalized": norm, "decision": "dismissed"}]},
+        )
+
+        assert test_client.get("/api/analytics/recurring").json()["items"] == []
+        listed = test_client.get(
+            "/api/analytics/recurring", params={"include_dismissed": True}
+        ).json()
+        assert listed["items"][0]["confirmation"] == "dismissed"
+
+    def test_unknown_candidate_is_404(self, test_client, db_session):
+        """A verdict on something detection never produced is rejected."""
+        response = test_client.post(
+            "/api/analytics/recurring/decisions",
+            json={"decisions": [{"normalized": "nothing here", "decision": "confirmed"}]},
+        )
+        assert response.status_code == 404
+
+    def test_invalid_decision_is_400(self, test_client, db_session):
+        """Only confirmed / dismissed / pending are accepted."""
+        norm = self._seed_subscription(test_client, db_session)
+        response = test_client.post(
+            "/api/analytics/recurring/decisions",
+            json={"decisions": [{"normalized": norm, "decision": "maybe"}]},
+        )
+        assert response.status_code == 400

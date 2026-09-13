@@ -67,6 +67,38 @@ export async function resetDemoData() {
 }
 
 /**
+ * Confirm every recurring charge the detector currently proposes.
+ *
+ * Detection only produces *candidates*. The budget Overview's fixed and
+ * committed segments, and the forecast's committed figure, are built from
+ * confirmed charges alone, so a spec asserting on those has to put the demo
+ * data's subscriptions through the gate first. Run it after
+ * ``resetDemoData()`` — a reset rebuilds the demo DB and takes every stored
+ * verdict with it.
+ */
+export async function confirmAllRecurring() {
+  const ctx: APIRequestContext = await request.newContext({
+    extraHTTPHeaders: { "X-FAD-Demo": "1" },
+  });
+  try {
+    const listed = await ctx.get(`${API_BASE}/analytics/recurring`);
+    expect(listed.ok()).toBeTruthy();
+    const { items } = await listed.json();
+    const decisions = (items as { normalized: string }[]).map((item) => ({
+      normalized: item.normalized,
+      decision: "confirmed",
+    }));
+    if (decisions.length === 0) return;
+    const stored = await ctx.post(`${API_BASE}/analytics/recurring/decisions`, {
+      data: { decisions },
+    });
+    expect(stored.ok()).toBeTruthy();
+  } finally {
+    await ctx.dispose();
+  }
+}
+
+/**
  * Navigate to a page and wait for it to load.
  *
  * Sets the OnboardingGate's session-storage flag before the document loads

@@ -688,7 +688,15 @@ export const analyticsApi = {
     }),
   getCashFlowForecast: () =>
     api.get<CashFlowForecast>("/analytics/cash-flow-forecast"),
-  getRecurring: () => api.get<RecurringSummary>("/analytics/recurring"),
+  getRecurring: (includeDismissed = false) =>
+    api.get<RecurringSummary>("/analytics/recurring", {
+      params: { include_dismissed: includeDismissed },
+    }),
+  setRecurringDecisions: (decisions: RecurringDecisionInput[]) =>
+    api.post<{ updated: RecurringDecisionInput[] }>(
+      "/analytics/recurring/decisions",
+      { decisions },
+    ),
   getInsights: () => api.get<Insight[]>("/analytics/insights"),
 };
 
@@ -697,7 +705,7 @@ export interface RecurringItem {
   normalized: string;
   amount: number;
   last_amount: number;
-  cadence: "weekly" | "monthly" | "quarterly" | "annual";
+  cadence: RecurringCadence;
   period_days: number;
   monthly_equivalent: number;
   occurrences: number;
@@ -707,11 +715,38 @@ export interface RecurringItem {
   next_expected_date: string;
   status: "active" | "new" | "price_changed" | "ended";
   price_change: number;
+  confirmation: RecurringConfirmation;
+  /** How much evidence backs the detection, 0..1. */
+  confidence: number;
+  /** ``fixed`` for a flat subscription, ``metered`` for a consumption bill. */
+  amount_kind: "fixed" | "metered";
+}
+
+export type RecurringCadence =
+  | "monthly"
+  | "bimonthly"
+  | "quarterly"
+  | "semiannual"
+  | "annual";
+
+/** Where a detected candidate stands with the user. */
+export type RecurringConfirmation = "confirmed" | "pending" | "dismissed";
+
+/** One verdict to store; ``pending`` undoes a previous one. */
+export interface RecurringDecisionInput {
+  normalized: string;
+  decision: RecurringConfirmation;
 }
 
 export interface RecurringSummary {
   items: RecurringItem[];
+  /** Monthly equivalent of confirmed, still-running charges only. */
   total_monthly: number;
+  /** The same sum over candidates still awaiting a verdict. */
+  pending_monthly: number;
+  pending_count: number;
+  confirmed_count: number;
+  dismissed_count: number;
 }
 
 export interface Insight {

@@ -5,6 +5,7 @@ import pandas as pd
 from backend.constants.tables import Tables
 from backend.models.transaction import CreditCardTransaction
 from backend.services.insights_service import InsightsService
+from backend.services.recurring_service import RecurringService
 
 
 def _add(db_session, description, amount, date, category="Food"):
@@ -46,14 +47,24 @@ class TestInsights:
             assert insight["severity"] in {"positive", "info", "warning"}
             assert isinstance(insight["data"], dict)
 
-    def test_new_recurring_surfaced_as_insight(self, db_session):
-        """A newly started subscription produces a newRecurring insight."""
+    def test_new_recurring_surfaced_as_insight_once_confirmed(self, db_session):
+        """A newly started subscription asks to be reviewed, then reports itself."""
         for n in range(3):
             _add(db_session, "DISNEY PLUS", -30.0, _months_ago(n), category="Streaming")
         db_session.commit()
 
         codes = {i["code"] for i in InsightsService(db_session).get_insights()}
+        assert codes & {"recurringToReview"}
+        assert "newRecurring" not in codes
+
+        recurring = RecurringService(db_session)
+        recurring.set_decision(
+            recurring.get_recurring()["items"][0]["normalized"], "confirmed"
+        )
+
+        codes = {i["code"] for i in InsightsService(db_session).get_insights()}
         assert "newRecurring" in codes
+        assert "recurringToReview" not in codes
 
     def test_category_spike_detected(self, db_session):
         """A category spending far above its trend produces a categorySpike."""
@@ -114,13 +125,18 @@ class TestRecurringInsights:
     """Recurring-item statuses map to newRecurring / priceIncrease / priceDecrease."""
 
     @staticmethod
-    def _service_with_items(db_session, monkeypatch, items):
+    def _service_with_items(db_session, monkeypatch, items, pending_count=0):
         service = InsightsService(db_session)
-        monkeypatch.setattr(service.recurring, "get_recurring", lambda: {"items": items})
+        summary = {
+            "items": items,
+            "pending_count": pending_count,
+            "pending_monthly": 0.0,
+        }
+        monkeypatch.setattr(service.recurring, "get_recurring", lambda: summary)
         return service
 
     @staticmethod
-    def _item(status, price_change=0.0, label="Gym"):
+    def _item(status, price_change=0.0, label="Gym", confirmation="confirmed"):
         return {
             "label": label,
             "amount": 120.0,
@@ -128,6 +144,7 @@ class TestRecurringInsights:
             "cadence": "monthly",
             "status": status,
             "price_change": price_change,
+            "confirmation": confirmation,
         }
 
     def test_price_increase_is_a_warning_and_decrease_is_info(self, db_session, monkeypatch):
@@ -168,6 +185,27 @@ class TestRecurringInsights:
         result = service._recurring_insights()
         assert len(result) == 3
         assert all(r["code"] == "newRecurring" for r in result)
+
+    def test_unconfirmed_items_never_become_cards(self, db_session, monkeypatch):
+        """A candidate nobody has ruled on is a question, not a finding."""
+        service = self._service_with_items(
+            db_session,
+            monkeypatch,
+            [self._item("new", confirmation="pending")],
+        )
+        assert service._recurring_insights() == []
+
+    def test_pending_candidates_get_one_review_card(self, db_session, monkeypatch):
+        """Waiting candidates produce a single nudge to review them."""
+        service = self._service_with_items(
+            db_session,
+            monkeypatch,
+            [self._item("new", confirmation="pending") for _ in range(4)],
+            pending_count=4,
+        )
+        result = service._recurring_insights()
+        assert [card["code"] for card in result] == ["recurringToReview"]
+        assert result[0]["data"]["count"] == 4
 
 
 class TestLargeTransactionInsight:
