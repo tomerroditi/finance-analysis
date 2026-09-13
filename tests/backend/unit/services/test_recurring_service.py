@@ -1,8 +1,10 @@
 """Tests for RecurringService subscription detection."""
 
 import pandas as pd
+import pytest
 
 from backend.constants.tables import Tables
+from backend.errors import EntityNotFoundException, ValidationException
 from backend.models.transaction import CreditCardTransaction
 from backend.services.recurring_service import RecurringService
 
@@ -64,7 +66,14 @@ class TestRecurringDetection:
     def test_empty_db(self, db_session):
         """No transactions yields an empty, well-shaped result."""
         result = RecurringService(db_session).get_recurring()
-        assert result == {"items": [], "total_monthly": 0.0}
+        assert result == {
+            "items": [],
+            "total_monthly": 0.0,
+            "pending_monthly": 0.0,
+            "pending_count": 0,
+            "confirmed_count": 0,
+            "dismissed_count": 0,
+        }
 
     def test_detects_monthly_subscription(self, db_session):
         """A charge repeating monthly across 5 months is detected as monthly."""
@@ -79,7 +88,11 @@ class TestRecurringDetection:
         assert item["amount"] == 45.0
         assert item["occurrences"] == 5
         assert item["monthly_equivalent"] == 45.0
-        assert result["total_monthly"] == 45.0
+        # Undecided candidates are not in the confirmed total.
+        assert item["confirmation"] == "pending"
+        assert result["total_monthly"] == 0.0
+        assert result["pending_monthly"] == 45.0
+        assert result["pending_count"] == 1
 
     def test_ignores_one_off_charges(self, db_session):
         """Charges that appear fewer than three times are not recurring."""
@@ -280,3 +293,111 @@ class TestRecurringDetection:
         db_session.commit()
 
         assert RecurringService(db_session).get_recurring()["items"] == []
+
+
+class TestRecurringConfirmation:
+    """Tests for the confirm / dismiss gate in front of detection."""
+
+    @staticmethod
+    def _seed_netflix(db_session):
+        """Seed a clean five-month monthly subscription and return its key."""
+        for n in range(5):
+            _add_charge(db_session, "NETFLIX.COM 1234", -45.0, _months_ago(n))
+        db_session.commit()
+        return RecurringService(db_session).get_recurring()["items"][0]["normalized"]
+
+    def test_new_candidate_is_pending(self, db_session):
+        """A freshly detected charge is reported as pending, not confirmed."""
+        self._seed_netflix(db_session)
+
+        result = RecurringService(db_session).get_recurring()
+        assert result["items"][0]["confirmation"] == "pending"
+        assert result["confirmed_count"] == 0
+        assert result["pending_count"] == 1
+
+    def test_confirming_moves_it_into_the_total(self, db_session):
+        """Confirming flips the verdict and adds the item to the monthly total."""
+        norm = self._seed_netflix(db_session)
+        service = RecurringService(db_session)
+
+        service.set_decision(norm, "confirmed")
+
+        result = RecurringService(db_session).get_recurring()
+        assert result["items"][0]["confirmation"] == "confirmed"
+        assert result["total_monthly"] == 45.0
+        assert result["pending_monthly"] == 0.0
+
+    def test_confirmed_items_are_what_downstream_reads(self, db_session):
+        """``get_confirmed_items`` is empty until the user confirms."""
+        norm = self._seed_netflix(db_session)
+        service = RecurringService(db_session)
+        assert service.get_confirmed_items() == []
+
+        service.set_decision(norm, "confirmed")
+        confirmed = RecurringService(db_session).get_confirmed_items()
+        assert [item["normalized"] for item in confirmed] == [norm]
+
+    def test_dismissed_candidate_is_hidden_by_default(self, db_session):
+        """A dismissed charge drops out of the list but is still counted."""
+        norm = self._seed_netflix(db_session)
+        RecurringService(db_session).set_decision(norm, "dismissed")
+
+        result = RecurringService(db_session).get_recurring()
+        assert result["items"] == []
+        assert result["dismissed_count"] == 1
+
+        with_dismissed = RecurringService(db_session).get_recurring(
+            include_dismissed=True
+        )
+        assert with_dismissed["items"][0]["confirmation"] == "dismissed"
+
+    def test_verdict_survives_new_charges(self, db_session):
+        """A later charge on a confirmed merchant does not reopen the question."""
+        norm = self._seed_netflix(db_session)
+        RecurringService(db_session).set_decision(norm, "confirmed")
+
+        _add_charge(db_session, "NETFLIX.COM 9981", -45.0, _days_ago(1))
+        db_session.commit()
+
+        result = RecurringService(db_session).get_recurring()
+        assert result["items"][0]["confirmation"] == "confirmed"
+        assert result["pending_count"] == 0
+
+    def test_pending_undoes_a_verdict(self, db_session):
+        """Setting ``pending`` puts a decided candidate back up for review."""
+        norm = self._seed_netflix(db_session)
+        service = RecurringService(db_session)
+        service.set_decision(norm, "dismissed")
+        service.set_decision(norm, "pending")
+
+        result = RecurringService(db_session).get_recurring()
+        assert result["items"][0]["confirmation"] == "pending"
+        assert result["dismissed_count"] == 0
+
+    def test_bulk_decisions_confirm_everything_at_once(self, db_session):
+        """``set_decisions`` stores a whole batch — the "confirm all" path."""
+        for n in range(5):
+            _add_charge(db_session, "NETFLIX.COM 1234", -45.0, _months_ago(n))
+            _add_charge(db_session, "SPOTIFY AB", -20.0, _months_ago(n))
+        db_session.commit()
+
+        service = RecurringService(db_session)
+        keys = [item["normalized"] for item in service.get_recurring()["items"]]
+        service.set_decisions(
+            [{"normalized": key, "decision": "confirmed"} for key in keys]
+        )
+
+        result = RecurringService(db_session).get_recurring()
+        assert result["confirmed_count"] == 2
+        assert result["total_monthly"] == 65.0
+
+    def test_unknown_key_is_rejected(self, db_session):
+        """Confirming something detection never produced is a 404, not a no-op."""
+        with pytest.raises(EntityNotFoundException):
+            RecurringService(db_session).set_decision("no such merchant", "confirmed")
+
+    def test_invalid_decision_is_rejected(self, db_session):
+        """Only the three known verdicts are accepted."""
+        norm = self._seed_netflix(db_session)
+        with pytest.raises(ValidationException):
+            RecurringService(db_session).set_decision(norm, "maybe")

@@ -240,7 +240,8 @@
       "newRecurring": "New recurring charge: {{label}} — {{amount}} {{cadence}}",
       "priceIncrease": "{{label}} went up by {{delta}}",
       "priceDecrease": "{{label}} went down by {{delta}}",
-      "largeTransaction": "Large charge this month: {{label}} ({{amount}})"
+      "largeTransaction": "Large charge this month: {{label}} ({{amount}})",
+      "recurringToReview": "{{count}} detected recurring charge(s) waiting for your review"
     },
     "recurring": {
       "title": "Subscriptions & Recurring",
@@ -259,6 +260,19 @@
         "monthly": "Monthly",
         "quarterly": "Quarterly",
         "annual": "Annual"
+      },
+      "noneConfirmed": "Nothing confirmed yet — review the detected charges above",
+      "review": {
+        "title": "Needs review",
+        "subtitle": "{{count}} detected charge(s), {{amount}} / mo — confirm to count them as recurring",
+        "evidence": "{{cadence}} · {{count}} charges · {{amount}} each",
+        "confirmAll": "Confirm all",
+        "confirm": "Confirm {{label}} as recurring",
+        "dismiss": "Not a recurring charge: {{label}}",
+        "unconfirm": "Send {{label}} back to review",
+        "restore": "Restore",
+        "showDismissed": "Show dismissed ({{count}})",
+        "hideDismissed": "Hide dismissed"
       }
     },
     "goals": {

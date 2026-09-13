@@ -158,7 +158,8 @@ export function makeQueryKeys(demo: boolean) {
         ["analytics", "income-by-source", start ?? "all", end ?? "all", demo] as const,
       monthlyExpenses: (excludePendingRefunds: boolean, includeProjects: boolean) =>
         ["analytics", "monthly-expenses", excludePendingRefunds, includeProjects, demo] as const,
-      recurring: () => ["analytics", "recurring", demo] as const,
+      recurring: (includeDismissed = false) =>
+        ["analytics", "recurring", includeDismissed, demo] as const,
       insights: () => ["analytics", "insights", demo] as const,
       cashFlowForecast: () => ["analytics", "cash-flow-forecast", demo] as const,
     },

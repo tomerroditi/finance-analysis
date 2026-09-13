@@ -5,6 +5,13 @@ feed required. Groups expense transactions by a normalized merchant label and
 looks for a stable cadence (weekly/monthly/quarterly/annual) across at least
 three occurrences. This powers the dashboard subscriptions view and feeds the
 insights engine with "new subscription" / "price increase" signals.
+
+Detection only ever produces a *candidate*. A candidate becomes a recurring
+charge the rest of the app acts on — committed spend in the budget overview,
+the forecast's safe-to-spend, insight cards — only once the user confirms it
+(:class:`~backend.repositories.recurring_decisions_repository.RecurringDecisionsRepository`).
+Unconfirmed candidates are reported as ``pending`` so the UI can ask, and
+dismissed ones are suppressed for good.
 """
 
 import re
@@ -19,6 +26,12 @@ from backend.constants.categories import (
     INVESTMENTS_CATEGORY,
     LIABILITIES_CATEGORY,
     IncomeCategories,
+)
+from backend.errors import EntityNotFoundException, ValidationException
+from backend.repositories.recurring_decisions_repository import (
+    DECISIONS,
+    PENDING,
+    RecurringDecisionsRepository,
 )
 from backend.repositories.transactions_repository import TransactionsRepository
 
@@ -56,6 +69,7 @@ class RecurringService:
         """
         self.db = db
         self.repo = TransactionsRepository(db)
+        self.decisions = RecurringDecisionsRepository(db)
 
     @staticmethod
     def _normalize(desc) -> str:
@@ -126,8 +140,18 @@ class RecurringService:
                 best = (name, days)
         return best
 
-    def get_recurring(self, today: date | pd.Timestamp | None = None) -> dict:
-        """Detect recurring charges across all itemized expense transactions.
+    def get_recurring(
+        self,
+        today: date | pd.Timestamp | None = None,
+        include_dismissed: bool = False,
+    ) -> dict:
+        """Detect recurring-charge candidates across itemized expenses.
+
+        Every candidate carries the user's verdict on it. Nothing here is
+        filtered by that verdict except dismissals, which are hidden unless
+        asked for — the dashboard needs the pending ones precisely so it can
+        ask. Callers that act on recurring charges want
+        :meth:`get_confirmed_items` instead.
 
         Parameters
         ----------
@@ -135,6 +159,9 @@ class RecurringService:
             Reference day for the ``new`` / ``ended`` status and the next
             expected date. Defaults to the current day; tests pin it so the
             verdict does not drift with the calendar.
+        include_dismissed : bool, optional
+            When True, candidates the user dismissed are listed too (so the
+            UI can offer to restore one). Default False.
 
         Returns
         -------
@@ -147,12 +174,25 @@ class RecurringService:
               ``monthly_equivalent``, ``occurrences``, ``category``,
               ``first_date``, ``last_date``, ``next_expected_date``,
               ``status`` (``active`` / ``new`` / ``price_changed`` /
-              ``ended``) and ``price_change`` (signed, 0 if none).
+              ``ended``), ``price_change`` (signed, 0 if none) and
+              ``confirmation`` (``confirmed`` / ``pending`` / ``dismissed``).
               Sorted by ``monthly_equivalent`` descending.
-            - ``total_monthly`` – sum of ``monthly_equivalent`` across all
-              non-ended items.
+            - ``total_monthly`` – sum of ``monthly_equivalent`` across
+              **confirmed**, non-ended items. Pending candidates are not
+              money the user has agreed is committed, so they are not in it.
+            - ``pending_monthly`` – the same sum over pending candidates.
+            - ``pending_count``, ``confirmed_count``, ``dismissed_count`` –
+              how many candidates fell into each bucket, dismissed ones
+              counted whether or not they were listed.
         """
-        empty = {"items": [], "total_monthly": 0.0}
+        empty = {
+            "items": [],
+            "total_monthly": 0.0,
+            "pending_monthly": 0.0,
+            "pending_count": 0,
+            "confirmed_count": 0,
+            "dismissed_count": 0,
+        }
 
         df = self.repo.get_itemized_transactions()
         if df.empty:
@@ -184,7 +224,9 @@ class RecurringService:
         today = (
             pd.Timestamp.today() if today is None else pd.Timestamp(today)
         ).normalize()
+        verdicts = self.decisions.get_all()
         items: list[dict] = []
+        dismissed_count = 0
 
         for norm, group in df.groupby("norm"):
             # Net same-day charges and refunds: sum signed amounts per day, then
@@ -259,6 +301,13 @@ class RecurringService:
 
             monthly_equivalent = amount * 30.0 / period_days
 
+            verdict = verdicts.get(norm)
+            confirmation = verdict.decision if verdict else PENDING
+            if confirmation == "dismissed":
+                dismissed_count += 1
+                if not include_dismissed:
+                    continue
+
             items.append({
                 "label": label,
                 "normalized": norm,
@@ -274,8 +323,139 @@ class RecurringService:
                 "next_expected_date": next_expected.strftime("%Y-%m-%d"),
                 "status": status,
                 "price_change": price_change,
+                "confirmation": confirmation,
             })
 
         items.sort(key=lambda i: i["monthly_equivalent"], reverse=True)
-        total_monthly = sum(i["monthly_equivalent"] for i in items if i["status"] != "ended")
-        return {"items": items, "total_monthly": round(total_monthly, 2)}
+        live = [i for i in items if i["status"] != "ended"]
+        total_monthly = sum(
+            i["monthly_equivalent"] for i in live if i["confirmation"] == "confirmed"
+        )
+        pending_monthly = sum(
+            i["monthly_equivalent"] for i in live if i["confirmation"] == PENDING
+        )
+        return {
+            "items": items,
+            "total_monthly": round(total_monthly, 2),
+            "pending_monthly": round(pending_monthly, 2),
+            "pending_count": sum(1 for i in items if i["confirmation"] == PENDING),
+            "confirmed_count": sum(
+                1 for i in items if i["confirmation"] == "confirmed"
+            ),
+            "dismissed_count": dismissed_count,
+        }
+
+    def get_confirmed_items(
+        self, today: date | pd.Timestamp | None = None
+    ) -> list[dict]:
+        """Return only the recurring charges the user has confirmed.
+
+        The single entry point for everything that *acts* on a recurring
+        charge — committed spend in the budget overview, the forecast's
+        safe-to-spend, the insight cards. A candidate the user has not ruled
+        on yet is a guess, and a guess must not move a number the user is
+        budgeting against.
+
+        Parameters
+        ----------
+        today : date or pd.Timestamp, optional
+            Reference day, forwarded to :meth:`get_recurring`.
+
+        Returns
+        -------
+        list[dict]
+            Confirmed items, in the same shape :meth:`get_recurring` returns.
+        """
+        return [
+            item
+            for item in self.get_recurring(today)["items"]
+            if item["confirmation"] == "confirmed"
+        ]
+
+    def set_decision(
+        self,
+        normalized: str,
+        decision: str,
+        today: date | pd.Timestamp | None = None,
+    ) -> dict:
+        """Record the user's verdict on one detected candidate.
+
+        Parameters
+        ----------
+        normalized : str
+            Normalized merchant key, exactly as detection reported it.
+        decision : str
+            ``'confirmed'``, ``'dismissed'``, or ``'pending'`` to undo a
+            previous verdict and put the candidate back up for review.
+        today : date or pd.Timestamp, optional
+            Reference day, forwarded to detection when looking the candidate
+            up.
+
+        Returns
+        -------
+        dict
+            ``{normalized, decision}``.
+
+        Raises
+        ------
+        ValidationException
+            If ``decision`` is not one of the three accepted values.
+        EntityNotFoundException
+            If no detected candidate carries that key. Confirming something
+            detection never produced would create a verdict nothing can ever
+            act on, which reads to the user as the click having done nothing.
+        """
+        if decision not in (*DECISIONS, PENDING):
+            raise ValidationException(
+                f"Invalid decision '{decision}'. "
+                f"Expected one of: {', '.join((*DECISIONS, PENDING))}."
+            )
+
+        candidate = next(
+            (
+                item
+                for item in self.get_recurring(today, include_dismissed=True)["items"]
+                if item["normalized"] == normalized
+            ),
+            None,
+        )
+        if candidate is None:
+            raise EntityNotFoundException(
+                f"No detected recurring charge named '{normalized}'."
+            )
+
+        if decision == PENDING:
+            self.decisions.clear(normalized)
+        else:
+            self.decisions.set_decision(
+                normalized,
+                decision,
+                label=candidate["label"],
+                amount=candidate["amount"],
+                cadence=candidate["cadence"],
+            )
+        return {"normalized": normalized, "decision": decision}
+
+    def set_decisions(
+        self, decisions: list[dict], today: date | pd.Timestamp | None = None
+    ) -> dict:
+        """Record several verdicts at once (the "confirm all" path).
+
+        Parameters
+        ----------
+        decisions : list[dict]
+            Each entry ``{"normalized": str, "decision": str}``.
+        today : date or pd.Timestamp, optional
+            Reference day, forwarded to :meth:`set_decision`.
+
+        Returns
+        -------
+        dict
+            ``{"updated": [...]}`` — the verdicts that were stored.
+        """
+        return {
+            "updated": [
+                self.set_decision(entry["normalized"], entry["decision"], today)
+                for entry in decisions
+            ]
+        }

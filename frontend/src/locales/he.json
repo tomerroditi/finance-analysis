@@ -240,7 +240,8 @@
       "newRecurring": "חיוב חוזר חדש: {{label}} — {{amount}} {{cadence}}",
       "priceIncrease": "{{label}} התייקר ב-{{delta}}",
       "priceDecrease": "{{label}} הוזל ב-{{delta}}",
-      "largeTransaction": "חיוב גדול החודש: {{label}} ({{amount}})"
+      "largeTransaction": "חיוב גדול החודש: {{label}} ({{amount}})",
+      "recurringToReview": "זוהו {{count}} חיובים חוזרים הממתינים לבדיקתכם"
     },
     "recurring": {
       "title": "מנויים וחיובים חוזרים",
@@ -259,6 +260,19 @@
         "monthly": "חודשי",
         "quarterly": "רבעוני",
         "annual": "שנתי"
+      },
+      "noneConfirmed": "עדיין לא אושר דבר — אשרו את החיובים שזוהו למעלה",
+      "review": {
+        "title": "ממתין לאישור",
+        "subtitle": "זוהו {{count}} חיובים, {{amount}} לחודש — אשרו כדי לספור אותם כחיובים חוזרים",
+        "evidence": "{{cadence}} · {{count}} חיובים · {{amount}} כל אחד",
+        "confirmAll": "אשרו הכל",
+        "confirm": "אישור {{label}} כחיוב חוזר",
+        "dismiss": "לא חיוב חוזר: {{label}}",
+        "unconfirm": "החזרת {{label}} לבדיקה",
+        "restore": "שחזור",
+        "showDismissed": "הצגת נדחים ({{count}})",
+        "hideDismissed": "הסתרת נדחים"
       }
     },
     "goals": {
