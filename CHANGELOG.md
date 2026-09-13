@@ -1,3 +1,9 @@
+## v1.64.0 (2026-09-13)
+
+### Feat
+
+- **recurring**: confirm detected subscriptions, and harden how they are detected (#276)
+
 ## v1.63.0 (2026-09-13)
 
 ### Feat
