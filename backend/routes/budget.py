@@ -86,6 +86,10 @@ class ProjectUpdate(ApiRequestModel):
     total_budget: float
 
 
+class ProjectClosedUpdate(ApiRequestModel):
+    closed: bool
+
+
 @router.get("/rules")
 def get_budget_rules(
     db: Session = Depends(get_database),
@@ -425,6 +429,18 @@ def get_available_categories_for_new_project(
     return service.get_available_categories_for_new_project()
 
 
+@router.get("/projects/status")
+def get_projects_status(
+    db: Session = Depends(get_database),
+) -> list[dict[str, Any]]:
+    """Get every project with its closed flag.
+
+    Declared above ``/projects/{name}`` so the literal path wins the match.
+    """
+    service = ProjectBudgetService(db)
+    return service.get_projects_status()
+
+
 @router.post("/projects")
 def create_project(
     project: ProjectCreate, db: Session = Depends(get_database)
@@ -482,6 +498,26 @@ def update_project(
     _ensure_project_exists(service, name)
     service.update_project(name, project.total_budget)
     return {"status": "success"}
+
+
+@router.put("/projects/{name}/closed")
+def set_project_closed(
+    name: str, body: ProjectClosedUpdate, db: Session = Depends(get_database)
+) -> dict[str, Any]:
+    """Close a finished project, or reopen a closed one.
+
+    A closed project keeps every rule and transaction; it only stops appearing
+    in the budget Overview.
+
+    Raises
+    ------
+    EntityNotFoundException
+        404 if no project with ``name`` exists.
+    """
+    service = ProjectBudgetService(db)
+    _ensure_project_exists(service, name)
+    service.set_project_closed(name, body.closed)
+    return {"status": "success", "name": name, "closed": body.closed}
 
 
 @router.delete("/projects/{name}")

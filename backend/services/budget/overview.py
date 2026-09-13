@@ -14,6 +14,10 @@ relies on :meth:`RecurringService.normalize_description`, so the split has to
 happen here rather than in the client, where the normalisation rules would have
 to be duplicated and would silently drift.
 
+A closed project drops out of the envelope list this returns while its spend
+stays in the month's totals — see
+:meth:`BudgetOverviewService._project_envelopes`.
+
 **A month's contribution to a long envelope.** Yearly and project envelopes run
 on their own clock: their percentage always describes today, never the month
 being viewed. ``get_yearly_budget_view`` filters on the year alone and the
@@ -98,8 +102,10 @@ class BudgetOverviewService(BudgetService):
               ``monthly_spent``.
             - ``total_out`` — the three pools added up: what actually left the
               accounts in the month.
-            - ``long_envelopes`` — yearly and project envelopes, each with both
-              ``month_contribution`` and its overall ``spent``/``budget``.
+            - ``long_envelopes`` — yearly and *open* project envelopes, each with
+              both ``month_contribution`` and its overall ``spent``/``budget``.
+              Closed projects are omitted, though their spend still counts in
+              ``projects_month_spent`` and ``total_out``.
         """
         today = _today()
         days_in_month = monthrange(year, month)[1]
@@ -144,6 +150,15 @@ class BudgetOverviewService(BudgetService):
                 e["month_contribution"] for e in long_envelopes if e["kind"] == "project"
             )
         )
+        # The totals above count every project, closed ones included — that
+        # money really did leave the accounts this month. The list below is a
+        # list of envelopes still worth watching, so closed projects drop out
+        # of it, and out of every section built from it.
+        open_envelopes = [
+            {key: value for key, value in envelope.items() if key != "closed"}
+            for envelope in long_envelopes
+            if not envelope["closed"]
+        ]
 
         return {
             "year": year,
@@ -169,7 +184,7 @@ class BudgetOverviewService(BudgetService):
             "total_out": round(
                 monthly_spent + projects_month_spent + yearly_month_spent, 2
             ),
-            "long_envelopes": long_envelopes,
+            "long_envelopes": open_envelopes,
         }
 
     # ------------------------------------------------------------------ #
@@ -330,6 +345,9 @@ class BudgetOverviewService(BudgetService):
                     "month_contribution": round(self._sum_expenses(matched), 2),
                     "spent": round(spent_by_name.get(rule[NAME], 0.0), 2),
                     "budget": round(float(rule[AMOUNT] or 0.0), 2),
+                    # Only projects can be closed; the key exists on every
+                    # envelope so the filter in get_overview is uniform.
+                    "closed": False,
                 }
             )
         return envelopes
@@ -337,12 +355,22 @@ class BudgetOverviewService(BudgetService):
     def _project_envelopes(
         self, year: int, month: int, include_split_parents: bool
     ) -> list[dict]:
-        """Projects with their lifetime spend and this month's share.
+        """Open projects with their lifetime spend and this month's share.
 
         A project has no calendar at all, so ``spent`` is lifetime-to-date by
         definition, never bounded to the viewed month.
+
+        Every project is measured, closed ones included, but each carries a
+        ``closed`` flag that :meth:`get_overview` uses to drop it from the
+        envelope list it returns. A finished renovation is not an envelope the
+        current month can still be measured against, and a completed one
+        sitting at 100% would otherwise keep itself pinned to the top of "needs
+        attention" forever. Its spend still counts towards the month's totals,
+        because that money did leave the accounts, and its history is
+        untouched — the Projects tab still shows it in full.
         """
         projects = ProjectBudgetService(self.db)
+        closed = set(projects.get_closed_projects_names())
         names = projects.get_all_projects_names()
         if not names:
             return []
@@ -374,6 +402,7 @@ class BudgetOverviewService(BudgetService):
                     ),
                     "spent": round(self._sum_expenses(rows), 2),
                     "budget": round(budget, 2),
+                    "closed": name in closed,
                 }
             )
         return envelopes
