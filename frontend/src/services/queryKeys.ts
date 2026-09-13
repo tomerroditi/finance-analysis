@@ -68,6 +68,7 @@ export function makeQueryKeys(demo: boolean) {
       analysis: (year: number, month: number, includeSplitParents: boolean) =>
         ["budget", "analysis", year, month, includeSplitParents, demo] as const,
       projects: () => ["budget", "projects", demo] as const,
+      projectsStatus: () => ["budget", "projects-status", demo] as const,
       projectDetails: (name: string, includeSplitParents: boolean) =>
         ["budget", "project-details", name, includeSplitParents, demo] as const,
       availableProjects: () => ["budget", "available-projects", demo] as const,

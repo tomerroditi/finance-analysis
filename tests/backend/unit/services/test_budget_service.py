@@ -6,6 +6,7 @@ from backend.constants.budget import (
     AMOUNT,
     CATEGORY,
     ID,
+    IS_CLOSED,
     MONTH,
     NAME,
     TAGS,
@@ -1199,6 +1200,115 @@ class TestProjectBudgetServiceExtended:
             service.create_project("Nope", 1000.0)
 
         assert service.get_all_projects_names() == []
+
+
+class TestProjectClosedState:
+    """Closing a project, and what reads it back."""
+
+    def test_new_project_is_open(self, db_session):
+        """A freshly created project is open until it is explicitly closed."""
+        service = ProjectBudgetService(db_session)
+        service.create_project("Wedding", 50000.0)
+
+        assert service.is_project_closed("Wedding") is False
+        assert service.get_closed_projects_names() == []
+
+    def test_close_flags_every_rule_of_the_project(self, db_session):
+        """The flag lands on all the project's rules, not just its anchor."""
+        service = ProjectBudgetService(db_session)
+        service.create_project("Wedding", 50000.0)
+
+        service.set_project_closed("Wedding", True)
+
+        rules = service.get_rules_for_project("Wedding")
+        assert len(rules) > 1
+        assert (rules[IS_CLOSED] == 1).all()
+
+    def test_close_then_reopen_round_trips(self, db_session):
+        """Reopening clears the flag so the project counts as running again."""
+        service = ProjectBudgetService(db_session)
+        service.create_project("Wedding", 50000.0)
+
+        service.set_project_closed("Wedding", True)
+        assert service.is_project_closed("Wedding") is True
+
+        service.set_project_closed("Wedding", False)
+        assert service.is_project_closed("Wedding") is False
+
+    def test_close_leaves_rules_and_the_project_listing_intact(self, db_session):
+        """Closing is not a delete — the project keeps its rules and its name."""
+        service = ProjectBudgetService(db_session)
+        service.create_project("Wedding", 50000.0)
+        before = len(service.get_rules_for_project("Wedding"))
+
+        service.set_project_closed("Wedding", True)
+
+        assert len(service.get_rules_for_project("Wedding")) == before
+        assert "Wedding" in service.get_all_projects_names()
+
+    def test_close_does_not_free_the_category_for_a_new_project(self, db_session):
+        """A closed project still owns its category — deleting it is what frees it."""
+        service = ProjectBudgetService(db_session)
+        service.create_project("Wedding", 50000.0)
+
+        service.set_project_closed("Wedding", True)
+
+        assert "Wedding" not in service.get_available_categories_for_new_project()
+
+    def test_close_touches_only_the_named_project(self, db_session):
+        """Closing one project leaves its siblings running."""
+        service = ProjectBudgetService(db_session)
+        service.create_project("Wedding", 50000.0)
+        service.create_project("Renovation", 25000.0)
+
+        service.set_project_closed("Wedding", True)
+
+        assert service.get_closed_projects_names() == ["Wedding"]
+        assert service.is_project_closed("Renovation") is False
+
+    def test_close_unknown_project_raises_not_found(self, db_session):
+        """Closing a project that does not exist is a 404, not a silent no-op."""
+        from backend.errors import EntityNotFoundException
+
+        service = ProjectBudgetService(db_session)
+        with pytest.raises(EntityNotFoundException, match="Nonexistent"):
+            service.set_project_closed("Nonexistent", True)
+
+    def test_projects_status_pairs_every_project_with_its_flag(self, db_session):
+        """One read answers both "which projects" and "which are finished"."""
+        service = ProjectBudgetService(db_session)
+        service.create_project("Wedding", 50000.0)
+        service.create_project("Renovation", 25000.0)
+        service.set_project_closed("Renovation", True)
+
+        status = {entry["name"]: entry["closed"] for entry in service.get_projects_status()}
+        assert status == {"Wedding": False, "Renovation": True}
+
+    def test_project_view_reports_the_closed_flag(self, db_session):
+        """The project's own page can tell the user it is closed."""
+        service = ProjectBudgetService(db_session)
+        service.create_project("Wedding", 50000.0)
+
+        assert service.get_project_budget_view("Wedding")["closed"] is False
+        service.set_project_closed("Wedding", True)
+        assert service.get_project_budget_view("Wedding")["closed"] is True
+
+    def test_a_rule_minted_after_closing_does_not_reopen_the_project(self, db_session):
+        """A late zero-amount tag rule must not read as "some rules are open"."""
+        service = ProjectBudgetService(db_session)
+        service.create_project("Wedding", 50000.0)
+        service.set_project_closed("Wedding", True)
+
+        service.add_rule(
+            name="Flowers",
+            amount=0,
+            category="Wedding",
+            tags=["Flowers"],
+            month=None,
+            year=None,
+        )
+
+        assert service.is_project_closed("Wedding") is True
 
 
 class TestAutoFillEmptyMonths:

@@ -246,6 +246,36 @@ class BudgetRepository:
         self.db.execute(stmt)
         self.db.commit()
 
+    def set_closed_by_category(self, category: str, closed: bool) -> None:
+        """Flag every project rule of ``category`` as closed or open.
+
+        The flag is set on all of the project's rules rather than only its
+        ``all_tags`` anchor: projects that predate the anchor (the demo
+        database among them) have no such row, so anchor-only state would
+        leave them permanently open.
+
+        Parameters
+        ----------
+        category : str
+            Project category name to flag.
+        closed : bool
+            ``True`` closes the project, ``False`` reopens it.
+
+        Notes
+        -----
+        Only touches project rules (``period_type == "project"``).
+        """
+        stmt = (
+            update(BudgetRule)
+            .where(
+                BudgetRule.category == category,
+                BudgetRule.period_type == PERIOD_PROJECT,
+            )
+            .values(is_closed=1 if closed else 0)
+        )
+        self.db.execute(stmt)
+        self.db.commit()
+
     def delete_by_category_and_tags(self, category: str, tags: str) -> None:
         """Delete budget rules by category and tags (project rules only).
 

@@ -132,6 +132,8 @@ export const budgetApi = {
       params: { include_split_parents: includeSplitParents },
     }),
   getProjects: () => api.get("/budget/projects"),
+  getProjectsStatus: () =>
+    api.get<ProjectStatus[]>("/budget/projects/status"),
   getAvailableProjects: () => api.get("/budget/projects/available"),
   createProject: (project: { category: string; total_budget: number }) =>
     api.post("/budget/projects", project),
@@ -143,6 +145,8 @@ export const budgetApi = {
     }),
   deleteProject: (name: string) =>
     api.delete(`/budget/projects/${encodeURIComponent(name)}`),
+  setProjectClosed: (name: string, closed: boolean) =>
+    api.put(`/budget/projects/${encodeURIComponent(name)}/closed`, { closed }),
   getCurrentAlerts: (threshold?: number) =>
     api.get("/budget/alerts", {
       params: threshold !== undefined ? { threshold } : undefined,
@@ -178,6 +182,17 @@ export interface BudgetChargeDue {
   label: string;
   amount: number;
   expected_date: string;
+}
+
+/**
+ * A project budget and whether it has been closed.
+ *
+ * A closed project is finished, not deleted: it keeps its rules, its history
+ * and its own tab, and only drops out of the budget Overview.
+ */
+export interface ProjectStatus {
+  name: string;
+  closed: boolean;
 }
 
 /**

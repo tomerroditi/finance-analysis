@@ -349,6 +349,97 @@ class TestLongEnvelopes:
         assert january["month_contribution"] == 9000.0
 
 
+class TestClosedProjects:
+    """A closed project leaves the envelope list without losing its spend."""
+
+    @staticmethod
+    def _open_project(db_session):
+        """Seed one project envelope with spend in and before the viewed month."""
+        service = ProjectBudgetService(db_session)
+        service.add_rule(
+            name="Total Budget",
+            amount=30000.0,
+            category="Home Renovation",
+            tags=["all_tags"],
+            month=None,
+            year=None,
+        )
+        _seed(db_session, "2026-01-08", "Home Renovation", "Materials", -9000.0)
+        _seed(db_session, "2026-03-09", "Home Renovation", "Materials", -4200.0)
+        return service
+
+    def test_closed_project_drops_out_of_the_envelope_list(
+        self, db_session, frozen_today
+    ):
+        """A finished project is no longer an envelope the month is measured against."""
+        service = self._open_project(db_session)
+        service.set_project_closed("Home Renovation", True)
+
+        envelopes = BudgetOverviewService(db_session).get_overview(2026, 3)[
+            "long_envelopes"
+        ]
+        assert [e["name"] for e in envelopes if e["kind"] == "project"] == []
+
+    def test_closed_project_still_counts_in_the_month_totals(
+        self, db_session, frozen_today
+    ):
+        """Its spend left the accounts, so the pool totals must still include it."""
+        service = self._open_project(db_session)
+        service.set_project_closed("Home Renovation", True)
+
+        overview = BudgetOverviewService(db_session).get_overview(2026, 3)
+        assert overview["projects_month_spent"] == 4200.0
+        assert overview["total_out"] == 4200.0
+
+    def test_reopened_project_returns_to_the_envelope_list(
+        self, db_session, frozen_today
+    ):
+        """Closing is reversible — reopening restores the envelope unchanged."""
+        service = self._open_project(db_session)
+        service.set_project_closed("Home Renovation", True)
+        service.set_project_closed("Home Renovation", False)
+
+        envelope = next(
+            e
+            for e in BudgetOverviewService(db_session).get_overview(2026, 3)[
+                "long_envelopes"
+            ]
+            if e["name"] == "Home Renovation"
+        )
+        assert envelope["spent"] == 13200.0
+        assert envelope["budget"] == 30000.0
+
+    def test_envelopes_never_expose_the_closed_flag(self, db_session, frozen_today):
+        """The flag is an internal filter — every listed envelope is open."""
+        self._open_project(db_session)
+        envelopes = BudgetOverviewService(db_session).get_overview(2026, 3)[
+            "long_envelopes"
+        ]
+        assert envelopes
+        assert all("closed" not in envelope for envelope in envelopes)
+
+    def test_open_project_is_unaffected_by_a_closed_sibling(
+        self, db_session, frozen_today
+    ):
+        """Closing one project must not take the others with it."""
+        service = self._open_project(db_session)
+        service.add_rule(
+            name="Total Budget",
+            amount=10000.0,
+            category="Wedding",
+            tags=["all_tags"],
+            month=None,
+            year=None,
+        )
+        _seed(db_session, "2026-03-11", "Wedding", "Venue", -2500.0)
+        service.set_project_closed("Home Renovation", True)
+
+        envelopes = BudgetOverviewService(db_session).get_overview(2026, 3)[
+            "long_envelopes"
+        ]
+        assert [e["name"] for e in envelopes if e["kind"] == "project"] == ["Wedding"]
+
+
 class TestEmptyState:
     """A month with nothing configured still answers."""
 

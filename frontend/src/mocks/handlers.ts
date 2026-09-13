@@ -428,6 +428,9 @@ export const handlers = [
   http.get("/api/budget/projects/available", () =>
     HttpResponse.json([]),
   ),
+  // Ahead of the "/:name" handler below, which would otherwise swallow the
+  // literal path and answer a project-details object where a list is expected.
+  http.get("/api/budget/projects/status", () => HttpResponse.json([])),
   http.post("/api/budget/projects", () =>
     HttpResponse.json({ status: "ok" }),
   ),
@@ -436,6 +439,9 @@ export const handlers = [
   ),
   http.delete("/api/budget/projects/:name", () =>
     HttpResponse.json({ status: "ok" }),
+  ),
+  http.put("/api/budget/projects/:name/closed", () =>
+    HttpResponse.json({ status: "success", name: "Test", closed: true }),
   ),
   http.get("/api/budget/projects/:name", () =>
     HttpResponse.json({ name: "Test", rules: [], transactions: [] }),

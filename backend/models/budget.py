@@ -31,6 +31,11 @@ class BudgetRule(Base, TimestampMixin):
         Month (1–12) of the monthly budget rule; ``NULL`` for project budgets.
     period_type : str, optional
         Rule kind discriminator: ``"monthly"``, ``"yearly"``, or ``"project"``.
+    is_closed : int, optional
+        ``1`` once the project this rule belongs to has been closed, ``0`` (or
+        ``NULL``, for rows predating the column) while it is still running.
+        Only project rules ever carry it — a closed project keeps its rules and
+        history but drops out of the budget Overview.
     """
 
     __tablename__ = Tables.BUDGET_RULES.value
@@ -43,3 +48,4 @@ class BudgetRule(Base, TimestampMixin):
     year = Column(Integer, nullable=True)
     month = Column(Integer, nullable=True)
     period_type = Column(String, nullable=True)
+    is_closed = Column(Integer, default=0)

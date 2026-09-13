@@ -3,6 +3,8 @@
 Error and not-found paths live in ``test_budget_routes_errors.py``.
 """
 
+from datetime import date
+
 from backend.constants.budget import ALL_TAGS, TOTAL_BUDGET
 from backend.models.budget import BudgetRule
 
@@ -256,6 +258,83 @@ class TestBudgetRoutes:
         # Verify deletion
         projects = test_client.get("/api/budget/projects").json()
         assert "Wedding" not in projects
+
+
+class TestProjectClosedRoutes:
+    """Closing and reopening a project over HTTP."""
+
+    def test_projects_status_defaults_to_open(
+        self, test_client, seed_project_transactions
+    ):
+        """GET /api/budget/projects/status lists every project as open."""
+        response = test_client.get("/api/budget/projects/status")
+        assert response.status_code == 200
+        status = {entry["name"]: entry["closed"] for entry in response.json()}
+        assert status["Wedding"] is False
+        assert status["Renovation"] is False
+
+    def test_close_project_marks_it_closed(
+        self, test_client, seed_project_transactions
+    ):
+        """PUT /api/budget/projects/{name}/closed flags the project."""
+        response = test_client.put(
+            "/api/budget/projects/Wedding/closed", json={"closed": True}
+        )
+        assert response.status_code == 200
+        assert response.json()["closed"] is True
+
+        status = {
+            entry["name"]: entry["closed"]
+            for entry in test_client.get("/api/budget/projects/status").json()
+        }
+        assert status["Wedding"] is True
+        assert status["Renovation"] is False
+
+    def test_closed_project_leaves_the_overview_envelopes(
+        self, test_client, seed_project_transactions
+    ):
+        """The Overview stops listing a project once it is closed."""
+        today = date.today()
+        before = test_client.get(
+            f"/api/budget/overview/{today.year}/{today.month}"
+        ).json()["long_envelopes"]
+        assert "Wedding" in [e["name"] for e in before]
+
+        test_client.put("/api/budget/projects/Wedding/closed", json={"closed": True})
+
+        after = test_client.get(
+            f"/api/budget/overview/{today.year}/{today.month}"
+        ).json()["long_envelopes"]
+        assert "Wedding" not in [e["name"] for e in after]
+
+    def test_closed_project_still_has_a_detail_page(
+        self, test_client, seed_project_transactions
+    ):
+        """Its own tab keeps working, and says the project is closed."""
+        test_client.put("/api/budget/projects/Wedding/closed", json={"closed": True})
+
+        response = test_client.get("/api/budget/projects/Wedding")
+        assert response.status_code == 200
+        assert response.json()["closed"] is True
+
+    def test_reopen_project_clears_the_flag(
+        self, test_client, seed_project_transactions
+    ):
+        """Closing is reversible over the same endpoint."""
+        test_client.put("/api/budget/projects/Wedding/closed", json={"closed": True})
+        response = test_client.put(
+            "/api/budget/projects/Wedding/closed", json={"closed": False}
+        )
+        assert response.status_code == 200
+        assert response.json()["closed"] is False
+        assert test_client.get("/api/budget/projects/Wedding").json()["closed"] is False
+
+    def test_close_unknown_project_returns_404(self, test_client):
+        """An unknown project name is a 404, matching the other project routes."""
+        response = test_client.put(
+            "/api/budget/projects/Nonexistent/closed", json={"closed": True}
+        )
+        assert response.status_code == 404
 
 
 class TestCategoryConflictsRoutes:

@@ -13,6 +13,7 @@ AMOUNT = "amount"
 MONTH = "month"
 YEAR = "year"
 ALL_TAGS = "all_tags"
+IS_CLOSED = "is_closed"
 
 TOTAL_BUDGET = "Total Budget"
 
