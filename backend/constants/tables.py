@@ -54,6 +54,8 @@ class Tables(Enum):
         Name of the table storing investment-to-savings-goal earmarks.
     RECURRING_DECISIONS : str
         Name of the table storing user verdicts on detected recurring charges.
+    INSIGHT_DISMISSALS : str
+        Name of the table storing insight cards the user has dismissed.
     """
 
     CREDIT_CARD = "credit_card_transactions"
@@ -85,6 +87,7 @@ class Tables(Enum):
     SAVINGS_GOAL_LINKS = "savings_goal_links"
     SAVINGS_GOAL_INVESTMENTS = "savings_goal_investments"
     RECURRING_DECISIONS = "recurring_decisions"
+    INSIGHT_DISMISSALS = "insight_dismissals"
 
 
 def _create_enum(name: str, fields: list[tuple[str, str]]) -> Type[Enum]:

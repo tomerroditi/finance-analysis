@@ -241,7 +241,9 @@
       "priceIncrease": "{{label}} went up by {{delta}}",
       "priceDecrease": "{{label}} went down by {{delta}}",
       "largeTransaction": "Large charge this month: {{label}} ({{amount}})",
-      "recurringToReview": "{{count}} detected recurring charge(s) waiting for your review"
+      "recurringToReview": "{{count}} detected recurring charge(s) waiting for your review",
+      "dismiss": "Dismiss",
+      "undo": "Undo"
     },
     "recurring": {
       "title": "Subscriptions & Recurring",

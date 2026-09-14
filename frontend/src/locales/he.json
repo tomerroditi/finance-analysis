@@ -241,7 +241,9 @@
       "priceIncrease": "{{label}} התייקר ב-{{delta}}",
       "priceDecrease": "{{label}} הוזל ב-{{delta}}",
       "largeTransaction": "חיוב גדול החודש: {{label}} ({{amount}})",
-      "recurringToReview": "זוהו {{count}} חיובים חוזרים הממתינים לבדיקתכם"
+      "recurringToReview": "זוהו {{count}} חיובים חוזרים הממתינים לבדיקתכם",
+      "dismiss": "הסתר",
+      "undo": "שחזר"
     },
     "recurring": {
       "title": "מנויים וחיובים חוזרים",

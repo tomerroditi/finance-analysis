@@ -31,6 +31,14 @@ class RecurringDecisionRequest(BaseModel):
     )
 
 
+class InsightDismissalRequest(BaseModel):
+    """One insight card the user waved away."""
+
+    key: str = Field(
+        ..., description="The insight's key, exactly as /insights reported it."
+    )
+
+
 class RecurringDecisionsRequest(BaseModel):
     """A batch of verdicts, so "confirm all" is one round trip."""
 
@@ -279,11 +287,57 @@ def get_insights(
     Returns
     -------
     list[dict]
-        Insight cards as ``{code, severity, data}``. See
+        Insight cards as ``{code, key, severity, data}``. See
         ``InsightsService.get_insights``.
     """
     service = InsightsService(db)
     return service.get_insights()
+
+
+@router.post("/insights/dismiss")
+def dismiss_insight(
+    payload: InsightDismissalRequest,
+    db: Session = Depends(get_database),
+):
+    """Hide one insight card.
+
+    The dismissal is keyed to what the card is *about*, so it lapses on its
+    own once that changes — next month's spike in the same category, or the
+    next price change for the same subscription, is a new card.
+
+    Parameters
+    ----------
+    payload : InsightDismissalRequest
+        The card to hide.
+
+    Returns
+    -------
+    dict
+        ``{key, dismissed}``.
+    """
+    service = InsightsService(db)
+    return service.dismiss(payload.key)
+
+
+@router.post("/insights/restore")
+def restore_insight(
+    payload: InsightDismissalRequest,
+    db: Session = Depends(get_database),
+):
+    """Undo a dismissal, letting the card come back.
+
+    Parameters
+    ----------
+    payload : InsightDismissalRequest
+        The card to bring back.
+
+    Returns
+    -------
+    dict
+        ``{key, dismissed}``.
+    """
+    service = InsightsService(db)
+    return service.restore(payload.key)
 
 
 @router.get("/cash-flow-forecast")
