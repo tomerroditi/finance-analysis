@@ -49,6 +49,13 @@ test.describe("Dashboard insight dismissal", () => {
     const cards = page.getByTestId("insight-card");
     await expect(cards.first()).toBeVisible({ timeout: 45_000 });
     const before = await cards.count();
+
+    // Let the React Query persister's 1 s throttle write this list to
+    // IndexedDB *before* anything is dismissed. Reloading into that stale
+    // snapshot is exactly how a dismissed card used to come back: hydration
+    // is instant and the global five-minute staleTime meant nothing
+    // refetched. There is no event to await here — it is a timer.
+    await page.waitForTimeout(1500);
     const dismissedKey = await cards.first().getAttribute("data-insight-key");
     expect(dismissedKey).toBeTruthy();
 

@@ -91,6 +91,12 @@ export function InsightsStrip() {
       const res = await analyticsApi.getInsights();
       return res.data;
     },
+    // This is the one card whose contents the user edits, by dismissing. The
+    // persisted IndexedDB snapshot hydrates instantly on reload and would
+    // otherwise count as fresh for the global five minutes — long enough to
+    // show a card the user has already waved away, because the snapshot is
+    // throttled and can predate the dismissal. Revalidate on every mount.
+    staleTime: 0,
   });
 
   const refresh = () =>
