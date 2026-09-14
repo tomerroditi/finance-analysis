@@ -1,3 +1,9 @@
+## v1.65.0 (2026-09-14)
+
+### Feat
+
+- **insights**: surface only what the budget — and the rest of the dashboard — does not already explain (#277)
+
 ## v1.64.0 (2026-09-13)
 
 ### Feat
