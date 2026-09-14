@@ -49,11 +49,12 @@ describe("shouldDehydrateQuery", () => {
 describe("PERSIST_BUSTER", () => {
   // `PendingRefund` (links / total_refunded / remaining) and `Liability`
   // (current_rate / rate_spread / new loan_type values) changed shape after
-  // the v3 bump, and per-client Demo Mode invalidated everything cached
-  // before v5 (a demo response could be cached under a real-mode query key
-  // pre-bump). Bump this string whenever a cached response shape changes.
-  it("is past v4, the last shape-incompatible cache generation", () => {
-    expect(PERSIST_BUSTER).not.toBe("v4");
-    expect(PERSIST_BUSTER).toBe("v5");
+  // the v3 bump, per-client Demo Mode invalidated everything cached before v5
+  // (a demo response could be cached under a real-mode query key pre-bump),
+  // and every insight card gained the `key` its dismiss button posts after
+  // that. Bump this string whenever a cached response shape changes.
+  it("is past v5, the last shape-incompatible cache generation", () => {
+    expect(PERSIST_BUSTER).not.toBe("v5");
+    expect(PERSIST_BUSTER).toBe("v6");
   });
 });

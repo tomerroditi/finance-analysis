@@ -65,6 +65,58 @@ class TestDemoModeStatus:
         }
 
 
+class TestDemoSchemaSync:
+    """A demo database built by an older version is upgraded, not rebuilt."""
+
+    def test_missing_table_is_created_without_touching_the_data(
+        self, tmp_path, monkeypatch
+    ):
+        """A table added after the demo DB was built appears, and rows survive."""
+        import sqlalchemy as sa
+
+        from backend.constants.tables import Tables
+        from backend.routes.testing import _sync_demo_schema
+
+        _isolate_demo_user_dir(tmp_path, monkeypatch)
+        config = AppConfig()
+        token = config.set_demo_mode(True)
+        try:
+            engine = get_engine()
+            # Stand in for an older schema: the table this version added is
+            # gone, and the demo data it should keep is present.
+            with engine.begin() as conn:
+                conn.execute(
+                    sa.text(f"DROP TABLE {Tables.INSIGHT_DISMISSALS.value}")
+                )
+                conn.execute(
+                    sa.text(
+                        f"INSERT INTO {Tables.CASH.value} "
+                        "(id, date, description, amount, source, created_at, updated_at) "
+                        "VALUES ('demo-1', '2026-09-01', 'COFFEE', -12.0, "
+                        "'cash_transactions', '2026-09-01', '2026-09-01')"
+                    )
+                )
+            assert Tables.INSIGHT_DISMISSALS.value not in sa.inspect(
+                engine
+            ).get_table_names()
+
+            _sync_demo_schema()
+
+            engine = get_engine()
+            assert Tables.INSIGHT_DISMISSALS.value in sa.inspect(
+                engine
+            ).get_table_names()
+            with engine.connect() as conn:
+                kept = conn.execute(
+                    sa.select(sa.func.count()).select_from(
+                        sa.table(Tables.CASH.value)
+                    )
+                ).scalar_one()
+            assert kept == 1
+        finally:
+            config.reset_demo_mode(token)
+
+
 class TestDemoPrepare:
     """Tests for the idempotent demo-database prepare endpoint."""
 
@@ -101,6 +153,27 @@ class TestDemoPrepare:
 
         assert response.json()["created"] is False
         assert calls == []
+
+    def test_existing_database_has_its_schema_brought_up_to_date(
+        self, test_client, monkeypatch
+    ):
+        """A demo DB from an older version gains tables added since, keeping its data."""
+        calls = []
+        monkeypatch.setattr(
+            "backend.routes.testing.prepare_demo_database",
+            lambda: calls.append("built"),
+        )
+        monkeypatch.setattr("backend.routes.testing._demo_db_exists", lambda: True)
+        synced = []
+        monkeypatch.setattr(
+            "backend.routes.testing._sync_demo_schema", lambda: synced.append("synced")
+        )
+
+        response = test_client.post("/api/testing/demo/prepare")
+
+        assert response.json()["created"] is False
+        assert calls == []
+        assert synced == ["synced"]
 
     def test_refuses_when_forced(self, test_client, monkeypatch):
         """Verify a pinned deployment never rebuilds on a client's request."""

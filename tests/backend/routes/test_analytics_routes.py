@@ -235,3 +235,91 @@ class TestRecurringDecisionRoutes:
             json={"decisions": [{"normalized": norm, "decision": "maybe"}]},
         )
         assert response.status_code == 400
+
+
+class TestInsightDismissalRoutes:
+    """Tests for the /api/analytics/insights dismissal endpoints."""
+
+    @staticmethod
+    def _seed_spike(db_session):
+        """Three quiet Food months then a big one, so a spike card exists."""
+        import pandas as pd
+
+        from backend.constants.tables import Tables
+        from backend.models.transaction import CreditCardTransaction
+
+        def add(description, amount, months_ago):
+            date = (
+                pd.Timestamp.today().normalize() - pd.DateOffset(months=months_ago)
+            ).replace(day=10).strftime("%Y-%m-%d")
+            db_session.add(
+                CreditCardTransaction(
+                    id=f"{description}-{date}",
+                    date=date,
+                    provider="visa",
+                    account_name="card-1",
+                    description=description,
+                    amount=amount,
+                    category="Food",
+                    source=Tables.CREDIT_CARD.value,
+                )
+            )
+
+        for n in range(1, 4):
+            add(f"GROCER {n}", -300.0, n)
+        add("GROCER NOW", -1500.0, 0)
+        db_session.commit()
+
+    def _spike_key(self, test_client, db_session):
+        """Seed a spike and return the key of the card it produces."""
+        self._seed_spike(db_session)
+        cards = test_client.get("/api/analytics/insights").json()
+        spike = next(c for c in cards if c["code"] == "categorySpike")
+        return spike["key"]
+
+    def test_every_card_carries_a_key(self, test_client, db_session):
+        """GET /api/analytics/insights reports the identity each card is dismissed by."""
+        self._seed_spike(db_session)
+        cards = test_client.get("/api/analytics/insights").json()
+        assert cards
+        assert all(card["key"] for card in cards)
+
+    def test_dismiss_hides_the_card(self, test_client, db_session):
+        """POST /api/analytics/insights/dismiss drops it from the next read."""
+        key = self._spike_key(test_client, db_session)
+
+        response = test_client.post(
+            "/api/analytics/insights/dismiss", json={"key": key}
+        )
+        assert response.status_code == 200
+        assert response.json() == {"key": key, "dismissed": True}
+
+        cards = test_client.get("/api/analytics/insights").json()
+        assert key not in [card["key"] for card in cards]
+
+    def test_restore_brings_it_back(self, test_client, db_session):
+        """POST /api/analytics/insights/restore undoes a dismissal."""
+        key = self._spike_key(test_client, db_session)
+        test_client.post("/api/analytics/insights/dismiss", json={"key": key})
+
+        response = test_client.post(
+            "/api/analytics/insights/restore", json={"key": key}
+        )
+        assert response.status_code == 200
+        assert response.json() == {"key": key, "dismissed": False}
+
+        cards = test_client.get("/api/analytics/insights").json()
+        assert key in [card["key"] for card in cards]
+
+    def test_dismissing_an_unknown_key_is_harmless(self, test_client):
+        """A stale key from an old page is stored without complaint."""
+        response = test_client.post(
+            "/api/analytics/insights/dismiss", json={"key": "categorySpike:Gone:1999-01"}
+        )
+        assert response.status_code == 200
+
+    def test_key_is_required(self, test_client):
+        """A body with no key is a validation error, not a silent no-op."""
+        response = test_client.post("/api/analytics/insights/dismiss", json={})
+        assert response.status_code == 422
+

@@ -36,6 +36,9 @@ from backend.constants.budget import (
     YEAR,
 )
 from backend.constants.categories import NON_EXPENSE_CATEGORIES
+from backend.repositories.insight_dismissals_repository import (
+    InsightDismissalsRepository,
+)
 from backend.repositories.transactions_repository import TransactionsRepository
 from backend.services.analysis_service import AnalysisService
 from backend.services.budget.core import BudgetService
@@ -113,6 +116,7 @@ class InsightsService:
         self.recurring = RecurringService(db)
         self.repo = TransactionsRepository(db)
         self.budget = BudgetService(db)
+        self.dismissals = InsightDismissalsRepository(db)
         # Per-request memo: every rule below needs the forecast, the budget
         # rules or the recurring detection, and each is expensive enough that
         # recomputing it once per rule would be the dominant cost of the card.
@@ -127,6 +131,7 @@ class InsightsService:
             Up to ``_MAX_INSIGHTS`` insight dicts, each with:
 
             - ``code`` – stable identifier the frontend maps to a message.
+            - ``key`` – stable identity of *this* card, for dismissal.
             - ``severity`` – ``positive`` / ``info`` / ``warning``.
             - ``data`` – payload for message interpolation (amounts, labels).
         """
@@ -157,9 +162,57 @@ class InsightsService:
         )
         return insights[: self._MAX_INSIGHTS]
 
+    def dismiss(self, key: str) -> dict:
+        """Wave one insight card away.
+
+        Parameters
+        ----------
+        key : str
+            The card's ``key``, exactly as ``get_insights`` reported it.
+
+        Returns
+        -------
+        dict
+            ``{key, dismissed}``.
+        """
+        self.dismissals.dismiss(key)
+        return {"key": key, "dismissed": True}
+
+    def restore(self, key: str) -> dict:
+        """Undo a dismissal, letting the card come back.
+
+        Parameters
+        ----------
+        key : str
+            The card's ``key``.
+
+        Returns
+        -------
+        dict
+            ``{key, dismissed}``.
+        """
+        self.dismissals.restore(key)
+        return {"key": key, "dismissed": False}
+
     # ------------------------------------------------------------------
     # Shared, memoized inputs
     # ------------------------------------------------------------------
+
+    def _dismissed(self) -> set[str]:
+        """Insight keys the user has waved away (memoized)."""
+        if "dismissed" not in self._cache:
+            self._cache["dismissed"] = self.dismissals.get_keys()
+        return self._cache["dismissed"]
+
+    def _visible(self, cards: list[dict]) -> list[dict]:
+        """Drop dismissed cards, before a rule's own cap picks winners.
+
+        Filtering here rather than at the end means a dismissal frees the slot
+        it occupied: wave away the top spike and the runner-up takes its place,
+        instead of the strip simply getting shorter.
+        """
+        dismissed = self._dismissed()
+        return [card for card in cards if card["key"] not in dismissed]
 
     def _forecast(self) -> dict:
         """This month's cash-flow forecast (memoized)."""
@@ -269,21 +322,24 @@ class InsightsService:
             return []
 
         floor = income * self._PACE_MIN_SHARE
+        month = pd.Timestamp.today().strftime("%Y-%m")
         if expenses > income:
             gap = expenses - income
             if gap < floor or gap <= self._project_spend_this_month():
                 return []
-            return [{
+            return self._visible([{
                 "code": "overspendPace",
+                "key": f"overspendPace:{month}",
                 "severity": "warning",
                 "data": {"amount": round(gap, 2)},
-            }]
+            }])
         if forecast["projected_net"] >= floor:
-            return [{
+            return self._visible([{
                 "code": "onTrack",
+                "key": f"onTrack:{month}",
                 "severity": "positive",
                 "data": {"amount": forecast["projected_net"]},
-            }]
+            }])
         return []
 
     def _category_spike_insights(self) -> list[dict]:
@@ -335,6 +391,7 @@ class InsightsService:
                 continue
             results.append({
                 "code": "categorySpike",
+                "key": f"categorySpike:{category}:{current_month}",
                 "severity": "warning",
                 "data": {
                     "category": category,
@@ -345,7 +402,7 @@ class InsightsService:
             })
 
         results.sort(key=lambda i: i.pop("_sort"), reverse=True)
-        return results[: self._MAX_SPIKES]
+        return self._visible(results)[: self._MAX_SPIKES]
 
     def _recurring_insights(self) -> list[dict]:
         """Surface confirmed subscriptions that are new or repriced.
@@ -359,10 +416,12 @@ class InsightsService:
         drift, not a decision to make.
         """
         summary = self._recurring_summary()
+        month = pd.Timestamp.today().strftime("%Y-%m")
         results = []
         if summary["pending_count"]:
             results.append({
                 "code": "recurringToReview",
+                "key": f"recurringToReview:{month}",
                 "severity": "info",
                 "data": {
                     "count": summary["pending_count"],
@@ -372,9 +431,11 @@ class InsightsService:
         for item in summary["items"]:
             if item["confirmation"] != "confirmed":
                 continue
+            subject = item.get("normalized") or item["label"]
             if item["status"] == "new":
                 results.append({
                     "code": "newRecurring",
+                    "key": f"newRecurring:{subject}",
                     "severity": "info",
                     "data": {
                         "label": item["label"],
@@ -390,8 +451,12 @@ class InsightsService:
                 ):
                     continue
                 increased = item["price_change"] > 0
+                code = "priceIncrease" if increased else "priceDecrease"
                 results.append({
-                    "code": "priceIncrease" if increased else "priceDecrease",
+                    "code": code,
+                    # The price itself is part of the identity: a dismissal
+                    # covers this change, not the next one.
+                    "key": f"{code}:{subject}:{item['last_amount']}",
                     "severity": "warning" if increased else "info",
                     "data": {
                         "label": item["label"],
@@ -399,7 +464,7 @@ class InsightsService:
                         "amount": item["last_amount"],
                     },
                 })
-        return results[:3]
+        return self._visible(results)[:3]
 
     def _large_transaction_insight(self) -> list[dict]:
         """Flag an unusually large single expense in the current month.
@@ -460,8 +525,14 @@ class InsightsService:
             peers = history.loc[history["category"] == category, "amount_abs"]
             if not peers.empty and amount <= float(peers.max()):
                 continue
+            # ``unique_id`` is per-table, so the source table is part of the
+            # key — bank #5 and credit-card #5 are different charges.
+            key = f"largeTransaction:{row.get('source')}:{row.get('unique_id')}"
+            if key in self._dismissed():
+                continue
             return [{
                 "code": "largeTransaction",
+                "key": key,
                 "severity": "info",
                 "data": {
                     "label": row.get("description") or category or "",

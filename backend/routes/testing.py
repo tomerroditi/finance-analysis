@@ -15,7 +15,12 @@ from fastapi import APIRouter, Header, HTTPException
 from backend import database, demo_sessions
 from backend.config import AppConfig
 from backend.database import get_db_context
-from backend.demo_setup import DEMO_REFERENCE_DATE, prepare_demo_database
+from backend.demo_setup import (
+    DEMO_REFERENCE_DATE,
+    prepare_demo_database,
+    sync_missing_columns,
+)
+from backend.models.base import Base
 from backend.services.tagging_service import CategoriesTagsService
 
 router = APIRouter()
@@ -37,6 +42,26 @@ def _demo_db_exists() -> bool:
     token = config.set_demo_mode(True)
     try:
         return os.path.exists(config.get_db_path())
+    finally:
+        config.reset_demo_mode(token)
+
+
+def _sync_demo_schema() -> None:
+    """Bring an existing demo database up to the current schema.
+
+    Startup migrations only ever run against the database the process opened
+    — the real one — and ``/demo/prepare`` deliberately does not rebuild a
+    demo DB that is already on disk. Without this, a demo database built by an
+    older version keeps that version's schema forever, and every read of a
+    table or column added since answers 500. Creating what is missing is
+    additive and leaves the demo data alone, so it is safe on every prepare.
+    """
+    config = AppConfig()
+    token = config.set_demo_mode(True)
+    try:
+        engine = database.get_engine()
+        Base.metadata.create_all(bind=engine)
+        sync_missing_columns(engine)
     finally:
         config.reset_demo_mode(token)
 
@@ -75,7 +100,8 @@ def prepare_demo() -> dict[str, str | bool]:
 
     Idempotent. A client switching Demo Mode on calls this; it deliberately
     does **not** rebuild an existing demo database, because another client
-    may be browsing it. Use ``/demo/reset`` for a deliberate rebuild.
+    may be browsing it — an existing one only has its schema brought up to
+    date, which keeps its data.
 
     Returns
     -------
@@ -87,6 +113,7 @@ def prepare_demo() -> dict[str, str | bool]:
         return {"status": "success", "created": False}
 
     if _demo_db_exists():
+        _sync_demo_schema()
         return {"status": "success", "created": False}
 
     _build_demo_database()

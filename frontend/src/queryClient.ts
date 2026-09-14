@@ -154,4 +154,7 @@ export function shouldDehydrateQuery(query: Query): boolean {
 // header didn't vary the key), so upgrading clients may be holding demo
 // payloads persisted as if they were real data. Discard everything written
 // before the bump.
-export const PERSIST_BUSTER = "v5";
+// v6: every insight card gained a `key` — the identity its dismiss button
+// posts. A hydrated v5 snapshot would render cards whose X has nothing to
+// send, so discard caches written before the field existed.
+export const PERSIST_BUSTER = "v6";

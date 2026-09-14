@@ -698,6 +698,10 @@ export const analyticsApi = {
       { decisions },
     ),
   getInsights: () => api.get<Insight[]>("/analytics/insights"),
+  dismissInsight: (key: string) =>
+    api.post<InsightDismissal>("/analytics/insights/dismiss", { key }),
+  restoreInsight: (key: string) =>
+    api.post<InsightDismissal>("/analytics/insights/restore", { key }),
 };
 
 export interface RecurringItem {
@@ -751,8 +755,15 @@ export interface RecurringSummary {
 
 export interface Insight {
   code: string;
+  /** Stable identity of this card — what a dismissal is keyed by. */
+  key: string;
   severity: "positive" | "info" | "warning";
   data: Record<string, string | number>;
+}
+
+export interface InsightDismissal {
+  key: string;
+  dismissed: boolean;
 }
 
 export interface CashFlowForecast {
