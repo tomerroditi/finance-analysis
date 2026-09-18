@@ -1,3 +1,9 @@
+## v1.65.1 (2026-09-18)
+
+### Fix
+
+- **dev**: run start.sh and the VS Code launch configs on Windows (#279)
+
 ## v1.65.0 (2026-09-14)
 
 ### Feat
