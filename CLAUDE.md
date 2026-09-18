@@ -39,6 +39,8 @@ python -m scraper <provider> --show-browser             # Run scraper with visib
 cd frontend && npm install
 ```
 
+**Windows:** `start.sh` and the bootstrap script run under Git Bash and use `.venv/Scripts/` (falling back to the `py -3.12` launcher for venv creation). `npm run backend` does not work there — npm runs scripts through cmd.exe — so use `./start.sh` or the VS Code tasks. Full Windows + macOS setup: `docs/development-setup.md`.
+
 To bootstrap the backend explicitly (without starting it), run the script directly:
 
 ```bash
