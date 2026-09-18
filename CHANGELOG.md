@@ -1,3 +1,9 @@
+## v1.65.3 (2026-09-18)
+
+### Fix
+
+- **sidebar**: stop footer overlapping the nav on short screens; tighten card spacing to 6px (#281)
+
 ## v1.65.2 (2026-09-18)
 
 ### Fix
