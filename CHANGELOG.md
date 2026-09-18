@@ -1,3 +1,9 @@
+## v1.65.4 (2026-09-18)
+
+### Fix
+
+- **credentials**: list accounts whose stored details can't be decrypted and flag them for re-entry (#282)
+
 ## v1.65.3 (2026-09-18)
 
 ### Fix
