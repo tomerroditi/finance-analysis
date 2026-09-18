@@ -65,11 +65,13 @@ case "$MODE" in
     # Expose both servers on all interfaces and allow the tailnet origin in
     # CORS, so another device (phone, laptop) can use the dashboard. The
     # Tailscale IP is looked up from the CLI when available ('tailscale' on
-    # PATH, or the macOS app bundle binary).
+    # PATH, or the macOS app bundle / Windows install-dir binary).
     ORIGINS="http://localhost:$FRONTEND_PORT,http://127.0.0.1:$FRONTEND_PORT"
     TS_BIN="$(command -v tailscale || true)"
     [ -z "$TS_BIN" ] && [ -x "/Applications/Tailscale.app/Contents/MacOS/Tailscale" ] \
       && TS_BIN="/Applications/Tailscale.app/Contents/MacOS/Tailscale"
+    [ -z "$TS_BIN" ] && [ -x "/c/Program Files/Tailscale/tailscale.exe" ] \
+      && TS_BIN="/c/Program Files/Tailscale/tailscale.exe"
     if [ -n "$TS_BIN" ] && TS_IP="$("$TS_BIN" ip -4 2>/dev/null | head -1)" && [ -n "$TS_IP" ]; then
       ORIGINS="$ORIGINS,http://$TS_IP:$FRONTEND_PORT"
       echo "Access from the tailnet at: http://$TS_IP:$FRONTEND_PORT"
