@@ -145,7 +145,7 @@ export function Sidebar() {
   const sidebarContent = (
     <>
       {/* Logo */}
-      <div className="h-16 flex items-center justify-between px-4 border-b border-[var(--surface-light)]">
+      <div className="h-16 shrink-0 flex items-center justify-between px-4 border-b border-[var(--surface-light)]">
         {sidebarOpen && (
           <span className="text-xl font-bold bg-gradient-to-r from-blue-400 to-emerald-400 bg-clip-text text-transparent">
             {t("sidebar.logo")}
@@ -170,7 +170,7 @@ export function Sidebar() {
       </div>
 
       {/* Navigation */}
-      <nav className="p-4 space-y-2">
+      <nav className="flex-1 min-h-0 overflow-y-auto scrollbar-auto-hide p-4 space-y-2 [@media(max-height:800px)]:space-y-1">
         {navItems.map((item) => (
           <NavLink
             key={item.path}
@@ -180,7 +180,7 @@ export function Sidebar() {
             onFocus={() => handlePrefetch(item.path)}
             onPointerDown={() => handlePrefetch(item.path)}
             className={({ isActive }) =>
-              `relative flex items-center gap-3 px-4 py-3 rounded-lg transition-all ${
+              `relative flex items-center gap-3 px-4 py-3 [@media(max-height:800px)]:py-2 rounded-lg transition-all ${
                 isActive
                   ? "bg-[var(--primary)] text-white"
                   : "text-[var(--text-muted)] hover:bg-[var(--surface-light)] hover:text-white"
@@ -202,13 +202,13 @@ export function Sidebar() {
       </nav>
 
       {/* Settings & Data Flow */}
-      <div className="absolute bottom-0 inset-x-0 p-4 border-t border-[var(--surface-light)] space-y-1">
+      <div data-testid="sidebar-footer" className="shrink-0 p-4 [@media(max-height:800px)]:py-2 border-t border-[var(--surface-light)] space-y-1">
         {budgetAlertsEnabled && (
           <BudgetAlertsBell variant="sidebar" expanded={sidebarOpen || mobileSidebarOpen} />
         )}
         <button
           onClick={() => setSettingsOpen(!settingsOpen)}
-          className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-all w-full ${
+          className={`flex items-center gap-3 px-4 py-3 [@media(max-height:800px)]:py-2 rounded-lg transition-all w-full ${
             settingsOpen
               ? "bg-blue-500/10 text-[var(--primary)]"
               : "text-[var(--text-muted)] hover:bg-[var(--surface-light)] hover:text-white"
@@ -222,7 +222,7 @@ export function Sidebar() {
             navigate("/data-flow");
             setMobileSidebarOpen(false);
           }}
-          className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-all w-full ${
+          className={`flex items-center gap-3 px-4 py-3 [@media(max-height:800px)]:py-2 rounded-lg transition-all w-full ${
             location.pathname === "/data-flow"
               ? "bg-[var(--primary)] text-white"
               : "text-[var(--text-muted)] hover:bg-[var(--surface-light)] hover:text-white"
@@ -262,7 +262,7 @@ export function Sidebar() {
 
       {/* Desktop sidebar */}
       <aside
-        className={`fixed start-0 top-0 h-screen bg-[var(--surface)] border-e border-[var(--surface-light)] transition-all duration-300 z-50 hidden md:block ${
+        className={`fixed start-0 top-0 h-screen bg-[var(--surface)] border-e border-[var(--surface-light)] transition-all duration-300 z-50 hidden md:flex md:flex-col ${
           sidebarOpen ? "w-64" : "w-20"
         }`}
       >

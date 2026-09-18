@@ -16,11 +16,11 @@ import { enableDemoMode, navigateTo } from "./helpers";
  * would pass against the bug.
  */
 
-/** Width of the desktop sidebar and of its absolutely-positioned footer. */
+/** Width of the desktop sidebar and of its footer. */
 async function sidebarWidths(page: Page) {
   return page.evaluate(() => {
     const aside = document.querySelector("aside");
-    const footer = aside?.querySelector("div.absolute.bottom-0");
+    const footer = aside?.querySelector('[data-testid="sidebar-footer"]');
     if (!aside || !footer) return null;
     return {
       aside: aside.getBoundingClientRect().width,
@@ -76,7 +76,7 @@ test.describe("logical inset utilities", () => {
     await enableDemoMode(page);
   });
 
-  test("sidebar footer spans the sidebar and the settings toggle knob travels, in both directions", async ({
+  test("sidebar footer spans the sidebar without overlapping the nav, and the settings toggle knob travels, in both directions", async ({
     page,
   }) => {
     // One cold navigation covers both directions: the settings popup's own
@@ -140,5 +140,25 @@ test.describe("logical inset utilities", () => {
     const rtlWidths = await sidebarWidths(page);
     expect(rtlWidths).not.toBeNull();
     expect(rtlWidths!.footer).toBeGreaterThan(rtlWidths!.aside - 4);
+
+    // --- Short viewport: the footer never overlaps the nav ---
+    // The footer used to be absolutely pinned to the bottom of an h-screen
+    // sidebar, so on a short window (a laptop at 125% scaling) it painted
+    // over the last nav links. The nav now scrolls in its own region.
+    await page.setViewportSize({ width: 1280, height: 480 });
+    const aside = page.locator("aside");
+    const nav = aside.locator("nav");
+    const footer = aside.getByTestId("sidebar-footer");
+    const navBox = await nav.boundingBox();
+    const footerBox = await footer.boundingBox();
+    expect(navBox).not.toBeNull();
+    expect(footerBox).not.toBeNull();
+    expect(navBox!.y + navBox!.height).toBeLessThanOrEqual(footerBox!.y + 1);
+    expect(footerBox!.y + footerBox!.height).toBeLessThanOrEqual(480 + 1);
+
+    const lastLink = nav.getByRole("link").last();
+    await lastLink.scrollIntoViewIfNeeded();
+    const lastBox = await lastLink.boundingBox();
+    expect(lastBox!.y + lastBox!.height).toBeLessThanOrEqual(footerBox!.y + 1);
   });
 });
