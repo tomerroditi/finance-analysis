@@ -37,12 +37,18 @@ FRONTEND_PORT="${FRONTEND_PORT:-$DEFAULT_FRONTEND_PORT}"
 
 ./.claude/scripts/bootstrap_venv.sh
 
+# Windows venvs put executables in Scripts/ instead of bin/.
+case "$(uname -s)" in
+  MINGW*|MSYS*|CYGWIN*) VENV_BIN=".venv/Scripts" ;;
+  *)                    VENV_BIN=".venv/bin" ;;
+esac
+
 # Run both dev servers; extra args are threaded to uvicorn/vite by the caller.
 #   $1 - extra uvicorn args (e.g. "--host 0.0.0.0"), may be empty
 #   $2 - extra vite args (e.g. "--host 0.0.0.0"), may be empty
 run_dev_pair() {
   # shellcheck disable=SC2086  # word-splitting of the extra args is intended
-  .venv/bin/uvicorn backend.main:app --reload \
+  "$VENV_BIN/uvicorn" backend.main:app --reload \
     --reload-dir backend --reload-dir scraper --port "$BACKEND_PORT" $1 &
   BACKEND_PID=$!
   trap 'kill $BACKEND_PID 2>/dev/null; exit' INT TERM
@@ -91,7 +97,7 @@ case "$MODE" in
     # The Demo Mode toggle lives in the testing router; keep it mounted.
     export ENABLE_TESTING_ROUTES="${ENABLE_TESTING_ROUTES:-1}"
     if [ "$BIND_HOST" != "127.0.0.1" ] && [ "$BIND_HOST" != "localhost" ]; then
-      TOKEN="$(.venv/bin/python -c 'from backend.utils.auth import get_or_create_api_token; print(get_or_create_api_token())')"
+      TOKEN="$("$VENV_BIN/python" -c 'from backend.utils.auth import get_or_create_api_token; print(get_or_create_api_token())')"
       if [ -z "${ALLOWED_HOSTS:-}" ]; then
         # Best-effort: allow this machine's own addresses in the Host check.
         HOST_IPS="$( { hostname -I 2>/dev/null || ipconfig getifaddr en0 2>/dev/null; } | tr ' ' '\n' | grep -v '^$' | paste -sd, - )"
@@ -102,7 +108,7 @@ case "$MODE" in
       echo "Allowed hosts: $ALLOWED_HOSTS (override with ALLOWED_HOSTS env)"
     fi
     echo "Starting server on $BIND_HOST:$BACKEND_PORT..."
-    .venv/bin/uvicorn backend.main:app --host "$BIND_HOST" --port "$BACKEND_PORT"
+    "$VENV_BIN/uvicorn" backend.main:app --host "$BIND_HOST" --port "$BACKEND_PORT"
     ;;
   *)
     echo "Usage: ./start.sh [dev|remote|prod] [backend-port]"

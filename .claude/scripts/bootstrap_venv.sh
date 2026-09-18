@@ -38,6 +38,21 @@ cd "$REPO_ROOT"
 LOCK_FILE="poetry.lock"
 STAMP_FILE=".venv/.deps-lock-hash"
 
+# Windows venvs put executables in Scripts/ instead of bin/.
+case "$(uname -s)" in
+  MINGW*|MSYS*|CYGWIN*) VENV_BIN=".venv/Scripts" ;;
+  *)                    VENV_BIN=".venv/bin" ;;
+esac
+
+# python.org's Windows installer ships the `py` launcher, not python3.12.
+if command -v python3.12 >/dev/null 2>&1; then
+  PYTHON=(python3.12)
+elif command -v py >/dev/null 2>&1 && py -3.12 --version >/dev/null 2>&1; then
+  PYTHON=(py -3.12)
+else
+  PYTHON=()
+fi
+
 # Portable SHA-256 of poetry.lock. Empty output if the lock or a hash tool is
 # missing — an empty hash never matches the stamp, so we fall through to a
 # (re)install rather than trusting a possibly-stale venv.
@@ -55,20 +70,21 @@ stored_hash=""
 [ -f "$STAMP_FILE" ] && stored_hash="$(cat "$STAMP_FILE" 2>/dev/null || true)"
 
 # Fast path: venv present AND lock unchanged since the last install.
-if [ -x .venv/bin/uvicorn ] && [ -n "$current_hash" ] && [ "$current_hash" = "$stored_hash" ]; then
+if [ -x "$VENV_BIN/uvicorn" ] && [ -n "$current_hash" ] && [ "$current_hash" = "$stored_hash" ]; then
   exit 0
 fi
 
-if [ ! -x .venv/bin/uvicorn ]; then
+if [ ! -x "$VENV_BIN/uvicorn" ]; then
   echo "[bootstrap] No .venv found in this worktree (or previous bootstrap was interrupted)."
   echo "[bootstrap] Setting up the backend environment — this takes ~90s and only runs once per worktree."
 
-  if ! command -v python3.12 >/dev/null 2>&1; then
+  if [ ${#PYTHON[@]} -eq 0 ]; then
     cat >&2 <<'EOF'
 [bootstrap] ERROR: python3.12 not found on PATH.
 
 This project requires Python 3.12 (see CLAUDE.md). Install it with:
-  brew install python@3.12       # macOS
+  brew install python@3.12                                 # macOS
+  winget install -e --id Python.Python.3.12 --scope user   # Windows
 
 Then re-run `npm run backend`.
 EOF
@@ -78,14 +94,14 @@ EOF
   # Create the venv if missing — keep an existing partial venv if present so
   # we don't lose any in-progress poetry state.
   if [ ! -d .venv ]; then
-    python3.12 -m venv .venv
+    "${PYTHON[@]}" -m venv .venv
   fi
 else
   echo "[bootstrap] poetry.lock changed since last install — syncing dependencies..."
 fi
 
 # shellcheck disable=SC1091
-source .venv/bin/activate
+source "$VENV_BIN/activate"
 
 # poetry lives inside the venv; a fresh venv (or one predating this check)
 # needs it installed before we can run the install.
