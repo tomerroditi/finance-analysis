@@ -1,3 +1,9 @@
+## v1.65.2 (2026-09-18)
+
+### Fix
+
+- **dev**: unblock the VS Code Dev Remote launch on Windows (#280)
+
 ## v1.65.1 (2026-09-18)
 
 ### Fix
