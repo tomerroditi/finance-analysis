@@ -17,11 +17,13 @@ def mock_credentials_deps(monkeypatch):
             "service": "credit_cards",
             "provider": "isracard",
             "account_name": "Main Card",
+            "needs_reentry": False,
         },
         {
             "service": "banks",
             "provider": "hapoalim",
             "account_name": "Checking",
+            "needs_reentry": True,
         },
     ]
     mock_service.get_available_providers.return_value = {
@@ -70,6 +72,7 @@ class TestCredentialsRoutes:
         assert isinstance(data, list)
         assert len(data) >= 1
         assert data[0]["service"] == "credit_cards"
+        assert [a["needs_reentry"] for a in data] == [False, True]
 
     def test_get_providers(self, test_client):
         """GET /api/credentials/providers returns available providers dict."""

@@ -87,6 +87,41 @@ test.describe("DataSources", () => {
     }
   });
 
+  // An account whose stored details are unreadable on this machine (a data
+  // dir moved from another device) must still be listed, carry a badge, and
+  // open straight into the edit form with an explanation. Stubbed so no
+  // backend write is needed to fake a broken keyring.
+  test("flags an account needing re-entry and opens its edit form from the badge", async ({
+    page,
+  }) => {
+    await page.route("**/api/credentials/accounts", async (route) => {
+      const response = await route.fetch();
+      const accounts: { provider: string; needs_reentry: boolean }[] =
+        await response.json();
+      await route.fulfill({
+        response,
+        json: accounts.map((a) => ({
+          ...a,
+          needs_reentry: a.provider === "hapoalim",
+        })),
+      });
+    });
+
+    await navigateTo(page, "/data-sources");
+
+    const badge = page.getByTestId("needs-reentry-badge");
+    await expect(badge).toHaveCount(1);
+    await expect(badge).toHaveText("Re-enter details");
+
+    await badge.click();
+    await expect(
+      page.getByRole("heading", { name: /edit connection/i }),
+    ).toBeVisible();
+    await expect(page.getByRole("status")).toContainText(
+      "can't be read on this machine",
+    );
+  });
+
   test("opens the shared balance modal from the $ button and saves", async ({
     page,
   }) => {

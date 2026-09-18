@@ -58,8 +58,8 @@ def get_credentials(
 @router.get("/accounts")
 def get_accounts(
     db: Session = Depends(get_database),
-) -> list[dict[str, str]]:
-    """Get a list of all configured accounts."""
+) -> list[dict[str, Any]]:
+    """Get all configured accounts, flagging those whose details must be re-entered."""
     service = CredentialsService(db)
     return service.get_accounts_list()
 

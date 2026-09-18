@@ -10,6 +10,7 @@ import {
   XCircle,
   CheckCircle2,
   Clock,
+  KeyRound,
 } from "lucide-react";
 import type { BankBalance, CredentialAccount } from "../../services/api";
 import type { ResendError, ScraperState } from "../../hooks/useScraping";
@@ -96,6 +97,17 @@ export function AccountCard({
           <p className="text-sm text-[var(--text-muted)] font-medium">
             {humanizeAccountType(acc.service)}
           </p>
+          {!!acc.needs_reentry && (
+            <button
+              onClick={onEdit}
+              data-testid="needs-reentry-badge"
+              className="mt-1.5 inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-amber-500/15 border border-amber-500/30 text-amber-400 hover:bg-amber-500/25 transition-colors"
+              title={t("dataSources.needsReentryHint")}
+            >
+              <KeyRound size={12} />
+              <span className="text-[10px] font-semibold">{t("dataSources.needsReentry")}</span>
+            </button>
+          )}
         </div>
       </div>
       <div className="flex flex-wrap items-center gap-3 md:gap-4">
