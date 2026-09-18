@@ -262,7 +262,7 @@ export function Sidebar() {
 
       {/* Desktop sidebar */}
       <aside
-        className={`fixed start-0 top-0 h-screen bg-[var(--surface)] border-e border-[var(--surface-light)] transition-all duration-300 z-50 hidden md:flex md:flex-col ${
+        className={`fixed start-0 top-0 h-screen bg-[var(--surface)] border-e border-[var(--surface-light)] transition-[width] duration-300 z-50 hidden md:flex md:flex-col ${
           sidebarOpen ? "w-64" : "w-20"
         }`}
       >

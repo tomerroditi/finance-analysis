@@ -145,20 +145,28 @@ test.describe("logical inset utilities", () => {
     // The footer used to be absolutely pinned to the bottom of an h-screen
     // sidebar, so on a short window (a laptop at 125% scaling) it painted
     // over the last nav links. The nav now scrolls in its own region.
+    // Everything is read in one evaluate once animations settle: separate
+    // boundingBox() calls can land on different frames of a layout change.
     await page.setViewportSize({ width: 1280, height: 480 });
-    const aside = page.locator("aside");
-    const nav = aside.locator("nav");
-    const footer = aside.getByTestId("sidebar-footer");
-    const navBox = await nav.boundingBox();
-    const footerBox = await footer.boundingBox();
-    expect(navBox).not.toBeNull();
-    expect(footerBox).not.toBeNull();
-    expect(navBox!.y + navBox!.height).toBeLessThanOrEqual(footerBox!.y + 1);
-    expect(footerBox!.y + footerBox!.height).toBeLessThanOrEqual(480 + 1);
-
-    const lastLink = nav.getByRole("link").last();
-    await lastLink.scrollIntoViewIfNeeded();
-    const lastBox = await lastLink.boundingBox();
-    expect(lastBox!.y + lastBox!.height).toBeLessThanOrEqual(footerBox!.y + 1);
+    const geometry = await page.evaluate(async () => {
+      const aside = document.querySelector("aside");
+      const nav = aside?.querySelector("nav");
+      const footer = aside?.querySelector('[data-testid="sidebar-footer"]');
+      const lastLink = nav?.querySelector("a:last-of-type");
+      if (!aside || !nav || !footer || !lastLink) return null;
+      await Promise.all(aside.getAnimations({ subtree: true }).map((a) => a.finished));
+      nav.scrollTop = nav.scrollHeight;
+      return {
+        viewport: window.innerHeight,
+        navBottom: nav.getBoundingClientRect().bottom,
+        footerTop: footer.getBoundingClientRect().top,
+        footerBottom: footer.getBoundingClientRect().bottom,
+        lastLinkBottom: lastLink.getBoundingClientRect().bottom,
+      };
+    });
+    expect(geometry).not.toBeNull();
+    expect(geometry!.navBottom).toBeLessThanOrEqual(geometry!.footerTop + 1);
+    expect(geometry!.footerBottom).toBeLessThanOrEqual(geometry!.viewport + 1);
+    expect(geometry!.lastLinkBottom).toBeLessThanOrEqual(geometry!.footerTop + 1);
   });
 });
