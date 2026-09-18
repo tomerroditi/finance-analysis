@@ -12,7 +12,7 @@
         "background": {
           "activeBegins": true,
           "beginsPattern": "Starting in",
-          "endsPattern": "Local:"
+          "endsPattern": "Local.*http://"
         }
       },
       "presentation": {
@@ -58,7 +58,7 @@
         "background": {
           "activeBegins": true,
           "beginsPattern": "VITE v",
-          "endsPattern": "Local:"
+          "endsPattern": "Local.*http://"
         }
       },
       "presentation": {
