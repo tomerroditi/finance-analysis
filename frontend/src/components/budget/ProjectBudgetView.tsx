@@ -293,7 +293,7 @@ export const ProjectBudgetView: React.FC<ProjectBudgetViewProps> = ({ tabs }) =>
   ];
 
   return (
-    <div className="space-y-3 md:space-y-4">
+    <div className="space-y-1.5">
       <BudgetCommandBar
         tabs={tabs}
         actions={

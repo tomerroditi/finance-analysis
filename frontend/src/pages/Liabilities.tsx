@@ -519,14 +519,14 @@ export function Liabilities() {
 
   if (isLoading)
     return (
-      <div className="space-y-8 p-4 md:p-8">
+      <div className="space-y-1.5">
         <Skeleton variant="text" lines={2} className="w-64" />
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-1.5">
           <Skeleton variant="card" className="h-24" />
           <Skeleton variant="card" className="h-24" />
           <Skeleton variant="card" className="h-24" />
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-1.5">
           <Skeleton variant="card" className="h-40" />
           <Skeleton variant="card" className="h-40" />
         </div>
@@ -534,7 +534,7 @@ export function Liabilities() {
     );
 
   return (
-    <div className="space-y-6 md:space-y-8 animate-in fade-in duration-500 pb-20">
+    <div className="space-y-1.5 animate-in fade-in duration-500 pb-20">
       {/* Header */}
       <div className="flex items-center justify-end gap-3">
         <button
@@ -547,7 +547,7 @@ export function Liabilities() {
       </div>
 
       {/* Summary Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-1.5">
         <div className="bg-[var(--surface)] border border-[var(--surface-light)] rounded-2xl p-4 md:p-6">
           <p className="text-[10px] uppercase font-black tracking-widest text-rose-400 mb-1">
             {t("liabilities.totalDebt")}
@@ -576,7 +576,7 @@ export function Liabilities() {
 
       {/* Charts: Debt Over Time + Debt Allocation */}
       {activeLiabilities.length > 0 && (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 md:gap-6">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-1.5">
           {/* Debt Over Time */}
           <div className="lg:col-span-2 bg-[var(--surface)] rounded-2xl p-4 md:p-6 border border-[var(--surface-light)]">
             <h3 className="text-sm font-bold uppercase tracking-widest text-[var(--text-muted)] mb-4">
@@ -660,7 +660,7 @@ export function Liabilities() {
                 {activeLiabilities.length}
               </span>
             </h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-1.5">
               {activeLiabilities.map((l: Liability) => (
                 <LiabilityCard
                   key={l.id}
@@ -704,7 +704,7 @@ export function Liabilities() {
               {paidOffLiabilities.length}
             </span>
           </h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 opacity-75 grayscale-[0.5]">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-1.5 opacity-75 grayscale-[0.5]">
             {paidOffLiabilities.map((l: Liability) => (
               <LiabilityCard
                 key={l.id}

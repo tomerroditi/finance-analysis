@@ -335,15 +335,15 @@ export function Investments() {
 
   if (isLoading)
     return (
-      <div className="space-y-4 md:space-y-8 p-4 md:p-8">
+      <div className="space-y-1.5">
         <Skeleton variant="text" lines={2} className="w-48 md:w-64" />
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-1.5">
           <Skeleton variant="card" className="h-24" />
           <Skeleton variant="card" className="h-24" />
           <Skeleton variant="card" className="h-24" />
           <Skeleton variant="card" className="h-24" />
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-1.5">
           <Skeleton variant="card" className="h-40" />
           <Skeleton variant="card" className="h-40" />
         </div>
@@ -351,7 +351,7 @@ export function Investments() {
     );
 
   return (
-    <div className="space-y-4 md:space-y-8 animate-in fade-in duration-500 pb-20">
+    <div className="space-y-1.5 animate-in fade-in duration-500 pb-20">
       {error && (
         <div className="p-4 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-sm font-medium">
           {t("investments.failedToLoad")}
@@ -387,7 +387,7 @@ export function Investments() {
                 <Plus size={18} /> {t("investments.newInvestment")}
               </button>
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 md:gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-1.5">
               {activeInvestments.map((inv: Investment) => (
                 <InvestmentCard
                   key={inv.id}
@@ -461,7 +461,7 @@ export function Investments() {
               {closedInvestments.length}
             </span>
           </h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 md:gap-6 opacity-75 grayscale-[0.5]">
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-1.5 opacity-75 grayscale-[0.5]">
             {closedInvestments.map((inv: Investment) => (
               <InvestmentCard
                 key={inv.id}

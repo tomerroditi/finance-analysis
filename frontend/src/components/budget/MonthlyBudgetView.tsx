@@ -307,7 +307,7 @@ export const MonthlyBudgetView: React.FC<MonthlyBudgetViewProps> = ({
 
   if (isLoading)
     return (
-      <div className="space-y-3 md:space-y-4">
+      <div className="space-y-1.5">
         {commandBar}
         <Skeleton variant="card" className="h-28" />
         <Skeleton variant="card" className="h-12" />
@@ -504,7 +504,7 @@ export const MonthlyBudgetView: React.FC<MonthlyBudgetViewProps> = ({
   );
 
   return (
-    <div className="space-y-3 md:space-y-4">
+    <div className="space-y-1.5">
       {commandBar}
 
       <BudgetNoticeLine
@@ -569,7 +569,7 @@ export const MonthlyBudgetView: React.FC<MonthlyBudgetViewProps> = ({
       )}
 
       {rules.length > 0 && (
-        <div className="w-full space-y-2">{childItems.map(renderRow)}</div>
+        <div className="w-full space-y-1.5">{childItems.map(renderRow)}</div>
       )}
 
       {/* Goals and projects share one row, half each. Both are month summaries
@@ -579,7 +579,7 @@ export const MonthlyBudgetView: React.FC<MonthlyBudgetViewProps> = ({
           for the transaction lists it now expands to. Either half takes the
           whole row when the other has nothing to show. */}
       {(hasGoalAllocations || monthProjects.length > 0) && (
-        <div className="flex flex-col xl:flex-row items-start gap-3 md:gap-4">
+        <div className="flex flex-col xl:flex-row items-start gap-1.5">
           {hasGoalAllocations && (
             <div className="w-full min-w-0 xl:flex-1">
               <SavingsGoalsBudgetSection allocations={analysis?.savings_goals} />

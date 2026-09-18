@@ -230,7 +230,7 @@ export const OverviewBudgetView: React.FC<OverviewBudgetViewProps> = ({ tabs }) 
 
   if (isLoading || !overview) {
     return (
-      <div className="space-y-3 md:space-y-4">
+      <div className="space-y-1.5">
         {commandBar}
         <Skeleton variant="card" className="h-24" />
         <Skeleton variant="card" className="h-64" />
@@ -306,12 +306,12 @@ export const OverviewBudgetView: React.FC<OverviewBudgetViewProps> = ({ tabs }) 
     ).length + longEnvelopes.length;
 
   return (
-    <div className="space-y-3 md:space-y-4">
+    <div className="space-y-1.5">
       {commandBar}
 
       {/* KPI strip. On a settled month the forward-looking tiles become
           backward-looking ones — there is no commitment or projection left. */}
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-2 md:gap-3">
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-1.5">
         <Kpi
           label={t("budget.overview.spent")}
           value={formatCurrency(spent)}
@@ -379,7 +379,7 @@ export const OverviewBudgetView: React.FC<OverviewBudgetViewProps> = ({ tabs }) 
         />
       </div>
 
-      <div className="grid grid-cols-1 xl:grid-cols-12 gap-3 md:gap-4">
+      <div className="grid grid-cols-1 xl:grid-cols-12 gap-1.5">
         {/* Where the month stands / how it closed. */}
         <div className="xl:col-span-7 bg-[var(--surface)] rounded-2xl border border-[var(--surface-light)] shadow-sm p-4 md:p-5 flex flex-col gap-3">
           <p className="font-bold text-sm md:text-base">
@@ -505,7 +505,7 @@ export const OverviewBudgetView: React.FC<OverviewBudgetViewProps> = ({ tabs }) 
         </div>
       </div>
 
-      <div className="grid grid-cols-1 xl:grid-cols-12 gap-3 md:gap-4">
+      <div className="grid grid-cols-1 xl:grid-cols-12 gap-1.5">
         <div className="xl:col-span-7 bg-[var(--surface)] rounded-2xl border border-[var(--surface-light)] shadow-sm p-4 md:p-5 flex flex-col gap-3">
           <p className="font-bold text-sm md:text-base">{t("budget.trend.title")}</p>
           {trend.hasData ? (

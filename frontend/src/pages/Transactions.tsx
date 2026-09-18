@@ -328,7 +328,7 @@ export function Transactions() {
 
   return (
     <div className="relative">
-      <div className="space-y-4 md:space-y-6 min-w-0">
+      <div className="space-y-1.5 min-w-0">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
           <div className="flex items-center gap-2 md:gap-4 overflow-x-auto scrollbar-auto-hide pb-1">
             <div className="flex gap-1.5 md:gap-2 items-center">

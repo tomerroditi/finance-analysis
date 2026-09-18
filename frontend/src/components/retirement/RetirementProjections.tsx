@@ -241,9 +241,9 @@ export function RetirementProjections({
   }
 
   return (
-    <div className="space-y-4 md:space-y-6">
+    <div className="space-y-1.5">
       {/* KPI Cards + Readiness */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-1.5">
         {kpis.map((kpi) => (
           <div
             key={kpi.key}
@@ -333,7 +333,7 @@ export function RetirementProjections({
       )}
 
       {/* Charts */}
-      <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 md:gap-6">
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-1.5">
         <div className="p-4 rounded-xl bg-[var(--surface)] border border-[var(--surface-light)]">
           <div className="flex items-center gap-2 mb-4">
             <h3 className="text-sm font-medium text-[var(--text-secondary)]">

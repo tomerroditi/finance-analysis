@@ -181,7 +181,7 @@ function FinancialHealthHeader({
 
   if (isLoading) {
     return (
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
         {Array.from({ length: 4 }).map((_, i) => (
           <Skeleton key={i} variant="card" className="h-16" />
         ))}
@@ -192,7 +192,7 @@ function FinancialHealthHeader({
   return (
     <>
     <div
-      className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3 cursor-pointer"
+      className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 cursor-pointer"
       onClick={() => setExpanded((v) => !v)}
     >
       {/* Net Worth */}
@@ -434,7 +434,7 @@ export function Dashboard() {
   };
 
   return (
-    <div className="space-y-3 md:space-y-4 animate-in fade-in duration-500">
+    <div className="space-y-1.5 animate-in fade-in duration-500">
       {/* Pinned: Financial Health Header (KPI cards) */}
       <FinancialHealthHeader
         netWorthData={netWorthData}
@@ -461,7 +461,7 @@ export function Dashboard() {
           `align-items: stretch` plus `[&>*]:h-full` makes both as tall as the
           taller card (still capped). On mobile the grid is a single column with
           natural, uncapped heights. */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 md:gap-4 [--dash-card-h:39rem]">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-1.5 [--dash-card-h:39rem]">
         {layout.order.map((id, index) => (
           <div
             key={id}

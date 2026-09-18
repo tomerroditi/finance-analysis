@@ -11,7 +11,7 @@ import { enableDemoMode } from "./helpers";
  *   full-width and spans the row. Fill order is start->end and flips under
  *   RTL (Hebrew).
  * - Blocks are capped at `--dash-card-h` (39rem) and scroll overflow inside.
- * - Card gutters are compact (gap-4 = 16px at >=md).
+ * - Card gutters are compact (gap-1.5 = 6px).
  * - The Spending Calendar (`heatmap`) card shows two months at half-row width
  *   (>=lg) and a single month in the single-column mobile layout.
  * - Expanding the KPI grid reveals the Net Worth card's last-3-months change
@@ -89,11 +89,11 @@ test.describe("Dashboard half-width blocks", () => {
       boxes.budget.width * 1.8,
     );
 
-    // --- Gutters between cards are compact (gap-4 = 16px at >=md) ---
+    // --- Gutters between cards are compact (gap-1.5 = 6px) ---
     // The customizable region used to sit at gap-8 (32px), which read as an
     // over-airy dashboard. Assert both bounds so neither a regression back to
     // the wide gutter nor a collapse to zero slips through.
-    const GUTTER = 16;
+    const GUTTER = 6;
     const columnGutter = boxes.recent.x - (boxes.budget.x + boxes.budget.width);
     const rowGutter = boxes.heatmap.y - (boxes.budget.y + boxes.budget.height);
     expect(

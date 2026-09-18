@@ -20,7 +20,7 @@ export function Layout() {
           sidebarOpen ? "md:ms-64" : "md:ms-20"
         } ms-0 pt-10 md:pt-0`}
       >
-        <div className="p-2 pt-2 sm:p-4 sm:pt-4 md:p-8 md:pt-6">
+        <div className="p-1.5">
           <DemoSandboxNotice />
           <Outlet />
         </div>

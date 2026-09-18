@@ -84,7 +84,7 @@ export function EarlyRetirement() {
   const shownSuggestions = preview?.suggestions ?? suggestions;
 
   return (
-    <div className="flex flex-col gap-4 md:gap-6 p-4 md:p-6">
+    <div className="flex flex-col gap-1.5">
       {/* Section 1: Retirement Goals (includes editable financial snapshot) */}
       <Section
         icon={<Target size={18} className="text-blue-400" />}
@@ -161,8 +161,8 @@ function FormSkeleton() {
 
 function ProjectionsSkeleton() {
   return (
-    <div className="space-y-6">
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+    <div className="space-y-1.5">
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-1.5">
         {Array.from({ length: 5 }).map((_, i) => (
           <div
             key={i}
@@ -170,7 +170,7 @@ function ProjectionsSkeleton() {
           />
         ))}
       </div>
-      <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-1.5">
         {Array.from({ length: 2 }).map((_, i) => (
           <div
             key={i}
