@@ -689,9 +689,9 @@ export function Insurances() {
   const trackSums = tracksWithSum.map((track) => track.sum ?? 0);
 
   return (
-    <div className="flex flex-col gap-6 p-6">
+    <div className="flex flex-col gap-1.5">
       {/* KPI Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-4 gap-1.5">
         <StatCard title={t("insurance.totalBalance")} value={formatCurrency(totalBalance)} icon={Landmark} color="bg-blue-500/10 text-blue-400" />
         <StatCard
           title={t("insurance.totalDeposits")}
@@ -714,7 +714,7 @@ export function Insurances() {
       </div>
 
       {/* Charts Row */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-1.5">
         {/* Monthly deposits chart */}
         <div className="bg-[var(--surface)] rounded-2xl border border-[var(--surface-light)] p-5">
           <h3 className="text-white font-bold mb-1">{t("insurance.depositTrends")}</h3>

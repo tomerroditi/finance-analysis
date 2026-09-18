@@ -155,7 +155,7 @@ export const YearlyBudgetView: React.FC<YearlyBudgetViewProps> = ({ tabs }) => {
     : [];
 
   return (
-    <div className="space-y-3 md:space-y-4">
+    <div className="space-y-1.5">
       <BudgetCommandBar
         tabs={tabs}
         actions={
@@ -222,7 +222,7 @@ export const YearlyBudgetView: React.FC<YearlyBudgetViewProps> = ({ tabs }) => {
       ) : rules.length === 0 ? (
         <p className="text-[var(--text-muted)] text-sm py-8 text-center">{t("budget.yearly.empty")}</p>
       ) : (
-        <div className="w-full space-y-2">
+        <div className="w-full space-y-1.5">
             {rules.map((entry) => {
               const rule = entry.rule;
               const tagList = Array.isArray(rule.tags) ? rule.tags : [];

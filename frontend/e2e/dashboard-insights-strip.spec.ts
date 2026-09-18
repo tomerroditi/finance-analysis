@@ -93,7 +93,7 @@ test.describe("Dashboard strip cards", () => {
       const strip = await boxOf(page, stripId);
       const next = await boxOf(page, nextId);
       const gap = next.y - (strip.y + strip.height);
-      // Only the grid gap (md:gap-8 = 32px) — never the ~350px the fixed
+      // Only the grid gap (gap-1.5 = 6px) — never the ~350px the fixed
       // height used to leave below a short strip. Allow generous slack.
       expect(gap, `gap below ${stripId}`).toBeGreaterThanOrEqual(0);
       expect(gap, `gap below ${stripId}`).toBeLessThan(64);

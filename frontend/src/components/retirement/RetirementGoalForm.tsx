@@ -445,7 +445,7 @@ export function RetirementGoalForm({
     effectiveIncome > 0 ? (computedSavings / effectiveIncome) * 100 : 0;
 
   return (
-    <form onSubmit={handleCalculate} className="space-y-4 md:space-y-6">
+    <form onSubmit={handleCalculate} className="space-y-1.5">
       {/* Financial Snapshot — editable current-status inputs */}
       <div className="space-y-3 p-4 rounded-xl bg-[var(--surface)] border border-[var(--surface-light)]">
         <p className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wider">

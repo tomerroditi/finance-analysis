@@ -136,8 +136,8 @@ export function PortfolioOverview({ portfolioAnalysis }: PortfolioOverviewProps)
   }, [series, balanceHistory]);
 
   return (
-    <div className="space-y-4 md:space-y-6">
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-3 md:gap-4">
+    <div className="space-y-1.5">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-1.5">
         <StatCard
           title={t("investments.totalValue")}
           value={formatCurrency(portfolioAnalysis.total_value)}
@@ -166,7 +166,7 @@ export function PortfolioOverview({ portfolioAnalysis }: PortfolioOverviewProps)
         />
       </div>
       {/* Charts: Balance Over Time + Allocation side-by-side */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 md:gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-1.5">
         {/* Balance Over Time Chart */}
         <div className="lg:col-span-2 bg-[var(--surface)] rounded-2xl p-4 md:p-6 border border-[var(--surface-light)]">
           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 mb-4">

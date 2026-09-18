@@ -63,9 +63,9 @@ export function Categories() {
 
   if (isLoading)
     return (
-      <div className="space-y-4 md:space-y-8">
+      <div className="space-y-1.5">
         <Skeleton variant="text" lines={2} className="w-full md:w-64" />
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-1.5">
           {Array.from({ length: 10 }).map((_, i) => (
             <Skeleton key={i} variant="card" className="h-28" />
           ))}
@@ -76,7 +76,7 @@ export function Categories() {
   const selectedTags = selectedCategory ? (categoriesRecord?.[selectedCategory] ?? []) : [];
 
   return (
-    <div className="space-y-4 md:space-y-6 animate-in fade-in duration-500">
+    <div className="space-y-1.5 animate-in fade-in duration-500">
       {/* Auto-Tagging Rules */}
       <RulesSection />
 
@@ -111,7 +111,7 @@ export function Categories() {
 
       {/* Category Grid */}
       {activeEntries.length > 0 ? (
-        <div className="grid grid-cols-4 lg:grid-cols-5 gap-2 sm:gap-3">
+        <div className="grid grid-cols-4 lg:grid-cols-5 gap-1.5">
           {activeEntries.map(([category, tags]) => (
             <CategoryCard
               key={category}

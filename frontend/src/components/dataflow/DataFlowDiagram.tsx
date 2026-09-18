@@ -219,7 +219,7 @@ export function DataFlowDiagram() {
   const detail: DetailData | null = activeNode ? details[activeNode] ?? null : null;
 
   return (
-    <div className="flex flex-col gap-4 md:gap-6">
+    <div className="flex flex-col gap-1.5">
       {/* Diagram viewport — a bounded box. Zooming and panning happen only
           inside this box; everything outside (page scroll, feature cards
           below) behaves normally. */}
@@ -397,7 +397,7 @@ export function DataFlowDiagram() {
           <span className="opacity-40 me-1.5">✦</span>
           {t("dataFlow.platformFeatures")}
         </h2>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-1.5">
           {platformFeatures.map((f, i) => (
             <div
               key={i}
@@ -426,7 +426,7 @@ export function DataFlowDiagram() {
       </div>
 
       {/* Key Insights */}
-      <div className="flex flex-col gap-4 pb-4">
+      <div className="flex flex-col gap-1.5 pb-4">
         {callouts.map((c, i) => (
           <div
             key={i}

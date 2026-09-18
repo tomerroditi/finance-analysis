@@ -268,9 +268,9 @@ export function DataSources() {
 
   if (isLoading)
     return (
-      <div className="space-y-4 md:space-y-8 p-4 md:p-8">
+      <div className="space-y-1.5">
         <Skeleton variant="text" lines={2} className="w-64" />
-        <div className="grid grid-cols-1 gap-4">
+        <div className="grid grid-cols-1 gap-1.5">
           <Skeleton variant="card" className="h-28" />
           <Skeleton variant="card" className="h-28" />
         </div>
@@ -278,7 +278,7 @@ export function DataSources() {
     );
 
   return (
-    <div className="space-y-4 md:space-y-8 animate-in fade-in duration-500">
+    <div className="space-y-1.5 animate-in fade-in duration-500">
       <div className="flex flex-wrap items-center justify-end gap-2 md:gap-3">
           <div className="relative">
             <select
@@ -315,7 +315,7 @@ export function DataSources() {
           </button>
       </div>
 
-      <div className="grid grid-cols-1 gap-4">
+      <div className="grid grid-cols-1 gap-1.5">
         {accounts?.length === 0 ? (
           <div className="bg-[var(--surface)] rounded-2xl border border-dashed border-[var(--surface-light)] p-6 md:p-12 text-center">
             <div className="mx-auto w-16 h-16 bg-[var(--surface-light)] rounded-2xl flex items-center justify-center text-[var(--text-muted)] mb-4">
@@ -389,7 +389,7 @@ export function DataSources() {
             };
 
             return (
-              <div className="space-y-4">
+              <div className="space-y-1.5">
                 {bankAccounts.length > 0 && (
                   <>
                     <h3 className="text-xs font-medium text-[var(--text-muted)] uppercase tracking-wide px-2 mb-2">

@@ -89,7 +89,7 @@ export const ProjectBudgetList: React.FC<ProjectBudgetListProps> = ({
   );
 
   return (
-    <div className="space-y-2">
+    <div className="space-y-1.5">
       {/* No sub-label: a project rule always covers exactly one tag, so the
           tag line only ever repeated the rule name back at the reader. */}
       {tagRules.map((item) => {
