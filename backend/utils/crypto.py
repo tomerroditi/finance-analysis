@@ -108,8 +108,8 @@ def decrypt_fields(stored: Dict) -> Dict:
     except InvalidToken:
         raise ValidationException(
             "Stored credentials could not be decrypted — the encryption key "
-            "in the OS keyring is missing or was replaced. Delete and "
-            "re-enter the affected credentials."
+            "in the OS keyring is missing or was replaced. Edit the account "
+            "on the Data Sources page and re-enter its details."
         )
 
 

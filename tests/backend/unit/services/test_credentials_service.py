@@ -52,6 +52,10 @@ def mock_repo(monkeypatch):
         {"service": "credit_cards", "provider": "isracard", "account_name": "Account 1"},
         {"service": "banks", "provider": "hapoalim", "account_name": "Main Account"},
     ]
+    mock.list_account_statuses.return_value = [
+        {**a, "fields_readable": True, "has_password": True}
+        for a in mock.list_accounts.return_value
+    ]
     mock.save_credentials.return_value = None
     mock.delete_credentials.return_value = None
 
@@ -127,16 +131,42 @@ class TestCredentialsService:
         assert safe["banks"]["hapoalim"] == ["Main Account"]
 
     def test_get_accounts_list(self, mock_repo):
-        """Verify flat list of accounts with service, provider, account_name."""
+        """Verify flat list of healthy accounts, none flagged for re-entry."""
         service = CredentialsService(MagicMock())
         accounts = service.get_accounts_list()
 
         assert len(accounts) == 2
         account_tuples = {
-            (a["service"], a["provider"], a["account_name"]) for a in accounts
+            (a["service"], a["provider"], a["account_name"], a["needs_reentry"])
+            for a in accounts
         }
-        assert ("credit_cards", "isracard", "Account 1") in account_tuples
-        assert ("banks", "hapoalim", "Main Account") in account_tuples
+        assert ("credit_cards", "isracard", "Account 1", False) in account_tuples
+        assert ("banks", "hapoalim", "Main Account", False) in account_tuples
+
+    @pytest.mark.parametrize(
+        ("provider", "fields_readable", "has_password", "expected"),
+        [
+            ("hapoalim", False, True, True),
+            ("hapoalim", True, False, True),
+            ("hafenix", True, False, False),
+            ("hafenix", False, False, True),
+        ],
+    )
+    def test_get_accounts_list_needs_reentry(
+        self, mock_repo, provider, fields_readable, has_password, expected
+    ):
+        """Verify re-entry is flagged for unreadable fields, or a missing password the provider needs."""
+        mock_repo.list_account_statuses.return_value = [{
+            "service": "banks",
+            "provider": provider,
+            "account_name": "Acc",
+            "fields_readable": fields_readable,
+            "has_password": has_password,
+        }]
+
+        [account] = CredentialsService(MagicMock()).get_accounts_list()
+
+        assert account["needs_reentry"] is expected
 
     def test_get_available_providers(self, monkeypatch):
         """Verify providers filtered by test mode (production excludes test_ prefixed)."""

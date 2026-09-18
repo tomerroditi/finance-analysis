@@ -10,13 +10,13 @@ All keyring access goes through ``backend.utils.keyring_store``.
 
 import logging
 import os
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 import yaml
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.errors import EntityNotFoundException
+from backend.errors import EntityNotFoundException, ValidationException
 from backend.models.credential import Credential
 from backend.utils import keyring_store
 from backend.utils.crypto import decrypt_fields, encrypt_fields, is_encrypted
@@ -77,6 +77,40 @@ class CredentialsRepository:
             )
         return cred
 
+    @staticmethod
+    def _try_decrypt(row: Credential) -> Optional[Dict]:
+        """Decrypt a row's fields, or return None when they cannot be read.
+
+        A row becomes unreadable when the field-encryption key in the OS
+        keyring is not the one it was written with — typically a data
+        directory copied from another machine, whose keyring held the
+        original key. One such row must not make every other account (or
+        the account list itself) unreachable.
+        """
+        try:
+            return decrypt_fields(row.fields)
+        except ValidationException:
+            logger.warning(
+                "Credential fields for %s/%s/%s cannot be decrypted with the "
+                "current keyring key; the account needs its details re-entered",
+                row.service,
+                row.provider,
+                row.account_name,
+            )
+            return None
+
+    def _get_password(self, service: str, provider: str, account_name: str) -> str:
+        """Read an account's password from the OS keyring ("" when absent)."""
+        return (
+            keyring_store.get_secret(
+                keyring_store.active_credentials_service(),
+                keyring_store.credential_secret_name(
+                    service, provider, account_name, "password"
+                ),
+            )
+            or ""
+        )
+
     def get_credentials(
         self, service: str, provider: str, account_name: str
     ) -> Dict:
@@ -105,15 +139,7 @@ class CredentialsRepository:
         """
         cred = self._find_credential(service, provider, account_name)
         result = decrypt_fields(cred.fields)
-        result["password"] = (
-            keyring_store.get_secret(
-                keyring_store.active_credentials_service(),
-                keyring_store.credential_secret_name(
-                    service, provider, account_name, "password"
-                ),
-            )
-            or ""
-        )
+        result["password"] = self._get_password(service, provider, account_name)
         return result
 
     def save_credentials(
@@ -239,6 +265,31 @@ class CredentialsRepository:
             for row in rows
         ]
 
+    def list_account_statuses(self) -> List[Dict]:
+        """List every account with the health of its stored credentials.
+
+        Returns
+        -------
+        List[Dict]
+            One dict per credential row with ``service``, ``provider``,
+            ``account_name``, ``fields_readable`` (False when the encrypted
+            fields cannot be decrypted with the current keyring key) and
+            ``has_password`` (whether the OS keyring holds a password).
+        """
+        rows = self.db.execute(select(Credential)).scalars().all()
+        return [
+            {
+                "service": row.service,
+                "provider": row.provider,
+                "account_name": row.account_name,
+                "fields_readable": self._try_decrypt(row) is not None,
+                "has_password": bool(
+                    self._get_password(row.service, row.provider, row.account_name)
+                ),
+            }
+            for row in rows
+        ]
+
     def get_all_credentials(self) -> Dict:
         """Get all credentials as nested dict with keyring passwords filled in.
 
@@ -250,21 +301,16 @@ class CredentialsRepository:
             for all stored credential rows, with the "password" field for each
             account merged in from the OS Keyring. The "password" key is always
             present; it is an empty string if no password has been stored in the
-            keyring.
+            keyring. A row whose fields cannot be decrypted contributes only
+            that password key, so the rest of the accounts stay usable.
         """
         rows = self.db.execute(select(Credential)).scalars().all()
         result: Dict = {}
         for row in rows:
             result.setdefault(row.service, {}).setdefault(row.provider, {})
-            fields = decrypt_fields(row.fields)
-            fields["password"] = (
-                keyring_store.get_secret(
-                    keyring_store.active_credentials_service(),
-                    keyring_store.credential_secret_name(
-                        row.service, row.provider, row.account_name, "password"
-                    ),
-                )
-                or ""
+            fields = self._try_decrypt(row) or {}
+            fields["password"] = self._get_password(
+                row.service, row.provider, row.account_name
             )
             result[row.service][row.provider][row.account_name] = fields
         return result

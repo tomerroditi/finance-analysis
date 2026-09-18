@@ -373,6 +373,9 @@ export interface CredentialAccount {
   service: string;
   provider: string;
   account_name: string;
+  /** Stored details are unreadable on this machine or the keyring has no
+   * password — the account cannot scrape until they are re-entered. */
+  needs_reentry?: boolean;
 }
 
 export interface CredentialDeleteResult {

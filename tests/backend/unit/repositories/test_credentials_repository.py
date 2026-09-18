@@ -1,13 +1,17 @@
 """Unit tests for CredentialsRepository DB-backed credential CRUD operations."""
 
+import json
+
 import pytest
 import yaml
 from unittest.mock import patch
 
+from cryptography.fernet import Fernet
+
 import keyring.errors as _real_keyring_errors
 from sqlalchemy import select
 
-from backend.errors import EntityNotFoundException
+from backend.errors import EntityNotFoundException, ValidationException
 from backend.models.credential import Credential
 from backend.repositories.credentials_repository import CredentialsRepository
 from backend.utils.crypto import ENCRYPTED_MARKER, decrypt_fields, is_encrypted
@@ -366,3 +370,70 @@ class TestCredentialsRepositoryKeyringEdgeCases:
         service_name, entry_name, _ = mock_keyring.set_password.call_args[0]
         assert service_name == "finance-analysis-app-demo"
         assert entry_name == "banks_hapoalim_Main_password"
+
+
+# ---------------------------------------------------------------------------
+# Rows encrypted under another machine's key
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def foreign_key_repo(seeded_repo, db_session):
+    """Add a row encrypted with a field key this machine's keyring lacks."""
+    foreign = Fernet(Fernet.generate_key())
+    token = foreign.encrypt(json.dumps({"email": "a@b.c"}).encode()).decode()
+    db_session.add(
+        Credential(
+            service="banks",
+            provider="onezero",
+            account_name="Moved",
+            fields={ENCRYPTED_MARKER: token},
+        )
+    )
+    db_session.commit()
+    return seeded_repo
+
+
+class TestCredentialsRepositoryUnreadableRows:
+    """A row that cannot be decrypted must not hide the other accounts."""
+
+    def test_get_all_credentials_survives_unreadable_row(self, foreign_key_repo):
+        """Verify readable rows keep their fields and the unreadable one only its password."""
+        result = foreign_key_repo.get_all_credentials()
+
+        assert result["banks"]["hapoalim"]["Main Account"]["userCode"] == "test_code"
+        assert result["banks"]["onezero"]["Moved"] == {"password": "secret123"}
+
+    def test_get_credentials_still_raises_for_unreadable_row(self, foreign_key_repo):
+        """Verify a direct read of the unreadable row reports it instead of returning blanks."""
+        with pytest.raises(ValidationException):
+            foreign_key_repo.get_credentials("banks", "onezero", "Moved")
+
+    def test_list_account_statuses_flags_unreadable_row(self, foreign_key_repo):
+        """Verify each account reports whether its fields decrypt."""
+        statuses = {
+            s["account_name"]: s for s in foreign_key_repo.list_account_statuses()
+        }
+
+        assert statuses["Main Account"]["fields_readable"] is True
+        assert statuses["Moved"]["fields_readable"] is False
+
+    def test_list_account_statuses_reports_missing_password(
+        self, seeded_repo, mock_keyring
+    ):
+        """Verify has_password is False when the keyring holds no entry."""
+        mock_keyring.get_password.return_value = None
+
+        statuses = seeded_repo.list_account_statuses()
+
+        assert statuses and all(s["has_password"] is False for s in statuses)
+
+    def test_resaving_unreadable_row_makes_it_readable(self, foreign_key_repo):
+        """Verify re-entering the details re-encrypts them under the current key."""
+        foreign_key_repo.save_credentials(
+            "banks", "onezero", "Moved",
+            {"email": "new@b.c", "phoneNumber": "050", "password": "pw"},
+        )
+
+        result = foreign_key_repo.get_credentials("banks", "onezero", "Moved")
+        assert result["email"] == "new@b.c"

@@ -575,6 +575,15 @@ export function DataSources() {
                   :
                 </p>
 
+                {!isViewOnly && !!editingAccount?.needs_reentry && (
+                  <div
+                    role="status"
+                    className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-100/80"
+                  >
+                    {t("dataSources.needsReentryNotice")}
+                  </div>
+                )}
+
                 <div className="space-y-4">
                   <div>
                     <label className="block text-[10px] font-black uppercase tracking-widest text-[var(--text-muted)] mb-2">

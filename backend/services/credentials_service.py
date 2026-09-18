@@ -4,12 +4,19 @@ This module provides business logic for credential management.
 """
 
 from copy import deepcopy
-from typing import Dict, List
+from typing import Any, Dict, List
 
 from sqlalchemy.orm import Session
 
 from backend.config import AppConfig
-from backend.constants.providers import Fields, Services, bank_providers, cc_providers, insurance_providers
+from backend.constants.providers import (
+    Fields,
+    LoginFields,
+    Services,
+    bank_providers,
+    cc_providers,
+    insurance_providers,
+)
 from backend.repositories.credentials_repository import _SENSITIVE_FIELDS, CredentialsRepository
 from backend.repositories.scraping_history_repository import ScrapingHistoryRepository
 
@@ -332,17 +339,36 @@ class CredentialsService:
             safe[a["service"]][a["provider"]].append(a["account_name"])
         return safe
 
-    def get_accounts_list(self) -> List[Dict[str, str]]:
+    def get_accounts_list(self) -> List[Dict[str, Any]]:
         """
-        Get a flat list of all configured accounts.
+        Get a flat list of all configured accounts with their credential health.
+
+        An account ``needs_reentry`` when its stored details cannot be
+        decrypted (the keyring's field-encryption key is not the one they were
+        written with — e.g. a data directory moved from another machine), or
+        when its provider logs in with a password and the OS keyring holds
+        none. Either way it cannot scrape until the user re-enters its
+        details, and the Data Sources page says so on the account card.
 
         Returns
         -------
         list[dict]
-            List of account dicts with ``service``, ``provider``, and
-            ``account_name`` keys.
+            List of account dicts with ``service``, ``provider``,
+            ``account_name`` and ``needs_reentry`` keys.
         """
-        return self.repository.list_accounts()
+        accounts = []
+        for status in self.repository.list_account_statuses():
+            uses_password = Fields.PASSWORD.value in LoginFields.get_fields(
+                status["provider"]
+            )
+            accounts.append({
+                "service": status["service"],
+                "provider": status["provider"],
+                "account_name": status["account_name"],
+                "needs_reentry": not status["fields_readable"]
+                or (uses_password and not status["has_password"]),
+            })
+        return accounts
 
     @staticmethod
     def get_available_providers() -> Dict[str, List[str]]:

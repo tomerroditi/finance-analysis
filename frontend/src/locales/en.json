@@ -1021,6 +1021,9 @@
     "failed": "Failed to set balance."
   },
   "dataSources": {
+    "needsReentry": "Re-enter details",
+    "needsReentryHint": "The saved login details can't be used on this machine — click to enter them again",
+    "needsReentryNotice": "The saved details for this account can't be read on this machine (they were encrypted on another device), or its password is missing. Enter every field again, including the password, and save.",
     "title": "Data Sources",
     "subtitle": "Manage your connected accounts",
     "addAccount": "Add Account",
