@@ -1,3 +1,9 @@
+## v1.67.2 (2026-09-19)
+
+### Perf
+
+- **frontend**: lazy-load routes, group vendor chunks, optimise logos (#294)
+
 ## v1.67.1 (2026-09-19)
 
 ### Fix
