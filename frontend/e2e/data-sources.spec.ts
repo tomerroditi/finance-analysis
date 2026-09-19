@@ -90,10 +90,12 @@ test.describe("DataSources", () => {
   // An account whose stored details are unreadable on this machine (a data
   // dir moved from another device) must still be listed, carry a badge, and
   // open straight into the edit form with an explanation. Stubbed so no
-  // backend write is needed to fake a broken keyring.
+  // backend write is needed to fake a broken keyring. Runs at phone size,
+  // where the edit form is taller than the screen.
   test("flags an account needing re-entry and opens its edit form from the badge", async ({
     page,
   }) => {
+    await page.setViewportSize({ width: 375, height: 480 });
     await page.route("**/api/credentials/accounts", async (route) => {
       const response = await route.fetch();
       const accounts: { provider: string; needs_reentry: boolean }[] =
@@ -120,6 +122,19 @@ test.describe("DataSources", () => {
     await expect(page.getByRole("status")).toContainText(
       "can't be read on this machine",
     );
+
+    // On a short phone screen the edit form is taller than the viewport and
+    // the page behind is scroll-locked, so the card itself must scroll —
+    // it used to overflow off-screen, leaving the save button unreachable.
+    const card = page
+      .getByRole("heading", { name: /edit connection/i })
+      .locator("xpath=ancestor::div[contains(@class, 'rounded-3xl')][1]");
+    const box = await card.boundingBox();
+    expect(box!.y).toBeGreaterThanOrEqual(0);
+    expect(box!.y + box!.height).toBeLessThanOrEqual(480);
+    const save = page.getByRole("button", { name: "Save Changes" });
+    await save.scrollIntoViewIfNeeded();
+    await expect(save).toBeInViewport();
   });
 
   test("opens the shared balance modal from the $ button and saves", async ({
