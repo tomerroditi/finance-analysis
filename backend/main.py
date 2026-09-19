@@ -4,7 +4,6 @@ FastAPI main application entry point.
 This module sets up the FastAPI application with CORS, routes, and exception handlers.
 """
 
-import asyncio
 import logging
 import math
 import os
@@ -80,15 +79,6 @@ async def lifespan(app: FastAPI):
         yield
         return
 
-    # Capture the running event loop so synchronous scraping routes (executed
-    # in a threadpool worker thread with no loop of their own) can launch
-    # scraper coroutines on it via run_coroutine_threadsafe. Without this,
-    # asyncio.create_task raised "no running event loop" and the scrape never
-    # started. See backend.services.scraping_service._launch_adapter.
-    from backend.services.scraping_service import set_main_loop
-
-    set_main_loop(asyncio.get_running_loop())
-
     from backend.repositories.credentials_repository import CredentialsRepository
     from backend.repositories.tagging_repository import (
         TaggingRepository,
@@ -146,6 +136,9 @@ async def lifespan(app: FastAPI):
     yield
     # Shutdown
     logger.info("Shutting down Finance Analysis API...")
+    from backend.services.scraping_service import shutdown_scraper_loop
+
+    await shutdown_scraper_loop()
 
 
 # Only expose OpenAPI/Swagger docs outside of production. ``ENVIRONMENT=production``

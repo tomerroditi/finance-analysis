@@ -8,6 +8,7 @@ from urllib.parse import urlparse
 from playwright.async_api import Browser, Frame, Page, async_playwright
 
 from scraper.base.base_scraper import BaseScraper
+from scraper.exceptions import BrowserNotFoundError
 from scraper.models.result import LoginResult
 from scraper.utils import (
     click_button,
@@ -113,9 +114,8 @@ class BrowserScraper(BaseScraper):
         Tries Chrome first; on ``BrowserType.NotInstalledError`` falls
         back to Edge (always present on Windows). If neither is
         installed (rare on Windows, common on macOS where Safari is
-        default), raises ``RuntimeError`` with a clear "install Chrome"
-        message — the scraping route surfaces it to the user via the
-        existing error toast.
+        default), raises ``BrowserNotFoundError``, which the UI renders as
+        "install Chrome or Edge".
         """
         self._playwright = await async_playwright().start()
 
@@ -157,7 +157,7 @@ class BrowserScraper(BaseScraper):
                 raise
         else:
             await self._playwright.stop()
-            raise RuntimeError(
+            raise BrowserNotFoundError(
                 "No supported browser found. Install Google Chrome from "
                 "https://www.google.com/chrome/ (or Microsoft Edge on Windows) "
                 "and try again."

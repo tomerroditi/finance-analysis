@@ -31,6 +31,7 @@ const KNOWN_ERROR_TYPES = [
   "TIMEOUT",
   "NO_ACCOUNTS",
   "INIT_ERROR",
+  "BROWSER_NOT_FOUND",
 ] as const;
 
 /**

@@ -1070,7 +1070,8 @@
       "TWO_FACTOR_RETRIEVER_MISSING": "This account needs a verification code, but none could be requested. Reconnect the account.",
       "TIMEOUT": "The provider took too long to respond. This is usually temporary — try again later.",
       "NO_ACCOUNTS": "Sign-in worked, but the provider returned no accounts.",
-      "INIT_ERROR": "The browser used for syncing could not start. Make sure Chrome or Edge is installed.",
+      "INIT_ERROR": "Syncing could not start on this computer. The technical detail below says why.",
+      "BROWSER_NOT_FOUND": "Syncing this provider needs Google Chrome or Microsoft Edge. Install one of them and try again.",
       "GENERAL_ERROR": "Syncing failed for an unexpected reason. The technical detail below is what the provider reported."
     },
     "viewDetails": "View Details",
