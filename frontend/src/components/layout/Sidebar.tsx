@@ -17,7 +17,6 @@ import {
   Menu,
   X,
   Workflow,
-  Bell,
 } from "lucide-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
@@ -28,10 +27,7 @@ import { useQueryKeys } from "../../hooks/useQueryKeys";
 import { prefetchRoute } from "../../services/routePrefetch";
 import { SettingsPopup } from "./SettingsPopup";
 import { BudgetAlertsBell } from "./BudgetAlertsBell";
-import { BudgetAlertsPopup } from "./BudgetAlertsPopup";
-import { useBudgetAlerts } from "../../hooks/useBudgetAlerts";
 import { useBudgetAlertSettings } from "../../hooks/useBudgetAlertSettings";
-import { useBudgetAlertDismissals } from "../../hooks/useBudgetAlertDismissals";
 
 const navItems = [
   { path: "/", icon: LayoutDashboard, key: "dashboard" },
@@ -51,7 +47,6 @@ export function Sidebar() {
   useScrollLock(mobileSidebarOpen);
   const { t, i18n } = useTranslation();
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [mobileAlertsOpen, setMobileAlertsOpen] = useState(false);
   const location = useLocation();
   const queryClient = useQueryClient();
   const { isDemoMode } = useDemoMode();
@@ -63,20 +58,7 @@ export function Sidebar() {
     [queryClient, isDemoMode],
   );
 
-  // Budget alerts visible-count for the mobile drawer tile badge
   const { enabled: budgetAlertsEnabled } = useBudgetAlertSettings();
-  const { data: budgetAlertsData } = useBudgetAlerts();
-  const { isDismissed: isBudgetAlertDismissed } = useBudgetAlertDismissals(
-    budgetAlertsData?.year,
-    budgetAlertsData?.month,
-  );
-  const budgetAlertsCount = useMemo(
-    () =>
-      (budgetAlertsData?.alerts ?? []).filter(
-        (a) => !isBudgetAlertDismissed(a.rule_id),
-      ).length,
-    [budgetAlertsData?.alerts, isBudgetAlertDismissed],
-  );
 
   // Auto-hide mobile top bar on scroll down, show on scroll up
   const [topBarVisible, setTopBarVisible] = useState(true);
@@ -238,8 +220,9 @@ export function Sidebar() {
   return (
     <>
       {/* Mobile top bar — full width, slim, auto-hides on scroll */}
-      <div className={`md:hidden fixed top-0 inset-x-0 h-10 bg-[var(--surface)]/95 backdrop-blur-md border-b border-[var(--surface-light)] z-40 flex items-center justify-between px-3 transition-transform duration-200 ${topBarVisible ? "translate-y-0" : "-translate-y-full"}`}>
+      <div data-testid="mobile-top-bar" className={`md:hidden fixed top-0 inset-x-0 h-10 bg-[var(--surface)]/95 backdrop-blur-md border-b border-[var(--surface-light)] z-40 flex items-center justify-between px-3 transition-transform duration-200 ${topBarVisible ? "translate-y-0" : "-translate-y-full"}`}>
         <button
+          data-testid="mobile-menu-button"
           onClick={() => setMobileSidebarOpen(true)}
           className="p-1.5 -ms-1.5 rounded-lg hover:bg-[var(--surface-light)] transition-colors"
         >
@@ -250,6 +233,19 @@ export function Sidebar() {
         </span>
         <div className="flex items-center gap-0.5">
           {budgetAlertsEnabled && <BudgetAlertsBell variant="compact" />}
+          <NavLink
+            to="/data-flow"
+            aria-label={t("dataFlow.title")}
+            className={({ isActive }) =>
+              `p-1.5 rounded-lg transition-colors ${
+                isActive
+                  ? "text-[var(--primary)]"
+                  : "text-[var(--text-muted)] hover:text-white hover:bg-[var(--surface-light)]"
+              }`
+            }
+          >
+            <Workflow size={20} />
+          </NavLink>
           <button
             onClick={() => setSettingsOpen(true)}
             aria-label={t("settings.title")}
@@ -276,6 +272,7 @@ export function Sidebar() {
           onClick={() => setMobileSidebarOpen(false)}
         >
           <div
+            data-testid="mobile-menu-drawer"
             className="fixed top-0 inset-x-0 bg-[var(--surface)] border-b border-[var(--surface-light)] animate-in slide-in-from-top duration-200 z-50 max-h-dvh overflow-y-auto"
             onClick={(e) => e.stopPropagation()}
           >
@@ -319,51 +316,6 @@ export function Sidebar() {
                   </NavLink>
                 );
               })}
-              {/* Budget Alerts tile */}
-              {budgetAlertsEnabled && (
-                <button
-                  onClick={() => {
-                    setMobileSidebarOpen(false);
-                    setMobileAlertsOpen(true);
-                  }}
-                  className="relative flex flex-col items-center gap-1.5 px-2 py-3 rounded-xl transition-all text-center text-[var(--text-muted)] hover:bg-[var(--surface-light)] hover:text-white"
-                >
-                  <Bell size={20} />
-                  <span className="text-[11px] font-medium leading-tight">{t("budgetAlerts.title")}</span>
-                  {budgetAlertsCount > 0 && (
-                    <span className="absolute -top-1 -end-1 min-w-[18px] h-[18px] flex items-center justify-center rounded-full bg-rose-500 text-white text-[10px] font-bold px-1">
-                      {budgetAlertsCount > 99 ? "99+" : budgetAlertsCount}
-                    </span>
-                  )}
-                </button>
-              )}
-              {/* Settings tile */}
-              <button
-                onClick={() => setSettingsOpen(!settingsOpen)}
-                className={`relative flex flex-col items-center gap-1.5 px-2 py-3 rounded-xl transition-all text-center ${
-                  settingsOpen
-                    ? "bg-blue-500/10 text-[var(--primary)]"
-                    : "text-[var(--text-muted)] hover:bg-[var(--surface-light)] hover:text-white"
-                }`}
-              >
-                <SettingsIcon size={20} />
-                <span className="text-[11px] font-medium leading-tight">{t("settings.title")}</span>
-              </button>
-              {/* Data Flow tile */}
-              <NavLink
-                to="/data-flow"
-                onClick={() => setMobileSidebarOpen(false)}
-                className={({ isActive }) =>
-                  `relative flex flex-col items-center gap-1.5 px-2 py-3 rounded-xl transition-all text-center ${
-                    isActive
-                      ? "bg-[var(--primary)] text-white"
-                      : "text-[var(--text-muted)] hover:bg-[var(--surface-light)] hover:text-white"
-                  }`
-                }
-              >
-                <Workflow size={20} />
-                <span className="text-[11px] font-medium leading-tight">{t("dataFlow.title")}</span>
-              </NavLink>
             </nav>
           </div>
         </div>
@@ -372,10 +324,6 @@ export function Sidebar() {
       <SettingsPopup
         isOpen={settingsOpen}
         onClose={() => setSettingsOpen(false)}
-      />
-      <BudgetAlertsPopup
-        isOpen={mobileAlertsOpen}
-        onClose={() => setMobileAlertsOpen(false)}
       />
     </>
   );

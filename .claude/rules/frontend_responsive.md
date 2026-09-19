@@ -11,7 +11,7 @@ paths:
 - **Desktop (`md:` and up):** Fixed sidebar (`hidden md:block`), collapsible between `w-64` (open) and `w-20` (icons). Main content uses `md:ms-64` / `md:ms-20` margin.
 - **Mobile (below `md:`):** Sidebar hidden. Top bar (`h-14`, `z-40`) with hamburger menu + page title. Sidebar opens as a full-screen overlay drawer (`z-50`) with backdrop.
 - **State:** `mobileSidebarOpen` in `appStore` controls the mobile drawer. Nav links call `setMobileSidebarOpen(false)` on click to auto-close.
-- **Parity with desktop:** every link/button in the desktop sidebar must also appear in the mobile drawer — including secondary entries like Budget Alerts, Settings, Data Flow. A user should never need to know that "the bell icon in the top bar opens X" to reach a feature; the mobile drawer is the canonical menu. When you add a new sidebar entry, edit BOTH the desktop sidebar and the mobile drawer in `frontend/src/components/layout/`.
+- **Parity with desktop:** every page link in the desktop sidebar's nav must also appear in the mobile drawer's grid. The desktop sidebar *footer* entries (Budget Alerts, Settings, Data Flow) are the exception: on mobile they live **only** in the top bar as icon buttons, never as drawer tiles. When you add a new sidebar entry, edit BOTH the desktop sidebar and its mobile home (drawer grid for a page, top bar for a footer utility) in `frontend/src/components/layout/Sidebar.tsx`.
 
 ### Main Content
 - Padding: `p-2 sm:p-4 md:p-8` (tighter on mobile to maximize screen real estate)

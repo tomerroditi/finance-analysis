@@ -304,8 +304,7 @@ test.describe("Budget", () => {
     const bell = page.getByRole("button", { name: /Budget Alerts/i }).first();
     await expect(bell).toBeVisible();
 
-    // The settings control is a <label>; the mobile drawer tile uses a
-    // <span>, so scope to the label.
+    // The settings control is a <label>, so scope to it.
     await page.getByRole("button", { name: "Settings" }).first().click();
     const toggleRow = page
       .locator("label", { hasText: "Budget Alerts" })
