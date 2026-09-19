@@ -176,7 +176,7 @@ class TestReadLog:
         log = tmp_path / "shard.log"
         log.write_bytes(b"Running 1 test\n\x94garbled\n  1 passed (2.0s)\n")
         with pytest.raises(UnicodeDecodeError):
-            log.read_text()
+            log.read_text(encoding="utf-8")
         assert "1 passed (2.0s)" in runner.read_log(log)
 
     def test_missing_file_reads_as_empty(self, tmp_path):

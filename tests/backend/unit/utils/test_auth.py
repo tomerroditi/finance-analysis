@@ -2,6 +2,7 @@
 
 import os
 import stat
+import sys
 
 import pytest
 
@@ -74,7 +75,11 @@ class TestApiTokenStorage:
         assert auth.get_api_token() is None
 
     def test_get_or_create_generates_owner_only_file(self, monkeypatch, tmp_path):
-        """Verify first call creates a 0600 token file, second call reuses it."""
+        """Verify first call creates a 0600 token file, second call reuses it.
+
+        The 0600 check is POSIX-only: Windows ignores mode bits, and the token
+        there is owner-only through the user-profile ACL it inherits.
+        """
         monkeypatch.setenv("FAD_USER_DIR", str(tmp_path))
         monkeypatch.delenv("FAD_API_TOKEN", raising=False)
 
@@ -83,8 +88,8 @@ class TestApiTokenStorage:
         token_path = tmp_path / auth.API_TOKEN_FILENAME
         assert token_path.read_text() == token
         assert len(token) >= 32
-        mode = stat.S_IMODE(os.stat(token_path).st_mode)
-        assert mode == 0o600
+        if sys.platform != "win32":
+            assert stat.S_IMODE(os.stat(token_path).st_mode) == 0o600
         assert auth.get_or_create_api_token() == token
 
 

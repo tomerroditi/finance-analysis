@@ -7,6 +7,7 @@ permissions — and the ``AppConfig`` fallback when no path is given.
 """
 
 import stat
+import sys
 from unittest.mock import patch
 
 from sqlalchemy import text
@@ -33,14 +34,21 @@ class TestCreateDbEngine:
     """Creating the on-disk engine."""
 
     def test_creates_missing_directory_and_file_with_private_permissions(self, tmp_path):
-        """A nested, non-existent path is created as 0o700 dir + 0o600 file."""
+        """A nested, non-existent path is created as 0o700 dir + 0o600 file.
+
+        The mode check is POSIX-only: Windows ignores mode bits (``os.chmod``
+        only toggles read-only). There the DB is owner-only through the ACL it
+        inherits from the user profile that ``~/.finance-analysis`` lives in
+        (SYSTEM, Administrators and the owner; no other users).
+        """
         db_path = tmp_path / "nested" / "deeper" / "data.db"
 
         engine = create_db_engine(str(db_path))
         try:
             assert db_path.is_file()
-            assert stat.S_IMODE(db_path.parent.stat().st_mode) == 0o700
-            assert stat.S_IMODE(db_path.stat().st_mode) == 0o600
+            if sys.platform != "win32":
+                assert stat.S_IMODE(db_path.parent.stat().st_mode) == 0o700
+                assert stat.S_IMODE(db_path.stat().st_mode) == 0o600
             assert isinstance(engine.pool, NullPool)
             with engine.connect() as conn:
                 assert conn.execute(text("select 1")).scalar() == 1
