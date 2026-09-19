@@ -1,3 +1,9 @@
+## v1.65.5 (2026-09-19)
+
+### Fix
+
+- **data-sources**: make the connection modal scroll on short mobile screens (#284)
+
 ## v1.65.4 (2026-09-18)
 
 ### Fix
