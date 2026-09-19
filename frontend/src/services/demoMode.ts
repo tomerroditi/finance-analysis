@@ -40,7 +40,7 @@ const SESSION_ID_PATTERN = /^[A-Za-z0-9_-]{16,64}$/;
 
 function mintSessionId(): string {
   // randomUUID is secure-context only; getRandomValues covers plain-http
-  // LAN access (e.g. `./start.sh remote` over an IP).
+  // access (e.g. a tailnet share without HTTPS certificates).
   if (typeof crypto.randomUUID === "function") {
     return crypto.randomUUID();
   }

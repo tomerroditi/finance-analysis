@@ -252,9 +252,10 @@ def origin_allowed(
     allowed_hosts : Iterable[str]
         The ``Host`` allowlist, consulted only for the ``*`` wildcard that
         disables the guard. A trusted hostname alone is no longer enough:
-        the tailnet frontend in ``./start.sh remote`` is accepted through
-        ``CORS_ORIGINS``, which that script sets, so a hostile page on
-        another port of a trusted host cannot issue writes.
+        the tailnet URL that ``./start.sh prod`` shares via ``tailscale
+        serve`` is accepted through ``CORS_ORIGINS``, which that script
+        sets, so a hostile page on another port of a trusted host cannot
+        issue writes.
 
     Returns
     -------

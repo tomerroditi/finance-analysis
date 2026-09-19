@@ -2,26 +2,6 @@
   "version": "2.0.0",
   "tasks": [
     {
-      "label": "Dev Remote (Backend + Frontend)",
-      "type": "shell",
-      "command": "./start.sh remote",
-      "isBackground": true,
-      "problemMatcher": {
-        "owner": "start-sh",
-        "pattern": { "regexp": "^__never_matches__$" },
-        "background": {
-          "activeBegins": true,
-          "beginsPattern": "Starting in",
-          "endsPattern": "Local.*http://"
-        }
-      },
-      "presentation": {
-        "group": "dev-remote",
-        "reveal": "always",
-        "panel": "dedicated"
-      }
-    },
-    {
       "label": "Backend",
       "type": "shell",
       "command": "npm run backend",

@@ -338,8 +338,8 @@ async def enforce_host_allowlist(request: Request, call_next):
 # /api/* is guarded plus the OpenAPI/docs endpoints: the static SPA shell
 # contains no data (and the frontend picks the token up from a one-time
 # `?apiToken=` URL parameter), but the schema enumerates every route, and
-# docs stay enabled whenever ENVIRONMENT isn't "production" — which includes
-# `./start.sh remote`, where the server is bound to 0.0.0.0.
+# docs stay enabled whenever ENVIRONMENT isn't "production" — e.g. a dev
+# server someone bound to 0.0.0.0.
 _DOC_PATHS = frozenset({"/openapi.json", "/docs", "/redoc"})
 
 

@@ -9,7 +9,7 @@ const api = axios.create({
 });
 
 // Remote-access API token. When the backend is exposed beyond localhost
-// (./start.sh prod with BIND_HOST set), non-local clients must send
+// (./start.sh prod's tailnet share, or BIND_HOST set), non-local clients must send
 // `Authorization: Bearer <token>` on /api requests. The token is handed
 // over once via a `?apiToken=` URL parameter, persisted to localStorage,
 // and stripped from the URL so it doesn't linger in the address bar or

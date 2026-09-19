@@ -202,8 +202,8 @@ class TestOriginAllowed:
     def test_allowlisted_host_alone_does_not_authorise_an_origin(self):
         """Verify Host-allowlisting a tailnet IP does not trust every port on it.
 
-        ``./start.sh remote`` puts the tailnet *frontend* origin into
-        ``CORS_ORIGINS``, which is what authorises it. Trusting the bare
+        ``./start.sh prod`` puts the tailnet origin into ``CORS_ORIGINS``,
+        which is what authorises it. Trusting the bare
         hostname on any port would hand every other service on that host a
         write channel.
         """
@@ -211,15 +211,18 @@ class TestOriginAllowed:
         assert self._check("http://100.64.0.7:5174", hosts=hosts) is False
 
     def test_tailnet_frontend_is_allowed_through_cors_origins(self):
-        """Verify the remote-mode tailnet frontend still reaches the API.
+        """Verify the tailnet share of the prod server still reaches the API.
 
-        This is the path ``./start.sh remote`` configures, and it is how the
-        origin above is meant to be authorised.
+        ``tailscale serve`` forwards the tailnet ``Host`` and the browser's
+        HTTPS ``Origin``, which never match as same-origin (port 443 vs the
+        plain-HTTP backend), so ``./start.sh prod`` allowlists the origin.
         """
-        cors = self.CORS + ["http://100.64.0.7:5174"]
+        cors = self.CORS + ["https://laptop.tail1234.ts.net"]
         assert (
             self._check(
-                "http://100.64.0.7:5174", host="100.64.0.7:8001", cors=cors
+                "https://laptop.tail1234.ts.net",
+                host="laptop.tail1234.ts.net",
+                cors=cors,
             )
             is True
         )

@@ -9,14 +9,7 @@
       "preLaunchTask": "Dev (Backend + Frontend)"
     },
     {
-      "name": "Dev Remote (Tailscale)",
-      "request": "launch",
-      "type": "node-terminal",
-      "command": "echo 'Remote dev starting — tailnet URL is printed by start.sh in the task panel.'",
-      "preLaunchTask": "Dev Remote (Backend + Frontend)"
-    },
-    {
-      "name": "Prod (Single Server)",
+      "name": "Prod (Single Server + Tailscale, auto-update)",
       "type": "node-terminal",
       "request": "launch",
       "command": "./start.sh prod",
