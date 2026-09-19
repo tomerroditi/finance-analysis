@@ -886,6 +886,9 @@ class OneZeroScraper(ApiScraper):
             (Twilio) as blocked, or if a prior call already recorded such
             a block and the cooldown hasn't elapsed yet.
         """
+        # Masked from the caller's value: normalizing never changes the last
+        # four digits, and it keeps the normalized number out of every log.
+        masked_phone = _mask_phone(phone_number)
         # Accounts saved before the +972 form was enforced may hold the local
         # 05X form, which the OTP endpoint rejects.
         phone_number = normalize_israeli_mobile(phone_number)
@@ -906,7 +909,7 @@ class OneZeroScraper(ApiScraper):
         device_token = _extract_result_data(device_token_response, "deviceToken")
 
         logger.debug(
-            "Sending OTP to phone number ending in %s", _mask_phone(phone_number)
+            "Sending OTP to phone number ending in %s", masked_phone
         )
         try:
             otp_prepare_response = await fetch_post(
@@ -923,7 +926,7 @@ class OneZeroScraper(ApiScraper):
                 raise
             logger.warning(
                 "SMS provider blocked phone number %s; arming cooldown",
-                _mask_phone(phone_number),
+                masked_phone,
             )
             otp_prepare_rate_limiter.record_provider_block(phone_number)
             raise OtpProviderBlockedError(OTP_PROVIDER_BLOCKED_MESSAGE) from error
