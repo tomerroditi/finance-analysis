@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { Suspense, useEffect } from "react";
 import { Outlet, useLocation } from "react-router";
 import { Sidebar } from "./Sidebar";
 import { DemoSandboxNotice } from "./DemoSandboxNotice";
@@ -22,7 +22,9 @@ export function Layout() {
       >
         <div className="p-1.5">
           <DemoSandboxNotice />
-          <Outlet />
+          <Suspense fallback={null}>
+            <Outlet />
+          </Suspense>
         </div>
       </main>
     </div>

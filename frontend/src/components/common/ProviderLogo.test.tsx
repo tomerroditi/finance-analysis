@@ -2,6 +2,8 @@ import { describe, it, expect } from "vitest";
 import { fireEvent, screen } from "@testing-library/react";
 import { ProviderLogo } from "./ProviderLogo";
 import { renderWithProviders } from "../../test-utils";
+import hapoalimLogo from "../../assets/provider-logos/hapoalim.svg?url";
+import visaCalLogo from "../../assets/provider-logos/visa-cal.svg?url";
 
 describe("ProviderLogo", () => {
   it("renders the bundled logo for a known bank provider", () => {
@@ -11,7 +13,7 @@ describe("ProviderLogo", () => {
     const img = screen.getByAltText("Hapoalim") as HTMLImageElement;
     expect(img).toBeInTheDocument();
     expect(img.tagName).toBe("IMG");
-    expect(img.src).toMatch(/hapoalim/i);
+    expect(img.getAttribute("src")).toBe(hapoalimLogo);
   });
 
   it("normalises provider keys with spaces to hyphenated filenames", () => {
@@ -19,7 +21,7 @@ describe("ProviderLogo", () => {
       <ProviderLogo provider="visa cal" service="credit_cards" alt="Cal" />,
     );
     const img = screen.getByAltText("Cal") as HTMLImageElement;
-    expect(img.src).toMatch(/visa-cal/i);
+    expect(img.getAttribute("src")).toBe(visaCalLogo);
   });
 
   it("supports PNG logos (Beyahad Bishvilha)", () => {

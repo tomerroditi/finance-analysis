@@ -160,14 +160,23 @@ persisted React Query cache.
 
 ## Build size & precache budget
 
-Workbox refuses to precache assets larger than 2 MiB by default. The main
-chunk sits at ~1.6 MiB minified (post-Plotly-removal; charts are Recharts
-now), so we set `maximumFileSizeToCacheInBytes: 3 MiB` in the `workbox`
-config block for headroom. **Do not raise that limit** — it's there to
-stop us shipping a huge SW cache again (the Plotly era needed 10 MiB).
-If you add a heavy dependency that pushes a single chunk past 3 MiB, the
-build will fail with a Workbox error. Fix it by code-splitting, not by
-bumping the limit.
+Workbox refuses to precache assets larger than 2 MiB, and we now run on
+that default — no `maximumFileSizeToCacheInBytes` override. It used to be
+raised to 3 MiB because every page lived in one ~1.6 MiB chunk; routes are
+lazy (`App.tsx`) and libraries are grouped (`build.rolldownOptions.output
+.codeSplitting` in `vite.config.ts`), so the largest chunk is well under
+the default. **Do not raise the limit** — it's there to stop us shipping a
+huge SW cache again (the Plotly era needed 10 MiB). If a heavy dependency
+pushes a single chunk past 2 MiB, the build fails with a Workbox error.
+Fix it by code-splitting, not by bumping the limit.
+
+The `charts` group (recharts + d3) must stay out of the entry's static
+import graph, or the browser preloads it on every first paint. It shares
+`use-sync-external-store` with zustand and react-i18next, so the eager
+groups carry a higher `priority` — that keeps the shared module in
+`vendor` instead of dragging all of recharts forward. After changing the
+groups, check that `dist/index.html` does not `modulepreload` the charts
+chunk.
 
 ## Lockfile hygiene
 
