@@ -119,6 +119,10 @@ class BaseScraper(ABC):
         self._emit_progress("initializing")
         try:
             await self.initialize()
+        except ScraperError as e:
+            return self._phase_failure(
+                "initialize", e.error_type.value, e, terminate=False
+            )
         except Exception as e:
             return self._phase_failure("initialize", "INIT_ERROR", e, terminate=False)
 

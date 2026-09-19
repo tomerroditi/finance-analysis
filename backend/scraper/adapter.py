@@ -52,8 +52,8 @@ NO_ACCOUNTS_ERROR = (
     "provider's API may have changed. Try reconnecting the account."
 )
 
-# NOTE: these two dicts are plain in-process, single-event-loop state —
-# there is exactly one asyncio event loop per uvicorn worker, and the app
+# NOTE: these two dicts are plain in-process state — every scrape runs on the
+# one scraper event loop (``scraping_service.get_scraper_loop``), and the app
 # runs a single in-process worker (see ``build/app_entry.py``). Under a
 # hypothetical multi-worker deployment, each worker would get its own copy
 # and these guards (single-flight lock, 2FA-waiting registry) would need
@@ -306,7 +306,7 @@ class ScraperAdapter:
 
         # Demo mode is context-local and does NOT survive the hand-off in
         # scraping_service._launch_adapter (run_coroutine_threadsafe starts
-        # the coroutine in a context copied on the event loop, not ours), so
+        # the coroutine in a context copied on the scraper loop, not ours), so
         # capture it here — inside the request — and re-apply it in run().
         self.demo_mode = AppConfig().is_demo_mode
 
@@ -387,13 +387,13 @@ class ScraperAdapter:
                         # transaction arrived. Only the row insert itself is
                         # conditional on there being rows.
                         #
-                        # TODO(perf): these are blocking sync DB writes (save,
-                        # auto-tag, rebalance) that run on the event loop thread.
-                        # Offloading them via run_in_executor was considered but
-                        # deferred: thread-pool work is NOT cancellable by the
-                        # asyncio.wait_for timeout above, so an executor hop would
-                        # let DB writes outlive the 5-minute ceiling. Revisit with
-                        # an explicit cancellation/cleanup story before offloading.
+                        # These are blocking sync DB writes (save, auto-tag,
+                        # rebalance). They stall the scraper loop — and so any
+                        # concurrent scrape — but never the server, which runs
+                        # on its own loop. They are deliberately not moved to an
+                        # executor: thread-pool work is NOT cancellable by the
+                        # asyncio.wait_for timeout above, so the hop would let DB
+                        # writes outlive the 5-minute ceiling.
                         if not self._data.empty:
                             self._data = self._data.sort_values(by=["date"])
                         self._save_scraped_transactions()
@@ -566,8 +566,8 @@ class ScraperAdapter:
         self._otp_code = code
         loop = self._loop
         if loop is not None and not loop.is_closed():
-            # run() executes on the server's main event loop; this method is
-            # called from a synchronous route in a threadpool worker thread.
+            # run() executes on the scraper event loop; this method is called
+            # from a synchronous route in a threadpool worker thread.
             # Marshal Event.set() onto that loop so the parked scraper
             # coroutine is woken reliably — asyncio.Event is not thread-safe.
             loop.call_soon_threadsafe(self._otp_event.set)
@@ -579,7 +579,10 @@ class ScraperAdapter:
     async def resend_otp(self) -> None:
         """Re-issue the OTP for the underlying scraper without restarting it.
 
-        Delegates to the scraper's ``resend_otp``. This only mutates the
+        Delegates to the scraper's ``resend_otp``, run on the loop ``run()``
+        executes on: the caller is on the server loop, but the scraper's
+        HTTP client and browser belong to the scraper loop and cannot be
+        driven from another one. This only mutates the
         provider's OTP context (e.g. OneZero's ``_otp_context``); it does not
         touch ``_otp_event`` or ``_otp_code``, so it is safe to call while the
         scraper coroutine is parked in ``_otp_callback`` awaiting the user's
@@ -599,7 +602,13 @@ class ScraperAdapter:
         """
         if self._scraper is None:
             raise EntityNotFoundException("Scraper is not ready for a resend yet")
-        await self._scraper.resend_otp()
+        loop = self._loop
+        if loop is None or loop is asyncio.get_running_loop():
+            await self._scraper.resend_otp()
+            return
+        await asyncio.wrap_future(
+            asyncio.run_coroutine_threadsafe(self._scraper.resend_otp(), loop)
+        )
 
     # ------------------------------------------------------------------
     # Scraper creation

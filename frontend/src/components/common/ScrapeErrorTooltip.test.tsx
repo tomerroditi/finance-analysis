@@ -50,6 +50,25 @@ describe("ScrapeErrorTooltip", () => {
       expect(screen.getByText(MESSAGE)).toBeInTheDocument();
     });
 
+    it("only suggests installing a browser when the browser is missing", () => {
+      // INIT_ERROR used to say "install Chrome or Edge" for any startup
+      // failure, sending users after an install that could not help.
+      const { unmount } = renderWithProviders(
+        <ScrapeErrorTooltip
+          message="initialize failed: NotImplementedError"
+          errorType="INIT_ERROR"
+        />,
+      );
+      expect(screen.getByText(/could not start/i)).toBeInTheDocument();
+      expect(screen.queryByText(/chrome|edge/i)).not.toBeInTheDocument();
+      unmount();
+
+      renderWithProviders(<ScrapeErrorTooltip errorType="BROWSER_NOT_FOUND" />);
+      expect(
+        screen.getByText(/needs Google Chrome or Microsoft Edge/i),
+      ).toBeInTheDocument();
+    });
+
     it("falls back to generic copy for an unrecognised errorType", () => {
       // A category the backend adds later must not leak a raw i18n key path.
       renderWithProviders(

@@ -1,4 +1,7 @@
 import asyncio
+import logging
+import sys
+import threading
 from datetime import date, datetime, timedelta
 from typing import Dict, List, Optional
 
@@ -19,41 +22,123 @@ from backend.scraper.adapter import (
 )
 
 
-# The server's main asyncio event loop, captured at startup (see
-# ``backend.main.lifespan``). ``start_scraping_single`` runs inside a
-# synchronous FastAPI route — executed in a threadpool worker thread with no
-# running event loop — so it cannot use ``asyncio.create_task`` (which needs a
-# loop in the *calling* thread and would raise "no running event loop",
-# leaking the ``adapter.run()`` coroutine). Instead it submits the coroutine
-# to this captured loop via ``asyncio.run_coroutine_threadsafe``, which is
-# safe from any thread, including the loop's own thread (the async
-# resend-relaunch path).
-_main_loop: "asyncio.AbstractEventLoop | None" = None
+logger = logging.getLogger(__name__)
+
+# Scrapers run on their own event loop, on a dedicated daemon thread, never on
+# the server's. Browser scrapers launch Playwright's driver with
+# ``asyncio.create_subprocess_exec``, which on Windows only a
+# ``ProactorEventLoop`` supports — and uvicorn hands the server a
+# ``SelectorEventLoop`` on Windows whenever it runs with ``--reload`` (its
+# ``use_subprocess`` mode), so every browser scrape died with
+# ``initialize failed: NotImplementedError``. Owning the loop makes the
+# launch mode irrelevant, and keeps a scrape's blocking DB writes (save,
+# auto-tag, rebalance) off the thread that serves requests.
+#
+# Routes reach this loop only through thread-safe hand-offs:
+# ``run_coroutine_threadsafe`` to launch, ``Future.cancel`` to abort,
+# ``call_soon_threadsafe`` to deliver an OTP, and ``ScraperAdapter.resend_otp``
+# for a resend.
+_scraper_loop: "asyncio.AbstractEventLoop | None" = None
+_scraper_loop_lock = threading.Lock()
+# Scrape tasks still in flight, so shutdown can cancel exactly the scrapes —
+# not Playwright's own tasks on the same loop, which the scrapes still need to
+# close their browsers. Touched only from the scraper loop's thread.
+_running_scrapes: "set[asyncio.Task]" = set()
+
+# How long shutdown waits for cancelled scrapes to close their browsers and
+# record their outcome before the loop is stopped regardless.
+_SHUTDOWN_GRACE_SECONDS = 10
 
 
-def set_main_loop(loop: "asyncio.AbstractEventLoop | None") -> None:
-    """Register the server's main event loop for launching scrapers.
+def _new_scraper_loop() -> asyncio.AbstractEventLoop:
+    """Create an event loop that can spawn subprocesses on every platform.
 
-    Called once from the application lifespan startup. Scraper launches are
-    submitted to this loop from synchronous route handlers.
+    Returns
+    -------
+    asyncio.AbstractEventLoop
+        A ``ProactorEventLoop`` on Windows, the platform default elsewhere.
+    """
+    if sys.platform == "win32":
+        return asyncio.ProactorEventLoop()
+    return asyncio.new_event_loop()
+
+
+def get_scraper_loop() -> asyncio.AbstractEventLoop:
+    """Return the scraper event loop, starting its thread on first use.
+
+    Returns
+    -------
+    asyncio.AbstractEventLoop
+        The running loop every ``ScraperAdapter.run()`` is scheduled on.
+    """
+    global _scraper_loop
+    with _scraper_loop_lock:
+        if _scraper_loop is None:
+            loop = _new_scraper_loop()
+            threading.Thread(
+                target=loop.run_forever, name="scraper-loop", daemon=True
+            ).start()
+            _scraper_loop = loop
+        return _scraper_loop
+
+
+async def shutdown_scraper_loop() -> None:
+    """Cancel in-flight scrapes and stop the scraper loop.
+
+    Cancelling (rather than just stopping the loop) lets each adapter close
+    its browser and record the run as canceled, instead of leaving a
+    Playwright process behind and a history row stuck in progress.
+    """
+    global _scraper_loop
+    with _scraper_loop_lock:
+        loop, _scraper_loop = _scraper_loop, None
+    if loop is None:
+        return
+
+    async def cancel_running_scrapes() -> None:
+        tasks = list(_running_scrapes)
+        for task in tasks:
+            task.cancel()
+        if tasks:
+            _, pending = await asyncio.wait(tasks, timeout=_SHUTDOWN_GRACE_SECONDS)
+            if pending:
+                logger.warning(
+                    "%d scrape(s) did not finish cancelling before shutdown",
+                    len(pending),
+                )
+
+    try:
+        await asyncio.wrap_future(
+            asyncio.run_coroutine_threadsafe(cancel_running_scrapes(), loop)
+        )
+    finally:
+        loop.call_soon_threadsafe(loop.stop)
+
+
+async def _run_tracked(adapter: ScraperAdapter) -> None:
+    """Run ``adapter.run()`` as a task shutdown can find and cancel.
 
     Parameters
     ----------
-    loop : asyncio.AbstractEventLoop or None
-        The running event loop to schedule scraper coroutines on.
+    adapter : ScraperAdapter
+        The adapter to run.
     """
-    global _main_loop
-    _main_loop = loop
+    task = asyncio.current_task()
+    _running_scrapes.add(task)
+    try:
+        await adapter.run()
+    finally:
+        _running_scrapes.discard(task)
 
 
 def _launch_adapter(adapter: ScraperAdapter) -> None:
-    """Schedule ``adapter.run()`` on the server's main event loop.
+    """Schedule ``adapter.run()`` on the scraper event loop.
 
-    Submitting via ``run_coroutine_threadsafe`` (rather than
-    ``asyncio.create_task``) lets this work from a synchronous route running
-    in a threadpool worker thread, which has no running loop of its own. The
+    Safe from any thread — the synchronous launch route runs in a threadpool
+    worker, and the async resend-relaunch path runs on the server loop. The
     returned ``concurrent.futures.Future`` is stored on the adapter so the
-    running task stays referenced for its full lifetime.
+    running task stays referenced for its full lifetime and can be cancelled
+    by an abort.
 
     ``run_coroutine_threadsafe`` does not carry the caller's context, so the
     adapter re-applies the demo mode it captured at construction (see
@@ -65,19 +150,9 @@ def _launch_adapter(adapter: ScraperAdapter) -> None:
     adapter : ScraperAdapter
         The adapter whose ``run()`` coroutine should be launched.
     """
-    loop = _main_loop
-    if loop is None:
-        # No captured loop — only expected outside the running app (e.g. an
-        # async caller already on a loop). Fall back to the running loop, or
-        # fail loudly rather than silently dropping the scrape.
-        try:
-            loop = asyncio.get_running_loop()
-        except RuntimeError as exc:
-            raise RuntimeError(
-                "No event loop available to launch scraper; set_main_loop() "
-                "was not called at startup."
-            ) from exc
-    adapter._run_future = asyncio.run_coroutine_threadsafe(adapter.run(), loop)
+    adapter._run_future = asyncio.run_coroutine_threadsafe(
+        _run_tracked(adapter), get_scraper_loop()
+    )
 
 
 class ScrapingService:
@@ -224,7 +299,7 @@ class ScrapingService:
         Start the scraping process for a single account as an async task.
 
         Records a new scraping history entry, creates a ``ScraperAdapter``,
-        and launches it on the main event loop via ``_launch_adapter`` (using
+        and launches it on the scraper event loop via ``_launch_adapter`` (using
         ``run_coroutine_threadsafe`` so it works from this synchronous route,
         which runs in a threadpool worker thread). If the provider requires
         2FA, the adapter is stored in ``_tfa_scrapers_waiting`` until an OTP

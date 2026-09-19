@@ -1,5 +1,8 @@
 """Tests for ScrapingService."""
 
+import asyncio
+import sys
+import threading
 from contextlib import contextmanager
 from datetime import date, datetime, timedelta
 from unittest.mock import MagicMock, patch
@@ -499,3 +502,78 @@ class TestScrapingServiceStartDate:
 
         start = real_service._get_scraper_start_date("banks", "hapoalim", "Main")
         assert (date.today() - start).days == 365
+
+
+class TestScraperLoop:
+    """Scrapers run on a dedicated loop that can always spawn subprocesses."""
+
+    @pytest.fixture(autouse=True)
+    def stop_loop(self):
+        """Stop the scraper loop a test started, so none leaks across tests."""
+        yield
+        asyncio.run(ss.shutdown_scraper_loop())
+
+    def test_loop_can_spawn_a_subprocess(self):
+        """The scraper loop can start a child process, as Playwright's driver needs.
+
+        Regression: scrapes ran on the server loop, which uvicorn makes a
+        ``SelectorEventLoop`` on Windows under ``--reload``; spawning the
+        Playwright driver there raised ``NotImplementedError`` and every
+        browser scrape failed at initialize.
+        """
+
+        async def spawn():
+            proc = await asyncio.create_subprocess_exec(
+                sys.executable, "-c", "pass"
+            )
+            return await proc.wait()
+
+        future = asyncio.run_coroutine_threadsafe(spawn(), ss.get_scraper_loop())
+
+        assert future.result(timeout=30) == 0
+
+    @pytest.mark.skipif(sys.platform != "win32", reason="Windows-only loop type")
+    def test_loop_is_proactor_on_windows(self):
+        """On Windows the scraper loop is a ProactorEventLoop."""
+        assert isinstance(ss.get_scraper_loop(), asyncio.ProactorEventLoop)
+
+    def test_loop_is_reused_across_launches(self):
+        """Every scrape shares the one loop instead of starting a thread each."""
+        assert ss.get_scraper_loop() is ss.get_scraper_loop()
+
+    def test_launch_runs_adapter_off_the_callers_thread(self):
+        """_launch_adapter runs adapter.run() on the scraper loop's thread."""
+        observed = {}
+
+        async def fake_run():
+            observed["thread"] = threading.current_thread().name
+            observed["loop"] = asyncio.get_running_loop()
+
+        adapter = MagicMock(run=fake_run)
+        ss._launch_adapter(adapter)
+        adapter._run_future.result(timeout=5)
+
+        assert observed["thread"] == "scraper-loop"
+        assert observed["loop"] is ss.get_scraper_loop()
+
+    def test_shutdown_cancels_running_scrapes_and_waits_for_cleanup(self):
+        """Shutdown cancels an in-flight scrape and lets its cleanup finish."""
+        started = threading.Event()
+        cleaned_up = threading.Event()
+
+        async def fake_run():
+            started.set()
+            try:
+                await asyncio.sleep(60)
+            finally:
+                await asyncio.sleep(0.05)
+                cleaned_up.set()
+
+        adapter = MagicMock(run=fake_run)
+        ss._launch_adapter(adapter)
+        assert started.wait(timeout=5)
+
+        asyncio.run(ss.shutdown_scraper_loop())
+
+        assert cleaned_up.is_set()
+        assert adapter._run_future.cancelled()

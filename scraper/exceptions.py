@@ -10,6 +10,7 @@ class ErrorType(str, Enum):
     INVALID_OTP = "INVALID_OTP"
     TIMEOUT = "TIMEOUT"
     AUTOMATION_BLOCKED = "AUTOMATION_BLOCKED"
+    BROWSER_NOT_FOUND = "BROWSER_NOT_FOUND"
     GENERIC = "GENERIC"
     GENERAL = "GENERAL_ERROR"
 
@@ -66,6 +67,18 @@ class AutomationBlockedError(ScraperError):
     """
 
     error_type = ErrorType.AUTOMATION_BLOCKED
+
+
+class BrowserNotFoundError(ScraperError):
+    """Neither Chrome nor Edge is installed, so a browser scraper cannot start.
+
+    Kept apart from the generic initialize failure so "install a browser" is
+    only ever advice given when a browser is actually missing — any other
+    launch failure (a sandbox, an event loop that cannot spawn processes)
+    would send the user chasing an install that changes nothing.
+    """
+
+    error_type = ErrorType.BROWSER_NOT_FOUND
 
 
 class ConnectionError(ScraperError):
