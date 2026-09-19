@@ -76,6 +76,7 @@ const READ_ONLY_SPECS = [
   "**/dashboard-block-sizes.spec.ts",
   "**/dashboard-insights-strip.spec.ts",
   "**/dashboard-lazy-cards.spec.ts",
+  "**/dashboard-mobile-kpis.spec.ts",
   "**/data-flow.spec.ts",
   "**/flows/demo-mode-isolation.spec.ts",
   "**/income-by-source-card.spec.ts",

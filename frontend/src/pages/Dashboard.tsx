@@ -53,9 +53,36 @@ function MomBadge({ mom }: { mom: { delta: number; percent: number | null } | nu
   const { delta, percent } = mom;
   const color = delta >= 0 ? "text-emerald-400" : "text-rose-400";
   return (
-    <span dir="ltr" className={`text-[10px] font-semibold ${color}`}>
+    <span dir="ltr" className={`shrink-0 whitespace-nowrap text-[10px] font-semibold ${color}`}>
       {formatChange(delta)} {percent !== null && `(${formatPercentChange(percent)})`}
     </span>
+  );
+}
+
+/* Label + value + MoM badge for a health-header KPI card. On mobile the card
+ * owns a full row, so the three parts sit on one line (label start, money end);
+ * from `sm:` up the card is one of four columns and they stack as before.
+ * Every text node truncates inside a `min-w-0` flex item, so a long label or an
+ * oversized balance clips instead of widening the row. */
+function KpiHeader({
+  label,
+  value,
+  mom,
+}: {
+  label: string;
+  value: string;
+  mom: { delta: number; percent: number | null } | null;
+}) {
+  return (
+    <div className="flex items-baseline justify-between gap-2 sm:block">
+      <p className="min-w-0 truncate text-xs text-[var(--text-muted)]">{label}</p>
+      <div className="flex min-w-0 items-baseline gap-1.5 sm:block">
+        <p dir="ltr" className="min-w-0 truncate text-base font-bold sm:mt-0.5 sm:text-lg">
+          {value}
+        </p>
+        <MomBadge mom={mom} />
+      </div>
+    </div>
   );
 }
 
@@ -181,9 +208,9 @@ function FinancialHealthHeader({
 
   if (isLoading) {
     return (
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
+      <div className="grid grid-cols-1 sm:grid-cols-4 gap-1.5">
         {Array.from({ length: 4 }).map((_, i) => (
-          <Skeleton key={i} variant="card" className="h-16" />
+          <Skeleton key={i} variant="card" className="h-11 sm:h-16" />
         ))}
       </div>
     );
@@ -192,28 +219,29 @@ function FinancialHealthHeader({
   return (
     <>
     <div
-      className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 cursor-pointer"
+      data-testid="health-kpis"
+      className="grid grid-cols-1 sm:grid-cols-4 gap-1.5 cursor-pointer"
       onClick={() => setExpanded((v) => !v)}
     >
       {/* Net Worth */}
-      <div className="bg-[var(--surface)] rounded-xl px-3 sm:px-4 py-2.5 sm:py-3 border border-[var(--surface-light)] overflow-hidden">
-        <p className="text-[10px] sm:text-xs text-[var(--text-muted)] truncate">{t("dashboard.netWorth")}</p>
-        <p dir="ltr" className="text-base sm:text-lg font-bold mt-0.5 truncate">
-          {latestNetWorth ? formatCurrency(latestNetWorth.net_worth) : "--"}
-        </p>
-        <MomBadge mom={netWorthMom} />
+      <div data-testid="kpi-card" className="bg-[var(--surface)] rounded-xl px-3 sm:px-4 py-2.5 sm:py-3 border border-[var(--surface-light)] overflow-hidden">
+        <KpiHeader
+          label={t("dashboard.netWorth")}
+          value={latestNetWorth ? formatCurrency(latestNetWorth.net_worth) : "--"}
+          mom={netWorthMom}
+        />
         {expanded && netWorthMonthlyChanges.length > 0 && (
           <MonthlyChangeList items={netWorthMonthlyChanges} />
         )}
       </div>
 
       {/* Bank Balance */}
-      <div className="bg-[var(--surface)] rounded-xl px-3 sm:px-4 py-2.5 sm:py-3 border border-[var(--surface-light)] overflow-hidden">
-        <p className="text-[10px] sm:text-xs text-[var(--text-muted)] truncate">{t("dashboard.bankBalance")}</p>
-        <p dir="ltr" className="text-base sm:text-lg font-bold mt-0.5 truncate">
-          {latestNetWorth ? formatCurrency(latestNetWorth.bank_balance) : "--"}
-        </p>
-        <MomBadge mom={bankMom} />
+      <div data-testid="kpi-card" className="bg-[var(--surface)] rounded-xl px-3 sm:px-4 py-2.5 sm:py-3 border border-[var(--surface-light)] overflow-hidden">
+        <KpiHeader
+          label={t("dashboard.bankBalance")}
+          value={latestNetWorth ? formatCurrency(latestNetWorth.bank_balance) : "--"}
+          mom={bankMom}
+        />
         {expanded && bankBalances && bankBalances.length > 0 && (
           <div className="mt-2 pt-2 border-t border-[var(--surface-light)] space-y-1">
             {bankBalances.map((b) => {
@@ -268,12 +296,12 @@ function FinancialHealthHeader({
       </div>
 
       {/* Investments */}
-      <div className="bg-[var(--surface)] rounded-xl px-3 sm:px-4 py-2.5 sm:py-3 border border-[var(--surface-light)] overflow-hidden">
-        <p className="text-[10px] sm:text-xs text-[var(--text-muted)] truncate">{t("dashboard.investmentValue")}</p>
-        <p dir="ltr" className="text-base sm:text-lg font-bold mt-0.5 truncate">
-          {latestNetWorth ? formatCurrency(latestNetWorth.investment_value) : "--"}
-        </p>
-        <MomBadge mom={investmentMom} />
+      <div data-testid="kpi-card" className="bg-[var(--surface)] rounded-xl px-3 sm:px-4 py-2.5 sm:py-3 border border-[var(--surface-light)] overflow-hidden">
+        <KpiHeader
+          label={t("dashboard.investmentValue")}
+          value={latestNetWorth ? formatCurrency(latestNetWorth.investment_value) : "--"}
+          mom={investmentMom}
+        />
         {expanded && openInvestments && openInvestments.length > 0 && (
           <BreakdownList
             items={openInvestments.map((i) => ({ name: i.name, amount: i.balance }))}
@@ -282,10 +310,12 @@ function FinancialHealthHeader({
       </div>
 
       {/* Cash */}
-      <div className="bg-[var(--surface)] rounded-xl px-3 sm:px-4 py-2.5 sm:py-3 border border-[var(--surface-light)] overflow-hidden">
-        <p className="text-[10px] sm:text-xs text-[var(--text-muted)] truncate">{t("dashboard.cashBalance")}</p>
-        <p dir="ltr" className="text-base sm:text-lg font-bold mt-0.5 truncate">{formatCurrency(totalCash)}</p>
-        <MomBadge mom={cashMom} />
+      <div data-testid="kpi-card" className="bg-[var(--surface)] rounded-xl px-3 sm:px-4 py-2.5 sm:py-3 border border-[var(--surface-light)] overflow-hidden">
+        <KpiHeader
+          label={t("dashboard.cashBalance")}
+          value={formatCurrency(totalCash)}
+          mom={cashMom}
+        />
         {expanded && cashBalances && cashBalances.length > 0 && (
           <BreakdownList
             items={cashBalances.map((c) => ({ name: c.account_name, amount: c.balance }))}
