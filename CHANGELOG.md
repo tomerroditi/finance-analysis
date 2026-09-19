@@ -1,3 +1,10 @@
+## v1.67.3 (2026-09-19)
+
+### Fix
+
+- **frontend**: stop long category/tag values overflowing the select trigger (#295)
+- **logging**: keep app logs alive after startup migrations (#293)
+
 ## v1.67.2 (2026-09-19)
 
 ### Perf
