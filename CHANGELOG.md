@@ -1,3 +1,9 @@
+## v1.66.3 (2026-09-19)
+
+### Fix
+
+- **scraper**: answer Max's ID-number login challenge (#290)
+
 ## v1.66.2 (2026-09-19)
 
 ### Fix
