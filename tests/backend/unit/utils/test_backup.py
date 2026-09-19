@@ -134,7 +134,11 @@ class TestBackupDb:
         assert not get_backup_dir().exists()
 
     def test_creates_a_readable_copy_with_timestamped_name(self, tmp_path):
-        """A backup lands in the backups dir, is a valid SQLite copy, and is owner-only."""
+        """A backup lands in the backups dir, is a valid SQLite copy, and is owner-only.
+
+        The 0o600 check is POSIX-only: Windows ignores mode bits, and a backup
+        there is owner-only through the user-profile ACL it inherits.
+        """
         _install_live_db(tmp_path)
 
         dest = backup_db()
@@ -147,7 +151,8 @@ class TestBackupDb:
             assert conn.execute("SELECT note FROM marker").fetchall() == [("from backup",)]
         finally:
             conn.close()
-        assert stat.S_IMODE(dest.stat().st_mode) == 0o600
+        if sys.platform != "win32":
+            assert stat.S_IMODE(dest.stat().st_mode) == 0o600
 
     def test_prunes_oldest_backups_beyond_the_limit(self, tmp_path):
         """Only ``max_backups`` newest files survive; the oldest are unlinked."""

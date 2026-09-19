@@ -63,7 +63,9 @@ def create_db_engine(db_path: str = None, echo: bool = False):
 
     # Ensure the directory exists with owner-only permissions. The DB
     # holds financial data; other users on a shared host should not be
-    # able to list backups or read the DB file.
+    # able to list backups or read the DB file. Windows ignores these mode
+    # bits; there the default dir under the user profile inherits an
+    # owner-only ACL (SYSTEM, Administrators, the user).
     db_dir = os.path.dirname(db_path)
     os.makedirs(db_dir, exist_ok=True)
     try:
