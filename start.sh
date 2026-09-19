@@ -43,8 +43,11 @@ esac
 
 # Run both dev servers.
 run_dev_pair() {
+  # --loop: a select() loop that survives socket-buffer exhaustion on Windows
+  # (see backend/utils/event_loop.py).
   "$VENV_BIN/uvicorn" backend.main:app --reload \
-    --reload-dir backend --reload-dir scraper --port "$BACKEND_PORT" &
+    --reload-dir backend --reload-dir scraper --port "$BACKEND_PORT" \
+    --loop backend.utils.event_loop:reload_loop_factory &
   BACKEND_PID=$!
   trap 'kill $BACKEND_PID 2>/dev/null; exit' INT TERM
   cd frontend && PORT="$FRONTEND_PORT" BACKEND_PORT="$BACKEND_PORT" npm run dev

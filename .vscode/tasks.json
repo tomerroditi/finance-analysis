@@ -6,7 +6,7 @@
       "type": "shell",
       "command": "npm run backend",
       "windows": {
-        "command": "./.claude/scripts/bootstrap_venv.sh && .venv/Scripts/uvicorn backend.main:app --reload --reload-dir backend --reload-dir scraper --port ${BACKEND_PORT:-8000}"
+        "command": "./.claude/scripts/bootstrap_venv.sh && .venv/Scripts/uvicorn backend.main:app --reload --reload-dir backend --reload-dir scraper --port ${BACKEND_PORT:-8000} --loop backend.utils.event_loop:reload_loop_factory"
       },
       "isBackground": true,
       "problemMatcher": {
