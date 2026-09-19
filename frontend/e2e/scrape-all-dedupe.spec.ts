@@ -29,7 +29,7 @@ async function setBankCredential(accountName: string, create: boolean) {
           credentials: {
             email: `${accountName.replace(/\s+/g, "-").toLowerCase()}@example.com`,
             password: "e2e-password",
-            phoneNumber: "+15551234567",
+            phoneNumber: "+972501234567",
           },
         },
       });
@@ -120,6 +120,25 @@ test.describe("Per-account scraping concurrency", () => {
       });
     });
 
+    // Hapoalim "Main Account" already synced successfully today: Scrape All
+    // must leave it alone rather than re-download the same data.
+    const SCRAPED_TODAY = "Main Account";
+    await page.route("**/api/scraping/last-scrapes", async (route) => {
+      const response = await route.fetch();
+      const rows = (await response.json()) as {
+        account_name: string;
+        last_scrape_date: string | null;
+      }[];
+      await route.fulfill({
+        response,
+        json: rows.map((row) =>
+          row.account_name === SCRAPED_TODAY
+            ? { ...row, last_scrape_date: new Date().toISOString() }
+            : row,
+        ),
+      });
+    });
+
     await navigateTo(page, "/data-sources");
 
     const cardFor = (name: string) =>
@@ -174,6 +193,8 @@ test.describe("Per-account scraping concurrency", () => {
       startedAccounts.filter((a) => a === RUNNING_ACCOUNT),
     ).toHaveLength(1);
     expect(startedAccounts.filter((a) => a === IDLE_ACCOUNT)).toHaveLength(1);
+    // …and an account already synced today is skipped entirely.
+    expect(startedAccounts).not.toContain(SCRAPED_TODAY);
   });
 
   test("a running scrape is still shown after navigating away and back", async ({
@@ -227,9 +248,22 @@ test.describe("Per-account scraping concurrency", () => {
       timeout: 10_000,
     });
     // Still mid-scrape, so the card offers Abort rather than Scrape.
-    await expect(
-      runningCard.getByTitle(/Abort Scraping|הפסק שליפה/),
-    ).toBeVisible();
+    const abortButton = runningCard.getByTitle(/Abort Scraping|הפסק שליפה/);
+    await expect(abortButton).toBeVisible();
+
+    // Aborting is the user's own choice, not a failure: the card must read
+    // "Aborted" with its own badge, never "Failed".
+    await page.route("**/api/scraping/abort", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ status: "aborted" }),
+      });
+    });
+    await abortButton.click();
+    await expect(runningCard.getByTestId("scrape-aborted-badge")).toBeVisible();
+    await expect(runningCard.getByText(/^Aborted$|^בוטל$/)).toBeVisible();
+    await expect(runningCard.getByText(/^Failed$|^נכשל$/)).toHaveCount(0);
   });
 
   test("a failed scrape explains itself and still exposes the provider's text", async ({
@@ -287,12 +321,27 @@ test.describe("Per-account scraping concurrency", () => {
       await expect(errorInfoButton).toBeVisible();
       await errorInfoButton.click();
 
+      // The panel is portalled to <body>, so it is found by role, not inside
+      // the card.
+      const tooltip = page.getByRole("tooltip");
       // Friendly, translated explanation chosen by error_type…
       await expect(
-        card.getByText(/rejected the saved login|דחה את פרטי ההתחברות/),
+        tooltip.getByText(/rejected the saved login|דחה את פרטי ההתחברות/),
       ).toBeVisible();
       // …with the provider's raw text still available underneath.
-      await expect(card.getByText(ERROR_MESSAGE)).toBeVisible();
+      await expect(tooltip.getByText(ERROR_MESSAGE)).toBeVisible();
+
+      // Anchored inside the 12px icon, the panel used to shrink-wrap to one
+      // word per line and poke out past the card and the viewport. It must be
+      // a readable width and sit wholly on screen.
+      const box = await tooltip.boundingBox();
+      const viewport = page.viewportSize();
+      expect(box).not.toBeNull();
+      expect(box!.width).toBeGreaterThan(200);
+      expect(box!.x).toBeGreaterThanOrEqual(0);
+      expect(box!.y).toBeGreaterThanOrEqual(0);
+      expect(box!.x + box!.width).toBeLessThanOrEqual(viewport!.width);
+      expect(box!.y + box!.height).toBeLessThanOrEqual(viewport!.height);
     } finally {
       await setBankCredential(FAILED_ACCOUNT, false);
     }

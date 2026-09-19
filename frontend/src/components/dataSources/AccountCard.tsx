@@ -1,5 +1,6 @@
 import { useTranslation } from "react-i18next";
 import {
+  Ban,
   Trash2,
   Edit2,
   Eye,
@@ -179,7 +180,17 @@ export function AccountCard({
               )}
             </div>
           )}
-          {(!scraper || !["in_progress", "waiting_for_2fa", "success", "failed"].includes(scraper.status)) && (
+          {scraper?.status === "canceled" && (
+            <div
+              className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-slate-500/15 border border-slate-500/30"
+              title={t("dataSources.abortedHint")}
+              data-testid="scrape-aborted-badge"
+            >
+              <Ban size={12} className="text-slate-300" />
+              <span className="text-[10px] font-semibold text-slate-300">{t("dataSources.aborted")}</span>
+            </div>
+          )}
+          {(!scraper || !["in_progress", "waiting_for_2fa", "success", "failed", "canceled"].includes(scraper.status)) && (
             <>
               {!lastScrapeDate ? (
                 <span className="text-[10px] text-[var(--text-muted)] italic">{t("dataSources.neverSynced")}</span>

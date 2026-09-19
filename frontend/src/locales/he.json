@@ -1031,6 +1031,7 @@
     "deleteAccount": "מחק חשבון",
     "scrape": "שליפת נתונים",
     "scrapeAll": "שלוף הכל",
+    "scrapeAllHint": "שליפת כל החשבונות שטרם סונכרנו היום",
     "lastScraped": "שליפה אחרונה",
     "neverScraped": "לא נשלף אף פעם",
     "provider": "ספק",
@@ -1053,6 +1054,8 @@
     "tfaRequired": "נדרש אימות דו-שלבי",
     "synced": "מסונכרן",
     "failed": "נכשל",
+    "aborted": "בוטל",
+    "abortedHint": "עצרת את השליפה לפני שהסתיימה.",
     "neverSynced": "לא סונכרן אף פעם",
     "noBalanceSet": "לא הוגדרה יתרה",
     "setBalance": "הגדר יתרה",
@@ -1138,7 +1141,9 @@
       "email": "אימייל",
       "phoneNumber": "מספר טלפון",
       "otpLongTermToken": "אסימון התחברות ארוך טווח"
-    }
+    },
+    "phoneLocalPlaceholder": "501234567",
+    "invalidIsraeliMobile": "יש להזין מספר נייד ישראלי: 5 ואחריו 8 ספרות (לדוגמה ‎+972 501234567)."
   },
   "liabilities": {
     "title": "התחייבויות",

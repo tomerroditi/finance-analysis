@@ -12,7 +12,7 @@ export interface Account {
 export interface ScraperState {
   process_id: number;
   account: Account;
-  status: string; // 'in_progress', 'waiting_for_2fa', 'success', 'failed'
+  status: string; // 'in_progress', 'waiting_for_2fa', 'success', 'failed', 'canceled'
   last_updated: number;
   /**
    * Technical failure detail — the provider's own message, HTTP body or
@@ -375,12 +375,15 @@ export function useScraping() {
   const abortScraper = useCallback(async (scraper: ScraperState) => {
     try {
       await scrapingApi.abort(scraper.process_id);
+      // Mirrors the CANCELED row the backend records — a user abort is not a
+      // failure and must not read as one.
       setRunningScrapers((prev) => ({
         ...prev,
         [scraper.process_id]: {
           ...scraper,
-          status: "failed",
-          error_message: "Aborted by user",
+          status: "canceled",
+          error_message: undefined,
+          error_type: undefined,
           last_updated: Date.now(),
         },
       }));

@@ -635,3 +635,25 @@ class TestMutualTls:
             asyncio.run(scraper.initialize())
         _, kwargs = mock_client.call_args
         assert kwargs["verify"] is sentinel
+
+
+class TestLegacyLocalPhoneNumber:
+    """Accounts saved before +972 was enforced still reach the OTP endpoint."""
+
+    def test_local_number_is_sent_in_international_form(self):
+        """A stored ``05X`` number is rewritten to ``+9725…`` before /otp/prepare."""
+        scraper = _make_scraper()
+        device_ok = {"resultData": {"deviceToken": "dt"}}
+        prepare_ok = {"resultData": {"otpContext": "ctx"}}
+
+        async def run():
+            with patch.object(
+                onezero,
+                "fetch_post",
+                new=AsyncMock(side_effect=[device_ok, prepare_ok]),
+            ) as mock_post:
+                await scraper._trigger_two_factor_auth("050-7654321")
+                return mock_post.call_args_list
+
+        prepare_call = asyncio.run(run())[1]
+        assert prepare_call.args[1]["factorValue"] == "+972507654321"

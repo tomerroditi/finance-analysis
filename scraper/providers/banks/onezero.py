@@ -7,6 +7,7 @@ from typing import Optional
 
 import httpx
 
+from backend.utils.phone_numbers import normalize_israeli_mobile
 from scraper.base import OTP_CANCEL_SENTINEL, ApiScraper, OtpCanceledError
 from scraper.exceptions import InvalidOtpError, ScraperError
 from scraper.models.account import AccountResult
@@ -885,6 +886,9 @@ class OneZeroScraper(ApiScraper):
             (Twilio) as blocked, or if a prior call already recorded such
             a block and the cooldown hasn't elapsed yet.
         """
+        # Accounts saved before the +972 form was enforced may hold the local
+        # 05X form, which the OTP endpoint rejects.
+        phone_number = normalize_israeli_mobile(phone_number)
         if not phone_number.startswith("+"):
             raise Exception(
                 "A full international phone number starting with + "

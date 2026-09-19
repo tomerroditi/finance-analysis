@@ -615,3 +615,37 @@ class TestRemoveData:
         assert history.get_last_successful_scrape_date(
             "banks", "hapoalim", "Main"
         )
+
+
+class TestOneZeroPhoneValidation:
+    """OneZero phone numbers are stored only in ``+9725XXXXXXXX`` form."""
+
+    @staticmethod
+    def _save(service, phone):
+        service.save_credentials(
+            {"banks": {"onezero": {"Acc": {"email": "e", "phoneNumber": phone}}}}
+        )
+
+    @pytest.mark.parametrize("phone", ["050-1234567", "0501234567", "+972 50 123 4567"])
+    def test_local_forms_are_normalized(self, mock_repo, phone):
+        """A local or spaced number is rewritten to the international form."""
+        self._save(CredentialsService(MagicMock()), phone)
+
+        saved_fields = mock_repo.save_credentials.call_args.args[3]
+        assert saved_fields["phoneNumber"] == "+972501234567"
+
+    @pytest.mark.parametrize("phone", ["+15551234567", "0212345678", "05012345", "abc"])
+    def test_non_mobile_numbers_are_rejected(self, mock_repo, phone):
+        """Anything that is not an Israeli mobile number fails with a 400."""
+        with pytest.raises(cs.ValidationException):
+            self._save(CredentialsService(MagicMock()), phone)
+        mock_repo.save_credentials.assert_not_called()
+
+    def test_other_providers_are_untouched(self, mock_repo):
+        """Providers that take a free-form phone keep the typed value."""
+        CredentialsService(MagicMock()).save_credentials(
+            {"insurances": {"hafenix": {"Acc": {"id": "1", "phoneNumber": "050-1234567"}}}}
+        )
+
+        saved_fields = mock_repo.save_credentials.call_args.args[3]
+        assert saved_fields["phoneNumber"] == "050-1234567"
