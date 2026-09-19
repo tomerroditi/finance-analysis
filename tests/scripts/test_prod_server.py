@@ -263,3 +263,39 @@ class TestServerHealthy:
             sock.bind(("127.0.0.1", 0))
             port = sock.getsockname()[1]
         assert prod.Server("127.0.0.1", port).healthy(timeout=2) is False
+
+
+class TestBuildEnv:
+    """Tests for build_env()."""
+
+    BOOTLOADER = "/home/u/.vscode/extensions/ms-vscode.js-debug/src/bootloader.js"
+
+    def test_strips_vscode_auto_attach(self):
+        """Verify the js-debug bootloader and its inspector options are dropped."""
+        env = prod.build_env(
+            {
+                "NODE_OPTIONS": f"--require {self.BOOTLOADER}",
+                "VSCODE_INSPECTOR_OPTIONS": '{"inspectorIpc":"x"}',
+                "PATH": "/usr/bin",
+            }
+        )
+        assert env == {"PATH": "/usr/bin"}
+
+    def test_keeps_other_node_options(self):
+        """Verify unrelated NODE_OPTIONS flags survive the strip."""
+        env = prod.build_env(
+            {"NODE_OPTIONS": f"--max-old-space-size=4096 -r {self.BOOTLOADER}"}
+        )
+        assert env["NODE_OPTIONS"] == "--max-old-space-size=4096"
+
+    def test_keeps_unrelated_require(self):
+        """Verify a --require that is not the debugger is left alone."""
+        env = prod.build_env({"NODE_OPTIONS": "--require ./instrument.js"})
+        assert env["NODE_OPTIONS"] == "--require ./instrument.js"
+
+    def test_does_not_mutate_input(self):
+        """Verify the caller's environment mapping is left unchanged."""
+        environ = {"NODE_OPTIONS": f"--require={self.BOOTLOADER}"}
+        env = prod.build_env(environ)
+        assert "NODE_OPTIONS" not in env
+        assert environ == {"NODE_OPTIONS": f"--require={self.BOOTLOADER}"}
