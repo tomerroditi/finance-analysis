@@ -30,6 +30,7 @@ from scraper.utils import (
     sort_transactions_by_date,
     to_amount,
     wait_for_redirect,
+    wait_until,
     wait_until_element_found,
 )
 
@@ -49,6 +50,15 @@ LOGIN_SUBMIT_SELECTOR = "app-user-login-form .general-button.send-me-code"
 # After repeated failed logins Max answers the password form with login code 17
 # and reveals this extra ID-number input; the form must be resubmitted with it.
 ID_INPUT_SELECTOR = '#idInput input[formcontrolname="id"]'
+# Max reports some failures by swapping the whole form for an error screen
+# (account locked, dormant account, technical error) and others as an inline
+# message under the fields — neither is a popup, so both must end the wait or
+# the login just times out with nothing to show for it.
+ERROR_SCREEN_SELECTOR = "app-error-screen"
+INLINE_ERROR_SELECTOR = "app-user-login-form .error-msg"
+# Words Max's lock screen uses ("your details have been locked"/"blocked"),
+# which separate a lockout from the other error screens.
+BLOCKED_TEXT_MARKERS = ("ננעל", "נעול", "נחסם", "חסימה")
 
 SHEKEL_CURRENCY = "ILS"
 DOLLAR_CURRENCY = "USD"
@@ -592,7 +602,8 @@ async def _complete_login(page, user_id: Optional[str]) -> None:
     CredentialsError
         If Max asks for the ID number and none is stored.
     """
-    if not await _await_login_outcome(page, watch_id_prompt=True):
+    stale_error = await _element_text(page, INLINE_ERROR_SELECTOR)
+    if not await _await_login_outcome(page, True, stale_error):
         return
     user_id = (user_id or "").strip()
     if not user_id:
@@ -601,13 +612,18 @@ async def _complete_login(page, user_id: Optional[str]) -> None:
             "Add the ID number to this Max account's credentials and try again."
         )
     logger.info("Max requested an ID number; resubmitting the login form with it")
+    # The ID request is itself rendered as an inline error, so the resubmit must
+    # wait for a *different* message — otherwise it returns on the stale one.
+    stale_error = await _element_text(page, INLINE_ERROR_SELECTOR)
     await fill_input(page, ID_INPUT_SELECTOR, user_id)
     await click_button(page, LOGIN_SUBMIT_SELECTOR)
-    await _await_login_outcome(page, watch_id_prompt=False)
+    await _await_login_outcome(page, False, stale_error)
 
 
-async def _await_login_outcome(page, watch_id_prompt: bool) -> bool:
-    """Wait for a redirect, a login error dialog, or the ID challenge.
+async def _await_login_outcome(
+    page, watch_id_prompt: bool, stale_inline_error: str = ""
+) -> bool:
+    """Wait for a redirect, a login failure, or the ID challenge.
 
     Parameters
     ----------
@@ -615,11 +631,14 @@ async def _await_login_outcome(page, watch_id_prompt: bool) -> bool:
         The Playwright browser page.
     watch_id_prompt : bool
         Whether the ID-number input appearing counts as an outcome.
+    stale_inline_error : str
+        Inline error text already on screen, which must not count as the
+        outcome of this attempt.
 
     Returns
     -------
     bool
-        True if the ID-number input appeared first, False otherwise.
+        True if Max is asking for the ID number, False otherwise.
     """
     import asyncio
 
@@ -631,19 +650,26 @@ async def _await_login_outcome(page, watch_id_prompt: bool) -> bool:
                 ignore_list=[BASE_WELCOME_URL, f"{BASE_WELCOME_URL}/"],
             )
         ),
-        asyncio.create_task(
-            wait_until_element_found(page, INVALID_DETAILS_SELECTOR, only_visible=True)
-        ),
-        asyncio.create_task(
-            wait_until_element_found(page, LOGIN_ERROR_SELECTOR, only_visible=True)
-        ),
     ]
-    id_prompt = None
-    if watch_id_prompt:
-        id_prompt = asyncio.create_task(
-            wait_until_element_found(page, ID_INPUT_SELECTOR, only_visible=True)
+    tasks += [
+        asyncio.create_task(
+            wait_until_element_found(page, selector, only_visible=True)
         )
-        tasks.append(id_prompt)
+        for selector in (
+            INVALID_DETAILS_SELECTOR,
+            LOGIN_ERROR_SELECTOR,
+            ERROR_SCREEN_SELECTOR,
+        )
+    ]
+    tasks.append(
+        asyncio.create_task(_wait_for_new_inline_error(page, stale_inline_error))
+    )
+    if watch_id_prompt:
+        tasks.append(
+            asyncio.create_task(
+                wait_until_element_found(page, ID_INPUT_SELECTOR, only_visible=True)
+            )
+        )
 
     done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
     for task in pending:
@@ -653,7 +679,9 @@ async def _await_login_outcome(page, watch_id_prompt: bool) -> bool:
         exc = task.exception()
         if exc is not None:
             raise exc
-    return id_prompt in done
+    # The ID request arrives as an inline error *and* an input, so whichever
+    # watcher won the race, an input on screen means Max wants the ID.
+    return watch_id_prompt and await _element_visible(page, ID_INPUT_SELECTOR)
 
 
 def _get_possible_login_results(page) -> dict[LoginResult, list]:
@@ -674,11 +702,90 @@ def _get_possible_login_results(page) -> dict[LoginResult, list]:
         return await element_present_on_page(page, INVALID_DETAILS_SELECTOR)
 
     async def is_unknown_error(**kwargs):
-        return await element_present_on_page(page, LOGIN_ERROR_SELECTOR)
+        return await element_present_on_page(
+            page, LOGIN_ERROR_SELECTOR
+        ) or await element_present_on_page(page, ERROR_SCREEN_SELECTOR)
+
+    async def is_account_blocked(**kwargs):
+        text = await _element_text(page, ERROR_SCREEN_SELECTOR)
+        return any(marker in text for marker in BLOCKED_TEXT_MARKERS)
+
+    async def is_wrong_details(**kwargs):
+        return await element_present_on_page(page, INLINE_ERROR_SELECTOR)
 
     return {
         LoginResult.SUCCESS: [SUCCESS_URL],
         LoginResult.CHANGE_PASSWORD: [PASSWORD_EXPIRED_URL],
-        LoginResult.INVALID_PASSWORD: [is_invalid_password],
+        LoginResult.ACCOUNT_BLOCKED: [is_account_blocked],
+        LoginResult.INVALID_PASSWORD: [is_invalid_password, is_wrong_details],
         LoginResult.UNKNOWN_ERROR: [is_unknown_error],
     }
+
+
+async def _wait_for_new_inline_error(page, stale_inline_error: str) -> None:
+    """Wait for an inline login error other than the one already displayed.
+
+    Parameters
+    ----------
+    page : Page
+        The Playwright browser page.
+    stale_inline_error : str
+        Inline error text left over from an earlier attempt.
+
+    Raises
+    ------
+    TimeoutError
+        If no new inline error appears in time.
+    """
+
+    async def has_new_error() -> bool:
+        text = (await _element_text(page, INLINE_ERROR_SELECTOR)).strip()
+        return bool(text) and text != stale_inline_error.strip()
+
+    await wait_until(has_new_error, "waiting for an inline login error", 25.0, 0.5)
+
+
+async def _element_visible(page, selector: str) -> bool:
+    """Return whether an element is present and visible.
+
+    Parameters
+    ----------
+    page : Page
+        The Playwright browser page.
+    selector : str
+        CSS selector for the element to test.
+
+    Returns
+    -------
+    bool
+        True when the element exists and is visible.
+    """
+    try:
+        element = await page.query_selector(selector)
+        return bool(element) and await element.is_visible()
+    except Exception as exc:
+        logger.debug("Could not test visibility of %s: %s", selector, exc)
+        return False
+
+
+async def _element_text(page, selector: str) -> str:
+    """Return an element's text, or an empty string when it is absent.
+
+    Parameters
+    ----------
+    page : Page
+        The Playwright browser page.
+    selector : str
+        CSS selector for the element to read.
+
+    Returns
+    -------
+    str
+        The element's text content, empty if it is not on the page.
+    """
+    try:
+        element = await page.query_selector(selector)
+        return (await element.inner_text()) if element else ""
+    except Exception as exc:
+        logger.debug("Could not read text of %s: %s", selector, exc)
+        return ""
