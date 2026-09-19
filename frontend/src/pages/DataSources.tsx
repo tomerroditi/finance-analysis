@@ -423,7 +423,7 @@ export function DataSources() {
       {/* Connection Modal */}
       {isAddOpen && (
         <div className="modal-overlay fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-md animate-in fade-in duration-300">
-          <div className="bg-[var(--surface)] border border-[var(--surface-light)] rounded-3xl p-4 md:p-8 shadow-2xl w-full max-w-xl animate-in zoom-in-95 duration-200 relative overflow-hidden">
+          <div className="bg-[var(--surface)] border border-[var(--surface-light)] rounded-3xl p-4 md:p-8 shadow-2xl w-full max-w-xl max-h-[calc(100dvh-2rem)] animate-in zoom-in-95 duration-200 relative overflow-x-hidden overflow-y-auto overscroll-contain">
             <button
               onClick={resetForm}
               className="absolute top-6 end-6 p-2 rounded-xl hover:bg-[var(--surface-light)] text-[var(--text-muted)] transition-colors"
