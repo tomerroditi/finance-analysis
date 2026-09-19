@@ -154,5 +154,46 @@ test.describe("Dashboard", () => {
         new RegExp(`${newCategoryName} / ${tagName}`),
       );
     }
+
+    // --- Mobile width: the editor stacks its two selects instead of squeezing
+    // them beside Done, and each select's label stays inside its own trigger.
+    // A long category name (e.g. "Entertainment") used to spill past the
+    // trigger's border and shove the chevron out of the control entirely. ---
+    await page.setViewportSize({ width: 390, height: 844 });
+    // Below `sm` the row's inline action buttons are replaced by a tap-to-open
+    // card, so the row can no longer be anchored on its edit button.
+    const recentCard = page.locator('[data-card-id="recent"]');
+    await recentCard.locator("div.cursor-pointer").first().click();
+    await recentCard.getByRole("button", { name: /^Tag$/ }).click();
+
+    const mobilePanel = page.locator("text=CATEGORY").locator("..").locator("..");
+    await expect(mobilePanel).toBeVisible();
+    const mobileCategory = mobilePanel.getByRole("button").nth(0);
+    const mobileTag = mobilePanel.getByRole("button").nth(1);
+
+    const categoryBox = (await mobileCategory.boundingBox())!;
+    const tagBox = (await mobileTag.boundingBox())!;
+    // Stacked, not side by side.
+    expect(tagBox.y).toBeGreaterThanOrEqual(categoryBox.y + categoryBox.height);
+
+    for (const trigger of [mobileCategory, mobileTag]) {
+      // Geometry alone can't prove the fix when the current value happens to
+      // be short, so also assert the label is allowed to clip.
+      await expect(trigger.locator("span").first()).toHaveCSS(
+        "text-overflow",
+        "ellipsis",
+      );
+      const triggerBox = (await trigger.boundingBox())!;
+      const labelBox = (await trigger.locator("span").first().boundingBox())!;
+      const chevronBox = (await trigger.locator("svg").first().boundingBox())!;
+      for (const child of [labelBox, chevronBox]) {
+        expect(child.x).toBeGreaterThanOrEqual(triggerBox.x - 1);
+        expect(child.x + child.width).toBeLessThanOrEqual(
+          triggerBox.x + triggerBox.width + 1,
+        );
+      }
+    }
+
+    await page.setViewportSize({ width: 1280, height: 720 });
   });
 });
