@@ -32,10 +32,7 @@ export default defineConfig(({ mode }) => {
         // strategy.
         registerType: "prompt",
         injectRegister: false,
-        includeAssets: [
-          "favicon.svg",
-          "icons/apple-touch-icon.png",
-        ],
+        includeAssets: ["favicon.svg", "icons/apple-touch-icon.png"],
         manifest: {
           name: "Finance Analysis",
           short_name: "Finance",
@@ -69,10 +66,6 @@ export default defineConfig(({ mode }) => {
         },
         workbox: {
           globPatterns: ["**/*.{js,css,html,svg,png,ico,webmanifest}"],
-          // The main chunk is ~1.6 MiB minified (Workbox's default cap is
-          // 2 MiB). 3 MiB gives headroom for normal growth while still
-          // failing the build if a Plotly-sized dependency sneaks back in.
-          maximumFileSizeToCacheInBytes: 3 * 1024 * 1024,
           navigateFallback: "/index.html",
           navigateFallbackDenylist: [/^\/api\//, /^\/docs/, /^\/openapi/],
           cleanupOutdatedCaches: true,
@@ -127,6 +120,38 @@ export default defineConfig(({ mode }) => {
         },
       }),
     ],
+    build: {
+      // Pages are lazy route chunks (App.tsx). Libraries are grouped so a
+      // deploy that only touches app code keeps them cached, and so the
+      // charting stack loads only with the first page that draws a chart.
+      rolldownOptions: {
+        output: {
+          codeSplitting: {
+            // Higher priority claims a module first. `charts` is lowest so
+            // a dependency it shares with an eager library (e.g.
+            // use-sync-external-store) is not pulled into the lazy chunk,
+            // which would make the entry preload all of recharts.
+            groups: [
+              {
+                name: "react",
+                priority: 3,
+                test: /[\\/]node_modules[\\/](react|react-dom|scheduler|react-router)[\\/]/,
+              },
+              {
+                name: "vendor",
+                priority: 2,
+                test: /[\\/]node_modules[\\/](@tanstack|i18next|react-i18next|axios|zustand|use-sync-external-store|idb-keyval|date-fns|lucide-react)[\\/]/,
+              },
+              {
+                name: "charts",
+                priority: 1,
+                test: /[\\/]node_modules[\\/](recharts|victory-vendor|d3-[^\\/]+)[\\/]/,
+              },
+            ],
+          },
+        },
+      },
+    },
     server: {
       port,
       proxy: {
