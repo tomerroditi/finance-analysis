@@ -10,6 +10,7 @@ import os
 import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, Request
@@ -54,6 +55,9 @@ from backend.routes import (
 from backend.utils.json_response import SafeJSONResponse
 from backend.utils.version import get_app_version
 
+if TYPE_CHECKING:
+    from alembic.config import Config
+
 load_dotenv()
 
 # Dev/uvicorn runs previously had no logging config at all — app loggers fell
@@ -63,7 +67,31 @@ load_dotenv()
 if not getattr(sys, "frozen", False):
     logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
 
+# One "setup plugin ..." line per autogenerate plugin on every startup, and
+# the startup path never autogenerates.
+logging.getLogger("alembic.runtime.plugins").setLevel(logging.WARNING)
+
 logger = logging.getLogger(__name__)
+
+
+def _startup_alembic_config(alembic_ini: Path) -> "Config":
+    """Build the Alembic config for in-process startup migrations.
+
+    Parameters
+    ----------
+    alembic_ini : Path
+        Path to ``alembic.ini``.
+
+    Returns
+    -------
+    Config
+        Config that tells ``env.py`` to leave the app's logging alone.
+    """
+    from alembic.config import Config
+
+    config = Config(str(alembic_ini))
+    config.attributes["configure_logger"] = False
+    return config
 
 
 @asynccontextmanager
@@ -98,7 +126,6 @@ async def lifespan(app: FastAPI):
     # uses, and every migration is idempotent (each inspects the schema before
     # altering), so it's safe on fresh installs too.
     from alembic import command
-    from alembic.config import Config
 
     if getattr(sys, "frozen", False):
         alembic_ini = Path(getattr(sys, "_MEIPASS", "")) / "alembic.ini"
@@ -106,7 +133,7 @@ async def lifespan(app: FastAPI):
         alembic_ini = Path(__file__).resolve().parent.parent / "alembic.ini"
 
     if alembic_ini.is_file():
-        command.upgrade(Config(str(alembic_ini)), "head")
+        command.upgrade(_startup_alembic_config(alembic_ini), "head")
     else:
         logger.warning(
             "alembic.ini not found at %s — skipping migrations", alembic_ini

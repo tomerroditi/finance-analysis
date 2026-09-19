@@ -24,9 +24,13 @@ from backend.models import (  # noqa: F401
 # access to the values within the .ini file in use.
 config = context.config
 
-# Interpret the config file for Python logging.
-# This line sets up loggers basically.
-if config.config_file_name is not None:
+# Only the standalone ``alembic`` CLI owns logging. When the app runs
+# migrations at startup it has already configured logging, and ``fileConfig``
+# would replace the root handlers and disable every existing logger
+# (``backend.*``, ``uvicorn.*``) for the rest of the process.
+if config.config_file_name is not None and config.attributes.get(
+    "configure_logger", True
+):
     fileConfig(config.config_file_name)
 
 # add your model's MetaData object here

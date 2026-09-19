@@ -34,6 +34,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shlex
 import shutil
 import signal
 import subprocess
@@ -41,7 +42,7 @@ import sys
 import time
 import urllib.error
 import urllib.request
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -389,9 +390,42 @@ class Server:
         return self.proc is not None and self.proc.poll() is None
 
 
+def build_env(environ: Mapping[str, str]) -> dict[str, str]:
+    """Return ``environ`` without VS Code's Node debugger auto-attach hook.
+
+    A VS Code terminal with auto-attach on exports ``NODE_OPTIONS=--require
+    .../js-debug/bootloader.js``, so every node process of the build (npm,
+    tsc, vite) attaches to the debugger and waits for it to disconnect. Any
+    other ``NODE_OPTIONS`` flag is kept.
+    """
+    env = {k: v for k, v in environ.items() if k != "VSCODE_INSPECTOR_OPTIONS"}
+    posix = os.name != "nt"
+    tokens = shlex.split(env.get("NODE_OPTIONS", ""), posix=posix)
+    kept: list[str] = []
+    i = 0
+    while i < len(tokens):
+        if tokens[i] in ("--require", "-r") and i + 1 < len(tokens):
+            if "js-debug" in tokens[i + 1]:
+                i += 2
+                continue
+        elif tokens[i].startswith("--require=") and "js-debug" in tokens[i]:
+            i += 1
+            continue
+        kept.append(tokens[i])
+        i += 1
+    if kept:
+        env["NODE_OPTIONS"] = shlex.join(kept) if posix else " ".join(kept)
+    else:
+        env.pop("NODE_OPTIONS", None)
+    return env
+
+
 def run_step(argv: list[str], cwd: Path) -> bool:
     """Run a build step with inherited output, returning whether it succeeded."""
-    return subprocess.run(argv, cwd=cwd, check=False).returncode == 0
+    return (
+        subprocess.run(argv, cwd=cwd, env=build_env(os.environ), check=False).returncode
+        == 0
+    )
 
 
 def build_frontend(install_deps: bool) -> bool:
