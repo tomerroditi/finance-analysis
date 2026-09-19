@@ -8,9 +8,12 @@ reach any goal, auto-closure, and the immutability of a closed goal's history
 across a rebuild.
 """
 
+from contextlib import contextmanager
 from datetime import date
 
 import pytest
+from sqlalchemy import event
+from sqlalchemy.orm import Session
 
 from backend.models.savings_goal import (
     GOAL_STATUS_CLOSED,
@@ -616,3 +619,85 @@ class TestFreeCashPool:
         assert before["free_cash"] == 5000
         assert after["free_cash"] == before["free_cash"] + 3000
         assert after["liquid"] == before["liquid"]
+
+
+@contextmanager
+def _commit_counter():
+    """Yield a list that gains an entry for every commit inside the block."""
+    commits: list[int] = []
+
+    def record(_session):
+        commits.append(1)
+
+    event.listen(Session, "after_commit", record)
+    try:
+        yield commits
+    finally:
+        event.remove(Session, "after_commit", record)
+
+
+class TestPersistenceIsIdempotent:
+    """`ensure_allocations` runs from read paths, so it must not write on every GET.
+
+    Rewriting the open month with the number it already held made a single
+    dashboard load commit six times over: a SQLite write lock per read, a
+    churned database file, and — since a commit invalidates the cross-request
+    caches in ``backend/utils/data_cache.py`` — those caches being discarded
+    on exactly the load that needed them most.
+
+    These use the *current* month: it is the only one `ensure_allocations`
+    recomputes (closed months on record are left alone), so it is the row
+    that used to be rewritten on every read.
+    """
+
+    def test_first_read_persists_the_ledger(self, db_session, service):
+        """The allocations still land the first time they are computed."""
+        this_month = _month_str(0)
+        _seed_surplus(db_session, this_month, income=10000, expenses=7000)
+        service.create(name="Vacation", target_amount=1000, start_month=this_month)
+
+        service.get_all()
+
+        assert not service.repo.get_allocations().empty
+
+    def test_repeat_reads_write_nothing(self, db_session, service):
+        """Once the ledger agrees with the simulation, reads stop committing."""
+        this_month = _month_str(0)
+        _seed_surplus(db_session, this_month, income=10000, expenses=7000)
+        service.create(name="Vacation", target_amount=1000, start_month=this_month)
+        service.get_all()
+
+        with _commit_counter() as commits:
+            service.get_all()
+            service.get_all()
+
+        assert commits == []
+
+    def test_a_disagreeing_ledger_row_is_rewritten(self, db_session, service):
+        """Skipping no-op writes must not skip the writes that matter."""
+        this_month = _month_str(0)
+        _seed_surplus(db_session, this_month, income=10000, expenses=7000)
+        service.create(name="Vacation", target_amount=1000, start_month=this_month)
+        service.get_all()
+
+        stored = service.repo.get_allocations().iloc[0]
+        expected = float(stored["amount"])
+        service.repo.upsert_allocation(
+            int(stored["goal_id"]),
+            int(stored["year"]),
+            int(stored["month"]),
+            expected + 500.0,
+            "auto",
+        )
+
+        with _commit_counter() as commits:
+            service.get_all()
+
+        assert commits  # the tampered row was corrected
+        rows = service.repo.get_allocations()
+        corrected = rows[
+            (rows["goal_id"] == int(stored["goal_id"]))
+            & (rows["year"] == int(stored["year"]))
+            & (rows["month"] == int(stored["month"]))
+        ]
+        assert float(corrected["amount"].iloc[0]) == pytest.approx(expected)

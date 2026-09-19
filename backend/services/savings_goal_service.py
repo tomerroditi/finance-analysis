@@ -95,6 +95,29 @@ def _month_str(key: tuple[int, int]) -> str:
     return f"{key[0]:04d}-{key[1]:02d}"
 
 
+def _same_amount(stored: float, computed: float) -> bool:
+    """Whether a recomputed allocation is the same money as the stored one.
+
+    Compared with a tolerance rather than ``==``: allocations are the result
+    of a float waterfall, so an identical ledger can reproduce to the last
+    bit or a few ULPs away depending on summation order. Half an agora is
+    far below anything the UI renders and far above that noise.
+
+    Parameters
+    ----------
+    stored : float
+        Amount currently on record.
+    computed : float
+        Amount the simulation just produced.
+
+    Returns
+    -------
+    bool
+        True when the two round to the same displayed value.
+    """
+    return abs(stored - computed) < 0.005
+
+
 def _iter_months(start: tuple[int, int], end: tuple[int, int]):
     """Yield every ``(year, month)`` from ``start`` through ``end`` inclusive."""
     year, month = start
@@ -915,8 +938,21 @@ class SavingsGoalService:
         return plan
 
     def _persist(self, plan: _Plan) -> None:
-        """Write a plan's computed allocations and any auto-closures."""
+        """Write a plan's computed allocations and any auto-closures.
+
+        Rows the ledger already agrees with are skipped. ``ensure_allocations``
+        runs from read paths and always recomputes the open month, so writing
+        unconditionally meant every dashboard load committed several times over
+        for numbers that had not moved — which churned the SQLite file, took a
+        write lock per GET, and invalidated the cross-request caches
+        (``backend/utils/data_cache.py``) mid-load, the one moment they are
+        worth the most.
+        """
+        existing = self._persisted_allocations()
         for (goal_id, year, month), amount in plan.computed.items():
+            current = existing.get((goal_id, year, month))
+            if current is not None and _same_amount(current, amount):
+                continue
             self.repo.upsert_allocation(goal_id, year, month, amount, ALLOCATION_AUTO)
         for goal_id, closed_month in plan.closed_month.items():
             goal = self.repo.get(goal_id)
@@ -924,6 +960,22 @@ class SavingsGoalService:
                 self.repo.update(
                     goal_id, status=GOAL_STATUS_CLOSED, closed_month=closed_month
                 )
+
+    def _persisted_allocations(self) -> dict[tuple[int, int, int], float]:
+        """The allocation ledger as ``{(goal_id, year, month): amount}``.
+
+        Returns
+        -------
+        dict
+            One entry per stored allocation row. Empty when the ledger is.
+        """
+        rows = self.repo.get_allocations()
+        if rows.empty:
+            return {}
+        return {
+            (int(row.goal_id), int(row.year), int(row.month)): float(row.amount)
+            for row in rows.itertuples(index=False)
+        }
 
     # ------------------------------------------------------------------
     # Inputs

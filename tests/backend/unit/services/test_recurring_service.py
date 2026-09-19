@@ -654,3 +654,113 @@ class TestConfidence:
         )["items"]
         scores = {item["label"]: item["confidence"] for item in items}
         assert scores["JUST STARTED"] < scores["LONG RUNNING"]
+
+
+class TestDetectionIsCachedAcrossRequests:
+    """Detection is the most expensive read in the app — it must run once.
+
+    A dashboard load asks for it five times over four endpoints
+    (`/analytics/recurring`, the forecast, the insights strip twice, the
+    budget overview), each in its own request and its own session. The
+    cross-request cache in ``backend/utils/data_cache.py`` collapses those
+    into one pass; these pin the key it is stored under, because a key that
+    ignored an argument would serve the wrong answer rather than merely a
+    slow one.
+
+    A file-backed database is required: in-memory ones are deliberately never
+    cached (they have no file identity to version against).
+    """
+
+    @pytest.fixture
+    def file_session(self, tmp_path):
+        """A session on a real file, seeded with one monthly subscription."""
+        from sqlalchemy import create_engine
+        from sqlalchemy.orm import sessionmaker
+
+        from backend.models.base import Base
+        from backend.utils import data_cache
+
+        engine = create_engine(f"sqlite:///{tmp_path / 'recurring.db'}")
+        Base.metadata.create_all(engine)
+        session = sessionmaker(bind=engine)()
+        for months in range(6):
+            _add_charge(session, "NETFLIX", -49.9, _months_ago(months))
+        session.commit()
+        data_cache.clear()
+        try:
+            yield session
+        finally:
+            session.close()
+            engine.dispose()
+            data_cache.clear()
+
+    @staticmethod
+    def _counting_service(session, monkeypatch):
+        """A service whose detection pass records each invocation."""
+        service = RecurringService(session)
+        calls: list[int] = []
+        original = service._detect_recurring
+
+        def spy(*args, **kwargs):
+            calls.append(1)
+            return original(*args, **kwargs)
+
+        monkeypatch.setattr(service, "_detect_recurring", spy)
+        return service, calls
+
+    def test_repeat_calls_detect_once(self, file_session, monkeypatch):
+        """The second and third asks are served from the cache."""
+        service, calls = self._counting_service(file_session, monkeypatch)
+        today = pd.Timestamp("2026-09-20")
+
+        first = service.get_recurring(today)
+        second = service.get_recurring(today)
+
+        assert len(calls) == 1
+        assert first == second
+
+    def test_a_different_day_is_a_different_answer(self, file_session, monkeypatch):
+        """`today` drives new/ended status, so it must be part of the key."""
+        service, calls = self._counting_service(file_session, monkeypatch)
+
+        service.get_recurring(pd.Timestamp("2026-09-20"))
+        service.get_recurring(pd.Timestamp("2026-11-20"))
+
+        assert len(calls) == 2
+
+    def test_include_dismissed_is_part_of_the_key(self, file_session, monkeypatch):
+        """Asking for dismissed candidates must not reuse the filtered list."""
+        service, calls = self._counting_service(file_session, monkeypatch)
+        today = pd.Timestamp("2026-09-20")
+
+        service.get_recurring(today, include_dismissed=False)
+        service.get_recurring(today, include_dismissed=True)
+
+        assert len(calls) == 2
+
+    def test_a_new_charge_invalidates_the_cache(self, file_session, monkeypatch):
+        """A committed write must not leave a stale summary behind."""
+        service, calls = self._counting_service(file_session, monkeypatch)
+        today = pd.Timestamp("2026-09-20")
+        service.get_recurring(today)
+
+        _add_charge(file_session, "SPOTIFY", -21.9, _months_ago(0))
+        file_session.commit()
+        service.get_recurring(today)
+
+        assert len(calls) == 2
+
+    def test_callers_cannot_corrupt_the_cached_summary(
+        self, file_session, monkeypatch
+    ):
+        """One caller mutating its result must not poison the next one's."""
+        service, _ = self._counting_service(file_session, monkeypatch)
+        today = pd.Timestamp("2026-09-20")
+
+        first = service.get_recurring(today)
+        first["items"].clear()
+        first["total_monthly"] = 999.0
+
+        second = service.get_recurring(today)
+        assert second["items"]
+        assert second["total_monthly"] != 999.0

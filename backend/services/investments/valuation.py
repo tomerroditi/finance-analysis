@@ -11,6 +11,7 @@ from bisect import bisect_right
 from datetime import date, datetime
 from typing import Any, Dict, List, Optional
 
+import numpy as np
 import pandas as pd
 from sqlalchemy import select
 
@@ -159,20 +160,98 @@ class ValuationMixin:
             txns = self._get_all_transactions_for_investment(
                 inv["category"], inv["tag"], investment_id=inv_id
             )
+            # Index once per investment, not once per (investment, date).
+            # The per-date path used to copy the frame and re-parse its date
+            # column every time — with format inference — so the net-worth
+            # chart paid ~370 full date parses for 8 investments over 46
+            # months. Now each date is a binary search into a running total.
+            index = self._balance_index(txns)
             for target_date in target_dates:
                 idx = bisect_right(snapshot_dates, target_date) - 1
                 if idx >= 0:
-                    totals[target_date] += self._carry_snapshot_forward(
-                        float(snapshot_balances[idx]),
-                        str(snapshot_dates[idx]),
-                        txns,
-                        as_of_date=target_date,
+                    totals[target_date] += float(
+                        snapshot_balances[idx]
+                    ) + self._balance_at(
+                        index, target_date, after_date=str(snapshot_dates[idx])
                     )
                     continue
-                totals[target_date] += self._calculate_balance_from_transactions(
-                    txns, as_of_date=target_date
-                )
+                totals[target_date] += self._balance_at(index, target_date)
         return totals
+
+    @staticmethod
+    def _balance_index(
+        transactions_df: pd.DataFrame,
+    ) -> tuple[np.ndarray, np.ndarray]:
+        """Build a date-ordered running balance for point-in-time lookups.
+
+        Parameters
+        ----------
+        transactions_df : pd.DataFrame
+            One investment's transactions.
+
+        Returns
+        -------
+        tuple of np.ndarray
+            ``(dates, cumulative)`` — ``dates`` are ``YYYY-MM-DD`` strings in
+            ascending order (which for that format is also chronological, the
+            same property the snapshot lookup relies on) and ``cumulative[i]``
+            is the balance implied by every transaction up to and including
+            ``dates[i]``. Rows with an unparseable date are dropped, matching
+            the comparison-based filter this replaces, where ``NaT`` never
+            satisfied the cut-off.
+        """
+        empty = (np.array([], dtype="<U10"), np.array([], dtype=float))
+        if transactions_df.empty or "amount" not in transactions_df.columns:
+            return empty
+
+        dates = pd.to_datetime(transactions_df["date"], errors="coerce")
+        amounts = pd.to_numeric(transactions_df["amount"], errors="coerce").fillna(0.0)
+        valid = dates.notna()
+        if not valid.any():
+            return empty
+        dates, amounts = dates[valid], amounts[valid]
+
+        order = np.argsort(dates.to_numpy(), kind="stable")
+        # Balance is the negated sum: a deposit of -1000 adds 1000.
+        return (
+            dates.dt.strftime("%Y-%m-%d").to_numpy().astype("<U10")[order],
+            np.cumsum(-amounts.to_numpy(dtype=float)[order]),
+        )
+
+    @staticmethod
+    def _balance_at(
+        index: tuple[np.ndarray, np.ndarray],
+        as_of_date: str,
+        after_date: Optional[str] = None,
+    ) -> float:
+        """Read a balance out of a :meth:`_balance_index`.
+
+        Parameters
+        ----------
+        index : tuple of np.ndarray
+            As returned by :meth:`_balance_index`.
+        as_of_date : str
+            Cut-off date (inclusive) in ``YYYY-MM-DD`` format.
+        after_date : str, optional
+            When given, only transactions dated strictly after this date
+            count — the snapshot carry-forward case, where anything on or
+            before the snapshot is already inside its balance.
+
+        Returns
+        -------
+        float
+            The balance those transactions imply.
+        """
+        dates, cumulative = index
+        if dates.size == 0:
+            return 0.0
+
+        end = int(np.searchsorted(dates, as_of_date, side="right"))
+        total = float(cumulative[end - 1]) if end > 0 else 0.0
+        if after_date is not None:
+            start = int(np.searchsorted(dates, after_date, side="right"))
+            total -= float(cumulative[start - 1]) if start > 0 else 0.0
+        return total
 
     def calculate_balance_over_time(
         self, investment_id: int, start_date: str, end_date: str

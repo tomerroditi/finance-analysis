@@ -33,6 +33,7 @@ from backend.repositories.transactions.service_repositories import (
     T_service,
 )
 from backend.repositories.transactions.splits import SplitsMixin
+from backend.utils import data_cache
 from backend.utils.session_cache import session_cache_get, session_cache_set
 
 logger = logging.getLogger(__name__)
@@ -203,13 +204,20 @@ class TransactionsRepository(IngestionMixin, SplitsMixin):
         if cached is not None:
             return cached
 
-        df = self._get_base_transactions(service, exclude_services)
+        def build() -> pd.DataFrame:
+            df = self._get_base_transactions(service, exclude_services)
 
-        if not include_split_parents:
-            df = self._filter_split_parents(df)
+            if not include_split_parents:
+                df = self._filter_split_parents(df)
 
-        df = self._add_split_children(df, service, exclude_services)
-        df = self._normalize_dates(df)
+            df = self._add_split_children(df, service, exclude_services)
+            return self._normalize_dates(df)
+
+        # Across requests too: ~20 dashboard endpoints each load this same
+        # table before doing their own work, and every one of them paid the
+        # full read + concat + date normalization. The copy is the caller's
+        # (DataFrames here are routinely mutated in place).
+        df = data_cache.cached(self.db, cache_key, build).copy()
 
         session_cache_set(self.db, cache_key, df)
         return df

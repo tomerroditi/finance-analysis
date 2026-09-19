@@ -14,6 +14,7 @@ Unconfirmed candidates are reported as ``pending`` so the UI can ask, and
 dismissed ones are suppressed for good.
 """
 
+import copy
 import re
 from datetime import date
 
@@ -35,6 +36,7 @@ from backend.repositories.recurring_decisions_repository import (
     RecurringDecisionsRepository,
 )
 from backend.repositories.transactions_repository import TransactionsRepository
+from backend.utils import data_cache
 
 
 class RecurringService:
@@ -356,6 +358,38 @@ class RecurringService:
               how many candidates fell into each bucket, dismissed ones
               counted whether or not they were listed.
         """
+        # Resolved before the cache key so an entry cannot outlive the day it
+        # was computed for ("new"/"ended" status and the next expected date
+        # all pivot on it).
+        today = (
+            pd.Timestamp.today() if today is None else pd.Timestamp(today)
+        ).normalize()
+
+        return copy.deepcopy(
+            data_cache.cached(
+                self.db,
+                ("recurring.get_recurring", today, include_dismissed),
+                lambda: self._detect_recurring(today, include_dismissed),
+            )
+        )
+
+    def _detect_recurring(
+        self, today: pd.Timestamp, include_dismissed: bool
+    ) -> dict:
+        """Run the detection behind :meth:`get_recurring`'s cache.
+
+        Parameters
+        ----------
+        today : pd.Timestamp
+            Normalized reference day.
+        include_dismissed : bool
+            Whether dismissed candidates are listed.
+
+        Returns
+        -------
+        dict
+            The summary documented on :meth:`get_recurring`.
+        """
         empty = {
             "items": [],
             "total_monthly": 0.0,
@@ -392,19 +426,27 @@ class RecurringService:
         if df.empty:
             return empty
 
-        today = (
-            pd.Timestamp.today() if today is None else pd.Timestamp(today)
-        ).normalize()
         verdicts = self.decisions.get_all()
         items: list[dict] = []
         dismissed_count = 0
 
-        for norm, group in df.groupby("norm"):
-            # Net same-day charges and refunds: sum signed amounts per day, then
-            # keep only net-outflow days as charge occurrences. A same-day (or
-            # same-statement-day) refund shrinks the charge; a fully-refunded day
-            # drops out entirely instead of masquerading as a recurring hit.
-            daily_net = group.groupby("date_parsed")["amount"].sum().sort_index()
+        # Net same-day charges and refunds: sum signed amounts per merchant-day,
+        # then keep only net-outflow days as charge occurrences. A same-day (or
+        # same-statement-day) refund shrinks the charge; a fully-refunded day
+        # drops out entirely instead of masquerading as a recurring hit.
+        #
+        # One grouping over both keys rather than a per-merchant groupby nested
+        # inside the merchant loop: pandas charges a fixed ~1 ms to set up each
+        # groupby, and with ~950 merchant labels that overhead *was* the
+        # detection pass. Sorting the MultiIndex once also leaves every
+        # merchant's days in date order, so the per-merchant sort goes away too.
+        daily_by_norm = df.groupby(["norm", "date_parsed"])["amount"].sum().sort_index()
+        # Positional row indices per merchant, for the few candidates that
+        # survive far enough to need their description and category.
+        rows_by_norm = df.groupby("norm").indices
+
+        for norm, norm_daily in daily_by_norm.groupby(level=0):
+            daily_net = norm_daily.droplevel(0)
             charges = daily_net[daily_net < 0]
             if len(charges) < self._MIN_OCCURRENCES:
                 continue
@@ -505,6 +547,7 @@ class RecurringService:
                     if status == "active":
                         status = "price_changed"
 
+            group = df.take(rows_by_norm[norm])
             label_mode = group["description"].mode()
             label = label_mode.iloc[0] if not label_mode.empty else norm
             cat_mode = group["category"].dropna().mode()

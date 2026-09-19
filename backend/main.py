@@ -17,6 +17,7 @@ from fastapi import FastAPI, Request
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -207,6 +208,16 @@ _cors_origins = [
     if origin.strip()
 ]
 _cors_allow_credentials = "*" not in _cors_origins
+
+# Compress responses. The dashboard alone pulls ~1.3 MB of JSON and the
+# production build serves a similar weight of JS/CSS from /assets, all of it
+# previously uncompressed — on a phone that is seconds of transfer before any
+# rendering starts. JSON of this shape compresses ~11x (the transactions
+# response measured 1233 KB -> 111 KB). Registered before the security
+# middlewares below so it wraps them and sees the final body; 500 bytes is
+# the usual floor below which framing costs more than it saves.
+app.add_middleware(GZipMiddleware, minimum_size=500)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_cors_origins,
