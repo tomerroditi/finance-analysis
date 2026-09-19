@@ -189,7 +189,7 @@ class LoginFields:
 
     providers_fields = {
         # cards
-        "max": ["username", "password"],
+        "max": ["username", "password", "id"],
         "visa cal": ["username", "password"],
         "isracard": ["id", "card6Digits", "password"],
         "amex": ["id", "card6Digits", "password"],
@@ -225,7 +225,7 @@ class LoginFields:
     @staticmethod
     def get_fields(provider: str) -> list[str]:
         """
-        Get the required login fields for a specific provider.
+        Get the login fields for a specific provider, optional ones last.
 
         Looks up the provider in the scraper framework's ``PROVIDER_CONFIGS``
         first, falling back to the hardcoded ``providers_fields`` dict for
@@ -239,7 +239,8 @@ class LoginFields:
         Returns
         -------
         list[str]
-            List of field names required for login to the specified provider.
+            Required field names followed by optional ones (e.g. Max's ID
+            number, used only when Max asks for it).
         """
         import importlib
         import os
@@ -251,5 +252,5 @@ class LoginFields:
 
         config = PROVIDER_CONFIGS.get(provider)
         if config:
-            return config.required_fields
+            return config.required_fields + config.optional_fields
         return LoginFields.providers_fields.get(provider, [])
