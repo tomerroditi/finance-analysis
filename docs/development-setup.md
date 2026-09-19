@@ -84,11 +84,32 @@ Scraping bank and credit-card accounts uses Playwright's Chromium. Install it on
 
 ```bash
 ./start.sh           # dev: backend :8000 (hot reload) + frontend :5173
-./start.sh remote    # same, bound to 0.0.0.0 for Tailscale access (:8001 / :5174)
 ./start.sh prod      # build the frontend and serve everything from the backend on :8080
 ```
 
 Open <http://localhost:5173>. Press **Ctrl+C** to stop.
+
+### Prod: phone access and auto-update
+
+`./start.sh prod` is meant to be left running as your everyday copy of the app:
+
+- **Tailnet access.** If Tailscale is connected, it runs `tailscale serve` for as long as
+  the server is up and prints the URL (`https://<machine>.<tailnet>.ts.net`). Open it on
+  any device signed in to your Tailscale account, such as your phone — no password or
+  token: `tailscale serve` tells the backend which tailnet user is calling, and only the
+  account that owns this machine is let in (`TAILNET_ALLOWED_USERS` overrides that, as
+  a comma-separated list of logins). Other tailnet users and shared-in devices still need
+  the API token. The server itself only listens on this machine, so nothing is exposed to
+  your local network. Without tailnet
+  HTTPS certificates (admin console → DNS → HTTPS Certificates) it shares over plain
+  HTTP, which works but can't install the app as a PWA.
+- **Auto-update.** Every 60 seconds it fast-forwards the checkout from its upstream
+  branch, and whenever the commit changes it rebuilds the frontend in the background,
+  re-syncs dependencies if the lock files changed, and restarts the server (a couple of
+  seconds of downtime). A failed build keeps the current version running. It skips the
+  pull while you have uncommitted changes or the branch has diverged, and still
+  redeploys after a pull you do yourself. `PROD_AUTO_PULL=0` turns off pulling;
+  `PROD_POLL_SECONDS` changes the interval.
 
 Turn on **Demo Mode** (in Settings) to explore the app with sample data, without connecting
 real accounts.
@@ -100,8 +121,8 @@ afterwards.
 
 ### From VS Code
 
-**Run and Debug** offers *Dev (Backend + Frontend)*, *Dev Remote (Tailscale)* and
-*Prod (Single Server)*. The tasks behind them are in `.vscode/tasks.json`.
+**Run and Debug** offers *Dev (Backend + Frontend)* and
+*Prod (Single Server + Tailscale, auto-update)*. The tasks behind them are in `.vscode/tasks.json`.
 
 On Windows, VS Code runs tasks in PowerShell by default, which can't run `start.sh`.
 Point it at Git Bash in `.vscode/settings.json`. That file is git-ignored, so each machine
