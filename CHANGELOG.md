@@ -1,3 +1,9 @@
+## v1.66.2 (2026-09-19)
+
+### Fix
+
+- **data-sources**: readable scrape-error tooltip, aborted state, smarter Scrape All, +972 OneZero phone (#289)
+
 ## v1.66.1 (2026-09-19)
 
 ### Fix
