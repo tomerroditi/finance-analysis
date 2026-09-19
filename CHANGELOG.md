@@ -1,3 +1,9 @@
+## v1.66.1 (2026-09-19)
+
+### Fix
+
+- **scraper**: run scrapers on their own Proactor event loop so browser scrapes work under uvicorn --reload on Windows (#287)
+
 ## v1.66.0 (2026-09-19)
 
 ### Feat
