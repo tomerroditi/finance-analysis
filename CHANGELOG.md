@@ -1,3 +1,9 @@
+## v1.66.0 (2026-09-19)
+
+### Feat
+
+- **sidebar**: move mobile settings, alerts and data flow to the top bar only (#286)
+
 ## v1.65.5 (2026-09-19)
 
 ### Fix
