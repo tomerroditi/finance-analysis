@@ -4,10 +4,13 @@ The app is a localhost-first personal dashboard with no user accounts, so
 its security model is connection-based:
 
 - Requests from the local machine (loopback / unix-socket clients) are
-  trusted — the desktop app and dev servers all live there.
+  trusted — the desktop app and dev servers all live there — unless a
+  local reverse proxy relayed them from elsewhere (``is_proxied_request``).
+- Requests relayed by ``tailscale serve`` are admitted when the tailnet
+  identity it vouches for is allowlisted (``TAILNET_ALLOWED_USERS``, set
+  by ``./start.sh prod`` to this machine's Tailscale owner).
 - Requests from anywhere else (``./start.sh prod`` bound beyond localhost,
-  a phone on the tailnet hitting the backend directly) must present a
-  bearer token. The token is generated once, stored in
+  another tailnet user) must present a bearer token. The token is generated once, stored in
   ``<user-dir>/api_token`` (0600), and handed to the browser via a
   one-time ``?apiToken=`` URL parameter that the frontend persists.
 - Every request must carry an allowlisted ``Host`` header. This blocks
@@ -26,12 +29,19 @@ import ipaddress
 import logging
 import os
 import secrets
-from typing import Iterable, Optional, Set
+from typing import Iterable, Mapping, Optional, Set
 from urllib.parse import urlsplit
 
 logger = logging.getLogger(__name__)
 
 API_TOKEN_FILENAME = "api_token"
+
+_PROXY_HEADERS = (
+    "x-forwarded-for",
+    "forwarded",
+    "x-real-ip",
+    "tailscale-user-login",
+)
 
 _DEFAULT_ALLOWED_HOSTS = {
     "localhost",
@@ -109,6 +119,64 @@ def is_trusted_client(client_host: Optional[str]) -> bool:
         return ipaddress.ip_address(client_host).is_loopback
     except ValueError:
         return False
+
+
+def is_proxied_request(headers: Mapping[str, str]) -> bool:
+    """Return True when a local proxy relayed the request from elsewhere.
+
+    A reverse proxy on this machine (``tailscale serve``, Caddy, an SSH
+    tunnel) connects from loopback, so without this check whatever it
+    relays would inherit local trust. Proxies announce the real client in
+    one of these headers; uvicorn must run with ``--no-proxy-headers`` for
+    the TCP peer to still be the proxy — with proxy headers on, uvicorn
+    already reports the forwarded client, which is then simply not local.
+
+    Parameters
+    ----------
+    headers : Mapping[str, str]
+        The request headers (case-insensitive mapping).
+    """
+    return any(headers.get(name) for name in _PROXY_HEADERS)
+
+
+def build_tailnet_users(env_value: Optional[str] = None) -> Set[str]:
+    """Build the tailnet-login allowlist from ``TAILNET_ALLOWED_USERS``.
+
+    Parameters
+    ----------
+    env_value : Optional[str]
+        Comma-separated Tailscale login names (e.g. ``me@example.com``).
+
+    Returns
+    -------
+    Set[str]
+        Lowercased logins; empty when unset, which admits nobody.
+    """
+    raw = (
+        env_value
+        if env_value is not None
+        else os.environ.get("TAILNET_ALLOWED_USERS", "")
+    )
+    return {entry.strip().lower() for entry in raw.split(",") if entry.strip()}
+
+
+def tailnet_user_allowed(login: Optional[str], allowed: Iterable[str]) -> bool:
+    """Return True when ``tailscale serve`` vouched for an allowlisted user.
+
+    ``tailscale serve`` sets ``Tailscale-User-Login`` to the verified
+    identity of the tailnet user behind the request and strips any copy the
+    client sent, so the header is trustworthy on a request relayed by this
+    machine's own tailscaled. It is absent for tagged devices and Funnel
+    (public internet) traffic, which therefore fall back to token auth.
+
+    Parameters
+    ----------
+    login : Optional[str]
+        The ``Tailscale-User-Login`` header value.
+    allowed : Iterable[str]
+        Lowercased logins from ``build_tailnet_users``.
+    """
+    return bool(login) and login.strip().lower() in set(allowed)
 
 
 def token_matches(supplied: Optional[str], expected: Optional[str]) -> bool:

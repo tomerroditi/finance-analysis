@@ -27,6 +27,52 @@ class TestIsTrustedClient:
         assert auth.is_trusted_client(host) is False
 
 
+class TestIsProxiedRequest:
+    """Tests for detecting a request a local reverse proxy relayed."""
+
+    @pytest.mark.parametrize(
+        "headers",
+        [
+            {"x-forwarded-for": "100.101.102.103"},
+            {"forwarded": "for=100.101.102.103"},
+            {"x-real-ip": "100.101.102.103"},
+            {"tailscale-user-login": "me@example.com"},
+        ],
+    )
+    def test_forwarding_headers_mark_a_relayed_request(self, headers):
+        """Verify each standard forwarding header marks the request relayed."""
+        assert auth.is_proxied_request(headers) is True
+
+    def test_plain_local_request_is_not_relayed(self):
+        """Verify a request without forwarding headers keeps local trust."""
+        assert auth.is_proxied_request({"host": "localhost:8080"}) is False
+
+
+class TestTailnetUsers:
+    """Tests for the tailnet-identity allowlist."""
+
+    def test_env_is_parsed_case_insensitively(self):
+        """Verify logins are trimmed and lowercased."""
+        allowed = auth.build_tailnet_users(env_value=" Me@Example.com, other@x.io ")
+        assert allowed == {"me@example.com", "other@x.io"}
+
+    def test_unset_allowlist_admits_nobody(self):
+        """Verify an empty allowlist rejects every tailnet identity."""
+        allowed = auth.build_tailnet_users(env_value="")
+        assert auth.tailnet_user_allowed("me@example.com", allowed) is False
+
+    def test_allowlisted_login_is_admitted(self):
+        """Verify an allowlisted login passes regardless of case."""
+        allowed = auth.build_tailnet_users("me@example.com")
+        assert auth.tailnet_user_allowed("ME@example.com", allowed) is True
+
+    @pytest.mark.parametrize("login", [None, "", "someone-else@example.com"])
+    def test_missing_or_foreign_login_is_rejected(self, login):
+        """Verify tagged/Funnel traffic (no login) and other users are rejected."""
+        allowed = auth.build_tailnet_users("me@example.com")
+        assert auth.tailnet_user_allowed(login, allowed) is False
+
+
 class TestTokenHelpers:
     """Tests for bearer extraction and constant-time comparison."""
 

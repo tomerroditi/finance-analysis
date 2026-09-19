@@ -94,11 +94,13 @@ Open <http://localhost:5173>. Press **Ctrl+C** to stop.
 `./start.sh prod` is meant to be left running as your everyday copy of the app:
 
 - **Tailnet access.** If Tailscale is connected, it runs `tailscale serve` for as long as
-  the server is up and prints the URL (`https://<machine>.<tailnet>.ts.net`) plus a
-  one-time sign-in link ending in `?apiToken=…`. Open that link once on each device
-  signed in to your tailnet, such as your phone; the app keeps the token and drops it
-  from the address bar. The server itself only listens on this machine, so nothing is
-  exposed to your local network. Without tailnet
+  the server is up and prints the URL (`https://<machine>.<tailnet>.ts.net`). Open it on
+  any device signed in to your Tailscale account, such as your phone — no password or
+  token: `tailscale serve` tells the backend which tailnet user is calling, and only the
+  account that owns this machine is let in (`TAILNET_ALLOWED_USERS` overrides that, as
+  a comma-separated list of logins). Other tailnet users and shared-in devices still need
+  the API token. The server itself only listens on this machine, so nothing is exposed to
+  your local network. Without tailnet
   HTTPS certificates (admin console → DNS → HTTPS Certificates) it shares over plain
   HTTP, which works but can't install the app as a PWA.
 - **Auto-update.** Every 60 seconds it fast-forwards the checkout from its upstream

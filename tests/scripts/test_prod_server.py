@@ -80,6 +80,18 @@ class TestTailnetShareFromStatus:
         )
         assert note == ""
 
+    def test_owner_login_is_read_from_the_user_map(self):
+        """Verify the machine owner's login comes from Self.UserID -> User."""
+        share, _ = prod.tailnet_share_from_status(
+            {
+                "BackendState": "Running",
+                "Self": {"DNSName": "laptop.tail1234.ts.net.", "UserID": 42},
+                "User": {"42": {"LoginName": "me@example.com"}},
+                "CertDomains": ["laptop.tail1234.ts.net"],
+            }
+        )
+        assert share.owner_login == "me@example.com"
+
     def test_http_fallback_without_certificates(self):
         """Verify a tailnet without certs falls back to HTTP and says why."""
         share, note = prod.tailnet_share_from_status(

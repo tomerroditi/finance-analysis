@@ -52,10 +52,6 @@ TAILSCALE_FALLBACK_PATHS = (
     "/Applications/Tailscale.app/Contents/MacOS/Tailscale",
     r"C:\Program Files\Tailscale\tailscale.exe",
 )
-_PRINT_API_TOKEN = (
-    "from backend.utils.auth import get_or_create_api_token; "
-    "print(get_or_create_api_token())"
-)
 HEALTH_TIMEOUT_SECONDS = 120
 RESTART_BACKOFF_SECONDS = 15
 
@@ -187,11 +183,15 @@ class TailnetShare:
         The URL other tailnet devices open.
     serve_flag : str
         The ``tailscale serve`` listener flag (``--https=443`` or ``--http=80``).
+    owner_login : str
+        The Tailscale login that owns this machine (empty if unknown). Its
+        devices are let in on their tailnet identity, without a token.
     """
 
     hostname: str
     url: str
     serve_flag: str
+    owner_login: str = ""
 
 
 def tailnet_share_from_status(status: dict) -> tuple[TailnetShare | None, str]:
@@ -220,10 +220,12 @@ def tailnet_share_from_status(status: dict) -> tuple[TailnetShare | None, str]:
             None,
             "this machine has no MagicDNS name (enable MagicDNS in the admin console)",
         )
+    owner_id = (status.get("Self") or {}).get("UserID")
+    owner = ((status.get("User") or {}).get(str(owner_id)) or {}).get("LoginName", "")
     if status.get("CertDomains"):
-        return TailnetShare(hostname, f"https://{hostname}", "--https=443"), ""
+        return TailnetShare(hostname, f"https://{hostname}", "--https=443", owner), ""
     return (
-        TailnetShare(hostname, f"http://{hostname}", "--http=80"),
+        TailnetShare(hostname, f"http://{hostname}", "--http=80", owner),
         (
             "tailnet HTTPS certificates are off, so sharing over plain HTTP - enable "
             "them under DNS -> HTTPS Certificates in the Tailscale admin console"
@@ -254,27 +256,14 @@ def serve_config_active(status_json: str) -> bool:
         return True
 
 
-def api_token() -> str:
-    """Return the API token remote clients need, creating it on first use."""
-    return subprocess.run(
-        [
-            sys.executable,
-            "-c",
-            _PRINT_API_TOKEN,
-        ],
-        cwd=ROOT,
-        capture_output=True,
-        text=True,
-        check=True,
-    ).stdout.strip()
-
-
 def prepare_tailnet_share() -> tuple[str | None, TailnetShare | None]:
     """Probe Tailscale and, when sharing is possible, allow its origin.
 
     Extends ``CORS_ORIGINS`` (the CSRF guard's origin allowlist) and
     ``ALLOWED_HOSTS`` (the Host-header allowlist) in this process's
-    environment, so the server started afterwards accepts the tailnet URL.
+    environment, so the server started afterwards accepts the tailnet URL,
+    and defaults ``TAILNET_ALLOWED_USERS`` to this machine's owner so their
+    devices get in on the identity ``tailscale serve`` vouches for.
     """
     ts_bin = find_tailscale()
     if not ts_bin:
@@ -314,6 +303,8 @@ def prepare_tailnet_share() -> tuple[str | None, TailnetShare | None]:
     os.environ["ALLOWED_HOSTS"] = (
         f"{hosts},{share.hostname}" if hosts else share.hostname
     )
+    if share.owner_login and not os.environ.get("TAILNET_ALLOWED_USERS"):
+        os.environ["TAILNET_ALLOWED_USERS"] = share.owner_login
     return ts_bin, share
 
 
@@ -355,6 +346,10 @@ class Server:
                 self.host,
                 "--port",
                 str(self.port),
+                # Keep the TCP peer as the real connection: the backend
+                # tells a tailscaled-relayed request apart from a genuinely
+                # local one by its proxy headers (auth.is_proxied_request).
+                "--no-proxy-headers",
             ],
             cwd=ROOT,
         )
@@ -485,10 +480,11 @@ class Supervisor:
         )
         if self.share and self.serve_proc:
             log(f"Tailnet: {self.share.url}")
-            log(
-                "Sign in a new device once with: "
-                f"{self.share.url}/?apiToken={api_token()}"
-            )
+            users = os.environ.get("TAILNET_ALLOWED_USERS", "")
+            if users:
+                log(f"Open it on any tailnet device signed in as: {users}")
+            else:
+                log("No tailnet users allowlisted - set TAILNET_ALLOWED_USERS.")
         mode = (
             "pulling from upstream and redeploying" if self.auto_pull else "redeploying"
         )
