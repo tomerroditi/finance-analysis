@@ -18,7 +18,9 @@ from backend.constants.providers import (
     insurance_providers,
 )
 from backend.repositories.credentials_repository import _SENSITIVE_FIELDS, CredentialsRepository
+from backend.errors import ValidationException
 from backend.repositories.scraping_history_repository import ScrapingHistoryRepository
+from backend.utils.phone_numbers import ISRAELI_MOBILE_RE, normalize_israeli_mobile
 
 # In-memory credentials cache, partitioned by the resolved database path.
 # Real mode, demo mode and every per-visitor demo sandbox resolve to a
@@ -35,6 +37,34 @@ def cache_key() -> str:
 # Sentinel returned by the API in place of stored secret values. Clients send
 # it back unchanged on save to mean "keep the stored value".
 MASK_SENTINEL = "__unchanged__"
+
+# Providers whose login sends ``phoneNumber`` verbatim to an API that only
+# accepts the international ``+9725XXXXXXXX`` form.
+_INTERNATIONAL_PHONE_PROVIDERS = frozenset({"onezero"})
+
+
+def _require_israeli_mobile(fields: Dict[str, Any]) -> None:
+    """Normalize ``fields["phoneNumber"]`` in place to ``+9725XXXXXXXX``.
+
+    Parameters
+    ----------
+    fields : dict
+        One account's credential fields, about to be persisted.
+
+    Raises
+    ------
+    ValidationException
+        If the phone number is not a recognisable Israeli mobile number.
+    """
+    phone = fields.get(Fields.PHONE_NUMBER.value)
+    if phone is None:
+        return
+    normalized = normalize_israeli_mobile(str(phone))
+    if not ISRAELI_MOBILE_RE.match(normalized):
+        raise ValidationException(
+            "Phone number must be an Israeli mobile number in the format +9725XXXXXXXX"
+        )
+    fields[Fields.PHONE_NUMBER.value] = normalized
 
 
 class CredentialsService:
@@ -122,6 +152,8 @@ class CredentialsService:
                     }
                     if not cleaned:
                         continue
+                    if provider in _INTERNATIONAL_PHONE_PROVIDERS:
+                        _require_israeli_mobile(cleaned)
                     self.repository.save_credentials(
                         service, provider, account_name, cleaned
                     )

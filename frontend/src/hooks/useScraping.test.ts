@@ -680,3 +680,26 @@ describe("useScraping — initial 2FA cooldown", () => {
     );
   });
 });
+
+describe("useScraping.abortScraper", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("marks the scrape canceled, not failed, and carries no error", async () => {
+    // A user abort is a choice, not a failure — it gets its own badge.
+    const { result } = renderHook(() => useScraping(), { wrapper });
+    await act(async () => {
+      await result.current.startScraper(acc, null);
+    });
+    const running = result.current.getScraperForAccount(acc)!;
+
+    await act(async () => {
+      await result.current.abortScraper(running);
+    });
+
+    const aborted = result.current.getScraperForAccount(acc);
+    expect(scrapingApi.abort).toHaveBeenCalledWith(running.process_id);
+    expect(aborted?.status).toBe("canceled");
+    expect(aborted?.error_message).toBeUndefined();
+    expect(result.current.isAnyScraping).toBe(false);
+  });
+});

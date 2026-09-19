@@ -76,6 +76,27 @@ test.describe("DataSources", () => {
       await expect(img).toBeVisible();
     }
 
+    // OneZero's OTP API only accepts +9725XXXXXXXX: the phone field carries a
+    // fixed +972 prefix, folds a typed local 05X number into it, and blocks
+    // saving anything that is not a full Israeli mobile number. Nothing is
+    // submitted — Back leaves the form untouched.
+    await page.getByRole("img", { name: "One Zero" }).last().click();
+    const phoneInput = page.locator("#credential-phone");
+    await expect(phoneInput).toBeVisible();
+    await expect(page.getByText("+972", { exact: true })).toBeVisible();
+    await page.getByPlaceholder(/My Investment Account/).fill("E2E OneZero");
+    const finishButton = page.getByRole("button", { name: "Finish Setup" });
+    await phoneInput.fill("050123");
+    await phoneInput.blur();
+    await expect(phoneInput).toHaveValue("50123");
+    await expect(page.getByText(/Enter an Israeli mobile number/)).toBeVisible();
+    await expect(finishButton).toBeDisabled();
+    await phoneInput.fill("050-1234567");
+    await expect(phoneInput).toHaveValue("501234567");
+    await expect(page.getByText(/Enter an Israeli mobile number/)).toHaveCount(0);
+    await expect(finishButton).toBeEnabled();
+    await page.getByRole("button", { name: "Back" }).click();
+
     // Bounce back to step 1 and try credit cards to make sure that grid wires
     // up too (different service key, different filename mappings — e.g. visa
     // cal has a space and Beyahad Bishvilha is a PNG instead of SVG).
@@ -156,7 +177,7 @@ test.describe("DataSources", () => {
         credentials: {
           email: "e2e-balance@example.com",
           password: "e2e-password",
-          phoneNumber: "+15551234567",
+          phoneNumber: "+972501234567",
         },
       },
     });
@@ -271,7 +292,7 @@ test.describe("DataSources", () => {
           credentials: {
             email: `${accountName.replace(/\s+/g, "-")}@example.com`,
             password: "e2e-password",
-            phoneNumber: "+15551234567",
+            phoneNumber: "+972501234567",
           },
         },
       });

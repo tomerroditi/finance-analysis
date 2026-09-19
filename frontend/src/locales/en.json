@@ -1031,6 +1031,7 @@
     "deleteAccount": "Delete Account",
     "scrape": "Scrape",
     "scrapeAll": "Scrape All",
+    "scrapeAllHint": "Scrape every account not already synced today",
     "lastScraped": "Last Scraped",
     "neverScraped": "Never Scraped",
     "provider": "Provider",
@@ -1053,6 +1054,8 @@
     "tfaRequired": "2FA Required",
     "synced": "Synced",
     "failed": "Failed",
+    "aborted": "Aborted",
+    "abortedHint": "You stopped this scrape before it finished.",
     "neverSynced": "Never synced",
     "noBalanceSet": "No balance set",
     "setBalance": "Set Balance",
@@ -1136,7 +1139,9 @@
       "email": "Email",
       "phoneNumber": "Phone Number",
       "otpLongTermToken": "OTP Long-Term Token"
-    }
+    },
+    "phoneLocalPlaceholder": "501234567",
+    "invalidIsraeliMobile": "Enter an Israeli mobile number: 5 followed by 8 digits (e.g. +972 501234567)."
   },
   "liabilities": {
     "title": "Liabilities",

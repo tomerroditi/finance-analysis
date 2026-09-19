@@ -34,6 +34,13 @@ import { useNotify } from "../context/DialogContext";
 import { humanizeProvider } from "../utils/textFormatting";
 import { useQueryKeys } from "../hooks/useQueryKeys";
 import { qkPrefix } from "../services/queryKeys";
+import {
+  INTERNATIONAL_PHONE_PROVIDERS,
+  ISRAEL_DIAL_PREFIX,
+  isValidIsraeliMobile,
+  toInternationalMobile,
+  toSubscriberDigits,
+} from "../utils/phoneNumbers";
 
 // Sentinel the backend returns in place of stored secrets; sending it back
 // on save keeps the stored value (see backend CredentialsService.MASK_SENTINEL).
@@ -70,6 +77,7 @@ export function DataSources() {
   const [editingAccount, setEditingAccount] = useState<CredentialAccount | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<CredentialAccount | null>(null);
   const [isViewOnly, setIsViewOnly] = useState(false);
+  const [phoneBlurred, setPhoneBlurred] = useState(false);
   useScrollLock(isAddOpen || !!editingAccount);
 
   const {
@@ -110,7 +118,16 @@ export function DataSources() {
     setEditingAccount(null);
     setIsViewOnly(false);
     setShowPasswords({});
+    setPhoneBlurred(false);
   };
+
+  const requiresIntlPhone =
+    INTERNATIONAL_PHONE_PROVIDERS.has(selectedProvider) && formFields.includes("phoneNumber");
+  // Legacy accounts may hold the local 05X form; normalize before judging it.
+  const normalizedPhone = toInternationalMobile(fields.phoneNumber || "");
+  const phoneIsValid = !requiresIntlPhone || isValidIsraeliMobile(normalizedPhone);
+  const showPhoneError =
+    requiresIntlPhone && phoneBlurred && !isViewOnly && !!fields.phoneNumber && !phoneIsValid;
 
   const createMutation = useMutation({
     mutationFn: () =>
@@ -118,7 +135,7 @@ export function DataSources() {
         service: selectedService,
         provider: selectedProvider,
         account_name: accountName,
-        credentials: fields,
+        credentials: requiresIntlPhone ? { ...fields, phoneNumber: normalizedPhone } : fields,
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: qkPrefix.credentialsAccounts });
@@ -295,7 +312,20 @@ export function DataSources() {
             <ChevronDown size={12} className="absolute end-2 top-1/2 -translate-y-1/2 text-[var(--text-muted)] pointer-events-none" />
           </div>
           <button
-            onClick={() => accounts && scrapeAll(accounts, scrapingPeriodDays)}
+            onClick={() =>
+              accounts &&
+              scrapeAll(
+                // Already fetched successfully today — another run would only
+                // re-download the same data (and re-send an SMS for 2FA banks).
+                accounts.filter(
+                  (acc) =>
+                    !isScrapedToday(acc.provider, acc.account_name) &&
+                    getScraperForAccount(acc)?.status !== "success",
+                ),
+                scrapingPeriodDays,
+              )
+            }
+            title={t("dataSources.scrapeAllHint")}
             disabled={!accounts?.length}
             className="flex items-center gap-2 px-5 py-2.5 bg-[var(--surface)] border border-[var(--surface-light)] text-white rounded-xl font-bold hover:border-[var(--primary)]/50 hover:bg-[var(--primary)]/5 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
           >
@@ -600,6 +630,51 @@ export function DataSources() {
                   </div>
 
                   {formFields.map((field) => {
+                    if (field === "phoneNumber" && requiresIntlPhone) {
+                      return (
+                        <div key={field}>
+                          <label
+                            htmlFor="credential-phone"
+                            className="block text-[10px] font-black uppercase tracking-widest text-[var(--text-muted)] mb-2"
+                          >
+                            {t("dataSources.fields.phoneNumber")}
+                          </label>
+                          {/* The dial prefix is fixed chrome, so the pair is
+                              always LTR — "+972" must lead even in Hebrew. */}
+                          <div
+                            dir="ltr"
+                            className={`flex items-stretch bg-[var(--surface-base)] border rounded-xl transition-all focus-within:border-[var(--primary)] ${
+                              showPhoneError ? "border-red-500/60" : "border-[var(--surface-light)]"
+                            }`}
+                          >
+                            <span className="flex items-center ps-4 pe-2 font-medium text-[var(--text-muted)] select-none">
+                              {ISRAEL_DIAL_PREFIX}
+                            </span>
+                            <input
+                              id="credential-phone"
+                              type="tel"
+                              inputMode="numeric"
+                              autoComplete="tel-national"
+                              disabled={isViewOnly}
+                              placeholder={t("dataSources.phoneLocalPlaceholder")}
+                              aria-invalid={showPhoneError}
+                              aria-describedby={showPhoneError ? "credential-phone-error" : undefined}
+                              className="min-w-0 flex-1 bg-transparent pe-4 py-3.5 outline-none font-medium disabled:opacity-50"
+                              value={toSubscriberDigits(fields[field] || "")}
+                              onBlur={() => setPhoneBlurred(true)}
+                              onChange={(e) =>
+                                setFields({ ...fields, [field]: toInternationalMobile(e.target.value) })
+                              }
+                            />
+                          </div>
+                          {showPhoneError && (
+                            <p id="credential-phone-error" className="mt-1.5 text-xs text-red-400">
+                              {t("dataSources.invalidIsraeliMobile")}
+                            </p>
+                          )}
+                        </div>
+                      );
+                    }
                     const isSensitive =
                       field.toLowerCase().includes("password") ||
                       field.toLowerCase().includes("secret");
@@ -673,7 +748,8 @@ export function DataSources() {
                       isViewOnly ? resetForm : () => createMutation.mutate()
                     }
                     disabled={
-                      (!isViewOnly && !accountName) || createMutation.isPending
+                      (!isViewOnly && (!accountName || !phoneIsValid)) ||
+                      createMutation.isPending
                     }
                     className="flex-[2] py-4 bg-[var(--primary)] rounded-2xl text-white font-black hover:bg-[var(--primary-dark)] transition-all shadow-xl shadow-[var(--primary)]/20 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
