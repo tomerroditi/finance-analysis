@@ -83,7 +83,9 @@ def list_providers() -> None:
     print("Available providers:\n")
     for key, config in PROVIDER_CONFIGS.items():
         tfa_marker = " [2FA]" if config.requires_2fa else ""
-        fields = ", ".join(config.required_fields)
+        fields = ", ".join(
+            config.required_fields + [f"{f} (optional)" for f in config.optional_fields]
+        )
         print(f"  {key:<22} {config.name}{tfa_marker}")
         print(f"  {'':<22} Fields: {fields}")
         print()
@@ -117,6 +119,10 @@ def gather_credentials(provider: str) -> dict:
             credentials[field_name] = getpass.getpass(f"{field_name}: ")
         else:
             credentials[field_name] = input(f"{field_name}: ")
+    for field_name in config.optional_fields:
+        env_value = os.environ.get(f"SCRAPER_{field_name.upper()}")
+        if env_value:
+            credentials[field_name] = env_value
     return credentials
 
 

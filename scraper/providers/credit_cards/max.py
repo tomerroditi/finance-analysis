@@ -9,6 +9,7 @@ from urllib.parse import urlencode
 from dateutil.relativedelta import relativedelta
 
 from scraper.base import BrowserScraper, LoginOptions
+from scraper.exceptions import CredentialsError
 from scraper.models.account import AccountResult
 from scraper.models.result import LoginResult
 from scraper.models.transaction import (
@@ -21,6 +22,7 @@ from scraper.utils import (
     click_button,
     element_present_on_page,
     fetch_get_within_page,
+    fill_input,
     filter_old_transactions,
     fix_installments,
     get_all_months,
@@ -43,6 +45,10 @@ SUCCESS_URL = f"{BASE_WELCOME_URL}/homepage/personal"
 
 INVALID_DETAILS_SELECTOR = "#popupWrongDetails"
 LOGIN_ERROR_SELECTOR = "#popupCardHoldersLoginError"
+LOGIN_SUBMIT_SELECTOR = "app-user-login-form .general-button.send-me-code"
+# After repeated failed logins Max answers the password form with login code 17
+# and reveals this extra ID-number input; the form must be resubmitted with it.
+ID_INPUT_SELECTOR = '#idInput input[formcontrolname="id"]'
 
 SHEKEL_CURRENCY = "ILS"
 DOLLAR_CURRENCY = "USD"
@@ -462,7 +468,8 @@ class MaxScraper(BrowserScraper):
         Parameters
         ----------
         credentials : dict
-            Must contain 'username' and 'password' keys.
+            Must contain 'username' and 'password' keys. An optional 'id'
+            (ID/passport number) answers Max's ID challenge when it appears.
 
         Returns
         -------
@@ -503,7 +510,7 @@ class MaxScraper(BrowserScraper):
             return None
 
         async def post_action():
-            await _redirect_or_dialog(page)
+            await _complete_login(page, credentials.get("id"))
 
         return LoginOptions(
             login_url=LOGIN_URL,
@@ -511,7 +518,7 @@ class MaxScraper(BrowserScraper):
                 {"selector": "#user-name", "value": credentials["username"]},
                 {"selector": "#password", "value": credentials["password"]},
             ],
-            submit_button_selector="app-user-login-form .general-button.send-me-code",
+            submit_button_selector=LOGIN_SUBMIT_SELECTOR,
             possible_results=_get_possible_login_results(page),
             check_readiness=check_readiness,
             pre_action=pre_action,
@@ -570,34 +577,75 @@ class MaxScraper(BrowserScraper):
         return accounts
 
 
-async def _redirect_or_dialog(page) -> None:
-    """Wait for either a redirect or a login error dialog.
+async def _complete_login(page, user_id: Optional[str]) -> None:
+    """Wait for the login outcome, answering Max's ID challenge if it appears.
 
     Parameters
     ----------
     page : Page
         The Playwright browser page.
+    user_id : str or None
+        The account holder's ID/passport number, if one is stored.
+
+    Raises
+    ------
+    CredentialsError
+        If Max asks for the ID number and none is stored.
+    """
+    if not await _await_login_outcome(page, watch_id_prompt=True):
+        return
+    user_id = (user_id or "").strip()
+    if not user_id:
+        raise CredentialsError(
+            "Max is asking for your ID number after repeated failed logins. "
+            "Add the ID number to this Max account's credentials and try again."
+        )
+    logger.info("Max requested an ID number; resubmitting the login form with it")
+    await fill_input(page, ID_INPUT_SELECTOR, user_id)
+    await click_button(page, LOGIN_SUBMIT_SELECTOR)
+    await _await_login_outcome(page, watch_id_prompt=False)
+
+
+async def _await_login_outcome(page, watch_id_prompt: bool) -> bool:
+    """Wait for a redirect, a login error dialog, or the ID challenge.
+
+    Parameters
+    ----------
+    page : Page
+        The Playwright browser page.
+    watch_id_prompt : bool
+        Whether the ID-number input appearing counts as an outcome.
+
+    Returns
+    -------
+    bool
+        True if the ID-number input appeared first, False otherwise.
     """
     import asyncio
 
-    done, pending = await asyncio.wait(
-        [
-            asyncio.create_task(
-                wait_for_redirect(
-                    page,
-                    timeout=20.0,
-                    ignore_list=[BASE_WELCOME_URL, f"{BASE_WELCOME_URL}/"],
-                )
-            ),
-            asyncio.create_task(
-                wait_until_element_found(page, INVALID_DETAILS_SELECTOR, only_visible=True)
-            ),
-            asyncio.create_task(
-                wait_until_element_found(page, LOGIN_ERROR_SELECTOR, only_visible=True)
-            ),
-        ],
-        return_when=asyncio.FIRST_COMPLETED,
-    )
+    tasks = [
+        asyncio.create_task(
+            wait_for_redirect(
+                page,
+                timeout=20.0,
+                ignore_list=[BASE_WELCOME_URL, f"{BASE_WELCOME_URL}/"],
+            )
+        ),
+        asyncio.create_task(
+            wait_until_element_found(page, INVALID_DETAILS_SELECTOR, only_visible=True)
+        ),
+        asyncio.create_task(
+            wait_until_element_found(page, LOGIN_ERROR_SELECTOR, only_visible=True)
+        ),
+    ]
+    id_prompt = None
+    if watch_id_prompt:
+        id_prompt = asyncio.create_task(
+            wait_until_element_found(page, ID_INPUT_SELECTOR, only_visible=True)
+        )
+        tasks.append(id_prompt)
+
+    done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
     for task in pending:
         task.cancel()
     # Re-raise if the completed task had an exception (besides cancellation)
@@ -605,6 +653,7 @@ async def _redirect_or_dialog(page) -> None:
         exc = task.exception()
         if exc is not None:
             raise exc
+    return id_prompt in done
 
 
 def _get_possible_login_results(page) -> dict[LoginResult, list]:
