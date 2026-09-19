@@ -1,3 +1,9 @@
+## v1.67.0 (2026-09-19)
+
+### Feat
+
+- **prod**: share on the tailnet and auto-update the running server (#291)
+
 ## v1.66.3 (2026-09-19)
 
 ### Fix
