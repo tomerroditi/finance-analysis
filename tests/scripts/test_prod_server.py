@@ -4,15 +4,19 @@ Unit tests for .claude/scripts/prod_server.py — the prod supervisor behind
 
 Covered here are the decisions that are easy to get subtly wrong: what a
 commit range requires of a redeploy, how the tailnet share is chosen from
-``tailscale status``, and when auto-pull must stand down. Nothing starts a
-server, runs a build or calls Tailscale.
+``tailscale status``, when auto-pull must stand down, and when a live server
+that stopped answering is restarted. Nothing starts uvicorn, runs a build or
+calls Tailscale.
 """
 
 from __future__ import annotations
 
+import http.server
 import importlib.util
+import socket
 import subprocess
 import sys
+import threading
 from pathlib import Path
 from typing import ClassVar
 
@@ -179,3 +183,83 @@ class TestServeConfigActive:
     def test_unparseable_output_is_treated_as_active(self):
         """Verify an unexpected answer leaves any existing share alone."""
         assert prod.serve_config_active("permission denied") is True
+
+
+class _ScriptedServer:
+    """A Server stand-in whose /health answers follow a script."""
+
+    def __init__(self, answers):
+        self.answers = list(answers)
+        self.stops = 0
+        self.starts = 0
+
+    def healthy(self, timeout=None):
+        return self.answers.pop(0)
+
+    def stop(self):
+        self.stops += 1
+
+    def start(self):
+        self.starts += 1
+        return True
+
+
+class TestSupervisorCheckHealth:
+    """Tests for Supervisor.check_health() — restarting a live but deaf server."""
+
+    @staticmethod
+    def _supervisor(monkeypatch, answers):
+        """Build a Supervisor around a scripted server, without touching git."""
+        monkeypatch.setattr(prod, "head_commit", lambda: "abc123")
+        supervisor = prod.Supervisor("127.0.0.1", 8080, 60, auto_pull=False)
+        supervisor.server = _ScriptedServer(answers)
+        return supervisor
+
+    def test_isolated_misses_are_tolerated(self, monkeypatch):
+        """Verify a success between misses resets the count, so no restart happens."""
+        misses = prod.HEALTH_FAILURES_BEFORE_RESTART - 1
+        answers = ([False] * misses + [True]) * 2
+        supervisor = self._supervisor(monkeypatch, answers)
+        restarts = [supervisor.check_health() for _ in answers]
+        assert not any(restarts)
+        assert supervisor.server.stops == 0
+
+    def test_consecutive_misses_restart_the_server(self, monkeypatch):
+        """Verify the Nth consecutive miss stops and restarts the server once."""
+        n = prod.HEALTH_FAILURES_BEFORE_RESTART
+        supervisor = self._supervisor(monkeypatch, [False] * n)
+        restarts = [supervisor.check_health() for _ in range(n)]
+        assert restarts == [False] * (n - 1) + [True]
+        assert (supervisor.server.stops, supervisor.server.starts) == (1, 1)
+        assert supervisor.health_failures == 0
+
+
+class TestServerHealthy:
+    """Tests for Server.healthy() against a real local HTTP listener."""
+
+    def test_answers_true_while_health_responds(self):
+        """Verify a 200 from /health counts as healthy."""
+
+        class Handler(http.server.BaseHTTPRequestHandler):
+            def do_GET(self):
+                self.send_response(200 if self.path == "/health" else 404)
+                self.end_headers()
+
+            def log_message(self, *args):
+                pass
+
+        httpd = http.server.HTTPServer(("127.0.0.1", 0), Handler)
+        thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+        thread.start()
+        try:
+            assert prod.Server("127.0.0.1", httpd.server_address[1]).healthy(timeout=5)
+        finally:
+            httpd.shutdown()
+            httpd.server_close()
+
+    def test_answers_false_when_nothing_listens(self):
+        """Verify a closed port — what a Proactor loop leaves after a failed accept — is unhealthy."""
+        with socket.socket() as sock:
+            sock.bind(("127.0.0.1", 0))
+            port = sock.getsockname()[1]
+        assert prod.Server("127.0.0.1", port).healthy(timeout=2) is False

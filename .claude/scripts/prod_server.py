@@ -5,7 +5,11 @@ Launched by ``./start.sh prod`` (which bootstraps the venv and exports the
 prod environment first). One process owns the whole prod lifecycle:
 
 1. **Serve.** Builds the frontend and runs uvicorn, which serves the API and
-   the built SPA from one port. The server is restarted if it dies.
+   the built SPA from one port. The server is restarted if it dies, and also
+   if it stops answering ``/health`` while still running: on Windows a single
+   failed accept (e.g. ``WinError 10055`` under a burst of sockets) makes
+   asyncio's Proactor loop close the listening socket for good, leaving a live
+   process that no longer takes connections.
 2. **Share.** When Tailscale is connected, runs ``tailscale serve`` in the
    foreground as a child, so the tailnet URL (a phone signed in to the same
    tailnet) lives exactly as long as this process. tailscaled proxies from
@@ -54,6 +58,9 @@ TAILSCALE_FALLBACK_PATHS = (
 )
 HEALTH_TIMEOUT_SECONDS = 120
 RESTART_BACKOFF_SECONDS = 15
+HEALTH_CHECK_INTERVAL_SECONDS = 10
+HEALTH_PROBE_TIMEOUT_SECONDS = 5
+HEALTH_FAILURES_BEFORE_RESTART = 3
 
 
 def log(message: str) -> None:
@@ -354,18 +361,22 @@ class Server:
             cwd=ROOT,
         )
         deadline = time.monotonic() + HEALTH_TIMEOUT_SECONDS
-        url = f"http://127.0.0.1:{self.port}/health"
         while time.monotonic() < deadline:
             if self.proc.poll() is not None:
                 return False
-            try:
-                with urllib.request.urlopen(url, timeout=2) as response:
-                    if response.status == 200:
-                        return True
-            except (urllib.error.URLError, OSError):
-                pass
+            if self.healthy(timeout=2):
+                return True
             time.sleep(0.5)
         return False
+
+    def healthy(self, timeout: float = HEALTH_PROBE_TIMEOUT_SECONDS) -> bool:
+        """Whether ``/health`` answers 200 within ``timeout`` seconds."""
+        url = f"http://127.0.0.1:{self.port}/health"
+        try:
+            with urllib.request.urlopen(url, timeout=timeout) as response:
+                return response.status == 200
+        except (urllib.error.URLError, OSError):
+            return False
 
     def stop(self) -> None:
         """Stop uvicorn."""
@@ -439,6 +450,7 @@ class Supervisor:
         self.ts_bin: str | None = None
         self.share: TailnetShare | None = None
         self.serve_proc: subprocess.Popen | None = None
+        self.health_failures = 0
 
     def run(self) -> int:
         """Build, start and supervise until interrupted."""
@@ -454,16 +466,20 @@ class Supervisor:
         self.start_share()
         self.announce()
         next_poll = time.monotonic() + self.poll_seconds
+        next_health_check = time.monotonic() + HEALTH_CHECK_INTERVAL_SECONDS
         last_restart = 0.0
         while True:
             time.sleep(1)
-            if (
-                not self.server.alive
-                and time.monotonic() - last_restart > RESTART_BACKOFF_SECONDS
-            ):
-                log("Server exited unexpectedly - restarting.")
-                last_restart = time.monotonic()
-                self.server.start()
+            if not self.server.alive:
+                if time.monotonic() - last_restart > RESTART_BACKOFF_SECONDS:
+                    log("Server exited unexpectedly - restarting.")
+                    last_restart = time.monotonic()
+                    self.health_failures = 0
+                    self.server.start()
+            elif time.monotonic() >= next_health_check:
+                next_health_check = time.monotonic() + HEALTH_CHECK_INTERVAL_SECONDS
+                if self.check_health():
+                    last_restart = time.monotonic()
             if time.monotonic() < next_poll:
                 continue
             next_poll = time.monotonic() + self.poll_seconds
@@ -472,6 +488,33 @@ class Supervisor:
             head = head_commit()
             if head not in (self.deployed, self.failed_commit):
                 self.redeploy(head)
+
+    def check_health(self) -> bool:
+        """Probe the running server and restart it once it stops answering.
+
+        A single missed probe is tolerated (a slow response under load); only
+        ``HEALTH_FAILURES_BEFORE_RESTART`` misses in a row count as a server
+        that is up but no longer serving.
+
+        Returns
+        -------
+        bool
+            True when this probe triggered a restart.
+        """
+        if self.server.healthy():
+            self.health_failures = 0
+            return False
+        self.health_failures += 1
+        if self.health_failures < HEALTH_FAILURES_BEFORE_RESTART:
+            return False
+        log(
+            f"Server is running but has not answered /health {self.health_failures} "
+            "times in a row - restarting."
+        )
+        self.health_failures = 0
+        self.server.stop()
+        self.server.start()
+        return True
 
     def announce(self) -> None:
         """Print where the app is reachable and what the loop does."""

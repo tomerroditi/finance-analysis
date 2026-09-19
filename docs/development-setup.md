@@ -110,6 +110,9 @@ Open <http://localhost:5173>. Press **Ctrl+C** to stop.
   pull while you have uncommitted changes or the branch has diverged, and still
   redeploys after a pull you do yourself. `PROD_AUTO_PULL=0` turns off pulling;
   `PROD_POLL_SECONDS` changes the interval.
+- **Self-healing.** It checks `/health` every 10 seconds and restarts the server if it
+  crashes or stops answering three checks in a row, so an unreachable backend comes back
+  on its own within about 30 seconds.
 
 Turn on **Demo Mode** (in Settings) to explore the app with sample data, without connecting
 real accounts.
