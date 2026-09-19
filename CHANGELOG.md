@@ -1,3 +1,9 @@
+## v1.67.1 (2026-09-19)
+
+### Fix
+
+- keep the backend reachable under socket pressure on Windows (dev reload loop + prod health restarts) (#292)
+
 ## v1.67.0 (2026-09-19)
 
 ### Feat
