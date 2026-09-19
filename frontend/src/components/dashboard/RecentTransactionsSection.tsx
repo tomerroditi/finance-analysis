@@ -348,8 +348,8 @@ export function RecentTransactionsFeed({
                         and avoids firing a mutation per dropdown change. */}
                     {isEditing && categories && (
                       <div className="mx-2 mb-2 ms-11 rounded-lg border border-[var(--surface-light)] bg-[var(--surface-light)]/20 overflow-hidden">
-                        <div className="flex items-center gap-3 px-3 py-2">
-                          <div className="flex-1 min-w-0">
+                        <div className="flex flex-col gap-2 px-3 py-2 sm:flex-row sm:items-end sm:gap-3">
+                          <div className="min-w-0 sm:flex-1">
                             <label className="text-[10px] uppercase tracking-wider text-[var(--text-muted)] mb-1 block">{t("common.category")}</label>
                             <SelectDropdown
                               options={Object.keys(categories).map((c) => ({ label: c, value: c }))}
@@ -369,7 +369,7 @@ export function RecentTransactionsFeed({
                               }}
                             />
                           </div>
-                          <div className="flex-1 min-w-0">
+                          <div className="min-w-0 sm:flex-1">
                             <label className="text-[10px] uppercase tracking-wider text-[var(--text-muted)] mb-1 block">{t("common.tag")}</label>
                             <SelectDropdown
                               options={
@@ -392,7 +392,7 @@ export function RecentTransactionsFeed({
                             />
                           </div>
                           <button
-                            className="self-end mb-0.5 px-2.5 py-1 text-[11px] font-medium rounded-md bg-[var(--primary)] text-white hover:bg-[var(--primary)]/90 transition-colors"
+                            className="self-end shrink-0 px-2.5 py-1 text-[11px] font-medium rounded-md bg-[var(--primary)] text-white hover:bg-[var(--primary)]/90 transition-colors sm:mb-0.5"
                             onClick={() => commitEdit(tx)}
                           >
                             {t("dashboard.done")}
