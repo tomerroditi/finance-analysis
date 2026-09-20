@@ -1,11 +1,26 @@
 import { useState, useMemo, useRef, useCallback, useEffect } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router";
-import { Split, RefreshCw, Tag, Link2 } from "lucide-react";
+import {
+  Split,
+  RefreshCw,
+  Tag,
+  Link2,
+  MoreHorizontal,
+  Pencil,
+  Eraser,
+  Info,
+  Trash2,
+  Filter,
+} from "lucide-react";
 import { transactionsApi, pendingRefundsApi } from "../../services/api";
 import { SplitTransactionModal } from "../modals/SplitTransactionModal";
 import { LinkRefundModal } from "../modals/LinkRefundModal";
+import { TransactionEditorModal } from "../modals/TransactionEditorModal";
 import { SelectDropdown } from "../common/SelectDropdown";
+import { RuleQuickAction } from "../transactions/RuleQuickAction";
+import { GoalLinkAction } from "../transactions/GoalLinkAction";
+import { RecentTransactionDetails } from "./RecentTransactionDetails";
 import { useCategoryTagCreate } from "../../hooks/useCategoryTagCreate";
 import { useCategories } from "../../hooks/useCategories";
 import { qkPrefix } from "../../services/queryKeys";
@@ -17,6 +32,7 @@ import { formatCurrency } from "../../utils/numberFormatting";
 import { isToday, isYesterday } from "date-fns";
 import i18n from "../../i18n";
 import { usePendingRows } from "../../hooks/usePendingRows";
+import { useConfirm, useNotify } from "../../context/DialogContext";
 
 function formatTransactionDate(dateStr: string): string {
   const d = new Date(dateStr);
@@ -26,6 +42,17 @@ function formatTransactionDate(dateStr: string): string {
 }
 
 const TRANSACTIONS_PAGE_SIZE = 20;
+
+/** Same predicate the transactions page's "Only Untagged" filter uses. */
+const isUntagged = (tx: Transaction) => !tx.tag || tx.tag === "-";
+
+/** Manual entries are the only rows the backend lets us edit or delete. */
+const isManualSource = (tx: Transaction) =>
+  !!tx.source &&
+  (tx.source.includes("cash") || tx.source.includes("manual_investment"));
+
+const ACTION_BUTTON_CLASS =
+  "flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium transition-colors whitespace-nowrap";
 
 export function RecentTransactionsFeed({
   transactions,
@@ -38,15 +65,21 @@ export function RecentTransactionsFeed({
 }) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
+  const confirm = useConfirm();
+  const notify = useNotify();
   const { createCategory, createTag } = useCategoryTagCreate();
   const [visibleCount, setVisibleCount] = useState(TRANSACTIONS_PAGE_SIZE);
   const sentinelRef = useRef<HTMLDivElement>(null);
+  const scrollRootRef = useRef<HTMLDivElement>(null);
+  const [onlyUntagged, setOnlyUntagged] = useState(false);
   const [editingTxKey, setEditingTxKey] = useState<string | null>(null);
   const [stagedCategory, setStagedCategory] = useState<string>("");
   const [stagedTag, setStagedTag] = useState<string>("");
-  const [mobileActionsTxKey, setMobileActionsTxKey] = useState<string | null>(null);
+  const [actionsTxKey, setActionsTxKey] = useState<string | null>(null);
+  const [detailsTxKey, setDetailsTxKey] = useState<string | null>(null);
   const [splittingTransaction, setSplittingTransaction] = useState<Transaction | null>(null);
   const [linkingTransaction, setLinkingTransaction] = useState<Transaction | null>(null);
+  const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
 
   const txKeyOf = (tx: Transaction) =>
     `${tx.source}_${tx.unique_id ?? tx.id ?? `${tx.date}-${tx.amount}`}`;
@@ -61,6 +94,27 @@ export function RecentTransactionsFeed({
     setEditingTxKey(null);
     setStagedCategory("");
     setStagedTag("");
+  };
+
+  // Collapsing a row's action bar must take the panels it opened with it —
+  // the category/tag editor and the details sheet are separate state, so
+  // without this they stayed on screen under a row with no actions bar.
+  const collapseRow = (txKey: string) => {
+    setActionsTxKey((current) => (current === txKey ? null : current));
+    setDetailsTxKey((current) => (current === txKey ? null : current));
+    if (editingTxKey === txKey) closeEditor();
+  };
+
+  const toggleActions = (tx: Transaction) => {
+    const txKey = txKeyOf(tx);
+    if (actionsTxKey === txKey) {
+      collapseRow(txKey);
+      return;
+    }
+    // The details sheet is only reachable from a row's action bar, so it
+    // follows whichever bar is open rather than lingering under a closed one.
+    setActionsTxKey(txKey);
+    setDetailsTxKey(null);
   };
 
   const commitEdit = (tx: Transaction) => {
@@ -113,6 +167,56 @@ export function RecentTransactionsFeed({
   // Per row: marking one transaction must not disable the refund button on
   // every other row while the write is out. See `usePendingRows`.
   const markingRefund = usePendingRows();
+  const clearingTagging = usePendingRows();
+
+  const clearTaggingMutation = useMutation({
+    mutationFn: (tx: Transaction) =>
+      transactionsApi.update(String(tx.unique_id ?? tx.id), {
+        source: tx.source || "",
+        category: "",
+        tag: "",
+      }),
+    onMutate: (tx) => clearingTagging.begin(txKeyOf(tx)),
+    onSettled: (_data, _error, tx) => clearingTagging.end(txKeyOf(tx)),
+    onSuccess: (_data, tx) => {
+      const sameRow = (candidate: Transaction) =>
+        candidate.source === tx.source &&
+        (candidate.unique_id ?? candidate.id) === (tx.unique_id ?? tx.id);
+      queryClient.setQueriesData<Transaction[]>(
+        { queryKey: qkPrefix.transactionsList },
+        (old) =>
+          Array.isArray(old)
+            ? old.map((candidate) =>
+                sameRow(candidate)
+                  ? { ...candidate, category: undefined, tag: undefined }
+                  : candidate,
+              )
+            : old,
+      );
+      queryClient.invalidateQueries({ queryKey: qkPrefix.categories });
+      invalidateAnalytics();
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (tx: Transaction) =>
+      transactionsApi.delete(String(tx.unique_id ?? tx.id), tx.source || ""),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: qkPrefix.transactions });
+      invalidateAnalytics();
+    },
+    onError: () => notify.error(t("transactions.failedDelete")),
+  });
+
+  const requestDelete = async (tx: Transaction) => {
+    const ok = await confirm({
+      title: t("transactions.deleteTransaction"),
+      message: t("transactions.deleteConfirmation"),
+      confirmLabel: t("common.delete"),
+      isDestructive: true,
+    });
+    if (ok) deleteMutation.mutate(tx);
+  };
 
   // Mark as pending refund
   const markPendingMutation = useMutation({
@@ -141,18 +245,24 @@ export function RecentTransactionsFeed({
     );
   }, [transactions]);
 
-  const visible = useMemo(() => sorted.slice(0, visibleCount), [sorted, visibleCount]);
-  const hasMore = visibleCount < sorted.length;
+  const filtered = useMemo(
+    () => (onlyUntagged ? sorted.filter(isUntagged) : sorted),
+    [sorted, onlyUntagged],
+  );
+  const untaggedCount = useMemo(() => sorted.filter(isUntagged).length, [sorted]);
+
+  const visible = useMemo(() => filtered.slice(0, visibleCount), [filtered, visibleCount]);
+  const hasMore = visibleCount < filtered.length;
 
   // IntersectionObserver to auto-load more when sentinel enters viewport
   const handleObserver = useCallback(
     (entries: IntersectionObserverEntry[]) => {
       const [entry] = entries;
       if (entry.isIntersecting && hasMore) {
-        setVisibleCount((prev) => Math.min(prev + TRANSACTIONS_PAGE_SIZE, sorted.length));
+        setVisibleCount((prev) => Math.min(prev + TRANSACTIONS_PAGE_SIZE, filtered.length));
       }
     },
-    [hasMore, sorted.length],
+    [hasMore, filtered.length],
   );
 
   useEffect(() => {
@@ -166,12 +276,28 @@ export function RecentTransactionsFeed({
     return () => observer.disconnect();
   }, [handleObserver]);
 
-  // Reset visible count when transactions change (e.g. demo mode toggle)
-
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
+  // Reset the page size only when the feed is actually showing a different
+  // dataset (demo-mode toggle, a new scrape, a split). Tagging a row rewrites
+  // the cached array in place, and resetting on every new array identity threw
+  // the reader back to the first 20 rows — losing the scroll position right
+  // after the edit they had scrolled down to make.
+  const datasetKey =
+    sorted.length === 0
+      ? "empty"
+      : `${sorted.length}|${txKeyOf(sorted[0])}|${txKeyOf(sorted[sorted.length - 1])}`;
+  const [lastDatasetKey, setLastDatasetKey] = useState(datasetKey);
+  if (lastDatasetKey !== datasetKey) {
+    // Adjusting state during render is React's documented way to reset derived
+    // state on a prop change — an effect would render the stale page size first.
+    setLastDatasetKey(datasetKey);
     setVisibleCount(TRANSACTIONS_PAGE_SIZE);
-  }, [transactions]);
+  }
+
+  const toggleOnlyUntagged = () => {
+    setOnlyUntagged((prev) => !prev);
+    setVisibleCount(TRANSACTIONS_PAGE_SIZE);
+    scrollRootRef.current?.scrollTo({ top: 0 });
+  };
 
   // Group by date label
   const grouped = useMemo(() => {
@@ -202,22 +328,48 @@ export function RecentTransactionsFeed({
 
   return (
     <div className="bg-[var(--surface)] rounded-2xl p-4 md:p-6 border border-[var(--surface-light)]">
-      <div className="flex items-center justify-between mb-4">
+      <div className="flex items-center justify-between gap-2 mb-4">
         <p className="text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
           {t("dashboard.recentTransactions")}
         </p>
-        <Link
-          to="/transactions"
-          className="text-sm font-medium text-[var(--primary)] hover:underline"
-        >
-          {t("dashboard.viewAll")} &rarr;
-        </Link>
+        <div className="flex items-center gap-2 shrink-0">
+          <button
+            type="button"
+            onClick={toggleOnlyUntagged}
+            aria-pressed={onlyUntagged}
+            aria-label={t("transactions.filters.onlyUntagged")}
+            title={t("transactions.filters.onlyUntagged")}
+            className={`flex items-center gap-1.5 px-2 py-1 rounded-lg text-xs font-medium transition-colors ${
+              onlyUntagged
+                ? "bg-[var(--primary)]/20 text-[var(--primary)]"
+                : "text-[var(--text-muted)] hover:text-white hover:bg-[var(--surface-light)]"
+            }`}
+          >
+            <Filter size={13} className="shrink-0" />
+            <span className="hidden sm:inline">{t("transactions.filters.onlyUntagged")}</span>
+            <span className="tabular-nums" dir="ltr">
+              ({untaggedCount})
+            </span>
+          </button>
+          <Link
+            to="/transactions"
+            className="text-sm font-medium text-[var(--primary)] hover:underline whitespace-nowrap"
+          >
+            {t("dashboard.viewAll")} &rarr;
+          </Link>
+        </div>
       </div>
 
       <div
+        ref={scrollRootRef}
         data-scroll-root=""
         className="max-h-[500px] overflow-y-auto space-y-4 scrollbar-auto-hide"
       >
+        {filtered.length === 0 && (
+          <p className="py-6 text-center text-sm text-[var(--text-muted)]">
+            {t("dashboard.noUntaggedTransactions")}
+          </p>
+        )}
         {grouped.map((group) => (
           <div key={group.label}>
             <p className="text-xs font-semibold text-[var(--text-muted)] mb-2 sticky top-0 bg-[var(--surface)] py-1 z-10">
@@ -229,44 +381,64 @@ export function RecentTransactionsFeed({
                 const isPositive = tx.amount >= 0;
                 const txKey = txKeyOf(tx);
                 const isEditing = editingTxKey === txKey;
+                const actionsOpen = actionsTxKey === txKey;
+                const detailsOpen = detailsTxKey === txKey;
+                const hasTagging = !!(tx.category || tx.tag);
+                const manual = isManualSource(tx);
 
                 return (
                   <div key={txKey}>
                     <div
-                      className={`flex items-center gap-2 py-1 px-2 rounded-lg hover:bg-[var(--surface-light)]/40 transition-colors sm:cursor-default cursor-pointer ${mobileActionsTxKey === txKey ? "bg-[var(--surface-light)]/30" : ""}`}
+                      data-testid="recent-tx-row"
+                      className={`flex items-center gap-2 py-1 px-2 rounded-lg hover:bg-[var(--surface-light)]/40 transition-colors sm:cursor-default cursor-pointer ${actionsOpen ? "bg-[var(--surface-light)]/30" : ""}`}
                       onClick={() => {
-                        // On mobile (< sm), toggle action card
-                        if (window.innerWidth < 640) {
-                          setMobileActionsTxKey(mobileActionsTxKey === txKey ? null : txKey);
-                        }
+                        // On mobile (< sm), tapping the row stands in for the
+                        // "more actions" button the row has no space for.
+                        if (window.innerWidth < 640) toggleActions(tx);
                       }}
                     >
                       <span className="text-lg flex-shrink-0 w-7 text-center">{icon || "?"}</span>
-                      <div className="flex-1 min-w-0 flex items-center justify-center gap-2 overflow-hidden">
-                        <span
-                          className="text-sm truncate shrink min-w-0"
-                          title={tx.description || ""}
-                          dir="auto"
-                        >
-                          {tx.description || ""}
-                        </span>
-                        <span className="text-[11px] text-[var(--text-muted)] flex-shrink-0 whitespace-nowrap" dir="auto">
-                          {tx.category}{tx.tag ? ` / ${tx.tag}` : ""}
-                        </span>
+                      {/* Description and category/tag stack instead of
+                          sharing one line. Side by side, the label was
+                          `flex-shrink-0`, so a long "Category / Tag" pair
+                          squeezed the description down to its ellipsis — and
+                          even letting both shrink only split a column barely
+                          wider than the label itself. */}
+                      <div className="flex-1 min-w-0">
+                        {!!tx.description && (
+                          <p
+                            className="text-sm truncate leading-tight"
+                            title={tx.description}
+                            dir="auto"
+                          >
+                            {tx.description}
+                          </p>
+                        )}
+                        {!!tx.category && (
+                          <p
+                            data-testid="recent-tx-meta"
+                            className="text-[11px] text-[var(--text-muted)] truncate leading-tight"
+                            title={`${tx.category}${tx.tag ? ` / ${tx.tag}` : ""}`}
+                            dir="auto"
+                          >
+                            {tx.category}{tx.tag ? ` / ${tx.tag}` : ""}
+                          </p>
+                        )}
                       </div>
-                      {/* Action buttons — hidden on small mobile, visible on sm+ */}
-                      <div className="hidden sm:grid grid-cols-3 flex-shrink-0 w-[96px]">
+                      {/* Quick actions — hidden on small mobile, visible on sm+.
+                          Everything else lives behind the "more" toggle. */}
+                      <div className="hidden sm:grid grid-cols-4 flex-shrink-0 w-[128px]">
                         <button
                           className={`w-[32px] h-[32px] flex items-center justify-center rounded-md transition-colors ${isEditing ? "bg-[var(--primary)]/20 text-[var(--primary)]" : "text-[var(--text-muted)]/40 hover:text-white hover:bg-[var(--surface-light)]"}`}
                           title={t("tooltips.editCategoryTag")}
-                          onClick={() => (isEditing ? closeEditor() : openEditor(tx))}
+                          onClick={(e) => { e.stopPropagation(); if (isEditing) closeEditor(); else openEditor(tx); }}
                         >
                           <Tag size={13} />
                         </button>
                         <button
                           className="w-[32px] h-[32px] flex items-center justify-center rounded-md text-[var(--text-muted)]/40 hover:text-white hover:bg-[var(--surface-light)] transition-colors"
                           title={t("tooltips.splitTransaction")}
-                          onClick={() => setSplittingTransaction(tx)}
+                          onClick={(e) => { e.stopPropagation(); setSplittingTransaction(tx); }}
                         >
                           <Split size={13} />
                         </button>
@@ -279,7 +451,7 @@ export function RecentTransactionsFeed({
                             <button
                               className="w-[32px] h-[32px] flex items-center justify-center rounded-md text-amber-400/40 hover:text-amber-400 hover:bg-amber-500/20 transition-colors"
                               title={t("tooltips.markPendingRefund")}
-                              onClick={() => markPendingMutation.mutate(tx)}
+                              onClick={(e) => { e.stopPropagation(); markPendingMutation.mutate(tx); }}
                               disabled={markingRefund.isPending(txKeyOf(tx))}
                             >
                               <RefreshCw size={13} />
@@ -289,11 +461,20 @@ export function RecentTransactionsFeed({
                           <button
                             className="w-[32px] h-[32px] flex items-center justify-center rounded-md text-emerald-400/40 hover:text-emerald-400 hover:bg-emerald-500/20 transition-colors"
                             title={t("tooltips.linkAsRefund")}
-                            onClick={() => setLinkingTransaction(tx)}
+                            onClick={(e) => { e.stopPropagation(); setLinkingTransaction(tx); }}
                           >
                             <Link2 size={13} />
                           </button>
                         )}
+                        <button
+                          className={`w-[32px] h-[32px] flex items-center justify-center rounded-md transition-colors ${actionsOpen ? "bg-[var(--surface-light)] text-white" : "text-[var(--text-muted)]/40 hover:text-white hover:bg-[var(--surface-light)]"}`}
+                          title={t("tooltips.moreActions")}
+                          aria-label={t("tooltips.moreActions")}
+                          aria-expanded={actionsOpen}
+                          onClick={(e) => { e.stopPropagation(); toggleActions(tx); }}
+                        >
+                          <MoreHorizontal size={13} />
+                        </button>
                       </div>
                       <span
                         className={`text-sm font-semibold flex-shrink-0 tabular-nums text-end w-[80px] ${
@@ -306,32 +487,51 @@ export function RecentTransactionsFeed({
                       </span>
                     </div>
 
-                    {/* Mobile action buttons — shown on tap */}
-                    {mobileActionsTxKey === txKey && (
-                      <div className="sm:hidden flex items-center gap-1.5 mx-2 mb-1 ms-9 p-1.5 rounded-lg bg-[var(--surface-light)]/40 border border-[var(--surface-light)] animate-in fade-in slide-in-from-top-1 duration-150">
+                    {/* Full action bar — the same set the transactions table
+                        offers per row, opened by the "more" button (or by
+                        tapping the row on mobile). */}
+                    {actionsOpen && (
+                      <div className="flex flex-wrap items-center gap-1.5 mx-2 mb-1 ms-9 p-1.5 rounded-lg bg-[var(--surface-light)]/40 border border-[var(--surface-light)] animate-in fade-in slide-in-from-top-1 duration-150">
                         <button
-                          className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium transition-colors ${isEditing ? "bg-[var(--primary)]/20 text-[var(--primary)]" : "text-[var(--text-muted)] hover:text-white hover:bg-[var(--surface-light)]"}`}
+                          className={`${ACTION_BUTTON_CLASS} ${isEditing ? "bg-[var(--primary)]/20 text-[var(--primary)]" : "text-[var(--text-muted)] hover:text-white hover:bg-[var(--surface-light)]"}`}
                           onClick={(e) => { e.stopPropagation(); if (isEditing) closeEditor(); else openEditor(tx); }}
                         >
                           <Tag size={13} className="shrink-0" />
                           {t("common.tag")}
                         </button>
                         <button
-                          className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium text-[var(--text-muted)] hover:text-white hover:bg-[var(--surface-light)] transition-colors"
+                          className={`${ACTION_BUTTON_CLASS} text-[var(--text-muted)] hover:text-white hover:bg-[var(--surface-light)] disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-[var(--text-muted)] disabled:cursor-not-allowed`}
+                          title={t("transactions.bulk.clearCategoryTag")}
+                          aria-label={t("transactions.bulk.clearCategoryTag")}
+                          disabled={!hasTagging || clearingTagging.isPending(txKey)}
+                          onClick={(e) => { e.stopPropagation(); clearTaggingMutation.mutate(tx); }}
+                        >
+                          <Eraser size={13} className="shrink-0" />
+                          {t("common.clear")}
+                        </button>
+                        <RuleQuickAction
+                          transactions={[tx]}
+                          stagedCategory={isEditing ? stagedCategory : tx.category}
+                          stagedTag={isEditing ? stagedTag : tx.tag}
+                          variant="compact"
+                        />
+                        <button
+                          className={`${ACTION_BUTTON_CLASS} text-[var(--text-muted)] hover:text-white hover:bg-[var(--surface-light)]`}
                           onClick={(e) => { e.stopPropagation(); setSplittingTransaction(tx); }}
                         >
                           <Split size={13} className="shrink-0" />
                           {t("common.split")}
                         </button>
+                        <GoalLinkAction transaction={tx} variant="compact" />
                         {tx.amount < 0 ? (
                           tx.pending_refund_id ? (
-                            <span className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-amber-400">
+                            <span className={`${ACTION_BUTTON_CLASS} text-amber-400`}>
                               <RefreshCw size={13} className="shrink-0 animate-pulse" />
                               {t("common.pending")}
                             </span>
                           ) : (
                             <button
-                              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium text-amber-400/70 hover:text-amber-400 hover:bg-amber-500/20 transition-colors"
+                              className={`${ACTION_BUTTON_CLASS} text-amber-400/70 hover:text-amber-400 hover:bg-amber-500/20`}
                               onClick={(e) => { e.stopPropagation(); markPendingMutation.mutate(tx); }}
                               disabled={markingRefund.isPending(txKeyOf(tx))}
                             >
@@ -341,13 +541,51 @@ export function RecentTransactionsFeed({
                           )
                         ) : (
                           <button
-                            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium text-emerald-400/70 hover:text-emerald-400 hover:bg-emerald-500/20 transition-colors"
+                            className={`${ACTION_BUTTON_CLASS} text-emerald-400/70 hover:text-emerald-400 hover:bg-emerald-500/20`}
                             onClick={(e) => { e.stopPropagation(); setLinkingTransaction(tx); }}
                           >
                             <Link2 size={13} className="shrink-0" />
                             {t("common.link")}
                           </button>
                         )}
+                        <button
+                          className={`${ACTION_BUTTON_CLASS} ${detailsOpen ? "bg-[var(--primary)]/20 text-[var(--primary)]" : "text-[var(--text-muted)] hover:text-white hover:bg-[var(--surface-light)]"}`}
+                          aria-expanded={detailsOpen}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setDetailsTxKey(detailsOpen ? null : txKey);
+                          }}
+                        >
+                          <Info size={13} className="shrink-0" />
+                          {t("common.details")}
+                        </button>
+                        {manual && (
+                          <>
+                            <button
+                              className={`${ACTION_BUTTON_CLASS} text-[var(--text-muted)] hover:text-white hover:bg-[var(--surface-light)]`}
+                              title={t("tooltips.editTransaction")}
+                              onClick={(e) => { e.stopPropagation(); setEditingTransaction(tx); }}
+                            >
+                              <Pencil size={13} className="shrink-0" />
+                              {t("common.edit")}
+                            </button>
+                            <button
+                              className={`${ACTION_BUTTON_CLASS} text-rose-400/70 hover:text-rose-400 hover:bg-rose-500/20`}
+                              title={t("tooltips.delete")}
+                              disabled={deleteMutation.isPending}
+                              onClick={(e) => { e.stopPropagation(); void requestDelete(tx); }}
+                            >
+                              <Trash2 size={13} className="shrink-0" />
+                              {t("common.delete")}
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    )}
+
+                    {detailsOpen && (
+                      <div className="mx-2 mb-2 ms-9 rounded-lg border border-[var(--surface-light)] bg-[var(--surface-light)]/20 overflow-hidden">
+                        <RecentTransactionDetails tx={tx} />
                       </div>
                     )}
 
@@ -356,7 +594,10 @@ export function RecentTransactionsFeed({
                         This keeps the row's icon/label stable during editing
                         and avoids firing a mutation per dropdown change. */}
                     {isEditing && categories && (
-                      <div className="mx-2 mb-2 ms-11 rounded-lg border border-[var(--surface-light)] bg-[var(--surface-light)]/20 overflow-hidden">
+                      <div
+                        data-testid="recent-tx-editor"
+                        className="mx-2 mb-2 ms-11 rounded-lg border border-[var(--surface-light)] bg-[var(--surface-light)]/20 overflow-hidden"
+                      >
                         <div className="flex flex-col gap-2 px-3 py-2 sm:flex-row sm:items-end sm:gap-3">
                           <div className="min-w-0 sm:flex-1">
                             <label className="text-[10px] uppercase tracking-wider text-[var(--text-muted)] mb-1 block">{t("common.category")}</label>
@@ -436,6 +677,22 @@ export function RecentTransactionsFeed({
           onClose={() => setSplittingTransaction(null)}
           onSuccess={() => {
             setSplittingTransaction(null);
+            queryClient.invalidateQueries({ queryKey: qkPrefix.transactions });
+            invalidateAnalytics();
+          }}
+        />
+      )}
+
+      {/* Manual transaction editor */}
+      {editingTransaction && (
+        <TransactionEditorModal
+          transaction={{
+            ...editingTransaction,
+            unique_id: String(editingTransaction.unique_id ?? editingTransaction.id ?? ""),
+          }}
+          onClose={() => setEditingTransaction(null)}
+          onSuccess={() => {
+            setEditingTransaction(null);
             queryClient.invalidateQueries({ queryKey: qkPrefix.transactions });
             invalidateAnalytics();
           }}
