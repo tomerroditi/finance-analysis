@@ -1,3 +1,9 @@
+## v1.74.0 (2026-09-20)
+
+### Feat
+
+- **budget**: envelope transactions, select-all tags, and a smarter project default (#320)
+
 ## v1.73.2 (2026-09-20)
 
 ### Fix
