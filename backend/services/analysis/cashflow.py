@@ -29,7 +29,51 @@ from backend.services.transaction_classification import (
 class CashflowMixin:
     """Cash-flow aggregation methods for ``AnalysisService``."""
 
-    def get_income_expenses_over_time(self, exclude_projects: bool = False, exclude_liabilities: bool = False, exclude_refunds: bool = False):
+    def _net_matched_refunds(
+        self, df: pd.DataFrame, exclude_pending_refunds: bool
+    ) -> pd.DataFrame:
+        """
+        Net refunds matched to a purchase out of both sides of a frame.
+
+        A refund and the purchase it pays back are one event, but they rarely
+        share a month, and an unlinked positive amount can only ever net
+        against the month it lands in. ``refund_links`` records which purchase
+        each incoming transaction repays, so the matched money is taken off
+        the purchase and off the refund alike, whatever months they fell in,
+        and neither shows up as that month's expense or income.
+
+        Parameters
+        ----------
+        df : pd.DataFrame
+            Transactions frame to net, straight from the repository.
+        exclude_pending_refunds : bool
+            Whether a still-outstanding expectation is dropped from its
+            purchase as well — the card's "Pending Refunds Excluded" chip.
+
+        Returns
+        -------
+        pd.DataFrame
+            The frame with ``amount`` netted.
+        """
+        # Local import: pending_refunds_service imports the transactions
+        # repository, which the analysis service is itself constructed with.
+        from backend.services.pending_refunds_service import (
+            PendingRefundsService,
+            apply_refund_amount_adjustments,
+        )
+
+        adjustments = PendingRefundsService(self.db).get_refund_amount_adjustments(
+            exclude_open=exclude_pending_refunds
+        )
+        return apply_refund_amount_adjustments(df, adjustments)
+
+    def get_income_expenses_over_time(
+        self,
+        exclude_projects: bool = False,
+        exclude_liabilities: bool = False,
+        exclude_refunds: bool = False,
+        exclude_pending_refunds: bool = True,
+    ):
         """
         Aggregate income and expenses by month over time.
 
@@ -41,6 +85,16 @@ class CashflowMixin:
         exclude_projects : bool, optional
             If True, exclude transactions whose category matches a project
             budget name. Defaults to False.
+        exclude_liabilities : bool, optional
+            If True, drop the Liabilities category entirely. Defaults to False.
+        exclude_refunds : bool, optional
+            If True, ignore *unmatched* refunds — a positive amount in an
+            expense category, or a negative one in an income category — so the
+            figures are gross rather than net. Defaults to False.
+        exclude_pending_refunds : bool, optional
+            Passed to :meth:`_net_matched_refunds`: whether a purchase still
+            awaiting its refund is dropped. Matched refunds are netted either
+            way. Defaults to True.
 
         Returns
         -------
@@ -55,6 +109,8 @@ class CashflowMixin:
 
         if df.empty:
             return []
+
+        df = self._net_matched_refunds(df, exclude_pending_refunds)
 
         if exclude_projects:
             from backend.services.budget_service import ProjectBudgetService
@@ -307,9 +363,18 @@ class CashflowMixin:
         income_df["source_label"] = np.where(is_loan, loan_label, non_loan_label)
         return income_df
 
-    def get_expenses_by_category_over_time(self):
+    def get_expenses_by_category_over_time(self, exclude_pending_refunds: bool = True):
         """
         Get monthly expenses broken down by category over time.
+
+        A refund is netted against the category of the purchase it repays, not
+        its own: the refund row is zeroed wherever it sits and the purchase is
+        reduced, so the money never moves between categories.
+
+        Parameters
+        ----------
+        exclude_pending_refunds : bool, optional
+            Passed to :meth:`_net_matched_refunds`. Defaults to True.
 
         Returns
         -------
@@ -323,6 +388,8 @@ class CashflowMixin:
 
         if df.empty:
             return []
+
+        df = self._net_matched_refunds(df, exclude_pending_refunds)
 
         # Regular expenses + negative liabilities (debt payments)
         regular_expense_mask = ~df["category"].isin(NON_EXPENSE_CATEGORIES) & (df["amount"] < 0)
@@ -342,7 +409,7 @@ class CashflowMixin:
             for month, row in pivot.iterrows()
         ]
 
-    def get_expenses_by_category(self):
+    def get_expenses_by_category(self, exclude_pending_refunds: bool = True):
         """
         Get expenses and refunds grouped by category.
 
@@ -350,6 +417,17 @@ class CashflowMixin:
         Liabilities) are excluded. Transactions with no category are grouped
         as ``"Uncategorized"``. Categories with positive net amounts are treated
         as refunds; those with negative net amounts are expenses.
+
+        A refund matched to its purchase is netted against that purchase (see
+        :meth:`_net_matched_refunds`), so it leaves the ``refunds`` bucket
+        entirely rather than showing up as money back on a category that no
+        longer carries the charge. What remains there is the unmatched
+        positive balance — a refund nobody linked to anything.
+
+        Parameters
+        ----------
+        exclude_pending_refunds : bool, optional
+            Passed to :meth:`_net_matched_refunds`. Defaults to True.
 
         Returns
         -------
@@ -365,6 +443,8 @@ class CashflowMixin:
 
         if df.empty:
             return {"expenses": [], "refunds": []}
+
+        df = self._net_matched_refunds(df, exclude_pending_refunds)
 
         expense_mask = ~df["category"].isin(NON_EXPENSE_CATEGORIES)
         expenses = df[expense_mask].copy()
@@ -383,9 +463,18 @@ class CashflowMixin:
             ],
         }
 
-    def get_income_by_source_over_time(self) -> list[dict]:
+    def get_income_by_source_over_time(
+        self, exclude_pending_refunds: bool = True
+    ) -> list[dict]:
         """
         Get monthly income broken down by source (category+tag combination).
+
+        Parameters
+        ----------
+        exclude_pending_refunds : bool, optional
+            Passed to :meth:`_net_matched_refunds`. A refund that landed in an
+            income category is money coming back, not earnings, so netting it
+            keeps it out of the breakdown. Defaults to True.
 
         Returns
         -------
@@ -397,6 +486,8 @@ class CashflowMixin:
 
         if df.empty:
             return []
+
+        df = self._net_matched_refunds(df, exclude_pending_refunds)
 
         # Exclude credit card and insurance transactions (same as other income methods)
         df = df[~df["source"].isin(self.repo._CASHFLOW_EXCLUDED)]
@@ -422,7 +513,12 @@ class CashflowMixin:
         for month, month_df in income_df.groupby("month", sort=True):
             sources = {}
             for label, group in month_df.groupby("source_label"):
-                sources[label] = round(float(group["amount"].sum()), 2)
+                # A source fully netted away by a matched refund contributes
+                # nothing; carrying it as a zero would only add a label the
+                # chart cannot draw.
+                amount = round(float(group["amount"].sum()), 2)
+                if amount > 0:
+                    sources[label] = amount
             total = round(sum(sources.values()), 2)
             result.append({"month": month, "sources": sources, "total": total})
 

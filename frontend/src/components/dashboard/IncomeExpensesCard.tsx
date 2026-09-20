@@ -1,11 +1,11 @@
-import { useState, useRef, useEffect, type MouseEvent as ReactMouseEvent } from "react";
+import { useState, type MouseEvent as ReactMouseEvent } from "react";
 import { createPortal } from "react-dom";
 import { useQuery } from "@tanstack/react-query";
 import { TrendingUp, TrendingDown, ArrowUp, ArrowDown, Minus, ChevronDown, ChevronUp } from "lucide-react";
 import { analyticsApi } from "../../services/api";
 import { useQueryKeys } from "../../hooks/useQueryKeys";
 import { useTranslation } from "react-i18next";
-import { formatCurrency, formatCompactCurrency, formatChange } from "../../utils/numberFormatting";
+import { formatCurrency, formatChange } from "../../utils/numberFormatting";
 import { formatMonthShort } from "../../utils/dateFormatting";
 import { CHART_COLORS } from "../../utils/chartStyle";
 
@@ -20,8 +20,6 @@ const CATEGORY_COLORS = [
   "#3b82f6", "#6366f1", "#8b5cf6", "#a855f7",
   "#d946ef", "#ec4899", "#fb7185", "#ef4444",
 ];
-
-type LabelMode = "pct" | "amt";
 
 /** How many recent months the ledger / breakdown views show before "Show earlier months". */
 const DEFAULT_VISIBLE_MONTHS = 12;
@@ -43,23 +41,6 @@ function avgOf(rows: { income: number }[] | undefined): number {
  * out every bar. Values above the cap are drawn full-width and flagged as
  * outliers — their exact ₪ label still tells the true story.
  */
-/**
- * Pick a legible ink for a label sitting on a coloured fill: dark text on light
- * segments (amber, lime, cyan…), light text on dark ones, each with a matching
- * soft shadow. Uses perceived brightness so white never disappears on a yellow
- * slice again.
- */
-function labelInk(hex: string): { color: string; textShadow: string } {
-  const h = hex.replace("#", "");
-  const r = parseInt(h.slice(0, 2), 16);
-  const g = parseInt(h.slice(2, 4), 16);
-  const b = parseInt(h.slice(4, 6), 16);
-  const brightness = (r * 299 + g * 587 + b * 114) / 1000;
-  return brightness > 150
-    ? { color: "#0b1220", textShadow: "0 1px 1px rgba(255,255,255,0.35)" }
-    : { color: "#ffffff", textShadow: "0 1px 2px rgba(0,0,0,0.4)" };
-}
-
 function barCap(values: number[], multiplier = 1.6): number {
   const positives = values.filter((v) => v > 0).sort((a, b) => a - b);
   if (positives.length === 0) return 1;
@@ -72,25 +53,26 @@ export function IncomeExpensesCard() {
   const { t } = useTranslation();
   const qk = useQueryKeys();
   const [incomeView, setIncomeView] = useState<"overview" | "by_source" | "by_category">("overview");
-  const [labelMode, setLabelMode] = useState<LabelMode>("pct");
   const [visibleMonths, setVisibleMonths] = useState(DEFAULT_VISIBLE_MONTHS);
   const showMore = () => setVisibleMonths((v) => v + DEFAULT_VISIBLE_MONTHS);
   const showLess = () => setVisibleMonths(DEFAULT_VISIBLE_MONTHS);
   const [excludePendingRefunds, setExcludePendingRefunds] = useState(true);
   const [includeProjects, setIncludeProjects] = useState(false);
-  const [excludeRefunds, setExcludeRefunds] = useState(false);
 
   const { data: incomeOutcome } = useQuery({
-    queryKey: qk.analytics.incomeExpensesOverTime(includeProjects, excludeRefunds),
-    queryFn: async () => (await analyticsApi.getIncomeExpensesOverTime(!includeProjects, false, excludeRefunds)).data,
+    queryKey: qk.analytics.incomeExpensesOverTime(includeProjects, excludePendingRefunds),
+    queryFn: async () =>
+      (await analyticsApi.getIncomeExpensesOverTime(!includeProjects, false, excludePendingRefunds)).data,
   });
   const { data: expensesByCategoryOverTime } = useQuery({
-    queryKey: qk.analytics.expensesByCategoryOverTime(),
-    queryFn: async () => (await analyticsApi.getExpensesByCategoryOverTime()).data,
+    queryKey: qk.analytics.expensesByCategoryOverTime(excludePendingRefunds),
+    queryFn: async () =>
+      (await analyticsApi.getExpensesByCategoryOverTime(excludePendingRefunds)).data,
   });
   const { data: incomeBySourceData } = useQuery({
-    queryKey: qk.analytics.incomeBySourceOverTime(),
-    queryFn: async () => (await analyticsApi.getIncomeBySourceOverTime()).data,
+    queryKey: qk.analytics.incomeBySourceOverTime(excludePendingRefunds),
+    queryFn: async () =>
+      (await analyticsApi.getIncomeBySourceOverTime(excludePendingRefunds)).data,
   });
   const { data: monthlyExpenses } = useQuery({
     queryKey: qk.analytics.monthlyExpenses(excludePendingRefunds, includeProjects),
@@ -132,18 +114,6 @@ export function IncomeExpensesCard() {
                   : t("dashboard.pendingRefundsIncluded")}
               </button>
               <button
-                onClick={() => setExcludeRefunds(!excludeRefunds)}
-                className={`rounded-lg px-3 py-1.5 text-xs font-medium border transition-colors ${
-                  excludeRefunds
-                    ? "bg-cyan-500/10 border-cyan-500/20 text-cyan-400"
-                    : "bg-[var(--surface-light)] border-[var(--surface-light)] text-[var(--text-muted)]"
-                }`}
-              >
-                {excludeRefunds
-                  ? t("dashboard.refundsExcluded")
-                  : t("dashboard.refundsIncluded")}
-              </button>
-              <button
                 onClick={() => setIncludeProjects(!includeProjects)}
                 className={`rounded-lg px-3 py-1.5 text-xs font-medium border transition-colors ${
                   includeProjects
@@ -157,28 +127,6 @@ export function IncomeExpensesCard() {
               </button>
             </div>
             <div className="flex items-center gap-2">
-              {incomeView !== "overview" && (
-                <div className="flex bg-[var(--surface-light)] p-1 rounded-xl">
-                  {([
-                    { key: "pct" as const, label: "%", aria: t("dashboard.showShare") },
-                    { key: "amt" as const, label: "₪", aria: t("dashboard.showAmount") },
-                  ]).map(({ key, label, aria }) => (
-                    <button
-                      key={key}
-                      onClick={() => setLabelMode(key)}
-                      aria-label={aria}
-                      aria-pressed={labelMode === key}
-                      className={`px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                        labelMode === key
-                          ? "bg-[var(--surface)] text-[var(--primary)] shadow-sm"
-                          : "text-[var(--text-muted)] hover:text-[var(--text-default)]"
-                      }`}
-                    >
-                      {label}
-                    </button>
-                  ))}
-                </div>
-              )}
               <div className="bg-[var(--surface-light)] rounded-xl overflow-hidden">
               <div className="flex p-1 overflow-x-auto scrollbar-auto-hide">
                 {([
@@ -214,7 +162,6 @@ export function IncomeExpensesCard() {
                 <CompositionView
                   rows={incomeBySourceData.map((d) => ({ month: d.month, values: d.sources }))}
                   palette={CHART_COLORS}
-                  labelMode={labelMode}
                   limit={visibleMonths}
                   onShowMore={showMore}
                   onShowLess={showLess}
@@ -230,7 +177,6 @@ export function IncomeExpensesCard() {
                 <CompositionView
                   rows={expensesByCategoryOverTime.map((d) => ({ month: d.month, values: d.categories }))}
                   palette={CATEGORY_COLORS}
-                  labelMode={labelMode}
                   sortSeries
                   limit={visibleMonths}
                   onShowMore={showMore}
@@ -493,19 +439,20 @@ function LedgerBar({
  * normalised to full width and split by share, so the *mix* is directly
  * comparable and an outlier month can never dwarf the others. The month total
  * sits on the right with a thin magnitude meter beneath it (relative to the
- * biggest month), so absolute size is still legible. Segment labels show the
- * share (%) or exact amount (₪) per `labelMode`, printed only where the slice
- * is wide enough to hold them.
+ * biggest month), so absolute size is still legible.
  *
- * There is deliberately no colour legend: with 20+ categories it was a wall of
- * swatches nobody could scan. Instead every slice names itself in a tooltip
- * that follows the cursor and appears instantly (the native `title` attribute
- * made you wait a second per slice, which is unusable for hunting a category).
+ * The bars themselves carry no text: a share printed inside a slice only ever
+ * fit the handful of widest ones, so the row read as a few arbitrary numbers
+ * over a band of anonymous colour. There is deliberately no colour legend
+ * either — with 20+ categories it was a wall of swatches nobody could scan.
+ * Instead every slice names itself, with both its amount and its share, in a
+ * tooltip that follows the cursor and appears instantly (the native `title`
+ * attribute made you wait a second per slice, which is unusable for hunting a
+ * category).
  */
 function CompositionView({
   rows,
   palette,
-  labelMode,
   sortSeries = false,
   limit,
   onShowMore,
@@ -513,7 +460,6 @@ function CompositionView({
 }: {
   rows: { month: string; values: Record<string, number> }[];
   palette: string[];
-  labelMode: LabelMode;
   sortSeries?: boolean;
   limit: number;
   onShowMore: () => void;
@@ -547,32 +493,8 @@ function CompositionView({
   const lastMonth = rows[rows.length - 1]?.month;
   const visible = rows.slice(-limit).reverse();
 
-  // Show a slice's label whenever the slice is genuinely wide enough to hold the
-  // text — measured against the real (responsive) bar width, not a flat % cut, so
-  // every tile that *can* fit its number shows it.
-  const rootRef = useRef<HTMLDivElement>(null);
-  const [barPx, setBarPx] = useState(0);
-  useEffect(() => {
-    const el = rootRef.current;
-    if (!el) return;
-    // The bar occupies the 1fr column: root width minus month(56) + total(112) + two gap-3 gaps(24).
-    const measure = () => setBarPx(Math.max(0, el.clientWidth - 56 - 112 - 24));
-    measure();
-    const ro = new ResizeObserver(measure);
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, []);
-  // Estimated label width at 10px extra-bold tabular-nums (~6.3px/char) + a little
-  // breathing room, ignoring zero-width bidi-isolate chars. Before the first
-  // measurement, fall back to a conservative % so labels still paint on load.
-  const fits = (labelText: string, pct: number) => {
-    const chars = labelText.replace(/[⁦⁩]/g, "").length;
-    if (barPx <= 0) return pct >= (labelMode === "amt" ? 18 : 12);
-    return (pct / 100) * barPx >= chars * 6.3 + 8;
-  };
-
   return (
-    <div ref={rootRef} className="min-w-[320px]" onMouseLeave={() => setTip(null)}>
+    <div className="min-w-[320px]" onMouseLeave={() => setTip(null)}>
       {visible.map((d) => {
         const total = totalOf(d.values);
         const isCurrent = d.month === lastMonth;
@@ -592,29 +514,18 @@ function CompositionView({
                 const val = d.values[name] || 0;
                 if (val <= 0) return null;
                 const pct = (val / total) * 100;
-                const label = labelMode === "amt" ? formatCompactCurrency(val) : `${Math.round(pct)}%`;
                 const segColor = colorOf(name);
-                const ink = labelInk(segColor);
                 return (
                   <div
                     key={name}
                     data-testid="composition-segment"
                     aria-label={`${name}: ${formatCurrency(val)} (${Math.round(pct)}%)`}
-                    className="h-full flex items-center justify-center overflow-hidden"
+                    className="h-full"
                     style={{ width: `${pct}%`, background: segColor }}
                     onMouseEnter={(e) => showTip(e, name, val, pct, segColor)}
                     onMouseMove={(e) => showTip(e, name, val, pct, segColor)}
                     onMouseLeave={() => setTip(null)}
-                  >
-                    {fits(label, pct) && (
-                      <span
-                        className="text-[10px] font-extrabold whitespace-nowrap tabular-nums"
-                        style={{ color: ink.color, textShadow: ink.textShadow }}
-                      >
-                        {label}
-                      </span>
-                    )}
-                  </div>
+                  />
                 );
               })}
             </div>

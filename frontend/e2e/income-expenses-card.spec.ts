@@ -7,12 +7,16 @@ import { enableDemoMode, navigateTo, resetDemoData } from "./helpers";
  *   - Totals tab      → a statement-style ledger (one row per month, newest
  *                       on top, income/expense bars + a Net figure).
  *   - Income/Expenses → 100%-composition rows (`data-testid="composition-row"`)
- *                       with a % / ₪ label toggle.
+ *                       whose slices carry no text at all.
  *
  * This spec guards that each tab renders, that the ledger is ordered
- * newest-first, that the label toggle + tab switches never crash the card, and
- * that hovering a composition slice pops the cursor-following tooltip that
- * replaced the (removed) colour legend. Demo Mode supplies the sample data.
+ * newest-first, that the filter row carries only the pending-refund and
+ * project chips and that the pending-refund one actually moves the
+ * breakdown, that tab switches never crash the card, and that hovering a
+ * composition slice pops the cursor-following tooltip — the only readout the
+ * bars have now that both the in-bar labels and the colour legend are gone, so
+ * it must name the slice with its amount *and* its share. Demo Mode supplies
+ * the sample data.
  *
  * All checks are client-side interactions on one rendered card, so they run
  * as a single test on a single dashboard load — the cold dashboard boot is
@@ -60,7 +64,7 @@ test.describe("Income & Expenses dashboard card", () => {
     return card;
   }
 
-  test("tabs, ledger, KPIs, pager, and label toggles all behave on one load", async ({
+  test("tabs, ledger, KPIs, pager, and slice tooltips all behave on one load", async ({
     page,
   }) => {
     const card = await openCard(page);
@@ -113,30 +117,39 @@ test.describe("Income & Expenses dashboard card", () => {
     await card.getByRole("button", { name: "Show less" }).click();
     await expect.poll(() => rows.count()).toBeLessThanOrEqual(12);
 
-    // --- Income Breakdown: composition rows and the % / ₪ toggle ---
+    // --- Filter chips: pending-refunds and projects only ---
+    // "Refunds Included/Excluded" is gone: a refund is a positive amount in an
+    // expense category, so it already nets off the month it lands in, and the
+    // opt-out only ever reached the ledger and the income KPI — never the
+    // expense KPI beside them or either breakdown tab.
+    await expect(
+      card.getByRole("button", { name: /^Pending Refunds (Ex|In)cluded$/ }),
+    ).toBeVisible();
+    await expect(
+      card.getByRole("button", { name: /^Refunds (Ex|In)cluded$/ }),
+    ).toHaveCount(0);
+
+    // --- Income Breakdown: composition rows with textless slices ---
     await card.getByRole("button", { name: "Income Breakdown" }).click();
 
     const compositionRows = card.getByTestId("composition-row");
     await expect(compositionRows.first()).toBeVisible({ timeout: 45_000 });
-    const before = await compositionRows.count();
-    expect(before).toBeGreaterThan(0);
+    expect(await compositionRows.count()).toBeGreaterThan(0);
 
-    // The label toggle appears only on breakdown tabs. Default is share (%).
-    const amountBtn = card.getByRole("button", { name: "Show amount (₪)" });
-    const shareBtn = card.getByRole("button", { name: "Show share (%)" });
-    await expect(amountBtn).toBeVisible();
-    await expect(shareBtn).toHaveAttribute("aria-pressed", "true");
+    // The % / ₪ label toggle is gone — the tooltip carries both figures now.
+    await expect(card.getByRole("button", { name: "Show amount (₪)" })).toHaveCount(0);
+    await expect(card.getByRole("button", { name: "Show share (%)" })).toHaveCount(0);
 
-    // Flip to amounts, then back — the rows must survive both.
-    await amountBtn.click();
-    await expect(amountBtn).toHaveAttribute("aria-pressed", "true");
-    await expect(card.getByTestId("composition-row")).toHaveCount(before);
+    // No slice prints anything: the bars are pure colour. The rows are already
+    // visible above, so an empty result here is a real one, not an unrendered
+    // page.
+    const segments = compositionRows.first().getByTestId("composition-segment");
+    await expect(segments.first()).toBeVisible();
+    for (const text of await segments.allTextContents()) {
+      expect(text.trim()).toBe("");
+    }
 
-    await shareBtn.click();
-    await expect(shareBtn).toHaveAttribute("aria-pressed", "true");
-    await expect(card.getByTestId("composition-row")).toHaveCount(before);
-
-    // --- Hovering a slice names it instantly (the legend is gone) ---
+    // --- Hovering a slice names it instantly (the only readout left) ---
     // The tooltip is portalled to <body>, so it is looked up on the page, not
     // inside the card. A short timeout is the point of the assertion: this
     // replaced a native `title`, which browsers delay by ~1s and never expose
@@ -144,11 +157,10 @@ test.describe("Income & Expenses dashboard card", () => {
     const tooltip = page.getByTestId("composition-tooltip");
     await expect(tooltip).toHaveCount(0);
 
-    const segment = compositionRows.first().getByTestId("composition-segment").first();
-    await segment.hover();
+    await segments.first().hover();
     await expect(tooltip).toBeVisible({ timeout: 1_000 });
-    // "<Category>: <amount> ₪ (<share>%)" — the slice's own aria-label.
-    await expect(tooltip).toHaveText(/.+: .+\(\d+%\)/);
+    // "<Category>: <amount> ₪ (<share>%)" — both figures, as the bars show none.
+    await expect(tooltip).toHaveText(/.+: .*\d.*\(\d+%\)/);
 
     // Leaving the chart dismisses it.
     await card.getByRole("heading", { name: "Income & Expenses" }).hover();
@@ -160,13 +172,33 @@ test.describe("Income & Expenses dashboard card", () => {
     await expect(compositionRows.first()).toBeVisible({ timeout: 45_000 });
     expect(await compositionRows.count()).toBeGreaterThan(0);
 
-    // Toggle is present here too and defaults to share.
+    // --- The pending-refunds chip now reaches the breakdown too ---
+    // It used to move only the expense KPI; the breakdown and ledger ignored
+    // it. Demo data carries open credit-card refund expectations in the
+    // recent months, so flipping the chip must change what a month cost.
+    const totalsBefore = await compositionRows.allTextContents();
+    await card.getByRole("button", { name: "Pending Refunds Excluded" }).click();
     await expect(
-      card.getByRole("button", { name: "Show amount (₪)" }),
+      card.getByRole("button", { name: "Pending Refunds Included" }),
+    ).toBeVisible();
+    await expect
+      .poll(() => compositionRows.allTextContents(), { timeout: 20_000 })
+      .not.toEqual(totalsBefore);
+
+    // Put it back so the rest of the journey sees the default view.
+    await card.getByRole("button", { name: "Pending Refunds Included" }).click();
+    await expect(
+      card.getByRole("button", { name: "Pending Refunds Excluded" }),
     ).toBeVisible();
 
-    // Slices carry their readout here as well.
-    await compositionRows.first().getByTestId("composition-segment").first().hover();
+    // Slices carry their readout here as well, and still print nothing.
+    const expenseSegments = compositionRows.first().getByTestId("composition-segment");
+    await expect(expenseSegments.first()).toBeVisible();
+    for (const text of await expenseSegments.allTextContents()) {
+      expect(text.trim()).toBe("");
+    }
+
+    await expenseSegments.first().hover();
     await expect(page.getByTestId("composition-tooltip")).toBeVisible({
       timeout: 1_000,
     });

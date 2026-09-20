@@ -336,7 +336,11 @@ class BudgetOverviewService(BudgetService):
             return []
 
         expenses = self.get_filtered_expenses(
-            exclude_pending_refunds=True, include_split_parents=include_split_parents
+            exclude_pending_refunds=True,
+            include_split_parents=include_split_parents,
+            # Envelopes report what a month cost, net of refunds matched to
+            # their purchase — the same definition the dashboard now uses.
+            net_refunds=True,
         )
         month_data = self._rows_in_month(expenses, year, month)
 

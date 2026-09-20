@@ -21,6 +21,7 @@ from backend.constants.budget import (
 from backend.constants.tables import TransactionsTableFields
 from backend.errors import EntityNotFoundException, ValidationException
 from backend.services.budget.core import BudgetService, _auto_fill_lock, _today
+from backend.services.pending_refunds_service import restore_gross_amounts
 
 
 class YearlyBudgetService(BudgetService):
@@ -263,7 +264,11 @@ class YearlyBudgetService(BudgetService):
             return None
 
         expenses = self.get_filtered_expenses(
-            exclude_pending_refunds=True, include_split_parents=include_split_parents
+            exclude_pending_refunds=True,
+            include_split_parents=include_split_parents,
+            # Envelopes report what a month cost, net of refunds matched to
+            # their purchase — the same definition the dashboard now uses.
+            net_refunds=True,
         )
         if not expenses.empty:
             year_data = expenses.loc[
@@ -294,7 +299,7 @@ class YearlyBudgetService(BudgetService):
                 {
                     "rule": rule.to_dict(),
                     "current_amount": amt,
-                    "data": cat_data.to_dict(orient="records"),
+                    "data": restore_gross_amounts(cat_data).to_dict(orient="records"),
                     "allow_edit": True,
                     "allow_delete": True,
                     "closed": self._rule_is_closed(rule),

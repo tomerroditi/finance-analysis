@@ -686,28 +686,36 @@ export const analyticsApi = {
     api.get<{ month: string; net_change: number; cumulative_balance: number }[]>(
       "/analytics/net-balance-over-time"
     ),
-  getIncomeExpensesOverTime: (excludeProjects = false, excludeLiabilities = false, excludeRefunds = false) =>
+  getIncomeExpensesOverTime: (excludeProjects = false, excludeLiabilities = false, excludePendingRefunds = true) =>
     api.get<{ month: string; income: number; expenses: number }[]>(
       "/analytics/income-expenses-over-time",
-      { params: { exclude_projects: excludeProjects, exclude_liabilities: excludeLiabilities, exclude_refunds: excludeRefunds } }
+      {
+        params: {
+          exclude_projects: excludeProjects,
+          exclude_liabilities: excludeLiabilities,
+          exclude_pending_refunds: excludePendingRefunds,
+        },
+      }
     ),
   getDebtPaymentsOverTime: () =>
     api.get<{ month: string; amount: number; tags: Record<string, number> }[]>(
       "/analytics/debt-payments-over-time"
     ),
   getByCategory: () => api.get("/analytics/by-category"),
-  getExpensesByCategoryOverTime: () =>
+  getExpensesByCategoryOverTime: (excludePendingRefunds = true) =>
     api.get<{ month: string; categories: Record<string, number> }[]>(
-      "/analytics/expenses-by-category-over-time"
+      "/analytics/expenses-by-category-over-time",
+      { params: { exclude_pending_refunds: excludePendingRefunds } }
     ),
   getSankeyData: () => api.get("/analytics/sankey"),
   getNetWorthOverTime: () =>
     api.get<{ month: string; bank_balance: number; investment_value: number; cash: number; net_worth: number }[]>(
       "/analytics/net-worth-over-time"
     ),
-  getIncomeBySourceOverTime: () =>
+  getIncomeBySourceOverTime: (excludePendingRefunds = true) =>
     api.get<{ month: string; sources: Record<string, number>; total: number }[]>(
-      "/analytics/income-by-source-over-time"
+      "/analytics/income-by-source-over-time",
+      { params: { exclude_pending_refunds: excludePendingRefunds } }
     ),
   getIncomeBySource: (start?: string, end?: string) =>
     api.get<{

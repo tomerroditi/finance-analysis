@@ -23,6 +23,7 @@ from backend.constants.budget import (
 from backend.constants.tables import TransactionsTableFields
 from backend.services.transaction_classification import EXPENSE_EXCLUDED_CATEGORIES
 from backend.services.budget.core import BudgetService, _auto_fill_lock
+from backend.services.pending_refunds_service import restore_gross_amounts
 from backend.services.budget.yearly import YearlyBudgetService
 
 
@@ -743,6 +744,9 @@ class MonthlyBudgetService(BudgetService):
         expenses = self.get_filtered_expenses(
             exclude_pending_refunds=True,
             include_split_parents=include_split_parents,
+            # Envelopes report what a month cost, net of refunds matched to
+            # their purchase — the same definition the dashboard now uses.
+            net_refunds=True,
         )
 
         if not expenses.empty:
@@ -770,7 +774,7 @@ class MonthlyBudgetService(BudgetService):
                 {
                     "rule": total_rule.iloc[0].to_dict(),
                     "current_amount": total,
-                    "data": month_data.to_dict(orient="records"),
+                    "data": restore_gross_amounts(month_data).to_dict(orient="records"),
                     "allow_edit": True,
                     "allow_delete": False,
                 }
@@ -800,7 +804,7 @@ class MonthlyBudgetService(BudgetService):
                     "rule": rules.iloc[position].to_dict(),
                     "current_amount": cat_data[TransactionsTableFields.AMOUNT.value].sum()
                     * -1,
-                    "data": cat_data.to_dict(orient="records"),
+                    "data": restore_gross_amounts(cat_data).to_dict(orient="records"),
                     "allow_edit": True,
                     "allow_delete": True,
                 }
@@ -826,7 +830,7 @@ class MonthlyBudgetService(BudgetService):
                         TransactionsTableFields.AMOUNT.value
                     ].sum()
                     * -1,
-                    "data": remaining_data.to_dict(orient="records"),
+                    "data": restore_gross_amounts(remaining_data).to_dict(orient="records"),
                     "allow_edit": False,
                     "allow_delete": False,
                 }

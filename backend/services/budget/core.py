@@ -33,7 +33,11 @@ from backend.errors import EntityNotFoundException, ValidationException
 from backend.services.transaction_classification import EXPENSE_EXCLUDED_CATEGORIES
 from backend.repositories.budget_repository import BudgetRepository
 from backend.services.budget_month_override_service import BudgetMonthOverrideService
-from backend.services.pending_refunds_service import PendingRefundsService
+from backend.services.pending_refunds_service import (
+    GROSS_AMOUNT_COLUMN,
+    PendingRefundsService,
+    apply_refund_amount_adjustments,
+)
 from backend.services.tagging_service import CategoriesTagsService
 from backend.services.transactions_service import TransactionsService
 
@@ -693,6 +697,7 @@ class BudgetService:
         self,
         exclude_pending_refunds: bool = True,
         include_split_parents: bool = False,
+        net_refunds: bool = False,
     ) -> pd.DataFrame:
         """
         Get expense transactions with budget-style filtering applied.
@@ -708,6 +713,15 @@ class BudgetService:
             Default is ``True``.
         include_split_parents : bool, optional
             When ``True``, include parent transactions alongside split children.
+            Default is ``False``.
+        net_refunds : bool, optional
+            When ``True``, net matched refunds against the purchases they pay
+            back by amount instead of dropping whole rows, so a refund cancels
+            its purchase across any month gap and a partly-refunded purchase
+            keeps the part still unrecovered. The pre-netting amount is kept
+            in :data:`GROSS_AMOUNT_COLUMN` so a caller that lists the
+            underlying transactions can restore it (see
+            :func:`restore_gross_amounts`) — totals net, rows do not.
             Default is ``False``.
 
         Returns
@@ -744,8 +758,19 @@ class BudgetService:
                 ~expenses[TransactionsTableFields.CATEGORY.value].isin(projects)
             ]
 
-        # Optionally exclude pending refunds
-        if exclude_pending_refunds:
+        # Netting supersedes the row-drop: it removes the same money and more
+        # (the refund transactions, and cross-month matches), so running both
+        # would double-count the exclusion.
+        if net_refunds:
+            adjustments = (
+                self.pending_refunds_service.get_refund_amount_adjustments(
+                    exclude_open=exclude_pending_refunds
+                )
+            )
+            expenses = apply_refund_amount_adjustments(
+                expenses, adjustments, keep_gross_in=GROSS_AMOUNT_COLUMN
+            )
+        elif exclude_pending_refunds:
             pending_refs = self.pending_refunds_service.get_active_pending_identifiers()
             tx_keys = pending_refs["transaction_keys"]
             split_ids = pending_refs["split_ids"]

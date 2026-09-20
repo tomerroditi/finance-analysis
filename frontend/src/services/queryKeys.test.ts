@@ -42,7 +42,7 @@ describe("makeQueryKeys", () => {
 
   it("gives the two income-by-source endpoints distinct keys", () => {
     const k = makeQueryKeys(false);
-    expect(k.analytics.incomeBySourceOverTime()).not.toEqual(
+    expect(k.analytics.incomeBySourceOverTime(true)).not.toEqual(
       k.analytics.incomeBySource(undefined, undefined),
     );
   });
