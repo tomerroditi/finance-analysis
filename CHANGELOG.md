@@ -1,3 +1,9 @@
+## v1.69.3 (2026-09-20)
+
+### Perf
+
+- **dashboard**: cut another 27% off a cold load (#307)
+
 ## v1.69.2 (2026-09-20)
 
 ### Fix
