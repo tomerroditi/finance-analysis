@@ -1,3 +1,9 @@
+## v1.71.3 (2026-09-20)
+
+### Perf
+
+- **recurring**: stop running detection to validate a verdict (#312)
+
 ## v1.71.2 (2026-09-20)
 
 ### Fix
