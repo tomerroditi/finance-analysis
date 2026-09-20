@@ -1,3 +1,9 @@
+## v1.76.2 (2026-09-20)
+
+### Fix
+
+- **tagging**: grow the rule that owns a tag instead of offering a duplicate (#324)
+
 ## v1.76.1 (2026-09-20)
 
 ### Fix
