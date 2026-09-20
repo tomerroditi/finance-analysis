@@ -179,7 +179,8 @@ export function IncomeExpensesCard() {
                   ))}
                 </div>
               )}
-              <div className="flex bg-[var(--surface-light)] p-1 rounded-xl overflow-x-auto scrollbar-auto-hide">
+              <div className="bg-[var(--surface-light)] rounded-xl overflow-hidden">
+              <div className="flex p-1 overflow-x-auto scrollbar-auto-hide">
                 {([
                   { key: "overview" as const, label: t("dashboard.totals") },
                   { key: "by_source" as const, label: t("dashboard.incomeBreakdown") },
@@ -197,6 +198,7 @@ export function IncomeExpensesCard() {
                     {label}
                   </button>
                 ))}
+              </div>
               </div>
             </div>
           </div>

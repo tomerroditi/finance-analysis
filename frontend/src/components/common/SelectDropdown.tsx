@@ -254,7 +254,7 @@ export const SelectDropdown: React.FC<SelectDropdownProps> = ({
             ref={dropdownRef}
             tabIndex={-1}
             onKeyDown={handleKeyDown}
-            className="fixed max-h-64 bg-[var(--surface)] border border-[var(--surface-light)] rounded-xl shadow-xl flex flex-col outline-none"
+            className="fixed max-h-64 bg-[var(--surface)] border border-[var(--surface-light)] rounded-xl shadow-xl flex flex-col outline-none overflow-hidden"
             style={{
               top: pos.openUp ? undefined : pos.top + 4,
               bottom: pos.openUp

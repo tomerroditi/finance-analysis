@@ -202,7 +202,8 @@ export function BudgetRuleModal({
                 disabled
               />
             ) : (
-              <div className="bg-[var(--surface-base)] border border-[var(--surface-light)] rounded-xl p-3 max-h-48 overflow-y-auto space-y-2">
+              <div className="bg-[var(--surface-base)] border border-[var(--surface-light)] rounded-xl overflow-hidden">
+              <div className="p-3 max-h-48 overflow-y-auto space-y-2">
                 {availableTags.length > 0 ? (
                   <div className="flex flex-wrap gap-2">
                     {(availableTags as string[]).map((tag) => (
@@ -227,6 +228,7 @@ export function BudgetRuleModal({
                       : t("modals.budgetRule.selectCategoryFirst")}
                   </p>
                 )}
+              </div>
               </div>
             )}
           </div>

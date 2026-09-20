@@ -132,10 +132,16 @@ export const BudgetCommandBar: React.FC<BudgetCommandBarProps> = ({
         padding used to sit outside them, so the segmented control stood 44px
         tall against every other control's 36. `p-0.5` keeps the active pill
         visibly inset; the tabs stretch to fill what's left. */}
-    <div
-      className={`${BAR_CONTROL} flex w-full md:w-auto max-w-full min-w-0 gap-1 bg-[var(--surface-light)]/40 p-0.5 rounded-xl overflow-x-auto scrollbar-auto-hide`}
-    >
-      {tabs}
+    {/* The rounded background sits on the wrapper, not on the scroller: a
+        scroll container paints its scrollbar in its border box, where the
+        corner radius does not clip it, so the strip's own scrollbar rode
+        over its rounded corners. */}
+    <div className="w-full md:w-auto max-w-full min-w-0 bg-[var(--surface-light)]/40 rounded-xl overflow-hidden">
+      <div
+        className={`${BAR_CONTROL} flex w-full gap-1 p-0.5 overflow-x-auto scrollbar-auto-hide`}
+      >
+        {tabs}
+      </div>
     </div>
 
     {/* `flex-wrap` is load-bearing: period nav + freshness chip + the primary

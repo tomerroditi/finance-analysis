@@ -154,7 +154,7 @@ export const MultiSelect: React.FC<MultiSelectProps> = ({
         createPortal(
           <div
             ref={dropdownRef}
-            className="fixed max-h-52 bg-[var(--surface)] border border-[var(--surface-light)] rounded-lg shadow-xl flex flex-col outline-none"
+            className="fixed max-h-52 bg-[var(--surface)] border border-[var(--surface-light)] rounded-lg shadow-xl flex flex-col outline-none overflow-hidden"
             style={{
               top: pos.top,
               left: pos.left,

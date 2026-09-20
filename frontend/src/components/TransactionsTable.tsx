@@ -814,8 +814,10 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
         </div>
       )}
 
-      {/* Table */}
-      <div className="overflow-x-auto rounded-lg border border-[var(--surface-light)]">
+      {/* Table — the rounded border lives on the wrapper so it clips the
+          scroller's scrollbar; a scroll container cannot round its own. */}
+      <div className="rounded-lg border border-[var(--surface-light)] overflow-hidden">
+        <div className="overflow-x-auto">
         <table className="w-full min-w-[1030px] text-sm text-start table-fixed">
           <thead className="bg-[var(--surface-light)] text-[var(--text-muted)] font-medium">
             <tr>
@@ -1260,6 +1262,7 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
             )}
           </tbody>
         </table>
+        </div>
       </div>
 
       {/* Pagination */}
