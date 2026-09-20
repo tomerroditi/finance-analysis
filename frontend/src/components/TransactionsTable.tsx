@@ -37,6 +37,7 @@ import {
 import { formatDate } from "../utils/dateFormatting";
 import { humanizeProvider } from "../utils/textFormatting";
 import { useTransactionFilters } from "../hooks/useTransactionFilters";
+import { usePendingRows } from "../hooks/usePendingRows";
 import { FilterPanel } from "./transactions/FilterPanel";
 import { Pagination } from "./transactions/Pagination";
 import { BulkActionsBar, type BulkEditData } from "./transactions/BulkActionsBar";
@@ -298,6 +299,14 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
   });
 
   // Pending refund mutation
+  // Each of these fires from a row, so their pending state is tracked per
+  // row: a write on one transaction must not disable the buttons on the
+  // rest of the table. See `usePendingRows`.
+  const markingRefund = usePendingRows();
+  const cancellingRefund = usePendingRows<number>();
+  const unlinkingRefund = usePendingRows<number>();
+  const clearingTagging = usePendingRows();
+
   const markPendingMutation = useMutation({
     mutationFn: (tx: Transaction) =>
       pendingRefundsApi.create({
@@ -306,6 +315,10 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
         source_table: tx.source || "unknown",
         expected_amount: Math.abs(tx.amount),
       }),
+    onMutate: (tx) => {
+      markingRefund.begin(getTransactionId(tx));
+    },
+    onSettled: (_data, _error, tx) => markingRefund.end(getTransactionId(tx)),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: qkPrefix.transactions });
       queryClient.invalidateQueries({ queryKey: qkPrefix.pendingRefunds });
@@ -316,6 +329,10 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
 
   const cancelPendingMutation = useMutation({
     mutationFn: (pendingId: number) => pendingRefundsApi.cancel(pendingId),
+    onMutate: (pendingId) => {
+      cancellingRefund.begin(pendingId);
+    },
+    onSettled: (_data, _error, pendingId) => cancellingRefund.end(pendingId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: qkPrefix.transactions });
       queryClient.invalidateQueries({ queryKey: qkPrefix.pendingRefunds });
@@ -326,6 +343,10 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
 
   const unlinkRefundMutation = useMutation({
     mutationFn: (linkId: number) => pendingRefundsApi.unlinkRefund(linkId),
+    onMutate: (linkId) => {
+      unlinkingRefund.begin(linkId);
+    },
+    onSettled: (_data, _error, linkId) => unlinkingRefund.end(linkId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: qkPrefix.transactions });
       queryClient.invalidateQueries({ queryKey: qkPrefix.pendingRefunds });
@@ -363,6 +384,11 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
   const clearCategoryTagMutation = useMutation({
     mutationFn: ({ uniqueId, source }: { uniqueId: string; source: string }) =>
       transactionsApi.update(uniqueId, { source, category: "", tag: "" }),
+    onMutate: ({ uniqueId, source }) => {
+      clearingTagging.begin(`${source || "unknown"}_${uniqueId}`);
+    },
+    onSettled: (_data, _error, { uniqueId, source }) =>
+      clearingTagging.end(`${source || "unknown"}_${uniqueId}`),
     // No per-mutation onSuccess: the global MutationCache.onSuccess in
     // queryClient.ts already runs a debounced invalidateQueries 200ms after
     // success. Per frontend_components.md ("Don't fan out invalidation in
@@ -1003,7 +1029,7 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
                                 });
                               }}
                               className="p-1.5 rounded-md hover:bg-[var(--surface-light)] text-[var(--text-muted)] hover:text-white transition-colors disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-[var(--text-muted)] disabled:cursor-not-allowed"
-                              disabled={clearCategoryTagMutation.isPending || !hasTagging}
+                              disabled={clearingTagging.isPending(getTransactionId(tx)) || !hasTagging}
                               title={t("transactions.bulk.clearCategoryTag")}
                               aria-label={t("transactions.bulk.clearCategoryTag")}
                             >
@@ -1041,7 +1067,7 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
                                       });
                                       if (ok) cancelPendingMutation.mutate(pending.id);
                                     }}
-                                    disabled={cancelPendingMutation.isPending}
+                                    disabled={cancellingRefund.isPending(pending.id)}
                                   >
                                     <CheckCircle2 size={14} />
                                   </button>
@@ -1061,7 +1087,7 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
                                       });
                                       if (ok) cancelPendingMutation.mutate(pending.id);
                                     }}
-                                    disabled={cancelPendingMutation.isPending}
+                                    disabled={cancellingRefund.isPending(pending.id)}
                                   >
                                     <RefreshCw size={14} />
                                   </button>
@@ -1080,7 +1106,7 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
                                     });
                                     if (ok) cancelPendingMutation.mutate(pending.id);
                                   }}
-                                  disabled={cancelPendingMutation.isPending}
+                                  disabled={cancellingRefund.isPending(pending.id)}
                                 >
                                   <RefreshCw
                                     size={14}
@@ -1094,7 +1120,7 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
                                 className="p-1.5 rounded-md hover:bg-amber-500/10 text-amber-400/70 hover:text-amber-400 transition-colors"
                                 title={t("tooltips.markAsRefund")}
                                 onClick={() => markPendingMutation.mutate(tx)}
-                                disabled={markPendingMutation.isPending}
+                                disabled={markingRefund.isPending(getTransactionId(tx))}
                               >
                                 <RefreshCw size={14} />
                               </button>
@@ -1138,7 +1164,7 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
                                         );
                                       }
                                     }}
-                                    disabled={unlinkRefundMutation.isPending}
+                                    disabled={links.some((l) => unlinkingRefund.isPending(l.id))}
                                   >
                                     <Link2 size={14} />
                                   </button>

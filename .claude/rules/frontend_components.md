@@ -121,6 +121,46 @@ patches there: the global guard is the safety net for sites that
 forget, and a component that depends on it alone is wrong when
 tested against a bare `QueryClient`.
 
+### A list shares one mutation — gate each row on its own write
+
+A list renders one `useMutation` and every row calls it, so `isPending` is
+true for the **whole list** while any single row is in flight. Wiring a row's
+button to it disables every sibling:
+
+```tsx
+// WRONG — one row's write disables the button on all of them
+<button onClick={() => markPending.mutate(tx)} disabled={markPending.isPending} />
+```
+
+On a slow write that locks the list for seconds, and clicks on the other rows
+land on dead buttons and are dropped with no feedback — which reads as the
+action not having registered, so the user clicks again. Removing `disabled`
+outright is not the fix either: without an optimistic update, nothing stops a
+double-submit on the row actually being written.
+
+Gate per row with `usePendingRows`:
+
+```tsx
+const writing = usePendingRows();
+const markPending = useMutation({
+  mutationFn: (tx: Transaction) => api.mark(tx),
+  onMutate: (tx) => { writing.begin(rowKey(tx)); },
+  onSettled: (_data, _error, tx) => writing.end(rowKey(tx)),
+});
+// …
+<button onClick={() => markPending.mutate(tx)}
+        disabled={writing.isPending(rowKey(tx))} />
+```
+
+Use the same key the row's React key uses — for transactions that is
+`(source, unique_id)`, never bare `unique_id` (see
+`backend_repositories.md` → "unique_id Is Per-Table").
+
+Not every `disabled={mutation.isPending}` is wrong. A modal's Save, a form
+submit, "Apply rules", closing the selected project — a single control firing
+a single write — is exactly what it is for. The rule is about **one mutation
+serving many rows**.
+
 ### Multi-field inline editors: stage locally, commit on Done
 
 Inline editors with two or more correlated fields (e.g. category +

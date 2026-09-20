@@ -10,6 +10,7 @@ import { useQueryKeys } from "../../hooks/useQueryKeys";
 import { qkPrefix } from "../../services/queryKeys";
 import { Modal } from "../common/Modal";
 import type { Transaction } from "../../types/transaction";
+import { usePendingRows } from "../../hooks/usePendingRows";
 
 /**
  * Row action for attaching one transaction to a savings goal.
@@ -58,6 +59,13 @@ export function GoalLinkAction({ transaction }: { transaction: Transaction }) {
     queryClient.invalidateQueries({ queryKey: qkPrefix.savingsGoals });
   };
 
+  // Per goal: linking to one goal must not disable the buttons on the other
+  // goals in the list while the write is out. Both buttons on a goal's row
+  // share its key — they are the same write with a different type. See
+  // `usePendingRows`. `unlinkMutation` below is a single control, so it
+  // stays on the mutation's own pending state.
+  const linking = usePendingRows<number>();
+
   const linkMutation = useMutation({
     mutationFn: ({
       goalId,
@@ -72,6 +80,10 @@ export function GoalLinkAction({ transaction }: { transaction: Transaction }) {
         source_table: sourceTable,
         link_type: linkType,
       }),
+    onMutate: ({ goalId }) => {
+      linking.begin(goalId);
+    },
+    onSettled: (_data, _error, { goalId }) => linking.end(goalId),
     onSuccess: () => {
       invalidate();
       setIsOpen(false);
@@ -143,7 +155,7 @@ export function GoalLinkAction({ transaction }: { transaction: Transaction }) {
                         linkType: "contribution",
                       })
                     }
-                    disabled={linkMutation.isPending}
+                    disabled={linking.isPending(goal.id)}
                     className="px-2 py-1 rounded-md text-xs font-medium bg-[var(--surface-light)] hover:bg-[var(--primary)]/20 disabled:opacity-50 transition-colors"
                   >
                     {t("transactions.goalLink.asContribution")}
@@ -155,7 +167,7 @@ export function GoalLinkAction({ transaction }: { transaction: Transaction }) {
                         linkType: "utilization",
                       })
                     }
-                    disabled={linkMutation.isPending}
+                    disabled={linking.isPending(goal.id)}
                     className="px-2 py-1 rounded-md text-xs font-medium bg-[var(--surface-light)] hover:bg-[var(--primary)]/20 disabled:opacity-50 transition-colors"
                   >
                     {t("transactions.goalLink.asUtilization")}
