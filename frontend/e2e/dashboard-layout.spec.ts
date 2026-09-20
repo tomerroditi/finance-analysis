@@ -66,6 +66,30 @@ test.describe("Dashboard layout customization", () => {
     ).toBeVisible();
     await page.getByRole("button", { name: /^Dashboard$/ }).click();
 
+    // The popup scrolls its body, not the rounded panel: a scrollbar on the
+    // panel itself is painted over its border and pokes out of the rounded
+    // corners. The panel clips (overflow hidden) and never scrolls, the body
+    // owns the scrollbar, and the body's box stays inside the panel's.
+    const scrollBox = await page
+      .getByRole("heading", { name: /^Settings$/ })
+      .evaluate((heading) => {
+        const panel = heading.closest<HTMLElement>(".rounded-2xl");
+        const body = panel?.lastElementChild as HTMLElement | null;
+        if (!panel || !body) throw new Error("settings panel not found");
+        return {
+          panelOverflow: getComputedStyle(panel).overflowY,
+          panelScrollOverflow: panel.scrollHeight - panel.clientHeight,
+          bodyOverflow: getComputedStyle(body).overflowY,
+          bodyOverhang:
+            body.getBoundingClientRect().right -
+            panel.getBoundingClientRect().right,
+        };
+      });
+    expect(scrollBox.panelOverflow).toBe("hidden");
+    expect(scrollBox.panelScrollOverflow).toBe(0);
+    expect(scrollBox.bodyOverflow).toBe("auto");
+    expect(scrollBox.bodyOverhang).toBeLessThanOrEqual(0);
+
     // The beta forecast card sits under Hidden cards with a Beta badge.
     const betaRow = page
       .getByText("This Month (forecast)", { exact: true })

@@ -54,7 +54,7 @@ export function BudgetAlertsPopup({ isOpen, onClose }: BudgetAlertsPopupProps) {
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className="w-full max-w-[calc(100vw-2rem)] sm:max-w-md bg-[var(--surface)] border border-[var(--surface-light)] rounded-2xl shadow-2xl animate-in zoom-in-95 duration-200 max-h-[80vh] flex flex-col">
+      <div className="w-full max-w-[calc(100vw-2rem)] sm:max-w-md bg-[var(--surface)] border border-[var(--surface-light)] rounded-2xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 max-h-[80vh] flex flex-col">
         <div className="flex items-center justify-between px-4 sm:px-6 py-4 border-b border-[var(--surface-light)]">
           <div className="flex items-center gap-2">
             <AlertTriangle size={18} className="text-amber-400" />
