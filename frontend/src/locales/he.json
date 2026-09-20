@@ -55,7 +55,9 @@
     "deselectAll": "בטל בחירת הכל",
     "countSelected": "{{count}} נבחרו",
     "countMore": "עוד {{count}}",
-    "remove": "הסר"
+    "remove": "הסר",
+    "clear": "נקה",
+    "details": "פרטים"
   },
   "onboarding": {
     "welcome": "ברוך הבא ל‑Finance Analysis",
@@ -382,7 +384,8 @@
       "allSettled": "כל בקשות ההחזר הושלמו.",
       "empty": "סמנו הוצאות כממתינות להחזר כדי לעקוב אחריהן כאן.",
       "moreCount": "+{{count}} נוספים"
-    }
+    },
+    "noUntaggedTransactions": "אין תנועות ללא תגית"
   },
   "transactions": {
     "title": "תנועות",
@@ -591,7 +594,13 @@
       "asContribution": "הפקדה",
       "asUtilization": "ניצול",
       "linkedTo": "מקושר ל{{name}}",
-      "unlink": "הסרת הקישור"
+      "unlink": "הסרת הקישור",
+      "short": "יעד"
+    },
+    "details": {
+      "provider": "ספק",
+      "cardNumber": "מספר כרטיס",
+      "accountNumber": "מספר חשבון"
     }
   },
   "budget": {
@@ -1440,7 +1449,8 @@
     "deleteEnvelope": "מחק מעטפה",
     "addNewProject": "הוסף פרויקט חדש",
     "editCloseDate": "ערוך תאריך סגירה",
-    "matchedRule": "כלל תואם"
+    "matchedRule": "כלל תואם",
+    "moreActions": "פעולות נוספות"
   },
   "services": {
     "creditCard": "כרטיס אשראי",

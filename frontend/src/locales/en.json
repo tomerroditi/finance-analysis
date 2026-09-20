@@ -55,7 +55,9 @@
     "deselectAll": "Deselect all",
     "countSelected": "{{count}} selected",
     "countMore": "+{{count}} more",
-    "remove": "Remove"
+    "remove": "Remove",
+    "clear": "Clear",
+    "details": "Details"
   },
   "onboarding": {
     "welcome": "Welcome to Finance Analysis",
@@ -382,7 +384,8 @@
       "allSettled": "All refund requests are settled.",
       "empty": "Mark expenses as pending refund to track them here.",
       "moreCount": "+{{count}} more"
-    }
+    },
+    "noUntaggedTransactions": "No untagged transactions"
   },
   "transactions": {
     "title": "Transactions",
@@ -591,7 +594,13 @@
       "asContribution": "Contribution",
       "asUtilization": "Utilization",
       "linkedTo": "Linked to {{name}}",
-      "unlink": "Remove link"
+      "unlink": "Remove link",
+      "short": "Goal"
+    },
+    "details": {
+      "provider": "Provider",
+      "cardNumber": "Card number",
+      "accountNumber": "Account number"
     }
   },
   "budget": {
@@ -1438,7 +1447,8 @@
     "deleteEnvelope": "Delete envelope",
     "addNewProject": "Add new project",
     "editCloseDate": "Edit close date",
-    "matchedRule": "Matched rule"
+    "matchedRule": "Matched rule",
+    "moreActions": "More actions"
   },
   "services": {
     "creditCard": "Credit Card",

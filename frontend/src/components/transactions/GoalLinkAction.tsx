@@ -24,7 +24,17 @@ import { usePendingRows } from "../../hooks/usePendingRows";
  * The button hides itself when the user keeps no goals, so the actions column
  * stays uncluttered for everyone who does not use the feature.
  */
-export function GoalLinkAction({ transaction }: { transaction: Transaction }) {
+export function GoalLinkAction({
+  transaction,
+  variant = "icon",
+}: {
+  transaction: Transaction;
+  /**
+   * `icon` — bare icon button for the transactions table's actions column.
+   * `compact` — icon + label, matching the dashboard feed's row action bar.
+   */
+  variant?: "icon" | "compact";
+}) {
   const { t } = useTranslation();
   const qk = useQueryKeys();
   const queryClient = useQueryClient();
@@ -110,7 +120,11 @@ export function GoalLinkAction({ transaction }: { transaction: Transaction }) {
   return (
     <>
       <button
-        className={`p-1.5 rounded-md hover:bg-[var(--surface-light)] transition-colors ${
+        className={`${
+          variant === "compact"
+            ? "flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium whitespace-nowrap"
+            : "p-1.5 rounded-md"
+        } hover:bg-[var(--surface-light)] transition-colors ${
           existing
             ? "text-[var(--primary)]"
             : "text-[var(--text-muted)] hover:text-white"
@@ -121,9 +135,13 @@ export function GoalLinkAction({ transaction }: { transaction: Transaction }) {
             : t("transactions.goalLink.action")
         }
         aria-label={t("transactions.goalLink.action")}
-        onClick={() => setIsOpen(true)}
+        onClick={(e) => {
+          e.stopPropagation();
+          setIsOpen(true);
+        }}
       >
-        <Target size={14} />
+        <Target size={variant === "compact" ? 13 : 14} className="shrink-0" />
+        {variant === "compact" && t("transactions.goalLink.short")}
       </button>
 
       {isOpen && (
