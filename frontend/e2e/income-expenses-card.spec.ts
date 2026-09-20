@@ -217,4 +217,57 @@ test.describe("Income & Expenses dashboard card", () => {
       timeout: 1_000,
     });
   });
+
+  // Its own test on purpose: the defect needs a bar to go capped -> uncapped
+  // on a card that has not been interacted with yet, and the journey test has
+  // paged the ledger by the time it gets here, which is enough to hide it.
+  test("a bar that loses its over-scale cap restores its own border", async ({
+    page,
+  }) => {
+    const card = await openCard(page);
+    const rows = card.getByTestId("ledger-row");
+    await expect(rows.first()).toBeVisible({ timeout: 45_000 });
+
+    // The tip's colour and style are supplied on every render rather than
+    // spread in only while capped. React removes a property a re-render stops
+    // giving, and a removed `borderRightColor` falls back to `currentColor`
+    // -- the inherited near-white text colour -- not to the `border`
+    // shorthand, so a bar that lost its cap kept a pale 1px sliver at its tip.
+    const barBorders = () =>
+      card.evaluate(() => {
+        const out: string[] = [];
+        document.querySelectorAll('[data-testid="ledger-row"]').forEach((row) => {
+          row.querySelectorAll('div[style*="width"]').forEach((bar) => {
+            const cs = getComputedStyle(bar as HTMLElement);
+            if (cs.borderLeftWidth === "0px" && cs.borderRightWidth === "0px") return;
+            out.push(
+              `${row.getAttribute("data-month")} ${cs.borderLeftStyle}|${cs.borderLeftColor}` +
+                `|${cs.borderRightStyle}|${cs.borderRightColor}`,
+            );
+          });
+        });
+        return out;
+      });
+
+    // The expense KPI has its own query and can still read the zero
+    // placeholder here; it is what tells us a toggle's refetch has landed.
+    const expenseKpi = card.getByTestId("kpi-expense");
+    await expect(expenseKpi).toContainText(/\d,\d{3}/, { timeout: 45_000 });
+    const kpiBefore = await expenseKpi.textContent();
+    const bordersBefore = await barBorders();
+    expect(bordersBefore.length).toBeGreaterThan(0);
+
+    const projectsChip = card.getByRole("button", { name: /^Projects (Ex|In)cluded$/ });
+    await projectsChip.click();
+    await expect.poll(() => expenseKpi.textContent(), { timeout: 20_000 }).not.toBe(kpiBefore);
+    // Some bar has to take a cap here, or the round trip proves nothing.
+    expect(await barBorders()).not.toEqual(bordersBefore);
+
+    await projectsChip.click();
+    await expect.poll(() => expenseKpi.textContent(), { timeout: 20_000 }).toBe(kpiBefore);
+    // Read the settled state once: polling until the borders matched would
+    // pass on the first frame that happened to agree, which is the transient
+    // this defect hides behind.
+    expect(await barBorders()).toEqual(bordersBefore);
+  });
 });

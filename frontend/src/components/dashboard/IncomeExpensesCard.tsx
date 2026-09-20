@@ -413,16 +413,26 @@ function LedgerBar({
       <div
         className={`relative h-[22px] rounded-md flex items-center ${income ? "justify-end" : "justify-start"}`}
         title={capped ? t("dashboard.barAboveScale") : undefined}
+        // The tip's colour and style are always given, never spread in only
+        // when capped. React removes a style property that a re-render stops
+        // supplying, and because the browser expands the `border` shorthand
+        // into longhands, removing `borderRightColor` does not fall back to
+        // the shorthand — it falls back to `currentColor`, the inherited text
+        // colour. A bar that lost its cap between renders therefore kept a
+        // near-white 1px sliver at its tip. Which bars are capped depends on a
+        // median over the visible data, so any filter toggle could strand one.
         style={{
           width: `${pct}%`,
           background: soft,
-          border: `1px solid ${borderRgba}`,
-          ...(capped
-            ? {
-                [income ? "borderLeftColor" : "borderRightColor"]: barColor,
-                [income ? "borderLeftStyle" : "borderRightStyle"]: "dashed",
-              }
-            : {}),
+          borderWidth: 1,
+          borderStyle: "solid",
+          borderColor: borderRgba,
+          [income ? "borderLeftColor" : "borderRightColor"]: capped
+            ? barColor
+            : borderRgba,
+          [income ? "borderLeftStyle" : "borderRightStyle"]: capped
+            ? "dashed"
+            : "solid",
         }}
       >
         {capped && (
