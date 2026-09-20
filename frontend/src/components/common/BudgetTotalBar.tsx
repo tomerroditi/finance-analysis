@@ -1,6 +1,6 @@
 import React from "react";
 import { useTranslation } from "react-i18next";
-import { formatCurrency } from "../../utils/numberFormatting";
+import { formatAmount, formatCurrency } from "../../utils/numberFormatting";
 
 interface BudgetTotalBarProps {
   spent: number;
@@ -15,6 +15,11 @@ interface BudgetTotalBarProps {
  * Shared by the Budget page's status band and the dashboard's budget card so
  * the two cannot drift apart on where amber starts or on how an overspend is
  * worded.
+ *
+ * One ₪ on the line, carried by the ceiling — "11,185 / 28,000 ₪" with a bare
+ * remainder in the pill. Three signs across three figures that are obviously
+ * the same currency is decoration, and the envelope rows under this bar read
+ * the same way.
  */
 export const BudgetTotalBar: React.FC<BudgetTotalBarProps> = ({
   spent,
@@ -38,7 +43,7 @@ export const BudgetTotalBar: React.FC<BudgetTotalBarProps> = ({
     <div data-testid="budget-total-bar">
       <div className={`flex items-baseline flex-wrap gap-2 mb-2 ${dimmed}`}>
         <span className="text-xl md:text-2xl font-bold font-mono" dir="ltr">
-          {formatCurrency(clamped)}
+          {formatAmount(clamped)}
         </span>
         <span className="text-xs md:text-sm text-[var(--text-muted)] font-mono" dir="ltr">
           / {formatCurrency(total)}
@@ -50,8 +55,8 @@ export const BudgetTotalBar: React.FC<BudgetTotalBarProps> = ({
             }`}
           >
             {over
-              ? t("budget.overByAmount", { amount: formatCurrency(Math.abs(remaining)) })
-              : t("budget.remainingAmount", { amount: formatCurrency(remaining) })}
+              ? t("budget.overByAmount", { amount: formatAmount(Math.abs(remaining)) })
+              : t("budget.remainingAmount", { amount: formatAmount(remaining) })}
           </span>
         )}
       </div>
