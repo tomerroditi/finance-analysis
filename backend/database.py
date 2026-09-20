@@ -22,6 +22,11 @@ from backend.config import AppConfig
 # opens a session imports this module, so registration is guaranteed.
 import backend.utils.session_cache  # noqa: F401  (side-effect import)
 
+# Same guarantee for the cross-request cache, whose listeners version its
+# entries by write activity. Imported by name too — the engine resets below
+# drop its entries when a database file is replaced underneath the process.
+from backend.utils import data_cache
+
 
 def get_database_url(db_path: str = None) -> str:
     """
@@ -246,6 +251,7 @@ def reset_engine_for(db_path: str) -> None:
         _session_factories.pop(db_path, None)
     if engine is not None:
         engine.dispose()
+    data_cache.clear()
 
 
 def reset_engines() -> None:
@@ -261,3 +267,4 @@ def reset_engines() -> None:
         _session_factories.clear()
     for engine in engines:
         engine.dispose()
+    data_cache.clear()

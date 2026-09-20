@@ -1389,3 +1389,108 @@ class TestInsuranceAndManualTransactionMerge:
         txns = service._get_all_transactions_for_investment(inv["category"], inv["tag"], investment_id=inv["id"])
 
         assert txns["amount"].tolist() == [-250.0]
+
+
+class TestBalanceIndexMatchesScanning:
+    """The batch valuation's date index must agree with the scanning fallback.
+
+    `get_total_values_at_dates` used to call
+    `_calculate_balance_from_transactions` once per (investment, date) — each
+    call copying the frame and re-parsing its date column with format
+    inference, so the net-worth chart paid hundreds of full date parses. It
+    now indexes each investment once and binary-searches a running total.
+    These pin the two to the same answers, including the cases where a
+    cumulative sum is easiest to get wrong: unordered rows, same-day
+    transactions, dates outside the data, and unparseable dates.
+    """
+
+    @staticmethod
+    def _frame(rows: list[tuple[str, float]]) -> pd.DataFrame:
+        """Build a transactions frame from ``(date, amount)`` pairs."""
+        return pd.DataFrame(
+            {"date": [r[0] for r in rows], "amount": [r[1] for r in rows]}
+        )
+
+    def _assert_agrees(self, db_session, rows, dates, after_date=None):
+        """Assert indexed lookups equal the scanning implementation."""
+        service = InvestmentsService(db_session)
+        frame = self._frame(rows)
+        index = service._balance_index(frame)
+
+        for as_of in dates:
+            assert service._balance_at(
+                index, as_of, after_date=after_date
+            ) == pytest.approx(
+                service._calculate_balance_from_transactions(
+                    frame, as_of_date=as_of, after_date=after_date
+                )
+            )
+
+    def test_agrees_on_unordered_rows(self, db_session):
+        """Storage order must not change the balance at any date."""
+        rows = [
+            ("2024-03-01", -300.0),
+            ("2024-01-01", -1000.0),
+            ("2024-02-01", 250.0),
+        ]
+        self._assert_agrees(
+            db_session,
+            rows,
+            ["2023-12-31", "2024-01-01", "2024-01-15", "2024-02-01", "2024-12-31"],
+        )
+
+    def test_agrees_on_same_day_transactions(self, db_session):
+        """Several rows on one day all land on the same side of the cut-off."""
+        rows = [
+            ("2024-01-10", -500.0),
+            ("2024-01-10", -250.0),
+            ("2024-01-10", 100.0),
+            ("2024-02-10", -50.0),
+        ]
+        self._assert_agrees(
+            db_session, rows, ["2024-01-09", "2024-01-10", "2024-01-11"]
+        )
+
+    def test_agrees_when_carrying_forward_from_a_snapshot(self, db_session):
+        """The `after_date` window (snapshot carry-forward) matches too."""
+        rows = [
+            ("2024-01-01", -1000.0),
+            ("2024-02-01", -500.0),
+            ("2024-03-01", 200.0),
+        ]
+        self._assert_agrees(
+            db_session,
+            rows,
+            ["2024-01-31", "2024-02-01", "2024-03-15"],
+            after_date="2024-01-31",
+        )
+
+    def test_agrees_when_a_date_is_missing(self, db_session):
+        """A row the repository could not date is excluded by both paths.
+
+        This is the shape a corrupt date actually reaches valuation in:
+        `_normalize_dates` coerces what it cannot parse to ``NaN`` so one bad
+        row can't 500 every analytics endpoint.
+        """
+        rows = [("2024-01-01", -1000.0), (float("nan"), -9999.0)]
+        self._assert_agrees(db_session, rows, ["2024-06-01"])
+
+    def test_unparseable_date_string_is_dropped_not_raised(self, db_session):
+        """The index tolerates a raw bad date; the old scan raised on it.
+
+        Nothing upstream produces this today, but tolerating it is the same
+        promise `_normalize_dates` already makes one layer down.
+        """
+        service = InvestmentsService(db_session)
+        frame = self._frame([("2024-01-01", -1000.0), ("not-a-date", -9999.0)])
+
+        index = service._balance_index(frame)
+
+        assert service._balance_at(index, "2024-06-01") == pytest.approx(1000.0)
+
+    def test_empty_frame_values_at_zero(self, db_session):
+        """An investment with no transactions is worth nothing, at any date."""
+        service = InvestmentsService(db_session)
+        index = service._balance_index(pd.DataFrame({"date": [], "amount": []}))
+
+        assert service._balance_at(index, "2024-01-01") == 0.0
