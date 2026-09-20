@@ -135,11 +135,21 @@ class InvestmentsRepository:
         pd.DataFrame
             All matching investment records with full investment columns.
         """
+        # Cached for the request: the portfolio overview and the net-worth
+        # chart each re-read this small table once per investment they walk,
+        # which was ~20 identical queries in one dashboard load.
+        cache_key = ("investments.get_all", include_closed)
+        cached = session_cache_get(self.db, cache_key)
+        if cached is not None:
+            return cached
+
         stmt = select(Investment)
         if not include_closed:
             stmt = stmt.where(Investment.is_closed == 0)
 
-        return pd.read_sql(stmt, self.db.bind)
+        df = pd.read_sql(stmt, self.db.bind)
+        session_cache_set(self.db, cache_key, df)
+        return df
 
     def get_by_id(self, investment_id: int) -> pd.DataFrame:
         """Get an investment by its ID.

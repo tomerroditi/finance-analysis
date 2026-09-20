@@ -8,6 +8,7 @@ builds on. Mixed into ``AnalysisService`` (see ``core.py``).
 
 import pandas as pd
 
+from backend.utils.dataframe_dates import to_month_series
 from backend.constants.tables import TransactionsTableFields
 
 
@@ -235,9 +236,9 @@ class ForecastMixin:
 
         # Group by month and sum (amounts are negative, multiply by -1)
         expenses = expenses.copy()
-        expenses["month"] = expenses[
-            TransactionsTableFields.DATE.value
-        ].dt.strftime("%Y-%m")
+        expenses["month"] = to_month_series(
+            expenses[TransactionsTableFields.DATE.value]
+        )
 
         monthly = (
             expenses.groupby("month")[TransactionsTableFields.AMOUNT.value]
@@ -258,12 +259,9 @@ class ForecastMixin:
                     & all_data[TransactionsTableFields.CATEGORY.value].isin(project_names)
                 ].copy()
                 if not project_txns.empty:
-                    project_txns[TransactionsTableFields.DATE.value] = pd.to_datetime(
+                    project_txns["month"] = to_month_series(
                         project_txns[TransactionsTableFields.DATE.value]
                     )
-                    project_txns["month"] = project_txns[
-                        TransactionsTableFields.DATE.value
-                    ].dt.strftime("%Y-%m")
                     monthly_project = (
                         project_txns.groupby("month")[TransactionsTableFields.AMOUNT.value]
                         .sum()

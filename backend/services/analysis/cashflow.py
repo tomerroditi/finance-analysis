@@ -11,6 +11,7 @@ from datetime import date
 
 import pandas as pd
 
+from backend.utils.dataframe_dates import to_month_series
 from backend.constants.categories import (
     PRIOR_WEALTH_TAG,
     LIABILITIES_CATEGORY,
@@ -65,7 +66,7 @@ class CashflowMixin:
         if exclude_liabilities:
             df = df[df[TransactionsTableFields.CATEGORY.value] != LIABILITIES_CATEGORY]
 
-        df["month"] = pd.to_datetime(df["date"]).dt.strftime("%Y-%m")
+        df["month"] = to_month_series(df["date"])
         # Month index from the *pre-exclusion* frame: a CC-only month must
         # still appear (with zeros), matching the historical per-month loop.
         months = sorted(df["month"].unique())
@@ -129,7 +130,7 @@ class CashflowMixin:
         if salary_df.empty:
             return None
 
-        salary_df["month"] = pd.to_datetime(salary_df["date"]).dt.strftime("%Y-%m")
+        salary_df["month"] = to_month_series(salary_df["date"])
         monthly_totals = salary_df.groupby("month")["amount"].sum()
         recent = monthly_totals.sort_index().tail(months)
         if recent.empty:
@@ -166,7 +167,7 @@ class CashflowMixin:
         if liabilities.empty:
             return []
 
-        liabilities["month"] = pd.to_datetime(liabilities["date"]).dt.strftime("%Y-%m")
+        liabilities["month"] = to_month_series(liabilities["date"])
         liabilities["tag"] = liabilities[TransactionsTableFields.TAG.value].fillna("Uncategorized")
 
         pivot = liabilities.groupby(["month", "tag"])[TransactionsTableFields.AMOUNT.value].sum().mul(-1).unstack(fill_value=0)
@@ -332,7 +333,7 @@ class CashflowMixin:
         liabilities_mask = expenses["category"] == LIABILITIES_CATEGORY
         expenses.loc[liabilities_mask, "category"] = expenses.loc[liabilities_mask, TransactionsTableFields.TAG.value].fillna(LIABILITIES_CATEGORY)
         expenses["category"] = expenses["category"].fillna("Uncategorized")
-        expenses["month"] = pd.to_datetime(expenses["date"]).dt.strftime("%Y-%m")
+        expenses["month"] = to_month_series(expenses["date"])
 
         pivot = expenses.groupby(["month", "category"])["amount"].sum().mul(-1).unstack(fill_value=0)
 
@@ -415,7 +416,7 @@ class CashflowMixin:
 
         income_df = self._add_source_label_column(income_df)
 
-        income_df["month"] = pd.to_datetime(income_df["date"]).dt.strftime("%Y-%m")
+        income_df["month"] = to_month_series(income_df["date"])
 
         result = []
         for month, month_df in income_df.groupby("month", sort=True):

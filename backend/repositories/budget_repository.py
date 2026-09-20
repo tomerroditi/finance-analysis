@@ -15,6 +15,7 @@ from backend.constants.budget import (
     PERIOD_MONTHLY, PERIOD_YEARLY, PERIOD_PROJECT,
 )
 from backend.constants.tables import Tables
+from backend.utils.session_cache import session_cache_get, session_cache_set
 
 
 class BudgetRepository:
@@ -92,8 +93,19 @@ class BudgetRepository:
             All budget rules with columns: id, name, amount, category, tags,
             month, year, created_at, updated_at.
         """
+        # Cached for the request: the budget overview asks its rule set a
+        # dozen times over while assembling one month (monthly totals, the
+        # long envelopes, the yearly envelopes), and every ask re-read the
+        # whole table.
+        cache_key = ("budget_rules.read_all",)
+        cached = session_cache_get(self.db, cache_key)
+        if cached is not None:
+            return cached
+
         stmt = select(BudgetRule)
-        return pd.read_sql(stmt, self.db.bind)
+        df = pd.read_sql(stmt, self.db.bind)
+        session_cache_set(self.db, cache_key, df)
+        return df
 
     def read_by_id(self, id_: int) -> pd.DataFrame:
         """Read a specific budget rule by ID.
