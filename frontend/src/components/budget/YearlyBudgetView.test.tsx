@@ -3,7 +3,12 @@ import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { renderWithProviders } from "../../test-utils";
 import { YearlyBudgetView } from "./YearlyBudgetView";
-import { budgetApi, type YearlyAnalysis } from "../../services/api";
+import {
+  budgetApi,
+  pendingRefundsApi,
+  type YearlyAnalysis,
+} from "../../services/api";
+import type { Transaction } from "../../types/transaction";
 import type * as ApiModule from "../../services/api";
 
 /**
@@ -27,6 +32,10 @@ vi.mock("../../services/api", async (importOriginal) => {
       getYearlyAnalysis: vi.fn(),
       setYearlyRuleClosed: vi.fn(),
     },
+    pendingRefundsApi: {
+      ...actual.pendingRefundsApi,
+      getAll: vi.fn(),
+    },
   };
 });
 
@@ -39,6 +48,7 @@ function entry(
   name: string,
   currentAmount: number,
   closed = false,
+  data: Transaction[] = [],
 ): YearlyAnalysis["rules"][number] {
   return {
     rule: {
@@ -50,7 +60,7 @@ function entry(
       year: YEAR,
     },
     current_amount: currentAmount,
-    data: [],
+    data,
     allow_edit: true,
     allow_delete: true,
     closed,
@@ -106,7 +116,12 @@ async function ledgerRow() {
 }
 
 describe("YearlyBudgetView", () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(pendingRefundsApi.getAll).mockResolvedValue({
+      data: [],
+    } as Awaited<ReturnType<typeof pendingRefundsApi.getAll>>);
+  });
 
   describe("spend-positive current_amount", () => {
     it("renders the API's spend as spend, not as a net refund", async () => {
@@ -218,6 +233,69 @@ describe("YearlyBudgetView", () => {
       await waitFor(() =>
         expect(budgetApi.setYearlyRuleClosed).toHaveBeenCalledWith(7, true),
       );
+    });
+  });
+
+  describe("related transactions", () => {
+    const TRANSACTIONS: Transaction[] = [
+      {
+        unique_id: "11",
+        source: "bank",
+        description: "El Al tickets",
+        amount: -3200,
+        date: `${YEAR}-03-14`,
+        category: "Vacations",
+        tag: "Flights",
+      },
+      {
+        unique_id: "12",
+        source: "credit_card",
+        description: "Hotel Firenze",
+        amount: -1886.25,
+        date: `${YEAR}-07-02`,
+        category: "Vacations",
+        tag: "Hotel",
+      },
+    ];
+
+    /** The row's own disclosure button — the one carrying `aria-expanded`. */
+    async function expandFirstRow() {
+      const toggles = await screen.findAllByRole("button", { expanded: false });
+      await userEvent.click(toggles[0]);
+    }
+
+    it("hides the envelope's transactions until the row is expanded", async () => {
+      renderAnalysis(
+        analysis([entry(1, "Vacations", 5086.25, false, TRANSACTIONS)]),
+      );
+      await ledgerFigures();
+
+      expect(screen.queryByText(/el al tickets/i)).toBeNull();
+    });
+
+    it("lists the year's transactions behind the envelope once expanded", async () => {
+      renderAnalysis(
+        analysis([entry(1, "Vacations", 5086.25, false, TRANSACTIONS)]),
+      );
+      await ledgerFigures();
+      await expandFirstRow();
+
+      expect(await screen.findByText(/el al tickets/i)).toBeTruthy();
+      expect(screen.getByText(/hotel firenze/i)).toBeTruthy();
+    });
+
+    it("lists a closed envelope's transactions too — closing keeps the history", async () => {
+      renderAnalysis(
+        analysis([entry(1, "Car insurance", 5086.25, true, TRANSACTIONS)], {
+          on_track: 0,
+          closed: 1,
+        }),
+      );
+      await ledgerFigures();
+      await expandFirstRow();
+
+      expect(await screen.findByText(/el al tickets/i)).toBeTruthy();
+      expect(screen.getAllByTestId("yearly-closed-notice")[0]).toBeTruthy();
     });
   });
 
