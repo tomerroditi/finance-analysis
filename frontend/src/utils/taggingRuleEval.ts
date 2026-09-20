@@ -75,3 +75,57 @@ export function findMatchingRules(
 ): TaggingRule[] {
   return rules.filter((r) => evalConditionTree(r.conditions, tx));
 }
+
+/** Collect every `description contains` value a condition tree already tests. */
+function collectDescriptionContains(node: ConditionNode, into: Set<string>): void {
+  if (node.type === "CONDITION") {
+    if (node.field === "description" && node.operator === "contains") {
+      into.add(String(node.value ?? "").toLowerCase());
+    }
+    return;
+  }
+  for (const sub of node.subconditions ?? []) collectDescriptionContains(sub, into);
+}
+
+/**
+ * Add one `description contains <value>` branch per value to a rule's existing
+ * conditions.
+ *
+ * This is how a transaction joins the rule that already owns its category/tag
+ * instead of spawning a second rule for the same pair — the editor allows only
+ * one rule per (category, tag), so a second one is not even savable.
+ *
+ * An `OR` root takes the new branches directly; anything else (an `AND` group,
+ * or a bare condition) is wrapped in an `OR` so the rule goes on matching
+ * everything it matched before. Values the tree already tests for are skipped,
+ * and when nothing is left to add the tree is returned untouched.
+ */
+export function appendDescriptionConditions(
+  conditions: ConditionNode,
+  values: string[],
+): ConditionNode {
+  const seen = new Set<string>();
+  collectDescriptionContains(conditions, seen);
+
+  const additions: ConditionNode[] = [];
+  for (const value of values) {
+    const key = value.toLowerCase();
+    if (!value || seen.has(key)) continue;
+    seen.add(key);
+    additions.push({
+      type: "CONDITION",
+      field: "description",
+      operator: "contains",
+      value,
+    });
+  }
+  if (additions.length === 0) return conditions;
+
+  if (conditions.type === "OR") {
+    return {
+      ...conditions,
+      subconditions: [...(conditions.subconditions ?? []), ...additions],
+    };
+  }
+  return { type: "OR", subconditions: [conditions, ...additions] };
+}

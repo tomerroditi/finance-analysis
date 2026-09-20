@@ -5,6 +5,7 @@ import { useTranslation } from "react-i18next";
 import type { Transaction } from "../../types/transaction";
 import type { ConditionNode, TaggingRule } from "../../services/api";
 import { useRuleSelectionState } from "../../hooks/useRuleSelectionState";
+import { appendDescriptionConditions } from "../../utils/taggingRuleEval";
 import { RuleEditorModal } from "./RuleEditorModal";
 
 interface RuleQuickActionProps {
@@ -29,8 +30,10 @@ interface RuleQuickActionProps {
  * Renders nothing when the selection contains no rule-applicable (bank /
  * credit-card) transactions. Otherwise it inspects how the selection relates to
  * existing auto-tagging rules (see {@link useRuleSelectionState}) and shows:
- * an "Add Rule" button (none match), a "View Rule" button (all share one rule),
- * or a disabled "Add Rule" button (ambiguous selection).
+ * an "Add Rule" button (none match and the staged category/tag is unclaimed),
+ * an "Add to Rule" button (a rule already owns that category/tag), a "View
+ * Rule" button (all share one rule), or a disabled "Add Rule" button
+ * (ambiguous selection).
  */
 export function RuleQuickAction({
     transactions,
@@ -39,8 +42,24 @@ export function RuleQuickAction({
     variant = "bar",
 }: RuleQuickActionProps) {
     const { t } = useTranslation();
-    const state = useRuleSelectionState(transactions);
+    const state = useRuleSelectionState(transactions, {
+        category: stagedCategory,
+        tag: stagedTag,
+    });
     const [open, setOpen] = useState(false);
+    /**
+     * The grown rule handed to the editor, snapshotted when the button is
+     * clicked. The editor re-reads `editingRule` into its form state whenever
+     * that object's identity changes, and the selection state is rebuilt
+     * whenever the parent re-renders (call sites pass `[tx]` inline), so
+     * deriving it during render would wipe out whatever the user had typed.
+     */
+    const [grownRule, setGrownRule] = useState<TaggingRule | null>(null);
+
+    const closeEditor = () => {
+        setOpen(false);
+        setGrownRule(null);
+    };
 
     if (state.kind === "none") return null;
 
@@ -66,6 +85,31 @@ export function RuleQuickAction({
                 title={t("transactions.ruleAction.viewTooltip")}
             >
                 <Eye size={iconSize} /> {t("transactions.ruleAction.view")}
+            </button>
+        );
+    } else if (state.kind === "extend") {
+        // Open the owning rule with the new `contains` branches already in it,
+        // so saving updates that rule instead of creating a duplicate the
+        // backend's one-rule-per-(category, tag) check would reject anyway.
+        const owner = state.rule;
+        const seeds = state.seedKeywords;
+        editingRule = grownRule;
+        button = (
+            <button
+                type="button"
+                onClick={() => {
+                    setGrownRule({
+                        ...owner,
+                        conditions: appendDescriptionConditions(owner.conditions, seeds),
+                    });
+                    setOpen(true);
+                }}
+                className={`${baseBtn} bg-[var(--primary)]/15 text-[var(--primary)] hover:bg-[var(--primary)]/25`}
+                title={t("transactions.ruleAction.extendTooltip", {
+                    name: state.rule.name || `${state.rule.category} - ${state.rule.tag}`,
+                })}
+            >
+                <Wand2 size={iconSize} /> {t("transactions.ruleAction.extend")}
             </button>
         );
     } else if (state.kind === "add") {
@@ -129,7 +173,7 @@ export function RuleQuickAction({
                 createPortal(
                     <RuleEditorModal
                         isOpen
-                        onClose={() => setOpen(false)}
+                        onClose={closeEditor}
                         editingRule={editingRule}
                         prefill={prefill}
                     />,
