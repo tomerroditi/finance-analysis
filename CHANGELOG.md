@@ -1,3 +1,9 @@
+## v1.76.3 (2026-09-20)
+
+### Fix
+
+- **dashboard**: stop a ledger bar stranding a pale border at its tip; net refunds in project budgets and insights (#323)
+
 ## v1.76.2 (2026-09-20)
 
 ### Fix
