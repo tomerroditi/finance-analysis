@@ -25,6 +25,11 @@ from backend.errors import (
     ValidationException,
 )
 from backend.services.budget.core import BudgetService
+from backend.services.pending_refunds_service import (
+    GROSS_AMOUNT_COLUMN,
+    apply_refund_amount_adjustments,
+    restore_gross_amounts,
+)
 
 
 class ProjectBudgetService(BudgetService):
@@ -261,12 +266,26 @@ class ProjectBudgetService(BudgetService):
         Returns
         -------
         pd.DataFrame
-            Transactions where category equals ``project``.
+            Transactions where category equals ``project``, with matched
+            refunds netted against the purchases they repay and each row's
+            pre-netting amount kept in :data:`GROSS_AMOUNT_COLUMN`.
         """
         all_data = self.transactions_service.get_data_for_analysis(
             include_split_parents
         )
-        return all_data.loc[all_data[TransactionsTableFields.CATEGORY.value] == project]
+        rows = all_data.loc[
+            all_data[TransactionsTableFields.CATEGORY.value] == project
+        ]
+        # A project envelope reports what the project cost, net of refunds
+        # matched to their purchase — the definition the monthly and yearly
+        # envelopes and the dashboard already use. The gross amount rides
+        # along so the transaction list underneath keeps real figures.
+        adjustments = self.pending_refunds_service.get_refund_amount_adjustments(
+            exclude_open=True
+        )
+        return apply_refund_amount_adjustments(
+            rows, adjustments, keep_gross_in=GROSS_AMOUNT_COLUMN
+        )
 
     def get_all_projects_names(self) -> list[str]:
         """
@@ -368,7 +387,7 @@ class ProjectBudgetService(BudgetService):
                 {
                     "rule": total_rule.iloc[0].to_dict(),
                     "current_amount": total_spent,
-                    "data": transactions_processed.to_dict(orient="records"),
+                    "data": restore_gross_amounts(transactions_processed).to_dict(orient="records"),
                     "allow_edit": True,
                     "allow_delete": False,
                 }
@@ -407,7 +426,7 @@ class ProjectBudgetService(BudgetService):
                 {
                     "rule": rule.to_dict(),
                     "current_amount": spent,
-                    "data": tag_txns_display.to_dict(orient="records"),
+                    "data": restore_gross_amounts(tag_txns_display).to_dict(orient="records"),
                     "allow_edit": True,
                     "allow_delete": True,
                 }
@@ -470,7 +489,7 @@ class ProjectBudgetService(BudgetService):
                     {
                         "rule": rule_dict,
                         "current_amount": spent,
-                        "data": group_display.to_dict(orient="records"),
+                        "data": restore_gross_amounts(group_display).to_dict(orient="records"),
                         "allow_edit": True,
                         "allow_delete": True,
                     }

@@ -3128,3 +3128,79 @@ class TestMonthlyBudgetRefundNetting:
         view = MonthlyBudgetService(db_session).get_monthly_budget_view(2026, 1)
 
         assert self._envelope(view, "Electronics")["current_amount"] == 0.0
+
+
+class TestProjectBudgetRefundNetting:
+    """A project envelope reports net cost; its transaction list stays real."""
+
+    def _seed(self, db_session, id_, date, category, tag, amount):
+        """Seed one bank transaction and return its assigned unique_id."""
+        from backend.models.transaction import BankTransaction
+
+        db_session.add(
+            BankTransaction(
+                id=id_, date=date, provider="p", account_name="a", description=id_,
+                amount=amount, category=category, tag=tag,
+                source="bank_transactions", type="normal", status="completed",
+            )
+        )
+        db_session.commit()
+        return (
+            db_session.query(BankTransaction).filter(BankTransaction.id == id_).one().unique_id
+        )
+
+    @staticmethod
+    def _total(view):
+        return view["total_spent"]
+
+    def _project_with_refund(self, db_session, expected, matched):
+        """A Wedding project with one charge partly or wholly repaid later."""
+        from backend.services.pending_refunds_service import PendingRefundsService
+
+        service = ProjectBudgetService(db_session)
+        service.create_project("Wedding", 50000.0)
+        venue = self._seed(db_session, "venue", "2026-01-10", "Wedding", "Venue", -10000.0)
+        refund = self._seed(db_session, "venue-refund", "2026-04-02", "Wedding", "Venue", matched)
+
+        refunds = PendingRefundsService(db_session)
+        pending = refunds.mark_as_pending_refund(
+            source_type="transaction", source_id=venue,
+            source_table="banks", expected_amount=expected,
+        )
+        if matched:
+            refunds.link_refund(
+                pending_refund_id=pending["id"], refund_transaction_id=refund,
+                refund_source="banks", amount=matched,
+            )
+        return service
+
+    def test_a_later_refund_reduces_what_the_project_cost(self, db_session):
+        """A April repayment nets against the January charge it repays."""
+        service = self._project_with_refund(db_session, 10000.0, 10000.0)
+
+        view = service.get_project_budget_view("Wedding")
+
+        assert self._total(view) == 0.0
+
+    def test_a_partly_refunded_charge_costs_what_was_not_returned(self, db_session):
+        """2,500 back on a 10,000 charge leaves 7,500 against the project."""
+        service = self._project_with_refund(db_session, 2500.0, 2500.0)
+
+        view = service.get_project_budget_view("Wedding")
+
+        assert self._total(view) == 7500.0
+
+    def test_the_project_transaction_list_keeps_the_real_amounts(self, db_session):
+        """Rows the user can act on must carry the amount the database holds."""
+        from backend.services.pending_refunds_service import GROSS_AMOUNT_COLUMN
+
+        service = self._project_with_refund(db_session, 2500.0, 2500.0)
+
+        view = service.get_project_budget_view("Wedding")
+        rows = view["rules"][0]["data"]
+        amounts = sorted(r[TransactionsTableFields.AMOUNT.value] for r in rows)
+
+        assert amounts == [-10000.0, 2500.0]
+        assert all(GROSS_AMOUNT_COLUMN not in r for r in rows)
+        # The total nets even though the rows do not.
+        assert self._total(view) == 7500.0
