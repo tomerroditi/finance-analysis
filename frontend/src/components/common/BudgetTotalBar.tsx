@@ -42,11 +42,20 @@ export const BudgetTotalBar: React.FC<BudgetTotalBarProps> = ({
   return (
     <div data-testid="budget-total-bar">
       <div className={`flex items-baseline flex-wrap gap-2 mb-2 ${dimmed}`}>
-        <span className="text-xl md:text-2xl font-bold font-mono" dir="ltr">
-          {formatAmount(clamped)}
-        </span>
-        <span className="text-xs md:text-sm text-[var(--text-muted)] font-mono" dir="ltr">
-          / {formatCurrency(total)}
+        {/* Spent and ceiling are ONE left-to-right run, not two flex items.
+            As siblings they are laid out in the container's direction, so
+            under RTL they swap and the slash lands at the far left of the
+            line, detached from the figures it divides: "/ 28,000 ₪ 11,185".
+            Grouping them makes the pair read the same in both languages —
+            the same reason the envelope rows below carry `dir="ltr"` on the
+            span that holds both figures. */}
+        <span className="flex items-baseline flex-wrap gap-2" dir="ltr">
+          <span className="text-xl md:text-2xl font-bold font-mono">
+            {formatAmount(clamped)}
+          </span>
+          <span className="text-xs md:text-sm text-[var(--text-muted)] font-mono">
+            / {formatCurrency(total)}
+          </span>
         </span>
         {(total > 0 || over) && (
           <span
