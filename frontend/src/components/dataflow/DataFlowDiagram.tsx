@@ -25,6 +25,9 @@ interface DragState {
   startY: number;
   startScrollLeft: number;
   startScrollTop: number;
+  /** False once the button is released — the state lives on so the click
+   *  that follows can read `hasDragged`, but it must stop driving scroll. */
+  active: boolean;
   hasDragged: boolean;
 }
 
@@ -161,21 +164,30 @@ export function DataFlowDiagram() {
       startY: e.clientY,
       startScrollLeft: el.scrollLeft,
       startScrollTop: el.scrollTop,
+      active: true,
       hasDragged: false,
     };
-    setIsDragging(true);
-    el.setPointerCapture(e.pointerId);
+    // Deliberately NOT capturing the pointer here. While a capture is
+    // active the compatibility mouse events are retargeted to the capture
+    // element, so `click` is dispatched on this container instead of the
+    // node card — and a plain click on a node silently did nothing,
+    // leaving every detail panel unreachable with a mouse. Capture is
+    // taken in `handlePointerMove`, once a drag has actually started.
   };
 
   const handlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
     const drag = dragRef.current;
     const el = containerRef.current;
-    if (!drag || !el || drag.pointerId !== e.pointerId) return;
-    if (!el.hasPointerCapture(e.pointerId)) return;
+    if (!drag || !el || drag.pointerId !== e.pointerId || !drag.active) return;
     const dx = e.clientX - drag.startX;
     const dy = e.clientY - drag.startY;
-    if (!drag.hasDragged && Math.hypot(dx, dy) > DRAG_THRESHOLD_PX) {
+    if (!drag.hasDragged) {
+      if (Math.hypot(dx, dy) <= DRAG_THRESHOLD_PX) return;
       drag.hasDragged = true;
+      setIsDragging(true);
+      // Now that this is a pan rather than a click, capture the pointer so
+      // it keeps tracking when the cursor leaves the viewport box.
+      el.setPointerCapture(e.pointerId);
     }
     el.scrollLeft = drag.startScrollLeft - dx;
     el.scrollTop = drag.startScrollTop - dy;
@@ -188,9 +200,11 @@ export function DataFlowDiagram() {
     if (el?.hasPointerCapture(e.pointerId)) {
       el.releasePointerCapture(e.pointerId);
     }
+    drag.active = false;
     setIsDragging(false);
     // Keep `hasDragged` on the ref so the click that follows pointerup can
-    // bail out on the node; it gets reset on the next pointerdown.
+    // bail out on the node; it gets reset on the next pointerdown. Clearing
+    // `active` is what stops a plain hover afterwards from still panning.
   };
 
   const handleNodeClick = (id: string) => {
