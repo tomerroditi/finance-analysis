@@ -1,3 +1,9 @@
+## v1.70.1 (2026-09-20)
+
+### Perf
+
+- **budget**: fetch the budget sparkline in one request instead of twelve (#308)
+
 ## v1.70.0 (2026-09-20)
 
 ### Feat
