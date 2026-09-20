@@ -191,6 +191,20 @@ test.describe("Income & Expenses dashboard card", () => {
       card.getByRole("button", { name: "Pending Refunds Excluded" }),
     ).toBeVisible();
 
+    // --- An over-scale month's meter is dashed, and legibly so ---
+    // The meter is 3px tall with a 2px rounded cap. A diagonal hatch is all
+    // but vertical over three pixels and the cap sheared both ends into
+    // ragged points, so the bar read as torn rather than hatched — and which
+    // rows showed it changed with every filter toggle. The stripes must stay
+    // horizontal (90deg), which is the one direction the height cannot spoil.
+    const overScaleFill = card
+      .locator('[data-testid="composition-row"] div[title]:not([title=""]) > div')
+      .first();
+    await expect(overScaleFill).toBeVisible();
+    expect(
+      await overScaleFill.evaluate((el) => getComputedStyle(el).backgroundImage),
+    ).toContain("90deg");
+
     // Slices carry their readout here as well, and still print nothing.
     const expenseSegments = compositionRows.first().getByTestId("composition-segment");
     await expect(expenseSegments.first()).toBeVisible();
