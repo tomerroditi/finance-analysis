@@ -1,3 +1,9 @@
+## v1.71.2 (2026-09-20)
+
+### Fix
+
+- **query**: stop a read that predates a write from reverting it, app-wide (#310)
+
 ## v1.71.1 (2026-09-20)
 
 ### Fix
