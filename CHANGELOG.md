@@ -1,3 +1,9 @@
+## v1.70.0 (2026-09-20)
+
+### Feat
+
+- **dashboard**: scroll only the budget tabs, deep-link them, close projects from the card (#305)
+
 ## v1.69.3 (2026-09-20)
 
 ### Perf
