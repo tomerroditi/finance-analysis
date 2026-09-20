@@ -3005,3 +3005,126 @@ class TestMonthlyBudgetTrend:
         service.get_budget_trend(today.year, today.month, months=2)
 
         assert called is False
+
+
+class TestMonthlyBudgetRefundNetting:
+    """Envelopes total what a month cost net of refunds; their rows stay real."""
+
+    def _seed(self, db_session, id_, date, category, tag, amount):
+        """Seed one bank transaction and return its assigned unique_id."""
+        from backend.models.transaction import BankTransaction
+
+        db_session.add(
+            BankTransaction(
+                id=id_, date=date, provider="p", account_name="a", description=id_,
+                amount=amount, category=category, tag=tag,
+                source="bank_transactions", type="normal", status="completed",
+            )
+        )
+        db_session.commit()
+        return (
+            db_session.query(BankTransaction).filter(BankTransaction.id == id_).one().unique_id
+        )
+
+    @staticmethod
+    def _envelope(view, category):
+        return next(item for item in view if item["rule"][CATEGORY] == category)
+
+    @staticmethod
+    def _rules(db_session):
+        """A month needs its Total Budget rule before any category rule."""
+        service = MonthlyBudgetService(db_session)
+        service.create_rule("Total Budget", 9999.0, TOTAL_BUDGET, [ALL_TAGS], 1, 2026)
+        service.create_rule("Electronics", 2000.0, "Electronics", [ALL_TAGS], 1, 2026)
+
+    def test_a_refund_from_a_later_month_nets_the_purchases_envelope(self, db_session):
+        """March's repayment reduces the January envelope that carried the charge."""
+        from backend.services.pending_refunds_service import PendingRefundsService
+
+        self._rules(db_session)
+        tv = self._seed(db_session, "tv", "2026-01-10", "Electronics", None, -1000.0)
+        refund = self._seed(db_session, "tv-refund", "2026-03-14", "Electronics", None, 1000.0)
+
+        service = PendingRefundsService(db_session)
+        pending = service.mark_as_pending_refund(
+            source_type="transaction", source_id=tv,
+            source_table="banks", expected_amount=1000.0,
+        )
+        service.link_refund(
+            pending_refund_id=pending["id"], refund_transaction_id=refund,
+            refund_source="banks", amount=1000.0,
+        )
+
+        view = MonthlyBudgetService(db_session).get_monthly_budget_view(2026, 1)
+
+        assert self._envelope(view, "Electronics")["current_amount"] == 0.0
+
+    def test_a_partly_refunded_purchase_costs_only_what_was_not_returned(self, db_session):
+        """300 back on a 1,000 charge leaves 700 against the envelope, not 0."""
+        from backend.services.pending_refunds_service import PendingRefundsService
+
+        self._rules(db_session)
+        tv = self._seed(db_session, "tv", "2026-01-10", "Electronics", None, -1000.0)
+        refund = self._seed(db_session, "tv-refund", "2026-03-14", "Electronics", None, 300.0)
+
+        service = PendingRefundsService(db_session)
+        pending = service.mark_as_pending_refund(
+            source_type="transaction", source_id=tv,
+            source_table="banks", expected_amount=300.0,
+        )
+        service.link_refund(
+            pending_refund_id=pending["id"], refund_transaction_id=refund,
+            refund_source="banks", amount=300.0,
+        )
+
+        view = MonthlyBudgetService(db_session).get_monthly_budget_view(2026, 1)
+
+        assert self._envelope(view, "Electronics")["current_amount"] == 700.0
+
+    def test_the_drilldown_lists_the_real_charge_not_the_netted_one(self, db_session):
+        """Rows the user can act on must carry the amount the database holds."""
+        from backend.services.pending_refunds_service import (
+            GROSS_AMOUNT_COLUMN,
+            PendingRefundsService,
+        )
+
+        self._rules(db_session)
+        tv = self._seed(db_session, "tv", "2026-01-10", "Electronics", None, -1000.0)
+        refund = self._seed(db_session, "tv-refund", "2026-03-14", "Electronics", None, 300.0)
+
+        service = PendingRefundsService(db_session)
+        pending = service.mark_as_pending_refund(
+            source_type="transaction", source_id=tv,
+            source_table="banks", expected_amount=300.0,
+        )
+        service.link_refund(
+            pending_refund_id=pending["id"], refund_transaction_id=refund,
+            refund_source="banks", amount=300.0,
+        )
+
+        envelope = self._envelope(
+            MonthlyBudgetService(db_session).get_monthly_budget_view(2026, 1),
+            "Electronics",
+        )
+        rows = envelope["data"]
+
+        assert [r[TransactionsTableFields.AMOUNT.value] for r in rows] == [-1000.0]
+        # The netting helper column must never reach the client.
+        assert all(GROSS_AMOUNT_COLUMN not in r for r in rows)
+        # The total still nets, so the two deliberately disagree.
+        assert envelope["current_amount"] == 700.0
+
+    def test_an_open_expectation_still_leaves_the_envelope(self, db_session):
+        """Nothing matched yet means the money is expected back, so it is not spend."""
+        from backend.services.pending_refunds_service import PendingRefundsService
+
+        self._rules(db_session)
+        tv = self._seed(db_session, "tv", "2026-01-10", "Electronics", None, -1000.0)
+        PendingRefundsService(db_session).mark_as_pending_refund(
+            source_type="transaction", source_id=tv,
+            source_table="banks", expected_amount=1000.0,
+        )
+
+        view = MonthlyBudgetService(db_session).get_monthly_budget_view(2026, 1)
+
+        assert self._envelope(view, "Electronics")["current_amount"] == 0.0

@@ -1013,8 +1013,45 @@ class PendingRefundsService:
         return {"transactions": tx_adj, "splits": split_adj}
 
 
+#: Column holding a row's pre-netting amount when netting is asked to keep it.
+#: Budget envelopes total the netted amount but list the real transactions, so
+#: they need both on the same frame.
+GROSS_AMOUNT_COLUMN = "_gross_amount"
+
+
+def restore_gross_amounts(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Undo netting on a frame about to be handed to the client as transactions.
+
+    An envelope totals what a month *cost* — net of refunds — but the rows
+    underneath it are real transactions the user can select, retag, split or
+    mark as awaiting a refund, and those actions validate against the amount
+    actually in the database. Serving a netted amount there would show a
+    ``1,000`` charge as ``700`` and let the user reason (and act) on a figure
+    no table elsewhere agrees with. So the sum nets and the list does not.
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        Frame that may carry :data:`GROSS_AMOUNT_COLUMN`.
+
+    Returns
+    -------
+    pd.DataFrame
+        A copy with ``amount`` restored and the helper column dropped, or
+        ``df`` unchanged when it was never netted.
+    """
+    if GROSS_AMOUNT_COLUMN not in df.columns:
+        return df
+    df = df.copy()
+    df["amount"] = df[GROSS_AMOUNT_COLUMN]
+    return df.drop(columns=[GROSS_AMOUNT_COLUMN])
+
+
 def apply_refund_amount_adjustments(
-    df: pd.DataFrame, adjustments: dict[str, dict]
+    df: pd.DataFrame,
+    adjustments: dict[str, dict],
+    keep_gross_in: str | None = None,
 ) -> pd.DataFrame:
     """
     Net matched refunds out of a transactions frame.
@@ -1037,6 +1074,9 @@ def apply_refund_amount_adjustments(
         ``split_id`` when split children are present.
     adjustments : dict[str, dict]
         ``{"transactions": ..., "splits": ...}`` as built by the service.
+    keep_gross_in : str or None, optional
+        When given, the pre-netting amount is preserved in this column (see
+        :func:`restore_gross_amounts`). Default is ``None``.
 
     Returns
     -------
@@ -1067,6 +1107,8 @@ def apply_refund_amount_adjustments(
         adj = adj.add(df[split_id_col].map(split_adj).fillna(0.0).astype(float))
 
     original = df["amount"].astype(float)
+    if keep_gross_in is not None:
+        df[keep_gross_in] = original
     netted = original + adj
     df["amount"] = netted.clip(upper=0.0).where(
         original < 0, netted.clip(lower=0.0)
