@@ -12,8 +12,6 @@ from backend.demo_setup import (
     DEMO_REFERENCE_DATE,
     _backfill_budget_rule_period_type,
     _drop_retired_columns,
-    _normalize_scrape_statuses,
-    _seed_demo_credentials,
     _shift_dates,
     _source_db_path,
     sync_missing_columns,
@@ -431,189 +429,126 @@ class TestShiftSavingsGoalMonths:
         assert self._read_months(engine) == (expected, expected)
 
 
-class TestNormalizeScrapeStatuses:
-    """The demo dataset's scrape statuses must match what the repo queries.
+class TestFrozenDemoSnapshotContents:
+    """Guards on the shipped ``backend/resources/demo_data.db`` itself.
 
-    ``ScrapingHistoryRepository`` looks up ``WHERE status = 'success'`` and
-    SQLite compares TEXT case-sensitively, so the fixture's ``"SUCCESS"``
-    matched nothing: every demo data source reported "Never synced" despite
-    a full history sitting in the table.
+    These used to be runtime backfills inside ``prepare_demo_database``. That
+    was wrong: the snapshot is re-copied on *every* rebuild, so the data they
+    corrected came back every time and they wrote to the demo database on all
+    ~130 rebuilds of an e2e run. Those writes raced the copy that the next
+    rebuild performs while a previous page's requests still hold the file
+    open, and turned an occasional logged "database disk image is malformed"
+    into 500s on the demo-reset endpoint — which then cascaded into every
+    request served from the half-built database.
+
+    Fixing the snapshot removes the writes entirely, so what has to be
+    asserted is the snapshot's contents.
     """
 
     @staticmethod
-    def _seed(engine, statuses):
-        """Insert one scrape-history row per given status."""
-        with engine.connect() as conn:
-            for i, status in enumerate(statuses, start=1):
-                conn.execute(
-                    text(
-                        "INSERT INTO scraping_history "
-                        "(id, service_name, provider_name, account_name, date, status, "
-                        "created_at, updated_at) "
-                        "VALUES (:id, 'banks', 'hapoalim', 'Main Account', "
-                        "'2026-09-01T08:30:00', :status, :ts, :ts)"
-                    ),
-                    {"id": i, "status": status, "ts": "2026-01-01 00:00:00"},
-                )
-            conn.commit()
+    def _snapshot():
+        """Open the frozen demo DB read-only."""
+        engine = create_engine(
+            f"sqlite:///file:{_source_db_path()}?mode=ro&uri=true",
+            poolclass=StaticPool,
+        )
+        return engine
 
-    @staticmethod
-    def _statuses(engine):
-        """Read back every row's status."""
-        with engine.connect() as conn:
-            return [
+    def test_scrape_statuses_match_the_repository_constants(self):
+        """Case matters: the watermark query is ``WHERE status = 'success'``.
+
+        SQLite compares TEXT case-sensitively, so the fixture's original
+        ``"SUCCESS"`` matched nothing and every demo source reported "Never
+        synced" while a full history sat in the table.
+        """
+        with self._snapshot().connect() as conn:
+            statuses = {
                 row[0]
-                for row in conn.execute(
-                    text("SELECT status FROM scraping_history ORDER BY id")
-                )
-            ]
+                for row in conn.execute(text("SELECT DISTINCT status FROM scraping_history"))
+            }
 
-    def test_uppercase_statuses_are_lowercased(self):
-        """The fixture's legacy casing is rewritten to the repo's constants."""
-        engine = _make_engine()
-        self._seed(engine, ["SUCCESS", "FAILED"])
+        assert statuses <= {
+            ScrapingHistoryRepository.SUCCESS,
+            ScrapingHistoryRepository.FAILED,
+            ScrapingHistoryRepository.CANCELED,
+            ScrapingHistoryRepository.IN_PROGRESS,
+            ScrapingHistoryRepository.WAITING_FOR_2FA,
+        }, f"unrecognised scrape status casing in the demo snapshot: {statuses}"
 
-        _normalize_scrape_statuses(engine)
-
-        assert self._statuses(engine) == ["success", "failed"]
-
-    def test_the_repository_lookup_finds_the_row_afterwards(self):
-        """The point of the fix: the watermark query stops returning nothing."""
-        engine = _make_engine()
-        self._seed(engine, ["SUCCESS"])
-
-        _normalize_scrape_statuses(engine)
-
-        with engine.connect() as conn:
+    def test_a_successful_scrape_is_findable_by_the_watermark_query(self):
+        """The end the casing serves — a card can show a last-synced date."""
+        with self._snapshot().connect() as conn:
             found = conn.execute(
-                text(
-                    "SELECT date FROM scraping_history WHERE status = :status"
-                ),
+                text("SELECT COUNT(*) FROM scraping_history WHERE status = :status"),
                 {"status": ScrapingHistoryRepository.SUCCESS},
             ).scalar()
-        assert found == "2026-09-01T08:30:00"
 
-    def test_already_lowercase_rows_are_untouched(self):
-        """Idempotent — ``prepare_demo_database`` runs on every demo build."""
-        engine = _make_engine()
-        self._seed(engine, ["success", "failed"])
+        assert found > 0
 
-        _normalize_scrape_statuses(engine)
-        _normalize_scrape_statuses(engine)
+    def test_the_demo_data_sources_are_present(self):
+        """Credentials ship in the snapshot, not seeded by the demo toggle.
 
-        assert self._statuses(engine) == ["success", "failed"]
-
-
-class TestSeedDemoCredentials:
-    """The demo dataset ships its own data sources.
-
-    They used to be created only by the demo-mode *toggle*, which the hosted
-    demo never runs (demo mode is forced on at cold start and must not be
-    toggled on a shared instance), so its Data Sources page was empty.
-    """
-
-    @staticmethod
-    def _accounts(engine):
-        """Read back the seeded (provider, account) pairs."""
-        with engine.connect() as conn:
-            return [
-                (row[0], row[1])
-                for row in conn.execute(
-                    text(
-                        "SELECT provider, account_name FROM credentials "
-                        "ORDER BY account_name"
-                    )
-                )
-            ]
-
-    def test_seeds_the_demo_accounts(self):
-        """An empty credentials table gets the demo dataset's four sources."""
-        engine = _make_engine()
-
-        _seed_demo_credentials(engine)
-
-        assert self._accounts(engine) == [
-            ("max", "Family Card"),
-            ("hapoalim", "Main Account"),
-            ("visa cal", "Online Shopping"),
-            ("hafenix", "The Cohens"),
-        ]
-
-    def test_seeded_accounts_match_the_demo_scrape_history(self):
-        """Names must line up, or every card reads "Never synced" anyway.
-
-        The history rows are keyed on service/provider/account, so a seeded
-        account whose name differs by a character gets no watermark.
+        The toggle never runs on the hosted demo — demo mode is forced on at
+        cold start and must not be toggled on a shared instance — so seeding
+        there left the Data Sources page empty.
         """
-        engine = _make_engine()
-
-        _seed_demo_credentials(engine)
-
-        with engine.connect() as conn:
-            seeded = {
-                (r[0], r[1], r[2])
-                for r in conn.execute(
+        with self._snapshot().connect() as conn:
+            accounts = {
+                (row[0], row[1], row[2])
+                for row in conn.execute(
                     text("SELECT service, provider, account_name FROM credentials")
                 )
             }
-        assert ("banks", "hapoalim", "Main Account") in seeded
-        assert ("credit_cards", "max", "Family Card") in seeded
-        assert ("credit_cards", "visa cal", "Online Shopping") in seeded
 
-    def test_fields_are_plaintext_and_hold_no_password(self):
-        """Plaintext is the only format available without ``cryptography``.
+        assert ("banks", "hapoalim", "Main Account") in accounts
+        assert ("credit_cards", "max", "Family Card") in accounts
+        assert ("credit_cards", "visa cal", "Online Shopping") in accounts
+        assert ("insurance", "hafenix", "The Cohens") in accounts
 
-        ``decrypt_fields`` passes a non-envelope dict straight through, and a
-        demo scrape never authenticates, so no password is stored — or needed.
+    def test_every_seeded_account_can_resolve_a_scrape_watermark(self):
+        """Account names must line up with the scrape history.
+
+        History rows are keyed on service/provider/account; a name that
+        differs by a character yields no watermark and the card reads "Never
+        synced" even with the casing fixed.
         """
-        engine = _make_engine()
-
-        _seed_demo_credentials(engine)
-
-        with engine.connect() as conn:
-            rows = [
-                json.loads(r[0])
-                for r in conn.execute(text("SELECT fields FROM credentials"))
+        with self._snapshot().connect() as conn:
+            accounts = [
+                (row[0], row[1], row[2])
+                for row in conn.execute(
+                    text("SELECT service, provider, account_name FROM credentials")
+                )
             ]
-        assert rows, "expected seeded rows"
+            history = {
+                (row[0], row[1], row[2])
+                for row in conn.execute(
+                    text(
+                        "SELECT service_name, provider_name, account_name "
+                        "FROM scraping_history WHERE status = :status"
+                    ),
+                    {"status": ScrapingHistoryRepository.SUCCESS},
+                )
+            }
+
+        matched = [a for a in accounts if a in history]
+        assert len(matched) >= 3, (
+            f"only {len(matched)} of {len(accounts)} demo accounts have a "
+            "successful scrape to show"
+        )
+
+    def test_credential_fields_are_plaintext_and_hold_no_password(self):
+        """Plaintext is the only format readable without ``cryptography``.
+
+        ``decrypt_fields`` passes a non-envelope dict through unchanged, and a
+        demo scrape never authenticates, so no password is stored or needed.
+        """
+        with self._snapshot().connect() as conn:
+            rows = [
+                json.loads(row[0])
+                for row in conn.execute(text("SELECT fields FROM credentials"))
+            ]
+
+        assert rows, "expected credential rows in the demo snapshot"
         for fields in rows:
             assert ENCRYPTED_MARKER not in fields
             assert "password" not in fields
-
-    def test_does_not_duplicate_on_a_second_run(self):
-        """Idempotent — every demo build calls it."""
-        engine = _make_engine()
-
-        _seed_demo_credentials(engine)
-        _seed_demo_credentials(engine)
-
-        assert len(self._accounts(engine)) == 4
-
-    def test_leaves_an_existing_account_alone(self):
-        """A user's own demo edits survive a rebuild of the dataset."""
-        engine = _make_engine()
-        with engine.connect() as conn:
-            conn.execute(
-                text(
-                    "INSERT INTO credentials "
-                    "(service, provider, account_name, fields, created_at, updated_at) "
-                    "VALUES ('banks', 'hapoalim', 'Main Account', :fields, :ts, :ts)"
-                ),
-                {
-                    "fields": json.dumps({"userCode": "edited-by-user"}),
-                    "ts": "2026-01-01 00:00:00",
-                },
-            )
-            conn.commit()
-
-        _seed_demo_credentials(engine)
-
-        with engine.connect() as conn:
-            fields = json.loads(
-                conn.execute(
-                    text(
-                        "SELECT fields FROM credentials WHERE account_name = 'Main Account'"
-                    )
-                ).scalar()
-            )
-        assert fields == {"userCode": "edited-by-user"}
