@@ -1,6 +1,7 @@
 import { MutationCache, QueryClient, type Query } from "@tanstack/react-query";
 import { createAsyncStoragePersister } from "@tanstack/query-async-storage-persister";
 import { createStore, get, set, del } from "idb-keyval";
+import { createInvalidationSweep } from "./queryInvalidation";
 
 /**
  * Query keys whose data must never be persisted to disk.
@@ -62,34 +63,15 @@ const CACHE_KEY = "tq-cache-v1";
 
 const idbStore = createStore(DB_NAME, STORE_NAME);
 
-/**
- * Any successful mutation alters server state, so every cached query
- * could now be stale. We invalidate the entire cache rather than relying
- * on per-mutation `onSuccess` invalidation: a mutation in one feature
- * frequently has knock-on effects (a new transaction shifts budgets,
- * KPIs, sankey, net-worth, etc.) and listing every dependent key on
- * every mutation site is fragile. Mounted queries refetch immediately;
- * unmounted ones refetch on next mount and the persister updates the
- * IndexedDB snapshot through its throttle.
- *
- * Trailing-edge debounce: when several mutations land in a burst (bulk
- * tagging, split-then-edit, etc.) we coalesce them into a single sweep
- * 200 ms after the last one settles instead of refetching every query
- * once per mutation.
- */
-const INVALIDATE_DEBOUNCE_MS = 200;
-let invalidateTimer: ReturnType<typeof setTimeout> | undefined;
-
-const scheduleInvalidateAll = () => {
-  if (invalidateTimer !== undefined) clearTimeout(invalidateTimer);
-  invalidateTimer = setTimeout(() => {
-    invalidateTimer = undefined;
-    queryClient.invalidateQueries();
-  }, INVALIDATE_DEBOUNCE_MS);
-};
+// The app-wide post-mutation sweep, built in `queryInvalidation.ts` so a
+// test can drive the same function against its own client. Built on first
+// use rather than here, because it needs the client the cache below is
+// being constructed for; by the time a mutation succeeds, it exists.
+let scheduleInvalidateAll: (() => void) | null = null;
 
 const mutationCache = new MutationCache({
   onSuccess: () => {
+    scheduleInvalidateAll ??= createInvalidationSweep(queryClient);
     scheduleInvalidateAll();
   },
 });
