@@ -162,17 +162,28 @@ export function IncomeBySourceCard() {
               {t("dashboard.incomeBySource.breakdown")}
             </button>
             {tableOpen && (
-              <div className="overflow-x-auto">
+              /* The list is capped and scrolls in place: a long breakdown
+                 (every salary + other-income tag) would otherwise stretch the
+                 card down the page on mobile, where the dashboard grid caps no
+                 card height. The header and the Total row stay pinned via
+                 sticky cells (sticky on <thead>/<tfoot> itself is patchier
+                 across browsers), and their separators are inset box-shadows —
+                 a collapsed-border <tr> border does not paint while scrolling
+                 under a sticky row. */
+              <div
+                data-testid="income-by-source-breakdown-scroll"
+                className="max-h-[20rem] overflow-auto overscroll-contain rounded-xl border border-[var(--surface-light)]"
+              >
                 <table className="w-full min-w-[240px] text-sm">
                   <thead>
-                    <tr className="text-[10px] uppercase tracking-widest text-[var(--text-muted)] border-b border-[var(--surface-light)]">
-                      <th className="text-start px-2 py-2 font-bold whitespace-nowrap">
+                    <tr className="text-[10px] uppercase tracking-widest text-[var(--text-muted)]">
+                      <th className="sticky top-0 z-10 bg-[var(--surface)] text-start px-2 py-2 font-bold whitespace-nowrap shadow-[inset_0_-1px_0_var(--surface-light)]">
                         {t("dashboard.incomeBySource.source")}
                       </th>
-                      <th className="text-center px-2 py-2 font-bold whitespace-nowrap">
+                      <th className="sticky top-0 z-10 bg-[var(--surface)] text-center px-2 py-2 font-bold whitespace-nowrap shadow-[inset_0_-1px_0_var(--surface-light)]">
                         {t("dashboard.incomeBySource.amount")}
                       </th>
-                      <th className="text-center px-2 py-2 font-bold whitespace-nowrap">
+                      <th className="sticky top-0 z-10 bg-[var(--surface)] text-center px-2 py-2 font-bold whitespace-nowrap shadow-[inset_0_-1px_0_var(--surface-light)]">
                         {t("dashboard.incomeBySource.share")}
                       </th>
                     </tr>
@@ -218,18 +229,20 @@ export function IncomeBySourceCard() {
                         </td>
                       </tr>
                     ))}
-                    <tr className="font-bold border-t-2 border-[var(--surface-light)]">
-                      <td className="text-start px-2 py-2 whitespace-nowrap">
+                  </tbody>
+                  <tfoot>
+                    <tr className="font-bold">
+                      <td className="sticky bottom-0 z-10 bg-[var(--surface)] text-start px-2 py-2 whitespace-nowrap shadow-[inset_0_2px_0_var(--surface-light)]">
                         {t("dashboard.incomeBySource.total")}
                       </td>
-                      <td className="text-center px-2 py-2 whitespace-nowrap">
+                      <td className="sticky bottom-0 z-10 bg-[var(--surface)] text-center px-2 py-2 whitespace-nowrap shadow-[inset_0_2px_0_var(--surface-light)]">
                         <span dir="ltr">{formatCurrency(total)}</span>
                       </td>
-                      <td className="text-center px-2 py-2 whitespace-nowrap text-[var(--text-muted)]">
+                      <td className="sticky bottom-0 z-10 bg-[var(--surface)] text-center px-2 py-2 whitespace-nowrap text-[var(--text-muted)] shadow-[inset_0_2px_0_var(--surface-light)]">
                         100.0%
                       </td>
                     </tr>
-                  </tbody>
+                  </tfoot>
                 </table>
               </div>
             )}

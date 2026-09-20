@@ -101,5 +101,55 @@ test.describe("Income by source dashboard card", () => {
     await sourceButton.click();
     await expect(sourceButton).toHaveAttribute("aria-expanded", "false");
     await expect(label).toHaveClass(/truncate/);
+
+    // --- The breakdown scrolls in place instead of stretching the card ---
+    // A household with many salary + other-income tags produces a long list.
+    // It is capped at 20rem and scrolls internally, with the column header
+    // and the Total row pinned by `position: sticky` so both stay readable
+    // at any scroll offset. Read the geometry rather than the class list:
+    // a className assertion would pass against a dead Tailwind class.
+    const scroller = card.getByTestId("income-by-source-breakdown-scroll");
+    await expect(scroller).toBeVisible();
+
+    const capped = await scroller.evaluate((el) => ({
+      overflowY: getComputedStyle(el).overflowY,
+      clientHeight: el.clientHeight,
+    }));
+    expect(capped.overflowY).toBe("auto");
+    // 20rem at the default 16px root font size.
+    expect(capped.clientHeight).toBeLessThanOrEqual(320);
+
+    await expect(scroller.locator("thead th").first()).toHaveCSS(
+      "position",
+      "sticky",
+    );
+    await expect(scroller.locator("tfoot td").first()).toHaveCSS(
+      "position",
+      "sticky",
+    );
+
+    // Scrolled to the bottom, the header still sits at the top edge of the
+    // scroll box and the Total row at its bottom edge. The demo household has
+    // only a handful of income sources — fewer than the cap holds — so the cap
+    // is lowered here to force the overflow a real user with a dozen salary and
+    // other-income tags hits. That exercises the sticky cells for real instead
+    // of asserting geometry against a list that never scrolls.
+    const pinned = await scroller.evaluate((el) => {
+      el.style.maxHeight = "120px";
+      el.scrollTop = el.scrollHeight;
+      const box = el.getBoundingClientRect();
+      const header = el.querySelector("thead th")!.getBoundingClientRect();
+      const footer = el.querySelector("tfoot td")!.getBoundingClientRect();
+      return {
+        scrolled: el.scrollTop,
+        headerOffset: header.top - box.top,
+        footerOffset: box.bottom - footer.bottom,
+      };
+    });
+    // The list really did scroll, and both pinned rows held their edges
+    // (1px container border, so allow a few pixels of slack).
+    expect(pinned.scrolled).toBeGreaterThan(0);
+    expect(Math.abs(pinned.headerOffset)).toBeLessThanOrEqual(3);
+    expect(Math.abs(pinned.footerOffset)).toBeLessThanOrEqual(3);
   });
 });
