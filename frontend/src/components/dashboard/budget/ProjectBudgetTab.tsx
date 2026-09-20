@@ -2,14 +2,16 @@ import React, { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router";
-import { Plus } from "lucide-react";
-import { budgetApi } from "../../../services/api";
+import { Archive, ArchiveRestore, Plus } from "lucide-react";
+import { budgetApi, type ProjectStatus } from "../../../services/api";
 import { BudgetTotalBar } from "../../common/BudgetTotalBar";
 import { SelectDropdown } from "../../common/SelectDropdown";
 import { Skeleton } from "../../common/Skeleton";
 import { ProjectModal } from "../../modals/ProjectModal";
+import { useConfirm, useNotify } from "../../../context/DialogContext";
 import { useQueryKeys } from "../../../hooks/useQueryKeys";
 import { qkPrefix } from "../../../services/queryKeys";
+import { budgetLink } from "../../../utils/budgetNavigation";
 import { BudgetRuleGrid } from "./BudgetRuleGrid";
 import { normalizeAnalysis } from "./normalizeAnalysis";
 
@@ -25,17 +27,29 @@ export const ProjectBudgetTab: React.FC<ProjectBudgetTabProps> = ({
   categoryIcons,
 }) => {
   const { t } = useTranslation();
+  const confirm = useConfirm();
+  const notify = useNotify();
   const qk = useQueryKeys();
   const queryClient = useQueryClient();
   const [isModalOpen, setIsModalOpen] = useState(false);
 
-  const { data: projects, isLoading: isProjectsLoading } = useQuery({
-    queryKey: qk.budget.projects(),
+  // The status read, not the plain name list: finishing a project from here
+  // means the picker has to say which ones are already closed.
+  const { data: projectsStatus, isLoading: isProjectsLoading } = useQuery({
+    queryKey: qk.budget.projectsStatus(),
     queryFn: async () => {
-      const res = await budgetApi.getProjects();
-      return res.data as string[];
+      const res = await budgetApi.getProjectsStatus();
+      return res.data;
     },
   });
+
+  const projects = useMemo(
+    () => (projectsStatus ?? []).map((project: ProjectStatus) => project.name),
+    [projectsStatus],
+  );
+  const isSelectedClosed = Boolean(
+    projectsStatus?.find((p: ProjectStatus) => p.name === selectedProject)?.closed,
+  );
 
   const createProject = useMutation({
     mutationFn: budgetApi.createProject,
@@ -46,8 +60,19 @@ export const ProjectBudgetTab: React.FC<ProjectBudgetTabProps> = ({
     },
   });
 
+  const closedMutation = useMutation({
+    mutationFn: ({ name, closed }: { name: string; closed: boolean }) =>
+      budgetApi.setProjectClosed(name, closed),
+    onSuccess: () => {
+      // The whole budget prefix: this card's own Overview tab builds its
+      // envelope list from the flag, so it has to refetch too.
+      queryClient.invalidateQueries({ queryKey: qkPrefix.budget });
+    },
+    onError: () => notify.error(t("budget.failedCloseProject")),
+  });
+
   useEffect(() => {
-    if (projects && projects.length > 0 && !selectedProject) {
+    if (projects.length > 0 && !selectedProject) {
       onSelectProject(projects[0]);
     }
   }, [projects, selectedProject, onSelectProject]);
@@ -68,6 +93,22 @@ export const ProjectBudgetTab: React.FC<ProjectBudgetTabProps> = ({
     [data],
   );
 
+  // Reopening is a plain undo, so only closing asks first — same as the
+  // Budget page's projects tab.
+  const handleToggleClosed = async () => {
+    if (!selectedProject) return;
+    if (isSelectedClosed) {
+      closedMutation.mutate({ name: selectedProject, closed: false });
+      return;
+    }
+    const ok = await confirm({
+      title: t("budget.closeProject"),
+      message: t("budget.confirmCloseProject", { name: selectedProject }),
+      confirmLabel: t("budget.closeProject"),
+    });
+    if (ok) closedMutation.mutate({ name: selectedProject, closed: true });
+  };
+
   const modal = (
     <ProjectModal
       isOpen={isModalOpen}
@@ -84,7 +125,7 @@ export const ProjectBudgetTab: React.FC<ProjectBudgetTabProps> = ({
     );
   }
 
-  if (!projects || projects.length === 0) {
+  if (projects.length === 0) {
     return (
       <div className="flex flex-1 flex-col min-h-0">
         <div className="flex flex-col items-center justify-center py-12 text-center">
@@ -106,15 +147,32 @@ export const ProjectBudgetTab: React.FC<ProjectBudgetTabProps> = ({
 
   const selector = (
     <div className="h-9 flex items-center w-full gap-2 mb-4">
-      <div className="flex-1">
+      <div className="flex-1 min-w-0">
         <SelectDropdown
-          options={projects.map((p) => ({ label: p, value: p }))}
+          options={(projectsStatus ?? []).map((p: ProjectStatus) => ({
+            label: p.closed ? t("budget.projectClosedOption", { name: p.name }) : p.name,
+            value: p.name,
+          }))}
           value={selectedProject ?? ""}
           onChange={onSelectProject}
           placeholder={t("budget.selectProject")}
           size="sm"
         />
       </div>
+      {!!selectedProject && (
+        <button
+          onClick={handleToggleClosed}
+          disabled={closedMutation.isPending}
+          data-testid="card-project-closed-toggle"
+          aria-label={
+            isSelectedClosed ? t("budget.reopenProject") : t("budget.closeProject")
+          }
+          title={isSelectedClosed ? t("budget.reopenProject") : t("budget.closeProject")}
+          className="p-1.5 rounded-lg hover:bg-[var(--surface-light)] text-[var(--text-muted)] hover:text-[var(--text)] transition-colors shrink-0 disabled:opacity-60"
+        >
+          {isSelectedClosed ? <ArchiveRestore size={16} /> : <Archive size={16} />}
+        </button>
+      )}
       <button
         onClick={() => setIsModalOpen(true)}
         className="p-1.5 rounded-lg hover:bg-[var(--surface-light)] text-[var(--primary)] transition-colors shrink-0"
@@ -128,6 +186,15 @@ export const ProjectBudgetTab: React.FC<ProjectBudgetTabProps> = ({
   return (
     <div className="flex flex-1 flex-col min-h-0">
       {selector}
+      {isSelectedClosed && (
+        <p
+          data-testid="card-project-closed-notice"
+          className="flex items-center gap-1.5 text-[11px] text-[var(--text-muted)] mb-3"
+        >
+          <Archive size={12} className="shrink-0" />
+          {t("budget.projectClosedNotice")}
+        </p>
+      )}
       {isDetailsLoading || !analysis ? (
         <Skeleton variant="chart" className="h-16" />
       ) : (
@@ -137,7 +204,10 @@ export const ProjectBudgetTab: React.FC<ProjectBudgetTabProps> = ({
           </div>
           <BudgetRuleGrid rules={analysis.rules} categoryIcons={categoryIcons} />
           <div className="text-end">
-            <Link to="/budget" className="text-sm font-medium text-[var(--primary)] hover:underline">
+            <Link
+              to={budgetLink("projects", { project: selectedProject })}
+              className="text-sm font-medium text-[var(--primary)] hover:underline"
+            >
               {t("dashboard.viewAllBudgetRules")} &rarr;
             </Link>
           </div>

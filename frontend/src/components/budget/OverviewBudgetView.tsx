@@ -104,6 +104,9 @@ function LooseEnd({
 interface OverviewBudgetViewProps {
   /** Tab group rendered into the shared command bar. */
   tabs: React.ReactNode;
+  /** Month to open on, when the link that got here named one. */
+  initialYear?: number;
+  initialMonth?: number;
 }
 
 /**
@@ -123,12 +126,16 @@ interface OverviewBudgetViewProps {
  * percentage — yearly and project envelopes report what that month contributed,
  * because their own percentages always describe today.
  */
-export const OverviewBudgetView: React.FC<OverviewBudgetViewProps> = ({ tabs }) => {
+export const OverviewBudgetView: React.FC<OverviewBudgetViewProps> = ({
+  tabs,
+  initialYear,
+  initialMonth,
+}) => {
   const { t } = useTranslation();
   const qk = useQueryKeys();
   const today = new Date();
-  const [year, setYear] = useState(today.getFullYear());
-  const [month, setMonth] = useState(today.getMonth() + 1);
+  const [year, setYear] = useState(initialYear ?? today.getFullYear());
+  const [month, setMonth] = useState(initialMonth ?? today.getMonth() + 1);
 
   const { data: overview, isLoading } = useQuery({
     queryKey: qk.budget.overview(year, month, false),

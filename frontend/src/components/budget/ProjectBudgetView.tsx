@@ -43,6 +43,8 @@ interface ProjectRuleItem {
 
 interface ProjectBudgetViewProps {
   tabs: React.ReactNode;
+  /** Project to open on, when the link that got here named one. */
+  initialProject?: string;
 }
 
 /** Month keys from the project's first transaction to today, oldest first. */
@@ -68,11 +70,14 @@ function projectMonthKeys(transactions: Transaction[]): string[] {
   return keys.length ? keys : [end];
 }
 
-export const ProjectBudgetView: React.FC<ProjectBudgetViewProps> = ({ tabs }) => {
+export const ProjectBudgetView: React.FC<ProjectBudgetViewProps> = ({
+  tabs,
+  initialProject,
+}) => {
   const { t } = useTranslation();
   const confirm = useConfirm();
   const notify = useNotify();
-  const [selectedProject, setSelectedProject] = useState<string>("");
+  const [selectedProject, setSelectedProject] = useState<string>(initialProject ?? "");
   const [isProjectModalOpen, setIsProjectModalOpen] = useState(false);
   const [isRuleModalOpen, setIsRuleModalOpen] = useState(false);
   const [isEditMode, setIsEditMode] = useState(false);

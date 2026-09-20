@@ -4,8 +4,7 @@ import { OverviewBudgetTab } from "./budget/OverviewBudgetTab";
 import { MonthlyBudgetTab } from "./budget/MonthlyBudgetTab";
 import { YearlyBudgetTab } from "./budget/YearlyBudgetTab";
 import { ProjectBudgetTab } from "./budget/ProjectBudgetTab";
-
-type BudgetTab = "overview" | "monthly" | "yearly" | "projects";
+import type { BudgetTabId } from "../../utils/budgetNavigation";
 
 interface BudgetSectionProps {
   categoryIcons: Record<string, string> | undefined;
@@ -21,13 +20,13 @@ interface BudgetSectionProps {
 export function BudgetSection({ categoryIcons }: BudgetSectionProps) {
   const { t } = useTranslation();
   const now = new Date();
-  const [activeTab, setActiveTab] = useState<BudgetTab>("overview");
+  const [activeTab, setActiveTab] = useState<BudgetTabId>("overview");
   const [year, setYear] = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth() + 1);
   const [yearlyYear, setYearlyYear] = useState(now.getFullYear());
   const [selectedProject, setSelectedProject] = useState<string | null>(null);
 
-  const tabClass = (tab: BudgetTab) =>
+  const tabClass = (tab: BudgetTabId) =>
     `shrink-0 whitespace-nowrap px-3 py-1 rounded-md text-xs font-semibold transition-all ${
       activeTab === tab
         ? "bg-[var(--surface)] text-[var(--primary)] shadow-sm"
@@ -36,11 +35,21 @@ export function BudgetSection({ categoryIcons }: BudgetSectionProps) {
 
   return (
     <div className="bg-[var(--surface)] rounded-2xl p-4 md:p-6 border border-[var(--surface-light)] flex flex-col h-full">
-      <div className="flex items-center justify-between mb-4">
-        <p className="text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
+      {/* The card sits in a `overflow-y-auto` grid cell, which makes its
+          horizontal overflow scrollable too — so a tab strip wider than the
+          card used to drag the whole card sideways, figures and all. The strip
+          scrolls on its own instead: `min-w-0` lets it shrink below its
+          content, `max-w-full` keeps it inside the card, and the tabs stay
+          `shrink-0 whitespace-nowrap`. See frontend_responsive.md →
+          "Tab Bars & Button Groups". */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-4 min-w-0">
+        <p className="shrink-0 text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
           {t("budget.title")}
         </p>
-        <div className="flex bg-[var(--surface-light)] p-0.5 rounded-lg">
+        <div
+          data-testid="dashboard-budget-tabs"
+          className="flex w-full sm:w-auto max-w-full min-w-0 bg-[var(--surface-light)] p-0.5 rounded-lg overflow-x-auto scrollbar-auto-hide"
+        >
           <button
             onClick={() => setActiveTab("overview")}
             className={tabClass("overview")}

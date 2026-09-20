@@ -60,17 +60,22 @@ interface MonthlyBudgetViewProps {
   onViewProjects: () => void;
   /** Tab group rendered into the shared command bar. */
   tabs: React.ReactNode;
+  /** Month to open on, when the link that got here named one. */
+  initialYear?: number;
+  initialMonth?: number;
 }
 
 export const MonthlyBudgetView: React.FC<MonthlyBudgetViewProps> = ({
   onViewProjects,
   tabs,
+  initialYear,
+  initialMonth,
 }) => {
   const { t } = useTranslation();
   const confirm = useConfirm();
   const today = new Date();
-  const [year, setYear] = useState(today.getFullYear());
-  const [month, setMonth] = useState(today.getMonth() + 1);
+  const [year, setYear] = useState(initialYear ?? today.getFullYear());
+  const [month, setMonth] = useState(initialMonth ?? today.getMonth() + 1);
   const [isRuleModalOpen, setIsRuleModalOpen] = useState(false);
   const [editingRule, setEditingRule] = useState<BudgetRule | null>(null);
   const [expandedRuleId, setExpandedRuleId] = useState<string | null>(null);

@@ -24,15 +24,20 @@ const MONTHS_IN_YEAR = 12;
 
 interface YearlyBudgetViewProps {
   tabs: React.ReactNode;
+  /** Year to open on, when the link that got here named one. */
+  initialYear?: number;
 }
 
-export const YearlyBudgetView: React.FC<YearlyBudgetViewProps> = ({ tabs }) => {
+export const YearlyBudgetView: React.FC<YearlyBudgetViewProps> = ({
+  tabs,
+  initialYear,
+}) => {
   const { t } = useTranslation();
   const confirm = useConfirm();
   const queryClient = useQueryClient();
   const qk = useQueryKeys();
   const currentYear = new Date().getFullYear();
-  const [year, setYear] = useState(currentYear);
+  const [year, setYear] = useState(initialYear ?? currentYear);
   const [modalOpen, setModalOpen] = useState(false);
   const [editRule, setEditRule] = useState<YearlyAnalysis["rules"][number]["rule"] | null>(null);
   const [alertDismissed, setAlertDismissed] = useState(false);
