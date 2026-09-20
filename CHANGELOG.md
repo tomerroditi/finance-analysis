@@ -1,3 +1,9 @@
+## v1.73.0 (2026-09-20)
+
+### Feat
+
+- **dashboard**: one line per envelope in the budget card (#315)
+
 ## v1.72.1 (2026-09-20)
 
 ### Fix
