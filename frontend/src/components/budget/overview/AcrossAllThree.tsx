@@ -2,7 +2,7 @@ import React from "react";
 import { useTranslation } from "react-i18next";
 import { Calendar, CalendarRange, Layers } from "lucide-react";
 import type { BudgetOverview } from "../../../services/api";
-import { formatCurrency } from "../../../utils/numberFormatting";
+import { formatAmount, formatCurrency } from "../../../utils/numberFormatting";
 import { envelopeColor } from "./envelopeMath";
 
 interface AcrossAllThreeProps {
@@ -80,7 +80,10 @@ export const AcrossAllThree: React.FC<AcrossAllThreeProps> = ({
             />
           </span>,
           <span dir="ltr" className="text-xs font-mono font-bold whitespace-nowrap">
-            {formatCurrency(spent)}
+            {/* One ₪ on the line, carried by the ceiling — unless there is no
+                ceiling to carry it, in which case the spend keeps its own.
+                The rows below hold a single figure each, so they keep theirs. */}
+            {budget > 0 ? formatAmount(spent) : formatCurrency(spent)}
             <span className="text-[var(--text-muted)] font-normal">
               {" / "}
               {budget > 0 ? formatCurrency(budget) : "—"}

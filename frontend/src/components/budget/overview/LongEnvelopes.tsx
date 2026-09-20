@@ -2,7 +2,7 @@ import React from "react";
 import { useTranslation } from "react-i18next";
 import { CalendarRange, Layers } from "lucide-react";
 import type { BudgetLongEnvelope } from "../../../services/api";
-import { formatCurrency } from "../../../utils/numberFormatting";
+import { formatAmount, formatCurrency } from "../../../utils/numberFormatting";
 import { envelopeColor, envelopeTextColor, percentOf, rankEnvelopes } from "./envelopeMath";
 
 function KindTag({ kind }: { kind: BudgetLongEnvelope["kind"] }) {
@@ -114,7 +114,13 @@ export const LongEnvelopes: React.FC<LongEnvelopesProps> = ({
                   data-testid="long-envelope-standing"
                   className="text-end text-xs font-mono whitespace-nowrap"
                 >
-                  <span className="font-bold">{formatCurrency(envelope.spent)}</span>
+                  {/* One ₪ on the pair, carried by the ceiling — unless the
+                      envelope has none, where the spend keeps its own. */}
+                  <span className="font-bold">
+                    {envelope.budget > 0
+                      ? formatAmount(envelope.spent)
+                      : formatCurrency(envelope.spent)}
+                  </span>
                   <span className="text-[var(--text-muted)] font-normal">
                     {" / "}
                     {envelope.budget > 0 ? formatCurrency(envelope.budget) : "—"}

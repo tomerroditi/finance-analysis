@@ -152,6 +152,28 @@ test.describe("dashboard budget card", () => {
     // The remainder pill is a sibling of the pair, so RTL puts it outside,
     // to the pair's left — never between the two figures.
     expect(pill).toBeLessThan(spent);
+
+    // The Overview tab's headline is the same shape and had the same bug.
+    // Checked on this load rather than in its own test: it is one more tab
+    // click, against a card that is already booted in Hebrew.
+    await card.getByRole("button", { name: /^סקירה$/ }).click();
+    const headline = card.getByTestId("overview-headline");
+    await expect(headline).toBeVisible({ timeout: 30_000 });
+
+    const headlineParts = await headline.evaluate((el) =>
+      [...el.querySelectorAll("span")]
+        .filter((s) => s.children.length === 0 && s.textContent!.trim())
+        .sort(
+          (a, b) =>
+            a.getBoundingClientRect().left - b.getBoundingClientRect().left,
+        )
+        .map((s) => s.textContent!.trim()),
+    );
+    expect(headlineParts).toHaveLength(2);
+    // Spend first, then the slash and the ceiling — mirrored, the slash sat
+    // at the line's left edge, next to the pill instead of between figures.
+    expect(headlineParts[1]).toContain("/");
+    expect(headlineParts[0]).not.toContain("/");
   });
 
   test("'open budget' lands on the tab the card was showing", async ({
