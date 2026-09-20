@@ -7,6 +7,7 @@ from backend.constants.tables import Tables
 from backend.models.transaction import BankTransaction, CreditCardTransaction
 from backend.services.analysis_service import AnalysisService
 from backend.services.investments_service import InvestmentsService
+from backend.services.pending_refunds_service import PendingRefundsService
 
 
 class TestAnalysisServiceOverview:
@@ -1625,3 +1626,155 @@ class TestMonthlyExpensesWithProjects:
         """When no project rules exist every month reports zero project spend."""
         result = AnalysisService(db_session).get_monthly_expenses(include_projects=True)
         assert result["months"] and all(m["project_expenses"] == 0.0 for m in result["months"])
+
+
+class TestRefundNettingAcrossMonths:
+    """A matched refund cancels its purchase whatever months the two fell in."""
+
+    @staticmethod
+    def _month(result, month):
+        return next((r for r in result if r["month"] == month), None)
+
+    @staticmethod
+    def _seed(db_session, rows):
+        """Insert ``(id, date, amount, category, tag)`` bank rows."""
+        for id_, d, amount, category, tag in rows:
+            db_session.add(
+                BankTransaction(
+                    id=id_, date=d, provider="leumi", account_name="Checking",
+                    description=id_, amount=amount, category=category, tag=tag,
+                    source="bank_transactions",
+                )
+            )
+        db_session.commit()
+
+    def _link(self, db_session, purchase_uid, refund_uid, expected, amount):
+        """Mark ``purchase_uid`` as awaiting ``expected`` and match ``amount`` to ``refund_uid``."""
+        service = PendingRefundsService(db_session)
+        pending = service.mark_as_pending_refund(
+            source_type="transaction", source_id=purchase_uid,
+            source_table="banks", expected_amount=expected,
+        )
+        service.link_refund(
+            pending_refund_id=pending["id"], refund_transaction_id=refund_uid,
+            refund_source="banks", amount=amount,
+        )
+        return pending
+
+    def _uids(self, db_session):
+        """Map seeded row ids to the auto-increment unique_ids they landed on."""
+        rows = db_session.query(BankTransaction).all()
+        return {r.id: r.unique_id for r in rows}
+
+    def test_resolved_refund_removes_both_sides_in_their_own_months(self, db_session):
+        """A January purchase repaid in March leaves neither month changed."""
+        self._seed(db_session, [
+            ("rent", "2024-01-03", -3000.0, "Home", "Rent"),
+            ("tv", "2024-01-10", -1000.0, "Electronics", None),
+            ("tv-refund", "2024-03-14", 1000.0, "Electronics", None),
+        ])
+        uids = self._uids(db_session)
+        self._link(db_session, uids["tv"], uids["tv-refund"], 1000.0, 1000.0)
+
+        result = AnalysisService(db_session).get_income_expenses_over_time()
+
+        # January keeps only the rent: the refunded TV never cost anything.
+        assert self._month(result, "2024-01")["expenses"] == 3000.0
+        # March neither gains income nor shows a negative expense.
+        march = self._month(result, "2024-03")
+        assert march is None or (march["expenses"], march["income"]) == (0.0, 0.0)
+
+    def test_partial_refund_leaves_only_the_unrecovered_part(self, db_session):
+        """300 back on a 1,000 purchase nets 300, not the whole row."""
+        self._seed(db_session, [
+            ("tv", "2024-01-10", -1000.0, "Electronics", None),
+            ("part-refund", "2024-02-14", 300.0, "Electronics", None),
+        ])
+        uids = self._uids(db_session)
+        self._link(db_session, uids["tv"], uids["part-refund"], 300.0, 300.0)
+
+        service = AnalysisService(db_session)
+        # With the expectation fully matched there is nothing outstanding, so
+        # both views agree: 700 of real spend stays.
+        for exclude in (True, False):
+            result = service.get_income_expenses_over_time(
+                exclude_pending_refunds=exclude
+            )
+            assert self._month(result, "2024-01")["expenses"] == 700.0
+            feb = self._month(result, "2024-02")
+            assert feb is None or feb["income"] == 0.0
+
+    def test_open_expectation_follows_the_toggle(self, db_session):
+        """An unmatched expectation is hidden only when pending refunds are excluded."""
+        self._seed(db_session, [
+            ("loan-to-friend", "2024-01-10", -800.0, "Other", None),
+        ])
+        uids = self._uids(db_session)
+        PendingRefundsService(db_session).mark_as_pending_refund(
+            source_type="transaction", source_id=uids["loan-to-friend"],
+            source_table="banks", expected_amount=800.0,
+        )
+        service = AnalysisService(db_session)
+
+        excluded = service.get_income_expenses_over_time(exclude_pending_refunds=True)
+        included = service.get_income_expenses_over_time(exclude_pending_refunds=False)
+
+        jan = self._month(excluded, "2024-01")
+        assert jan is None or jan["expenses"] == 0.0
+        assert self._month(included, "2024-01")["expenses"] == 800.0
+
+    def test_closed_remainder_stays_an_expense_either_way(self, db_session):
+        """Money the user gave up recovering is spend, whatever the toggle says."""
+        self._seed(db_session, [
+            ("deposit", "2024-01-10", -500.0, "Other", None),
+        ])
+        uids = self._uids(db_session)
+        service = PendingRefundsService(db_session)
+        pending = service.mark_as_pending_refund(
+            source_type="transaction", source_id=uids["deposit"],
+            source_table="banks", expected_amount=500.0,
+        )
+        service.close_pending_refund(pending["id"])
+        analysis = AnalysisService(db_session)
+
+        for exclude in (True, False):
+            result = analysis.get_income_expenses_over_time(
+                exclude_pending_refunds=exclude
+            )
+            assert self._month(result, "2024-01")["expenses"] == 500.0
+
+    def test_refund_nets_against_its_purchases_category_not_its_own(self, db_session):
+        """The breakdown credits the category that was charged, not the refund's."""
+        self._seed(db_session, [
+            ("tv", "2024-01-10", -1000.0, "Electronics", None),
+            ("tv-refund", "2024-03-14", 1000.0, "Uncategorized Refunds", None),
+        ])
+        uids = self._uids(db_session)
+        self._link(db_session, uids["tv"], uids["tv-refund"], 1000.0, 1000.0)
+
+        result = AnalysisService(db_session).get_expenses_by_category_over_time()
+
+        jan = self._month(result, "2024-01")
+        assert jan is None or "Electronics" not in jan["categories"]
+        # The refund's own category never receives the money either.
+        for row in result:
+            assert "Uncategorized Refunds" not in row["categories"]
+
+    def test_matched_refund_is_not_counted_as_income(self, db_session):
+        """A repayment landing in an income category is money back, not earnings."""
+        self._seed(db_session, [
+            ("salary", "2024-03-01", 8000.0, "Salary", None),
+            ("work-expense", "2024-01-10", -600.0, "Other", None),
+            ("reimbursement", "2024-03-05", 600.0, "Other Income", None),
+        ])
+        uids = self._uids(db_session)
+        self._link(db_session, uids["work-expense"], uids["reimbursement"], 600.0, 600.0)
+
+        service = AnalysisService(db_session)
+        over_time = service.get_income_expenses_over_time()
+        by_source = service.get_income_by_source_over_time()
+
+        assert self._month(over_time, "2024-03")["income"] == 8000.0
+        march_sources = self._month(by_source, "2024-03")["sources"]
+        assert sum(march_sources.values()) == 8000.0
+        assert not any("Other Income" in label for label in march_sources)

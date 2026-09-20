@@ -11,7 +11,8 @@ import { enableDemoMode, navigateTo, resetDemoData } from "./helpers";
  *
  * This spec guards that each tab renders, that the ledger is ordered
  * newest-first, that the filter row carries only the pending-refund and
- * project chips, that tab switches never crash the card, and that hovering a
+ * project chips and that the pending-refund one actually moves the
+ * breakdown, that tab switches never crash the card, and that hovering a
  * composition slice pops the cursor-following tooltip — the only readout the
  * bars have now that both the in-bar labels and the colour legend are gone, so
  * it must name the slice with its amount *and* its share. Demo Mode supplies
@@ -170,6 +171,25 @@ test.describe("Income & Expenses dashboard card", () => {
 
     await expect(compositionRows.first()).toBeVisible({ timeout: 45_000 });
     expect(await compositionRows.count()).toBeGreaterThan(0);
+
+    // --- The pending-refunds chip now reaches the breakdown too ---
+    // It used to move only the expense KPI; the breakdown and ledger ignored
+    // it. Demo data carries open credit-card refund expectations in the
+    // recent months, so flipping the chip must change what a month cost.
+    const totalsBefore = await compositionRows.allTextContents();
+    await card.getByRole("button", { name: "Pending Refunds Excluded" }).click();
+    await expect(
+      card.getByRole("button", { name: "Pending Refunds Included" }),
+    ).toBeVisible();
+    await expect
+      .poll(() => compositionRows.allTextContents(), { timeout: 20_000 })
+      .not.toEqual(totalsBefore);
+
+    // Put it back so the rest of the journey sees the default view.
+    await card.getByRole("button", { name: "Pending Refunds Included" }).click();
+    await expect(
+      card.getByRole("button", { name: "Pending Refunds Excluded" }),
+    ).toBeVisible();
 
     // Slices carry their readout here as well, and still print nothing.
     const expenseSegments = compositionRows.first().getByTestId("composition-segment");

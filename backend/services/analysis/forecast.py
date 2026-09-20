@@ -186,6 +186,7 @@ class ForecastMixin:
         self,
         exclude_pending_refunds: bool = True,
         include_projects: bool = False,
+        net_refunds: bool = False,
     ) -> dict:
         """
         Get monthly expense totals and rolling averages, calculated like the monthly budget.
@@ -203,6 +204,12 @@ class ForecastMixin:
         include_projects : bool, optional
             When ``True``, includes project expenses as a separate
             ``project_expenses`` field per month. Default is ``False``.
+        net_refunds : bool, optional
+            When ``True``, net matched refunds against the purchases they pay
+            back across any month gap (see
+            :meth:`BudgetService.get_filtered_expenses`). Off by default so
+            the forecast's own baseline keeps the figure it has always used;
+            the dashboard's expense KPI opts in. Default is ``False``.
 
         Returns
         -------
@@ -229,6 +236,7 @@ class ForecastMixin:
         budget_service = MonthlyBudgetService(self.db)
         expenses = budget_service.get_filtered_expenses(
             exclude_pending_refunds=exclude_pending_refunds,
+            net_refunds=net_refunds,
         )
 
         if expenses.empty:

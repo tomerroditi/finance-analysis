@@ -95,6 +95,7 @@ def get_income_expenses_over_time(
     exclude_projects: bool = False,
     exclude_liabilities: bool = False,
     exclude_refunds: bool = False,
+    exclude_pending_refunds: bool = True,
 ):
     """Return monthly income and expense totals over time.
 
@@ -106,6 +107,9 @@ def get_income_expenses_over_time(
         If True, exclude liability/loan transactions.
     exclude_refunds : bool
         If True, only count positive income and negative expenses.
+    exclude_pending_refunds : bool
+        If True, a purchase still awaiting its refund is left out. Refunds
+        already matched to a purchase are netted out either way.
 
     Returns
     -------
@@ -117,6 +121,7 @@ def get_income_expenses_over_time(
         exclude_projects=exclude_projects,
         exclude_liabilities=exclude_liabilities,
         exclude_refunds=exclude_refunds,
+        exclude_pending_refunds=exclude_pending_refunds,
     )
 
 
@@ -132,10 +137,21 @@ def get_debt_payments_over_time(
 @router.get("/expenses-by-category-over-time")
 def get_expenses_by_category_over_time(
     db: Session = Depends(get_database),
+    exclude_pending_refunds: bool = True,
 ):
-    """Return monthly expenses broken down by category."""
+    """Return monthly expenses broken down by category.
+
+    Parameters
+    ----------
+    exclude_pending_refunds : bool
+        If True, a purchase still awaiting its refund is left out. Refunds
+        already matched to a purchase are netted against that purchase's
+        category either way.
+    """
     service = AnalysisService(db)
-    return service.get_expenses_by_category_over_time()
+    return service.get_expenses_by_category_over_time(
+        exclude_pending_refunds=exclude_pending_refunds
+    )
 
 
 @router.get("/by-category")
@@ -173,8 +189,15 @@ def get_sankey_data(
 @router.get("/income-by-source-over-time")
 def get_income_by_source_over_time(
     db: Session = Depends(get_database),
+    exclude_pending_refunds: bool = True,
 ):
     """Return monthly income broken down by source (category+tag).
+
+    Parameters
+    ----------
+    exclude_pending_refunds : bool
+        If True, a purchase still awaiting its refund is left out. Refunds
+        already matched to a purchase are netted out either way.
 
     Returns
     -------
@@ -183,7 +206,9 @@ def get_income_by_source_over_time(
         ordered chronologically. Prior Wealth is excluded.
     """
     service = AnalysisService(db)
-    return service.get_income_by_source_over_time()
+    return service.get_income_by_source_over_time(
+        exclude_pending_refunds=exclude_pending_refunds
+    )
 
 
 @router.get("/income-by-source")
@@ -238,7 +263,11 @@ def get_monthly_expenses(
         ``avg_6_months``, ``avg_12_months`` averages.
     """
     service = AnalysisService(db)
-    return service.get_monthly_expenses(exclude_pending_refunds, include_projects)
+    # The dashboard's expense KPI is a cashflow figure: a refund cancels the
+    # purchase it repays whatever month it arrived in.
+    return service.get_monthly_expenses(
+        exclude_pending_refunds, include_projects, net_refunds=True
+    )
 
 
 @router.get("/recurring")

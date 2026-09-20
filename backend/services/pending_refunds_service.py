@@ -3,8 +3,10 @@
 import logging
 from typing import Literal, Optional
 
+import pandas as pd
 from sqlalchemy.orm import Session
 
+from backend.constants.tables import TransactionsTableFields
 from backend.errors import EntityNotFoundException, ValidationException
 from backend.models.transaction import SplitTransaction
 from backend.repositories.pending_refunds_repository import PendingRefundsRepository
@@ -921,3 +923,152 @@ class PendingRefundsService:
         split_ids = set(split_pending["source_id"].tolist())
 
         return {"transaction_keys": transaction_keys, "split_ids": split_ids}
+
+    def get_refund_amount_adjustments(
+        self, exclude_open: bool = True
+    ) -> dict[str, dict]:
+        """
+        Build per-row amount adjustments that net matched refunds against the
+        purchases they pay back, whatever months the two landed in.
+
+        A refund is not the receiving month's income, and the purchase it
+        cancels is not the spending month's expense. Netting by date — what an
+        unlinked positive amount in an expense category does — only works when
+        both fall in the same month; a January purchase refunded in March
+        otherwise overstates January and understates March. Every
+        ``refund_links`` row names the purchase an incoming transaction pays
+        back and how much of it, so the matched money can be taken off both
+        sides wherever each one sits.
+
+        Adjustments are signed values to **add** to a row's ``amount``: a
+        -1,000 purchase refunded in full gets +1,000 and the +1,000 refund
+        transaction gets -1,000, so neither month sees either.
+
+        Parameters
+        ----------
+        exclude_open : bool, optional
+            When ``True``, the still-outstanding part of an *open*
+            (``pending`` / ``partial``) expectation is taken off the purchase
+            too — the "Pending Refunds Excluded" view. A ``closed`` refund is
+            money the user gave up on, so its unmatched remainder always stays
+            an expense however this is set. Default is ``True``.
+
+        Returns
+        -------
+        dict[str, dict]
+            ``{"transactions": {(table, unique_id): adjustment},
+            "splits": {split_id: adjustment}}``.
+        """
+        empty: dict[str, dict] = {"transactions": {}, "splits": {}}
+        pending_df = self.repo.get_all_pending_refunds()
+        if pending_df.empty:
+            return empty
+
+        links_df = self.repo.get_links_for_pendings(
+            [int(v) for v in pending_df["id"].tolist()]
+        )
+        links_by_pending = (
+            dict(tuple(links_df.groupby("pending_refund_id")))
+            if not links_df.empty
+            else {}
+        )
+
+        tx_adj: dict[tuple[str, int], float] = {}
+        split_adj: dict[int, float] = {}
+
+        for _, pending in pending_df.iterrows():
+            links = links_by_pending.get(pending["id"])
+            matched = float(links["amount"].sum()) if links is not None else 0.0
+
+            # Take the matched money back off the refund transactions that
+            # carried it. One incoming transaction may fund several
+            # expectations, so only its linked share is removed — the rest is
+            # somebody else's refund, or genuine income.
+            if links is not None:
+                for _, link in links.iterrows():
+                    key = (
+                        self._canonical_source(link["refund_source"]),
+                        int(link["refund_transaction_id"]),
+                    )
+                    tx_adj[key] = tx_adj.get(key, 0.0) - float(link["amount"])
+
+            credit = matched
+            if exclude_open and pending["status"] in ("pending", "partial"):
+                credit += max(
+                    0.0, float(pending["expected_amount"]) - matched
+                )
+            if credit <= 0:
+                continue
+
+            if pending["source_type"] == "split":
+                split_id = int(pending["source_id"])
+                split_adj[split_id] = split_adj.get(split_id, 0.0) + credit
+            else:
+                key = (
+                    self._canonical_source(pending["source_table"]),
+                    int(pending["source_id"]),
+                )
+                tx_adj[key] = tx_adj.get(key, 0.0) + credit
+
+        return {"transactions": tx_adj, "splits": split_adj}
+
+
+def apply_refund_amount_adjustments(
+    df: pd.DataFrame, adjustments: dict[str, dict]
+) -> pd.DataFrame:
+    """
+    Net matched refunds out of a transactions frame.
+
+    Adds each row's adjustment (see
+    :meth:`PendingRefundsService.get_refund_amount_adjustments`) to its
+    ``amount``, clamped so no row can cross zero: netting reduces what a
+    purchase cost and what a refund returned, it never turns an expense into
+    income or the reverse. The clamp is load-bearing rather than defensive —
+    ``link_refund`` deliberately allows a link past the expected amount once
+    the expectation is already met, so the credit on a purchase can exceed it.
+
+    Rows netted to zero are kept, not dropped: they contribute nothing to a
+    sum, and a caller that filters on sign (``amount < 0``) drops them anyway.
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        Transactions frame carrying ``source``, ``unique_id`` and ``amount``;
+        ``split_id`` when split children are present.
+    adjustments : dict[str, dict]
+        ``{"transactions": ..., "splits": ...}`` as built by the service.
+
+    Returns
+    -------
+    pd.DataFrame
+        A copy with ``amount`` netted, or ``df`` unchanged when there is
+        nothing to net.
+    """
+    tx_adj = adjustments.get("transactions") or {}
+    split_adj = adjustments.get("splits") or {}
+    if df.empty or (not tx_adj and not split_adj):
+        return df
+
+    source_col = TransactionsTableFields.SOURCE.value
+    unique_id_col = TransactionsTableFields.UNIQUE_ID.value
+    split_id_col = TransactionsTableFields.SPLIT_ID.value
+
+    df = df.copy()
+    adj = pd.Series(0.0, index=df.index)
+
+    if tx_adj:
+        # `unique_id` is a per-table auto-increment, so it only identifies a
+        # row alongside its source table.
+        keys = pd.Series(
+            list(zip(df[source_col], df[unique_id_col])), index=df.index
+        )
+        adj = adj.add(keys.map(tx_adj).fillna(0.0).astype(float))
+    if split_adj and split_id_col in df.columns:
+        adj = adj.add(df[split_id_col].map(split_adj).fillna(0.0).astype(float))
+
+    original = df["amount"].astype(float)
+    netted = original + adj
+    df["amount"] = netted.clip(upper=0.0).where(
+        original < 0, netted.clip(lower=0.0)
+    )
+    return df

@@ -33,7 +33,10 @@ from backend.errors import EntityNotFoundException, ValidationException
 from backend.services.transaction_classification import EXPENSE_EXCLUDED_CATEGORIES
 from backend.repositories.budget_repository import BudgetRepository
 from backend.services.budget_month_override_service import BudgetMonthOverrideService
-from backend.services.pending_refunds_service import PendingRefundsService
+from backend.services.pending_refunds_service import (
+    PendingRefundsService,
+    apply_refund_amount_adjustments,
+)
 from backend.services.tagging_service import CategoriesTagsService
 from backend.services.transactions_service import TransactionsService
 
@@ -693,6 +696,7 @@ class BudgetService:
         self,
         exclude_pending_refunds: bool = True,
         include_split_parents: bool = False,
+        net_refunds: bool = False,
     ) -> pd.DataFrame:
         """
         Get expense transactions with budget-style filtering applied.
@@ -709,6 +713,14 @@ class BudgetService:
         include_split_parents : bool, optional
             When ``True``, include parent transactions alongside split children.
             Default is ``False``.
+        net_refunds : bool, optional
+            When ``True``, net matched refunds against the purchases they pay
+            back by amount instead of dropping whole rows, so a refund cancels
+            its purchase across any month gap and a partly-refunded purchase
+            keeps the part still unrecovered. Opt-in because it changes what a
+            month costs: the dashboard's expense KPI wants the netted figure,
+            while budget envelopes keep the whole-row exclusion they have
+            always counted. Default is ``False``.
 
         Returns
         -------
@@ -744,8 +756,17 @@ class BudgetService:
                 ~expenses[TransactionsTableFields.CATEGORY.value].isin(projects)
             ]
 
-        # Optionally exclude pending refunds
-        if exclude_pending_refunds:
+        # Netting supersedes the row-drop: it removes the same money and more
+        # (the refund transactions, and cross-month matches), so running both
+        # would double-count the exclusion.
+        if net_refunds:
+            adjustments = (
+                self.pending_refunds_service.get_refund_amount_adjustments(
+                    exclude_open=exclude_pending_refunds
+                )
+            )
+            expenses = apply_refund_amount_adjustments(expenses, adjustments)
+        elif exclude_pending_refunds:
             pending_refs = self.pending_refunds_service.get_active_pending_identifiers()
             tx_keys = pending_refs["transaction_keys"]
             split_ids = pending_refs["split_ids"]

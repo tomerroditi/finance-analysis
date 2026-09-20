@@ -60,16 +60,19 @@ export function IncomeExpensesCard() {
   const [includeProjects, setIncludeProjects] = useState(false);
 
   const { data: incomeOutcome } = useQuery({
-    queryKey: qk.analytics.incomeExpensesOverTime(includeProjects),
-    queryFn: async () => (await analyticsApi.getIncomeExpensesOverTime(!includeProjects)).data,
+    queryKey: qk.analytics.incomeExpensesOverTime(includeProjects, excludePendingRefunds),
+    queryFn: async () =>
+      (await analyticsApi.getIncomeExpensesOverTime(!includeProjects, false, excludePendingRefunds)).data,
   });
   const { data: expensesByCategoryOverTime } = useQuery({
-    queryKey: qk.analytics.expensesByCategoryOverTime(),
-    queryFn: async () => (await analyticsApi.getExpensesByCategoryOverTime()).data,
+    queryKey: qk.analytics.expensesByCategoryOverTime(excludePendingRefunds),
+    queryFn: async () =>
+      (await analyticsApi.getExpensesByCategoryOverTime(excludePendingRefunds)).data,
   });
   const { data: incomeBySourceData } = useQuery({
-    queryKey: qk.analytics.incomeBySourceOverTime(),
-    queryFn: async () => (await analyticsApi.getIncomeBySourceOverTime()).data,
+    queryKey: qk.analytics.incomeBySourceOverTime(excludePendingRefunds),
+    queryFn: async () =>
+      (await analyticsApi.getIncomeBySourceOverTime(excludePendingRefunds)).data,
   });
   const { data: monthlyExpenses } = useQuery({
     queryKey: qk.analytics.monthlyExpenses(excludePendingRefunds, includeProjects),
