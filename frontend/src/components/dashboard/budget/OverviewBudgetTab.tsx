@@ -7,7 +7,7 @@ import { budgetApi } from "../../../services/api";
 import { Skeleton } from "../../common/Skeleton";
 import { useQueryKeys } from "../../../hooks/useQueryKeys";
 import { formatMonthYear } from "../../../utils/dateFormatting";
-import { formatCurrency } from "../../../utils/numberFormatting";
+import { formatAmount, formatCurrency } from "../../../utils/numberFormatting";
 import { CommitmentBar } from "../../budget/overview/CommitmentBar";
 import { percentOf, rankEnvelopes } from "../../budget/overview/envelopeMath";
 import { budgetLink } from "../../../utils/budgetNavigation";
@@ -144,6 +144,7 @@ export const OverviewBudgetTab: React.FC<OverviewBudgetTabProps> = ({
 
   const finalOrProjected = projected ?? spent;
   const delta = budget - finalOrProjected;
+  const hasCeiling = budget > 0;
   const ranked = rankEnvelopes(longEnvelopes);
   const shown = ranked.slice(0, CARD_ENVELOPES);
   const remaining = ranked.length - shown.length;
@@ -154,11 +155,24 @@ export const OverviewBudgetTab: React.FC<OverviewBudgetTabProps> = ({
       {nav}
 
       <div className="flex items-baseline gap-2 flex-wrap mb-2.5">
-        <span dir="ltr" className="text-2xl font-bold font-mono">
-          {formatCurrency(spent)}
-        </span>
-        <span dir="ltr" className="text-sm text-[var(--text-muted)] font-mono">
-          / {budget > 0 ? formatCurrency(budget) : "—"}
+        {/* Spent and ceiling are ONE left-to-right run, not two flex items.
+            As siblings they lay out in the container's direction, so under
+            RTL they swap and the slash lands at the far left of the line,
+            divorced from the figures it divides. Same shape, same fix as
+            `BudgetTotalBar`. */}
+        <span
+          dir="ltr"
+          data-testid="overview-headline"
+          className="flex items-baseline gap-2 flex-wrap"
+        >
+          <span className="text-2xl font-bold font-mono">
+            {/* One ₪ on the line, carried by the ceiling — unless there is no
+                ceiling to carry it, in which case the spend keeps its own. */}
+            {hasCeiling ? formatAmount(spent) : formatCurrency(spent)}
+          </span>
+          <span className="text-sm text-[var(--text-muted)] font-mono">
+            / {hasCeiling ? formatCurrency(budget) : "—"}
+          </span>
         </span>
         <span
           className={`text-xs font-medium px-2 py-0.5 rounded-full ${
@@ -169,14 +183,16 @@ export const OverviewBudgetTab: React.FC<OverviewBudgetTabProps> = ({
         >
           {isCurrent
             ? t("budget.overview.freeAfterCommitments", {
-                amount: formatCurrency(free),
+                amount: hasCeiling ? formatAmount(free) : formatCurrency(free),
               })
             : delta < 0
               ? t("budget.overview.overBudget", {
-                  amount: formatCurrency(Math.abs(delta)),
+                  amount: hasCeiling
+                    ? formatAmount(Math.abs(delta))
+                    : formatCurrency(Math.abs(delta)),
                 })
               : t("budget.overview.underBudget", {
-                  amount: formatCurrency(delta),
+                  amount: hasCeiling ? formatAmount(delta) : formatCurrency(delta),
                 })}
         </span>
       </div>

@@ -14,6 +14,20 @@ describe("BudgetTotalBar", () => {
     expect(screen.getByText(/11,934.*remaining/)).toBeInTheDocument();
   });
 
+  it("prints one shekel sign on the line, carried by the ceiling", () => {
+    // Spent, ceiling and remainder are plainly the same currency; three signs
+    // across them is decoration. The envelope rows under this bar read the
+    // same way.
+    const { container } = render(
+      <BudgetTotalBar spent={11185} total={28000} />,
+    );
+    const line = container.querySelector('[data-testid="budget-total-bar"]')!;
+    expect(line.textContent!.match(/\u20aa/g)).toHaveLength(1);
+    expect(line.textContent).toMatch(/28,000\s*\u20aa/);
+    expect(line.textContent).toMatch(/11,185/);
+    expect(line.textContent).toMatch(/16,815.*remaining/);
+  });
+
   it("is emerald and proportionally filled while comfortably under budget", () => {
     const { container } = render(<BudgetTotalBar spent={250} total={1000} />);
     expect(fill(container).className).toContain("bg-emerald-500");

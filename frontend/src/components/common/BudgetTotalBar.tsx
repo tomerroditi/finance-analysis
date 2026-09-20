@@ -1,6 +1,6 @@
 import React from "react";
 import { useTranslation } from "react-i18next";
-import { formatCurrency } from "../../utils/numberFormatting";
+import { formatAmount, formatCurrency } from "../../utils/numberFormatting";
 
 interface BudgetTotalBarProps {
   spent: number;
@@ -15,6 +15,11 @@ interface BudgetTotalBarProps {
  * Shared by the Budget page's status band and the dashboard's budget card so
  * the two cannot drift apart on where amber starts or on how an overspend is
  * worded.
+ *
+ * One ₪ on the line, carried by the ceiling — "11,185 / 28,000 ₪" with a bare
+ * remainder in the pill. Three signs across three figures that are obviously
+ * the same currency is decoration, and the envelope rows under this bar read
+ * the same way.
  */
 export const BudgetTotalBar: React.FC<BudgetTotalBarProps> = ({
   spent,
@@ -37,22 +42,30 @@ export const BudgetTotalBar: React.FC<BudgetTotalBarProps> = ({
   return (
     <div data-testid="budget-total-bar">
       <div className={`flex items-baseline flex-wrap gap-2 mb-2 ${dimmed}`}>
-        <span className="text-xl md:text-2xl font-bold font-mono" dir="ltr">
-          {formatCurrency(clamped)}
-        </span>
-        <span className="text-xs md:text-sm text-[var(--text-muted)] font-mono" dir="ltr">
-          / {formatCurrency(total)}
+        {/* Spent and ceiling are ONE left-to-right run, not two flex items.
+            As siblings they are laid out in the container's direction, so
+            under RTL they swap and the slash lands at the far left of the
+            line, detached from the figures it divides: "/ 28,000 ₪ 11,185".
+            Grouping them makes the pair read the same in both languages —
+            the same reason the envelope rows below carry `dir="ltr"` on the
+            span that holds both figures. */}
+        <span className="flex items-baseline flex-wrap gap-2" dir="ltr">
+          <span className="text-xl md:text-2xl font-bold font-mono">
+            {formatAmount(clamped)}
+          </span>
+          <span className="text-xs md:text-sm text-[var(--text-muted)] font-mono">
+            / {formatCurrency(total)}
+          </span>
         </span>
         {(total > 0 || over) && (
           <span
             className={`text-[10px] sm:text-xs font-medium px-2 py-0.5 rounded-full ${
               over ? "bg-rose-500/10 text-rose-400" : "bg-emerald-500/10 text-emerald-400"
             }`}
-            dir="ltr"
           >
             {over
-              ? t("budget.overByAmount", { amount: formatCurrency(Math.abs(remaining)) })
-              : t("budget.remainingAmount", { amount: formatCurrency(remaining) })}
+              ? t("budget.overByAmount", { amount: formatAmount(Math.abs(remaining)) })
+              : t("budget.remainingAmount", { amount: formatAmount(remaining) })}
           </span>
         )}
       </div>

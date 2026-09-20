@@ -35,6 +35,29 @@ export function formatCurrency(value: number, maximumFractionDigits = 0): string
 }
 
 /**
+ * Format a bare amount — the digits alone, no currency sign.
+ *
+ * For a line that already says what unit it is in: the dashboard's envelope
+ * rows print "979 / 2,000 ₪" and "1,021 left", so one ₪ serves the whole row
+ * instead of three competing for the same line. Only reach for it where a ₪
+ * sits within a glance of the number; a figure standing on its own uses
+ * `formatCurrency`.
+ *
+ * Wrapped in LRI/PDI like every other helper here, so the digits and their
+ * minus sign keep their order under RTL. A caller that joins the output to
+ * anything else (" / ", a literal sign) still wraps the join in `dir="ltr"`.
+ * @param value - The numeric value to format
+ * @param maximumFractionDigits - Decimal places (default: 0)
+ * @returns Formatted amount without currency (e.g., "1,234")
+ */
+export function formatAmount(value: number, maximumFractionDigits = 0): string {
+  const v = value || 0;
+  const sign = v < 0 ? "-" : "";
+  const magnitude = Math.abs(v).toLocaleString("en-US", { maximumFractionDigits });
+  return `${LRI}${sign}${magnitude}${PDI}`;
+}
+
+/**
  * Format currency in compact form for small UI spaces (KPI cards, badges).
  * Canonical layout: sign-magnitude-currency (e.g., "12K ₪", "-1.5M ₪").
  * Uses K/M suffixes for large values; small values render in full but with the
