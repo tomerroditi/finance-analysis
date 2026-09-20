@@ -1,3 +1,9 @@
+## v1.73.2 (2026-09-20)
+
+### Fix
+
+- **budget**: read the remainder right in Hebrew, and one ₪ per row (#317)
+
 ## v1.73.1 (2026-09-20)
 
 ### Fix
