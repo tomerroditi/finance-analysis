@@ -462,3 +462,142 @@ class TestYearlyProjectCategoryExclusion:
         rid = int(svc.get_year_rules(2026).iloc[0]["id"])
         with pytest.raises(ValueError, match="project"):
             svc.update_rule(rid, category="Renovation", tags=["Materials"])
+
+
+class TestClosingAYearlyRule:
+    """A settled yearly envelope is retired, not deleted."""
+
+    @staticmethod
+    def _seed(db_session, unique_id, date_, category, tag, amount):
+        """Insert one bank transaction."""
+        from backend.models.transaction import BankTransaction
+
+        db_session.add(
+            BankTransaction(
+                id=unique_id,
+                date=date_,
+                provider="hapoalim",
+                account_name="Checking",
+                description="x",
+                amount=amount,
+                category=category,
+                tag=tag,
+                source="bank_transactions",
+                type="normal",
+                status="completed",
+            )
+        )
+        db_session.commit()
+
+    @staticmethod
+    def _service_with_rule(db_session, name="Car insurance"):
+        """Return ``(service, rule_id)`` for one open yearly rule in 2026."""
+        from backend.services.budget_service import YearlyBudgetService
+
+        svc = YearlyBudgetService(db_session)
+        svc.create_rule(name, 6000.0, "Transport", ["Insurance"], 2026)
+        rules = svc.get_year_rules(2026)
+        return svc, int(rules.loc[rules["name"] == name].iloc[0]["id"])
+
+    def test_new_rule_is_open(self, db_session):
+        """A rule is open until it is explicitly closed."""
+        svc, rule_id = self._service_with_rule(db_session)
+        assert svc.is_rule_closed(rule_id) is False
+
+    def test_close_sets_the_flag(self, db_session):
+        """Closing is visible through the service and the view."""
+        svc, rule_id = self._service_with_rule(db_session)
+        svc.set_rule_closed(rule_id, True)
+
+        assert svc.is_rule_closed(rule_id) is True
+        entry = next(
+            e for e in svc.get_yearly_budget_view(2026) if e["rule"]["id"] == rule_id
+        )
+        assert entry["closed"] is True
+
+    def test_reopen_clears_the_flag(self, db_session):
+        """Closing is reversible."""
+        svc, rule_id = self._service_with_rule(db_session)
+        svc.set_rule_closed(rule_id, True)
+        svc.set_rule_closed(rule_id, False)
+        assert svc.is_rule_closed(rule_id) is False
+
+    def test_closed_rule_keeps_its_row_and_spend(self, db_session):
+        """The year's own tab still reports the envelope in full."""
+        svc, rule_id = self._service_with_rule(db_session)
+        self._seed(db_session, "c1", "2026-02-01", "Transport", "Insurance", -4500.0)
+        svc.set_rule_closed(rule_id, True)
+
+        entry = next(
+            e for e in svc.get_yearly_budget_view(2026) if e["rule"]["id"] == rule_id
+        )
+        assert entry["rule"]["amount"] == 6000.0
+        assert entry["current_amount"] == 4500.0
+
+    def test_closed_rule_raises_no_alert(self, db_session):
+        """An alert asks for action on an envelope the user has finished with."""
+        svc, rule_id = self._service_with_rule(db_session)
+        self._seed(db_session, "c2", "2026-02-01", "Transport", "Insurance", -7000.0)
+        assert svc.get_alerts(2026)
+
+        svc.set_rule_closed(rule_id, True)
+        assert svc.get_alerts(2026) == []
+
+    def test_summary_counts_closed_apart_but_keeps_the_money(self, db_session):
+        """Health counts drop the closed rule; the year's totals do not."""
+        svc, rule_id = self._service_with_rule(db_session)
+        svc.create_rule("Vacations", 20000.0, "Travel", ["Hotels"], 2026)
+        self._seed(db_session, "c3", "2026-02-01", "Transport", "Insurance", -7000.0)
+        svc.set_rule_closed(rule_id, True)
+
+        summary = svc.get_year_summary(2026)
+        assert summary["closed"] == 1
+        assert summary["over"] == 0
+        assert summary["on_track"] == 1
+        assert summary["biggest_overspend"] is None
+        assert summary["total_allocated"] == 26000.0
+        assert summary["total_spent"] == 7000.0
+
+    def test_closed_rule_still_claims_its_tags(self, db_session):
+        """Mutual exclusion with monthly rules survives the close.
+
+        A closed envelope's spend must not silently reappear inside the
+        monthly budget, so the rule goes on owning its ``(category, tag)``.
+        """
+        from backend.services.budget_service import MonthlyBudgetService
+
+        svc, rule_id = self._service_with_rule(db_session)
+        svc.set_rule_closed(rule_id, True)
+
+        monthly = MonthlyBudgetService(db_session)
+        monthly.create_rule("Total Budget", 9999.0, "Total Budget", ["all_tags"], 3, 2026)
+        with pytest.raises(ValueError, match="Insurance"):
+            monthly.create_rule("Car M", 500.0, "Transport", ["Insurance"], 3, 2026)
+
+    def test_carry_forward_reopens_the_copy(self, db_session, monkeypatch):
+        """Next year's copy of a closed envelope starts open — it is a new year."""
+        import backend.services.budget.yearly as mod
+
+        svc, rule_id = self._service_with_rule(db_session)
+        svc.set_rule_closed(rule_id, True)
+
+        monkeypatch.setattr(mod, "_today", lambda: date(2027, 1, 1))
+        assert svc.auto_carry_forward(2027)["copied_from"] == 2026
+        copied = svc.get_year_rules(2027)
+        assert not copied.empty
+        assert [
+            svc._rule_is_closed(row) for _, row in copied.iterrows()
+        ] == [False] * len(copied)
+
+    def test_closing_a_monthly_id_is_not_found(self, db_session):
+        """The yearly close endpoint must never reach a monthly rule."""
+        from backend.errors import EntityNotFoundException
+        from backend.services.budget_service import MonthlyBudgetService
+
+        monthly = MonthlyBudgetService(db_session)
+        monthly.create_rule("Total Budget", 9999.0, "Total Budget", ["all_tags"], 5, 2026)
+        rid = int(monthly.get_month_rules(2026, 5).iloc[0]["id"])
+
+        svc, _ = self._service_with_rule(db_session)
+        with pytest.raises(EntityNotFoundException, match="yearly"):
+            svc.set_rule_closed(rid, True)

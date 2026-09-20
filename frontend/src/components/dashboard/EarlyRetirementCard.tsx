@@ -123,7 +123,8 @@ export function EarlyRetirementCard() {
 
           {/* Chart toggle */}
           <div className="flex justify-end">
-            <div className="flex bg-[var(--surface-light)] p-1 rounded-xl overflow-x-auto scrollbar-auto-hide">
+            <div className="bg-[var(--surface-light)] rounded-xl overflow-hidden">
+            <div className="flex p-1 overflow-x-auto scrollbar-auto-hide">
               {(
                 [
                   { key: "net_worth", label: t("earlyRetirement.charts.netWorthProjection") },
@@ -142,6 +143,7 @@ export function EarlyRetirementCard() {
                   {label}
                 </button>
               ))}
+            </div>
             </div>
           </div>
 

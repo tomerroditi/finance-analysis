@@ -14,9 +14,10 @@ relies on :meth:`RecurringService.normalize_description`, so the split has to
 happen here rather than in the client, where the normalisation rules would have
 to be duplicated and would silently drift.
 
-A closed project drops out of the envelope list this returns while its spend
-stays in the month's totals — see
-:meth:`BudgetOverviewService._project_envelopes`.
+A closed project or a closed yearly envelope drops out of the envelope list
+this returns while its spend stays in the month's totals — see
+:meth:`BudgetOverviewService._project_envelopes` and
+:meth:`BudgetOverviewService._yearly_envelopes`.
 
 **A month's contribution to a long envelope.** Yearly and project envelopes run
 on their own clock: their percentage always describes today, never the month
@@ -102,9 +103,10 @@ class BudgetOverviewService(BudgetService):
               ``monthly_spent``.
             - ``total_out`` — the three pools added up: what actually left the
               accounts in the month.
-            - ``long_envelopes`` — yearly and *open* project envelopes, each with
-              both ``month_contribution`` and its overall ``spent``/``budget``.
-              Closed projects are omitted, though their spend still counts in
+            - ``long_envelopes`` — the *open* yearly and project envelopes, each
+              with both ``month_contribution`` and its overall
+              ``spent``/``budget``. Closed ones are omitted, though their spend
+              still counts in ``yearly_month_spent`` /
               ``projects_month_spent`` and ``total_out``.
         """
         today = _today()
@@ -152,10 +154,10 @@ class BudgetOverviewService(BudgetService):
                 e["month_contribution"] for e in long_envelopes if e["kind"] == "project"
             )
         )
-        # The totals above count every project, closed ones included — that
+        # The totals above count every envelope, closed ones included — that
         # money really did leave the accounts this month. The list below is a
-        # list of envelopes still worth watching, so closed projects drop out
-        # of it, and out of every section built from it.
+        # list of envelopes still worth watching, so closed ones drop out of
+        # it, and out of every section built from it.
         open_envelopes = [
             {key: value for key, value in envelope.items() if key != "closed"}
             for envelope in long_envelopes
@@ -319,6 +321,14 @@ class BudgetOverviewService(BudgetService):
         The month share is taken on the transaction's own date rather than its
         budget month: a month override moves spend between *monthly* envelopes,
         and must not shuffle a yearly envelope's history.
+
+        Every rule for the year is measured, closed ones included, and each
+        carries a ``closed`` flag :meth:`get_overview` uses to drop it from the
+        list it returns — an annual bill the user has marked settled is no
+        longer an envelope this month is measured against, and one sitting at
+        100% would otherwise stay pinned to the top of "needs attention" for
+        the rest of the year. Its spend still counts towards the month's
+        totals, and the Yearly tab still shows it in full.
         """
         yearly = YearlyBudgetService(self.db)
         rules = yearly.get_year_rules(year)
@@ -347,9 +357,9 @@ class BudgetOverviewService(BudgetService):
                     "month_contribution": round(self._sum_expenses(matched), 2),
                     "spent": round(spent_by_name.get(rule[NAME], 0.0), 2),
                     "budget": round(float(rule[AMOUNT] or 0.0), 2),
-                    # Only projects can be closed; the key exists on every
-                    # envelope so the filter in get_overview is uniform.
-                    "closed": False,
+                    # Measured either way; get_overview is what drops the
+                    # closed ones, so their spend still reaches the totals.
+                    "closed": yearly._rule_is_closed(rule),
                 }
             )
         return envelopes

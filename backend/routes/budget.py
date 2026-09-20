@@ -77,6 +77,10 @@ class YearlyRuleUpdate(ApiRequestModel):
     tags: Optional[str | List[str]] = None
 
 
+class YearlyRuleClosedUpdate(ApiRequestModel):
+    closed: bool
+
+
 class ProjectCreate(ApiRequestModel):
     category: str
     total_budget: float
@@ -407,6 +411,27 @@ def update_yearly_rule(
         return {"status": "success"}
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.put("/yearly/rules/{rule_id}/closed")
+def set_yearly_rule_closed(
+    rule_id: int,
+    body: YearlyRuleClosedUpdate,
+    db: Session = Depends(get_database),
+) -> dict[str, Any]:
+    """Close a settled yearly envelope, or reopen a closed one.
+
+    A closed rule keeps its allocation, its spend and its row in the year's
+    tab, and goes on claiming its tags against monthly rules; it only stops
+    appearing in the budget Overview.
+
+    Raises
+    ------
+    EntityNotFoundException
+        404 if ``rule_id`` is not a yearly rule.
+    """
+    YearlyBudgetService(db).set_rule_closed(rule_id, body.closed)
+    return {"status": "success", "id": rule_id, "closed": body.closed}
 
 
 @router.delete("/yearly/rules/{rule_id}")

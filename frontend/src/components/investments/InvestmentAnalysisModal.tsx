@@ -186,7 +186,10 @@ export function InvestmentAnalysisModal({
 
   return (
     <div className="modal-overlay fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
-      <div className="bg-[var(--surface)] border border-[var(--surface-light)] rounded-2xl w-full max-w-4xl max-h-[90vh] overflow-y-auto overflow-x-hidden shadow-2xl animate-in zoom-in-95 duration-200">
+      <div className="bg-[var(--surface)] border border-[var(--surface-light)] rounded-2xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col shadow-2xl animate-in zoom-in-95 duration-200">
+        {/* The panel clips; the body scrolls. A scroll container paints its
+            scrollbar outside its own border radius. */}
+        <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden">
         <div className="sticky top-0 z-10 bg-[var(--surface)]/95 backdrop-blur border-b border-[var(--surface-light)] p-6 flex justify-between items-center">
           <h2 className="text-2xl font-bold flex items-center gap-3">
             <BarChart2 className="text-[var(--primary)]" /> {t("investments.investmentAnalysis")}
@@ -571,6 +574,7 @@ export function InvestmentAnalysisModal({
               })()}
             </>
           )}
+        </div>
         </div>
       </div>
     </div>

@@ -16,6 +16,7 @@ import { formatShortDate } from "../../utils/dateFormatting";
 import { formatCurrency } from "../../utils/numberFormatting";
 import { isToday, isYesterday } from "date-fns";
 import i18n from "../../i18n";
+import { usePendingRows } from "../../hooks/usePendingRows";
 
 function formatTransactionDate(dateStr: string): string {
   const d = new Date(dateStr);
@@ -109,6 +110,10 @@ export function RecentTransactionsFeed({
     },
   });
 
+  // Per row: marking one transaction must not disable the refund button on
+  // every other row while the write is out. See `usePendingRows`.
+  const markingRefund = usePendingRows();
+
   // Mark as pending refund
   const markPendingMutation = useMutation({
     mutationFn: (tx: Transaction) =>
@@ -118,6 +123,10 @@ export function RecentTransactionsFeed({
         source_table: tx.source || "",
         expected_amount: Math.abs(tx.amount),
       }),
+    onMutate: (tx) => {
+      markingRefund.begin(txKeyOf(tx));
+    },
+    onSettled: (_data, _error, tx) => markingRefund.end(txKeyOf(tx)),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: qkPrefix.transactions });
       queryClient.invalidateQueries({ queryKey: qkPrefix.pendingRefunds });
@@ -271,7 +280,7 @@ export function RecentTransactionsFeed({
                               className="w-[32px] h-[32px] flex items-center justify-center rounded-md text-amber-400/40 hover:text-amber-400 hover:bg-amber-500/20 transition-colors"
                               title={t("tooltips.markPendingRefund")}
                               onClick={() => markPendingMutation.mutate(tx)}
-                              disabled={markPendingMutation.isPending}
+                              disabled={markingRefund.isPending(txKeyOf(tx))}
                             >
                               <RefreshCw size={13} />
                             </button>
@@ -324,7 +333,7 @@ export function RecentTransactionsFeed({
                             <button
                               className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium text-amber-400/70 hover:text-amber-400 hover:bg-amber-500/20 transition-colors"
                               onClick={(e) => { e.stopPropagation(); markPendingMutation.mutate(tx); }}
-                              disabled={markPendingMutation.isPending}
+                              disabled={markingRefund.isPending(txKeyOf(tx))}
                             >
                               <RefreshCw size={13} className="shrink-0" />
                               {t("common.refund")}

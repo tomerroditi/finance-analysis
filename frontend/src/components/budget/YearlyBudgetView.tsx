@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, X, Plus } from "lucide-react";
+import { AlertTriangle, Archive, X, Plus } from "lucide-react";
 import { budgetApi, type YearlyAnalysis } from "../../services/api";
 import { YearlyRuleModal } from "../modals/YearlyRuleModal";
-import { useConfirm } from "../../context/DialogContext";
+import { useConfirm, useNotify } from "../../context/DialogContext";
 import { useQueryKeys } from "../../hooks/useQueryKeys";
+import { qkPrefix } from "../../services/queryKeys";
 import { BAR_CONTROL, BudgetCommandBar, PeriodNav } from "./BudgetCommandBar";
 import { BudgetStatusBand, type BandStat } from "./BudgetStatusBand";
 import { BudgetNoticeLine } from "./BudgetNoticeLine";
@@ -34,6 +35,7 @@ export const YearlyBudgetView: React.FC<YearlyBudgetViewProps> = ({
 }) => {
   const { t } = useTranslation();
   const confirm = useConfirm();
+  const notify = useNotify();
   const queryClient = useQueryClient();
   const qk = useQueryKeys();
   const currentYear = new Date().getFullYear();
@@ -63,9 +65,43 @@ export const YearlyBudgetView: React.FC<YearlyBudgetViewProps> = ({
     onSuccess: () => queryClient.invalidateQueries({ queryKey: qk.budget.yearly(year) }),
   });
 
+  const closedMutation = useMutation({
+    mutationFn: ({ id, closed }: { id: number; closed: boolean }) =>
+      budgetApi.setYearlyRuleClosed(id, closed),
+    onSuccess: () => {
+      // The whole budget prefix, not just this year's key: the Overview's
+      // envelope list is built from this flag, so it has to refetch too.
+      queryClient.invalidateQueries({ queryKey: qkPrefix.budget });
+    },
+    onError: () => notify.error(t("budget.yearly.closeFailed")),
+  });
+
+  // Reopening is a plain undo, so only closing asks first.
+  const toggleClosed = async (rule: { id: number; name: string }, closed: boolean) => {
+    if (!closed) {
+      closedMutation.mutate({ id: rule.id, closed: false });
+      return;
+    }
+    const ok = await confirm({
+      title: t("budget.yearly.closeRule"),
+      message: t("budget.yearly.confirmClose", { name: rule.name }),
+      confirmLabel: t("budget.yearly.closeRule"),
+    });
+    if (ok) closedMutation.mutate({ id: rule.id, closed: true });
+  };
+
   // Memoised because `?? []` mints a new array on every render, which would
-  // re-bucket every rule's burn series for nothing.
-  const rules = useMemo(() => data?.rules ?? [], [data?.rules]);
+  // re-bucket every rule's burn series for nothing. Closed envelopes sink to
+  // the bottom: they are kept for their history, and leaving them between the
+  // envelopes still being spent from is exactly the noise closing removes.
+  // The sort is stable, so open rules keep the order the API sent them in.
+  const rules = useMemo(
+    () =>
+      [...(data?.rules ?? [])].sort(
+        (a, b) => Number(a.closed) - Number(b.closed),
+      ),
+    [data?.rules],
+  );
   const summary = data?.summary;
 
   // Months elapsed in the viewed year — the whole year once it is in the past.
@@ -133,6 +169,20 @@ export const YearlyBudgetView: React.FC<YearlyBudgetViewProps> = ({
                   </span>
                   <span className="text-[10px] sm:text-xs text-[var(--text-muted)]">
                     {t("budget.overBudgetLabel")}
+                  </span>
+                </>
+              )}
+              {summary.closed > 0 && (
+                <>
+                  <span className="text-[10px] sm:text-xs text-[var(--text-muted)]">·</span>
+                  <span
+                    className="text-lg md:text-xl font-bold text-[var(--text-muted)]"
+                    data-testid="yearly-closed-count"
+                  >
+                    {summary.closed}
+                  </span>
+                  <span className="text-[10px] sm:text-xs text-[var(--text-muted)]">
+                    {t("budget.yearly.closedLabel")}
                   </span>
                 </>
               )}
@@ -239,6 +289,18 @@ export const YearlyBudgetView: React.FC<YearlyBudgetViewProps> = ({
                   subLabel={subLabel}
                   current={entry.current_amount}
                   total={rule.amount}
+                  dimmed={entry.closed}
+                  badge={
+                    entry.closed ? (
+                      <span
+                        data-testid="yearly-closed-badge"
+                        className="inline-flex items-center gap-1 shrink-0 rounded-full bg-[var(--surface-light)] px-1.5 py-0.5 text-[10px] text-[var(--text-muted)]"
+                      >
+                        <Archive size={10} className="shrink-0" />
+                        {t("budget.yearly.closedBadge")}
+                      </span>
+                    ) : undefined
+                  }
                   isExpanded={expandedRuleId === rule.id}
                   onToggleExpand={() =>
                     setExpandedRuleId((prev) => (prev === rule.id ? null : rule.id))
@@ -268,6 +330,20 @@ export const YearlyBudgetView: React.FC<YearlyBudgetViewProps> = ({
                         }
                       />
                       <LedgerRowAction
+                        kind={entry.closed ? "reopen" : "close"}
+                        testId={`yearly-close-toggle-${rule.id}`}
+                        label={
+                          entry.closed
+                            ? t("budget.yearly.reopenRule")
+                            : t("budget.yearly.closeRule")
+                        }
+                        onClick={
+                          closedMutation.isPending
+                            ? undefined
+                            : () => toggleClosed(rule, !entry.closed)
+                        }
+                      />
+                      <LedgerRowAction
                         kind="delete"
                         label={t("budget.deleteRule")}
                         onClick={
@@ -292,6 +368,14 @@ export const YearlyBudgetView: React.FC<YearlyBudgetViewProps> = ({
                       spent: formatCurrency(entry.current_amount),
                       total: formatCurrency(rule.amount),
                     })}
+                    {entry.closed && (
+                      <span
+                        data-testid="yearly-closed-notice"
+                        className="block mt-1"
+                      >
+                        {t("budget.yearly.closedNotice")}
+                      </span>
+                    )}
                   </div>
                 </BudgetLedgerRow>
               );

@@ -1,3 +1,22 @@
+## v1.73.0 (2026-09-20)
+
+### Feat
+
+- **dashboard**: one line per envelope in the budget card (#315)
+
+## v1.72.1 (2026-09-20)
+
+### Fix
+
+- **ui**: gate a list row's action on its own write, not the whole list (#314)
+- **ui**: keep scrollbars inside rounded panels, everywhere (#311)
+
+## v1.72.0 (2026-09-20)
+
+### Feat
+
+- **budget**: let a settled yearly envelope be closed (#313)
+
 ## v1.71.3 (2026-09-20)
 
 ### Perf

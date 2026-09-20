@@ -709,7 +709,14 @@
       "saveFailed": "Could not save the rule.",
       "pace": "Year pace",
       "monthsElapsed": "{{elapsed}} of {{total}} months",
-      "spentOfAllocation": "{{spent}} spent of {{total}} allocated"
+      "spentOfAllocation": "{{spent}} spent of {{total}} allocated",
+      "closeRule": "Close envelope",
+      "reopenRule": "Reopen envelope",
+      "confirmClose": "Close \"{{name}}\"? It keeps its limit, its spend and its row here, but stops appearing in the budget overview.",
+      "closedBadge": "Closed",
+      "closedLabel": "closed",
+      "closedNotice": "This envelope is closed. Its history is kept here, but it no longer appears in the budget overview.",
+      "closeFailed": "Could not update the envelope's status."
     },
     "categoryConflict": {
       "banner": "These categories are in both a project and a monthly/yearly budget: {{names}}. Resolve to avoid double-tracking.",

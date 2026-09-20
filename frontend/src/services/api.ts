@@ -178,6 +178,8 @@ export const budgetApi = {
   updateYearlyRule: (id: number, rule: object) =>
     api.put(`/budget/yearly/rules/${id}`, rule),
   deleteYearlyRule: (id: number) => api.delete(`/budget/yearly/rules/${id}`),
+  setYearlyRuleClosed: (id: number, closed: boolean) =>
+    api.put(`/budget/yearly/rules/${id}/closed`, { closed }),
   copyYearlyRules: (year: number) => api.post(`/budget/yearly/${year}/copy`),
   getCategoryConflicts: () => api.get("/budget/category-conflicts"),
   getOverview: (year: number, month: number, includeSplitParents = false) =>
@@ -285,6 +287,8 @@ export interface YearlyRollup {
   remaining: number;
   on_track: number;
   over: number;
+  /** Rules the user has marked settled — counted apart from the health above. */
+  closed: number;
   biggest_overspend: { name: string; percentage: number } | null;
 }
 
@@ -302,6 +306,14 @@ export interface YearlyAnalysis {
     data: unknown[];
     allow_edit: boolean;
     allow_delete: boolean;
+    /**
+     * Whether the envelope has been closed.
+     *
+     * A closed yearly rule is settled, not deleted: it keeps its allocation,
+     * its spend and its row here, and it still claims its tags against the
+     * monthly budget. It only stops appearing in the budget Overview.
+     */
+    closed: boolean;
   }[];
   summary: YearlyRollup;
   alerts: BudgetAlert[];
