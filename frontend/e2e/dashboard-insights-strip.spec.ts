@@ -30,7 +30,7 @@ test.describe("Dashboard strip cards", () => {
       "net_worth",
     ],
     hidden: ["recurring", "goals", "cash_flow", "category"],
-    v: 3,
+    v: 4,
   };
   // Demo Mode lives in the browser context's localStorage, so it must be
   // seeded per-test (a fresh context per test) rather than once in

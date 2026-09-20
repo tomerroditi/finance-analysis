@@ -49,11 +49,11 @@ export function RecurringSection() {
     mutationFn: (decisions: RecurringDecisionInput[]) =>
       analyticsApi.setRecurringDecisions(decisions),
     // Show the verdict at once. The write itself is quick, but it invalidates
-    // every derived read on the dashboard, so waiting for the refetch below
-    // left the item sitting in "needs review" long enough to look ignored.
-    // Both cached variants are patched — the dismissed-inclusive list is the
-    // same data under a second key, and leaving it stale would make the
-    // "show dismissed" toggle contradict the list above it.
+    // every derived read on the dashboard, so waiting for the sweep that
+    // follows left the item sitting in "needs review" long enough to look
+    // ignored. Both cached variants are patched — the dismissed-inclusive
+    // list is the same data under a second key, and leaving it stale would
+    // make the "show dismissed" toggle contradict the list above it.
     onMutate: async (decisions) => {
       const filter = { queryKey: qkPrefix.recurring };
       await queryClient.cancelQueries(filter);
@@ -74,13 +74,15 @@ export function RecurringSection() {
         queryClient.setQueryData(key, summary),
       );
     },
-    // A verdict moves money between "committed" and "free to spend", so the
-    // budget Overview and every analytics figure built on recurring charges
-    // have to be refetched alongside this panel.
-    onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: qkPrefix.analytics });
-      queryClient.invalidateQueries({ queryKey: qkPrefix.budget });
-    },
+    // No invalidation here on purpose. A verdict moves money between
+    // "committed" and "free to spend", so the budget Overview and every
+    // analytics figure built on recurring charges do have to be refetched —
+    // but the shared `MutationCache.onSuccess` in `queryClient.ts` already
+    // sweeps them 200 ms after the last mutation settles. Sweeping again
+    // from here just ran every one of those queries twice per click (and
+    // un-debounced), which is overhead on exactly the path that felt slow.
+    // On failure the rollback above restores the server's own last answer,
+    // so there is nothing to refetch either.
   });
 
   const items = data?.items ?? [];
@@ -98,8 +100,16 @@ export function RecurringSection() {
     .filter((item) => item.confirmation === "pending")
     .sort((a, b) => b.confidence - a.confidence);
   const confirmed = live.filter((item) => item.confirmation === "confirmed");
-  const dismissed = live.filter((item) => item.confirmation === "dismissed");
-  const isEmpty = items.length === 0;
+  // Deliberately off `items`, not `live`: "show dismissed" is an explicit
+  // request to see everything that was ruled out, and its count comes from
+  // the backend over every candidate. Filtering it by `showEnded` too would
+  // let the toggle promise two and reveal one.
+  const dismissed = items.filter((item) => item.confirmation === "dismissed");
+  // "Nothing detected", not "nothing on screen". Dismissed candidates are
+  // absent from `items` in this view but still real, and the empty state
+  // carries no toggles — so counting this as empty would strand them with no
+  // way back. Ended ones are in `items` already, just filtered out of `live`.
+  const isEmpty = items.length === 0 && (data?.dismissed_count ?? 0) === 0;
 
   const decideOne = (item: RecurringItem, decision: RecurringDecisionInput["decision"]) =>
     decide.mutate([{ normalized: item.normalized, decision }]);
@@ -313,9 +323,21 @@ export function RecurringSection() {
                   data-testid="recurring-dismissed-item"
                   className="flex items-center gap-2 py-2 px-2.5 rounded-lg opacity-60"
                 >
-                  <p className="text-xs md:text-sm font-medium truncate flex-1" dir="auto" title={item.label}>
-                    {item.label}
-                  </p>
+                  {/* What it cost and how often it billed, because that is
+                      what tells the user whether ruling it out was a
+                      mistake — a bare merchant label does not. */}
+                  <div className="min-w-0 flex-1">
+                    <p className="text-xs md:text-sm font-medium truncate" dir="auto" title={item.label}>
+                      {item.label}
+                    </p>
+                    <p className="text-[9px] md:text-[10px] text-[var(--text-muted)]">
+                      {t("dashboard.recurring.review.evidence", {
+                        cadence: t(`dashboard.recurring.cadence.${item.cadence}`),
+                        count: item.occurrences,
+                        amount: formatCurrency(item.amount),
+                      })}
+                    </p>
+                  </div>
                   <button
                     type="button"
                     disabled={decide.isPending}
