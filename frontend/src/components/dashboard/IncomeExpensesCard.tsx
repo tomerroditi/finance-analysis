@@ -21,6 +21,20 @@ const CATEGORY_COLORS = [
   "#d946ef", "#ec4899", "#fb7185", "#ef4444",
 ];
 
+/**
+ * Fill for a month meter whose total runs past the chart scale.
+ *
+ * The stripes are vertical rather than diagonal because the meter is 3px tall
+ * with a 2px rounded cap. Across three pixels a 45° stripe is already almost
+ * vertical, so the diagonal bought nothing and the rounding sheared both ends
+ * into ragged points — beside a clean solid meter the bar read as torn rather
+ * than deliberately hatched, and which rows showed it changed with every
+ * filter toggle. Vertical stripes do not depend on the height at all, so they
+ * stay crisp here and the rounded cap clips a full-height dash cleanly.
+ */
+const OVER_SCALE_HATCH =
+  "repeating-linear-gradient(90deg, var(--text-muted) 0 3px, transparent 3px 6px)";
+
 /** How many recent months the ledger / breakdown views show before "Show earlier months". */
 const DEFAULT_VISIBLE_MONTHS = 12;
 
@@ -540,9 +554,7 @@ function CompositionView({
                   style={{
                     width: `${Math.min((total / meterCap) * 100, 100)}%`,
                     background:
-                      total > meterCap
-                        ? "repeating-linear-gradient(-45deg, var(--text-muted) 0 1.5px, transparent 1.5px 4px)"
-                        : "var(--text-muted)",
+                      total > meterCap ? OVER_SCALE_HATCH : "var(--text-muted)",
                   }}
                 />
               </div>
