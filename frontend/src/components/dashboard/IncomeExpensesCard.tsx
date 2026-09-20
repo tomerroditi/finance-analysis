@@ -58,11 +58,10 @@ export function IncomeExpensesCard() {
   const showLess = () => setVisibleMonths(DEFAULT_VISIBLE_MONTHS);
   const [excludePendingRefunds, setExcludePendingRefunds] = useState(true);
   const [includeProjects, setIncludeProjects] = useState(false);
-  const [excludeRefunds, setExcludeRefunds] = useState(false);
 
   const { data: incomeOutcome } = useQuery({
-    queryKey: qk.analytics.incomeExpensesOverTime(includeProjects, excludeRefunds),
-    queryFn: async () => (await analyticsApi.getIncomeExpensesOverTime(!includeProjects, false, excludeRefunds)).data,
+    queryKey: qk.analytics.incomeExpensesOverTime(includeProjects),
+    queryFn: async () => (await analyticsApi.getIncomeExpensesOverTime(!includeProjects)).data,
   });
   const { data: expensesByCategoryOverTime } = useQuery({
     queryKey: qk.analytics.expensesByCategoryOverTime(),
@@ -110,18 +109,6 @@ export function IncomeExpensesCard() {
                 {excludePendingRefunds
                   ? t("dashboard.pendingRefundsExcluded")
                   : t("dashboard.pendingRefundsIncluded")}
-              </button>
-              <button
-                onClick={() => setExcludeRefunds(!excludeRefunds)}
-                className={`rounded-lg px-3 py-1.5 text-xs font-medium border transition-colors ${
-                  excludeRefunds
-                    ? "bg-cyan-500/10 border-cyan-500/20 text-cyan-400"
-                    : "bg-[var(--surface-light)] border-[var(--surface-light)] text-[var(--text-muted)]"
-                }`}
-              >
-                {excludeRefunds
-                  ? t("dashboard.refundsExcluded")
-                  : t("dashboard.refundsIncluded")}
               </button>
               <button
                 onClick={() => setIncludeProjects(!includeProjects)}

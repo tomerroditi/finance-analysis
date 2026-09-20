@@ -10,7 +10,8 @@ import { enableDemoMode, navigateTo, resetDemoData } from "./helpers";
  *                       whose slices carry no text at all.
  *
  * This spec guards that each tab renders, that the ledger is ordered
- * newest-first, that tab switches never crash the card, and that hovering a
+ * newest-first, that the filter row carries only the pending-refund and
+ * project chips, that tab switches never crash the card, and that hovering a
  * composition slice pops the cursor-following tooltip — the only readout the
  * bars have now that both the in-bar labels and the colour legend are gone, so
  * it must name the slice with its amount *and* its share. Demo Mode supplies
@@ -114,6 +115,18 @@ test.describe("Income & Expenses dashboard card", () => {
     // Collapsing returns to the 12-month window.
     await card.getByRole("button", { name: "Show less" }).click();
     await expect.poll(() => rows.count()).toBeLessThanOrEqual(12);
+
+    // --- Filter chips: pending-refunds and projects only ---
+    // "Refunds Included/Excluded" is gone: a refund is a positive amount in an
+    // expense category, so it already nets off the month it lands in, and the
+    // opt-out only ever reached the ledger and the income KPI — never the
+    // expense KPI beside them or either breakdown tab.
+    await expect(
+      card.getByRole("button", { name: /^Pending Refunds (Ex|In)cluded$/ }),
+    ).toBeVisible();
+    await expect(
+      card.getByRole("button", { name: /^Refunds (Ex|In)cluded$/ }),
+    ).toHaveCount(0);
 
     // --- Income Breakdown: composition rows with textless slices ---
     await card.getByRole("button", { name: "Income Breakdown" }).click();

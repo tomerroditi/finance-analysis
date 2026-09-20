@@ -684,10 +684,10 @@ export const analyticsApi = {
     api.get<{ month: string; net_change: number; cumulative_balance: number }[]>(
       "/analytics/net-balance-over-time"
     ),
-  getIncomeExpensesOverTime: (excludeProjects = false, excludeLiabilities = false, excludeRefunds = false) =>
+  getIncomeExpensesOverTime: (excludeProjects = false, excludeLiabilities = false) =>
     api.get<{ month: string; income: number; expenses: number }[]>(
       "/analytics/income-expenses-over-time",
-      { params: { exclude_projects: excludeProjects, exclude_liabilities: excludeLiabilities, exclude_refunds: excludeRefunds } }
+      { params: { exclude_projects: excludeProjects, exclude_liabilities: excludeLiabilities } }
     ),
   getDebtPaymentsOverTime: () =>
     api.get<{ month: string; amount: number; tags: Record<string, number> }[]>(
