@@ -1,3 +1,13 @@
+## v1.68.0 (2026-09-20)
+
+### Feat
+
+- **dashboard**: stack mobile KPI cards one per row (#296)
+
+### Perf
+
+- **dashboard**: cut a cold dashboard load from 21s to 7s (#297)
+
 ## v1.67.3 (2026-09-19)
 
 ### Fix
