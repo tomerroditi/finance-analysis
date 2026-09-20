@@ -671,6 +671,7 @@
     "pendingRefundsFooter": "אלו הוצאות שסימנת כמצפות להחזר",
     "addRule": "הוסף כלל",
     "remainingAmount": "נותרו {{amount}}",
+    "leftAmount": "נותרו {{amount}}",
     "overByAmount": "חריגה של {{amount}}",
     "netRefund": "זיכוי נטו של {{amount}}",
     "spendOverTime": "הוצאות לאורך זמן",
