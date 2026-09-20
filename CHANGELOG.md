@@ -1,3 +1,13 @@
+## v1.69.0 (2026-09-20)
+
+### Feat
+
+- **scraping**: keep scraper state app-wide so scrapes survive navigation (#301)
+
+### Fix
+
+- **scraping**: close the single-flight race and register scrapers before launch (#300)
+
 ## v1.68.1 (2026-09-20)
 
 ### Fix
