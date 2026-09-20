@@ -42,6 +42,12 @@ interface BurnProps extends BaseProps {
   totalPeriods: number;
   /** Draw the diagonal "you should be here by now" line (yearly only). */
   showPace?: boolean;
+  /**
+   * Periods already gone by (months elapsed, for a yearly rule). Pace is
+   * measured against the calendar, so a caller that knows it passes it;
+   * without it the last period with a charge stands in.
+   */
+  elapsedPeriods?: number;
 }
 
 type RuleSparklineProps = BarsProps | BurnProps;
@@ -66,6 +72,13 @@ function colorFor(spent: number, budget: number): string {
  * Cumulative spend against the ceiling, optionally with a pace diagonal: a row
  * can sit well under its ceiling and still be spending too fast for the year,
  * which the percentage column cannot express.
+ *
+ * Both variants take their colour from `colorFor`, the same share-of-ceiling
+ * thresholds the ledger row's dot, bar and percentage use. Pace gets its own
+ * mark — the diagonal turns amber when the burn line is above it — rather than
+ * the status colour: an envelope at 85% of its ceiling is on track by every
+ * other surface on the page (the year's health count included), and painting
+ * only its trend amber made one row answer two questions in one palette.
  */
 export const RuleSparkline: React.FC<RuleSparklineProps> = (props) => {
   const { t } = useTranslation();
@@ -95,18 +108,10 @@ export const RuleSparkline: React.FC<RuleSparklineProps> = (props) => {
   const last = isBars ? series.length - 1 : lastActivePeriod(series);
   const finalValue = totals[isBars ? series.length - 1 : last];
 
-  // One entry per period plus the reference, so the mark is never the only
-  // channel. This deliberately does NOT use the app's [data-tooltip] pattern:
-  // that renders an absolutely-positioned, `white-space: nowrap` ::after, and
-  // a summary this long inflates the document's scrollWidth — which is exactly
-  // the horizontal-scroll-on-mobile regression budget.spec.ts guards against.
-  // An in-SVG <title> has no layout box at all.
-  const summary = [
-    ...labels.map((label, i) => `${label} ${formatCompactCurrency(totals[i] ?? 0)}`),
-    `${isBars ? t("budget.trend.budget") : t("budget.yearly.allocated")} ${formatCompactCurrency(budget)}`,
-  ].join(" · ");
-
   let body: React.ReactNode;
+  // Set by the burn branch; the summary is assembled below so the pace
+  // warning reaches a reader who never sees the amber diagonal.
+  let aheadOfPace = false;
 
   if (isBars) {
     const gap = 2;
@@ -145,14 +150,19 @@ export const RuleSparkline: React.FC<RuleSparklineProps> = (props) => {
       </>
     );
   } else {
-    const { totalPeriods, showPace = false } = props;
+    const { totalPeriods, showPace = false, elapsedPeriods } = props;
     const span = Math.max(totalPeriods, 2);
     const max = Math.max(budget, ...totals) * 1.1 || 1;
     const x = (i: number) => (i / (span - 1)) * width;
     const y = (value: number) => height - (value / max) * height;
-    const expected = showPace ? budget * ((last + 1) / span) : budget;
-    const stroke =
-      finalValue > budget ? ROSE : finalValue > expected ? AMBER : GREEN;
+    // Pace belongs to the calendar, not to the last charge: an envelope whose
+    // last spend was in May is not "on May's pace" once September is here, and
+    // judging it by a clock that stopped with its own spending flagged rows
+    // that had in fact fallen further behind pace with every quiet month.
+    const elapsed = Math.min(Math.max(elapsedPeriods ?? last + 1, 1), span);
+    const expected = budget * (elapsed / span);
+    aheadOfPace = showPace && budget > 0 && finalValue > expected;
+    const stroke = colorFor(finalValue, budget);
     const points = totals
       .slice(0, last + 1)
       .map((value, i) => `${x(i)},${y(value)}`)
@@ -181,10 +191,11 @@ export const RuleSparkline: React.FC<RuleSparklineProps> = (props) => {
             y1={height}
             x2={width}
             y2={ceilingY}
-            stroke={REFERENCE}
+            stroke={aheadOfPace ? AMBER : REFERENCE}
             strokeWidth={1}
             strokeDasharray="2 3"
-            opacity={0.45}
+            opacity={aheadOfPace ? 0.9 : 0.45}
+            data-testid="pace-line"
           />
         )}
         <polyline
@@ -206,6 +217,18 @@ export const RuleSparkline: React.FC<RuleSparklineProps> = (props) => {
       </>
     );
   }
+
+  // One entry per period plus the reference, so the mark is never the only
+  // channel. This deliberately does NOT use the app's [data-tooltip] pattern:
+  // that renders an absolutely-positioned, `white-space: nowrap` ::after, and
+  // a summary this long inflates the document's scrollWidth — which is exactly
+  // the horizontal-scroll-on-mobile regression budget.spec.ts guards against.
+  // An in-SVG <title> has no layout box at all.
+  const summary = [
+    ...labels.map((label, i) => `${label} ${formatCompactCurrency(totals[i] ?? 0)}`),
+    `${isBars ? t("budget.trend.budget") : t("budget.yearly.allocated")} ${formatCompactCurrency(budget)}`,
+    ...(aheadOfPace ? [t("budget.trend.aheadOfPace")] : []),
+  ].join(" · ");
 
   return (
     <span

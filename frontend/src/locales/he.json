@@ -681,7 +681,8 @@
     "viewAllProjects": "הצג את כל הפרויקטים",
     "trend": {
       "title": "תקציב מול ביצוע",
-      "budget": "תקציב"
+      "budget": "תקציב",
+      "aheadOfPace": "מקדים את הקצב"
     },
     "yearly": {
       "tab": "שנתי",
