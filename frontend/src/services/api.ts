@@ -765,6 +765,15 @@ export type RecurringConfirmation = "confirmed" | "pending" | "dismissed";
 export interface RecurringDecisionInput {
   normalized: string;
   decision: RecurringConfirmation;
+  /**
+   * What the candidate read as on screen when the user ruled. Stored beside
+   * the verdict for audit and read by nothing — sent because the card
+   * already has it, where deriving it server-side would cost a full
+   * detection pass per verdict.
+   */
+  label?: string;
+  amount?: number;
+  cadence?: RecurringCadence;
 }
 
 export interface RecurringSummary {

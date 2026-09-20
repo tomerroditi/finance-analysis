@@ -23,11 +23,25 @@ class RecurringDecisionRequest(BaseModel):
     """One verdict on a detected recurring-charge candidate."""
 
     normalized: str = Field(
-        ..., description="Normalized merchant key, as detection reported it."
+        ...,
+        max_length=500,
+        description="Normalized merchant key, as detection reported it.",
     )
     decision: str = Field(
         ...,
         description="'confirmed', 'dismissed', or 'pending' to undo a verdict.",
+    )
+    # Stored beside the verdict for audit, never read back. The client
+    # already has them on screen, so taking them here is free; deriving them
+    # server-side would mean a full detection pass per verdict.
+    label: str | None = Field(
+        None, max_length=500, description="Candidate's label when the user ruled."
+    )
+    amount: float | None = Field(
+        None, description="Candidate's median amount when the user ruled."
+    )
+    cadence: str | None = Field(
+        None, max_length=50, description="Candidate's cadence when the user ruled."
     )
 
 

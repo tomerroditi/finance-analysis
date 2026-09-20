@@ -118,16 +118,28 @@ export function RecurringSection() {
   // been accepted. The row moves optimistically the moment it is clicked, so
   // the disabled state communicated nothing the list was not already showing,
   // and a repeated verdict is idempotent.
+  // The label, amount and cadence ride along because the row already has
+  // them: they are stored beside the verdict for audit, and the backend
+  // would otherwise have to run a full detection pass per verdict to
+  // recover what is on screen here.
+  const verdict = (
+    item: RecurringItem,
+    decision: RecurringDecisionInput["decision"],
+  ): RecurringDecisionInput => ({
+    normalized: item.normalized,
+    decision,
+    label: item.label,
+    amount: item.amount,
+    cadence: item.cadence,
+  });
+
   const decideOne = (item: RecurringItem, decision: RecurringDecisionInput["decision"]) =>
-    decide.mutate([{ normalized: item.normalized, decision }]);
+    decide.mutate([verdict(item, decision)]);
 
   const decideAll = (
     group: RecurringItem[],
     decision: RecurringDecisionInput["decision"],
-  ) =>
-    decide.mutate(
-      group.map((item) => ({ normalized: item.normalized, decision })),
-    );
+  ) => decide.mutate(group.map((item) => verdict(item, decision)));
 
   return (
     <div className="bg-[var(--surface)] rounded-2xl border border-[var(--surface-light)] p-4 md:p-6">
