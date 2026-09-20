@@ -143,27 +143,34 @@ class TestScrapingServiceStatus:
         assert result["status"] == "unknown"
         assert result["process_id"] == 99
 
-    def test_get_last_scrape_dates(self, service):
-        """Verify last scrape dates are fetched for all configured accounts."""
-        service.credentials_repo.list_accounts.return_value = [
-            {"service": "credit_cards", "provider": "isracard", "account_name": "Main"},
-            {"service": "banks", "provider": "hapoalim", "account_name": "Checking"},
-        ]
-        service.scraping_history_repo.get_last_successful_scrape_date.side_effect = [
-            "2026-02-18",
-            None,
-        ]
+    def test_get_last_scrape_dates_delegates_to_the_history_service(self, service):
+        """Scrape history is answered by ``ScrapingHistoryService``.
 
-        result = service.get_last_scrape_dates()
+        The implementation lives there — and is tested there — because this
+        module imports the scraper adapter, and therefore Playwright, which
+        serverless deployments do not install. Keeping a second copy here
+        would let the two answers drift, and only one of them is reachable
+        on the hosted demo.
+        """
+        rows = [
+            {
+                "service": "credit_cards",
+                "provider": "isracard",
+                "account_name": "Main",
+                "last_scrape_date": "2026-02-18",
+            }
+        ]
+        history_service = MagicMock()
+        history_service.get_last_scrape_dates.return_value = rows
 
-        assert len(result) == 2
-        assert result[0] == {
-            "service": "credit_cards",
-            "provider": "isracard",
-            "account_name": "Main",
-            "last_scrape_date": "2026-02-18",
-        }
-        assert result[1]["last_scrape_date"] is None
+        with patch(
+            "backend.services.scraping_service.ScrapingHistoryService",
+            lambda db: history_service,
+        ):
+            result = service.get_last_scrape_dates()
+
+        assert result == rows
+        history_service.get_last_scrape_dates.assert_called_once_with()
 
 
 class TestScrapingServiceStart:

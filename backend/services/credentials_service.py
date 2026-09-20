@@ -382,12 +382,21 @@ class CredentialsService:
         none. Either way it cannot scrape until the user re-enters its
         details, and the Data Sources page says so on the account card.
 
+        Never in demo mode. A demo scrape does not authenticate — the adapter
+        redirects every provider to a dummy scraper that ignores credentials
+        entirely — so there is nothing a demo account could be missing. Demo
+        rows are deliberately stored as plaintext with no keyring password
+        (the hosted demo has neither an OS keyring nor ``cryptography``), and
+        without this the whole demo dataset would wear a "Re-enter details"
+        badge for a login that is never performed.
+
         Returns
         -------
         list[dict]
             List of account dicts with ``service``, ``provider``,
             ``account_name`` and ``needs_reentry`` keys.
         """
+        demo = AppConfig().is_demo_mode
         accounts = []
         for status in self.repository.list_account_statuses():
             uses_password = Fields.PASSWORD.value in LoginFields.get_fields(
@@ -397,8 +406,11 @@ class CredentialsService:
                 "service": status["service"],
                 "provider": status["provider"],
                 "account_name": status["account_name"],
-                "needs_reentry": not status["fields_readable"]
-                or (uses_password and not status["has_password"]),
+                "needs_reentry": not demo
+                and (
+                    not status["fields_readable"]
+                    or (uses_password and not status["has_password"])
+                ),
             })
         return accounts
 

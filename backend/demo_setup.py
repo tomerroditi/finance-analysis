@@ -424,6 +424,35 @@ def _shift_dates(engine: Engine, offset_days: int) -> None:
         conn.commit()
 
 
+def _install_snapshot(source: str, destination: str) -> None:
+    """Put the frozen snapshot in place without tearing it under live readers.
+
+    ``shutil.copy2`` straight onto ``destination`` truncates and rewrites the
+    file *in place*, so every request still holding it open keeps reading the
+    same inode while its contents change underneath — SQLite then reports
+    "database disk image is malformed", and one landing inside the rebuild's
+    own ``create_all`` fails the rebuild outright and leaves a half-built
+    database that 500s everything until the next one.
+
+    Copying to a sibling and ``os.replace``-ing is atomic: readers that
+    already have the old file open keep a consistent (if stale) inode until
+    they close, and every open after the swap sees the finished copy. They
+    were about to be torn down anyway — the demo database is being reset.
+
+    Any stale rollback journal is removed *before* the swap. Left behind, it
+    describes the previous file and SQLite would try to replay it over the
+    new one on the next open.
+    """
+    staging = f"{destination}.incoming"
+    shutil.copy2(source, staging)
+    for sidecar in (f"{destination}-journal", f"{destination}-wal", f"{destination}-shm"):
+        try:
+            os.remove(sidecar)
+        except FileNotFoundError:
+            pass
+    os.replace(staging, destination)
+
+
 def prepare_demo_database() -> None:
     """Copy the frozen demo DB into the demo-mode location and shift dates.
 
@@ -454,7 +483,7 @@ def prepare_demo_database() -> None:
 
         if os.path.exists(source):
             os.makedirs(os.path.dirname(demo_db_path), exist_ok=True)
-            shutil.copy2(source, demo_db_path)
+            _install_snapshot(source, demo_db_path)
 
         database.reset_engines()
         engine = database.get_engine()

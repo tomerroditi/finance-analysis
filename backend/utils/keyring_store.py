@@ -10,17 +10,44 @@ keeps its own lazy ``import keyring`` so the standalone uninstall CLI can
 still run (and report "keyring unavailable") on machines where the keyring
 package or backend is broken. A drift-guard unit test pins its service
 names and key format to the constants defined here.
+
+Where the ``keyring`` package itself is absent (serverless), reads answer
+"nothing stored" and writes raise ``ValidationException``. See the import
+block below.
 """
 
 import logging
 import os
 from typing import Optional
 
-import keyring
-import keyring.errors
+try:
+    import keyring
+    import keyring.errors
+
+    KEYRING_AVAILABLE = True
+except ImportError:  # pragma: no cover - exercised only without keyring
+    # Serverless deployments (Vercel) deliberately omit the OS-keyring stack:
+    # there is no keystore in the sandbox, and the hosted demo never scrapes,
+    # so it never needs a password. This module sits on the import path of
+    # every credentials route (routes -> service -> repository -> here), so a
+    # hard import made the WHOLE /api/credentials group vanish through
+    # main.py's `except ImportError: pass` — the Data Sources page 404'd its
+    # account list and rendered empty.
+    #
+    # Reads degrade to "nothing stored"; writes raise rather than silently
+    # dropping a real user's password on a machine where keyring is simply
+    # broken.
+    keyring = None  # type: ignore[assignment]
+    KEYRING_AVAILABLE = False
 
 from backend.config import AppConfig
 from backend.errors import ValidationException
+
+_UNAVAILABLE_MESSAGE = (
+    "The OS keyring is unavailable in this environment (the keyring package "
+    "is not installed), so credentials cannot be stored. This is expected on "
+    "the hosted demo, which never scrapes."
+)
 
 logger = logging.getLogger(__name__)
 
@@ -58,6 +85,8 @@ def ensure_secure_backend() -> None:
         If the resolved backend is a known-insecure one and no explicit
         override is set.
     """
+    if not KEYRING_AVAILABLE:
+        raise ValidationException(_UNAVAILABLE_MESSAGE)
     if os.environ.get("FAD_ALLOW_INSECURE_KEYRING") == "1":
         return
     if os.environ.get("PYTHON_KEYRING_BACKEND"):
@@ -118,8 +147,11 @@ def get_secret(service_name: str, secret_name: str) -> Optional[str]:
     Returns
     -------
     Optional[str]
-        The stored value, or None when no entry exists.
+        The stored value, or None when no entry exists — including when
+        this environment has no keyring at all.
     """
+    if not KEYRING_AVAILABLE:
+        return None
     return keyring.get_password(service_name, secret_name)
 
 
@@ -140,8 +172,11 @@ def delete_secret(service_name: str, secret_name: str) -> bool:
     -------
     bool
         True when an entry was deleted, False when none existed (a
-        missing entry is not an error).
+        missing entry is not an error). Always False where no keyring is
+        installed — there is nothing stored to delete.
     """
+    if not KEYRING_AVAILABLE:
+        return False
     try:
         keyring.delete_password(service_name, secret_name)
         return True
