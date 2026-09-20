@@ -10,6 +10,7 @@ import { useQueryKeys } from "../../../hooks/useQueryKeys";
 import { formatMonthYear } from "../../../utils/dateFormatting";
 import { BudgetRuleGrid } from "./BudgetRuleGrid";
 import { normalizeAnalysis } from "./normalizeAnalysis";
+import { budgetLink } from "../../../utils/budgetNavigation";
 
 interface MonthlyBudgetTabProps {
   year: number;
@@ -132,7 +133,7 @@ export const MonthlyBudgetTab: React.FC<MonthlyBudgetTabProps> = ({
             {t("dashboard.noBudgetRulesForMonth")}
           </p>
           <Link
-            to="/budget"
+            to={budgetLink("monthly", { year, month })}
             className="flex items-center gap-2 text-sm font-medium text-[var(--primary)] hover:text-[var(--primary-dark)] transition-colors cursor-pointer"
           >
             <Plus size={16} />
@@ -151,7 +152,10 @@ export const MonthlyBudgetTab: React.FC<MonthlyBudgetTabProps> = ({
       </div>
       <BudgetRuleGrid rules={analysis.rules} categoryIcons={categoryIcons} />
       <div className="text-end">
-        <Link to="/budget" className="text-sm font-medium text-[var(--primary)] hover:underline">
+        <Link
+          to={budgetLink("monthly", { year, month })}
+          className="text-sm font-medium text-[var(--primary)] hover:underline"
+        >
           {t("dashboard.viewAllBudgetRules")} &rarr;
         </Link>
       </div>

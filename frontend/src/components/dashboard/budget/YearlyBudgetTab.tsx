@@ -9,6 +9,7 @@ import { Skeleton } from "../../common/Skeleton";
 import { useQueryKeys } from "../../../hooks/useQueryKeys";
 import { BudgetRuleGrid } from "./BudgetRuleGrid";
 import type { BudgetRule } from "./types";
+import { budgetLink } from "../../../utils/budgetNavigation";
 
 interface YearlyBudgetTabProps {
   year: number;
@@ -89,7 +90,7 @@ export const YearlyBudgetTab: React.FC<YearlyBudgetTabProps> = ({
         <div className="flex flex-col items-center justify-center py-12 text-center">
           <p className="text-sm text-[var(--text-muted)] mb-3">{t("budget.yearly.empty")}</p>
           <Link
-            to="/budget"
+            to={budgetLink("yearly", { year })}
             className="flex items-center gap-2 text-sm font-medium text-[var(--primary)] hover:text-[var(--primary-dark)] transition-colors cursor-pointer"
           >
             <Plus size={16} />
@@ -111,7 +112,10 @@ export const YearlyBudgetTab: React.FC<YearlyBudgetTabProps> = ({
       </div>
       <BudgetRuleGrid rules={rules} categoryIcons={categoryIcons} />
       <div className="text-end">
-        <Link to="/budget" className="text-sm font-medium text-[var(--primary)] hover:underline">
+        <Link
+          to={budgetLink("yearly", { year })}
+          className="text-sm font-medium text-[var(--primary)] hover:underline"
+        >
           {t("dashboard.viewAllBudgetRules")} &rarr;
         </Link>
       </div>

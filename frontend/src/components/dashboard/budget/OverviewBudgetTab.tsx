@@ -10,6 +10,7 @@ import { formatMonthYear } from "../../../utils/dateFormatting";
 import { formatCurrency } from "../../../utils/numberFormatting";
 import { CommitmentBar } from "../../budget/overview/CommitmentBar";
 import { percentOf, rankEnvelopes } from "../../budget/overview/envelopeMath";
+import { budgetLink } from "../../../utils/budgetNavigation";
 
 /** How many long envelopes fit the card before it outgrows the dashboard slot. */
 const CARD_ENVELOPES = 2;
@@ -131,7 +132,7 @@ export const OverviewBudgetTab: React.FC<OverviewBudgetTabProps> = ({
             {t("budget.overview.noBudgetForMonth")}
           </p>
           <Link
-            to="/budget"
+            to={budgetLink("overview", { year, month })}
             className="text-sm font-medium text-[var(--primary)] hover:text-[var(--primary-dark)] transition-colors"
           >
             {t("budget.overview.openOverview")} &rarr;
@@ -267,7 +268,7 @@ export const OverviewBudgetTab: React.FC<OverviewBudgetTabProps> = ({
 
       <div className="text-end mt-auto pt-3">
         <Link
-          to="/budget"
+          to={budgetLink("overview", { year, month })}
           className="text-sm font-medium text-[var(--primary)] hover:underline"
         >
           {t("budget.overview.openOverview")}{" "}
