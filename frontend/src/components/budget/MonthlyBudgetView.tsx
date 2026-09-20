@@ -21,7 +21,7 @@ import { BudgetLedgerRow, LedgerRowAction } from "./BudgetLedgerRow";
 import { RuleSparkline } from "./RuleSparkline";
 import { DataFreshnessBadge } from "./DataFreshnessBadge";
 import { useBudgetFreshness } from "../../hooks/useBudgetFreshness";
-import { useScraping } from "../../hooks/useScraping";
+import { useIsAnyScraping } from "../../stores/scrapingStore";
 import { useBudgetTrend } from "../../hooks/useBudgetTrend";
 import {
   ProjectsThisMonthSummary,
@@ -84,7 +84,7 @@ export const MonthlyBudgetView: React.FC<MonthlyBudgetViewProps> = ({
   const queryClient = useQueryClient();
   const qk = useQueryKeys();
   const freshness = useBudgetFreshness();
-  const { isAnyScraping } = useScraping();
+  const isAnyScraping = useIsAnyScraping();
 
   const { data: analysis, isLoading } = useQuery({
     queryKey: qk.budget.analysis(year, month, includeSplitParents),

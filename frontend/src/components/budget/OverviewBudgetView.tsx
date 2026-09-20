@@ -10,7 +10,7 @@ import { Skeleton } from "../common/Skeleton";
 import { useQueryKeys } from "../../hooks/useQueryKeys";
 import { useBudgetTrend } from "../../hooks/useBudgetTrend";
 import { useBudgetFreshness } from "../../hooks/useBudgetFreshness";
-import { useScraping } from "../../hooks/useScraping";
+import { useIsAnyScraping } from "../../stores/scrapingStore";
 import { DataFreshnessBadge } from "./DataFreshnessBadge";
 import { BAR_CONTROL, BudgetCommandBar, PeriodNav } from "./BudgetCommandBar";
 import { RuleSparkline } from "./RuleSparkline";
@@ -153,7 +153,7 @@ export const OverviewBudgetView: React.FC<OverviewBudgetViewProps> = ({ tabs }) 
   });
 
   const freshness = useBudgetFreshness();
-  const { isAnyScraping } = useScraping();
+  const isAnyScraping = useIsAnyScraping();
 
   const trend = useBudgetTrend(year, month, TREND_MONTHS, false);
   const trendLabels = useMemo(

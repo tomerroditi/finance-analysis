@@ -200,11 +200,11 @@ test.describe("Per-account scraping concurrency", () => {
   test("a running scrape is still shown after navigating away and back", async ({
     page,
   }) => {
-    // The hook's `runningScrapers` map is component-local, so leaving Data
-    // Sources unmounts it. Without the GET /api/scraping/active hydration on
-    // mount, the card came back reading "idle" while the scraper was still
-    // running — and the 2s poller never restarted, so the scrape's completion
-    // invalidations never fired either.
+    // Cold-load hydration: this browser never clicked Scrape, so the store
+    // starts empty and GET /api/scraping/active is the only thing that can
+    // tell the card a scrape is in flight. (State surviving an in-app
+    // navigation is a different guarantee, covered by
+    // scraping-state-persistence.spec.ts, which stubs /active empty.)
     const ACTIVE = {
       process_id: RUNNING_PROCESS_ID,
       service: "banks",
