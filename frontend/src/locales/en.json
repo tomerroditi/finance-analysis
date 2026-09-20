@@ -265,6 +265,7 @@
         "annual": "Annual"
       },
       "noneConfirmed": "Nothing confirmed yet — review the detected charges above",
+      "noneRunning": "No running charges — everything here has ended",
       "review": {
         "title": "Needs review",
         "subtitle": "{{count}} detected charge(s), {{amount}} / mo — confirm to count them as recurring",
@@ -277,7 +278,10 @@
         "showDismissed": "Show dismissed ({{count}})",
         "hideDismissed": "Hide dismissed",
         "confidence": "{{percent}}% match",
-        "evidenceMetered": "{{cadence}} · {{count}} bills · ~{{amount}} typical"
+        "evidenceMetered": "{{cadence}} · {{count}} bills · ~{{amount}} typical",
+        "remove": "Remove {{label}} from recurring charges",
+        "showEnded": "Show ended ({{count}})",
+        "hideEnded": "Hide ended"
       },
       "amountKind": {
         "fixed": "Fixed price",

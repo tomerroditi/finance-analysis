@@ -111,6 +111,20 @@ test.describe("Dashboard — forecast, recurring, goals", () => {
     await expect(page.getByTestId("recurring-confirmed-item")).toHaveCount(0);
     await expect(page.getByText(/Needs review/i).first()).toBeVisible();
 
+    // A charge that stopped billing is history, not a commitment: the demo
+    // data's lapsed national-insurance run is detected but kept off the card
+    // until it is asked for. The toggle names how many are waiting.
+    const endedToggle = page.getByTestId("recurring-toggle-ended");
+    await expect(endedToggle).toContainText("1");
+    await expect(page.getByText(/BITUACH LEUMI/i)).toHaveCount(0);
+
+    await endedToggle.click();
+    await expect(page.getByText(/BITUACH LEUMI/i).first()).toBeVisible();
+    await expect(pending).toHaveCount(pendingBefore + 1);
+
+    await endedToggle.click();
+    await expect(page.getByText(/BITUACH LEUMI/i)).toHaveCount(0);
+
     // Confirming the first one moves it into the list of real charges.
     await pending
       .first()
@@ -129,5 +143,12 @@ test.describe("Dashboard — forecast, recurring, goals", () => {
     await expect(pending).toHaveCount(pendingBefore - 2);
     await page.getByRole("button", { name: /Show dismissed/i }).click();
     await expect(page.getByTestId("recurring-dismissed-item")).toHaveCount(1);
+
+    // A confirmed charge can be dropped outright rather than only sent back
+    // to review — it joins the dismissed list, not the pending one.
+    await page.getByTestId("recurring-remove").first().click();
+    await expect(page.getByTestId("recurring-confirmed-item")).toHaveCount(0);
+    await expect(page.getByTestId("recurring-dismissed-item")).toHaveCount(2);
+    await expect(pending).toHaveCount(pendingBefore - 2);
   });
 });

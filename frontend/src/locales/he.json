@@ -265,6 +265,7 @@
         "annual": "שנתי"
       },
       "noneConfirmed": "עדיין לא אושר דבר — אשרו את החיובים שזוהו למעלה",
+      "noneRunning": "אין חיובים פעילים — כל מה שכאן הסתיים",
       "review": {
         "title": "ממתין לאישור",
         "subtitle": "זוהו {{count}} חיובים, {{amount}} לחודש — אשרו כדי לספור אותם כחיובים חוזרים",
@@ -277,7 +278,10 @@
         "showDismissed": "הצגת נדחים ({{count}})",
         "hideDismissed": "הסתרת נדחים",
         "confidence": "התאמה {{percent}}%",
-        "evidenceMetered": "{{cadence}} · {{count}} חיובים · {{amount}} בממוצע"
+        "evidenceMetered": "{{cadence}} · {{count}} חיובים · {{amount}} בממוצע",
+        "remove": "הסרת {{label}} מהחיובים החוזרים",
+        "showEnded": "הצגת שהסתיימו ({{count}})",
+        "hideEnded": "הסתרת שהסתיימו"
       },
       "amountKind": {
         "fixed": "מחיר קבוע",

@@ -657,61 +657,78 @@ class RecurringService:
         ValidationException
             If ``decision`` is not one of the three accepted values.
         EntityNotFoundException
-            If no detected candidate carries that key. Confirming something
-            detection never produced would create a verdict nothing can ever
-            act on, which reads to the user as the click having done nothing.
+            If no detected candidate carries that key.
         """
-        if decision not in (*DECISIONS, PENDING):
-            raise ValidationException(
-                f"Invalid decision '{decision}'. "
-                f"Expected one of: {', '.join((*DECISIONS, PENDING))}."
-            )
-
-        candidate = next(
-            (
-                item
-                for item in self.get_recurring(today, include_dismissed=True)["items"]
-                if item["normalized"] == normalized
-            ),
-            None,
-        )
-        if candidate is None:
-            raise EntityNotFoundException(
-                f"No detected recurring charge named '{normalized}'."
-            )
-
-        if decision == PENDING:
-            self.decisions.clear(normalized)
-        else:
-            self.decisions.set_decision(
-                normalized,
-                decision,
-                label=candidate["label"],
-                amount=candidate["amount"],
-                cadence=candidate["cadence"],
-            )
-        return {"normalized": normalized, "decision": decision}
+        return self.set_decisions(
+            [{"normalized": normalized, "decision": decision}], today
+        )["updated"][0]
 
     def set_decisions(
         self, decisions: list[dict], today: date | pd.Timestamp | None = None
     ) -> dict:
         """Record several verdicts at once (the "confirm all" path).
 
+        Every verdict is validated before any of them is written, and the
+        whole batch lands in one commit. Both matter for how fast the card
+        answers a click: detection runs once for the batch rather than once
+        per entry, and a single commit invalidates the derived-read cache
+        once instead of *n* times — applying eight verdicts one at a time
+        meant eight full detection passes, which is what made "confirm all"
+        take seconds.
+
         Parameters
         ----------
         decisions : list[dict]
             Each entry ``{"normalized": str, "decision": str}``.
         today : date or pd.Timestamp, optional
-            Reference day, forwarded to :meth:`set_decision`.
+            Reference day, forwarded to detection when looking candidates up.
 
         Returns
         -------
         dict
             ``{"updated": [...]}`` — the verdicts that were stored.
+
+        Raises
+        ------
+        ValidationException
+            If any ``decision`` is not one of the three accepted values.
+        EntityNotFoundException
+            If any key names no detected candidate. Confirming something
+            detection never produced would create a verdict nothing can ever
+            act on, which reads to the user as the click having done nothing.
         """
+        accepted = (*DECISIONS, PENDING)
+        for entry in decisions:
+            if entry["decision"] not in accepted:
+                raise ValidationException(
+                    f"Invalid decision '{entry['decision']}'. "
+                    f"Expected one of: {', '.join(accepted)}."
+                )
+
+        candidates = {
+            item["normalized"]: item
+            for item in self.get_recurring(today, include_dismissed=True)["items"]
+        }
+
+        entries = []
+        for entry in decisions:
+            candidate = candidates.get(entry["normalized"])
+            if candidate is None:
+                raise EntityNotFoundException(
+                    f"No detected recurring charge named '{entry['normalized']}'."
+                )
+            entries.append({
+                "normalized": entry["normalized"],
+                "decision": entry["decision"],
+                "label": candidate["label"],
+                "amount": candidate["amount"],
+                "cadence": candidate["cadence"],
+            })
+
+        self.decisions.apply(entries)
         return {
             "updated": [
-                self.set_decision(entry["normalized"], entry["decision"], today)
-                for entry in decisions
+                {"normalized": e["normalized"], "decision": e["decision"]}
+                for e in entries
             ]
         }
