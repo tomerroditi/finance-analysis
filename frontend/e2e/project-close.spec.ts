@@ -58,8 +58,9 @@ test.describe("Closing a project budget", () => {
       .filter({ hasText: targetPattern });
     await expect(targetAttentionRow).toHaveCount(1);
 
-    // Close it from the Projects tab. The view auto-selects the first project,
-    // which is the same one the Overview listed above.
+    // Close it from the Projects tab. The view auto-selects the first *open*
+    // project, and every seeded project is open here, so that is the first
+    // one — the same one the Overview listed above.
     await page.getByRole("button", { name: /^Project Budgets$/i }).click();
     const toggle = page.getByTestId("project-closed-toggle");
     await expect(toggle).toHaveText(/close project/i, { timeout: 15_000 });
@@ -107,8 +108,25 @@ test.describe("Closing a project budget", () => {
     await expect(overviewEnvelopes).toBeVisible({ timeout: 15_000 });
     await expect(overviewEnvelopes).not.toContainText(targetPattern);
 
-    // Reopening puts it back, with no confirmation step.
+    // Back on the Projects tab (the tabs unmount, so the view picks a project
+    // again from scratch) it must NOT land on the one just closed: a finished
+    // project is history, so the auto-selection skips it for an open one.
     await page.getByRole("button", { name: /^Project Budgets$/i }).click();
+    await expect(page.getByTestId("project-closed-notice")).toHaveCount(0, {
+      timeout: 15_000,
+    });
+    await expect(toggle).toHaveText(/close project/i);
+
+    // Reopening puts it back, with no confirmation step — reached by picking
+    // the closed project out of the picker, which still lists it.
+    // The picker's trigger shows the selected project, so it has no stable
+    // accessible name to address it by — go through its container.
+    await page.getByTestId("project-picker").getByRole("button").click();
+    await page
+      .getByRole("option", {
+        name: new RegExp(`^${escapeRegExp(target)}\\s*·\\s*Closed$`, "i"),
+      })
+      .click();
     await expect(toggle).toHaveText(/reopen project/i, { timeout: 15_000 });
     await toggle.click();
     await expect(page.getByTestId("project-closed-notice")).toBeHidden({

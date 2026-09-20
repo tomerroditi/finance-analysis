@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from "react";
 import { createPortal } from "react-dom";
-import { ChevronDown, X, Check, Search } from "lucide-react";
+import { ChevronDown, X, Check, CheckCheck, Search } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 interface MultiSelectProps {
@@ -8,6 +8,15 @@ interface MultiSelectProps {
   selected: string[];
   onChange: (selected: string[]) => void;
   placeholder?: string;
+  /**
+   * Offer a one-click "select all" row above the options.
+   *
+   * Opt-in, because it only makes sense where every option is a real choice —
+   * a budget envelope covering its whole category. In a filter, selecting
+   * everything is the same as selecting nothing, so the row would be a
+   * control that does not do anything.
+   */
+  showSelectAll?: boolean;
 }
 
 export const MultiSelect: React.FC<MultiSelectProps> = ({
@@ -15,6 +24,7 @@ export const MultiSelect: React.FC<MultiSelectProps> = ({
   selected,
   onChange,
   placeholder = "Select...",
+  showSelectAll = false,
 }) => {
   const { t } = useTranslation();
   const [isOpen, setIsOpen] = useState(false);
@@ -81,6 +91,24 @@ export const MultiSelect: React.FC<MultiSelectProps> = ({
     }
   };
 
+  // Scoped to what the search box is showing: with a query typed, "select
+  // all" means the matches in front of the user, not every hidden option —
+  // and the label flips to the undo of exactly that.
+  const allFilteredSelected =
+    filteredOptions.length > 0 &&
+    filteredOptions.every((opt) => selected.includes(opt));
+
+  const toggleAllFiltered = () => {
+    if (allFilteredSelected) {
+      onChange(selected.filter((s) => !filteredOptions.includes(s)));
+      return;
+    }
+    onChange([
+      ...selected,
+      ...filteredOptions.filter((opt) => !selected.includes(opt)),
+    ]);
+  };
+
   const clearAll = (e: React.MouseEvent) => {
     e.stopPropagation();
     onChange([]);
@@ -99,7 +127,7 @@ export const MultiSelect: React.FC<MultiSelectProps> = ({
         >
           {selected.length === 0
             ? placeholder
-            : `${selected.length} selected`}
+            : t("common.countSelected", { count: selected.length })}
         </span>
         <div className="flex items-center gap-1 ms-1 shrink-0">
           {selected.length > 0 && (
@@ -144,7 +172,7 @@ export const MultiSelect: React.FC<MultiSelectProps> = ({
           ))}
           {selected.length > 2 && (
             <span className="text-[10px] text-[var(--text-muted)] py-0.5">
-              +{selected.length - 2} more
+              {t("common.countMore", { count: selected.length - 2 })}
             </span>
           )}
         </div>
@@ -178,6 +206,24 @@ export const MultiSelect: React.FC<MultiSelectProps> = ({
                 />
               </div>
             </div>
+            {showSelectAll && filteredOptions.length > 0 && (
+              <button
+                type="button"
+                data-testid="multiselect-select-all"
+                onClick={toggleAllFiltered}
+                className="w-full flex items-center gap-2 px-2.5 py-2 text-xs font-medium text-[var(--primary)] hover:bg-[var(--surface-light)] border-b border-[var(--surface-light)] transition-colors text-start"
+              >
+                <CheckCheck size={12} className="shrink-0" />
+                <span className="truncate">
+                  {allFilteredSelected
+                    ? t("common.deselectAll")
+                    : t("common.selectAll")}
+                </span>
+                <span className="ms-auto text-[10px] text-[var(--text-muted)]" dir="ltr">
+                  {filteredOptions.length}
+                </span>
+              </button>
+            )}
             <div role="listbox" aria-multiselectable="true" className="overflow-y-auto flex-1">
               {filteredOptions.map((opt) => (
                 <button

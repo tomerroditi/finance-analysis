@@ -161,17 +161,21 @@ test.describe("Yearly budget", () => {
       .click();
 
     // Take every tag in the category so the envelope covers the whole of that
-    // category's spend, which was checked to be non-zero above.
+    // category's spend, which was checked to be non-zero above. An envelope
+    // over a whole category is the common case, so that is one click on the
+    // select-all row rather than one click per tag.
     await addDialog.getByRole("button", { name: /select tags/i }).click();
-    for (const tag of freeCategoryTags) {
-      await page
-        .getByRole("option", {
-          name: new RegExp(`^${escapeRegExp(tag)}$`, "i"),
-        })
-        .click();
-    }
+    const selectAllTags = page.getByTestId("multiselect-select-all");
+    await expect(selectAllTags).toContainText(/select all/i);
+    await selectAllTags.click();
+    // It flips to its own undo, and the trigger counts every tag — not just
+    // the ones that happened to be on screen.
+    await expect(selectAllTags).toContainText(/deselect all/i);
     // Close the tags popover (it stays open to allow multiple picks).
     await addDialog.getByPlaceholder(/vacations/i).click();
+    await expect(
+      addDialog.getByText(new RegExp(`^${freeCategoryTags.length} selected$`)),
+    ).toBeVisible();
 
     await addDialog.getByPlaceholder(/20,?000/i).fill(String(ceiling));
     await addDialog.getByRole("button", { name: /^save$/i }).click();

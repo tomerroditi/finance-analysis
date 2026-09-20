@@ -6,6 +6,7 @@ import { YearlyBudgetView } from "./YearlyBudgetView";
 import {
   budgetApi,
   pendingRefundsApi,
+  type PendingRefund,
   type YearlyAnalysis,
 } from "../../services/api";
 import type { Transaction } from "../../types/transaction";
@@ -119,7 +120,7 @@ describe("YearlyBudgetView", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(pendingRefundsApi.getAll).mockResolvedValue({
-      data: [],
+      data: [] as PendingRefund[],
     } as Awaited<ReturnType<typeof pendingRefundsApi.getAll>>);
   });
 
