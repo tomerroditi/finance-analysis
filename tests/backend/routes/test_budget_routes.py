@@ -482,3 +482,58 @@ class TestBudgetOverviewRoute:
         """
         assert test_client.get("/api/budget/overview/2026/13").status_code == 422
         assert test_client.get("/api/budget/overview/2026/0").status_code == 422
+
+
+class TestBudgetTrendRoute:
+    """Tests for GET /api/budget/trend/{year}/{month}.
+
+    One request in place of the per-month analysis call the sparkline used to
+    make for each of its twelve points.
+    """
+
+    def test_returns_the_requested_number_of_months_oldest_first(self, test_client):
+        """The series ends at the month asked for and runs back from there."""
+        response = test_client.get("/api/budget/trend/2026/3?months=3")
+
+        assert response.status_code == 200
+        body = response.json()
+        assert [(p["year"], p["month"]) for p in body] == [
+            (2026, 1),
+            (2026, 2),
+            (2026, 3),
+        ]
+
+    def test_each_point_carries_the_shape_the_sparkline_reads(self, test_client):
+        """Each point holds the headline pair and the per-rule spend map."""
+        response = test_client.get("/api/budget/trend/2026/3?months=1")
+
+        assert response.status_code == 200
+        [point] = response.json()
+        for key in ("year", "month", "budget", "actual", "rules"):
+            assert key in point
+
+    def test_defaults_to_twelve_months(self, test_client):
+        """The budget page renders a twelve-month sparkline."""
+        response = test_client.get("/api/budget/trend/2026/3")
+
+        assert response.status_code == 200
+        assert len(response.json()) == 12
+
+    def test_rejects_a_nonsensical_span(self, test_client):
+        """`months` is bounded: an unbounded span would scan arbitrary history."""
+        assert test_client.get("/api/budget/trend/2026/3?months=0").status_code == 422
+        assert test_client.get("/api/budget/trend/2026/3?months=99").status_code == 422
+
+    def test_rejects_an_out_of_range_month(self, test_client):
+        """Path validation matches the other month-scoped budget routes."""
+        assert test_client.get("/api/budget/trend/2026/13").status_code == 422
+
+    def test_an_empty_month_is_not_an_error(self, test_client):
+        """A month with no rules plots zeros rather than failing."""
+        response = test_client.get("/api/budget/trend/2026/3?months=1")
+
+        assert response.status_code == 200
+        [point] = response.json()
+        assert point["budget"] == 0
+        assert point["actual"] == 0
+        assert point["rules"] == {}
