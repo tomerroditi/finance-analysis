@@ -7,9 +7,9 @@ import { enableDemoMode } from "./helpers";
  *
  * - Half-width cards: on wide (>=lg) viewports the customizable region is a
  *   2-column grid. `budget` and `recent` are both half-width and adjacent in
- *   the default order, so they pair on one row; `income_expenses` is
- *   full-width and spans the row. Fill order is start->end and flips under
- *   RTL (Hebrew).
+ *   the default order, so they pair on one row, as do `recurring` and
+ *   `heatmap` on the next; `income_expenses` is full-width and spans the row.
+ *   Fill order is start->end and flips under RTL (Hebrew).
  * - Blocks are capped at `--dash-card-h` (39rem) and scroll overflow inside.
  * - Card gutters are compact (gap-1.5 = 6px).
  * - The Spending Calendar (`heatmap`) card shows two months at half-row width
@@ -72,6 +72,7 @@ test.describe("Dashboard half-width blocks", () => {
     const ids = [
       "budget",
       "recent",
+      "recurring",
       "heatmap",
       "income_by_source",
       "income_expenses",
@@ -119,8 +120,13 @@ test.describe("Dashboard half-width blocks", () => {
 
     // Two half cards sharing a row are the same height (the taller of the two).
     expect(Math.abs(boxes.budget.height - boxes.recent.height)).toBeLessThan(2);
+    // Second row: `recurring` + `heatmap`. `recurring` graduated out of beta
+    // into the default layout between `recent` and `heatmap`, which is what
+    // makes this the pair — it used to be `heatmap` + `income_by_source`.
+    expect(Math.abs(boxes.recurring.y - boxes.heatmap.y)).toBeLessThan(4);
+    expect(boxes.recurring.x).toBeLessThan(boxes.heatmap.x);
     expect(
-      Math.abs(boxes.heatmap.height - boxes.income_by_source.height),
+      Math.abs(boxes.recurring.height - boxes.heatmap.height),
     ).toBeLessThan(2);
 
     // Every block enables internal scrolling.

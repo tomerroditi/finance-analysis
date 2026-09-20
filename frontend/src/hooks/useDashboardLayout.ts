@@ -15,7 +15,7 @@ import { useCallback, useSyncExternalStore } from "react";
 const STORAGE_KEY = "fa.dashboard.layout";
 // Bump when the default visibility policy changes so a one-time migration can
 // run against older stored layouts (see `normalize`).
-const LAYOUT_VERSION = 3;
+const LAYOUT_VERSION = 4;
 
 /** A card's width on the dashboard grid. */
 export type DashboardCardSize = "half" | "full";
@@ -26,7 +26,7 @@ export const DASHBOARD_CARDS = [
   { id: "insights", labelKey: "dashboard.cards.insights", size: "full", beta: true },
   { id: "budget", labelKey: "dashboard.cards.budget", size: "half" },
   { id: "recent", labelKey: "dashboard.cards.recent", size: "half" },
-  { id: "recurring", labelKey: "dashboard.cards.recurring", size: "half", beta: true },
+  { id: "recurring", labelKey: "dashboard.cards.recurring", size: "half" },
   { id: "goals", labelKey: "dashboard.cards.goals", size: "half", beta: true },
   { id: "heatmap", labelKey: "dashboard.cards.heatmap", size: "half" },
   { id: "income_by_source", labelKey: "dashboard.cards.incomeBySource", size: "half" },
@@ -126,6 +126,17 @@ export function normalize(raw: StoredLayout): DashboardLayout {
     }
     rawOrder = rawOrder.filter((id) => id !== "charts");
     rawHidden = rawHidden.filter((id) => id !== "charts");
+  }
+
+  // v4: the subscriptions/recurring card left beta and is default-visible
+  // now. Existing layouts carry it in `hidden` because the beta policy put it
+  // there, not because the user chose to hide it, so the graduation has to
+  // reach them too — otherwise "default-visible" would only ever apply to
+  // people installing for the first time. Dropping it from `hidden` lets the
+  // tail loop below append it to the end of the visible order, which is
+  // exactly where enabling it by hand would have put it.
+  if (version < 4) {
+    rawHidden = rawHidden.filter((id) => id !== "recurring");
   }
 
   const hidden = Array.from(

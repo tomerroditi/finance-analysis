@@ -25,7 +25,7 @@ test.describe("Dashboard insight dismissal", () => {
       "income_expenses",
       "net_worth",
     ],
-    v: 3,
+    v: 4,
   };
 
   // Mutating spec: the dismissal writes to the shared demo DB, so the file

@@ -391,6 +391,53 @@ class TestRecurringConfirmation:
         assert result["confirmed_count"] == 2
         assert result["total_monthly"] == 65.0
 
+    def test_a_rejected_batch_stores_nothing(self, db_session):
+        """One bad key voids the whole batch — verdicts are all or nothing.
+
+        A partially applied batch is worse than a rejected one: the card would
+        report the failure while half its rows had silently moved.
+        """
+        norm = self._seed_netflix(db_session)
+        service = RecurringService(db_session)
+
+        with pytest.raises(EntityNotFoundException):
+            service.set_decisions([
+                {"normalized": norm, "decision": "confirmed"},
+                {"normalized": "no such merchant", "decision": "confirmed"},
+            ])
+
+        result = RecurringService(db_session).get_recurring()
+        assert result["items"][0]["confirmation"] == "pending"
+
+    def test_a_batch_can_mix_verdicts(self, db_session):
+        """Confirm, dismiss and undo travel together in one call."""
+        for n in range(5):
+            _add_charge(db_session, "NETFLIX.COM 1234", -45.0, _months_ago(n))
+            _add_charge(db_session, "SPOTIFY AB", -20.0, _months_ago(n))
+            _add_charge(db_session, "GYM MEMBERSHIP", -199.0, _months_ago(n))
+        db_session.commit()
+
+        service = RecurringService(db_session)
+        keys = {
+            item["label"]: item["normalized"]
+            for item in service.get_recurring()["items"]
+        }
+        service.set_decision(keys["GYM MEMBERSHIP"], "dismissed")
+
+        service.set_decisions([
+            {"normalized": keys["NETFLIX.COM 1234"], "decision": "confirmed"},
+            {"normalized": keys["SPOTIFY AB"], "decision": "dismissed"},
+            {"normalized": keys["GYM MEMBERSHIP"], "decision": "pending"},
+        ])
+
+        result = RecurringService(db_session).get_recurring(include_dismissed=True)
+        verdicts = {i["label"]: i["confirmation"] for i in result["items"]}
+        assert verdicts == {
+            "NETFLIX.COM 1234": "confirmed",
+            "SPOTIFY AB": "dismissed",
+            "GYM MEMBERSHIP": "pending",
+        }
+
     def test_unknown_key_is_rejected(self, db_session):
         """Confirming something detection never produced is a 404, not a no-op."""
         with pytest.raises(EntityNotFoundException):
@@ -749,6 +796,31 @@ class TestDetectionIsCachedAcrossRequests:
         service.get_recurring(today)
 
         assert len(calls) == 2
+
+    def test_a_batch_of_verdicts_detects_once(self, file_session, monkeypatch):
+        """"Confirm all" must not pay for a detection pass per entry.
+
+        Every verdict used to be written — and committed — on its own, and a
+        commit discards the whole cache generation, so entry *n* re-ran the
+        detection the previous entry had just invalidated. The card took
+        seconds to answer a single click on "confirm all".
+        """
+        service, calls = self._counting_service(file_session, monkeypatch)
+        today = pd.Timestamp("2026-09-20")
+        for months in range(6):
+            _add_charge(file_session, "SPOTIFY", -21.9, _months_ago(months))
+            _add_charge(file_session, "GYM", -199.0, _months_ago(months))
+        file_session.commit()
+        keys = [i["normalized"] for i in service.get_recurring(today)["items"]]
+        assert len(keys) == 3
+        calls.clear()
+
+        service.set_decisions(
+            [{"normalized": key, "decision": "confirmed"} for key in keys], today
+        )
+
+        assert len(calls) == 1
+        assert service.get_recurring(today)["confirmed_count"] == 3
 
     def test_callers_cannot_corrupt_the_cached_summary(
         self, file_session, monkeypatch

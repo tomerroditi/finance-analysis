@@ -1,6 +1,6 @@
 """Repository for user verdicts on detected recurring charges."""
 
-from sqlalchemy import delete, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.models.recurring_decision import RecurringDecision
@@ -35,84 +35,45 @@ class RecurringDecisionsRepository:
         rows = self.db.execute(select(RecurringDecision)).scalars().all()
         return {row.normalized: row for row in rows}
 
-    def get(self, normalized: str) -> RecurringDecision | None:
-        """Return the stored verdict for one merchant, if any.
+    def apply(self, entries: list[dict]) -> None:
+        """Apply a batch of verdicts in a single transaction.
+
+        One commit for the whole batch, which is what the caller needs: every
+        commit invalidates the process-wide derived-read cache, so a batch
+        written a row at a time made the recurring detection re-run once per
+        entry and "confirm all" took seconds.
 
         Parameters
         ----------
-        normalized : str
-            Normalized merchant label.
-
-        Returns
-        -------
-        RecurringDecision or None
-            The stored row, or None when the candidate is still pending.
+        entries : list[dict]
+            Each entry ``{"normalized": str, "decision": str}`` plus the
+            optional display fields ``label``, ``amount`` and ``cadence``.
+            A decision of ``'pending'`` deletes the stored verdict.
         """
-        return self.db.execute(
-            select(RecurringDecision).where(RecurringDecision.normalized == normalized)
-        ).scalar_one_or_none()
+        rows = self.get_all()
+        for entry in entries:
+            normalized = entry["normalized"]
+            decision = entry["decision"]
 
-    def set_decision(
-        self,
-        normalized: str,
-        decision: str,
-        label: str | None = None,
-        amount: float | None = None,
-        cadence: str | None = None,
-    ) -> RecurringDecision:
-        """Upsert one verdict.
+            if decision == PENDING:
+                row = rows.pop(normalized, None)
+                if row is not None:
+                    self.db.delete(row)
+                continue
 
-        Parameters
-        ----------
-        normalized : str
-            Normalized merchant label — the key detection groups on.
-        decision : str
-            ``'confirmed'`` or ``'dismissed'``.
-        label : str, optional
-            Human-readable description to remember alongside the verdict.
-        amount : float, optional
-            Median amount at decision time.
-        cadence : str, optional
-            Cadence at decision time.
-
-        Returns
-        -------
-        RecurringDecision
-            The stored row.
-        """
-        row = self.get(normalized)
-        if row is None:
-            row = RecurringDecision(normalized=normalized, decision=decision)
-            self.db.add(row)
-        row.decision = decision
-        # Only overwrite the remembered display fields when the caller has
-        # something to offer — a verdict re-made from a stale client must not
-        # blank out what the last decision recorded.
-        if label is not None:
-            row.label = label
-        if amount is not None:
-            row.decided_amount = amount
-        if cadence is not None:
-            row.decided_cadence = cadence
+            row = rows.get(normalized)
+            if row is None:
+                row = RecurringDecision(normalized=normalized, decision=decision)
+                self.db.add(row)
+                rows[normalized] = row
+            row.decision = decision
+            # Only overwrite the remembered display fields when the caller
+            # has something to offer — a verdict re-made from a stale client
+            # must not blank out what the last decision recorded.
+            if entry.get("label") is not None:
+                row.label = entry["label"]
+            if entry.get("amount") is not None:
+                row.decided_amount = entry["amount"]
+            if entry.get("cadence") is not None:
+                row.decided_cadence = entry["cadence"]
         self.db.commit()
-        self.db.refresh(row)
-        return row
-
-    def clear(self, normalized: str) -> bool:
-        """Delete one verdict, returning the candidate to *pending*.
-
-        Parameters
-        ----------
-        normalized : str
-            Normalized merchant label.
-
-        Returns
-        -------
-        bool
-            True when a row was removed, False when there was nothing stored.
-        """
-        result = self.db.execute(
-            delete(RecurringDecision).where(RecurringDecision.normalized == normalized)
-        )
-        self.db.commit()
-        return bool(result.rowcount)

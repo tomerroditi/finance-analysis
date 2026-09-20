@@ -51,6 +51,37 @@ describe("default visibility", () => {
   });
 });
 
+describe("v3 -> v4 graduation of the recurring card out of beta", () => {
+  it("ships it visible and unbadged on a fresh layout", () => {
+    const { order, hidden } = normalize({});
+    expect(order).toContain("recurring");
+    expect(hidden).not.toContain("recurring");
+    expect(isBetaCard("recurring")).toBe(false);
+  });
+
+  it("un-hides it for a stored layout that hid it under the beta policy", () => {
+    const { order, hidden } = normalize({
+      v: 3,
+      order: ["budget", "recent"],
+      hidden: ["recurring", "forecast"],
+    });
+    expect(order).toContain("recurring");
+    expect(hidden).not.toContain("recurring");
+    // The other beta cards are untouched — only this one graduated.
+    expect(hidden).toContain("forecast");
+  });
+
+  it("leaves a v4 layout that hides it alone", () => {
+    const { order, hidden } = normalize({
+      v: 4,
+      order: ["budget"],
+      hidden: ["recurring"],
+    });
+    expect(hidden).toContain("recurring");
+    expect(order).not.toContain("recurring");
+  });
+});
+
 describe("v2 -> v3 migration of the old 'charts' card", () => {
   it("replaces a VISIBLE charts card with income_expenses + net_worth, hiding the rest", () => {
     const { order, hidden } = normalize({ v: 2, order: ["budget", "charts", "recent"], hidden: [] });

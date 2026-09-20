@@ -4,7 +4,7 @@ import { enableDemoMode, resetDemoData } from "./helpers";
 /**
  * Customizable dashboard layout: the Settings → Dashboard tab lets users
  * reorder and hide cards; the KPI header stays pinned. Beta cards (forecast,
- * insights, recurring, goals) ship hidden by default. Persistence is
+ * insights, goals) ship hidden by default. Persistence is
  * localStorage-backed.
  */
 test.describe("Dashboard layout customization", () => {
@@ -149,12 +149,12 @@ test.describe("Dashboard layout customization", () => {
   test("hidden card persists across reload and can be restored", async ({
     page,
   }) => {
-    // Current (v:3) layout so it isn't migrated; heatmap hidden explicitly.
+    // Current (v:4) layout so it isn't migrated; heatmap hidden explicitly.
     await page.addInitScript(() => {
       window.localStorage.setItem(
         "fa.dashboard.layout",
         JSON.stringify({
-          v: 3,
+          v: 4,
           order: ["budget", "recent", "income_expenses", "net_worth"],
           hidden: ["heatmap"],
         }),

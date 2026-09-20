@@ -6,8 +6,10 @@ import {
   analyticsApi,
   type RecurringDecisionInput,
   type RecurringItem,
+  type RecurringSummary,
 } from "../../services/api";
 import { useQueryKeys } from "../../hooks/useQueryKeys";
+import { applyDecisions } from "./recurringOptimistic";
 import { qkPrefix } from "../../services/queryKeys";
 import { Skeleton } from "../common/Skeleton";
 import { formatCurrency } from "../../utils/numberFormatting";
@@ -33,6 +35,7 @@ export function RecurringSection() {
   const qk = useQueryKeys();
   const queryClient = useQueryClient();
   const [showDismissed, setShowDismissed] = useState(false);
+  const [showEnded, setShowEnded] = useState(false);
 
   const { data, isLoading } = useQuery({
     queryKey: qk.analytics.recurring(showDismissed),
@@ -45,25 +48,68 @@ export function RecurringSection() {
   const decide = useMutation({
     mutationFn: (decisions: RecurringDecisionInput[]) =>
       analyticsApi.setRecurringDecisions(decisions),
-    // A verdict moves money between "committed" and "free to spend", so the
-    // budget Overview and every analytics figure built on recurring charges
-    // have to be refetched alongside this panel.
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: qkPrefix.analytics });
-      queryClient.invalidateQueries({ queryKey: qkPrefix.budget });
+    // Show the verdict at once. The write itself is quick, but it invalidates
+    // every derived read on the dashboard, so waiting for the sweep that
+    // follows left the item sitting in "needs review" long enough to look
+    // ignored. Both cached variants are patched — the dismissed-inclusive
+    // list is the same data under a second key, and leaving it stale would
+    // make the "show dismissed" toggle contradict the list above it.
+    onMutate: async (decisions) => {
+      const filter = { queryKey: qkPrefix.recurring };
+      await queryClient.cancelQueries(filter);
+      const snapshot = queryClient.getQueriesData<RecurringSummary>(filter);
+
+      snapshot.forEach(([key, summary]) => {
+        if (!summary) return;
+        // The key is ["analytics", "recurring", includeDismissed, demo].
+        queryClient.setQueryData<RecurringSummary>(
+          key,
+          applyDecisions(summary, decisions, key[2] === true),
+        );
+      });
+      return { snapshot };
     },
+    onError: (_error, _decisions, context) => {
+      context?.snapshot.forEach(([key, summary]) =>
+        queryClient.setQueryData(key, summary),
+      );
+    },
+    // No invalidation here on purpose. A verdict moves money between
+    // "committed" and "free to spend", so the budget Overview and every
+    // analytics figure built on recurring charges do have to be refetched —
+    // but the shared `MutationCache.onSuccess` in `queryClient.ts` already
+    // sweeps them 200 ms after the last mutation settles. Sweeping again
+    // from here just ran every one of those queries twice per click (and
+    // un-debounced), which is overhead on exactly the path that felt slow.
+    // On failure the rollback above restores the server's own last answer,
+    // so there is nothing to refetch either.
   });
 
   const items = data?.items ?? [];
+  // A charge whose last sighting is long past is over, and an ended one is
+  // never in the monthly total, never in committed spend and has no next
+  // date — so it is history, not a commitment, and listing it alongside the
+  // live ones only pads the card. It stays one click away rather than gone:
+  // a cancellation that turns out to be a billing gap comes straight back.
+  const ended = items.filter((item) => item.status === "ended");
+  const live = showEnded ? items : items.filter((item) => item.status !== "ended");
   // Detection is a heuristic, so the review list leads with the candidates it
   // is most sure about — the reviewer works down from the obvious ones rather
   // than meeting a marginal guess first.
-  const pending = items
+  const pending = live
     .filter((item) => item.confirmation === "pending")
     .sort((a, b) => b.confidence - a.confidence);
-  const confirmed = items.filter((item) => item.confirmation === "confirmed");
+  const confirmed = live.filter((item) => item.confirmation === "confirmed");
+  // Deliberately off `items`, not `live`: "show dismissed" is an explicit
+  // request to see everything that was ruled out, and its count comes from
+  // the backend over every candidate. Filtering it by `showEnded` too would
+  // let the toggle promise two and reveal one.
   const dismissed = items.filter((item) => item.confirmation === "dismissed");
-  const isEmpty = items.length === 0;
+  // "Nothing detected", not "nothing on screen". Dismissed candidates are
+  // absent from `items` in this view but still real, and the empty state
+  // carries no toggles — so counting this as empty would strand them with no
+  // way back. Ended ones are in `items` already, just filtered out of `live`.
+  const isEmpty = items.length === 0 && (data?.dismissed_count ?? 0) === 0;
 
   const decideOne = (item: RecurringItem, decision: RecurringDecisionInput["decision"]) =>
     decide.mutate([{ normalized: item.normalized, decision }]);
@@ -88,7 +134,7 @@ export function RecurringSection() {
         {!!data && confirmed.length > 0 && (
           <div className="text-end">
             <p className="text-[10px] md:text-xs text-[var(--text-muted)]">{t("dashboard.recurring.totalMonthly")}</p>
-            <p dir="ltr" className="text-sm md:text-base font-bold text-start">{formatCurrency(data.total_monthly)}</p>
+            <p dir="ltr" data-testid="recurring-total" className="text-sm md:text-base font-bold text-start">{formatCurrency(data.total_monthly)}</p>
           </div>
         )}
       </div>
@@ -195,9 +241,13 @@ export function RecurringSection() {
             </section>
           )}
 
-          {confirmed.length === 0 && pending.length > 0 ? (
+          {confirmed.length === 0 ? (
             <p className="text-[var(--text-muted)] text-xs py-2 text-center">
-              {t("dashboard.recurring.noneConfirmed")}
+              {t(
+                pending.length > 0
+                  ? "dashboard.recurring.noneConfirmed"
+                  : "dashboard.recurring.noneRunning",
+              )}
             </p>
           ) : (
             <div className="space-y-1.5 max-h-[360px] overflow-y-auto pe-1">
@@ -233,16 +283,33 @@ export function RecurringSection() {
                       {t("dashboard.recurring.perMonth", { amount: formatCurrency(item.monthly_equivalent) })}
                     </p>
                   </div>
-                  <button
-                    type="button"
-                    disabled={decide.isPending}
-                    aria-label={t("dashboard.recurring.review.unconfirm", { label: item.label })}
-                    title={t("dashboard.recurring.review.unconfirm", { label: item.label })}
-                    onClick={() => decideOne(item, "pending")}
-                    className="shrink-0 p-2 rounded-lg text-[var(--text-muted)] hover:bg-[var(--surface-light)] md:opacity-0 md:group-hover:opacity-100 md:focus:opacity-100 disabled:opacity-50 transition-opacity"
-                  >
-                    <RotateCcw size={16} />
-                  </button>
+                  {/* Two different retractions: send it back to review when
+                      the verdict was premature, or drop it for good when it
+                      was never a subscription. Hidden until hover on a
+                      pointer device, always present on touch. */}
+                  <div className="flex items-center gap-1 shrink-0 md:opacity-0 md:group-hover:opacity-100 md:focus-within:opacity-100 transition-opacity">
+                    <button
+                      type="button"
+                      disabled={decide.isPending}
+                      aria-label={t("dashboard.recurring.review.unconfirm", { label: item.label })}
+                      title={t("dashboard.recurring.review.unconfirm", { label: item.label })}
+                      onClick={() => decideOne(item, "pending")}
+                      className="p-2 rounded-lg text-[var(--text-muted)] hover:bg-[var(--surface-light)] disabled:opacity-50 transition-colors"
+                    >
+                      <RotateCcw size={16} />
+                    </button>
+                    <button
+                      type="button"
+                      data-testid="recurring-remove"
+                      disabled={decide.isPending}
+                      aria-label={t("dashboard.recurring.review.remove", { label: item.label })}
+                      title={t("dashboard.recurring.review.remove", { label: item.label })}
+                      onClick={() => decideOne(item, "dismissed")}
+                      className="p-2 rounded-lg text-[var(--text-muted)] hover:bg-rose-500/15 hover:text-rose-300 disabled:opacity-50 transition-colors"
+                    >
+                      <X size={16} />
+                    </button>
+                  </div>
                 </div>
               ))}
             </div>
@@ -256,9 +323,21 @@ export function RecurringSection() {
                   data-testid="recurring-dismissed-item"
                   className="flex items-center gap-2 py-2 px-2.5 rounded-lg opacity-60"
                 >
-                  <p className="text-xs md:text-sm font-medium truncate flex-1" dir="auto" title={item.label}>
-                    {item.label}
-                  </p>
+                  {/* What it cost and how often it billed, because that is
+                      what tells the user whether ruling it out was a
+                      mistake — a bare merchant label does not. */}
+                  <div className="min-w-0 flex-1">
+                    <p className="text-xs md:text-sm font-medium truncate" dir="auto" title={item.label}>
+                      {item.label}
+                    </p>
+                    <p className="text-[9px] md:text-[10px] text-[var(--text-muted)]">
+                      {t("dashboard.recurring.review.evidence", {
+                        cadence: t(`dashboard.recurring.cadence.${item.cadence}`),
+                        count: item.occurrences,
+                        amount: formatCurrency(item.amount),
+                      })}
+                    </p>
+                  </div>
                   <button
                     type="button"
                     disabled={decide.isPending}
@@ -272,20 +351,39 @@ export function RecurringSection() {
             </div>
           )}
 
-          {(showDismissed || (data?.dismissed_count ?? 0) > 0) && (
-            <button
-              type="button"
-              onClick={() => setShowDismissed((shown) => !shown)}
-              className="flex items-center gap-1.5 text-[10px] md:text-xs text-[var(--text-muted)] hover:text-[var(--text)] transition-colors"
-            >
-              {showDismissed ? <EyeOff size={12} /> : <Eye size={12} />}
-              {showDismissed
-                ? t("dashboard.recurring.review.hideDismissed")
-                : t("dashboard.recurring.review.showDismissed", {
-                    count: data?.dismissed_count ?? 0,
-                  })}
-            </button>
-          )}
+          <div className="flex items-center gap-3 flex-wrap">
+            {(showDismissed || (data?.dismissed_count ?? 0) > 0) && (
+              <button
+                type="button"
+                onClick={() => setShowDismissed((shown) => !shown)}
+                className="flex items-center gap-1.5 text-[10px] md:text-xs text-[var(--text-muted)] hover:text-[var(--text)] transition-colors"
+              >
+                {showDismissed ? <EyeOff size={12} /> : <Eye size={12} />}
+                {showDismissed
+                  ? t("dashboard.recurring.review.hideDismissed")
+                  : t("dashboard.recurring.review.showDismissed", {
+                      count: data?.dismissed_count ?? 0,
+                    })}
+              </button>
+            )}
+            {/* Counted off the unfiltered list, so the toggle still offers
+                the way back when every charge on the card has ended. */}
+            {(showEnded || ended.length > 0) && (
+              <button
+                type="button"
+                data-testid="recurring-toggle-ended"
+                onClick={() => setShowEnded((shown) => !shown)}
+                className="flex items-center gap-1.5 text-[10px] md:text-xs text-[var(--text-muted)] hover:text-[var(--text)] transition-colors"
+              >
+                {showEnded ? <EyeOff size={12} /> : <Eye size={12} />}
+                {showEnded
+                  ? t("dashboard.recurring.review.hideEnded")
+                  : t("dashboard.recurring.review.showEnded", {
+                      count: ended.length,
+                    })}
+              </button>
+            )}
+          </div>
         </div>
       )}
     </div>

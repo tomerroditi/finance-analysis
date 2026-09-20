@@ -31,6 +31,10 @@ export const qkPrefix = {
   // refetch in MonthlyBudgetView).
   budgetAnalysis: ["budget", "analysis"] as const,
   analytics: ["analytics"] as const,
+  // Narrower than `analytics` — matches only the recurring summaries
+  // (["analytics","recurring",includeDismissed,demo]), whose two
+  // include-dismissed variants a setQueriesData patch rewrites together.
+  recurring: ["analytics", "recurring"] as const,
   investments: ["investments"] as const,
   liabilities: ["liabilities"] as const,
   categories: ["categories"] as const,
