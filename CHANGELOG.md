@@ -1,3 +1,9 @@
+## v1.71.0 (2026-09-20)
+
+### Feat
+
+- **dashboard**: recurring card — instant verdicts, out of beta, recoverable dismissals (#306)
+
 ## v1.70.1 (2026-09-20)
 
 ### Perf
