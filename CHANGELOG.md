@@ -1,3 +1,10 @@
+## v1.68.1 (2026-09-20)
+
+### Fix
+
+- **scraper**: report Max's lockout and wrong-details screens instead of timing out (#298)
+- **migrations**: repair retirement_goals columns lost to a mistyped table name (#299)
+
 ## v1.68.0 (2026-09-20)
 
 ### Feat
