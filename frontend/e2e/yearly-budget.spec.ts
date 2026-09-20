@@ -137,6 +137,15 @@ test.describe("Yearly budget", () => {
 
     // ---- 1. Create a yearly rule and confirm it renders with a progress bar. ----
     const ruleName = `E2E Yearly ${Date.now()}`;
+    // Ceiling picked so the envelope lands at ~85% used: inside the green
+    // tier the row's dot, bar and percentage paint, yet (before December)
+    // ahead of the year's pace. That is the combination that used to give a
+    // row a green bar and an amber trend line at the same time.
+    const TARGET_SHARE = 0.85;
+    const ceiling = Math.max(
+      Math.round((spendThisYear.get(freeCategory) ?? 0) / TARGET_SHARE),
+      1,
+    );
 
     await page.getByRole("button", { name: /add yearly rule/i }).click();
     const addDialog = page.getByRole("dialog", { name: /add yearly rule/i });
@@ -164,7 +173,7 @@ test.describe("Yearly budget", () => {
     // Close the tags popover (it stays open to allow multiple picks).
     await addDialog.getByPlaceholder(/vacations/i).click();
 
-    await addDialog.getByPlaceholder(/20,?000/i).fill("15000");
+    await addDialog.getByPlaceholder(/20,?000/i).fill(String(ceiling));
     await addDialog.getByRole("button", { name: /^save$/i }).click();
     await expect(addDialog).toBeHidden({ timeout: 10_000 });
 
@@ -213,6 +222,51 @@ test.describe("Yearly budget", () => {
     await expect(
       createdRow.locator("[style*='width']").first(),
     ).not.toHaveAttribute("style", /width:\s*0%/);
+
+    // ---- 1c. The row's status colour and its trend agree. ----
+    // Every status surface on the page — this dot and bar, the overview's
+    // envelopes, the year's health count — colours by share of the ceiling.
+    // The burn sparkline used to colour by pace instead, so an envelope at
+    // 85% with three months of the year left drew a green bar beside an
+    // amber line and left the reader to guess which one meant trouble.
+    const STATUS_STROKE: Record<string, string> = {
+      "bg-emerald-500": "#10b981",
+      "bg-amber-500": "#f59e0b",
+      "bg-rose-500": "#f43f5e",
+    };
+    const barClass =
+      (await createdRow.locator("[style*='width']").first().getAttribute("class")) ?? "";
+    const tier = Object.keys(STATUS_STROKE).find((cls) => barClass.includes(cls));
+    expect(tier, `no status colour on the row's bar: ${barClass}`).toBeTruthy();
+
+    const sparkline = createdRow.getByTestId("rule-sparkline").first();
+    await expect(sparkline).toBeVisible();
+    await expect(sparkline.locator("polyline")).toHaveAttribute(
+      "stroke",
+      STATUS_STROKE[tier!],
+    );
+
+    const share = createdEntry!.current_amount / ceiling;
+    expect(
+      share,
+      "the ceiling above should put this envelope under the row's 90% amber threshold",
+    ).toBeLessThan(0.9);
+    await expect(sparkline.locator("polyline")).toHaveAttribute("stroke", "#10b981");
+
+    // Pace still has a voice, it just has its own mark: the diagonal goes
+    // amber (and the summary says so, for anyone who cannot see it) when the
+    // burn line is above it. In December the year has caught up with an 85%
+    // envelope, so the diagonal is correctly quiet.
+    const paceLine = sparkline.locator('[data-testid="pace-line"]');
+    const paceFraction = (new Date().getMonth() + 1) / 12;
+    const svg = sparkline.locator("svg");
+    if (share > paceFraction) {
+      await expect(paceLine).toHaveAttribute("stroke", "#f59e0b");
+      await expect(svg).toHaveAttribute("aria-label", /Ahead of pace/i);
+    } else {
+      await expect(paceLine).toHaveAttribute("stroke", "#94a3b8");
+      await expect(svg).not.toHaveAttribute("aria-label", /Ahead of pace/i);
+    }
 
     // ---- 2. Attempt a colliding yearly rule and assert the inline error. ----
     await page.getByRole("button", { name: /add yearly rule/i }).click();

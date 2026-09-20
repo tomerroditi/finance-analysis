@@ -680,7 +680,8 @@
     "viewAllProjects": "View all projects",
     "trend": {
       "title": "Budget vs Actual",
-      "budget": "Budget"
+      "budget": "Budget",
+      "aheadOfPace": "Ahead of pace"
     },
     "yearly": {
       "tab": "Yearly",

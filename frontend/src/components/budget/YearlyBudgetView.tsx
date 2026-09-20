@@ -312,6 +312,7 @@ export const YearlyBudgetView: React.FC<YearlyBudgetViewProps> = ({
                       labels={monthLabels}
                       budget={rule.amount}
                       totalPeriods={MONTHS_IN_YEAR}
+                      elapsedPeriods={elapsedMonths}
                       showPace
                     />
                   }

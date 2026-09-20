@@ -67,10 +67,11 @@ describe("RuleSparkline", () => {
       expect(withoutPace.container.querySelectorAll("line")).toHaveLength(1);
     });
 
-    it("flags a row that is under its ceiling but ahead of pace", () => {
-      // 3 of 12 months elapsed → pace is 300 of 1200. Spending 600 is only
-      // half the ceiling, but twice the pace: the percentage column would
-      // call this fine, the trend must not.
+    it("warns on the pace diagonal — not the line — when a row is ahead of pace", () => {
+      // 3 of 12 months elapsed → pace is 300 of 1200. Spending 600 is twice
+      // the pace but only half the ceiling: the row's dot, bar and percentage
+      // all call that on track, so the line stays green and the diagonal
+      // carries the warning instead of the two disagreeing in one palette.
       const { container } = render(
         <RuleSparkline
           variant="burn"
@@ -78,6 +79,43 @@ describe("RuleSparkline", () => {
           labels={LABELS}
           budget={1200}
           totalPeriods={12}
+          elapsedPeriods={3}
+          showPace
+        />,
+      );
+      expect(container.querySelector("polyline")?.getAttribute("stroke")).toBe("#10b981");
+      expect(
+        container.querySelector('[data-testid="pace-line"]')?.getAttribute("stroke"),
+      ).toBe("#f59e0b");
+    });
+
+    it("keeps the line's colour on the same thresholds as the ledger row", () => {
+      // The reported mismatch: 85% of the ceiling with 9 of 12 months gone.
+      // The row paints that green (under 90%), so the trend must too.
+      const { container } = render(
+        <RuleSparkline
+          variant="burn"
+          series={[0, 0, 0, 0, 0, 0, 0, 1086, 4000]}
+          labels={LABELS}
+          budget={6000}
+          totalPeriods={12}
+          elapsedPeriods={9}
+          showPace
+        />,
+      );
+      expect(container.querySelector("polyline")?.getAttribute("stroke")).toBe("#10b981");
+      expect(container.querySelector("circle")?.getAttribute("fill")).toBe("#10b981");
+    });
+
+    it("turns the line amber once the envelope is nearly spent out", () => {
+      const { container } = render(
+        <RuleSparkline
+          variant="burn"
+          series={[600, 500]}
+          labels={["Feb", "Mar"]}
+          budget={1200}
+          totalPeriods={12}
+          elapsedPeriods={2}
           showPace
         />,
       );
@@ -92,10 +130,67 @@ describe("RuleSparkline", () => {
           labels={LABELS}
           budget={1200}
           totalPeriods={12}
+          elapsedPeriods={3}
           showPace
         />,
       );
       expect(container.querySelector("polyline")?.getAttribute("stroke")).toBe("#10b981");
+      expect(
+        container.querySelector('[data-testid="pace-line"]')?.getAttribute("stroke"),
+      ).toBe("#94a3b8");
+    });
+
+    it("measures pace against the calendar, not the last month with a charge", () => {
+      // 8,600 of 20,000 spent in a single May charge, now that September is
+      // here. Against May's clock that was ahead of pace; four quiet months
+      // later it is not, and the diagonal must stop claiming otherwise.
+      const series = [0, 0, 0, 0, 8600, 0, 0, 0, 0, 0, 0, 0];
+      const labels = series.map((_, i) => `M${i + 1}`);
+      const stale = render(
+        <RuleSparkline
+          variant="burn"
+          series={series}
+          labels={labels}
+          budget={20000}
+          totalPeriods={12}
+          showPace
+        />,
+      );
+      expect(
+        stale.container.querySelector('[data-testid="pace-line"]')?.getAttribute("stroke"),
+      ).toBe("#f59e0b");
+
+      const current = render(
+        <RuleSparkline
+          variant="burn"
+          series={series}
+          labels={labels}
+          budget={20000}
+          totalPeriods={12}
+          elapsedPeriods={9}
+          showPace
+        />,
+      );
+      expect(
+        current.container.querySelector('[data-testid="pace-line"]')?.getAttribute("stroke"),
+      ).toBe("#94a3b8");
+    });
+
+    it("says it in words, so the pace warning is not colour-only", () => {
+      const { container } = render(
+        <RuleSparkline
+          variant="burn"
+          series={[200, 200, 200]}
+          labels={LABELS}
+          budget={1200}
+          totalPeriods={12}
+          elapsedPeriods={3}
+          showPace
+        />,
+      );
+      expect(container.querySelector("svg")?.getAttribute("aria-label")).toContain(
+        "Ahead of pace",
+      );
     });
 
     it("goes rose once cumulative spend passes the ceiling", () => {
@@ -106,6 +201,7 @@ describe("RuleSparkline", () => {
           labels={["Feb", "Mar"]}
           budget={1000}
           totalPeriods={12}
+          elapsedPeriods={2}
           showPace
         />,
       );
