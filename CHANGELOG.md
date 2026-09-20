@@ -1,3 +1,9 @@
+## v1.72.0 (2026-09-20)
+
+### Feat
+
+- **budget**: let a settled yearly envelope be closed (#313)
+
 ## v1.71.3 (2026-09-20)
 
 ### Perf
