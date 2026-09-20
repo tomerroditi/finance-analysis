@@ -88,6 +88,7 @@ const layerStructure: LayerStructure[] = [
       { id: "credit-cards", icon: "\u{1F4B3}", badge: "PLAYWRIGHT" },
       { id: "insurance", icon: "\u{1F6E1}\uFE0F", badge: "PLAYWRIGHT" },
       { id: "manual", icon: "\u270F\uFE0F", badge: "UI FORMS" },
+      { id: "rates-feed", icon: "\u{1F4C9}", badge: "BOI FEED" },
     ],
   },
   {
@@ -108,6 +109,7 @@ const layerStructure: LayerStructure[] = [
       { id: "auto-tag", icon: "\u{1F3F7}\uFE0F", badge: "RULES ENGINE" },
       { id: "balance-recalc", icon: "\u2696\uFE0F" },
       { id: "prior-wealth", icon: "\u{1F3DB}\uFE0F", badge: "SYNTHETIC ROWS" },
+      { id: "kh-sync", icon: "\u{1F504}", badge: "AUTO-SYNC" },
     ],
   },
   {
@@ -120,6 +122,9 @@ const layerStructure: LayerStructure[] = [
       { id: "cash-bal", icon: "\u{1F4B5}" },
       { id: "inv-snapshots", icon: "\u{1F4F8}", badge: "SNAPSHOT-FIRST" },
       { id: "meta-tables", icon: "\u2699\uFE0F" },
+      { id: "goal-tables", icon: "\u{1F3AF}", badge: "EARMARKS" },
+      { id: "decision-tables", icon: "\u2705", badge: "STICKY VERDICTS" },
+      { id: "credentials-vault", icon: "\u{1F510}", badge: "KEYRING + FERNET" },
       { id: "demo-mode", icon: "\uD83E\uddEA", badge: "TOGGLE" },
       { id: "backup", icon: "\uD83D\uDCBE", badge: "SNAPSHOTS" },
     ],
@@ -135,7 +140,10 @@ const layerStructure: LayerStructure[] = [
       { id: "refunds-mgmt", icon: "\u{1F4B8}", badge: "BUDGET ADJUST" },
       { id: "invest-mgmt", icon: "\u{1F4BC}" },
       { id: "liab-mgmt", icon: "\u{1F4DD}" },
-      { id: "budget-mgmt", icon: "\u{1F4CA}", badge: "RULES + PROJECTS" },
+      { id: "budget-mgmt", icon: "\u{1F4CA}", badge: "MONTHLY / YEARLY / PROJECT" },
+      { id: "month-override", icon: "\u{1F4C5}", badge: "±1 MONTH" },
+      { id: "savings-goals-mgmt", icon: "\u{1F3AF}", badge: "VIRTUAL EARMARKS" },
+      { id: "recurring-review", icon: "\u{1F501}", badge: "CONFIRM / DISMISS" },
       { id: "balance-mgmt", icon: "\u{1F4B1}", badge: "TRIGGERS PRIOR WEALTH" },
       { id: "cat-mgmt", icon: "\u{1F4C1}", badge: "CASCADE" },
     ],
@@ -145,11 +153,16 @@ const layerStructure: LayerStructure[] = [
     color: "#a78bfa",
     badgeColors: { bg: "rgba(167,139,250,0.1)", text: "#a78bfa", border: "rgba(167,139,250,0.2)" },
     nodes: [
-      { id: "analysis-svc", icon: "\u{1F4CA}", badge: "7 KPI METHODS" },
+      { id: "analysis-svc", icon: "\u{1F4CA}", badge: "11 KPI READS" },
+      { id: "forecast-svc", icon: "\u{1F52E}", badge: "SAFE TO SPEND" },
+      { id: "recurring-svc", icon: "\u{1F501}", badge: "5 CADENCE BANDS" },
+      { id: "insights-svc", icon: "\u{1F4A1}", badge: "DISMISSIBLE" },
       { id: "budget-svc", icon: "\u{1F3AF}" },
+      { id: "goals-svc", icon: "\u{1F30A}", badge: "SURPLUS WATERFALL" },
       { id: "invest-svc", icon: "\u{1F4C8}" },
       { id: "liab-svc", icon: "\u{1F4C9}" },
-      { id: "retire-svc", icon: "\u{1F3D6}\uFE0F" },
+      { id: "rates-svc", icon: "\u{1F4B9}", badge: "PRIME" },
+      { id: "retire-svc", icon: "\u{1F3D6}\uFE0F", badge: "REAL TERMS" },
     ],
   },
   {
@@ -157,7 +170,8 @@ const layerStructure: LayerStructure[] = [
     color: "#f472b6",
     badgeColors: { bg: "rgba(244,114,182,0.1)", text: "#f472b6", border: "rgba(244,114,182,0.2)" },
     nodes: [
-      { id: "dashboard", icon: "\u{1F5A5}\uFE0F", badge: "10+ QUERIES" },
+      { id: "onboarding-page", icon: "\u{1F680}", badge: "FIRST RUN" },
+      { id: "dashboard", icon: "\u{1F5A5}\uFE0F", badge: "14 CARDS" },
       { id: "txn-page", icon: "\u{1F4D1}" },
       { id: "budget-page", icon: "\u{1F4B0}" },
       { id: "categories-page", icon: "\u{1F3F7}\uFE0F" },
@@ -166,6 +180,8 @@ const layerStructure: LayerStructure[] = [
       { id: "insurance-page", icon: "\u{1F6E1}\uFE0F" },
       { id: "retire-page", icon: "\u{1F305}" },
       { id: "datasources-page", icon: "\u{1F4E1}" },
+      { id: "settings-page", icon: "\u2699\uFE0F", badge: "LAYOUT + DEMO" },
+      { id: "pwa", icon: "\u{1F4F2}", badge: "SERVICE WORKER" },
     ],
   },
 ];
@@ -180,10 +196,12 @@ export const connectionDefs: ConnectionDef[] = [
   { from: "credit-cards", to: "scraper", color: "#22d3ee" },
   { from: "insurance", to: "scraper", color: "#22d3ee" },
   { from: "manual", to: "api-routes", color: "#22d3ee" },
+  { from: "rates-feed", to: "api-routes", color: "#22d3ee" },
   // Ingestion -> Processing
   { from: "scraper", to: "adapter", color: "#3b82f6" },
   { from: "adapter", to: "auto-tag", color: "#3b82f6" },
   { from: "adapter", to: "balance-recalc", color: "#3b82f6" },
+  { from: "adapter", to: "kh-sync", color: "#3b82f6" },
   // Ingestion -> Storage
   { from: "adapter", to: "txn-tables", color: "#3b82f6" },
   { from: "api-routes", to: "txn-tables", color: "#3b82f6" },
@@ -194,6 +212,10 @@ export const connectionDefs: ConnectionDef[] = [
   { from: "prior-wealth", to: "cash-bal", color: "#fbbf24" },
   { from: "prior-wealth", to: "inv-snapshots", color: "#fbbf24" },
   { from: "api-routes", to: "prior-wealth", color: "#3b82f6" },
+  { from: "kh-sync", to: "inv-snapshots", color: "#fbbf24" },
+  { from: "kh-sync", to: "meta-tables", color: "#fbbf24" },
+  { from: "api-routes", to: "meta-tables", color: "#3b82f6" },
+  { from: "api-routes", to: "credentials-vault", color: "#3b82f6" },
   // Storage -> Management
   { from: "txn-tables", to: "manual-tagging", color: "#34d399" },
   { from: "txn-tables", to: "splits", color: "#34d399" },
@@ -204,11 +226,19 @@ export const connectionDefs: ConnectionDef[] = [
   { from: "meta-tables", to: "cat-mgmt", color: "#34d399" },
   { from: "meta-tables", to: "manual-tagging", color: "#34d399" },
   { from: "inv-snapshots", to: "invest-mgmt", color: "#34d399" },
+  { from: "txn-tables", to: "month-override", color: "#34d399" },
+  { from: "txn-tables", to: "savings-goals-mgmt", color: "#34d399" },
+  { from: "goal-tables", to: "savings-goals-mgmt", color: "#34d399" },
+  { from: "decision-tables", to: "month-override", color: "#34d399" },
+  { from: "decision-tables", to: "recurring-review", color: "#34d399" },
   // Management -> Storage (writes back)
   { from: "manual-tagging", to: "txn-tables", color: "#fb923c" },
   { from: "splits", to: "txn-tables", color: "#fb923c" },
   { from: "cat-mgmt", to: "meta-tables", color: "#fb923c" },
   { from: "invest-mgmt", to: "inv-snapshots", color: "#fb923c" },
+  { from: "savings-goals-mgmt", to: "goal-tables", color: "#fb923c" },
+  { from: "recurring-review", to: "decision-tables", color: "#fb923c" },
+  { from: "month-override", to: "decision-tables", color: "#fb923c" },
   // Management -> Analytics
   { from: "cc-dedup", to: "analysis-svc", color: "#fb923c" },
   { from: "refunds-mgmt", to: "budget-svc", color: "#fb923c" },
@@ -216,6 +246,9 @@ export const connectionDefs: ConnectionDef[] = [
   { from: "liab-mgmt", to: "liab-svc", color: "#fb923c" },
   { from: "splits", to: "analysis-svc", color: "#fb923c" },
   { from: "manual-tagging", to: "analysis-svc", color: "#fb923c" },
+  { from: "savings-goals-mgmt", to: "goals-svc", color: "#fb923c" },
+  { from: "recurring-review", to: "recurring-svc", color: "#fb923c" },
+  { from: "month-override", to: "budget-svc", color: "#fb923c" },
   // Management -> Storage (budget & balance writes)
   { from: "budget-mgmt", to: "meta-tables", color: "#fb923c" },
   { from: "balance-mgmt", to: "bank-bal", color: "#fb923c" },
@@ -231,35 +264,62 @@ export const connectionDefs: ConnectionDef[] = [
   { from: "bank-bal", to: "analysis-svc", color: "#34d399" },
   { from: "cash-bal", to: "analysis-svc", color: "#34d399" },
   { from: "meta-tables", to: "budget-svc", color: "#34d399" },
+  { from: "txn-tables", to: "recurring-svc", color: "#34d399" },
+  { from: "txn-tables", to: "forecast-svc", color: "#34d399" },
+  { from: "bank-bal", to: "forecast-svc", color: "#34d399" },
+  { from: "goal-tables", to: "goals-svc", color: "#34d399" },
+  { from: "inv-snapshots", to: "goals-svc", color: "#34d399" },
+  { from: "decision-tables", to: "insights-svc", color: "#34d399" },
+  { from: "decision-tables", to: "recurring-svc", color: "#34d399" },
+  { from: "meta-tables", to: "rates-svc", color: "#34d399" },
+  { from: "meta-tables", to: "retire-svc", color: "#34d399" },
+  { from: "inv-snapshots", to: "retire-svc", color: "#34d399" },
   // Analytics -> Frontend
   { from: "analysis-svc", to: "dashboard", color: "#a78bfa" },
+  { from: "forecast-svc", to: "dashboard", color: "#a78bfa" },
+  { from: "recurring-svc", to: "dashboard", color: "#a78bfa" },
+  { from: "insights-svc", to: "dashboard", color: "#a78bfa" },
+  { from: "budget-svc", to: "dashboard", color: "#a78bfa" },
+  { from: "goals-svc", to: "dashboard", color: "#a78bfa" },
+  { from: "retire-svc", to: "dashboard", color: "#a78bfa" },
   { from: "budget-svc", to: "budget-page", color: "#a78bfa" },
+  { from: "goals-svc", to: "budget-page", color: "#a78bfa" },
   { from: "invest-svc", to: "invest-page", color: "#a78bfa" },
   { from: "liab-svc", to: "liab-page", color: "#a78bfa" },
+  { from: "rates-svc", to: "liab-page", color: "#a78bfa" },
+  { from: "rates-svc", to: "invest-page", color: "#a78bfa" },
   { from: "retire-svc", to: "retire-page", color: "#a78bfa" },
   { from: "txn-tables", to: "txn-page", color: "#34d399" },
   { from: "meta-tables", to: "categories-page", color: "#34d399" },
   { from: "txn-tables", to: "insurance-page", color: "#34d399" },
   { from: "meta-tables", to: "datasources-page", color: "#34d399" },
+  { from: "meta-tables", to: "onboarding-page", color: "#34d399" },
+  { from: "credentials-vault", to: "onboarding-page", color: "#34d399" },
+  { from: "credentials-vault", to: "datasources-page", color: "#34d399" },
+  { from: "api-routes", to: "pwa", color: "#3b82f6" },
+  // Credential vault feeds the scraper its logins
+  { from: "credentials-vault", to: "scraper", color: "#34d399" },
   // Demo Mode connections
   { from: "demo-mode", to: "scraper", color: "#34d399" },
   { from: "demo-mode", to: "txn-tables", color: "#34d399" },
+  { from: "demo-mode", to: "settings-page", color: "#34d399" },
   // Backup connections
   { from: "backup", to: "txn-tables", color: "#34d399" },
   { from: "backup", to: "meta-tables", color: "#34d399" },
+  { from: "backup", to: "settings-page", color: "#34d399" },
 ];
 
 /* ------------------------------------------------------------------ */
 /*  Callout icons — shared across languages                            */
 /* ------------------------------------------------------------------ */
 
-const calloutIcons = ["\u26A1", "\u26A1", "\u26A1", "\u26A1", "\u26A1"];
+const calloutIcons = ["\u26A1", "\u26A1", "\u26A1", "\u26A1", "\u26A1", "\u26A1", "\u26A1"];
 
 /* ------------------------------------------------------------------ */
 /*  Platform feature icons — shared across languages                   */
 /* ------------------------------------------------------------------ */
 
-const platformFeatureIcons = ["✂️", "🏷️", "💰", "📈", "💸", "🌐"];
+const platformFeatureIcons = ["✂️", "🏷️", "💰", "🎯", "🔁", "💡", "📈", "💸", "🏖️", "🌐"];
 
 /* ------------------------------------------------------------------ */
 /*  Builder — merges structural data with language content              */

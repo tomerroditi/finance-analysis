@@ -12,21 +12,26 @@ const content: DataFlowContent = {
   },
 
   nodes: {
-    banks: { title: "Banks", desc: "17 Israeli bank providers" },
+    banks: { title: "Banks", desc: "12 Israeli bank providers \u2014 Hapoalim, Leumi, Discount, Mizrahi, OneZero\u2026" },
     "credit-cards": { title: "Credit Cards", desc: "6 providers \u2014 Max, Visa Cal, Isracard, Amex" },
-    insurance: { title: "Insurance", desc: "Pension & savings \u2014 Hafenix" },
-    manual: { title: "Manual Entry", desc: "Cash, investments, balance corrections" },
+    insurance: { title: "Insurance", desc: "Keren Hishtalmut & pension \u2014 HaPhoenix." },
+    manual: { title: "Manual Entry", desc: "Cash, investments, liabilities, balance corrections" },
+    "rates-feed": { title: "Bank of Israel", desc: "Key-rate series behind the Israeli prime rate. Drives prime-linked loans and savings." },
     scraper: { title: "Scraper Framework", desc: "BrowserScraper (Playwright) & ApiScraper (httpx). Login, 2FA, stealth, data fetch." },
     adapter: { title: "ScraperAdapter", desc: "Result \u2192 DataFrame. Generates unique_id, normalizes fields, triggers pipeline." },
-    "api-routes": { title: "API Routes", desc: "POST /transactions, /investments, /cash_balances, /bank_balances" },
+    "api-routes": { title: "API Routes", desc: "One router per feature area under /api. Host allowlist, bearer token for non-loopback, same-origin guard on writes." },
     "auto-tag": { title: "Auto-Tagging", desc: "Recursive AND/OR rule engine. Creation order, first match wins. CC bill matching." },
     "balance-recalc": { title: "Balance Recalculation", desc: "Recomputes running bank balance from transaction history after each scrape." },
     "prior-wealth": { title: "Prior Wealth", desc: "Bridges pre-tracking capital. entered_balance \u2212 sum(transactions). Injected as synthetic rows." },
+    "kh-sync": { title: "Keren Hishtalmut Sync", desc: "Scraped insurance policies become type=hishtalmut investments with scraped snapshots." },
     "txn-tables": { title: "Transaction Tables", desc: "5 parallel tables: bank, credit_card, cash, manual_investment, insurance + split_transactions." },
     "bank-bal": { title: "Bank Balances", desc: "Per-account balance + prior_wealth_amount." },
     "cash-bal": { title: "Cash Balances", desc: "Per-envelope balance + prior_wealth. Multiple envelopes." },
     "inv-snapshots": { title: "Investment Snapshots", desc: "Timestamped market values. manual | calculated | scraped." },
-    "meta-tables": { title: "Metadata", desc: "categories, tagging_rules, budget_rules, investments, liabilities, pending_refunds." },
+    "meta-tables": { title: "Metadata", desc: "categories, tagging_rules, budget_rules, investments, liabilities, insurance_accounts, interest_rates, refunds." },
+    "goal-tables": { title: "Savings Goal Tables", desc: "savings_goals + per-month allocations, transaction links, investment backings." },
+    "decision-tables": { title: "Decisions & Overrides", desc: "recurring_decisions, insight_dismissals, budget_month_overrides \u2014 what you ruled on, kept across re-detection." },
+    "credentials-vault": { title: "Credential Vault", desc: "Passwords in the OS Keyring; usernames, ID numbers and card digits Fernet-encrypted in the DB." },
     "demo-mode": { title: "Demo Mode", desc: "Isolated demo DB with date-shifted sample data. Dummy scrapers for testing." },
     backup: { title: "Backup & Restore", desc: "Database snapshots. Create, list, restore with safety backup." },
     "manual-tagging": { title: "Manual Tagging", desc: "Inline category/tag editing, bulk-tag operations on selected transactions." },
@@ -35,30 +40,41 @@ const content: DataFlowContent = {
     "refunds-mgmt": { title: "Refund Management", desc: "Mark pending refunds, link to actual refund transactions, adjust budget calculations." },
     "invest-mgmt": { title: "Investment Management", desc: "Create/close/reopen investments. Manual snapshots. Fixed-rate compounding generation." },
     "liab-mgmt": { title: "Liability Management", desc: "Create loans, track payments, mark as paid off. Amortization schedule generation." },
-    "budget-mgmt": { title: "Budget Management", desc: "Monthly budget rules, project budgets, copy rules between months. Total Budget special limit." },
+    "budget-mgmt": { title: "Budget Management", desc: "Three envelope kinds \u2014 monthly, yearly, project. Copy forward, close a finished one, alerts." },
+    "month-override": { title: "Budget Month Override", desc: "Count a transaction in a neighbouring month without changing its date. Capped at \u00B11 month." },
+    "savings-goals-mgmt": { title: "Savings Goals", desc: "Prioritised earmarks over money already tracked. Cap, target, links, investment backing." },
+    "recurring-review": { title: "Recurring Review", desc: "Confirm, dismiss or re-open a detected commitment. Only confirmed ones are acted on." },
     "balance-mgmt": { title: "Balance Management", desc: "Bank balance entry (post-scrape), cash envelope CRUD. Triggers prior wealth recalculation." },
     "cat-mgmt": { title: "Category & Rules", desc: "Create/rename/delete categories and tags. Manage tagging rules. Changes cascade to all transactions." },
-    "analysis-svc": { title: "Analysis", desc: "Overview, income/expenses, net balance, net worth, by-category, Sankey, income by source." },
-    "budget-svc": { title: "Budget", desc: "Budget vs actual. Monthly limits + project budgets. Refund adjustments." },
+    "analysis-svc": { title: "Analysis", desc: "Overview, income/expenses, net balance, net worth, by-category, Sankey, income by source, heatmap." },
+    "forecast-svc": { title: "Cash-Flow Forecast", desc: "Projects month end from trend + month-to-date. Safe-to-spend nets out committed charges." },
+    "recurring-svc": { title: "Recurring Detection", desc: "Finds commitments on cadence, regularity and amount stability. Scores each with a confidence." },
+    "insights-svc": { title: "Insights", desc: "Only what the budget does not already explain \u2014 spikes, pace, big charges, repriced subscriptions." },
+    "budget-svc": { title: "Budget", desc: "Budget vs actual across monthly, yearly and project envelopes. Fixed/variable split, alerts." },
+    "goals-svc": { title: "Savings Goals Engine", desc: "Each month\u2019s realized surplus flows down goals by priority. Free cash is what none claims." },
     "invest-svc": { title: "Investments", desc: "P&L, ROI, CAGR. Snapshot-first balance. Fixed-rate compounding." },
     "liab-svc": { title: "Liabilities", desc: "Amortization, remaining balance, total interest, payment tracking." },
-    "retire-svc": { title: "Retirement", desc: "FIRE projections, savings rate, years to retirement, suggestions." },
-    dashboard: { title: "Dashboard", desc: "Overview cards, net worth chart, income/expenses, Sankey, budget progress bar." },
-    "txn-page": { title: "Transactions", desc: "Filterable table, inline tagging, splits, bulk ops, refunds." },
-    "budget-page": { title: "Budget", desc: "Monthly gauges, per-tag breakdown, project budgets." },
+    "rates-svc": { title: "Rates", desc: "Bank of Israel key-rate history \u2192 prime. Re-prices prime-linked loans and savings at each step." },
+    "retire-svc": { title: "Retirement", desc: "All-real-terms FIRE model. Projections, drawdown survival, solve-for-a-field, suggestions." },
+    "onboarding-page": { title: "Onboarding", desc: "First-run gate \u2014 connect an account or add data before the app opens." },
+    dashboard: { title: "Dashboard", desc: "Reorderable, hideable cards: forecast, insights, budget, recurring, goals, net worth, heatmap\u2026" },
+    "txn-page": { title: "Transactions", desc: "Filterable table, inline tagging, splits, bulk ops, refunds, budget-month override." },
+    "budget-page": { title: "Budget", desc: "Overview, monthly, yearly and project tabs. Savings goals section, alerts, freshness badge." },
     "categories-page": { title: "Categories", desc: "Category/tag management, drag-and-drop reorder, tagging rules." },
     "invest-page": { title: "Investments", desc: "Portfolio overview, allocation, balance history, P&L analysis." },
     "liab-page": { title: "Liabilities", desc: "Debt cards, payment timeline, amortization schedule." },
     "insurance-page": { title: "Insurance", desc: "Insurance policy tracking, pension/savings accounts." },
     "retire-page": { title: "Early Retirement", desc: "FIRE calculator, projections, status cards, suggestions." },
     "datasources-page": { title: "Data Sources", desc: "Bank/CC account management, scraping triggers, stale data alerts." },
+    "settings-page": { title: "Settings", desc: "Dashboard layout, budget alerts, language, demo toggle, backups, updates, uninstall." },
+    pwa: { title: "PWA & Offline", desc: "Installable app. Service worker caches API GETs; the query cache persists to IndexedDB." },
   },
 
   details: {
     banks: {
-      title: "Banks", tag: "17 Providers",
+      title: "Banks", tag: "12 Providers",
       sections: [
-        { heading: "Providers", text: "Hapoalim, Leumi, Discount, Mercantile, Mizrahi, Otsar Hahayal, Union, Beinleumi, Massad, Yahav, OneZero, Pagi, and more." },
+        { heading: "Providers", text: "Hapoalim, Leumi, Discount, Mercantile, Mizrahi, Otsar Hahayal, Union, Beinleumi, Massad, Yahav, OneZero, Pagi \u2014 19 providers in all across banks, cards and insurance." },
         { heading: "Data Produced", items: ["Account transactions (debits, deposits, CC bill payments, transfers)", "Account balance snapshot", "Fields: date, amount, description, account_number, status"] },
         { heading: "Pipeline", flow: ["Playwright login", "Navigate to transactions", "Parse HTML/API response", "AccountResult", "ScraperAdapter"] },
       ],
@@ -72,10 +88,11 @@ const content: DataFlowContent = {
       ],
     },
     insurance: {
-      title: "Insurance", tag: "Hafenix",
+      title: "Insurance", tag: "HaPhoenix",
       sections: [
         { heading: "Data Produced", items: ["Pension/savings deposit transactions", "Memo field: deposit breakdown (employee/employer/compensation)", "Account metadata (policy type, investment tracks, commissions)"] },
-        { heading: "Special Handling", text: "InsuranceScraperAdapter extends base adapter with post-save hook to persist insurance account metadata." },
+        { heading: "Special Handling", text: "InsuranceScraperAdapter extends the base adapter with a post-save hook that persists insurance account metadata, which the Keren Hishtalmut sync then turns into a tracked investment." },
+        { heading: "Policy IDs Drift", text: "A provider can restyle the internal ID it appends to a policy number without the account changing. Incoming IDs are normalized before being stored or matched \u2014 a stored ID is never rewritten, because other tables join on that exact string." },
       ],
     },
     manual: {
@@ -85,11 +102,19 @@ const content: DataFlowContent = {
         { heading: "Restrictions", text: "Manual entries can be fully edited/deleted. Scraped entries only allow category/tag changes." },
       ],
     },
+    "rates-feed": {
+      title: "Bank of Israel", tag: "Rates Feed",
+      sections: [
+        { heading: "What It Provides", text: "The Bank of Israel key-rate series. The Israeli prime rate is that key rate + 1.5%, and it is what variable Israeli credit is quoted against." },
+        { heading: "Who Consumes It", items: ["Prime-linked loans \u2014 rate = prime + per-loan spread (the spread may be negative)", "Variable-unlinked loans \u2014 re-priced every rate_reset_months at the prime of the reset date", "Prime-linked savings and deposits \u2014 same arithmetic on the investment side"] },
+        { heading: "Sync", text: "Seeded from a bundled history on first run and refreshed on demand via POST /rates/refresh. Stored in interest_rates, so amortization and compounding stay reproducible offline." },
+      ],
+    },
     scraper: {
       title: "Scraper Framework", tag: "Async",
       sections: [
         { heading: "Architecture", items: ["BaseScraper: initialize \u2192 login \u2192 fetch_data \u2192 terminate", "BrowserScraper: Playwright with stealth anti-detection", "ApiScraper: httpx async HTTP for API-only sources"] },
-        { heading: "Features", items: ["2FA/OTP handling with async callback", "Configurable scraping period (days back)", "Screenshot capture on failure", "Daily rate limit (one scrape per account per day)", "5-minute timeout"] },
+        { heading: "Features", items: ["2FA/OTP handling with async callback", "Scrape window shaped by the last-success watermark \u2014 no daily cap, no automatic retry", "Screenshot capture on failure", "5-minute timeout per run", "OneZero needs a Cloudflare mTLS client certificate, vendored with the provider"] },
         { heading: "Output", text: "ScrapingResult { success, accounts: [{ account_number, transactions, balance }], error_type, error_message }" },
       ],
     },
@@ -106,6 +131,8 @@ const content: DataFlowContent = {
       sections: [
         { heading: "Transaction Routes", items: ["POST /transactions/ \u2014 create (cash, manual_investments)", "PUT /transactions/{id} \u2014 update fields", "DELETE /transactions/{id} \u2014 delete (manual only)", "POST /transactions/{id}/split \u2014 split into sub-transactions", "POST /transactions/bulk-tag \u2014 bulk category/tag update"] },
         { heading: "Balance Routes", items: ["POST /bank_balances/ \u2014 triggers prior wealth calculation", "POST /cash_balances/ \u2014 triggers prior wealth + balance recalc"] },
+        { heading: "Access Control", items: ["Every request needs an allowlisted Host header (DNS-rebinding guard)", "Non-loopback clients need Authorization: Bearer <token>", "Writes require a same-site Origin, or none at all \u2014 a cross-origin POST cannot reach the API from a browser", "A tailscale-relayed request is admitted by its verified tailnet login"] },
+        { heading: "Errors", text: "Domain errors are raised in services and repositories \u2014 EntityNotFound (404), EntityAlreadyExists (409), Validation / BadRequest (400). Routes carry no try/except, and a 5xx body never echoes exception text." },
       ],
     },
     "auto-tag": {
@@ -129,6 +156,13 @@ const content: DataFlowContent = {
         { heading: "Formula", text: "prior_wealth = user_entered_balance \u2212 sum(all_tracked_transactions)" },
         { heading: "Three Sources", items: ["Bank: calculated when user enters balance after scraping", "Cash: calculated when user sets cash balance", "Investments: investment.prior_wealth_amount = \u2212sum(all inv txns)"] },
         { heading: "Why Inv Prior Wealth Lives in Bank", text: "Investment deposits came from bank accounts. Keeping inv_prior_wealth in bank balance maintains: net_worth = bank_balance + investment_value." },
+      ],
+    },
+    "kh-sync": {
+      title: "Keren Hishtalmut Sync", tag: "Insurance \u2192 Investments",
+      sections: [
+        { heading: "What It Does", items: ["Scraped hishtalmut policies become type=hishtalmut investments, keyed by insurance_policy_id", "Balance data upserts a scraped snapshot \u2014 never overwriting a manual one", "Existing policies have their metadata refreshed instead of being duplicated"] },
+        { heading: "Why It Matters For FIRE", text: "A synced policy is already inside tracked net worth. The retirement model therefore swaps the tracked KH value out before adding the goal\u2019s KH bucket, so Keren Hishtalmut counts exactly once for scraped and typed-only users alike." },
       ],
     },
     "manual-tagging": {
@@ -164,22 +198,49 @@ const content: DataFlowContent = {
     "invest-mgmt": {
       title: "Investment Management", tag: "Lifecycle",
       sections: [
-        { heading: "Operations", items: ["Create investment (category, tag, type, rates, commissions)", "Add manual balance snapshots at any date", "Generate fixed-rate compounded snapshots automatically", "Close investment \u2192 creates 0-balance snapshot on last txn date", "Reopen closed investments, edit close date"] },
+        { heading: "Operations", items: ["Create investment (category, tag, type, rates, commissions)", "Add manual balance snapshots at any date", "Generate compounded snapshots for fixed and prime-linked rates", "Close investment \u2192 creates a 0-balance snapshot on the last transaction date", "Reopen closed investments, edit close date", "Earmark a holding to back a savings goal"] },
+        { heading: "Keren Hishtalmut", text: "A scraped hishtalmut policy arrives as a managed investment with its own scraped snapshots. Its value is already in net worth, so the retirement model deliberately swaps it out before adding the KH bucket." },
         { heading: "Balance Resolution", items: ["1. Latest snapshot on/before today \u2192 use snapshot", "2. No snapshots \u2192 fallback to \u2212sum(all transactions)", "Snapshot sources: manual > calculated > scraped"] },
       ],
     },
     "liab-mgmt": {
       title: "Liability Management", tag: "Loan Tracking",
       sections: [
-        { heading: "Operations", items: ["Create liability (principal, rate, term, start date)", "Track payment records against amortization schedule", "Mark as paid off with specific date", "Reopen if needed"] },
+        { heading: "Operations", items: ["Create liability (principal, rate, term, start date, loan type)", "Generated payment rows land in liability_transactions", "Track payment records against the amortization schedule", "Mark as paid off with a specific date, reopen if needed"] },
+        { heading: "Rate Behavior", items: ["Fixed unlinked \u2014 one rate for the term", "Prime-linked \u2014 prime + spread, re-priced at every Bank of Israel step", "Variable unlinked \u2014 resets to the prime of the reset date, flat between resets"] },
         { heading: "Category Override", text: "Negative Liabilities (debt payments) override into expenses despite Liabilities being a non-expense category." },
       ],
     },
     "budget-mgmt": {
-      title: "Budget Management", tag: "Rules + Projects",
+      title: "Budget Management", tag: "Three Envelope Kinds",
       sections: [
-        { heading: "Monthly Budgets", items: ["Create spending limit per category/tag for a specific month", "Edit or delete existing budget rules", "Copy all rules from a previous month to a new month", "'Total Budget' \u2014 special overall monthly spending limit"] },
-        { heading: "Project Budgets", items: ["Time-limited budgets for specific goals (e.g., Home Renovation)", "Track spending vs budget with gauge visualization", "View all transactions tagged to the project"] },
+        { heading: "Monthly", items: ["A spending limit per category/tag for one month", "Copy every rule from a previous month forward in one click", "'Total Budget' \u2014 a single overall monthly cap", "Alerts when a rule is near or over its limit"] },
+        { heading: "Yearly", items: ["A per-year envelope for a category/tag that is lumpy by design \u2014 insurance, car test, tuition", "Mutually exclusive with a monthly rule on the same (category, tag) within that year", "Carry the year\u2019s rules into the next year", "A settled envelope is closed, not deleted \u2014 it keeps its limit, its spend and its row, and goes on claiming its category"] },
+        { heading: "Projects", items: ["A category-owned envelope for a one-off effort \u2014 a renovation, a trip", "A finished project is closed, not deleted: it keeps its rules, transactions and tab, and its category stays claimed", "Deleting is what frees the category again", "Closing only removes it from the Overview \u2014 the money it spent still counts in total out"] },
+        { heading: "Category Exclusion", text: "A category cannot be both project-owned and used by a monthly or yearly rule. The new-project picker filters claimed categories out, rule creation blocks claimed ones, and any pre-existing overlap surfaces as a dismissible notice rather than a hard block." },
+      ],
+    },
+    "month-override": {
+      title: "Budget Month Override", tag: "\u00B11 Month",
+      sections: [
+        { heading: "The Problem", text: "A charge lands on the 1st for a bill that belongs to last month, or the supermarket run for next month\u2019s holiday clears early. Its real date is correct; the month the budget counts it in is not." },
+        { heading: "How It Works", items: ["The transaction keeps its real date \u2014 only the monthly budget view moves", "Movement is capped at one month before or after the real month", "Works on a split as well as a whole transaction", "Stored in budget_month_overrides; removing the override puts it back"] },
+      ],
+    },
+    "savings-goals-mgmt": {
+      title: "Savings Goals", tag: "Virtual Earmarks",
+      sections: [
+        { heading: "What A Goal Is", text: "A claim over money already sitting in tracked accounts \u2014 never an addition to net worth. You are not moving shekels, you are naming what they are for." },
+        { heading: "Operations", items: ["Name, target amount, opening balance, optional monthly cap and target date", "Priority order \u2014 drag to reorder; changes apply forward", "Link a transaction as a contribution or a utilization", "Back a goal with an investment you mean to liquidate", "Close a goal \u2014 its allocations freeze and can never be reclaimed"] },
+        { heading: "Rewriting History", text: "A priority change applies from today. Recomputing past months is an explicit rebuild, and it is previewed before it is written." },
+      ],
+    },
+    "recurring-review": {
+      title: "Recurring Review", tag: "Confirm / Dismiss",
+      sections: [
+        { heading: "Nothing Is Assumed", text: "Detection only proposes. A candidate stays pending until you rule on it, and only confirmed charges reach the budget\u2019s fixed/variable split, the forecast\u2019s safe-to-spend, and the insight cards." },
+        { heading: "Verdicts", items: ["Confirm \u2014 it is a real commitment", "Dismiss \u2014 it is not; hidden, but listed under \u201cshow dismissed\u201d with its amount and cadence", "Back to review \u2014 undo either one", "Ended charges hide behind a toggle: already out of the monthly total, so history rather than commitment"] },
+        { heading: "Why Verdicts Survive", text: "A decision is keyed by the normalized merchant label detection groups on \u2014 not by a transaction id \u2014 so it outlives new charges, amount drift and re-detection. Writing a verdict runs no detection at all; the card patches its own cached row so it moves on click." },
       ],
     },
     "balance-mgmt": {
@@ -201,6 +262,7 @@ const content: DataFlowContent = {
       sections: [
         { heading: "Tables", items: ["bank_transactions \u2014 debits, deposits, CC bills, transfers", "credit_card_transactions \u2014 itemized CC purchases", "cash_transactions \u2014 manual cash entries", "manual_investment_transactions \u2014 deposits/withdrawals", "insurance_transactions \u2014 pension/savings (+ memo)"] },
         { heading: "Unified Schema", items: ["unique_id (PK), id, date, amount, description", "provider, account_name, account_number", "category, tag, source, type, status"] },
+        { heading: "unique_id Is Per-Table", text: "Each table has its own auto-increment \u2014 bank #5 and credit-card #5 are different transactions. Merged or cross-table data is always keyed by the pair (source, unique_id), never by the bare id." },
       ],
     },
     "bank-bal": {
@@ -221,28 +283,88 @@ const content: DataFlowContent = {
       title: "Investment Snapshots", tag: "Snapshot-First",
       sections: [
         { heading: "Resolution Order", items: ["1. Latest snapshot on/before today \u2192 use it", "2. No snapshots \u2192 fallback to \u2212sum(transactions)"] },
-        { heading: "Sources", items: ["manual \u2014 user-entered", "calculated \u2014 fixed-rate daily compounding", "scraped \u2014 future integration"] },
-        { heading: "Closing", text: "Auto-creates 0-balance snapshot on last transaction date." },
+        { heading: "Sources", items: ["manual \u2014 user-entered, wins over the others", "calculated \u2014 daily compounding for fixed and prime-linked rates", "scraped \u2014 live Keren Hishtalmut policy values"] },
+        { heading: "Closing", text: "Closing auto-creates a 0-balance snapshot on the last transaction date \u2014 not the closure date." },
+        { heading: "The Closing Zero Follows", text: "A withdrawal that lands after the close would otherwise be carried past that zero and value the fund below zero in net worth. Every write path that can add, re-date or retag a transaction re-aligns closed investments." },
       ],
     },
     "meta-tables": {
       title: "Metadata Tables", tag: "Configuration",
       sections: [
-        { heading: "Tables", items: ["categories \u2014 name, tags (JSON), icon", "tagging_rules \u2014 name, conditions (recursive JSON), category, tag", "budget_rules \u2014 amount, category, tags (semicolon-sep)", "investments \u2014 type, rates, commissions, dates", "liabilities \u2014 principal, rate, term, dates", "pending_refunds \u2014 source tracking, resolution"] },
+        { heading: "Tables", items: ["categories \u2014 name, tags (JSON), icon", "tagging_rules \u2014 name, conditions (recursive JSON), category, tag", "budget_rules \u2014 amount, category, tags (semicolon-separated), period_type, is_closed", "investments + insurance_accounts \u2014 type, rates, commissions, policy metadata", "liabilities + liability_transactions \u2014 principal, rate, term, generated payments", "pending_refunds, refund_links, refund_source_notes", "interest_rates \u2014 Bank of Israel key-rate history", "scraping_history \u2014 the per-account success watermark", "retirement_goal \u2014 the single FIRE plan"] },
+        { heading: "Budget Kinds Are Explicit", text: "budget_rules.period_type discriminates monthly, yearly and project rules as a column \u2014 not inferred from which fields happen to be null." },
+      ],
+    },
+    "goal-tables": {
+      title: "Savings Goal Tables", tag: "Earmarks",
+      sections: [
+        { heading: "Tables", items: ["savings_goals \u2014 target, opening balance, priority, monthly cap, status", "savings_goal_allocations \u2014 one row per (goal, month), auto or manual", "savings_goal_links \u2014 transactions tied to a goal as contribution or utilization", "savings_goal_investments \u2014 holdings earmarked to back a goal"] },
+        { heading: "Why Allocations Persist", text: "Progress is derived from surplus, but the derivation is stored per month so a later priority change does not silently rewrite last year. Rewriting is an explicit, previewed rebuild." },
+      ],
+    },
+    "decision-tables": {
+      title: "Decisions & Overrides", tag: "Sticky Verdicts",
+      sections: [
+        { heading: "Tables", items: ["recurring_decisions \u2014 pending / confirmed / dismissed per normalized merchant key", "insight_dismissals \u2014 dismissed insight cards, restorable", "budget_month_overrides \u2014 the budget month a transaction is counted in"] },
+        { heading: "Keyed To Outlive Detection", text: "A verdict is stored against the same normalized label detection groups on, and a dismissal key encodes what its card is about \u2014 a month, a (source, unique_id), a merchant and a price. So a verdict survives re-detection, and a dismissal lapses exactly when the thing it was about changes." },
+      ],
+    },
+    "credentials-vault": {
+      title: "Credential Vault", tag: "Keyring + Fernet",
+      sections: [
+        { heading: "Where Secrets Live", items: ["Passwords: the OS Keyring, never in code, YAML or the database", "Usernames, ID numbers and card digits: Fernet-encrypted in the DB, key also in the Keyring", "All keyring access goes through one module \u2014 nothing else imports keyring directly"] },
+        { heading: "Refusals", text: "An insecure keyring backend (null or plaintext) is rejected on credential writes. CI and sandboxes opt in explicitly." },
+        { heading: "2FA", text: "Providers that need an OTP prompt the browser through an async callback during the scrape \u2014 the code is never stored." },
       ],
     },
     "analysis-svc": {
-      title: "AnalysisService", tag: "7 KPI Methods",
+      title: "AnalysisService", tag: "11 KPI Reads",
       sections: [
-        { heading: "Methods", items: ["get_overview() \u2014 totals + net change", "get_income_expenses_over_time() \u2014 monthly bars", "get_net_balance_over_time() \u2014 cumulative trend", "get_net_worth_over_time() \u2014 bank + cash + investments", "get_expenses_by_category() \u2014 pie chart", "get_sankey_data() \u2014 income \u2192 expenses flow", "get_income_by_source_over_time() \u2014 stacked breakdown"] },
+        { heading: "Core KPIs", items: ["overview \u2014 totals + net change", "income-expenses-over-time \u2014 monthly bars", "net-balance-over-time \u2014 cumulative trend", "net-worth-over-time \u2014 bank + cash + investments", "by-category and expenses-by-category-over-time", "sankey \u2014 income \u2192 expenses flow", "income-by-source (+ over time) \u2014 stacked breakdown", "debt-payments-over-time, monthly-expenses (spending heatmap)"] },
         { heading: "Transaction Masks", items: ["Income: Salary, Other Income, + positive Liabilities", "Investment: Investments category", "Expense: everything else + negative Liabilities"] },
+        { heading: "Also Hosted Here", text: "The same service hosts the cash-flow forecast, which is its own card here. Recurring detection and insights are separate services reading the same merged transaction view." },
+      ],
+    },
+    "forecast-svc": {
+      title: "Cash-Flow Forecast", tag: "Safe To Spend",
+      sections: [
+        { heading: "How It Projects", items: ["Month-to-date actuals + a trend estimate for the days that are left", "Expense trend: rolling 3-month average, falling back to 6 or 12 when sparse", "Income trend: the average of the last 3 complete months", "The projection never dips below money already spent"] },
+        { heading: "Safe To Spend", text: "expected income \u2212 actual expenses \u2212 committed remaining, floored at zero, and also given per remaining day. Committed remaining is the confirmed recurring charges still due before month end \u2014 the rent that has not left yet is not spending money." },
+        { heading: "Outputs", items: ["Projected month-end bank balance and net", "A per-day trajectory: actual up to today, projected after", "The trend baselines themselves, so the number can be argued with"] },
+      ],
+    },
+    "recurring-svc": {
+      title: "Recurring Detection", tag: "5 Cadence Bands",
+      sections: [
+        { heading: "What Qualifies", items: ["One of five cadence bands \u2014 monthly, bimonthly, quarterly, semiannual, annual \u2014 each with its own tight tolerance", "Nothing below a month is a cadence: weekly rhythms are habits, not billing", "An interval-regularity gate on the robust spread of the gaps", "An amount path: fixed (\u2265 75% of charges within \u00B115%) or metered (a consumption bill: \u00B150%, but a tighter schedule and \u2265 6 sightings)"] },
+        { heading: "Day-Of-Month", text: "Anchoring only scores a candidate, never rejects one \u2014 real bills slip five or six days around weekends and month ends." },
+        { heading: "Confidence", text: "Every candidate carries a 0\u20131 score over regularity, interval shape, day anchoring, amount stability and evidence count. It ranks the review list; it does not decide anything on its own." },
+      ],
+    },
+    "insights-svc": {
+      title: "InsightsService", tag: "Dismissible",
+      sections: [
+        { heading: "Unexplained And Material", items: ["Project and yearly spend is lumpy by design \u2014 never a spike or a surprise charge", "A category still inside its monthly budget is not a spike", "A confirmed recurring charge is never a large-charge surprise \u2014 rent is big every month", "A spike\u2019s baseline is the median of the last 3 months, and the category must appear in at least 2"] },
+        { heading: "Scaled To The Household", text: "Shekel floors are max(absolute, a share of typical monthly outflow), so the same rule fits a small budget and a large one. Cards sort by severity, then by the money involved, capped at 6." },
+        { heading: "Dismissal", text: "Each card has a stable key encoding what it is about \u2014 a month, a (source, unique_id), a merchant and a price. Dismiss it and it stays gone until that changes. Filtering happens before each rule\u2019s cap, so a dismissal frees its slot for the runner-up." },
       ],
     },
     "budget-svc": {
       title: "BudgetService", tag: "Budget vs Actual",
       sections: [
-        { heading: "Features", items: ["Monthly spending limits per category/tag", "Project budgets (time-limited)", "Total Budget special category", "Pending refund adjustments"] },
-        { heading: "Exclusions", text: "Excludes Credit Cards, Investments, Liabilities, Ignore from calculations." },
+        { heading: "Features", items: ["Monthly limits per category/tag, plus the Total Budget cap", "Yearly envelopes and project envelopes, open or closed", "Pending-refund adjustments so a refundable expense is not flagged as overspend", "Alerts, per-rule sparklines and a trend view"] },
+        { heading: "The Overview", items: ["Splits the month into fixed (confirmed recurring) and variable spend", "committed_remaining \u2014 confirmed charges still due this month", "free_to_spend = budget \u2212 spent \u2212 committed", "long_envelopes \u2014 the open yearly and project envelopes, and the needs-attention rows built from them"] },
+        { heading: "Closed Still Counts", text: "A closed project or yearly envelope leaves the Overview but its spend stays in total out \u2014 that money did leave the accounts. What it loses is attention, not arithmetic." },
+        { heading: "Exclusions", text: "Credit Cards, Investments, Liabilities and Ignore are excluded from budget calculations." },
+      ],
+    },
+    "goals-svc": {
+      title: "Savings Goals Engine", tag: "Surplus Waterfall",
+      sections: [
+        { heading: "The Waterfall", items: ["Each month\u2019s realized surplus is income \u2212 expenses \u2212 investments, CC-deduped", "It flows down the goals by priority, each taking min(remaining need, monthly cap)", "Linked transactions are pulled out of the surplus and reintroduced explicitly, so no shekel counts twice", "What no goal claims stays in the free-cash pool"] },
+        { heading: "A Bad Month", text: "A month that spends more than it earns drains free cash first. Only once that is empty does the shortfall come back out of the goals, lowest priority first, each giving back at most what is funded but not yet spent \u2014 money already spent can never be reclaimed." },
+        { heading: "Investment-Backed", text: "A goal can be backed by a holding you mean to liquidate. It counts toward funded and shrinks what the goal needs from surplus, but it is not cash: never in the free-cash pool, never clawed back, reported separately." },
+        { heading: "Closed Goals", text: "Frozen. Their allocations can never be reclaimed or clawed back." },
       ],
     },
     "invest-svc": {
@@ -256,40 +378,60 @@ const content: DataFlowContent = {
       title: "LiabilitiesService", tag: "Amortization",
       sections: [
         { heading: "Calculations", items: ["Monthly payment schedule", "Total interest over lifetime", "Remaining balance, percent paid"] },
-        { heading: "Category", text: "Positive = loan receipts (income). Negative = debt payments (override into expenses)." },
+        { heading: "Loan Types", items: ["Fixed unlinked \u2014 one rate for the whole term", "Prime-linked \u2014 prime + a per-loan spread, re-priced at every Bank of Israel step", "Variable unlinked \u2014 resets to the prime of the reset date every rate_reset_months, flat in between"] },
+        { heading: "Category", text: "Positive = loan receipts (income). Negative = debt payments (override into expenses despite Liabilities being a non-expense category)." },
+      ],
+    },
+    "rates-svc": {
+      title: "RatesService", tag: "BOI Prime",
+      sections: [
+        { heading: "What It Answers", items: ["The current prime rate and the key-rate history behind it", "The prime in effect at any given date", "The sequence of prime steps from a date forward \u2014 what re-prices a variable loan"] },
+        { heading: "Why It Is Stored", text: "Amortization and compounding have to be reproducible offline, so the history is seeded on first run and refreshed on demand rather than fetched per calculation." },
       ],
     },
     "retire-svc": {
-      title: "RetirementService", tag: "FIRE",
+      title: "RetirementService", tag: "Real Terms",
       sections: [
-        { heading: "Inputs", items: ["Net worth, income, expenses, savings rate", "Target retirement age, annual expenses", "Withdrawal rate (e.g., 4% rule)"] },
-        { heading: "Outputs", items: ["Years to financial independence", "Net worth projection chart", "Income scenarios, optimization suggestions"] },
+        { heading: "Everything In Today\u2019s Shekels", text: "The whole model is real-terms \u2014 a nominal return is converted through inflation before it is used, so a projection 30 years out is readable as money you understand now." },
+        { heading: "Inputs", items: ["Net worth, income, expenses, savings rate", "Target retirement age, life expectancy, monthly expenses in retirement", "Return rate and withdrawal rate", "Pension and Keren Hishtalmut buckets, pre-filled from scraped data where available"] },
+        { heading: "Counting KH Once", text: "Scraped Keren Hishtalmut policies are already inside tracked net worth. The model swaps that tracked value out before adding the goal\u2019s KH bucket, so it counts exactly once for scraped and typed-only users alike." },
+        { heading: "Outputs", items: ["Years to financial independence and a net-worth projection", "Whether the plan survives drawdown to life expectancy, and where it depletes if not", "Solve for a single field \u2014 what retirement age, spend, return or life expectancy would make the plan work", "Optimization suggestions"] },
+      ],
+    },
+    "onboarding-page": {
+      title: "Onboarding", tag: "First Run",
+      sections: [
+        { heading: "The Gate", text: "A fresh install has nothing to show, so every route sits behind a gate until there is data. The gate asks the backend what exists rather than guessing from a local flag." },
+        { heading: "Ways In", items: ["Connect a bank or credit-card account and scrape it", "Enter balances and transactions by hand", "Turn on Demo Mode and explore the sample household first"] },
       ],
     },
     dashboard: {
-      title: "Dashboard", tag: "10+ Queries",
+      title: "Dashboard", tag: "14 Cards",
       sections: [
-        { heading: "Data Sources", items: ["analyticsApi: 10 endpoints", "bankBalancesApi + cashBalancesApi", "investmentsApi.getPortfolioAnalysis()", "transactionsApi.getAll() for recent feed"] },
-        { heading: "Components", text: "Financial health header, net worth chart, income/expenses bars, Sankey flow, budget progress bar, recent transactions." },
+        { heading: "Cards", items: ["This-month forecast and safe-to-spend", "Insights strip \u2014 dismissible, deduplicated against the other cards", "Budget, recurring charges, savings goals, pending refunds", "Net worth, income vs expenses, income by source, category breakdown, spending heatmap, cash flow, early retirement"] },
+        { heading: "Your Layout, Your Browser", text: "Card order and which cards are hidden is a per-browser preference. The pinned KPI header stays put; everything below it can be reordered or hidden from Settings \u2192 Dashboard." },
+        { heading: "No Card Repeats Another", text: "The insights strip drops its pace cards while the forecast card is on screen, and its recurring cards while the recurring card is \u2014 which cards are visible is a browser-local preference the backend cannot see, so the strip does that filtering itself." },
       ],
     },
     "txn-page": {
       title: "Transactions Page", tag: "Filterable",
       sections: [
-        { heading: "Features", items: ["Sortable/filterable table", "Inline tag editing", "Split creation, bulk operations", "Pending refunds section"] },
-        { heading: "Cache Invalidation", text: "Tagging invalidates: transactions, categories, and 6 analytics queries." },
+        { heading: "Features", items: ["Sortable, filterable table", "Inline tag editing and bulk operations", "Split creation, pending refunds, refund linking", "Move a charge to a neighbouring budget month without changing its date", "Link a transaction to a savings goal as a contribution or a utilization"] },
+        { heading: "Editability", text: "A scraped transaction only allows category and tag changes. A manual one is fully editable and deletable." },
+        { heading: "Cache Invalidation", text: "Every write cancels the reads that predate it, then invalidates transactions, categories and the analytics queries \u2014 so a response computed before the write cannot land on top of it." },
       ],
     },
     "budget-page": {
-      title: "Budget Page", tag: "Monthly + Projects",
+      title: "Budget Page", tag: "Overview + 3 Tabs",
       sections: [
-        { heading: "Views", items: ["Monthly: gauge + rule cards", "Per-tag breakdown within categories", "Project budgets with progress"] },
+        { heading: "Views", items: ["Overview \u2014 fixed vs variable, free to spend, long envelopes needing attention", "Monthly \u2014 ledger rows with sparklines and a per-tag breakdown", "Yearly \u2014 annual envelopes, open and closed", "Projects \u2014 one tab per project, closed ones included"] },
+        { heading: "Alongside", items: ["Savings goals section", "Pending refunds section", "Budget alerts, also reachable from the bell in the sidebar", "A freshness badge so a stale scrape does not read as an underspend", "A dismissible notice for pre-existing category conflicts"] },
       ],
     },
     "invest-page": {
       title: "Investments Page", tag: "Portfolio",
       sections: [
-        { heading: "Views", items: ["Portfolio: total value, profit, ROI", "Allocation pie chart", "Balance history line chart", "Individual analysis modal"] },
+        { heading: "Views", items: ["Portfolio: total value, profit, ROI", "Allocation pie chart", "Balance history line chart", "Individual analysis modal", "Keren Hishtalmut policies alongside typed-in holdings", "Prime-linked positions re-priced from the Bank of Israel history"] },
       ],
     },
     "liab-page": {
@@ -301,7 +443,7 @@ const content: DataFlowContent = {
     "retire-page": {
       title: "Early Retirement Page", tag: "FIRE Calculator",
       sections: [
-        { heading: "Components", items: ["Retirement goal form", "6-card status grid", "Projection charts", "Optimization suggestions"] },
+        { heading: "Components", items: ["Retirement goal form, pre-fillable from scraped pension and KH data", "Status grid \u2014 savings rate, years to FI, readiness", "Projection charts in today\u2019s shekels", "Solve-for-a-field: what would have to change for the plan to work", "Optimization suggestions"] },
       ],
     },
     "categories-page": {
@@ -313,7 +455,7 @@ const content: DataFlowContent = {
     "insurance-page": {
       title: "Insurance Page", tag: "Policies",
       sections: [
-        { heading: "Features", items: ["Insurance policy cards", "Pension/savings account details", "Deposit history and breakdowns", "Investment track information"] },
+        { heading: "Features", items: ["Insurance policy cards", "Pension and Keren Hishtalmut account details", "Deposit history with the employee / employer / compensation breakdown", "Investment track information and commissions", "Rename a policy, and sync hishtalmut policies into tracked investments"] },
       ],
     },
     "demo-mode": {
@@ -322,6 +464,7 @@ const content: DataFlowContent = {
         { heading: "How It Works", items: ["Toggle in Settings (sidebar) switches THIS browser only \u2014 other clients on the same backend are unaffected", "The choice is stored in localStorage and sent as the X-FAD-Demo request header", "Demo DB is a copy of bundled template with date-shifted data", "All dates relative to current date for realistic appearance", "Pre-seeded bank and credit card accounts (with/without 2FA)"] },
         { heading: "Scraper Redirect", text: "When demo mode is active, scraping requests are automatically redirected to dummy scrapers that generate fake data. No real financial institutions are contacted." },
         { heading: "Isolation", text: "Separate database \u2014 no production data is read or affected. Per-client: one browser can be in demo mode while another reads real data. Two clients both in demo mode do share one demo database." },
+        { heading: "Hosted Demo", text: "On the public deployment each visitor gets their own sandbox database instead, mirrored to blob storage between requests so a write survives being served by a different instance." },
       ],
     },
     backup: {
@@ -334,7 +477,22 @@ const content: DataFlowContent = {
     "datasources-page": {
       title: "Data Sources Page", tag: "Scraping",
       sections: [
-        { heading: "Features", items: ["Bank/CC account management", "Scraping triggers with progress", "Stale data alerts (>7 days)", "Credential management via OS Keyring"] },
+        { heading: "Features", items: ["Bank, credit-card and insurance account management", "Scraping triggers with live progress, per account or all at once", "2FA prompts surfaced inline during a run", "Stale data alerts", "Credential management via the OS Keyring"] },
+      ],
+    },
+    "settings-page": {
+      title: "Settings", tag: "Layout + Demo",
+      sections: [
+        { heading: "Panels", items: ["Dashboard \u2014 reorder cards, hide cards, opt into experimental ones", "Budget alert thresholds", "Language and direction \u2014 English or Hebrew, RTL switches automatically", "Demo Mode toggle", "Backups: create, list, restore", "App version, update check, uninstall"] },
+        { heading: "Per-Browser", text: "Layout, language and the demo flag live in that browser\u2019s localStorage, not on the server \u2014 two people on the same backend can see it their own way." },
+      ],
+    },
+    pwa: {
+      title: "PWA & Offline", tag: "Service Worker",
+      sections: [
+        { heading: "What Is Cached", items: ["The build itself is precached \u2014 the app opens offline", "API GETs are network-first with a fallback to the last good response", "Credentials, scraping and backup endpoints are never cached", "The React Query cache persists to IndexedDB across reloads"] },
+        { heading: "Network-First, Not Timeout-First", text: "The fallback fires the moment a request errors. The timeout only bounds a connection that is up and silent, so it sits well above any plausible recompute \u2014 otherwise a slow-but-healthy read gets answered with the body from before your last write." },
+        { heading: "Also", items: ["Installable on phone and desktop", "Toasts for service-worker updates and for going offline", "Mobile-first responsive layout throughout"] },
       ],
     },
   },
@@ -359,13 +517,47 @@ const content: DataFlowContent = {
       ],
     },
     {
-      title: "Monthly & Project Budgets",
-      desc: "Set spending limits by category, plus time-bounded budgets for one-off projects like a renovation or a trip.",
+      title: "Monthly, Yearly & Project Budgets",
+      desc: "Three kinds of envelope, because not every commitment repeats every month.",
       highlights: [
-        "Total monthly cap or per-category limits",
-        "Copy last month's rules forward in one click",
-        "Live progress bar with spent/total and a remaining-or-over pill, on the dashboard and budget page",
+        "Monthly limits per category, or one total cap",
+        "Yearly envelopes for the lumpy things \u2014 insurance, car test, tuition",
+        "Project envelopes for a renovation or a trip; close one when it's done and it keeps its history",
+        "Copy last month's (or last year's) rules forward in one click",
+        "Move a charge to a neighbouring month when it lands on the wrong side of the 1st",
         "Pending refunds adjust spent amounts so you don't get false 'overspent' alerts",
+      ],
+    },
+    {
+      title: "Savings Goals",
+      desc: "Name what your money is for. Goals are earmarks over cash you already have \u2014 never an imaginary extra balance.",
+      highlights: [
+        "Each month's leftover flows down your goals in priority order",
+        "An optional monthly cap keeps one goal from eating the whole surplus",
+        "What no goal claims stays in a free-cash pool you can see",
+        "A bad month drains free cash first, and only gives back what a goal hasn't already spent",
+        "Back a goal with an investment you plan to liquidate",
+      ],
+    },
+    {
+      title: "Recurring Charges, Confirmed By You",
+      desc: "The app spots what looks like a standing commitment \u2014 then asks, instead of assuming.",
+      highlights: [
+        "Monthly through annual cadences, judged on timing regularity and amount stability",
+        "Metered bills (electricity, water) are allowed to vary; they just need a tighter schedule",
+        "Confirm, dismiss, or send one back to review \u2014 nothing is final",
+        "Only confirmed charges shape your budget's fixed/variable split and safe-to-spend",
+        "A verdict survives new charges, price changes and re-detection",
+      ],
+    },
+    {
+      title: "Insights & This-Month Forecast",
+      desc: "A short strip of things worth knowing, and a projection of where the month actually lands.",
+      highlights: [
+        "Safe-to-spend nets out the bills that haven't left yet",
+        "Spikes compare against the median of recent months, not a one-off",
+        "Nothing your budget already plans for gets flagged \u2014 projects and yearly envelopes stay quiet",
+        "Every card can be dismissed, and the next-best one takes its slot",
       ],
     },
     {
@@ -383,9 +575,20 @@ const content: DataFlowContent = {
       desc: "Keep tabs on the money flowing the other way \u2014 debt payments, loan amortization, and pending refunds.",
       highlights: [
         "Full amortization schedule for every loan you track",
+        "Fixed, prime-linked and periodically-resetting loans, priced off real Bank of Israel rates",
         "Mark transactions as 'pending refund' so they don't pollute your budget",
         "Link partial or full refunds when the money actually comes back",
         "Status tracking from pending \u2192 partial \u2192 resolved \u2192 closed",
+      ],
+    },
+    {
+      title: "Early Retirement Planning",
+      desc: "A FIRE calculator that speaks in today's shekels and knows how Israeli retirement savings actually work.",
+      highlights: [
+        "Everything real-terms \u2014 a projection 30 years out is still money you recognise",
+        "Pension and Keren Hishtalmut buckets, pre-filled from your scraped policies",
+        "Scraped KH is counted exactly once, never double-added to net worth",
+        "Ask it to solve: what retirement age, spend or return would make this plan work?",
       ],
     },
     {
@@ -406,6 +609,8 @@ const content: DataFlowContent = {
     { title: "Net worth, cash flow, and FIRE projections.", text: "See where every shekel goes with a Sankey flow chart, watch your net worth trend over time, and run early-retirement scenarios with the built-in FIRE calculator \u2014 all from the same data." },
     { title: "Try everything without risk via Demo Mode.", text: "Open Settings from the sidebar and toggle demo mode to switch to an isolated database with realistic sample data. Explore every feature, click every button, then switch back when you're done. Your real finances stay untouched." },
     { title: "Backups and history, just in case.", text: "Snapshot your data anytime, browse your backup list, and restore on demand. A safety backup is taken first, so even an accidental restore can be undone." },
+    { title: "Nothing is decided behind your back.", text: "A detected subscription stays pending until you confirm it. An insight card can be dismissed and comes back only if the thing it was about changes. A finished project or annual envelope is closed, not deleted \u2014 it keeps its history and its category. The app proposes; you rule." },
+    { title: "Your data stays on your machine.", text: "Everything lives in a local SQLite file. Passwords sit in the OS keyring, other credential fields are encrypted at rest, and the API refuses requests that don't come from you. Install it as an app and it keeps working offline on cached data." },
   ],
 };
 
