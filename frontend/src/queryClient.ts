@@ -13,7 +13,7 @@ const NON_PERSISTABLE_KEY_PREFIXES = new Set<string>([
   // Mirrors the SW's /api/scraping/* exclusion (rules/frontend_pwa.md says
   // both cache layers must agree). This is the ONLY scraping-backed query
   // key in the app — live scraper status is polled imperatively through
-  // `scrapingApi.getStatus` in `hooks/useScraping.ts`, never via React
+  // `scrapingApi.getStatus` in `hooks/useScrapingPoller.ts`, never via React
   // Query, so there is no "scrapingStatus"/"scraping-status" entry to
   // exclude (two such dead strings used to sit here matching nothing).
   "last-scrapes",

@@ -1,44 +1,11 @@
 import { useState, useEffect, useCallback } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation } from "@tanstack/react-query";
 import { scrapingApi } from "../services/api";
-import { qkPrefix } from "../services/queryKeys";
+import { useScrapingStore, isLive } from "../stores/scrapingStore";
+import type { Account, ResendError, ScraperState } from "../stores/scrapingStore";
 
-export interface Account {
-  service: string;
-  provider: string;
-  account_name: string;
-}
-
-export interface ScraperState {
-  process_id: number;
-  account: Account;
-  status: string; // 'in_progress', 'waiting_for_2fa', 'success', 'failed', 'canceled'
-  last_updated: number;
-  /**
-   * Technical failure detail — the provider's own message, HTTP body or
-   * exception text. Shown as secondary "technical details" copy, never as the
-   * primary explanation.
-   */
-  error_message?: string;
-  /**
-   * Failure category (`INVALID_PASSWORD`, `TIMEOUT`, `GENERAL_ERROR`, …) that
-   * selects the translated user-facing message. Undefined for scrapes recorded
-   * before the backend tracked it, where `error_message` is all there is.
-   */
-  error_type?: string;
-}
-
-/**
- * Resend-2FA failure surfaced to the UI. `kind` lets the component decide
- * between showing the server's own actionable message verbatim (rate
- * limit) versus a translated, friendlier message (expired process) —
- * backend error strings are English-only and not meant to be shown
- * unfiltered for every failure mode.
- */
-export interface ResendError {
-  kind: "rate_limited" | "expired" | "unknown";
-  detail?: string;
-}
+export type { Account, ResendError, ScraperState };
+export { useIsAnyScraping } from "../stores/scrapingStore";
 
 /** Cooldown window enforced client-side after a resend attempt, win or lose. */
 export const RESEND_COOLDOWN_SECONDS = 60;
@@ -56,47 +23,25 @@ export const RESEND_COOLDOWN_SECONDS = 60;
 export const INITIAL_2FA_COOLDOWN_SECONDS = 30;
 
 /**
- * Query-key prefixes a finished scrape invalidates.
+ * Actions and read models over the app-wide scraping store.
  *
- * A successful scrape writes new transactions (and, for insurance
- * providers, new policy balances) straight into the DB. Completion is
- * detected by POLLING, not by a mutation, so the shared
- * `MutationCache.onSuccess` sweep in `queryClient.ts` never fires for it —
- * whatever isn't listed here stays stale for the full 5-minute
- * `staleTime`, i.e. freshly scraped transactions were invisible on the
- * Transactions / Dashboard / Budget pages for up to five minutes.
- *
- * Deliberately a narrow list rather than a bare `invalidateQueries()`:
- * `.claude/rules/frontend_components.md` → "Don't fan out invalidation in
- * mutation hot paths". Everything here is genuinely downstream of new
- * transaction rows.
+ * Holds no state of its own any more — see `stores/scrapingStore.ts` for why.
+ * Polling and cold-load hydration live in `useScrapingPoller`, mounted once by
+ * `ScrapingTracker`, so they keep running while this hook's callers are
+ * unmounted.
  */
-const SCRAPE_COMPLETION_PREFIXES = [
-  qkPrefix.transactions,
-  qkPrefix.analytics,
-  qkPrefix.budget,
-  qkPrefix.pendingRefunds,
-  qkPrefix.insuranceAccounts,
-  qkPrefix.bankBalances,
-  qkPrefix.lastScrapes,
-] as const;
-
 export function useScraping() {
-  const queryClient = useQueryClient();
-  const [runningScrapers, setRunningScrapers] = useState<
-    Record<number, ScraperState>
-  >({});
+  const runningScrapers = useScrapingStore((s) => s.runningScrapers);
+  const resendCooldownEnd = useScrapingStore((s) => s.resendCooldownEnd);
+  const resendErrors = useScrapingStore((s) => s.resendErrors);
+  const trackStarted = useScrapingStore((s) => s.trackStarted);
+  const updateStatus = useScrapingStore((s) => s.updateStatus);
+  const replaceProcess = useScrapingStore((s) => s.replaceProcess);
+  const touch = useScrapingStore((s) => s.touch);
+  const setResendCooldown = useScrapingStore((s) => s.setResendCooldown);
+  const setResendError = useScrapingStore((s) => s.setResendError);
+  const clearResendError = useScrapingStore((s) => s.clearResendError);
 
-  // Resend-2FA cooldown bookkeeping. Keyed by the process_id the user was
-  // looking at when they clicked Resend — if `resend2fa` swaps in a new
-  // process_id ("restarted" case), the cooldown key follows it so the UI
-  // (keyed off the current scraper's process_id) still finds it.
-  const [resendCooldownEnd, setResendCooldownEnd] = useState<
-    Record<number, number>
-  >({});
-  const [resendErrors, setResendErrors] = useState<
-    Record<number, ResendError>
-  >({});
   // Forces re-render every second while any cooldown is active so
   // `resendCooldownRemaining` recomputes and the countdown ticks down in
   // the UI without callers needing their own interval.
@@ -120,54 +65,6 @@ export function useScraping() {
     }, 1000);
     return () => clearInterval(interval);
   }, [resendCooldownEnd]);
-
-  // Re-hydrate from the backend on mount.
-  //
-  // `runningScrapers` is component-local state, so it dies with whatever
-  // component called this hook — leaving Data Sources and coming back used
-  // to reset every card to idle even though the scraper was still running,
-  // and the polling effect never restarted, so the finished scrape's
-  // invalidations never fired either. The backend's `_active_scrapers`
-  // registry is the real source of truth; ask it what is still live.
-  //
-  // Merged rather than assigned: a scrape started microseconds before this
-  // request resolves is already in local state and must not be dropped, and
-  // locally-known terminal states (a just-failed scrape the user is still
-  // reading) must survive too. Existing entries win — their `last_updated`
-  // and error fields are fresher than anything this endpoint returns.
-  useEffect(() => {
-    let cancelled = false;
-    scrapingApi
-      .getActive()
-      .then((res) => {
-        if (cancelled || res.data.length === 0) return;
-        setRunningScrapers((prev) => {
-          const next = { ...prev };
-          for (const entry of res.data) {
-            if (next[entry.process_id]) continue;
-            next[entry.process_id] = {
-              process_id: entry.process_id,
-              account: {
-                service: entry.service,
-                provider: entry.provider,
-                account_name: entry.account_name,
-              },
-              status: entry.status,
-              last_updated: Date.now(),
-            };
-          }
-          return next;
-        });
-      })
-      .catch((e) => {
-        // Non-fatal: the user simply sees idle cards until they act, which
-        // is exactly the pre-hydration behaviour.
-        console.error("Failed to load active scrapers:", e);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   /** Seconds remaining in the resend cooldown for a process, or 0 if none. */
   const resendCooldownRemaining = useCallback(
@@ -196,34 +93,28 @@ export function useScraping() {
           }),
           ...(opts?.force2fa && { force_2fa: true }),
         });
-        const processId = res.data;
-        setRunningScrapers((prev) => ({
-          ...prev,
-          [processId]: {
-            process_id: processId,
-            account: acc,
-            status: "in_progress",
-            last_updated: Date.now(),
-          },
-        }));
+        trackStarted(res.data, acc);
       } catch (e) {
         console.error("Failed to start scraper:", e);
       }
     },
-    [],
+    [trackStarted],
   );
 
   // Start all accounts, skipping any that already have an active scraper
   // (in_progress or waiting_for_2fa). Without this guard, clicking
   // "Scrape All" while one account is mid-2FA would fire a second
   // concurrent scrape for that same account — exactly the burst the
-  // backend single-flight guard + OTP rate-limiter (Tasks 1-2) exist to
-  // stop, just triggered from the UI instead of a double-click.
+  // backend single-flight guard + OTP rate-limiter exist to stop, just
+  // triggered from the UI instead of a double-click.
   const scrapeAll = useCallback(
     (accounts: Account[], scrapingPeriodDays: number | null) => {
-      const activeScrapers = Object.values(runningScrapers).filter(
-        (s) => s.status === "in_progress" || s.status === "waiting_for_2fa",
-      );
+      // Read through the store rather than the render-time snapshot: a
+      // Scrape All fired moments after a card's own Play button would
+      // otherwise still see that account as idle.
+      const activeScrapers = Object.values(
+        useScrapingStore.getState().runningScrapers,
+      ).filter(isLive);
       accounts.forEach((acc) => {
         const isActive = activeScrapers.some(
           (s) =>
@@ -235,7 +126,7 @@ export function useScraping() {
         startScraper(acc, scrapingPeriodDays);
       });
     },
-    [startScraper, runningScrapers],
+    [startScraper],
   );
 
   // 2FA mutation
@@ -256,14 +147,7 @@ export function useScraping() {
   // Submit 2FA with optimistic update
   const submitTfa = useCallback(
     (scraper: ScraperState, code: string) => {
-      setRunningScrapers((prev) => ({
-        ...prev,
-        [scraper.process_id]: {
-          ...scraper,
-          status: "in_progress",
-          last_updated: Date.now(),
-        },
-      }));
+      updateStatus(scraper.process_id, { status: "in_progress" });
       tfaMutation.mutate({
         service: scraper.account.service,
         provider: scraper.account.provider,
@@ -271,7 +155,7 @@ export function useScraping() {
         code,
       });
     },
-    [tfaMutation],
+    [tfaMutation, updateStatus],
   );
 
   // Resend 2FA in place: ask the backend to re-issue the OTP without
@@ -281,11 +165,7 @@ export function useScraping() {
   const resendTfa = useCallback(
     async (scraper: ScraperState) => {
       const oldProcessId = scraper.process_id;
-      setResendErrors((prev) => {
-        const next = { ...prev };
-        delete next[oldProcessId];
-        return next;
-      });
+      clearResendError(oldProcessId);
       try {
         const res = await scrapingApi.resend2fa(
           scraper.account.service,
@@ -297,47 +177,29 @@ export function useScraping() {
         if (status === "restarted" && newProcessId !== oldProcessId) {
           // Browser-provider fallback: the old process is gone, track the
           // new one under its own id.
-          setRunningScrapers((prev) => {
-            const next = { ...prev };
-            delete next[oldProcessId];
-            next[newProcessId] = {
-              process_id: newProcessId,
-              account: scraper.account,
-              status: "waiting_for_2fa",
-              last_updated: Date.now(),
-            };
-            return next;
-          });
+          replaceProcess(oldProcessId, newProcessId, scraper.account);
         } else {
           // Resent in place: same process stays alive, just bump the
-          // freshness timestamp so the polling effect doesn't treat it as
+          // freshness timestamp so the polling loop doesn't treat it as
           // stale.
-          setRunningScrapers((prev) => {
-            const existing = prev[oldProcessId];
-            if (!existing) return prev;
-            return {
-              ...prev,
-              [oldProcessId]: { ...existing, last_updated: Date.now() },
-            };
-          });
+          touch(oldProcessId);
         }
 
-        // Same condition as the runningScrapers branch above, so the
-        // cooldown always keys off whichever process_id that branch just
-        // decided is "the current one" for this account — today the
-        // backend always mints a fresh id on "restarted", so
-        // newProcessId !== oldProcessId is always true in that branch and
-        // this is equivalent to `status === "restarted" ? newProcessId :
-        // oldProcessId`, but keeping the two conditions textually
-        // identical avoids the two ever silently diverging.
+        // Same condition as the branch above, so the cooldown always keys
+        // off whichever process_id that branch just decided is "the current
+        // one" for this account — today the backend always mints a fresh id
+        // on "restarted", so newProcessId !== oldProcessId is always true in
+        // that branch and this is equivalent to `status === "restarted" ?
+        // newProcessId : oldProcessId`, but keeping the two conditions
+        // textually identical avoids the two ever silently diverging.
         const cooldownProcessId =
           status === "restarted" && newProcessId !== oldProcessId
             ? newProcessId
             : oldProcessId;
-        setResendCooldownEnd((prev) => ({
-          ...prev,
-          [cooldownProcessId]: Date.now() + RESEND_COOLDOWN_SECONDS * 1000,
-        }));
+        setResendCooldown(
+          cooldownProcessId,
+          Date.now() + RESEND_COOLDOWN_SECONDS * 1000,
+        );
       } catch (e) {
         const axiosErr = e as {
           response?: { status?: number; data?: { detail?: string } };
@@ -358,39 +220,37 @@ export function useScraping() {
             : httpStatus === 404
               ? { kind: "expired" }
               : { kind: "unknown" };
-        setResendErrors((prev) => ({ ...prev, [oldProcessId]: resendError }));
+        setResendError(oldProcessId, resendError);
         // Even a failed attempt (e.g. rate-limited) should still start the
         // cooldown so the user isn't tempted to hammer the button.
-        setResendCooldownEnd((prev) => ({
-          ...prev,
-          [oldProcessId]: Date.now() + RESEND_COOLDOWN_SECONDS * 1000,
-        }));
+        setResendCooldown(
+          oldProcessId,
+          Date.now() + RESEND_COOLDOWN_SECONDS * 1000,
+        );
         console.error("Failed to resend code:", e);
       }
     },
-    [],
+    [clearResendError, replaceProcess, setResendCooldown, setResendError, touch],
   );
 
   // Abort a scraper
-  const abortScraper = useCallback(async (scraper: ScraperState) => {
-    try {
-      await scrapingApi.abort(scraper.process_id);
-      // Mirrors the CANCELED row the backend records — a user abort is not a
-      // failure and must not read as one.
-      setRunningScrapers((prev) => ({
-        ...prev,
-        [scraper.process_id]: {
-          ...scraper,
+  const abortScraper = useCallback(
+    async (scraper: ScraperState) => {
+      try {
+        await scrapingApi.abort(scraper.process_id);
+        // Mirrors the CANCELED row the backend records — a user abort is not
+        // a failure and must not read as one.
+        updateStatus(scraper.process_id, {
           status: "canceled",
           error_message: undefined,
           error_type: undefined,
-          last_updated: Date.now(),
-        },
-      }));
-    } catch (e) {
-      console.error("Failed to abort:", e);
-    }
-  }, []);
+        });
+      } catch (e) {
+        console.error("Failed to abort:", e);
+      }
+    },
+    [updateStatus],
+  );
 
   // Get scraper state for a specific account
   const getScraperForAccount = useCallback(
@@ -408,70 +268,7 @@ export function useScraping() {
   );
 
   // Check if any scraper is actively running
-  const isAnyScraping = Object.values(runningScrapers).some(
-    (s) => s.status === "in_progress" || s.status === "waiting_for_2fa",
-  );
-
-  // Polling effect
-  useEffect(() => {
-    const activeScrapers = Object.values(runningScrapers).filter(
-      (s) => s.status === "in_progress" || s.status === "waiting_for_2fa",
-    );
-    if (activeScrapers.length === 0) return;
-
-    const checkStatus = async () => {
-      for (const scraper of activeScrapers) {
-        try {
-          const res = await scrapingApi.getStatus(scraper.process_id);
-          const newStatus = res.data.status;
-          const errorMessage = res.data.error_message;
-          const errorType = res.data.error_type;
-
-          if (newStatus === "waiting_for_2fa") {
-            // Seed the resend cooldown from the moment the button appears.
-            // `!== undefined` rather than a falsy check: an already-elapsed
-            // deadline must not be re-seeded, and it also keeps a real resend's
-            // longer cooldown from being clobbered back down to 30s.
-            setResendCooldownEnd((prev) =>
-              prev[scraper.process_id] !== undefined
-                ? prev
-                : {
-                    ...prev,
-                    [scraper.process_id]:
-                      Date.now() + INITIAL_2FA_COOLDOWN_SECONDS * 1000,
-                  },
-            );
-          }
-
-          if (
-            newStatus !== scraper.status ||
-            Date.now() - scraper.last_updated > 5000
-          ) {
-            if (newStatus === "success" && scraper.status !== "success") {
-              for (const queryKey of SCRAPE_COMPLETION_PREFIXES) {
-                queryClient.invalidateQueries({ queryKey });
-              }
-            }
-            setRunningScrapers((prev) => ({
-              ...prev,
-              [scraper.process_id]: {
-                ...scraper,
-                status: newStatus,
-                error_message: errorMessage,
-                error_type: errorType,
-                last_updated: Date.now(),
-              },
-            }));
-          }
-        } catch (e) {
-          console.error("Failed to check status for", scraper.process_id, e);
-        }
-      }
-    };
-
-    const interval = setInterval(checkStatus, 2000);
-    return () => clearInterval(interval);
-  }, [runningScrapers, queryClient]);
+  const isAnyScraping = Object.values(runningScrapers).some(isLive);
 
   return {
     startScraper,
