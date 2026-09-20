@@ -1,3 +1,9 @@
+## v1.71.1 (2026-09-20)
+
+### Fix
+
+- **pwa**: stop the service worker serving pre-write bodies for slow reads (#309)
+
 ## v1.71.0 (2026-09-20)
 
 ### Feat
