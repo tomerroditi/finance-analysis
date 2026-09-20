@@ -37,12 +37,15 @@ test.describe("Bar chart hover shows the tooltip without the cursor rectangle", 
     const bar = card.locator(".recharts-bar-rectangle, .recharts-rectangle").first();
     await expect(bar).toBeVisible({ timeout: 10_000 });
 
-    // Scroll before measuring: mouse coordinates are viewport-relative, so a
-    // move computed against a below-the-fold box never reaches the chart.
-    await bar.scrollIntoViewIfNeeded();
-    const box = await bar.boundingBox();
-    expect(box).not.toBeNull();
-    await page.mouse.move(box!.x + box!.width / 2, box!.y + box!.height / 2);
+    // `hover()` rather than scroll-measure-move by hand. It ends in the same
+    // real pointer move to the bar's centre, and scrolls it into view first
+    // (mouse coordinates are viewport-relative, so a move computed against a
+    // below-the-fold box never reaches the chart) — but it re-resolves the
+    // element and retries when the node goes away mid-action. Recharts
+    // replaces its <rect> nodes on every re-render, so the hand-rolled
+    // version raced: under CI load the bar was detached between the
+    // visibility check and the scroll ("Element is not attached to the DOM").
+    await bar.hover();
 
     // The data tooltip appears (positive anchor before the negative assertion,
     // so the cursor check can't pass vacuously against an un-hovered chart).
