@@ -1,3 +1,9 @@
+## v1.76.0 (2026-09-20)
+
+### Feat
+
+- net refunds against their purchase across months, everywhere it belongs (#319)
+
 ## v1.75.0 (2026-09-20)
 
 ### Feat
