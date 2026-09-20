@@ -105,7 +105,28 @@ export default defineConfig(({ mode }) => {
               handler: "NetworkFirst",
               options: {
                 cacheName: "finance-api-get-v2",
-                networkTimeoutSeconds: 4,
+                // Only ever trips on a connection that is up but not
+                // answering. NetworkFirst already falls back to the cache
+                // the instant a request *errors* (offline, refused), so this
+                // timeout is not what makes offline work — it only decides
+                // how long a live-but-silent connection is given.
+                //
+                // It used to be 4 s, which quietly reinterpreted "the server
+                // is still computing" as "the network is down" and served
+                // the previous body instead. On a real database the derived
+                // analytics reads (recurring detection, budget overview,
+                // forecast, insights) routinely pass 4 s — and *always* do
+                // right after a write, because the commit discards the
+                // backend's `data_cache` generation and the next read pays
+                // the full recompute. The result: confirm a recurring
+                // charge, and ~4 s later the pre-confirmation body landed
+                // and put it back in "needs review" for good. Any optimistic
+                // update on a slow endpoint was exposed the same way.
+                //
+                // 30 s sits above any plausible recompute and matches the
+                // window `prod_server.py` already uses to declare a wedged
+                // backend (3 missed 10 s health probes).
+                networkTimeoutSeconds: 30,
                 expiration: {
                   maxEntries: 200,
                   maxAgeSeconds: 60 * 60 * 24 * 7,

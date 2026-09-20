@@ -111,6 +111,13 @@ export function RecurringSection() {
   // way back. Ended ones are in `items` already, just filtered out of `live`.
   const isEmpty = items.length === 0 && (data?.dismissed_count ?? 0) === 0;
 
+  // Deliberately not gated on `decide.isPending`. Disabling every verdict
+  // button while one request is in flight locked the whole card for as long
+  // as the write took — seconds on a real database — and a click landing in
+  // that window was silently dropped, which reads as the approval not having
+  // been accepted. The row moves optimistically the moment it is clicked, so
+  // the disabled state communicated nothing the list was not already showing,
+  // and a repeated verdict is idempotent.
   const decideOne = (item: RecurringItem, decision: RecurringDecisionInput["decision"]) =>
     decide.mutate([{ normalized: item.normalized, decision }]);
 
@@ -164,7 +171,7 @@ export function RecurringSection() {
                 </div>
                 <button
                   type="button"
-                  disabled={decide.isPending}
+                  disabled={pending.length === 0}
                   onClick={() => decideAll(pending, "confirmed")}
                   className="shrink-0 text-[10px] md:text-xs px-2 py-1 rounded-lg bg-[var(--primary)]/15 text-[var(--primary)] hover:bg-[var(--primary)]/25 disabled:opacity-50 transition-colors"
                 >
@@ -216,21 +223,19 @@ export function RecurringSection() {
                     <div className="flex items-center gap-1 shrink-0">
                       <button
                         type="button"
-                        disabled={decide.isPending}
                         aria-label={t("dashboard.recurring.review.confirm", { label: item.label })}
                         title={t("dashboard.recurring.review.confirm", { label: item.label })}
                         onClick={() => decideOne(item, "confirmed")}
-                        className="p-2 rounded-lg bg-emerald-500/15 text-emerald-300 hover:bg-emerald-500/25 disabled:opacity-50 transition-colors"
+                        className="p-2 rounded-lg bg-emerald-500/15 text-emerald-300 hover:bg-emerald-500/25 transition-colors"
                       >
                         <Check size={16} />
                       </button>
                       <button
                         type="button"
-                        disabled={decide.isPending}
                         aria-label={t("dashboard.recurring.review.dismiss", { label: item.label })}
                         title={t("dashboard.recurring.review.dismiss", { label: item.label })}
                         onClick={() => decideOne(item, "dismissed")}
-                        className="p-2 rounded-lg bg-rose-500/15 text-rose-300 hover:bg-rose-500/25 disabled:opacity-50 transition-colors"
+                        className="p-2 rounded-lg bg-rose-500/15 text-rose-300 hover:bg-rose-500/25 transition-colors"
                       >
                         <X size={16} />
                       </button>
@@ -290,22 +295,20 @@ export function RecurringSection() {
                   <div className="flex items-center gap-1 shrink-0 md:opacity-0 md:group-hover:opacity-100 md:focus-within:opacity-100 transition-opacity">
                     <button
                       type="button"
-                      disabled={decide.isPending}
                       aria-label={t("dashboard.recurring.review.unconfirm", { label: item.label })}
                       title={t("dashboard.recurring.review.unconfirm", { label: item.label })}
                       onClick={() => decideOne(item, "pending")}
-                      className="p-2 rounded-lg text-[var(--text-muted)] hover:bg-[var(--surface-light)] disabled:opacity-50 transition-colors"
+                      className="p-2 rounded-lg text-[var(--text-muted)] hover:bg-[var(--surface-light)] transition-colors"
                     >
                       <RotateCcw size={16} />
                     </button>
                     <button
                       type="button"
                       data-testid="recurring-remove"
-                      disabled={decide.isPending}
                       aria-label={t("dashboard.recurring.review.remove", { label: item.label })}
                       title={t("dashboard.recurring.review.remove", { label: item.label })}
                       onClick={() => decideOne(item, "dismissed")}
-                      className="p-2 rounded-lg text-[var(--text-muted)] hover:bg-rose-500/15 hover:text-rose-300 disabled:opacity-50 transition-colors"
+                      className="p-2 rounded-lg text-[var(--text-muted)] hover:bg-rose-500/15 hover:text-rose-300 transition-colors"
                     >
                       <X size={16} />
                     </button>
@@ -340,9 +343,8 @@ export function RecurringSection() {
                   </div>
                   <button
                     type="button"
-                    disabled={decide.isPending}
                     onClick={() => decideOne(item, "pending")}
-                    className="shrink-0 text-[10px] md:text-xs px-2 py-1 rounded-lg bg-[var(--surface-light)] hover:bg-[var(--surface-light)]/70 disabled:opacity-50 transition-colors"
+                    className="shrink-0 text-[10px] md:text-xs px-2 py-1 rounded-lg bg-[var(--surface-light)] hover:bg-[var(--surface-light)]/70 transition-colors"
                   >
                     {t("dashboard.recurring.review.restore")}
                   </button>
