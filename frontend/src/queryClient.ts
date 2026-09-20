@@ -1,7 +1,7 @@
-import { MutationCache, QueryClient, type Query } from "@tanstack/react-query";
+import { QueryClient, type Query } from "@tanstack/react-query";
 import { createAsyncStoragePersister } from "@tanstack/query-async-storage-persister";
 import { createStore, get, set, del } from "idb-keyval";
-import { createInvalidationSweep } from "./queryInvalidation";
+import { createMutationCache } from "./queryInvalidation";
 
 /**
  * Query keys whose data must never be persisted to disk.
@@ -63,18 +63,11 @@ const CACHE_KEY = "tq-cache-v1";
 
 const idbStore = createStore(DB_NAME, STORE_NAME);
 
-// The app-wide post-mutation sweep, built in `queryInvalidation.ts` so a
-// test can drive the same function against its own client. Built on first
-// use rather than here, because it needs the client the cache below is
-// being constructed for; by the time a mutation succeeds, it exists.
-let scheduleInvalidateAll: (() => void) | null = null;
-
-const mutationCache = new MutationCache({
-  onSuccess: () => {
-    scheduleInvalidateAll ??= createInvalidationSweep(queryClient);
-    scheduleInvalidateAll();
-  },
-});
+// What happens to the query cache around every write, app-wide. Built in
+// `queryInvalidation.ts` so a test can drive the same wiring against its own
+// client; it takes a getter because the client below is constructed *with*
+// this cache and so does not exist yet.
+const mutationCache = createMutationCache(() => queryClient);
 
 export const queryClient = new QueryClient({
   mutationCache,
