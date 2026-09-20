@@ -1,3 +1,10 @@
+## v1.72.1 (2026-09-20)
+
+### Fix
+
+- **ui**: gate a list row's action on its own write, not the whole list (#314)
+- **ui**: keep scrollbars inside rounded panels, everywhere (#311)
+
 ## v1.72.0 (2026-09-20)
 
 ### Feat
