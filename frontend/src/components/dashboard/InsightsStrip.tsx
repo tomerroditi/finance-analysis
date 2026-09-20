@@ -6,6 +6,7 @@ import { analyticsApi, type Insight } from "../../services/api";
 import { useQueryKeys } from "../../hooks/useQueryKeys";
 import { useDashboardLayout, type DashboardCardId } from "../../hooks/useDashboardLayout";
 import { formatCurrency } from "../../utils/numberFormatting";
+import { usePendingRows } from "../../hooks/usePendingRows";
 
 const SEVERITY_STYLES: Record<Insight["severity"], { box: string; icon: typeof Info }> = {
   warning: { box: "bg-amber-500/10 border-amber-500/25 text-amber-300", icon: AlertTriangle },
@@ -102,6 +103,10 @@ export function InsightsStrip() {
   const refresh = () =>
     queryClient.invalidateQueries({ queryKey: qk.analytics.insights() });
 
+  // Per card: dismissing one must not disable the dismiss button on every
+  // other card while the write is out. See `usePendingRows`.
+  const dismissing = usePendingRows();
+
   const dismiss = useMutation({
     mutationFn: (key: string) => analyticsApi.dismissInsight(key),
     // Drop the card from the cache before the round trip: a card that lingers
@@ -109,6 +114,7 @@ export function InsightsStrip() {
     // refetch still follows, because dismissing frees a slot the backend may
     // fill with the runner-up it was holding back.
     onMutate: async (key) => {
+      dismissing.begin(key);
       await queryClient.cancelQueries({ queryKey: qk.analytics.insights() });
       const previous = queryClient.getQueryData<Insight[]>(qk.analytics.insights());
       queryClient.setQueryData<Insight[]>(qk.analytics.insights(), (old) =>
@@ -122,7 +128,10 @@ export function InsightsStrip() {
       }
     },
     onSuccess: (_res, key) => setUndoKey(key),
-    onSettled: refresh,
+    onSettled: (_data, _error, key) => {
+      dismissing.end(key);
+      refresh();
+    },
   });
 
   const restore = useMutation({
@@ -183,7 +192,7 @@ export function InsightsStrip() {
                 title={t("dashboard.insights.dismiss")}
                 data-testid="insight-dismiss"
                 onClick={() => dismiss.mutate(insight.key)}
-                disabled={dismiss.isPending}
+                disabled={dismissing.isPending(insight.key)}
                 className="ms-auto shrink-0 -me-1 -mt-0.5 p-1 rounded-md text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-light)] transition-colors"
               >
                 <X size={14} />

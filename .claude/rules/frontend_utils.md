@@ -54,6 +54,7 @@ Custom React hooks for shared data fetching and stateful logic.
 | `useCategoryTagCreate()` | Category/tag creation mutation logic | N/A (mutation) |
 | `useScraping()` | Scraping progress state machine | N/A (state) |
 | `useScrollLock(isOpen)` | Body scroll prevention for modals | N/A (side effect) |
+| `usePendingRows()` | Per-row pending state for a list's shared mutation | N/A (local state) |
 
 **When to create a new shared hook:**
 - The same `useQuery` pattern (same `queryKey` + `queryFn`) appears in **3+ components**

@@ -104,6 +104,39 @@ describe("InsightsStrip", () => {
     });
   });
 
+  describe("dismissing one card", () => {
+    it("leaves the other cards' buttons clickable while it is in flight", async () => {
+      // One mutation serves every card, so gating each button on its
+      // `isPending` disabled the whole strip for the length of the write —
+      // seconds on a real database — and a click on another card in that
+      // window was silently dropped.
+      const dismiss = vi.spyOn(analyticsApi, "dismissInsight").mockReturnValue(
+        new Promise(() => {}) as ReturnType<typeof analyticsApi.dismissInsight>,
+      );
+      hiddenCards = ["forecast", "recurring"];
+      await renderStrip([
+        makeInsight(),
+        makeInsight({
+          key: "categorySpike:Transport:2026-09",
+          data: { category: "Transport", percent: 40, amount: 900 },
+        }),
+      ]);
+
+      const buttons = await screen.findAllByTestId("insight-dismiss");
+      expect(buttons).toHaveLength(2);
+      fireEvent.click(buttons[0]);
+
+      await waitFor(() => expect(dismiss).toHaveBeenCalledTimes(1));
+      // The card being written is held; its sibling is not.
+      expect(buttons[0]).toBeDisabled();
+      expect(buttons[1]).not.toBeDisabled();
+
+      fireEvent.click(buttons[1]);
+      await waitFor(() => expect(dismiss).toHaveBeenCalledTimes(2));
+      expect(dismiss).toHaveBeenLastCalledWith("categorySpike:Transport:2026-09");
+    });
+  });
+
   describe("dismissing", () => {
     it("posts the card's key and offers a way back", async () => {
       hiddenCards = ["forecast", "recurring"];
