@@ -9,9 +9,16 @@ import { API_BASE, enableDemoMode, navigateTo, resetDemoData } from "./helpers";
  * tag out of its dropdown, so the "Create Rule" it used to open could not even
  * be saved: it came up with the tag select stuck on its placeholder.
  *
- * Demo fixture used here: the "Rides" rule (Transportation / Taxi) matches
- * `UBER` / `GETT`, while the demo's "RIDE REFUND - REMAINING" transaction
- * carries that same category/tag without matching the rule.
+ * The action is shared — the dashboard's recent-transactions card, the
+ * transactions table's bulk actions bar and the single-transaction editor all
+ * render the same `RuleQuickAction` — so this covers the card and the table.
+ *
+ * Demo fixtures used here:
+ *  - the "Rides" rule (Transportation / Taxi) matches `UBER` / `GETT`, while
+ *    "RIDE REFUND - REMAINING" carries that category/tag without matching it;
+ *  - the "Food Delivery" rule (Food / Delivery) is a bare
+ *    `description starts_with WOLT` — not an OR — while "TENBIS" carries that
+ *    category/tag without matching it.
  */
 const RIDE_REFUND = "RIDE REFUND - REMAINING";
 
@@ -85,5 +92,51 @@ test.describe("Auto-tagging quick action — extend an existing rule", () => {
     expect(
       JSON.stringify(grown.conditions),
     ).toContain(RIDE_REFUND);
+  });
+
+  // The bulk bar opens with empty category/tag dropdowns, so nothing is
+  // staged: the action has to read the pair off the selection itself. This
+  // also drives the non-OR root — the Food / Delivery rule is a bare
+  // `starts_with` condition, which must be WRAPPED in an OR rather than
+  // appended into, or the rule would stop matching plain WOLT charges.
+  test("reads the pair off the selection in the transactions table's bulk bar", async ({
+    page,
+  }) => {
+    await navigateTo(page, "/transactions");
+    await expect(page.locator("table tbody tr").first()).toBeVisible({
+      timeout: 45_000,
+    });
+
+    const search = page.getByRole("textbox", { name: /search/i }).first();
+    await search.fill("TENBIS");
+    const row = page.locator("table tbody tr").filter({ hasText: "TENBIS" }).first();
+    await expect(row).toBeVisible({ timeout: 15_000 });
+    await row.locator('input[type="checkbox"]').check();
+
+    const bulkBar = page
+      .locator("div.fixed.bottom-4, div.fixed.md\\:bottom-8")
+      .last();
+    const ruleButton = bulkBar.getByRole("button", { name: "Add to Rule" });
+    await expect(ruleButton).toBeVisible({ timeout: 10_000 });
+    await ruleButton.click();
+
+    const modal = page.locator(".modal-overlay").last();
+    await expect(modal.getByRole("heading", { name: "Edit Rule" })).toBeVisible();
+
+    const values = modal.locator('input[placeholder="Value"]:visible');
+    await expect(values).toHaveCount(2);
+    expect(
+      await values.evaluateAll((els) =>
+        els.map((el) => (el as HTMLInputElement).value),
+      ),
+    ).toEqual(["WOLT", "TENBIS"]);
+
+    // The original `starts_with WOLT` survives as a branch of the new OR, so
+    // the preview still carries the plain WOLT charges it always matched.
+    const operators = modal.locator("select:visible, button:visible");
+    await expect(operators.filter({ hasText: "Starts with" }).first()).toBeVisible();
+    await expect(
+      modal.locator("tbody tr").filter({ hasText: "WOLT" }).first(),
+    ).toBeVisible();
   });
 });
