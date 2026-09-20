@@ -1,3 +1,9 @@
+## v1.69.2 (2026-09-20)
+
+### Fix
+
+- **dashboard**: scroll the income breakdown and collapse it by default (#304)
+
 ## v1.69.1 (2026-09-20)
 
 ### Fix
