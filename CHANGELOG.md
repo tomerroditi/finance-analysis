@@ -1,3 +1,9 @@
+## v1.73.1 (2026-09-20)
+
+### Fix
+
+- **budget**: stop the yearly trend contradicting its own row's status colour (#316)
+
 ## v1.73.0 (2026-09-20)
 
 ### Feat
