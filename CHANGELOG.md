@@ -1,3 +1,9 @@
+## v1.69.1 (2026-09-20)
+
+### Fix
+
+- **demo**: make the Data Sources page work in Demo Mode and on serverless (#302)
+
 ## v1.69.0 (2026-09-20)
 
 ### Feat
