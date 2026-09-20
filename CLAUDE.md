@@ -70,7 +70,7 @@ Routes (FastAPI) -> Services (Business Logic) -> Repositories (Data Access) -> S
 - **Tests:** `tests/backend/unit/` — pytest with test classes, docstrings required
 - **Rules:** `.claude/rules/` — detailed architecture docs covering services, repos, scraper, frontend (i18n, responsive, PWA/offline cache), testing, retirement/FIRE math (`retirement_calculations.md`), savings-goal allocation (`savings_goals.md`). Each has `paths:` frontmatter and loads automatically when you open a file it covers; `general.md` is always on and indexes the rest
 - **Skills:** `.claude/skills/` — `scraper-development` (build a new provider), `demo-data-generation` (regenerate the demo DB), `israeli-salary-knowledge` (payroll/pension/KH reference), `sync-upstream-scraper` (port upstream scraper changes; user-invoked only)
-- **Data Flow:** `frontend/src/components/dataflow/dataFlowData.ts` — comprehensive map of all features and how data flows through the system (sources → ingestion → processing → storage → management → analytics → frontend). Read this for a quick overview of the entire application.
+- **Data Flow:** `frontend/src/components/dataflow/` — comprehensive map of all features and how data flows through the system (sources → ingestion → processing → storage → management → analytics → frontend). `dataFlowContent.en.ts` carries the prose and is the file to read for a quick overview of the entire application; `dataFlowData.ts` holds only the structure (which nodes exist, what connects to what) and `dataFlowContent.he.ts` mirrors the English. Adding a node means touching all three — `dataFlowContent.test.ts` fails if they drift, because nothing at runtime does (a node missing from a locale silently renders its raw id).
 
 ## Key Conventions
 
