@@ -12,6 +12,7 @@ from backend.demo_setup import (
     DEMO_REFERENCE_DATE,
     _backfill_budget_rule_period_type,
     _drop_retired_columns,
+    _install_snapshot,
     _shift_dates,
     _source_db_path,
     sync_missing_columns,
@@ -552,3 +553,77 @@ class TestFrozenDemoSnapshotContents:
         for fields in rows:
             assert ENCRYPTED_MARKER not in fields
             assert "password" not in fields
+
+
+class TestInstallSnapshotIsAtomic:
+    """The snapshot must never be rewritten under a live reader.
+
+    ``prepare_demo_database`` runs while requests from the page being reset
+    are still in flight. Copying straight onto the destination changes the
+    bytes of an inode those requests hold open, which SQLite reports as
+    "database disk image is malformed"; one landing inside the rebuild's own
+    ``create_all`` fails the rebuild and leaves a half-built database that
+    500s every request until the next one.
+    """
+
+    def test_destination_inode_is_replaced_not_rewritten(self, tmp_path):
+        """A reader holding the old file keeps a coherent view of it.
+
+        Inode identity is the observable proxy: a changed inode means the
+        open descriptor still points at the intact previous file.
+        """
+        source = tmp_path / "snapshot.db"
+        source.write_bytes(b"new-contents")
+        destination = tmp_path / "demo.db"
+        destination.write_bytes(b"old-contents")
+        before = destination.stat().st_ino
+
+        with open(destination, "rb") as reader:
+            _install_snapshot(str(source), str(destination))
+            # The pre-existing descriptor still sees the whole old file.
+            assert reader.read() == b"old-contents"
+
+        assert destination.read_bytes() == b"new-contents"
+        assert destination.stat().st_ino != before
+
+    def test_leaves_no_staging_file_behind(self, tmp_path):
+        """The sibling used for the swap must not survive it."""
+        source = tmp_path / "snapshot.db"
+        source.write_bytes(b"x")
+        destination = tmp_path / "demo.db"
+
+        _install_snapshot(str(source), str(destination))
+
+        assert list(tmp_path.iterdir()) == [source, destination] or sorted(
+            f.name for f in tmp_path.iterdir()
+        ) == ["demo.db", "snapshot.db"]
+
+    def test_stale_journal_is_removed_before_the_swap(self, tmp_path):
+        """A journal describes the OLD file and would be replayed over the new.
+
+        SQLite treats a rollback journal sitting next to a database as a
+        crash to recover from, so one left behind corrupts the fresh copy on
+        its very first open.
+        """
+        source = tmp_path / "snapshot.db"
+        source.write_bytes(b"new")
+        destination = tmp_path / "demo.db"
+        destination.write_bytes(b"old")
+        journal = tmp_path / "demo.db-journal"
+        journal.write_bytes(b"stale journal")
+
+        _install_snapshot(str(source), str(destination))
+
+        assert not journal.exists()
+        assert destination.read_bytes() == b"new"
+
+    def test_works_when_the_destination_does_not_exist_yet(self, tmp_path):
+        """First build has nothing to replace."""
+        source = tmp_path / "snapshot.db"
+        source.write_bytes(b"fresh")
+        destination = tmp_path / "nested" / "demo.db"
+        destination.parent.mkdir()
+
+        _install_snapshot(str(source), str(destination))
+
+        assert destination.read_bytes() == b"fresh"
