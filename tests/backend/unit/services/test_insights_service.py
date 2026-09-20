@@ -663,3 +663,72 @@ class TestDismissal:
             },
         )
         assert fresh._pace_insight() == []
+
+
+class TestLargeTransactionRefundNetting:
+    """A charge that came back is not news, however large it was."""
+
+    def _seed_baseline(self, db_session, n=8, amount=-50.0):
+        for i in range(n):
+            _add(db_session, f"coffee {i}", amount, _months_ago(1 + i % 3, day=5 + i))
+
+    def _expect_refund(self, db_session, charge, expected, matched_txn=None, matched=0.0):
+        """Mark ``charge`` as awaiting ``expected``, optionally matching a refund."""
+        from backend.services.pending_refunds_service import PendingRefundsService
+
+        service = PendingRefundsService(db_session)
+        pending = service.mark_as_pending_refund(
+            source_type="transaction",
+            source_id=charge.unique_id,
+            source_table=Tables.CREDIT_CARD.value,
+            expected_amount=expected,
+        )
+        if matched_txn is not None:
+            service.link_refund(
+                pending_refund_id=pending["id"],
+                refund_transaction_id=matched_txn.unique_id,
+                refund_source=Tables.CREDIT_CARD.value,
+                amount=matched,
+            )
+
+    def test_a_fully_refunded_charge_raises_no_card(self, db_session):
+        """It cost nothing, so there is nothing to tell the user about."""
+        self._seed_baseline(db_session)
+        laptop = _add(
+            db_session, "New Laptop", -4200.0, _months_ago(0, day=3), category="Electronics"
+        )
+        refund = _add(
+            db_session, "Laptop Refund", 4200.0, _months_ago(0, day=20), category="Electronics"
+        )
+        db_session.commit()
+        self._expect_refund(db_session, laptop, 4200.0, refund, 4200.0)
+
+        assert InsightsService(db_session)._large_transaction_insight() == []
+
+    def test_a_partly_refunded_charge_is_reported_at_what_it_cost(self, db_session):
+        """1,200 back on a 4,200 laptop leaves a 3,000 charge to flag."""
+        self._seed_baseline(db_session)
+        laptop = _add(
+            db_session, "New Laptop", -4200.0, _months_ago(0, day=3), category="Electronics"
+        )
+        refund = _add(
+            db_session, "Partial Refund", 1200.0, _months_ago(0, day=20), category="Electronics"
+        )
+        db_session.commit()
+        self._expect_refund(db_session, laptop, 1200.0, refund, 1200.0)
+
+        result = InsightsService(db_session)._large_transaction_insight()
+
+        assert [c["data"]["amount"] for c in result] == [3000.0]
+
+    def test_an_unrefunded_charge_still_raises_its_card(self, db_session):
+        """The netting must not swallow an ordinary outsized charge."""
+        self._seed_baseline(db_session)
+        laptop = _add(
+            db_session, "New Laptop", -4200.0, _months_ago(0, day=3), category="Electronics"
+        )
+        db_session.commit()
+
+        result = InsightsService(db_session)._large_transaction_insight()
+
+        assert [c["data"]["amount"] for c in result] == [4200.0]
