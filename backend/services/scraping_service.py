@@ -13,6 +13,7 @@ from backend.errors import BadRequestException, EntityNotFoundException
 from backend.repositories.credentials_repository import CredentialsRepository
 from backend.repositories.scraping_history_repository import ScrapingHistoryRepository
 from backend.scraper import ScraperAdapter, create_adapter, is_2fa_required
+from backend.services.scraping_history_service import ScrapingHistoryService
 from backend.scraper.adapter import (
     OtpRateLimitError,
     ResendNotSupportedError,
@@ -221,25 +222,20 @@ class ScrapingService:
         }
 
     def get_last_scrape_dates(self) -> List[Dict]:
+        """Get last successful scrape dates for all configured accounts.
+
+        Delegates to :class:`ScrapingHistoryService`, which carries the
+        implementation so the same answer is available without the scraper
+        stack. Kept here as a thin pass-through because callers already hold
+        a ``ScrapingService``.
+
+        Returns
+        -------
+        list[dict]
+            Records with ``service``, ``provider``, ``account_name`` and
+            ``last_scrape_date``.
         """
-        Get last successful scrape dates for all configured accounts.
-        Returns a list of dicts with service, provider, account_name, and last_scrape_date.
-        """
-        accounts = self.credentials_repo.list_accounts()
-        result = []
-        for acc in accounts:
-            last_scrape = self.scraping_history_repo.get_last_successful_scrape_date(
-                acc["service"], acc["provider"], acc["account_name"]
-            )
-            result.append(
-                {
-                    "service": acc["service"],
-                    "provider": acc["provider"],
-                    "account_name": acc["account_name"],
-                    "last_scrape_date": last_scrape,
-                }
-            )
-        return result
+        return ScrapingHistoryService(self.db).get_last_scrape_dates()
 
     def get_active_scrapes(self) -> List[Dict[str, str | int]]:
         """List the scrapes currently running for the caller's demo mode.

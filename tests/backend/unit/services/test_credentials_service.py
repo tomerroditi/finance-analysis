@@ -168,6 +168,40 @@ class TestCredentialsService:
 
         assert account["needs_reentry"] is expected
 
+    @pytest.mark.parametrize(
+        ("provider", "fields_readable", "has_password"),
+        [
+            ("hapoalim", False, True),
+            ("hapoalim", True, False),
+            ("hafenix", False, False),
+        ],
+    )
+    def test_demo_accounts_never_need_reentry(
+        self, mock_repo, monkeypatch, provider, fields_readable, has_password
+    ):
+        """Demo accounts are never flagged, whatever their stored state.
+
+        A demo scrape does not authenticate — the adapter redirects every
+        provider to a dummy scraper that ignores credentials — so there is
+        nothing to re-enter. The demo dataset's rows are deliberately
+        plaintext with no keyring password (the hosted demo has neither an OS
+        keyring nor ``cryptography``), which is exactly the shape this
+        parametrisation covers; without the demo check every demo card would
+        wear a "Re-enter details" badge for a login that never happens.
+        """
+        monkeypatch.setattr("backend.config.AppConfig.is_demo_mode", True)
+        mock_repo.list_account_statuses.return_value = [{
+            "service": "banks",
+            "provider": provider,
+            "account_name": "Acc",
+            "fields_readable": fields_readable,
+            "has_password": has_password,
+        }]
+
+        [account] = CredentialsService(MagicMock()).get_accounts_list()
+
+        assert account["needs_reentry"] is False
+
     def test_get_available_providers(self, monkeypatch):
         """Verify providers filtered by test mode (production excludes test_ prefixed)."""
         monkeypatch.setattr("backend.config.AppConfig.is_demo_mode", False)

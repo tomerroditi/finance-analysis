@@ -1,5 +1,6 @@
-"""Unit tests for demo database date-shifting (``backend.demo_setup``)."""
+"""Unit tests for demo database preparation (``backend.demo_setup``)."""
 
+import json
 import shutil
 from datetime import date, timedelta
 
@@ -11,11 +12,17 @@ from backend.demo_setup import (
     DEMO_REFERENCE_DATE,
     _backfill_budget_rule_period_type,
     _drop_retired_columns,
+    _normalize_scrape_statuses,
+    _seed_demo_credentials,
     _shift_dates,
     _source_db_path,
     sync_missing_columns,
 )
 from backend.models.base import Base
+from backend.repositories.scraping_history_repository import (
+    ScrapingHistoryRepository,
+)
+from backend.utils.crypto import ENCRYPTED_MARKER
 
 #: "Today" values spanning early/late days of the month, a month shorter than
 #: the reference day, and a year boundary. The reference date is day 25, so
@@ -422,3 +429,191 @@ class TestShiftSavingsGoalMonths:
 
         expected = f"{today.year:04d}-{today.month:02d}"
         assert self._read_months(engine) == (expected, expected)
+
+
+class TestNormalizeScrapeStatuses:
+    """The demo dataset's scrape statuses must match what the repo queries.
+
+    ``ScrapingHistoryRepository`` looks up ``WHERE status = 'success'`` and
+    SQLite compares TEXT case-sensitively, so the fixture's ``"SUCCESS"``
+    matched nothing: every demo data source reported "Never synced" despite
+    a full history sitting in the table.
+    """
+
+    @staticmethod
+    def _seed(engine, statuses):
+        """Insert one scrape-history row per given status."""
+        with engine.connect() as conn:
+            for i, status in enumerate(statuses, start=1):
+                conn.execute(
+                    text(
+                        "INSERT INTO scraping_history "
+                        "(id, service_name, provider_name, account_name, date, status, "
+                        "created_at, updated_at) "
+                        "VALUES (:id, 'banks', 'hapoalim', 'Main Account', "
+                        "'2026-09-01T08:30:00', :status, :ts, :ts)"
+                    ),
+                    {"id": i, "status": status, "ts": "2026-01-01 00:00:00"},
+                )
+            conn.commit()
+
+    @staticmethod
+    def _statuses(engine):
+        """Read back every row's status."""
+        with engine.connect() as conn:
+            return [
+                row[0]
+                for row in conn.execute(
+                    text("SELECT status FROM scraping_history ORDER BY id")
+                )
+            ]
+
+    def test_uppercase_statuses_are_lowercased(self):
+        """The fixture's legacy casing is rewritten to the repo's constants."""
+        engine = _make_engine()
+        self._seed(engine, ["SUCCESS", "FAILED"])
+
+        _normalize_scrape_statuses(engine)
+
+        assert self._statuses(engine) == ["success", "failed"]
+
+    def test_the_repository_lookup_finds_the_row_afterwards(self):
+        """The point of the fix: the watermark query stops returning nothing."""
+        engine = _make_engine()
+        self._seed(engine, ["SUCCESS"])
+
+        _normalize_scrape_statuses(engine)
+
+        with engine.connect() as conn:
+            found = conn.execute(
+                text(
+                    "SELECT date FROM scraping_history WHERE status = :status"
+                ),
+                {"status": ScrapingHistoryRepository.SUCCESS},
+            ).scalar()
+        assert found == "2026-09-01T08:30:00"
+
+    def test_already_lowercase_rows_are_untouched(self):
+        """Idempotent — ``prepare_demo_database`` runs on every demo build."""
+        engine = _make_engine()
+        self._seed(engine, ["success", "failed"])
+
+        _normalize_scrape_statuses(engine)
+        _normalize_scrape_statuses(engine)
+
+        assert self._statuses(engine) == ["success", "failed"]
+
+
+class TestSeedDemoCredentials:
+    """The demo dataset ships its own data sources.
+
+    They used to be created only by the demo-mode *toggle*, which the hosted
+    demo never runs (demo mode is forced on at cold start and must not be
+    toggled on a shared instance), so its Data Sources page was empty.
+    """
+
+    @staticmethod
+    def _accounts(engine):
+        """Read back the seeded (provider, account) pairs."""
+        with engine.connect() as conn:
+            return [
+                (row[0], row[1])
+                for row in conn.execute(
+                    text(
+                        "SELECT provider, account_name FROM credentials "
+                        "ORDER BY account_name"
+                    )
+                )
+            ]
+
+    def test_seeds_the_demo_accounts(self):
+        """An empty credentials table gets the demo dataset's four sources."""
+        engine = _make_engine()
+
+        _seed_demo_credentials(engine)
+
+        assert self._accounts(engine) == [
+            ("max", "Family Card"),
+            ("hapoalim", "Main Account"),
+            ("visa cal", "Online Shopping"),
+            ("hafenix", "The Cohens"),
+        ]
+
+    def test_seeded_accounts_match_the_demo_scrape_history(self):
+        """Names must line up, or every card reads "Never synced" anyway.
+
+        The history rows are keyed on service/provider/account, so a seeded
+        account whose name differs by a character gets no watermark.
+        """
+        engine = _make_engine()
+
+        _seed_demo_credentials(engine)
+
+        with engine.connect() as conn:
+            seeded = {
+                (r[0], r[1], r[2])
+                for r in conn.execute(
+                    text("SELECT service, provider, account_name FROM credentials")
+                )
+            }
+        assert ("banks", "hapoalim", "Main Account") in seeded
+        assert ("credit_cards", "max", "Family Card") in seeded
+        assert ("credit_cards", "visa cal", "Online Shopping") in seeded
+
+    def test_fields_are_plaintext_and_hold_no_password(self):
+        """Plaintext is the only format available without ``cryptography``.
+
+        ``decrypt_fields`` passes a non-envelope dict straight through, and a
+        demo scrape never authenticates, so no password is stored — or needed.
+        """
+        engine = _make_engine()
+
+        _seed_demo_credentials(engine)
+
+        with engine.connect() as conn:
+            rows = [
+                json.loads(r[0])
+                for r in conn.execute(text("SELECT fields FROM credentials"))
+            ]
+        assert rows, "expected seeded rows"
+        for fields in rows:
+            assert ENCRYPTED_MARKER not in fields
+            assert "password" not in fields
+
+    def test_does_not_duplicate_on_a_second_run(self):
+        """Idempotent — every demo build calls it."""
+        engine = _make_engine()
+
+        _seed_demo_credentials(engine)
+        _seed_demo_credentials(engine)
+
+        assert len(self._accounts(engine)) == 4
+
+    def test_leaves_an_existing_account_alone(self):
+        """A user's own demo edits survive a rebuild of the dataset."""
+        engine = _make_engine()
+        with engine.connect() as conn:
+            conn.execute(
+                text(
+                    "INSERT INTO credentials "
+                    "(service, provider, account_name, fields, created_at, updated_at) "
+                    "VALUES ('banks', 'hapoalim', 'Main Account', :fields, :ts, :ts)"
+                ),
+                {
+                    "fields": json.dumps({"userCode": "edited-by-user"}),
+                    "ts": "2026-01-01 00:00:00",
+                },
+            )
+            conn.commit()
+
+        _seed_demo_credentials(engine)
+
+        with engine.connect() as conn:
+            fields = json.loads(
+                conn.execute(
+                    text(
+                        "SELECT fields FROM credentials WHERE account_name = 'Main Account'"
+                    )
+                ).scalar()
+            )
+        assert fields == {"userCode": "edited-by-user"}

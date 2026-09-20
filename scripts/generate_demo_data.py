@@ -26,6 +26,9 @@ from sqlalchemy.orm import sessionmaker  # noqa: E402
 from sqlalchemy.pool import NullPool  # noqa: E402
 
 from backend.models.base import Base  # noqa: E402
+from backend.repositories.scraping_history_repository import (  # noqa: E402
+    ScrapingHistoryRepository,
+)
 from backend.models import (  # noqa: E402
     BankBalance,
     BankTransaction,
@@ -2614,7 +2617,7 @@ def create_scraping_history(session):
         provider_name="hapoalim",
         account_name="Main Account",
         date=datetime(recent.year, recent.month, recent.day, 8, 30, 0).isoformat(),
-        status="SUCCESS",
+        status=ScrapingHistoryRepository.SUCCESS,
         start_date=(recent - timedelta(days=30)).isoformat(),
     ))
     session.add(ScrapingHistory(
@@ -2622,7 +2625,7 @@ def create_scraping_history(session):
         provider_name="leumi",
         account_name="Savings Account",
         date=datetime(recent.year, recent.month, recent.day, 8, 32, 0).isoformat(),
-        status="SUCCESS",
+        status=ScrapingHistoryRepository.SUCCESS,
         start_date=(recent - timedelta(days=30)).isoformat(),
     ))
     session.add(ScrapingHistory(
@@ -2630,7 +2633,7 @@ def create_scraping_history(session):
         provider_name="max",
         account_name="Family Card",
         date=datetime(recent.year, recent.month, recent.day, 8, 35, 0).isoformat(),
-        status="SUCCESS",
+        status=ScrapingHistoryRepository.SUCCESS,
         start_date=(recent - timedelta(days=30)).isoformat(),
     ))
     session.add(ScrapingHistory(
@@ -2638,7 +2641,7 @@ def create_scraping_history(session):
         provider_name="visa cal",
         account_name="Online Shopping",
         date=datetime(recent.year, recent.month, recent.day, 8, 40, 0).isoformat(),
-        status="SUCCESS",
+        status=ScrapingHistoryRepository.SUCCESS,
         start_date=(recent - timedelta(days=30)).isoformat(),
     ))
 
@@ -2648,7 +2651,7 @@ def create_scraping_history(session):
         provider_name="hapoalim",
         account_name="Main Account",
         date=datetime(older.year, older.month, older.day, 9, 0, 0).isoformat(),
-        status="FAILED",
+        status=ScrapingHistoryRepository.FAILED,
         start_date=(older - timedelta(days=30)).isoformat(),
         error_message="Timeout waiting for page load",
     ))
@@ -2659,7 +2662,7 @@ def create_scraping_history(session):
         provider_name="max",
         account_name="Family Card",
         date=datetime(older.year, older.month, older.day, 9, 5, 0).isoformat(),
-        status="SUCCESS",
+        status=ScrapingHistoryRepository.SUCCESS,
         start_date=(older - timedelta(days=30)).isoformat(),
     ))
 

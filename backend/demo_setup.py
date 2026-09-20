@@ -14,9 +14,10 @@ ended up with budget rules pinned to ``DEMO_REFERENCE_DATE``.
 
 from __future__ import annotations
 
+import json
 import os
 import shutil
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 
 from sqlalchemy import inspect, text
 from sqlalchemy.engine import Engine
@@ -424,6 +425,96 @@ def _shift_dates(engine: Engine, offset_days: int) -> None:
         conn.commit()
 
 
+def _normalize_scrape_statuses(engine: Engine) -> None:
+    """Lower-case ``scraping_history.status`` in the demo dataset.
+
+    The demo fixture wrote ``"SUCCESS"`` / ``"FAILED"`` while
+    ``ScrapingHistoryRepository`` queries ``WHERE status = 'success'``.
+    SQLite's ``=`` on TEXT is case-sensitive, so the lookup matched nothing:
+    every demo data source reported "Never synced" despite a full scrape
+    history sitting in the table, and the balance-entry button stayed
+    disabled. The generator now writes the repository's own constants, but
+    the frozen snapshot still carries the old rows — and rebuilding that
+    binary would churn a 1.2 MB blob for a one-column fix.
+
+    Safe to call repeatedly: lower-casing an already-lower-cased value is a
+    no-op.
+    """
+    inspector = inspect(engine)
+    if not inspector.has_table("scraping_history"):
+        return
+    with engine.connect() as conn:
+        conn.execute(
+            text("UPDATE scraping_history SET status = lower(status)")
+        )
+        conn.commit()
+
+
+def _seed_demo_credentials(engine: Engine) -> None:
+    """Give the demo dataset its data sources.
+
+    Demo credentials used to be created only by ``seed_demo_credentials()``
+    on the demo-mode *toggle* — which never runs on the hosted demo, where
+    demo mode is forced on at cold start and must never be toggled on a
+    shared instance. The result was a Data Sources page with nothing on it.
+
+    Seeded here instead, so both paths that build a demo database get them:
+    the local toggle and the per-visitor Vercel sandbox
+    (``demo_sessions`` also calls :func:`prepare_demo_database`).
+
+    The rows are written directly, as plaintext ``fields`` with no keyring
+    password, rather than through ``CredentialsService``:
+
+    - Plaintext is a format the reader already accepts — ``decrypt_fields``
+      passes non-envelope dicts straight through (the legacy-row path) — and
+      it is the only format available where ``cryptography`` is absent.
+    - No password is needed because a demo scrape never authenticates:
+      ``adapter.py`` redirects every demo provider to a dummy scraper that
+      ignores credentials entirely.
+
+    Account names match the demo ``scraping_history`` rows, so each card
+    shows a real last-synced date.
+
+    Safe to call repeatedly: it only inserts accounts that are absent.
+    """
+    inspector = inspect(engine)
+    if not inspector.has_table("credentials"):
+        return
+    seeds = [
+        ("banks", "hapoalim", "Main Account", {"userCode": "demo"}),
+        ("credit_cards", "max", "Family Card", {"username": "demo", "id": "demo"}),
+        ("credit_cards", "visa cal", "Online Shopping", {"username": "demo"}),
+        ("insurance", "hafenix", "The Cohens", {"id": "demo", "phoneNumber": "050-1234567"}),
+    ]
+    with engine.connect() as conn:
+        for service, provider, account_name, fields in seeds:
+            exists = conn.execute(
+                text(
+                    "SELECT 1 FROM credentials WHERE service = :service "
+                    "AND provider = :provider AND account_name = :account"
+                ),
+                {"service": service, "provider": provider, "account": account_name},
+            ).first()
+            if exists:
+                continue
+            now = datetime.now().isoformat(sep=" ", timespec="seconds")
+            conn.execute(
+                text(
+                    "INSERT INTO credentials "
+                    "(service, provider, account_name, fields, created_at, updated_at) "
+                    "VALUES (:service, :provider, :account, :fields, :now, :now)"
+                ),
+                {
+                    "service": service,
+                    "provider": provider,
+                    "account": account_name,
+                    "fields": json.dumps(fields),
+                    "now": now,
+                },
+            )
+        conn.commit()
+
+
 def prepare_demo_database() -> None:
     """Copy the frozen demo DB into the demo-mode location and shift dates.
 
@@ -463,6 +554,8 @@ def prepare_demo_database() -> None:
         _drop_retired_columns(engine)
         _backfill_budget_rule_period_type(engine)
         _backfill_liability_loan_type(engine)
+        _normalize_scrape_statuses(engine)
+        _seed_demo_credentials(engine)
 
         offset_days = (date.today() - DEMO_REFERENCE_DATE).days
         _shift_dates(engine, offset_days)
