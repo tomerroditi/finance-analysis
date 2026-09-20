@@ -87,6 +87,32 @@ Two things that look redundant and aren't:
 `adapter.py` redirects to dummy scrapers when `AppConfig().is_demo_mode` and the
 provider name lacks `test_`. Demo mode never touches a real site.
 
+## Single-flight per account
+
+`_active_scrapers` (in `adapter.py`, keyed by
+`scraper_registry_key(demo, service, provider, account)`) makes
+`start_scraping_single` a no-op for an account that is already scraping — it
+returns the running `process_id` instead of opening a second history row,
+building a second adapter, or firing a second OTP SMS.
+
+Two ordering rules keep that guarantee, both enforced in
+`scraping_service._launch_lock`:
+
+- **Take the lock.** `start_scraping_single` is a *synchronous* route handler,
+  so FastAPI runs it in a threadpool worker and two requests for one account
+  run on two real OS threads. Reasoning about `await` points does not apply.
+  The registry re-check, the history insert, the registration and the launch
+  all sit inside the lock; the slow preparation (keyring reads, start-date
+  lookup) stays outside it so one account's launch never queues behind
+  another's keyring round trip.
+- **Register before launching.** `run()` executes on the scraper loop's own
+  thread and pops both registries *by identity* in its `finally`. Launch
+  first and a scrape that fails immediately reaches that cleanup before the
+  key exists: the pop no-ops, the finished adapter gets registered afterwards,
+  and the account stays locked until the process restarts. If the launch
+  itself raises there is no `run()` to clean up, so the start path undoes its
+  own registration and closes out the history row.
+
 ## Limits
 
 5-minute timeout per run, no automatic retry, no daily cap — a user can

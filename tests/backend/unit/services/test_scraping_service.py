@@ -577,3 +577,184 @@ class TestScraperLoop:
 
         assert cleaned_up.is_set()
         assert adapter._run_future.cancelled()
+
+
+class TestScrapingServiceConcurrentStarts:
+    """Single-flight has to survive genuine thread-level parallelism.
+
+    ``start_scraping_single`` is a synchronous route handler, so FastAPI runs
+    it in a threadpool worker: two requests for one account run on two OS
+    threads, not as interleaved coroutines. Before ``_launch_lock`` both could
+    clear the registry check and launch, costing the user two scrapes and —
+    on a 2FA provider — two OTP SMS for a single account.
+    """
+
+    @staticmethod
+    def _barrier_on_credentials(service, parties):
+        """Park every caller inside the credentials read until all have arrived.
+
+        The credentials fetch sits between the unlocked fast-path check and the
+        locked critical section, so holding all callers there guarantees they
+        have each seen an empty registry before any of them registers — the
+        exact interleaving the lock exists to survive.
+        """
+        barrier = threading.Barrier(parties)
+
+        def gated(*_args, **_kwargs):
+            barrier.wait(timeout=5)
+            return {"user": "test"}
+
+        service.credentials_repo.get_credentials.side_effect = gated
+
+    @staticmethod
+    def _run_concurrently(targets):
+        """Run each callable on its own thread and return their results."""
+        results: list = [None] * len(targets)
+        errors: list = [None] * len(targets)
+
+        def runner(index, fn):
+            try:
+                results[index] = fn()
+            except BaseException as err:  # noqa: BLE001 - re-raised below
+                errors[index] = err
+
+        threads = [
+            threading.Thread(target=runner, args=(i, fn))
+            for i, fn in enumerate(targets)
+        ]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join(timeout=10)
+            assert not thread.is_alive(), "a start_scraping_single thread hung"
+        for err in errors:
+            if err is not None:
+                raise err
+        return results
+
+    def test_same_account_launches_once_under_concurrent_starts(
+        self, service, launch, history_repo, create_adapter, is_2fa_required
+    ):
+        """Two threads racing on one account produce a single scrape.
+
+        Both clear the fast-path check before either registers; the loser must
+        adopt the winner's process_id rather than open a second history row,
+        build a second adapter or fire a second OTP SMS.
+        """
+        is_2fa_required.return_value = True
+        service.scraping_history_repo.get_last_successful_scrape_date.return_value = None
+        history_repo.record_scrape_start.return_value = 50
+        create_adapter.return_value.process_id = 50
+        self._barrier_on_credentials(service, 2)
+
+        results = self._run_concurrently(
+            [
+                lambda: service.start_scraping_single("banks", "onezero", "Acc1"),
+                lambda: service.start_scraping_single("banks", "onezero", "Acc1"),
+            ]
+        )
+
+        assert results == [50, 50]
+        create_adapter.assert_called_once()
+        history_repo.record_scrape_start.assert_called_once()
+        launch.assert_called_once()
+
+    def test_different_accounts_all_launch_under_concurrent_starts(
+        self, service, launch, history_repo, create_adapter, is_2fa_required
+    ):
+        """The lock serialises the critical section without serialising accounts.
+
+        Three distinct accounts started at once must each get their own scrape —
+        a global lock that collapsed them into one would break Scrape All.
+        """
+        service.scraping_history_repo.get_last_successful_scrape_date.return_value = None
+        history_repo.record_scrape_start.side_effect = [60, 61, 62]
+        create_adapter.side_effect = lambda *a, **k: MagicMock(process_id=a[5])
+        self._barrier_on_credentials(service, 3)
+
+        results = self._run_concurrently(
+            [
+                (lambda name=name: service.start_scraping_single(
+                    "banks", "hapoalim", name
+                ))
+                for name in ("AccA", "AccB", "AccC")
+            ]
+        )
+
+        assert sorted(results) == [60, 61, 62]
+        assert launch.call_count == 3
+        assert len(ss._active_scrapers) == 3
+
+    def test_adapter_is_registered_before_it_is_launched(
+        self, service, launch, history_repo, create_adapter, is_2fa_required
+    ):
+        """Registration must precede the hand-off to the scraper loop.
+
+        ``run()`` executes on the scraper loop's thread and pops the registries
+        by identity in its ``finally``. A scrape that fails instantly can reach
+        that cleanup before a launch-then-register ordering has registered
+        anything: the pop no-ops, the dead adapter is installed afterwards, and
+        the account stays single-flight-locked until the process restarts.
+        """
+        service.credentials_repo.get_credentials.return_value = {"user": "test"}
+        service.scraping_history_repo.get_last_successful_scrape_date.return_value = None
+        history_repo.record_scrape_start.return_value = 70
+        adapter = create_adapter.return_value
+        adapter.process_id = 70
+        key = scraper_registry_key(False, "banks", "hapoalim", "Acc1")
+        registered_at_launch = {}
+
+        def check_registry(handed_over):
+            registered_at_launch["active"] = ss._active_scrapers.get(key) is handed_over
+
+        launch.side_effect = check_registry
+
+        service.start_scraping_single("banks", "hapoalim", "Acc1")
+
+        assert registered_at_launch["active"] is True
+
+    def test_failed_launch_frees_the_account_instead_of_wedging_it(
+        self, service, launch, history_repo, create_adapter, is_2fa_required
+    ):
+        """A launch that raises must not leave a phantom holding the account.
+
+        Registering before launching means the entry exists before anything can
+        go wrong; if the hand-off fails there is no ``run()`` to ever pop it, so
+        the start path has to undo its own registration and close out the
+        history row it opened.
+        """
+        is_2fa_required.return_value = True
+        service.credentials_repo.get_credentials.return_value = {"user": "test"}
+        service.scraping_history_repo.get_last_successful_scrape_date.return_value = None
+        history_repo.record_scrape_start.return_value = 80
+        create_adapter.return_value.process_id = 80
+        launch.side_effect = RuntimeError("no scraper loop")
+
+        with pytest.raises(RuntimeError):
+            service.start_scraping_single("banks", "onezero", "Acc1")
+
+        key = scraper_registry_key(False, "banks", "onezero", "Acc1")
+        assert key not in ss._active_scrapers
+        assert key not in ss._tfa_scrapers_waiting
+        history_repo.record_scrape_end.assert_called_once_with(
+            80, "failed", error_message="Failed to launch the scraper",
+            error_type="GENERAL_ERROR",
+        )
+
+    def test_account_is_relaunchable_after_a_failed_launch(
+        self, service, launch, history_repo, create_adapter, is_2fa_required
+    ):
+        """The rollback is real: a retry after a failed launch starts a scrape."""
+        service.credentials_repo.get_credentials.return_value = {"user": "test"}
+        service.scraping_history_repo.get_last_successful_scrape_date.return_value = None
+        history_repo.record_scrape_start.side_effect = [90, 91]
+        create_adapter.side_effect = lambda *a, **k: MagicMock(process_id=a[5])
+        launch.side_effect = [RuntimeError("no scraper loop"), None]
+
+        with pytest.raises(RuntimeError):
+            service.start_scraping_single("banks", "hapoalim", "Acc1")
+        retry_id = service.start_scraping_single("banks", "hapoalim", "Acc1")
+
+        assert retry_id == 91
+        key = scraper_registry_key(False, "banks", "hapoalim", "Acc1")
+        assert ss._active_scrapers[key].process_id == 91
