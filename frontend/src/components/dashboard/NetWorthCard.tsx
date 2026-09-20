@@ -295,7 +295,8 @@ export function NetWorthCard() {
                     );
                   });
                 })()}
-                <div className="w-full md:w-auto md:ms-auto flex bg-[var(--surface-light)] p-1 rounded-xl overflow-x-auto scrollbar-auto-hide">
+                <div className="w-full md:w-auto md:ms-auto bg-[var(--surface-light)] rounded-xl overflow-hidden">
+                <div className="flex p-1 overflow-x-auto scrollbar-auto-hide">
                   {(
                     [
                       { key: "all", label: t("dashboard.all") },
@@ -317,6 +318,7 @@ export function NetWorthCard() {
                       {label}
                     </button>
                   ))}
+                </div>
                 </div>
               </div>
               <div className="flex-1 min-h-0" data-testid="net-worth-chart">

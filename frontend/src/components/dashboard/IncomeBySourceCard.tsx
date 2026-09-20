@@ -90,7 +90,8 @@ export function IncomeBySourceCard() {
           </p>
         </div>
         {/* Range presets */}
-        <div className="flex overflow-x-auto scrollbar-auto-hide gap-1 bg-[var(--surface-light)] p-1 rounded-xl">
+        <div className="bg-[var(--surface-light)] rounded-xl overflow-hidden">
+        <div className="flex overflow-x-auto scrollbar-auto-hide gap-1 p-1">
           {presets.map(({ key, label }) => (
             <button
               key={key}
@@ -104,6 +105,7 @@ export function IncomeBySourceCard() {
               {label}
             </button>
           ))}
+        </div>
         </div>
       </div>
 
@@ -172,9 +174,10 @@ export function IncomeBySourceCard() {
                  across browsers), and their separators are inset box-shadows —
                  a collapsed-border <tr> border does not paint while scrolling
                  under a sticky row. */
+              <div className="rounded-xl border border-[var(--surface-light)] overflow-hidden">
               <div
                 data-testid="income-by-source-breakdown-scroll"
-                className="max-h-[20rem] overflow-auto overscroll-contain rounded-xl border border-[var(--surface-light)]"
+                className="max-h-[20rem] overflow-auto overscroll-contain"
               >
                 <table className="w-full min-w-[240px] text-sm">
                   <thead>
@@ -246,6 +249,7 @@ export function IncomeBySourceCard() {
                     </tr>
                   </tfoot>
                 </table>
+              </div>
               </div>
             )}
           </div>

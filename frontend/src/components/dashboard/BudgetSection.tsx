@@ -46,9 +46,10 @@ export function BudgetSection({ categoryIcons }: BudgetSectionProps) {
         <p className="shrink-0 text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
           {t("budget.title")}
         </p>
+        <div className="w-full sm:w-auto max-w-full min-w-0 bg-[var(--surface-light)] rounded-lg overflow-hidden">
         <div
           data-testid="dashboard-budget-tabs"
-          className="flex w-full sm:w-auto max-w-full min-w-0 bg-[var(--surface-light)] p-0.5 rounded-lg overflow-x-auto scrollbar-auto-hide"
+          className="flex w-full p-0.5 overflow-x-auto scrollbar-auto-hide"
         >
           <button
             onClick={() => setActiveTab("overview")}
@@ -78,6 +79,7 @@ export function BudgetSection({ categoryIcons }: BudgetSectionProps) {
           >
             {t("budget.projectBudgets")}
           </button>
+        </div>
         </div>
       </div>
 

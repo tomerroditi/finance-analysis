@@ -285,6 +285,43 @@ When a modal opens another modal (e.g., transaction edit → split transaction),
 ```
 Default is `z-50`. Use `z-[60]` for second-level modals.
 
+## Rounded Scroll Containers
+
+A scroll container cannot round its own scrollbar away. Blink paints the
+scrollbar inside the element's **border box**, and `border-radius` clips
+content, not scrollbar gutters — so an element that is both rounded and its
+own scroller gets the scrollbar drawn across its rounded corners and over its
+border. With this app's `::-webkit-scrollbar` styling (8px, solid track) that
+is plainly visible; it shipped in the Settings popup.
+
+The same defect has a second shape: a rounded **panel** that clamps its
+height and lets a child scroll. The panel clips nothing, so the child's
+scrollbar runs over the panel's corners instead.
+
+```tsx
+// WRONG — the rounded element is the scroller
+<div className="rounded-2xl border p-6 max-h-[90vh] overflow-y-auto">…</div>
+
+// WRONG — rounded panel, scrolling child, nothing clipping
+<div className="rounded-2xl border max-h-[80vh] flex flex-col">
+  <div className="flex-1 overflow-y-auto">…</div>
+</div>
+
+// CORRECT — radius + border on a clipping parent, scrolling on the child
+<div className="rounded-2xl border overflow-hidden flex flex-col max-h-[90vh]">
+  <div className="flex-1 min-h-0 overflow-y-auto p-6">…</div>
+</div>
+```
+
+The radius, border and background belong to the wrapper; padding moves to the
+scroller (so the scrollbar sits outside it, flush to the clipped edge). This
+is what `components/common/Modal.tsx` already does — reach for it before
+hand-rolling a panel.
+
+Both shapes are enforced by `frontend/src/roundedScrollContainers.test.ts`
+(a source scan, runs in `npm test`), with the behavioural half in
+`e2e/dashboard-layout.spec.ts`.
+
 ## TransactionsTable Consumer Updates
 
 When modifying `TransactionsTable.tsx` props or behavior, **always update all consumers**:
