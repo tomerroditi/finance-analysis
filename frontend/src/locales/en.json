@@ -211,8 +211,6 @@
     "expensesBreakdown": "Expenses Breakdown",
     "ledgerMonth": "Month",
     "ledgerNet": "Net",
-    "showShare": "Show share (%)",
-    "showAmount": "Show amount (₪)",
     "showEarlierMonths": "Show earlier months ({{count}})",
     "showLess": "Show less",
     "barAboveScale": "Above the chart scale — see the exact amount",
