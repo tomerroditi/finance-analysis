@@ -1,3 +1,9 @@
+## v1.75.0 (2026-09-20)
+
+### Feat
+
+- **dashboard**: full row actions, untagged filter and details in recent transactions (#321)
+
 ## v1.74.0 (2026-09-20)
 
 ### Feat
