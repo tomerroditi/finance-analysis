@@ -125,6 +125,82 @@ class TestYearlyBudgetRoutes:
         assert r.status_code == 404
 
 
+class TestCloseYearlyRuleRoute:
+    """PUT /yearly/rules/{id}/closed retires an envelope without deleting it."""
+
+    @staticmethod
+    def _create(test_client, year=2035, name="Car insurance"):
+        """Create one yearly rule and return its id."""
+        test_client.post("/api/budget/yearly/rules", json={
+            "name": name, "amount": 6000, "category": "Travel",
+            "tags": ["Hotels"], "year": year})
+        rules = test_client.get(f"/api/budget/yearly/{year}/analysis").json()["rules"]
+        return next(e["rule"]["id"] for e in rules if e["rule"]["name"] == name)
+
+    def test_close_flags_the_rule(self, test_client):
+        """The analysis reports the rule as closed after the call."""
+        rule_id = self._create(test_client)
+        r = test_client.put(
+            f"/api/budget/yearly/rules/{rule_id}/closed", json={"closed": True}
+        )
+        assert r.status_code == 200
+        assert r.json() == {"status": "success", "id": rule_id, "closed": True}
+
+        entry = next(
+            e
+            for e in test_client.get("/api/budget/yearly/2035/analysis").json()["rules"]
+            if e["rule"]["id"] == rule_id
+        )
+        assert entry["closed"] is True
+
+    def test_close_is_not_a_delete(self, test_client):
+        """The rule keeps its row, its amount and its year."""
+        rule_id = self._create(test_client, year=2036)
+        test_client.put(
+            f"/api/budget/yearly/rules/{rule_id}/closed", json={"closed": True}
+        )
+        entry = next(
+            e
+            for e in test_client.get("/api/budget/yearly/2036/analysis").json()["rules"]
+            if e["rule"]["id"] == rule_id
+        )
+        assert entry["rule"]["amount"] == 6000
+
+    def test_reopen_clears_the_flag(self, test_client):
+        """Closing is reversible through the same endpoint."""
+        rule_id = self._create(test_client, year=2037)
+        test_client.put(
+            f"/api/budget/yearly/rules/{rule_id}/closed", json={"closed": True}
+        )
+        test_client.put(
+            f"/api/budget/yearly/rules/{rule_id}/closed", json={"closed": False}
+        )
+        entry = next(
+            e
+            for e in test_client.get("/api/budget/yearly/2037/analysis").json()["rules"]
+            if e["rule"]["id"] == rule_id
+        )
+        assert entry["closed"] is False
+
+    def test_monthly_rule_id_is_not_found(self, test_client, seed_budget_rules):
+        """A monthly id must not be closable through the yearly endpoint."""
+        food = next(
+            r for r in test_client.get("/api/budget/rules/2024/1").json()
+            if r["name"] == "Food"
+        )
+        r = test_client.put(
+            f"/api/budget/yearly/rules/{food['id']}/closed", json={"closed": True}
+        )
+        assert r.status_code == 404
+
+    def test_unknown_rule_returns_404(self, test_client):
+        """An id that exists nowhere is 404, not a silent success."""
+        r = test_client.put(
+            "/api/budget/yearly/rules/99999/closed", json={"closed": True}
+        )
+        assert r.status_code == 404
+
+
 class TestMonthlyEditYearlyConflictRoute:
     """Editing a monthly rule to claim a yearly-owned tag must be rejected."""
 

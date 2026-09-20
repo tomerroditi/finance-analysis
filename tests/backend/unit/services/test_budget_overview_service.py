@@ -495,6 +495,91 @@ class TestClosedProjects:
         assert [e["name"] for e in envelopes if e["kind"] == "project"] == ["Wedding"]
 
 
+class TestClosedYearlyEnvelopes:
+    """A closed yearly envelope leaves the list without losing its spend."""
+
+    @staticmethod
+    def _open_envelope(db_session):
+        """Seed one yearly envelope with spend in and before the viewed month."""
+        service = YearlyBudgetService(db_session)
+        service.create_rule("Gifts", 4000.0, "Shopping", ["Gifts"], 2026)
+        _seed(db_session, "2026-01-08", "Shopping", "Gifts", -900.0)
+        _seed(db_session, "2026-03-09", "Shopping", "Gifts", -350.0)
+        rules = service.get_year_rules(2026)
+        return service, int(rules.iloc[0]["id"])
+
+    def test_closed_envelope_drops_out_of_the_envelope_list(
+        self, db_session, frozen_today
+    ):
+        """A settled annual commitment is not something this month is measured against."""
+        service, rule_id = self._open_envelope(db_session)
+        service.set_rule_closed(rule_id, True)
+
+        envelopes = BudgetOverviewService(db_session).get_overview(2026, 3)[
+            "long_envelopes"
+        ]
+        assert [e["name"] for e in envelopes if e["kind"] == "yearly"] == []
+
+    def test_closed_envelope_still_counts_in_the_month_totals(
+        self, db_session, frozen_today
+    ):
+        """Its spend left the accounts, so the pool totals must still include it."""
+        service, rule_id = self._open_envelope(db_session)
+        service.set_rule_closed(rule_id, True)
+
+        overview = BudgetOverviewService(db_session).get_overview(2026, 3)
+        assert overview["yearly_month_spent"] == 350.0
+        assert overview["total_out"] == 350.0
+
+    def test_reopened_envelope_returns_unchanged(self, db_session, frozen_today):
+        """Closing is reversible — reopening restores the envelope as it was."""
+        service, rule_id = self._open_envelope(db_session)
+        service.set_rule_closed(rule_id, True)
+        service.set_rule_closed(rule_id, False)
+
+        envelope = next(
+            e
+            for e in BudgetOverviewService(db_session).get_overview(2026, 3)[
+                "long_envelopes"
+            ]
+            if e["name"] == "Gifts"
+        )
+        assert envelope["spent"] == 1250.0
+        assert envelope["budget"] == 4000.0
+
+    def test_open_envelope_is_unaffected_by_a_closed_sibling(
+        self, db_session, frozen_today
+    ):
+        """Closing one yearly rule must not take the others with it."""
+        service, rule_id = self._open_envelope(db_session)
+        service.create_rule("Vacations", 20000.0, "Travel", ["Hotels"], 2026)
+        _seed(db_session, "2026-03-11", "Travel", "Hotels", -2500.0)
+        service.set_rule_closed(rule_id, True)
+
+        envelopes = BudgetOverviewService(db_session).get_overview(2026, 3)[
+            "long_envelopes"
+        ]
+        assert [e["name"] for e in envelopes if e["kind"] == "yearly"] == ["Vacations"]
+
+    def test_closed_envelope_still_keeps_its_spend_out_of_the_monthly_pool(
+        self, db_session, frozen_today
+    ):
+        """The rule goes on claiming its tag, so the monthly budget is untouched.
+
+        This is the failure closing must not cause: a closed envelope whose
+        spend fell back into the monthly pool would blow the month's budget
+        for money the user had already accounted for elsewhere.
+        """
+        service, rule_id = self._open_envelope(db_session)
+        MonthlyBudgetService(db_session).create_rule(
+            "Total Budget", 9000.0, "Total Budget", ["all_tags"], 3, 2026
+        )
+        service.set_rule_closed(rule_id, True)
+
+        overview = BudgetOverviewService(db_session).get_overview(2026, 3)
+        assert overview["monthly_spent"] == 0.0
+
+
 class TestEmptyState:
     """A month with nothing configured still answers."""
 
