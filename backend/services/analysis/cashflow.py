@@ -409,7 +409,7 @@ class CashflowMixin:
             for month, row in pivot.iterrows()
         ]
 
-    def get_expenses_by_category(self):
+    def get_expenses_by_category(self, exclude_pending_refunds: bool = True):
         """
         Get expenses and refunds grouped by category.
 
@@ -417,6 +417,17 @@ class CashflowMixin:
         Liabilities) are excluded. Transactions with no category are grouped
         as ``"Uncategorized"``. Categories with positive net amounts are treated
         as refunds; those with negative net amounts are expenses.
+
+        A refund matched to its purchase is netted against that purchase (see
+        :meth:`_net_matched_refunds`), so it leaves the ``refunds`` bucket
+        entirely rather than showing up as money back on a category that no
+        longer carries the charge. What remains there is the unmatched
+        positive balance — a refund nobody linked to anything.
+
+        Parameters
+        ----------
+        exclude_pending_refunds : bool, optional
+            Passed to :meth:`_net_matched_refunds`. Defaults to True.
 
         Returns
         -------
@@ -432,6 +443,8 @@ class CashflowMixin:
 
         if df.empty:
             return {"expenses": [], "refunds": []}
+
+        df = self._net_matched_refunds(df, exclude_pending_refunds)
 
         expense_mask = ~df["category"].isin(NON_EXPENSE_CATEGORIES)
         expenses = df[expense_mask].copy()

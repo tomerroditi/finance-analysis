@@ -1760,6 +1760,78 @@ class TestRefundNettingAcrossMonths:
         for row in result:
             assert "Uncategorized Refunds" not in row["categories"]
 
+    def test_by_category_drops_a_matched_refund_from_both_buckets(self, db_session):
+        """The category card nets the charge away instead of listing money back."""
+        self._seed(db_session, [
+            ("tv", "2024-01-10", -1000.0, "Electronics", None),
+            ("tv-refund", "2024-03-14", 1000.0, "Electronics", None),
+            ("milk", "2024-01-11", -30.0, "Groceries", None),
+        ])
+        uids = self._uids(db_session)
+        self._link(db_session, uids["tv"], uids["tv-refund"], 1000.0, 1000.0)
+
+        result = AnalysisService(db_session).get_expenses_by_category()
+
+        assert {r["category"] for r in result["expenses"]} == {"Groceries"}
+        assert result["refunds"] == []
+
+    def test_by_category_keeps_an_unmatched_refund_in_the_refunds_bucket(self, db_session):
+        """Money back that no one linked to a purchase is still a refund."""
+        self._seed(db_session, [
+            ("goodwill", "2024-03-14", 120.0, "Electronics", None),
+        ])
+
+        result = AnalysisService(db_session).get_expenses_by_category()
+
+        assert [r["category"] for r in result["refunds"]] == ["Electronics"]
+
+    def test_sankey_stops_flowing_a_repaid_charge_out_and_back(self, db_session):
+        """A netted purchase is neither an expense destination nor a Refunds source."""
+        self._seed(db_session, [
+            ("salary", "2024-01-01", 9000.0, "Salary", None),
+            ("tv", "2024-01-10", -1000.0, "Electronics", None),
+            ("tv-refund", "2024-03-14", 1000.0, "Electronics", None),
+        ])
+        uids = self._uids(db_session)
+        self._link(db_session, uids["tv"], uids["tv-refund"], 1000.0, 1000.0)
+
+        nodes = AnalysisService(db_session).get_sankey_data()["nodes"]
+
+        assert "Electronics" not in nodes
+        assert not any(n.startswith("Refunds:") for n in nodes)
+
+    def test_sankey_unknown_gap_is_measured_before_netting(self, db_session):
+        """Netting must not invent untracked card spend out of a refund."""
+        # A card purchase repaid into the bank: the bill still covered the
+        # full charge, so the itemized detail is complete and there is no gap.
+        db_session.add(
+            CreditCardTransaction(
+                id="cc-tv", date="2024-01-10", provider="max", account_name="Visa",
+                description="tv", amount=-1000.0, category="Electronics",
+                source="credit_card_transactions",
+            )
+        )
+        self._seed(db_session, [
+            ("cc-bill", "2024-02-02", -1000.0, "Credit Cards", None),
+            ("tv-refund", "2024-03-14", 1000.0, "Electronics", None),
+        ])
+        db_session.commit()
+        cc_uid = db_session.query(CreditCardTransaction).one().unique_id
+        service = PendingRefundsService(db_session)
+        pending = service.mark_as_pending_refund(
+            source_type="transaction", source_id=cc_uid,
+            source_table="credit_cards", expected_amount=1000.0,
+        )
+        service.link_refund(
+            pending_refund_id=pending["id"],
+            refund_transaction_id=self._uids(db_session)["tv-refund"],
+            refund_source="banks", amount=1000.0,
+        )
+
+        nodes = AnalysisService(db_session).get_sankey_data()["nodes"]
+
+        assert "Unknown" not in nodes
+
     def test_matched_refund_is_not_counted_as_income(self, db_session):
         """A repayment landing in an income category is money back, not earnings."""
         self._seed(db_session, [

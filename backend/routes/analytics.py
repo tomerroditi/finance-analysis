@@ -157,8 +157,16 @@ def get_expenses_by_category_over_time(
 @router.get("/by-category")
 def get_expenses_by_category(
     db: Session = Depends(get_database),
+    exclude_pending_refunds: bool = True,
 ):
     """Return expenses aggregated by category.
+
+    Parameters
+    ----------
+    exclude_pending_refunds : bool
+        If True, a purchase still awaiting its refund is left out. Refunds
+        already matched to a purchase are netted against that purchase
+        either way.
 
     Returns
     -------
@@ -167,14 +175,24 @@ def get_expenses_by_category(
         Excludes non-expense categories (Ignore, Salary, Other Income, etc.).
     """
     service = AnalysisService(db)
-    return service.get_expenses_by_category()
+    return service.get_expenses_by_category(
+        exclude_pending_refunds=exclude_pending_refunds
+    )
 
 
 @router.get("/sankey")
 def get_sankey_data(
     db: Session = Depends(get_database),
+    exclude_pending_refunds: bool = True,
 ) -> dict:
     """Return Sankey chart data showing income-to-expense flow.
+
+    Parameters
+    ----------
+    exclude_pending_refunds : bool
+        If True, a purchase still awaiting its refund is left out. Refunds
+        already matched to a purchase are netted against that purchase
+        either way.
 
     Returns
     -------
@@ -183,7 +201,9 @@ def get_sankey_data(
         suitable for rendering a Sankey diagram (income sources -> categories -> tags).
     """
     service = AnalysisService(db)
-    return service.get_sankey_data()
+    return service.get_sankey_data(
+        exclude_pending_refunds=exclude_pending_refunds
+    )
 
 
 @router.get("/income-by-source-over-time")

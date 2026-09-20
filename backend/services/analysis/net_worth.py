@@ -76,7 +76,7 @@ class NetWorthMixin:
 
         return trend
 
-    def get_sankey_data(self) -> dict:
+    def get_sankey_data(self, exclude_pending_refunds: bool = True) -> dict:
         """
         Get data for a two-layer Sankey (flow) diagram.
 
@@ -88,6 +88,22 @@ class NetWorthMixin:
         include: per-category expenses, Paid Debt, and Wealth Growth
         (added when income exceeds expenses). Credit Cards and Ignore
         categories are excluded.
+
+        A refund matched to its purchase is netted against it (see
+        :meth:`CashflowMixin._net_matched_refunds`), so a fully repaid charge
+        stops flowing out to its category and stops flowing back in as a
+        ``Refunds:`` source. The ``Unknown`` destination is deliberately
+        measured *before* netting: it is how much of the card bill has no
+        itemized detail, a question about coverage that a refund does not
+        answer. Netting first would shrink the itemized side of that
+        subtraction while the bill it is compared against stayed put, and
+        invent untracked spend that never happened.
+
+        Parameters
+        ----------
+        exclude_pending_refunds : bool, optional
+            Passed to :meth:`CashflowMixin._net_matched_refunds`.
+            Defaults to True.
 
         Returns
         -------
@@ -104,10 +120,13 @@ class NetWorthMixin:
         if df.empty:
             return {"nodes": [], "links": []}
 
-        # Calculate CC gap before filtering out Credit Cards category
+        # Calculate CC gap before filtering out Credit Cards category — and
+        # before netting, which would otherwise shrink only the itemized side.
         bank_cc_payments = abs(df[df["category"] == CREDIT_CARDS]["amount"].sum())
         itemized_cc_total = abs(df[df["source"] == Tables.CREDIT_CARD.value]["amount"].sum())
         cc_gap = bank_cc_payments - itemized_cc_total
+
+        df = self._net_matched_refunds(df, exclude_pending_refunds)
 
         df = df[df['category'] != CREDIT_CARDS]
 
