@@ -108,10 +108,18 @@ When a mutation's effect on the UI is local and predictable, prefer:
 3. Reserve `invalidateQueries()` (no args) for explicit "I just
    imported a backup, refresh everything" flows.
 
-The shared `MutationCache.onSuccess` in `queryClient.ts` already
-runs a debounced full invalidation on every mutation. **You do not
-need to add another one.** Anything you add on top is pure overhead
-on the hot path.
+The shared mutation cache (`queryInvalidation.ts`, installed by
+`queryClient.ts`) already runs a debounced full invalidation after
+every mutation settles. **You do not need to add another one.**
+Anything you add on top is pure overhead on the hot path.
+
+It also cancels, on every write, any query that is already fetching
+*and* already holds data — so a read computed before your write
+cannot land on top of your patch and revert it. Your component
+should still call `cancelQueries` in its own `onMutate` if it
+patches there: the global guard is the safety net for sites that
+forget, and a component that depends on it alone is wrong when
+tested against a bare `QueryClient`.
 
 ### Multi-field inline editors: stage locally, commit on Done
 

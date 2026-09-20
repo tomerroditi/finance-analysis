@@ -249,9 +249,10 @@ The flip side: `queryClient.invalidateQueries()` with no args
 refetches every active query and saturates the mobile HTTP/1.1
 connection pool. Prefer narrow keys
 (`{ queryKey: ["specific"] }`) and synchronous `setQueriesData`
-patches for local effects. The shared `MutationCache.onSuccess`
-already runs a debounced global sweep — you don't need to add
-another one. See `frontend_components.md` →
+patches for local effects. The shared mutation cache already
+runs a debounced global sweep after every mutation settles — you
+don't need to add another one. It also cancels reads that were in
+flight when the write began, so they cannot revert your patch. See `frontend_components.md` →
 "Don't fan out invalidation in mutation hot paths".
 
 ### Multi-field inline editors stage and commit on Done
