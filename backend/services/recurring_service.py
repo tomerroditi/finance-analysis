@@ -29,7 +29,7 @@ from backend.constants.categories import (
     LIABILITIES_CATEGORY,
     IncomeCategories,
 )
-from backend.errors import EntityNotFoundException, ValidationException
+from backend.errors import ValidationException
 from backend.repositories.recurring_decisions_repository import (
     DECISIONS,
     PENDING,
@@ -632,9 +632,11 @@ class RecurringService:
         self,
         normalized: str,
         decision: str,
-        today: date | pd.Timestamp | None = None,
+        label: str | None = None,
+        amount: float | None = None,
+        cadence: str | None = None,
     ) -> dict:
-        """Record the user's verdict on one detected candidate.
+        """Record the user's verdict on one candidate.
 
         Parameters
         ----------
@@ -643,9 +645,9 @@ class RecurringService:
         decision : str
             ``'confirmed'``, ``'dismissed'``, or ``'pending'`` to undo a
             previous verdict and put the candidate back up for review.
-        today : date or pd.Timestamp, optional
-            Reference day, forwarded to detection when looking the candidate
-            up.
+        label, amount, cadence : optional
+            What the candidate read as when the user ruled on it, kept
+            alongside the verdict for audit. See :meth:`set_decisions`.
 
         Returns
         -------
@@ -655,33 +657,44 @@ class RecurringService:
         Raises
         ------
         ValidationException
-            If ``decision`` is not one of the three accepted values.
-        EntityNotFoundException
-            If no detected candidate carries that key.
+            If ``decision`` is not one of the three accepted values, or the
+            key is blank.
         """
-        return self.set_decisions(
-            [{"normalized": normalized, "decision": decision}], today
-        )["updated"][0]
+        return self.set_decisions([{
+            "normalized": normalized,
+            "decision": decision,
+            "label": label,
+            "amount": amount,
+            "cadence": cadence,
+        }])["updated"][0]
 
-    def set_decisions(
-        self, decisions: list[dict], today: date | pd.Timestamp | None = None
-    ) -> dict:
+    def set_decisions(self, decisions: list[dict]) -> dict:
         """Record several verdicts at once (the "confirm all" path).
 
-        Every verdict is validated before any of them is written, and the
-        whole batch lands in one commit. Both matter for how fast the card
-        answers a click: detection runs once for the batch rather than once
-        per entry, and a single commit invalidates the derived-read cache
-        once instead of *n* times — applying eight verdicts one at a time
-        meant eight full detection passes, which is what made "confirm all"
-        take seconds.
+        A pure write. It deliberately does **not** run detection to check
+        that each key is one detection currently produces, which is what it
+        used to do — and what made every verdict cost a full detection pass,
+        on a cache its own previous commit had just discarded, seconds of it
+        on a real database.
+
+        That check was also wrong on its own terms. A verdict is keyed by the
+        normalized label precisely so it can outlive detection: it survives
+        new charges, re-detection and amount drift, and a key detection does
+        not produce *today* is exactly the case the design is for — the row
+        waits, inert, until it does. Rejecting it turned a slightly stale
+        list in the browser into a 404, which the card showed as the verdict
+        springing back to "needs review". The sibling verdict endpoint,
+        insight dismissal, has always stored its key without recomputing
+        anything to justify it.
 
         Parameters
         ----------
         decisions : list[dict]
-            Each entry ``{"normalized": str, "decision": str}``.
-        today : date or pd.Timestamp, optional
-            Reference day, forwarded to detection when looking candidates up.
+            Each entry ``{"normalized": str, "decision": str}``, plus the
+            optional ``label`` / ``amount`` / ``cadence`` the client
+            displayed when the user ruled. Those are stored for audit and
+            read by nothing, so they are never worth computing server-side;
+            omitted, they leave whatever the last verdict recorded.
 
         Returns
         -------
@@ -691,38 +704,30 @@ class RecurringService:
         Raises
         ------
         ValidationException
-            If any ``decision`` is not one of the three accepted values.
-        EntityNotFoundException
-            If any key names no detected candidate. Confirming something
-            detection never produced would create a verdict nothing can ever
-            act on, which reads to the user as the click having done nothing.
+            If any ``decision`` is not one of the three accepted values, or
+            any key is blank. Validated before anything is written, so a bad
+            entry leaves the whole batch unapplied.
         """
         accepted = (*DECISIONS, PENDING)
-        for entry in decisions:
-            if entry["decision"] not in accepted:
-                raise ValidationException(
-                    f"Invalid decision '{entry['decision']}'. "
-                    f"Expected one of: {', '.join(accepted)}."
-                )
-
-        candidates = {
-            item["normalized"]: item
-            for item in self.get_recurring(today, include_dismissed=True)["items"]
-        }
-
         entries = []
         for entry in decisions:
-            candidate = candidates.get(entry["normalized"])
-            if candidate is None:
-                raise EntityNotFoundException(
-                    f"No detected recurring charge named '{entry['normalized']}'."
+            decision = entry["decision"]
+            if decision not in accepted:
+                raise ValidationException(
+                    f"Invalid decision '{decision}'. "
+                    f"Expected one of: {', '.join(accepted)}."
+                )
+            normalized = (entry.get("normalized") or "").strip()
+            if not normalized:
+                raise ValidationException(
+                    "A verdict needs the normalized merchant key it applies to."
                 )
             entries.append({
-                "normalized": entry["normalized"],
-                "decision": entry["decision"],
-                "label": candidate["label"],
-                "amount": candidate["amount"],
-                "cadence": candidate["cadence"],
+                "normalized": normalized,
+                "decision": decision,
+                "label": entry.get("label"),
+                "amount": entry.get("amount"),
+                "cadence": entry.get("cadence"),
             })
 
         self.decisions.apply(entries)

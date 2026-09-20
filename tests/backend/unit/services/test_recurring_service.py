@@ -4,7 +4,7 @@ import pandas as pd
 import pytest
 
 from backend.constants.tables import Tables
-from backend.errors import EntityNotFoundException, ValidationException
+from backend.errors import ValidationException
 from backend.models.transaction import CreditCardTransaction
 from backend.services.recurring_service import RecurringService
 
@@ -400,10 +400,10 @@ class TestRecurringConfirmation:
         norm = self._seed_netflix(db_session)
         service = RecurringService(db_session)
 
-        with pytest.raises(EntityNotFoundException):
+        with pytest.raises(ValidationException):
             service.set_decisions([
                 {"normalized": norm, "decision": "confirmed"},
-                {"normalized": "no such merchant", "decision": "confirmed"},
+                {"normalized": norm, "decision": "maybe"},
             ])
 
         result = RecurringService(db_session).get_recurring()
@@ -438,10 +438,32 @@ class TestRecurringConfirmation:
             "GYM MEMBERSHIP": "pending",
         }
 
-    def test_unknown_key_is_rejected(self, db_session):
-        """Confirming something detection never produced is a 404, not a no-op."""
-        with pytest.raises(EntityNotFoundException):
-            RecurringService(db_session).set_decision("no such merchant", "confirmed")
+    def test_a_verdict_outlives_the_detection_that_suggested_it(self, db_session):
+        """A key detection does not produce *yet* is stored, not rejected.
+
+        This is what keying a verdict by the normalized label is for. The
+        browser's list can be minutes old, and detection shifts as charges
+        land; rejecting a key that is momentarily absent turned that into a
+        404, which the card showed as the verdict springing back to "needs
+        review". The row simply waits until detection produces the key.
+        """
+        service = RecurringService(db_session)
+        service.set_decision("netflix com", "confirmed")
+
+        # Nothing to act on yet — the charges have not been seen.
+        assert service.get_recurring()["items"] == []
+
+        for n in range(5):
+            _add_charge(db_session, "NETFLIX.COM 1234", -45.0, _months_ago(n))
+        db_session.commit()
+
+        result = RecurringService(db_session).get_recurring()
+        assert result["items"][0]["confirmation"] == "confirmed"
+
+    def test_a_blank_key_is_rejected(self, db_session):
+        """A verdict still has to say what it applies to."""
+        with pytest.raises(ValidationException):
+            RecurringService(db_session).set_decision("   ", "confirmed")
 
     def test_invalid_decision_is_rejected(self, db_session):
         """Only the three known verdicts are accepted."""
@@ -797,13 +819,14 @@ class TestDetectionIsCachedAcrossRequests:
 
         assert len(calls) == 2
 
-    def test_a_batch_of_verdicts_detects_once(self, file_session, monkeypatch):
-        """"Confirm all" must not pay for a detection pass per entry.
+    def test_storing_verdicts_runs_no_detection_at_all(self, file_session, monkeypatch):
+        """Writing a verdict must not cost a detection pass.
 
-        Every verdict used to be written — and committed — on its own, and a
-        commit discards the whole cache generation, so entry *n* re-ran the
-        detection the previous entry had just invalidated. The card took
-        seconds to answer a single click on "confirm all".
+        Verdicts used to be validated against a fresh detection, on a cache
+        the previous verdict's own commit had just discarded — so every
+        click paid for a full pass, seconds of it on a real database, purely
+        to fill audit columns nothing reads and to reject keys the design
+        exists to tolerate.
         """
         service, calls = self._counting_service(file_session, monkeypatch)
         today = pd.Timestamp("2026-09-20")
@@ -816,10 +839,10 @@ class TestDetectionIsCachedAcrossRequests:
         calls.clear()
 
         service.set_decisions(
-            [{"normalized": key, "decision": "confirmed"} for key in keys], today
+            [{"normalized": key, "decision": "confirmed"} for key in keys]
         )
 
-        assert len(calls) == 1
+        assert calls == []
         assert service.get_recurring(today)["confirmed_count"] == 3
 
     def test_callers_cannot_corrupt_the_cached_summary(

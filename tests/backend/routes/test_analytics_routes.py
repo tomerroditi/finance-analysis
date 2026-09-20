@@ -219,13 +219,26 @@ class TestRecurringDecisionRoutes:
         ).json()
         assert listed["items"][0]["confirmation"] == "dismissed"
 
-    def test_unknown_candidate_is_404(self, test_client, db_session):
-        """A verdict on something detection never produced is rejected."""
+    def test_a_key_detection_has_not_produced_yet_is_accepted(
+        self, test_client, db_session
+    ):
+        """A verdict is keyed to outlive detection, so it is stored, not 404'd."""
         response = test_client.post(
             "/api/analytics/recurring/decisions",
             json={"decisions": [{"normalized": "nothing here", "decision": "confirmed"}]},
         )
-        assert response.status_code == 404
+        assert response.status_code == 200
+        assert response.json()["updated"] == [
+            {"normalized": "nothing here", "decision": "confirmed"}
+        ]
+
+    def test_a_blank_key_is_400(self, test_client, db_session):
+        """A verdict still has to say what it applies to."""
+        response = test_client.post(
+            "/api/analytics/recurring/decisions",
+            json={"decisions": [{"normalized": "  ", "decision": "confirmed"}]},
+        )
+        assert response.status_code == 400
 
     def test_invalid_decision_is_400(self, test_client, db_session):
         """Only confirmed / dismissed / pending are accepted."""

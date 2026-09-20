@@ -141,8 +141,17 @@ describe("RecurringSection", () => {
         expect(screen.queryByTestId("recurring-pending-item")).toBeNull();
       });
       expect(screen.getByTestId("recurring-confirmed-item")).toBeTruthy();
+      // The label, amount and cadence ride along: they are stored beside the
+      // verdict for audit, and deriving them server-side would cost a full
+      // detection pass per verdict.
       expect(decide).toHaveBeenCalledWith([
-        { normalized: "netflix com", decision: "confirmed" },
+        {
+          normalized: "netflix com",
+          decision: "confirmed",
+          label: "NETFLIX.COM",
+          amount: 45,
+          cadence: "monthly",
+        },
       ]);
     });
 
@@ -266,7 +275,10 @@ describe("RecurringSection", () => {
 
       await waitFor(() => {
         expect(analyticsApi.setRecurringDecisions).toHaveBeenCalledWith([
-          { normalized: "netflix com", decision: "pending" },
+          expect.objectContaining({
+            normalized: "netflix com",
+            decision: "pending",
+          }),
         ]);
       });
       expect(await screen.findByTestId("recurring-pending-item")).toBeTruthy();
@@ -312,7 +324,10 @@ describe("RecurringSection", () => {
 
       await waitFor(() => {
         expect(analyticsApi.setRecurringDecisions).toHaveBeenCalledWith([
-          { normalized: "netflix com", decision: "dismissed" },
+          expect.objectContaining({
+            normalized: "netflix com",
+            decision: "dismissed",
+          }),
         ]);
       });
       await waitFor(() => {
