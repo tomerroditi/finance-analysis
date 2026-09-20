@@ -38,7 +38,9 @@ export function IncomeBySourceCard() {
   const [preset, setPreset] = useState<RangePreset>("all");
   const [customStart, setCustomStart] = useState("");
   const [customEnd, setCustomEnd] = useState("");
-  const [tableOpen, setTableOpen] = useState(true);
+  // Closed by default: the donut is the headline, and the per-tag list is
+  // detail the reader opts into.
+  const [tableOpen, setTableOpen] = useState(false);
   const [expandedLabels, setExpandedLabels] = useState<Set<string>>(new Set());
 
   const toggleLabel = (label: string) =>

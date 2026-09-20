@@ -3,11 +3,11 @@ import { enableDemoMode, navigateTo } from "./helpers";
 
 /**
  * The "Income by source" dashboard card (id `income_by_source`) renders a
- * donut chart + a breakdown table with a Total row, plus range-preset
- * buttons (All time / This year / Last 12 months / Custom). It's visible by
- * default on the dashboard route; Demo Mode supplies sample income data so the
- * donut + table render. This spec guards that the card mounts and that
- * switching range presets doesn't crash it.
+ * donut chart plus range-preset buttons (All time / This year / Last 12 months
+ * / Custom), over a collapsed-by-default breakdown table with a Total row. The
+ * card is visible by default on the dashboard route; Demo Mode supplies sample
+ * income data so the donut + table render. This spec guards that the card
+ * mounts and that switching range presets doesn't crash it.
  *
  * All checks are client-side interactions on one rendered card, so they run
  * as a single test on a single dashboard load (the cold dashboard boot is the
@@ -38,12 +38,12 @@ test.describe("Income by source dashboard card", () => {
       .last();
   }
 
-  test("renders donut + Total row; range preset, Breakdown toggle, and label reveal all work", async ({
+  test("renders donut with breakdown collapsed; range preset, Breakdown toggle, label reveal, and list scrolling all work", async ({
     page,
   }) => {
     await navigateTo(page, "/");
 
-    // --- Card mounts: title, donut, and a Total row in the table ---
+    // --- Card mounts: title and donut, with the breakdown collapsed ---
     await expect(
       page.getByText("Income by source", { exact: true }).first(),
     ).toBeVisible({ timeout: 45_000 });
@@ -53,29 +53,35 @@ test.describe("Income by source dashboard card", () => {
     await expect(card.locator(".recharts-wrapper").first()).toBeVisible({
       timeout: 45_000,
     });
-    await expect(
-      card.getByText("Total", { exact: true }).first(),
-    ).toBeVisible();
+
+    // The donut is the headline; the per-tag table is opt-in detail, so it is
+    // closed on mount. `toHaveCount(0)` is a negative assertion, hence the
+    // positive anchor on the donut above to prove the card actually rendered.
+    const toggle = card.getByRole("button", { name: "Breakdown" }).first();
+    await expect(toggle).toHaveAttribute("aria-expanded", "false");
+    await expect(card.locator("table")).toHaveCount(0);
 
     // --- Switching to "Last 12 months" keeps the card rendered (no crash) ---
     await card.getByRole("button", { name: "Last 12 months" }).first().click();
     await expect(card.locator(".recharts-wrapper").first()).toBeVisible({
       timeout: 45_000,
     });
+
+    // --- Breakdown toggle expands and re-collapses the table ---
+    // Expand: the table appears with its Total row.
+    await toggle.click();
+    await expect(toggle).toHaveAttribute("aria-expanded", "true");
+    await expect(card.locator("table").first()).toBeVisible();
     await expect(
       card.getByText("Total", { exact: true }).first(),
     ).toBeVisible();
-
-    // --- Breakdown toggle collapses and restores the table ---
-    await expect(card.locator("table").first()).toBeVisible();
-    const toggle = card.getByRole("button", { name: "Breakdown" }).first();
 
     // Collapse: the table is removed but the donut stays.
     await toggle.click();
     await expect(card.locator("table")).toHaveCount(0);
     await expect(card.locator(".recharts-wrapper").first()).toBeVisible();
 
-    // Expand again: the table comes back.
+    // Re-expand for the remaining assertions, which all read the table.
     await toggle.click();
     await expect(card.locator("table").first()).toBeVisible();
 
