@@ -1,5 +1,6 @@
 import axios from "axios";
 import { readOrCreateDemoSessionId, readStoredDemoMode } from "./demoMode";
+import type { Transaction } from "../types/transaction";
 
 const api = axios.create({
   baseURL: "/api",
@@ -303,7 +304,8 @@ export interface YearlyAnalysis {
       year: number;
     };
     current_amount: number;
-    data: unknown[];
+    /** The year's transactions behind this envelope — what the row expands to show. */
+    data: Transaction[];
     allow_edit: boolean;
     allow_delete: boolean;
     /**

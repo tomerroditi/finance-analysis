@@ -51,6 +51,10 @@
     "link": "קישור",
     "pending": "ממתין",
     "clearSelection": "נקה בחירה",
+    "selectAll": "בחר הכל",
+    "deselectAll": "בטל בחירת הכל",
+    "countSelected": "{{count}} נבחרו",
+    "countMore": "עוד {{count}}",
     "remove": "הסר"
   },
   "onboarding": {

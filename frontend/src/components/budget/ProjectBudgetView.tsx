@@ -115,13 +115,17 @@ export const ProjectBudgetView: React.FC<ProjectBudgetViewProps> = ({
     return map;
   }, [pendingRefunds]);
 
-  // Auto-select first project if available and none selected
+  // Auto-select a project when none is selected yet: the first *open* one,
+  // since a closed project is a finished one and landing on it means the tab
+  // opens on history the user is no longer spending against. Only when every
+  // project is closed does the first of those stand in — an empty tab would
+  // say less than a settled project does.
   useEffect(() => {
-    if (!selectedProject && projects.length > 0) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setSelectedProject(projects[0]);
-    }
-  }, [projects, selectedProject]);
+    if (selectedProject || projectsStatus.length === 0) return;
+    const firstOpen = projectsStatus.find((p: ProjectStatus) => !p.closed);
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setSelectedProject((firstOpen ?? projectsStatus[0]).name);
+  }, [projectsStatus, selectedProject]);
 
   const { data: projectDetails } = useQuery({
     queryKey: qk.budget.projectDetails(selectedProject, includeSplitParents),
@@ -346,7 +350,7 @@ export const ProjectBudgetView: React.FC<ProjectBudgetViewProps> = ({
           <label className="text-xs md:text-sm font-medium text-[var(--text-muted)] whitespace-nowrap">
             {t("budget.selectProject")}
           </label>
-          <div className="w-40 md:w-56">
+          <div className="w-40 md:w-56" data-testid="project-picker">
             <SelectDropdown
               options={projectsStatus.map((p: ProjectStatus) => ({
                 label: p.closed

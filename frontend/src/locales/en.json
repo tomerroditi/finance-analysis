@@ -51,6 +51,10 @@
     "link": "Link",
     "pending": "Pending",
     "clearSelection": "Clear selection",
+    "selectAll": "Select all",
+    "deselectAll": "Deselect all",
+    "countSelected": "{{count}} selected",
+    "countMore": "+{{count}} more",
     "remove": "Remove"
   },
   "onboarding": {

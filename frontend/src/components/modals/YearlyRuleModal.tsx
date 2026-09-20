@@ -149,6 +149,10 @@ export const YearlyRuleModal: React.FC<Props> = ({ isOpen, onClose, year, editRu
           <label className="block text-xs font-bold uppercase text-[var(--text-muted)] mb-1.5">
             {t("budget.yearly.tagsLabel")}
           </label>
+          {/* An envelope usually covers a whole category (every "Vacations"
+              tag), so picking the tags one by one is the common case, not the
+              exception — hence the select-all row. The monthly rule modal
+              has had the same control for as long as it has had tags. */}
           <MultiSelect
             options={tagOptions}
             selected={tags}
@@ -157,6 +161,7 @@ export const YearlyRuleModal: React.FC<Props> = ({ isOpen, onClose, year, editRu
               setError(null);
             }}
             placeholder={t("budget.yearly.tagsPlaceholder")}
+            showSelectAll
           />
           {error && (
             <p className="text-xs text-red-400 mt-2" dir="auto">
