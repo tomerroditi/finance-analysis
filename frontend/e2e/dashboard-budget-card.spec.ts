@@ -4,11 +4,13 @@ import { enableDemoMode, navigateTo, resetDemoData } from "./helpers";
 /**
  * The dashboard's budget card, driven the way a phone user drives it.
  *
- * Three behaviours that only show up in a real browser: the tab strip has to
+ * Four behaviours that only show up in a real browser: the tab strip has to
  * scroll on its own (the card sits in an `overflow-y-auto` grid cell, which
  * makes any horizontal overflow drag the whole card — figures and all —
- * sideways), "open budget" has to land on the tab the card was showing, and
- * closing a project from the card has to reach the backend.
+ * sideways), the one-line envelope rows have to survive a phone-width card
+ * without wrapping or overflowing, "open budget" has to land on the tab the
+ * card was showing, and closing a project from the card has to reach the
+ * backend.
  *
  * Its own file rather than a block in `dashboard.spec.ts`: it needs a mobile
  * viewport (set before the page boots), it navigates off the dashboard, and
@@ -56,14 +58,60 @@ test.describe("dashboard budget card", () => {
       expect(geometry.stripWidth).toBeLessThanOrEqual(geometry.cardWidth);
 
       // And the strip is genuinely scrollable: the last tab can be reached.
-      const projectsTab = card.getByRole("button", { name: /Project Budgets/i });
+      const projectsTab = card.getByRole("button", {
+        name: /Project Budgets/i,
+      });
       await projectsTab.scrollIntoViewIfNeeded();
       await projectsTab.click();
       await expect(projectsTab).toHaveAttribute("aria-pressed", "true");
+
+      // Envelope rows: one line each, even at 390px. The row packs a name, a
+      // bar and two figures onto a single line, so a phone is exactly where it
+      // would wrap to two lines or push the card sideways.
+      const monthlyTab = card.getByRole("button", { name: /Monthly Budget/i });
+      await monthlyTab.scrollIntoViewIfNeeded();
+      await monthlyTab.click();
+      const rows = card.getByTestId("budget-rule-row");
+      await expect(rows.first()).toBeVisible({ timeout: 30_000 });
+
+      const rowGeometry = await card.evaluate((el) => {
+        const list = [
+          ...el.querySelectorAll<HTMLElement>(
+            '[data-testid="budget-rule-row"]',
+          ),
+        ];
+        return {
+          count: list.length,
+          maxHeight: Math.max(
+            ...list.map((r) => r.getBoundingClientRect().height),
+          ),
+          maxOverflow: Math.max(
+            ...list.map((r) => r.scrollWidth - r.clientWidth),
+          ),
+          cardOverflow: el.scrollWidth - el.clientWidth,
+        };
+      });
+
+      // A phone's budget card shows a month's envelopes, not a handful: the
+      // single-column line replaced a four-row tile precisely to fit them.
+      expect(rowGeometry.count).toBeGreaterThanOrEqual(5);
+      // Two lines of 10-12px text plus padding clears 44px; one does not.
+      expect(rowGeometry.maxHeight).toBeLessThan(44);
+      expect(rowGeometry.maxOverflow).toBe(0);
+      expect(rowGeometry.cardOverflow).toBe(0);
+
+      // The trailing figure keeps its word at every width — an unlabelled
+      // number beside "spent / budget" is a guess. The percentage is what the
+      // phone drops, since the bar already draws it.
+      const firstRow = await rows.first().innerText();
+      expect(firstRow).toMatch(/left|over/);
+      expect(firstRow).not.toContain("%");
     });
   });
 
-  test("'open budget' lands on the tab the card was showing", async ({ page }) => {
+  test("'open budget' lands on the tab the card was showing", async ({
+    page,
+  }) => {
     await navigateTo(page, "/");
     const card = budgetCard(page);
     await card.scrollIntoViewIfNeeded();
@@ -72,6 +120,14 @@ test.describe("dashboard budget card", () => {
     await expect(card.getByTestId("budget-total-bar")).toBeVisible({
       timeout: 30_000,
     });
+
+    // Desktop keeps the percentage the phone drops, as a muted suffix on the
+    // remainder rather than the pill the four-row tile used to carry.
+    const firstRow = card.getByTestId("budget-rule-row").first();
+    await expect(firstRow).toBeVisible({ timeout: 30_000 });
+    await expect(firstRow).toContainText("%");
+    await expect(firstRow).toContainText(/left|over/);
+
     await card.getByRole("link", { name: /View All Budget Rules/i }).click();
 
     await expect(page).toHaveURL(/\/budget\?tab=monthly/);
@@ -92,11 +148,9 @@ test.describe("dashboard budget card", () => {
     await expect(page).toHaveURL(
       new RegExp(`/budget\\?tab=yearly&year=${new Date().getFullYear()}`),
     );
-    await expect(page.getByRole("button", { name: /^Yearly$/i }).first()).toHaveAttribute(
-      "aria-pressed",
-      "true",
-      { timeout: 30_000 },
-    );
+    await expect(
+      page.getByRole("button", { name: /^Yearly$/i }).first(),
+    ).toHaveAttribute("aria-pressed", "true", { timeout: 30_000 });
   });
 
   test("closes and reopens a project without leaving the dashboard", async ({

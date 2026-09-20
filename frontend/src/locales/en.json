@@ -671,6 +671,7 @@
     "pendingRefundsFooter": "These are expenses you marked as expecting a refund",
     "addRule": "Add Rule",
     "remainingAmount": "{{amount}} remaining",
+    "leftAmount": "{{amount}} left",
     "overByAmount": "{{amount}} over",
     "netRefund": "{{amount}} net refund",
     "spendOverTime": "Spend Over Time",
