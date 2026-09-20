@@ -161,17 +161,21 @@ test.describe("Yearly budget", () => {
       .click();
 
     // Take every tag in the category so the envelope covers the whole of that
-    // category's spend, which was checked to be non-zero above.
+    // category's spend, which was checked to be non-zero above. An envelope
+    // over a whole category is the common case, so that is one click on the
+    // select-all row rather than one click per tag.
     await addDialog.getByRole("button", { name: /select tags/i }).click();
-    for (const tag of freeCategoryTags) {
-      await page
-        .getByRole("option", {
-          name: new RegExp(`^${escapeRegExp(tag)}$`, "i"),
-        })
-        .click();
-    }
+    const selectAllTags = page.getByTestId("multiselect-select-all");
+    await expect(selectAllTags).toContainText(/select all/i);
+    await selectAllTags.click();
+    // It flips to its own undo, and the trigger counts every tag — not just
+    // the ones that happened to be on screen.
+    await expect(selectAllTags).toContainText(/deselect all/i);
     // Close the tags popover (it stays open to allow multiple picks).
     await addDialog.getByPlaceholder(/vacations/i).click();
+    await expect(
+      addDialog.getByText(new RegExp(`^${freeCategoryTags.length} selected$`)),
+    ).toBeVisible();
 
     await addDialog.getByPlaceholder(/20,?000/i).fill(String(ceiling));
     await addDialog.getByRole("button", { name: /^save$/i }).click();
@@ -199,7 +203,11 @@ test.describe("Yearly budget", () => {
     );
     expect(analysisRes.ok()).toBeTruthy();
     const analysis: {
-      rules: { rule: { name: string }; current_amount: number }[];
+      rules: {
+        rule: { name: string };
+        current_amount: number;
+        data: unknown[];
+      }[];
     } = await analysisRes.json();
     const createdEntry = analysis.rules.find((r) => r.rule.name === ruleName);
     expect(
@@ -267,6 +275,34 @@ test.describe("Yearly budget", () => {
       await expect(paceLine).toHaveAttribute("stroke", "#94a3b8");
       await expect(svg).not.toHaveAttribute("aria-label", /Ahead of pace/i);
     }
+
+    // ---- 1d. The row expands to the transactions behind the envelope. ----
+    // The analysis already carries them (the burn sparkline is bucketed from
+    // the same array), so expanding costs no request — but the list only
+    // mounts while the row is open, which is what these assertions pin.
+    const disclosure = createdRow.locator("button[aria-expanded]").first();
+    await expect(disclosure).toHaveAttribute("aria-expanded", "false");
+
+    const txRows = createdRow.locator('[data-testid^="transaction-row-"]');
+    // A negative assertion against a collapsed row: nothing here auto-waits,
+    // so anchor on the disclosure state above before trusting the zero.
+    await expect(txRows).toHaveCount(0);
+
+    await disclosure.click();
+    await expect(disclosure).toHaveAttribute("aria-expanded", "true");
+    await expect(txRows.first()).toBeVisible({ timeout: 10_000 });
+
+    // The table paginates at 10 rows, so a busy envelope shows its first page.
+    const TX_PAGE_SIZE = 10;
+    await expect(txRows).toHaveCount(
+      Math.min(createdEntry!.data.length, TX_PAGE_SIZE),
+    );
+
+    // Collapsing takes them away again — the row is a disclosure, not a
+    // one-way reveal.
+    await disclosure.click();
+    await expect(disclosure).toHaveAttribute("aria-expanded", "false");
+    await expect(txRows).toHaveCount(0);
 
     // ---- 2. Attempt a colliding yearly rule and assert the inline error. ----
     await page.getByRole("button", { name: /add yearly rule/i }).click();

@@ -1,3 +1,21 @@
+## v1.76.0 (2026-09-20)
+
+### Feat
+
+- net refunds against their purchase across months, everywhere it belongs (#319)
+
+## v1.75.0 (2026-09-20)
+
+### Feat
+
+- **dashboard**: full row actions, untagged filter and details in recent transactions (#321)
+
+## v1.74.0 (2026-09-20)
+
+### Feat
+
+- **budget**: envelope transactions, select-all tags, and a smarter project default (#320)
+
 ## v1.73.2 (2026-09-20)
 
 ### Fix

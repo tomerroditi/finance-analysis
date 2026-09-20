@@ -2,8 +2,15 @@ import React, { useState, useEffect, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle, Archive, X, Plus } from "lucide-react";
-import { budgetApi, type YearlyAnalysis } from "../../services/api";
+import {
+  budgetApi,
+  pendingRefundsApi,
+  type PendingRefund,
+  type RefundLink,
+  type YearlyAnalysis,
+} from "../../services/api";
 import { YearlyRuleModal } from "../modals/YearlyRuleModal";
+import { TransactionCollapsibleList } from "./TransactionCollapsibleList";
 import { useConfirm, useNotify } from "../../context/DialogContext";
 import { useQueryKeys } from "../../hooks/useQueryKeys";
 import { qkPrefix } from "../../services/queryKeys";
@@ -15,11 +22,7 @@ import { RuleSparkline } from "./RuleSparkline";
 import { isAllTagsRule } from "../../utils/budgetRules";
 import { formatCurrency } from "../../utils/numberFormatting";
 import { formatMonthCompact } from "../../utils/dateFormatting";
-import {
-  bucketByMonth,
-  monthKeysOfYear,
-  type TrendTransaction,
-} from "../../utils/budgetTrends";
+import { bucketByMonth, monthKeysOfYear } from "../../utils/budgetTrends";
 
 const MONTHS_IN_YEAR = 12;
 
@@ -59,6 +62,44 @@ export const YearlyBudgetView: React.FC<YearlyBudgetViewProps> = ({
     queryKey: qk.budget.yearly(year),
     queryFn: () => budgetApi.getYearlyAnalysis(year).then((r) => r.data as YearlyAnalysis),
   });
+
+  // Refund badges for the transactions an envelope expands to show. Shares
+  // its cache entry with the monthly and project views, so opening the tab
+  // after either of them costs no request.
+  const { data: pendingRefunds } = useQuery({
+    queryKey: qk.pendingRefunds.all(),
+    queryFn: () => pendingRefundsApi.getAll().then((res) => res.data),
+  });
+
+  const pendingRefundsMap = useMemo(() => {
+    const map = new Map<string, PendingRefund>();
+    pendingRefunds?.forEach((pr: PendingRefund) => {
+      map.set(`${pr.source_table}_${pr.source_id}`, pr);
+    });
+    return map;
+  }, [pendingRefunds]);
+
+  const refundLinksMap = useMemo(() => {
+    const map = new Map<string, RefundLink[]>();
+    pendingRefunds?.forEach((pr: PendingRefund) => {
+      pr.links?.forEach((link: RefundLink) => {
+        const key = `${link.refund_source}_${link.refund_transaction_id}`;
+        const existing = map.get(key);
+        if (existing) {
+          existing.push(link);
+        } else {
+          map.set(key, [link]);
+        }
+      });
+    });
+    return map;
+  }, [pendingRefunds]);
+
+  // Retagging a transaction from the expanded list can move it out of this
+  // envelope and into another one — and out of the Overview's long envelopes
+  // — so the whole budget prefix refetches, not just this year's key.
+  const invalidateBudget = () =>
+    queryClient.invalidateQueries({ queryKey: qkPrefix.budget });
 
   const deleteMutation = useMutation({
     mutationFn: (id: number) => budgetApi.deleteYearlyRule(id),
@@ -129,11 +170,7 @@ export const YearlyBudgetView: React.FC<YearlyBudgetViewProps> = ({
     for (const entry of rules) {
       map.set(
         entry.rule.id,
-        bucketByMonth(
-          entry.data as TrendTransaction[],
-          monthKeys,
-          entry.current_amount,
-        ),
+        bucketByMonth(entry.data, monthKeys, entry.current_amount),
       );
     }
     return map;
@@ -364,19 +401,32 @@ export const YearlyBudgetView: React.FC<YearlyBudgetViewProps> = ({
                     </>
                   }
                 >
-                  <div className="px-3 pb-3 text-xs text-[var(--text-muted)]" dir="auto">
-                    {t("budget.yearly.spentOfAllocation", {
-                      spent: formatCurrency(entry.current_amount),
-                      total: formatCurrency(rule.amount),
-                    })}
-                    {entry.closed && (
-                      <span
-                        data-testid="yearly-closed-notice"
-                        className="block mt-1"
-                      >
-                        {t("budget.yearly.closedNotice")}
-                      </span>
-                    )}
+                  <div className="px-3 pb-3">
+                    <div className="text-xs text-[var(--text-muted)]" dir="auto">
+                      {t("budget.yearly.spentOfAllocation", {
+                        spent: formatCurrency(entry.current_amount),
+                        total: formatCurrency(rule.amount),
+                      })}
+                      {entry.closed && (
+                        <span
+                          data-testid="yearly-closed-notice"
+                          className="block mt-1"
+                        >
+                          {t("budget.yearly.closedNotice")}
+                        </span>
+                      )}
+                    </div>
+                    {/* The year's transactions behind this envelope. A closed
+                        one lists them too — its history is exactly what
+                        closing keeps. */}
+                    <TransactionCollapsibleList
+                      transactions={entry.data}
+                      isOpen
+                      showActions
+                      onTransactionUpdated={invalidateBudget}
+                      pendingRefundsMap={pendingRefundsMap}
+                      refundLinksMap={refundLinksMap}
+                    />
                   </div>
                 </BudgetLedgerRow>
               );

@@ -17,8 +17,10 @@ interface RuleQuickActionProps {
     /**
      * `bar` — compact icon+label button for the floating bulk actions bar.
      * `inline` — slightly larger button for the single-transaction edit modal.
+     * `compact` — matches the small row-action buttons of the dashboard's
+     * recent-transactions feed.
      */
-    variant?: "bar" | "inline";
+    variant?: "bar" | "inline" | "compact";
 }
 
 /**
@@ -42,11 +44,13 @@ export function RuleQuickAction({
 
     if (state.kind === "none") return null;
 
-    const iconSize = variant === "bar" ? 18 : 16;
+    const iconSize = variant === "bar" ? 18 : variant === "compact" ? 13 : 16;
     const baseBtn =
         variant === "bar"
             ? "px-2.5 py-1.5 rounded-lg flex items-center gap-1.5 text-sm font-semibold transition-all whitespace-nowrap"
-            : "px-3 py-2 rounded-xl flex items-center justify-center gap-2 text-sm font-semibold transition-all whitespace-nowrap";
+            : variant === "compact"
+              ? "px-2.5 py-1.5 rounded-md flex items-center gap-1.5 text-xs font-medium transition-colors whitespace-nowrap"
+              : "px-3 py-2 rounded-xl flex items-center justify-center gap-2 text-sm font-semibold transition-all whitespace-nowrap";
 
     let button;
     let editingRule: TaggingRule | null = null;
