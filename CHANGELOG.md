@@ -1,3 +1,9 @@
+## v1.76.1 (2026-09-20)
+
+### Fix
+
+- **dashboard**: make the over-scale month meter legible (#322)
+
 ## v1.76.0 (2026-09-20)
 
 ### Feat
