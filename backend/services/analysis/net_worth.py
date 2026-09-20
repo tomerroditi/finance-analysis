@@ -9,6 +9,7 @@ two-layer Sankey cash-flow data. Mixed into ``AnalysisService`` (see
 
 import pandas as pd
 
+from backend.utils.dataframe_dates import to_month_series
 from backend.constants.categories import (
     PRIOR_WEALTH_TAG,
     CREDIT_CARDS,
@@ -48,7 +49,7 @@ class NetWorthMixin:
         if df.empty:
             return []
 
-        df["month"] = pd.to_datetime(df["date"]).dt.strftime("%Y-%m")
+        df["month"] = to_month_series(df["date"])
         cumulative = bank_prior_wealth + investment_prior_wealth + cash_prior_wealth
 
 
@@ -248,7 +249,7 @@ class NetWorthMixin:
             return []
 
         df["date_parsed"] = pd.to_datetime(df["date"])
-        df["month"] = df["date_parsed"].dt.strftime("%Y-%m")
+        df["month"] = to_month_series(df["date"])
         months = sorted(df["month"].unique())
 
         # --- Split cash off from bank-side cashflow ---

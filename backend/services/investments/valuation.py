@@ -17,6 +17,9 @@ from sqlalchemy import select
 
 from backend.models.transaction import InsuranceTransaction
 
+#: One day as a numpy timedelta, for date arithmetic on datetime64 values.
+_ONE_DAY = np.timedelta64(1, "D")
+
 HISHTALMUT_TYPE = "hishtalmut"
 """Investment ``type`` marking a Keren Hishtalmut account.
 
@@ -324,13 +327,18 @@ class ValuationMixin:
                 snap_dates[(snap_dates >= start_ts) & (snap_dates <= end_ts)]
             )
 
+        # Index the transactions once for the whole series. The per-date
+        # helpers each copied the frame and re-parsed its date column with
+        # format inference, and this loop calls them once per sample date —
+        # for the portfolio overview (8 investments × ~39 samples) that was
+        # over 300 full date parses for one request.
+        index = self._balance_index(transactions_df)
+
         if snapshots_df.empty:
             balances = [
                 {
                     "date": d.strftime("%Y-%m-%d"),
-                    "balance": self._calculate_balance_from_transactions(
-                        transactions_df, as_of_date=d.strftime("%Y-%m-%d")
-                    ),
+                    "balance": self._balance_at(index, d.strftime("%Y-%m-%d")),
                 }
                 for d in sample_dates
             ]
@@ -338,38 +346,46 @@ class ValuationMixin:
             snapshots_df = snapshots_df.copy()
             snapshots_df["date"] = pd.to_datetime(snapshots_df["date"])
             snapshots_df = snapshots_df.sort_values("date")
+            # Bracketing each sample date by binary search rather than two
+            # boolean masks over the whole frame per date.
+            snap_dates = snapshots_df["date"].to_numpy()
+            snap_balances = snapshots_df["balance"].to_numpy(dtype=float)
 
             balances = []
             for d in sample_dates:
                 d_str = d.strftime("%Y-%m-%d")
-                before = snapshots_df[snapshots_df["date"] <= d]
-                after = snapshots_df[snapshots_df["date"] >= d]
+                d64 = d.to_datetime64()
+                # Last snapshot on or before d, and first on or after it.
+                prev_idx = int(np.searchsorted(snap_dates, d64, side="right")) - 1
+                next_idx = int(np.searchsorted(snap_dates, d64, side="left"))
 
-                if not before.empty and not after.empty:
-                    prev = before.iloc[-1]
-                    nxt = after.iloc[0]
+                has_prev = prev_idx >= 0
+                has_next = next_idx < snap_dates.size
 
-                    if prev["date"] == nxt["date"]:
-                        balance = float(prev["balance"])
+                if has_prev and has_next:
+                    prev_date = snap_dates[prev_idx]
+                    next_date = snap_dates[next_idx]
+                    prev_balance = float(snap_balances[prev_idx])
+
+                    if prev_date == next_date:
+                        balance = prev_balance
                     else:
-                        total_days = (nxt["date"] - prev["date"]).days
-                        elapsed_days = (d - prev["date"]).days
+                        total_days = (next_date - prev_date) / _ONE_DAY
+                        elapsed_days = (d64 - prev_date) / _ONE_DAY
                         frac = elapsed_days / total_days if total_days > 0 else 0
-                        balance = float(prev["balance"]) + frac * (
-                            float(nxt["balance"]) - float(prev["balance"])
+                        balance = prev_balance + frac * (
+                            float(snap_balances[next_idx]) - prev_balance
                         )
-                elif not before.empty:
-                    prev = before.iloc[-1]
-                    balance = self._carry_snapshot_forward(
-                        float(prev["balance"]),
-                        prev["date"].strftime("%Y-%m-%d"),
-                        transactions_df,
-                        as_of_date=d_str,
+                elif has_prev:
+                    balance = float(snap_balances[prev_idx]) + self._balance_at(
+                        index,
+                        d_str,
+                        after_date=pd.Timestamp(snap_dates[prev_idx]).strftime(
+                            "%Y-%m-%d"
+                        ),
                     )
                 else:
-                    balance = self._calculate_balance_from_transactions(
-                        transactions_df, as_of_date=d_str
-                    )
+                    balance = self._balance_at(index, d_str)
 
                 balances.append({"date": d_str, "balance": balance})
 

@@ -2,6 +2,8 @@
 Unit tests for BudgetRepository CRUD operations.
 """
 
+from contextlib import contextmanager
+from sqlalchemy import event
 import pytest
 from sqlalchemy.orm import Session
 
@@ -274,3 +276,57 @@ class TestBudgetRepositoryPeriodType:
 
         yearly = repo.read_by_period_type("yearly")
         assert list(yearly["name"]) == ["Y"]
+
+
+@contextmanager
+def _query_counter(db_session):
+    """Yield a list that gains an entry for every SQL statement executed."""
+    queries: list[str] = []
+
+    def record(conn, cursor, statement, params, context, executemany):
+        queries.append(statement)
+
+    engine = db_session.get_bind()
+    event.listen(engine, "before_cursor_execute", record)
+    try:
+        yield queries
+    finally:
+        event.remove(engine, "before_cursor_execute", record)
+
+
+class TestReadAllIsRequestCached:
+    """Assembling one budget month asks for the rule set a dozen times over.
+
+    Every ask re-read the whole table. The cache is the request-scoped one,
+    so it dies with the session and is dropped on any commit.
+    """
+
+    def test_repeat_reads_hit_the_database_once(self, db_session, seed_budget_rules):
+        """A second identical read is served from the session cache."""
+        repo = BudgetRepository(db_session)
+        with _query_counter(db_session) as queries:
+            repo.read_all()
+            repo.read_all()
+            repo.read_all()
+
+        assert len(queries) == 1
+
+    def test_a_write_invalidates_the_cache(self, db_session, seed_budget_rules):
+        """A newly added rule shows up in the next read."""
+        repo = BudgetRepository(db_session)
+        before = len(repo.read_all())
+
+        repo.add(
+            name="Fresh", amount=100.0, category="Food", tags="Groceries",
+            month=1, year=2024,
+        )
+
+        assert len(repo.read_all()) == before + 1
+
+    def test_callers_cannot_corrupt_the_cached_frame(self, db_session, seed_budget_rules):
+        """The service layer rewrites ``tags`` in place on what it gets back."""
+        repo = BudgetRepository(db_session)
+        first = repo.read_all()
+        first.loc[:, "name"] = "clobbered"
+
+        assert "clobbered" not in set(repo.read_all()["name"])

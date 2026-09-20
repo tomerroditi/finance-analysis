@@ -1494,3 +1494,100 @@ class TestBalanceIndexMatchesScanning:
         index = service._balance_index(pd.DataFrame({"date": [], "amount": []}))
 
         assert service._balance_at(index, "2024-01-01") == 0.0
+
+
+class TestBalanceOverTimeSnapshotBracketing:
+    """`calculate_balance_over_time` brackets each date by binary search.
+
+    It used to filter the whole snapshot frame twice per sample date, and to
+    re-parse the transactions for every date on top. Interpolation between
+    snapshots, the carry-forward past the last one, and the transaction-only
+    fallback before the first one are all easy to get off by one when that
+    becomes a `searchsorted`, so each branch is pinned here.
+    """
+
+    @staticmethod
+    def _series(service, investment_id, start, end):
+        """Return ``{date: balance}`` for a balance-over-time call."""
+        return {
+            row["date"]: row["balance"]
+            for row in service.calculate_balance_over_time(investment_id, start, end)
+        }
+
+    def test_interpolates_between_two_snapshots(self, db_session, seed_investments):
+        """A date between snapshots lands proportionally between them."""
+        service = InvestmentsService(db_session)
+        stock_fund = seed_investments["investments"][0]
+        service.snapshots_repo.upsert_snapshot(
+            stock_fund.id, date="2024-01-01", balance=1000.0, source="manual"
+        )
+        service.snapshots_repo.upsert_snapshot(
+            stock_fund.id, date="2024-03-01", balance=3000.0, source="manual"
+        )
+
+        series = self._series(service, stock_fund.id, "2024-01-01", "2024-03-01")
+
+        assert series["2024-02-01"] == pytest.approx(1000.0 + 2000.0 * 31 / 60)
+
+    def test_lands_exactly_on_a_snapshot_date(self, db_session, seed_investments):
+        """A sample date equal to a snapshot takes that snapshot's value.
+
+        The bracket collapses to one row here — the case where a `side=`
+        mistake on either search silently interpolates against itself.
+        """
+        service = InvestmentsService(db_session)
+        stock_fund = seed_investments["investments"][0]
+        service.snapshots_repo.upsert_snapshot(
+            stock_fund.id, date="2024-01-01", balance=1000.0, source="manual"
+        )
+        service.snapshots_repo.upsert_snapshot(
+            stock_fund.id, date="2024-03-01", balance=3000.0, source="manual"
+        )
+
+        series = self._series(service, stock_fund.id, "2024-01-01", "2024-03-01")
+
+        assert series["2024-01-01"] == pytest.approx(1000.0)
+        assert series["2024-03-01"] == pytest.approx(3000.0)
+
+    def test_carries_the_last_snapshot_forward_over_later_transactions(
+        self, db_session, seed_investments
+    ):
+        """Past the newest snapshot, later deposits still move the line."""
+        service = InvestmentsService(db_session)
+        stock_fund = seed_investments["investments"][0]
+        # Stock fund deposits -2000 on 2024-01-15; a snapshot the day before
+        # must be carried over it rather than flattening the line.
+        service.snapshots_repo.upsert_snapshot(
+            stock_fund.id, date="2024-01-14", balance=11000.0, source="manual"
+        )
+
+        series = self._series(service, stock_fund.id, "2024-01-14", "2024-01-20")
+
+        assert series["2024-01-14"] == pytest.approx(11000.0)
+        assert series["2024-01-20"] == pytest.approx(13000.0)
+
+    def test_falls_back_to_transactions_before_the_first_snapshot(
+        self, db_session, seed_investments
+    ):
+        """Dates the snapshots do not reach are still valued from transactions."""
+        service = InvestmentsService(db_session)
+        stock_fund = seed_investments["investments"][0]
+        service.snapshots_repo.upsert_snapshot(
+            stock_fund.id, date="2024-06-01", balance=99999.0, source="manual"
+        )
+
+        series = self._series(service, stock_fund.id, "2023-06-15", "2024-06-01")
+
+        # Only the 2023-06-15 deposit of -10000 has happened by then.
+        assert series["2023-06-15"] == pytest.approx(10000.0)
+
+    def test_matches_the_single_date_resolver(self, db_session, seed_investments):
+        """The series agrees with `get_total_value_at_date` for one investment."""
+        service = InvestmentsService(db_session)
+        bond_fund = seed_investments["investments"][1]
+        service.delete_investment(seed_investments["investments"][0].id)
+
+        series = self._series(service, bond_fund.id, "2023-01-01", "2024-01-10")
+
+        for day in ("2023-01-01", "2023-01-10", "2024-01-10"):
+            assert series[day] == pytest.approx(service.get_total_value_at_date(day))
