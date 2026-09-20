@@ -131,6 +131,15 @@ export const budgetApi = {
     api.get(`/budget/analysis/${year}/${month}`, {
       params: { include_split_parents: includeSplitParents },
     }),
+  getTrend: (
+    year: number,
+    month: number,
+    months = 12,
+    includeSplitParents = false,
+  ) =>
+    api.get<BudgetTrendPointResponse[]>(`/budget/trend/${year}/${month}`, {
+      params: { months, include_split_parents: includeSplitParents },
+    }),
   getProjects: () => api.get("/budget/projects"),
   getProjectsStatus: () =>
     api.get<ProjectStatus[]>("/budget/projects/status"),
@@ -178,6 +187,19 @@ export const budgetApi = {
 };
 
 /** One recurring charge the month still owes. */
+/** One month of `GET /budget/trend/{year}/{month}`. */
+export interface BudgetTrendPointResponse {
+  year: number;
+  month: number;
+  /** The month's "Total Budget" cap. */
+  budget: number;
+  /** That row's spend, already sign-normalised by the backend. */
+  actual: number;
+  /** Spend per rule name — names, not ids, because an auto-filled month
+   *  creates fresh rows for the same envelope. */
+  rules: Record<string, number>;
+}
+
 export interface BudgetChargeDue {
   label: string;
   amount: number;

@@ -2879,3 +2879,129 @@ class TestMonthlyBudgetViewOverlappingRules:
         assert [a["name"] for a in alerts] == ["Groceries"]
         assert alerts[0]["spent"] == 150.0
         assert alerts[0]["severity"] == "critical"
+
+
+class TestMonthlyBudgetTrend:
+    """Tests for ``MonthlyBudgetService.get_budget_trend``.
+
+    The budget page's sparkline used to fetch one month of analysis per
+    point — twelve concurrent requests for a twelve-month series, re-fired in
+    full by the global query invalidation after every mutation. They starved
+    ``/budget/overview`` (~0.5 s alone, ~12 s alongside them), which is what
+    left a reopened project missing from the Overview for twelve seconds.
+    """
+
+    def test_returns_one_point_per_month_oldest_first(
+        self, db_session, seed_budget_rules, seed_base_transactions
+    ):
+        """The series spans `months` calendar months, ending at the one asked for."""
+        service = MonthlyBudgetService(db_session)
+
+        series = service.get_budget_trend(2024, 3, months=3)
+
+        assert [(p["year"], p["month"]) for p in series] == [
+            (2024, 1),
+            (2024, 2),
+            (2024, 3),
+        ]
+
+    def test_steps_back_across_a_year_boundary(self, db_session, seed_budget_rules):
+        """January's predecessors are the previous December and November."""
+        service = MonthlyBudgetService(db_session)
+
+        series = service.get_budget_trend(2024, 1, months=3)
+
+        assert [(p["year"], p["month"]) for p in series] == [
+            (2023, 11),
+            (2023, 12),
+            (2024, 1),
+        ]
+
+    def test_reads_the_headline_pair_from_the_total_budget_row(
+        self, db_session, seed_budget_rules, seed_base_transactions
+    ):
+        """`budget`/`actual` come from the Total Budget row, not a sum of rules.
+
+        Summing the per-category rules would undercount the budget (it ignores
+        headroom no rule claims) and the actual (it drops the "Other Expenses"
+        catch-all).
+        """
+        service = MonthlyBudgetService(db_session)
+
+        [point] = service.get_budget_trend(2024, 1, months=1)
+
+        assert point["budget"] == 10000.0
+        assert point["actual"] == pytest.approx(3605.0)
+
+    def test_matches_the_analysis_endpoint_month_for_month(
+        self, db_session, seed_budget_rules, seed_base_transactions
+    ):
+        """The trend must agree with the per-month analysis it replaces.
+
+        This is the contract the sparkline depended on when it was built from
+        those responses directly.
+        """
+        service = MonthlyBudgetService(db_session)
+
+        series = service.get_budget_trend(2024, 1, months=1)
+        analysis = service.get_monthly_analysis(2024, 1)
+        total = next(
+            item for item in analysis["rules"] if item["rule"][NAME] == TOTAL_BUDGET
+        )
+
+        assert series[0]["budget"] == total["rule"][AMOUNT]
+        assert series[0]["actual"] == pytest.approx(abs(total["current_amount"]))
+
+    def test_per_rule_spend_is_keyed_by_name(
+        self, db_session, seed_budget_rules, seed_base_transactions
+    ):
+        """Rules are keyed by name, not id.
+
+        A month auto-filled from its predecessor gets freshly created rows, so
+        the same envelope carries a different id in every month — an id-keyed
+        series would break apart across the range.
+        """
+        service = MonthlyBudgetService(db_session)
+
+        [point] = service.get_budget_trend(2024, 1, months=1)
+
+        assert point["rules"]["Food"] == pytest.approx(245.0)
+        assert point["rules"]["Transport"] == pytest.approx(70.0)
+
+    def test_a_month_with_no_rules_reports_zeros(self, db_session):
+        """An empty month plots a zero bar rather than dropping a point."""
+        service = MonthlyBudgetService(db_session)
+
+        [point] = service.get_budget_trend(2020, 5, months=1)
+
+        assert point == {
+            "year": 2020,
+            "month": 5,
+            "budget": 0,
+            "actual": 0,
+            "rules": {},
+        }
+
+    def test_does_not_auto_fill_an_empty_current_month(self, db_session, monkeypatch):
+        """The trend is read-only; only the analysis endpoint may auto-fill.
+
+        Two endpoints racing to copy the previous month's rules into the same
+        empty month is exactly the write this one has no business doing — the
+        frontend overlays the viewed month from the analysis it already holds.
+        """
+        service = MonthlyBudgetService(db_session)
+        called = False
+
+        def spy(*args, **kwargs):
+            nonlocal called
+            called = True
+            return None
+
+        monkeypatch.setattr(service, "auto_fill_empty_months", spy)
+        from datetime import date as date_cls
+
+        today = date_cls.today()
+
+        service.get_budget_trend(today.year, today.month, months=2)
+
+        assert called is False

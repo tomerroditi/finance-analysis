@@ -226,6 +226,45 @@ def get_monthly_analysis(
     return service.get_monthly_analysis(year, month, include_split_parents)
 
 
+@router.get("/trend/{year}/{month}")
+def get_budget_trend(
+    year: int = YearPath,
+    month: int = MonthPath,
+    months: int = Query(12, ge=1, le=36),
+    include_split_parents: bool = Query(False),
+    db: Session = Depends(get_database),
+) -> list[dict[str, Any]]:
+    """Return budget-vs-actual totals for the trailing ``months`` months.
+
+    One request in place of the per-month analysis call the budget
+    sparkline used to make for each point.
+
+    Read-only: unlike ``/analysis/{year}/{month}`` this never auto-fills an
+    empty month, so the last point reports zeros for a month whose rules
+    have not been created yet. The caller is displaying that month and holds
+    its analysis already, so the frontend overlays it from there.
+
+    Parameters
+    ----------
+    year : int
+        Year of the last month in the series.
+    month : int
+        Month (1-12) of the last month in the series, inclusive.
+    months : int, optional
+        How many calendar months the series spans. Defaults to 12.
+    include_split_parents : bool, optional
+        When ``True``, include split parents alongside their children.
+
+    Returns
+    -------
+    list[dict]
+        One entry per month, oldest first, with ``year``, ``month``,
+        ``budget``, ``actual`` and a ``rules`` name-to-spend mapping.
+    """
+    service = MonthlyBudgetService(db)
+    return service.get_budget_trend(year, month, months, include_split_parents)
+
+
 @router.get("/overview/{year}/{month}")
 def get_budget_overview(
     year: int = Path(ge=1900, le=2999),

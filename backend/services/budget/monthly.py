@@ -432,6 +432,98 @@ class MonthlyBudgetService(BudgetService):
 
         BudgetService.update_rule(self, id_, **fields)
 
+    def get_budget_trend(
+        self,
+        year: int,
+        month: int,
+        months: int = 12,
+        include_split_parents: bool = False,
+    ) -> list[dict]:
+        """Budget-vs-actual totals for the trailing ``months`` calendar months.
+
+        One call in place of one ``get_monthly_analysis`` request per month.
+        The budget page renders a 12-month sparkline, so the page used to open
+        twelve concurrent requests for it — and because every successful
+        mutation invalidates the whole query cache, all twelve fired again on
+        each one. They are individually cheap but collectively saturating:
+        ``/budget/overview`` answers in ~0.5 s alone and ~12 s alongside them,
+        which is long enough for the Overview to keep showing a closed project
+        after it has been reopened.
+
+        Deliberately built on ``get_monthly_budget_view`` rather than
+        ``get_monthly_analysis``: the sparkline needs only rule totals, while
+        the analysis additionally assembles project spending, savings-goal
+        allocations and pending refunds (12 months: ~0.5 s vs ~1.7 s).
+
+        **Read-only, and therefore not a drop-in for the analysis endpoint.**
+        ``get_monthly_analysis`` auto-fills an empty current/future month by
+        copying the previous month's rules; this does not, so a brand-new
+        month reports zeros here until that happens. The caller owns that
+        month's figures anyway — it is the month the page is displaying — so
+        the frontend hook overlays them from the analysis query it already
+        holds. Two writers racing to auto-fill the same month would be the
+        alternative, and this endpoint has no business writing.
+
+        Parameters
+        ----------
+        year : int
+            Year of the last month in the series.
+        month : int
+            Month (1–12) of the last month in the series, inclusive.
+        months : int, optional
+            How many calendar months the series spans, ending at
+            ``year``/``month``. Default 12.
+        include_split_parents : bool, optional
+            When ``True``, include split parents alongside their children.
+
+        Returns
+        -------
+        list[dict]
+            One entry per month, oldest first, each with ``year``, ``month``,
+            ``budget`` (the "Total Budget" row's configured cap), ``actual``
+            (that row's spend, sign-normalised) and ``rules`` mapping each
+            rule name to its spend.
+        """
+        series: list[dict] = []
+        for offset in range(months - 1, -1, -1):
+            # Month arithmetic through a zero-based absolute index, so
+            # stepping back across a year boundary needs no special case.
+            absolute = (year * 12 + month - 1) - offset
+            point_year, point_month = divmod(absolute, 12)
+            point_month += 1
+            view = self.get_monthly_budget_view(
+                point_year, point_month, include_split_parents
+            ) or []
+
+            # The "Total Budget" row is the source of truth for the headline
+            # pair, exactly as the monthly gauge reads it. Summing the
+            # per-category rules would undercount both the budget (it ignores
+            # headroom no rule claims) and the actual (it drops the
+            # "Other Expenses" catch-all).
+            total = next(
+                (item for item in view if item["rule"][NAME] == TOTAL_BUDGET),
+                None,
+            )
+
+            # Rules are keyed by NAME, not id: a month auto-filled from its
+            # predecessor gets freshly created rows, so the same envelope
+            # carries a different id in every month.
+            rules = {
+                item["rule"][NAME]: max(item.get("current_amount") or 0, 0)
+                for item in view
+            }
+
+            series.append(
+                {
+                    "year": point_year,
+                    "month": point_month,
+                    "budget": (total or {}).get("rule", {}).get(AMOUNT) or 0,
+                    "actual": abs((total or {}).get("current_amount") or 0),
+                    "rules": rules,
+                }
+            )
+        return series
+
     def get_monthly_analysis(
         self, year: int, month: int, include_split_parents: bool = False
     ) -> dict:
