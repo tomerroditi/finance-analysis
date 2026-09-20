@@ -484,7 +484,9 @@
       "addTooltip": "Create an auto-tagging rule from this transaction",
       "viewTooltip": "View the auto-tagging rule matching this selection",
       "mixedTooltip": "Some selected transactions match a rule and some don't — select a uniform set to add a rule",
-      "multipleTooltip": "The selection matches multiple rules — manage them on the Categories page"
+      "multipleTooltip": "The selection matches multiple rules — manage them on the Categories page",
+      "extend": "Add to Rule",
+      "extendTooltip": "Add this transaction's description to the existing \"{{name}}\" rule"
     },
     "addCash": "Add Cash Transaction",
     "addInvestment": "Add Investment Transaction",

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { evalCondition } from "./taggingRuleEval";
+import { appendDescriptionConditions, evalCondition } from "./taggingRuleEval";
 import type { ConditionNode } from "../services/api";
 import type { Transaction } from "../types/transaction";
 
@@ -64,5 +64,70 @@ describe("evalCondition service field", () => {
   it("ignores operators other than equals", () => {
     expect(evalCondition(serviceNode("contains", "credit"), txSource("credit_card_transactions"))).toBe(false);
     expect(evalCondition(serviceNode("starts_with", "credit"), txSource("credit_card_transactions"))).toBe(false);
+  });
+});
+
+describe("appendDescriptionConditions", () => {
+  const orRoot: ConditionNode = {
+    type: "OR",
+    subconditions: [cond("contains", "SHUFERSAL")],
+  };
+
+  it("appends a branch per value to an OR root", () => {
+    const grown = appendDescriptionConditions(orRoot, ["GOZ GOZ", "LOTIE"]);
+    expect(grown.type).toBe("OR");
+    expect(grown.subconditions?.map((s) => s.value)).toEqual([
+      "SHUFERSAL",
+      "GOZ GOZ",
+      "LOTIE",
+    ]);
+  });
+
+  // Wrapping rather than appending keeps an AND rule matching what it always
+  // matched — appending into the AND would narrow it instead of widening it.
+  it("wraps a non-OR root in an OR instead of appending into it", () => {
+    const andRoot: ConditionNode = {
+      type: "AND",
+      subconditions: [cond("contains", "PAZ"), cond("contains", "FUEL")],
+    };
+    const grown = appendDescriptionConditions(andRoot, ["GOZ GOZ"]);
+    expect(grown.type).toBe("OR");
+    expect(grown.subconditions?.[0]).toEqual(andRoot);
+    expect(grown.subconditions?.[1].value).toBe("GOZ GOZ");
+  });
+
+  it("wraps a bare condition root", () => {
+    const leaf = cond("contains", "PAZ");
+    const grown = appendDescriptionConditions(leaf, ["GOZ GOZ"]);
+    expect(grown).toEqual({
+      type: "OR",
+      subconditions: [leaf, cond("contains", "GOZ GOZ")],
+    });
+  });
+
+  // `contains` is case-insensitive on the backend, so a differently-cased
+  // duplicate would be dead weight in the tree.
+  it("skips values the tree already tests, ignoring case", () => {
+    expect(appendDescriptionConditions(orRoot, ["shufersal"])).toBe(orRoot);
+  });
+
+  it("skips blank values and returns the tree untouched when nothing is left", () => {
+    expect(appendDescriptionConditions(orRoot, ["", "  ".trim()])).toBe(orRoot);
+  });
+
+  it("dedupes repeated values within one call", () => {
+    const grown = appendDescriptionConditions(orRoot, ["GOZ GOZ", "goz goz"]);
+    expect(grown.subconditions).toHaveLength(2);
+  });
+
+  it("leaves nested conditions in place", () => {
+    const nested: ConditionNode = {
+      type: "OR",
+      subconditions: [
+        { type: "AND", subconditions: [cond("contains", "PAZ")] },
+      ],
+    };
+    const grown = appendDescriptionConditions(nested, ["PAZ", "SONOL"]);
+    expect(grown.subconditions?.map((s) => s.value)).toEqual([undefined, "SONOL"]);
   });
 });
