@@ -9,6 +9,7 @@ from backend.constants.budget import (
     AMOUNT,
     CATEGORY,
     ID,
+    IS_CLOSED,
     MONTH,
     NAME,
     PERIOD_MONTHLY,
@@ -29,6 +30,14 @@ class YearlyBudgetService(BudgetService):
     a calendar year. Spend accumulates over the whole year. There is no overall
     cap and no synthetic "Other Expenses" entry. Yearly rules are mutually
     exclusive with monthly rules on ``(category, tag)`` within the same year.
+
+    A rule can be *closed* once the year's commitment behind it is settled —
+    the annual insurance is paid, the trip is over. Closing is not a delete
+    and not an edit: the rule keeps its amount, its spend and its place in this
+    year's tab, and it still claims its ``(category, tag)`` against monthly
+    rules. What it loses is the budget Overview, where it is no longer an
+    envelope the running month is measured against, and the attention it drew
+    there — see :meth:`set_rule_closed`.
     """
 
     def get_all_rules(self) -> pd.DataFrame:
@@ -44,6 +53,64 @@ class YearlyBudgetService(BudgetService):
         if rules.empty:
             return rules
         return rules.loc[rules[YEAR] == year]
+
+    @staticmethod
+    def _rule_is_closed(rule: pd.Series) -> bool:
+        """Whether one yearly rule row carries the closed flag.
+
+        Parameters
+        ----------
+        rule : pd.Series
+            One row of a ``get_all_rules``-style frame.
+
+        Returns
+        -------
+        bool
+            ``True`` only for a row explicitly flagged closed. Rows written
+            before the flag existed hold ``NULL``, which pandas reads back as
+            ``NaN`` — neither of those is closed.
+        """
+        if IS_CLOSED not in rule:
+            return False
+        value = rule[IS_CLOSED]
+        if value is None or pd.isna(value):
+            return False
+        return int(value) == 1
+
+    def set_rule_closed(self, id_: int, closed: bool) -> None:
+        """Close a settled yearly envelope, or reopen a closed one.
+
+        Closing is deliberately neither a delete nor a zeroing: the rule keeps
+        its allocation, its spend and its row in the year's tab, and it goes on
+        claiming its ``(category, tag)`` against monthly rules for the year — a
+        closed envelope's spend must not suddenly reappear inside the monthly
+        budget. All it loses is the budget Overview, where a settled commitment
+        is no longer something the running month can be measured against.
+
+        Parameters
+        ----------
+        id_ : int
+            Yearly rule id.
+        closed : bool
+            ``True`` closes the rule, ``False`` reopens it.
+
+        Raises
+        ------
+        EntityNotFoundException
+            If ``id_`` is not a yearly rule.
+        """
+        self._yearly_row(id_)
+        self.budget_repository.set_closed_by_id(id_, closed, PERIOD_YEARLY)
+
+    def is_rule_closed(self, id_: int) -> bool:
+        """Whether the yearly rule ``id_`` has been closed.
+
+        Raises
+        ------
+        EntityNotFoundException
+            If ``id_`` is not a yearly rule.
+        """
+        return self._rule_is_closed(self._yearly_row(id_))
 
     def _validate(
         self,
@@ -186,8 +253,10 @@ class YearlyBudgetService(BudgetService):
         """Compute spend-vs-limit per yearly rule for a calendar year.
 
         Returns ``None`` when the year has no yearly rules. Otherwise a flat list
-        of ``{rule, current_amount, data, allow_edit, allow_delete}`` — no total
-        rule, no "Other Expenses" remainder.
+        of ``{rule, current_amount, data, allow_edit, allow_delete, closed}`` —
+        no total rule, no "Other Expenses" remainder. Closed rules are listed
+        like any other: this is the envelope's own tab, where its history
+        belongs; it is the Overview that drops them.
         """
         rules = self.get_year_rules(year)
         if rules.empty:
@@ -228,6 +297,7 @@ class YearlyBudgetService(BudgetService):
                     "data": cat_data.to_dict(orient="records"),
                     "allow_edit": True,
                     "allow_delete": True,
+                    "closed": self._rule_is_closed(rule),
                 }
             )
         return view
@@ -235,11 +305,20 @@ class YearlyBudgetService(BudgetService):
     def get_year_summary(self, year: int) -> dict:
         """Computed, display-only roll-up for the year header.
 
+        The money figures cover every rule, closed ones included — an envelope
+        that has been settled still allocated and still spent this year, and
+        dropping it would make the year's own totals disagree with the rows
+        listed under them. The health counts are the opposite: they are a call
+        to act, and a closed envelope is one the user has said is finished, so
+        it is counted apart in ``closed`` and can never be the year's
+        ``biggest_overspend``.
+
         Returns
         -------
         dict
             ``total_allocated``, ``total_spent``, ``remaining``, ``on_track``
-            (count of rules at/under budget), ``over`` (count over budget), and
+            (count of open rules at/under budget), ``over`` (count of open
+            rules over budget), ``closed`` (count of closed rules), and
             ``biggest_overspend`` (``{"name", "percentage"}`` or ``None``).
         """
         view = self.get_yearly_budget_view(year) or []
@@ -247,8 +326,12 @@ class YearlyBudgetService(BudgetService):
         total_spent = sum(float(e["current_amount"] or 0) for e in view)
         on_track = 0
         over = 0
+        closed = 0
         biggest = None
         for e in view:
+            if e.get("closed"):
+                closed += 1
+                continue
             amount = float(e["rule"].get(AMOUNT) or 0)
             spent = float(e["current_amount"] or 0)
             pct = spent / amount if amount > 0 else 0.0
@@ -264,6 +347,7 @@ class YearlyBudgetService(BudgetService):
             "remaining": total_allocated - total_spent,
             "on_track": on_track,
             "over": over,
+            "closed": closed,
             "biggest_overspend": biggest,
         }
 
@@ -272,13 +356,17 @@ class YearlyBudgetService(BudgetService):
 
         Mirrors ``MonthlyBudgetService.get_alerts`` — ``percentage = spent/amount``;
         ``critical`` at ≥ 1.0, ``warning`` in ``[threshold, 1.0)``. There is no
-        Total Budget / Other Expenses row to skip.
+        Total Budget / Other Expenses row to skip. Closed rules are skipped: an
+        alert asks the user to do something about an envelope they are still
+        spending from, and a settled one is exactly what closing says it isn't.
         """
         view = self.get_yearly_budget_view(year)
         if view is None:
             return []
         alerts = []
         for entry in view:
+            if entry.get("closed"):
+                continue
             rule = entry["rule"]
             amount = float(rule.get(AMOUNT) or 0)
             if amount <= 0:

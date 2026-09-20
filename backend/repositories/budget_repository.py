@@ -288,6 +288,37 @@ class BudgetRepository:
         self.db.execute(stmt)
         self.db.commit()
 
+    def set_closed_by_id(self, id_: int, closed: bool, period_type: str) -> None:
+        """Flag a single rule of ``period_type`` as closed or open.
+
+        Scoped by ``period_type`` as well as id so a yearly endpoint can never
+        flag a monthly or project row that happens to share the id space.
+
+        Parameters
+        ----------
+        id_ : int
+            Primary key of the budget rule to flag.
+        closed : bool
+            ``True`` closes the rule, ``False`` reopens it.
+        period_type : str
+            The kind the rule must be, e.g. ``"yearly"``.
+
+        Raises
+        ------
+        EntityNotFoundException
+            If no rule of that id and period type exists.
+        """
+        stmt = (
+            update(BudgetRule)
+            .where(BudgetRule.id == id_, BudgetRule.period_type == period_type)
+            .values(is_closed=1 if closed else 0)
+        )
+        result = self.db.execute(stmt)
+        if result.rowcount == 0:
+            self.db.rollback()
+            raise EntityNotFoundException(f"No rule found with ID {id_}.")
+        self.db.commit()
+
     def delete_by_category_and_tags(self, category: str, tags: str) -> None:
         """Delete budget rules by category and tags (project rules only).
 
