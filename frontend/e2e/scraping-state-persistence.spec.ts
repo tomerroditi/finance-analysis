@@ -1,4 +1,5 @@
 import { test, expect, request } from "@playwright/test";
+import type { Page } from "@playwright/test";
 import { enableDemoMode, navigateTo, resetDemoData, API_BASE } from "./helpers";
 
 // A throwaway account so the assertions target one unambiguous card rather
@@ -46,7 +47,7 @@ async function setBankCredential(create: boolean) {
  * these tests are about.
  */
 async function navigateInApp(
-  page: import("@playwright/test").Page,
+  page: Page,
   name: RegExp,
   urlPattern: RegExp,
 ) {
@@ -54,7 +55,7 @@ async function navigateInApp(
   await expect(page).toHaveURL(urlPattern);
 }
 
-const cardFor = (page: import("@playwright/test").Page) =>
+const cardFor = (page: Page) =>
   page
     .getByRole("heading", { name: ACCOUNT, exact: true })
     .locator("xpath=ancestor::div[contains(@class, 'group')][1]");
