@@ -1,6 +1,6 @@
 import React from "react";
 import { useTranslation } from "react-i18next";
-import { formatCurrency } from "../../../utils/numberFormatting";
+import { formatAmount, formatCurrency } from "../../../utils/numberFormatting";
 import type { BudgetRule } from "./types";
 
 interface BudgetRuleGridProps {
@@ -31,6 +31,12 @@ function getProgressColor(pct: number, isUnbudgetedSpend: boolean): string {
  * columns — a column of ragged figures is the thing that makes a dense list
  * hard to scan. The name column (`minmax(0,1fr)`) absorbs the slack and
  * truncates, with the full name on hover.
+ *
+ * One ₪ per row, on the ceiling: "979 / 2,000 ₪  1,021 left". Three signs on
+ * one line (and thirteen lines in the card) read as noise, and the two
+ * figures either side of the sign are plainly in the same unit. The pair is
+ * joined by hand, so it carries `dir="ltr"` — the rule for any numeric string
+ * built outside the formatting helpers.
  *
  * Below `sm:` the percentage suffix is dropped: a phone-width card cannot fit
  * the whole line, and the percentage is the one part the bar already draws.
@@ -108,8 +114,11 @@ export const BudgetRuleGrid: React.FC<BudgetRuleGridProps> = ({
                 />
               </span>
 
-              <span className="text-xs font-bold tabular-nums text-end">
-                {formatCurrency(rule.spent_amount)}
+              <span
+                className="text-xs font-bold tabular-nums text-end"
+                dir="ltr"
+              >
+                {formatAmount(rule.spent_amount)}
                 <span className="text-[10px] font-normal text-[var(--text-muted)]">
                   {" "}
                   / {formatCurrency(rule.budget_amount)}
@@ -123,10 +132,10 @@ export const BudgetRuleGrid: React.FC<BudgetRuleGridProps> = ({
               >
                 {over
                   ? t("budget.overByAmount", {
-                      amount: formatCurrency(Math.abs(remaining)),
+                      amount: formatAmount(Math.abs(remaining)),
                     })
                   : t("budget.leftAmount", {
-                      amount: formatCurrency(remaining),
+                      amount: formatAmount(remaining),
                     })}
                 <span className="hidden text-[var(--text-muted)] sm:inline">
                   {" "}

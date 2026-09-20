@@ -488,7 +488,7 @@ export const OverviewBudgetView: React.FC<OverviewBudgetViewProps> = ({
                 >
                   {item.percent}%
                 </span>
-                <span dir="ltr" className="text-xs font-mono text-[var(--text-muted)] shrink-0">
+                <span className="text-xs font-mono text-[var(--text-muted)] shrink-0">
                   {item.remaining < 0
                     ? t("budget.overByAmount", {
                         amount: formatCurrency(Math.abs(item.remaining)),

@@ -256,7 +256,7 @@ export const BudgetLedgerRow: React.FC<BudgetLedgerRowProps> = ({
               {trend}
             </span>
             {leftLabel && (
-              <span className="text-[10px] text-[var(--text-muted)]" dir="ltr">
+              <span className="text-[10px] text-[var(--text-muted)]">
                 {leftLabel}
               </span>
             )}

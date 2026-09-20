@@ -47,6 +47,17 @@ describe("BudgetRuleGrid", () => {
     expect(groceries.textContent).toContain("49%");
   });
 
+  it("prints one shekel sign per row, on the ceiling", () => {
+    // The row is one line and the figures either side of the sign are plainly
+    // in the same unit: three signs on a line, thirteen lines to a card, read
+    // as noise. The ceiling carries it for the whole row.
+    render(<BudgetRuleGrid rules={[makeRule()]} categoryIcons={{}} />);
+    const row = screen.getByTestId("budget-rule-row");
+    expect(row.textContent!.match(/\u20aa/g)).toHaveLength(1);
+    // And the sign sits on the budget, not on the spend or the remainder.
+    expect(row.textContent).toMatch(/2,000\s*\u20aa/);
+  });
+
   it("fills the bar proportionally and stays emerald while comfortably under", () => {
     render(
       <BudgetRuleGrid

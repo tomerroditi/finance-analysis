@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
+  formatAmount,
   formatCurrency,
   formatCompactCurrency,
   formatChange,
@@ -109,6 +110,29 @@ describe("formatPercentChange", () => {
   it("respects fractionDigits", () => {
     expect(formatPercentChange(614.4, 1)).toBe("+614.4%");
     expect(formatPercentChange(2.5, 2)).toBe("+2.50%");
+  });
+});
+
+describe("formatAmount", () => {
+  it("emits the digits alone, with no currency sign", () => {
+    expect(formatAmount(1234)).toBe(`${LRI}1,234${PDI}`);
+    expect(formatAmount(1234)).not.toContain("\u20aa");
+  });
+
+  it("keeps the minus with its digits inside the isolate", () => {
+    expect(formatAmount(-132)).toBe(`${LRI}-132${PDI}`);
+  });
+
+  it("is isolated like the currency helpers, so RTL cannot reorder it", () => {
+    // Without LRI/PDI a bare "-132" beside Hebrew text renders as "132-".
+    expect(formatAmount(-132).startsWith(LRI)).toBe(true);
+    expect(formatAmount(-132).endsWith(PDI)).toBe(true);
+  });
+
+  it("honours fraction digits and treats a missing value as zero", () => {
+    expect(formatAmount(12.345, 2)).toBe(`${LRI}12.35${PDI}`);
+    expect(formatAmount(0)).toBe(`${LRI}0${PDI}`);
+    expect(formatAmount(NaN)).toBe(`${LRI}0${PDI}`);
   });
 });
 

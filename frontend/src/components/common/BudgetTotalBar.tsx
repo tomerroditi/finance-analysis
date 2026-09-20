@@ -48,7 +48,6 @@ export const BudgetTotalBar: React.FC<BudgetTotalBarProps> = ({
             className={`text-[10px] sm:text-xs font-medium px-2 py-0.5 rounded-full ${
               over ? "bg-rose-500/10 text-rose-400" : "bg-emerald-500/10 text-emerald-400"
             }`}
-            dir="ltr"
           >
             {over
               ? t("budget.overByAmount", { amount: formatCurrency(Math.abs(remaining)) })
