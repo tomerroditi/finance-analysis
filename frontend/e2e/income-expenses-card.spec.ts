@@ -9,8 +9,13 @@ import { enableDemoMode, navigateTo, resetDemoData } from "./helpers";
  *   - Income/Expenses → 100%-composition rows (`data-testid="composition-row"`)
  *                       whose slices carry no text at all.
  *
+ * A Monthly/Yearly scope toggle in the title row re-folds every view: the
+ * ledger and both breakdowns collapse to one row per calendar year, and the
+ * KPI cards swap their rolling averages for per-year totals.
+ *
  * This spec guards that each tab renders, that the ledger is ordered
- * newest-first, that the filter row carries only the pending-refund and
+ * newest-first, that the scope toggle folds months into years, that the
+ * filter row carries only the pending-refund and
  * project chips and that the pending-refund one actually moves the
  * breakdown, that tab switches never crash the card, and that hovering a
  * composition slice pops the cursor-following tooltip — the only readout the
@@ -116,6 +121,50 @@ test.describe("Income & Expenses dashboard card", () => {
     // Collapsing returns to the 12-month window.
     await card.getByRole("button", { name: "Show less" }).click();
     await expect.poll(() => rows.count()).toBeLessThanOrEqual(12);
+
+    // --- Scope toggle: the ledger folds into one row per year ---
+    // Purely client-side (the card re-folds the monthly series it already
+    // holds), so the year rows must add up to the months they replace.
+    const monthlyNets = await rows.allTextContents();
+    const monthKeys = await rows.evaluateAll((els) =>
+      els.map((el) => el.getAttribute("data-month")),
+    );
+
+    await card.getByRole("button", { name: "Yearly" }).click();
+    await expect(card.getByText("Year", { exact: true }).first()).toBeVisible();
+
+    // Fewer rows than months, and every key is a bare year.
+    await expect.poll(() => rows.count()).toBeLessThan(monthKeys.length);
+    const yearKeys = await rows.evaluateAll((els) =>
+      els.map((el) => el.getAttribute("data-month")),
+    );
+    expect(yearKeys.length).toBeGreaterThan(0);
+    for (const key of yearKeys) expect(key).toMatch(/^\d{4}$/);
+    // Newest-first, like the monthly ledger.
+    expect(yearKeys[0]! > yearKeys[yearKeys.length - 1]!).toBe(true);
+
+    // A year row carries real money, and the KPI card leads with a year
+    // caption instead of the 3-month average.
+    await expect(rows.first()).toContainText(/\d,\d{3}/);
+    await expect(income.getByText("3-mo avg")).toHaveCount(0);
+    await expect(income.getByText(/^\d{4}( to date)?$/).first()).toBeVisible();
+
+    // The breakdown tabs fold too — one composition row per year.
+    await card.getByRole("button", { name: "Expenses Breakdown" }).click();
+    const yearlyComposition = card.getByTestId("composition-row");
+    await expect(yearlyComposition.first()).toBeVisible({ timeout: 45_000 });
+    const compositionKeys = await yearlyComposition.evaluateAll((els) =>
+      els.map((el) => el.getAttribute("data-month")),
+    );
+    expect(compositionKeys.length).toBeGreaterThan(0);
+    for (const key of compositionKeys) expect(key).toMatch(/^\d{4}$/);
+
+    // Back to Monthly: the ledger returns exactly as it was.
+    await card.getByRole("button", { name: "Totals" }).click();
+    await card.getByRole("button", { name: "Monthly" }).click();
+    await expect(card.getByText("Month", { exact: true }).first()).toBeVisible();
+    await expect.poll(() => rows.allTextContents()).toEqual(monthlyNets);
+    await expect(income.getByText("3-mo avg")).toBeVisible();
 
     // --- Filter chips: pending-refunds and projects only ---
     // "Refunds Included/Excluded" is gone: a refund is a positive amount in an
