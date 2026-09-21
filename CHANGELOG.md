@@ -1,3 +1,9 @@
+## v1.83.0 (2026-09-21)
+
+### Feat
+
+- **data-sources**: scrape a picked subset, and fit the toolbar on one row (#335)
+
 ## v1.82.2 (2026-09-21)
 
 ### Fix
