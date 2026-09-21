@@ -1,3 +1,9 @@
+## v1.82.2 (2026-09-21)
+
+### Fix
+
+- **investments**: stop KPI amounts and info tooltips overflowing (#334)
+
 ## v1.82.1 (2026-09-21)
 
 ### Fix
