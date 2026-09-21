@@ -1,3 +1,9 @@
+## v1.78.0 (2026-09-21)
+
+### Feat
+
+- **dashboard**: act on a yearly envelope from its row in the budget card (#326)
+
 ## v1.77.0 (2026-09-21)
 
 ### Feat
