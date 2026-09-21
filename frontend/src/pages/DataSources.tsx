@@ -88,6 +88,11 @@ export function DataSources() {
 
   const [scrapingPeriodDays, setScrapingPeriodDays] = useState<number | null>(null);
   const [tfaCodes, setTfaCodes] = useState<Record<string, string>>({});
+  // Sources explicitly picked for the next scrape. Kept as keys rather than
+  // account objects so a refetched accounts list (new object identities)
+  // doesn't drop the selection, and so a disconnected account's stale key
+  // simply stops matching instead of having to be swept.
+  const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
 
   const { data: accounts, isLoading } = useQuery({
     queryKey: qk.credentials.accounts(),
@@ -206,6 +211,19 @@ export function DataSources() {
     );
   };
 
+  const accountKey = (acc: CredentialAccount) =>
+    `${acc.service}|${acc.provider}|${acc.account_name}`;
+
+  const toggleSelected = (acc: CredentialAccount, selected: boolean) => {
+    const key = accountKey(acc);
+    setSelectedKeys((prev) => {
+      const next = new Set(prev);
+      if (selected) next.add(key);
+      else next.delete(key);
+      return next;
+    });
+  };
+
   const isScrapedToday = (
     provider: string,
     accountName: string,
@@ -283,6 +301,33 @@ export function DataSources() {
     setShowPasswords((prev) => ({ ...prev, [field]: !prev[field] }));
   };
 
+  // Derived from the live accounts list, so a key left behind by a
+  // disconnected account simply matches nothing.
+  const selectedAccounts = (accounts ?? []).filter((acc) =>
+    selectedKeys.has(accountKey(acc)),
+  );
+
+  const handleScrape = () => {
+    if (!accounts?.length) return;
+    if (selectedAccounts.length > 0) {
+      // An explicit pick overrides the synced-today skip below: the user
+      // named these sources, so re-fetching one is what they asked for.
+      // scrapeAll() still refuses to relaunch an account already running.
+      scrapeAll(selectedAccounts, scrapingPeriodDays);
+      return;
+    }
+    scrapeAll(
+      // Already fetched successfully today — another run would only
+      // re-download the same data (and re-send an SMS for 2FA banks).
+      accounts.filter(
+        (acc) =>
+          !isScrapedToday(acc.provider, acc.account_name) &&
+          getScraperForAccount(acc)?.status !== "success",
+      ),
+      scrapingPeriodDays,
+    );
+  };
+
   if (isLoading)
     return (
       <div className="space-y-1.5">
@@ -296,14 +341,21 @@ export function DataSources() {
 
   return (
     <div className="space-y-1.5 animate-in fade-in duration-500">
-      <div className="flex flex-wrap items-center justify-end gap-2 md:gap-3">
-          <div className="relative">
+      {/* One row at every width: the controls shrink instead of wrapping, so
+          the period, the scrape trigger and Connect Account stay side by side
+          on a phone. */}
+      <div className="flex items-center justify-end gap-1.5 md:gap-3">
+          <div className="relative shrink-0">
             <select
               value={scrapingPeriodDays ?? "auto"}
               onChange={(e) =>
                 setScrapingPeriodDays(e.target.value === "auto" ? null : Number(e.target.value))
               }
-              className="appearance-none bg-[var(--surface)] border border-[var(--surface-light)] rounded-xl px-3 pe-7 py-2.5 text-xs font-bold text-white outline-none focus:border-[var(--primary)]/50 transition-colors disabled:opacity-50 cursor-pointer"
+              aria-label={t("dataSources.scrapePeriodLabel")}
+              // A <select> is as wide as its widest option ("12 Months"),
+              // which is what pushed this row past a phone's width. Capped
+              // here; the longest label still clears the padding.
+              className="appearance-none w-[104px] md:w-auto bg-[var(--surface)] border border-[var(--surface-light)] rounded-xl px-2.5 pe-6 md:px-3 md:pe-7 py-2.5 text-xs font-bold text-white outline-none focus:border-[var(--primary)]/50 transition-colors disabled:opacity-50 cursor-pointer"
             >
               {SCRAPING_PERIODS.map((p) => (
                 <option key={p.key} value={p.days ?? "auto"}>{t(`dataSources.scrapePeriod.${p.key}`)}</option>
@@ -312,38 +364,63 @@ export function DataSources() {
             <ChevronDown size={12} className="absolute end-2 top-1/2 -translate-y-1/2 text-[var(--text-muted)] pointer-events-none" />
           </div>
           <button
-            onClick={() =>
-              accounts &&
-              scrapeAll(
-                // Already fetched successfully today — another run would only
-                // re-download the same data (and re-send an SMS for 2FA banks).
-                accounts.filter(
-                  (acc) =>
-                    !isScrapedToday(acc.provider, acc.account_name) &&
-                    getScraperForAccount(acc)?.status !== "success",
-                ),
-                scrapingPeriodDays,
-              )
+            onClick={handleScrape}
+            title={
+              selectedAccounts.length > 0
+                ? t("dataSources.scrapeSelectedHint")
+                : t("dataSources.scrapeAllHint")
             }
-            title={t("dataSources.scrapeAllHint")}
             disabled={!accounts?.length}
-            className="flex items-center gap-2 px-5 py-2.5 bg-[var(--surface)] border border-[var(--surface-light)] text-white rounded-xl font-bold hover:border-[var(--primary)]/50 hover:bg-[var(--primary)]/5 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+            data-testid="scrape-launch"
+            className="flex items-center gap-2 shrink-0 px-3 md:px-5 py-2.5 bg-[var(--surface)] border border-[var(--surface-light)] text-white rounded-xl text-xs md:text-sm font-bold hover:border-[var(--primary)]/50 hover:bg-[var(--primary)]/5 transition-all disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
           >
             {/* Stays clickable while scrapes are in flight so the remaining
                 idle accounts can still be launched; scrapeAll() skips the
                 ones already running. The spinner is the only in-progress
-                signal — the label must NOT swap, or a name-based locator
-                (and the user's muscle memory) loses the button mid-run. */}
+                signal — the label must NOT swap mid-run, so it tracks the
+                selection (a user action) and nothing else. */}
             <RefreshCw size={16} className={isAnyScraping ? "animate-spin" : ""} />
-            {t("dataSources.scrapeAll")}
+            {selectedAccounts.length > 0
+              ? t("dataSources.scrapeSelected", { count: selectedAccounts.length })
+              : t("dataSources.scrapeAll")}
           </button>
           <button
             onClick={() => setIsAddOpen(true)}
-            className="flex items-center gap-2 px-6 py-2.5 bg-[var(--primary)] text-white rounded-xl font-bold hover:bg-[var(--primary-dark)] transition-all shadow-lg shadow-[var(--primary)]/20"
+            // The short label keeps the row intact on a phone; the aria-label
+            // holds the full name, which every locator and screen reader uses.
+            aria-label={t("dataSources.connectAccount")}
+            className="flex items-center gap-2 shrink-0 px-3 md:px-6 py-2.5 bg-[var(--primary)] text-white rounded-xl text-xs md:text-sm font-bold hover:bg-[var(--primary-dark)] transition-all shadow-lg shadow-[var(--primary)]/20 whitespace-nowrap"
           >
-            <Plus size={18} /> {t("dataSources.connectAccount")}
+            <Plus size={18} />
+            <span className="sm:hidden">{t("dataSources.connectAccountShort")}</span>
+            <span className="hidden sm:inline">{t("dataSources.connectAccount")}</span>
           </button>
       </div>
+
+      {selectedAccounts.length > 0 && (
+        <div
+          data-testid="selection-bar"
+          className="flex items-center justify-between gap-2 rounded-xl border border-[var(--primary)]/30 bg-[var(--primary)]/5 px-3 py-2"
+        >
+          <span className="text-xs font-bold text-white">
+            {t("dataSources.sourcesSelected", { count: selectedAccounts.length })}
+          </span>
+          <div className="flex items-center gap-1.5">
+            <button
+              onClick={() => setSelectedKeys(new Set((accounts ?? []).map(accountKey)))}
+              className="px-2.5 py-1 rounded-lg text-xs font-bold text-[var(--text-muted)] hover:text-white hover:bg-[var(--surface-light)] transition-colors"
+            >
+              {t("dataSources.selectAllSources")}
+            </button>
+            <button
+              onClick={() => setSelectedKeys(new Set())}
+              className="px-2.5 py-1 rounded-lg text-xs font-bold text-[var(--text-muted)] hover:text-white hover:bg-[var(--surface-light)] transition-colors"
+            >
+              {t("dataSources.clearSelection")}
+            </button>
+          </div>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 gap-1.5">
         {accounts?.length === 0 ? (
@@ -384,6 +461,8 @@ export function DataSources() {
                   lastScrapeDate={lastScrape?.last_scrape_date}
                   balance={bal}
                   scrapedToday={isScrapedToday(acc.provider, acc.account_name)}
+                  selected={selectedKeys.has(accountKey(acc))}
+                  onToggleSelected={(isSelected) => toggleSelected(acc, isSelected)}
                   tfaIsPending={tfaIsPending}
                   tfaCode={tfaCodes[tfaKey] || ""}
                   onTfaCodeChange={(code) =>

@@ -169,12 +169,10 @@ test.describe("Per-account scraping concurrency", () => {
       .poll(() => startedAccounts)
       .toEqual([RUNNING_ACCOUNT, IDLE_ACCOUNT]);
 
-    // Located structurally rather than by accessible name so the locator
-    // survives any future label change — the same gotcha documented in
-    // onezero-resend.spec.ts for the Resend button.
-    const scrapeAllButton = page
-      .getByRole("button", { name: "Connect Account", exact: true })
-      .locator("xpath=preceding-sibling::button[1]");
+    // Located by test id rather than accessible name: the label tracks the
+    // multi-select (it reads "Scrape (N)" once sources are picked), so a
+    // name-based locator would break the moment a selection exists.
+    const scrapeAllButton = page.getByTestId("scrape-launch");
 
     // Scrape All also stays usable mid-run: it is how the user launches the
     // accounts that are still idle. Its dedupe (useScraping.scrapeAll, unit
@@ -345,5 +343,83 @@ test.describe("Per-account scraping concurrency", () => {
     } finally {
       await setBankCredential(FAILED_ACCOUNT, false);
     }
+  });
+
+  test("picking sources narrows the scrape, and the toolbar stays one row on a phone", async ({
+    page,
+  }) => {
+    // Nothing picked must keep meaning "scrape everything" — the selection is
+    // additive, not a new mandatory step. Stubbed like the test above so no
+    // real provider is contacted.
+    const startedAccounts: string[] = [];
+    let nextProcessId = 7000;
+
+    await page.route("**/api/scraping/start", async (route) => {
+      const body = route.request().postDataJSON() as { account: string };
+      startedAccounts.push(body.account);
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(nextProcessId++),
+      });
+    });
+    await page.route("**/api/scraping/status*", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ status: "in_progress" }),
+      });
+    });
+
+    await page.setViewportSize({ width: 375, height: 800 });
+    await navigateTo(page, "/data-sources");
+
+    const scrapeButton = page.getByTestId("scrape-launch");
+    const connectButton = page.getByRole("button", {
+      name: "Connect Account",
+      exact: true,
+    });
+    const periodSelect = page.locator("main select").first();
+    await expect(scrapeButton).toBeVisible();
+
+    // The three toolbar controls share one row at phone width: same vertical
+    // band, and nothing pushed off the side of the viewport.
+    const boxes = await Promise.all(
+      [periodSelect, scrapeButton, connectButton].map((l) => l.boundingBox()),
+    );
+    for (const box of boxes) expect(box).not.toBeNull();
+    const tops = boxes.map((b) => b!.y);
+    expect(Math.max(...tops) - Math.min(...tops)).toBeLessThan(8);
+    for (const box of boxes) {
+      expect(box!.x).toBeGreaterThanOrEqual(0);
+      expect(box!.x + box!.width).toBeLessThanOrEqual(375);
+    }
+
+    const cardFor = (name: string) =>
+      page
+        .getByRole("heading", { name, exact: true })
+        .locator("xpath=ancestor::div[contains(@class, 'group')][1]");
+
+    // Tick one source: the button stops offering "everything" and names the
+    // count instead.
+    await expect(scrapeButton).toHaveText(/Scrape All|שלוף הכל/);
+    await cardFor(IDLE_ACCOUNT).getByTestId("select-source").check();
+    await expect(page.getByTestId("selection-bar")).toContainText(
+      /1 source selected|נבחר מקור אחד/,
+    );
+    await expect(scrapeButton).toHaveText(/\(1\)/);
+
+    await scrapeButton.click();
+    await expect.poll(() => startedAccounts).toEqual([IDLE_ACCOUNT]);
+    // Give any stray dispatch a chance to land before asserting the negative.
+    await page.waitForTimeout(500);
+    expect(startedAccounts).toEqual([IDLE_ACCOUNT]);
+
+    // Clearing hands the button back its scrape-everything default.
+    await page.getByTestId("selection-bar").getByRole("button").last().click();
+    await expect(page.getByTestId("selection-bar")).toHaveCount(0);
+    await expect(scrapeButton).toHaveText(/Scrape All|שלוף הכל/);
+    await scrapeButton.click();
+    await expect.poll(() => startedAccounts.length).toBeGreaterThan(2);
   });
 });
