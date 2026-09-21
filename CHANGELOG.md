@@ -1,3 +1,31 @@
+## v1.82.0 (2026-09-21)
+
+### Feat
+
+- **dashboard**: remove the Categories card (#331)
+
+## v1.81.1 (2026-09-21)
+
+### Perf
+
+- **prod**: cut minutes off the path from a merge to the reload toast (#333)
+
+## v1.81.0 (2026-09-21)
+
+### Feat
+
+- **dashboard**: monthly/yearly scope toggle on the Income & Expenses card (#332)
+
+### Fix
+
+- **dashboard**: pin recent-transactions date headers without a gap (#330)
+
+## v1.80.0 (2026-09-21)
+
+### Feat
+
+- **savings-goals**: take over the free cash that predates a goal as its opening balance (#329)
+
 ## v1.79.0 (2026-09-21)
 
 ### Feat

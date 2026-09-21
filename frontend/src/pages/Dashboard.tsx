@@ -24,7 +24,6 @@ import { IncomeBySourceCard } from "../components/dashboard/IncomeBySourceCard";
 import { IncomeExpensesCard } from "../components/dashboard/IncomeExpensesCard";
 import { NetWorthCard } from "../components/dashboard/NetWorthCard";
 import { CashFlowCard } from "../components/dashboard/CashFlowCard";
-import { CategoryBreakdownCard } from "../components/dashboard/CategoryBreakdownCard";
 import { RefundsCard } from "../components/dashboard/RefundsCard";
 import { EarlyRetirementCard } from "../components/dashboard/EarlyRetirementCard";
 import { Skeleton } from "../components/common/Skeleton";
@@ -458,7 +457,6 @@ export function Dashboard() {
     income_expenses: () => <IncomeExpensesCard />,
     net_worth: () => <NetWorthCard />,
     cash_flow: () => <CashFlowCard />,
-    category: () => <CategoryBreakdownCard />,
     refunds: () => <RefundsCard />,
     retirement: () => <EarlyRetirementCard />,
   };

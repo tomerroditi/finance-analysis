@@ -35,6 +35,34 @@ test.describe("DataFlow diagram", () => {
 
     const container = page.locator('[class*="cursor-grab"]').first();
     await expect(container).toBeVisible();
+
+    // The diagram auto-fits itself to the viewport ~120 ms after mount, which
+    // both settles the layout and — at the default 1280px window — shrinks the
+    // content to exactly the viewport width, leaving nothing to scroll. Two
+    // things follow, and this test needs both handled.
+    //
+    // First, wait the fit out. Dragging before it lands pans the still-oversized
+    // diagram, and the fit then clamps that scroll offset back to 0 — which
+    // reads as "the diagram scrolled after the button came up" and failed this
+    // test under load while passing in a fast isolated run.
+    //
+    // Second, zoom back in afterwards. Against a diagram that cannot scroll,
+    // every reading here is 0 and the assertions hold no matter what the pan
+    // handlers do — the test passed vacuously. Zooming in overflows the
+    // container again, so a released drag that kept tracking the cursor
+    // genuinely moves the scroll offset and genuinely fails.
+    // The fit button doubles as the zoom readout, so it says when the auto-fit
+    // has landed: it starts at 100% and the fit takes it below.
+    await expect(page.getByRole("button", { name: "Fit to screen" })).not.toHaveText(
+      "100%",
+    );
+    const overflow = () =>
+      container.evaluate((el) => el.scrollWidth - el.clientWidth);
+    for (let i = 0; i < 3; i++) {
+      await page.getByRole("button", { name: "Zoom in" }).click();
+    }
+    await expect.poll(overflow).toBeGreaterThan(100);
+
     const box = await container.boundingBox();
     if (!box) throw new Error("container not found");
 
@@ -60,6 +88,9 @@ test.describe("DataFlow diagram", () => {
       left: el.scrollLeft,
       top: el.scrollTop,
     }));
+
+    // The drag must actually have panned, or the comparison below is vacuous.
+    expect(scrollAfterDrag.left).toBeGreaterThan(0);
 
     expect(scrollAfterHover.left).toBe(scrollAfterDrag.left);
     expect(scrollAfterHover.top).toBe(scrollAfterDrag.top);

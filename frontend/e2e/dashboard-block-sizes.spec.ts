@@ -73,11 +73,27 @@ test.describe("Dashboard half-width blocks", () => {
    * a runner loaded enough for the page to still be settling through both
    * attempts.
    *
-   * Two consecutive agreeing samples of every card at once pins the
-   * measurements to a settled layout. It weakens no assertion — the geometry
-   * checked is the same, just no longer read mid-reflow.
+   * Two consecutive agreeing samples of every card at once was the first
+   * attempt at pinning this down, and it is not enough on its own: the cards
+   * arrive in waves, and the lull between two waves is longer than the sample
+   * gap. Measured on a warm dev server, the whole grid held still from 1.0 s
+   * to 1.5 s and then jumped again at 2.0 s — so a run that started sampling
+   * in that lull declared the layout settled while two more reflows were
+   * still to come. The same 144px row gutter came back on CI.
+   *
+   * What actually ends the movement is the last query landing, so wait for
+   * the network to go quiet first and let the sampling guard the reflow that
+   * follows it. Measured on the same page: the last card stops moving ~3 s
+   * in, `networkidle` lands ~5.8 s in — after every reflow, never before.
+   * This is the case the "avoid redundant networkidle" rule carves out, since
+   * what follows is a non-waiting geometry read. Nothing here polls on a
+   * timer (no `refetchInterval` in the app), so the network genuinely idles.
+   *
+   * It weakens no assertion — the geometry checked is the same, just no
+   * longer read mid-reflow.
    */
   async function waitForSettledCards(page: Page, ids: string[] = CARD_IDS) {
+    await page.waitForLoadState("networkidle");
     const sample = () =>
       page.evaluate(
         (cardIds) =>

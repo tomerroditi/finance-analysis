@@ -146,6 +146,8 @@ export function makeQueryKeys(demo: boolean) {
     savingsGoals: {
       all: () => ["savings-goals", demo] as const,
       freeCash: () => ["savings-goals", "free-cash", demo] as const,
+      freeCashBefore: (month: string, goalId?: number) =>
+        ["savings-goals", "free-cash", "before", month, goalId ?? "new", demo] as const,
       timeline: (months: number) =>
         ["savings-goals", "timeline", months, demo] as const,
       investments: (goalId?: number) =>
@@ -159,7 +161,6 @@ export function makeQueryKeys(demo: boolean) {
       overview: () => ["analytics", "overview", demo] as const,
       netWorthOverTime: () => ["analytics", "net-worth-over-time", demo] as const,
       debtPayments: () => ["analytics", "debt-payments-over-time", demo] as const,
-      byCategory: () => ["analytics", "by-category", demo] as const,
       sankey: () => ["analytics", "sankey", demo] as const,
       incomeExpensesOverTime: (includeProjects: boolean, excludePendingRefunds: boolean) =>
         ["analytics", "income-expenses-over-time", includeProjects, excludePendingRefunds, demo] as const,

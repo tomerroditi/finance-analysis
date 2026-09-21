@@ -54,6 +54,98 @@ class TestPlanRedeploy:
         """Verify only the repo-root poetry.lock re-syncs the venv."""
         assert prod.plan_redeploy(["tools/poetry.lock"]).sync_python_deps is False
 
+    def test_version_only_manifests_cost_nothing_but_a_restart(self):
+        """Verify a Commitizen bump commit is a bare restart.
+
+        Its whole frontend diff is the version string in package.json and
+        package-lock.json, which the bundle never reads.
+        """
+        plan = prod.plan_redeploy(
+            [
+                "CHANGELOG.md",
+                "build/installer_script.nsi",
+                "frontend/package.json",
+                "frontend/package-lock.json",
+                "pyproject.toml",
+            ],
+            version_only_paths=[
+                "frontend/package.json",
+                "frontend/package-lock.json",
+            ],
+        )
+        assert plan == prod.RedeployPlan(False, False, False)
+
+    def test_a_real_dependency_change_still_installs(self):
+        """Verify subtracting version-only paths can't mask a real npm install."""
+        plan = prod.plan_redeploy(
+            ["frontend/package.json", "frontend/package-lock.json"],
+            version_only_paths=["frontend/package.json"],
+        )
+        assert plan == prod.RedeployPlan(True, True, False)
+
+
+class TestVersionOnlyManifests:
+    """Tests for version_only_manifests() against this repository's history."""
+
+    @staticmethod
+    def _bump_commit() -> tuple[str, str]:
+        """Find a real ``bump:`` commit and its parent, or skip."""
+        found = prod.git(
+            "log", "--format=%H", "--grep=^bump: version", "-n", "1", check=False
+        )
+        sha = found.stdout.strip()
+        if found.returncode != 0 or not sha:
+            pytest.skip("no bump commit in this checkout's history")
+        parent = prod.git("rev-parse", f"{sha}^", check=False)
+        if parent.returncode != 0:
+            pytest.skip("bump commit has no parent in this checkout")
+        return parent.stdout.strip(), sha
+
+    def test_a_release_bump_is_recognised_as_version_only(self):
+        """Verify a real bump commit's npm manifests are both version-only.
+
+        This is the whole point: judged by path they look like a dependency
+        change, so every release used to pay a full `npm ci` plus bundle
+        build for two rewritten lines.
+        """
+        parent, sha = self._bump_commit()
+        paths = prod.changed_paths_between(parent, sha)
+
+        assert prod.version_only_manifests(parent, sha, paths) == {
+            "frontend/package.json",
+            "frontend/package-lock.json",
+        }
+        assert prod.plan_redeploy(
+            paths, prod.version_only_manifests(parent, sha, paths)
+        ) == prod.RedeployPlan(False, False, False)
+
+    def test_a_range_carrying_real_frontend_work_still_builds(self):
+        """Verify the merge a bump releases is unaffected by the subtraction."""
+        parent, sha = self._bump_commit()
+        grandparent = prod.git("rev-parse", f"{parent}^", check=False)
+        if grandparent.returncode != 0:
+            pytest.skip("not enough history in this checkout")
+        old = grandparent.stdout.strip()
+        paths = prod.changed_paths_between(old, sha)
+        if not any(p.startswith("frontend/src/") for p in paths):
+            pytest.skip("the released merge did not touch frontend sources")
+
+        plan = prod.plan_redeploy(paths, prod.version_only_manifests(old, sha, paths))
+        assert plan.build_frontend is True
+
+    def test_an_unreadable_commit_is_treated_as_a_real_change(self):
+        """Verify a range we can't inspect subtracts nothing."""
+        assert (
+            prod.version_only_manifests(
+                "0" * 40, "HEAD", ["frontend/package-lock.json"]
+            )
+            == set()
+        )
+
+    def test_untouched_manifests_are_never_considered(self):
+        """Verify only paths actually in the range can be subtracted."""
+        assert prod.version_only_manifests("HEAD", "HEAD", ["backend/main.py"]) == set()
+
 
 class TestChangedPathsBetween:
     """Tests for changed_paths_between()."""

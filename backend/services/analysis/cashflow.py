@@ -2,7 +2,7 @@
 Cash-flow aggregations for the analysis service.
 
 Provides the ``CashflowMixin`` with income/expense/debt-over-time series,
-income-by-source and expenses-by-category breakdowns, and the shared
+income-by-source and expenses-by-category-over-time breakdowns, and the shared
 income/investment/expense mask helpers. Mixed into ``AnalysisService``
 (see ``core.py``).
 """
@@ -66,6 +66,36 @@ class CashflowMixin:
             exclude_open=exclude_pending_refunds
         )
         return apply_refund_amount_adjustments(df, adjustments)
+
+    @staticmethod
+    def _filter_date_window(
+        df: pd.DataFrame, start: date | None, end: date | None
+    ) -> pd.DataFrame:
+        """
+        Keep only the rows whose ``date`` falls inside an inclusive window.
+
+        Parameters
+        ----------
+        df : pd.DataFrame
+            Frame carrying a ``date`` column.
+        start, end : date | None
+            Inclusive bounds. ``None`` means unbounded on that side, so both
+            ``None`` returns the frame untouched.
+
+        Returns
+        -------
+        pd.DataFrame
+            The rows inside the window.
+        """
+        if df.empty or (start is None and end is None):
+            return df
+        parsed = pd.to_datetime(df["date"])
+        mask = pd.Series(True, index=df.index)
+        if start is not None:
+            mask &= parsed >= pd.Timestamp(start)
+        if end is not None:
+            mask &= parsed <= pd.Timestamp(end)
+        return df[mask]
 
     def get_income_expenses_over_time(
         self,
@@ -409,60 +439,6 @@ class CashflowMixin:
             for month, row in pivot.iterrows()
         ]
 
-    def get_expenses_by_category(self, exclude_pending_refunds: bool = True):
-        """
-        Get expenses and refunds grouped by category.
-
-        Non-expense categories (Ignore, Salary, Other Income, Investments,
-        Liabilities) are excluded. Transactions with no category are grouped
-        as ``"Uncategorized"``. Categories with positive net amounts are treated
-        as refunds; those with negative net amounts are expenses.
-
-        A refund matched to its purchase is netted against that purchase (see
-        :meth:`_net_matched_refunds`), so it leaves the ``refunds`` bucket
-        entirely rather than showing up as money back on a category that no
-        longer carries the charge. What remains there is the unmatched
-        positive balance — a refund nobody linked to anything.
-
-        Parameters
-        ----------
-        exclude_pending_refunds : bool, optional
-            Passed to :meth:`_net_matched_refunds`. Defaults to True.
-
-        Returns
-        -------
-        dict
-            Dictionary with keys:
-
-            - ``expenses`` – list of ``{"category": str, "amount": float}`` dicts
-              (positive absolute values) for categories with net negative spend.
-            - ``refunds`` – list of ``{"category": str, "amount": float}`` dicts
-              for categories with net positive amounts (refunds exceed spend).
-        """
-        df = self.repo.get_itemized_transactions()
-
-        if df.empty:
-            return {"expenses": [], "refunds": []}
-
-        df = self._net_matched_refunds(df, exclude_pending_refunds)
-
-        expense_mask = ~df["category"].isin(NON_EXPENSE_CATEGORIES)
-        expenses = df[expense_mask].copy()
-        expenses["category"] = expenses["category"].fillna("Uncategorized")
-        grouped = expenses.groupby("category")["amount"].sum()
-        neg_grouped = grouped[grouped < 0].abs()
-        pos_grouped = grouped[grouped > 0]
-        return {
-            "expenses": [
-                {"category": cat, "amount": float(amt)}
-                for cat, amt in neg_grouped.items()
-            ],
-            "refunds": [
-                {"category": cat, "amount": float(amt)}
-                for cat, amt in pos_grouped.items()
-            ],
-        }
-
     def get_income_by_source_over_time(
         self, exclude_pending_refunds: bool = True
     ) -> list[dict]:
@@ -567,12 +543,7 @@ class CashflowMixin:
         if income_df.empty:
             return empty
 
-        parsed = pd.to_datetime(income_df["date"])
-        if start is not None:
-            income_df = income_df[parsed >= pd.Timestamp(start)]
-            parsed = pd.to_datetime(income_df["date"])
-        if end is not None:
-            income_df = income_df[parsed <= pd.Timestamp(end)]
+        income_df = self._filter_date_window(income_df, start, end)
         if income_df.empty:
             return empty
 

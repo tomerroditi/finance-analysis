@@ -704,7 +704,6 @@ export const analyticsApi = {
     api.get<{ month: string; amount: number; tags: Record<string, number> }[]>(
       "/analytics/debt-payments-over-time"
     ),
-  getByCategory: () => api.get("/analytics/by-category"),
   getExpensesByCategoryOverTime: (excludePendingRefunds = true) =>
     api.get<{ month: string; categories: Record<string, number> }[]>(
       "/analytics/expenses-by-category-over-time",
@@ -1242,6 +1241,12 @@ export interface SavingsGoalFreeCash {
   has_goals: boolean;
 }
 
+/** Free cash that existed when a goal starting in `month` began. */
+export interface SavingsGoalFreeCashBefore {
+  month: string;
+  free_cash: number;
+}
+
 /** An investment holding earmarked against a goal. */
 export interface SavingsGoalInvestment {
   id: number;
@@ -1293,6 +1298,11 @@ export const savingsGoalsApi = {
       dry_run: dryRun,
     }),
   getFreeCash: () => api.get<SavingsGoalFreeCash>("/savings-goals/free-cash"),
+  /** Leaves `goalId` out of the figure, so it can become that goal's opening balance. */
+  getFreeCashBefore: (month: string, goalId?: number) =>
+    api.get<SavingsGoalFreeCashBefore>("/savings-goals/free-cash/before", {
+      params: goalId ? { month, goal_id: goalId } : { month },
+    }),
   /** Per-month allocation history. `months: 0` asks for the whole timeline. */
   getTimeline: (months: number) =>
     api.get<SavingsGoalTimeline>("/savings-goals/timeline", {

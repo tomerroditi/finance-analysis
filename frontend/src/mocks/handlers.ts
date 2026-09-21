@@ -469,15 +469,6 @@ export const handlers = [
       { month: "2026-03", categories: { Food: 1200, Transport: 300 } },
     ]),
   ),
-  http.get("/api/analytics/by-category", () =>
-    HttpResponse.json({
-      expenses: [
-        { category: "Food", amount: -1200 },
-        { category: "Transport", amount: -300 },
-      ],
-      refunds: [],
-    }),
-  ),
   http.get("/api/analytics/sankey", () =>
     HttpResponse.json({
       nodes: [],

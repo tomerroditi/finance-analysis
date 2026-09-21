@@ -47,17 +47,6 @@ class TestAnalyticsRoutesErrors:
             with pytest.raises(RuntimeError, match="Computation error"):
                 test_client.get("/api/analytics/income-expenses-over-time")
 
-    def test_get_expenses_by_category_internal_error(self, test_client):
-        """Verify that RuntimeError propagates when category breakdown fails."""
-        with patch("backend.routes.analytics.AnalysisService") as mock_cls:
-            mock_svc = MagicMock()
-            mock_cls.return_value = mock_svc
-            mock_svc.get_expenses_by_category.side_effect = RuntimeError(
-                "Category aggregation failed"
-            )
-            with pytest.raises(RuntimeError, match="Category aggregation failed"):
-                test_client.get("/api/analytics/by-category")
-
     def test_get_net_worth_over_time_internal_error(self, test_client):
         """Verify that RuntimeError propagates when net worth computation fails."""
         with patch("backend.routes.analytics.AnalysisService") as mock_cls:
@@ -79,18 +68,6 @@ class TestAnalyticsRoutesErrors:
             )
             with pytest.raises(RuntimeError, match="Monthly expenses failed"):
                 test_client.get("/api/analytics/monthly-expenses")
-
-    def test_get_expenses_by_category_empty_returns_empty(self, test_client):
-        """Verify by-category endpoint returns the canonical dict shape with no data.
-
-        On an empty DB the endpoint must still return
-        ``{"expenses": [], "refunds": []}`` so the frontend can safely read
-        ``.expenses``/``.refunds`` (previously it returned a bare ``[]``).
-        """
-        response = test_client.get("/api/analytics/by-category")
-        assert response.status_code == 200
-        data = response.json()
-        assert data == {"expenses": [], "refunds": []}
 
     def test_get_net_balance_over_time_empty(self, test_client):
         """Verify net-balance-over-time returns empty list with no data."""

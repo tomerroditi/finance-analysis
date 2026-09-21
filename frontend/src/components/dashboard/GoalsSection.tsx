@@ -39,7 +39,7 @@ import {
 import { useQueryKeys } from "../../hooks/useQueryKeys";
 import { stackEnds, roundedStackShape } from "../charts/stackedBarShape";
 import { qkPrefix } from "../../services/queryKeys";
-import { useConfirm } from "../../context/DialogContext";
+import { useConfirm, useNotify } from "../../context/DialogContext";
 import { Modal } from "../common/Modal";
 import { Skeleton } from "../common/Skeleton";
 import { ChartTooltip } from "../charts/ChartTooltip";
@@ -89,6 +89,7 @@ export function GoalsSection() {
   const qk = useQueryKeys();
   const queryClient = useQueryClient();
   const confirm = useConfirm();
+  const notify = useNotify();
   const [editing, setEditing] = useState<SavingsGoal | "new" | null>(null);
   const [backing, setBacking] = useState<SavingsGoal | null>(null);
   const [redistributing, setRedistributing] = useState(false);
@@ -121,6 +122,49 @@ export function GoalsSection() {
     mutationFn: (goalIds: number[]) => savingsGoalsApi.reorder(goalIds),
     onSuccess: invalidate,
   });
+
+  const claimMutation = useMutation({
+    mutationFn: async ({ goal, amount, start }: { goal: SavingsGoal; amount: number; start: string }) => {
+      await savingsGoalsApi.update(goal.id, { opening_balance: amount });
+      // Same restate the editor runs: stored months were computed against the
+      // old opening balance, and replaying them would claw from the wrong goal.
+      await savingsGoalsApi.rebuild(start, false);
+    },
+    onSuccess: invalidate,
+  });
+
+  /** Offer the free cash that predates a goal as its opening balance. */
+  const claimFreeCash = async (goal: SavingsGoal) => {
+    const start = goal.start_month?.slice(0, 7) || currentMonthKey();
+    // The row can still hold the list from before a claim that just landed,
+    // so compare against the list as it stands (refetched if stale).
+    const [{ free_cash: amount }, goalsNow] = await Promise.all([
+      queryClient.fetchQuery({
+        queryKey: qk.savingsGoals.freeCashBefore(start, goal.id),
+        queryFn: async () => (await savingsGoalsApi.getFreeCashBefore(start, goal.id)).data,
+      }),
+      queryClient.fetchQuery({
+        queryKey: qk.savingsGoals.all(),
+        queryFn: async () => (await savingsGoalsApi.getAll()).data,
+      }),
+    ]);
+    const held = goalsNow.find((g) => g.id === goal.id)?.opening_balance ?? goal.opening_balance;
+    const month = monthKeyLabel(start);
+    if (Math.abs(amount - held) < 0.005) {
+      notify.info(t("dashboard.goals.claimNothing", { name: goal.name, month }));
+      return;
+    }
+    const ok = await confirm({
+      title: t("dashboard.goals.claimTitle"),
+      message: t("dashboard.goals.claimConfirm", {
+        name: goal.name,
+        amount: formatCurrency(amount),
+        month,
+      }),
+      confirmLabel: t("dashboard.goals.claimAction"),
+    });
+    if (ok) claimMutation.mutate({ goal, amount, start });
+  };
 
   const goals = data ?? [];
 
@@ -180,6 +224,7 @@ export function GoalsSection() {
               onMoveDown={() => move(index, 1)}
               onEdit={() => setEditing(goal)}
               onBack={() => setBacking(goal)}
+              onClaim={() => void claimFreeCash(goal)}
               onDelete={async () => {
                 const ok = await confirm({
                   title: t("common.deleteTitle"),
@@ -524,6 +569,7 @@ function GoalRow({
   onMoveDown,
   onEdit,
   onBack,
+  onClaim,
   onDelete,
 }: {
   goal: SavingsGoal;
@@ -534,6 +580,7 @@ function GoalRow({
   onMoveDown: () => void;
   onEdit: () => void;
   onBack: () => void;
+  onClaim: () => void;
   onDelete: () => void;
 }) {
   const { t } = useTranslation();
@@ -592,6 +639,17 @@ function GoalRow({
           >
             <Landmark size={14} />
           </button>
+          {/* A closed goal's history is frozen, so there is nothing to restate. */}
+          {!goal.is_closed && (
+            <button
+              onClick={onClaim}
+              aria-label={t("dashboard.goals.claimAriaLabel")}
+              title={t("dashboard.goals.claimAriaLabel")}
+              className="p-1.5 rounded-lg text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-light)] transition-colors"
+            >
+              <Wallet size={14} />
+            </button>
+          )}
           <button onClick={onEdit} aria-label={t("common.edit")} className="p-1.5 rounded-lg text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-light)] transition-colors">
             <Pencil size={14} />
           </button>
@@ -967,6 +1025,17 @@ function BackingRow({
   );
 }
 
+/** `YYYY-MM` for the current month — the start a goal gets when none is set. */
+function currentMonthKey(): string {
+  const today = new Date();
+  return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}`;
+}
+
+/** "January 2026" for a `YYYY-MM` key, parsed in local time. */
+function monthKeyLabel(month: string): string {
+  return formatMonthYear(new Date(`${month.slice(0, 7)}-01T00:00:00`));
+}
+
 function GoalEditorModal({ goal, onClose }: { goal: SavingsGoal | null; onClose: () => void }) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
@@ -976,10 +1045,30 @@ function GoalEditorModal({ goal, onClose }: { goal: SavingsGoal | null; onClose:
   const [monthlyCap, setMonthlyCap] = useState(goal?.monthly_cap != null ? String(goal.monthly_cap) : "");
   const [startMonth, setStartMonth] = useState(goal?.start_month ?? "");
   const [targetDate, setTargetDate] = useState(goal?.target_date ?? "");
+  const qk = useQueryKeys();
+
+  const effectiveStart = startMonth || currentMonthKey();
+  const startLabel = monthKeyLabel(effectiveStart);
+
+  const { data: freeBefore } = useQuery({
+    queryKey: qk.savingsGoals.freeCashBefore(effectiveStart, goal?.id),
+    queryFn: async () =>
+      (await savingsGoalsApi.getFreeCashBefore(effectiveStart, goal?.id)).data,
+  });
+
+  // Stored months keep their rows, so an opening balance that moves without a
+  // restate leaves history computed against the old pool — a later deficit
+  // month would then take the difference back out of the wrong goal.
+  const openingChanged = (Number(openingBalance) || 0) !== (goal?.opening_balance ?? 0);
 
   const save = useMutation({
-    mutationFn: (payload: SavingsGoalInput) =>
-      goal ? savingsGoalsApi.update(goal.id, payload) : savingsGoalsApi.create(payload),
+    mutationFn: async (payload: SavingsGoalInput) => {
+      const res = goal
+        ? await savingsGoalsApi.update(goal.id, payload)
+        : await savingsGoalsApi.create(payload);
+      if (openingChanged) await savingsGoalsApi.rebuild(effectiveStart, false);
+      return res;
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: qkPrefix.savingsGoals });
       onClose();
@@ -1048,6 +1137,25 @@ function GoalEditorModal({ goal, onClose }: { goal: SavingsGoal | null; onClose:
             <p className="text-[10px] text-[var(--text-muted)] mt-1">
               {t("dashboard.goals.openingHint")}
             </p>
+            {!!freeBefore && freeBefore.free_cash > 0 && (
+              <button
+                type="button"
+                data-testid="goal-opening-use-free-cash"
+                onClick={() => setOpeningBalance(String(freeBefore.free_cash))}
+                className="mt-1.5 inline-flex items-center gap-1.5 text-start text-xs font-medium text-[var(--primary)] hover:underline"
+              >
+                <Wallet size={12} className="shrink-0" />
+                {t("dashboard.goals.openingUseFreeCash", {
+                  amount: formatCurrency(freeBefore.free_cash),
+                  month: startLabel,
+                })}
+              </button>
+            )}
+            {!!goal && openingChanged && (
+              <p className="text-[10px] text-amber-400 mt-1">
+                {t("dashboard.goals.openingRestateHint", { month: startLabel })}
+              </p>
+            )}
           </div>
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">

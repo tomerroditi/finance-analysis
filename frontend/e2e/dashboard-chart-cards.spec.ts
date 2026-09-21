@@ -2,10 +2,10 @@ import { test, expect } from "@playwright/test";
 import { enableDemoMode, resetDemoData } from "./helpers";
 
 /**
- * The former single tabbed "Charts & analytics" panel is now four independent
- * dashboard cards. Income & Expenses + Net Worth ship visible; Cash Flow +
- * Categories ship hidden (opt-in) but — unlike beta cards — carry no Beta pill.
- * Each card is reorderable/hideable via Settings → Dashboard like any other.
+ * The former single tabbed "Charts & analytics" panel became independent
+ * dashboard cards. Income & Expenses + Net Worth ship visible; Cash Flow ships
+ * hidden (opt-in) but — unlike beta cards — carries no Beta pill. Each card is
+ * reorderable/hideable via Settings → Dashboard like any other.
  *
  * One dashboard load covers the default card set, the Hidden-cards badge
  * rules, and the opt-in flow — the cold dashboard boot is the expensive step.
@@ -41,13 +41,12 @@ test.describe("Dashboard per-chart cards", () => {
     await page.goto("/");
 
     // Income & Expenses and Net Worth render as separate cards by default;
-    // Cash Flow + Categories are opt-in: not rendered on the default dashboard.
+    // Cash Flow is opt-in: not rendered on the default dashboard.
     await expect(page.locator('[data-card-id="income_expenses"]')).toBeVisible({
       timeout: 45_000,
     });
     await expect(page.locator('[data-card-id="net_worth"]')).toBeVisible();
     await expect(page.locator('[data-card-id="cash_flow"]')).toHaveCount(0);
-    await expect(page.locator('[data-card-id="category"]')).toHaveCount(0);
 
     await page
       .getByRole("button", { name: /^Settings$/ })
