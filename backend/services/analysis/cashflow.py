@@ -67,6 +67,36 @@ class CashflowMixin:
         )
         return apply_refund_amount_adjustments(df, adjustments)
 
+    @staticmethod
+    def _filter_date_window(
+        df: pd.DataFrame, start: date | None, end: date | None
+    ) -> pd.DataFrame:
+        """
+        Keep only the rows whose ``date`` falls inside an inclusive window.
+
+        Parameters
+        ----------
+        df : pd.DataFrame
+            Frame carrying a ``date`` column.
+        start, end : date | None
+            Inclusive bounds. ``None`` means unbounded on that side, so both
+            ``None`` returns the frame untouched.
+
+        Returns
+        -------
+        pd.DataFrame
+            The rows inside the window.
+        """
+        if df.empty or (start is None and end is None):
+            return df
+        parsed = pd.to_datetime(df["date"])
+        mask = pd.Series(True, index=df.index)
+        if start is not None:
+            mask &= parsed >= pd.Timestamp(start)
+        if end is not None:
+            mask &= parsed <= pd.Timestamp(end)
+        return df[mask]
+
     def get_income_expenses_over_time(
         self,
         exclude_projects: bool = False,
@@ -409,9 +439,14 @@ class CashflowMixin:
             for month, row in pivot.iterrows()
         ]
 
-    def get_expenses_by_category(self, exclude_pending_refunds: bool = True):
+    def get_expenses_by_category(
+        self,
+        exclude_pending_refunds: bool = True,
+        start: date | None = None,
+        end: date | None = None,
+    ):
         """
-        Get expenses and refunds grouped by category.
+        Get expenses and refunds grouped by category, optionally over a window.
 
         Non-expense categories (Ignore, Salary, Other Income, Investments,
         Liabilities) are excluded. Transactions with no category are grouped
@@ -428,6 +463,11 @@ class CashflowMixin:
         ----------
         exclude_pending_refunds : bool, optional
             Passed to :meth:`_net_matched_refunds`. Defaults to True.
+        start, end : date | None, optional
+            Inclusive date bounds. ``None`` on both sides (the default) covers
+            all time. Refunds are matched to their purchase *before* the window
+            is applied, so a refund that landed outside it still cancels the
+            charge it repays instead of resurfacing as spend.
 
         Returns
         -------
@@ -445,6 +485,10 @@ class CashflowMixin:
             return {"expenses": [], "refunds": []}
 
         df = self._net_matched_refunds(df, exclude_pending_refunds)
+        df = self._filter_date_window(df, start, end)
+
+        if df.empty:
+            return {"expenses": [], "refunds": []}
 
         expense_mask = ~df["category"].isin(NON_EXPENSE_CATEGORIES)
         expenses = df[expense_mask].copy()
@@ -567,12 +611,7 @@ class CashflowMixin:
         if income_df.empty:
             return empty
 
-        parsed = pd.to_datetime(income_df["date"])
-        if start is not None:
-            income_df = income_df[parsed >= pd.Timestamp(start)]
-            parsed = pd.to_datetime(income_df["date"])
-        if end is not None:
-            income_df = income_df[parsed <= pd.Timestamp(end)]
+        income_df = self._filter_date_window(income_df, start, end)
         if income_df.empty:
             return empty
 

@@ -197,6 +197,16 @@
     "done": "Done",
     "incomeAndExpenses": "Income & Expenses",
     "categories": "Categories",
+    "categoryBreakdown": {
+      "range": {
+        "last1m": "Last month",
+        "last3m": "Last 3 months",
+        "year": "This year",
+        "last12m": "Last 12 months",
+        "all": "All time"
+      },
+      "emptyRange": "No expenses in this range."
+    },
     "avg3Months": "Avg 3 Months",
     "avg6Months": "Avg 6 Months",
     "avg12Months": "Avg 12 Months",

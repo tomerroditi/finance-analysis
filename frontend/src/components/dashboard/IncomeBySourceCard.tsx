@@ -8,6 +8,7 @@ import { useTranslation } from "react-i18next";
 import { formatCurrency, formatCompactCurrency } from "../../utils/numberFormatting";
 import { CHART_COLORS } from "../../utils/chartStyle";
 import { DonutChart } from "../charts/DonutChart";
+import { resolveRangePreset, type DateRange } from "../../utils/dateRanges";
 
 type RangePreset = "all" | "year" | "last12m" | "custom";
 
@@ -16,20 +17,11 @@ function resolveRange(
   preset: RangePreset,
   customStart: string,
   customEnd: string,
-): { start?: string; end?: string } {
-  if (preset === "all") return {};
-  const now = new Date();
-  const iso = (d: Date) => d.toISOString().slice(0, 10);
-  if (preset === "year") {
-    return { start: `${now.getFullYear()}-01-01`, end: iso(now) };
+): DateRange {
+  if (preset === "custom") {
+    return { start: customStart || undefined, end: customEnd || undefined };
   }
-  if (preset === "last12m") {
-    const start = new Date(now);
-    start.setMonth(start.getMonth() - 12);
-    return { start: iso(start), end: iso(now) };
-  }
-  // custom
-  return { start: customStart || undefined, end: customEnd || undefined };
+  return resolveRangePreset(preset);
 }
 
 export function IncomeBySourceCard() {

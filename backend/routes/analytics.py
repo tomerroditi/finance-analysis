@@ -158,6 +158,8 @@ def get_expenses_by_category_over_time(
 def get_expenses_by_category(
     db: Session = Depends(get_database),
     exclude_pending_refunds: bool = True,
+    start: date | None = Query(None),
+    end: date | None = Query(None),
 ):
     """Return expenses aggregated by category.
 
@@ -167,6 +169,8 @@ def get_expenses_by_category(
         If True, a purchase still awaiting its refund is left out. Refunds
         already matched to a purchase are netted against that purchase
         either way.
+    start, end : date | None
+        Inclusive ``YYYY-MM-DD`` bounds. Omit both for all-time.
 
     Returns
     -------
@@ -176,7 +180,9 @@ def get_expenses_by_category(
     """
     service = AnalysisService(db)
     return service.get_expenses_by_category(
-        exclude_pending_refunds=exclude_pending_refunds
+        exclude_pending_refunds=exclude_pending_refunds,
+        start=start,
+        end=end,
     )
 
 

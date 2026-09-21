@@ -1,5 +1,7 @@
 """Tests for AnalysisService functionality."""
 
+from datetime import date
+
 import pandas as pd
 import pytest
 
@@ -313,6 +315,54 @@ class TestAnalysisServiceCategories:
         assert "Investments" not in all_categories
         assert "Other Income" not in all_categories
         assert "Liabilities" not in all_categories
+
+    def test_get_expenses_by_category_window_narrows_to_its_months(
+        self, db_session, seed_base_transactions
+    ):
+        """A start/end window counts only the spend that landed inside it."""
+        service = AnalysisService(db_session)
+        result = service.get_expenses_by_category(
+            start=date(2024, 1, 1), end=date(2024, 1, 31)
+        )
+
+        expense_map = {e["category"]: e["amount"] for e in result["expenses"]}
+
+        # January only: Food CC(-150-80) + Cash(-15) = -245, against -870 all-time.
+        assert expense_map["Food"] == 245.0
+        assert expense_map["Transport"] == 70.0
+        assert expense_map["Entertainment"] == 40.0
+        assert expense_map["Home"] == 3000.0
+
+        # And the window really moves: "Other" is a one-off January charge, so
+        # February sees Food's February total and no Other at all.
+        february = service.get_expenses_by_category(
+            start=date(2024, 2, 1), end=date(2024, 2, 29)
+        )
+        feb_map = {e["category"]: e["amount"] for e in february["expenses"]}
+        assert feb_map["Food"] == 318.0
+        assert "Other" not in feb_map
+
+    def test_get_expenses_by_category_window_bounds_are_inclusive(
+        self, db_session, seed_base_transactions
+    ):
+        """Both bounds count: a window of one day keeps that day's charge."""
+        service = AnalysisService(db_session)
+        result = service.get_expenses_by_category(
+            start=date(2024, 1, 5), end=date(2024, 1, 5)
+        )
+
+        assert result["expenses"] == [{"category": "Food", "amount": 150.0}]
+
+    def test_get_expenses_by_category_window_without_data_is_empty(
+        self, db_session, seed_base_transactions
+    ):
+        """A window the history does not reach returns the canonical empty shape."""
+        service = AnalysisService(db_session)
+        result = service.get_expenses_by_category(
+            start=date(2025, 1, 1), end=date(2025, 12, 31)
+        )
+
+        assert result == {"expenses": [], "refunds": []}
 
     def test_get_expenses_by_category_empty(self, db_session):
         """Verify empty data returns the canonical dict shape, not a bare list.
@@ -1773,6 +1823,29 @@ class TestRefundNettingAcrossMonths:
         result = AnalysisService(db_session).get_expenses_by_category()
 
         assert {r["category"] for r in result["expenses"]} == {"Groceries"}
+        assert result["refunds"] == []
+
+    def test_by_category_nets_a_refund_that_landed_outside_the_window(self, db_session):
+        """A January charge repaid in March is gone from a January-only window.
+
+        Matching runs before the window is applied, so the refund cancels the
+        charge it repays even though it falls outside the months on screen —
+        otherwise narrowing the card to January would resurrect spend the
+        household got back.
+        """
+        self._seed(db_session, [
+            ("tv", "2024-01-10", -1000.0, "Electronics", None),
+            ("tv-refund", "2024-03-14", 1000.0, "Electronics", None),
+            ("milk", "2024-01-11", -30.0, "Groceries", None),
+        ])
+        uids = self._uids(db_session)
+        self._link(db_session, uids["tv"], uids["tv-refund"], 1000.0, 1000.0)
+
+        result = AnalysisService(db_session).get_expenses_by_category(
+            start=date(2024, 1, 1), end=date(2024, 1, 31)
+        )
+
+        assert result["expenses"] == [{"category": "Groceries", "amount": 30.0}]
         assert result["refunds"] == []
 
     def test_by_category_keeps_an_unmatched_refund_in_the_refunds_bucket(self, db_session):

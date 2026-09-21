@@ -197,6 +197,16 @@
     "done": "בוצע",
     "incomeAndExpenses": "הכנסות והוצאות",
     "categories": "קטגוריות",
+    "categoryBreakdown": {
+      "range": {
+        "last1m": "חודש אחרון",
+        "last3m": "3 חודשים אחרונים",
+        "year": "השנה",
+        "last12m": "12 חודשים אחרונים",
+        "all": "כל הזמן"
+      },
+      "emptyRange": "אין הוצאות בטווח הזה."
+    },
     "avg3Months": "ממוצע 3 חודשים",
     "avg6Months": "ממוצע 6 חודשים",
     "avg12Months": "ממוצע 12 חודשים",

@@ -1,40 +1,64 @@
+import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { TrendingDown, Tag } from "lucide-react";
 import { analyticsApi, taggingApi } from "../../services/api";
 import { useQueryKeys } from "../../hooks/useQueryKeys";
 import { useTranslation } from "react-i18next";
 import { formatCurrency } from "../../utils/numberFormatting";
+import { resolveRangePreset, type RangePreset } from "../../utils/dateRanges";
+
+/** Windows the breakdown can be read over, in the order the strip shows them. */
+const RANGE_PRESETS: RangePreset[] = ["last1m", "last3m", "year", "last12m", "all"];
 
 /** Category breakdown dashboard card (expenses + refunds, sorted, with share %). */
 export function CategoryBreakdownCard() {
   const { t } = useTranslation();
   const qk = useQueryKeys();
+  // All-time by default: the card has always shown the whole history, and a
+  // window is what the reader opts into.
+  const [preset, setPreset] = useState<RangePreset>("all");
+
+  const { start, end } = useMemo(() => resolveRangePreset(preset), [preset]);
 
   const { data: categoryData } = useQuery({
-    queryKey: qk.analytics.byCategory(),
-    queryFn: async () => (await analyticsApi.getByCategory()).data,
+    queryKey: qk.analytics.byCategory(start, end),
+    queryFn: async () => (await analyticsApi.getByCategory(start, end)).data,
   });
   const { data: categoryIcons } = useQuery({
     queryKey: qk.tagging.icons(),
     queryFn: async () => (await taggingApi.getIcons()).data,
   });
 
-  const expenses = categoryData?.expenses
-    ?.slice()
-    .sort((a: { amount: number }, b: { amount: number }) => b.amount - a.amount) || [];
-  const refunds = categoryData?.refunds
-    ?.slice()
-    .sort((a: { amount: number }, b: { amount: number }) => b.amount - a.amount) || [];
-  const totalExpenses = expenses.reduce((s: number, d: { amount: number }) => s + d.amount, 0);
-  const totalRefunds = refunds.reduce((s: number, d: { amount: number }) => s + d.amount, 0);
+  const expenses = categoryData?.expenses?.slice().sort((a, b) => b.amount - a.amount) || [];
+  const refunds = categoryData?.refunds?.slice().sort((a, b) => b.amount - a.amount) || [];
+  const totalExpenses = expenses.reduce((sum, d) => sum + d.amount, 0);
+  const totalRefunds = refunds.reduce((sum, d) => sum + d.amount, 0);
   const topCategory = expenses[0];
   const maxExpense = topCategory?.amount || 1;
   const maxRefund = refunds[0]?.amount || 1;
 
   return (
     <div className="bg-[var(--surface)] rounded-2xl border border-[var(--surface-light)] overflow-hidden flex flex-col">
-      <div className="px-3 md:px-6 pt-4 md:pt-5">
+      <div className="px-3 md:px-6 pt-4 md:pt-5 flex flex-col gap-3">
         <h2 className="text-sm md:text-base font-bold">{t("dashboard.categories")}</h2>
+        <div className="bg-[var(--surface-light)] rounded-xl overflow-hidden">
+          <div className="flex overflow-x-auto scrollbar-auto-hide gap-1 p-1">
+            {RANGE_PRESETS.map((key) => (
+              <button
+                key={key}
+                onClick={() => setPreset(key)}
+                aria-pressed={preset === key}
+                className={`shrink-0 whitespace-nowrap px-2 md:px-3 py-1 rounded-lg text-xs font-bold transition-all ${
+                  preset === key
+                    ? "bg-[var(--surface)] text-[var(--primary)] shadow-sm"
+                    : "text-[var(--text-muted)] hover:text-[var(--text-default)]"
+                }`}
+              >
+                {t(`dashboard.categoryBreakdown.range.${key}`)}
+              </button>
+            ))}
+          </div>
+        </div>
       </div>
       <div className="px-3 md:px-6 pb-4 md:pb-6 pt-4 min-h-[400px] md:h-[600px] overflow-y-auto flex flex-col">
         <div className="flex flex-col flex-1 min-h-0 space-y-5">
@@ -71,7 +95,7 @@ export function CategoryBreakdownCard() {
           <div>
             <p className="text-sm font-bold text-rose-400 uppercase tracking-wider mb-3">{t("dashboard.expenses")}</p>
             <div className="space-y-1.5 max-h-[350px] overflow-y-auto pe-1">
-              {expenses.map((d: { category: string; amount: number }, i: number) => {
+              {expenses.map((d, i) => {
                 const pct = totalExpenses > 0 ? (d.amount / totalExpenses) * 100 : 0;
                 const barWidth = (d.amount / maxExpense) * 100;
                 const icon = categoryIcons?.[d.category] ?? "";
@@ -91,7 +115,11 @@ export function CategoryBreakdownCard() {
                 );
               })}
               {expenses.length === 0 && (
-                <p className="text-[var(--text-muted)] text-sm py-4 text-center">{t("dashboard.noExpenseData")}</p>
+                <p className="text-[var(--text-muted)] text-sm py-4 text-center">
+                  {preset === "all"
+                    ? t("dashboard.noExpenseData")
+                    : t("dashboard.categoryBreakdown.emptyRange")}
+                </p>
               )}
             </div>
           </div>
@@ -100,7 +128,7 @@ export function CategoryBreakdownCard() {
             <div>
               <p className="text-sm font-bold text-emerald-400 uppercase tracking-wider mb-3">{t("dashboard.refunds")}</p>
               <div className="space-y-1.5 max-h-[200px] overflow-y-auto pe-1">
-                {refunds.map((d: { category: string; amount: number }, i: number) => {
+                {refunds.map((d, i) => {
                   const pct = totalRefunds > 0 ? (d.amount / totalRefunds) * 100 : 0;
                   const barWidth = (d.amount / maxRefund) * 100;
                   const icon = categoryIcons?.[d.category] ?? "";
