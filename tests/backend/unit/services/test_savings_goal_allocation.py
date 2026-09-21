@@ -707,6 +707,55 @@ class TestFreeCashBefore:
         assert goal["clawed_back"] == 4000
         assert goal["funded"] == 5000 + 3000 - 4000
 
+    def test_an_opening_balance_leaves_the_pool_when_its_goal_starts(
+        self, db_session, service
+    ):
+        """A later goal's opening balance cannot make an earlier deficit claw back.
+
+        It used to leave the pool when the *earliest* goal started, so the
+        pool looked empty months before that money was actually earmarked and
+        the deficit in between was taken out of the earlier goal instead.
+        """
+        early, deficit, late = _month_str(3), _month_str(2), _month_str(1)
+        _seed_free_cash(db_session, 5000)
+        _seed_surplus(db_session, early, income=10000, expenses=8000)
+        _seed_surplus(db_session, deficit, income=5000, expenses=9000)
+        service.create(name="Early", target_amount=10000, priority=0, start_month=early)
+        service.create(
+            name="Late", target_amount=10000, opening_balance=3000, priority=1,
+            start_month=late,
+        )
+
+        goal = next(g for g in service.get_all() if g["name"] == "Early")
+        assert goal["clawed_back"] == 0
+        assert goal["funded"] == 2000
+
+    def test_claiming_does_not_move_the_figure_it_claimed(self, db_session, service):
+        """With an earlier goal in place, the figure is the same before and after a claim."""
+        early, deficit, start = _month_str(4), _month_str(3), _month_str(2)
+        _seed_free_cash(db_session, 5000)
+        _seed_surplus(db_session, deficit, income=5000, expenses=9000)
+        service.create(
+            name="Early", target_amount=10000, opening_balance=500, priority=0,
+            start_month=early,
+        )
+        goal_id = next(
+            g["id"]
+            for g in service.create(
+                name="Claim", target_amount=50000, priority=1, start_month=start
+            )
+            if g["name"] == "Claim"
+        )
+
+        claim = service.get_free_cash_before(start, goal_id)["free_cash"]
+        service.update(goal_id, opening_balance=claim)
+        service.rebuild(from_month=start)
+
+        assert claim == 500
+        assert service.get_free_cash_before(start, goal_id)["free_cash"] == claim
+        early_goal = next(g for g in service.get_all() if g["name"] == "Early")
+        assert early_goal["clawed_back"] == 0
+
     def test_rejects_a_malformed_month(self, service):
         """An unparseable month is a validation error, not a silent zero."""
         with pytest.raises(ValidationException):

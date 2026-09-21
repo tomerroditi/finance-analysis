@@ -376,24 +376,43 @@ test.describe("Savings goals", () => {
       "demo data should leave free cash before the goal starts",
     ).toBeGreaterThan(0);
 
+    const openingBalance = async () =>
+      (await (await ctx.get(`${API_BASE}/savings-goals/`)).json()).find(
+        (g: { id: number }) => g.id === goal.id,
+      ).opening_balance;
+
     await openDashboardWithGoals(page);
     const row = goalRow(page, "E2E Claim Goal");
     await expect(row).toBeVisible({ timeout: 30_000 });
-    await row.getByRole("button", { name: "Edit", exact: true }).click();
+    const claimButton = row.getByRole("button", {
+      name: /earmark the free cash from before/i,
+    });
 
+    // From the card: a confirm names the amount, then applies it.
+    await claimButton.click();
+    const confirmDialog = page.getByRole("alertdialog");
+    await expect(confirmDialog.getByText(/opening balance to/i)).toBeVisible();
+    await confirmDialog.getByRole("button", { name: "Earmark", exact: true }).click();
+    await expect(confirmDialog).toHaveCount(0);
+    await expect.poll(openingBalance).toBeCloseTo(claim.free_cash, 2);
+
+    // Asking again straight away changes nothing and says so — even before
+    // the post-write refetch has repainted the row.
+    await claimButton.click();
+    await expect(page.getByText(/already holds all the free cash/i)).toBeVisible();
+
+    // From the editor: the same amount, one click away from a cleared field.
+    await row.getByRole("button", { name: "Edit", exact: true }).click();
     const dialog = page.getByRole("dialog");
+    await dialog.getByLabel("Already saved").fill("0");
+    // Moving the opening balance restates history, and the editor says so.
+    await expect(dialog.getByText(/recalculates goal allocations/i)).toBeVisible();
     await dialog.getByTestId("goal-opening-use-free-cash").click();
     await expect(dialog.getByLabel("Already saved")).toHaveValue(
       String(claim.free_cash),
     );
-    // Moving the opening balance restates history, and the editor says so.
-    await expect(dialog.getByText(/recalculates goal allocations/i)).toBeVisible();
     await dialog.getByRole("button", { name: "Save", exact: true }).click();
     await expect(dialog).toHaveCount(0);
-
-    const saved = (
-      await (await ctx.get(`${API_BASE}/savings-goals/`)).json()
-    ).find((g: { id: number }) => g.id === goal.id);
-    expect(saved.opening_balance).toBeCloseTo(claim.free_cash, 2);
+    expect(await openingBalance()).toBeCloseTo(claim.free_cash, 2);
   });
 });
