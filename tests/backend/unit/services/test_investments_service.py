@@ -284,6 +284,43 @@ class TestInvestmentsServiceCalculations:
         assert overview["portfolio_roi"] == 0.0
         assert overview["allocation"] == []
 
+    def test_get_portfolio_overview_roi_counts_withdrawals_as_returned(self, db_session):
+        """Verify partial withdrawals from an open investment don't read as a loss.
+
+        Deposit 1000, withdraw 400, 600 left: nothing gained or lost, so the
+        portfolio ROI is 0% — matching the investment's own ROI — not
+        600 / 1000 - 1 = -40%.
+        """
+        service = InvestmentsService(db_session)
+        service.create_investment(
+            category="Investments",
+            tag="Broker",
+            type_="brokerage_account",
+            name="Broker",
+            interest_rate_type="variable",
+        )
+        for i, (day, amount) in enumerate([("2024-01-01", -1000.0), ("2024-06-01", 400.0)]):
+            db_session.add(ManualInvestmentTransaction(
+                id=f"roi_txn_{i}",
+                date=day,
+                provider="manual_investments",
+                account_name="Broker",
+                description="flow",
+                amount=amount,
+                category="Investments",
+                tag="Broker",
+                source="manual_investment_transactions",
+                type="normal",
+            ))
+        db_session.commit()
+
+        overview = service.get_portfolio_overview()
+
+        assert overview["total_value"] == 600.0
+        assert overview["total_profit"] == 0.0
+        assert overview["portfolio_roi"] == pytest.approx(0.0)
+        assert overview["allocation"][0]["roi"] == pytest.approx(0.0)
+
     def test_get_portfolio_balance_history_active_only(
         self, db_session, seed_investments
     ):
