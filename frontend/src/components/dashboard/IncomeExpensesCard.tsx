@@ -48,6 +48,18 @@ const OVER_SCALE_HATCH =
 const DEFAULT_VISIBLE_PERIODS = 12;
 
 /**
+ * Ledger grid: period label, income bar, expense bar, net.
+ *
+ * The two fixed columns are sized to their own widest content and no wider —
+ * a bar grows toward the label beside it, so every spare pixel in the label
+ * column reads as a gap between the bar's tip and the text it belongs to.
+ * 56px fits "Sep '26" at text-xs/bold, 88px fits a six-figure net with its
+ * sign and ₪. Both grids that use this (header + rows) must share it or the
+ * column headings drift off their columns.
+ */
+const LEDGER_COLUMNS = "56px 1fr 1fr 88px";
+
+/**
  * What one KPI summary card shows: a headline figure with its caption, up to
  * two secondary figures, and the baseline its trend chip measures against.
  * Both scopes fill the same shape — monthly with rolling averages, yearly
@@ -467,8 +479,8 @@ function LedgerView({
   return (
     <div className="min-w-[300px]">
       <div
-        className="grid gap-3 px-1 pb-2 text-[10px] font-bold uppercase tracking-wide text-[var(--text-muted)]"
-        style={{ gridTemplateColumns: "60px 1fr 1fr 92px" }}
+        className="grid gap-1.5 px-1 pb-2 text-[10px] font-bold uppercase tracking-wide text-[var(--text-muted)]"
+        style={{ gridTemplateColumns: `${LEDGER_COLUMNS}` }}
       >
         <div>{scope === "yearly" ? t("dashboard.ledgerYear") : t("dashboard.ledgerMonth")}</div>
         <div className="text-end">{t("dashboard.income")}</div>
@@ -484,8 +496,8 @@ function LedgerView({
             key={d.month}
             data-testid="ledger-row"
             data-month={d.month}
-            className={`grid gap-3 items-center px-1 py-1.5 rounded-lg ${isCurrent ? "bg-[var(--primary)]/10" : ""}`}
-            style={{ gridTemplateColumns: "60px 1fr 1fr 92px" }}
+            className={`grid gap-1.5 items-center px-1 py-1.5 rounded-lg ${isCurrent ? "bg-[var(--primary)]/10" : ""}`}
+            style={{ gridTemplateColumns: `${LEDGER_COLUMNS}` }}
           >
             <div className="text-xs font-bold text-[var(--text-muted)] whitespace-nowrap">
               {formatPeriodLabel(d.month)}
