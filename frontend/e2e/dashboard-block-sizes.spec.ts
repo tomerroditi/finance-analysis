@@ -73,6 +73,7 @@ test.describe("Dashboard half-width blocks", () => {
       "budget",
       "recent",
       "recurring",
+      "goals",
       "heatmap",
       "income_by_source",
       "income_expenses",
@@ -96,7 +97,7 @@ test.describe("Dashboard half-width blocks", () => {
     // the wide gutter nor a collapse to zero slips through.
     const GUTTER = 6;
     const columnGutter = boxes.recent.x - (boxes.budget.x + boxes.budget.width);
-    const rowGutter = boxes.heatmap.y - (boxes.budget.y + boxes.budget.height);
+    const rowGutter = boxes.recurring.y - (boxes.budget.y + boxes.budget.height);
     expect(
       columnGutter,
       "column gutter between paired half cards",
@@ -120,14 +121,16 @@ test.describe("Dashboard half-width blocks", () => {
 
     // Two half cards sharing a row are the same height (the taller of the two).
     expect(Math.abs(boxes.budget.height - boxes.recent.height)).toBeLessThan(2);
-    // Second row: `recurring` + `heatmap`. `recurring` graduated out of beta
-    // into the default layout between `recent` and `heatmap`, which is what
-    // makes this the pair — it used to be `heatmap` + `income_by_source`.
-    expect(Math.abs(boxes.recurring.y - boxes.heatmap.y)).toBeLessThan(4);
-    expect(boxes.recurring.x).toBeLessThan(boxes.heatmap.x);
-    expect(
-      Math.abs(boxes.recurring.height - boxes.heatmap.height),
-    ).toBeLessThan(2);
+    // Second row: `recurring` + `goals`. Both graduated out of beta into the
+    // default layout between `recent` and `heatmap`, each shifting this pair
+    // along — it was `heatmap` + `income_by_source`, then `recurring` +
+    // `heatmap`, and `heatmap` now pairs on the row below.
+    expect(Math.abs(boxes.recurring.y - boxes.goals.y)).toBeLessThan(4);
+    expect(boxes.recurring.x).toBeLessThan(boxes.goals.x);
+    expect(Math.abs(boxes.recurring.height - boxes.goals.height)).toBeLessThan(
+      2,
+    );
+    expect(Math.abs(boxes.heatmap.y - boxes.income_by_source.y)).toBeLessThan(4);
 
     // Every block enables internal scrolling.
     const allOverflows = await page

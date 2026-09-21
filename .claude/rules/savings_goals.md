@@ -236,7 +236,12 @@ not closed.
   y-scales on purpose: a monthly flow and a standing balance do not share a
   scale, and the pool is usually orders of magnitude larger than a month's
   allocation. Series colour is keyed by goal **id**, not by priority, so
-  reordering the waterfall never repaints the chart.
+  reordering the waterfall never repaints the chart. Only the outer segment of
+  a month's stack is rounded (`goalHistoryStacks.ts`) — rounding every segment
+  renders a column as a string of beads — and the pool panel's y-axis is a
+  silent gutter: its domain is fitted to the range so month-to-month movement
+  is visible, fitted bounds make tick values nobody can read, and the gutter
+  still has to be there for both panels to sit on the same months.
 - **Monthly budget** (`SavingsGoalsBudgetSection.tsx`) — what each goal
   received that month, below the ledger rows. A deficit month reads in
   reverse: an amber banner explains the clawback and the per-goal rows go

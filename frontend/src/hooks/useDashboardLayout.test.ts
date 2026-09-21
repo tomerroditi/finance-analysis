@@ -82,6 +82,37 @@ describe("v3 -> v4 graduation of the recurring card out of beta", () => {
   });
 });
 
+describe("v4 -> v5 graduation of the savings-goals card out of beta", () => {
+  it("ships it visible and unbadged on a fresh layout", () => {
+    const { order, hidden } = normalize({});
+    expect(order).toContain("goals");
+    expect(hidden).not.toContain("goals");
+    expect(isBetaCard("goals")).toBe(false);
+  });
+
+  it("un-hides it for a stored layout that hid it under the beta policy", () => {
+    const { order, hidden } = normalize({
+      v: 4,
+      order: ["budget", "recent"],
+      hidden: ["goals", "forecast"],
+    });
+    expect(order).toContain("goals");
+    expect(hidden).not.toContain("goals");
+    // Only this card graduated; the remaining beta cards stay hidden.
+    expect(hidden).toContain("forecast");
+  });
+
+  it("leaves a v5 layout that hides it alone", () => {
+    const { order, hidden } = normalize({
+      v: 5,
+      order: ["budget"],
+      hidden: ["goals"],
+    });
+    expect(hidden).toContain("goals");
+    expect(order).not.toContain("goals");
+  });
+});
+
 describe("v2 -> v3 migration of the old 'charts' card", () => {
   it("replaces a VISIBLE charts card with income_expenses + net_worth, hiding the rest", () => {
     const { order, hidden } = normalize({ v: 2, order: ["budget", "charts", "recent"], hidden: [] });

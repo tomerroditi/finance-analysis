@@ -19,9 +19,11 @@ import {
 import {
   ResponsiveContainer,
   BarChart,
-  AreaChart,
+  LineChart,
   Bar,
-  Area,
+  Line,
+  Rectangle,
+  ReferenceLine,
   XAxis,
   YAxis,
   Tooltip,
@@ -36,13 +38,17 @@ import {
   type SavingsGoalInvestment,
 } from "../../services/api";
 import { useQueryKeys } from "../../hooks/useQueryKeys";
+import {
+  stackEnds,
+  segmentRadius,
+  type CornerRadii,
+} from "./goalHistoryStacks";
 import { qkPrefix } from "../../services/queryKeys";
 import { useConfirm } from "../../context/DialogContext";
 import { Modal } from "../common/Modal";
 import { Skeleton } from "../common/Skeleton";
 import { ChartTooltip } from "../charts/ChartTooltip";
 import { ChartLegend } from "../charts/ChartLegend";
-import { AreaGradientDef } from "../charts/AreaGradientDef";
 import { formatCurrency } from "../../utils/numberFormatting";
 import {
   formatMonthCompact,
@@ -53,6 +59,7 @@ import {
   CHART_COLORS,
   CHART_TEXT_COLOR,
   formatAxisNumber,
+  hexToRgba,
 } from "../../utils/chartStyle";
 
 /**
@@ -61,6 +68,9 @@ import {
  * belongs to one.
  */
 const FREE_CASH_COLOR = CHART_TEXT_COLOR;
+
+/** Faint rule for the zero line — present enough to read against, no more. */
+const GRID_COLOR = "rgba(148, 163, 184, 0.25)";
 
 /**
  * Dashboard savings-goals panel.
@@ -306,11 +316,20 @@ function AllocationHistory() {
   const series = (data?.goals ?? []).filter((goal) =>
     rows.some((row) => row[`g${goal.id}`] !== undefined && row[`g${goal.id}`] !== 0),
   );
+  const keys = series.map((goal) => `g${goal.id}`);
+  // Which segment sits at each end of a month's stack, so only the outer
+  // corners are rounded and the column reads as one shape rather than a
+  // string of beads.
+  const ends = stackEnds(rows, keys);
+  const hasClawback = rows.some((row) =>
+    keys.some((key) => typeof row[key] === "number" && (row[key] as number) < 0),
+  );
 
   const tooltip = (
     <ChartTooltip labelFormatter={(m) => formatMonthYear(monthDate(String(m)))} />
   );
   const hasMoreHistory = (data?.total_months ?? 0) > Math.max(...HISTORY_RANGES);
+  const latestPool = data?.months?.at(-1)?.free_cash;
 
   return (
     <div
@@ -345,76 +364,192 @@ function AllocationHistory() {
 
       {isLoading ? (
         <Skeleton variant="chart" className="h-40" />
-      ) : series.length === 0 && rows.length === 0 ? (
+      ) : rows.length === 0 ? (
         <p className="text-[10px] md:text-xs text-[var(--text-muted)] py-4 text-center">
           {t("dashboard.goals.historyEmpty")}
         </p>
       ) : (
-        <div data-testid="goals-history-chart">
-          <div className="h-36 md:h-44">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={rows} margin={{ top: 4, bottom: 0, left: 0, right: 8 }}>
-                <XAxis dataKey="month" hide />
-                <YAxis {...AXIS_DEFAULTS} tickFormatter={formatAxisNumber} width={44} />
-                <Tooltip cursor={false} content={tooltip} />
-                <Legend content={<ChartLegend fontSize={10} />} />
-                {series.map((goal) => (
-                  <Bar
-                    key={goal.id}
-                    dataKey={`g${goal.id}`}
-                    name={goal.name}
-                    stackId="allocations"
-                    fill={palette.get(goal.id)}
-                    // A gap in the surface colour keeps adjacent segments of
-                    // one stack legible instead of fusing into one block. On a
-                    // long window the bars are only a few pixels wide, where
-                    // the same gap would eat the segment it separates.
-                    stroke="var(--surface)"
-                    strokeWidth={rows.length > 18 ? 0 : 2}
-                    maxBarSize={48}
-                    isAnimationActive={false}
+        <div
+          className="rounded-xl border border-[var(--surface-light)] bg-[var(--surface-light)]/20 p-3"
+          data-testid="goals-history-chart"
+        >
+          {series.length === 0 ? (
+            // Goals exist but nothing has reached them yet. The bar panel
+            // would be an empty axis, so it is left out — the pool below is
+            // still worth showing, since it is where the money went instead.
+            <p className="text-[10px] md:text-xs text-[var(--text-muted)] py-2 text-center">
+              {t("dashboard.goals.historyEmpty")}
+            </p>
+          ) : (
+            <div className="h-40 md:h-48">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart
+                  data={rows}
+                  margin={{ top: 4, bottom: 0, left: 0, right: 4 }}
+                  barCategoryGap="22%"
+                >
+                  <defs>
+                    {series.map((goal) => (
+                      <linearGradient
+                        key={goal.id}
+                        id={`goal-fill-${goal.id}`}
+                        x1="0"
+                        y1="0"
+                        x2="0"
+                        y2="1"
+                      >
+                        <stop
+                          offset="0%"
+                          stopColor={hexToRgba(palette.get(goal.id)!, 0.95)}
+                        />
+                        <stop
+                          offset="100%"
+                          stopColor={hexToRgba(palette.get(goal.id)!, 0.55)}
+                        />
+                      </linearGradient>
+                    ))}
+                  </defs>
+                  <XAxis dataKey="month" hide />
+                  <YAxis
+                    {...AXIS_DEFAULTS}
+                    tickFormatter={formatAxisNumber}
+                    tickCount={4}
+                    width={44}
                   />
-                ))}
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
+                  {/* Only drawn when a deficit actually pulled a bar under the
+                      line — with nothing below it, the axis is the baseline. */}
+                  {hasClawback && (
+                    <ReferenceLine y={0} stroke={GRID_COLOR} strokeWidth={1} />
+                )}
+                  <Tooltip
+                    cursor={{ fill: "rgba(148, 163, 184, 0.08)", radius: 6 }}
+                    content={tooltip}
+                  />
+                  <Legend content={<ChartLegend fontSize={10} />} />
+                  {series.map((goal) => (
+                    <Bar
+                      key={goal.id}
+                      dataKey={`g${goal.id}`}
+                      name={goal.name}
+                      stackId="allocations"
+                      // The legend swatch reads the flat colour; the bars
+                      // themselves get the gradient defined above.
+                      fill={palette.get(goal.id)}
+                      maxBarSize={30}
+                      // The gradient goes on the drawn segment rather than on
+                      // the series, so the legend swatch keeps a flat colour it
+                      // can actually paint (a `url(#…)` fill renders as nothing
+                      // in a CSS background).
+                      shape={(props: SegmentProps) => (
+                        <StackSegment
+                          {...props}
+                          fill={`url(#goal-fill-${goal.id})`}
+                          radius={segmentRadius(ends, props.payload, `g${goal.id}`)}
+                        />
+                    )}
+                      isAnimationActive={false}
+                    />
+                  ))}
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          )}
 
           {/* The pool gets its own panel below, on the same months: it is the
               buffer a deficit drains before the engine reaches into a goal, so
-              seeing it flat at zero explains a clawback the bars alone can't. */}
-          <p className="text-[10px] md:text-xs text-[var(--text-muted)] mt-2 mb-1">
-            {t("dashboard.goals.historyFreeCash")}
-          </p>
-          <div className="h-16 md:h-20">
+              seeing it bottom out explains a clawback the bars alone can't. */}
+          <div className="flex items-baseline justify-between gap-2 mt-3 mb-1">
+            <p className="text-[10px] md:text-xs text-[var(--text-muted)]">
+              {t("dashboard.goals.historyFreeCash")}
+            </p>
+            {latestPool !== undefined && (
+              <span className="text-[10px] md:text-xs font-semibold tabular-nums">
+                {formatCurrency(latestPool)}
+              </span>
+            )}
+          </div>
+          <div className="h-14 md:h-16">
             <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={rows} margin={{ top: 4, bottom: 0, left: 0, right: 8 }}>
-                <AreaGradientDef id="goals-free-cash" color={FREE_CASH_COLOR} />
+              <LineChart data={rows} margin={{ top: 4, bottom: 0, left: 0, right: 4 }}>
                 <XAxis
                   dataKey="month"
                   {...AXIS_DEFAULTS}
                   tickFormatter={formatMonthCompact}
                 />
-                <YAxis {...AXIS_DEFAULTS} tickFormatter={formatAxisNumber} width={44} />
+                {/* A balance, not a magnitude, so the domain fits the range
+                    to show month-to-month movement (snapping to zero only
+                    when the pool actually ran down to it — the one level here
+                    that means something). Fitted bounds make for ugly tick
+                    values, so the axis carries none: it reserves the bar
+                    chart's gutter so both panels sit on the same months, and
+                    the figures come from the caption and the tooltip. */}
+                <YAxis
+                  axisLine={false}
+                  tickLine={false}
+                  tick={false}
+                  domain={[
+                    (min: number) => Math.max(0, min * 0.95),
+                    (max: number) => max * 1.05,
+                  ]}
+                  width={44}
+                />
                 <Tooltip content={tooltip} />
-                <Area
+                <Line
                   dataKey="free_cash"
                   name={t("dashboard.goals.freeCash")}
                   type="monotone"
                   stroke={FREE_CASH_COLOR}
                   strokeWidth={2}
-                  fill="url(#goals-free-cash)"
+                  dot={false}
+                  activeDot={{ r: 3, strokeWidth: 0 }}
                   isAnimationActive={false}
                 />
-              </AreaChart>
+              </LineChart>
             </ResponsiveContainer>
           </div>
-
-          <p className="mt-2 text-[10px] text-[var(--text-muted)]">
-            {t("dashboard.goals.historyHint")}
-          </p>
         </div>
       )}
+
+      <p className="mt-2 text-[10px] text-[var(--text-muted)]">
+        {t("dashboard.goals.historyHint")}
+      </p>
     </div>
+  );
+}
+
+/** The geometry Recharts hands a bar's custom shape. */
+interface SegmentProps {
+  x?: number;
+  y?: number;
+  width?: number;
+  height?: number;
+  payload?: Record<string, number | string>;
+}
+
+/** One segment of a stacked column, drawn with the radii it was given. */
+function StackSegment({
+  x = 0,
+  y = 0,
+  width = 0,
+  height = 0,
+  fill,
+  radius,
+}: SegmentProps & { fill: string; radius: CornerRadii }) {
+  if (width <= 0 || height === 0) return null;
+  // A stack segment can arrive shorter than its own corner radius (a small
+  // allocation beside a large one); clamping keeps the rounding from
+  // inverting the rectangle into a sliver.
+  const limit = Math.min(width / 2, Math.abs(height));
+  const clamped = radius.map((r) => Math.min(r, limit)) as CornerRadii;
+  return (
+    <Rectangle
+      x={x}
+      y={y}
+      width={width}
+      height={height}
+      fill={fill}
+      radius={clamped}
+    />
   );
 }
 

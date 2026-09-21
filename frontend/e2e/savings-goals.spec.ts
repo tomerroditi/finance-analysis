@@ -8,10 +8,10 @@ import {
 import { enableDemoMode, API_BASE } from "./helpers";
 
 /**
- * The Goals card is a "beta" dashboard widget, hidden by default
- * (useDashboardLayout.ts). Make it visible by seeding the layout in
- * localStorage (key "fa.dashboard.layout", version 2 to skip the
- * beta-hide migration) before the dashboard renders, then reload.
+ * The Goals card is default-visible since layout v5, but this spec asserts on
+ * a card near the top of the page, so the layout is still seeded explicitly:
+ * it pins the card first and keeps the rest of the dashboard out of the way,
+ * which is what keeps the assertions below independent of the default order.
  */
 async function openDashboardWithGoals(page: Page) {
   await page.goto("about:blank");
@@ -21,7 +21,7 @@ async function openDashboardWithGoals(page: Page) {
     localStorage.setItem(
       "fa.dashboard.layout",
       JSON.stringify({
-        v: 2,
+        v: 5,
         order: ["goals", "budget", "recent"],
         hidden: [],
       }),

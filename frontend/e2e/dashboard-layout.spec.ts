@@ -4,8 +4,7 @@ import { enableDemoMode, resetDemoData } from "./helpers";
 /**
  * Customizable dashboard layout: the Settings → Dashboard tab lets users
  * reorder and hide cards; the KPI header stays pinned. Beta cards (forecast,
- * insights, goals) ship hidden by default. Persistence is
- * localStorage-backed.
+ * insights) ship hidden by default. Persistence is localStorage-backed.
  */
 test.describe("Dashboard layout customization", () => {
   // Restore pristine demo data before this file runs. The `mutating`

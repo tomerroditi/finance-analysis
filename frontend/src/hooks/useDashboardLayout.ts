@@ -15,7 +15,7 @@ import { useCallback, useSyncExternalStore } from "react";
 const STORAGE_KEY = "fa.dashboard.layout";
 // Bump when the default visibility policy changes so a one-time migration can
 // run against older stored layouts (see `normalize`).
-const LAYOUT_VERSION = 4;
+const LAYOUT_VERSION = 5;
 
 /** A card's width on the dashboard grid. */
 export type DashboardCardSize = "half" | "full";
@@ -27,7 +27,7 @@ export const DASHBOARD_CARDS = [
   { id: "budget", labelKey: "dashboard.cards.budget", size: "half" },
   { id: "recent", labelKey: "dashboard.cards.recent", size: "half" },
   { id: "recurring", labelKey: "dashboard.cards.recurring", size: "half" },
-  { id: "goals", labelKey: "dashboard.cards.goals", size: "half", beta: true },
+  { id: "goals", labelKey: "dashboard.cards.goals", size: "half" },
   { id: "heatmap", labelKey: "dashboard.cards.heatmap", size: "half" },
   { id: "income_by_source", labelKey: "dashboard.cards.incomeBySource", size: "half" },
   { id: "income_expenses", labelKey: "dashboard.cards.incomeExpenses", size: "full" },
@@ -137,6 +137,14 @@ export function normalize(raw: StoredLayout): DashboardLayout {
   // exactly where enabling it by hand would have put it.
   if (version < 4) {
     rawHidden = rawHidden.filter((id) => id !== "recurring");
+  }
+
+  // v5: the savings-goals card left beta, for the same reason and with the
+  // same consequence as `recurring` above — a layout that hides it was told
+  // to by the beta policy, not by the user, so the graduation has to reach
+  // existing installs or "default-visible" means new ones only.
+  if (version < 5) {
+    rawHidden = rawHidden.filter((id) => id !== "goals");
   }
 
   const hidden = Array.from(
