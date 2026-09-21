@@ -17,6 +17,17 @@ import {
   X,
 } from "lucide-react";
 import {
+  ResponsiveContainer,
+  BarChart,
+  AreaChart,
+  Bar,
+  Area,
+  XAxis,
+  YAxis,
+  Tooltip,
+  Legend,
+} from "recharts";
+import {
   savingsGoalsApi,
   type SavingsGoal,
   type SavingsGoalInput,
@@ -29,7 +40,27 @@ import { qkPrefix } from "../../services/queryKeys";
 import { useConfirm } from "../../context/DialogContext";
 import { Modal } from "../common/Modal";
 import { Skeleton } from "../common/Skeleton";
+import { ChartTooltip } from "../charts/ChartTooltip";
+import { ChartLegend } from "../charts/ChartLegend";
+import { AreaGradientDef } from "../charts/AreaGradientDef";
 import { formatCurrency } from "../../utils/numberFormatting";
+import {
+  formatMonthCompact,
+  formatMonthYear,
+} from "../../utils/dateFormatting";
+import {
+  AXIS_DEFAULTS,
+  CHART_COLORS,
+  CHART_TEXT_COLOR,
+  formatAxisNumber,
+} from "../../utils/chartStyle";
+
+/**
+ * The free-cash pool is drawn in neutral ink rather than a palette hue: it is
+ * the money *no* goal claimed, so borrowing a goal's colour would imply it
+ * belongs to one.
+ */
+const FREE_CASH_COLOR = CHART_TEXT_COLOR;
 
 /**
  * Dashboard savings-goals panel.
@@ -132,7 +163,7 @@ export function GoalsSection() {
       ) : goals.length === 0 ? (
         <p className="text-[var(--text-muted)] text-sm py-6 text-center">{t("dashboard.goals.empty")}</p>
       ) : (
-        <div className="space-y-3">
+        <div className="space-y-3" data-testid="goals-list">
           {goals.map((goal, index) => (
             <GoalRow
               key={goal.id}
@@ -159,6 +190,8 @@ export function GoalsSection() {
       )}
 
       {!!pool?.has_goals && <FreeCashRow pool={pool} />}
+
+      {goals.length > 0 && <AllocationHistory />}
 
       {editing !== null && (
         <GoalEditorModal
@@ -219,6 +252,178 @@ function FreeCashRow({ pool }: { pool: SavingsGoalFreeCash }) {
   );
 }
 
+/** Trailing windows the history panel offers; 0 means the whole timeline. */
+const HISTORY_RANGES = [6, 12, 0] as const;
+
+type HistoryRange = (typeof HISTORY_RANGES)[number];
+
+/**
+ * The waterfall read month by month, under the current standings.
+ *
+ * The rows above answer "where is each goal now"; this answers "how did it get
+ * there" — which months fed a goal, which month a deficit took money back out
+ * of one (a negative segment, below the axis), and how much was left
+ * unearmarked each time.
+ *
+ * Allocations and the free-cash pool are drawn as two stacked panels sharing
+ * one month axis rather than one chart with two y-scales: a monthly flow and a
+ * standing balance are different quantities, and putting them on a common
+ * scale makes whichever is smaller unreadable.
+ */
+function AllocationHistory() {
+  const { t } = useTranslation();
+  const qk = useQueryKeys();
+  const [range, setRange] = useState<HistoryRange>(12);
+
+  const { data, isLoading } = useQuery({
+    queryKey: qk.savingsGoals.timeline(range),
+    queryFn: async () => (await savingsGoalsApi.getTimeline(range)).data,
+  });
+
+  // One row per month with a column per goal, which is the shape a stacked
+  // chart wants. Months where nothing moved still get a row — the backend
+  // sends them, and a gap in a time series reads as "skipped", not "zero".
+  const rows = (data?.months ?? []).map((month) => {
+    const row: Record<string, number | string> = {
+      month: month.month,
+      free_cash: month.free_cash,
+    };
+    for (const goal of month.goals) {
+      row[`g${goal.goal_id}`] = goal.total;
+    }
+    return row;
+  });
+
+  // Colour follows the goal, not its rank: keyed by id (stable) rather than
+  // by priority, so reordering the waterfall never repaints the chart.
+  const palette = new Map(
+    [...(data?.goals ?? [])]
+      .sort((a, b) => a.id - b.id)
+      .map((goal, index) => [goal.id, CHART_COLORS[index % CHART_COLORS.length]]),
+  );
+  // A goal that took nothing in this window would be a legend entry with no
+  // mark, so only the ones that actually moved get a series.
+  const series = (data?.goals ?? []).filter((goal) =>
+    rows.some((row) => row[`g${goal.id}`] !== undefined && row[`g${goal.id}`] !== 0),
+  );
+
+  const tooltip = (
+    <ChartTooltip labelFormatter={(m) => formatMonthYear(monthDate(String(m)))} />
+  );
+  const hasMoreHistory = (data?.total_months ?? 0) > Math.max(...HISTORY_RANGES);
+
+  return (
+    <div
+      className="mt-4 pt-4 border-t border-[var(--surface-light)]"
+      data-testid="goals-history"
+    >
+      <div className="flex items-center justify-between gap-2 mb-3">
+        <p className="text-xs md:text-sm font-bold">
+          {t("dashboard.goals.historyTitle")}
+        </p>
+        <div className="flex bg-[var(--surface-light)] rounded-lg p-0.5">
+          {HISTORY_RANGES.map((option) => (
+            <button
+              key={option}
+              onClick={() => setRange(option)}
+              // "All time" is only honest while there is more history than the
+              // widest fixed window; below that it shows the same months twice.
+              disabled={option === 0 && !hasMoreHistory}
+              className={`px-2 py-1 rounded-md text-[10px] md:text-xs font-bold transition-colors disabled:opacity-40 ${
+                range === option
+                  ? "bg-[var(--surface)] text-[var(--primary)] shadow-sm"
+                  : "text-[var(--text-muted)] hover:text-[var(--text-primary)]"
+              }`}
+            >
+              {option === 0
+                ? t("dashboard.goals.historyAll")
+                : t("dashboard.goals.historyMonths", { count: option })}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {isLoading ? (
+        <Skeleton variant="chart" className="h-40" />
+      ) : series.length === 0 && rows.length === 0 ? (
+        <p className="text-[10px] md:text-xs text-[var(--text-muted)] py-4 text-center">
+          {t("dashboard.goals.historyEmpty")}
+        </p>
+      ) : (
+        <div data-testid="goals-history-chart">
+          <div className="h-36 md:h-44">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={rows} margin={{ top: 4, bottom: 0, left: 0, right: 8 }}>
+                <XAxis dataKey="month" hide />
+                <YAxis {...AXIS_DEFAULTS} tickFormatter={formatAxisNumber} width={44} />
+                <Tooltip cursor={false} content={tooltip} />
+                <Legend content={<ChartLegend fontSize={10} />} />
+                {series.map((goal) => (
+                  <Bar
+                    key={goal.id}
+                    dataKey={`g${goal.id}`}
+                    name={goal.name}
+                    stackId="allocations"
+                    fill={palette.get(goal.id)}
+                    // A gap in the surface colour keeps adjacent segments of
+                    // one stack legible instead of fusing into one block. On a
+                    // long window the bars are only a few pixels wide, where
+                    // the same gap would eat the segment it separates.
+                    stroke="var(--surface)"
+                    strokeWidth={rows.length > 18 ? 0 : 2}
+                    maxBarSize={48}
+                    isAnimationActive={false}
+                  />
+                ))}
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+
+          {/* The pool gets its own panel below, on the same months: it is the
+              buffer a deficit drains before the engine reaches into a goal, so
+              seeing it flat at zero explains a clawback the bars alone can't. */}
+          <p className="text-[10px] md:text-xs text-[var(--text-muted)] mt-2 mb-1">
+            {t("dashboard.goals.historyFreeCash")}
+          </p>
+          <div className="h-16 md:h-20">
+            <ResponsiveContainer width="100%" height="100%">
+              <AreaChart data={rows} margin={{ top: 4, bottom: 0, left: 0, right: 8 }}>
+                <AreaGradientDef id="goals-free-cash" color={FREE_CASH_COLOR} />
+                <XAxis
+                  dataKey="month"
+                  {...AXIS_DEFAULTS}
+                  tickFormatter={formatMonthCompact}
+                />
+                <YAxis {...AXIS_DEFAULTS} tickFormatter={formatAxisNumber} width={44} />
+                <Tooltip content={tooltip} />
+                <Area
+                  dataKey="free_cash"
+                  name={t("dashboard.goals.freeCash")}
+                  type="monotone"
+                  stroke={FREE_CASH_COLOR}
+                  strokeWidth={2}
+                  fill="url(#goals-free-cash)"
+                  isAnimationActive={false}
+                />
+              </AreaChart>
+            </ResponsiveContainer>
+          </div>
+
+          <p className="mt-2 text-[10px] text-[var(--text-muted)]">
+            {t("dashboard.goals.historyHint")}
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Parse a `YYYY-MM` key into a local-time Date (never UTC midnight). */
+function monthDate(month: string): Date {
+  const [year, index] = month.split("-").map(Number);
+  return new Date(year, index - 1, 1);
+}
+
 function GoalRow({
   goal,
   rank,
@@ -249,8 +454,12 @@ function GoalRow({
 
   return (
     <div className="group border border-[var(--surface-light)] rounded-xl p-3 hover:bg-[var(--surface-light)]/30 transition-colors">
+      {/* The name owns its own line. It used to share one with the funded /
+          target pair and five buttons, which on a phone left it about eight
+          characters wide — "New car fund" rendered as "New …", and the row
+          named nothing at all. */}
       <div className="flex items-center justify-between gap-2 mb-2">
-        <div className="flex items-center gap-1.5 min-w-0">
+        <div className="flex items-center gap-1.5 min-w-0 flex-1">
           <span
             className="text-[10px] font-bold text-[var(--text-muted)] tabular-nums shrink-0"
             title={t("dashboard.goals.priorityHint")}
@@ -264,11 +473,7 @@ function GoalRow({
           )}
           <p className="font-semibold text-sm truncate" dir="auto" title={goal.name}>{goal.name}</p>
         </div>
-        <div className="flex items-center gap-1 shrink-0">
-          <span dir="ltr" className="text-xs md:text-sm font-bold tabular-nums">
-            {formatCurrency(goal.funded)}
-            <span className="text-[var(--text-muted)] font-normal"> / {formatCurrency(goal.target_amount)}</span>
-          </span>
+        <div className="flex items-center gap-0.5 shrink-0">
           <button
             onClick={onMoveUp}
             disabled={!canMoveUp}
@@ -304,11 +509,22 @@ function GoalRow({
           </button>
         </div>
       </div>
+      <div className="flex items-baseline justify-between gap-2 mb-1.5">
+        <span dir="ltr" className="text-sm md:text-base font-bold tabular-nums">
+          {formatCurrency(goal.funded)}
+          <span className="text-[var(--text-muted)] text-xs md:text-sm font-normal">
+            {" / "}
+            {formatCurrency(goal.target_amount)}
+          </span>
+        </span>
+        <span dir="ltr" className="text-[10px] md:text-xs text-[var(--text-muted)] tabular-nums shrink-0">
+          {goal.progress_pct}%
+        </span>
+      </div>
       <div className="w-full bg-[var(--surface-light)] rounded-full h-2 overflow-hidden">
         <div className={`h-2 rounded-full bg-gradient-to-r ${barColor} transition-all duration-500`} style={{ width: `${goal.progress_pct}%` }} />
       </div>
-      <div className="flex justify-between items-center gap-2 mt-1.5 text-[10px] md:text-xs text-[var(--text-muted)]">
-        <span dir="ltr">{goal.progress_pct}%</span>
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1.5 text-[10px] md:text-xs text-[var(--text-muted)]">
         <GoalStatusLine goal={goal} />
       </div>
       {(goal.this_month_allocation > 0 ||
