@@ -33,7 +33,6 @@ export const DASHBOARD_CARDS = [
   { id: "income_expenses", labelKey: "dashboard.cards.incomeExpenses", size: "full" },
   { id: "net_worth", labelKey: "dashboard.cards.netWorth", size: "full" },
   { id: "cash_flow", labelKey: "dashboard.cards.cashFlow", size: "full", defaultHidden: true },
-  { id: "category", labelKey: "dashboard.cards.category", size: "full", defaultHidden: true },
   // Appended last so the default half-card row pairings above it stay intact.
   { id: "refunds", labelKey: "dashboard.cards.refunds", size: "half" },
   { id: "retirement", labelKey: "dashboard.cards.retirement", size: "full", defaultHidden: true },
@@ -116,7 +115,9 @@ export function normalize(raw: StoredLayout): DashboardLayout {
   // cards (rest hidden); a hidden charts card hides all four.
   if (version < 3) {
     const NEW_VISIBLE = ["income_expenses", "net_worth"] as DashboardCardId[];
-    const NEW_HIDDEN = ["cash_flow", "category"] as DashboardCardId[];
+    // "category" was a card once and is named here so a pre-v3 layout still
+    // migrates the same way; it is filtered out below as an unknown id.
+    const NEW_HIDDEN = ["cash_flow", "category"];
     const chartsIdx = rawOrder.indexOf("charts");
     if (chartsIdx !== -1) {
       rawOrder.splice(chartsIdx, 1, ...NEW_VISIBLE);

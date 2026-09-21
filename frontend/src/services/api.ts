@@ -704,7 +704,6 @@ export const analyticsApi = {
     api.get<{ month: string; amount: number; tags: Record<string, number> }[]>(
       "/analytics/debt-payments-over-time"
     ),
-  getByCategory: () => api.get("/analytics/by-category"),
   getExpensesByCategoryOverTime: (excludePendingRefunds = true) =>
     api.get<{ month: string; categories: Record<string, number> }[]>(
       "/analytics/expenses-by-category-over-time",
