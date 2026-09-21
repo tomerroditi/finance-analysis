@@ -521,6 +521,7 @@ export const OverviewBudgetView: React.FC<OverviewBudgetViewProps> = ({
               series={trend.data.map((point) => point.actual)}
               labels={trendLabels}
               budget={trend.data[trend.data.length - 1]?.budget ?? 0}
+              budgets={trend.data.map((point) => point.budget)}
               height={96}
               fluid
             />

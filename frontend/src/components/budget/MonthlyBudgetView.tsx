@@ -427,6 +427,7 @@ export const MonthlyBudgetView: React.FC<MonthlyBudgetViewProps> = ({
           series={trend.data.map((point) => point.actual)}
           labels={trendLabels}
           budget={trend.data[trend.data.length - 1]?.budget ?? 0}
+          budgets={trend.data.map((point) => point.budget)}
           width={220}
           height={44}
           fluid
@@ -488,6 +489,9 @@ export const MonthlyBudgetView: React.FC<MonthlyBudgetViewProps> = ({
           series={(trend.byRule[item.rule.name] ?? []).slice(-ROW_TREND_MONTHS)}
           labels={rowTrendLabels}
           budget={item.rule.amount}
+          budgets={(trend.byRuleLimit[item.rule.name] ?? []).slice(
+            -ROW_TREND_MONTHS,
+          )}
         />
       }
     >

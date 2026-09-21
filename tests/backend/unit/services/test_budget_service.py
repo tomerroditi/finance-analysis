@@ -2980,7 +2980,43 @@ class TestMonthlyBudgetTrend:
             "budget": 0,
             "actual": 0,
             "rules": {},
+            "limits": {},
         }
+
+    def test_reports_the_limit_each_rule_carried_that_month(
+        self, db_session, seed_budget_rules, seed_base_transactions
+    ):
+        """Each month reports its own caps, not the latest ones.
+
+        A monthly envelope is a fresh, separately editable row per month, so
+        a series drawn against today's cap rewrites its own history: a month
+        that came in on budget would turn red once the envelope is tightened.
+        """
+        service = MonthlyBudgetService(db_session)
+        # February tightens Food and raises the overall cap.
+        service.add_rule(TOTAL_BUDGET, 12000.0, TOTAL_BUDGET, [ALL_TAGS], 2, 2024)
+        service.add_rule("Food", 1500.0, "Food", [ALL_TAGS], 2, 2024)
+
+        january, february = service.get_budget_trend(2024, 2, months=2)
+
+        assert january["limits"]["Food"] == 2000.0
+        assert february["limits"]["Food"] == 1500.0
+        assert january["limits"][TOTAL_BUDGET] == 10000.0
+        assert february["limits"][TOTAL_BUDGET] == 12000.0
+
+    def test_omits_a_rule_from_the_months_it_did_not_exist_in(
+        self, db_session, seed_budget_rules, seed_base_transactions
+    ):
+        """A month without the envelope reports no limit for it.
+
+        Zero and "no envelope" are the same thing to the sparkline, which
+        draws a gap there rather than a reference line along the floor.
+        """
+        service = MonthlyBudgetService(db_session)
+
+        december, _january = service.get_budget_trend(2024, 1, months=2)
+
+        assert december["limits"] == {}
 
     def test_does_not_auto_fill_an_empty_current_month(self, db_session, monkeypatch):
         """The trend is read-only; only the analysis endpoint may auto-fill.

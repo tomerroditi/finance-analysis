@@ -43,8 +43,9 @@ function trendPoint(
   budget: number,
   actual: number,
   rules: Record<string, number> = {},
+  limits: Record<string, number> = {},
 ) {
-  return { year, month, budget, actual, rules };
+  return { year, month, budget, actual, rules, limits };
 }
 
 describe("useBudgetTrend", () => {
@@ -173,6 +174,84 @@ describe("useBudgetTrend", () => {
     // A rule absent from a month plots zero there rather than shifting the
     // series out of alignment with `data`.
     expect(result.current.byRule.Transport).toEqual([300, 0]);
+  });
+
+  it("carries the limit each rule held in each month", async () => {
+    // A monthly envelope is a fresh, separately editable row per month, so
+    // the sparkline cannot draw the whole history against today's cap: a
+    // month that came in on budget would turn red once the cap is cut.
+    getTrend.mockResolvedValue({
+      data: [
+        trendPoint(2026, 5, 10000, 4500, { Food: 1900 }, { Food: 2000 }),
+        trendPoint(2026, 6, 10000, 5000, { Food: 1500 }, { Food: 1500 }),
+      ],
+    });
+    getAnalysis.mockResolvedValue({
+      data: {
+        rules: [
+          { rule: { name: "Total Budget", amount: 10000 }, current_amount: -5000 },
+          { rule: { name: "Food", amount: 1500 }, current_amount: 1500 },
+        ],
+      },
+    });
+
+    const { result } = renderTrend(2);
+
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    expect(result.current.byRuleLimit.Food).toEqual([2000, 1500]);
+  });
+
+  it("takes the viewed month's limit from the analysis, not the read-only trend", async () => {
+    // `/budget/trend` never auto-fills, so a brand-new month reports nothing
+    // for its rules there. Reading the limit from the trend alone would draw
+    // the current month as unbudgeted right after its envelopes were copied
+    // forward.
+    getTrend.mockResolvedValue({
+      data: [
+        trendPoint(2026, 5, 10000, 4500, { Food: 1900 }, { Food: 2000 }),
+        trendPoint(2026, 6, 0, 0),
+      ],
+    });
+    getAnalysis.mockResolvedValue({
+      data: {
+        rules: [
+          { rule: { name: "Total Budget", amount: 10000 }, current_amount: -800 },
+          { rule: { name: "Food", amount: 2400 }, current_amount: 800 },
+        ],
+      },
+    });
+
+    const { result } = renderTrend(2);
+
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    expect(result.current.byRuleLimit.Food).toEqual([2000, 2400]);
+  });
+
+  it("leaves a zero for a month the rule did not exist in", async () => {
+    // Zero reads as "no envelope that month" downstream, which the sparkline
+    // draws as a gap rather than a reference line along the floor.
+    getTrend.mockResolvedValue({
+      data: [
+        trendPoint(2026, 5, 10000, 4500, {}, {}),
+        trendPoint(2026, 6, 10000, 5000, { Food: 1500 }, { Food: 1500 }),
+      ],
+    });
+    getAnalysis.mockResolvedValue({
+      data: {
+        rules: [
+          { rule: { name: "Total Budget", amount: 10000 }, current_amount: -5000 },
+          { rule: { name: "Food", amount: 1500 }, current_amount: 1500 },
+        ],
+      },
+    });
+
+    const { result } = renderTrend(2);
+
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    expect(result.current.byRuleLimit.Food).toEqual([0, 1500]);
   });
 
   it("reports no data when every month is empty", async () => {
