@@ -23,10 +23,17 @@ prod environment first). One process owns the whole prod lifecycle:
    ``dist/`` and start the new code. A failed build leaves the running
    deployment untouched.
 
+   The redeploy does only what the commit range actually requires, because
+   everything it skips is time a browser spends on the old build. In
+   particular a Commitizen ``bump:`` commit — which every release pushes ~45 s
+   behind the merge it releases — rewrites nothing but version strings, and
+   is therefore a bare server restart rather than a second ``npm ci`` and
+   bundle build. See ``plan_redeploy``.
+
 Usage::
 
     python .claude/scripts/prod_server.py --port 8080 [--host 127.0.0.1]
-        [--poll 60] [--no-pull]
+        [--poll 15] [--no-pull]
 """
 
 from __future__ import annotations
@@ -86,6 +93,11 @@ def head_commit() -> str:
 # --------------------------------------------------------------------------
 
 
+# The npm manifests Commitizen rewrites on every release (``version_files``
+# in pyproject.toml). Nothing else in them is touched by a bump.
+VERSIONED_NPM_MANIFESTS = ("frontend/package.json", "frontend/package-lock.json")
+
+
 @dataclass(frozen=True)
 class RedeployPlan:
     """What a move from one commit to another requires.
@@ -107,25 +119,86 @@ class RedeployPlan:
     sync_python_deps: bool
 
 
-def plan_redeploy(changed_paths: Iterable[str]) -> RedeployPlan:
+def plan_redeploy(
+    changed_paths: Iterable[str], version_only_paths: Iterable[str] = ()
+) -> RedeployPlan:
     """Derive a redeploy plan from the repo-relative paths that changed.
 
     Parameters
     ----------
     changed_paths : Iterable[str]
         Paths as printed by ``git diff --name-only`` (forward slashes).
+    version_only_paths : Iterable[str]
+        Paths whose whole diff across this range is the app's own version
+        string — see ``version_only_manifests``. They are subtracted before
+        the plan is derived, because nothing they changed reaches the build.
 
     Returns
     -------
     RedeployPlan
         The steps needed beyond restarting the backend, which always happens.
     """
-    paths = set(changed_paths)
+    paths = set(changed_paths) - set(version_only_paths)
     return RedeployPlan(
         build_frontend=any(p.startswith("frontend/") for p in paths),
         install_frontend_deps="frontend/package-lock.json" in paths,
         sync_python_deps="poetry.lock" in paths,
     )
+
+
+def _manifest_without_app_version(commit: str, path: str) -> dict | None:
+    """Read a JSON manifest at a commit with the app's own version removed.
+
+    Returns None when the file can't be read or parsed there, which the
+    caller must treat as "assume it really changed".
+    """
+    result = git("show", f"{commit}:{path}", check=False)
+    if result.returncode != 0:
+        return None
+    try:
+        doc = json.loads(result.stdout)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(doc, dict):
+        return None
+    doc.pop("version", None)
+    packages = doc.get("packages")
+    # package-lock.json carries the app version twice: at the top level and
+    # on the root `packages[""]` entry. Commitizen rewrites both.
+    if isinstance(packages, dict) and isinstance(packages.get(""), dict):
+        packages[""].pop("version", None)
+    return doc
+
+
+def version_only_manifests(
+    old: str, new: str, changed_paths: Iterable[str]
+) -> set[str]:
+    """Which npm manifests moved by nothing but the app's own version string.
+
+    Every release pushes a Commitizen ``bump:`` commit that rewrites the
+    version in ``frontend/package.json`` and ``frontend/package-lock.json``.
+    Judged by path alone that reads as a frontend change *and* a dependency
+    change, so every single release rebuilt the bundle and reinstalled
+    ``node_modules`` from scratch — minutes of work for two rewritten lines,
+    and minutes during which browsers are still being served the old build.
+
+    Nothing in the bundle depends on those lines: the frontend never imports
+    its own version (Settings → About reads it from ``GET /api/version``,
+    which the restarted backend answers from ``pyproject.toml``). So a
+    version-only rewrite is safely subtracted from the plan.
+
+    Comparing parsed manifests, rather than diffing text, is what keeps this
+    honest: a commit that bumps the version *and* adds a dependency differs
+    by more than the version and still triggers ``npm ci``.
+    """
+    candidates = set(changed_paths) & set(VERSIONED_NPM_MANIFESTS)
+    version_only = set()
+    for path in candidates:
+        before = _manifest_without_app_version(old, path)
+        after = _manifest_without_app_version(new, path)
+        if before is not None and before == after:
+            version_only.add(path)
+    return version_only
 
 
 def changed_paths_between(old: str, new: str) -> list[str]:
@@ -578,8 +651,21 @@ class Supervisor:
 
     def redeploy(self, head: str) -> None:
         """Move the running deployment from ``self.deployed`` to ``head``."""
-        plan = plan_redeploy(changed_paths_between(self.deployed, head))
-        log(f"HEAD moved {self.deployed[:8]} -> {head[:8]} - redeploying.")
+        paths = changed_paths_between(self.deployed, head)
+        plan = plan_redeploy(paths, version_only_manifests(self.deployed, head, paths))
+        steps = [
+            name
+            for name, needed in (
+                ("npm ci", plan.install_frontend_deps),
+                ("frontend build", plan.build_frontend),
+                ("poetry install", plan.sync_python_deps),
+            )
+            if needed
+        ]
+        log(
+            f"HEAD moved {self.deployed[:8]} -> {head[:8]} - redeploying "
+            f"({', '.join(steps + ['restart'])})."
+        )
         if plan.build_frontend and not build_frontend(plan.install_frontend_deps):
             log(
                 f"Frontend build failed - still serving {self.deployed[:8]}. "
@@ -635,7 +721,7 @@ def main() -> int:
     parser.add_argument(
         "--poll",
         type=int,
-        default=int(os.environ.get("PROD_POLL_SECONDS", "60")),
+        default=int(os.environ.get("PROD_POLL_SECONDS", "15")),
         help="seconds between upstream checks (env PROD_POLL_SECONDS)",
     )
     parser.add_argument(
