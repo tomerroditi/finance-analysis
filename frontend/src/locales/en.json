@@ -938,6 +938,8 @@
     "cagr": "CAGR",
     "holdingPeriod": "Holding Period",
     "openingBalance": "Opening Balance",
+    "notAvailable": "Not available",
+    "noBalanceReading": "No balance was recorded for this month, so its balance and profit are unknown. Balances are recorded on each sync; the provider only reports older deposits.",
     "years": "years",
     "calculating": "Calculating...",
     "calculateFixedRate": "Calculate Fixed Rate",
