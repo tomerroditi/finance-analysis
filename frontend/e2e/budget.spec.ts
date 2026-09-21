@@ -151,6 +151,14 @@ test.describe("Budget", () => {
     expect(await sparklines.first().locator("rect").count()).toBeGreaterThan(0);
     await expect(sparklines.first().locator("polyline")).toHaveCount(0);
 
+    // The dashed budget reference is one stepped path, not a straight line:
+    // each month is drawn against the limit it actually carried, so an
+    // envelope raised or cut later cannot rewrite its own history.
+    await expect(
+      sparklines.first().locator('[data-testid="budget-reference"]'),
+    ).toHaveCount(1);
+    await expect(sparklines.first().locator("line")).toHaveCount(0);
+
     // --- Rule rows carry no chevron; the row itself is the toggle ---
     // The trailing chevron was a decorative <span>, not a control: it could
     // not be clicked and only restated what clicking the row already does,

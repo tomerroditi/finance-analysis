@@ -482,8 +482,9 @@ class MonthlyBudgetService(BudgetService):
         list[dict]
             One entry per month, oldest first, each with ``year``, ``month``,
             ``budget`` (the "Total Budget" row's configured cap), ``actual``
-            (that row's spend, sign-normalised) and ``rules`` mapping each
-            rule name to its spend.
+            (that row's spend, sign-normalised), ``rules`` mapping each rule
+            name to its spend and ``limits`` mapping each rule name to the
+            cap it carried that month.
         """
         series: list[dict] = []
         for offset in range(months - 1, -1, -1):
@@ -514,6 +515,17 @@ class MonthlyBudgetService(BudgetService):
                 for item in view
             }
 
+            # The limit each rule carried *that* month, so the sparkline can
+            # draw its reference against the month it belongs to. A rule is
+            # a fresh row per month and its cap is editable, so plotting
+            # every month against today's limit misreports history: a month
+            # that ran 1,800 against an 1,800 budget reads as an overspend
+            # once the envelope is cut to 1,500. A name missing here simply
+            # had no envelope that month.
+            limits = {
+                item["rule"][NAME]: item["rule"].get(AMOUNT) or 0 for item in view
+            }
+
             series.append(
                 {
                     "year": point_year,
@@ -521,6 +533,7 @@ class MonthlyBudgetService(BudgetService):
                     "budget": (total or {}).get("rule", {}).get(AMOUNT) or 0,
                     "actual": abs((total or {}).get("current_amount") or 0),
                     "rules": rules,
+                    "limits": limits,
                 }
             )
         return series

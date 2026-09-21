@@ -8,6 +8,15 @@ function bars(container: HTMLElement) {
   return Array.from(container.querySelectorAll("rect"));
 }
 
+function reference(container: HTMLElement) {
+  return container.querySelector('[data-testid="budget-reference"]');
+}
+
+/** Every y the reference path visits, in order. */
+function heights(d: string): number[] {
+  return Array.from(d.matchAll(/[ML] [\d.]+,([\d.]+)/g)).map((m) => Number(m[1]));
+}
+
 describe("RuleSparkline", () => {
   describe("bars variant (monthly envelopes)", () => {
     it("colours only the months that crossed the budget as over", () => {
@@ -35,9 +44,95 @@ describe("RuleSparkline", () => {
       const { container } = render(
         <RuleSparkline variant="bars" series={[100, 200]} labels={["Feb", "Mar"]} budget={0} />,
       );
-      expect(container.querySelectorAll("line")).toHaveLength(0);
+      expect(reference(container)).toBeNull();
       // Neutral, not a status colour — there is no budget to be over.
       expect(bars(container)[0].getAttribute("fill")).toBe("#64748b");
+    });
+
+    it("runs the reference flat when no per-month limits are given", () => {
+      // A caller with no history of its caps keeps the single line it had
+      // before: one subpath, one height, edge to edge.
+      const { container } = render(
+        <RuleSparkline variant="bars" series={[100, 200]} labels={["Feb", "Mar"]} budget={300} />,
+      );
+      const d = reference(container)?.getAttribute("d") ?? "";
+      expect(d.match(/M /g)).toHaveLength(1);
+      expect(new Set(heights(d)).size).toBe(1);
+    });
+
+    it("steps the reference where the limit moved", () => {
+      // The same envelope cut from 2,000 to 1,000: the older months keep
+      // their own line, so the chart stops claiming they were over budget.
+      const { container } = render(
+        <RuleSparkline
+          variant="bars"
+          series={[1800, 1800, 900]}
+          labels={LABELS}
+          budget={1000}
+          budgets={[2000, 2000, 1000]}
+        />,
+      );
+      const d = reference(container)?.getAttribute("d") ?? "";
+      // One subpath — the steps are risers inside it, not separate lines.
+      expect(d.match(/M /g)).toHaveLength(1);
+      const levels = heights(d);
+      // Two distinct heights, and the later (smaller) limit sits lower.
+      expect(new Set(levels).size).toBe(2);
+      expect(levels[levels.length - 1]).toBeGreaterThan(levels[0]);
+    });
+
+    it("judges each month against the limit it actually carried", () => {
+      // 1,800 spent under an 1,800 envelope is not an overspend, and cutting
+      // the envelope to 1,500 afterwards must not repaint that month red.
+      const { container } = render(
+        <RuleSparkline
+          variant="bars"
+          series={[1800, 1800, 1400]}
+          labels={LABELS}
+          budget={1500}
+          budgets={[2000, 2000, 1500]}
+        />,
+      );
+      const fills = bars(container).map((r) => r.getAttribute("fill"));
+      expect(fills).toEqual(["#10b981", "#10b981", "#f59e0b"]);
+    });
+
+    it("breaks the reference over a month the envelope did not exist in", () => {
+      const { container } = render(
+        <RuleSparkline
+          variant="bars"
+          series={[0, 400, 300]}
+          labels={LABELS}
+          budget={500}
+          budgets={[0, 500, 500]}
+        />,
+      );
+      const d = reference(container)?.getAttribute("d") ?? "";
+      // The gap is where the path starts, not a line along the floor: the
+      // first bar's slot is left bare, so nothing is drawn before it.
+      expect(d.match(/M /g)).toHaveLength(1);
+      const firstX = Number(d.match(/M ([\d.]+),/)?.[1]);
+      // Default width 74, 2px gaps → the first of three bars ends at ~23.3.
+      expect(firstX).toBeGreaterThan(23);
+      // And nothing sits at the floor (y = height) either.
+      expect(heights(d).every((y) => y < 22)).toBe(true);
+    });
+
+    it("scales to the tallest limit in the window, not just the latest", () => {
+      // A raised-then-cut envelope: the old, higher reference must stay
+      // inside the viewport instead of being clipped off the top.
+      const { container } = render(
+        <RuleSparkline
+          variant="bars"
+          series={[100, 100]}
+          labels={["Feb", "Mar"]}
+          budget={200}
+          budgets={[4000, 200]}
+        />,
+      );
+      expect(heights(reference(container)?.getAttribute("d") ?? "").every((y) => y >= 0)).toBe(
+        true,
+      );
     });
   });
 
@@ -227,6 +322,23 @@ describe("RuleSparkline", () => {
       const label = container.querySelector("svg")?.getAttribute("aria-label") ?? "";
       expect(label).toContain("Feb");
       expect(label).toContain("Mar");
+    });
+
+    it("names each month's own limit once they stop agreeing", () => {
+      // A stepped line says nothing to a screen reader, so the limit each
+      // month was measured against has to be in the text.
+      const { container } = render(
+        <RuleSparkline
+          variant="bars"
+          series={[1800, 1400]}
+          labels={["Feb", "Mar"]}
+          budget={1500}
+          budgets={[2000, 1500]}
+        />,
+      );
+      const label = container.querySelector("svg")?.getAttribute("aria-label") ?? "";
+      expect(label).toContain("2.0K");
+      expect(label).toContain("1.5K");
     });
   });
 });
