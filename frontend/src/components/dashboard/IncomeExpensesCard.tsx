@@ -86,6 +86,9 @@ function avgOf(rows: { income: number }[] | undefined): number {
  * constant salary) where a percentile would collapse onto the cluster and max
  * out every bar. Values above the cap are drawn full-width and flagged as
  * outliers — their exact ₪ label still tells the true story.
+ *
+ * Feed this one series at a time. The ledger derives a cap per column rather
+ * than one over income and expenses together — see `LedgerView`.
  */
 function barCap(values: number[], multiplier = 1.6): number {
   const positives = values.filter((v) => v > 0).sort((a, b) => a - b);
@@ -449,9 +452,15 @@ function TrendChip({
 /**
  * Totals view — a statement-style ledger, newest period on top. Each row shows
  * the income bar (grows toward the centre), the expense bar (mirrored), and the
- * net for the period. Bars share one scale (widest of any income/|expense|) so
- * magnitudes stay comparable; the exact ₪ sits on every bar so nothing needs a
- * hover. Vertical layout keeps the period labels always visible (no bottom axis).
+ * net for the period. The exact ₪ sits on every bar so nothing needs a hover,
+ * and the vertical layout keeps the period labels always visible (no bottom
+ * axis).
+ *
+ * Each column carries its own scale, so a bar's length is comparable down its
+ * column but not across the gutter — an income bar and an expense bar of equal
+ * length are not equal money. Comparing the two is what the Net column is for,
+ * and it states the difference outright rather than asking anyone to eyeball
+ * two lengths.
  */
 function LedgerView({
   rows,
@@ -469,10 +478,19 @@ function LedgerView({
   const { t } = useTranslation();
   if (rows.length === 0) return <p className="text-[var(--text-muted)] text-sm">{t("common.noData")}</p>;
 
-  // Median-anchored cap over the FULL history so typical months sit mid-range
-  // (with headroom) and widths don't shift when earlier months are revealed;
-  // only the *displayed* rows are capped to `limit`.
-  const cap = barCap(rows.flatMap((d) => [d.income, Math.abs(d.expenses)]));
+  // One cap per column, not one pooled over both. Income and expenses are
+  // different distributions — a household's income carries the lumpy events
+  // (a bonus, a windfall, a fund liquidation) while its expenses cluster —
+  // so pooling them let a single 400k income month set the scale a 17k
+  // expense month had to live on. Every expense then rendered in the bottom
+  // third of its column, and ordinary high-salary months were flagged as
+  // over-scale outliers beside the genuine ones.
+  //
+  // Both are still median-anchored over the FULL history, so typical periods
+  // sit mid-range with headroom and widths don't shift when earlier ones are
+  // revealed; only the *displayed* rows are capped to `limit`.
+  const incomeCap = barCap(rows.map((d) => d.income));
+  const expenseCap = barCap(rows.map((d) => Math.abs(d.expenses)));
   const lastPeriod = rows[rows.length - 1]?.month;
   const visible = rows.slice(-limit).reverse();
 
@@ -503,8 +521,8 @@ function LedgerView({
               {formatPeriodLabel(d.month)}
             </div>
             {/* income grows toward the centre; expenses mirror outward */}
-            <LedgerBar value={d.income} kind="income" cap={cap} />
-            <LedgerBar value={d.expenses} kind="expense" cap={cap} color={expenseColor} />
+            <LedgerBar value={d.income} kind="income" cap={incomeCap} />
+            <LedgerBar value={d.expenses} kind="expense" cap={expenseCap} color={expenseColor} />
             <div
               className="text-xs font-extrabold text-end whitespace-nowrap tabular-nums"
               style={{ color: net >= 0 ? INCOME_COLOR : EXPENSE_COLOR }}
