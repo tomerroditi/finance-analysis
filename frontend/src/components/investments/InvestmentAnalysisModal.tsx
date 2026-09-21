@@ -512,7 +512,13 @@ export function InvestmentAnalysisModal({
                                   ) : row.snapshot ? (
                                     <span className="text-white" dir="ltr">{formatCurrency(row.snapshot.balance)}</span>
                                   ) : (
-                                    <span className="text-[var(--text-muted)]">—</span>
+                                    <span
+                                      data-testid="snapshot-not-available"
+                                      className="text-[var(--text-muted)] text-xs font-medium"
+                                      title={t("investments.noBalanceReading")}
+                                    >
+                                      {t("investments.notAvailable")}
+                                    </span>
                                   )}
                                 </td>
                                 <td className="px-3 py-2 text-center font-bold whitespace-nowrap">
@@ -548,6 +554,14 @@ export function InvestmentAnalysisModal({
                                         </span>
                                       )}
                                     </div>
+                                  ) : !row.snapshot ? (
+                                    <span
+                                      data-testid="snapshot-not-available"
+                                      className="text-[var(--text-muted)] text-xs font-medium"
+                                      title={t("investments.noBalanceReading")}
+                                    >
+                                      {t("investments.notAvailable")}
+                                    </span>
                                   ) : (
                                     <span className="text-[var(--text-muted)]">—</span>
                                   )}

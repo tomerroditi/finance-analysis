@@ -118,5 +118,10 @@ test.describe("Investments", () => {
       timeout: 15_000,
     });
     await expect(khModal.locator("tbody .text-emerald-400").first()).toBeVisible();
+    // Deposit months before the first balance reading have no balance or
+    // profit to show; they say so instead of a bare dash.
+    await expect(khModal.getByTestId("snapshot-not-available").first()).toHaveText(
+      "Not available",
+    );
   });
 });
