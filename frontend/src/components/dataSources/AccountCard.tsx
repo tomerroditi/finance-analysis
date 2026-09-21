@@ -28,6 +28,9 @@ interface AccountCardProps {
   balance: BankBalance | undefined;
   /** Whether this account was scraped today (gates balance entry + badge). */
   scrapedToday: boolean;
+  /** Whether this source is picked for the toolbar's multi-source scrape. */
+  selected: boolean;
+  onToggleSelected: (selected: boolean) => void;
   tfaIsPending: boolean;
   tfaCode: string;
   onTfaCodeChange: (code: string) => void;
@@ -52,6 +55,8 @@ export function AccountCard({
   lastScrapeDate,
   balance,
   scrapedToday,
+  selected,
+  onToggleSelected,
   tfaIsPending,
   tfaCode,
   onTfaCodeChange,
@@ -78,6 +83,17 @@ export function AccountCard({
     <div className="group bg-[var(--surface)] rounded-2xl border border-[var(--surface-light)] p-3 md:p-5 hover:border-[var(--primary)]/30 hover:shadow-xl transition-all">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 md:gap-0">
       <div className="flex items-center gap-3 md:gap-5">
+        {/* Picks this source for the toolbar's scrape button. Selecting
+            nothing keeps that button's "scrape everything" default, so the
+            checkbox is purely additive — see DataSources's handleScrape. */}
+        <input
+          type="checkbox"
+          checked={selected}
+          onChange={(e) => onToggleSelected(e.target.checked)}
+          aria-label={t("dataSources.selectForScrape", { name: acc.account_name })}
+          data-testid="select-source"
+          className="w-4 h-4 shrink-0 rounded border-slate-700 bg-slate-800 text-blue-500 focus:ring-blue-500 cursor-pointer"
+        />
         <div className="w-14 h-14 shrink-0 rounded-2xl bg-white flex items-center justify-center p-2 text-gray-700">
           <ProviderLogo
             provider={acc.provider}
