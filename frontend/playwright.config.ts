@@ -82,6 +82,7 @@ const READ_ONLY_SPECS = [
   "**/income-by-source-card.spec.ts",
   "**/info-tooltip-aria-label.spec.ts",
   "**/insurances.spec.ts",
+  "**/investment-analysis-kpi-overflow.spec.ts",
   "**/investments.spec.ts",
   "**/liabilities.spec.ts",
   "**/mobile-top-bar.spec.ts",

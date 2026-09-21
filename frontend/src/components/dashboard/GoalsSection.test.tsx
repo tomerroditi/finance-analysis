@@ -67,6 +67,12 @@ async function renderGoals(
   goals: SavingsGoal[],
   pool: Partial<SavingsGoalFreeCash> = {},
   timeline: Partial<SavingsGoalTimeline> = {},
+  /**
+   * How long a fetched query counts as fresh, mirroring `queryClient.ts`.
+   * Defaults to React Query's own 0 — pass the app's real value to exercise
+   * code that reads through the cache while an entry is still fresh.
+   */
+  staleTime = 0,
 ) {
   vi.spyOn(savingsGoalsApi, "getAll").mockResolvedValue({
     data: goals,
@@ -103,7 +109,7 @@ async function renderGoals(
   } as Awaited<ReturnType<typeof testingApi.getDemoModeStatus>>);
 
   const client = new QueryClient({
-    defaultOptions: { queries: { retry: false } },
+    defaultOptions: { queries: { retry: false, staleTime } },
   });
   const result = render(
     <QueryClientProvider client={client}>
@@ -473,6 +479,35 @@ describe("GoalsSection", () => {
       await renderGoals([makeGoal({ name: "Vacation", opening_balance: 24000 })]);
       stubFreeCashBefore(24000);
       const update = vi.spyOn(savingsGoalsApi, "update");
+
+      fireEvent.click(
+        within(rowFor("Vacation")).getByRole("button", {
+          name: /earmark the free cash from before/i,
+        }),
+      );
+
+      await waitFor(() => expect(notifyInfo).toHaveBeenCalled());
+      expect(update).not.toHaveBeenCalled();
+    });
+
+    it("re-reads the server before deciding there is nothing left to claim", async () => {
+      // The app keeps a query fresh for five minutes, and `fetchQuery` serves
+      // a fresh entry straight from cache. A claim that has reached the server
+      // but whose mutation has not yet settled into an invalidation therefore
+      // leaves the cached list holding the *old* opening balance. Deciding
+      // against that copy re-offered a claim that had already been applied.
+      await renderGoals(
+        [makeGoal({ name: "Vacation", opening_balance: 0 })],
+        {},
+        {},
+        5 * 60 * 1000,
+      );
+      stubFreeCashBefore(24000);
+      const update = vi.spyOn(savingsGoalsApi, "update");
+      // The server now holds the claim; only a re-read can see it.
+      vi.spyOn(savingsGoalsApi, "getAll").mockResolvedValue({
+        data: [makeGoal({ name: "Vacation", opening_balance: 24000 })],
+      } as Awaited<ReturnType<typeof savingsGoalsApi.getAll>>);
 
       fireEvent.click(
         within(rowFor("Vacation")).getByRole("button", {

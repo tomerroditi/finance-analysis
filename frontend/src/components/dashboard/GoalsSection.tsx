@@ -137,15 +137,24 @@ export function GoalsSection() {
   const claimFreeCash = async (goal: SavingsGoal) => {
     const start = goal.start_month?.slice(0, 7) || currentMonthKey();
     // The row can still hold the list from before a claim that just landed,
-    // so compare against the list as it stands (refetched if stale).
+    // so compare against the server's figures rather than the cache.
+    // `staleTime: 0` is what forces that: the app's default keeps a query
+    // fresh for five minutes, and `fetchQuery` serves a fresh entry from
+    // cache without asking. In the window between a claim reaching the
+    // server and its mutation settling into an invalidation, that cached
+    // entry still holds the pre-claim opening balance — so the guard below
+    // compared the new figure against the old one and re-offered a claim
+    // that had already been applied.
     const [{ free_cash: amount }, goalsNow] = await Promise.all([
       queryClient.fetchQuery({
         queryKey: qk.savingsGoals.freeCashBefore(start, goal.id),
         queryFn: async () => (await savingsGoalsApi.getFreeCashBefore(start, goal.id)).data,
+        staleTime: 0,
       }),
       queryClient.fetchQuery({
         queryKey: qk.savingsGoals.all(),
         queryFn: async () => (await savingsGoalsApi.getAll()).data,
+        staleTime: 0,
       }),
     ]);
     const held = goalsNow.find((g) => g.id === goal.id)?.opening_balance ?? goal.opening_balance;
