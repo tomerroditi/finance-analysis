@@ -1,3 +1,9 @@
+## v1.79.0 (2026-09-21)
+
+### Feat
+
+- **dashboard**: savings-goals card — the goal name, a month-by-month history, and default-visible (#327)
+
 ## v1.78.0 (2026-09-21)
 
 ### Feat
