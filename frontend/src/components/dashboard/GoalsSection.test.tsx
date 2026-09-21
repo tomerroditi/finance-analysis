@@ -366,23 +366,63 @@ describe("GoalsSection", () => {
   });
 
   describe("card height", () => {
-    it("caps the waterfall and scrolls it in place rather than growing the card", async () => {
-      // jsdom does no layout, so the cap is checked where it is declared: a
-      // list that scrolls itself is what keeps the free-cash row and the
-      // history panel inside the card once a household keeps many goals.
-      await renderGoals([
-        makeGoal({ id: 1, name: "One", priority: 0 }),
-        makeGoal({ id: 2, name: "Two", priority: 1 }),
-        makeGoal({ id: 3, name: "Three", priority: 2 }),
-        makeGoal({ id: 4, name: "Four", priority: 3 }),
-      ]);
+    /**
+     * jsdom lays nothing out, so every height it reports is 0. Stand in a
+     * content height for the one measurement the cap is decided on.
+     */
+    function withContentHeight(height: number) {
+      const original = Object.getOwnPropertyDescriptor(
+        HTMLElement.prototype,
+        "scrollHeight",
+      );
+      Object.defineProperty(HTMLElement.prototype, "scrollHeight", {
+        configurable: true,
+        get: () => height,
+      });
+      return () => {
+        if (original) {
+          Object.defineProperty(HTMLElement.prototype, "scrollHeight", original);
+        }
+      };
+    }
 
-      const list = screen.getByTestId("goals-list");
-      expect(list.className).toMatch(/max-h-\[26rem\]/);
-      expect(list.className).toMatch(/overflow-y-auto/);
-      // The card is itself a scroller on the dashboard grid; the list must not
-      // hand it a stray wheel event once it bottoms out.
-      expect(list.className).toMatch(/overscroll-contain/);
+    const manyGoals = [
+      makeGoal({ id: 1, name: "One", priority: 0 }),
+      makeGoal({ id: 2, name: "Two", priority: 1 }),
+      makeGoal({ id: 3, name: "Three", priority: 2 }),
+      makeGoal({ id: 4, name: "Four", priority: 3 }),
+    ];
+
+    it("scrolls the waterfall in place once a cap would hide a row", async () => {
+      // Taller than the 26rem cap by more than a row, so capping it reaches
+      // something: the card keeps its free-cash row and history panel instead
+      // of carrying them down the page.
+      const restore = withContentHeight(900);
+      try {
+        await renderGoals(manyGoals);
+
+        const list = screen.getByTestId("goals-list");
+        expect(list.className).toMatch(/max-h-\[26rem\]/);
+        expect(list.className).toMatch(/overflow-y-auto/);
+      } finally {
+        restore();
+      }
+    });
+
+    it("leaves a list that would barely scroll as a plain block", async () => {
+      // 26rem is 416px, so this overflows by 20 — nothing worth reaching, and
+      // a scroll region here would swallow the drag that was meant to scroll
+      // the page on a phone.
+      const restore = withContentHeight(436);
+      try {
+        await renderGoals(manyGoals);
+
+        const list = screen.getByTestId("goals-list");
+        expect(list.className).not.toMatch(/max-h-/);
+        expect(list.className).not.toMatch(/overflow-y-auto/);
+      } finally {
+        restore();
+      }
     });
   });
 

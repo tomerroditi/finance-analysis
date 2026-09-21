@@ -202,10 +202,11 @@ test.describe("Savings goals", () => {
     await historyToggle.click();
     await expect(history).toBeVisible();
     // What no goal claimed stacks on the same bars — it is a cut of the same
-    // month's surplus. The pool's standing balance is a different quantity and
-    // is reported as a figure under the chart, not as a second panel.
+    // month's surplus. It is named for the flow it is, not for the pool: the
+    // pool's standing balance is a different quantity, reported as a figure
+    // under the chart rather than as a second panel.
     await expect(
-      history.getByText("Free cash", { exact: true }),
+      history.getByText("Left unearmarked", { exact: true }),
     ).toBeVisible();
     await expect(
       page.getByText("Free cash left at month end", { exact: true }),
@@ -259,7 +260,9 @@ test.describe("Savings goals", () => {
     // --- the waterfall is a capped scroll region ------------------------
     // A household that keeps many goals must not push the free-cash row and
     // the history panel down the page — the list scrolls inside the card
-    // instead. The seeded fillers take it past the cap.
+    // instead. The seeded fillers take it well past the cap, which is what
+    // turns the list into a scroll region at all: one that would scroll by
+    // only a hair stays a plain block, so a drag on it still scrolls the page.
     const list = page.getByTestId("goals-list");
     const geometry = await list.evaluate((el) => ({
       client: el.clientHeight,

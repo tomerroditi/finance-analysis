@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import {
@@ -69,6 +69,21 @@ const GRID_COLOR = "rgba(148, 163, 184, 0.25)";
 /** Series key for the part of a month's surplus no goal claimed. */
 const FREE_CASH_KEY = "free_cash_flow";
 
+/** How tall the waterfall may stand before it scrolls in place (26rem, px). */
+const LIST_CAP_PX = 416;
+
+/**
+ * How far past the cap the list must reach before capping it is worth doing.
+ *
+ * A scroll region swallows the gesture that starts on it: once an inner
+ * scroller has anywhere at all to go, a touch drag scrolls it and the page
+ * stays put — browsers chain to the page only when the inner scroller could
+ * not move at all. So a list that scrolls by a hair traps the finger on a
+ * phone while hiding nothing worth reaching. Below roughly one row of
+ * overflow, a slightly taller card is the better trade.
+ */
+const LIST_CAP_SLACK_PX = 120;
+
 
 /**
  * Dashboard savings-goals panel.
@@ -96,6 +111,8 @@ export function GoalsSection() {
   const [editing, setEditing] = useState<SavingsGoal | "new" | null>(null);
   const [backing, setBacking] = useState<SavingsGoal | null>(null);
   const [redistributing, setRedistributing] = useState(false);
+  const listRef = useRef<HTMLDivElement>(null);
+  const [capped, setCapped] = useState(false);
 
   const { data, isLoading } = useQuery({
     queryKey: qk.savingsGoals.all(),
@@ -180,6 +197,26 @@ export function GoalsSection() {
 
   const goals = data ?? [];
 
+  // Whether the waterfall is worth turning into a scroll region. Measured
+  // rather than counted: rows differ in height (a goal with a monthly figure,
+  // an investment backing or a clawback note runs taller than a plain one),
+  // and the question is how much a cap would actually hide. `scrollHeight` is
+  // the content's height whether or not the cap is on, so the reading does not
+  // flip-flop. Re-measured on resize as well as on a change of goals, because
+  // a narrower card wraps names and grows rows.
+  useEffect(() => {
+    const el = listRef.current;
+    if (!el) return;
+    const measure = () =>
+      setCapped(el.scrollHeight > LIST_CAP_PX + LIST_CAP_SLACK_PX);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    return () => observer.disconnect();
+    // `data`, not `goals`: the query's array is stable between renders, while
+    // the `?? []` fallback is a fresh one every time.
+  }, [data]);
+
   /** Swap a goal with its neighbour and persist the new waterfall order. */
   const move = (index: number, direction: -1 | 1) => {
     const next = index + direction;
@@ -229,13 +266,15 @@ export function GoalsSection() {
            the page — off the screen entirely on mobile, where the dashboard
            grid leaves card heights uncapped, and behind the card's own
            scrollbar at >=lg, where the 39rem cap scrolls the header away with
-           them. The list is what grows without bound, so it is what is capped:
-           the cap is a max, so a short list still sizes to its rows and never
-           scrolls, and a long one leaves the card's chrome in place. Sized to
-           sit under the card cap with the history collapsed, so the two
-           scrollers don't both appear at rest. */
+           them. The list is what grows without bound, so it is what is capped,
+           and only once a cap would hide something worth scrolling to: until
+           then it is a plain block, so a finger dragged across it scrolls the
+           page like the rest of the card. The cap is sized to sit under the
+           card cap with the history collapsed, so the two scrollers don't both
+           appear at rest. */
         <div
-          className="space-y-3 max-h-[26rem] overflow-y-auto overscroll-contain pe-1"
+          ref={listRef}
+          className={`space-y-3 ${capped ? "max-h-[26rem] overflow-y-auto pe-1" : ""}`}
           data-testid="goals-list"
         >
           {goals.map((goal, index) => (
@@ -585,7 +624,11 @@ function AllocationHistory() {
                       {hasFreeCash && (
                         <Bar
                           dataKey={FREE_CASH_KEY}
-                          name={t("dashboard.goals.freeCash")}
+                          // Not "free cash": the segment is the pool's
+                          // movement, so a month that spent more than it
+                          // earned shows a negative — which would read as a
+                          // negative balance under the pool's own name.
+                          name={t("dashboard.goals.historyUnclaimed")}
                           stackId="allocations"
                           fill={FREE_CASH_COLOR}
                           maxBarSize={30}
