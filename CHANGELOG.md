@@ -1,3 +1,9 @@
+## v1.81.1 (2026-09-21)
+
+### Perf
+
+- **prod**: cut minutes off the path from a merge to the reload toast (#333)
+
 ## v1.81.0 (2026-09-21)
 
 ### Feat
