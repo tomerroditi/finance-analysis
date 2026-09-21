@@ -91,6 +91,60 @@ test.describe("Income & Expenses dashboard card", () => {
     expect(firstMonth && lastMonth).toBeTruthy();
     expect(firstMonth! > lastMonth!).toBe(true); // "YYYY-MM" strings sort lexically
 
+    // --- Heading row and data rows share one grid track list ---
+    // They are two separate grids, so a column width edited in one and not the
+    // other slides every heading off the column it names — and nothing else in
+    // this suite would notice, because both grids still render.
+    const trackLists = await page.evaluate(() => {
+      const row = document.querySelector('[data-testid="ledger-row"]')!;
+      const head = row.parentElement!.querySelector(":scope > div.grid")!;
+      const read = (el: Element) => {
+        const cs = getComputedStyle(el);
+        return `${cs.gridTemplateColumns} / ${cs.columnGap}`;
+      };
+      return { head: read(head), row: read(row) };
+    });
+    expect(trackLists.row).toBe(trackLists.head);
+
+    // --- Each column scales off its own series, proportionally ---
+    // Pooling income and expenses under one cap let the lumpy series (income
+    // carries the bonuses and windfalls) set the scale the steady one had to
+    // live on, pinning every expense bar to the bottom of its column.
+    const scales = await page.evaluate(() => {
+      const impliedCaps = (kind: string) =>
+        Array.from(
+          document.querySelectorAll(
+            `[data-testid="ledger-bar"][data-kind="${kind}"]`,
+          ),
+        )
+          .filter((bar) => (bar as HTMLElement).dataset.capped === "false")
+          .map((bar) => {
+            // The label is the bar's own ₪ figure; width is its share of the cap.
+            const value = Number((bar.textContent || "").replace(/\D/g, ""));
+            const pct = parseFloat((bar as HTMLElement).style.width);
+            return { value, pct };
+          })
+          // Skip the 2% floor and the full-width end, where width no longer
+          // tracks value.
+          .filter((b) => b.value > 0 && b.pct > 2 && b.pct < 100)
+          .map((b) => (b.value / b.pct) * 100);
+      return { income: impliedCaps("income"), expense: impliedCaps("expense") };
+    });
+
+    // Every uncapped bar in a column implies the same cap — i.e. length stays
+    // strictly proportional to ₪ within the column.
+    for (const caps of [scales.income, scales.expense]) {
+      expect(caps.length).toBeGreaterThan(1);
+      for (const cap of caps) expect(cap).toBeCloseTo(caps[0], -2);
+    }
+    // ...and the two columns arrive at different caps, which they cannot do
+    // from a shared pool. (Demo income is a flat salary while expenses vary,
+    // so their medians are far apart — if demo data ever makes the two series
+    // coincide, this is the assertion to revisit, not the split.)
+    expect(Math.abs(scales.income[0] - scales.expense[0])).toBeGreaterThan(
+      scales.income[0] * 0.05,
+    );
+
     // --- KPI cards summarise income and expenses with period labels ---
     const income = card.getByTestId("kpi-income");
     const expenses = card.getByTestId("kpi-expense");
