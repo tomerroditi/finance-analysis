@@ -373,16 +373,32 @@ export function RecentTransactionsFeed({
         {/* Date headers are direct children of the scroll root, not of a
             per-group wrapper. A sticky element only stays pinned while its
             containing block is on screen: wrapped, each header unpinned the
-            moment its own group ended and the next one had not reached the top
-            yet, so a sliver of the outgoing group's last row showed above the
-            pinned date. Sharing the scroll root as the containing block hands
-            one header straight over to the next with nothing in between. */}
+            moment its own group ended and the next had not reached the top
+            yet, leaving a sliver of the outgoing group's last row above the
+            pinned date. Sharing the scroll root keeps a date pinned at all
+            times — but they then all pin at 0 and stack, so the incoming one
+            slides up *over* the outgoing one instead of pushing it, and for
+            the ~30px that takes, a clipped band of the previous date showed
+            above the current one. Same thin line, made of a date.
+
+            The upward box-shadow closes that. Three numbers are equal on
+            purpose: the header is 28px tall (pt-1 + a 16px line + pb-2), the
+            shadow reaches 28px above it (26px offset + 2px spread), and the
+            gap between groups is 28px (mt-7). Pinned, the shadow is clipped by
+            the scroll port and hides the outgoing header for the whole
+            overlap, so the date swaps in one frame; unpinned, it fills exactly
+            the gap and stops at the previous row's edge, surface over surface.
+            The offset/spread split is what makes the shadow *overlap* the
+            header's own background rather than abut it — abutting edges snap
+            to device pixels independently and left a one-pixel seam of the
+            covered date showing through. `stickyDateHeader.test.ts` pins all
+            three numbers together. */}
         {grouped.map((group, groupIndex) => (
           <Fragment key={group.label}>
             <p
               data-testid="recent-tx-date"
-              className={`text-xs font-semibold text-[var(--text-muted)] sticky top-0 bg-[var(--surface)] pt-1 pb-2 z-10 ${
-                groupIndex > 0 ? "mt-4" : ""
+              className={`text-xs font-semibold text-[var(--text-muted)] sticky top-0 z-10 bg-[var(--surface)] pt-1 pb-2 shadow-[0_-26px_0_2px_var(--surface)] ${
+                groupIndex > 0 ? "mt-7" : ""
               }`}
             >
               {group.label}

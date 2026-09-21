@@ -14,7 +14,9 @@ import { enableDemoMode, navigateTo, resetDemoData } from "./helpers";
  *  4. Nothing in the card said where the money moved (account / card).
  *  5. Each date header was sticky inside its own group wrapper, so it unpinned
  *     the moment its group ended and left a strip of the outgoing group's last
- *     row exposed above the next pinned date.
+ *     row exposed above the next pinned date. Sharing the scroll root fixed
+ *     the gap but stacked every header at 0, so the incoming date then slid up
+ *     over the outgoing one and showed it clipped to a sliver instead.
  *  6. The action bar was indented past the row's icon column, which wrapped its
  *     buttons onto three lines on a phone.
  */
@@ -41,60 +43,148 @@ async function scrollFeed(page: Page, delta: number): Promise<number> {
 }
 
 /**
- * Largest gap, over a scroll sweep, between the top of the feed's scroll port
- * and the nearest date header still on screen.
+ * Worst number of pixels painting something other than the card's own
+ * background in the band above the topmost date header, sampled around every
+ * date handover the feed currently holds.
  *
- * A date header is meant to be pinned flush to that edge at every offset, so
- * anything above zero is a band of scrolling rows left uncovered — the thin
- * line of a half-scrolled row that used to show above the pinned date.
+ * This is the "thin line above the pinned date" as the eye sees it, so it is
+ * checked in pixels rather than in geometry. Geometry alone passed while the
+ * bug was plainly visible: a date header is always pinned flush to the top
+ * edge, but they all pin at 0 and stack, so the incoming date slid up *over*
+ * the outgoing one and both were on screen at once, the outgoing one clipped
+ * to a sliver. What keeps the band clean is the header's upward box-shadow,
+ * and only its rendering can confirm it.
  */
-async function worstUncoveredBandAboveDate(page: Page): Promise<number> {
-  return page.evaluate(async (selector) => {
-    const root = document
+async function worstBandAboveDate(page: Page): Promise<number> {
+  const root = page.locator(`${RECENT_CARD} [data-scroll-root]`);
+  await root.scrollIntoViewIfNeeded();
+
+  // The app scrolls smoothly, so a bare `scrollTop =` starts an animation and
+  // every probe would read an in-flight offset instead of the one it asked for.
+  await page.addStyleTag({
+    content: "*, *::before, *::after { scroll-behavior: auto !important; }",
+  });
+
+  // Page in enough rows for several date groups to exist above the fold.
+  let previousRows = -1;
+  for (let i = 0; i < 6; i++) {
+    const rows = await page.evaluate((selector) => {
+      const el = document
+        .querySelector(selector)
+        ?.querySelector<HTMLElement>("[data-scroll-root]");
+      if (!el) throw new Error("recent transactions scroll root not found");
+      el.scrollTop = el.scrollHeight;
+      return el.querySelectorAll('[data-testid="recent-tx-row"]').length;
+    }, RECENT_CARD);
+    if (rows === previousRows) break;
+    previousRows = rows;
+    await page.waitForTimeout(400);
+  }
+
+  const offsets = await page.evaluate((selector) => {
+    const el = document
       .querySelector(selector)
       ?.querySelector<HTMLElement>("[data-scroll-root]");
-    if (!root) throw new Error("recent transactions scroll root not found");
-    const headers = () => [
-      ...root.querySelectorAll<HTMLElement>('[data-testid="recent-tx-date"]'),
-    ];
-    const rootTop = () => root.getBoundingClientRect().top;
-    // Sticky offsets are recomputed by the compositor, not by a forced
-    // layout, so every scroll has to cross a frame before it can be read.
-    const settle = () =>
-      new Promise<void>((resolve) =>
-        requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
-      );
-
-    // Natural (unpinned) offset of each header. Read at scrollTop 0, where
-    // every header below the fold still sits at its flow position.
-    root.scrollTop = 0;
-    await settle();
-    const boundaries = headers()
-      .map((header) => header.getBoundingClientRect().top - rootTop())
-      .filter((offset) => offset > 0);
-
-    // Only the handover from one date to the next can leave a gap, so probe
-    // finely around each boundary instead of sweeping the whole feed coarsely.
-    const offsets = new Set<number>([0]);
+    if (!el) throw new Error("recent transactions scroll root not found");
+    el.scrollTop = 0;
+    const top = el.getBoundingClientRect().top;
+    const boundaries = [
+      ...el.querySelectorAll<HTMLElement>('[data-testid="recent-tx-date"]'),
+    ]
+      .map((header) => header.getBoundingClientRect().top - top)
+      .filter((offset) => offset > 0)
+      .slice(0, 4);
+    // Only the handover from one date to the next can dirty the band.
+    const sampled = new Set<number>();
     for (const boundary of boundaries) {
-      for (let delta = -48; delta <= 12; delta += 3) {
-        offsets.add(Math.max(0, Math.round(boundary + delta)));
+      for (let delta = -30; delta <= 6; delta += 4) {
+        sampled.add(Math.max(0, Math.round(boundary + delta)));
       }
     }
-
-    let worst = 0;
-    for (const scrollTop of offsets) {
-      root.scrollTop = scrollTop;
-      await settle();
-      const top = rootTop();
-      const visible = headers()
-        .map((header) => header.getBoundingClientRect())
-        .filter((box) => box.bottom - top > 0.5)
-        .map((box) => box.top - top);
-      if (visible.length) worst = Math.max(worst, Math.min(...visible));
-    }
-    return worst;
+    return [...sampled];
   }, RECENT_CARD);
+
+  const box = await root.boundingBox();
+  if (!box) throw new Error("recent transactions scroll root has no box");
+
+  let worst = 0;
+  for (const scrollTop of offsets) {
+    // Height of the band above the date that paints on top there. All the
+    // headers pin at 0 and stack, so that is the last one in DOM order which
+    // reaches into the band — during a handover, the date sliding into place.
+    const band = await page.evaluate(
+      async ([selector, offset]) => {
+        const el = document
+          .querySelector(selector as string)
+          ?.querySelector<HTMLElement>("[data-scroll-root]");
+        if (!el) throw new Error("recent transactions scroll root not found");
+        el.scrollTop = offset as number;
+        // Sticky offsets are recomputed by the compositor, not by a forced
+        // layout, so the scroll has to cross a frame before it can be read.
+        await new Promise<void>((resolve) =>
+          requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+        );
+        const top = el.getBoundingClientRect().top;
+        const reaching = [
+          ...el.querySelectorAll<HTMLElement>('[data-testid="recent-tx-date"]'),
+        ]
+          .map((header) => header.getBoundingClientRect())
+          .filter((r) => r.bottom - top > 0.5 && r.top - top < 28);
+        if (!reaching.length) return 0;
+        return Math.max(0, Math.floor(reaching[reaching.length - 1].top - top));
+      },
+      [RECENT_CARD, scrollTop] as const,
+    );
+    if (band < 1) continue;
+
+    const shot = await page.screenshot({
+      clip: { x: box.x, y: box.y, width: box.width, height: band },
+    });
+    const dirty = await page.evaluate(
+      async ([data, selector]) => {
+        const image = new Image();
+        image.src = `data:image/png;base64,${data}`;
+        await image.decode();
+        const canvas = document.createElement("canvas");
+        canvas.width = image.width;
+        canvas.height = image.height;
+        const context = canvas.getContext("2d");
+        if (!context) throw new Error("no 2d context");
+        context.drawImage(image, 0, 0);
+        const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data;
+        // The card's own backdrop — `[data-card-id]` is a layout wrapper and
+        // is transparent, which would make every pixel look wrong.
+        let node = document
+          .querySelector(selector as string)
+          ?.querySelector<HTMLElement>("[data-scroll-root]") as HTMLElement | null;
+        let backdrop = "";
+        while (node) {
+          const colour = getComputedStyle(node).backgroundColor;
+          const parts = colour.match(/[\d.]+/g)?.map(Number) ?? [];
+          if (parts.length < 4 || parts[3] > 0) {
+            backdrop = colour;
+            break;
+          }
+          node = node.parentElement;
+        }
+        const [r, g, b] = backdrop.match(/[\d.]+/g)!.map(Number);
+        let count = 0;
+        for (let i = 0; i < pixels.length; i += 4) {
+          if (
+            Math.abs(pixels[i] - r) > 6 ||
+            Math.abs(pixels[i + 1] - g) > 6 ||
+            Math.abs(pixels[i + 2] - b) > 6
+          ) {
+            count++;
+          }
+        }
+        return count;
+      },
+      [shot.toString("base64"), RECENT_CARD] as const,
+    );
+    worst = Math.max(worst, dirty);
+  }
+  return worst;
 }
 
 async function feedScrollTop(page: Page): Promise<number> {
@@ -204,8 +294,8 @@ test.describe("Dashboard recent transactions — row actions", () => {
     await row.click();
     await expect(actionBar).toHaveCount(0);
 
-    // --- A date header is pinned flush to the top at every scroll offset ---
-    expect(await worstUncoveredBandAboveDate(page)).toBeLessThanOrEqual(0.5);
+    // --- Nothing but the card's background above the pinned date ----------
+    expect(await worstBandAboveDate(page)).toBe(0);
   });
 
   test("tagging a row keeps the feed's scroll position", async ({ page }) => {
