@@ -1,3 +1,9 @@
+## v1.82.1 (2026-09-21)
+
+### Fix
+
+- **dashboard**: stop the outgoing date showing above the pinned one (#336)
+
 ## v1.82.0 (2026-09-21)
 
 ### Feat
