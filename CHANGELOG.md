@@ -1,3 +1,9 @@
+## v1.80.0 (2026-09-21)
+
+### Feat
+
+- **savings-goals**: take over the free cash that predates a goal as its opening balance (#329)
+
 ## v1.79.0 (2026-09-21)
 
 ### Feat
