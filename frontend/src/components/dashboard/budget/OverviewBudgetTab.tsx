@@ -9,13 +9,13 @@ import { useQueryKeys } from "../../../hooks/useQueryKeys";
 import { formatMonthYear } from "../../../utils/dateFormatting";
 import { formatAmount, formatCurrency } from "../../../utils/numberFormatting";
 import { CommitmentBar } from "../../budget/overview/CommitmentBar";
-import { percentOf, rankEnvelopes } from "../../budget/overview/envelopeMath";
+import { percentOf, rankRules } from "../../budget/overview/ruleMath";
 import { budgetLink } from "../../../utils/budgetNavigation";
 
-/** How many long envelopes fit the card before it outgrows the dashboard slot. */
+/** How many long rules fit the card before it outgrows the dashboard slot. */
 const CARD_ENVELOPES = 2;
 
-/** An envelope is "hot" once this full. */
+/** A rule is "hot" once this full. */
 const HOT = 90;
 
 interface OverviewBudgetTabProps {
@@ -30,11 +30,11 @@ interface OverviewBudgetTabProps {
  *
  * Says nothing about pace. The card shows where the month's budget stands as
  * four parts (charged, chosen, still owed, free), a verdict built from those
- * parts rather than from elapsed days, and the envelopes that need a decision.
+ * parts rather than from elapsed days, and the rules that need a decision.
  *
  * The yearly-and-projects block is the card's answer to a question the old
- * design got wrong: those envelopes have no monthly limit, so one column states
- * what this month put in and the other where the envelope stands overall, each
+ * design got wrong: those rules have no monthly limit, so one column states
+ * what this month put in and the other where the rule stands overall, each
  * under its own heading. On a settled month the second column is headed "now",
  * because that is what it describes.
  */
@@ -120,7 +120,7 @@ export const OverviewBudgetTab: React.FC<OverviewBudgetTabProps> = ({
     monthly_budget: budget,
     free_to_spend: free,
     projected,
-    long_envelopes: longEnvelopes,
+    long_envelopes: longRules,
   } = overview;
 
   if (budget <= 0 && spent === 0) {
@@ -145,10 +145,10 @@ export const OverviewBudgetTab: React.FC<OverviewBudgetTabProps> = ({
   const finalOrProjected = projected ?? spent;
   const delta = budget - finalOrProjected;
   const hasCeiling = budget > 0;
-  const ranked = rankEnvelopes(longEnvelopes);
+  const ranked = rankRules(longRules);
   const shown = ranked.slice(0, CARD_ENVELOPES);
   const remaining = ranked.length - shown.length;
-  const troubled = ranked.filter((envelope) => percentOf(envelope) >= HOT).length;
+  const troubled = ranked.filter((rule) => percentOf(rule) >= HOT).length;
 
   return (
     <div className="flex flex-1 flex-col min-h-0">
@@ -230,7 +230,7 @@ export const OverviewBudgetTab: React.FC<OverviewBudgetTabProps> = ({
           {/* Two headings, because the two figures mean different things. */}
           <div className="grid grid-cols-[minmax(0,1fr)_72px_52px] gap-2 mb-0.5">
             <span className="text-xs font-bold uppercase tracking-wide text-[var(--text-muted)]">
-              {t("budget.overview.longEnvelopesShort")}
+              {t("budget.overview.longRulesShort")}
             </span>
             <span className="text-end text-[10px] uppercase text-[var(--text-muted)]">
               {t("budget.overview.inMonth", { month: shortMonth })}
@@ -241,20 +241,20 @@ export const OverviewBudgetTab: React.FC<OverviewBudgetTabProps> = ({
                 : t("budget.overview.overallNow")}
             </span>
           </div>
-          {shown.map((envelope) => {
-            const percent = percentOf(envelope);
+          {shown.map((rule) => {
+            const percent = percentOf(rule);
             return (
               <div
-                key={`${envelope.kind}-${envelope.name}`}
-                data-testid="card-long-envelope"
+                key={`${rule.kind}-${rule.name}`}
+                data-testid="card-long-rule"
                 className="grid grid-cols-[minmax(0,1fr)_72px_52px] gap-2 items-center py-1.5 border-b border-[var(--surface-light)] last:border-b-0"
               >
                 <span className="font-semibold text-[13px] truncate" dir="auto">
-                  {envelope.name}
+                  {rule.name}
                 </span>
                 <span dir="ltr" className="text-end text-[11px] font-mono font-bold">
-                  {envelope.month_contribution
-                    ? formatCurrency(envelope.month_contribution)
+                  {rule.month_contribution
+                    ? formatCurrency(rule.month_contribution)
                     : "—"}
                 </span>
                 <span
@@ -267,7 +267,7 @@ export const OverviewBudgetTab: React.FC<OverviewBudgetTabProps> = ({
                         : "text-[var(--text-default)]"
                   }`}
                 >
-                  {envelope.budget > 0 ? `${percent}%` : "—"}
+                  {rule.budget > 0 ? `${percent}%` : "—"}
                 </span>
               </div>
             );

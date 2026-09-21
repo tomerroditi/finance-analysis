@@ -42,7 +42,7 @@ export const YearlyBudgetTab: React.FC<YearlyBudgetTabProps> = ({
   });
 
   // The whole budget prefix, not just this year's key: the card's own
-  // Overview tab builds its envelope list from these rules and their closed
+  // Overview tab builds its rule list from these rules and their closed
   // flag, so it has to refetch too.
   const invalidateBudget = () =>
     queryClient.invalidateQueries({ queryKey: qkPrefix.budget });
@@ -133,7 +133,7 @@ export const YearlyBudgetTab: React.FC<YearlyBudgetTabProps> = ({
   // Yearly analysis emits no "Total Budget" pseudo-rule — the roll-up sums the
   // view — so every row here is a real rule and the totals come from summary.
   //
-  // Closed envelopes sink below the open ones: they are kept for their
+  // Closed rules sink below the open ones: they are kept for their
   // history, and leaving a settled commitment among the ones still being
   // spent from is exactly the noise closing removes. Within each group the
   // heaviest spend leads, as before.

@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next";
 import { useQuery, keepPreviousData } from "@tanstack/react-query";
 import { AlertTriangle, HelpCircle, Lock, Target, Undo2, Wallet } from "lucide-react";
 import i18n from "../../i18n";
-import { budgetApi, type BudgetLongEnvelope } from "../../services/api";
+import { budgetApi, type BudgetLongRule } from "../../services/api";
 import { formatCurrency } from "../../utils/numberFormatting";
 import { formatShortDate } from "../../utils/dateFormatting";
 import { Skeleton } from "../common/Skeleton";
@@ -16,13 +16,13 @@ import { BAR_CONTROL, BudgetCommandBar, PeriodNav } from "./BudgetCommandBar";
 import { RuleSparkline } from "./RuleSparkline";
 import { CommitmentBar } from "./overview/CommitmentBar";
 import { AcrossAllThree } from "./overview/AcrossAllThree";
-import { LongEnvelopes } from "./overview/LongEnvelopes";
-import { percentOf, rankEnvelopes } from "./overview/envelopeMath";
+import { LongRules } from "./overview/LongRules";
+import { percentOf, rankRules } from "./overview/ruleMath";
 
 /** Months in the budget-vs-actual figure. Closed months compare cleanly. */
 const TREND_MONTHS = 12;
 
-/** An envelope is "hot" once this full — the same threshold the ledger rows use. */
+/** A rule is "hot" once this full — the same threshold the ledger rows use. */
 const HOT = 90;
 
 interface AttentionItem {
@@ -122,8 +122,8 @@ interface OverviewBudgetViewProps {
  *
  * Stepping back to a settled month changes the question from "can I still act?"
  * to "how did it close?", so the screen changes with it: nothing is committed,
- * the projection becomes a final figure, and only monthly envelopes keep a
- * percentage — yearly and project envelopes report what that month contributed,
+ * the projection becomes a final figure, and only monthly rules keep a
+ * percentage — yearly and project rules report what that month contributed,
  * because their own percentages always describe today.
  */
 export const OverviewBudgetView: React.FC<OverviewBudgetViewProps> = ({
@@ -255,7 +255,7 @@ export const OverviewBudgetView: React.FC<OverviewBudgetViewProps> = ({
     projected,
     charges_due: chargesDue,
     days_left: daysLeft,
-    long_envelopes: longEnvelopes,
+    long_envelopes: longRules,
   } = overview;
 
   const spentPercent =
@@ -264,7 +264,7 @@ export const OverviewBudgetView: React.FC<OverviewBudgetViewProps> = ({
   const delta = budget - finalOrProjected;
 
   // Monthly alerts come from the server (they know each rule's tags); the long
-  // envelopes are already in the overview payload, so their trouble is derived
+  // rules are already in the overview payload, so their trouble is derived
   // here rather than fetched twice.
   const monthlyAttention: AttentionItem[] = (alerts?.alerts ?? []).map(
     (alert: MonthlyAlert) => ({
@@ -275,14 +275,14 @@ export const OverviewBudgetView: React.FC<OverviewBudgetViewProps> = ({
       remaining: alert.amount - alert.spent,
     }),
   );
-  const longAttention: AttentionItem[] = longEnvelopes
-    .filter((envelope) => percentOf(envelope) >= HOT)
-    .map((envelope: BudgetLongEnvelope) => ({
-      key: `${envelope.kind}-${envelope.name}`,
-      name: envelope.name,
-      kind: envelope.kind,
-      percent: percentOf(envelope),
-      remaining: envelope.budget - envelope.spent,
+  const longAttention: AttentionItem[] = longRules
+    .filter((rule) => percentOf(rule) >= HOT)
+    .map((rule: BudgetLongRule) => ({
+      key: `${rule.kind}-${rule.name}`,
+      name: rule.name,
+      kind: rule.kind,
+      percent: percentOf(rule),
+      remaining: rule.budget - rule.spent,
     }));
   const attention = [...monthlyAttention, ...longAttention].sort(
     (a, b) => b.percent - a.percent,
@@ -306,11 +306,11 @@ export const OverviewBudgetView: React.FC<OverviewBudgetViewProps> = ({
   const refunds = analysis?.pending_refunds;
   const goals = analysis?.savings_goals;
 
-  const envelopeCount =
+  const ruleCount =
     (analysis?.rules ?? []).filter(
       (item: { rule: { name: string } }) =>
         item.rule.name !== "Total Budget" && item.rule.name !== "Other Expenses",
-    ).length + longEnvelopes.length;
+    ).length + longRules.length;
 
   return (
     <div className="space-y-1.5">
@@ -381,7 +381,7 @@ export const OverviewBudgetView: React.FC<OverviewBudgetViewProps> = ({
             over: overCount,
             hot: hotCount,
           })}
-          sub={t("budget.overview.ofEnvelopes", { count: envelopeCount })}
+          sub={t("budget.overview.ofRules", { count: ruleCount })}
           tone={overCount > 0 ? "bad" : "muted"}
         />
       </div>
@@ -446,7 +446,7 @@ export const OverviewBudgetView: React.FC<OverviewBudgetViewProps> = ({
           </div>
         </div>
 
-        {/* Needs attention / envelope by envelope. */}
+        {/* Needs attention / rule by rule. */}
         <div className="xl:col-span-5 bg-[var(--surface)] rounded-2xl border border-[var(--surface-light)] shadow-sm p-4 md:p-5 flex flex-col gap-3">
           <div className="flex items-center justify-between gap-2">
             <div className="flex items-center gap-2 min-w-0">
@@ -456,13 +456,13 @@ export const OverviewBudgetView: React.FC<OverviewBudgetViewProps> = ({
               <p className="font-bold text-sm md:text-base truncate">
                 {isCurrent
                   ? t("budget.overview.needsAttention")
-                  : t("budget.overview.monthlyEnvelopes")}
+                  : t("budget.overview.monthlyRules")}
               </p>
             </div>
             <span className="text-xs text-[var(--text-muted)] shrink-0">
               {isCurrent
                 ? attention.length
-                : t("budget.overview.monthlyEnvelopesOnly")}
+                : t("budget.overview.monthlyRulesOnly")}
             </span>
           </div>
 
@@ -535,8 +535,8 @@ export const OverviewBudgetView: React.FC<OverviewBudgetViewProps> = ({
         </div>
       </div>
 
-      <LongEnvelopes
-        envelopes={rankEnvelopes(longEnvelopes)}
+      <LongRules
+        rules={rankRules(longRules)}
         monthLabel={monthLabel}
         isPast={!isCurrent}
       />

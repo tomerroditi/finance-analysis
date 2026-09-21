@@ -22,16 +22,16 @@ function getProgressColor(pct: number, isUnbudgetedSpend: boolean): string {
 }
 
 /**
- * One envelope per line, scrolling inside whatever height the card's row allows.
+ * One rule per line, scrolling inside whatever height the card's row allows.
  *
  * Replaces the two-column tile (name + percentage pill, figures, full-width
  * bar, remaining — four stacked rows per rule, ~110px) with a single line per
  * rule in one column. The tile spent its height on layout rather than signal:
  * four rules filled the box, so the card showed a quarter of a typical month's
- * envelopes. The same box now holds roughly eight. Nothing was dropped — name,
+ * rules. The same box now holds roughly eight. Nothing was dropped — name,
  * spend, ceiling, bar, remaining and percentage all still render; the
  * percentage moved out of its colored pill and rides the remaining figure as a
- * muted suffix, since the color already says how close the envelope is.
+ * muted suffix, since the color already says how close the rule is.
  *
  * The four cells sit on a `subgrid`, so the bar, the figures and the
  * remainder line up down the whole list instead of each row sizing its own
@@ -65,7 +65,7 @@ function getProgressColor(pct: number, isUnbudgetedSpend: boolean): string {
  * where only one of them would ever have fit a column. One row is open at a
  * time, so the list never turns into a wall of panels.
  *
- * A closed envelope is dimmed and takes an archive marker in its category
+ * A closed rule is dimmed and takes an archive marker in its category
  * icon's place, whether or not the tab offers actions — that is state, not an
  * action, and it is what tells a settled row apart from a live one.
  *
@@ -109,7 +109,7 @@ export const BudgetRuleGrid: React.FC<BudgetRuleGridProps> = ({
           // rose instead of staying empty.
           const isUnbudgetedSpend =
             rule.budget_amount <= 0 && rule.spent_amount > 0;
-          // A net refund leaves the envelope negative. That is not spending:
+          // A net refund leaves the rule negative. That is not spending:
           // the bar floors at empty and the percentage reads 0%, rather than
           // a negative width the browser drops and a "-19%" nobody can act on.
           const spent = Math.max(rule.spent_amount, 0);

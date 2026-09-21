@@ -9,7 +9,7 @@ function bars(container: HTMLElement) {
 }
 
 describe("RuleSparkline", () => {
-  describe("bars variant (monthly envelopes)", () => {
+  describe("bars variant (monthly rules)", () => {
     it("colours only the months that crossed the budget as over", () => {
       const { container } = render(
         <RuleSparkline
@@ -31,7 +31,7 @@ describe("RuleSparkline", () => {
       expect(opacity).toEqual(["0.45", "1"]);
     });
 
-    it("draws no budget reference line for an unbudgeted envelope", () => {
+    it("draws no budget reference line for an unbudgeted rule", () => {
       const { container } = render(
         <RuleSparkline variant="bars" series={[100, 200]} labels={["Feb", "Mar"]} budget={0} />,
       );
@@ -41,7 +41,7 @@ describe("RuleSparkline", () => {
     });
   });
 
-  describe("burn variant (yearly and project envelopes)", () => {
+  describe("burn variant (yearly and project rules)", () => {
     it("draws a pace diagonal only when asked", () => {
       const withPace = render(
         <RuleSparkline
@@ -107,7 +107,7 @@ describe("RuleSparkline", () => {
       expect(container.querySelector("circle")?.getAttribute("fill")).toBe("#10b981");
     });
 
-    it("turns the line amber once the envelope is nearly spent out", () => {
+    it("turns the line amber once the rule is nearly spent out", () => {
       const { container } = render(
         <RuleSparkline
           variant="burn"

@@ -29,7 +29,7 @@ export const LedgerRowAction: React.FC<{
   testId?: string;
 }> = ({ kind, label, onClick, testId }) => {
   const Icon = ACTION_ICON[kind];
-  // Destructive red is reserved for delete; retiring an envelope is a
+  // Destructive red is reserved for delete; retiring a rule is a
   // reversible bookkeeping act, so it gets the neutral hover the edit
   // control uses rather than a warning colour.
   const enabled =
@@ -73,22 +73,22 @@ export interface BudgetLedgerRowProps {
   actions?: React.ReactNode;
   /** Per-rule trend cell (see RuleSparkline). */
   trend?: React.ReactNode;
-  /** Short chip shown beside the label, e.g. to mark a retired envelope. */
+  /** Short chip shown beside the label, e.g. to mark a retired rule. */
   badge?: React.ReactNode;
   /**
    * Render the row as settled: faded, so a row that is only kept for its
-   * history reads as background against the envelopes still being spent from.
+   * history reads as background against the rules still being spent from.
    */
   dimmed?: boolean;
   children?: React.ReactNode;
 }
 
 /**
- * One envelope per line.
+ * One rule per line.
  *
  * Replaces the two-line card (title line + full-width 20px bar + padding,
  * ~76px) with a single grid line on desktop, so a month with a dozen
- * envelopes fits on one screen. Below `md:` it keeps two lines — name and
+ * rules fits on one screen. Below `md:` it keeps two lines — name and
  * percentage, then bar, figures and trend — because eight columns don't fit
  * on a phone.
  *
@@ -114,7 +114,7 @@ export const BudgetLedgerRow: React.FC<BudgetLedgerRowProps> = ({
 
   const isNetRefund = current < 0;
   const spent = Math.max(current, 0);
-  // No budget means no proportion to draw: a 0-ceiling envelope used to
+  // No budget means no proportion to draw: a 0-ceiling rule used to
   // render a full amber bar, which read as "spent out" rather than "no
   // budget set" — and every other cell on the row already shows an em dash.
   const percent = total > 0 ? Math.min((spent / total) * 100, 100) : 0;

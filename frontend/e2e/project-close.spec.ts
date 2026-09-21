@@ -14,7 +14,7 @@ function escapeRegExp(value: string): string {
  */
 const DEMO_HEADERS = { "X-FAD-Demo": "1" };
 
-/** The month the Overview opens on, which is the one it reports envelopes for. */
+/** The month the Overview opens on, which is the one it reports rules for. */
 function currentMonthPath(): string {
   const now = new Date();
   return `${now.getFullYear()}/${now.getMonth() + 1}`;
@@ -37,9 +37,9 @@ test.describe("Closing a project budget", () => {
   }) => {
     await navigateTo(page, "/budget");
 
-    // The Overview lists the seeded project as a long envelope to begin with.
-    const overviewEnvelopes = page.getByTestId("budget-long-envelopes");
-    await expect(overviewEnvelopes).toBeVisible({ timeout: 15_000 });
+    // The Overview lists the seeded project as a long rule to begin with.
+    const overviewRules = page.getByTestId("budget-long-rules");
+    await expect(overviewRules).toBeVisible({ timeout: 15_000 });
 
     const projectsRes = await page.request.get("/api/budget/projects", {
       headers: DEMO_HEADERS,
@@ -49,7 +49,7 @@ test.describe("Closing a project budget", () => {
     expect(projects.length).toBeGreaterThan(0);
     const target = projects[0];
     const targetPattern = new RegExp(escapeRegExp(target), "i");
-    await expect(overviewEnvelopes).toContainText(targetPattern);
+    await expect(overviewRules).toContainText(targetPattern);
 
     // The demo project is over its budget, so it also holds a "needs
     // attention" row — the other section a closed project has to leave.
@@ -79,7 +79,7 @@ test.describe("Closing a project budget", () => {
     });
     await expect(toggle).toHaveText(/reopen project/i);
     // The seeded demo projects carry no `all_tags` anchor rule, so this tab
-    // renders its ledger without a status band — the envelope rows are what
+    // renders its ledger without a status band — the rule rows are what
     // proves the history survived the close.
     await expect(page.getByTestId("ledger-figures").first()).toBeVisible({
       timeout: 10_000,
@@ -99,14 +99,14 @@ test.describe("Closing a project budget", () => {
       overview.long_envelopes.map((e: { name: string }) => e.name),
     ).not.toContain(target);
 
-    // Overview: the envelope is gone, and with it the "needs attention" row.
+    // Overview: the rule is gone, and with it the "needs attention" row.
     // Counting a filtered locator rather than asserting `not.toContainText`
     // on the rows: once the last row goes, that locator matches nothing at
     // all and the negative assertion fails on "element(s) not found".
     await page.getByRole("button", { name: /^Overview$/i }).click();
     await expect(targetAttentionRow).toHaveCount(0, { timeout: 15_000 });
-    await expect(overviewEnvelopes).toBeVisible({ timeout: 15_000 });
-    await expect(overviewEnvelopes).not.toContainText(targetPattern);
+    await expect(overviewRules).toBeVisible({ timeout: 15_000 });
+    await expect(overviewRules).not.toContainText(targetPattern);
 
     // Back on the Projects tab (the tabs unmount, so the view picks a project
     // again from scratch) it must NOT land on the one just closed: a finished
@@ -134,7 +134,7 @@ test.describe("Closing a project budget", () => {
     });
 
     await page.getByRole("button", { name: /^Overview$/i }).click();
-    await expect(overviewEnvelopes).toContainText(targetPattern, {
+    await expect(overviewRules).toContainText(targetPattern, {
       timeout: 15_000,
     });
   });

@@ -5,7 +5,7 @@ import { BudgetRuleGrid } from "./BudgetRuleGrid";
 import type { BudgetRule } from "./types";
 
 /**
- * The dashboard's envelope list is one line per rule: name, bar, figures and
+ * The dashboard's rule list is one line per rule: name, bar, figures and
  * the remainder with its percentage suffix all live on the same row. The
  * assertions below pin the signal that line carries — nothing the old
  * four-row tile showed may quietly disappear — and the two states where the
@@ -71,7 +71,7 @@ describe("BudgetRuleGrid", () => {
     expect(bar.className).toContain("bg-emerald-500");
   });
 
-  it("turns amber from 75% of the envelope", () => {
+  it("turns amber from 75% of the rule", () => {
     render(
       <BudgetRuleGrid
         rules={[makeRule({ spent_amount: 1600 })]}
@@ -100,7 +100,7 @@ describe("BudgetRuleGrid", () => {
 
   // Regression: "Other Expenses" carries a 0 ceiling once every shekel is
   // allocated to explicit rules. Spend against it is entirely unbudgeted, so
-  // the row must read fully over rather than as an untouched envelope.
+  // the row must read fully over rather than as an untouched rule.
   it("treats spend against a zero budget as fully over", () => {
     render(
       <BudgetRuleGrid

@@ -7,11 +7,11 @@ import { API_BASE, enableDemoMode, navigateTo, resetDemoData } from "./helpers";
  * Six behaviours that only show up in a real browser: the tab strip has to
  * scroll on its own (the card sits in an `overflow-y-auto` grid cell, which
  * makes any horizontal overflow drag the whole card — figures and all —
- * sideways), the one-line envelope rows have to survive a phone-width card
+ * sideways), the one-line rule rows have to survive a phone-width card
  * without wrapping or overflowing, the total bar's "spent / ceiling" pair has
  * to stay in one left-to-right run under RTL, "open budget" has to land on
  * the tab the card was showing, closing a project from the card has to reach
- * the backend, and a yearly envelope's row has to expand into a panel whose
+ * the backend, and a yearly rule's row has to expand into a panel whose
  * edit, close and delete all do.
  *
  * Its own file rather than a block in `dashboard.spec.ts`: it needs a mobile
@@ -67,7 +67,7 @@ test.describe("dashboard budget card", () => {
       await projectsTab.click();
       await expect(projectsTab).toHaveAttribute("aria-pressed", "true");
 
-      // Envelope rows: one line each, even at 390px. The row packs a name, a
+      // Rule rows: one line each, even at 390px. The row packs a name, a
       // bar and two figures onto a single line, so a phone is exactly where it
       // would wrap to two lines or push the card sideways.
       const monthlyTab = card.getByRole("button", { name: /Monthly Budget/i });
@@ -94,7 +94,7 @@ test.describe("dashboard budget card", () => {
         };
       });
 
-      // A phone's budget card shows a month's envelopes, not a handful: the
+      // A phone's budget card shows a month's rules, not a handful: the
       // single-column line replaced a four-row tile precisely to fit them.
       expect(rowGeometry.count).toBeGreaterThanOrEqual(5);
       // Two lines of 10-12px text plus padding clears 44px; one does not.
@@ -255,7 +255,7 @@ test.describe("dashboard budget card", () => {
     await expect(toggle).toHaveAttribute("aria-label", /close project/i);
   });
 
-  test("edits, closes and reopens a yearly envelope from its row panel", async ({
+  test("edits, closes and reopens a yearly rule from its row panel", async ({
     page,
   }) => {
     const year = new Date().getFullYear();
@@ -396,7 +396,7 @@ test.describe("dashboard budget card", () => {
     const dialog = page.getByRole("alertdialog");
     await expect(dialog).toBeVisible();
     await expect(dialog).toContainText(`${ruleName} v2`);
-    await dialog.getByRole("button", { name: /^Close envelope$/i }).click();
+    await dialog.getByRole("button", { name: /^Close rule$/i }).click();
 
     // The card keeps the row — closing is not a delete — and its allocation
     // survives.
@@ -409,11 +409,11 @@ test.describe("dashboard budget card", () => {
     ).toBe(true);
 
     // ---- Reopen: a plain undo, with no confirmation step. ----
-    // Still the same open panel: closing an envelope sinks its row to the
+    // Still the same open panel: closing a rule sinks its row to the
     // bottom of the list, and the undo travels with it.
     await expect(
       panel.getByTestId(`card-rule-closed-toggle-${ruleId}`),
-    ).toHaveAttribute("aria-label", /reopen envelope/i, { timeout: 15_000 });
+    ).toHaveAttribute("aria-label", /reopen rule/i, { timeout: 15_000 });
     await panel.getByTestId(`card-rule-closed-toggle-${ruleId}`).click();
     await expect(renamedRow).not.toHaveAttribute("data-closed", "true", {
       timeout: 15_000,

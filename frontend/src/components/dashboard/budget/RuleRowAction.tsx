@@ -22,7 +22,7 @@ interface RuleRowActionProps {
  * Icon *and* label, unlike the Budget page's icon-only `LedgerRowAction`: the
  * panel only exists because it was tapped open, so it is read on a phone as
  * often as with a mouse, and an unlabelled icon there is a guess. Destructive
- * red stays reserved for delete — closing an envelope is reversible
+ * red stays reserved for delete — closing a rule is reversible
  * bookkeeping, so it takes the same neutral hover as edit.
  */
 export const RuleRowAction: React.FC<RuleRowActionProps> = ({

@@ -10,7 +10,7 @@ export interface BudgetRule {
   budget_amount: number;
   spent_amount: number;
   /**
-   * Whether this envelope has been settled, for the tabs that can close one.
+   * Whether this rule has been settled, for the tabs that can close one.
    * Monthly rules have no such state and leave it undefined; the grid only
    * draws the closed treatment where a tab also passes `onToggleClosed`.
    */
