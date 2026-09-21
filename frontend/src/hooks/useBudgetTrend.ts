@@ -16,7 +16,7 @@ interface TrendRuleItem {
   current_amount: number;
 }
 
-/** Per-rule spend series, aligned index-for-index with the returned `data`. */
+/** Per-rule series, aligned index-for-index with the returned `data`. */
 export type RuleTrendMap = Record<string, number[]>;
 
 /**
@@ -102,6 +102,13 @@ export function useBudgetTrend(
   // which creates fresh rows, so the same envelope has a different
   // `rule.id` in every month.
   const byRule: RuleTrendMap = {};
+  // The cap each rule carried in each month, aligned the same way. Caps are
+  // editable and a rule is a fresh row per month, so a sparkline drawn
+  // against today's limit misreports its own history: a month that ran 1,800
+  // against an 1,800 envelope reads as an overspend once the envelope is cut
+  // to 1,500. A month where the rule did not exist keeps its zero, which the
+  // sparkline draws as a gap rather than a floor.
+  const byRuleLimit: RuleTrendMap = {};
   points.forEach((p, i) => {
     // Clamp net refunds to 0: a period where refunds exceeded spend is not
     // negative spending, and a negative bar would read as an overspend. The
@@ -120,7 +127,19 @@ export function useBudgetTrend(
       if (!byRule[name]) byRule[name] = points.map(() => 0);
       byRule[name][i] = amount;
     }
+
+    const monthLimits =
+      hasViewedMonth && isViewedMonth(p)
+        ? Object.fromEntries(
+            viewedRules.map((item) => [item.rule.name, item.rule.amount || 0]),
+          )
+        : (p.limits ?? {});
+
+    for (const [name, limit] of Object.entries(monthLimits)) {
+      if (!byRuleLimit[name]) byRuleLimit[name] = points.map(() => 0);
+      byRuleLimit[name][i] = limit;
+    }
   });
 
-  return { data, isLoading, hasData, byRule };
+  return { data, isLoading, hasData, byRule, byRuleLimit };
 }

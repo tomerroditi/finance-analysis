@@ -201,6 +201,9 @@ export interface BudgetTrendPointResponse {
   /** Spend per rule name — names, not ids, because an auto-filled month
    *  creates fresh rows for the same envelope. */
   rules: Record<string, number>;
+  /** The cap each rule carried *that* month, keyed the same way. A rule
+   *  missing from the map had no envelope that month. */
+  limits: Record<string, number>;
 }
 
 export interface BudgetChargeDue {
