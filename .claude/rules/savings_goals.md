@@ -85,6 +85,20 @@ engine starts taking money back out of the goals.
 - **It is spendable cash, not a bank statement.** Investment transfers reduce it
   for the same reason they reduce the surplus, so it will sit below the raw
   bank + cash balance for anyone who invests.
+- **Goals never draw on the standing pool, only on each month's new
+  surplus.** Money already in the accounts when a goal starts stays free cash
+  for good — a flat, non-zero pool line under a goal that absorbs every
+  month's surplus is correct, not a leak. The way to earmark that money is the
+  goal's opening balance: `GET /savings-goals/free-cash/before?month=&goal_id=`
+  (`get_free_cash_before`) reports the pool at the start of the goal's start
+  month with the goal itself left out of the walk, and the editor offers it as
+  a one-click opening balance.
+- **Moving an opening balance restates history.** Stored months keep their
+  rows, so a new opening balance replayed against old ones leaves the pool
+  short — the next deficit month then claws the difference back out of
+  whichever goal has no row there, which is the wrong goal. The editor
+  therefore runs a `rebuild` from the goal's start month whenever the opening
+  balance changes, and says so before the user saves.
 - `free_cash + Σ available` is the liquid money the goals sit over, which is
   what `GET /savings-goals/free-cash` reports as `liquid`. That endpoint
   short-circuits to zeros when the user keeps no goals, so the no-goals path

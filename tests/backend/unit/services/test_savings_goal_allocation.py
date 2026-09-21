@@ -8,6 +8,7 @@ reach any goal, auto-closure, and the immutability of a closed goal's history
 across a rebuild.
 """
 
+import math
 from contextlib import contextmanager
 from datetime import date
 
@@ -15,6 +16,7 @@ import pytest
 from sqlalchemy import event
 from sqlalchemy.orm import Session
 
+from backend.errors import ValidationException
 from backend.models.savings_goal import (
     GOAL_STATUS_CLOSED,
     LINK_CONTRIBUTION,
@@ -619,6 +621,96 @@ class TestFreeCashPool:
         assert before["free_cash"] == 5000
         assert after["free_cash"] == before["free_cash"] + 3000
         assert after["liquid"] == before["liquid"]
+
+    def test_a_drained_pool_reports_positive_zero(self, db_session, service):
+        """A pool drained to nothing reads 0.0, never the -0.0 rounding leaves."""
+        good, bad = _month_str(2), _month_str(1)
+        _seed_surplus(db_session, good, income=10000, expenses=9000)
+        _seed_surplus(db_session, bad, income=5000, expenses=8000)
+        service.create(name="Goal", target_amount=5000, priority=0, start_month=good)
+
+        pools = [row["free_cash"] for row in service.get_timeline(months=None)["months"]]
+        assert all(math.copysign(1.0, pool) == 1.0 for pool in pools)
+
+
+class TestFreeCashBefore:
+    """The money already in the accounts when a goal started, offered as its opening balance.
+
+    Goals only draw on each month's new surplus, so that money otherwise sits
+    in the free-cash pool for good.
+    """
+
+    def test_earliest_goal_sees_prior_wealth_and_earlier_surplus(
+        self, db_session, service
+    ):
+        """Before any goal starts, the pool is prior wealth walked through history."""
+        before, start = _month_str(3), _month_str(2)
+        _seed_free_cash(db_session, 5000)
+        _seed_surplus(db_session, before, income=10000, expenses=9000)
+        _seed_surplus(db_session, start, income=10000, expenses=7000)
+        goal_id = service.create(
+            name="Goal", target_amount=50000, start_month=start
+        )[0]["id"]
+
+        assert service.get_free_cash_before(start, goal_id)["free_cash"] == 6000
+
+    def test_the_goals_own_opening_balance_does_not_count(self, db_session, service):
+        """Asking twice gives the same answer — the goal is left out of its own figure."""
+        start = _month_str(2)
+        _seed_free_cash(db_session, 5000)
+        goal_id = service.create(
+            name="Goal", target_amount=50000, opening_balance=5000, start_month=start
+        )[0]["id"]
+
+        assert service.get_free_cash_before(start, goal_id)["free_cash"] == 5000
+
+    def test_later_goal_sees_what_earlier_goals_left(self, db_session, service):
+        """A goal starting after another sees the pool that goal's cap left behind."""
+        early, late = _month_str(2), _month_str(1)
+        _seed_free_cash(db_session, 1000)
+        _seed_surplus(db_session, early, income=10000, expenses=7000)
+        service.create(
+            name="Early", target_amount=50000, monthly_cap=1000, priority=0,
+            start_month=early,
+        )
+
+        assert service.get_free_cash_before(late)["free_cash"] == 3000
+
+    def test_claiming_it_empties_the_pool_without_moving_liquid(
+        self, db_session, service
+    ):
+        """Taking the figure as the opening balance and restating earmarks all of it.
+
+        This is the dashboard case: a flat pool that goals never touched, then
+        a deficit month drains it before reaching any goal. Once claimed, the
+        same deficit comes out of the goal instead, and the total liquid money
+        the goals sit over is unchanged.
+        """
+        start, bad = _month_str(2), _month_str(1)
+        _seed_free_cash(db_session, 5000)
+        _seed_surplus(db_session, start, income=10000, expenses=7000)
+        _seed_surplus(db_session, bad, income=5000, expenses=9000)
+        goal_id = service.create(
+            name="Goal", target_amount=50000, start_month=start
+        )[0]["id"]
+        before = service.get_free_cash()
+        assert before["free_cash"] == 1000
+
+        claim = service.get_free_cash_before(start, goal_id)["free_cash"]
+        service.update(goal_id, opening_balance=claim)
+        service.rebuild(from_month=start)
+
+        after = service.get_free_cash()
+        goal = service.get_all()[0]
+        assert after["free_cash"] == 0
+        assert after["liquid"] == before["liquid"]
+        assert goal["clawed_back"] == 4000
+        assert goal["funded"] == 5000 + 3000 - 4000
+
+    def test_rejects_a_malformed_month(self, service):
+        """An unparseable month is a validation error, not a silent zero."""
+        with pytest.raises(ValidationException):
+            service.get_free_cash_before("not-a-month")
 
 
 @contextmanager

@@ -355,4 +355,45 @@ test.describe("Savings goals", () => {
     // they took, so a deficit month can explain itself.
     await expect(page.getByText(/^Free cash:/)).toBeVisible();
   });
+
+  test("a goal can take over the free cash that predates it", async ({
+    page,
+  }) => {
+    const start = monthsAgo(3);
+    const goal = await createGoal({
+      name: "E2E Claim Goal",
+      target_amount: 5_000_000,
+      monthly_cap: 1,
+      start_month: start,
+    });
+    const claim = await (
+      await ctx.get(`${API_BASE}/savings-goals/free-cash/before`, {
+        params: { month: start, goal_id: goal.id },
+      })
+    ).json();
+    expect(
+      claim.free_cash,
+      "demo data should leave free cash before the goal starts",
+    ).toBeGreaterThan(0);
+
+    await openDashboardWithGoals(page);
+    const row = goalRow(page, "E2E Claim Goal");
+    await expect(row).toBeVisible({ timeout: 30_000 });
+    await row.getByRole("button", { name: "Edit", exact: true }).click();
+
+    const dialog = page.getByRole("dialog");
+    await dialog.getByTestId("goal-opening-use-free-cash").click();
+    await expect(dialog.getByLabel("Already saved")).toHaveValue(
+      String(claim.free_cash),
+    );
+    // Moving the opening balance restates history, and the editor says so.
+    await expect(dialog.getByText(/recalculates goal allocations/i)).toBeVisible();
+    await dialog.getByRole("button", { name: "Save", exact: true }).click();
+    await expect(dialog).toHaveCount(0);
+
+    const saved = (
+      await (await ctx.get(`${API_BASE}/savings-goals/`)).json()
+    ).find((g: { id: number }) => g.id === goal.id);
+    expect(saved.opening_balance).toBeCloseTo(claim.free_cash, 2);
+  });
 });

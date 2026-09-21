@@ -301,6 +301,8 @@
       "targetLabel": "Target amount",
       "openingLabel": "Already saved",
       "openingHint": "Money set aside before tracking started",
+      "openingUseFreeCash": "Use the {{amount}} free before {{month}}",
+      "openingRestateHint": "Saving recalculates goal allocations from {{month}}",
       "capLabel": "Monthly cap",
       "capPlaceholder": "No limit",
       "capHint": "Most this goal can take in one month",

@@ -976,10 +976,32 @@ function GoalEditorModal({ goal, onClose }: { goal: SavingsGoal | null; onClose:
   const [monthlyCap, setMonthlyCap] = useState(goal?.monthly_cap != null ? String(goal.monthly_cap) : "");
   const [startMonth, setStartMonth] = useState(goal?.start_month ?? "");
   const [targetDate, setTargetDate] = useState(goal?.target_date ?? "");
+  const qk = useQueryKeys();
+
+  const today = new Date();
+  const currentMonth = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}`;
+  const effectiveStart = startMonth || currentMonth;
+  const startLabel = formatMonthYear(new Date(`${effectiveStart}-01T00:00:00`));
+
+  const { data: freeBefore } = useQuery({
+    queryKey: qk.savingsGoals.freeCashBefore(effectiveStart, goal?.id),
+    queryFn: async () =>
+      (await savingsGoalsApi.getFreeCashBefore(effectiveStart, goal?.id)).data,
+  });
+
+  // Stored months keep their rows, so an opening balance that moves without a
+  // restate leaves history computed against the old pool — a later deficit
+  // month would then take the difference back out of the wrong goal.
+  const openingChanged = (Number(openingBalance) || 0) !== (goal?.opening_balance ?? 0);
 
   const save = useMutation({
-    mutationFn: (payload: SavingsGoalInput) =>
-      goal ? savingsGoalsApi.update(goal.id, payload) : savingsGoalsApi.create(payload),
+    mutationFn: async (payload: SavingsGoalInput) => {
+      const res = goal
+        ? await savingsGoalsApi.update(goal.id, payload)
+        : await savingsGoalsApi.create(payload);
+      if (openingChanged) await savingsGoalsApi.rebuild(effectiveStart, false);
+      return res;
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: qkPrefix.savingsGoals });
       onClose();
@@ -1048,6 +1070,25 @@ function GoalEditorModal({ goal, onClose }: { goal: SavingsGoal | null; onClose:
             <p className="text-[10px] text-[var(--text-muted)] mt-1">
               {t("dashboard.goals.openingHint")}
             </p>
+            {!!freeBefore && freeBefore.free_cash > 0 && (
+              <button
+                type="button"
+                data-testid="goal-opening-use-free-cash"
+                onClick={() => setOpeningBalance(String(freeBefore.free_cash))}
+                className="mt-1.5 inline-flex items-center gap-1.5 text-start text-xs font-medium text-[var(--primary)] hover:underline"
+              >
+                <Wallet size={12} className="shrink-0" />
+                {t("dashboard.goals.openingUseFreeCash", {
+                  amount: formatCurrency(freeBefore.free_cash),
+                  month: startLabel,
+                })}
+              </button>
+            )}
+            {!!goal && openingChanged && (
+              <p className="text-[10px] text-amber-400 mt-1">
+                {t("dashboard.goals.openingRestateHint", { month: startLabel })}
+              </p>
+            )}
           </div>
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">

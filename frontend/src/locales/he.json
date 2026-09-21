@@ -301,6 +301,8 @@
       "targetLabel": "סכום היעד",
       "openingLabel": "כבר נחסך",
       "openingHint": "כסף שהופרש עוד לפני תחילת המעקב",
+      "openingUseFreeCash": "השתמש ב-{{amount}} שהיו פנויים לפני {{month}}",
+      "openingRestateHint": "השמירה תחשב מחדש את הקצאות היעדים החל מ-{{month}}",
       "capLabel": "תקרה חודשית",
       "capPlaceholder": "ללא הגבלה",
       "capHint": "הסכום המרבי שהיעד יקבל בחודש אחד",
