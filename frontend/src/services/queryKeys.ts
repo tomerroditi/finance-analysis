@@ -146,6 +146,8 @@ export function makeQueryKeys(demo: boolean) {
     savingsGoals: {
       all: () => ["savings-goals", demo] as const,
       freeCash: () => ["savings-goals", "free-cash", demo] as const,
+      timeline: (months: number) =>
+        ["savings-goals", "timeline", months, demo] as const,
       investments: (goalId?: number) =>
         ["savings-goals", "investments", goalId ?? "all", demo] as const,
       availableInvestments: () =>

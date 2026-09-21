@@ -223,7 +223,26 @@ not closed.
   /savings-goals/free-cash`, its own query key). The bank icon on a row opens
   `InvestmentBackingModal`, which mutates earmarks immediately rather than
   staging behind a Save — they are their own resources, not fields on the
-  goal, so there is no half-finished state to be in.
+  goal, so there is no half-finished state to be in. A goal's **name owns its
+  own line** in the row: sharing one with the funded/target pair and five
+  action buttons left it about eight characters wide on a phone, so the row
+  named nothing at all.
+- **Dashboard history** (`AllocationHistory` in the same file) — the same
+  ledger read the other way round, from `GET /savings-goals/timeline?months=N`
+  (`0` = all time; `total_months` is what tells the UI whether "All" would
+  add anything). Stacked bars carry each month's per-goal funding, a negative
+  segment is a clawback, and the free-cash pool gets **its own panel below**,
+  on the same months. Those are two panels rather than one chart with two
+  y-scales on purpose: a monthly flow and a standing balance do not share a
+  scale, and the pool is usually orders of magnitude larger than a month's
+  allocation. Series colour is keyed by goal **id**, not by priority, so
+  reordering the waterfall never repaints the chart. Only the outer segment of
+  a month's stack is rounded (`charts/stackedBarShape.tsx`, shared with the
+  retirement income chart) — rounding every segment renders a column as a
+  string of beads — and the pool panel's y-axis is a
+  silent gutter: its domain is fitted to the range so month-to-month movement
+  is visible, fitted bounds make tick values nobody can read, and the gutter
+  still has to be there for both panels to sit on the same months.
 - **Monthly budget** (`SavingsGoalsBudgetSection.tsx`) — what each goal
   received that month, below the ledger rows. A deficit month reads in
   reverse: an amber banner explains the clawback and the per-goal rows go

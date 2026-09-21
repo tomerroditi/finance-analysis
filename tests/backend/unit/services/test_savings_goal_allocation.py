@@ -701,3 +701,104 @@ class TestPersistenceIsIdempotent:
             & (rows["month"] == int(stored["month"]))
         ]
         assert float(corrected["amount"].iloc[0]) == pytest.approx(expected)
+
+
+class TestTimeline:
+    """The ledger read month by month: allocations, clawbacks and the pool."""
+
+    def test_every_month_from_the_first_goal_is_present(self, db_session, service):
+        """Months where nothing moved still get a row — a gap would read as skipped."""
+        start = _month_str(3)
+        _seed_surplus(db_session, start, income=10000, expenses=7000)
+
+        service.create(name="Vacation", target_amount=1000, start_month=start)
+
+        timeline = service.get_timeline()
+        months = [row["month"] for row in timeline["months"]]
+        assert months == [_month_str(n) for n in (3, 2, 1, 0)]
+        assert timeline["total_months"] == 4
+        assert timeline["months"][-1]["is_provisional"] is True
+
+    def test_each_month_reports_what_every_goal_took(self, db_session, service):
+        """Per-goal rows carry the month's allocation, keyed by goal id."""
+        start = _month_str(1)
+        _seed_surplus(db_session, start, income=10000, expenses=7000)
+
+        service.create(
+            name="First", target_amount=5000, priority=0, monthly_cap=1000,
+            start_month=start,
+        )
+        service.create(
+            name="Second", target_amount=5000, priority=1, monthly_cap=500,
+            start_month=start,
+        )
+
+        month = service.get_timeline()["months"][0]
+        amounts = {row["name"]: row["total"] for row in month["goals"]}
+        assert amounts == {"First": 1000, "Second": 500}
+        assert month["allocated"] == 1500
+        assert month["surplus"] == 3000
+
+    def test_free_cash_is_reported_per_month(self, db_session, service):
+        """What the goals left behind is on every row, not just today's."""
+        first, second = _month_str(2), _month_str(1)
+        _seed_surplus(db_session, first, income=10000, expenses=7000)
+        _seed_surplus(db_session, second, income=10000, expenses=9000)
+
+        service.create(name="Goal", target_amount=2000, monthly_cap=1000, start_month=first)
+
+        by_month = {row["month"]: row for row in service.get_timeline()["months"]}
+        # 3000 surplus less the 1000 the goal took, then 1000 more surplus
+        # less its second 1000.
+        assert by_month[first]["free_cash"] == 2000
+        assert by_month[second]["free_cash"] == 2000
+
+    def test_a_deficit_month_reports_its_clawback_apart_from_funding(
+        self, db_session, service
+    ):
+        """Funding and clawback are separate figures — netting hides half the month."""
+        good, bad = _month_str(2), _month_str(1)
+        _seed_surplus(db_session, good, income=10000, expenses=9000)
+        _seed_surplus(db_session, bad, income=5000, expenses=8000)
+
+        service.create(name="Goal", target_amount=5000, start_month=good)
+
+        by_month = {row["month"]: row for row in service.get_timeline()["months"]}
+        assert by_month[good]["allocated"] == 1000
+        assert by_month[bad]["clawed_back"] == 1000
+        assert by_month[bad]["allocated"] == 0
+        assert by_month[bad]["free_cash"] == 0
+
+    def test_window_trims_to_the_trailing_months_it_was_asked_for(
+        self, db_session, service
+    ):
+        """`months` bounds the window while `total_months` keeps offering "all time"."""
+        start = _month_str(5)
+        _seed_surplus(db_session, start, income=10000, expenses=7000)
+        service.create(name="Goal", target_amount=1000, start_month=start)
+
+        trimmed = service.get_timeline(months=2)
+        assert [row["month"] for row in trimmed["months"]] == [
+            _month_str(1),
+            _month_str(0),
+        ]
+        assert trimmed["total_months"] == 6
+        assert len(service.get_timeline(months=None)["months"]) == 6
+
+    def test_no_goals_costs_no_transaction_scan(self, db_session, service):
+        """With no goals there is no timeline, and nothing is read to prove it."""
+        calls = []
+        original = service.transactions_service.get_data_for_analysis
+        service.transactions_service.get_data_for_analysis = lambda *a, **k: (
+            calls.append(1) or original(*a, **k)
+        )
+
+        timeline = service.get_timeline()
+
+        assert timeline == {
+            "has_goals": False,
+            "total_months": 0,
+            "months": [],
+            "goals": [],
+        }
+        assert calls == []

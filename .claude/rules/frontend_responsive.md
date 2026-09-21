@@ -164,7 +164,8 @@ All dropdowns that use `createPortal` or `absolute` positioning MUST:
 
 ### Charts (Recharts)
 - Wrap every chart in `<ResponsiveContainer width="100%" height="100%">` inside a sized div — charts auto-resize with their container
-- Shared style lives in `utils/chartStyle.ts` (spread `{...AXIS_DEFAULTS}` into every axis) and `components/charts/` (`ChartTooltip`, `DonutChart`, `AreaGradientDef`)
+- Shared style lives in `utils/chartStyle.ts` (spread `{...AXIS_DEFAULTS}` into every axis) and `components/charts/` (`ChartTooltip`, `DonutChart`, `AreaGradientDef`, `stackedBarShape`)
+- **Stacked bars round only at each column's outer end** — use `stackEnds` + `roundedStackShape` from `components/charts/stackedBarShape.tsx` rather than a per-`Bar` `radius`, which rounds every segment and renders a column as a string of beads. A single-series bar can keep `radius={BAR_RADIUS}`: Recharts applies `radius[0]`/`[1]` at the bar's *value* end for either sign, so a negative bar still rounds at its tip
 - **Legends:** horizontal by default; use `iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 11, color: CHART_TEXT_COLOR }}`
 - **Hover/touch:** Recharts tooltips follow taps natively; SVG charts never hijack page scroll, so no dragmode/touch workarounds are needed
 - Keep chart margins tight: `margin: { top: 8, bottom: 4, left: 0, right: 8 }`-style, YAxis `width` 48–56

@@ -13,6 +13,11 @@ import { useTranslation } from "react-i18next";
 import { AXIS_DEFAULTS, CHART_TEXT_COLOR, formatAxisNumber } from "../../utils/chartStyle";
 import { ChartTooltip } from "../charts/ChartTooltip";
 import { ChartLegend } from "../charts/ChartLegend";
+import {
+  stackEnds,
+  roundedStackShape,
+  type StackRow,
+} from "../charts/stackedBarShape";
 
 interface DataPoint {
   age: number;
@@ -29,6 +34,15 @@ interface Props {
   data: DataPoint[];
 }
 
+/** The stacked income sources, in the order they fill a year's column. */
+const INCOME_SERIES = [
+  { dataKey: "salary_savings", labelKey: "earlyRetirement.income.salarySavings", color: "#06b6d4" },
+  { dataKey: "portfolio_withdrawal", labelKey: "earlyRetirement.income.portfolioWithdrawal", color: "#3b82f6" },
+  { dataKey: "pension", labelKey: "earlyRetirement.income.pension", color: "#10b981" },
+  { dataKey: "bituach_leumi", labelKey: "earlyRetirement.income.bituachLeumi", color: "#a855f7" },
+  { dataKey: "passive_income", labelKey: "earlyRetirement.income.passiveIncome", color: "#f59e0b" },
+] as const;
+
 export function RetirementIncomeChart({ data }: Props) {
   const { t } = useTranslation();
 
@@ -41,13 +55,20 @@ export function RetirementIncomeChart({ data }: Props) {
     return ticks;
   }, [minAge, maxAge]);
 
-  const bars = [
-    { dataKey: "salary_savings", name: t("earlyRetirement.income.salarySavings"), color: "#06b6d4" },
-    { dataKey: "portfolio_withdrawal", name: t("earlyRetirement.income.portfolioWithdrawal"), color: "#3b82f6" },
-    { dataKey: "pension", name: t("earlyRetirement.income.pension"), color: "#10b981" },
-    { dataKey: "bituach_leumi", name: t("earlyRetirement.income.bituachLeumi"), color: "#a855f7" },
-    { dataKey: "passive_income", name: t("earlyRetirement.income.passiveIncome"), color: "#f59e0b" },
-  ];
+  const bars = INCOME_SERIES.map((s) => ({ ...s, name: t(s.labelKey) }));
+
+  // Each year's income sources stack into one column, so only the topmost
+  // source present that year is rounded — a projection runs over decades, and
+  // rounding every segment turns each column into a string of beads.
+  const ends = useMemo(
+    () =>
+      stackEnds(
+        data as unknown as StackRow[],
+        INCOME_SERIES.map((s) => s.dataKey),
+        "age",
+      ),
+    [data],
+  );
 
   return (
     <div className="w-full" style={{ minHeight: 300, height: 400 }}>
@@ -81,6 +102,7 @@ export function RetirementIncomeChart({ data }: Props) {
               name={b.name}
               stackId="income"
               fill={b.color}
+              shape={roundedStackShape(ends, b.dataKey, "age")}
               isAnimationActive={false}
             />
           ))}

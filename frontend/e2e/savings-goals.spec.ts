@@ -8,10 +8,10 @@ import {
 import { enableDemoMode, API_BASE } from "./helpers";
 
 /**
- * The Goals card is a "beta" dashboard widget, hidden by default
- * (useDashboardLayout.ts). Make it visible by seeding the layout in
- * localStorage (key "fa.dashboard.layout", version 2 to skip the
- * beta-hide migration) before the dashboard renders, then reload.
+ * The Goals card is default-visible since layout v5, but this spec asserts on
+ * a card near the top of the page, so the layout is still seeded explicitly:
+ * it pins the card first and keeps the rest of the dashboard out of the way,
+ * which is what keeps the assertions below independent of the default order.
  */
 async function openDashboardWithGoals(page: Page) {
   await page.goto("about:blank");
@@ -21,7 +21,7 @@ async function openDashboardWithGoals(page: Page) {
     localStorage.setItem(
       "fa.dashboard.layout",
       JSON.stringify({
-        v: 2,
+        v: 5,
         order: ["goals", "budget", "recent"],
         hidden: [],
       }),
@@ -38,11 +38,21 @@ function monthsAgo(count: number): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 }
 
-/** The goal row container, found by walking up from the goal's name. */
+/**
+ * The goal row container, found by walking up from the goal's name.
+ *
+ * Scoped to the waterfall list: the card's history chart legends the same
+ * names, so an unscoped text lookup matches twice.
+ */
 function goalRow(page: Page, name: string) {
-  return page
-    .getByText(name, { exact: true })
-    .locator("xpath=ancestor::div[contains(@class,'group')][1]");
+  return goalName(page, name).locator(
+    "xpath=ancestor::div[contains(@class,'group')][1]",
+  );
+}
+
+/** The goal's name as the waterfall list renders it (never the chart legend). */
+function goalName(page: Page, name: string) {
+  return page.getByTestId("goals-list").getByText(name, { exact: true });
 }
 
 /**
@@ -125,10 +135,8 @@ test.describe("Savings goals", () => {
   }) => {
     await openDashboardWithGoals(page);
 
-    const inProgressName = page.getByText("E2E In Progress Goal", {
-      exact: true,
-    });
-    const achievedName = page.getByText("E2E Achieved Goal", { exact: true });
+    const inProgressName = goalName(page, "E2E In Progress Goal");
+    const achievedName = goalName(page, "E2E Achieved Goal");
     await expect(inProgressName).toBeVisible({ timeout: 30_000 });
     await expect(achievedName).toBeVisible();
 
@@ -161,6 +169,33 @@ test.describe("Savings goals", () => {
     const header = inProgressRow.locator("xpath=.//p[1]/..");
     await expect(header).toHaveText("#1E2E In Progress Goal");
 
+    // --- month-by-month history ----------------------------------------
+    // The card carries the ledger over time, not just today's standing: a
+    // stacked bar per month for the goals and a separate panel for the pool
+    // (a monthly flow and a standing balance must not share one y-scale).
+    const history = page.getByTestId("goals-history-chart");
+    await expect(history).toBeVisible();
+    await expect(
+      page.getByText("Free cash left at month end", { exact: true }),
+    ).toBeVisible();
+    // A goal that took money in the window is legended by name; the achieved
+    // one never drew on the waterfall (it opened already full), so it earns
+    // no series — a legend entry with no mark names nothing.
+    await expect(
+      history.getByText("E2E In Progress Goal", { exact: true }),
+    ).toBeVisible();
+    await expect(
+      history.getByText("E2E Achieved Goal", { exact: true }),
+    ).toHaveCount(0);
+
+    // Narrowing the window re-renders the chart rather than emptying it.
+    // Scoped to the panel: other cards carry range chips of their own.
+    await page
+      .getByTestId("goals-history")
+      .getByRole("button", { name: "6M" })
+      .click();
+    await expect(history).toBeVisible();
+
     // --- free-cash pool ------------------------------------------------
     // The unearmarked remainder renders below the waterfall and outside any
     // goal row — it is the buffer a deficit month drains before the engine
@@ -184,9 +219,7 @@ test.describe("Savings goals", () => {
 
   test("reordering moves a goal up the waterfall", async ({ page }) => {
     await openDashboardWithGoals(page);
-    await expect(
-      page.getByText("E2E Achieved Goal", { exact: true }),
-    ).toBeVisible({
+    await expect(goalName(page, "E2E Achieved Goal")).toBeVisible({
       timeout: 30_000,
     });
 

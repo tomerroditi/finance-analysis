@@ -333,6 +333,110 @@ class SavingsGoalService:
             "has_goals": True,
         }
 
+    def get_timeline(self, months: int | None = 12) -> dict:
+        """Return the month-by-month history of the waterfall.
+
+        The dashboard card shows a goal's *current* standing; this is the same
+        ledger read the other way round — one row per month, with what each
+        goal took, what a deficit took back, and what was left over in the
+        free-cash pool. Reading it per month is the only way to see that a
+        goal stalled in March or that the pool has been empty since spring.
+
+        Parameters
+        ----------
+        months : int or None, optional
+            How many trailing months to return, ending with the current one.
+            ``None`` returns the whole history. ``total_months`` always
+            reports the full length, so a caller can offer "all time" only
+            when there is more to show.
+
+        Returns
+        -------
+        dict
+            ``months`` (oldest first), ``goals`` (waterfall order, for stable
+            series colours), ``total_months`` and ``has_goals``. Every month
+            between the first and the current one is present, including the
+            ones where nothing moved — a gap in a time series reads as zero,
+            not as "skipped".
+        """
+        today = date.today()
+        current = (today.year, today.month)
+        goals = self._goals_in_order()
+        if not goals:
+            return {"has_goals": False, "total_months": 0, "months": [], "goals": []}
+
+        self.ensure_allocations()
+        plan = self._last_plan
+        context = self._build_context()
+
+        ledger: dict[tuple[int, int], dict[int, float]] = {}
+        for (goal_id, year, month), amount in self._stored_allocations().items():
+            ledger.setdefault((year, month), {})[goal_id] = amount
+
+        starts = [_month_key(g.start_month) or current for g in goals]
+        first = min([*starts, *ledger.keys(), current])
+
+        rows = []
+        for key in _iter_months(first, current):
+            per_goal = ledger.get(key, {})
+            direct = context["direct"].get(key, {})
+            goal_rows = []
+            for goal in goals:
+                allocated = float(per_goal.get(goal.id, 0.0))
+                contributed = float(direct.get(goal.id, 0.0))
+                if allocated == 0 and contributed == 0:
+                    continue
+                goal_rows.append(
+                    {
+                        "goal_id": goal.id,
+                        "name": goal.name,
+                        "allocated": round(allocated, 2),
+                        "contributed": round(contributed, 2),
+                        "total": round(allocated + contributed, 2),
+                    }
+                )
+            # Funding and clawback are reported apart rather than netted: a
+            # month that gave a goal 3,000 and took 800 back out of another
+            # did both, and a single net figure would hide half of it.
+            funded = sum(row["total"] for row in goal_rows if row["total"] > 0)
+            clawed = -sum(amount for amount in per_goal.values() if amount < 0)
+            rows.append(
+                {
+                    "month": _month_str(key),
+                    "goals": goal_rows,
+                    "allocated": round(funded, 2),
+                    "clawed_back": round(clawed, 2),
+                    "surplus": round(float(context["surplus"].get(key, 0.0)), 2),
+                    # Months the walk never reached (a stray ledger row that
+                    # predates every goal's start) have no pool figure; zero
+                    # is the honest reading — nothing was earmarked yet.
+                    "free_cash": round(float(plan.free_cash.get(key, 0.0)), 2)
+                    if plan
+                    else 0.0,
+                    "is_provisional": key >= current,
+                }
+            )
+
+        total_months = len(rows)
+        if months is not None and months > 0:
+            rows = rows[-months:]
+
+        return {
+            "has_goals": True,
+            "total_months": total_months,
+            "months": rows,
+            "goals": [
+                {
+                    "id": goal.id,
+                    "name": goal.name,
+                    "priority": goal.priority,
+                    "status": goal.status,
+                    "is_closed": goal.status == GOAL_STATUS_CLOSED,
+                }
+                for goal in goals
+            ],
+        }
+
     def create(self, **fields) -> dict:
         """Create a new savings goal at the bottom of the waterfall."""
         fields.setdefault("priority", self.repo.next_priority())

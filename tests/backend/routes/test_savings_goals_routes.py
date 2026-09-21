@@ -151,6 +151,45 @@ class TestAllocationAndLinkRoutes:
         res = test_client.get("/api/savings-goals/allocations/2020/1")
         assert res.json()["is_provisional"] is False
 
+    def test_timeline_shape(self, test_client):
+        """The timeline endpoint reports months, goals and the full length."""
+        _create(test_client, name="A", target_amount=100)
+
+        res = test_client.get("/api/savings-goals/timeline")
+        assert res.status_code == 200
+        body = res.json()
+        assert body["has_goals"] is True
+        assert body["total_months"] == len(body["months"]) == 1
+        month = body["months"][0]
+        assert month["is_provisional"] is True
+        assert {"month", "goals", "allocated", "clawed_back", "free_cash"} <= set(month)
+        assert [g["name"] for g in body["goals"]] == ["A"]
+
+    def test_timeline_window_is_bounded(self, test_client):
+        """`months` trims the window; zero asks for the whole history."""
+        _create(test_client, name="A", target_amount=100, start_month="2020-01")
+
+        windowed = test_client.get("/api/savings-goals/timeline?months=3").json()
+        assert len(windowed["months"]) == 3
+        assert windowed["total_months"] > 3
+
+        everything = test_client.get("/api/savings-goals/timeline?months=0").json()
+        assert len(everything["months"]) == everything["total_months"]
+
+    def test_timeline_rejects_a_negative_window(self, test_client):
+        """A negative month count fails request validation rather than silently passing."""
+        assert test_client.get("/api/savings-goals/timeline?months=-1").status_code == 422
+
+    def test_timeline_without_goals(self, test_client):
+        """With no goals there is nothing to chart."""
+        body = test_client.get("/api/savings-goals/timeline").json()
+        assert body == {
+            "has_goals": False,
+            "total_months": 0,
+            "months": [],
+            "goals": [],
+        }
+
     def test_link_and_unlink_a_transaction(self, test_client):
         """A transaction can be attached to a goal and then detached."""
         goal = _create(test_client, name="Trip", target_amount=1000)

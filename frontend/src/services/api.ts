@@ -1178,6 +1178,43 @@ export interface SavingsGoalMonthAllocations {
   is_provisional: boolean;
 }
 
+/** One goal's share of a single month in the allocation timeline. */
+export interface SavingsGoalTimelineGoal {
+  goal_id: number;
+  name: string;
+  /** Waterfall allocation; negative when a deficit clawed money back. */
+  allocated: number;
+  contributed: number;
+  total: number;
+}
+
+/** One month of the waterfall: who took what, and what was left unearmarked. */
+export interface SavingsGoalTimelineMonth {
+  month: string;
+  goals: SavingsGoalTimelineGoal[];
+  /** Money that went into goals this month (clawbacks reported apart). */
+  allocated: number;
+  clawed_back: number;
+  surplus: number;
+  /** Unearmarked pool at the end of this month. */
+  free_cash: number;
+  is_provisional: boolean;
+}
+
+export interface SavingsGoalTimeline {
+  has_goals: boolean;
+  /** Full history length, so the UI offers "all time" only when it adds months. */
+  total_months: number;
+  months: SavingsGoalTimelineMonth[];
+  goals: {
+    id: number;
+    name: string;
+    priority: number;
+    status: string;
+    is_closed: boolean;
+  }[];
+}
+
 export interface SavingsGoalRebuildChange {
   goal_id: number;
   name: string;
@@ -1256,6 +1293,11 @@ export const savingsGoalsApi = {
       dry_run: dryRun,
     }),
   getFreeCash: () => api.get<SavingsGoalFreeCash>("/savings-goals/free-cash"),
+  /** Per-month allocation history. `months: 0` asks for the whole timeline. */
+  getTimeline: (months: number) =>
+    api.get<SavingsGoalTimeline>("/savings-goals/timeline", {
+      params: { months },
+    }),
   getInvestments: (goalId?: number) =>
     api.get<SavingsGoalInvestment[]>("/savings-goals/investments", {
       params: goalId ? { goal_id: goalId } : undefined,

@@ -8,6 +8,7 @@ import {
   type SavingsGoal,
   type SavingsGoalFreeCash,
   type SavingsGoalInvestment,
+  type SavingsGoalTimeline,
 } from "../../services/api";
 import { DemoModeProvider } from "../../context/DemoModeContext";
 
@@ -62,10 +63,25 @@ function makeGoal(overrides: Partial<SavingsGoal> = {}): SavingsGoal {
 async function renderGoals(
   goals: SavingsGoal[],
   pool: Partial<SavingsGoalFreeCash> = {},
+  timeline: Partial<SavingsGoalTimeline> = {},
 ) {
   vi.spyOn(savingsGoalsApi, "getAll").mockResolvedValue({
     data: goals,
   } as Awaited<ReturnType<typeof savingsGoalsApi.getAll>>);
+
+  // Every render draws the history panel, so the timeline is stubbed here
+  // rather than per test — an unmocked call would hit the network.
+  if (!vi.isMockFunction(savingsGoalsApi.getTimeline)) {
+    vi.spyOn(savingsGoalsApi, "getTimeline").mockResolvedValue({
+      data: {
+        has_goals: true,
+        total_months: 0,
+        months: [],
+        goals: [],
+        ...timeline,
+      },
+    } as Awaited<ReturnType<typeof savingsGoalsApi.getTimeline>>);
+  }
 
   vi.spyOn(savingsGoalsApi, "getFreeCash").mockResolvedValue({
     data: {
@@ -331,6 +347,88 @@ describe("GoalsSection", () => {
       expect(
         within(rowFor("Vacation")).getByText(/taken back/i),
       ).toBeInTheDocument();
+    });
+  });
+
+  describe("month-by-month history", () => {
+    /** A timeline whose single month funded `goalId`. */
+    function timelineWith(goalId: number, name: string, totalMonths = 3) {
+      return {
+        has_goals: true,
+        total_months: totalMonths,
+        months: [
+          {
+            month: "2026-08",
+            goals: [
+              { goal_id: goalId, name, allocated: 900, contributed: 0, total: 900 },
+            ],
+            allocated: 900,
+            clawed_back: 0,
+            surplus: 1500,
+            free_cash: 600,
+            is_provisional: false,
+          },
+        ],
+        goals: [
+          { id: goalId, name, priority: 0, status: "active", is_closed: false },
+        ],
+      };
+    }
+
+    it("asks for the last 12 months by default", async () => {
+      await renderGoals([makeGoal({ id: 4, name: "Trip" })], {}, timelineWith(4, "Trip"));
+
+      await waitFor(() =>
+        expect(savingsGoalsApi.getTimeline).toHaveBeenCalledWith(12),
+      );
+      expect(await screen.findByTestId("goals-history-chart")).toBeInTheDocument();
+      // The pool gets its own panel: a monthly flow and a standing balance
+      // must not share one scale.
+      expect(screen.getByText(/free cash left at month end/i)).toBeInTheDocument();
+    });
+
+    it("refetches the window when another range is picked", async () => {
+      await renderGoals([makeGoal({ id: 4, name: "Trip" })], {}, timelineWith(4, "Trip"));
+      await screen.findByTestId("goals-history-chart");
+
+      fireEvent.click(screen.getByRole("button", { name: "6M" }));
+
+      await waitFor(() =>
+        expect(savingsGoalsApi.getTimeline).toHaveBeenCalledWith(6),
+      );
+    });
+
+    it("offers all-time only once there is more history than the widest window", async () => {
+      // "All" over a 3-month history would show the same months as "12M",
+      // so it stays disabled until the ledger outgrows the fixed windows.
+      await renderGoals([makeGoal({ id: 4, name: "Trip" })], {}, timelineWith(4, "Trip", 3));
+      await screen.findByTestId("goals-history-chart");
+
+      expect(
+        (screen.getByRole("button", { name: /^all$/i }) as HTMLButtonElement)
+          .disabled,
+      ).toBe(true);
+    });
+
+    it("enables all-time once the ledger outgrows the fixed windows", async () => {
+      await renderGoals([makeGoal({ id: 4, name: "Trip" })], {}, timelineWith(4, "Trip", 18));
+      await screen.findByTestId("goals-history-chart");
+
+      fireEvent.click(screen.getByRole("button", { name: /^all$/i }));
+
+      // Zero is how the client asks for the whole timeline.
+      await waitFor(() =>
+        expect(savingsGoalsApi.getTimeline).toHaveBeenCalledWith(0),
+      );
+    });
+
+    it("says so plainly when nothing has been allocated yet", async () => {
+      await renderGoals([makeGoal({ name: "New" })]);
+
+      expect(
+        await screen.findByText(/nothing allocated yet/i),
+      ).toBeInTheDocument();
+      expect(screen.queryByTestId("goals-history-chart")).not.toBeInTheDocument();
     });
   });
 

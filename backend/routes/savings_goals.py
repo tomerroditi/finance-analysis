@@ -7,7 +7,7 @@ links, and the previewable history rebuild.
 
 from typing import Literal, Optional
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -127,6 +127,18 @@ def reopen_goal(goal_id: int, db: Session = Depends(get_database)):
 def get_free_cash(db: Session = Depends(get_database)):
     """Return the pool of tracked money no goal has earmarked."""
     return SavingsGoalService(db).get_free_cash()
+
+
+@router.get("/timeline")
+def get_timeline(
+    months: int = Query(12, ge=0, le=600), db: Session = Depends(get_database)
+):
+    """Return the per-month allocation history plus the free-cash pool.
+
+    ``months`` trims to the trailing window the dashboard chart shows;
+    ``0`` returns the whole history (the "all time" range).
+    """
+    return SavingsGoalService(db).get_timeline(months=months or None)
 
 
 @router.get("/allocations/{year}/{month}")
