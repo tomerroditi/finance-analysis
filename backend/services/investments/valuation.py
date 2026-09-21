@@ -615,8 +615,10 @@ class ValuationMixin:
             - ``total_value`` – sum of current balances across all open investments.
             - ``total_profit`` – total value minus net invested (deposits plus
               opening balances, minus withdrawals).
-            - ``portfolio_roi`` – ``(total_value / cost_basis - 1) * 100`` percentage,
-              where ``cost_basis`` is deposits plus opening balances.
+            - ``portfolio_roi`` – ``((total_value + total_withdrawals) / cost_basis - 1) * 100``
+              percentage, where ``cost_basis`` is deposits plus opening balances —
+              the per-investment ROI formula over the open investments, so money
+              already withdrawn counts as returned rather than lost.
             - ``allocation`` – list of dicts per investment (open and closed).
         """
         all_investments = self.investments_repo.get_all_investments(include_closed=True)
@@ -651,7 +653,9 @@ class ValuationMixin:
 
         total_profit = total_value - (cost_basis - total_withdrawals)
         portfolio_roi = (
-            ((total_value / cost_basis) - 1) * 100 if cost_basis > 0 else 0.0
+            ((total_value + total_withdrawals) / cost_basis - 1) * 100
+            if cost_basis > 0
+            else 0.0
         )
 
         return {
