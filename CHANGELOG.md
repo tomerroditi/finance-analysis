@@ -1,3 +1,9 @@
+## v1.83.2 (2026-09-21)
+
+### Fix
+
+- **investments**: count withdrawals as returned in portfolio ROI (#338)
+
 ## v1.83.1 (2026-09-21)
 
 ### Fix
