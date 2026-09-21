@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef, useCallback, useEffect } from "react";
+import { Fragment, useState, useMemo, useRef, useCallback, useEffect } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router";
 import {
@@ -52,7 +52,7 @@ const isManualSource = (tx: Transaction) =>
   (tx.source.includes("cash") || tx.source.includes("manual_investment"));
 
 const ACTION_BUTTON_CLASS =
-  "flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium transition-colors whitespace-nowrap";
+  "flex items-center gap-1 px-1.5 py-1.5 rounded-md text-xs font-medium transition-colors whitespace-nowrap";
 
 export function RecentTransactionsFeed({
   transactions,
@@ -363,16 +363,28 @@ export function RecentTransactionsFeed({
       <div
         ref={scrollRootRef}
         data-scroll-root=""
-        className="max-h-[500px] overflow-y-auto space-y-4 scrollbar-auto-hide"
+        className="max-h-[500px] overflow-y-auto scrollbar-auto-hide"
       >
         {filtered.length === 0 && (
           <p className="py-6 text-center text-sm text-[var(--text-muted)]">
             {t("dashboard.noUntaggedTransactions")}
           </p>
         )}
-        {grouped.map((group) => (
-          <div key={group.label}>
-            <p className="text-xs font-semibold text-[var(--text-muted)] mb-2 sticky top-0 bg-[var(--surface)] py-1 z-10">
+        {/* Date headers are direct children of the scroll root, not of a
+            per-group wrapper. A sticky element only stays pinned while its
+            containing block is on screen: wrapped, each header unpinned the
+            moment its own group ended and the next one had not reached the top
+            yet, so a sliver of the outgoing group's last row showed above the
+            pinned date. Sharing the scroll root as the containing block hands
+            one header straight over to the next with nothing in between. */}
+        {grouped.map((group, groupIndex) => (
+          <Fragment key={group.label}>
+            <p
+              data-testid="recent-tx-date"
+              className={`text-xs font-semibold text-[var(--text-muted)] sticky top-0 bg-[var(--surface)] pt-1 pb-2 z-10 ${
+                groupIndex > 0 ? "mt-4" : ""
+              }`}
+            >
               {group.label}
             </p>
             <div className="space-y-1">
@@ -491,7 +503,10 @@ export function RecentTransactionsFeed({
                         offers per row, opened by the "more" button (or by
                         tapping the row on mobile). */}
                     {actionsOpen && (
-                      <div className="flex flex-wrap items-center gap-1.5 mx-2 mb-1 ms-9 p-1.5 rounded-lg bg-[var(--surface-light)]/40 border border-[var(--surface-light)] animate-in fade-in slide-in-from-top-1 duration-150">
+                      <div
+                        data-testid="recent-tx-actions"
+                        className="flex flex-wrap items-center gap-1 mx-2 mb-1 p-1.5 rounded-lg bg-[var(--surface-light)]/40 border border-[var(--surface-light)] animate-in fade-in slide-in-from-top-1 duration-150"
+                      >
                         <button
                           className={`${ACTION_BUTTON_CLASS} ${isEditing ? "bg-[var(--primary)]/20 text-[var(--primary)]" : "text-[var(--text-muted)] hover:text-white hover:bg-[var(--surface-light)]"}`}
                           onClick={(e) => { e.stopPropagation(); if (isEditing) closeEditor(); else openEditor(tx); }}
@@ -584,7 +599,7 @@ export function RecentTransactionsFeed({
                     )}
 
                     {detailsOpen && (
-                      <div className="mx-2 mb-2 ms-9 rounded-lg border border-[var(--surface-light)] bg-[var(--surface-light)]/20 overflow-hidden">
+                      <div className="mx-2 mb-2 rounded-lg border border-[var(--surface-light)] bg-[var(--surface-light)]/20 overflow-hidden">
                         <RecentTransactionDetails tx={tx} />
                       </div>
                     )}
@@ -654,7 +669,7 @@ export function RecentTransactionsFeed({
                 );
               })}
             </div>
-          </div>
+          </Fragment>
         ))}
 
         {/* Sentinel element for infinite scroll */}

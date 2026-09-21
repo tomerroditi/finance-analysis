@@ -333,6 +333,66 @@ class SavingsGoalService:
             "has_goals": True,
         }
 
+    def get_free_cash_before(self, month: str, goal_id: int | None = None) -> dict:
+        """Return the free cash a goal starting in ``month`` could take over.
+
+        Goals only ever draw on each month's *new* surplus, so money that was
+        already in the accounts when a goal started stays in the free-cash
+        pool for good. Setting a goal's opening balance to this figure is how
+        the user earmarks that money for it.
+
+        The goal itself is left out of the walk, so the answer does not
+        depend on the opening balance or the allocations it already has.
+
+        Parameters
+        ----------
+        month : str
+            The goal's start month, ``YYYY-MM``.
+        goal_id : int or None, optional
+            The goal being edited. ``None`` for a goal not created yet.
+
+        Returns
+        -------
+        dict
+            ``month`` (echoed) and ``free_cash`` — the pool at the start of
+            that month, never negative.
+        """
+        key = _month_key(month)
+        if key is None:
+            raise ValidationException(f"Invalid month: {month!r}")
+
+        today = date.today()
+        current = (today.year, today.month)
+        others = [g for g in self._goals_in_order() if g.id != goal_id]
+        context = self._build_context()
+        starts = [_month_key(g.start_month) or current for g in others]
+
+        if not others or key <= min(starts):
+            amount = self._pool_before(key, context)
+        elif key > current:
+            # A future start sees today's pool, which the walk has already
+            # debited for every opening balance due by now.
+            plan = self._simulate(recompute_from=None, goals=others)
+            return {
+                "month": _month_str(key),
+                "free_cash": round(float(plan.free_cash.get(current, 0.0)), 2) + 0.0,
+            }
+        else:
+            year, mon = key
+            previous = (year, mon - 1) if mon > 1 else (year - 1, 12)
+            plan = self._simulate(recompute_from=None, goals=others)
+            amount = float(plan.free_cash.get(previous, 0.0))
+        # Another goal starting the same month takes its opening balance out
+        # of the same money first, exactly as the walk does.
+        same_month = sum(
+            float(g.opening_balance or 0.0)
+            for g, start in zip(others, starts)
+            if min(start, current) == min(key, current)
+        )
+        amount = max(0.0, amount - same_month)
+
+        return {"month": _month_str(key), "free_cash": round(amount, 2) + 0.0}
+
     def get_timeline(self, months: int | None = 12) -> dict:
         """Return the month-by-month history of the waterfall.
 
@@ -841,7 +901,9 @@ class SavingsGoalService:
     # Simulation
     # ------------------------------------------------------------------
 
-    def _simulate(self, recompute_from: tuple[int, int] | None) -> _Plan:
+    def _simulate(
+        self, recompute_from: tuple[int, int] | None, goals: list | None = None
+    ) -> _Plan:
         """Walk the timeline month by month, allocating surplus to goals.
 
         Parameters
@@ -851,6 +913,10 @@ class SavingsGoalService:
             recomputed. When ``None``, only months with no ledger rows yet —
             plus the always-provisional current month — are computed, and
             everything else is replayed from what is already stored.
+        goals : list or None, optional
+            The goals to walk, in waterfall order. ``None`` walks every goal;
+            a subset answers "what would the pool look like without this one"
+            and must never be persisted.
 
         Returns
         -------
@@ -858,7 +924,8 @@ class SavingsGoalService:
             Computed allocations plus the funded/utilized/closed state each
             goal ends the timeline in.
         """
-        goals = self._goals_in_order()
+        if goals is None:
+            goals = self._goals_in_order()
         plan = _Plan()
         if not goals:
             return plan
@@ -883,32 +950,42 @@ class SavingsGoalService:
         backed = {g.id: float(backing.get(g.id, 0.0)) for g in goals}
         # The pool opens at the spendable money the user had when the first
         # goal started: the capital that predates tracking, walked forward
-        # through every month of realized cash flow before the walk begins,
-        # less whatever the goals already earmark of it. Anchoring on prior
-        # wealth alone would ignore years of history the goals never saw.
+        # through every month of realized cash flow before the walk begins.
+        # Anchoring on prior wealth alone would ignore years of history the
+        # goals never saw.
         #
         # That history floors at zero month by month, exactly as the walk
         # below does. Summing it and flooring once would put the floor at the
         # earliest goal's start month, so deleting that goal moved the floor,
         # changed how much the floor absorbed, and lost free cash with it.
-        free_cash = self._opening_free_cash()
-        for month_key in sorted(context["surplus"]):
-            if month_key >= first_month:
-                break
-            free_cash = max(0.0, free_cash + context["surplus"][month_key])
-        # The goals can claim more than that, which is a bookkeeping artefact
-        # rather than real debt — floor it at zero so the first deficit month
-        # does not raid goals over a phantom hole.
-        free_cash = max(0.0, free_cash - sum(funded.values()))
+        free_cash = self._pool_before(first_month, context)
         # A goal closed by the user is frozen from the outset; one that fills
         # and is fully spent closes partway through the walk.
         frozen = {g.id: g.status == GOAL_STATUS_CLOSED for g in goals}
         start_of = dict(zip((g.id for g in goals), starts))
+        # An opening balance is money the goal held when it started, so it
+        # leaves the pool in that month. Taking every opening balance out when
+        # the *earliest* goal started drained a pool that later history still
+        # needed — the next deficit then clawed from goals that had done
+        # nothing, and claiming the free cash before a goal moved the very
+        # figure it had just claimed. A goal that starts in the future
+        # earmarks its opening balance today.
+        opening_month = {g.id: min(start_of[g.id], current) for g in goals}
 
         plan.surplus = context["surplus"]
 
         for year, month in _iter_months(first_month, current):
             key = (year, month)
+            opening = sum(
+                float(g.opening_balance or 0.0)
+                for g in goals
+                if opening_month[g.id] == key
+            )
+            # The goals can claim more than the pool holds, which is a
+            # bookkeeping artefact rather than real debt — floor it at zero so
+            # the first deficit month does not raid goals over a phantom hole.
+            if opening:
+                free_cash = max(0.0, free_cash - opening)
             # The open month is always restated (it is provisional), as is
             # everything inside an explicit rebuild range. Every other month is
             # history: existing rows stand, and only goals with no row yet may
@@ -1019,7 +1096,8 @@ class SavingsGoalService:
                 # model does not track (an overdraft, an untagged account).
                 # The pool is empty either way; it never goes negative.
 
-            plan.free_cash[key] = round(free_cash, 2)
+            # Adding zero turns the -0.0 a fully drained pool rounds to into 0.0.
+            plan.free_cash[key] = round(free_cash, 2) + 0.0
 
             # Money spent back out of a goal lands after that month's funding,
             # and never reduces the target — it is utilization, not a refund.
@@ -1151,6 +1229,31 @@ class SavingsGoalService:
         bank = BankBalanceService(self.db).get_total_prior_wealth()
         cash = CashBalanceService(self.db).get_total_prior_wealth()
         return float(bank) + float(cash)
+
+    def _pool_before(self, month: tuple[int, int], context: dict) -> float:
+        """Free cash at the start of ``month``, when no goal has started yet.
+
+        Prior wealth walked forward through every month before ``month``,
+        floored at zero month by month.
+
+        Parameters
+        ----------
+        month : tuple
+            ``(year, month)`` the pool is measured at the start of.
+        context : dict
+            The transaction context from :meth:`_build_context`.
+
+        Returns
+        -------
+        float
+            The pool, never negative.
+        """
+        free_cash = self._opening_free_cash()
+        for month_key in sorted(context["surplus"]):
+            if month_key >= month:
+                break
+            free_cash = max(0.0, free_cash + context["surplus"][month_key])
+        return free_cash
 
     def _build_context(self) -> dict:
         """Compute per-month surplus and per-month goal-linked amounts, memoised.

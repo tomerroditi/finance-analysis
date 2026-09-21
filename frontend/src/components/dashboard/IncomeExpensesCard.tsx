@@ -1,4 +1,4 @@
-import { useState, type MouseEvent as ReactMouseEvent } from "react";
+import { useMemo, useState, type MouseEvent as ReactMouseEvent } from "react";
 import { createPortal } from "react-dom";
 import { useQuery } from "@tanstack/react-query";
 import { TrendingUp, TrendingDown, ArrowUp, ArrowDown, Minus, ChevronDown, ChevronUp } from "lucide-react";
@@ -6,8 +6,17 @@ import { analyticsApi } from "../../services/api";
 import { useQueryKeys } from "../../hooks/useQueryKeys";
 import { useTranslation } from "react-i18next";
 import { formatCurrency, formatChange } from "../../utils/numberFormatting";
-import { formatMonthShort } from "../../utils/dateFormatting";
 import { CHART_COLORS } from "../../utils/chartStyle";
+import {
+  formatPeriodLabel,
+  toYearlyComposition,
+  toYearlyLedger,
+  yearlyKpi,
+  type CompositionRow,
+  type LedgerRow,
+  type Scope,
+  type YearlyKpi,
+} from "./incomeExpensesScope";
 
 const INCOME_COLOR = "#10b981";
 const EXPENSE_COLOR = "#f43f5e";
@@ -35,11 +44,22 @@ const CATEGORY_COLORS = [
 const OVER_SCALE_HATCH =
   "repeating-linear-gradient(90deg, var(--text-muted) 0 3px, transparent 3px 6px)";
 
-/** How many recent months the ledger / breakdown views show before "Show earlier months". */
-const DEFAULT_VISIBLE_MONTHS = 12;
+/** How many recent periods the ledger / breakdown views show before "Show earlier". */
+const DEFAULT_VISIBLE_PERIODS = 12;
 
-/** The three rolling averages + a monthly series, feeding one KPI summary card. */
-type KpiSeries = { avg3: number; avg6: number; avg12: number };
+/**
+ * What one KPI summary card shows: a headline figure with its caption, up to
+ * two secondary figures, and the baseline its trend chip measures against.
+ * Both scopes fill the same shape — monthly with rolling averages, yearly
+ * with per-year totals.
+ */
+type KpiSummary = {
+  primary: number;
+  primaryLabel: string;
+  stats: { label: string; value: number }[];
+  trendBaseline: number;
+  trendTitle: string;
+};
 
 /** Mean of a numeric field over a slice of months (0 when empty). */
 function avgOf(rows: { income: number }[] | undefined): number {
@@ -62,14 +82,21 @@ function barCap(values: number[], multiplier = 1.6): number {
   return (median || positives[positives.length - 1] || 1) * multiplier;
 }
 
-/** Income & Expenses dashboard card (KPI averages, refund/project filters, Totals/Income/Expenses sub-views). */
+/** Income & Expenses dashboard card (monthly/yearly scope, KPI summaries, refund/project filters, Totals/Income/Expenses sub-views). */
 export function IncomeExpensesCard() {
   const { t } = useTranslation();
   const qk = useQueryKeys();
   const [incomeView, setIncomeView] = useState<"overview" | "by_source" | "by_category">("overview");
-  const [visibleMonths, setVisibleMonths] = useState(DEFAULT_VISIBLE_MONTHS);
-  const showMore = () => setVisibleMonths((v) => v + DEFAULT_VISIBLE_MONTHS);
-  const showLess = () => setVisibleMonths(DEFAULT_VISIBLE_MONTHS);
+  const [scope, setScope] = useState<Scope>("monthly");
+  const [visiblePeriods, setVisiblePeriods] = useState(DEFAULT_VISIBLE_PERIODS);
+  const showMore = () => setVisiblePeriods((v) => v + DEFAULT_VISIBLE_PERIODS);
+  const showLess = () => setVisiblePeriods(DEFAULT_VISIBLE_PERIODS);
+  // A window measured in months means nothing once the rows are years, so a
+  // scope switch starts the pager over.
+  const changeScope = (next: Scope) => {
+    setScope(next);
+    setVisiblePeriods(DEFAULT_VISIBLE_PERIODS);
+  };
   const [excludePendingRefunds, setExcludePendingRefunds] = useState(true);
   const [includeProjects, setIncludeProjects] = useState(false);
 
@@ -93,25 +120,85 @@ export function IncomeExpensesCard() {
     queryFn: async () => (await analyticsApi.getMonthlyExpenses(excludePendingRefunds, includeProjects)).data,
   });
 
+  const yearly = scope === "yearly";
+  const ledgerRows: LedgerRow[] = useMemo(
+    () => (yearly ? toYearlyLedger(incomeOutcome ?? []) : (incomeOutcome ?? [])),
+    [yearly, incomeOutcome],
+  );
+  const sourceRows: CompositionRow[] = useMemo(() => {
+    const rows = (incomeBySourceData ?? []).map((d) => ({ month: d.month, values: d.sources }));
+    return yearly ? toYearlyComposition(rows) : rows;
+  }, [yearly, incomeBySourceData]);
+  const categoryRows: CompositionRow[] = useMemo(() => {
+    const rows = (expensesByCategoryOverTime ?? []).map((d) => ({ month: d.month, values: d.categories }));
+    return yearly ? toYearlyComposition(rows) : rows;
+  }, [yearly, expensesByCategoryOverTime]);
+
+  const yearlyIncome = useMemo(
+    () => yearlyKpi((incomeOutcome ?? []).map((d) => ({ month: d.month, value: d.income }))),
+    [incomeOutcome],
+  );
+  // The yearly expense KPI folds the very series the monthly one averages, so
+  // the two scopes can never disagree about a year; project spend arrives as
+  // its own field there and is only counted when the chip asks for it.
+  const yearlyExpenses = useMemo(
+    () =>
+      yearlyKpi(
+        (monthlyExpenses?.months ?? []).map((m) => ({
+          month: m.month,
+          value: m.expenses + (includeProjects ? (m.project_expenses ?? 0) : 0),
+        })),
+      ),
+    [monthlyExpenses, includeProjects],
+  );
+
+  const monthlySummary = (avg3: number, avg6: number, avg12: number): KpiSummary => ({
+    primary: avg3,
+    primaryLabel: t("dashboard.avg3mo"),
+    stats: [
+      { label: t("dashboard.mo6"), value: avg6 },
+      { label: t("dashboard.mo12"), value: avg12 },
+    ],
+    trendBaseline: avg12,
+    trendTitle: t("dashboard.avgTrendTitle"),
+  });
+
+  const yearlySummary = (kpi: YearlyKpi | null): KpiSummary => ({
+    primary: kpi?.latest.value ?? 0,
+    primaryLabel: kpi
+      ? kpi.partial
+        ? t("dashboard.yearToDateLabel", { year: kpi.latest.year })
+        : kpi.latest.year
+      : t("dashboard.scopeYearly"),
+    stats: (kpi?.earlier ?? []).map((y) => ({ label: y.year, value: y.value })),
+    trendBaseline: kpi?.baseline ?? 0,
+    trendTitle: kpi?.partial ? t("dashboard.yearTrendTitleYtd") : t("dashboard.yearTrendTitle"),
+  });
+
+  const incomeSummary = yearly
+    ? yearlySummary(yearlyIncome)
+    : monthlySummary(
+        avgOf(incomeOutcome?.slice(-3)),
+        avgOf(incomeOutcome?.slice(-6)),
+        avgOf(incomeOutcome?.slice(-12)),
+      );
+  const expenseSummary = yearly
+    ? yearlySummary(yearlyExpenses)
+    : monthlySummary(
+        monthlyExpenses?.avg_3_months ?? 0,
+        monthlyExpenses?.avg_6_months ?? 0,
+        monthlyExpenses?.avg_12_months ?? 0,
+      );
+
   return (
     <div className="bg-[var(--surface)] rounded-2xl border border-[var(--surface-light)] overflow-hidden flex flex-col">
-      <div className="px-3 md:px-6 pt-4 md:pt-5">
+      <div className="px-3 md:px-6 pt-4 md:pt-5 flex items-center justify-between gap-2">
         <h2 className="text-sm md:text-base font-bold">{t("dashboard.incomeAndExpenses")}</h2>
+        <ScopeToggle scope={scope} onChange={changeScope} />
       </div>
       <div className="px-3 md:px-6 pb-4 md:pb-6 pt-4 min-h-[400px] md:h-[600px] overflow-y-auto flex flex-col">
         <div className="flex flex-col flex-1 min-h-0">
-          <KpiCards
-            income={{
-              avg3: avgOf(incomeOutcome?.slice(-3)),
-              avg6: avgOf(incomeOutcome?.slice(-6)),
-              avg12: avgOf(incomeOutcome?.slice(-12)),
-            }}
-            expenses={{
-              avg3: monthlyExpenses?.avg_3_months ?? 0,
-              avg6: monthlyExpenses?.avg_6_months ?? 0,
-              avg12: monthlyExpenses?.avg_12_months ?? 0,
-            }}
-          />
+          <KpiCards income={incomeSummary} expenses={expenseSummary} />
 
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-2 mb-3">
             <div className="flex flex-wrap gap-2">
@@ -167,16 +254,23 @@ export function IncomeExpensesCard() {
 
           {incomeView === "overview" && (
             <div className="flex-1 min-h-0 overflow-y-auto">
-              <LedgerView rows={incomeOutcome ?? []} limit={visibleMonths} onShowMore={showMore} onShowLess={showLess} />
+              <LedgerView
+                rows={ledgerRows}
+                scope={scope}
+                limit={visiblePeriods}
+                onShowMore={showMore}
+                onShowLess={showLess}
+              />
             </div>
           )}
           {incomeView === "by_source" && (
             <div className="flex-1 min-h-0 overflow-y-auto">
-              {incomeBySourceData && incomeBySourceData.length > 0 ? (
+              {sourceRows.length > 0 ? (
                 <CompositionView
-                  rows={incomeBySourceData.map((d) => ({ month: d.month, values: d.sources }))}
+                  rows={sourceRows}
                   palette={CHART_COLORS}
-                  limit={visibleMonths}
+                  scope={scope}
+                  limit={visiblePeriods}
                   onShowMore={showMore}
                   onShowLess={showLess}
                 />
@@ -187,12 +281,13 @@ export function IncomeExpensesCard() {
           )}
           {incomeView === "by_category" && (
             <div className="flex-1 min-h-0 overflow-y-auto">
-              {expensesByCategoryOverTime && expensesByCategoryOverTime.length > 0 ? (
+              {categoryRows.length > 0 ? (
                 <CompositionView
-                  rows={expensesByCategoryOverTime.map((d) => ({ month: d.month, values: d.categories }))}
+                  rows={categoryRows}
                   palette={CATEGORY_COLORS}
                   sortSeries
-                  limit={visibleMonths}
+                  scope={scope}
+                  limit={visiblePeriods}
                   onShowMore={showMore}
                   onShowLess={showLess}
                 />
@@ -208,12 +303,41 @@ export function IncomeExpensesCard() {
 }
 
 /**
- * The two KPI summary cards above the chart — one for income, one for expenses.
- * Compact and always side-by-side (one row at every width): the 12-month
- * average leads, the 3M/6M windows sit beneath, and a trend chip compares the
- * recent 3-month average to the 12-month baseline.
+ * Monthly / yearly scope switch, in the card's title row. It re-folds the
+ * series the card already holds, so flipping it costs no request.
  */
-function KpiCards({ income, expenses }: { income: KpiSeries; expenses: KpiSeries }) {
+function ScopeToggle({ scope, onChange }: { scope: Scope; onChange: (next: Scope) => void }) {
+  const { t } = useTranslation();
+  return (
+    <div data-testid="scope-toggle" className="flex flex-none p-0.5 rounded-lg bg-[var(--surface-light)]">
+      {([
+        { key: "monthly" as const, label: t("dashboard.scopeMonthly") },
+        { key: "yearly" as const, label: t("dashboard.scopeYearly") },
+      ]).map(({ key, label }) => (
+        <button
+          key={key}
+          onClick={() => onChange(key)}
+          aria-pressed={scope === key}
+          className={`px-2.5 py-1 rounded-md text-[11px] md:text-xs font-bold whitespace-nowrap transition-all ${
+            scope === key
+              ? "bg-[var(--surface)] text-[var(--primary)] shadow-sm"
+              : "text-[var(--text-muted)] hover:text-[var(--text-default)]"
+          }`}
+        >
+          {label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * The two KPI summary cards above the chart — one for income, one for expenses.
+ * Compact and always side-by-side (one row at every width): the headline figure
+ * leads (the 3-month average monthly, this year's total yearly), the other two
+ * windows sit beneath, and a trend chip compares the headline to its baseline.
+ */
+function KpiCards({ income, expenses }: { income: KpiSummary; expenses: KpiSummary }) {
   const { t } = useTranslation();
   return (
     <div className="grid grid-cols-2 gap-2 md:gap-3 mb-3">
@@ -231,10 +355,9 @@ function KpiCard({
 }: {
   label: string;
   kind: "income" | "expense";
-  data: KpiSeries;
+  data: KpiSummary;
   color: string;
 }) {
-  const { t } = useTranslation();
   const Icon = kind === "income" ? TrendingUp : TrendingDown;
   const gradient =
     kind === "income"
@@ -255,20 +378,20 @@ function KpiCard({
         </div>
         <span className="text-[11px] md:text-xs font-bold text-[var(--text-muted)] truncate">{label}</span>
         <div className="flex-1" />
-        <TrendChip value={data.avg3} baseline={data.avg12} kind={kind} title={t("dashboard.avgTrendTitle")} />
+        <TrendChip value={data.primary} baseline={data.trendBaseline} kind={kind} title={data.trendTitle} />
       </div>
-      <div className="text-lg md:text-2xl font-extrabold tabular-nums leading-none">{formatCurrency(data.avg3)}</div>
-      <div className="text-[10px] text-slate-500 mt-1">{t("dashboard.avg3mo")}</div>
-      <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-2 pt-2 border-t border-[var(--surface-light)]">
-        <div className="flex items-baseline gap-1.5">
-          <span className="text-[10px] text-slate-500 font-semibold">{t("dashboard.mo6")}</span>
-          <span className="text-[11px] md:text-xs font-bold tabular-nums">{formatCurrency(data.avg6)}</span>
+      <div className="text-lg md:text-2xl font-extrabold tabular-nums leading-none">{formatCurrency(data.primary)}</div>
+      <div className="text-[10px] text-slate-500 mt-1">{data.primaryLabel}</div>
+      {data.stats.length > 0 && (
+        <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-2 pt-2 border-t border-[var(--surface-light)]">
+          {data.stats.map((stat) => (
+            <div key={stat.label} className="flex items-baseline gap-1.5">
+              <span className="text-[10px] text-slate-500 font-semibold">{stat.label}</span>
+              <span className="text-[11px] md:text-xs font-bold tabular-nums">{formatCurrency(stat.value)}</span>
+            </div>
+          ))}
         </div>
-        <div className="flex items-baseline gap-1.5">
-          <span className="text-[10px] text-slate-500 font-semibold">{t("dashboard.mo12")}</span>
-          <span className="text-[11px] md:text-xs font-bold tabular-nums">{formatCurrency(data.avg12)}</span>
-        </div>
-      </div>
+      )}
     </div>
   );
 }
@@ -312,19 +435,21 @@ function TrendChip({
 }
 
 /**
- * Totals view — a statement-style ledger, newest month on top. Each row shows
+ * Totals view — a statement-style ledger, newest period on top. Each row shows
  * the income bar (grows toward the centre), the expense bar (mirrored), and the
- * net for the month. Bars share one scale (widest of any income/|expense|) so
+ * net for the period. Bars share one scale (widest of any income/|expense|) so
  * magnitudes stay comparable; the exact ₪ sits on every bar so nothing needs a
- * hover. Vertical layout keeps the month labels always visible (no bottom axis).
+ * hover. Vertical layout keeps the period labels always visible (no bottom axis).
  */
 function LedgerView({
   rows,
+  scope,
   limit,
   onShowMore,
   onShowLess,
 }: {
-  rows: { month: string; income: number; expenses: number }[];
+  rows: LedgerRow[];
+  scope: Scope;
   limit: number;
   onShowMore: () => void;
   onShowLess: () => void;
@@ -336,7 +461,7 @@ function LedgerView({
   // (with headroom) and widths don't shift when earlier months are revealed;
   // only the *displayed* rows are capped to `limit`.
   const cap = barCap(rows.flatMap((d) => [d.income, Math.abs(d.expenses)]));
-  const lastMonth = rows[rows.length - 1]?.month;
+  const lastPeriod = rows[rows.length - 1]?.month;
   const visible = rows.slice(-limit).reverse();
 
   return (
@@ -345,14 +470,14 @@ function LedgerView({
         className="grid gap-3 px-1 pb-2 text-[10px] font-bold uppercase tracking-wide text-[var(--text-muted)]"
         style={{ gridTemplateColumns: "60px 1fr 1fr 92px" }}
       >
-        <div>{t("dashboard.ledgerMonth")}</div>
+        <div>{scope === "yearly" ? t("dashboard.ledgerYear") : t("dashboard.ledgerMonth")}</div>
         <div className="text-end">{t("dashboard.income")}</div>
         <div>{t("dashboard.expenses")}</div>
         <div className="text-end">{t("dashboard.ledgerNet")}</div>
       </div>
       {visible.map((d) => {
         const net = d.income - Math.abs(d.expenses);
-        const isCurrent = d.month === lastMonth;
+        const isCurrent = d.month === lastPeriod;
         const expenseColor = d.expenses < 0 ? EXPENSE_LIGHT : EXPENSE_COLOR;
         return (
           <div
@@ -363,7 +488,7 @@ function LedgerView({
             style={{ gridTemplateColumns: "60px 1fr 1fr 92px" }}
           >
             <div className="text-xs font-bold text-[var(--text-muted)] whitespace-nowrap">
-              {formatMonthShort(d.month)}
+              {formatPeriodLabel(d.month)}
             </div>
             {/* income grows toward the centre; expenses mirror outward */}
             <LedgerBar value={d.income} kind="income" cap={cap} />
@@ -377,7 +502,13 @@ function LedgerView({
           </div>
         );
       })}
-      <MonthPager total={rows.length} visible={visible.length} onShowMore={onShowMore} onShowLess={onShowLess} />
+      <PeriodPager
+        total={rows.length}
+        visible={visible.length}
+        scope={scope}
+        onShowMore={onShowMore}
+        onShowLess={onShowLess}
+      />
     </div>
   );
 }
@@ -386,7 +517,8 @@ function LedgerView({
  * One ledger bar. Income grows toward the centre, expenses mirror outward. A
  * value above the shared cap is drawn full-width and flagged as an outlier: a
  * hatched strip at the growing tip plus a dashed edge signal "off the scale",
- * while the exact ₪ still shows the real figure.
+ * while the exact ₪ still shows the real figure. Which physical edge that tip
+ * is flips with the document direction, so everything marking it is logical.
  */
 function LedgerBar({
   value,
@@ -399,7 +531,7 @@ function LedgerBar({
   cap: number;
   color?: string;
 }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const abs = Math.abs(value);
   const pct = Math.min(Math.max((abs / cap) * 100, 2), 100);
   const capped = abs > cap;
@@ -407,43 +539,59 @@ function LedgerBar({
   const barColor = color ?? (income ? INCOME_COLOR : EXPENSE_COLOR);
   const soft = income ? "rgba(16,185,129,0.16)" : "rgba(244,63,94,0.16)";
   const borderRgba = income ? "rgba(16,185,129,0.5)" : "rgba(244,63,94,0.5)";
-  const tip = income ? "left" : "right"; // the growing end of the bar
+  // Flexbox anchors the bar on the inline axis, so the *growing* end is the
+  // inline-start edge for income and the inline-end edge for expenses in
+  // either direction — the tip markers must therefore be logical too. They
+  // used to be physical (`left`/`borderLeft*`), which pinned them to the
+  // anchored end under RTL: in Hebrew every over-scale bar carried its
+  // hatch and its dashed edge on the side that never moves.
+  const isRtl = i18n.language === "he";
+  // The hatch's diagonal is the one thing with no logical form, so it is
+  // mirrored by hand — otherwise the stripes lean against the growth in RTL.
+  const tipOnLeft = income !== isRtl;
   return (
     <div className={`flex ${income ? "justify-end" : "justify-start"}`}>
       <div
+        data-testid="ledger-bar"
+        data-kind={kind}
+        data-capped={capped ? "true" : "false"}
         className={`relative h-[22px] rounded-md flex items-center ${income ? "justify-end" : "justify-start"}`}
         title={capped ? t("dashboard.barAboveScale") : undefined}
         // The tip's colour and style are always given, never spread in only
         // when capped. React removes a style property that a re-render stops
         // supplying, and because the browser expands the `border` shorthand
-        // into longhands, removing `borderRightColor` does not fall back to
-        // the shorthand — it falls back to `currentColor`, the inherited text
-        // colour. A bar that lost its cap between renders therefore kept a
-        // near-white 1px sliver at its tip. Which bars are capped depends on a
-        // median over the visible data, so any filter toggle could strand one.
+        // into longhands, removing `borderInlineEndColor` does not fall back
+        // to the shorthand — it falls back to `currentColor`, the inherited
+        // text colour. A bar that lost its cap between renders therefore kept
+        // a near-white 1px sliver at its tip. Which bars are capped depends on
+        // a median over the visible data, so any filter toggle could strand
+        // one. (A logical longhand set after the shorthand wins, same as a
+        // physical one: within a declaration block the two cascade in
+        // declaration order.)
         style={{
           width: `${pct}%`,
           background: soft,
           borderWidth: 1,
           borderStyle: "solid",
           borderColor: borderRgba,
-          [income ? "borderLeftColor" : "borderRightColor"]: capped
+          [income ? "borderInlineStartColor" : "borderInlineEndColor"]: capped
             ? barColor
             : borderRgba,
-          [income ? "borderLeftStyle" : "borderRightStyle"]: capped
+          [income ? "borderInlineStartStyle" : "borderInlineEndStyle"]: capped
             ? "dashed"
             : "solid",
         }}
       >
         {capped && (
           <div
+            data-testid="ledger-bar-hatch"
             className="absolute inset-y-0 w-4 pointer-events-none"
             style={{
-              [tip]: 0,
-              [income ? "borderTopLeftRadius" : "borderTopRightRadius"]: 5,
-              [income ? "borderBottomLeftRadius" : "borderBottomRightRadius"]: 5,
+              [income ? "insetInlineStart" : "insetInlineEnd"]: 0,
+              [income ? "borderStartStartRadius" : "borderStartEndRadius"]: 5,
+              [income ? "borderEndStartRadius" : "borderEndEndRadius"]: 5,
               opacity: 0.6,
-              background: `repeating-linear-gradient(${income ? "45deg" : "-45deg"}, ${barColor} 0 1.5px, transparent 1.5px 4.5px)`,
+              background: `repeating-linear-gradient(${tipOnLeft ? "45deg" : "-45deg"}, ${barColor} 0 1.5px, transparent 1.5px 4.5px)`,
             }}
           />
         )}
@@ -478,13 +626,15 @@ function CompositionView({
   rows,
   palette,
   sortSeries = false,
+  scope,
   limit,
   onShowMore,
   onShowLess,
 }: {
-  rows: { month: string; values: Record<string, number> }[];
+  rows: CompositionRow[];
   palette: string[];
   sortSeries?: boolean;
+  scope: Scope;
   limit: number;
   onShowMore: () => void;
   onShowLess: () => void;
@@ -514,14 +664,14 @@ function CompositionView({
   // Median-anchored meter cap over the FULL history so widths stay stable across
   // "Show earlier months"; totals above it are flagged as outliers.
   const meterCap = barCap(rows.map((d) => totalOf(d.values)));
-  const lastMonth = rows[rows.length - 1]?.month;
+  const lastPeriod = rows[rows.length - 1]?.month;
   const visible = rows.slice(-limit).reverse();
 
   return (
     <div className="min-w-[320px]" onMouseLeave={() => setTip(null)}>
       {visible.map((d) => {
         const total = totalOf(d.values);
-        const isCurrent = d.month === lastMonth;
+        const isCurrent = d.month === lastPeriod;
         return (
           <div
             key={d.month}
@@ -531,7 +681,7 @@ function CompositionView({
             style={{ gridTemplateColumns: "56px 1fr 112px" }}
           >
             <div className="text-xs font-bold text-[var(--text-muted)] whitespace-nowrap">
-              {formatMonthShort(d.month)}
+              {formatPeriodLabel(d.month)}
             </div>
             <div className="flex h-6 rounded-md overflow-hidden bg-[var(--background)]">
               {series.map((name) => {
@@ -572,7 +722,13 @@ function CompositionView({
           </div>
         );
       })}
-      <MonthPager total={rows.length} visible={visible.length} onShowMore={onShowMore} onShowLess={onShowLess} />
+      <PeriodPager
+        total={rows.length}
+        visible={visible.length}
+        scope={scope}
+        onShowMore={onShowMore}
+        onShowLess={onShowLess}
+      />
       <SegmentTooltip tip={tip} />
     </div>
   );
@@ -609,23 +765,25 @@ function SegmentTooltip({ tip }: { tip: Tip | null }) {
 }
 
 /**
- * "Show earlier months" / "Show less" control shown under a capped month list.
- * Hidden entirely when everything already fits in the default window.
+ * "Show earlier months/years" / "Show less" control shown under a capped period
+ * list. Hidden entirely when everything already fits in the default window.
  */
-function MonthPager({
+function PeriodPager({
   total,
   visible,
+  scope,
   onShowMore,
   onShowLess,
 }: {
   total: number;
   visible: number;
+  scope: Scope;
   onShowMore: () => void;
   onShowLess: () => void;
 }) {
   const { t } = useTranslation();
   const hasMore = total > visible;
-  const canCollapse = visible > DEFAULT_VISIBLE_MONTHS;
+  const canCollapse = visible > DEFAULT_VISIBLE_PERIODS;
   if (!hasMore && !canCollapse) return null;
   return (
     <div className="flex items-center justify-center gap-4 pt-3 pb-1">
@@ -635,7 +793,9 @@ function MonthPager({
           className="inline-flex items-center gap-1 text-xs font-bold text-[var(--primary)] hover:underline"
         >
           <ChevronDown size={14} />
-          {t("dashboard.showEarlierMonths", { count: total - visible })}
+          {t(scope === "yearly" ? "dashboard.showEarlierYears" : "dashboard.showEarlierMonths", {
+            count: total - visible,
+          })}
         </button>
       )}
       {canCollapse && (

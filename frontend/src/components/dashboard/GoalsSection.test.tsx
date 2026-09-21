@@ -22,8 +22,11 @@ import { DemoModeProvider } from "../../context/DemoModeContext";
  * the literal string "0" beside the goal name.
  */
 
+const { notifyInfo } = vi.hoisted(() => ({ notifyInfo: vi.fn() }));
+
 vi.mock("../../context/DialogContext", () => ({
   useConfirm: () => async () => true,
+  useNotify: () => ({ info: notifyInfo }),
 }));
 
 function makeGoal(overrides: Partial<SavingsGoal> = {}): SavingsGoal {
@@ -121,6 +124,7 @@ function rowFor(name: string): HTMLElement {
 
 beforeEach(() => {
   vi.restoreAllMocks();
+  notifyInfo.mockClear();
 });
 
 describe("GoalsSection", () => {
@@ -429,6 +433,65 @@ describe("GoalsSection", () => {
         await screen.findByText(/nothing allocated yet/i),
       ).toBeInTheDocument();
       expect(screen.queryByTestId("goals-history-chart")).not.toBeInTheDocument();
+    });
+  });
+
+  describe("earmarking earlier free cash from the row", () => {
+    function stubFreeCashBefore(freeCash: number) {
+      return vi.spyOn(savingsGoalsApi, "getFreeCashBefore").mockResolvedValue({
+        data: { month: "2026-01", free_cash: freeCash },
+      } as Awaited<ReturnType<typeof savingsGoalsApi.getFreeCashBefore>>);
+    }
+
+    it("sets the opening balance and restates from the goal's start", async () => {
+      await renderGoals([makeGoal({ name: "Vacation", start_month: "2026-01" })]);
+      stubFreeCashBefore(24000);
+      const update = vi
+        .spyOn(savingsGoalsApi, "update")
+        .mockResolvedValue({ data: [] } as unknown as Awaited<
+          ReturnType<typeof savingsGoalsApi.update>
+        >);
+      const rebuild = vi
+        .spyOn(savingsGoalsApi, "rebuild")
+        .mockResolvedValue({ data: {} } as unknown as Awaited<
+          ReturnType<typeof savingsGoalsApi.rebuild>
+        >);
+
+      fireEvent.click(
+        within(rowFor("Vacation")).getByRole("button", {
+          name: /earmark the free cash from before/i,
+        }),
+      );
+
+      await waitFor(() =>
+        expect(update).toHaveBeenCalledWith(1, { opening_balance: 24000 }),
+      );
+      await waitFor(() => expect(rebuild).toHaveBeenCalledWith("2026-01", false));
+    });
+
+    it("says so and writes nothing when the goal already holds it", async () => {
+      await renderGoals([makeGoal({ name: "Vacation", opening_balance: 24000 })]);
+      stubFreeCashBefore(24000);
+      const update = vi.spyOn(savingsGoalsApi, "update");
+
+      fireEvent.click(
+        within(rowFor("Vacation")).getByRole("button", {
+          name: /earmark the free cash from before/i,
+        }),
+      );
+
+      await waitFor(() => expect(notifyInfo).toHaveBeenCalled());
+      expect(update).not.toHaveBeenCalled();
+    });
+
+    it("is not offered on a closed goal", async () => {
+      await renderGoals([makeGoal({ name: "Vacation", status: "closed", is_closed: true })]);
+
+      expect(
+        within(rowFor("Vacation")).queryByRole("button", {
+          name: /earmark the free cash from before/i,
+        }),
+      ).not.toBeInTheDocument();
     });
   });
 

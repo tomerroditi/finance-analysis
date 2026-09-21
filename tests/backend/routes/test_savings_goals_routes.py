@@ -126,6 +126,25 @@ class TestWaterfallRoutes:
         )
         assert res.status_code == 400
 
+    def test_free_cash_before_answers_for_a_goal(self, test_client):
+        """GET /free-cash/before echoes the month and reports a non-negative pool."""
+        goal = _create(test_client, name="A", target_amount=100)
+        month = f"{date.today():%Y-%m}"
+
+        res = test_client.get(
+            "/api/savings-goals/free-cash/before",
+            params={"month": month, "goal_id": goal["id"]},
+        )
+        assert res.status_code == 200
+        assert res.json() == {"month": month, "free_cash": 0.0}
+
+    def test_free_cash_before_rejects_a_malformed_month(self, test_client):
+        """An unparseable month is a 400, not a silent zero."""
+        res = test_client.get(
+            "/api/savings-goals/free-cash/before", params={"month": "not-a-month"}
+        )
+        assert res.status_code == 400
+
 
 class TestAllocationAndLinkRoutes:
     """The month view the budget page reads, and transaction linking."""
