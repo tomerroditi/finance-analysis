@@ -129,6 +129,20 @@ def get_free_cash(db: Session = Depends(get_database)):
     return SavingsGoalService(db).get_free_cash()
 
 
+@router.get("/free-cash/before")
+def get_free_cash_before(
+    month: str,
+    goal_id: Optional[int] = None,
+    db: Session = Depends(get_database),
+):
+    """Return the free cash that existed when a goal starting in ``month`` began.
+
+    ``goal_id`` leaves the goal being edited out of the figure, so it can be
+    used as that goal's opening balance.
+    """
+    return SavingsGoalService(db).get_free_cash_before(month, goal_id)
+
+
 @router.get("/timeline")
 def get_timeline(
     months: int = Query(12, ge=0, le=600), db: Session = Depends(get_database)
