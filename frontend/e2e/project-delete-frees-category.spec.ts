@@ -28,7 +28,7 @@ test.describe("Project deletion frees its category", () => {
     await enableDemoMode(page);
   });
 
-  test("renders a project's envelopes, then deletes it, frees its category and renders the project recreated from it", async ({
+  test("renders a project's rules, then deletes it, frees its category and renders the project recreated from it", async ({
     page,
   }) => {
     await navigateTo(page, "/budget");
@@ -56,7 +56,7 @@ test.describe("Project deletion frees its category", () => {
       page.getByText(new RegExp(escapeRegExp(target), "i")).first(),
     ).toBeVisible({ timeout: 10_000 });
 
-    // The selected project's envelopes must actually render. The seeded demo
+    // The selected project's rules must actually render. The seeded demo
     // projects carry no `all_tags` anchor rule, and the view used to gate its
     // entire body — band, ledger and rail — on finding one, so picking such a
     // project showed the command bar over an empty page with no explanation.

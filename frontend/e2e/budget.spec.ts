@@ -133,7 +133,7 @@ test.describe("Budget", () => {
     }
 
     // --- Per-rule trend column ---
-    // Every budgeted envelope carries its own sparkline on top of the band's
+    // Every budgeted rule carries its own sparkline on top of the band's
     // figure, and the summary in its aria-label names each month plus the
     // reference figure, so the status is never conveyed by colour alone.
     const sparklines = page.getByTestId("rule-sparkline");
@@ -150,6 +150,14 @@ test.describe("Budget", () => {
     // bar, and the leading month of a 12-month series is often exactly that.
     expect(await sparklines.first().locator("rect").count()).toBeGreaterThan(0);
     await expect(sparklines.first().locator("polyline")).toHaveCount(0);
+
+    // The dashed budget reference is one stepped path, not a straight line:
+    // each month is drawn against the limit it actually carried, so an
+    // rule raised or cut later cannot rewrite its own history.
+    await expect(
+      sparklines.first().locator('[data-testid="budget-reference"]'),
+    ).toHaveCount(1);
+    await expect(sparklines.first().locator("line")).toHaveCount(0);
 
     // --- Rule rows carry no chevron; the row itself is the toggle ---
     // The trailing chevron was a decorative <span>, not a control: it could
@@ -213,7 +221,7 @@ test.describe("Budget", () => {
   // The tab bar previously used `flex-1` + `whitespace-nowrap`, so the three
   // tabs could not shrink below their text and pushed the document 53px past
   // the viewport — the whole page scrolled sideways on a phone.
-  test("overview tab: the month splits four ways, and a long envelope's standing never moves with the month", async ({
+  test("overview tab: the month splits four ways, and a long rule's standing never moves with the month", async ({
     page,
   }) => {
     await navigateTo(page, "/budget");
@@ -231,15 +239,15 @@ test.describe("Budget", () => {
     // --- Three pools, stated as three pools ---
     await expect(page.getByTestId("budget-across-all-three")).toBeVisible();
 
-    // --- Long envelopes carry both figures, under separate headings ---
-    const rows = page.getByTestId("long-envelope-row");
+    // --- Long rules carry both figures, under separate headings ---
+    const rows = page.getByTestId("long-rule-row");
     await expect(rows.first()).toBeVisible();
     const liveStanding = await page
-      .getByTestId("long-envelope-standing")
+      .getByTestId("long-rule-standing")
       .first()
       .textContent();
     const liveContribution = await page
-      .getByTestId("long-envelope-contribution")
+      .getByTestId("long-rule-contribution")
       .first()
       .textContent();
 
@@ -248,22 +256,24 @@ test.describe("Budget", () => {
     await expect(bar).toBeVisible();
     await expect(page.getByTestId("commitment-segment-committed")).toHaveCount(0);
 
-    // --- ...but the envelope's standing is a fact about today, so it must not
+    // --- ...but the rule's standing is a fact about today, so it must not
     // move with the month. Only the contribution is scoped to the month. This
     // is the whole reason the card shows two columns. ---
     const pastStanding = await page
-      .getByTestId("long-envelope-standing")
+      .getByTestId("long-rule-standing")
       .first()
       .textContent();
     const pastContribution = await page
-      .getByTestId("long-envelope-contribution")
+      .getByTestId("long-rule-contribution")
       .first()
       .textContent();
     expect(pastStanding).toBe(liveStanding);
     expect(pastContribution).not.toBe(liveContribution);
   });
 
-  test("does not scroll horizontally at mobile width", async ({ page }) => {
+  test("at mobile width the page does not scroll sideways, the active tab stays in view, and the picker fills its row", async ({
+    page,
+  }) => {
     await navigateTo(page, "/budget");
     await expect(page.getByRole("navigation").first()).toBeVisible();
 
@@ -278,6 +288,34 @@ test.describe("Budget", () => {
       clientWidth: document.documentElement.clientWidth,
     }));
     expect(scrollWidth).toBeLessThanOrEqual(clientWidth + 1);
+
+    // --- The tab bar scrolls at this width, so the tab you switch to is not
+    // necessarily inside it: Projects is the last of four and starts out of
+    // view, which left the page looking like it had opened on no tab at all.
+    await page.getByRole("button", { name: /Project Budgets/i }).first().click();
+    const strip = page.getByTestId("budget-tab-strip");
+    const activeTab = strip.getByRole("button", { name: /Project Budgets/i });
+    await expect(activeTab).toHaveAttribute("aria-pressed", "true");
+
+    // Polled: the strip is scrolled from an effect that runs after the commit
+    // the pressed state lands in, so a single read can catch it mid-flight.
+    await expect
+      .poll(async () => {
+        const stripBox = await strip.boundingBox();
+        const tabBox = await activeTab.boundingBox();
+        if (!stripBox || !tabBox) return false;
+        return (
+          tabBox.x >= stripBox.x - 1 &&
+          tabBox.x + tabBox.width <= stripBox.x + stripBox.width + 1
+        );
+      })
+      .toBe(true);
+
+    // --- The project picker takes the width its label leaves, rather than
+    // truncating the name inside a fixed 160px box beside empty space. ---
+    const stripBox = await strip.boundingBox();
+    const pickerBox = await page.getByTestId("project-picker").boundingBox();
+    expect(pickerBox!.width).toBeGreaterThan(stripBox!.width * 0.6);
   });
 
   test("over-budget rules are flagged inline; the alerts toggle gates the bell", async ({

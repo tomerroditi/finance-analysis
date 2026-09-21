@@ -132,4 +132,8 @@ export function shouldDehydrateQuery(query: Query): boolean {
 // v6: every insight card gained a `key` — the identity its dismiss button
 // posts. A hydrated v5 snapshot would render cards whose X has nothing to
 // send, so discard caches written before the field existed.
-export const PERSIST_BUSTER = "v6";
+// v7: `/budget/trend` points gained `limits`, the cap each rule carried that
+// month. A hydrated v6 snapshot has no such field, so every monthly
+// sparkline would fall back to drawing its whole history against today's
+// limit — the very thing the stepped reference exists to stop.
+export const PERSIST_BUSTER = "v7";

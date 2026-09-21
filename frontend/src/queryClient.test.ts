@@ -52,9 +52,11 @@ describe("PERSIST_BUSTER", () => {
   // the v3 bump, per-client Demo Mode invalidated everything cached before v5
   // (a demo response could be cached under a real-mode query key pre-bump),
   // and every insight card gained the `key` its dismiss button posts after
-  // that. Bump this string whenever a cached response shape changes.
-  it("is past v5, the last shape-incompatible cache generation", () => {
-    expect(PERSIST_BUSTER).not.toBe("v5");
-    expect(PERSIST_BUSTER).toBe("v6");
+  // that, then `/budget/trend` gained the per-month `limits` the budget
+  // sparkline draws its reference from. Bump this string whenever a cached
+  // response shape changes.
+  it("is past v6, the last shape-incompatible cache generation", () => {
+    expect(PERSIST_BUSTER).not.toBe("v6");
+    expect(PERSIST_BUSTER).toBe("v7");
   });
 });

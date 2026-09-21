@@ -40,7 +40,7 @@ const content: DataFlowContent = {
     "refunds-mgmt": { title: "Refund Management", desc: "Mark pending refunds, link to actual refund transactions, adjust budget calculations." },
     "invest-mgmt": { title: "Investment Management", desc: "Create/close/reopen investments. Manual snapshots. Fixed-rate compounding generation." },
     "liab-mgmt": { title: "Liability Management", desc: "Create loans, track payments, mark as paid off. Amortization schedule generation." },
-    "budget-mgmt": { title: "Budget Management", desc: "Three envelope kinds \u2014 monthly, yearly, project. Copy forward, close a finished one, alerts." },
+    "budget-mgmt": { title: "Budget Management", desc: "Three rule kinds \u2014 monthly, yearly, project. Copy forward, close a finished one, alerts." },
     "month-override": { title: "Budget Month Override", desc: "Count a transaction in a neighbouring month without changing its date. Capped at \u00B11 month." },
     "savings-goals-mgmt": { title: "Savings Goals", desc: "Prioritised earmarks over money already tracked. Cap, target, links, investment backing." },
     "recurring-review": { title: "Recurring Review", desc: "Confirm, dismiss or re-open a detected commitment. Only confirmed ones are acted on." },
@@ -50,7 +50,7 @@ const content: DataFlowContent = {
     "forecast-svc": { title: "Cash-Flow Forecast", desc: "Projects month end from trend + month-to-date. Safe-to-spend nets out committed charges." },
     "recurring-svc": { title: "Recurring Detection", desc: "Finds commitments on cadence, regularity and amount stability. Scores each with a confidence." },
     "insights-svc": { title: "Insights", desc: "Only what the budget does not already explain \u2014 spikes, pace, big charges, repriced subscriptions." },
-    "budget-svc": { title: "Budget", desc: "Budget vs actual across monthly, yearly and project envelopes. Fixed/variable split, alerts." },
+    "budget-svc": { title: "Budget", desc: "Budget vs actual across monthly, yearly and project rules. Fixed/variable split, alerts." },
     "goals-svc": { title: "Savings Goals Engine", desc: "Each month\u2019s realized surplus flows down goals by priority. Free cash is what none claims." },
     "invest-svc": { title: "Investments", desc: "P&L, ROI, CAGR. Snapshot-first balance. Fixed-rate compounding." },
     "liab-svc": { title: "Liabilities", desc: "Amortization, remaining balance, total interest, payment tracking." },
@@ -212,11 +212,11 @@ const content: DataFlowContent = {
       ],
     },
     "budget-mgmt": {
-      title: "Budget Management", tag: "Three Envelope Kinds",
+      title: "Budget Management", tag: "Three Rule Kinds",
       sections: [
         { heading: "Monthly", items: ["A spending limit per category/tag for one month", "Copy every rule from a previous month forward in one click", "'Total Budget' \u2014 a single overall monthly cap", "Alerts when a rule is near or over its limit"] },
-        { heading: "Yearly", items: ["A per-year envelope for a category/tag that is lumpy by design \u2014 insurance, car test, tuition", "Mutually exclusive with a monthly rule on the same (category, tag) within that year", "Carry the year\u2019s rules into the next year", "A settled envelope is closed, not deleted \u2014 it keeps its limit, its spend and its row, and goes on claiming its category"] },
-        { heading: "Projects", items: ["A category-owned envelope for a one-off effort \u2014 a renovation, a trip", "A finished project is closed, not deleted: it keeps its rules, transactions and tab, and its category stays claimed", "Deleting is what frees the category again", "Closing only removes it from the Overview \u2014 the money it spent still counts in total out"] },
+        { heading: "Yearly", items: ["A per-year rule for a category/tag that is lumpy by design \u2014 insurance, car test, tuition", "Mutually exclusive with a monthly rule on the same (category, tag) within that year", "Carry the year\u2019s rules into the next year", "A settled rule is closed, not deleted \u2014 it keeps its limit, its spend and its row, and goes on claiming its category"] },
+        { heading: "Projects", items: ["A category-owned rule for a one-off effort \u2014 a renovation, a trip", "A finished project is closed, not deleted: it keeps its rules, transactions and tab, and its category stays claimed", "Deleting is what frees the category again", "Closing only removes it from the Overview \u2014 the money it spent still counts in total out"] },
         { heading: "Category Exclusion", text: "A category cannot be both project-owned and used by a monthly or yearly rule. The new-project picker filters claimed categories out, rule creation blocks claimed ones, and any pre-existing overlap surfaces as a dismissible notice rather than a hard block." },
       ],
     },
@@ -352,9 +352,9 @@ const content: DataFlowContent = {
     "budget-svc": {
       title: "BudgetService", tag: "Budget vs Actual",
       sections: [
-        { heading: "Features", items: ["Monthly limits per category/tag, plus the Total Budget cap", "Yearly envelopes and project envelopes, open or closed", "Pending-refund adjustments so a refundable expense is not flagged as overspend", "Alerts, per-rule sparklines and a trend view"] },
-        { heading: "The Overview", items: ["Splits the month into fixed (confirmed recurring) and variable spend", "committed_remaining \u2014 confirmed charges still due this month", "free_to_spend = budget \u2212 spent \u2212 committed", "long_envelopes \u2014 the open yearly and project envelopes, and the needs-attention rows built from them"] },
-        { heading: "Closed Still Counts", text: "A closed project or yearly envelope leaves the Overview but its spend stays in total out \u2014 that money did leave the accounts. What it loses is attention, not arithmetic." },
+        { heading: "Features", items: ["Monthly limits per category/tag, plus the Total Budget cap", "Yearly rules and project rules, open or closed", "Pending-refund adjustments so a refundable expense is not flagged as overspend", "Alerts, per-rule sparklines and a trend view"] },
+        { heading: "The Overview", items: ["Splits the month into fixed (confirmed recurring) and variable spend", "committed_remaining \u2014 confirmed charges still due this month", "free_to_spend = budget \u2212 spent \u2212 committed", "long_envelopes \u2014 the open yearly and project rules, and the needs-attention rows built from them"] },
+        { heading: "Closed Still Counts", text: "A closed project or yearly rule leaves the Overview but its spend stays in total out \u2014 that money did leave the accounts. What it loses is attention, not arithmetic." },
         { heading: "Exclusions", text: "Credit Cards, Investments, Liabilities and Ignore are excluded from budget calculations." },
       ],
     },
@@ -424,7 +424,7 @@ const content: DataFlowContent = {
     "budget-page": {
       title: "Budget Page", tag: "Overview + 3 Tabs",
       sections: [
-        { heading: "Views", items: ["Overview \u2014 fixed vs variable, free to spend, long envelopes needing attention", "Monthly \u2014 ledger rows with sparklines and a per-tag breakdown", "Yearly \u2014 annual envelopes, open and closed", "Projects \u2014 one tab per project, closed ones included"] },
+        { heading: "Views", items: ["Overview \u2014 fixed vs variable, free to spend, long rules needing attention", "Monthly \u2014 ledger rows with sparklines and a per-tag breakdown", "Yearly \u2014 annual rules, open and closed", "Projects \u2014 one tab per project, closed ones included"] },
         { heading: "Alongside", items: ["Savings goals section", "Pending refunds section", "Budget alerts, also reachable from the bell in the sidebar", "A freshness badge so a stale scrape does not read as an underspend", "A dismissible notice for pre-existing category conflicts"] },
       ],
     },
@@ -518,11 +518,11 @@ const content: DataFlowContent = {
     },
     {
       title: "Monthly, Yearly & Project Budgets",
-      desc: "Three kinds of envelope, because not every commitment repeats every month.",
+      desc: "Three kinds of rule, because not every commitment repeats every month.",
       highlights: [
         "Monthly limits per category, or one total cap",
-        "Yearly envelopes for the lumpy things \u2014 insurance, car test, tuition",
-        "Project envelopes for a renovation or a trip; close one when it's done and it keeps its history",
+        "Yearly rules for the lumpy things \u2014 insurance, car test, tuition",
+        "Project rules for a renovation or a trip; close one when it's done and it keeps its history",
         "Copy last month's (or last year's) rules forward in one click",
         "Move a charge to a neighbouring month when it lands on the wrong side of the 1st",
         "Pending refunds adjust spent amounts so you don't get false 'overspent' alerts",
@@ -556,7 +556,7 @@ const content: DataFlowContent = {
       highlights: [
         "Safe-to-spend nets out the bills that haven't left yet",
         "Spikes compare against the median of recent months, not a one-off",
-        "Nothing your budget already plans for gets flagged \u2014 projects and yearly envelopes stay quiet",
+        "Nothing your budget already plans for gets flagged \u2014 projects and yearly rules stay quiet",
         "Every card can be dismissed, and the next-best one takes its slot",
       ],
     },
@@ -609,7 +609,7 @@ const content: DataFlowContent = {
     { title: "Net worth, cash flow, and FIRE projections.", text: "See where every shekel goes with a Sankey flow chart, watch your net worth trend over time, and run early-retirement scenarios with the built-in FIRE calculator \u2014 all from the same data." },
     { title: "Try everything without risk via Demo Mode.", text: "Open Settings from the sidebar and toggle demo mode to switch to an isolated database with realistic sample data. Explore every feature, click every button, then switch back when you're done. Your real finances stay untouched." },
     { title: "Backups and history, just in case.", text: "Snapshot your data anytime, browse your backup list, and restore on demand. A safety backup is taken first, so even an accidental restore can be undone." },
-    { title: "Nothing is decided behind your back.", text: "A detected subscription stays pending until you confirm it. An insight card can be dismissed and comes back only if the thing it was about changes. A finished project or annual envelope is closed, not deleted \u2014 it keeps its history and its category. The app proposes; you rule." },
+    { title: "Nothing is decided behind your back.", text: "A detected subscription stays pending until you confirm it. An insight card can be dismissed and comes back only if the thing it was about changes. A finished project or yearly rule is closed, not deleted \u2014 it keeps its history and its category. The app proposes; you rule." },
     { title: "Your data stays on your machine.", text: "Everything lives in a local SQLite file. Passwords sit in the OS keyring, other credential fields are encrypted at rest, and the API refuses requests that don't come from you. Install it as an app and it keeps working offline on cached data." },
   ],
 };

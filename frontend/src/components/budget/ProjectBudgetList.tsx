@@ -50,7 +50,7 @@ interface ProjectBudgetListProps {
  *
  * The project's own total is no longer a row here — it is the status band at
  * the top of the page, which shows the same figure the "all tags" rule
- * carried. What is left is one line per tag envelope plus the uncategorized
+ * carried. What is left is one line per tag rule plus the uncategorized
  * catch-all.
  */
 export const ProjectBudgetList: React.FC<ProjectBudgetListProps> = ({

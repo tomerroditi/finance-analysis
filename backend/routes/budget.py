@@ -263,7 +263,8 @@ def get_budget_trend(
     -------
     list[dict]
         One entry per month, oldest first, with ``year``, ``month``,
-        ``budget``, ``actual`` and a ``rules`` name-to-spend mapping.
+        ``budget``, ``actual``, a ``rules`` name-to-spend mapping and a
+        ``limits`` name-to-cap mapping for that month.
     """
     service = MonthlyBudgetService(db)
     return service.get_budget_trend(year, month, months, include_split_parents)

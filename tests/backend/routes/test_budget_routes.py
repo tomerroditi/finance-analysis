@@ -509,7 +509,7 @@ class TestBudgetTrendRoute:
 
         assert response.status_code == 200
         [point] = response.json()
-        for key in ("year", "month", "budget", "actual", "rules"):
+        for key in ("year", "month", "budget", "actual", "rules", "limits"):
             assert key in point
 
     def test_defaults_to_twelve_months(self, test_client):
@@ -537,3 +537,4 @@ class TestBudgetTrendRoute:
         assert point["budget"] == 0
         assert point["actual"] == 0
         assert point["rules"] == {}
+        assert point["limits"] == {}

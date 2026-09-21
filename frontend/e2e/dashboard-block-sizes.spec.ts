@@ -42,12 +42,67 @@ test.describe("Dashboard half-width blocks", () => {
     );
   });
 
+  /** The default layout's cards, in fill order. */
+  const CARD_IDS = [
+    "budget",
+    "recent",
+    "recurring",
+    "goals",
+    "heatmap",
+    "income_by_source",
+    "income_expenses",
+  ];
+
   async function boxOf(page: Page, id: string) {
     const el = page.locator(`[data-card-id="${id}"]`);
     await expect(el).toBeVisible({ timeout: 45_000 });
     const box = await el.boundingBox();
     if (!box) throw new Error(`no box for ${id}`);
     return box;
+  }
+
+  /**
+   * Block until no card's geometry is still moving.
+   *
+   * Every assertion here is a comparison *between* cards, but `boxOf` only
+   * waits for the card it is asked about to be visible. The cards lazy-load
+   * and grow as their content arrives, so a card measured early can still be
+   * short while one measured later has already been pushed down — and the
+   * difference lands in whichever gap is computed from the two. CI saw
+   * exactly that: a 6px row gutter read as 144px, then 290px on the retry, on
+   * a runner loaded enough for the page to still be settling through both
+   * attempts.
+   *
+   * Two consecutive agreeing samples of every card at once pins the
+   * measurements to a settled layout. It weakens no assertion — the geometry
+   * checked is the same, just no longer read mid-reflow.
+   */
+  async function waitForSettledCards(page: Page, ids: string[] = CARD_IDS) {
+    const sample = () =>
+      page.evaluate(
+        (cardIds) =>
+          cardIds
+            .map((id) => {
+              const el = document.querySelector(`[data-card-id="${id}"]`);
+              if (!el) return `${id}:absent`;
+              const r = el.getBoundingClientRect();
+              return `${id}:${Math.round(r.x)},${Math.round(r.y)},${Math.round(r.width)},${Math.round(r.height)}`;
+            })
+            .join("|"),
+        ids,
+      );
+
+    await expect
+      .poll(
+        async () => {
+          const before = await sample();
+          if (before.includes(":absent")) return "moving";
+          await page.waitForTimeout(250);
+          return before === (await sample()) ? "settled" : "moving";
+        },
+        { timeout: 45_000, intervals: [100] },
+      )
+      .toBe("settled");
   }
 
   /** Count the 7-column weekday-header rows inside the heatmap card — one per month. */
@@ -69,19 +124,12 @@ test.describe("Dashboard half-width blocks", () => {
     await page.goto("/");
 
     // --- Two half cards pair on one row; a full card spans the row ---
-    const ids = [
-      "budget",
-      "recent",
-      "recurring",
-      "goals",
-      "heatmap",
-      "income_by_source",
-      "income_expenses",
-    ];
+    const ids = CARD_IDS;
     const boxes: Record<
       string,
       { x: number; y: number; width: number; height: number }
     > = {};
+    await waitForSettledCards(page, ids);
     for (const id of ids) boxes[id] = await boxOf(page, id);
 
     expect(Math.abs(boxes.budget.y - boxes.recent.y)).toBeLessThan(4);
@@ -202,6 +250,8 @@ test.describe("Dashboard half-width blocks", () => {
 
     // --- Below lg the cards stack full-width (single column) ---
     await page.setViewportSize({ width: 800, height: 1000 });
+    // A resize reflows every card, so the layout has to settle again.
+    await waitForSettledCards(page);
 
     const budgetNarrow = await boxOf(page, "budget");
     const recentNarrow = await boxOf(page, "recent");
@@ -223,6 +273,7 @@ test.describe("Dashboard half-width blocks", () => {
     await page.goto("/");
 
     await expect(page.locator("html")).toHaveAttribute("dir", "rtl");
+    await waitForSettledCards(page);
 
     const budget = await boxOf(page, "budget");
     const recent = await boxOf(page, "recent");

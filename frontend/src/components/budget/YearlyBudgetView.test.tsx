@@ -19,7 +19,7 @@ import type * as ApiModule from "../../services/api";
  * the same convention BudgetLedgerRow documents: positive is spend, negative
  * means refunds outran spend for the period.
  *
- * Negating it again in the view made every envelope look like a net refund:
+ * Negating it again in the view made every rule look like a net refund:
  * the bar clamped to 0%, and the remaining column reported the untouched
  * budget in red. These tests pin the sign at the boundary so the row and the
  * status band above it can never disagree again.
@@ -134,7 +134,7 @@ describe("YearlyBudgetView", () => {
       expect(row.textContent).not.toMatch(/net refund/i);
     });
 
-    it("fills the progress bar to the share of the envelope spent", async () => {
+    it("fills the progress bar to the share of the rule spent", async () => {
       renderView(5000);
       const row = await ledgerRow();
 
@@ -154,8 +154,8 @@ describe("YearlyBudgetView", () => {
     });
   });
 
-  describe("closed envelopes", () => {
-    it("marks a closed envelope and offers to reopen it", async () => {
+  describe("closed rules", () => {
+    it("marks a closed rule and offers to reopen it", async () => {
       renderAnalysis(
         analysis([entry(1, "Car insurance", 5000, true)], {
           on_track: 0,
@@ -167,13 +167,13 @@ describe("YearlyBudgetView", () => {
         0,
       );
       expect(
-        screen.getAllByRole("button", { name: /reopen envelope/i }).length,
+        screen.getAllByRole("button", { name: /reopen rule/i }).length,
       ).toBeGreaterThan(0);
       // The count sits beside the health figures rather than inflating them.
       expect(screen.getAllByTestId("yearly-closed-count")[0].textContent).toBe("1");
     });
 
-    it("keeps a closed envelope's figures — closing is not a delete", async () => {
+    it("keeps a closed rule's figures — closing is not a delete", async () => {
       renderAnalysis(
         analysis([entry(1, "Car insurance", 5000, true)], { closed: 1 }),
       );
@@ -182,7 +182,7 @@ describe("YearlyBudgetView", () => {
       expect((await ledgerFigures()).textContent).toContain("20,000");
     });
 
-    it("lists open envelopes before closed ones", async () => {
+    it("lists open rules before closed ones", async () => {
       renderAnalysis(
         analysis(
           [entry(1, "Car insurance", 5000, true), entry(2, "Vacations", 900)],
@@ -215,7 +215,7 @@ describe("YearlyBudgetView", () => {
       );
     });
 
-    it("asks before closing an open envelope", async () => {
+    it("asks before closing an open rule", async () => {
       vi.mocked(budgetApi.setYearlyRuleClosed).mockResolvedValue(
         {} as Awaited<ReturnType<typeof budgetApi.setYearlyRuleClosed>>,
       );
@@ -229,7 +229,7 @@ describe("YearlyBudgetView", () => {
       expect(budgetApi.setYearlyRuleClosed).not.toHaveBeenCalled();
 
       await userEvent.click(
-        within(dialog).getByRole("button", { name: /close envelope/i }),
+        within(dialog).getByRole("button", { name: /close rule/i }),
       );
       await waitFor(() =>
         expect(budgetApi.setYearlyRuleClosed).toHaveBeenCalledWith(7, true),
@@ -265,7 +265,7 @@ describe("YearlyBudgetView", () => {
       await userEvent.click(toggles[0]);
     }
 
-    it("hides the envelope's transactions until the row is expanded", async () => {
+    it("hides the rule's transactions until the row is expanded", async () => {
       renderAnalysis(
         analysis([entry(1, "Vacations", 5086.25, false, TRANSACTIONS)]),
       );
@@ -274,7 +274,7 @@ describe("YearlyBudgetView", () => {
       expect(screen.queryByText(/el al tickets/i)).toBeNull();
     });
 
-    it("lists the year's transactions behind the envelope once expanded", async () => {
+    it("lists the year's transactions behind the rule once expanded", async () => {
       renderAnalysis(
         analysis([entry(1, "Vacations", 5086.25, false, TRANSACTIONS)]),
       );
@@ -285,7 +285,7 @@ describe("YearlyBudgetView", () => {
       expect(screen.getByText(/hotel firenze/i)).toBeTruthy();
     });
 
-    it("lists a closed envelope's transactions too — closing keeps the history", async () => {
+    it("lists a closed rule's transactions too — closing keeps the history", async () => {
       renderAnalysis(
         analysis([entry(1, "Car insurance", 5086.25, true, TRANSACTIONS)], {
           on_track: 0,

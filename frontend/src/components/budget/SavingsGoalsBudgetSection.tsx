@@ -7,7 +7,7 @@ import { formatCurrency } from "../../utils/numberFormatting";
  * Where the month's leftover money went.
  *
  * Sits below the budget ledger rather than inside it: a goal is an earmark
- * over money that survived the month's spending, not a spending envelope, so
+ * over money that survived the month's spending, not a spending rule, so
  * it must not read as another budget rule competing for the same shekels.
  *
  * The data arrives on the monthly analysis payload instead of a query of its

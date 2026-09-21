@@ -173,7 +173,7 @@ export const ProjectBudgetView: React.FC<ProjectBudgetViewProps> = ({
       budgetApi.setProjectClosed(name, closed),
     onSuccess: () => {
       // The whole budget prefix, not just the project keys: the Overview's
-      // envelope list is built from this flag, so it has to refetch too.
+      // rule list is built from this flag, so it has to refetch too.
       queryClient.invalidateQueries({ queryKey: qkPrefix.budget });
     },
     onError: () => notify.error(t("budget.failedCloseProject")),
@@ -266,7 +266,7 @@ export const ProjectBudgetView: React.FC<ProjectBudgetViewProps> = ({
         <span className="flex items-baseline gap-1">
           <span className="text-lg md:text-xl font-bold">{tagCount}</span>
           <span className="text-[10px] sm:text-xs text-[var(--text-muted)]">
-            {t("budget.projectTagEnvelopes")}
+            {t("budget.projectTagRules")}
           </span>
         </span>
       ),
@@ -346,11 +346,21 @@ export const ProjectBudgetView: React.FC<ProjectBudgetViewProps> = ({
           </>
         }
       >
-        <div className="flex items-center gap-2 min-w-0">
+        {/* The picker takes the space beside its label instead of sitting in
+            it at a fixed 160px: a project name is free text, and it was being
+            truncated mid-name while the rest of the row stood empty. `w-full`
+            (not `flex-1`) keeps the group a full line on a phone, so the
+            actions still wrap below it rather than squeezing the select back
+            down; the desktop cap stops it stretching across a wide screen,
+            where that space belongs to the actions. */}
+        <div className="flex w-full md:w-auto md:flex-auto items-center gap-2 min-w-0">
           <label className="text-xs md:text-sm font-medium text-[var(--text-muted)] whitespace-nowrap">
             {t("budget.selectProject")}
           </label>
-          <div className="w-40 md:w-56" data-testid="project-picker">
+          <div
+            className="flex-1 min-w-0 md:max-w-80"
+            data-testid="project-picker"
+          >
             <SelectDropdown
               options={projectsStatus.map((p: ProjectStatus) => ({
                 label: p.closed
@@ -374,7 +384,7 @@ export const ProjectBudgetView: React.FC<ProjectBudgetViewProps> = ({
       <BudgetNoticeLine />
 
       {/* Only the status band needs the project's `all_tags` anchor rule (it
-          is where the project's total lives) — the envelope ledger does not.
+          is where the project's total lives) — the rule ledger does not.
           Gating the whole block on the anchor rendered a project without one
           as a blank page: no band, no ledger, not even an empty state. */}
       {selectedProject && projectDetails && (

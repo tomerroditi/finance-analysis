@@ -1,3 +1,21 @@
+## v1.78.0 (2026-09-21)
+
+### Feat
+
+- **dashboard**: act on a yearly envelope from its row in the budget card (#326)
+
+## v1.77.0 (2026-09-21)
+
+### Feat
+
+- **budget**: step the sparkline's budget line with each month's limit (#328)
+
+## v1.76.4 (2026-09-21)
+
+### Fix
+
+- **budget**: keep the active tab in view and let the project picker fill its row (#325)
+
 ## v1.76.3 (2026-09-20)
 
 ### Fix
