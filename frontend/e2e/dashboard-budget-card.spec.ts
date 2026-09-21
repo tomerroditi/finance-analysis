@@ -10,8 +10,9 @@ import { API_BASE, enableDemoMode, navigateTo, resetDemoData } from "./helpers";
  * sideways), the one-line envelope rows have to survive a phone-width card
  * without wrapping or overflowing, the total bar's "spent / ceiling" pair has
  * to stay in one left-to-right run under RTL, "open budget" has to land on
- * the tab the card was showing, and closing a project — or a yearly
- * envelope — from the card has to reach the backend.
+ * the tab the card was showing, closing a project from the card has to reach
+ * the backend, and a yearly envelope's row has to expand into a panel whose
+ * edit, close and delete all do.
  *
  * Its own file rather than a block in `dashboard.spec.ts`: it needs a mobile
  * viewport (set before the page boots), it navigates off the dashboard, and
@@ -254,7 +255,7 @@ test.describe("dashboard budget card", () => {
     await expect(toggle).toHaveAttribute("aria-label", /close project/i);
   });
 
-  test("closes and reopens a yearly envelope without leaving the dashboard", async ({
+  test("edits, closes and reopens a yearly envelope from its row panel", async ({
     page,
   }) => {
     const year = new Date().getFullYear();
@@ -275,35 +276,43 @@ test.describe("dashboard budget card", () => {
       (await rulesRes.json()).map((r: { category: string }) => r.category),
     );
     const categoriesMap: Record<string, string[]> = await categoriesRes.json();
-    const freeCategory = Object.entries(categoriesMap).find(
-      ([name, tags]) => !claimed.has(name) && tags.length > 0,
-    );
+    // Two rules, not one: the column-alignment guard below needs a collapsed
+    // sibling to measure the expanded row against, and the demo data carries
+    // no yearly rule of its own for the current year.
+    const freeCategories = Object.entries(categoriesMap)
+      .filter(([name, tags]) => !claimed.has(name) && tags.length > 0)
+      .slice(0, 2);
     expect(
-      freeCategory,
-      "expected at least one category with no budget rule of any kind",
-    ).toBeTruthy();
+      freeCategories.length,
+      "expected two categories with no budget rule of any kind",
+    ).toBe(2);
 
-    const created = await page.request.post(
-      `${API_BASE}/budget/yearly/rules`,
-      {
-        headers: { "X-FAD-Demo": "1" },
-        data: {
-          name: ruleName,
-          amount: 12000,
-          category: freeCategory![0],
-          tags: freeCategory![1],
-          year,
+    // A name that does not contain `ruleName`: the row locator filters by
+    // text, and a superstring would make it match two rows.
+    const siblingName = `E2E Card Sibling ${Date.now()}`;
+    for (const [name, [category, tags]] of [
+      [ruleName, freeCategories[0]],
+      [siblingName, freeCategories[1]],
+    ] as [string, [string, string[]]][]) {
+      const created = await page.request.post(
+        `${API_BASE}/budget/yearly/rules`,
+        {
+          headers: { "X-FAD-Demo": "1" },
+          data: { name, amount: 12000, category, tags, year },
         },
-      },
-    );
-    expect(created.ok()).toBeTruthy();
+      );
+      expect(created.ok()).toBeTruthy();
+    }
 
     const analysisUrl = `${API_BASE}/budget/yearly/${year}/analysis`;
     const readAnalysis = async () =>
       (await (
         await page.request.get(analysisUrl, { headers: { "X-FAD-Demo": "1" } })
       ).json()) as {
-        rules: { rule: { id: number; name: string }; closed: boolean }[];
+        rules: {
+          rule: { id: number; name: string; amount: number };
+          closed: boolean;
+        }[];
       };
     const ruleId = (await readAnalysis()).rules.find(
       (r) => r.rule.name === ruleName,
@@ -314,41 +323,123 @@ test.describe("dashboard budget card", () => {
     await card.scrollIntoViewIfNeeded();
     await card.getByRole("button", { name: /^Yearly$/i }).click();
 
-    const toggle = card.getByTestId(`card-rule-closed-toggle-${ruleId}`);
-    await expect(toggle).toBeVisible({ timeout: 30_000 });
-    await expect(toggle).toHaveAttribute("aria-label", /close envelope/i);
     const row = card
       .getByTestId("budget-rule-row")
       .filter({ hasText: ruleName });
+    await expect(row).toBeVisible({ timeout: 30_000 });
 
-    await toggle.click();
+    // The actions are behind the row, not permanently in it — the line is
+    // already four cells wide at 390px.
+    const panel = card.getByTestId(`card-rule-actions-${ruleId}`);
+    await expect(panel).toBeHidden();
+    await expect(row).toHaveAttribute("aria-expanded", "false");
+    await row.click();
+    await expect(panel).toBeVisible();
+    await expect(row).toHaveAttribute("aria-expanded", "true");
+
+    // A second tap on the row is what dismisses it.
+    await row.click();
+    await expect(panel).toBeHidden();
+    await row.click();
+    await expect(panel).toBeVisible();
+
+    // The expanded row keeps the subgrid's columns. Rendering it as a real
+    // `<button>` silently broke this: Chromium wraps a button's children in
+    // an anonymous box, `grid-cols-subgrid` never reached them, and the open
+    // row sized its own columns — its bar collapsed to a dot and its figures
+    // drifted right of every collapsed sibling. Only geometry catches it;
+    // the DOM is identical either way.
+    const columnLefts = await card.evaluate((el) => {
+      const rows = [
+        ...el.querySelectorAll<HTMLElement>('[data-testid="budget-rule-row"]'),
+      ];
+      const cellLefts = (r: HTMLElement) =>
+        [...r.children].map((c) => Math.round(c.getBoundingClientRect().left));
+      return {
+        expanded: cellLefts(
+          rows.find((r) => r.getAttribute("aria-expanded") === "true")!,
+        ),
+        collapsed: rows
+          .filter((r) => r.getAttribute("aria-expanded") === "false")
+          .map(cellLefts),
+      };
+    });
+    expect(columnLefts.collapsed.length).toBeGreaterThan(0);
+    for (const row of columnLefts.collapsed) {
+      expect(row).toEqual(columnLefts.expanded);
+    }
+
+    // ---- Edit: the panel opens the same modal the Budget page uses. ----
+    await panel.getByTestId(`card-rule-edit-${ruleId}`).click();
+    const editDialog = page.getByRole("dialog");
+    await expect(editDialog).toBeVisible();
+    await editDialog.getByRole("textbox").first().fill(`${ruleName} v2`);
+    await editDialog.getByRole("button", { name: /^save$/i }).click();
+    await expect(editDialog).toBeHidden({ timeout: 15_000 });
+    await expect(
+      card.getByTestId("budget-rule-row").filter({ hasText: `${ruleName} v2` }),
+    ).toBeVisible({ timeout: 15_000 });
+    expect(
+      (await readAnalysis()).rules.find((r) => r.rule.id === ruleId)!.rule.name,
+    ).toBe(`${ruleName} v2`);
+
+    // ---- Close: asks first, then keeps the row and marks it. ----
+    // The panel is keyed by the rule, not by what the row says, so it rides
+    // the rename and the refetch that followed the save — an action does not
+    // dismiss it, only another tap does.
+    const renamedRow = card
+      .getByTestId("budget-rule-row")
+      .filter({ hasText: `${ruleName} v2` });
+    await expect(panel).toBeVisible();
+    await panel.getByTestId(`card-rule-closed-toggle-${ruleId}`).click();
+
     const dialog = page.getByRole("alertdialog");
     await expect(dialog).toBeVisible();
-    await expect(dialog).toContainText(ruleName);
+    await expect(dialog).toContainText(`${ruleName} v2`);
     await dialog.getByRole("button", { name: /^Close envelope$/i }).click();
 
-    // The card keeps the row — closing is not a delete — marks it, and the
-    // action turns into a reopen. Its allocation survives too.
-    await expect(row).toHaveAttribute("data-closed", "true", {
+    // The card keeps the row — closing is not a delete — and its allocation
+    // survives.
+    await expect(renamedRow).toHaveAttribute("data-closed", "true", {
       timeout: 15_000,
     });
-    await expect(toggle).toHaveAttribute("aria-label", /reopen envelope/i);
-    await expect(row).toContainText("12,000");
-
-    // And the write reached the backend, rather than only the cache.
+    await expect(renamedRow).toContainText("12,000");
     expect(
       (await readAnalysis()).rules.find((r) => r.rule.id === ruleId)!.closed,
     ).toBe(true);
 
-    // Reopening is a plain undo, with no confirmation step.
-    await toggle.click();
-    await expect(row).not.toHaveAttribute("data-closed", "true", {
+    // ---- Reopen: a plain undo, with no confirmation step. ----
+    // Still the same open panel: closing an envelope sinks its row to the
+    // bottom of the list, and the undo travels with it.
+    await expect(
+      panel.getByTestId(`card-rule-closed-toggle-${ruleId}`),
+    ).toHaveAttribute("aria-label", /reopen envelope/i, { timeout: 15_000 });
+    await panel.getByTestId(`card-rule-closed-toggle-${ruleId}`).click();
+    await expect(renamedRow).not.toHaveAttribute("data-closed", "true", {
       timeout: 15_000,
     });
-    await expect(toggle).toHaveAttribute("aria-label", /close envelope/i);
 
-    await page.request.delete(`${API_BASE}/budget/yearly/rules/${ruleId}`, {
-      headers: { "X-FAD-Demo": "1" },
-    });
+    // ---- Delete: destructive, confirmed, and the row goes for good. ----
+    await panel.getByTestId(`card-rule-delete-${ruleId}`).click();
+    const deleteDialog = page.getByRole("alertdialog");
+    await expect(deleteDialog).toBeVisible();
+    await deleteDialog.getByRole("button", { name: /^delete$/i }).click();
+
+    await expect(renamedRow).toHaveCount(0, { timeout: 15_000 });
+    // And the panel goes with it, rather than stranding an id no row can close.
+    await expect(panel).toHaveCount(0);
+    expect(
+      (await readAnalysis()).rules.find((r) => r.rule.id === ruleId),
+    ).toBeUndefined();
+
+    const siblingId = (await readAnalysis()).rules.find(
+      (r) => r.rule.name === siblingName,
+    )?.rule.id;
+    if (siblingId !== undefined) {
+      await page.request.delete(
+        `${API_BASE}/budget/yearly/rules/${siblingId}`,
+        { headers: { "X-FAD-Demo": "1" } },
+      );
+    }
   });
 });

@@ -728,7 +728,8 @@
       "closedBadge": "Closed",
       "closedLabel": "closed",
       "closedNotice": "This envelope is closed. Its history is kept here, but it no longer appears in the budget overview.",
-      "closeFailed": "Could not update the envelope's status."
+      "closeFailed": "Could not update the envelope's status.",
+      "deleteFailed": "Could not delete the envelope."
     },
     "categoryConflict": {
       "banner": "These categories are in both a project and a monthly/yearly budget: {{names}}. Resolve to avoid double-tracking.",

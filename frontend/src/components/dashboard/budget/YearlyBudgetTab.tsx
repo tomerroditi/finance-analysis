@@ -1,4 +1,4 @@
-import React, { useMemo } from "react";
+import React, { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router";
@@ -6,11 +6,12 @@ import { ChevronLeft, ChevronRight, Plus } from "lucide-react";
 import { budgetApi, type YearlyAnalysis } from "../../../services/api";
 import { BudgetTotalBar } from "../../common/BudgetTotalBar";
 import { Skeleton } from "../../common/Skeleton";
+import { YearlyRuleModal } from "../../modals/YearlyRuleModal";
 import { useConfirm, useNotify } from "../../../context/DialogContext";
-import { usePendingRows } from "../../../hooks/usePendingRows";
 import { useQueryKeys } from "../../../hooks/useQueryKeys";
 import { qkPrefix } from "../../../services/queryKeys";
 import { BudgetRuleGrid } from "./BudgetRuleGrid";
+import { RuleRowAction } from "./RuleRowAction";
 import type { BudgetRule } from "./types";
 import { budgetLink } from "../../../utils/budgetNavigation";
 
@@ -31,28 +32,32 @@ export const YearlyBudgetTab: React.FC<YearlyBudgetTabProps> = ({
   const notify = useNotify();
   const qk = useQueryKeys();
   const queryClient = useQueryClient();
-  // Per row: one mutation serves every envelope's toggle, so its own
-  // `isPending` would disable the whole list for one row's write.
-  const writing = usePendingRows<number>();
+  const [editRule, setEditRule] = useState<
+    YearlyAnalysis["rules"][number]["rule"] | null
+  >(null);
 
   const { data, isLoading } = useQuery({
     queryKey: qk.budget.yearly(year),
     queryFn: () => budgetApi.getYearlyAnalysis(year).then((r) => r.data as YearlyAnalysis),
   });
 
+  // The whole budget prefix, not just this year's key: the card's own
+  // Overview tab builds its envelope list from these rules and their closed
+  // flag, so it has to refetch too.
+  const invalidateBudget = () =>
+    queryClient.invalidateQueries({ queryKey: qkPrefix.budget });
+
   const closedMutation = useMutation({
     mutationFn: ({ id, closed }: { id: number; closed: boolean }) =>
       budgetApi.setYearlyRuleClosed(id, closed),
-    onMutate: ({ id }) => {
-      writing.begin(id);
-    },
-    onSettled: (_data, _error, { id }) => writing.end(id),
-    onSuccess: () => {
-      // The whole budget prefix: this card's own Overview tab builds its
-      // envelope list from the flag, so it has to refetch too.
-      queryClient.invalidateQueries({ queryKey: qkPrefix.budget });
-    },
+    onSuccess: invalidateBudget,
     onError: () => notify.error(t("budget.yearly.closeFailed")),
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: number) => budgetApi.deleteYearlyRule(id),
+    onSuccess: invalidateBudget,
+    onError: () => notify.error(t("budget.yearly.deleteFailed")),
   });
 
   // Reopening is a plain undo, so only closing asks first — same as the
@@ -68,6 +73,61 @@ export const YearlyBudgetTab: React.FC<YearlyBudgetTabProps> = ({
       confirmLabel: t("budget.yearly.closeRule"),
     });
     if (ok) closedMutation.mutate({ id: rule.id, closed: true });
+  };
+
+  const handleDelete = async (rule: BudgetRule) => {
+    const ok = await confirm({
+      title: t("budget.deleteRule"),
+      message: t("budget.yearly.confirmDelete", { name: rule.name }),
+      confirmLabel: t("common.delete"),
+      isDestructive: true,
+    });
+    if (ok) deleteMutation.mutate(rule.id);
+  };
+
+  // The grid renders the normalized row shape; editing and the permission
+  // flags need the analysis entry the row was built from.
+  const entryById = useMemo(
+    () => new Map((data?.rules ?? []).map((item) => [item.rule.id, item])),
+    [data],
+  );
+
+  const renderRowActions = (rule: BudgetRule) => {
+    const entry = entryById.get(rule.id);
+    return (
+      <>
+        <RuleRowAction
+          kind="edit"
+          label={t("budget.editRule")}
+          testId={`card-rule-edit-${rule.id}`}
+          onClick={
+            entry?.allow_edit ? () => setEditRule(entry.rule) : undefined
+          }
+        />
+        <RuleRowAction
+          kind={rule.closed ? "reopen" : "close"}
+          label={
+            rule.closed
+              ? t("budget.yearly.reopenRule")
+              : t("budget.yearly.closeRule")
+          }
+          testId={`card-rule-closed-toggle-${rule.id}`}
+          onClick={
+            closedMutation.isPending
+              ? undefined
+              : () => handleToggleClosed(rule)
+          }
+        />
+        <RuleRowAction
+          kind="delete"
+          label={t("budget.deleteRule")}
+          testId={`card-rule-delete-${rule.id}`}
+          onClick={
+            entry?.allow_delete ? () => handleDelete(rule) : undefined
+          }
+        />
+      </>
+    );
   };
 
   // Yearly analysis emits no "Total Budget" pseudo-rule — the roll-up sums the
@@ -132,6 +192,18 @@ export const YearlyBudgetTab: React.FC<YearlyBudgetTabProps> = ({
     );
   }
 
+  // Editing is reached from a row, so the modal only ever opens where rows
+  // exist — but it is rendered beside both returns so a delete that empties
+  // the year cannot unmount it mid-flight.
+  const modal = (
+    <YearlyRuleModal
+      isOpen={editRule !== null}
+      onClose={() => setEditRule(null)}
+      year={year}
+      editRule={editRule}
+    />
+  );
+
   if (rules.length === 0) {
     return (
       <div className="flex flex-1 flex-col min-h-0">
@@ -146,6 +218,7 @@ export const YearlyBudgetTab: React.FC<YearlyBudgetTabProps> = ({
             {t("budget.yearly.addRule")}
           </Link>
         </div>
+        {modal}
       </div>
     );
   }
@@ -162,8 +235,7 @@ export const YearlyBudgetTab: React.FC<YearlyBudgetTabProps> = ({
       <BudgetRuleGrid
         rules={rules}
         categoryIcons={categoryIcons}
-        onToggleClosed={handleToggleClosed}
-        isTogglePending={(rule) => writing.isPending(rule.id)}
+        renderRowActions={renderRowActions}
       />
       <div className="text-end">
         <Link
@@ -173,6 +245,7 @@ export const YearlyBudgetTab: React.FC<YearlyBudgetTabProps> = ({
           {t("dashboard.viewAllBudgetRules")} &rarr;
         </Link>
       </div>
+      {modal}
     </div>
   );
 };

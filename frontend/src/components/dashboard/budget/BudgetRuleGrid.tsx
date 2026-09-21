@@ -1,6 +1,6 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Archive, ArchiveRestore } from "lucide-react";
+import { Archive } from "lucide-react";
 import { formatAmount, formatCurrency } from "../../../utils/numberFormatting";
 import type { BudgetRule } from "./types";
 
@@ -8,17 +8,11 @@ interface BudgetRuleGridProps {
   rules: BudgetRule[];
   categoryIcons: Record<string, string> | undefined;
   /**
-   * Close / reopen the envelope on this row. Only the tabs whose envelopes
-   * have that state pass it — omitting it drops the whole column, so a
-   * monthly rule's row keeps the width it had.
+   * What a rule can have done to it, rendered into a panel the row expands
+   * to show. Only the tabs that have actions pass it; without it rows are
+   * plain readouts and nothing responds to a click.
    */
-  onToggleClosed?: (rule: BudgetRule) => void;
-  /**
-   * Whether this row's own close/reopen write is in flight. Per row, not per
-   * list: one mutation serves every toggle, so gating them all on its
-   * `isPending` would leave a slow write's siblings dead to the touch.
-   */
-  isTogglePending?: (rule: BudgetRule) => boolean;
+  renderRowActions?: (rule: BudgetRule) => React.ReactNode;
 }
 
 function getProgressColor(pct: number, isUnbudgetedSpend: boolean): string {
@@ -64,11 +58,16 @@ function getProgressColor(pct: number, isUnbudgetedSpend: boolean): string {
  * row from crushing it. Do not add `min-h-0` alongside it: both compile to
  * `min-height` and the winner would come down to stylesheet order.
  *
- * A tab that can close an envelope (yearly, and only yearly for now) adds a
- * fifth `auto` column for the toggle and dims the closed rows, so the archive
- * icon is the only width the feature costs a row that cannot use it — the
- * phone-width card has no room to spare, and the monthly list must not pay
- * for the yearly one's action.
+ * Actions live in a panel the row expands to show, not in a column of their
+ * own. The line is already four cells wide at 390px, and a permanent action
+ * column would have to come out of the name — the one cell a person scans
+ * the list by. Expanding also scales: edit, delete and close all fit a panel,
+ * where only one of them would ever have fit a column. One row is open at a
+ * time, so the list never turns into a wall of panels.
+ *
+ * A closed envelope is dimmed and takes an archive marker in its category
+ * icon's place, whether or not the tab offers actions — that is state, not an
+ * action, and it is what tells a settled row apart from a live one.
  *
  * `max-h-[16rem] lg:max-h-none` bounds the same box below `lg`: the dashboard
  * row only gets a definite height at `lg` (Dashboard.tsx's `--dash-card-h`
@@ -81,23 +80,28 @@ function getProgressColor(pct: number, isUnbudgetedSpend: boolean): string {
 export const BudgetRuleGrid: React.FC<BudgetRuleGridProps> = ({
   rules,
   categoryIcons,
-  onToggleClosed,
-  isTogglePending,
+  renderRowActions,
 }) => {
   const { t } = useTranslation();
-  const closable = !!onToggleClosed;
+  const [expandedId, setExpandedId] = useState<number | null>(null);
+
+  // A rule can leave the list under the open panel — deleted from it, or the
+  // tab's period cursor moved — and an id that matches nothing would keep the
+  // grid in a state no row can close.
+  const present = rules.some((rule) => rule.id === expandedId);
+  useEffect(() => {
+    if (expandedId !== null && !present) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setExpandedId(null);
+    }
+  }, [expandedId, present]);
+
   return (
     <div
       data-testid="budget-rule-grid"
       className="flex-1 min-h-[16rem] max-h-[16rem] lg:max-h-none overflow-y-auto scrollbar-auto-hide mb-4"
     >
-      <div
-        className={`grid gap-y-1 ${
-          closable
-            ? "grid-cols-[minmax(0,1fr)_auto_auto_auto_auto]"
-            : "grid-cols-[minmax(0,1fr)_auto_auto_auto]"
-        }`}
-      >
+      <div className="grid grid-cols-[minmax(0,1fr)_auto_auto_auto] gap-y-1">
         {rules.map((rule) => {
           // budget_amount can be 0 (e.g., "Other Expenses" when the user has
           // allocated their full Total Budget across explicit rules). Treat any
@@ -118,17 +122,17 @@ export const BudgetRuleGrid: React.FC<BudgetRuleGridProps> = ({
           const remaining = rule.budget_amount - rule.spent_amount;
           const over = remaining < 0;
           const icon = categoryIcons?.[rule.category] ?? "";
-          return (
-            <div
-              key={rule.id}
-              data-testid="budget-rule-row"
-              data-closed={closable && rule.closed ? "true" : undefined}
-              className={`grid grid-cols-subgrid items-center gap-2 sm:gap-3 rounded-lg bg-[var(--surface-light)] px-2.5 py-2 ${
-                closable ? "col-span-5" : "col-span-4"
-              } ${closable && rule.closed ? "opacity-60" : ""}`}
-            >
+          const actions = renderRowActions?.(rule);
+          const isExpanded = expandedId === rule.id;
+          const toggle = () =>
+            setExpandedId((prev) => (prev === rule.id ? null : rule.id));
+          const rowClass = `col-span-4 grid grid-cols-subgrid items-center gap-2 sm:gap-3 bg-[var(--surface-light)] px-2.5 py-2 text-start ${
+            isExpanded ? "rounded-t-lg" : "rounded-lg"
+          } ${rule.closed ? "opacity-60" : ""}`;
+          const cells = (
+            <>
               <span className="flex min-w-0 items-center gap-1.5">
-                {closable && rule.closed ? (
+                {rule.closed ? (
                   <Archive
                     size={12}
                     aria-label={t("budget.yearly.closedBadge")}
@@ -181,32 +185,60 @@ export const BudgetRuleGrid: React.FC<BudgetRuleGridProps> = ({
                   · {Math.round(pct)}%
                 </span>
               </span>
+            </>
+          );
 
-              {onToggleClosed && (
-                <button
-                  onClick={() => onToggleClosed(rule)}
-                  disabled={isTogglePending?.(rule) ?? false}
-                  data-testid={`card-rule-closed-toggle-${rule.id}`}
-                  aria-label={
-                    rule.closed
-                      ? t("budget.yearly.reopenRule")
-                      : t("budget.yearly.closeRule")
-                  }
-                  title={
-                    rule.closed
-                      ? t("budget.yearly.reopenRule")
-                      : t("budget.yearly.closeRule")
-                  }
-                  className="shrink-0 rounded-md p-1.5 text-[var(--text-muted)] transition-colors hover:bg-[var(--surface)] hover:text-[var(--text)] disabled:opacity-60"
+          return (
+            <React.Fragment key={rule.id}>
+              {/* `role="button"` on a div, not a real `<button>`: Chromium
+                  wraps a button's children in an anonymous box, so
+                  `grid-cols-subgrid` does not reach them and the row sizes
+                  its own columns — the expanded row's bar and figures then
+                  drift out of line with every collapsed sibling, which is
+                  the one thing the subgrid exists to prevent. A plain
+                  readout stays a bare div: a control that does nothing is a
+                  focus stop and a pointer cursor promising an interaction
+                  the row does not have. */}
+              <div
+                data-testid="budget-rule-row"
+                data-closed={rule.closed ? "true" : undefined}
+                {...(actions
+                  ? {
+                      role: "button",
+                      tabIndex: 0,
+                      "aria-expanded": isExpanded,
+                      onClick: toggle,
+                      onKeyDown: (event: React.KeyboardEvent) => {
+                        if (event.key !== "Enter" && event.key !== " ") return;
+                        // Space scrolls the list otherwise, which moves the
+                        // row out from under the finger that just opened it.
+                        event.preventDefault();
+                        toggle();
+                      },
+                    }
+                  : {})}
+                /* `brightness`, not a background swap: the bar's track is
+                   `--surface`, so a hover that painted the row `--surface`
+                   made the track vanish into it. A filter lifts the row and
+                   its track together, keeping their contrast. */
+                className={`${rowClass} ${
+                  actions
+                    ? "cursor-pointer transition-[filter] hover:brightness-110"
+                    : ""
+                }`}
+              >
+                {cells}
+              </div>
+
+              {isExpanded && (
+                <div
+                  data-testid={`card-rule-actions-${rule.id}`}
+                  className="col-span-4 flex flex-wrap items-center gap-1 rounded-b-lg bg-[var(--surface-light)]/60 px-2 pb-2"
                 >
-                  {rule.closed ? (
-                    <ArchiveRestore size={14} />
-                  ) : (
-                    <Archive size={14} />
-                  )}
-                </button>
+                  {actions}
+                </div>
               )}
-            </div>
+            </React.Fragment>
           );
         })}
       </div>
