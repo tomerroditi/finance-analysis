@@ -83,15 +83,36 @@ function StatCard({
   tooltip?: string;
 }) {
   return (
-    <div className="bg-[var(--surface)] rounded-xl p-5 border border-[var(--surface-light)] flex items-center justify-between shadow-sm">
-      <div className="min-w-0">
+    <div
+      data-testid="analysis-kpi"
+      className="bg-[var(--surface)] rounded-xl p-4 border border-[var(--surface-light)] flex items-center justify-between gap-3 lg:gap-2 shadow-sm"
+    >
+      <div className="min-w-0 flex-1">
         <p className="text-[var(--text-muted)] text-[10px] uppercase tracking-widest font-bold flex items-center gap-1.5">
-          <span>{title}</span>
-          {tooltip && <InfoTooltip text={tooltip} iconSize={12} width={220} />}
+          <span className="min-w-0">{title}</span>
+          {tooltip && (
+            <InfoTooltip
+              text={tooltip}
+              iconSize={12}
+              width={220}
+              className="shrink-0"
+            />
+          )}
         </p>
-        <p className="text-xl font-black mt-1 text-white" dir="ltr">{value}</p>
+        {/* The modal caps at `max-w-4xl`, so the four-up tier gets ~196px per
+            card however wide the screen is — the amount steps down a size
+            there to stay on one line beside the icon. `break-words` over
+            `truncate` is the backstop: a card too narrow for the amount wraps
+            it, never hides digits or spills it under the icon. */}
+        <p
+          data-testid="analysis-kpi-value"
+          className="text-xl lg:text-lg font-black mt-1 text-white break-words"
+          dir="ltr"
+        >
+          {value}
+        </p>
       </div>
-      <div className={`p-3 rounded-xl shrink-0 ${color}`}>
+      <div data-testid="analysis-kpi-icon" className={`p-2.5 rounded-xl shrink-0 ${color}`}>
         <Icon size={20} />
       </div>
     </div>
@@ -205,7 +226,7 @@ export function InvestmentAnalysisModal({
         <div className="p-4 md:p-8 space-y-6 md:space-y-8">
           {isLoadingAnalysis || !selectedAnalysis ? (
             <div className="space-y-6">
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                 <Skeleton variant="card" className="h-24" />
                 <Skeleton variant="card" className="h-24" />
                 <Skeleton variant="card" className="h-24" />
@@ -226,7 +247,7 @@ export function InvestmentAnalysisModal({
             </div>
           ) : (
             <>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                 <StatCard
                   title={t("investments.currentBalance")}
                   value={formatCurrency(

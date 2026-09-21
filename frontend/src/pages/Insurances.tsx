@@ -147,12 +147,12 @@ function StatCard({
   color: string;
 }) {
   return (
-    <div className="bg-[var(--surface)] rounded-xl p-5 border border-[var(--surface-light)] flex items-center justify-between">
-      <div>
+    <div className="bg-[var(--surface)] rounded-xl p-5 border border-[var(--surface-light)] flex items-center justify-between gap-3">
+      <div className="min-w-0 flex-1">
         <p className="text-[var(--text-muted)] text-[10px] uppercase tracking-widest font-bold">{title}</p>
-        <p className="text-xl font-black mt-1 text-white">{value}</p>
+        <p className="text-xl font-black mt-1 text-white break-words">{value}</p>
       </div>
-      <div className={`p-3 rounded-xl ${color}`}>
+      <div className={`p-3 rounded-xl shrink-0 ${color}`}>
         <Icon size={20} />
       </div>
     </div>
