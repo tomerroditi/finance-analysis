@@ -91,6 +91,21 @@ test.describe("Income & Expenses dashboard card", () => {
     expect(firstMonth && lastMonth).toBeTruthy();
     expect(firstMonth! > lastMonth!).toBe(true); // "YYYY-MM" strings sort lexically
 
+    // --- Heading row and data rows share one grid track list ---
+    // They are two separate grids, so a column width edited in one and not the
+    // other slides every heading off the column it names — and nothing else in
+    // this suite would notice, because both grids still render.
+    const trackLists = await page.evaluate(() => {
+      const row = document.querySelector('[data-testid="ledger-row"]')!;
+      const head = row.parentElement!.querySelector(":scope > div.grid")!;
+      const read = (el: Element) => {
+        const cs = getComputedStyle(el);
+        return `${cs.gridTemplateColumns} / ${cs.columnGap}`;
+      };
+      return { head: read(head), row: read(row) };
+    });
+    expect(trackLists.row).toBe(trackLists.head);
+
     // --- KPI cards summarise income and expenses with period labels ---
     const income = card.getByTestId("kpi-income");
     const expenses = card.getByTestId("kpi-expense");
