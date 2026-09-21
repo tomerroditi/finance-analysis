@@ -1,3 +1,9 @@
+## v1.83.1 (2026-09-21)
+
+### Fix
+
+- **investments**: stop Keren Hishtalmut pre-window capital reading as profit (#337)
+
 ## v1.83.0 (2026-09-21)
 
 ### Feat
