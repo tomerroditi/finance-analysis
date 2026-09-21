@@ -5,13 +5,18 @@ import { enableDemoMode, navigateTo, resetDemoData } from "./helpers";
  * Dashboard "Recent Transactions" card — the row action bar, the
  * only-untagged filter and scroll retention.
  *
- * Covers four regressions the card shipped with:
+ * Covers six regressions the card shipped with:
  *  1. Collapsing a row's action bar left the category/tag editor (and the
  *     details sheet) stranded on screen under a row with no bar.
  *  2. Tagging a row reset the feed's page size to the first 20 rows, throwing
  *     the reader back to the top of the card.
  *  3. The card offered only three of the actions the transactions table has.
  *  4. Nothing in the card said where the money moved (account / card).
+ *  5. Each date header was sticky inside its own group wrapper, so it unpinned
+ *     the moment its group ended and left a strip of the outgoing group's last
+ *     row exposed above the next pinned date.
+ *  6. The action bar was indented past the row's icon column, which wrapped its
+ *     buttons onto three lines on a phone.
  */
 
 const RECENT_CARD = '[data-card-id="recent"]';
@@ -33,6 +38,63 @@ async function scrollFeed(page: Page, delta: number): Promise<number> {
     },
     [RECENT_CARD, delta] as const,
   );
+}
+
+/**
+ * Largest gap, over a scroll sweep, between the top of the feed's scroll port
+ * and the nearest date header still on screen.
+ *
+ * A date header is meant to be pinned flush to that edge at every offset, so
+ * anything above zero is a band of scrolling rows left uncovered — the thin
+ * line of a half-scrolled row that used to show above the pinned date.
+ */
+async function worstUncoveredBandAboveDate(page: Page): Promise<number> {
+  return page.evaluate(async (selector) => {
+    const root = document
+      .querySelector(selector)
+      ?.querySelector<HTMLElement>("[data-scroll-root]");
+    if (!root) throw new Error("recent transactions scroll root not found");
+    const headers = () => [
+      ...root.querySelectorAll<HTMLElement>('[data-testid="recent-tx-date"]'),
+    ];
+    const rootTop = () => root.getBoundingClientRect().top;
+    // Sticky offsets are recomputed by the compositor, not by a forced
+    // layout, so every scroll has to cross a frame before it can be read.
+    const settle = () =>
+      new Promise<void>((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+      );
+
+    // Natural (unpinned) offset of each header. Read at scrollTop 0, where
+    // every header below the fold still sits at its flow position.
+    root.scrollTop = 0;
+    await settle();
+    const boundaries = headers()
+      .map((header) => header.getBoundingClientRect().top - rootTop())
+      .filter((offset) => offset > 0);
+
+    // Only the handover from one date to the next can leave a gap, so probe
+    // finely around each boundary instead of sweeping the whole feed coarsely.
+    const offsets = new Set<number>([0]);
+    for (const boundary of boundaries) {
+      for (let delta = -48; delta <= 12; delta += 3) {
+        offsets.add(Math.max(0, Math.round(boundary + delta)));
+      }
+    }
+
+    let worst = 0;
+    for (const scrollTop of offsets) {
+      root.scrollTop = scrollTop;
+      await settle();
+      const top = rootTop();
+      const visible = headers()
+        .map((header) => header.getBoundingClientRect())
+        .filter((box) => box.bottom - top > 0.5)
+        .map((box) => box.top - top);
+      if (visible.length) worst = Math.max(worst, Math.min(...visible));
+    }
+    return worst;
+  }, RECENT_CARD);
 }
 
 async function feedScrollTop(page: Page): Promise<number> {
@@ -110,6 +172,40 @@ test.describe("Dashboard recent transactions — row actions", () => {
 
     await untaggedFilter.click();
     await expect(untaggedFilter).toHaveAttribute("aria-pressed", "false");
+
+    // --- Phone width: the action bar spans the row, in at most two lines ---
+    // The bar used to sit indented past the row's icon column, which left it
+    // narrow enough to wrap seven actions onto three lines.
+    await page.setViewportSize({ width: 390, height: 900 });
+    const row = card.getByTestId("recent-tx-row").first();
+    await expect(row).toBeVisible();
+    await row.click();
+
+    const actionBar = card.getByTestId("recent-tx-actions").first();
+    await expect(actionBar).toBeVisible();
+    const barLayout = await actionBar.evaluate((el) => {
+      const buttons = [...el.children]
+        .map((child) => child.getBoundingClientRect())
+        .filter((box) => box.height > 0);
+      const scrollRoot = el.closest("[data-scroll-root]") as HTMLElement;
+      return {
+        buttons: buttons.length,
+        // Buttons sharing a rounded top offset are on the same wrapped line.
+        lines: new Set(buttons.map((box) => Math.round(box.top))).size,
+        insetStart:
+          el.getBoundingClientRect().left -
+          scrollRoot.getBoundingClientRect().left,
+      };
+    });
+    expect(barLayout.buttons).toBeGreaterThanOrEqual(6);
+    expect(barLayout.lines).toBeLessThanOrEqual(2);
+    // Only the bar's own horizontal margin, not an icon-column indent.
+    expect(barLayout.insetStart).toBeLessThanOrEqual(12);
+    await row.click();
+    await expect(actionBar).toHaveCount(0);
+
+    // --- A date header is pinned flush to the top at every scroll offset ---
+    expect(await worstUncoveredBandAboveDate(page)).toBeLessThanOrEqual(0.5);
   });
 
   test("tagging a row keeps the feed's scroll position", async ({ page }) => {
