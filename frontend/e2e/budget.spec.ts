@@ -263,7 +263,9 @@ test.describe("Budget", () => {
     expect(pastContribution).not.toBe(liveContribution);
   });
 
-  test("does not scroll horizontally at mobile width", async ({ page }) => {
+  test("at mobile width the page does not scroll sideways, the active tab stays in view, and the picker fills its row", async ({
+    page,
+  }) => {
     await navigateTo(page, "/budget");
     await expect(page.getByRole("navigation").first()).toBeVisible();
 
@@ -278,6 +280,34 @@ test.describe("Budget", () => {
       clientWidth: document.documentElement.clientWidth,
     }));
     expect(scrollWidth).toBeLessThanOrEqual(clientWidth + 1);
+
+    // --- The tab bar scrolls at this width, so the tab you switch to is not
+    // necessarily inside it: Projects is the last of four and starts out of
+    // view, which left the page looking like it had opened on no tab at all.
+    await page.getByRole("button", { name: /Project Budgets/i }).first().click();
+    const strip = page.getByTestId("budget-tab-strip");
+    const activeTab = strip.getByRole("button", { name: /Project Budgets/i });
+    await expect(activeTab).toHaveAttribute("aria-pressed", "true");
+
+    // Polled: the strip is scrolled from an effect that runs after the commit
+    // the pressed state lands in, so a single read can catch it mid-flight.
+    await expect
+      .poll(async () => {
+        const stripBox = await strip.boundingBox();
+        const tabBox = await activeTab.boundingBox();
+        if (!stripBox || !tabBox) return false;
+        return (
+          tabBox.x >= stripBox.x - 1 &&
+          tabBox.x + tabBox.width <= stripBox.x + stripBox.width + 1
+        );
+      })
+      .toBe(true);
+
+    // --- The project picker takes the width its label leaves, rather than
+    // truncating the name inside a fixed 160px box beside empty space. ---
+    const stripBox = await strip.boundingBox();
+    const pickerBox = await page.getByTestId("project-picker").boundingBox();
+    expect(pickerBox!.width).toBeGreaterThan(stripBox!.width * 0.6);
   });
 
   test("over-budget rules are flagged inline; the alerts toggle gates the bell", async ({

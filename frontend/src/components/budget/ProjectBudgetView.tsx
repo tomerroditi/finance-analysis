@@ -346,11 +346,21 @@ export const ProjectBudgetView: React.FC<ProjectBudgetViewProps> = ({
           </>
         }
       >
-        <div className="flex items-center gap-2 min-w-0">
+        {/* The picker takes the space beside its label instead of sitting in
+            it at a fixed 160px: a project name is free text, and it was being
+            truncated mid-name while the rest of the row stood empty. `w-full`
+            (not `flex-1`) keeps the group a full line on a phone, so the
+            actions still wrap below it rather than squeezing the select back
+            down; the desktop cap stops it stretching across a wide screen,
+            where that space belongs to the actions. */}
+        <div className="flex w-full md:w-auto md:flex-auto items-center gap-2 min-w-0">
           <label className="text-xs md:text-sm font-medium text-[var(--text-muted)] whitespace-nowrap">
             {t("budget.selectProject")}
           </label>
-          <div className="w-40 md:w-56" data-testid="project-picker">
+          <div
+            className="flex-1 min-w-0 md:max-w-80"
+            data-testid="project-picker"
+          >
             <SelectDropdown
               options={projectsStatus.map((p: ProjectStatus) => ({
                 label: p.closed
