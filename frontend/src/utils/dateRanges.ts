@@ -4,7 +4,7 @@ import { format, startOfYear, subMonths } from "date-fns";
  * Named windows a dashboard card can be read over. `all` means unbounded —
  * every transaction on record.
  */
-export type RangePreset = "all" | "last1m" | "last3m" | "year" | "last12m";
+export type RangePreset = "all" | "year" | "last12m";
 
 /** An inclusive ISO (`YYYY-MM-DD`) window; an absent bound is unbounded. */
 export interface DateRange {
@@ -19,9 +19,9 @@ export interface DateRange {
  * `toISOString()`: the latter serialises the UTC instant, so in any
  * positive-offset zone (Israel is UTC+2/+3) every moment between local
  * midnight and 02:00/03:00 resolves the window a day early. `subMonths` also
- * clamps month-ends properly — "last month" on the 31st lands on the 28th/30th
- * rather than skidding forward into the current month the way
- * `setMonth(getMonth() - 1)` does.
+ * clamps month-ends properly — a trailing window measured from the 31st lands
+ * on the 28th/30th rather than skidding forward into the current month the way
+ * `setMonth(getMonth() - n)` does.
  *
  * @param preset - Which named window to resolve
  * @param now - Reference "today" (defaults to the current time)
@@ -32,6 +32,5 @@ export function resolveRangePreset(preset: RangePreset, now: Date = new Date()):
   const iso = (d: Date) => format(d, "yyyy-MM-dd");
   const end = iso(now);
   if (preset === "year") return { start: iso(startOfYear(now)), end };
-  const months = preset === "last1m" ? 1 : preset === "last3m" ? 3 : 12;
-  return { start: iso(subMonths(now, months)), end };
+  return { start: iso(subMonths(now, 12)), end };
 }

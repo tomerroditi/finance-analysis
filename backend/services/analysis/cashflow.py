@@ -2,7 +2,7 @@
 Cash-flow aggregations for the analysis service.
 
 Provides the ``CashflowMixin`` with income/expense/debt-over-time series,
-income-by-source and expenses-by-category breakdowns, and the shared
+income-by-source and expenses-by-category-over-time breakdowns, and the shared
 income/investment/expense mask helpers. Mixed into ``AnalysisService``
 (see ``core.py``).
 """
@@ -438,74 +438,6 @@ class CashflowMixin:
             {"month": month, "categories": {cat: round(float(val), 2) for cat, val in row.items() if val > 0}}
             for month, row in pivot.iterrows()
         ]
-
-    def get_expenses_by_category(
-        self,
-        exclude_pending_refunds: bool = True,
-        start: date | None = None,
-        end: date | None = None,
-    ):
-        """
-        Get expenses and refunds grouped by category, optionally over a window.
-
-        Non-expense categories (Ignore, Salary, Other Income, Investments,
-        Liabilities) are excluded. Transactions with no category are grouped
-        as ``"Uncategorized"``. Categories with positive net amounts are treated
-        as refunds; those with negative net amounts are expenses.
-
-        A refund matched to its purchase is netted against that purchase (see
-        :meth:`_net_matched_refunds`), so it leaves the ``refunds`` bucket
-        entirely rather than showing up as money back on a category that no
-        longer carries the charge. What remains there is the unmatched
-        positive balance — a refund nobody linked to anything.
-
-        Parameters
-        ----------
-        exclude_pending_refunds : bool, optional
-            Passed to :meth:`_net_matched_refunds`. Defaults to True.
-        start, end : date | None, optional
-            Inclusive date bounds. ``None`` on both sides (the default) covers
-            all time. Refunds are matched to their purchase *before* the window
-            is applied, so a refund that landed outside it still cancels the
-            charge it repays instead of resurfacing as spend.
-
-        Returns
-        -------
-        dict
-            Dictionary with keys:
-
-            - ``expenses`` – list of ``{"category": str, "amount": float}`` dicts
-              (positive absolute values) for categories with net negative spend.
-            - ``refunds`` – list of ``{"category": str, "amount": float}`` dicts
-              for categories with net positive amounts (refunds exceed spend).
-        """
-        df = self.repo.get_itemized_transactions()
-
-        if df.empty:
-            return {"expenses": [], "refunds": []}
-
-        df = self._net_matched_refunds(df, exclude_pending_refunds)
-        df = self._filter_date_window(df, start, end)
-
-        if df.empty:
-            return {"expenses": [], "refunds": []}
-
-        expense_mask = ~df["category"].isin(NON_EXPENSE_CATEGORIES)
-        expenses = df[expense_mask].copy()
-        expenses["category"] = expenses["category"].fillna("Uncategorized")
-        grouped = expenses.groupby("category")["amount"].sum()
-        neg_grouped = grouped[grouped < 0].abs()
-        pos_grouped = grouped[grouped > 0]
-        return {
-            "expenses": [
-                {"category": cat, "amount": float(amt)}
-                for cat, amt in neg_grouped.items()
-            ],
-            "refunds": [
-                {"category": cat, "amount": float(amt)}
-                for cat, amt in pos_grouped.items()
-            ],
-        }
 
     def get_income_by_source_over_time(
         self, exclude_pending_refunds: bool = True

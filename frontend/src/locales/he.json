@@ -134,7 +134,6 @@
     "title": "לוח בקרה",
     "subtitle": "תמונת המצב הפיננסית שלך במבט אחד",
     "totalIncome": "סה\"כ הכנסות",
-    "totalExpenses": "סה\"כ הוצאות",
     "totalBankBalance": "סה\"כ יתרת בנק",
     "totalInvestments": "סה\"כ השקעות",
     "netWorth": "שווי נקי",
@@ -199,17 +198,6 @@
     "viewAllBudgetRules": "הצג את כל כללי התקציב",
     "done": "בוצע",
     "incomeAndExpenses": "הכנסות והוצאות",
-    "categories": "קטגוריות",
-    "categoryBreakdown": {
-      "range": {
-        "last1m": "חודש אחרון",
-        "last3m": "3 חודשים אחרונים",
-        "year": "השנה",
-        "last12m": "12 חודשים אחרונים",
-        "all": "כל הזמן"
-      },
-      "emptyRange": "אין הוצאות בטווח הזה."
-    },
     "avg3Months": "ממוצע 3 חודשים",
     "avg6Months": "ממוצע 6 חודשים",
     "avg12Months": "ממוצע 12 חודשים",
@@ -219,7 +207,6 @@
     "projectExpensesExcluded": "ללא פרויקטים",
     "projectExpenses": "הוצאות פרויקט",
     "amountILS": "סכום (₪)",
-    "noExpenseData": "אין נתוני הוצאות זמינים.",
     "noNetWorthData": "אין נתוני שווי נקי זמינים.",
     "overview": "סקירה",
     "totals": "סיכומים",
@@ -236,7 +223,6 @@
     "showLess": "הצג פחות",
     "barAboveScale": "מעל קנה המידה של הגרף — ראה את הסכום המדויק",
     "noIncomeSourceData": "אין נתוני הכנסות לפי מקור.",
-    "topCategory": "קטגוריה מובילה",
     "forecast": {
       "title": "החודש",
       "daysLeft": "נותרו {{count}} ימים",
@@ -389,7 +375,6 @@
       "incomeExpenses": "הכנסות והוצאות",
       "netWorth": "שווי נקי",
       "cashFlow": "תזרים מזומנים",
-      "category": "קטגוריות",
       "refunds": "החזרים",
       "retirement": "פרישה מוקדמת"
     },

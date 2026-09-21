@@ -46,7 +46,7 @@ const content: DataFlowContent = {
     "recurring-review": { title: "Recurring Review", desc: "Confirm, dismiss or re-open a detected commitment. Only confirmed ones are acted on." },
     "balance-mgmt": { title: "Balance Management", desc: "Bank balance entry (post-scrape), cash envelope CRUD. Triggers prior wealth recalculation." },
     "cat-mgmt": { title: "Category & Rules", desc: "Create/rename/delete categories and tags. Manage tagging rules. Changes cascade to all transactions." },
-    "analysis-svc": { title: "Analysis", desc: "Overview, income/expenses, net balance, net worth, by-category, Sankey, income by source, heatmap." },
+    "analysis-svc": { title: "Analysis", desc: "Overview, income/expenses, net balance, net worth, Sankey, income by source, heatmap." },
     "forecast-svc": { title: "Cash-Flow Forecast", desc: "Projects month end from trend + month-to-date. Safe-to-spend nets out committed charges." },
     "recurring-svc": { title: "Recurring Detection", desc: "Finds commitments on cadence, regularity and amount stability. Scores each with a confidence." },
     "insights-svc": { title: "Insights", desc: "Only what the budget does not already explain \u2014 spikes, pace, big charges, repriced subscriptions." },
@@ -320,7 +320,7 @@ const content: DataFlowContent = {
     "analysis-svc": {
       title: "AnalysisService", tag: "11 KPI Reads",
       sections: [
-        { heading: "Core KPIs", items: ["overview \u2014 totals + net change", "income-expenses-over-time \u2014 monthly bars", "net-balance-over-time \u2014 cumulative trend", "net-worth-over-time \u2014 bank + cash + investments", "by-category and expenses-by-category-over-time", "sankey \u2014 income \u2192 expenses flow", "income-by-source (+ over time) \u2014 stacked breakdown", "debt-payments-over-time, monthly-expenses (spending heatmap)"] },
+        { heading: "Core KPIs", items: ["overview \u2014 totals + net change", "income-expenses-over-time \u2014 monthly bars", "net-balance-over-time \u2014 cumulative trend", "net-worth-over-time \u2014 bank + cash + investments", "expenses-by-category-over-time", "sankey \u2014 income \u2192 expenses flow", "income-by-source (+ over time) \u2014 stacked breakdown", "debt-payments-over-time, monthly-expenses (spending heatmap)"] },
         { heading: "Transaction Masks", items: ["Income: Salary, Other Income, + positive Liabilities", "Investment: Investments category", "Expense: everything else + negative Liabilities"] },
         { heading: "Also Hosted Here", text: "The same service hosts the cash-flow forecast, which is its own card here. Recurring detection and insights are separate services reading the same merged transaction view." },
       ],

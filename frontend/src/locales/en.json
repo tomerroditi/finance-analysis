@@ -134,7 +134,6 @@
     "title": "Dashboard",
     "subtitle": "Your financial snapshot at a glance",
     "totalIncome": "Total Income",
-    "totalExpenses": "Total Expenses",
     "totalBankBalance": "Total Bank Balance",
     "totalInvestments": "Total Investments",
     "netWorth": "Net Worth",
@@ -199,17 +198,6 @@
     "viewAllBudgetRules": "View All Budget Rules",
     "done": "Done",
     "incomeAndExpenses": "Income & Expenses",
-    "categories": "Categories",
-    "categoryBreakdown": {
-      "range": {
-        "last1m": "Last month",
-        "last3m": "Last 3 months",
-        "year": "This year",
-        "last12m": "Last 12 months",
-        "all": "All time"
-      },
-      "emptyRange": "No expenses in this range."
-    },
     "avg3Months": "Avg 3 Months",
     "avg6Months": "Avg 6 Months",
     "avg12Months": "Avg 12 Months",
@@ -219,7 +207,6 @@
     "projectExpensesExcluded": "Projects Excluded",
     "projectExpenses": "Project Expenses",
     "amountILS": "Amount (ILS)",
-    "noExpenseData": "No expense data available.",
     "noNetWorthData": "No net worth data available.",
     "overview": "Overview",
     "totals": "Totals",
@@ -236,7 +223,6 @@
     "showLess": "Show less",
     "barAboveScale": "Above the chart scale — see the exact amount",
     "noIncomeSourceData": "No income source data available.",
-    "topCategory": "Top Category",
     "forecast": {
       "title": "This Month",
       "daysLeft": "{{count}} days left",
@@ -389,7 +375,6 @@
       "incomeExpenses": "Income & Expenses",
       "netWorth": "Net Worth",
       "cashFlow": "Cash Flow",
-      "category": "Categories",
       "refunds": "Refunds",
       "retirement": "Early Retirement"
     },

@@ -44,44 +44,6 @@ class TestAnalyticsRoutes:
         assert "income" in entry
         assert "expenses" in entry
 
-    def test_get_expenses_by_category(self, test_client, seed_base_transactions):
-        """GET /api/analytics/by-category returns category breakdown."""
-        response = test_client.get("/api/analytics/by-category")
-        assert response.status_code == 200
-        data = response.json()
-        assert isinstance(data, dict)
-        assert "expenses" in data
-        assert "refunds" in data
-        assert isinstance(data["expenses"], list)
-        # Seed data has expense categories like Food, Transport, Entertainment
-        assert len(data["expenses"]) > 0
-        expense_entry = data["expenses"][0]
-        assert "category" in expense_entry
-        assert "amount" in expense_entry
-
-    def test_get_expenses_by_category_window(
-        self, test_client, seed_base_transactions
-    ):
-        """GET /api/analytics/by-category honours the start/end window."""
-        response = test_client.get(
-            "/api/analytics/by-category",
-            params={"start": "2024-01-01", "end": "2024-01-31"},
-        )
-        assert response.status_code == 200
-        by_category = {
-            e["category"]: e["amount"] for e in response.json()["expenses"]
-        }
-        # January's Food spend alone, not the Jan-Mar total the unwindowed
-        # call reports.
-        assert by_category["Food"] == 245.0
-
-    def test_get_expenses_by_category_rejects_a_malformed_date(self, test_client):
-        """A non-date `start` is a 422, not a silently ignored filter."""
-        response = test_client.get(
-            "/api/analytics/by-category", params={"start": "last-month"}
-        )
-        assert response.status_code == 422
-
     def test_get_sankey_data(self, test_client, seed_base_transactions):
         """GET /api/analytics/sankey returns sankey diagram data."""
         response = test_client.get("/api/analytics/sankey")

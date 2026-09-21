@@ -74,7 +74,6 @@ const READ_ONLY_SPECS = [
   "**/budget-net-refund.spec.ts",
   "**/categories.spec.ts",
   "**/dashboard-block-sizes.spec.ts",
-  "**/dashboard-category-card.spec.ts",
   "**/dashboard-insights-strip.spec.ts",
   "**/dashboard-lazy-cards.spec.ts",
   "**/dashboard-mobile-kpis.spec.ts",
