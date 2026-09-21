@@ -102,5 +102,21 @@ test.describe("Investments", () => {
     await expect(page.getByText(/Management fee/i).first()).toBeVisible();
     await expect(page.getByText(/Deposit fee/i).first()).toBeVisible();
     await expect(page.getByText(/^Liquid \d{4}-\d{2}-\d{2}$/).first()).toBeVisible();
+
+    // --- KH analysis: pre-window capital and scraped deposits ---
+    // A synced policy's first snapshot holds more than its scraped deposits
+    // explain; that money is shown as an opening balance (not profit), and
+    // the scraped deposits reach the snapshot table instead of reading "—".
+    await page.locator(".modal-overlay").getByRole("button").first().click();
+    await page
+      .locator("div.group")
+      .filter({ hasText: "Keren Hishtalmut - Tech Company" })
+      .getByRole("button", { name: "View Analysis" })
+      .click();
+    const khModal = page.locator(".modal-overlay");
+    await expect(khModal.getByTestId("investment-opening-balance")).toContainText(/₪/, {
+      timeout: 15_000,
+    });
+    await expect(khModal.locator("tbody .text-emerald-400").first()).toBeVisible();
   });
 });

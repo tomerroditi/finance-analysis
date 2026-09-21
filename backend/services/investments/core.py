@@ -25,15 +25,11 @@ from backend.repositories.savings_goal_repository import SavingsGoalRepository
 from backend.repositories.transactions_repository import TransactionsRepository
 from backend.services.investments.insurance_sync import InsuranceSyncMixin
 from backend.services.investments.snapshots import SnapshotsMixin
-from backend.services.investments.valuation import ValuationMixin
+from backend.services.investments.valuation import CLOSED_SOURCE, ValuationMixin
 
 # TransactionsService is imported lazily inside __init__ to avoid a
 # module-level circular dependency (TransactionsService also lazy-imports
 # InvestmentsService inside its create/delete methods).
-
-CLOSED_SOURCE = "closed"
-"""Snapshot ``source`` of the zero balance written when an investment closes."""
-
 
 class InvestmentsService(SnapshotsMixin, ValuationMixin, InsuranceSyncMixin):
     """
@@ -180,6 +176,7 @@ class InvestmentsService(SnapshotsMixin, ValuationMixin, InsuranceSyncMixin):
 
             - ``metrics`` – profit/loss metrics dict (from ``calculate_profit_loss``).
             - ``history`` – list of daily balance dicts (from ``calculate_balance_over_time``).
+            - ``flows`` – per-date deposits and withdrawals (from ``_calculate_daily_flows``).
         """
         metrics = self.calculate_profit_loss(investment_id)
         if not start_date:
@@ -190,45 +187,49 @@ class InvestmentsService(SnapshotsMixin, ValuationMixin, InsuranceSyncMixin):
             end_date = date.today().strftime(r"%Y-%m-%d")
 
         history = self.calculate_balance_over_time(investment_id, start_date, end_date)
-        monthly_transactions = self._calculate_monthly_transactions(investment_id)
         return {
             "metrics": metrics,
             "history": history,
-            "monthly_transactions": monthly_transactions,
+            "flows": self._calculate_daily_flows(investment_id),
         }
 
-    def _calculate_monthly_transactions(
-        self, investment_id: int
-    ) -> List[Dict[str, Any]]:
-        """Aggregate investment transactions by month.
+    def _calculate_daily_flows(self, investment_id: int) -> List[Dict[str, Any]]:
+        """Aggregate an investment's deposits and withdrawals by date.
 
-        Returns a list of ``{month, deposits, withdrawals}`` entries sorted
-        chronologically. Deposits are reported as positive numbers (the
-        absolute value of negative transactions), withdrawals are positive
-        amounts.
+        Includes an insurance-linked investment's scraped deposits and leaves
+        out its synthetic opening balance, which is no flow on any date. Kept
+        per date rather than per month because a scraped policy has several
+        balance snapshots a month, and a deposit belongs between the two
+        snapshots that bracket its date.
+
+        Returns
+        -------
+        list[dict]
+            ``{date, deposits, withdrawals}`` entries sorted chronologically;
+            deposits are the absolute value of negative transactions,
+            withdrawals are positive amounts.
         """
         inv = self.investments_repo.get_by_id(investment_id).iloc[0]
-        txns = self._get_all_transactions_for_investment(inv["category"], inv["tag"])
+        txns = self._get_all_transactions_for_investment(
+            inv["category"], inv["tag"], investment_id=investment_id
+        )
         if txns.empty:
             return []
 
-        df = txns.copy()
+        df = txns[~self._opening_balance_mask(txns)].copy()
         df["amount"] = pd.to_numeric(df["amount"], errors="coerce").fillna(0.0)
-        df["month"] = pd.to_datetime(df["date"]).dt.strftime("%Y-%m")
+        df["day"] = pd.to_datetime(df["date"]).dt.strftime("%Y-%m-%d")
         df["deposit"] = df["amount"].where(df["amount"] < 0, 0.0).abs()
         df["withdrawal"] = df["amount"].where(df["amount"] > 0, 0.0)
 
-        grouped = (
-            df.groupby("month")[["deposit", "withdrawal"]].sum().reset_index()
-        )
-        grouped = grouped.sort_values("month")
+        grouped = df.groupby("day")[["deposit", "withdrawal"]].sum().sort_index()
         return [
             {
-                "month": row["month"],
+                "date": day,
                 "deposits": float(row["deposit"]),
                 "withdrawals": float(row["withdrawal"]),
             }
-            for _, row in grouped.iterrows()
+            for day, row in grouped.iterrows()
             if row["deposit"] > 0 or row["withdrawal"] > 0
         ]
 

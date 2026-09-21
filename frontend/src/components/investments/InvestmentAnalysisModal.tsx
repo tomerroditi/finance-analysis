@@ -52,8 +52,8 @@ interface Snapshot {
   source: string;
 }
 
-interface MonthlyTransaction {
-  month: string;
+interface Flow {
+  date: string;
   deposits: number;
   withdrawals: number;
 }
@@ -214,7 +214,8 @@ export function InvestmentAnalysisModal({
               <Skeleton variant="card" className="h-[400px]" />
             </div>
           ) : selectedAnalysis.metrics.total_deposits === 0 &&
-            selectedAnalysis.metrics.total_withdrawals === 0 ? (
+            selectedAnalysis.metrics.total_withdrawals === 0 &&
+            !selectedAnalysis.metrics.opening_balance ? (
             <div className="text-center py-16 space-y-3">
               <div className="p-4 bg-[var(--surface-light)] rounded-2xl w-fit mx-auto text-[var(--text-muted)]">
                 <BarChart2 size={32} />
@@ -305,7 +306,22 @@ export function InvestmentAnalysisModal({
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 text-sm text-[var(--text-muted)] font-medium bg-[var(--surface-base)] p-6 rounded-2xl border border-[var(--surface-light)]">
+              <div
+                className={`grid grid-cols-1 ${
+                  selectedAnalysis.metrics.opening_balance > 0 ? "sm:grid-cols-4" : "sm:grid-cols-3"
+                } gap-6 text-sm text-[var(--text-muted)] font-medium bg-[var(--surface-base)] p-6 rounded-2xl border border-[var(--surface-light)]`}
+              >
+                {selectedAnalysis.metrics.opening_balance > 0 && (
+                  <div data-testid="investment-opening-balance">
+                    <p className="uppercase text-[10px] tracking-widest font-bold mb-1 flex items-center gap-1">
+                      {t("investments.openingBalance")}
+                      <InfoTooltip text={t("investments.tooltips.openingBalance")} iconSize={12} width={220} />
+                    </p>
+                    <p className="text-white text-lg font-bold">
+                      {formatCurrency(selectedAnalysis.metrics.opening_balance)}
+                    </p>
+                  </div>
+                )}
                 <div>
                   <p className="uppercase text-[10px] tracking-widest font-bold mb-1">
                     {t("investments.totalDeposits")}
@@ -356,61 +372,54 @@ export function InvestmentAnalysisModal({
                 </div>
               )}
 
-              {/* Monthly Breakdown: Snapshots + Deposits */}
+              {/* Snapshots + Deposits */}
               {(() => {
-                const snapshots: Snapshot[] = selectedSnapshots ?? [];
-                const monthly: MonthlyTransaction[] =
-                  selectedAnalysis.monthly_transactions ?? [];
-
-                if (snapshots.length === 0 && monthly.length === 0) return null;
-
-                const monthMap = new Map<string, MonthRow>();
-                for (const m of monthly) {
-                  monthMap.set(m.month, {
-                    key: `m-${m.month}`,
-                    month: m.month,
-                    date: null,
-                    snapshot: null,
-                    deposits: m.deposits,
-                    withdrawals: m.withdrawals,
-                    profit: null,
-                    profitPct: null,
-                  });
-                }
-                const rows: MonthRow[] = [];
-                for (const snap of snapshots) {
-                  const month = snap.date.slice(0, 7);
-                  const monthDeposit = monthMap.get(month);
-                  rows.push({
+                const flows: Flow[] = selectedAnalysis.flows ?? [];
+                const snapshotRows: MonthRow[] = [...(selectedSnapshots ?? [])]
+                  .sort((a: Snapshot, b: Snapshot) => a.date.localeCompare(b.date))
+                  .map((snap: Snapshot) => ({
                     key: `s-${snap.id}`,
-                    month,
+                    month: snap.date.slice(0, 7),
                     date: snap.date,
                     snapshot: snap,
-                    deposits: monthDeposit?.deposits ?? 0,
-                    withdrawals: monthDeposit?.withdrawals ?? 0,
+                    deposits: 0,
+                    withdrawals: 0,
                     profit: null,
                     profitPct: null,
-                  });
-                  monthMap.delete(month);
-                }
-                for (const orphan of monthMap.values()) rows.push(orphan);
+                  }));
 
-                // Compute profit per snapshot row vs the previous (older) snapshot,
-                // netting out deposits/withdrawals between the two snapshot months.
-                const ascSnapshotRows = rows
-                  .filter((r) => r.snapshot && r.date)
-                  .sort((a, b) => (a.date ?? "").localeCompare(b.date ?? ""));
-                const monthlyByMonth = new Map<string, MonthlyTransaction>();
-                for (const m of monthly) monthlyByMonth.set(m.month, m);
-                for (let i = 1; i < ascSnapshotRows.length; i++) {
-                  const prev = ascSnapshotRows[i - 1];
-                  const curr = ascSnapshotRows[i];
-                  let netInflow = 0;
-                  for (const [m, txn] of monthlyByMonth) {
-                    if (m > prev.month && m <= curr.month) {
-                      netInflow += txn.deposits - txn.withdrawals;
-                    }
+                if (snapshotRows.length === 0 && flows.length === 0) return null;
+
+                // A flow belongs to the first snapshot on or after its date (a
+                // snapshot already includes that day's flows) when an earlier
+                // snapshot brackets it; otherwise it has no snapshot pair to be
+                // netted against and is listed on its own month row.
+                const monthRows = new Map<string, MonthRow>();
+                for (const flow of flows) {
+                  const idx = snapshotRows.findIndex((r) => r.date! >= flow.date);
+                  let row = idx > 0 ? snapshotRows[idx] : undefined;
+                  if (!row) {
+                    const month = flow.date.slice(0, 7);
+                    row = monthRows.get(month) ?? {
+                      key: `m-${month}`,
+                      month,
+                      date: null,
+                      snapshot: null,
+                      deposits: 0,
+                      withdrawals: 0,
+                      profit: null,
+                      profitPct: null,
+                    };
+                    monthRows.set(month, row);
                   }
+                  row.deposits += flow.deposits;
+                  row.withdrawals += flow.withdrawals;
+                }
+
+                for (let i = 1; i < snapshotRows.length; i++) {
+                  const prev = snapshotRows[i - 1];
+                  const curr = snapshotRows[i];
+                  const netInflow = curr.deposits - curr.withdrawals;
                   const profit =
                     curr.snapshot!.balance - prev.snapshot!.balance - netInflow;
                   const base = prev.snapshot!.balance + netInflow;
@@ -418,6 +427,7 @@ export function InvestmentAnalysisModal({
                   curr.profitPct = base > 0 ? (profit / base) * 100 : null;
                 }
 
+                const rows = [...snapshotRows, ...monthRows.values()];
                 rows.sort((a, b) => {
                   const ka = a.date ?? `${a.month}-00`;
                   const kb = b.date ?? `${b.month}-00`;

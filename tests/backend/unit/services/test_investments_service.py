@@ -975,6 +975,140 @@ class TestInsuranceLinkedTransactions:
         assert metrics["total_deposits"] == 0.0
 
 
+class TestInsuranceOpeningBalance:
+    """Tests for the capital a provider's truncated deposit history leaves unexplained."""
+
+    def _seed(self, db_session, deposits, snapshots, policy_id="POL-OPEN"):
+        service = InvestmentsService(db_session)
+        service.sync_from_insurance({
+            "policy_id": policy_id,
+            "policy_type": "hishtalmut",
+            "provider": "hafenix",
+            "account_name": "KH",
+            "balance": None,
+            "balance_date": None,
+        })
+        inv_id = service.get_all_investments()[0]["id"]
+        for i, (day, amount) in enumerate(deposits):
+            db_session.add(InsuranceTransaction(
+                id=f"{policy_id}-{i}",
+                date=day,
+                provider="hafenix",
+                account_name="KH",
+                account_number=policy_id,
+                description="הפקדה",
+                amount=amount,
+                source="insurance_transactions",
+            ))
+        db_session.commit()
+        for day, balance in snapshots:
+            service.create_balance_snapshot(inv_id, day, balance, source="scraped")
+        return service, inv_id
+
+    def test_profit_loss_counts_pre_window_capital_as_invested(self, db_session):
+        """Verify money the deposits cannot explain is cost basis, not profit."""
+        service, inv_id = self._seed(
+            db_session,
+            deposits=[("2025-01-15", 1000.0), ("2025-02-15", 1000.0)],
+            snapshots=[("2025-03-01", 5000.0), ("2025-06-01", 5500.0)],
+        )
+
+        metrics = service.calculate_profit_loss(inv_id)
+
+        assert metrics["total_deposits"] == 2000.0
+        assert metrics["opening_balance"] == 3000.0
+        assert metrics["net_invested"] == 5000.0
+        assert metrics["current_balance"] == 5500.0
+        assert metrics["absolute_profit_loss"] == 500.0
+        assert metrics["roi_percentage"] == pytest.approx(10.0)
+        assert metrics["first_transaction_date"] == "2025-01-14"
+
+    def test_balance_history_has_no_jump_at_first_snapshot(self, db_session):
+        """Verify pre-snapshot history starts from the opening balance and meets the snapshot."""
+        service, inv_id = self._seed(
+            db_session,
+            deposits=[("2025-01-15", 1000.0), ("2025-02-15", 1000.0)],
+            snapshots=[("2025-03-01", 5000.0)],
+        )
+
+        history = {
+            point["date"]: point["balance"]
+            for point in service.calculate_balance_over_time(inv_id, "2025-01-14", "2025-03-01")
+        }
+
+        assert history["2025-01-14"] == 3000.0
+        assert history["2025-01-15"] == 4000.0
+        assert history["2025-02-15"] == 5000.0
+        assert history["2025-03-01"] == 5000.0
+
+    def test_policy_without_scraped_deposits_opens_at_first_snapshot(self, db_session):
+        """Verify a policy whose deposits all predate the window reports growth, not its whole balance."""
+        service, inv_id = self._seed(
+            db_session,
+            deposits=[],
+            snapshots=[("2026-03-02", 1813.0), ("2026-09-15", 1985.0)],
+        )
+
+        metrics = service.calculate_profit_loss(inv_id)
+
+        assert metrics["total_deposits"] == 0.0
+        assert metrics["opening_balance"] == 1813.0
+        assert metrics["absolute_profit_loss"] == 172.0
+        assert metrics["first_transaction_date"] == "2026-03-01"
+
+    def test_deposits_covering_first_snapshot_add_no_opening(self, db_session):
+        """Verify a policy fully inside the deposit window gets no opening balance."""
+        service, inv_id = self._seed(
+            db_session,
+            deposits=[("2026-01-08", 628.48), ("2026-02-09", 1571.2)],
+            snapshots=[("2026-03-02", 2140.0)],
+        )
+
+        metrics = service.calculate_profit_loss(inv_id)
+
+        assert metrics["opening_balance"] == 0.0
+        assert metrics["total_deposits"] == pytest.approx(2199.68)
+
+    def test_manual_investment_with_snapshot_gets_no_opening(self, db_session, seed_investments):
+        """Verify only insurance-linked investments synthesize an opening balance."""
+        service = InvestmentsService(db_session)
+        stock_fund = seed_investments["investments"][0]
+        service.create_balance_snapshot(stock_fund.id, "2024-03-01", 1_000_000.0)
+
+        metrics = service.calculate_profit_loss(stock_fund.id)
+
+        assert metrics["opening_balance"] == 0.0
+
+    def test_analysis_flows_list_insurance_deposits_by_date(self, db_session):
+        """Verify analysis flows carry the scraped deposits per date and omit the opening balance."""
+        service, inv_id = self._seed(
+            db_session,
+            deposits=[("2025-08-05", 1571.2), ("2025-09-08", 1571.2)],
+            snapshots=[("2025-08-04", 10848.0), ("2025-08-18", 12300.0)],
+        )
+
+        flows = service.get_investment_analysis(inv_id)["flows"]
+
+        assert flows == [
+            {"date": "2025-08-05", "deposits": 1571.2, "withdrawals": 0.0},
+            {"date": "2025-09-08", "deposits": 1571.2, "withdrawals": 0.0},
+        ]
+
+    def test_portfolio_roi_includes_opening_in_cost_basis(self, db_session):
+        """Verify the portfolio totals treat the opening balance as invested money."""
+        service, _ = self._seed(
+            db_session,
+            deposits=[("2025-01-15", 1000.0)],
+            snapshots=[("2025-03-01", 4000.0), ("2025-06-01", 4400.0)],
+        )
+
+        overview = service.get_portfolio_overview()
+
+        assert overview["allocation"][0]["opening_balance"] == 3000.0
+        assert overview["total_profit"] == 400.0
+        assert overview["portfolio_roi"] == pytest.approx(10.0)
+
+
 class TestHishtalmutTotalBalance:
     """Tests for InvestmentsService.get_hishtalmut_total_balance."""
 

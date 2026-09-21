@@ -136,4 +136,7 @@ export function shouldDehydrateQuery(query: Query): boolean {
 // month. A hydrated v6 snapshot has no such field, so every monthly
 // sparkline would fall back to drawing its whole history against today's
 // limit — the very thing the stepped reference exists to stop.
-export const PERSIST_BUSTER = "v7";
+// v8: investment analysis swapped `monthly_transactions` for per-date `flows`
+// and its metrics gained `opening_balance`. A hydrated v7 snapshot would show
+// a Keren Hishtalmut's snapshot table with no deposits at all.
+export const PERSIST_BUSTER = "v8";
