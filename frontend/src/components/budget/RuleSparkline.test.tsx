@@ -18,7 +18,7 @@ function heights(d: string): number[] {
 }
 
 describe("RuleSparkline", () => {
-  describe("bars variant (monthly envelopes)", () => {
+  describe("bars variant (monthly rules)", () => {
     it("colours only the months that crossed the budget as over", () => {
       const { container } = render(
         <RuleSparkline
@@ -40,7 +40,7 @@ describe("RuleSparkline", () => {
       expect(opacity).toEqual(["0.45", "1"]);
     });
 
-    it("draws no budget reference line for an unbudgeted envelope", () => {
+    it("draws no budget reference line for an unbudgeted rule", () => {
       const { container } = render(
         <RuleSparkline variant="bars" series={[100, 200]} labels={["Feb", "Mar"]} budget={0} />,
       );
@@ -61,7 +61,7 @@ describe("RuleSparkline", () => {
     });
 
     it("steps the reference where the limit moved", () => {
-      // The same envelope cut from 2,000 to 1,000: the older months keep
+      // The same rule cut from 2,000 to 1,000: the older months keep
       // their own line, so the chart stops claiming they were over budget.
       const { container } = render(
         <RuleSparkline
@@ -82,8 +82,8 @@ describe("RuleSparkline", () => {
     });
 
     it("judges each month against the limit it actually carried", () => {
-      // 1,800 spent under an 1,800 envelope is not an overspend, and cutting
-      // the envelope to 1,500 afterwards must not repaint that month red.
+      // 1,800 spent under an 1,800 rule is not an overspend, and cutting
+      // the rule to 1,500 afterwards must not repaint that month red.
       const { container } = render(
         <RuleSparkline
           variant="bars"
@@ -97,7 +97,7 @@ describe("RuleSparkline", () => {
       expect(fills).toEqual(["#10b981", "#10b981", "#f59e0b"]);
     });
 
-    it("breaks the reference over a month the envelope did not exist in", () => {
+    it("breaks the reference over a month the rule did not exist in", () => {
       const { container } = render(
         <RuleSparkline
           variant="bars"
@@ -119,7 +119,7 @@ describe("RuleSparkline", () => {
     });
 
     it("scales to the tallest limit in the window, not just the latest", () => {
-      // A raised-then-cut envelope: the old, higher reference must stay
+      // A raised-then-cut rule: the old, higher reference must stay
       // inside the viewport instead of being clipped off the top.
       const { container } = render(
         <RuleSparkline
@@ -136,7 +136,7 @@ describe("RuleSparkline", () => {
     });
   });
 
-  describe("burn variant (yearly and project envelopes)", () => {
+  describe("burn variant (yearly and project rules)", () => {
     it("draws a pace diagonal only when asked", () => {
       const withPace = render(
         <RuleSparkline
@@ -202,7 +202,7 @@ describe("RuleSparkline", () => {
       expect(container.querySelector("circle")?.getAttribute("fill")).toBe("#10b981");
     });
 
-    it("turns the line amber once the envelope is nearly spent out", () => {
+    it("turns the line amber once the rule is nearly spent out", () => {
       const { container } = render(
         <RuleSparkline
           variant="burn"

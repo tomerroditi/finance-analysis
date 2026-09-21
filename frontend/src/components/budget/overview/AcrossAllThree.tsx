@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next";
 import { Calendar, CalendarRange, Layers } from "lucide-react";
 import type { BudgetOverview } from "../../../services/api";
 import { formatAmount, formatCurrency } from "../../../utils/numberFormatting";
-import { envelopeColor } from "./envelopeMath";
+import { ruleColor } from "./ruleMath";
 
 interface AcrossAllThreeProps {
   overview: BudgetOverview;
@@ -75,7 +75,7 @@ export const AcrossAllThree: React.FC<AcrossAllThreeProps> = ({
           t("budget.monthlyBudget"),
           <span className="relative block h-1.5 w-full rounded-full bg-[var(--surface-light)] overflow-hidden">
             <span
-              className={`absolute inset-y-0 start-0 rounded-full ${envelopeColor(percent)}`}
+              className={`absolute inset-y-0 start-0 rounded-full ${ruleColor(percent)}`}
               style={{ width: `${Math.min(percent, 100)}%` }}
             />
           </span>,

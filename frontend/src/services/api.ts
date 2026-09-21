@@ -199,10 +199,10 @@ export interface BudgetTrendPointResponse {
   /** That row's spend, already sign-normalised by the backend. */
   actual: number;
   /** Spend per rule name — names, not ids, because an auto-filled month
-   *  creates fresh rows for the same envelope. */
+   *  creates fresh rows for the same rule. */
   rules: Record<string, number>;
   /** The cap each rule carried *that* month, keyed the same way. A rule
-   *  missing from the map had no envelope that month. */
+   *  missing from the map had no rule that month. */
   limits: Record<string, number>;
 }
 
@@ -224,11 +224,11 @@ export interface ProjectStatus {
 }
 
 /**
- * A yearly or project envelope: what the viewed month put in, and where the
- * envelope stands overall. The two are never interchangeable — ``spent`` always
+ * A yearly or project rule: what the viewed month put in, and where the
+ * rule stands overall. The two are never interchangeable — ``spent`` always
  * describes today, whichever month is being viewed.
  */
-export interface BudgetLongEnvelope {
+export interface BudgetLongRule {
   name: string;
   kind: "yearly" | "project";
   category: string;
@@ -260,7 +260,7 @@ export interface BudgetOverview {
   projects_month_spent: number;
   yearly_month_spent: number;
   total_out: number;
-  long_envelopes: BudgetLongEnvelope[];
+  long_envelopes: BudgetLongRule[];
 }
 
 export interface CategoryConflict {
@@ -307,12 +307,12 @@ export interface YearlyAnalysis {
       year: number;
     };
     current_amount: number;
-    /** The year's transactions behind this envelope — what the row expands to show. */
+    /** The year's transactions behind this rule — what the row expands to show. */
     data: Transaction[];
     allow_edit: boolean;
     allow_delete: boolean;
     /**
-     * Whether the envelope has been closed.
+     * Whether the rule has been closed.
      *
      * A closed yearly rule is settled, not deleted: it keeps its allocation,
      * its spend and its row here, and it still claims its tags against the

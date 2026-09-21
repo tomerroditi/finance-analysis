@@ -19,13 +19,13 @@ interface BudgetRuleRecord {
   category: string;
 }
 
-/** The month the Overview opens on, which is the one it reports envelopes for. */
+/** The month the Overview opens on, which is the one it reports rules for. */
 function currentMonthPath(): string {
   const now = new Date();
   return `${now.getFullYear()}/${now.getMonth() + 1}`;
 }
 
-test.describe("Closing a yearly budget envelope", () => {
+test.describe("Closing a yearly budget rule", () => {
   // Restore pristine demo data before this file runs. The `mutating` project
   // is serial and each file owns its DB state; the demo database is
   // process-global, so without this a predecessor's writes leak in.
@@ -37,7 +37,7 @@ test.describe("Closing a yearly budget envelope", () => {
     await enableDemoMode(page);
   });
 
-  test("closes a yearly envelope, drops it from the overview, and reopens it", async ({
+  test("closes a yearly rule, drops it from the overview, and reopens it", async ({
     page,
   }) => {
     const year = new Date().getFullYear();
@@ -88,16 +88,16 @@ test.describe("Closing a yearly budget envelope", () => {
     const ruleId = entry!.rule.id;
     const namePattern = new RegExp(escapeRegExp(ruleName), "i");
 
-    // The Overview lists the fresh envelope to begin with.
+    // The Overview lists the fresh rule to begin with.
     await navigateTo(page, "/budget");
-    const overviewEnvelopes = page.getByTestId("budget-long-envelopes");
-    await expect(overviewEnvelopes).toBeVisible({ timeout: 30_000 });
-    await expect(overviewEnvelopes).toContainText(namePattern);
+    const overviewRules = page.getByTestId("budget-long-rules");
+    await expect(overviewRules).toBeVisible({ timeout: 30_000 });
+    await expect(overviewRules).toContainText(namePattern);
 
     // Close it from the Yearly tab.
     await page.getByRole("button", { name: /^Yearly$/i }).click();
     const toggle = page.getByTestId(`yearly-close-toggle-${ruleId}`).first();
-    await expect(toggle).toHaveAttribute("aria-label", /close envelope/i, {
+    await expect(toggle).toHaveAttribute("aria-label", /close rule/i, {
       timeout: 15_000,
     });
     await toggle.click();
@@ -106,15 +106,15 @@ test.describe("Closing a yearly budget envelope", () => {
     await expect(confirmDialog).toBeVisible();
     await expect(confirmDialog).toContainText(ruleName);
     await confirmDialog
-      .getByRole("button", { name: /^Close envelope$/i })
+      .getByRole("button", { name: /^Close rule$/i })
       .click();
 
-    // The year's own tab keeps the envelope, now marked, and the action
+    // The year's own tab keeps the rule, now marked, and the action
     // turns into a reopen.
     await expect(page.getByTestId("yearly-closed-badge").first()).toBeVisible({
       timeout: 10_000,
     });
-    await expect(toggle).toHaveAttribute("aria-label", /reopen envelope/i);
+    await expect(toggle).toHaveAttribute("aria-label", /reopen rule/i);
     // Its figures survive — closing is not a delete or a zeroing.
     const row = page
       .locator("div.w-full.rounded-xl")
@@ -145,15 +145,15 @@ test.describe("Closing a yearly budget envelope", () => {
       overview.long_envelopes.map((e: { name: string }) => e.name),
     ).not.toContain(ruleName);
 
-    // Overview: the envelope is gone from the list the month is measured
+    // Overview: the rule is gone from the list the month is measured
     // against.
     await page.getByRole("button", { name: /^Overview$/i }).click();
-    await expect(overviewEnvelopes).toBeVisible({ timeout: 15_000 });
-    await expect(overviewEnvelopes).not.toContainText(namePattern);
+    await expect(overviewRules).toBeVisible({ timeout: 15_000 });
+    await expect(overviewRules).not.toContainText(namePattern);
 
     // Reopening puts it back, with no confirmation step.
     await page.getByRole("button", { name: /^Yearly$/i }).click();
-    await expect(toggle).toHaveAttribute("aria-label", /reopen envelope/i, {
+    await expect(toggle).toHaveAttribute("aria-label", /reopen rule/i, {
       timeout: 15_000,
     });
     await toggle.click();
@@ -162,7 +162,7 @@ test.describe("Closing a yearly budget envelope", () => {
     });
 
     await page.getByRole("button", { name: /^Overview$/i }).click();
-    await expect(overviewEnvelopes).toContainText(namePattern, {
+    await expect(overviewRules).toContainText(namePattern, {
       timeout: 15_000,
     });
   });

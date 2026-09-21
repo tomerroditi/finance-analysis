@@ -33,11 +33,11 @@ interface BarsProps extends BaseProps {
   variant: "bars";
   /**
    * The limit each period carried, oldest first, aligned with `series`. A
-   * monthly envelope is re-created and re-editable every month, so its
+   * monthly rule is re-created and re-editable every month, so its
    * history was not all measured against today's cap — the reference steps
    * with it instead of running flat, and each bar takes its colour from the
    * limit that was actually in force. A zero (or an entry past the end of
-   * the array) means no envelope that period, drawn as a gap. Omit it
+   * the array) means no rule that period, drawn as a gap. Omit it
    * entirely and every period falls back to `budget`.
    */
   budgets?: number[];
@@ -46,7 +46,7 @@ interface BarsProps extends BaseProps {
 interface BurnProps extends BaseProps {
   variant: "burn";
   /**
-   * Periods the envelope spans (12 for a yearly rule). The line stops at the
+   * Periods the rule spans (12 for a yearly rule). The line stops at the
    * last active period, so the empty tail reads as "time left".
    */
   totalPeriods: number;
@@ -75,7 +75,7 @@ function colorFor(spent: number, budget: number): string {
  * Each period's segment spans its own bar plus half the gap on either side,
  * so consecutive periods meet exactly and a run of equal limits draws as the
  * single flat line it used to be — a step only appears where the limit
- * actually moved. A period with no envelope (limit <= 0) breaks the path
+ * actually moved. A period with no rule (limit <= 0) breaks the path
  * into a new subpath, leaving a gap rather than a line along the floor.
  */
 function referencePath(
@@ -106,17 +106,17 @@ function referencePath(
 }
 
 /**
- * Per-rule trend, drawn two ways because the two kinds of envelope ask
+ * Per-rule trend, drawn two ways because the two kinds of rule ask
  * different questions.
  *
- * `bars` — a monthly envelope resets every month, so the question is "is this
+ * `bars` — a monthly rule resets every month, so the question is "is this
  * month unusual?". One bar per month against a dashed budget line; the current
  * month is the only one at full opacity. The line steps with `budgets`, each
  * month drawn against the cap it actually carried, because a raised or cut
- * envelope would otherwise rewrite its own history: a month that came in on
- * budget must not turn red because the envelope was tightened afterwards.
+ * rule would otherwise rewrite its own history: a month that came in on
+ * budget must not turn red because the rule was tightened afterwards.
  *
- * `burn` — a yearly or project envelope is a fixed pot spent down once, so
+ * `burn` — a yearly or project rule is a fixed pot spent down once, so
  * comparing months is meaningless and the question is "will it hold?".
  * Cumulative spend against the ceiling, optionally with a pace diagonal: a row
  * can sit well under its ceiling and still be spending too fast for the year,
@@ -125,7 +125,7 @@ function referencePath(
  * Both variants take their colour from `colorFor`, the same share-of-ceiling
  * thresholds the ledger row's dot, bar and percentage use. Pace gets its own
  * mark — the diagonal turns amber when the burn line is above it — rather than
- * the status colour: an envelope at 85% of its ceiling is on track by every
+ * the status colour: a rule at 85% of its ceiling is on track by every
  * other surface on the page (the year's health count included), and painting
  * only its trend amber made one row answer two questions in one palette.
  */
@@ -211,7 +211,7 @@ export const RuleSparkline: React.FC<RuleSparklineProps> = (props) => {
     const max = Math.max(budget, ...totals) * 1.1 || 1;
     const x = (i: number) => (i / (span - 1)) * width;
     const y = (value: number) => height - (value / max) * height;
-    // Pace belongs to the calendar, not to the last charge: an envelope whose
+    // Pace belongs to the calendar, not to the last charge: a rule whose
     // last spend was in May is not "on May's pace" once September is here, and
     // judging it by a clock that stopped with its own spending flagged rows
     // that had in fact fallen further behind pace with every quiet month.

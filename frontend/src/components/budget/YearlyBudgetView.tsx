@@ -63,7 +63,7 @@ export const YearlyBudgetView: React.FC<YearlyBudgetViewProps> = ({
     queryFn: () => budgetApi.getYearlyAnalysis(year).then((r) => r.data as YearlyAnalysis),
   });
 
-  // Refund badges for the transactions an envelope expands to show. Shares
+  // Refund badges for the transactions a rule expands to show. Shares
   // its cache entry with the monthly and project views, so opening the tab
   // after either of them costs no request.
   const { data: pendingRefunds } = useQuery({
@@ -96,7 +96,7 @@ export const YearlyBudgetView: React.FC<YearlyBudgetViewProps> = ({
   }, [pendingRefunds]);
 
   // Retagging a transaction from the expanded list can move it out of this
-  // envelope and into another one — and out of the Overview's long envelopes
+  // rule and into another one — and out of the Overview's long rules
   // — so the whole budget prefix refetches, not just this year's key.
   const invalidateBudget = () =>
     queryClient.invalidateQueries({ queryKey: qkPrefix.budget });
@@ -111,7 +111,7 @@ export const YearlyBudgetView: React.FC<YearlyBudgetViewProps> = ({
       budgetApi.setYearlyRuleClosed(id, closed),
     onSuccess: () => {
       // The whole budget prefix, not just this year's key: the Overview's
-      // envelope list is built from this flag, so it has to refetch too.
+      // rule list is built from this flag, so it has to refetch too.
       queryClient.invalidateQueries({ queryKey: qkPrefix.budget });
     },
     onError: () => notify.error(t("budget.yearly.closeFailed")),
@@ -132,9 +132,9 @@ export const YearlyBudgetView: React.FC<YearlyBudgetViewProps> = ({
   };
 
   // Memoised because `?? []` mints a new array on every render, which would
-  // re-bucket every rule's burn series for nothing. Closed envelopes sink to
+  // re-bucket every rule's burn series for nothing. Closed rules sink to
   // the bottom: they are kept for their history, and leaving them between the
-  // envelopes still being spent from is exactly the noise closing removes.
+  // rules still being spent from is exactly the noise closing removes.
   // The sort is stable, so open rules keep the order the API sent them in.
   const rules = useMemo(
     () =>
@@ -161,7 +161,7 @@ export const YearlyBudgetView: React.FC<YearlyBudgetViewProps> = ({
     [monthKeys],
   );
 
-  // A yearly envelope has no per-period endpoint, so its burn series is
+  // A yearly rule has no per-period endpoint, so its burn series is
   // bucketed from the transactions the analysis already returns per rule.
   // `current_amount` arrives spend-positive (the service already negates the
   // transaction sum), so it is passed through as the series' reference total.
@@ -416,7 +416,7 @@ export const YearlyBudgetView: React.FC<YearlyBudgetViewProps> = ({
                         </span>
                       )}
                     </div>
-                    {/* The year's transactions behind this envelope. A closed
+                    {/* The year's transactions behind this rule. A closed
                         one lists them too — its history is exactly what
                         closing keeps. */}
                     <TransactionCollapsibleList

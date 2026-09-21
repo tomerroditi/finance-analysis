@@ -133,7 +133,7 @@ test.describe("Budget", () => {
     }
 
     // --- Per-rule trend column ---
-    // Every budgeted envelope carries its own sparkline on top of the band's
+    // Every budgeted rule carries its own sparkline on top of the band's
     // figure, and the summary in its aria-label names each month plus the
     // reference figure, so the status is never conveyed by colour alone.
     const sparklines = page.getByTestId("rule-sparkline");
@@ -153,7 +153,7 @@ test.describe("Budget", () => {
 
     // The dashed budget reference is one stepped path, not a straight line:
     // each month is drawn against the limit it actually carried, so an
-    // envelope raised or cut later cannot rewrite its own history.
+    // rule raised or cut later cannot rewrite its own history.
     await expect(
       sparklines.first().locator('[data-testid="budget-reference"]'),
     ).toHaveCount(1);
@@ -221,7 +221,7 @@ test.describe("Budget", () => {
   // The tab bar previously used `flex-1` + `whitespace-nowrap`, so the three
   // tabs could not shrink below their text and pushed the document 53px past
   // the viewport — the whole page scrolled sideways on a phone.
-  test("overview tab: the month splits four ways, and a long envelope's standing never moves with the month", async ({
+  test("overview tab: the month splits four ways, and a long rule's standing never moves with the month", async ({
     page,
   }) => {
     await navigateTo(page, "/budget");
@@ -239,15 +239,15 @@ test.describe("Budget", () => {
     // --- Three pools, stated as three pools ---
     await expect(page.getByTestId("budget-across-all-three")).toBeVisible();
 
-    // --- Long envelopes carry both figures, under separate headings ---
-    const rows = page.getByTestId("long-envelope-row");
+    // --- Long rules carry both figures, under separate headings ---
+    const rows = page.getByTestId("long-rule-row");
     await expect(rows.first()).toBeVisible();
     const liveStanding = await page
-      .getByTestId("long-envelope-standing")
+      .getByTestId("long-rule-standing")
       .first()
       .textContent();
     const liveContribution = await page
-      .getByTestId("long-envelope-contribution")
+      .getByTestId("long-rule-contribution")
       .first()
       .textContent();
 
@@ -256,15 +256,15 @@ test.describe("Budget", () => {
     await expect(bar).toBeVisible();
     await expect(page.getByTestId("commitment-segment-committed")).toHaveCount(0);
 
-    // --- ...but the envelope's standing is a fact about today, so it must not
+    // --- ...but the rule's standing is a fact about today, so it must not
     // move with the month. Only the contribution is scoped to the month. This
     // is the whole reason the card shows two columns. ---
     const pastStanding = await page
-      .getByTestId("long-envelope-standing")
+      .getByTestId("long-rule-standing")
       .first()
       .textContent();
     const pastContribution = await page
-      .getByTestId("long-envelope-contribution")
+      .getByTestId("long-rule-contribution")
       .first()
       .textContent();
     expect(pastStanding).toBe(liveStanding);

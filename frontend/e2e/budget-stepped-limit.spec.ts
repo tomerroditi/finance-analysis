@@ -18,9 +18,9 @@ interface AnalysisItem {
 /**
  * The monthly sparkline's dashed reference follows each month's own limit.
  *
- * A monthly envelope is a fresh, separately editable row per month, so a
+ * A monthly rule is a fresh, separately editable row per month, so a
  * single flat line across the whole series measured every month against
- * today's cap: raise the envelope and a month that overspent went quietly
+ * today's cap: raise the rule and a month that overspent went quietly
  * green, cut it and a month that came in on budget turned red. The line now
  * steps with the limit, and each bar takes its colour from the cap that was
  * actually in force.
@@ -89,7 +89,7 @@ test.describe("Budget sparkline stepped limit", () => {
         await ctx.get(`${API_BASE}/budget/trend/${year}/${month}?months=3`)
       ).json();
 
-      // Envelopes the whole window shares, so the "before" line is genuinely
+      // Rules the whole window shares, so the "before" line is genuinely
       // flat and the step below can only have come from the edit.
       const spanning = Object.keys(trend.at(-1)?.limits ?? {}).filter(
         (name) =>
@@ -118,7 +118,7 @@ test.describe("Budget sparkline stepped limit", () => {
           break;
         }
       }
-      test.skip(!target, "Demo data has no editable envelope spanning the window");
+      test.skip(!target, "Demo data has no editable rule spanning the window");
 
       const flat = await openLedger(browser, target!.name);
       // One limit all along → one flat run, edge to edge.
@@ -127,7 +127,7 @@ test.describe("Budget sparkline stepped limit", () => {
       );
       await flat.context.close();
 
-      // Halve this month's envelope — downwards, so no total-budget cap is
+      // Halve this month's rule — downwards, so no total-budget cap is
       // at stake. Only this month's row changes, so the reference must drop
       // for the last bar alone.
       const put = await ctx.put(`${API_BASE}/budget/rules/${target!.id}`, {
@@ -142,7 +142,7 @@ test.describe("Budget sparkline stepped limit", () => {
       // Still one run — the step is a riser inside the path, not a second
       // line floating beside it.
       expect(after.match(/M /g)).toHaveLength(1);
-      // A smaller envelope sits lower, and y grows downwards.
+      // A smaller rule sits lower, and y grows downwards.
       expect(levels.at(-1)!).toBeGreaterThan(levels[0]);
       await stepped.context.close();
     } finally {

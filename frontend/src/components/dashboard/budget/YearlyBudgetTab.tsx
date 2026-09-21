@@ -1,13 +1,17 @@
-import React, { useMemo } from "react";
+import React, { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router";
 import { ChevronLeft, ChevronRight, Plus } from "lucide-react";
 import { budgetApi, type YearlyAnalysis } from "../../../services/api";
 import { BudgetTotalBar } from "../../common/BudgetTotalBar";
 import { Skeleton } from "../../common/Skeleton";
+import { YearlyRuleModal } from "../../modals/YearlyRuleModal";
+import { useConfirm, useNotify } from "../../../context/DialogContext";
 import { useQueryKeys } from "../../../hooks/useQueryKeys";
+import { qkPrefix } from "../../../services/queryKeys";
 import { BudgetRuleGrid } from "./BudgetRuleGrid";
+import { RuleRowAction } from "./RuleRowAction";
 import type { BudgetRule } from "./types";
 import { budgetLink } from "../../../utils/budgetNavigation";
 
@@ -24,15 +28,115 @@ export const YearlyBudgetTab: React.FC<YearlyBudgetTabProps> = ({
 }) => {
   const { t, i18n } = useTranslation();
   const isRtl = i18n.language === "he";
+  const confirm = useConfirm();
+  const notify = useNotify();
   const qk = useQueryKeys();
+  const queryClient = useQueryClient();
+  const [editRule, setEditRule] = useState<
+    YearlyAnalysis["rules"][number]["rule"] | null
+  >(null);
 
   const { data, isLoading } = useQuery({
     queryKey: qk.budget.yearly(year),
     queryFn: () => budgetApi.getYearlyAnalysis(year).then((r) => r.data as YearlyAnalysis),
   });
 
+  // The whole budget prefix, not just this year's key: the card's own
+  // Overview tab builds its rule list from these rules and their closed
+  // flag, so it has to refetch too.
+  const invalidateBudget = () =>
+    queryClient.invalidateQueries({ queryKey: qkPrefix.budget });
+
+  const closedMutation = useMutation({
+    mutationFn: ({ id, closed }: { id: number; closed: boolean }) =>
+      budgetApi.setYearlyRuleClosed(id, closed),
+    onSuccess: invalidateBudget,
+    onError: () => notify.error(t("budget.yearly.closeFailed")),
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: number) => budgetApi.deleteYearlyRule(id),
+    onSuccess: invalidateBudget,
+    onError: () => notify.error(t("budget.yearly.deleteFailed")),
+  });
+
+  // Reopening is a plain undo, so only closing asks first — same as the
+  // Budget page's yearly tab.
+  const handleToggleClosed = async (rule: BudgetRule) => {
+    if (rule.closed) {
+      closedMutation.mutate({ id: rule.id, closed: false });
+      return;
+    }
+    const ok = await confirm({
+      title: t("budget.yearly.closeRule"),
+      message: t("budget.yearly.confirmClose", { name: rule.name }),
+      confirmLabel: t("budget.yearly.closeRule"),
+    });
+    if (ok) closedMutation.mutate({ id: rule.id, closed: true });
+  };
+
+  const handleDelete = async (rule: BudgetRule) => {
+    const ok = await confirm({
+      title: t("budget.deleteRule"),
+      message: t("budget.yearly.confirmDelete", { name: rule.name }),
+      confirmLabel: t("common.delete"),
+      isDestructive: true,
+    });
+    if (ok) deleteMutation.mutate(rule.id);
+  };
+
+  // The grid renders the normalized row shape; editing and the permission
+  // flags need the analysis entry the row was built from.
+  const entryById = useMemo(
+    () => new Map((data?.rules ?? []).map((item) => [item.rule.id, item])),
+    [data],
+  );
+
+  const renderRowActions = (rule: BudgetRule) => {
+    const entry = entryById.get(rule.id);
+    return (
+      <>
+        <RuleRowAction
+          kind="edit"
+          label={t("budget.editRule")}
+          testId={`card-rule-edit-${rule.id}`}
+          onClick={
+            entry?.allow_edit ? () => setEditRule(entry.rule) : undefined
+          }
+        />
+        <RuleRowAction
+          kind={rule.closed ? "reopen" : "close"}
+          label={
+            rule.closed
+              ? t("budget.yearly.reopenRule")
+              : t("budget.yearly.closeRule")
+          }
+          testId={`card-rule-closed-toggle-${rule.id}`}
+          onClick={
+            closedMutation.isPending
+              ? undefined
+              : () => handleToggleClosed(rule)
+          }
+        />
+        <RuleRowAction
+          kind="delete"
+          label={t("budget.deleteRule")}
+          testId={`card-rule-delete-${rule.id}`}
+          onClick={
+            entry?.allow_delete ? () => handleDelete(rule) : undefined
+          }
+        />
+      </>
+    );
+  };
+
   // Yearly analysis emits no "Total Budget" pseudo-rule — the roll-up sums the
   // view — so every row here is a real rule and the totals come from summary.
+  //
+  // Closed rules sink below the open ones: they are kept for their
+  // history, and leaving a settled commitment among the ones still being
+  // spent from is exactly the noise closing removes. Within each group the
+  // heaviest spend leads, as before.
   const rules: BudgetRule[] = useMemo(
     () =>
       (data?.rules ?? [])
@@ -42,8 +146,13 @@ export const YearlyBudgetTab: React.FC<YearlyBudgetTabProps> = ({
           category: item.rule.category,
           budget_amount: item.rule.amount,
           spent_amount: item.current_amount,
+          closed: item.closed,
         }))
-        .sort((a, b) => b.spent_amount - a.spent_amount),
+        .sort(
+          (a, b) =>
+            Number(a.closed) - Number(b.closed) ||
+            b.spent_amount - a.spent_amount,
+        ),
     [data],
   );
 
@@ -83,6 +192,18 @@ export const YearlyBudgetTab: React.FC<YearlyBudgetTabProps> = ({
     );
   }
 
+  // Editing is reached from a row, so the modal only ever opens where rows
+  // exist — but it is rendered beside both returns so a delete that empties
+  // the year cannot unmount it mid-flight.
+  const modal = (
+    <YearlyRuleModal
+      isOpen={editRule !== null}
+      onClose={() => setEditRule(null)}
+      year={year}
+      editRule={editRule}
+    />
+  );
+
   if (rules.length === 0) {
     return (
       <div className="flex flex-1 flex-col min-h-0">
@@ -97,6 +218,7 @@ export const YearlyBudgetTab: React.FC<YearlyBudgetTabProps> = ({
             {t("budget.yearly.addRule")}
           </Link>
         </div>
+        {modal}
       </div>
     );
   }
@@ -110,7 +232,11 @@ export const YearlyBudgetTab: React.FC<YearlyBudgetTabProps> = ({
           total={data?.summary.total_allocated ?? 0}
         />
       </div>
-      <BudgetRuleGrid rules={rules} categoryIcons={categoryIcons} />
+      <BudgetRuleGrid
+        rules={rules}
+        categoryIcons={categoryIcons}
+        renderRowActions={renderRowActions}
+      />
       <div className="text-end">
         <Link
           to={budgetLink("yearly", { year })}
@@ -119,6 +245,7 @@ export const YearlyBudgetTab: React.FC<YearlyBudgetTabProps> = ({
           {t("dashboard.viewAllBudgetRules")} &rarr;
         </Link>
       </div>
+      {modal}
     </div>
   );
 };

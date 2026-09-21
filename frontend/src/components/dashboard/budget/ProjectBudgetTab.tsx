@@ -65,7 +65,7 @@ export const ProjectBudgetTab: React.FC<ProjectBudgetTabProps> = ({
       budgetApi.setProjectClosed(name, closed),
     onSuccess: () => {
       // The whole budget prefix: this card's own Overview tab builds its
-      // envelope list from the flag, so it has to refetch too.
+      // rule list from the flag, so it has to refetch too.
       queryClient.invalidateQueries({ queryKey: qkPrefix.budget });
     },
     onError: () => notify.error(t("budget.failedCloseProject")),

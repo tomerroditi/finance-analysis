@@ -173,7 +173,7 @@ export const ProjectBudgetView: React.FC<ProjectBudgetViewProps> = ({
       budgetApi.setProjectClosed(name, closed),
     onSuccess: () => {
       // The whole budget prefix, not just the project keys: the Overview's
-      // envelope list is built from this flag, so it has to refetch too.
+      // rule list is built from this flag, so it has to refetch too.
       queryClient.invalidateQueries({ queryKey: qkPrefix.budget });
     },
     onError: () => notify.error(t("budget.failedCloseProject")),
@@ -266,7 +266,7 @@ export const ProjectBudgetView: React.FC<ProjectBudgetViewProps> = ({
         <span className="flex items-baseline gap-1">
           <span className="text-lg md:text-xl font-bold">{tagCount}</span>
           <span className="text-[10px] sm:text-xs text-[var(--text-muted)]">
-            {t("budget.projectTagEnvelopes")}
+            {t("budget.projectTagRules")}
           </span>
         </span>
       ),
@@ -384,7 +384,7 @@ export const ProjectBudgetView: React.FC<ProjectBudgetViewProps> = ({
       <BudgetNoticeLine />
 
       {/* Only the status band needs the project's `all_tags` anchor rule (it
-          is where the project's total lives) — the envelope ledger does not.
+          is where the project's total lives) — the rule ledger does not.
           Gating the whole block on the anchor rendered a project without one
           as a blank page: no band, no ledger, not even an empty state. */}
       {selectedProject && projectDetails && (

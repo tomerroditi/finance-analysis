@@ -1,11 +1,11 @@
 import React from "react";
 import { useTranslation } from "react-i18next";
 import { CalendarRange, Layers } from "lucide-react";
-import type { BudgetLongEnvelope } from "../../../services/api";
+import type { BudgetLongRule } from "../../../services/api";
 import { formatAmount, formatCurrency } from "../../../utils/numberFormatting";
-import { envelopeColor, envelopeTextColor, percentOf, rankEnvelopes } from "./envelopeMath";
+import { ruleColor, ruleTextColor, percentOf, rankRules } from "./ruleMath";
 
-function KindTag({ kind }: { kind: BudgetLongEnvelope["kind"] }) {
+function KindTag({ kind }: { kind: BudgetLongRule["kind"] }) {
   const { t } = useTranslation();
   const Icon = kind === "project" ? Layers : CalendarRange;
   return (
@@ -16,8 +16,8 @@ function KindTag({ kind }: { kind: BudgetLongEnvelope["kind"] }) {
   );
 }
 
-interface LongEnvelopesProps {
-  envelopes: BudgetLongEnvelope[];
+interface LongRulesProps {
+  rules: BudgetLongRule[];
   /** Month label for the contribution column, e.g. "September". */
   monthLabel: string;
   /** A settled month: the standing column describes today, not that month. */
@@ -25,10 +25,10 @@ interface LongEnvelopesProps {
 }
 
 /**
- * Yearly and project envelopes, each showing two figures that must never be
+ * Yearly and project rules, each showing two figures that must never be
  * mistaken for one another.
  *
- * A yearly or project envelope has no monthly limit, so it has no percentage
+ * A yearly or project rule has no monthly limit, so it has no percentage
  * that belongs to the month being viewed — the backend filters yearly spend by
  * year alone and project spend not at all, so a percentage here always
  * describes today. Only the contribution is scoped to the month. Showing one
@@ -39,29 +39,29 @@ interface LongEnvelopesProps {
  * Hence two columns with their own headings, and on a settled month the
  * standing column says so out loud.
  */
-export const LongEnvelopes: React.FC<LongEnvelopesProps> = ({
-  envelopes,
+export const LongRules: React.FC<LongRulesProps> = ({
+  rules,
   monthLabel,
   isPast,
 }) => {
   const { t } = useTranslation();
-  if (envelopes.length === 0) return null;
+  if (rules.length === 0) return null;
 
-  const ranked = rankEnvelopes(envelopes);
+  const ranked = rankRules(rules);
   const columns =
     "grid-cols-[minmax(0,1.4fr)_96px_minmax(0,1fr)_120px_168px_44px]";
 
   return (
     <div
-      data-testid="budget-long-envelopes"
+      data-testid="budget-long-rules"
       className="bg-[var(--surface)] rounded-2xl border border-[var(--surface-light)] shadow-sm p-4 md:p-5 flex flex-col gap-3"
     >
       <div className="flex items-center justify-between gap-2">
         <p className="font-bold text-sm md:text-base">
-          {t("budget.overview.longEnvelopes")}
+          {t("budget.overview.longRules")}
         </p>
         <span className="text-xs text-[var(--text-muted)]">
-          {t("budget.overview.longEnvelopesCount", { count: envelopes.length })}
+          {t("budget.overview.longRulesCount", { count: rules.length })}
         </span>
       </div>
 
@@ -80,57 +80,57 @@ export const LongEnvelopes: React.FC<LongEnvelopesProps> = ({
       </div>
 
       <div className="flex flex-col gap-1.5">
-        {ranked.map((envelope) => {
-          const percent = percentOf(envelope);
+        {ranked.map((rule) => {
+          const percent = percentOf(rule);
           return (
             <div
-              key={`${envelope.kind}-${envelope.name}`}
-              data-testid="long-envelope-row"
+              key={`${rule.kind}-${rule.name}`}
+              data-testid="long-rule-row"
               className="rounded-xl border border-[var(--surface-light)] bg-[var(--surface)] px-3 py-2.5"
             >
               {/* Desktop: one line, both figures under their headings. */}
               <div className={`hidden md:grid ${columns} gap-3 items-center`}>
                 <span className="font-semibold text-sm truncate" dir="auto">
-                  {envelope.name}
+                  {rule.name}
                 </span>
-                <KindTag kind={envelope.kind} />
+                <KindTag kind={rule.kind} />
                 <span className="relative block h-1.5 w-full rounded-full bg-[var(--surface-light)] overflow-hidden">
                   <span
-                    className={`absolute inset-y-0 start-0 rounded-full ${envelopeColor(percent)}`}
+                    className={`absolute inset-y-0 start-0 rounded-full ${ruleColor(percent)}`}
                     style={{ width: `${Math.min(percent, 100)}%` }}
                   />
                 </span>
                 <span
                   dir="ltr"
-                  data-testid="long-envelope-contribution"
+                  data-testid="long-rule-contribution"
                   className="text-end text-xs font-mono font-bold whitespace-nowrap"
                 >
-                  {envelope.month_contribution
-                    ? formatCurrency(envelope.month_contribution)
+                  {rule.month_contribution
+                    ? formatCurrency(rule.month_contribution)
                     : "—"}
                 </span>
                 <span
                   dir="ltr"
-                  data-testid="long-envelope-standing"
+                  data-testid="long-rule-standing"
                   className="text-end text-xs font-mono whitespace-nowrap"
                 >
                   {/* One ₪ on the pair, carried by the ceiling — unless the
-                      envelope has none, where the spend keeps its own. */}
+                      rule has none, where the spend keeps its own. */}
                   <span className="font-bold">
-                    {envelope.budget > 0
-                      ? formatAmount(envelope.spent)
-                      : formatCurrency(envelope.spent)}
+                    {rule.budget > 0
+                      ? formatAmount(rule.spent)
+                      : formatCurrency(rule.spent)}
                   </span>
                   <span className="text-[var(--text-muted)] font-normal">
                     {" / "}
-                    {envelope.budget > 0 ? formatCurrency(envelope.budget) : "—"}
+                    {rule.budget > 0 ? formatCurrency(rule.budget) : "—"}
                   </span>
                 </span>
                 <span
                   dir="ltr"
-                  className={`text-end text-xs font-mono font-bold ${envelopeTextColor(percent)}`}
+                  className={`text-end text-xs font-mono font-bold ${ruleTextColor(percent)}`}
                 >
-                  {envelope.budget > 0 ? `${percent}%` : "—"}
+                  {rule.budget > 0 ? `${percent}%` : "—"}
                 </span>
               </div>
 
@@ -139,23 +139,23 @@ export const LongEnvelopes: React.FC<LongEnvelopesProps> = ({
                 <span className="flex items-center justify-between gap-2">
                   <span className="flex items-center gap-2 min-w-0">
                     <span className="font-semibold text-sm truncate" dir="auto">
-                      {envelope.name}
+                      {rule.name}
                     </span>
-                    <KindTag kind={envelope.kind} />
+                    <KindTag kind={rule.kind} />
                   </span>
                   <span
                     dir="ltr"
-                    className={`text-xs font-mono font-bold shrink-0 ${envelopeTextColor(percent)}`}
+                    className={`text-xs font-mono font-bold shrink-0 ${ruleTextColor(percent)}`}
                   >
-                    {envelope.budget > 0 ? `${percent}%` : "—"}
+                    {rule.budget > 0 ? `${percent}%` : "—"}
                   </span>
                 </span>
                 <span className="flex items-center justify-between gap-2 text-[11px] text-[var(--text-muted)]">
                   <span>
                     {t("budget.overview.inMonth", { month: monthLabel })}:{" "}
                     <span dir="ltr" className="font-mono text-[var(--text-default)]">
-                      {envelope.month_contribution
-                        ? formatCurrency(envelope.month_contribution)
+                      {rule.month_contribution
+                        ? formatCurrency(rule.month_contribution)
                         : "—"}
                     </span>
                   </span>
@@ -165,7 +165,7 @@ export const LongEnvelopes: React.FC<LongEnvelopesProps> = ({
                       : t("budget.overview.overall")}
                     :{" "}
                     <span dir="ltr" className="font-mono text-[var(--text-default)]">
-                      {formatCurrency(envelope.spent)}
+                      {formatCurrency(rule.spent)}
                     </span>
                   </span>
                 </span>

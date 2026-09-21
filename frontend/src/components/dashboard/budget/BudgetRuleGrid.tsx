@@ -1,11 +1,18 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { Archive } from "lucide-react";
 import { formatAmount, formatCurrency } from "../../../utils/numberFormatting";
 import type { BudgetRule } from "./types";
 
 interface BudgetRuleGridProps {
   rules: BudgetRule[];
   categoryIcons: Record<string, string> | undefined;
+  /**
+   * What a rule can have done to it, rendered into a panel the row expands
+   * to show. Only the tabs that have actions pass it; without it rows are
+   * plain readouts and nothing responds to a click.
+   */
+  renderRowActions?: (rule: BudgetRule) => React.ReactNode;
 }
 
 function getProgressColor(pct: number, isUnbudgetedSpend: boolean): string {
@@ -15,16 +22,16 @@ function getProgressColor(pct: number, isUnbudgetedSpend: boolean): string {
 }
 
 /**
- * One envelope per line, scrolling inside whatever height the card's row allows.
+ * One rule per line, scrolling inside whatever height the card's row allows.
  *
  * Replaces the two-column tile (name + percentage pill, figures, full-width
  * bar, remaining — four stacked rows per rule, ~110px) with a single line per
  * rule in one column. The tile spent its height on layout rather than signal:
  * four rules filled the box, so the card showed a quarter of a typical month's
- * envelopes. The same box now holds roughly eight. Nothing was dropped — name,
+ * rules. The same box now holds roughly eight. Nothing was dropped — name,
  * spend, ceiling, bar, remaining and percentage all still render; the
  * percentage moved out of its colored pill and rides the remaining figure as a
- * muted suffix, since the color already says how close the envelope is.
+ * muted suffix, since the color already says how close the rule is.
  *
  * The four cells sit on a `subgrid`, so the bar, the figures and the
  * remainder line up down the whole list instead of each row sizing its own
@@ -51,6 +58,17 @@ function getProgressColor(pct: number, isUnbudgetedSpend: boolean): string {
  * row from crushing it. Do not add `min-h-0` alongside it: both compile to
  * `min-height` and the winner would come down to stylesheet order.
  *
+ * Actions live in a panel the row expands to show, not in a column of their
+ * own. The line is already four cells wide at 390px, and a permanent action
+ * column would have to come out of the name — the one cell a person scans
+ * the list by. Expanding also scales: edit, delete and close all fit a panel,
+ * where only one of them would ever have fit a column. One row is open at a
+ * time, so the list never turns into a wall of panels.
+ *
+ * A closed rule is dimmed and takes an archive marker in its category
+ * icon's place, whether or not the tab offers actions — that is state, not an
+ * action, and it is what tells a settled row apart from a live one.
+ *
  * `max-h-[16rem] lg:max-h-none` bounds the same box below `lg`: the dashboard
  * row only gets a definite height at `lg` (Dashboard.tsx's `--dash-card-h`
  * cap is `lg:`-scoped), so below that breakpoint the flex parent's height is
@@ -62,8 +80,22 @@ function getProgressColor(pct: number, isUnbudgetedSpend: boolean): string {
 export const BudgetRuleGrid: React.FC<BudgetRuleGridProps> = ({
   rules,
   categoryIcons,
+  renderRowActions,
 }) => {
   const { t } = useTranslation();
+  const [expandedId, setExpandedId] = useState<number | null>(null);
+
+  // A rule can leave the list under the open panel — deleted from it, or the
+  // tab's period cursor moved — and an id that matches nothing would keep the
+  // grid in a state no row can close.
+  const present = rules.some((rule) => rule.id === expandedId);
+  useEffect(() => {
+    if (expandedId !== null && !present) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setExpandedId(null);
+    }
+  }, [expandedId, present]);
+
   return (
     <div
       data-testid="budget-rule-grid"
@@ -77,7 +109,7 @@ export const BudgetRuleGrid: React.FC<BudgetRuleGridProps> = ({
           // rose instead of staying empty.
           const isUnbudgetedSpend =
             rule.budget_amount <= 0 && rule.spent_amount > 0;
-          // A net refund leaves the envelope negative. That is not spending:
+          // A net refund leaves the rule negative. That is not spending:
           // the bar floors at empty and the percentage reads 0%, rather than
           // a negative width the browser drops and a "-19%" nobody can act on.
           const spent = Math.max(rule.spent_amount, 0);
@@ -90,14 +122,25 @@ export const BudgetRuleGrid: React.FC<BudgetRuleGridProps> = ({
           const remaining = rule.budget_amount - rule.spent_amount;
           const over = remaining < 0;
           const icon = categoryIcons?.[rule.category] ?? "";
-          return (
-            <div
-              key={rule.id}
-              data-testid="budget-rule-row"
-              className="col-span-4 grid grid-cols-subgrid items-center gap-2 sm:gap-3 rounded-lg bg-[var(--surface-light)] px-2.5 py-2"
-            >
+          const actions = renderRowActions?.(rule);
+          const isExpanded = expandedId === rule.id;
+          const toggle = () =>
+            setExpandedId((prev) => (prev === rule.id ? null : rule.id));
+          const rowClass = `col-span-4 grid grid-cols-subgrid items-center gap-2 sm:gap-3 bg-[var(--surface-light)] px-2.5 py-2 text-start ${
+            isExpanded ? "rounded-t-lg" : "rounded-lg"
+          } ${rule.closed ? "opacity-60" : ""}`;
+          const cells = (
+            <>
               <span className="flex min-w-0 items-center gap-1.5">
-                {icon && <span className="text-sm flex-shrink-0">{icon}</span>}
+                {rule.closed ? (
+                  <Archive
+                    size={12}
+                    aria-label={t("budget.yearly.closedBadge")}
+                    className="shrink-0 text-[var(--text-muted)]"
+                  />
+                ) : (
+                  icon && <span className="text-sm flex-shrink-0">{icon}</span>
+                )}
                 <span
                   className="text-xs font-semibold truncate"
                   dir="auto"
@@ -142,7 +185,60 @@ export const BudgetRuleGrid: React.FC<BudgetRuleGridProps> = ({
                   · {Math.round(pct)}%
                 </span>
               </span>
-            </div>
+            </>
+          );
+
+          return (
+            <React.Fragment key={rule.id}>
+              {/* `role="button"` on a div, not a real `<button>`: Chromium
+                  wraps a button's children in an anonymous box, so
+                  `grid-cols-subgrid` does not reach them and the row sizes
+                  its own columns — the expanded row's bar and figures then
+                  drift out of line with every collapsed sibling, which is
+                  the one thing the subgrid exists to prevent. A plain
+                  readout stays a bare div: a control that does nothing is a
+                  focus stop and a pointer cursor promising an interaction
+                  the row does not have. */}
+              <div
+                data-testid="budget-rule-row"
+                data-closed={rule.closed ? "true" : undefined}
+                {...(actions
+                  ? {
+                      role: "button",
+                      tabIndex: 0,
+                      "aria-expanded": isExpanded,
+                      onClick: toggle,
+                      onKeyDown: (event: React.KeyboardEvent) => {
+                        if (event.key !== "Enter" && event.key !== " ") return;
+                        // Space scrolls the list otherwise, which moves the
+                        // row out from under the finger that just opened it.
+                        event.preventDefault();
+                        toggle();
+                      },
+                    }
+                  : {})}
+                /* `brightness`, not a background swap: the bar's track is
+                   `--surface`, so a hover that painted the row `--surface`
+                   made the track vanish into it. A filter lifts the row and
+                   its track together, keeping their contrast. */
+                className={`${rowClass} ${
+                  actions
+                    ? "cursor-pointer transition-[filter] hover:brightness-110"
+                    : ""
+                }`}
+              >
+                {cells}
+              </div>
+
+              {isExpanded && (
+                <div
+                  data-testid={`card-rule-actions-${rule.id}`}
+                  className="col-span-4 flex flex-wrap items-center gap-1 rounded-b-lg bg-[var(--surface-light)]/60 px-2 pb-2"
+                >
+                  {actions}
+                </div>
+              )}
+            </React.Fragment>
           );
         })}
       </div>
