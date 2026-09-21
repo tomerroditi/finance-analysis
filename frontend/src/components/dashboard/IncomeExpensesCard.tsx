@@ -71,6 +71,13 @@ const DEFAULT_VISIBLE_PERIODS = 12;
  * earlier periods can widen one and shift the bars. It takes an earlier
  * period whose net is wider than anything currently shown, and it costs a
  * few pixels once; a fixed width pays its slack on every row forever.
+ *
+ * The net column carries its ₪ in the heading ("Net (₪)") rather than on
+ * every row, which is the one thing `max-content` could not shave: the
+ * symbol and its NBSP are real glyphs, so twelve rows paid for them twelve
+ * times to say what the column says once. The bars keep theirs — they are
+ * read individually, and the label sits at a bar's anchored end where it
+ * costs no gap.
  */
 const LEDGER_COLUMNS = "max-content 1fr 1fr max-content";
 
@@ -535,11 +542,12 @@ function LedgerView({
               {/* income grows toward the centre; expenses mirror outward */}
               <LedgerBar value={d.income} kind="income" cap={incomeCap} />
               <LedgerBar value={d.expenses} kind="expense" cap={expenseCap} color={expenseColor} />
+              {/* The ₪ lives in the column heading — see LEDGER_COLUMNS. */}
               <div
                 className="text-xs font-extrabold text-end whitespace-nowrap tabular-nums"
                 style={{ color: net >= 0 ? INCOME_COLOR : EXPENSE_COLOR }}
               >
-                {formatChange(net, { compact: false })}
+                {formatChange(net, { compact: false, currency: false })}
               </div>
             </div>
           );

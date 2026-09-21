@@ -78,7 +78,11 @@ test.describe("Income & Expenses dashboard card", () => {
     await expect(
       card.getByText("Month", { exact: true }).first(),
     ).toBeVisible();
-    await expect(card.getByText("Net", { exact: true }).first()).toBeVisible();
+    // Exact, not a substring: the heading carries the column's unit, and a
+    // bare "Net" would mean the ₪ had quietly moved back onto every row.
+    await expect(
+      card.getByText("Net (₪)", { exact: true }).first(),
+    ).toBeVisible();
 
     const rows = card.getByTestId("ledger-row");
     await expect(rows.first()).toBeVisible({ timeout: 45_000 });
@@ -133,6 +137,32 @@ test.describe("Income & Expenses dashboard card", () => {
     // metrics and the row's own padding leave a little, never a column's worth.
     expect(columns.periodSlack).toBeLessThan(6);
     expect(columns.netSlack).toBeLessThan(6);
+
+    // --- The Net column names its unit once, in the heading ---
+    // ₪ and its NBSP are real glyphs, so a per-row symbol is width every row
+    // pays to repeat what the column already says.
+    const currency = await page.evaluate(() => {
+      const rows = Array.from(
+        document.querySelectorAll('[data-testid="ledger-row"]'),
+      );
+      const head = rows[0].parentElement!.querySelector(
+        ":scope > div.grid-cols-subgrid",
+      )!;
+      return {
+        heading: head.children[3].textContent || "",
+        rowsWithShekel: rows.filter((r) =>
+          (r.children[3].textContent || "").includes("₪"),
+        ).length,
+        // Every net still carries its own sign, with nothing between the
+        // sign and the digits that bidi could reorder.
+        allSigned: rows.every((r) =>
+          /^[+-]\d/.test((r.children[3].textContent || "").replace(/[\u2066\u2069]/g, "")),
+        ),
+      };
+    });
+    expect(currency.heading).toContain("₪");
+    expect(currency.rowsWithShekel).toBe(0);
+    expect(currency.allSigned).toBe(true);
 
     // --- Each column scales off its own series, proportionally ---
     // Pooling income and expenses under one cap let the lumpy series (income

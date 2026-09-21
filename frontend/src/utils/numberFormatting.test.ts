@@ -13,6 +13,8 @@ const LRI = "⁦";
 const PDI = "⁩";
 const NBSP = " ";
 const wrap = (inner: string) => `${LRI}${inner}${NBSP}₪${PDI}`;
+// Same envelope, no currency — what `currency: false` emits.
+const bare = (inner: string) => `${LRI}${inner}${PDI}`;
 
 describe("formatCurrency", () => {
   it("renders positives with sign-magnitude-currency wrapped in LRI/PDI", () => {
@@ -97,6 +99,20 @@ describe("formatChange", () => {
   it("respects compact: false to disable K/M abbreviation", () => {
     expect(formatChange(35_000, { compact: false })).toBe(wrap("+35,000"));
     expect(formatChange(-1_234_567, { compact: false })).toBe(wrap("-1,234,567"));
+  });
+
+  it("drops the ₪ and its NBSP under currency: false", () => {
+    expect(formatChange(10_449, { compact: false, currency: false })).toBe(bare("+10,449"));
+    expect(formatChange(-9_872, { compact: false, currency: false })).toBe(bare("-9,872"));
+    expect(formatChange(1_100_000, { currency: false })).toBe(bare("+1.1M"));
+  });
+
+  it("keeps the LRI/PDI envelope without the currency, so the sign cannot flip in RTL", () => {
+    const out = formatChange(-482, { currency: false });
+    expect(out.startsWith(LRI)).toBe(true);
+    expect(out.endsWith(PDI)).toBe(true);
+    expect(out).not.toContain("₪");
+    expect(out).not.toContain(NBSP);
   });
 });
 
