@@ -237,8 +237,9 @@ not closed.
   scale, and the pool is usually orders of magnitude larger than a month's
   allocation. Series colour is keyed by goal **id**, not by priority, so
   reordering the waterfall never repaints the chart. Only the outer segment of
-  a month's stack is rounded (`goalHistoryStacks.ts`) — rounding every segment
-  renders a column as a string of beads — and the pool panel's y-axis is a
+  a month's stack is rounded (`charts/stackedBarShape.tsx`, shared with the
+  retirement income chart) — rounding every segment renders a column as a
+  string of beads — and the pool panel's y-axis is a
   silent gutter: its domain is fitted to the range so month-to-month movement
   is visible, fitted bounds make tick values nobody can read, and the gutter
   still has to be there for both panels to sit on the same months.

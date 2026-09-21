@@ -22,7 +22,6 @@ import {
   LineChart,
   Bar,
   Line,
-  Rectangle,
   ReferenceLine,
   XAxis,
   YAxis,
@@ -38,11 +37,7 @@ import {
   type SavingsGoalInvestment,
 } from "../../services/api";
 import { useQueryKeys } from "../../hooks/useQueryKeys";
-import {
-  stackEnds,
-  segmentRadius,
-  type CornerRadii,
-} from "./goalHistoryStacks";
+import { stackEnds, roundedStackShape } from "../charts/stackedBarShape";
 import { qkPrefix } from "../../services/queryKeys";
 import { useConfirm } from "../../context/DialogContext";
 import { Modal } from "../common/Modal";
@@ -320,7 +315,7 @@ function AllocationHistory() {
   // Which segment sits at each end of a month's stack, so only the outer
   // corners are rounded and the column reads as one shape rather than a
   // string of beads.
-  const ends = stackEnds(rows, keys);
+  const ends = stackEnds(rows, keys, "month");
   const hasClawback = rows.some((row) =>
     keys.some((key) => typeof row[key] === "number" && (row[key] as number) < 0),
   );
@@ -432,21 +427,18 @@ function AllocationHistory() {
                       dataKey={`g${goal.id}`}
                       name={goal.name}
                       stackId="allocations"
-                      // The legend swatch reads the flat colour; the bars
-                      // themselves get the gradient defined above.
+                      // The gradient goes on the drawn segment, not on the
+                      // series, so the legend swatch keeps a flat colour it
+                      // can actually paint — a `url(#…)` fill renders as
+                      // nothing in a CSS background.
                       fill={palette.get(goal.id)}
                       maxBarSize={30}
-                      // The gradient goes on the drawn segment rather than on
-                      // the series, so the legend swatch keeps a flat colour it
-                      // can actually paint (a `url(#…)` fill renders as nothing
-                      // in a CSS background).
-                      shape={(props: SegmentProps) => (
-                        <StackSegment
-                          {...props}
-                          fill={`url(#goal-fill-${goal.id})`}
-                          radius={segmentRadius(ends, props.payload, `g${goal.id}`)}
-                        />
-                    )}
+                      shape={roundedStackShape(
+                        ends,
+                        `g${goal.id}`,
+                        "month",
+                        `url(#goal-fill-${goal.id})`,
+                      )}
                       isAnimationActive={false}
                     />
                   ))}
@@ -514,42 +506,6 @@ function AllocationHistory() {
         {t("dashboard.goals.historyHint")}
       </p>
     </div>
-  );
-}
-
-/** The geometry Recharts hands a bar's custom shape. */
-interface SegmentProps {
-  x?: number;
-  y?: number;
-  width?: number;
-  height?: number;
-  payload?: Record<string, number | string>;
-}
-
-/** One segment of a stacked column, drawn with the radii it was given. */
-function StackSegment({
-  x = 0,
-  y = 0,
-  width = 0,
-  height = 0,
-  fill,
-  radius,
-}: SegmentProps & { fill: string; radius: CornerRadii }) {
-  if (width <= 0 || height === 0) return null;
-  // A stack segment can arrive shorter than its own corner radius (a small
-  // allocation beside a large one); clamping keeps the rounding from
-  // inverting the rectangle into a sliver.
-  const limit = Math.min(width / 2, Math.abs(height));
-  const clamped = radius.map((r) => Math.min(r, limit)) as CornerRadii;
-  return (
-    <Rectangle
-      x={x}
-      y={y}
-      width={width}
-      height={height}
-      fill={fill}
-      radius={clamped}
-    />
   );
 }
 
