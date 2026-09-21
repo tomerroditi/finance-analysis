@@ -1,3 +1,9 @@
+## v1.77.0 (2026-09-21)
+
+### Feat
+
+- **budget**: step the sparkline's budget line with each month's limit (#328)
+
 ## v1.76.4 (2026-09-21)
 
 ### Fix
