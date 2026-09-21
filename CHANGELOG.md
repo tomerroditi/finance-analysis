@@ -1,3 +1,9 @@
+## v1.82.0 (2026-09-21)
+
+### Feat
+
+- **dashboard**: remove the Categories card (#331)
+
 ## v1.81.1 (2026-09-21)
 
 ### Perf
