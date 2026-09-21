@@ -1,3 +1,9 @@
+## v1.76.4 (2026-09-21)
+
+### Fix
+
+- **budget**: keep the active tab in view and let the project picker fill its row (#325)
+
 ## v1.76.3 (2026-09-20)
 
 ### Fix
