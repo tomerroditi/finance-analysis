@@ -1,3 +1,9 @@
+## v1.83.3 (2026-09-21)
+
+### Fix
+
+- **investments**: say "Not available" where a month has no balance reading (#341)
+
 ## v1.83.2 (2026-09-21)
 
 ### Fix
