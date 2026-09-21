@@ -115,6 +115,20 @@ test.describe("Savings goals", () => {
       monthly_cap: 1,
       start_month: monthsAgo(10),
     });
+
+    // Enough goals to take the waterfall past its height cap, which is what
+    // the journey test's scroll-region check needs to see. They open already
+    // at their target, so they draw nothing from any month's surplus and
+    // change no other reading — and they sort below the two above, leaving
+    // the absolute positions asserted there intact.
+    for (let i = 0; i < 4; i++) {
+      await createGoal({
+        name: `E2E Filler ${i}`,
+        target_amount: 1000,
+        opening_balance: 1000,
+        monthly_cap: 1,
+      });
+    }
   });
 
   test.afterAll(async () => {
@@ -147,12 +161,17 @@ test.describe("Savings goals", () => {
     await expect(inProgressRow.getByText("#1")).toBeVisible();
     await expect(achievedRow.getByText("#2")).toBeVisible();
 
-    // The top goal can't move up and the bottom one can't move down.
+    // The top goal can't move up and the bottom one can't move down. The
+    // bottom is the last filler, which sorts below the two goals asserted
+    // above.
     await expect(
       inProgressRow.getByRole("button", { name: /move up/i }),
     ).toBeDisabled();
     await expect(
       achievedRow.getByRole("button", { name: /move down/i }),
+    ).toBeEnabled();
+    await expect(
+      goalRow(page, "E2E Filler 3").getByRole("button", { name: /move down/i }),
     ).toBeDisabled();
 
     // --- achieved state ------------------------------------------------
@@ -173,7 +192,14 @@ test.describe("Savings goals", () => {
     // The card carries the ledger over time, not just today's standing: a
     // stacked bar per month for the goals and a separate panel for the pool
     // (a monthly flow and a standing balance must not share one y-scale).
+    // It opens collapsed, so the standings stay the card's first screen.
     const history = page.getByTestId("goals-history-chart");
+    await expect(history).toBeHidden();
+    const historyToggle = page
+      .getByTestId("goals-history")
+      .getByRole("button", { name: /month by month/i });
+    await expect(historyToggle).toHaveAttribute("aria-expanded", "false");
+    await historyToggle.click();
     await expect(history).toBeVisible();
     await expect(
       page.getByText("Free cash left at month end", { exact: true }),
@@ -196,6 +222,13 @@ test.describe("Savings goals", () => {
       .click();
     await expect(history).toBeVisible();
 
+    // The toggle closes what it opened, range chips and all.
+    await historyToggle.click();
+    await expect(history).toBeHidden();
+    await expect(
+      page.getByTestId("goals-history").getByRole("button", { name: "6M" }),
+    ).toBeHidden();
+
     // --- free-cash pool ------------------------------------------------
     // The unearmarked remainder renders below the waterfall and outside any
     // goal row — it is the buffer a deficit month drains before the engine
@@ -215,6 +248,31 @@ test.describe("Savings goals", () => {
       reported.liquid,
       2,
     );
+
+    // --- the waterfall is a capped scroll region ------------------------
+    // A household that keeps many goals must not push the free-cash row and
+    // the history panel down the page — the list scrolls inside the card
+    // instead. The seeded fillers take it past the cap.
+    const list = page.getByTestId("goals-list");
+    const geometry = await list.evaluate((el) => ({
+      client: el.clientHeight,
+      scroll: el.scrollHeight,
+      overflowY: getComputedStyle(el).overflowY,
+    }));
+    // The list is taller than the window it shows, and that window is the cap
+    // rather than whatever the rows happen to add up to.
+    expect(geometry.overflowY).toBe("auto");
+    expect(geometry.scroll).toBeGreaterThan(geometry.client);
+    expect(geometry.client).toBeLessThanOrEqual(26 * 16 + 2);
+
+    // Scrolling the list moves the rows, not the card's chrome: the free-cash
+    // row and the history panel below it stay put.
+    const beforeScroll = await page.getByTestId("goals-history").boundingBox();
+    await list.evaluate((el) => el.scrollTo(0, el.scrollHeight));
+    const afterScroll = await page.getByTestId("goals-history").boundingBox();
+    expect(
+      Math.abs((afterScroll?.y ?? 0) - (beforeScroll?.y ?? 0)),
+    ).toBeLessThan(2);
   });
 
   test("reordering moves a goal up the waterfall", async ({ page }) => {

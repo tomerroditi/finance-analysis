@@ -78,8 +78,8 @@ async function renderGoals(
     data: goals,
   } as Awaited<ReturnType<typeof savingsGoalsApi.getAll>>);
 
-  // Every render draws the history panel, so the timeline is stubbed here
-  // rather than per test — an unmocked call would hit the network.
+  // The history panel fetches as soon as it is expanded, so the timeline is
+  // stubbed here rather than per test — an unmocked call would hit the network.
   if (!vi.isMockFunction(savingsGoalsApi.getTimeline)) {
     vi.spyOn(savingsGoalsApi, "getTimeline").mockResolvedValue({
       data: {
@@ -120,6 +120,11 @@ async function renderGoals(
   );
   await screen.findByText(goals[0].name);
   return result;
+}
+
+/** Expand the collapsed-by-default month-by-month panel. */
+function expandHistory() {
+  fireEvent.click(screen.getByRole("button", { name: /month by month/i }));
 }
 
 /** The row container for a goal, found by walking up from its name. */
@@ -360,6 +365,27 @@ describe("GoalsSection", () => {
     });
   });
 
+  describe("card height", () => {
+    it("caps the waterfall and scrolls it in place rather than growing the card", async () => {
+      // jsdom does no layout, so the cap is checked where it is declared: a
+      // list that scrolls itself is what keeps the free-cash row and the
+      // history panel inside the card once a household keeps many goals.
+      await renderGoals([
+        makeGoal({ id: 1, name: "One", priority: 0 }),
+        makeGoal({ id: 2, name: "Two", priority: 1 }),
+        makeGoal({ id: 3, name: "Three", priority: 2 }),
+        makeGoal({ id: 4, name: "Four", priority: 3 }),
+      ]);
+
+      const list = screen.getByTestId("goals-list");
+      expect(list.className).toMatch(/max-h-\[26rem\]/);
+      expect(list.className).toMatch(/overflow-y-auto/);
+      // The card is itself a scroller on the dashboard grid; the list must not
+      // hand it a stray wheel event once it bottoms out.
+      expect(list.className).toMatch(/overscroll-contain/);
+    });
+  });
+
   describe("month-by-month history", () => {
     /** A timeline whose single month funded `goalId`. */
     function timelineWith(goalId: number, name: string, totalMonths = 3) {
@@ -385,8 +411,36 @@ describe("GoalsSection", () => {
       };
     }
 
+    it("stays collapsed until asked, and fetches nothing until it is", async () => {
+      await renderGoals([makeGoal({ id: 4, name: "Trip" })], {}, timelineWith(4, "Trip"));
+
+      // The standings are what the card is opened for; the ledger behind them
+      // is a second question, so it costs neither screen nor a request until
+      // someone asks it.
+      expect(screen.queryByTestId("goals-history-chart")).not.toBeInTheDocument();
+      const toggle = screen.getByRole("button", { name: /month by month/i });
+      expect(toggle).toHaveAttribute("aria-expanded", "false");
+      expect(savingsGoalsApi.getTimeline).not.toHaveBeenCalled();
+
+      fireEvent.click(toggle);
+
+      expect(await screen.findByTestId("goals-history-chart")).toBeInTheDocument();
+      expect(toggle).toHaveAttribute("aria-expanded", "true");
+    });
+
+    it("collapses again on a second click", async () => {
+      await renderGoals([makeGoal({ id: 4, name: "Trip" })], {}, timelineWith(4, "Trip"));
+      expandHistory();
+      await screen.findByTestId("goals-history-chart");
+
+      expandHistory();
+
+      expect(screen.queryByTestId("goals-history-chart")).not.toBeInTheDocument();
+    });
+
     it("asks for the last 12 months by default", async () => {
       await renderGoals([makeGoal({ id: 4, name: "Trip" })], {}, timelineWith(4, "Trip"));
+      expandHistory();
 
       await waitFor(() =>
         expect(savingsGoalsApi.getTimeline).toHaveBeenCalledWith(12),
@@ -399,6 +453,7 @@ describe("GoalsSection", () => {
 
     it("refetches the window when another range is picked", async () => {
       await renderGoals([makeGoal({ id: 4, name: "Trip" })], {}, timelineWith(4, "Trip"));
+      expandHistory();
       await screen.findByTestId("goals-history-chart");
 
       fireEvent.click(screen.getByRole("button", { name: "6M" }));
@@ -412,6 +467,7 @@ describe("GoalsSection", () => {
       // "All" over a 3-month history would show the same months as "12M",
       // so it stays disabled until the ledger outgrows the fixed windows.
       await renderGoals([makeGoal({ id: 4, name: "Trip" })], {}, timelineWith(4, "Trip", 3));
+      expandHistory();
       await screen.findByTestId("goals-history-chart");
 
       expect(
@@ -422,6 +478,7 @@ describe("GoalsSection", () => {
 
     it("enables all-time once the ledger outgrows the fixed windows", async () => {
       await renderGoals([makeGoal({ id: 4, name: "Trip" })], {}, timelineWith(4, "Trip", 18));
+      expandHistory();
       await screen.findByTestId("goals-history-chart");
 
       fireEvent.click(screen.getByRole("button", { name: /^all$/i }));
@@ -434,6 +491,7 @@ describe("GoalsSection", () => {
 
     it("says so plainly when nothing has been allocated yet", async () => {
       await renderGoals([makeGoal({ name: "New" })]);
+      expandHistory();
 
       expect(
         await screen.findByText(/nothing allocated yet/i),
