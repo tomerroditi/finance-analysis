@@ -438,6 +438,17 @@ describe("GoalsSection", () => {
       expect(screen.queryByTestId("goals-history-chart")).not.toBeInTheDocument();
     });
 
+    it("reports the standing pool apart from the bars", async () => {
+      await renderGoals([makeGoal({ id: 4, name: "Trip" })], {}, timelineWith(4, "Trip"));
+      expandHistory();
+      await screen.findByTestId("goals-history-chart");
+
+      // The standing pool is two orders of magnitude bigger than a month's
+      // movement, so it stays a figure under the chart rather than a segment
+      // on it (the segment itself is `unclaimedSurplus`, tested with it).
+      expect(screen.getByText(/free cash left at month end/i)).toBeInTheDocument();
+    });
+
     it("asks for the last 12 months by default", async () => {
       await renderGoals([makeGoal({ id: 4, name: "Trip" })], {}, timelineWith(4, "Trip"));
       expandHistory();
@@ -446,9 +457,6 @@ describe("GoalsSection", () => {
         expect(savingsGoalsApi.getTimeline).toHaveBeenCalledWith(12),
       );
       expect(await screen.findByTestId("goals-history-chart")).toBeInTheDocument();
-      // The pool gets its own panel: a monthly flow and a standing balance
-      // must not share one scale.
-      expect(screen.getByText(/free cash left at month end/i)).toBeInTheDocument();
     });
 
     it("refetches the window when another range is picked", async () => {

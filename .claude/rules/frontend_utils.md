@@ -33,6 +33,7 @@ Pure helper functions — stateless, no React, no side effects.
 | `dateFormatting.ts` | Date display (date-fns, Hebrew locale) | `formatDate()`, `formatMonth()` |
 | `textFormatting.ts` | Provider/service labels (bilingual) | `humanizeProvider()`, `humanizeService()`, `PROVIDER_LABELS`, `PROVIDER_LABELS_HE` |
 | `taggingRuleEval.ts` | Evaluate tagging rule conditions against transactions | `findMatchingRule()`, `evalConditionTree()` |
+| `savingsGoalTimeline.ts` | Savings-goal timeline readings the chart stacks — the part of a month's surplus no goal claimed (a flow, unlike the standing pool balance) | `unclaimedSurplus()` |
 | `chartStyle.ts` | Recharts chart style constants, touch detection | `CHART_COLORS`, `AXIS_DEFAULTS`, `BAR_RADIUS`, `formatAxisNumber()`, `hexToRgba()`, `isTouchDevice` |
 
 **Rules:**

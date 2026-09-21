@@ -19,9 +19,7 @@ import {
 import {
   ResponsiveContainer,
   BarChart,
-  LineChart,
   Bar,
-  Line,
   ReferenceLine,
   XAxis,
   YAxis,
@@ -37,6 +35,7 @@ import {
   type SavingsGoalInvestment,
 } from "../../services/api";
 import { useQueryKeys } from "../../hooks/useQueryKeys";
+import { unclaimedSurplus } from "../../utils/savingsGoalTimeline";
 import { stackEnds, roundedStackShape } from "../charts/stackedBarShape";
 import { qkPrefix } from "../../services/queryKeys";
 import { useConfirm, useNotify } from "../../context/DialogContext";
@@ -66,6 +65,10 @@ const FREE_CASH_COLOR = CHART_TEXT_COLOR;
 
 /** Faint rule for the zero line — present enough to read against, no more. */
 const GRID_COLOR = "rgba(148, 163, 184, 0.25)";
+
+/** Series key for the part of a month's surplus no goal claimed. */
+const FREE_CASH_KEY = "free_cash_flow";
+
 
 /**
  * Dashboard savings-goals panel.
@@ -294,7 +297,10 @@ function FreeCashRow({ pool }: { pool: SavingsGoalFreeCash }) {
   const { t } = useTranslation();
 
   return (
-    <div className="mt-3 border border-dashed border-[var(--surface-light)] rounded-xl p-3">
+    <div
+      className="mt-3 border border-dashed border-[var(--surface-light)] rounded-xl p-3"
+      data-testid="goals-free-cash"
+    >
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-2 min-w-0">
           <div className="p-1.5 rounded-lg bg-[var(--surface-light)] text-[var(--text-muted)]">
@@ -340,10 +346,18 @@ type HistoryRange = (typeof HISTORY_RANGES)[number];
  * of one (a negative segment, below the axis), and how much was left
  * unearmarked each time.
  *
- * Allocations and the free-cash pool are drawn as two stacked panels sharing
- * one month axis rather than one chart with two y-scales: a monthly flow and a
- * standing balance are different quantities, and putting them on a common
- * scale makes whichever is smaller unreadable.
+ * Each bar is that month's surplus, split into what each goal took (in
+ * priority order) and what none of them claimed — so the column's height is
+ * the money the month actually produced and the free-cash segment on top is
+ * the part that stayed unearmarked. Below the line is the mirror image: a
+ * month that spent more than it earned draws the pool down, and once that is
+ * empty, back out of the goals themselves.
+ *
+ * The segment is the month's *flow*, not the standing pool: the pool is a
+ * running balance two orders of magnitude larger than a month's movement, and
+ * stacking it would leave every goal segment a hairline at the foot of the
+ * chart. The balance is a figure, not a shape, so it is reported as one under
+ * the chart.
  */
 function AllocationHistory() {
   const { t } = useTranslation();
@@ -370,6 +384,7 @@ function AllocationHistory() {
     const row: Record<string, number | string> = {
       month: month.month,
       free_cash: month.free_cash,
+      [FREE_CASH_KEY]: unclaimedSurplus(month),
     };
     for (const goal of month.goals) {
       row[`g${goal.goal_id}`] = goal.total;
@@ -389,12 +404,22 @@ function AllocationHistory() {
   const series = (data?.goals ?? []).filter((goal) =>
     rows.some((row) => row[`g${goal.id}`] !== undefined && row[`g${goal.id}`] !== 0),
   );
-  const keys = series.map((goal) => `g${goal.id}`);
+  // Free cash stacks last, so it caps the column: the goals take their share
+  // from the bottom in priority order and what is left sits on top. A window
+  // where every month's surplus was fully claimed drops it, on the same terms
+  // as a goal that took nothing.
+  const hasFreeCash = rows.some((row) => row[FREE_CASH_KEY] !== 0);
+  const keys = [
+    ...series.map((goal) => `g${goal.id}`),
+    ...(hasFreeCash ? [FREE_CASH_KEY] : []),
+  ];
   // Which segment sits at each end of a month's stack, so only the outer
   // corners are rounded and the column reads as one shape rather than a
   // string of beads.
   const ends = stackEnds(rows, keys, "month");
-  const hasClawback = rows.some((row) =>
+  // A segment under the line is a month that took money back: out of the pool
+  // first, and out of the goals once the pool was empty.
+  const hasDeficit = rows.some((row) =>
     keys.some((key) => typeof row[key] === "number" && (row[key] as number) < 0),
   );
 
@@ -460,15 +485,15 @@ function AllocationHistory() {
               className="rounded-xl border border-[var(--surface-light)] bg-[var(--surface-light)]/20 p-3"
               data-testid="goals-history-chart"
             >
-              {series.length === 0 ? (
-                // Goals exist but nothing has reached them yet. The bar panel
-                // would be an empty axis, so it is left out — the pool below is
-                // still worth showing, since it is where the money went instead.
+              {keys.length === 0 ? (
+                // Goals exist, but no month in this window moved a shekel into
+                // one or left any surplus behind. There is nothing to stack, so
+                // an empty axis is left out.
                 <p className="text-[10px] md:text-xs text-[var(--text-muted)] py-2 text-center">
                   {t("dashboard.goals.historyEmpty")}
                 </p>
               ) : (
-                <div className="h-40 md:h-48">
+                <div className="h-48 md:h-56">
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart
                       data={rows}
@@ -495,8 +520,31 @@ function AllocationHistory() {
                             />
                           </linearGradient>
                         ))}
+                        <linearGradient
+                          id="goal-fill-free"
+                          x1="0"
+                          y1="0"
+                          x2="0"
+                          y2="1"
+                        >
+                          <stop
+                            offset="0%"
+                            stopColor={hexToRgba(FREE_CASH_COLOR, 0.55)}
+                          />
+                          <stop
+                            offset="100%"
+                            stopColor={hexToRgba(FREE_CASH_COLOR, 0.28)}
+                          />
+                        </linearGradient>
                       </defs>
-                      <XAxis dataKey="month" hide />
+                      {/* The months were labelled by the pool panel that used
+                          to sit below; with one chart left, this axis carries
+                          them. */}
+                      <XAxis
+                        dataKey="month"
+                        {...AXIS_DEFAULTS}
+                        tickFormatter={formatMonthCompact}
+                      />
                       <YAxis
                         {...AXIS_DEFAULTS}
                         tickFormatter={formatAxisNumber}
@@ -505,7 +553,7 @@ function AllocationHistory() {
                       />
                       {/* Only drawn when a deficit actually pulled a bar under the
                           line — with nothing below it, the axis is the baseline. */}
-                      {hasClawback && (
+                      {hasDeficit && (
                         <ReferenceLine y={0} stroke={GRID_COLOR} strokeWidth={1} />
                     )}
                       <Tooltip
@@ -534,15 +582,32 @@ function AllocationHistory() {
                           isAnimationActive={false}
                         />
                       ))}
+                      {hasFreeCash && (
+                        <Bar
+                          dataKey={FREE_CASH_KEY}
+                          name={t("dashboard.goals.freeCash")}
+                          stackId="allocations"
+                          fill={FREE_CASH_COLOR}
+                          maxBarSize={30}
+                          shape={roundedStackShape(
+                            ends,
+                            FREE_CASH_KEY,
+                            "month",
+                            "url(#goal-fill-free)",
+                          )}
+                          isAnimationActive={false}
+                        />
+                      )}
                     </BarChart>
                   </ResponsiveContainer>
                 </div>
               )}
 
-              {/* The pool gets its own panel below, on the same months: it is the
-                  buffer a deficit drains before the engine reaches into a goal, so
-                  seeing it bottom out explains a clawback the bars alone can't. */}
-              <div className="flex items-baseline justify-between gap-2 mt-3 mb-1">
+              {/* The bars carry the pool's *movement*; this is where it
+                  stands now. A balance and a monthly flow are different
+                  quantities, so the one that cannot share the chart's scale is
+                  reported as a figure instead of a second panel. */}
+              <div className="flex items-baseline justify-between gap-2 mt-3">
                 <p className="text-[10px] md:text-xs text-[var(--text-muted)]">
                   {t("dashboard.goals.historyFreeCash")}
                 </p>
@@ -551,45 +616,6 @@ function AllocationHistory() {
                     {formatCurrency(latestPool)}
                   </span>
                 )}
-              </div>
-              <div className="h-14 md:h-16">
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={rows} margin={{ top: 4, bottom: 0, left: 0, right: 4 }}>
-                    <XAxis
-                      dataKey="month"
-                      {...AXIS_DEFAULTS}
-                      tickFormatter={formatMonthCompact}
-                    />
-                    {/* A balance, not a magnitude, so the domain fits the range
-                        to show month-to-month movement (snapping to zero only
-                        when the pool actually ran down to it — the one level here
-                        that means something). Fitted bounds make for ugly tick
-                        values, so the axis carries none: it reserves the bar
-                        chart's gutter so both panels sit on the same months, and
-                        the figures come from the caption and the tooltip. */}
-                    <YAxis
-                      axisLine={false}
-                      tickLine={false}
-                      tick={false}
-                      domain={[
-                        (min: number) => Math.max(0, min * 0.95),
-                        (max: number) => max * 1.05,
-                      ]}
-                      width={44}
-                    />
-                    <Tooltip content={tooltip} />
-                    <Line
-                      dataKey="free_cash"
-                      name={t("dashboard.goals.freeCash")}
-                      type="monotone"
-                      stroke={FREE_CASH_COLOR}
-                      strokeWidth={2}
-                      dot={false}
-                      activeDot={{ r: 3, strokeWidth: 0 }}
-                      isAnimationActive={false}
-                    />
-                  </LineChart>
-                </ResponsiveContainer>
               </div>
             </div>
           )}

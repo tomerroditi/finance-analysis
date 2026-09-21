@@ -346,7 +346,7 @@
       "historyMonths": "{{count}}M",
       "historyAll": "All",
       "historyFreeCash": "Free cash left at month end",
-      "historyHint": "Bars stack each month's funding in priority order; a bar below the line is money a deficit took back.",
+      "historyHint": "Bars split each month's surplus: what each goal took, in priority order, then what no goal claimed. Below the line is a month that spent more than it earned — out of the free-cash pool first, out of the goals once it was empty.",
       "historyEmpty": "Nothing allocated yet — the first month with a surplus will show up here",
       "priorityHint": "Funding order — the top goal fills first",
       "moveUp": "Move up in funding order",

@@ -201,6 +201,12 @@ test.describe("Savings goals", () => {
     await expect(historyToggle).toHaveAttribute("aria-expanded", "false");
     await historyToggle.click();
     await expect(history).toBeVisible();
+    // What no goal claimed stacks on the same bars — it is a cut of the same
+    // month's surplus. The pool's standing balance is a different quantity and
+    // is reported as a figure under the chart, not as a second panel.
+    await expect(
+      history.getByText("Free cash", { exact: true }),
+    ).toBeVisible();
     await expect(
       page.getByText("Free cash left at month end", { exact: true }),
     ).toBeVisible();
@@ -233,7 +239,8 @@ test.describe("Savings goals", () => {
     // The unearmarked remainder renders below the waterfall and outside any
     // goal row — it is the buffer a deficit month drains before the engine
     // reaches back into the goals themselves.
-    const pool = page.getByText("Free cash", { exact: true });
+    // Found by its own handle: the chart legend carries the same words.
+    const pool = page.getByTestId("goals-free-cash");
     await expect(pool).toBeVisible();
     await expect(
       pool.locator("xpath=ancestor::div[contains(@class,'group')]"),
