@@ -424,4 +424,58 @@ test.describe("DataSources", () => {
     const value = await passwordInput.inputValue();
     expect(["__unchanged__", ""]).toContain(value);
   });
+
+  // Card anatomy at phone width. Every service must read the same way: an
+  // identity row, then a metadata line, then the action buttons. Credit-card
+  // and insurance cards used to let the last-scrape chip ride along beside
+  // the buttons, because only bank cards had a balance filling that line.
+  test("every card stacks metadata above its buttons, and the balance says what it is", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 375, height: 900 });
+    await navigateTo(page, "/data-sources");
+
+    const cardFor = (name: string) =>
+      page
+        .getByRole("heading", { name, exact: true })
+        .locator("xpath=ancestor::div[contains(@class, 'group')][1]");
+
+    // The bank balance is a bare number without a word for what it counts.
+    const bankCard = cardFor("Main Account");
+    await expect(bankCard).toBeVisible();
+    await expect(bankCard.getByText(/^Balance$|^יתרה$/)).toBeVisible();
+
+    // One card per service: a bank (has a balance), a credit card and an
+    // insurance account (both have none, which is what used to change the
+    // layout).
+    for (const name of ["Main Account", "Family Card", "The Cohens"]) {
+      const card = cardFor(name);
+      await expect(card).toBeVisible();
+
+      const status = card
+        .getByText(/Yesterday|Never synced|אתמול|לא סונכרן/)
+        .first();
+      const actions = card.getByTitle(/Scrape This Source|שלוף מקור זה/);
+      await expect(status).toBeVisible();
+      await expect(actions).toBeVisible();
+
+      const statusBox = await status.boundingBox();
+      const actionsBox = await actions.boundingBox();
+      expect(statusBox, `${name}: status box`).not.toBeNull();
+      expect(actionsBox, `${name}: actions box`).not.toBeNull();
+      // Separate rows: the status chip ends before the buttons begin.
+      expect(
+        statusBox!.y + statusBox!.height,
+        `${name}: status must sit above the action buttons`,
+      ).toBeLessThanOrEqual(actionsBox!.y);
+    }
+
+    // The select-source checkbox sits after the provider logo, not in a
+    // column of its own ahead of it.
+    const checkbox = bankCard.getByTestId("select-source");
+    const logo = bankCard.getByRole("img").first();
+    const checkboxBox = await checkbox.boundingBox();
+    const logoBox = await logo.boundingBox();
+    expect(checkboxBox!.x).toBeGreaterThan(logoBox!.x + logoBox!.width);
+  });
 });

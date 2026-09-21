@@ -1107,6 +1107,7 @@
     "aborted": "Aborted",
     "abortedHint": "You stopped this scrape before it finished.",
     "neverSynced": "Never synced",
+    "balanceLabel": "Balance",
     "noBalanceSet": "No balance set",
     "setBalance": "Set Balance",
     "scrapeFirstToSetBalance": "Scrape first to set balance",

@@ -1109,6 +1109,7 @@
     "aborted": "בוטל",
     "abortedHint": "עצרת את השליפה לפני שהסתיימה.",
     "neverSynced": "לא סונכרן אף פעם",
+    "balanceLabel": "יתרה",
     "noBalanceSet": "לא הוגדרה יתרה",
     "setBalance": "הגדר יתרה",
     "scrapeFirstToSetBalance": "שלוף נתונים תחילה להגדרת יתרה",

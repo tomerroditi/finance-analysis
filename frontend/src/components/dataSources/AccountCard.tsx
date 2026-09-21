@@ -83,6 +83,14 @@ export function AccountCard({
     <div className="group bg-[var(--surface)] rounded-2xl border border-[var(--surface-light)] p-3 md:p-5 hover:border-[var(--primary)]/30 hover:shadow-xl transition-all">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 md:gap-0">
       <div className="flex items-center gap-3 md:gap-5">
+        <div className="w-14 h-14 shrink-0 rounded-2xl bg-white flex items-center justify-center p-2 text-gray-700">
+          <ProviderLogo
+            provider={acc.provider}
+            service={acc.service}
+            size={40}
+            alt={humanizeProvider(acc.provider)}
+          />
+        </div>
         {/* Picks this source for the toolbar's scrape button. Selecting
             nothing keeps that button's "scrape everything" default, so the
             checkbox is purely additive — see DataSources's handleScrape. */}
@@ -94,20 +102,15 @@ export function AccountCard({
           data-testid="select-source"
           className="w-4 h-4 shrink-0 rounded border-slate-700 bg-slate-800 text-blue-500 focus:ring-blue-500 cursor-pointer"
         />
-        <div className="w-14 h-14 shrink-0 rounded-2xl bg-white flex items-center justify-center p-2 text-gray-700">
-          <ProviderLogo
-            provider={acc.provider}
-            service={acc.service}
-            size={40}
-            alt={humanizeProvider(acc.provider)}
-          />
-        </div>
         <div>
-          <div className="flex items-center gap-2 mb-0.5">
+          {/* Wraps rather than squeezes: on a narrow card the provider badge
+              drops to its own line instead of breaking the account name in
+              two. */}
+          <div className="flex flex-wrap items-center gap-2 mb-0.5">
             <h3 className="font-bold text-lg text-white capitalize">
               {acc.account_name}
             </h3>
-            <span className="text-[10px] font-black uppercase tracking-widest px-2 py-0.5 rounded bg-[var(--surface-light)] text-[var(--text-muted)]">
+            <span className="text-[10px] font-black uppercase tracking-widest whitespace-nowrap shrink-0 px-2 py-0.5 rounded bg-[var(--surface-light)] text-[var(--text-muted)]">
               {humanizeProvider(acc.provider)}
             </span>
           </div>
@@ -128,12 +131,23 @@ export function AccountCard({
         </div>
       </div>
       <div className="flex flex-wrap items-center gap-3 md:gap-4">
-        <div className="md:w-[160px] flex items-center md:justify-end">
-        {acc.service === "banks" && (
-          <div className="flex items-center gap-2">
+        {/* Balance and scrape status share one line, which on mobile pushes
+            the action buttons onto their own row. Bank cards always looked
+            like this because the balance filled that line; without it a
+            credit-card or insurance card let "Yesterday" ride along beside
+            the buttons. The full-width line gives every service the same
+            two-row shape. */}
+        <div className="flex w-full md:w-auto items-center gap-3 md:gap-4">
+        {acc.service === "banks" ? (
+          <div className="md:w-[160px] flex items-center gap-2 md:justify-end">
             {balance ? (
-              <span className="text-sm font-semibold text-amber-400">
-                {formatCurrency(balance.balance)}
+              <span className="flex items-baseline gap-1.5">
+                <span className="text-xs text-[var(--text-muted)]">
+                  {t("dataSources.balanceLabel")}
+                </span>
+                <span className="text-sm font-semibold text-amber-400">
+                  {formatCurrency(balance.balance)}
+                </span>
               </span>
             ) : (
               <span className="text-xs text-[var(--text-muted)] italic">
@@ -157,8 +171,12 @@ export function AccountCard({
               <DollarSign size={16} />
             </button>
           </div>
+        ) : (
+          // Desktop keeps the balance column reserved so every card's status
+          // lines up down the page; on mobile an empty box would only add a
+          // stray gap before the status.
+          <div className="hidden md:block md:w-[160px]" />
         )}
-        </div>
 
         {/* Scraping Status */}
         <div className="flex items-center gap-2 min-w-[100px] justify-end">
@@ -223,6 +241,7 @@ export function AccountCard({
               )}
             </>
           )}
+        </div>
         </div>
 
         <div className="flex gap-2">
