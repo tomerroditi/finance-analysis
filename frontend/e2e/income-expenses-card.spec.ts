@@ -267,6 +267,57 @@ test.describe("Income & Expenses dashboard card", () => {
     });
   });
 
+  // Its own test on purpose: it needs Hebrew seeded before the app boots, so
+  // it cannot share the journey test's page.
+  test("an over-scale bar marks its growing tip under RTL", async ({ page }) => {
+    await page.addInitScript(() => localStorage.setItem("language", "he"));
+    await navigateTo(page, "/");
+    const card = cardContainer(page);
+    await expect(card).toBeVisible({ timeout: 45_000 });
+    await card.scrollIntoViewIfNeeded();
+
+    const bars = card.locator('[data-testid="ledger-bar"][data-capped="true"]');
+    await expect(bars.first()).toBeVisible({ timeout: 45_000 });
+
+    // Flexbox anchors each bar on the inline axis, so in Hebrew an income bar
+    // grows to the right and an expense bar to the left — the mirror of LTR.
+    // The hatch and the dashed edge mark the *growing* tip, so both have to
+    // follow. They were physical (`left` / `borderLeftColor`), which pinned
+    // them to the anchored end that never moves.
+    const marks = await bars.evaluateAll((els) =>
+      els.map((el) => {
+        const cs = getComputedStyle(el);
+        const bar = el.getBoundingClientRect();
+        const hatch = el
+          .querySelector('[data-testid="ledger-bar-hatch"]')!
+          .getBoundingClientRect();
+        return {
+          kind: el.getAttribute("data-kind"),
+          dashedLeft: cs.borderLeftStyle === "dashed",
+          dashedRight: cs.borderRightStyle === "dashed",
+          // Which half of the bar the hatched strip sits in.
+          hatchOnRight: hatch.left + hatch.width / 2 > bar.left + bar.width / 2,
+        };
+      }),
+    );
+    // Demo data reliably caps at least one bar (an income month well above the
+    // median); both kinds are marked from the same logical mapping, so
+    // whichever ones are capped here prove the direction handling.
+    expect(marks.length).toBeGreaterThan(0);
+
+    for (const mark of marks) {
+      if (mark.kind === "income") {
+        expect(mark.dashedRight).toBe(true);
+        expect(mark.dashedLeft).toBe(false);
+        expect(mark.hatchOnRight).toBe(true);
+      } else {
+        expect(mark.dashedLeft).toBe(true);
+        expect(mark.dashedRight).toBe(false);
+        expect(mark.hatchOnRight).toBe(false);
+      }
+    }
+  });
+
   // Its own test on purpose: the defect needs a bar to go capped -> uncapped
   // on a card that has not been interacted with yet, and the journey test has
   // paged the ledger by the time it gets here, which is enough to hide it.

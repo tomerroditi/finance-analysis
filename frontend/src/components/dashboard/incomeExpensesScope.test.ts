@@ -6,6 +6,7 @@ import {
   toYearlyLedger,
   totalsByYear,
   yearlyKpi,
+  type CompositionRow,
 } from "./incomeExpensesScope";
 
 /**
@@ -64,7 +65,7 @@ describe("toYearlyLedger", () => {
 
 describe("toYearlyComposition", () => {
   it("sums each series separately and carries one that appears in a single month", () => {
-    const rows = [
+    const rows: CompositionRow[] = [
       { month: "2026-01", values: { Food: 100, Transport: 50 } },
       { month: "2026-02", values: { Food: 120 } },
       { month: "2025-12", values: { Food: 90, Gifts: 300 } },

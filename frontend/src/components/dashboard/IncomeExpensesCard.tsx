@@ -517,7 +517,8 @@ function LedgerView({
  * One ledger bar. Income grows toward the centre, expenses mirror outward. A
  * value above the shared cap is drawn full-width and flagged as an outlier: a
  * hatched strip at the growing tip plus a dashed edge signal "off the scale",
- * while the exact ₪ still shows the real figure.
+ * while the exact ₪ still shows the real figure. Which physical edge that tip
+ * is flips with the document direction, so everything marking it is logical.
  */
 function LedgerBar({
   value,
@@ -530,7 +531,7 @@ function LedgerBar({
   cap: number;
   color?: string;
 }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const abs = Math.abs(value);
   const pct = Math.min(Math.max((abs / cap) * 100, 2), 100);
   const capped = abs > cap;
@@ -538,43 +539,59 @@ function LedgerBar({
   const barColor = color ?? (income ? INCOME_COLOR : EXPENSE_COLOR);
   const soft = income ? "rgba(16,185,129,0.16)" : "rgba(244,63,94,0.16)";
   const borderRgba = income ? "rgba(16,185,129,0.5)" : "rgba(244,63,94,0.5)";
-  const tip = income ? "left" : "right"; // the growing end of the bar
+  // Flexbox anchors the bar on the inline axis, so the *growing* end is the
+  // inline-start edge for income and the inline-end edge for expenses in
+  // either direction — the tip markers must therefore be logical too. They
+  // used to be physical (`left`/`borderLeft*`), which pinned them to the
+  // anchored end under RTL: in Hebrew every over-scale bar carried its
+  // hatch and its dashed edge on the side that never moves.
+  const isRtl = i18n.language === "he";
+  // The hatch's diagonal is the one thing with no logical form, so it is
+  // mirrored by hand — otherwise the stripes lean against the growth in RTL.
+  const tipOnLeft = income !== isRtl;
   return (
     <div className={`flex ${income ? "justify-end" : "justify-start"}`}>
       <div
+        data-testid="ledger-bar"
+        data-kind={kind}
+        data-capped={capped ? "true" : "false"}
         className={`relative h-[22px] rounded-md flex items-center ${income ? "justify-end" : "justify-start"}`}
         title={capped ? t("dashboard.barAboveScale") : undefined}
         // The tip's colour and style are always given, never spread in only
         // when capped. React removes a style property that a re-render stops
         // supplying, and because the browser expands the `border` shorthand
-        // into longhands, removing `borderRightColor` does not fall back to
-        // the shorthand — it falls back to `currentColor`, the inherited text
-        // colour. A bar that lost its cap between renders therefore kept a
-        // near-white 1px sliver at its tip. Which bars are capped depends on a
-        // median over the visible data, so any filter toggle could strand one.
+        // into longhands, removing `borderInlineEndColor` does not fall back
+        // to the shorthand — it falls back to `currentColor`, the inherited
+        // text colour. A bar that lost its cap between renders therefore kept
+        // a near-white 1px sliver at its tip. Which bars are capped depends on
+        // a median over the visible data, so any filter toggle could strand
+        // one. (A logical longhand set after the shorthand wins, same as a
+        // physical one: within a declaration block the two cascade in
+        // declaration order.)
         style={{
           width: `${pct}%`,
           background: soft,
           borderWidth: 1,
           borderStyle: "solid",
           borderColor: borderRgba,
-          [income ? "borderLeftColor" : "borderRightColor"]: capped
+          [income ? "borderInlineStartColor" : "borderInlineEndColor"]: capped
             ? barColor
             : borderRgba,
-          [income ? "borderLeftStyle" : "borderRightStyle"]: capped
+          [income ? "borderInlineStartStyle" : "borderInlineEndStyle"]: capped
             ? "dashed"
             : "solid",
         }}
       >
         {capped && (
           <div
+            data-testid="ledger-bar-hatch"
             className="absolute inset-y-0 w-4 pointer-events-none"
             style={{
-              [tip]: 0,
-              [income ? "borderTopLeftRadius" : "borderTopRightRadius"]: 5,
-              [income ? "borderBottomLeftRadius" : "borderBottomRightRadius"]: 5,
+              [income ? "insetInlineStart" : "insetInlineEnd"]: 0,
+              [income ? "borderStartStartRadius" : "borderStartEndRadius"]: 5,
+              [income ? "borderEndStartRadius" : "borderEndEndRadius"]: 5,
               opacity: 0.6,
-              background: `repeating-linear-gradient(${income ? "45deg" : "-45deg"}, ${barColor} 0 1.5px, transparent 1.5px 4.5px)`,
+              background: `repeating-linear-gradient(${tipOnLeft ? "45deg" : "-45deg"}, ${barColor} 0 1.5px, transparent 1.5px 4.5px)`,
             }}
           />
         )}
