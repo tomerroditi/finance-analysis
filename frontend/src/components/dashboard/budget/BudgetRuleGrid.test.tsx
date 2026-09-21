@@ -1,5 +1,6 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { render, screen, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { BudgetRuleGrid } from "./BudgetRuleGrid";
 import type { BudgetRule } from "./types";
 
@@ -124,5 +125,96 @@ describe("BudgetRuleGrid", () => {
     const bar = fill(screen.getByTestId("budget-rule-row"));
     expect(bar.getAttribute("style")).toContain("width: 0%");
     expect(bar.className).toContain("bg-emerald-500");
+  });
+
+  /**
+   * The close column only exists for the tabs whose envelopes can be
+   * settled — yearly today. A monthly row must not pay a column's width for
+   * an action it has no state for, which is why the callback gates it.
+   */
+  describe("closing an envelope", () => {
+    it("draws no toggle, and no fifth column, without the callback", () => {
+      render(<BudgetRuleGrid rules={[makeRule()]} categoryIcons={{}} />);
+      expect(screen.queryByRole("button")).not.toBeInTheDocument();
+      const row = screen.getByTestId("budget-rule-row");
+      expect(row.className).toContain("col-span-4");
+      expect(row).not.toHaveAttribute("data-closed");
+    });
+
+    it("gives every row a toggle labelled for its own state", () => {
+      render(
+        <BudgetRuleGrid
+          rules={[
+            makeRule(),
+            makeRule({ id: 2, name: "Insurance", closed: true }),
+          ]}
+          categoryIcons={{}}
+          onToggleClosed={vi.fn()}
+        />,
+      );
+
+      expect(
+        screen.getByTestId("card-rule-closed-toggle-1"),
+      ).toHaveAttribute("aria-label", "Close envelope");
+      expect(
+        screen.getByTestId("card-rule-closed-toggle-2"),
+      ).toHaveAttribute("aria-label", "Reopen envelope");
+    });
+
+    // Closing is not deleting: the row stays, with its figures, and says so.
+    it("dims a closed row and marks it for the tests that read geometry", () => {
+      render(
+        <BudgetRuleGrid
+          rules={[makeRule({ closed: true })]}
+          categoryIcons={{ Groceries: "🍔" }}
+          onToggleClosed={vi.fn()}
+        />,
+      );
+      const row = screen.getByTestId("budget-rule-row");
+      expect(row).toHaveAttribute("data-closed", "true");
+      expect(row.className).toContain("opacity-60");
+      expect(row.className).toContain("col-span-5");
+      // The archive marker takes the category icon's place rather than adding
+      // a badge — the row is one line and has no width to spare.
+      expect(within(row).getByLabelText("Closed")).toBeInTheDocument();
+      expect(within(row).queryByText("🍔")).not.toBeInTheDocument();
+      // Its figures are exactly what closing keeps.
+      expect(row.textContent).toContain("979");
+      expect(row.textContent).toContain("2,000");
+    });
+
+    it("hands the clicked rule to the callback", async () => {
+      const onToggleClosed = vi.fn();
+      render(
+        <BudgetRuleGrid
+          rules={[makeRule(), makeRule({ id: 2, name: "Insurance" })]}
+          categoryIcons={{}}
+          onToggleClosed={onToggleClosed}
+        />,
+      );
+
+      await userEvent.click(screen.getByTestId("card-rule-closed-toggle-2"));
+      expect(onToggleClosed).toHaveBeenCalledTimes(1);
+      expect(onToggleClosed.mock.calls[0][0]).toMatchObject({
+        id: 2,
+        name: "Insurance",
+      });
+    });
+
+    // One mutation serves every row, so gating the toggles on its own
+    // `isPending` would lock the whole list for one row's write and its
+    // siblings' clicks would land on dead buttons.
+    it("disables only the row whose own write is in flight", () => {
+      render(
+        <BudgetRuleGrid
+          rules={[makeRule(), makeRule({ id: 2, name: "Insurance" })]}
+          categoryIcons={{}}
+          onToggleClosed={vi.fn()}
+          isTogglePending={(rule) => rule.id === 2}
+        />,
+      );
+      expect(screen.getByTestId("card-rule-closed-toggle-1")).toBeEnabled();
+      expect(screen.getByTestId("card-rule-closed-toggle-2")).toBeDisabled();
+    });
   });
 });

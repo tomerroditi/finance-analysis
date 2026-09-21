@@ -1,11 +1,24 @@
 import React from "react";
 import { useTranslation } from "react-i18next";
+import { Archive, ArchiveRestore } from "lucide-react";
 import { formatAmount, formatCurrency } from "../../../utils/numberFormatting";
 import type { BudgetRule } from "./types";
 
 interface BudgetRuleGridProps {
   rules: BudgetRule[];
   categoryIcons: Record<string, string> | undefined;
+  /**
+   * Close / reopen the envelope on this row. Only the tabs whose envelopes
+   * have that state pass it — omitting it drops the whole column, so a
+   * monthly rule's row keeps the width it had.
+   */
+  onToggleClosed?: (rule: BudgetRule) => void;
+  /**
+   * Whether this row's own close/reopen write is in flight. Per row, not per
+   * list: one mutation serves every toggle, so gating them all on its
+   * `isPending` would leave a slow write's siblings dead to the touch.
+   */
+  isTogglePending?: (rule: BudgetRule) => boolean;
 }
 
 function getProgressColor(pct: number, isUnbudgetedSpend: boolean): string {
@@ -51,6 +64,12 @@ function getProgressColor(pct: number, isUnbudgetedSpend: boolean): string {
  * row from crushing it. Do not add `min-h-0` alongside it: both compile to
  * `min-height` and the winner would come down to stylesheet order.
  *
+ * A tab that can close an envelope (yearly, and only yearly for now) adds a
+ * fifth `auto` column for the toggle and dims the closed rows, so the archive
+ * icon is the only width the feature costs a row that cannot use it — the
+ * phone-width card has no room to spare, and the monthly list must not pay
+ * for the yearly one's action.
+ *
  * `max-h-[16rem] lg:max-h-none` bounds the same box below `lg`: the dashboard
  * row only gets a definite height at `lg` (Dashboard.tsx's `--dash-card-h`
  * cap is `lg:`-scoped), so below that breakpoint the flex parent's height is
@@ -62,14 +81,23 @@ function getProgressColor(pct: number, isUnbudgetedSpend: boolean): string {
 export const BudgetRuleGrid: React.FC<BudgetRuleGridProps> = ({
   rules,
   categoryIcons,
+  onToggleClosed,
+  isTogglePending,
 }) => {
   const { t } = useTranslation();
+  const closable = !!onToggleClosed;
   return (
     <div
       data-testid="budget-rule-grid"
       className="flex-1 min-h-[16rem] max-h-[16rem] lg:max-h-none overflow-y-auto scrollbar-auto-hide mb-4"
     >
-      <div className="grid grid-cols-[minmax(0,1fr)_auto_auto_auto] gap-y-1">
+      <div
+        className={`grid gap-y-1 ${
+          closable
+            ? "grid-cols-[minmax(0,1fr)_auto_auto_auto_auto]"
+            : "grid-cols-[minmax(0,1fr)_auto_auto_auto]"
+        }`}
+      >
         {rules.map((rule) => {
           // budget_amount can be 0 (e.g., "Other Expenses" when the user has
           // allocated their full Total Budget across explicit rules). Treat any
@@ -94,10 +122,21 @@ export const BudgetRuleGrid: React.FC<BudgetRuleGridProps> = ({
             <div
               key={rule.id}
               data-testid="budget-rule-row"
-              className="col-span-4 grid grid-cols-subgrid items-center gap-2 sm:gap-3 rounded-lg bg-[var(--surface-light)] px-2.5 py-2"
+              data-closed={closable && rule.closed ? "true" : undefined}
+              className={`grid grid-cols-subgrid items-center gap-2 sm:gap-3 rounded-lg bg-[var(--surface-light)] px-2.5 py-2 ${
+                closable ? "col-span-5" : "col-span-4"
+              } ${closable && rule.closed ? "opacity-60" : ""}`}
             >
               <span className="flex min-w-0 items-center gap-1.5">
-                {icon && <span className="text-sm flex-shrink-0">{icon}</span>}
+                {closable && rule.closed ? (
+                  <Archive
+                    size={12}
+                    aria-label={t("budget.yearly.closedBadge")}
+                    className="shrink-0 text-[var(--text-muted)]"
+                  />
+                ) : (
+                  icon && <span className="text-sm flex-shrink-0">{icon}</span>
+                )}
                 <span
                   className="text-xs font-semibold truncate"
                   dir="auto"
@@ -142,6 +181,31 @@ export const BudgetRuleGrid: React.FC<BudgetRuleGridProps> = ({
                   · {Math.round(pct)}%
                 </span>
               </span>
+
+              {onToggleClosed && (
+                <button
+                  onClick={() => onToggleClosed(rule)}
+                  disabled={isTogglePending?.(rule) ?? false}
+                  data-testid={`card-rule-closed-toggle-${rule.id}`}
+                  aria-label={
+                    rule.closed
+                      ? t("budget.yearly.reopenRule")
+                      : t("budget.yearly.closeRule")
+                  }
+                  title={
+                    rule.closed
+                      ? t("budget.yearly.reopenRule")
+                      : t("budget.yearly.closeRule")
+                  }
+                  className="shrink-0 rounded-md p-1.5 text-[var(--text-muted)] transition-colors hover:bg-[var(--surface)] hover:text-[var(--text)] disabled:opacity-60"
+                >
+                  {rule.closed ? (
+                    <ArchiveRestore size={14} />
+                  ) : (
+                    <Archive size={14} />
+                  )}
+                </button>
+              )}
             </div>
           );
         })}

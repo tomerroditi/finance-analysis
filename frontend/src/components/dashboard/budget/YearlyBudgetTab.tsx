@@ -1,12 +1,15 @@
 import React, { useMemo } from "react";
 import { useTranslation } from "react-i18next";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router";
 import { ChevronLeft, ChevronRight, Plus } from "lucide-react";
 import { budgetApi, type YearlyAnalysis } from "../../../services/api";
 import { BudgetTotalBar } from "../../common/BudgetTotalBar";
 import { Skeleton } from "../../common/Skeleton";
+import { useConfirm, useNotify } from "../../../context/DialogContext";
+import { usePendingRows } from "../../../hooks/usePendingRows";
 import { useQueryKeys } from "../../../hooks/useQueryKeys";
+import { qkPrefix } from "../../../services/queryKeys";
 import { BudgetRuleGrid } from "./BudgetRuleGrid";
 import type { BudgetRule } from "./types";
 import { budgetLink } from "../../../utils/budgetNavigation";
@@ -24,15 +27,56 @@ export const YearlyBudgetTab: React.FC<YearlyBudgetTabProps> = ({
 }) => {
   const { t, i18n } = useTranslation();
   const isRtl = i18n.language === "he";
+  const confirm = useConfirm();
+  const notify = useNotify();
   const qk = useQueryKeys();
+  const queryClient = useQueryClient();
+  // Per row: one mutation serves every envelope's toggle, so its own
+  // `isPending` would disable the whole list for one row's write.
+  const writing = usePendingRows<number>();
 
   const { data, isLoading } = useQuery({
     queryKey: qk.budget.yearly(year),
     queryFn: () => budgetApi.getYearlyAnalysis(year).then((r) => r.data as YearlyAnalysis),
   });
 
+  const closedMutation = useMutation({
+    mutationFn: ({ id, closed }: { id: number; closed: boolean }) =>
+      budgetApi.setYearlyRuleClosed(id, closed),
+    onMutate: ({ id }) => {
+      writing.begin(id);
+    },
+    onSettled: (_data, _error, { id }) => writing.end(id),
+    onSuccess: () => {
+      // The whole budget prefix: this card's own Overview tab builds its
+      // envelope list from the flag, so it has to refetch too.
+      queryClient.invalidateQueries({ queryKey: qkPrefix.budget });
+    },
+    onError: () => notify.error(t("budget.yearly.closeFailed")),
+  });
+
+  // Reopening is a plain undo, so only closing asks first — same as the
+  // Budget page's yearly tab.
+  const handleToggleClosed = async (rule: BudgetRule) => {
+    if (rule.closed) {
+      closedMutation.mutate({ id: rule.id, closed: false });
+      return;
+    }
+    const ok = await confirm({
+      title: t("budget.yearly.closeRule"),
+      message: t("budget.yearly.confirmClose", { name: rule.name }),
+      confirmLabel: t("budget.yearly.closeRule"),
+    });
+    if (ok) closedMutation.mutate({ id: rule.id, closed: true });
+  };
+
   // Yearly analysis emits no "Total Budget" pseudo-rule — the roll-up sums the
   // view — so every row here is a real rule and the totals come from summary.
+  //
+  // Closed envelopes sink below the open ones: they are kept for their
+  // history, and leaving a settled commitment among the ones still being
+  // spent from is exactly the noise closing removes. Within each group the
+  // heaviest spend leads, as before.
   const rules: BudgetRule[] = useMemo(
     () =>
       (data?.rules ?? [])
@@ -42,8 +86,13 @@ export const YearlyBudgetTab: React.FC<YearlyBudgetTabProps> = ({
           category: item.rule.category,
           budget_amount: item.rule.amount,
           spent_amount: item.current_amount,
+          closed: item.closed,
         }))
-        .sort((a, b) => b.spent_amount - a.spent_amount),
+        .sort(
+          (a, b) =>
+            Number(a.closed) - Number(b.closed) ||
+            b.spent_amount - a.spent_amount,
+        ),
     [data],
   );
 
@@ -110,7 +159,12 @@ export const YearlyBudgetTab: React.FC<YearlyBudgetTabProps> = ({
           total={data?.summary.total_allocated ?? 0}
         />
       </div>
-      <BudgetRuleGrid rules={rules} categoryIcons={categoryIcons} />
+      <BudgetRuleGrid
+        rules={rules}
+        categoryIcons={categoryIcons}
+        onToggleClosed={handleToggleClosed}
+        isTogglePending={(rule) => writing.isPending(rule.id)}
+      />
       <div className="text-end">
         <Link
           to={budgetLink("yearly", { year })}

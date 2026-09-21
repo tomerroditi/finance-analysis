@@ -1,21 +1,21 @@
 import { test, expect, type Page } from "@playwright/test";
-import { enableDemoMode, navigateTo, resetDemoData } from "./helpers";
+import { API_BASE, enableDemoMode, navigateTo, resetDemoData } from "./helpers";
 
 /**
  * The dashboard's budget card, driven the way a phone user drives it.
  *
- * Five behaviours that only show up in a real browser: the tab strip has to
+ * Six behaviours that only show up in a real browser: the tab strip has to
  * scroll on its own (the card sits in an `overflow-y-auto` grid cell, which
  * makes any horizontal overflow drag the whole card — figures and all —
  * sideways), the one-line envelope rows have to survive a phone-width card
  * without wrapping or overflowing, the total bar's "spent / ceiling" pair has
  * to stay in one left-to-right run under RTL, "open budget" has to land on
- * the tab the card was showing, and closing a project from the card has to
- * reach the backend.
+ * the tab the card was showing, and closing a project — or a yearly
+ * envelope — from the card has to reach the backend.
  *
  * Its own file rather than a block in `dashboard.spec.ts`: it needs a mobile
  * viewport (set before the page boots), it navigates off the dashboard, and
- * the closing test writes.
+ * the closing tests write.
  */
 test.describe("dashboard budget card", () => {
   test.beforeAll(async () => {
@@ -252,5 +252,103 @@ test.describe("dashboard budget card", () => {
       timeout: 15_000,
     });
     await expect(toggle).toHaveAttribute("aria-label", /close project/i);
+  });
+
+  test("closes and reopens a yearly envelope without leaving the dashboard", async ({
+    page,
+  }) => {
+    const year = new Date().getFullYear();
+    const ruleName = `E2E Card Close ${Date.now()}`;
+
+    // Its own rule on a category no budget rule of any kind claims: the
+    // yearly/project category exclusion would reject anything already taken,
+    // and a demo rule would make the assertions depend on the seed data.
+    const [rulesRes, categoriesRes] = await Promise.all([
+      page.request.get(`${API_BASE}/budget/rules`, {
+        headers: { "X-FAD-Demo": "1" },
+      }),
+      page.request.get(`${API_BASE}/tagging/categories`, {
+        headers: { "X-FAD-Demo": "1" },
+      }),
+    ]);
+    const claimed = new Set(
+      (await rulesRes.json()).map((r: { category: string }) => r.category),
+    );
+    const categoriesMap: Record<string, string[]> = await categoriesRes.json();
+    const freeCategory = Object.entries(categoriesMap).find(
+      ([name, tags]) => !claimed.has(name) && tags.length > 0,
+    );
+    expect(
+      freeCategory,
+      "expected at least one category with no budget rule of any kind",
+    ).toBeTruthy();
+
+    const created = await page.request.post(
+      `${API_BASE}/budget/yearly/rules`,
+      {
+        headers: { "X-FAD-Demo": "1" },
+        data: {
+          name: ruleName,
+          amount: 12000,
+          category: freeCategory![0],
+          tags: freeCategory![1],
+          year,
+        },
+      },
+    );
+    expect(created.ok()).toBeTruthy();
+
+    const analysisUrl = `${API_BASE}/budget/yearly/${year}/analysis`;
+    const readAnalysis = async () =>
+      (await (
+        await page.request.get(analysisUrl, { headers: { "X-FAD-Demo": "1" } })
+      ).json()) as {
+        rules: { rule: { id: number; name: string }; closed: boolean }[];
+      };
+    const ruleId = (await readAnalysis()).rules.find(
+      (r) => r.rule.name === ruleName,
+    )!.rule.id;
+
+    await navigateTo(page, "/");
+    const card = budgetCard(page);
+    await card.scrollIntoViewIfNeeded();
+    await card.getByRole("button", { name: /^Yearly$/i }).click();
+
+    const toggle = card.getByTestId(`card-rule-closed-toggle-${ruleId}`);
+    await expect(toggle).toBeVisible({ timeout: 30_000 });
+    await expect(toggle).toHaveAttribute("aria-label", /close envelope/i);
+    const row = card
+      .getByTestId("budget-rule-row")
+      .filter({ hasText: ruleName });
+
+    await toggle.click();
+    const dialog = page.getByRole("alertdialog");
+    await expect(dialog).toBeVisible();
+    await expect(dialog).toContainText(ruleName);
+    await dialog.getByRole("button", { name: /^Close envelope$/i }).click();
+
+    // The card keeps the row — closing is not a delete — marks it, and the
+    // action turns into a reopen. Its allocation survives too.
+    await expect(row).toHaveAttribute("data-closed", "true", {
+      timeout: 15_000,
+    });
+    await expect(toggle).toHaveAttribute("aria-label", /reopen envelope/i);
+    await expect(row).toContainText("12,000");
+
+    // And the write reached the backend, rather than only the cache.
+    expect(
+      (await readAnalysis()).rules.find((r) => r.rule.id === ruleId)!.closed,
+    ).toBe(true);
+
+    // Reopening is a plain undo, with no confirmation step.
+    await toggle.click();
+    await expect(row).not.toHaveAttribute("data-closed", "true", {
+      timeout: 15_000,
+    });
+    await expect(toggle).toHaveAttribute("aria-label", /close envelope/i);
+
+    await page.request.delete(`${API_BASE}/budget/yearly/rules/${ruleId}`, {
+      headers: { "X-FAD-Demo": "1" },
+    });
   });
 });
