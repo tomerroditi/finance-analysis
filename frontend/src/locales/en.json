@@ -937,6 +937,7 @@
     "investmentAnalysis": "Investment Analysis",
     "cagr": "CAGR",
     "holdingPeriod": "Holding Period",
+    "openingBalance": "Opening Balance",
     "years": "years",
     "calculating": "Calculating...",
     "calculateFixedRate": "Calculate Fixed Rate",
@@ -948,7 +949,8 @@
       "currentBalance": "Latest known market value: the most recent balance snapshot, or, if none exists, minus the cumulative sum of all transactions (deposits and withdrawals).",
       "profitLoss": "Current balance minus net invested. Net invested = total deposits − total withdrawals. Positive = gain, negative = loss.",
       "roi": "Return on investment as a percentage of total deposits: (final value / total deposits − 1) × 100. Final value adds withdrawals back so partial cash-outs still count.",
-      "cagr": "Compound annual growth rate: the constant yearly return that would turn your total deposits into the current value over the holding period."
+      "cagr": "Compound annual growth rate: the constant yearly return that would turn your total deposits into the current value over the holding period.",
+      "openingBalance": "Money already in the fund before the provider's deposit history begins: the first recorded balance minus the deposits listed up to it. It counts as invested, not as profit, alongside total deposits in profit, ROI and CAGR."
     },
     "loadingAnalysis": "Loading analysis...",
     "updateBalance": "Update Balance",

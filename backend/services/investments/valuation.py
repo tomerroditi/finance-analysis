@@ -27,6 +27,20 @@ Matches ``insurance_accounts.policy_type`` so scraped policies and
 manually-created KH investments share one identity.
 """
 
+CLOSED_SOURCE = "closed"
+"""Snapshot ``source`` of the zero balance written when an investment closes."""
+
+OPENING_BALANCE_COLUMN = "is_opening_balance"
+"""Marks the synthetic opening-balance row of an insurance-linked investment.
+
+A provider only exposes a window of recent deposits, so a policy that predates
+that window holds money no scraped deposit explains. The row carries that money
+as one deposit, dated just before the window, so the balance history is
+continuous and the pre-window capital is cost basis rather than profit. It is a
+deposit for valuation only: P&L reports it apart from ``total_deposits`` (which
+must keep matching the provider's deposit list) and the per-date flows skip it.
+"""
+
 
 class ValuationMixin:
     """Valuation and profit/loss methods for ``InvestmentsService``."""
@@ -396,7 +410,8 @@ class ValuationMixin:
         Calculate comprehensive profit/loss metrics for an investment.
 
         For closed investments, ``current_balance`` is ``0.0`` and
-        ``absolute_profit_loss`` is ``total_withdrawals - total_deposits``.
+        ``absolute_profit_loss`` is ``total_withdrawals`` minus the cost basis
+        (deposits plus opening balance).
 
         Parameters
         ----------
@@ -408,12 +423,17 @@ class ValuationMixin:
         dict
             Dictionary with keys:
 
-            - ``total_deposits`` – absolute sum of negative transaction amounts.
+            - ``total_deposits`` – absolute sum of negative transaction amounts,
+              excluding the opening balance.
             - ``total_withdrawals`` – sum of positive transaction amounts.
-            - ``net_invested`` – deposits minus withdrawals.
+            - ``opening_balance`` – capital an insurance-linked investment held
+              before its provider's deposit history (see
+              ``OPENING_BALANCE_COLUMN``); ``0.0`` otherwise.
+            - ``net_invested`` – deposits plus opening balance minus withdrawals.
             - ``current_balance`` – current reconstructed balance (0 if closed).
             - ``absolute_profit_loss`` – current balance minus net invested.
-            - ``roi_percentage`` – ``(final_value / total_deposits - 1) * 100``.
+            - ``roi_percentage`` – ``(final_value / cost_basis - 1) * 100``, where
+              ``cost_basis`` is deposits plus opening balance.
             - ``total_years`` – years between first transaction and today/close date.
             - ``cagr_percentage`` – compound annual growth rate as a percentage.
             - ``first_transaction_date`` – date string of the first transaction.
@@ -435,6 +455,7 @@ class ValuationMixin:
                     return {
                         "total_deposits": 0.0,
                         "total_withdrawals": 0.0,
+                        "opening_balance": 0.0,
                         "net_invested": 0.0,
                         "current_balance": balance,
                         "absolute_profit_loss": balance,
@@ -446,6 +467,7 @@ class ValuationMixin:
             return {
                 "total_deposits": 0.0,
                 "total_withdrawals": 0.0,
+                "opening_balance": 0.0,
                 "net_invested": 0.0,
                 "current_balance": 0.0,
                 "absolute_profit_loss": 0.0,
@@ -461,18 +483,18 @@ class ValuationMixin:
                 transactions_df["amount"], errors="coerce"
             ).fillna(0.0)
 
+        opening_mask = self._opening_balance_mask(transactions_df)
+        opening_balance = abs(float(transactions_df.loc[opening_mask, "amount"].sum()))
+        flows = transactions_df[~opening_mask]
         # Transaction sign: Negative = deposit (money OUT), Positive = withdrawal (money IN)
-        total_deposits = abs(
-            transactions_df[transactions_df["amount"] < 0]["amount"].sum()
-        )
-        total_withdrawals = transactions_df[transactions_df["amount"] > 0][
-            "amount"
-        ].sum()
-        net_invested = total_deposits - total_withdrawals
+        total_deposits = abs(flows[flows["amount"] < 0]["amount"].sum())
+        total_withdrawals = flows[flows["amount"] > 0]["amount"].sum()
+        cost_basis = total_deposits + opening_balance
+        net_invested = cost_basis - total_withdrawals
 
         if inv["is_closed"]:
             current_balance = 0.0
-            absolute_profit_loss = total_withdrawals - total_deposits
+            absolute_profit_loss = total_withdrawals - cost_basis
         else:
             # Snapshot first (carried forward by later transactions), fall
             # back to transaction-based
@@ -493,7 +515,7 @@ class ValuationMixin:
             else current_balance + total_withdrawals
         )
         roi_percentage = (
-            ((final_value / total_deposits) - 1) * 100 if total_deposits > 0 else 0.0
+            ((final_value / cost_basis) - 1) * 100 if cost_basis > 0 else 0.0
         )
 
         transactions_df = transactions_df.copy()
@@ -507,14 +529,15 @@ class ValuationMixin:
         )  # Avoid division by zero
 
         cagr_percentage = 0.0
-        if total_deposits > 0 and total_years > 0 and final_value > 0:
+        if cost_basis > 0 and total_years > 0 and final_value > 0:
             cagr_percentage = (
-                (final_value / total_deposits) ** (1 / total_years) - 1
+                (final_value / cost_basis) ** (1 / total_years) - 1
             ) * 100
 
         return {
             "total_deposits": float(total_deposits),
             "total_withdrawals": float(total_withdrawals),
+            "opening_balance": opening_balance,
             "net_invested": float(net_invested),
             "current_balance": float(current_balance),
             "absolute_profit_loss": float(absolute_profit_loss),
@@ -523,6 +546,24 @@ class ValuationMixin:
             "cagr_percentage": float(cagr_percentage),
             "first_transaction_date": first_date.strftime("%Y-%m-%d"),
         }
+
+    @staticmethod
+    def _opening_balance_mask(transactions_df: pd.DataFrame) -> pd.Series:
+        """Select the synthetic opening-balance row of a transactions frame.
+
+        Parameters
+        ----------
+        transactions_df : pd.DataFrame
+            Output of ``_get_all_transactions_for_investment``.
+
+        Returns
+        -------
+        pd.Series
+            Boolean mask, all ``False`` when the frame carries no opening row.
+        """
+        if OPENING_BALANCE_COLUMN not in transactions_df.columns:
+            return pd.Series(False, index=transactions_df.index)
+        return transactions_df[OPENING_BALANCE_COLUMN].fillna(False).astype(bool)
 
     def _build_allocation_entry(
         self, inv_id: int, inv_name: str, inv_type: str
@@ -553,6 +594,7 @@ class ValuationMixin:
             "roi": metrics["roi_percentage"],
             "total_deposits": metrics["total_deposits"],
             "total_withdrawals": metrics["total_withdrawals"],
+            "opening_balance": metrics["opening_balance"],
             "cagr": metrics["cagr_percentage"],
             "history": [h["balance"] for h in condensed],
         }
@@ -571,8 +613,10 @@ class ValuationMixin:
             Dictionary with keys:
 
             - ``total_value`` – sum of current balances across all open investments.
-            - ``total_profit`` – total value minus net invested (deposits - withdrawals).
-            - ``portfolio_roi`` – ``(total_value / total_deposits - 1) * 100`` percentage.
+            - ``total_profit`` – total value minus net invested (deposits plus
+              opening balances, minus withdrawals).
+            - ``portfolio_roi`` – ``(total_value / cost_basis - 1) * 100`` percentage,
+              where ``cost_basis`` is deposits plus opening balances.
             - ``allocation`` – list of dicts per investment (open and closed).
         """
         all_investments = self.investments_repo.get_all_investments(include_closed=True)
@@ -586,7 +630,7 @@ class ValuationMixin:
             }
 
         total_value = 0.0
-        total_deposits = 0.0
+        cost_basis = 0.0
         total_withdrawals = 0.0
         allocation = []
 
@@ -602,12 +646,12 @@ class ValuationMixin:
             # Only open investments contribute to portfolio totals
             if not inv["is_closed"]:
                 total_value += entry["balance"]
-                total_deposits += entry["total_deposits"]
+                cost_basis += entry["total_deposits"] + entry["opening_balance"]
                 total_withdrawals += entry["total_withdrawals"]
 
-        total_profit = total_value - (total_deposits - total_withdrawals)
+        total_profit = total_value - (cost_basis - total_withdrawals)
         portfolio_roi = (
-            ((total_value / total_deposits) - 1) * 100 if total_deposits > 0 else 0.0
+            ((total_value / cost_basis) - 1) * 100 if cost_basis > 0 else 0.0
         )
 
         return {
@@ -736,7 +780,9 @@ class ValuationMixin:
 
         For insurance-linked investments, also includes insurance deposit
         transactions (with amounts negated to match the investment convention:
-        negative = deposit).
+        negative = deposit) and, when the first balance snapshot holds more
+        than those deposits explain, a synthetic opening-balance row flagged
+        by ``OPENING_BALANCE_COLUMN``.
 
         Parameters
         ----------
@@ -768,20 +814,80 @@ class ValuationMixin:
         ins_txns = pd.read_sql(stmt, self.db.bind)
 
         if ins_txns.empty:
-            return manual_txns
+            combined = manual_txns
+        else:
+            # Negate amounts: insurance txns are positive (deposits received),
+            # but investment convention is negative = deposit (money out)
+            ins_txns["amount"] = -ins_txns["amount"]
+            if manual_txns.empty:
+                combined = ins_txns
+            else:
+                # Preserve manual_txns column order so downstream code sees a
+                # stable schema
+                common_cols = [c for c in manual_txns.columns if c in ins_txns.columns]
+                combined = pd.concat(
+                    [manual_txns[common_cols], ins_txns[common_cols]],
+                    ignore_index=True,
+                )
 
-        # Negate amounts: insurance txns are positive (deposits received),
-        # but investment convention is negative = deposit (money out)
-        ins_txns["amount"] = -ins_txns["amount"]
+        return self._with_opening_balance(investment_id, combined)
 
-        if manual_txns.empty:
-            return ins_txns
+    def _with_opening_balance(
+        self, investment_id: int, transactions_df: pd.DataFrame
+    ) -> pd.DataFrame:
+        """Prepend the capital a provider's deposit window does not explain.
 
-        # Preserve manual_txns column order so downstream code sees a stable schema
-        common_cols = [c for c in manual_txns.columns if c in ins_txns.columns]
-        return pd.concat(
-            [manual_txns[common_cols], ins_txns[common_cols]], ignore_index=True
-        )
+        The first observed snapshot is the only fact about the balance before
+        the scrape began. Whatever it holds beyond the deposits recorded on or
+        before its date was already in the policy before the provider's
+        deposit history starts, so it becomes one deposit dated the day
+        before the earliest known event (see ``OPENING_BALANCE_COLUMN``).
+        Growth inside the window up to the first snapshot is folded into that
+        figure too — the data cannot tell the two apart, and understating
+        profit beats reporting prior capital as gains.
+
+        Parameters
+        ----------
+        investment_id : int
+            ID of an insurance-linked investment.
+        transactions_df : pd.DataFrame
+            Its manual and insurance transactions (may be empty).
+
+        Returns
+        -------
+        pd.DataFrame
+            ``transactions_df`` with an ``OPENING_BALANCE_COLUMN`` column, plus
+            the opening row when the first snapshot exceeds the deposits.
+        """
+        snapshots = self.snapshots_repo.get_snapshots_for_investment(investment_id)
+        if not snapshots.empty:
+            snapshots = snapshots[snapshots["source"] != CLOSED_SOURCE]
+        if snapshots.empty:
+            return transactions_df
+
+        first = snapshots.sort_values("date").iloc[0]
+        first_date = pd.Timestamp(str(first["date"]))
+        start = first_date
+        recorded = 0.0
+        if not transactions_df.empty:
+            dates = pd.to_datetime(transactions_df["date"])
+            amounts = pd.to_numeric(transactions_df["amount"], errors="coerce").fillna(0.0)
+            # Deposits are negative, so adding them leaves what they do not cover.
+            recorded = float(amounts[dates <= first_date].sum())
+            start = min(start, dates.min())
+        opening = float(first["balance"]) + recorded
+        if opening <= 0:
+            return transactions_df
+
+        opening_row = pd.DataFrame([{
+            "date": (start - pd.Timedelta(days=1)).strftime("%Y-%m-%d"),
+            "amount": -opening,
+            OPENING_BALANCE_COLUMN: True,
+        }])
+        if transactions_df.empty:
+            return opening_row
+        flagged = transactions_df.assign(**{OPENING_BALANCE_COLUMN: False})
+        return pd.concat([opening_row, flagged], ignore_index=True)
 
     def _carry_snapshot_forward(
         self,
