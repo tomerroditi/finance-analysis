@@ -102,6 +102,14 @@ describe("CashFlowForecastSection", () => {
     expect(screen.getByTestId("forecast-observed-through")).toBeInTheDocument();
   });
 
+  it("still admits a sync that stopped in an earlier month", async () => {
+    // Compared as ISO strings, not day-of-month numbers: 28 > 23 would have
+    // read August the 28th as later than September the 23rd and hidden this.
+    await renderCard(makeForecast({ observed_through: "2026-08-28" }));
+
+    expect(screen.getByTestId("forecast-observed-through")).toBeInTheDocument();
+  });
+
   it("stays quiet when the data is current", async () => {
     await renderCard(makeForecast({ observed_through: "2026-09-23" }));
 

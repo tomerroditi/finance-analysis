@@ -9,6 +9,7 @@ builds on. Mixed into ``AnalysisService`` (see ``core.py``).
 import pandas as pd
 
 from backend.utils.dataframe_dates import to_month_series
+from backend.constants.providers import Services
 from backend.constants.tables import TransactionsTableFields
 
 
@@ -44,9 +45,14 @@ class ForecastMixin:
         is counted once, when it falls, rather than smeared across the month.
 
         Both projections run over the days the data has *not* seen rather than
-        the days left on the calendar: accounts are scraped on their own
-        schedule, and days after the last transaction are unobserved, not
-        spend-free.
+        the days left on the calendar. That edge comes from the **scrape audit
+        trail** — the weakest-link sync across scrapable accounts — and not
+        from the last transaction on file: a household that simply did not
+        spend for three days leaves exactly the same gap at the end of the
+        ledger as an account that stopped syncing three days ago, and only one
+        of those is missing data. What the fresher accounts have already
+        reported inside that window is subtracted, so a card current to the
+        23rd beside a bank current to the 5th is not billed twice.
 
         Money-in and money-out are measured on their own terms, and the two
         are not interchangeable. ``actual_expenses`` and the trend behind
@@ -67,8 +73,8 @@ class ForecastMixin:
 
             - ``month`` – current month in ``YYYY-MM`` format.
             - ``days_in_month`` / ``day_of_month`` / ``days_remaining`` – ints.
-            - ``observed_through`` – ``YYYY-MM-DD`` of the latest transaction
-              the projection could see, or null when the month has none yet.
+            - ``observed_through`` – ``YYYY-MM-DD`` the accounts are synced
+              through (weakest link), or null when nothing is scrapable.
             - ``actual_income`` – month-to-date income banked.
             - ``actual_expenses`` – month-to-date itemized spend (the same
               figure the Budget page shows).
@@ -126,10 +132,29 @@ class ForecastMixin:
             0.0,
         )
 
+        # --- How far the accounts have actually been synced ---
+        # Accounts are scraped on their own schedule, so the days after the
+        # last sync carry no evidence either way. Counting them as observed
+        # reads them as days of spending nothing, which is how a week-old
+        # scrape quietly turned into a week of savings.
+        observed_through = self._observed_through(today)
+        observed_day = (
+            observed_through.day
+            if observed_through is not None and observed_through >= month_start
+            else (0 if observed_through is not None else day_of_month)
+        )
+        unobserved_days = days_in_month - observed_day
+        observed_edge = (
+            observed_through
+            if observed_through is not None
+            else today
+        )
+
         # --- Bank-side month-to-date, for the balance trajectory ---
         df = self.repo.get_cashflow_transactions()
         actual_income = 0.0
         cash_out_to_date = 0.0
+        cash_out_after_edge = 0.0
         per_day_net: dict[int, float] = {}
         if not df.empty:
             df = df.copy()
@@ -142,15 +167,11 @@ class ForecastMixin:
                 per_day_net = (
                     mtd.groupby(mtd["date_parsed"].dt.day)["amount"].sum().to_dict()
                 )
-
-        # --- How much of the month the data has actually seen ---
-        # A scrape lags the calendar, and the days between the last
-        # transaction and today carry no evidence of anything. Treating them
-        # as observed counts them as days of zero spending, which is how a
-        # week-old scrape quietly turned into a week of savings.
-        observed_through = self._latest_transaction_date(month_start, today)
-        observed_day = observed_through.day if observed_through is not None else 0
-        unobserved_days = days_in_month - observed_day
+                past_edge = mtd[mtd["date_parsed"] > observed_edge]
+                if not past_edge.empty:
+                    _, _, cash_out_after_edge = (
+                        self.get_income_investments_and_expenses(past_edge)
+                    )
 
         # --- Current bank balance ---
         balances = self.bank_balance_service.get_all_balances()
@@ -163,7 +184,6 @@ class ForecastMixin:
         # safe-to-spend.
         committed_remaining = 0.0
         committed_monthly = 0.0
-        observed_edge = observed_through if observed_through is not None else month_start
         for item in recurring.get_confirmed_items():
             if item["status"] == "ended":
                 continue
@@ -177,10 +197,14 @@ class ForecastMixin:
         # below, so leaving them in the daily trend would bill them twice.
         discretionary_monthly = max(0.0, avg_monthly_expenses - committed_monthly)
         projected_remaining_expenses = (
-            discretionary_monthly / days_in_month * unobserved_days
-            if days_in_month
-            else 0.0
-        ) + committed_remaining
+            self._project_unobserved(
+                discretionary_monthly,
+                days_in_month,
+                unobserved_days,
+                self._itemized_spend_after(observed_edge, today),
+            )
+            + committed_remaining
+        )
         expected_expenses = actual_expenses + projected_remaining_expenses
 
         # --- Income projection: what is still due, not what is typical ---
@@ -209,8 +233,8 @@ class ForecastMixin:
         cash_out_baseline = (
             float(pd.Series([m["expenses"] for m in recent]).median()) if recent else 0.0
         )
-        projected_remaining_cash_out = (
-            cash_out_baseline / days_in_month * unobserved_days if days_in_month else 0.0
+        projected_remaining_cash_out = self._project_unobserved(
+            cash_out_baseline, days_in_month, unobserved_days, cash_out_after_edge
         )
         projected_end_balance = (
             current_bank_balance
@@ -281,38 +305,129 @@ class ForecastMixin:
             "daily": daily,
         }
 
-    def _latest_transaction_date(
-        self, month_start: pd.Timestamp, today: pd.Timestamp
-    ) -> pd.Timestamp | None:
-        """Latest transaction date inside the running month, if any.
+    def _observed_through(self, today: pd.Timestamp) -> pd.Timestamp | None:
+        """How far every scrapable account has been synced — the weakest link.
 
-        The edge of what the projection can see. Only this month counts: data
-        that stops before the 1st says nothing about how far through *this*
-        month the scrape got, and treating the whole month as unobserved would
-        project a full month of spending onto a household that has simply not
-        connected an account yet.
+        The edge of what the projection can see. It is read from the **scrape
+        audit trail**, not from the transactions: a household that simply did
+        not spend for three days leaves the same gap at the end of the ledger
+        as an account that stopped syncing three days ago, and only one of
+        those is missing data. Reading the last transaction date treated both
+        as unobserved and projected spending over a genuinely quiet stretch.
+
+        Weakest link, because the combined picture is only complete up to the
+        account that synced least recently — the same rule the budget's
+        freshness badge already teaches (``useBudgetFreshness``). Insurance is
+        excluded on the same grounds it is there: it is scraped but never
+        produces budget transactions, so a stale insurance sync says nothing
+        about how complete the month is.
+
+        An account that has *never* synced is skipped rather than treated as
+        infinitely stale. It contributed nothing to the trend baseline either,
+        so counting it here would project spending that no month in the
+        history ever contained.
 
         Parameters
         ----------
-        month_start : pd.Timestamp
-            First day of the running month.
         today : pd.Timestamp
-            Upper bound — a future-dated transaction is not evidence that the
-            days before it were observed.
+            Upper bound — a clock-skewed scrape row cannot observe the future.
 
         Returns
         -------
         pd.Timestamp or None
-            The latest date seen, or None when the month has no transactions.
+            The weakest-link sync day, or None when the user has no scrapable
+            accounts at all (cash/manual-only, or Demo Mode) and there is
+            therefore no staleness to account for.
         """
-        df = self.repo.get_itemized_transactions()
-        if df.empty:
+        from backend.services.scraping_history_service import ScrapingHistoryService
+
+        synced = [
+            entry["last_scrape_date"]
+            for entry in ScrapingHistoryService(self.db).get_last_scrape_dates()
+            if entry["service"] != Services.INSURANCE.value
+            and entry["last_scrape_date"]
+        ]
+        if not synced:
             return None
-        parsed = pd.to_datetime(df[TransactionsTableFields.DATE.value])
-        parsed = parsed[(parsed >= month_start) & (parsed <= today)]
-        if parsed.empty:
-            return None
-        return parsed.max().normalize()
+        oldest = pd.Timestamp(min(synced)).normalize()
+        return min(oldest, today)
+
+    @staticmethod
+    def _project_unobserved(
+        monthly_baseline: float,
+        days_in_month: int,
+        unobserved_days: int,
+        already_seen: float,
+    ) -> float:
+        """Project a monthly baseline over the days no account has synced yet.
+
+        ``already_seen`` is what the *fresher* accounts have already reported
+        inside that same window, and it is subtracted rather than ignored.
+        Accounts sync at different times: with one card current to the 23rd and
+        a bank current to the 5th, the window opens on the 6th, and what the
+        card has already shown for the 6th–23rd is in ``actual_expenses``
+        too — projecting the household's full daily rate across the whole
+        window on top of it would bill those days twice.
+
+        Parameters
+        ----------
+        monthly_baseline : float
+            Typical spend for a whole month, on the basis being projected.
+        days_in_month : int
+            Length of the running month.
+        unobserved_days : int
+            Days from the weakest link's sync day to month end.
+        already_seen : float
+            Spend already recorded inside the unobserved window.
+
+        Returns
+        -------
+        float
+            Non-negative projection for the rest of the window.
+        """
+        if days_in_month <= 0:
+            return 0.0
+        expected = monthly_baseline / days_in_month * unobserved_days
+        return max(0.0, expected - already_seen)
+
+    def _itemized_spend_after(
+        self, edge: pd.Timestamp, today: pd.Timestamp
+    ) -> float:
+        """Budget-basis spend recorded after ``edge``, up to and including today.
+
+        The same filtered frame ``get_monthly_expenses`` totals, so this
+        subtraction and the baseline it is subtracted from are measured the
+        same way.
+
+        Parameters
+        ----------
+        edge : pd.Timestamp
+            Exclusive lower bound — the weakest link's sync day.
+        today : pd.Timestamp
+            Inclusive upper bound.
+
+        Returns
+        -------
+        float
+            Non-negative spend in that window.
+        """
+        if edge >= today:
+            return 0.0
+
+        from backend.services.budget_service import MonthlyBudgetService
+
+        expenses = MonthlyBudgetService(self.db).get_filtered_expenses(
+            exclude_pending_refunds=True
+        )
+        if expenses.empty:
+            return 0.0
+        parsed = pd.to_datetime(expenses[TransactionsTableFields.DATE.value])
+        window = expenses[(parsed > edge) & (parsed <= today)]
+        if window.empty:
+            return 0.0
+        return max(
+            0.0, -float(window[TransactionsTableFields.AMOUNT.value].sum())
+        )
 
     def get_monthly_expenses(
         self,

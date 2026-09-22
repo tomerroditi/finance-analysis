@@ -177,10 +177,27 @@ dates as `committed_remaining` — a bill lands once, on its day, not smeared
 across the month on top of itself.
 
 Both projections span `days_in_month - observed_day`, where `observed_through`
-is the latest transaction inside the running month. Accounts are scraped on
-their own schedule; the days after the last transaction are unobserved, not
-spend-free. Treating them as observed turned a week-old scrape into a week of
-savings.
+is the **weakest-link sync** across scrapable accounts, read from
+`scraping_history` via `ScrapingHistoryService.get_last_scrape_dates`. Accounts
+are scraped on their own schedule; the days after the oldest sync are
+unobserved, not spend-free, and treating them as observed turned a week-old
+scrape into a week of savings.
+
+**Read the edge from the scrape trail, never from the last transaction.** A
+household that simply did not spend for three days leaves exactly the same gap
+at the end of the ledger as an account that stopped syncing three days ago, and
+only one of those is missing data. Same exclusions the budget's freshness badge
+uses (`useBudgetFreshness`): insurance is scraped but produces no budget
+transactions, and a never-synced account is skipped — it contributed nothing to
+the trend baseline either, so counting it would project spending no month in
+the history ever contained. No scrapable accounts at all (cash-only, Demo Mode)
+means no staleness: the edge is today.
+
+Because accounts sync at different times, the window the weakest link opens
+already holds whatever the fresher accounts reported inside it — that spend is
+in `actual_expenses` too. `_project_unobserved` subtracts it, so a card current
+to the 23rd beside a bank current to the 5th is not billed twice for the 6th
+through the 23rd.
 
 ## Prior Wealth
 

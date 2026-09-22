@@ -62,11 +62,14 @@ export function CashFlowForecastSection() {
     .map((item) => `${item.label}: ${formatCurrency(item.amount)}`)
     .join("\n");
 
-  // The projection reads days after the last transaction as unobserved, not
-  // spend-free. Say so when the scrape is behind, or the card looks like it
-  // simply forgot a week.
+  // The projection reads days past the weakest-link sync as unobserved, not
+  // spend-free. Say so when an account is behind, or the card looks like it
+  // simply forgot a week. Compared as ISO strings so a sync that stopped in a
+  // previous month still counts — comparing day-of-month numbers made the
+  // 28th of August look later than the 23rd of September.
+  const todayIso = `${data.month}-${String(data.day_of_month).padStart(2, "0")}`;
   const staleThrough =
-    data.observed_through && Number(data.observed_through.slice(8, 10)) < data.day_of_month
+    data.observed_through && data.observed_through < todayIso
       ? data.observed_through
       : null;
 
