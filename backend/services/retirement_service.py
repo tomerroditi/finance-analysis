@@ -166,21 +166,28 @@ class RetirementService:
             ] or monthly_data
 
             monthly_data = complete_months
-            # Income: last 6 months average (or all if fewer).
+            # Median, not mean, on both sides. A FIRE projection compounds
+            # `monthly_savings` for forty years, so a single freak month is
+            # not a rounding error in it — an inheritance, a wedding, the
+            # proceeds of a sold car lifted a 6-month mean income to 108k
+            # against a 25k salary, and with it the savings rate, the FIRE
+            # date and every solver suggestion. A windfall is not a salary;
+            # the number that survives one is the middle month, not the
+            # average. The window either side is unchanged.
             recent_income = (
                 monthly_data[-6:] if len(monthly_data) >= 6 else monthly_data
             )
-            avg_monthly_income = sum(
-                m["income"] for m in recent_income
-            ) / len(recent_income)
-            # Expenses: last 12 months average (or all if fewer) — a full
-            # year smooths out seasonal spikes (holidays, annual fees).
+            avg_monthly_income = float(
+                pd.Series([m["income"] for m in recent_income]).median()
+            )
+            # Expenses: last 12 months (or all if fewer) — a full year covers
+            # every seasonal spike (holidays, annual fees) at least once.
             recent_expenses = (
                 monthly_data[-12:] if len(monthly_data) >= 12 else monthly_data
             )
-            avg_monthly_expenses = sum(
-                m["expenses"] for m in recent_expenses
-            ) / len(recent_expenses)
+            avg_monthly_expenses = float(
+                pd.Series([m["expenses"] for m in recent_expenses]).median()
+            )
             monthly_savings = avg_monthly_income - avg_monthly_expenses
 
         savings_rate = (

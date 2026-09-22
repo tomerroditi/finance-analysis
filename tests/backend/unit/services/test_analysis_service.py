@@ -10,6 +10,13 @@ from backend.models.transaction import BankTransaction, CreditCardTransaction
 from backend.services.analysis_service import AnalysisService
 from backend.services.investments_service import InvestmentsService
 from backend.services.pending_refunds_service import PendingRefundsService
+from backend.services.recurring_service import RecurringService
+
+
+def _months_ago(n: int, day: int = 10) -> str:
+    """A YYYY-MM-DD string ``n`` months back, on a fixed day."""
+    d = (pd.Timestamp.today().normalize() - pd.DateOffset(months=n)).replace(day=day)
+    return d.strftime("%Y-%m-%d")
 
 
 class TestAnalysisServiceOverview:
@@ -1914,3 +1921,274 @@ class TestExpenseBreakdownFilters:
         by_month = {r["month"]: round(sum(r["categories"].values()), 2) for r in breakdown}
         for month in budget["months"]:
             assert by_month.get(month["month"], 0.0) == round(month["expenses"], 2)
+
+
+class TestForecastIncomeComesFromRecurringStreams:
+    """The income half of get_cash_flow_forecast."""
+
+    def _salary(self, db_session, amount=12000.0, day=10, months=6, skip_current=True):
+        """A salary paid on ``day`` of each of the last ``months`` months."""
+        anchor = pd.Timestamp.today().normalize().replace(day=day)
+        start = 1 if skip_current else 0
+        for n in range(start, months + start):
+            db_session.add(
+                BankTransaction(
+                    id=f"sal-{n}",
+                    date=(anchor - pd.DateOffset(months=n)).strftime("%Y-%m-%d"),
+                    provider="leumi",
+                    account_name="Checking",
+                    description="MONTHLY SALARY",
+                    amount=amount,
+                    category="Salary",
+                    source=Tables.BANK.value,
+                )
+            )
+        db_session.commit()
+
+    def test_a_windfall_does_not_become_next_month_s_income(self, db_session):
+        """A one-off deposit three months ago must not be projected as income.
+
+        This is the bug the recurring basis exists for: an averaged baseline
+        carried a single 400k month into the next three forecasts, which told
+        a household on a 12k salary it was on track to save six figures.
+        """
+        self._salary(db_session)
+        db_session.add(
+            BankTransaction(
+                id="windfall",
+                date=_months_ago(2),
+                provider="leumi",
+                account_name="Checking",
+                description="INHERITANCE",
+                amount=400000.0,
+                category="Other Income",
+                source=Tables.BANK.value,
+            )
+        )
+        db_session.commit()
+
+        result = AnalysisService(db_session).get_cash_flow_forecast()
+
+        assert result["income_basis"] == "recurring"
+        assert result["expected_income"] < 40000.0
+        assert result["projected_net"] < 40000.0
+
+    def test_a_salary_not_yet_paid_is_added_to_what_is_in_hand(self, db_session):
+        """Early in the month the forecast still expects the salary to land."""
+        import pytest
+
+        today = pd.Timestamp.today().normalize()
+        if today.day >= today.days_in_month:
+            pytest.skip("run on the last day of the month — no day left to pay on")
+        # Anchor pay day just ahead of today, whenever the suite runs.
+        self._salary(db_session, day=today.day + 1)
+
+        result = AnalysisService(db_session).get_cash_flow_forecast()
+
+        assert result["recurring_income_due"] == 12000.0
+        assert result["expected_income"] == pytest.approx(
+            result["actual_income"] + 12000.0
+        )
+
+    def test_no_stream_falls_back_to_a_median_not_a_mean(self, db_session):
+        """With nothing recurring to lean on, one freak month must not set the
+        baseline — the median of the complete months does."""
+        payers = ["ALPHA LTD", "BETA GMBH", "GAMMA INC", "DELTA CO"]
+        amounts = [5000.0, 5000.0, 400000.0, 5000.0]
+        for n, (payer, amount) in enumerate(zip(payers, amounts), start=1):
+            db_session.add(
+                BankTransaction(
+                    id=f"odd-{n}",
+                    date=_months_ago(n),
+                    provider="leumi",
+                    account_name="Checking",
+                    description=payer,
+                    amount=amount,
+                    category="Other Income",
+                    source=Tables.BANK.value,
+                )
+            )
+        db_session.commit()
+
+        result = AnalysisService(db_session).get_cash_flow_forecast()
+
+        assert result["income_basis"] == "trend"
+        assert result["avg_monthly_income"] == 5000.0
+
+    def test_a_salary_already_banked_keeps_the_recurring_basis(self, db_session):
+        """A stream that has paid owes nothing and is still the evidence.
+
+        If an empty "still due" list flipped the basis back to the trend, the
+        forecast would swap to a median the moment the salary landed — and
+        immediately hand back the windfall the recurring basis exists to keep
+        out.
+        """
+        import pytest
+
+        today = pd.Timestamp.today().normalize()
+        if today.day < 2:
+            pytest.skip("run on the 1st — no earlier day to bank the salary on")
+        self._salary(db_session, day=1)
+        db_session.add(
+            BankTransaction(
+                id="sal-this-month",
+                date=today.replace(day=1).strftime("%Y-%m-%d"),
+                provider="leumi",
+                account_name="Checking",
+                description="MONTHLY SALARY",
+                amount=12000.0,
+                category="Salary",
+                source=Tables.BANK.value,
+            )
+        )
+        db_session.commit()
+
+        result = AnalysisService(db_session).get_cash_flow_forecast()
+
+        assert result["income_basis"] == "recurring"
+        assert result["recurring_income_due"] == 0.0
+        assert result["expected_income"] == result["actual_income"]
+
+    def test_expected_income_never_dips_below_what_is_already_banked(
+        self, db_session
+    ):
+        """Whatever the basis, money in hand is money in hand."""
+        result = AnalysisService(db_session).get_cash_flow_forecast()
+        assert result["expected_income"] >= result["actual_income"]
+
+
+class TestForecastExpensesUseOneDefinition:
+    """The expense half — month-to-date and trend measured the same way."""
+
+    def test_month_to_date_expenses_match_the_budget_page(self, db_session):
+        """``actual_expenses`` is itemized spend, not the card bill the bank
+        paid this month for last month's shopping."""
+        today = pd.Timestamp.today().normalize()
+        db_session.add(
+            CreditCardTransaction(
+                id="bought-this-month",
+                date=today.replace(day=1).strftime("%Y-%m-%d"),
+                provider="visa",
+                account_name="card-1",
+                description="GROCERIES",
+                amount=-500.0,
+                category="Food",
+                source=Tables.CREDIT_CARD.value,
+            )
+        )
+        db_session.add(
+            BankTransaction(
+                id="card-bill",
+                date=today.replace(day=1).strftime("%Y-%m-%d"),
+                provider="leumi",
+                account_name="Checking",
+                description="CARD BILL",
+                amount=-9000.0,
+                category="Credit Cards",
+                source=Tables.BANK.value,
+            )
+        )
+        db_session.commit()
+
+        service = AnalysisService(db_session)
+        result = service.get_cash_flow_forecast()
+        month = today.strftime("%Y-%m")
+        budget_figure = next(
+            m["expenses"]
+            for m in service.get_monthly_expenses()["months"]
+            if m["month"] == month
+        )
+
+        assert result["actual_expenses"] == budget_figure
+
+    def test_days_the_data_has_not_seen_are_projected_not_counted_as_zero(
+        self, db_session, monkeypatch
+    ):
+        """A scrape that stopped a week ago is a week of unknown spending, not
+        a week of savings."""
+        import pytest
+
+        today = pd.Timestamp.today().normalize()
+        if today.day < 12:
+            pytest.skip("too early in the month to leave a stale gap")
+
+        for n in range(1, 4):
+            db_session.add(
+                CreditCardTransaction(
+                    id=f"hist-{n}",
+                    date=_months_ago(n),
+                    provider="visa",
+                    account_name="card-1",
+                    description=f"SHOP {n}",
+                    amount=-3000.0,
+                    category="Food",
+                    source=Tables.CREDIT_CARD.value,
+                )
+            )
+        db_session.add(
+            CreditCardTransaction(
+                id="stale-edge",
+                date=today.replace(day=2).strftime("%Y-%m-%d"),
+                provider="visa",
+                account_name="card-1",
+                description="SHOP now",
+                amount=-100.0,
+                category="Food",
+                source=Tables.CREDIT_CARD.value,
+            )
+        )
+        db_session.commit()
+
+        result = AnalysisService(db_session).get_cash_flow_forecast()
+
+        assert result["observed_through"] == today.replace(day=2).strftime("%Y-%m-%d")
+        # Projected over the 2nd onward, not merely the days left on the
+        # calendar — so the projection covers more than days_remaining/month.
+        projected = result["expected_expenses"] - result["actual_expenses"]
+        calendar_share = (
+            result["avg_monthly_expenses"]
+            / result["days_in_month"]
+            * result["days_remaining"]
+        )
+        assert projected > calendar_share
+
+    def test_a_committed_bill_is_counted_once(self, db_session):
+        """A confirmed recurring charge is added at its due date and taken out
+        of the daily trend, not smeared across the month on top of itself."""
+        import pytest
+
+        today = pd.Timestamp.today().normalize()
+        month_end = today + pd.offsets.MonthEnd(0)
+        if today >= month_end:
+            pytest.skip("run on the last day of the month — no remaining days")
+
+        next_due = today + pd.Timedelta(days=1)
+        for k in range(1, 5):
+            db_session.add(
+                CreditCardTransaction(
+                    id=f"rent-{k}",
+                    date=(next_due - pd.Timedelta(days=30 * k)).strftime("%Y-%m-%d"),
+                    provider="visa",
+                    account_name="card-1",
+                    description="RENT",
+                    amount=-5000.0,
+                    category="Household",
+                    source=Tables.CREDIT_CARD.value,
+                )
+            )
+        db_session.commit()
+
+        recurring = RecurringService(db_session)
+        recurring.set_decision(
+            recurring.get_recurring()["items"][0]["normalized"], "confirmed"
+        )
+
+        result = AnalysisService(db_session).get_cash_flow_forecast()
+        projected = result["expected_expenses"] - result["actual_expenses"]
+
+        assert result["committed_remaining"] >= 5000.0
+        # The bill is in there once; a trend that still carried it would push
+        # the remainder past the bill plus a full month of everything else.
+        assert projected <= result["committed_remaining"] + result[
+            "avg_monthly_expenses"
+        ]

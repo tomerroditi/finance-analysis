@@ -142,6 +142,46 @@ category it lands in, so a month can end in credit. Anything that draws a
 category (a bar segment, a pie slice) skips those; anything that totals a
 month must keep them, or the refund vanishes from the month it belongs to.
 
+## The "This Month" forecast: due money, not average money
+
+`get_cash_flow_forecast` projects the running month. Two rules keep it honest.
+
+**Income is what recurring streams still owe.** `RecurringService.get_income_due_remaining`
+runs the cadence detector over income rows and reports what has not yet landed
+this month; the forecast adds exactly that to what is already banked:
+
+```
+expected_income = actual_income + recurring_income_due
+```
+
+There is no averaging in that line, and that is the point. An averaged
+baseline carries a windfall for as many months as the window is long — one
+wedding, one inheritance, one sold car, and the card promises six figures of
+savings on a five-figure salary. The median-of-6-complete-months fallback runs
+**only** when no income stream is detected at all; `income_basis` reports which
+was used.
+
+**Expenses are measured on one basis, and only over unobserved days.**
+
+| figure | basis |
+|---|---|
+| `actual_expenses`, `avg_monthly_expenses`, `expected_expenses`, `safe_to_spend` | itemized, CC-deduped, project-excluded — the Budget page's figure |
+| `current_bank_balance`, `projected_end_balance`, `daily` | the bank account's own view, where a card statement is one debit |
+
+Mixing them reported last month's card bill as this month's spending. Keep
+each column in its own basis.
+
+Confirmed recurring charges come **out** of the daily trend
+(`avg_monthly_expenses - committed_monthly`) and are added back at their due
+dates as `committed_remaining` — a bill lands once, on its day, not smeared
+across the month on top of itself.
+
+Both projections span `days_in_month - observed_day`, where `observed_through`
+is the latest transaction inside the running month. Accounts are scraped on
+their own schedule; the days after the last transaction are unobserved, not
+spend-free. Treating them as observed turned a week-old scrape into a week of
+savings.
+
 ## Prior Wealth
 
 Prior wealth represents money that existed **before the system started tracking transactions**. Without it, cumulative balance charts would start at zero instead of the user's actual starting balance.

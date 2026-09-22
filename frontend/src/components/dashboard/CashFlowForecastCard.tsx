@@ -56,6 +56,20 @@ export function CashFlowForecastSection() {
     ? Math.round((data.day_of_month / data.days_in_month) * 100)
     : 0;
 
+  // Which recurring streams make up the "still due" figure. User data, so it
+  // stays untranslated; the caption around it does not.
+  const dueBreakdown = data.recurring_income_items
+    .map((item) => `${item.label}: ${formatCurrency(item.amount)}`)
+    .join("\n");
+
+  // The projection reads days after the last transaction as unobserved, not
+  // spend-free. Say so when the scrape is behind, or the card looks like it
+  // simply forgot a week.
+  const staleThrough =
+    data.observed_through && Number(data.observed_through.slice(8, 10)) < data.day_of_month
+      ? data.observed_through
+      : null;
+
   // Unified rows so both series share one x-axis; missing keys render as gaps.
   const dailyRows = data.daily.map((d) => ({
     date: d.date,
@@ -76,9 +90,19 @@ export function CashFlowForecastSection() {
             <p className="text-[10px] md:text-xs text-[var(--text-muted)]" dir="auto">{monthLabel}</p>
           </div>
         </div>
-        <span className="text-[10px] md:text-xs text-[var(--text-muted)] whitespace-nowrap">
-          {t("dashboard.forecast.daysLeft", { count: data.days_remaining })}
-        </span>
+        <div className="text-end">
+          <span className="text-[10px] md:text-xs text-[var(--text-muted)] whitespace-nowrap">
+            {t("dashboard.forecast.daysLeft", { count: data.days_remaining })}
+          </span>
+          {staleThrough && (
+            <p
+              className="text-[9px] md:text-[10px] text-[var(--text-muted)] whitespace-nowrap"
+              data-testid="forecast-observed-through"
+            >
+              {t("dashboard.forecast.dataThrough", { date: formatDate(staleThrough) })}
+            </p>
+          )}
+        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-6">
@@ -168,6 +192,17 @@ export function CashFlowForecastSection() {
             <div className="bg-[var(--surface-light)] rounded-lg px-2.5 py-2">
               <p className="text-[9px] md:text-[10px] text-[var(--text-muted)] truncate">{t("dashboard.forecast.expectedIncome")}</p>
               <p dir="ltr" className="text-xs md:text-sm font-bold text-emerald-400 text-start truncate">{formatCurrency(data.expected_income)}</p>
+              {data.recurring_income_due > 0 && (
+                <p
+                  className="text-[9px] text-[var(--text-muted)] truncate"
+                  title={dueBreakdown}
+                  data-testid="forecast-income-due"
+                >
+                  {t("dashboard.forecast.incomeStillDue", {
+                    amount: formatCurrency(data.recurring_income_due),
+                  })}
+                </p>
+              )}
             </div>
             <div className="bg-[var(--surface-light)] rounded-lg px-2.5 py-2">
               <p className="text-[9px] md:text-[10px] text-[var(--text-muted)] truncate">{t("dashboard.forecast.expectedExpenses")}</p>
