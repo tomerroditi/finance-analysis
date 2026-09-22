@@ -535,6 +535,7 @@ test.describe("Income & Expenses dashboard card", () => {
       if ((await legendToggle.getAttribute("aria-expanded")) === "false") {
         await legendToggle.click();
       }
+      await expect(card.getByTestId("breakdown-legend-scroll")).toBeVisible();
       const legend = await card
         .getByTestId("breakdown-legend-scroll")
         .locator("tfoot td")
@@ -584,6 +585,15 @@ test.describe("Income & Expenses dashboard card", () => {
     expect(withProjects.kpi).toBe(withProjects.ledger);
     expect(withProjects.legend).toBe(withProjects.ledger);
     expect(withProjects.ledger).not.toBe(all.ledger);
+
+    // An opened legend survives a chip toggle. Each chip is part of the query
+    // key, so a toggle is a different query with no data of its own — without
+    // `keepPreviousData` the card empties out, the "no data" line flashes and
+    // the remount closes the legend under the reader.
+    await expect(
+      card.getByRole("button", { name: "Breakdown", exact: true }),
+    ).toHaveAttribute("aria-expanded", "true");
+    await expect(card.getByTestId("breakdown-legend-row").first()).toBeVisible();
 
     // Debt payments are money out by default; excluding them takes the
     // envelope view, and must move every reading at once.
@@ -681,27 +691,36 @@ test.describe("Income & Expenses dashboard card", () => {
         return out;
       });
 
-    // The expense KPI has its own query and can still read the zero
-    // placeholder here; it is what tells us a toggle's refetch has landed.
+    // A chip refetches income and expenses as two independent queries, and
+    // the bars sampled below are scaled per column — the income bars by the
+    // income series, the expense bars by the expense one. Waiting on a single
+    // KPI therefore reads the bars while half the card is still on the
+    // previous answer, which is exactly the transient this test is otherwise
+    // about. Both KPIs have to be back before the borders mean anything.
     const expenseKpi = card.getByTestId("kpi-expense");
+    const incomeKpi = card.getByTestId("kpi-income");
     await expect(expenseKpi).toContainText(/\d,\d{3}/, { timeout: 45_000 });
-    const kpiBefore = await expenseKpi.textContent();
+    await expect(incomeKpi).toContainText(/\d,\d{3}/, { timeout: 45_000 });
+    const kpis = async () =>
+      `${await incomeKpi.textContent()}|${await expenseKpi.textContent()}`;
+    const kpiBefore = await kpis();
     const bordersBefore = await barBorders();
     expect(bordersBefore.length).toBeGreaterThan(0);
 
-    // The loans chip is the one that reliably moves the cap: it takes a
-    // steady few thousand out of *every* month, which shifts the median the
-    // scale is anchored to, so bars cross the cap in both directions. The
-    // projects chip moves two lumpy months and can leave the capped set
-    // exactly as it was.
-    const loansChip = card.getByRole("button", { name: /^Loans & Debt (Ex|In)cluded$/ });
-    await loansChip.click();
-    await expect.poll(() => expenseKpi.textContent(), { timeout: 20_000 }).not.toBe(kpiBefore);
+    // The projects chip is the one that moves a cap *among the rows on
+    // screen*. The scale is anchored to the median of the whole history, but
+    // the ledger shows the last 12 periods, so a toggle only shows here if it
+    // flips a bar inside that window: project spend lands in recent months
+    // and takes four expense bars over the cap, while the loans chip's
+    // capped months are all older than the window.
+    const projectsChip = card.getByRole("button", { name: /^Projects (Ex|In)cluded$/ });
+    await projectsChip.click();
+    await expect.poll(kpis, { timeout: 20_000 }).not.toBe(kpiBefore);
     // Some bar has to take a cap here, or the round trip proves nothing.
     expect(await barBorders()).not.toEqual(bordersBefore);
 
-    await loansChip.click();
-    await expect.poll(() => expenseKpi.textContent(), { timeout: 20_000 }).toBe(kpiBefore);
+    await projectsChip.click();
+    await expect.poll(kpis, { timeout: 20_000 }).toBe(kpiBefore);
     // Read the settled state once: polling until the borders matched would
     // pass on the first frame that happened to agree, which is the transient
     // this defect hides behind.

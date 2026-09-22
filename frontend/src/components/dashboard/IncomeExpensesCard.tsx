@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import { createPortal } from "react-dom";
-import { useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { TrendingUp, TrendingDown, ArrowUp, ArrowDown, Minus, ChevronDown, ChevronUp } from "lucide-react";
 import { analyticsApi } from "../../services/api";
 import { useQueryKeys } from "../../hooks/useQueryKeys";
@@ -227,11 +227,18 @@ export function IncomeExpensesCard() {
           !includeDebt,
         )
       ).data,
+    // Every chip is part of the key, so a toggle is a *different* query with
+    // no data of its own. Without this the card empties out and rebuilds
+    // itself on every toggle: the "no data" line flashes, and because that
+    // unmounts the breakdown, an opened legend closes and a focused series is
+    // dropped — the reader loses their place for the length of a refetch.
+    placeholderData: keepPreviousData,
   });
   const { data: incomeBySourceData } = useQuery({
     queryKey: qk.analytics.incomeBySourceOverTime(excludePendingRefunds, !includeDebt),
     queryFn: async () =>
       (await analyticsApi.getIncomeBySourceOverTime(excludePendingRefunds, !includeDebt)).data,
+    placeholderData: keepPreviousData,
   });
 
   const yearly = scope === "yearly";
