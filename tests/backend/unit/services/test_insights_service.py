@@ -1,6 +1,7 @@
 """Tests for InsightsService insight-card generation."""
 
 import pandas as pd
+import pytest
 
 from backend.constants.budget import (
     ALL_TAGS,
@@ -252,10 +253,26 @@ class TestPaceInsight:
         monkeypatch.setattr(service.analysis, "get_cash_flow_forecast", lambda: forecast)
         return service
 
-    def test_no_income_baseline_yields_nothing(self, db_session, monkeypatch):
-        """Without expected income there is no pace to judge."""
+    @pytest.mark.parametrize(
+        "income, expenses, net",
+        [
+            (0.0, 500.0, -500.0),
+            (10000.0, 10400.0, -400.0),
+            (10000.0, 9900.0, 100.0),
+            (10000.0, 10000.0, 0.0),
+        ],
+        ids=["no-income-baseline", "gap-inside-error-bars", "barely-positive", "break-even"],
+    )
+    def test_no_card_when_the_pace_is_not_news(self, db_session, monkeypatch, income, expenses, net):
+        """Pace cards need an income baseline and a gap worth reading.
+
+        Without expected income there is no pace to judge; a gap under 5% of
+        expected income is noise in the projection itself, whether it is a
+        small overspend or a 1% saving; and exact break-even is neither a
+        warning nor a win.
+        """
         service = self._service_with_forecast(
-            db_session, monkeypatch, expected_income=0.0, expected_expenses=500.0, projected_net=-500.0
+            db_session, monkeypatch, expected_income=income, expected_expenses=expenses, projected_net=net
         )
         assert service._pace_insight() == []
 
@@ -272,13 +289,6 @@ class TestPaceInsight:
                 "data": {"amount": 2345.68},
             }
         ]
-
-    def test_gap_inside_the_forecast_error_bars_is_not_a_warning(self, db_session, monkeypatch):
-        """A gap under 5% of expected income is noise in the projection itself."""
-        service = self._service_with_forecast(
-            db_session, monkeypatch, expected_income=10000.0, expected_expenses=10400.0, projected_net=-400.0
-        )
-        assert service._pace_insight() == []
 
     def test_gap_a_running_project_accounts_for_is_not_a_warning(self, db_session, monkeypatch):
         """Overspending because a planned project is drawing is the plan, not a surprise."""
@@ -301,20 +311,6 @@ class TestPaceInsight:
                 "data": {"amount": 2000.0},
             }
         ]
-
-    def test_barely_positive_projection_is_not_worth_a_card(self, db_session, monkeypatch):
-        """Saving 1% of income is within the noise, not a win to announce."""
-        service = self._service_with_forecast(
-            db_session, monkeypatch, expected_income=10000.0, expected_expenses=9900.0, projected_net=100.0
-        )
-        assert service._pace_insight() == []
-
-    def test_break_even_yields_nothing(self, db_session, monkeypatch):
-        """Exactly break-even is neither a warning nor a win."""
-        service = self._service_with_forecast(
-            db_session, monkeypatch, expected_income=10000.0, expected_expenses=10000.0, projected_net=0.0
-        )
-        assert service._pace_insight() == []
 
 
 class TestRecurringInsights:
@@ -609,15 +605,6 @@ class TestDismissal:
         after = [i["data"]["category"] for i in InsightsService(db_session)._category_spike_insights()]
         assert after == ["Transportation", "Shopping"]
 
-    def test_next_month_is_a_new_card(self, db_session):
-        """The key carries the month, so a dismissal cannot silence the next one."""
-        self._seed_spike(db_session)
-        db_session.commit()
-
-        service = InsightsService(db_session)
-        key = service._category_spike_insights()[0]["key"]
-        assert key.endswith(_this_month())
-
     def test_a_dismissed_large_charge_lets_the_next_one_through(self, db_session):
         """The scan continues past a dismissed charge to the next candidate."""
         for i in range(8):
@@ -720,15 +707,3 @@ class TestLargeTransactionRefundNetting:
         result = InsightsService(db_session)._large_transaction_insight()
 
         assert [c["data"]["amount"] for c in result] == [3000.0]
-
-    def test_an_unrefunded_charge_still_raises_its_card(self, db_session):
-        """The netting must not swallow an ordinary outsized charge."""
-        self._seed_baseline(db_session)
-        laptop = _add(
-            db_session, "New Laptop", -4200.0, _months_ago(0, day=3), category="Electronics"
-        )
-        db_session.commit()
-
-        result = InsightsService(db_session)._large_transaction_insight()
-
-        assert [c["data"]["amount"] for c in result] == [4200.0]

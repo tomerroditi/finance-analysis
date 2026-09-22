@@ -72,13 +72,6 @@ def _split_ids(db_session, unique_id: int, source: str) -> list[int]:
 class TestTransactionsServiceDataRetrieval:
     """Tests for TransactionsService data retrieval methods."""
 
-    def test_get_data_for_analysis_empty_db(self, db_session):
-        """Verify empty DataFrame returned when no transactions exist."""
-        service = TransactionsService(db_session)
-        result = service.get_data_for_analysis()
-        assert isinstance(result, pd.DataFrame)
-        assert result.empty
-
     def test_get_data_for_analysis_empty_db_has_canonical_columns(self, db_session):
         """Verify the empty result still exposes the canonical analysis columns.
 
@@ -298,15 +291,18 @@ class TestTransactionsServiceCRUD:
     def test_update_transaction_scraped_source_only_tags(
         self, db_session, seed_base_transactions
     ):
-        """Verify scraped sources can only update category/tag."""
+        """Verify scraped sources only take category/tag; description, date and account are ignored."""
         service = TransactionsService(db_session)
 
         cc_df = service.get_all_transactions("credit_cards")
         unique_id = int(cc_df.iloc[0]["unique_id"])
         original_description = cc_df.iloc[0]["description"]
+        original_date = cc_df.iloc[0]["date"]
 
         updates = {
             "description": "Should not update",
+            "date": "2099-01-01",
+            "account_name": "Hacked",
             "category": "Transport",
             "tag": "Gas",
         }
@@ -317,6 +313,8 @@ class TestTransactionsServiceCRUD:
         updated_df = service.get_all_transactions("credit_cards")
         updated_row = updated_df[updated_df["unique_id"] == unique_id].iloc[0]
         assert updated_row["description"] == original_description
+        assert str(updated_row["date"]) == str(original_date)
+        assert updated_row["account_name"] != "Hacked"
         assert updated_row["category"] == "Transport"
         assert updated_row["tag"] == "Gas"
 
@@ -360,28 +358,6 @@ class TestTransactionsServiceCRUD:
         # wealth 0) now carries the -50.
         assert wallet_a["balance"] == pytest.approx(250.0)
         assert wallet_b["balance"] == pytest.approx(-50.0)
-
-    def test_update_transaction_date_ignored_for_scraped_source(
-        self, db_session, seed_base_transactions
-    ):
-        """Verify date and account_name updates are ignored for scraped (non-manual) sources."""
-        service = TransactionsService(db_session)
-
-        cc_df = service.get_all_transactions("credit_cards")
-        unique_id = int(cc_df.iloc[0]["unique_id"])
-        original_date = cc_df.iloc[0]["date"]
-
-        assert service.update_transaction(
-            unique_id,
-            "credit_card_transactions",
-            {"date": "2099-01-01", "account_name": "Hacked", "category": "Food"},
-        ) is True
-
-        updated_df = service.get_all_transactions("credit_cards")
-        updated_row = updated_df[updated_df["unique_id"] == unique_id].iloc[0]
-        assert str(updated_row["date"]) == str(original_date)
-        assert updated_row["account_name"] != "Hacked"
-        assert updated_row["category"] == "Food"
 
     def test_update_transaction_nonexistent_id_raises_not_found(self, db_session):
         """Updating a unique_id that does not exist is a 404, not a silent no-op."""

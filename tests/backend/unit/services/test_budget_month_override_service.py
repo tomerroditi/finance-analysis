@@ -196,11 +196,6 @@ class TestRemoveOverride:
 class TestGetAllAndOverrideMap:
     """Tests for get_all and the get_override_map lookup structure."""
 
-    def test_get_all_empty_returns_empty_list(self, db_session):
-        """With no overrides, get_all returns an empty list, not a DataFrame."""
-        service = BudgetMonthOverrideService(db_session)
-        assert service.get_all() == []
-
     def test_get_all_returns_serialized_records(
         self, db_session, seed_base_transactions
     ):

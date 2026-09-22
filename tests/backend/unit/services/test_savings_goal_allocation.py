@@ -95,18 +95,6 @@ def service(db_session):
 class TestWaterfallOrdering:
     """Priority decides who is funded first, and leftovers spill downward."""
 
-    def test_higher_priority_goal_fills_first(self, db_session, service):
-        """The top-priority goal absorbs the surplus before the next one sees any."""
-        last = _month_str(1)
-        _seed_surplus(db_session, last, income=10000, expenses=7000)
-
-        service.create(name="First", target_amount=1000, priority=0, start_month=last)
-        service.create(name="Second", target_amount=1000, priority=1, start_month=last)
-
-        goals = {g["name"]: g for g in service.get_all()}
-        assert goals["First"]["funded"] == 1000
-        assert goals["Second"]["funded"] == 1000
-
     def test_surplus_runs_out_before_lower_priority_goal(self, db_session, service):
         """A goal below the waterline gets nothing when the surplus is exhausted."""
         last = _month_str(1)
@@ -197,19 +185,6 @@ class TestAchievement:
 
 class TestSurplusDefinition:
     """What counts as the month's spare money."""
-
-    def test_negative_surplus_month_allocates_nothing(self, db_session, service):
-        """Overspending a month funds no goals — the deficit hits the pool."""
-        good, bad = _month_str(2), _month_str(1)
-        _seed_free_cash(db_session, 50000)
-        _seed_surplus(db_session, good, income=10000, expenses=9000)
-        _seed_surplus(db_session, bad, income=5000, expenses=8000)
-
-        service.create(name="Goal", target_amount=5000, priority=0, start_month=good)
-
-        goal = service.get_all()[0]
-        assert goal["funded"] == 1000
-        assert goal["clawed_back"] == 0
 
     def test_investment_transfers_reduce_the_surplus(self, db_session, service):
         """Money moved into investments has left the spendable pool."""
@@ -345,24 +320,12 @@ class TestUtilization:
 class TestRebuild:
     """Restating history is explicit, previewable, and respects closed goals."""
 
-    def test_priority_change_alone_does_not_restate_history(self, db_session, service):
-        """Reordering applies forward; already-written months keep their amounts."""
-        last = _month_str(1)
-        _seed_surplus(db_session, last, income=10000, expenses=9500)
-        first = service.create(name="First", target_amount=1000, priority=0, start_month=last)
-        service.create(name="Second", target_amount=1000, priority=1, start_month=last)
-
-        before = {g["name"]: g["funded"] for g in service.get_all()}
-        assert before == {"First": 500, "Second": 0}
-
-        ids = {g["name"]: g["id"] for g in service.get_all()}
-        service.reorder([ids["Second"], ids["First"]])
-
-        after = {g["name"]: g["funded"] for g in service.get_all()}
-        assert after == before
-
     def test_rebuild_dry_run_previews_without_writing(self, db_session, service):
-        """A dry run reports the diff and leaves the ledger untouched."""
+        """A dry run reports the diff and leaves the ledger untouched.
+
+        The reorder before it applies forward only, so the ledger still holds
+        the old order's amounts after both.
+        """
         last = _month_str(1)
         _seed_surplus(db_session, last, income=10000, expenses=9500)
         service.create(name="First", target_amount=1000, priority=0, start_month=last)

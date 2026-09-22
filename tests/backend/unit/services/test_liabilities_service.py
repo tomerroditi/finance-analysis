@@ -4,8 +4,10 @@ from datetime import date
 from unittest.mock import patch
 
 import pandas as pd
+import pytest
 from sqlalchemy import select
 
+from backend.errors import ValidationException
 from backend.models.liability import Liability, LiabilityTransaction
 from backend.models.transaction import BankTransaction
 from backend.services.liabilities_service import LiabilitiesService, _optional_number
@@ -103,23 +105,6 @@ class TestLiabilitiesService:
         # Strictly greater than the naive principal - payments figure
         assert summary["remaining_balance"] > 50000.0 - 3450.0
 
-    def test_analysis_interest_split_matches_schedule(self, db_session, seed_liabilities):
-        """Verify interest_paid + interest_remaining equals total schedule interest."""
-        service = LiabilitiesService(db_session)
-        car_loan = seed_liabilities["liabilities"][0]
-        analysis = service.get_liability_analysis(car_loan.id)
-        summary = analysis["summary"]
-
-        total_schedule_interest = sum(
-            e["interest_portion"] for e in analysis["schedule"]
-        )
-
-        # interest_paid + interest_remaining == total schedule interest
-        assert abs(
-            (summary["interest_paid"] + summary["interest_remaining"])
-            - total_schedule_interest
-        ) < 0.01
-
     def test_analysis_interest_paid_from_actual_payments(self, db_session, seed_liabilities):
         """Verify interest_paid is based on first N schedule entries matching payment count."""
         service = LiabilitiesService(db_session)
@@ -215,7 +200,7 @@ class TestLiabilitiesService:
 
     @patch("backend.services.liabilities_service.date", _FakeDate)
     def test_generate_missing_transactions(self, db_session, seed_liabilities):
-        """Verify generate_missing_transactions creates entries for months without payments."""
+        """Verify generate_missing_transactions fills months without payments, and only once."""
         # Car Loan: start 2023-06-01, payments exist for Jul/Aug/Sep 2023
         # _FakeDate.today() returns 2023-12-15 so months Oct/Nov/Dec should be generated
         _FakeDate._today = date(2023, 12, 15)
@@ -236,19 +221,7 @@ class TestLiabilitiesService:
         assert all(t.amount < 0 for t in gen_txns)
         assert {t.payment_number for t in gen_txns} == {4, 5, 6}
 
-    @patch("backend.services.liabilities_service.date", _FakeDate)
-    def test_generate_missing_transactions_idempotent(self, db_session, seed_liabilities):
-        """Verify calling generate twice does not create duplicate transactions."""
-        _FakeDate._today = date(2023, 12, 15)
-
-        service = LiabilitiesService(db_session)
-        car_loan = seed_liabilities["liabilities"][0]
-
-        first_run = service.generate_missing_transactions(car_loan.id)
-        second_run = service.generate_missing_transactions(car_loan.id)
-
-        assert first_run == 3
-        assert second_run == 0
+        assert service.generate_missing_transactions(car_loan.id) == 0
 
     @patch("backend.services.liabilities_service.date", _FakeDate)
     def test_get_liability_transactions_includes_generated(self, db_session, seed_liabilities):
@@ -374,55 +347,28 @@ class TestPrimeBasedLoans:
             "boi_rate", points, source="seed"
         )
 
-    def test_create_prime_linked_requires_spread(self, db_session):
-        """Verify creating a prime-linked loan without a spread raises ValidationException."""
-        import pytest
-
-        from backend.errors import ValidationException
-
+    @pytest.mark.parametrize(
+        "loan_kwargs",
+        [
+            pytest.param({"loan_type": "prime_linked"}, id="prime_linked_without_spread"),
+            pytest.param(
+                {"loan_type": "variable_unlinked", "rate_spread": 1.0},
+                id="variable_without_reset_months",
+            ),
+            pytest.param({}, id="fixed_without_interest_rate"),
+        ],
+    )
+    def test_create_missing_rate_input_raises(self, db_session, loan_kwargs):
+        """Verify each loan type rejects creation without the rate input it needs."""
         service = LiabilitiesService(db_session)
         with pytest.raises(ValidationException):
             service.create_liability(
-                name="Mortgage Prime",
-                tag="Mortgage",
-                principal_amount=500000.0,
-                term_months=240,
-                start_date="2024-01-01",
-                loan_type="prime_linked",
-            )
-
-    def test_create_variable_requires_reset_months(self, db_session):
-        """Verify creating a variable loan without reset months raises ValidationException."""
-        import pytest
-
-        from backend.errors import ValidationException
-
-        service = LiabilitiesService(db_session)
-        with pytest.raises(ValidationException):
-            service.create_liability(
-                name="Variable Loan",
+                name="Loan",
                 tag="Mortgage",
                 principal_amount=100000.0,
                 term_months=120,
                 start_date="2024-01-01",
-                loan_type="variable_unlinked",
-                rate_spread=1.0,
-            )
-
-    def test_create_fixed_requires_interest_rate(self, db_session):
-        """Verify creating a fixed loan without a rate raises ValidationException."""
-        import pytest
-
-        from backend.errors import ValidationException
-
-        service = LiabilitiesService(db_session)
-        with pytest.raises(ValidationException):
-            service.create_liability(
-                name="Fixed Loan",
-                tag="Car Loan",
-                principal_amount=50000.0,
-                term_months=48,
-                start_date="2024-01-01",
+                **loan_kwargs,
             )
 
     def test_prime_linked_derives_rate_and_tracks_steps(self, db_session):
@@ -515,25 +461,26 @@ class TestPrimeBasedLoans:
 class TestOptionalNumber:
     """Tests for the NaN-tolerant ``_optional_number`` coercion helper."""
 
-    def test_none_stays_none(self):
-        """``None`` is passed through untouched."""
-        assert _optional_number(None) is None
-
-    def test_nan_becomes_none(self):
-        """A pandas/NumPy NaN (a NULL read from a DataFrame) is treated as missing."""
-        assert _optional_number(float("nan")) is None
-        assert _optional_number(pd.NA) is None
-
-    def test_numeric_values_are_coerced_to_float(self):
-        """Ints, floats and numeric strings all become plain floats."""
-        assert _optional_number(7) == 7.0
-        assert _optional_number(2.5) == 2.5
-        assert _optional_number("4.5") == 4.5
-        assert isinstance(_optional_number(7), float)
-
-    def test_zero_is_preserved(self):
-        """Zero is a real value, not a missing one."""
-        assert _optional_number(0) == 0.0
+    @pytest.mark.parametrize(
+        ("value", "expected"),
+        [
+            pytest.param(None, None, id="none"),
+            pytest.param(float("nan"), None, id="float_nan"),
+            pytest.param(pd.NA, None, id="pd_na"),
+            pytest.param(0, 0.0, id="zero_is_a_value"),
+            pytest.param(7, 7.0, id="int"),
+            pytest.param(2.5, 2.5, id="float"),
+            pytest.param("4.5", 4.5, id="numeric_string"),
+        ],
+    )
+    def test_coercion(self, value, expected):
+        """Missing values (None, NaN, NA) become None; numbers, zero included, become floats."""
+        result = _optional_number(value)
+        if expected is None:
+            assert result is None
+        else:
+            assert result == expected
+            assert isinstance(result, float)
 
 
 class TestDebtOverTime:

@@ -469,19 +469,10 @@ class TestScrapingServiceStartDate:
         expected = datetime.fromisoformat("2026-02-20T10:30:00").date() - timedelta(days=7)
         assert result == expected
 
-    def test_get_scraper_start_date_invalid_date_falls_back(self, service):
-        """Verify invalid date string falls back to 365 days ago."""
-        service.scraping_history_repo.get_last_successful_scrape_date.return_value = (
-            "not-a-date"
-        )
-
-        result = service._get_scraper_start_date("banks", "hapoalim", "Main")
-
-        assert result == date.today() - timedelta(days=365)
-
-    def test_get_scraper_start_date_no_prior_scrape(self, service):
-        """Verify None last scrape falls back to 365 days ago."""
-        service.scraping_history_repo.get_last_successful_scrape_date.return_value = None
+    @pytest.mark.parametrize("last_scrape", ["not-a-date", None], ids=["invalid-date", "never-scraped"])
+    def test_get_scraper_start_date_falls_back_to_a_year(self, service, last_scrape):
+        """Verify an unparseable or missing last scrape falls back to 365 days ago."""
+        service.scraping_history_repo.get_last_successful_scrape_date.return_value = last_scrape
 
         result = service._get_scraper_start_date("banks", "hapoalim", "Main")
 

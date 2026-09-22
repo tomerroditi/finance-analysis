@@ -84,15 +84,12 @@ class TestMonthFraming:
         assert result["days_left"] == 12
 
     def test_closed_month_is_fully_elapsed(self, db_session, frozen_today):
-        """A month already past counts every one of its days as spent."""
+        """A month already past counts every one of its days and offers no projection."""
         result = BudgetOverviewService(db_session).get_overview(2026, 1)
         assert result["is_current_month"] is False
         assert result["days_elapsed"] == 31
         assert result["days_left"] == 0
-
-    def test_closed_month_has_no_projection(self, db_session, frozen_today):
-        """A settled month has a final figure, so no projection is offered."""
-        assert BudgetOverviewService(db_session).get_overview(2026, 1)["projected"] is None
+        assert result["projected"] is None
 
     def test_future_month_has_no_elapsed_days(self, db_session, frozen_today):
         """A month that has not started has nothing elapsed to extrapolate from."""
@@ -261,10 +258,13 @@ class TestCommitments:
 class TestSeparatePools:
     """Project and yearly spend is not inside the monthly budget."""
 
-    def test_project_spend_stays_out_of_the_monthly_total(self, db_session, frozen_today):
-        """A project transaction never counts against the monthly budget."""
+    def test_total_out_adds_the_three_pools(self, db_session, frozen_today):
+        """Project and yearly spend stay out of the monthly total; ``total_out`` adds all three."""
         MonthlyBudgetService(db_session).create_rule(
             "Total Budget", 20000.0, "Total Budget", ["all_tags"], 3, 2026
+        )
+        YearlyBudgetService(db_session).create_rule(
+            "Vacations", 20000.0, "Travel", ["Hotels"], 2026
         )
         ProjectBudgetService(db_session).add_rule(
             name="Total Budget",
@@ -274,83 +274,19 @@ class TestSeparatePools:
             month=None,
             year=None,
         )
-        _seed(db_session, "2026-03-08", "Home Renovation", "Materials", -4200.0)
+        _seed(db_session, "2026-03-08", "Travel", "Hotels", -3000.0)
+        _seed(db_session, "2026-03-09", "Home Renovation", "Materials", -4200.0)
         _seed(db_session, "2026-03-11", "Food", "Groceries", -400.0)
 
         result = BudgetOverviewService(db_session).get_overview(2026, 3)
         assert result["monthly_spent"] == 400.0
         assert result["projects_month_spent"] == 4200.0
-
-    def test_yearly_claimed_spend_stays_out_of_the_monthly_total(
-        self, db_session, frozen_today
-    ):
-        """A yearly-claimed tag never counts against the monthly budget."""
-        MonthlyBudgetService(db_session).create_rule(
-            "Total Budget", 20000.0, "Total Budget", ["all_tags"], 3, 2026
-        )
-        YearlyBudgetService(db_session).create_rule(
-            "Vacations", 20000.0, "Travel", ["Hotels"], 2026
-        )
-        _seed(db_session, "2026-03-08", "Travel", "Hotels", -3000.0)
-        _seed(db_session, "2026-03-11", "Food", "Groceries", -400.0)
-
-        result = BudgetOverviewService(db_session).get_overview(2026, 3)
-        assert result["monthly_spent"] == 400.0
         assert result["yearly_month_spent"] == 3000.0
-
-    def test_total_out_adds_the_three_pools(self, db_session, frozen_today):
-        """Only ``total_out`` describes everything that left the accounts."""
-        MonthlyBudgetService(db_session).create_rule(
-            "Total Budget", 20000.0, "Total Budget", ["all_tags"], 3, 2026
-        )
-        YearlyBudgetService(db_session).create_rule(
-            "Vacations", 20000.0, "Travel", ["Hotels"], 2026
-        )
-        ProjectBudgetService(db_session).add_rule(
-            name="Total Budget",
-            amount=30000.0,
-            category="Home Renovation",
-            tags=["all_tags"],
-            month=None,
-            year=None,
-        )
-        _seed(db_session, "2026-03-08", "Travel", "Hotels", -3000.0)
-        _seed(db_session, "2026-03-09", "Home Renovation", "Materials", -4200.0)
-        _seed(db_session, "2026-03-11", "Food", "Groceries", -400.0)
-
-        result = BudgetOverviewService(db_session).get_overview(2026, 3)
         assert result["total_out"] == 7600.0
 
 
 class TestLongEnvelopes:
     """Yearly and project envelopes carry a month share and an overall standing."""
-
-    def test_project_reports_month_share_and_lifetime_standing(
-        self, db_session, frozen_today
-    ):
-        """The month's contribution is scoped; the standing is lifetime-to-date."""
-        ProjectBudgetService(db_session).add_rule(
-            name="Total Budget",
-            amount=30000.0,
-            category="Home Renovation",
-            tags=["all_tags"],
-            month=None,
-            year=None,
-        )
-        _seed(db_session, "2026-01-08", "Home Renovation", "Materials", -9000.0)
-        _seed(db_session, "2026-03-09", "Home Renovation", "Materials", -4200.0)
-
-        envelope = next(
-            e
-            for e in BudgetOverviewService(db_session).get_overview(2026, 3)[
-                "long_envelopes"
-            ]
-            if e["name"] == "Home Renovation"
-        )
-        assert envelope["kind"] == "project"
-        assert envelope["month_contribution"] == 4200.0
-        assert envelope["spent"] == 13200.0
-        assert envelope["budget"] == 30000.0
 
     def test_yearly_reports_month_share_and_year_to_date_standing(
         self, db_session, frozen_today
@@ -399,6 +335,8 @@ class TestLongEnvelopes:
         january = next(
             e for e in service.get_overview(2026, 1)["long_envelopes"] if e["name"] == "Home Renovation"
         )
+        assert march["kind"] == "project"
+        assert march["budget"] == 30000.0
         assert march["spent"] == january["spent"] == 13200.0
         assert march["month_contribution"] == 4200.0
         assert january["month_contribution"] == 9000.0

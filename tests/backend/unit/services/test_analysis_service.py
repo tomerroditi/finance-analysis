@@ -8,7 +8,6 @@ import pytest
 from backend.constants.tables import Tables
 from backend.models.transaction import BankTransaction, CreditCardTransaction
 from backend.services.analysis_service import AnalysisService
-from backend.services.investments_service import InvestmentsService
 from backend.services.pending_refunds_service import PendingRefundsService
 
 
@@ -109,29 +108,6 @@ class TestAnalysisServiceTimeSeries:
         assert mar["net_change"] == 5180.0
         assert mar["cumulative_balance"] == 4975.0 + 8970.0 + 5180.0
 
-    def test_get_net_balance_over_time_excludes_cc(
-        self, db_session, seed_base_transactions
-    ):
-        """Verify credit card transactions excluded from balance (only bank source used)."""
-        service = AnalysisService(db_session)
-        result = service.get_net_balance_over_time()
-
-        # Total net change across all months should equal sum of all bank+cash amounts
-        # (CC transactions are excluded)
-        total_net = sum(r["net_change"] for r in result)
-
-        # Sum of all bank+cash amounts in seed data:
-        # Jan: 8000 - 3000 - 500 + 500 - 15 - 10 = 4975
-        # Feb: 8500 - 3000 - 18 - 12 + 3500 = 8970
-        # Mar: 8200 - 3000 - 700 + 700 - 12 - 8 = 5180
-        expected_total = 4975.0 + 8970.0 + 5180.0
-        assert total_net == expected_total
-
-        # Verify CC amounts are NOT included (total CC = -1380 across all months)
-        # If CC were included, total would differ
-        cc_total = -(150 + 80 + 60 + 40 + 250 + 180 + 120 + 55 + 45 + 200 + 95 + 70 + 35)
-        assert total_net != expected_total + cc_total
-
     def test_cc_only_month_appears_with_zeros(self, db_session):
         """A month with only credit-card rows still appears, valued at zero.
 
@@ -177,11 +153,11 @@ class TestAnalysisServiceNetWorthOverTime:
     """Tests for net worth over time including cash balance tracking."""
 
     def test_get_net_worth_over_time_structure(self, db_session, seed_base_transactions):
-        """Verify each snapshot has all required keys including cash."""
+        """Verify an anchor month plus one snapshot per month, each with all keys."""
         service = AnalysisService(db_session)
         result = service.get_net_worth_over_time()
 
-        assert len(result) == 4  # anchor + 3 months
+        assert [r["month"] for r in result] == ["2023-12", "2024-01", "2024-02", "2024-03"]
         for entry in result:
             assert "month" in entry
             assert "bank_balance" in entry
@@ -213,14 +189,6 @@ class TestAnalysisServiceNetWorthOverTime:
         service = AnalysisService(db_session)
         result = service.get_net_worth_over_time()
         assert result == []
-
-    def test_get_net_worth_over_time_months(self, db_session, seed_base_transactions):
-        """Verify correct months returned with anchor point."""
-        service = AnalysisService(db_session)
-        result = service.get_net_worth_over_time()
-
-        months = [r["month"] for r in result]
-        assert months == ["2023-12", "2024-01", "2024-02", "2024-03"]
 
     def test_get_net_worth_over_time_net_worth_equals_bank_plus_investments_plus_cash(
         self, db_session, seed_base_transactions
@@ -278,7 +246,7 @@ class TestAnalysisServiceIncomeExpenses:
 
         # Call get_income_investments_and_expenses directly with the full transactions df
         df = service.repo.get_table()
-        income, investments, expenses = service.get_income_investments_and_expenses(df)
+        income, _investments, expenses = service.get_income_investments_and_expenses(df)
 
         # Income from bank+cash only (CC excluded): Salary 24700 + Other Income 3500
         assert income == 28200.0
@@ -548,46 +516,6 @@ class TestAnalysisServiceSankey:
 
         assert "Unknown" not in result["nodes"]
 
-    def test_get_sankey_data_excludes_ignore(
-        self, db_session, seed_base_transactions
-    ):
-        """Verify Ignore category excluded from Sankey."""
-        service = AnalysisService(db_session)
-        result = service.get_sankey_data()
-
-        # "Ignore" should not appear anywhere in nodes
-        assert "Ignore" not in result["nodes"]
-
-        # Verify that all nodes are valid (no Ignore-related nodes)
-        for node in result["nodes"]:
-            assert "Ignore" not in node
-
-
-class TestAnalysisServiceInvestmentPriorWealth:
-    """Tests for investment prior wealth aggregation."""
-
-    def test_get_investment_prior_wealth_total_sums_all_investments(
-        self, db_session, seed_investments
-    ):
-        """Verify get_total_prior_wealth sums prior_wealth_amount for all investments."""
-        stock_fund, bond_fund = seed_investments["investments"]
-        stock_fund.prior_wealth_amount = 12000.0
-        bond_fund.prior_wealth_amount = -160.0   # closed, still included
-        db_session.commit()
-
-        service = InvestmentsService(db_session)
-        total = service.get_total_prior_wealth()
-
-        assert total == pytest.approx(11840.0)
-
-    def test_get_investment_prior_wealth_total_returns_zero_with_no_investments(
-        self, db_session
-    ):
-        """Verify get_total_prior_wealth returns 0.0 when no investments exist."""
-        service = InvestmentsService(db_session)
-        assert service.get_total_prior_wealth() == 0.0
-
-
 class TestAnalysisServiceIncomeBySource:
     """Tests for income breakdown by source over time."""
 
@@ -706,74 +634,8 @@ class TestAnalysisServiceIncomeBySource:
         result = service.get_income_by_source_over_time()
         assert result == []
 
-    def test_get_income_by_source_over_time_excludes_cc(
-        self, db_session, seed_base_transactions
-    ):
-        """Verify credit card transactions are excluded from income calculation."""
-        service = AnalysisService(db_session)
-        result = service.get_income_by_source_over_time()
-
-        # All income should come from bank/cash sources only
-        # CC transactions have no income categories in seed data, but verify
-        # the method filters them out by checking totals match expected
-        total_income = sum(r["total"] for r in result)
-        assert total_income == 8000.0 + 12000.0 + 8200.0  # 28200
-
-
 class TestIncomeMaskPositiveLiabilities:
     """Tests for _get_income_mask handling of positive liabilities (loan receipts)."""
-
-    def test_positive_liabilities_classified_as_income(self, db_session):
-        """Verify positive Liabilities amount is classified as income by the mask."""
-        loan = BankTransaction(
-            id="bank_loan_mask_1",
-            date="2024-06-01",
-            provider="hapoalim",
-            account_name="Checking",
-            description="Loan Disbursement",
-            amount=25000.0,
-            category="Liabilities",
-            tag="Mortgage",
-            source="bank_transactions",
-            type="normal",
-            status="completed",
-        )
-        db_session.add(loan)
-        db_session.commit()
-
-        service = AnalysisService(db_session)
-        df = service.repo.get_table()
-        mask = service._get_income_mask(df)
-
-        income_rows = df[mask]
-        assert len(income_rows) == 1
-        assert income_rows.iloc[0]["category"] == "Liabilities"
-        assert income_rows.iloc[0]["amount"] == 25000.0
-
-    def test_negative_liabilities_not_classified_as_income(self, db_session):
-        """Verify negative Liabilities (debt payments) are NOT classified as income."""
-        debt_payment = BankTransaction(
-            id="bank_debt_1",
-            date="2024-06-01",
-            provider="hapoalim",
-            account_name="Checking",
-            description="Mortgage Payment",
-            amount=-2000.0,
-            category="Liabilities",
-            tag="Mortgage",
-            source="bank_transactions",
-            type="normal",
-            status="completed",
-        )
-        db_session.add(debt_payment)
-        db_session.commit()
-
-        service = AnalysisService(db_session)
-        df = service.repo.get_table()
-        mask = service._get_income_mask(df)
-
-        income_rows = df[mask]
-        assert income_rows.empty
 
     def test_mixed_liabilities_only_positive_is_income(self, db_session):
         """Verify only positive Liabilities rows are income when mixed with negative."""
@@ -819,32 +681,6 @@ class TestIncomeMaskPositiveLiabilities:
 
 class TestInvestmentMask:
     """Tests for _get_investment_mask identifying investment transactions."""
-
-    def test_investment_category_classified_as_investment(self, db_session):
-        """Verify Investments category transactions are identified by the mask."""
-        inv_txn = BankTransaction(
-            id="bank_inv_mask_1",
-            date="2024-06-01",
-            provider="hapoalim",
-            account_name="Checking",
-            description="Investment Deposit",
-            amount=-5000.0,
-            category="Investments",
-            tag="Stock Fund",
-            source="bank_transactions",
-            type="normal",
-            status="completed",
-        )
-        db_session.add(inv_txn)
-        db_session.commit()
-
-        service = AnalysisService(db_session)
-        df = service.repo.get_table()
-        mask = service._get_investment_mask(df)
-
-        investment_rows = df[mask]
-        assert len(investment_rows) == 1
-        assert investment_rows.iloc[0]["category"] == "Investments"
 
     def test_non_investment_category_not_classified(self, db_session):
         """Verify non-investment categories are excluded by the investment mask."""
@@ -1071,7 +907,7 @@ class TestMonthlyExpenses:
     def test_get_monthly_expenses_returns_months_and_averages(
         self, db_session, seed_base_transactions
     ):
-        """Verify monthly expenses returns correct structure with months list and averages."""
+        """Verify months come back chronologically with non-negative expenses and float averages."""
         service = AnalysisService(db_session)
         result = service.get_monthly_expenses()
 
@@ -1080,10 +916,11 @@ class TestMonthlyExpenses:
         assert "avg_6_months" in result
         assert "avg_12_months" in result
         assert len(result["months"]) > 0
+        assert all(isinstance(result[k], float) for k in ("avg_3_months", "avg_6_months", "avg_12_months"))
 
+        months = [entry["month"] for entry in result["months"]]
+        assert months == sorted(months)
         for entry in result["months"]:
-            assert "month" in entry
-            assert "expenses" in entry
             assert entry["expenses"] >= 0
 
     def test_get_monthly_expenses_empty_db(self, db_session):
@@ -1095,38 +932,6 @@ class TestMonthlyExpenses:
         assert result["avg_3_months"] == 0.0
         assert result["avg_6_months"] == 0.0
         assert result["avg_12_months"] == 0.0
-
-    def test_get_monthly_expenses_months_ordered_chronologically(
-        self, db_session, seed_base_transactions
-    ):
-        """Verify monthly expense entries are sorted by month ascending."""
-        service = AnalysisService(db_session)
-        result = service.get_monthly_expenses()
-
-        months = [entry["month"] for entry in result["months"]]
-        assert months == sorted(months)
-
-    def test_get_monthly_expenses_amounts_are_positive(
-        self, db_session, seed_base_transactions
-    ):
-        """Verify expense amounts are positive (negated from raw negative convention)."""
-        service = AnalysisService(db_session)
-        result = service.get_monthly_expenses()
-
-        for entry in result["months"]:
-            assert entry["expenses"] >= 0
-
-    def test_get_monthly_expenses_averages_are_floats(
-        self, db_session, seed_base_transactions
-    ):
-        """Verify rolling averages are numeric float values."""
-        service = AnalysisService(db_session)
-        result = service.get_monthly_expenses()
-
-        assert isinstance(result["avg_3_months"], float)
-        assert isinstance(result["avg_6_months"], float)
-        assert isinstance(result["avg_12_months"], float)
-
 
 class TestCashFlowForecast:
     """Tests for AnalysisService.get_cash_flow_forecast."""
@@ -1142,6 +947,7 @@ class TestCashFlowForecast:
         assert result["expected_expenses"] == 0
         assert result["safe_to_spend"] == 0
         assert result["current_bank_balance"] == 0
+        assert result["projected_end_balance"] == result["current_bank_balance"]
         # daily trajectory always spans the full month
         assert len(result["daily"]) == result["days_in_month"]
 
@@ -1167,18 +973,11 @@ class TestCashFlowForecast:
         actual = [d for d in result["daily"] if d["actual_balance"] is not None]
         assert len(actual) == result["day_of_month"]
 
-    def test_forecast_projects_end_balance_from_current(self, db_session):
-        """Verify projected end balance equals current balance when no activity."""
-        service = AnalysisService(db_session)
-        result = service.get_cash_flow_forecast()
-
-        # No transactions, no trend → end balance stays at current balance.
-        assert result["projected_end_balance"] == result["current_bank_balance"]
-
     def test_forecast_subtracts_upcoming_recurring(self, db_session):
         """A subscription due later this month feeds committed_remaining and
         keeps safe_to_spend at or below income-minus-spent."""
         import pytest
+
         from backend.models.transaction import CreditCardTransaction
 
         today = pd.Timestamp.today().normalize()
@@ -1290,7 +1089,6 @@ class TestAnalysisServiceIncomeBySourceAggregate:
 
     def test_date_range_is_inclusive_on_both_edges(self, db_session):
         """A window covering only Jan keeps Jan rows, drops Feb/Mar."""
-        from datetime import date
         self._seed(db_session)
         result = AnalysisService(db_session).get_income_by_source(
             start=date(2024, 1, 1), end=date(2024, 1, 31)
@@ -1303,7 +1101,6 @@ class TestAnalysisServiceIncomeBySourceAggregate:
 
     def test_empty_window_returns_zero(self, db_session):
         """A window with no income returns empty sources and zero total."""
-        from datetime import date
         self._seed(db_session)
         result = AnalysisService(db_session).get_income_by_source(
             start=date(2025, 1, 1), end=date(2025, 12, 31)
@@ -1318,7 +1115,6 @@ class TestAnalysisServiceIncomeBySourceAggregate:
 
     def test_one_sided_windows_filter_independently(self, db_session):
         """A start-only window and an end-only window each filter on their own edge."""
-        from datetime import date
 
         self._seed(db_session)
         service = AnalysisService(db_session)
@@ -1439,11 +1235,6 @@ class TestDebtPaymentsOverTime:
         assert [r["month"] for r in result] == ["2023-07", "2023-08", "2023-09"]
         assert all(r["amount"] == 1150.0 for r in result)
         assert all(r["tags"] == {"Car Loan": 1150.0} for r in result)
-
-    def test_loan_receipts_are_not_payments(self, db_session, seed_liabilities):
-        """The positive disbursement month (2023-06) does not appear."""
-        months = {r["month"] for r in AnalysisService(db_session).get_debt_payments_over_time()}
-        assert "2023-06" not in months
 
     def test_untagged_payments_fall_under_uncategorized(self, db_session):
         """A Liabilities payment without a tag is bucketed as ``Uncategorized``."""

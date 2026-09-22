@@ -29,40 +29,24 @@ class TestOnboardingService:
             "is_first_run": True,
         }
 
-    def test_bank_transaction_flips_has_transactions(
-        self, service, db_session: Session
+    @pytest.mark.parametrize(
+        "table, provider",
+        [(Tables.BANK.value, "hapoalim"), (Tables.CREDIT_CARD.value, "isracard")],
+        ids=["bank", "credit-card"],
+    )
+    def test_transaction_flips_has_transactions(
+        self, service, db_session: Session, table: str, provider: str
     ):
-        """Inserting any bank transaction flips has_transactions."""
+        """A bank or credit-card transaction flips has_transactions."""
         now = datetime.now().isoformat()
         db_session.execute(
             text(
                 f"""
-                INSERT INTO {Tables.BANK.value}
+                INSERT INTO {table}
                 (id, date, amount, description, account_name, provider, source,
                  created_at, updated_at)
-                VALUES ('t1', '2026-01-01', -50, 'X', 'Main', 'hapoalim',
-                        'bank_transactions', '{now}', '{now}')
-                """
-            )
-        )
-        db_session.commit()
-        status = service.get_status()
-        assert status["has_transactions"] is True
-        assert status["is_first_run"] is False
-
-    def test_credit_card_transaction_flips_has_transactions(
-        self, service, db_session: Session
-    ):
-        """Credit card transactions also count toward has_transactions."""
-        now = datetime.now().isoformat()
-        db_session.execute(
-            text(
-                f"""
-                INSERT INTO {Tables.CREDIT_CARD.value}
-                (id, date, amount, description, account_name, provider, source,
-                 created_at, updated_at)
-                VALUES ('t1', '2026-01-01', -50, 'X', 'CC', 'isracard',
-                        'credit_card_transactions', '{now}', '{now}')
+                VALUES ('t1', '2026-01-01', -50, 'X', 'Main', '{provider}',
+                        '{table}', '{now}', '{now}')
                 """
             )
         )
