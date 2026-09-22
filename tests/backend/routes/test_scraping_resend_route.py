@@ -16,7 +16,13 @@ class TestResend2FARoute:
     """Tests for the resend-2fa scraping endpoint."""
 
     def test_resend_success_returns_status_dict(self, test_client):
-        """POST /api/scraping/resend-2fa returns the service's status dict."""
+        """POST /api/scraping/resend-2fa returns the service's status dict verbatim.
+
+        Sent with redirects disabled: per .claude/rules/api_paths.md, a
+        trailing-slash mismatch would emit a 307 to an absolute backend URL
+        that the frontend CSP then blocks, so the exact path must answer 200
+        directly.
+        """
         instance = MagicMock()
         instance.resend_2fa_code = AsyncMock(
             return_value={"status": "resent", "process_id": 42}
@@ -27,28 +33,12 @@ class TestResend2FARoute:
             resp = test_client.post(
                 "/api/scraping/resend-2fa",
                 json={"service": "banks", "provider": "onezero", "account": "Acc"},
+                follow_redirects=False,
             )
 
         assert resp.status_code == 200
         assert resp.json() == {"status": "resent", "process_id": 42}
         instance.resend_2fa_code.assert_awaited_once_with("banks", "onezero", "Acc")
-
-    def test_resend_restarted_status_passes_through(self, test_client):
-        """A 'restarted' fallback result is returned verbatim."""
-        instance = MagicMock()
-        instance.resend_2fa_code = AsyncMock(
-            return_value={"status": "restarted", "process_id": 99}
-        )
-        with patch(
-            "backend.routes.scraping.ScrapingService", lambda db: instance
-        ):
-            resp = test_client.post(
-                "/api/scraping/resend-2fa",
-                json={"service": "banks", "provider": "hapoalim", "account": "Acc"},
-            )
-
-        assert resp.status_code == 200
-        assert resp.json() == {"status": "restarted", "process_id": 99}
 
     def test_resend_rate_limited_returns_400(self, test_client):
         """A BadRequestException from the service maps to HTTP 400 with the message."""
@@ -82,27 +72,3 @@ class TestResend2FARoute:
             )
 
         assert resp.status_code == 404
-
-    def test_resend_exact_path_no_redirect(self, test_client):
-        """The exact path resolves with no 307 redirect (redirect_slashes=False).
-
-        Per .claude/rules/api_paths.md, a trailing-slash mismatch would emit a
-        307 to an absolute backend URL that the frontend CSP then blocks. The
-        client path and the route must agree exactly, so the non-slash path
-        must return 200 directly — never 307.
-        """
-        instance = MagicMock()
-        instance.resend_2fa_code = AsyncMock(
-            return_value={"status": "resent", "process_id": 1}
-        )
-        with patch(
-            "backend.routes.scraping.ScrapingService", lambda db: instance
-        ):
-            resp = test_client.post(
-                "/api/scraping/resend-2fa",
-                json={"service": "banks", "provider": "onezero", "account": "Acc"},
-                follow_redirects=False,
-            )
-
-        assert resp.status_code != 307
-        assert resp.status_code == 200

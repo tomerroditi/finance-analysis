@@ -108,14 +108,15 @@ class TestBudgetRuleValidationErrors:
         assert response.status_code == 400
         assert "tag" in response.json()["detail"].lower()
 
-    def test_create_budget_rule_whitespace_name_returns_400(
-        self, test_client, seed_budget_rules
+    @pytest.mark.parametrize("name", ["", "   "], ids=["empty", "whitespace"])
+    def test_create_budget_rule_blank_name_returns_400(
+        self, test_client, seed_budget_rules, name
     ):
-        """POST /api/budget/rules with a whitespace-only name is 400 (empty name)."""
+        """POST /api/budget/rules with an empty or whitespace-only name is 400."""
         response = test_client.post(
             "/api/budget/rules",
             json={
-                "name": "   ", "amount": 100.0, "category": "Home",
+                "name": name, "amount": 100.0, "category": "Home",
                 "tags": ["Rent"], "month": 1, "year": 2024,
             },
         )
@@ -214,81 +215,35 @@ class TestBudgetRuleValidationErrors:
         assert response.status_code == 400
         assert "Wedding" in test_client.get("/api/budget/projects").json()
 
-    def test_create_budget_rule_missing_required_fields(self, test_client):
-        """POST /api/budget/rules with empty body returns 422.
+    @pytest.mark.parametrize(
+        "missing",
+        [
+            ("name", "amount", "category", "tags", "month", "year"),
+            ("name",),
+            ("amount",),
+            ("category",),
+            ("tags",),
+        ],
+        ids=["empty-body", "no-name", "no-amount", "no-category", "no-tags"],
+    )
+    def test_create_budget_rule_missing_required_field(self, test_client, missing):
+        """POST /api/budget/rules without a required field returns 422.
 
         The ``BudgetRuleCreate`` schema requires ``name``, ``amount``,
         ``category``, and ``tags``.
         """
-        response = test_client.post("/api/budget/rules", json={})
-        assert response.status_code == 422
-
-    def test_create_budget_rule_missing_name(self, test_client):
-        """POST /api/budget/rules without name returns 422."""
-        payload = {
-            "amount": 100.0,
-            "category": "Food",
-            "tags": "Groceries",
-            "month": 1,
-            "year": 2024,
-        }
-        response = test_client.post("/api/budget/rules", json=payload)
-        assert response.status_code == 422
-
-    def test_create_budget_rule_missing_amount(self, test_client):
-        """POST /api/budget/rules without amount returns 422."""
-        payload = {
-            "name": "Food Budget",
-            "category": "Food",
-            "tags": "Groceries",
-            "month": 1,
-            "year": 2024,
-        }
-        response = test_client.post("/api/budget/rules", json=payload)
-        assert response.status_code == 422
-
-    def test_create_budget_rule_missing_category(self, test_client):
-        """POST /api/budget/rules without category returns 422."""
-        payload = {
-            "name": "Food Budget",
-            "amount": 100.0,
-            "tags": "Groceries",
-            "month": 1,
-            "year": 2024,
-        }
-        response = test_client.post("/api/budget/rules", json=payload)
-        assert response.status_code == 422
-
-    def test_create_budget_rule_missing_tags(self, test_client):
-        """POST /api/budget/rules without tags returns 422."""
         payload = {
             "name": "Food Budget",
             "amount": 100.0,
             "category": "Food",
-            "month": 1,
-            "year": 2024,
-        }
-        response = test_client.post("/api/budget/rules", json=payload)
-        assert response.status_code == 422
-
-    def test_create_budget_rule_empty_name_returns_400(
-        self, test_client, seed_budget_rules
-    ):
-        """POST /api/budget/rules with empty name string returns 400.
-
-        The service layer validates that the budget rule name is non-empty,
-        raising a ValueError that the route maps to a 400 response.
-        """
-        payload = {
-            "name": "",
-            "amount": 100.0,
-            "category": "Food",
             "tags": "Groceries",
             "month": 1,
             "year": 2024,
         }
+        for field in missing:
+            del payload[field]
         response = test_client.post("/api/budget/rules", json=payload)
-        assert response.status_code == 400
+        assert response.status_code == 422
 
     def test_create_budget_rule_duplicate_name_returns_400(
         self, test_client, seed_budget_rules
@@ -394,26 +349,17 @@ class TestProjectBudgetErrors:
         assert test_client.get("/api/budget/rules").json() == []
         assert test_client.get("/api/budget/projects").json() == []
 
-    def test_create_project_missing_required_fields(self, test_client):
-        """POST /api/budget/projects with empty body returns 422.
+    @pytest.mark.parametrize(
+        "payload",
+        [{}, {"total_budget": 5000.0}, {"category": "Housing"}],
+        ids=["empty-body", "no-category", "no-total-budget"],
+    )
+    def test_create_project_missing_required_field(self, test_client, payload):
+        """POST /api/budget/projects without a required field returns 422.
 
         The ``ProjectCreate`` schema requires ``category`` and ``total_budget``.
         """
-        response = test_client.post("/api/budget/projects", json={})
-        assert response.status_code == 422
-
-    def test_create_project_missing_category(self, test_client):
-        """POST /api/budget/projects without category returns 422."""
-        response = test_client.post(
-            "/api/budget/projects", json={"total_budget": 5000.0}
-        )
-        assert response.status_code == 422
-
-    def test_create_project_missing_total_budget(self, test_client):
-        """POST /api/budget/projects without total_budget returns 422."""
-        response = test_client.post(
-            "/api/budget/projects", json={"category": "Housing"}
-        )
+        response = test_client.post("/api/budget/projects", json=payload)
         assert response.status_code == 422
 
     def test_update_project_missing_total_budget(self, test_client):

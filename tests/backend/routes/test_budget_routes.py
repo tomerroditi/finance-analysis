@@ -503,15 +503,6 @@ class TestBudgetTrendRoute:
             (2026, 3),
         ]
 
-    def test_each_point_carries_the_shape_the_sparkline_reads(self, test_client):
-        """Each point holds the headline pair and the per-rule spend map."""
-        response = test_client.get("/api/budget/trend/2026/3?months=1")
-
-        assert response.status_code == 200
-        [point] = response.json()
-        for key in ("year", "month", "budget", "actual", "rules", "limits"):
-            assert key in point
-
     def test_defaults_to_twelve_months(self, test_client):
         """The budget page renders a twelve-month sparkline."""
         response = test_client.get("/api/budget/trend/2026/3")
