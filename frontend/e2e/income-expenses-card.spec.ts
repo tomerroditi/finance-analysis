@@ -9,9 +9,15 @@ import { enableDemoMode, navigateTo, resetDemoData } from "./helpers";
  *   - Income/Expenses → 100%-composition rows (`data-testid="composition-row"`)
  *                       whose slices carry no text at all.
  *
- * A Monthly/Yearly scope toggle in the title row re-folds every view: the
- * ledger and both breakdowns collapse to one row per calendar year, and the
- * KPI cards swap their rolling averages for per-year totals.
+ * A Monthly/Yearly/All-time scope toggle in the title row re-folds every view:
+ * the ledger and both breakdowns collapse to one row per calendar year (or to
+ * a single row over the whole window), and the KPI cards swap their rolling
+ * averages for per-year — or all-time — totals. In the all scope a breakdown
+ * is drawn as a donut with a collapsible legend instead of a composition bar,
+ * because a single period has no movement for a bar to show.
+ *
+ * Either breakdown can also be filtered to one series — click a slice, a donut
+ * slice or a legend row — which replaces the mix with that series over time.
  *
  * This spec guards that each tab renders, that the ledger is ordered
  * newest-first, that the scope toggle folds months into years, that the
@@ -374,9 +380,116 @@ test.describe("Income & Expenses dashboard card", () => {
     }
 
     await expenseSegments.first().hover();
-    await expect(page.getByTestId("composition-tooltip")).toBeVisible({
-      timeout: 1_000,
-    });
+    const expenseTooltip = page.getByTestId("composition-tooltip");
+    await expect(expenseTooltip).toBeVisible({ timeout: 1_000 });
+    // Nothing about a coloured band says it can be clicked, so the readout
+    // that names the slice has to say it.
+    await expect(expenseTooltip).toContainText("Click to filter");
+
+    // --- Clicking a slice filters the tab down to that one series ---
+    // The composition rows answer "what did this month consist of"; following
+    // one colour down a stack of differently-ordered bars is the comparison
+    // the eye is worst at, so the slice is also the control that pulls its
+    // own series out over time.
+    const clicked = await expenseSegments.first().getAttribute("aria-label");
+    const clickedName = clicked!.split(":")[0];
+    await expenseSegments.first().click();
+
+    const focusRows = card.getByTestId("series-focus-row");
+    await expect(focusRows.first()).toBeVisible({ timeout: 45_000 });
+    await expect(card.getByTestId("series-focus-chip")).toContainText(clickedName);
+    // One row per period, newest first, each with the series' share of that
+    // period — the reading a composition bar cannot give.
+    expect(await focusRows.count()).toBeGreaterThan(1);
+    const focusMonths = await focusRows.evaluateAll((els) =>
+      els.map((el) => el.getAttribute("data-month")),
+    );
+    expect(focusMonths[0]! > focusMonths[focusMonths.length - 1]!).toBe(true);
+    await expect(focusRows.first()).toContainText("%");
+    // The composition rows are gone while the filter is on.
+    await expect(compositionRows).toHaveCount(0);
+
+    // Escape is the dismissal people try without looking, and the focused
+    // view is not a dialog, so nothing else would handle it.
+    await page.keyboard.press("Escape");
+    await expect(focusRows).toHaveCount(0);
+    await expect(compositionRows.first()).toBeVisible();
+
+    // A tab switch drops the filter too: the two tabs share no series names,
+    // so a name carried across is a filter that matches nothing.
+    await expenseSegments.first().click();
+    await expect(card.getByTestId("series-focus-chip")).toBeVisible();
+    await card.getByRole("button", { name: "Income Breakdown" }).click();
+    await expect(card.getByTestId("series-focus-chip")).toHaveCount(0);
+    await expect(compositionRows.first()).toBeVisible();
+  });
+
+  test("the all-time scope draws a donut with a legend, and both filter a series", async ({
+    page,
+  }) => {
+    const card = await openCard(page);
+
+    const scope = card.getByTestId("scope-toggle");
+    await scope.getByRole("button", { name: "All time" }).click();
+
+    // --- Totals: the whole history folds to a single labelled row ---
+    // Income against expenses is not a part-whole relation, so this tab keeps
+    // its bars and its Net — a donut here would be a lie about the figures.
+    const rows = card.getByTestId("ledger-row");
+    await expect(rows).toHaveCount(1);
+    await expect(rows.first()).toHaveAttribute("data-month", "all");
+    await expect(rows.first()).toContainText("All time");
+
+    // The KPI drops its trend chip: there is no earlier "all time" to compare
+    // against, and a 0% chip would read as "flat" rather than "not asked".
+    const income = card.getByTestId("kpi-income");
+    await expect(income.getByText("Per month")).toBeVisible();
+    await expect(income.locator("span[title]")).toHaveCount(0);
+
+    // --- Income Breakdown: a donut, with the legend closed by default ---
+    await card.getByRole("button", { name: "Income Breakdown" }).click();
+    await expect(card.getByTestId("donut-chart")).toBeVisible({ timeout: 45_000 });
+    await expect(card.getByTestId("composition-row")).toHaveCount(0);
+    await expect(card.getByTestId("breakdown-legend-row")).toHaveCount(0);
+
+    await card.getByRole("button", { name: "Breakdown", exact: true }).click();
+    const legendRows = card.getByTestId("breakdown-legend-row");
+    await expect(legendRows.first()).toBeVisible();
+    expect(await legendRows.count()).toBeGreaterThan(0);
+    // The legend states the shares the donut only draws, and they add up.
+    await expect(card.getByTestId("breakdown-legend-scroll")).toContainText("100.0%");
+
+    // --- The window chips narrow what the donut folds ---
+    const ranges = card.getByTestId("range-chips");
+    const legendBefore = await legendRows.allTextContents();
+    await ranges.getByRole("button", { name: "This year" }).click();
+    await expect
+      .poll(() => legendRows.allTextContents(), { timeout: 20_000 })
+      .not.toEqual(legendBefore);
+    await ranges.getByRole("button", { name: "All time" }).click();
+
+    // --- A legend row filters, and drops back to months to have periods ---
+    // A slice under a few percent is hard to hit, so the legend is the
+    // reachable way to the same filter; and the focused view needs periods,
+    // which the all scope by definition does not have.
+    const firstLegend = await legendRows.first().textContent();
+    await legendRows.first().click();
+
+    const focusRows = card.getByTestId("series-focus-row");
+    await expect(focusRows.first()).toBeVisible({ timeout: 45_000 });
+    expect(await focusRows.count()).toBeGreaterThan(1);
+    await expect(card.getByTestId("series-focus-chip")).toContainText(
+      firstLegend!.trim().split(/\s{2,}/)[0],
+    );
+    await expect(scope.getByRole("button", { name: "Monthly" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+
+    // The chip's ✕ is the visible dismissal; clicking it restores the mix.
+    await card.getByTestId("series-focus-chip").click();
+    await expect(focusRows).toHaveCount(0);
+    await expect(card.getByTestId("composition-row").first()).toBeVisible();
   });
 
   // Its own test on purpose: it needs Hebrew seeded before the app boots, so

@@ -168,8 +168,6 @@ export function makeQueryKeys(demo: boolean) {
         ["analytics", "expenses-by-category-over-time", excludePendingRefunds, demo] as const,
       incomeBySourceOverTime: (excludePendingRefunds: boolean) =>
         ["analytics", "income-by-source-over-time", excludePendingRefunds, demo] as const,
-      incomeBySource: (start: string | undefined, end: string | undefined) =>
-        ["analytics", "income-by-source", start ?? "all", end ?? "all", demo] as const,
       monthlyExpenses: (excludePendingRefunds: boolean, includeProjects: boolean) =>
         ["analytics", "monthly-expenses", excludePendingRefunds, includeProjects, demo] as const,
       recurring: (includeDismissed = false) =>

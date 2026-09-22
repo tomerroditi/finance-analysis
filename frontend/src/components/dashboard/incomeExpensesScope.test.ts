@@ -1,7 +1,12 @@
 import { describe, it, expect } from "vitest";
 import {
+  allTimeKpi,
+  barCap,
   formatPeriodLabel,
   isYearKey,
+  sliceWindow,
+  toAllComposition,
+  toAllLedger,
   toYearlyComposition,
   toYearlyLedger,
   totalsByYear,
@@ -36,6 +41,14 @@ describe("period keys", () => {
 
   it("labels a month key with its short month", () => {
     expect(formatPeriodLabel("2026-06")).toBe("Jun '26");
+  });
+
+  it("is not a year key that the all-scope fold happens to spell", () => {
+    expect(isYearKey("all")).toBe(false);
+  });
+
+  it("labels the all-scope key with the caller's translated phrase", () => {
+    expect(formatPeriodLabel("all", "כל הזמן")).toBe("כל הזמן");
   });
 });
 
@@ -138,5 +151,107 @@ describe("yearlyKpi", () => {
 
     expect(yearlyKpi(rows)?.earlier.map((y) => y.year)).toEqual(["2025", "2024"]);
     expect(yearlyKpi([{ month: "2026-01", value: 10 }])?.baseline).toBe(0);
+  });
+});
+
+
+describe("toAllLedger", () => {
+  it("sums the whole series into one row", () => {
+    const rows = [...fullYear("2025", 100, 60), ...fullYear("2026", 200, 90)];
+
+    expect(toAllLedger(rows)).toEqual([{ month: "all", income: 3600, expenses: 1800 }]);
+  });
+
+  it("has no row at all for an empty series", () => {
+    expect(toAllLedger([])).toEqual([]);
+  });
+});
+
+describe("toAllComposition", () => {
+  it("sums every series across every month into one row", () => {
+    const rows: CompositionRow[] = [
+      { month: "2025-11", values: { Salary: 100, Rent: 20 } },
+      { month: "2026-01", values: { Salary: 150, Bonus: 5 } },
+    ];
+
+    expect(toAllComposition(rows)).toEqual([
+      { month: "all", values: { Salary: 250, Rent: 20, Bonus: 5 } },
+    ]);
+  });
+
+  it("has no row at all for an empty series", () => {
+    expect(toAllComposition([])).toEqual([]);
+  });
+});
+
+describe("sliceWindow", () => {
+  const rows = [
+    { month: "2024-12" },
+    { month: "2025-09" },
+    { month: "2025-10" },
+    { month: "2026-01" },
+    { month: "2026-09" },
+  ];
+  const today = new Date(2026, 8, 22); // 2026-09-22, local time
+
+  it("keeps everything for the all-time window", () => {
+    expect(sliceWindow(rows, "all", today)).toEqual(rows);
+  });
+
+  it("keeps the calendar year to date", () => {
+    expect(sliceWindow(rows, "year", today).map((r) => r.month)).toEqual([
+      "2026-01",
+      "2026-09",
+    ]);
+  });
+
+  it("keeps the current month and the eleven before it", () => {
+    // The window opens at 2025-10, so the month before it is out and the
+    // boundary month itself is in.
+    expect(sliceWindow(rows, "last12m", today).map((r) => r.month)).toEqual([
+      "2025-10",
+      "2026-01",
+      "2026-09",
+    ]);
+  });
+
+  it("reads a month key as a local month, not a UTC instant", () => {
+    // A `Date` built from "2026-01" is UTC midnight, which is still December
+    // west of Greenwich — the bound has to be a string comparison.
+    const newYear = new Date(2026, 0, 5);
+    expect(sliceWindow([{ month: "2026-01" }], "year", newYear)).toEqual([
+      { month: "2026-01" },
+    ]);
+  });
+});
+
+describe("allTimeKpi", () => {
+  it("averages over the months the series carries, not the calendar span", () => {
+    // Tracking began in November, so the average is over two months.
+    const kpi = allTimeKpi([
+      { month: "2026-11", value: 100 },
+      { month: "2026-12", value: 300 },
+    ]);
+
+    expect(kpi).toEqual({ total: 400, months: 2, perMonth: 200 });
+  });
+
+  it("has no average to give for an empty series", () => {
+    expect(allTimeKpi([])).toEqual({ total: 0, months: 0, perMonth: 0 });
+  });
+});
+
+describe("barCap", () => {
+  it("anchors on the median so a single outlier cannot flatten the rest", () => {
+    expect(barCap([10, 10, 10, 1000])).toBe(16);
+  });
+
+  it("ignores zero and negative values", () => {
+    expect(barCap([0, -50, 10])).toBe(16);
+  });
+
+  it("falls back to 1 when nothing is positive", () => {
+    expect(barCap([])).toBe(1);
+    expect(barCap([0, -1])).toBe(1);
   });
 });

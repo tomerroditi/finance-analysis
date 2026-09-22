@@ -719,13 +719,6 @@ export const analyticsApi = {
       "/analytics/income-by-source-over-time",
       { params: { exclude_pending_refunds: excludePendingRefunds } }
     ),
-  getIncomeBySource: (start?: string, end?: string) =>
-    api.get<{
-      sources: { label: string; amount: number; share: number }[];
-      total: number;
-      start: string | null;
-      end: string | null;
-    }>("/analytics/income-by-source", { params: { start, end } }),
   getMonthlyExpenses: (excludePendingRefunds = true, includeProjects = false) =>
     api.get<{
       months: { month: string; expenses: number; project_expenses?: number }[];

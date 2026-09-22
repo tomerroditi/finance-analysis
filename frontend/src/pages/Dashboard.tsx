@@ -20,7 +20,6 @@ import { InsightsStrip } from "../components/dashboard/InsightsStrip";
 import { RecurringSection } from "../components/dashboard/RecurringSection";
 import { GoalsSection } from "../components/dashboard/GoalsSection";
 import { SpendingHeatmap } from "../components/dashboard/SpendingHeatmap";
-import { IncomeBySourceCard } from "../components/dashboard/IncomeBySourceCard";
 import { IncomeExpensesCard } from "../components/dashboard/IncomeExpensesCard";
 import { NetWorthCard } from "../components/dashboard/NetWorthCard";
 import { CashFlowCard } from "../components/dashboard/CashFlowCard";
@@ -453,7 +452,6 @@ export function Dashboard() {
     recurring: () => <RecurringSection />,
     goals: () => <GoalsSection />,
     heatmap: () => <SpendingHeatmap transactions={allTransactions} size={cardSize("heatmap")} />,
-    income_by_source: () => <IncomeBySourceCard />,
     income_expenses: () => <IncomeExpensesCard />,
     net_worth: () => <NetWorthCard />,
     cash_flow: () => <CashFlowCard />,

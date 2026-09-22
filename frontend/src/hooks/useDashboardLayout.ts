@@ -29,7 +29,6 @@ export const DASHBOARD_CARDS = [
   { id: "recurring", labelKey: "dashboard.cards.recurring", size: "half" },
   { id: "goals", labelKey: "dashboard.cards.goals", size: "half" },
   { id: "heatmap", labelKey: "dashboard.cards.heatmap", size: "half" },
-  { id: "income_by_source", labelKey: "dashboard.cards.incomeBySource", size: "half" },
   { id: "income_expenses", labelKey: "dashboard.cards.incomeExpenses", size: "full" },
   { id: "net_worth", labelKey: "dashboard.cards.netWorth", size: "full" },
   { id: "cash_flow", labelKey: "dashboard.cards.cashFlow", size: "full", defaultHidden: true },
