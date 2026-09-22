@@ -137,28 +137,48 @@ test.describe("Dashboard layout customization", () => {
     await page.getByRole("button", { name: /^Dashboard$/ }).click();
 
     // Visible order still starts with "Budget spending"; drag it down.
-    const firstRow = page
+    await expect(
+      page.getByText("Budget spending", { exact: true }),
+    ).toBeVisible();
+
+    // Only the grip handle drags: a press-and-drag on the row's label must
+    // leave the order untouched.
+    const labelBox = await page
       .getByText("Budget spending", { exact: true })
-      .locator("xpath=..");
-    await expect(firstRow).toBeVisible();
+      .boundingBox();
+    if (!labelBox) throw new Error("no label box");
+    await page.mouse.move(labelBox.x + 10, labelBox.y + labelBox.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(labelBox.x + 10, labelBox.y + 80, { steps: 8 });
+    await page.mouse.move(labelBox.x + 10, labelBox.y + 140, { steps: 8 });
+    await page.mouse.up();
+    const orderAfterLabelDrag = await page.evaluate(() => {
+      const raw = window.localStorage.getItem("fa.dashboard.layout");
+      return raw ? (JSON.parse(raw).order as string[]) : [];
+    });
+    expect(orderAfterLabelDrag[0]).toBe("budget");
+
+    const handle = page.getByTestId("drag-handle-budget");
+    await expect(handle).toBeVisible();
 
     // Regression guard before dragging: @dnd-kit spreads role="button" onto
-    // each row; the global `[role="button"] { touch-action: manipulation }`
+    // the handle; the global `[role="button"] { touch-action: manipulation }`
     // rule would otherwise win the cascade and break dragging on
     // touch/trackpad. The inline `touch-action: none` must override it —
     // a synthetic-mouse drag alone cannot catch that bug.
-    const touchAction = await firstRow.evaluate(
+    const touchAction = await handle.evaluate(
       (el) => getComputedStyle(el).touchAction,
     );
     expect(touchAction).toBe("none");
 
-    const box = await firstRow.boundingBox();
+    const box = await handle.boundingBox();
     if (!box) throw new Error("no drag handle box");
 
-    await page.mouse.move(box.x + 20, box.y + box.height / 2);
+    const x = box.x + box.width / 2;
+    await page.mouse.move(x, box.y + box.height / 2);
     await page.mouse.down();
-    await page.mouse.move(box.x + 20, box.y + 80, { steps: 8 });
-    await page.mouse.move(box.x + 20, box.y + 140, { steps: 8 });
+    await page.mouse.move(x, box.y + 80, { steps: 8 });
+    await page.mouse.move(x, box.y + 140, { steps: 8 });
     await page.mouse.up();
 
     const order = await page.evaluate(() => {
