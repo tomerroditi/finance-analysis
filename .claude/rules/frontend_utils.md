@@ -33,7 +33,6 @@ Pure helper functions — stateless, no React, no side effects.
 | `dateFormatting.ts` | Date display (date-fns, Hebrew locale) | `formatDate()`, `formatMonth()` |
 | `textFormatting.ts` | Provider/service labels (bilingual) | `humanizeProvider()`, `humanizeService()`, `PROVIDER_LABELS`, `PROVIDER_LABELS_HE` |
 | `taggingRuleEval.ts` | Evaluate tagging rule conditions against transactions | `findMatchingRule()`, `evalConditionTree()` |
-| `savingsGoalTimeline.ts` | Savings-goal timeline readings the chart stacks — the part of a month's surplus no goal claimed (a flow, unlike the standing pool balance) | `unclaimedSurplus()` |
 | `chartStyle.ts` | Recharts chart style constants, touch detection | `CHART_COLORS`, `AXIS_DEFAULTS`, `BAR_RADIUS`, `formatAxisNumber()`, `hexToRgba()`, `isTouchDevice` |
 
 **Rules:**
@@ -55,6 +54,7 @@ Custom React hooks for shared data fetching and stateful logic.
 | `useCategoryTagCreate()` | Category/tag creation mutation logic | N/A (mutation) |
 | `useScraping()` | Scraping progress state machine | N/A (state) |
 | `useScrollLock(isOpen)` | Body scroll prevention for modals | N/A (side effect) |
+| `useScrollCap(capPx, contentKey?, slackPx?)` | Height cap that only becomes a scroll region once it hides about a row — an always-on cap swallows the page's scroll (`frontend_pitfalls.md`) | N/A (measurement) |
 | `usePendingRows()` | Per-row pending state for a list's shared mutation | N/A (local state) |
 
 **When to create a new shared hook:**

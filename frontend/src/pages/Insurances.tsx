@@ -38,6 +38,7 @@ import { EmptyState } from "../components/common/EmptyState";
 import { DemoModeConfirmPopover } from "../components/common/DemoModeConfirmPopover";
 import { useQueryKeys } from "../hooks/useQueryKeys";
 import { qkPrefix } from "../services/queryKeys";
+import { useScrollCap } from "../hooks/useScrollCap";
 
 // ─── Types ───────────────────────────────────────────────────────────────
 interface InsuranceTransaction {
@@ -222,6 +223,12 @@ function AccountCardFull({
     .filter((tx) => tx.account_number === account.policy_id)
     .sort((a, b) => b.date.localeCompare(a.date));
   const deposits = txs.filter((tx) => tx.amount > 0);
+  // Only capped once the cap hides a row — see `useScrollCap`. The section
+  // renders nothing until it is expanded, so the expansion is part of the key.
+  const [depositsRef, depositsCapped] = useScrollCap(
+    320,
+    expandedSection === "deposits" ? txs.length : 0,
+  );
 
   const renameMutation = useMutation({
     mutationFn: (customName: string | null) =>
@@ -542,7 +549,14 @@ function AccountCardFull({
         </div>
         {expandedSection === "covers" && <CoversSection id={coversSectionId} covers={covers} />}
         {expandedSection === "deposits" && (
-          <div id={depositsSectionId} className="overflow-x-auto max-h-80 overflow-y-auto">
+          <div
+            id={depositsSectionId}
+            ref={depositsRef}
+            // The horizontal scroller is unconditional (the table is wider
+            // than a phone); the height cap waits until it hides a row, so a
+            // short history does not swallow the drag meant for the page.
+            className={`overflow-x-auto ${depositsCapped ? "max-h-80 overflow-y-auto" : ""}`}
+          >
             <table className="w-full text-sm">
               <thead className="sticky top-0 bg-[var(--surface)]">
                 <tr className="text-[var(--text-muted)] text-[10px] uppercase tracking-widest border-b border-[var(--surface-light)]">

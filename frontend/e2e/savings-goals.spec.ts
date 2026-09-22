@@ -201,24 +201,60 @@ test.describe("Savings goals", () => {
     await expect(historyToggle).toHaveAttribute("aria-expanded", "false");
     await historyToggle.click();
     await expect(history).toBeVisible();
-    // What no goal claimed stacks on the same bars — it is a cut of the same
-    // month's surplus. It is named for the flow it is, not for the pool: the
-    // pool's standing balance is a different quantity, reported as a figure
-    // under the chart rather than as a second panel.
-    await expect(
-      history.getByText("Left unearmarked", { exact: true }),
-    ).toBeVisible();
-    await expect(
-      page.getByText("Free cash left at month end", { exact: true }),
-    ).toBeVisible();
+    // The unearmarked pool stacks on the same bars as the goals.
+    const poolSeries = history.getByRole("button", { name: "Free cash" });
+    await expect(poolSeries).toBeVisible();
+    await expect(poolSeries).toHaveAttribute("aria-pressed", "true");
+
+    // --- focusing the chart from its legend -----------------------------
+    // The pool is a standing balance and the allocations are monthly flows,
+    // so the pool towers over them. A click hides it and the axis refits to
+    // what is left, which is the whole point of the legend being clickable.
+    // The largest number any axis tick carries — the value axis's top, since
+    // the month labels ("11.25") are orders of magnitude smaller. Read this
+    // way because Recharts renders tick text outside the axis group, so a
+    // `.yAxis text` lookup finds nothing.
+    const axisTop = async () => {
+      const ticks = await history
+        .locator(".recharts-cartesian-axis-tick-value")
+        .allTextContents();
+      const values = ticks.map((text) => {
+        const digits = Number(text.replace(/[^\d.-]/g, ""));
+        if (Number.isNaN(digits)) return 0;
+        if (/M/i.test(text)) return digits * 1_000_000;
+        return /K/i.test(text) ? digits * 1_000 : digits;
+      });
+      return Math.max(...values);
+    };
+    const withPool = await axisTop();
+    await poolSeries.click();
+    await expect(poolSeries).toHaveAttribute("aria-pressed", "false");
+    await expect
+      .poll(async () => await axisTop(), { timeout: 10_000 })
+      .toBeLessThan(withPool);
+
+    // A double-click narrows to one goal; the rest dim rather than vanish, so
+    // the way back is where the way out was.
+    const goalSeries = history.getByRole("button", {
+      name: "E2E In Progress Goal",
+    });
+    await goalSeries.dblclick();
+    await expect(goalSeries).toHaveAttribute("aria-pressed", "true");
+    // The pool stays hidden rather than springing back: the double-click
+    // narrowed to the goal, it did not undo the click before it.
+    await expect(poolSeries).toHaveAttribute("aria-pressed", "false");
+
+    // Double-clicking the series it narrowed to brings the rest back.
+    await goalSeries.dblclick();
+    await expect(poolSeries).toHaveAttribute("aria-pressed", "true");
     // A goal that took money in the window is legended by name; the achieved
     // one never drew on the waterfall (it opened already full), so it earns
     // no series — a legend entry with no mark names nothing.
     await expect(
-      history.getByText("E2E In Progress Goal", { exact: true }),
+      history.getByRole("button", { name: "E2E In Progress Goal" }),
     ).toBeVisible();
     await expect(
-      history.getByText("E2E Achieved Goal", { exact: true }),
+      history.getByRole("button", { name: "E2E Achieved Goal" }),
     ).toHaveCount(0);
 
     // Narrowing the window re-renders the chart rather than emptying it.

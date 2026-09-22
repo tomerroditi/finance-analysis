@@ -323,6 +323,47 @@ Both shapes are enforced by `frontend/src/roundedScrollContainers.test.ts`
 (a source scan, runs in `npm test`), with the behavioural half in
 `e2e/dashboard-layout.spec.ts`.
 
+## Capped Scroll Regions Swallow the Page's Scroll
+
+A height cap turns an element into a scroll container, and a scroll container
+owns every gesture that starts on it. Browsers chain a drag to the page only
+when the inner scroller **could not move at all**, and they do not start
+chaining part-way through one — so a list capped at a height its content
+barely passes scrolls those few pixels and then holds the finger. On a phone
+that reads as "the page won't scroll here", over a list hiding nothing worth
+reaching. The savings-goals card shipped exactly that.
+
+Cap conditionally instead. `hooks/useScrollCap.ts` measures the content and
+turns the cap on only once it hides about a row:
+
+```tsx
+// WRONG — a scroll region whether or not there is anything to scroll
+<div className="space-y-2 max-h-[20rem] overflow-y-auto">…</div>
+
+// CORRECT — a plain block until the cap earns its keep
+const [listRef, capped] = useScrollCap(320, rows.length);
+<div ref={listRef} className={capped ? "max-h-[20rem] overflow-y-auto" : ""}>…</div>
+```
+
+Pass anything that changes with the content as the second argument: a capped
+element's own box stops changing size, so a resize observer alone never
+notices rows arriving.
+
+Two things stay exempt, and the scan knows both:
+
+- **Modals, popups and drawers.** The page behind them is locked, so there is
+  nothing to chain to and the cap is always right.
+- **Panes the layout fixes** (`min-h-*` and `max-h-*` together, e.g. a grid
+  cell that must match its neighbour's height). Their height is structural;
+  dropping the cap would move the layout.
+
+`overscroll-contain` is a different knob and does not help here — it governs
+what happens once the inner scroller is exhausted, not whether the gesture was
+taken in the first place.
+
+Enforced by `frontend/src/cappedScrollRegions.test.ts` (a source scan, runs in
+`npm test`), with the behavioural half in `e2e/savings-goals.spec.ts`.
+
 ## TransactionsTable Consumer Updates
 
 When modifying `TransactionsTable.tsx` props or behavior, **always update all consumers**:

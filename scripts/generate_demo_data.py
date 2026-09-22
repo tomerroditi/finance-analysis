@@ -37,6 +37,7 @@ from backend.models import (  # noqa: E402
     CashBalance,
     CashTransaction,
     Category,
+    Credential,
     CreditCardTransaction,
     InsuranceAccount,
     InsuranceTransaction,
@@ -2444,7 +2445,7 @@ def create_pending_refunds(session, cc_txns, bank_txns):
 
 
 def create_savings_goals(session, savings_plan, bank_txns):
-    """Create the Cohens' three savings goals and what backs them.
+    """Create the Cohens' five savings goals and what backs them.
 
     The goals demo every way a goal can be funded, in one waterfall:
 
@@ -2462,12 +2463,25 @@ def create_savings_goals(session, savings_plan, bank_txns):
        no target date: the wedding is already being paid for, and a deadline
        weeks away would only render an implausible "catch up by" figure.
 
+    4. **Home Renovation Fund** — the saving side of the renovation the
+       budget project tracks, carrying a large opening balance: money the
+       couple had already set aside when they started tracking. Opening
+       balances come straight out of the free-cash pool in the goal's first
+       month, which is what keeps the pool in proportion to the rest of the
+       card.
+    5. **New Car Fund** — the same, further off and lower priority, so the
+       waterfall has a goal that is still filling behind the others.
+
     Only the education fund carries a ``target_date`` — far enough out (the
     older child reaching university) that the monthly-needed figure it drives
     is a realistic number rather than a panic.
 
-    Whatever the three leave unclaimed each month stays in the free-cash pool,
-    which is what a negative month drains before any goal is touched.
+    Whatever the five leave unclaimed each month stays in the free-cash pool,
+    which is what a negative month drains before any goal is touched. The
+    Cohens' pool is large because the app counts loan receipts as income (see
+    ``.claude/rules/kpi_calculations.md``) and the demo's mortgage and car
+    loan were never spent back out; the two goals above earmark the part of it
+    that has a job.
 
     No allocation rows are seeded: the engine derives the whole ledger on
     first read, and doing it here would anchor it to this script's reference
@@ -2513,7 +2527,27 @@ def create_savings_goals(session, savings_plan, bank_txns):
         status="active",
         notes="Saving for the wedding the budget project tracks spending against.",
     )
-    session.add_all([emergency, education, wedding])
+    renovation = SavingsGoal(
+        name="Home Renovation Fund",
+        target_amount=350000.0,
+        opening_balance=260000.0,
+        priority=3,
+        monthly_cap=4000.0,
+        start_month=month_str(28),
+        status="active",
+        notes="Kitchen and bathrooms — what the renovation budget spends against.",
+    )
+    car = SavingsGoal(
+        name="New Car Fund",
+        target_amount=180000.0,
+        opening_balance=110000.0,
+        priority=4,
+        monthly_cap=3000.0,
+        start_month=month_str(16),
+        status="active",
+        notes="Replacing the family car once the car loan is paid off.",
+    )
+    session.add_all([emergency, education, wedding, renovation, car])
     session.flush()
 
     # The savings plan backs the education fund in full. No amount is given,
@@ -2549,7 +2583,7 @@ def create_savings_goals(session, savings_plan, bank_txns):
         )
 
     session.flush()
-    return emergency, education, wedding
+    return emergency, education, wedding, renovation, car
 
 
 def create_retirement_goal(session):
@@ -2603,6 +2637,49 @@ def create_retirement_goal(session):
         # Steady-state spending without the one-off wedding/renovation arcs.
         monthly_expenses_override=22000.0,
     ))
+    session.flush()
+
+
+def create_demo_credentials(session):
+    """Create the four demo data-source accounts.
+
+    These ship **inside the snapshot** rather than being seeded when Demo Mode
+    is switched on: the hosted demo forces demo mode at cold start and never
+    runs the toggle, so a seed-on-toggle left its Data Sources page empty.
+    `tests/backend/unit/test_demo_setup.py` guards their presence, their
+    account names (the scrape watermark is keyed on them, so a character out
+    of place reads as "Never synced"), and their contents.
+
+    Fields stay **plaintext and password-free**: `decrypt_fields` passes a
+    non-envelope dict through unchanged, so the snapshot stays readable
+    without `cryptography`, and a demo scrape never authenticates — the
+    scraper layer redirects these providers to dummy scrapers. Nothing here
+    ever reaches the OS keyring, which is what lets the generator run on a
+    headless box.
+    """
+    stamp = datetime(2026, 1, 1, 0, 0, 0)
+    accounts = [
+        ("banks", "hapoalim", "Main Account", {"userCode": "demo"}),
+        ("credit_cards", "max", "Family Card", {"username": "demo", "id": "demo"}),
+        ("credit_cards", "visa cal", "Online Shopping", {"username": "demo"}),
+        (
+            "insurance",
+            "hafenix",
+            "The Cohens",
+            {"id": "demo", "phoneNumber": "050-1234567"},
+        ),
+    ]
+    for service, provider, account_name, fields in accounts:
+        session.add(
+            Credential(
+                service=service,
+                provider=provider,
+                account_name=account_name,
+                fields=fields,
+                created_at=stamp,
+                updated_at=stamp,
+            )
+        )
     session.flush()
 
 
@@ -3099,6 +3176,10 @@ def main():
         # 16. Scraping history
         print("  Creating scraping history...")
         create_scraping_history(session)
+
+        # 21. Demo data-source accounts (shipped, never seeded on toggle)
+        print("  Creating demo credentials...")
+        create_demo_credentials(session)
 
         # 17. Insurance accounts & transactions
         print("  Generating insurance data...")

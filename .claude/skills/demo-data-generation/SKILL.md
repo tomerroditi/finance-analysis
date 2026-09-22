@@ -58,10 +58,20 @@ Three goals demonstrate every way a goal can be funded, in one waterfall:
 | 1 | Emergency Fund | cash only, capped 2,500/mo | a goal that filled — "Achieved 🎉" |
 | 2 | Kids' Education Fund | cash + the **Savings Plan** investment | investment backing, and `monthly_needed` off a long `target_date` |
 | 3 | Wedding Fund | cash, with two wedding bank transfers linked as **utilizations** | money set aside *and* since spent, without the target shrinking |
+| 4 | Home Renovation Fund | cash, with a large `opening_balance` | an opening balance, which comes straight out of the pool in the goal's first month |
+| 5 | New Car Fund | the same, further off and lower priority | a goal still filling behind the others |
 
-Whatever the three leave unclaimed each month is the **free-cash pool**, which
+Whatever the five leave unclaimed each month is the **free-cash pool**, which
 a negative month drains before any goal is touched (see
 `.claude/rules/savings_goals.md`).
+
+The Cohens' pool is large on purpose-by-accident: the app counts a **loan
+receipt as income** (`kpi_calculations.md`), and the demo's 450k mortgage and
+120k car loan arrive without a matching purchase ever leaving the accounts, so
+they sit in the pool for the rest of the window. Goals 4 and 5 earmark the
+part of it that has a job, which is what keeps the dashboard card's stacked
+history in proportion. Raising or lowering their `opening_balance` is the
+lever on that pool — it is taken in the goal's first month.
 
 Two constraints on anything you add here:
 

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import {
@@ -35,7 +35,7 @@ import {
   type SavingsGoalInvestment,
 } from "../../services/api";
 import { useQueryKeys } from "../../hooks/useQueryKeys";
-import { unclaimedSurplus } from "../../utils/savingsGoalTimeline";
+import { useScrollCap } from "../../hooks/useScrollCap";
 import { stackEnds, roundedStackShape } from "../charts/stackedBarShape";
 import { qkPrefix } from "../../services/queryKeys";
 import { useConfirm, useNotify } from "../../context/DialogContext";
@@ -66,22 +66,13 @@ const FREE_CASH_COLOR = CHART_TEXT_COLOR;
 /** Faint rule for the zero line — present enough to read against, no more. */
 const GRID_COLOR = "rgba(148, 163, 184, 0.25)";
 
-/** Series key for the part of a month's surplus no goal claimed. */
-const FREE_CASH_KEY = "free_cash_flow";
+/** Series key for the unearmarked pool. */
+const FREE_CASH_KEY = "free_cash";
 
 /** How tall the waterfall may stand before it scrolls in place (26rem, px). */
 const LIST_CAP_PX = 416;
 
-/**
- * How far past the cap the list must reach before capping it is worth doing.
- *
- * A scroll region swallows the gesture that starts on it: once an inner
- * scroller has anywhere at all to go, a touch drag scrolls it and the page
- * stays put — browsers chain to the page only when the inner scroller could
- * not move at all. So a list that scrolls by a hair traps the finger on a
- * phone while hiding nothing worth reaching. Below roughly one row of
- * overflow, a slightly taller card is the better trade.
- */
+/** A goal row, roughly — the least overflow worth capping for (see the hook). */
 const LIST_CAP_SLACK_PX = 120;
 
 
@@ -111,8 +102,6 @@ export function GoalsSection() {
   const [editing, setEditing] = useState<SavingsGoal | "new" | null>(null);
   const [backing, setBacking] = useState<SavingsGoal | null>(null);
   const [redistributing, setRedistributing] = useState(false);
-  const listRef = useRef<HTMLDivElement>(null);
-  const [capped, setCapped] = useState(false);
 
   const { data, isLoading } = useQuery({
     queryKey: qk.savingsGoals.all(),
@@ -197,25 +186,12 @@ export function GoalsSection() {
 
   const goals = data ?? [];
 
-  // Whether the waterfall is worth turning into a scroll region. Measured
-  // rather than counted: rows differ in height (a goal with a monthly figure,
-  // an investment backing or a clawback note runs taller than a plain one),
-  // and the question is how much a cap would actually hide. `scrollHeight` is
-  // the content's height whether or not the cap is on, so the reading does not
-  // flip-flop. Re-measured on resize as well as on a change of goals, because
-  // a narrower card wraps names and grows rows.
-  useEffect(() => {
-    const el = listRef.current;
-    if (!el) return;
-    const measure = () =>
-      setCapped(el.scrollHeight > LIST_CAP_PX + LIST_CAP_SLACK_PX);
-    measure();
-    const observer = new ResizeObserver(measure);
-    observer.observe(el);
-    return () => observer.disconnect();
-    // `data`, not `goals`: the query's array is stable between renders, while
-    // the `?? []` fallback is a fresh one every time.
-  }, [data]);
+  // Measured rather than counted: rows differ in height (a goal with a monthly
+  // figure, an investment backing or a clawback note runs taller than a plain
+  // one), and what matters is how much a cap would actually hide. `data`, not
+  // `goals`: the query's array is stable between renders, while the `?? []`
+  // fallback is a fresh one every time.
+  const [listRef, capped] = useScrollCap(LIST_CAP_PX, data, LIST_CAP_SLACK_PX);
 
   /** Swap a goal with its neighbour and persist the new waterfall order. */
   const move = (index: number, direction: -1 | 1) => {
@@ -385,18 +361,16 @@ type HistoryRange = (typeof HISTORY_RANGES)[number];
  * of one (a negative segment, below the axis), and how much was left
  * unearmarked each time.
  *
- * Each bar is that month's surplus, split into what each goal took (in
- * priority order) and what none of them claimed — so the column's height is
- * the money the month actually produced and the free-cash segment on top is
- * the part that stayed unearmarked. Below the line is the mirror image: a
- * month that spent more than it earned draws the pool down, and once that is
- * empty, back out of the goals themselves.
+ * Each bar stacks what the goals took that month, in priority order, with
+ * the free-cash pool on top — the money that is tracked and liquid but which
+ * no goal has claimed. A segment below the line is money a deficit month took
+ * back out of a goal.
  *
- * The segment is the month's *flow*, not the standing pool: the pool is a
- * running balance two orders of magnitude larger than a month's movement, and
- * stacking it would leave every goal segment a hairline at the foot of the
- * chart. The balance is a figure, not a shape, so it is reported as one under
- * the chart.
+ * The pool is a standing balance and the allocations are monthly flows, so a
+ * household with real savings will show a tall pool over thin goal segments.
+ * That is the point of the legend being clickable: hide the pool and the
+ * remaining series rescale to their own size, and a double-click narrows to
+ * one goal.
  */
 function AllocationHistory() {
   const { t } = useTranslation();
@@ -407,6 +381,15 @@ function AllocationHistory() {
   // question, and two charts' worth of it pushed the rows off a dashboard
   // screen before anyone asked.
   const [open, setOpen] = useState(false);
+  // Series the reader has clicked away in the legend. Keyed by series key, so
+  // a goal renamed between fetches keeps its state and a goal that leaves the
+  // window simply stops mattering.
+  const [hidden, setHidden] = useState<ReadonlySet<string>>(new Set());
+  // Which series a double-click narrowed to, so that double-clicking it again
+  // is what brings the others back. Inferring "already alone" from `hidden`
+  // instead would make a double-click undo a state the reader had built up
+  // click by click, rather than the isolation they just asked for.
+  const [isolated, setIsolated] = useState<string | null>(null);
 
   const { data, isLoading } = useQuery({
     queryKey: qk.savingsGoals.timeline(range),
@@ -422,8 +405,7 @@ function AllocationHistory() {
   const rows = (data?.months ?? []).map((month) => {
     const row: Record<string, number | string> = {
       month: month.month,
-      free_cash: month.free_cash,
-      [FREE_CASH_KEY]: unclaimedSurplus(month),
+      [FREE_CASH_KEY]: month.free_cash,
     };
     for (const goal of month.goals) {
       row[`g${goal.goal_id}`] = goal.total;
@@ -455,18 +437,48 @@ function AllocationHistory() {
   // Which segment sits at each end of a month's stack, so only the outer
   // corners are rounded and the column reads as one shape rather than a
   // string of beads.
-  const ends = stackEnds(rows, keys, "month");
-  // A segment under the line is a month that took money back: out of the pool
-  // first, and out of the goals once the pool was empty.
+  // Only what is on screen shapes the chart: the rounded corners follow the
+  // visible stack, and so does the zero line.
+  const visible = keys.filter((key) => !hidden.has(key));
+  const ends = stackEnds(rows, visible, "month");
+  // A segment under the line is money a deficit month took back out of a goal.
   const hasDeficit = rows.some((row) =>
-    keys.some((key) => typeof row[key] === "number" && (row[key] as number) < 0),
+    visible.some((key) => typeof row[key] === "number" && (row[key] as number) < 0),
   );
+
+  /**
+   * Hide or show one series.
+   *
+   * Hiding the last one is allowed: an empty plot under a legend of dimmed
+   * entries says what happened and where to undo it, which a click that
+   * silently does nothing does not.
+   */
+  const toggleSeries = (key: string) => {
+    setHidden((current) => {
+      const next = new Set(current);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+    // Whatever the chart shows now, the reader built it by hand.
+    setIsolated(null);
+  };
+
+  /** Narrow to one series; double-clicking the same one again undoes it. */
+  const isolateSeries = (key: string) => {
+    if (isolated === key) {
+      setHidden(new Set());
+      setIsolated(null);
+      return;
+    }
+    setHidden(new Set(keys.filter((other) => other !== key)));
+    setIsolated(key);
+  };
 
   const tooltip = (
     <ChartTooltip labelFormatter={(m) => formatMonthYear(monthDate(String(m)))} />
   );
   const hasMoreHistory = (data?.total_months ?? 0) > Math.max(...HISTORY_RANGES);
-  const latestPool = data?.months?.at(-1)?.free_cash;
 
   return (
     <div
@@ -599,7 +611,16 @@ function AllocationHistory() {
                         cursor={{ fill: "rgba(148, 163, 184, 0.08)", radius: 6 }}
                         content={tooltip}
                       />
-                      <Legend content={<ChartLegend fontSize={10} />} />
+                      <Legend
+                        content={
+                          <ChartLegend
+                            fontSize={10}
+                            hidden={hidden}
+                            onToggle={toggleSeries}
+                            onIsolate={isolateSeries}
+                          />
+                        }
+                      />
                       {series.map((goal) => (
                         <Bar
                           key={goal.id}
@@ -611,6 +632,9 @@ function AllocationHistory() {
                           // can actually paint — a `url(#…)` fill renders as
                           // nothing in a CSS background.
                           fill={palette.get(goal.id)}
+                          // A hidden series leaves the stack entirely, so the
+                          // y-axis refits to what is left.
+                          hide={hidden.has(`g${goal.id}`)}
                           maxBarSize={30}
                           shape={roundedStackShape(
                             ends,
@@ -624,13 +648,10 @@ function AllocationHistory() {
                       {hasFreeCash && (
                         <Bar
                           dataKey={FREE_CASH_KEY}
-                          // Not "free cash": the segment is the pool's
-                          // movement, so a month that spent more than it
-                          // earned shows a negative — which would read as a
-                          // negative balance under the pool's own name.
-                          name={t("dashboard.goals.historyUnclaimed")}
+                          name={t("dashboard.goals.freeCash")}
                           stackId="allocations"
                           fill={FREE_CASH_COLOR}
+                          hide={hidden.has(FREE_CASH_KEY)}
                           maxBarSize={30}
                           shape={roundedStackShape(
                             ends,
@@ -646,20 +667,6 @@ function AllocationHistory() {
                 </div>
               )}
 
-              {/* The bars carry the pool's *movement*; this is where it
-                  stands now. A balance and a monthly flow are different
-                  quantities, so the one that cannot share the chart's scale is
-                  reported as a figure instead of a second panel. */}
-              <div className="flex items-baseline justify-between gap-2 mt-3">
-                <p className="text-[10px] md:text-xs text-[var(--text-muted)]">
-                  {t("dashboard.goals.historyFreeCash")}
-                </p>
-                {latestPool !== undefined && (
-                  <span className="text-[10px] md:text-xs font-semibold tabular-nums">
-                    {formatCurrency(latestPool)}
-                  </span>
-                )}
-              </div>
             </div>
           )}
 

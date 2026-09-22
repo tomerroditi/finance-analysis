@@ -33,6 +33,7 @@ import { isToday, isYesterday } from "date-fns";
 import i18n from "../../i18n";
 import { usePendingRows } from "../../hooks/usePendingRows";
 import { useConfirm, useNotify } from "../../context/DialogContext";
+import { useScrollCap } from "../../hooks/useScrollCap";
 
 function formatTransactionDate(dateStr: string): string {
   const d = new Date(dateStr);
@@ -70,7 +71,6 @@ export function RecentTransactionsFeed({
   const { createCategory, createTag } = useCategoryTagCreate();
   const [visibleCount, setVisibleCount] = useState(TRANSACTIONS_PAGE_SIZE);
   const sentinelRef = useRef<HTMLDivElement>(null);
-  const scrollRootRef = useRef<HTMLDivElement>(null);
   const [onlyUntagged, setOnlyUntagged] = useState(false);
   const [editingTxKey, setEditingTxKey] = useState<string | null>(null);
   const [stagedCategory, setStagedCategory] = useState<string>("");
@@ -253,6 +253,10 @@ export function RecentTransactionsFeed({
 
   const visible = useMemo(() => filtered.slice(0, visibleCount), [filtered, visibleCount]);
   const hasMore = visibleCount < filtered.length;
+  // The feed caps itself only once the cap hides a row (see `useScrollCap`):
+  // a couple of transactions must not turn the card into a scroll region that
+  // swallows the drag meant for the page.
+  const [feedRef, feedCapped] = useScrollCap(500, visible.length);
 
   // IntersectionObserver to auto-load more when sentinel enters viewport
   const handleObserver = useCallback(
@@ -296,7 +300,7 @@ export function RecentTransactionsFeed({
   const toggleOnlyUntagged = () => {
     setOnlyUntagged((prev) => !prev);
     setVisibleCount(TRANSACTIONS_PAGE_SIZE);
-    scrollRootRef.current?.scrollTo({ top: 0 });
+    feedRef.current?.scrollTo({ top: 0 });
   };
 
   // Group by date label
@@ -361,9 +365,11 @@ export function RecentTransactionsFeed({
       </div>
 
       <div
-        ref={scrollRootRef}
+        ref={feedRef}
         data-scroll-root=""
-        className="max-h-[500px] overflow-y-auto scrollbar-auto-hide"
+        className={`scrollbar-auto-hide ${
+          feedCapped ? "max-h-[500px] overflow-y-auto" : ""
+        }`}
       >
         {filtered.length === 0 && (
           <p className="py-6 text-center text-sm text-[var(--text-muted)]">
