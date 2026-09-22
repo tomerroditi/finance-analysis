@@ -1,35 +1,6 @@
 import { test, expect } from "@playwright/test";
 
 test.describe("DataFlow diagram", () => {
-  test("hovering over diagram without clicking does not scroll it", async ({ page }) => {
-    await page.goto("/data-flow");
-
-    const container = page.locator('[class*="cursor-grab"]').first();
-    await expect(container).toBeVisible();
-
-    // Record scroll position before any mouse movement
-    const scrollBefore = await container.evaluate((el) => ({
-      left: el.scrollLeft,
-      top: el.scrollTop,
-    }));
-
-    // Move the mouse across the diagram without clicking
-    const box = await container.boundingBox();
-    if (!box) throw new Error("container not found");
-    await page.mouse.move(box.x + box.width * 0.25, box.y + box.height * 0.5);
-    await page.mouse.move(box.x + box.width * 0.5, box.y + box.height * 0.5);
-    await page.mouse.move(box.x + box.width * 0.75, box.y + box.height * 0.5);
-
-    const scrollAfter = await container.evaluate((el) => ({
-      left: el.scrollLeft,
-      top: el.scrollTop,
-    }));
-
-    // Diagram must not have scrolled from hover alone
-    expect(scrollAfter.left).toBe(scrollBefore.left);
-    expect(scrollAfter.top).toBe(scrollBefore.top);
-  });
-
   test("diagram does not scroll after mouse button is released", async ({ page }) => {
     await page.goto("/data-flow");
 
@@ -96,9 +67,39 @@ test.describe("DataFlow diagram", () => {
     expect(scrollAfterHover.top).toBe(scrollAfterDrag.top);
   });
 
-  test("diagram nodes are visible and clickable", async ({ page }) => {
+  test("hovering does not scroll the diagram; nodes are visible and clickable", async ({
+    page,
+  }) => {
     await page.goto("/data-flow");
 
+    // --- Hovering without a button held never scrolls -------------------
+    // First on this load, before anything else has moved the diagram.
+    const container = page.locator('[class*="cursor-grab"]').first();
+    await expect(container).toBeVisible();
+
+    // Record scroll position before any mouse movement
+    const hoverStart = await container.evaluate((el) => ({
+      left: el.scrollLeft,
+      top: el.scrollTop,
+    }));
+
+    // Move the mouse across the diagram without clicking
+    const box = await container.boundingBox();
+    if (!box) throw new Error("container not found");
+    await page.mouse.move(box.x + box.width * 0.25, box.y + box.height * 0.5);
+    await page.mouse.move(box.x + box.width * 0.5, box.y + box.height * 0.5);
+    await page.mouse.move(box.x + box.width * 0.75, box.y + box.height * 0.5);
+
+    const hoverEnd = await container.evaluate((el) => ({
+      left: el.scrollLeft,
+      top: el.scrollTop,
+    }));
+
+    // Diagram must not have scrolled from hover alone
+    expect(hoverEnd.left).toBe(hoverStart.left);
+    expect(hoverEnd.top).toBe(hoverStart.top);
+
+    // --- Columns and nodes ----------------------------------------------
     // Column headers should render
     await expect(page.getByText(/Data Sources/i).first()).toBeVisible();
     await expect(page.getByText(/Frontend/i).first()).toBeVisible();
@@ -149,13 +150,12 @@ test.describe("DataFlow diagram", () => {
     // passed, precisely so a plain click keeps reaching the node card. The
     // capture still has to happen, or a pan that leaves the viewport box
     // stops tracking, and it must not turn into a node click.
-    const container = page.locator('[class*="cursor-grab"]').first();
-    const box = await container.boundingBox();
-    if (!box) throw new Error("container not found");
+    const panBox = await container.boundingBox();
+    if (!panBox) throw new Error("container not found");
     const scrollBefore = await container.evaluate((el) => el.scrollTop);
-    await page.mouse.move(box.x + box.width * 0.5, box.y + box.height * 0.8);
+    await page.mouse.move(panBox.x + panBox.width * 0.5, panBox.y + panBox.height * 0.8);
     await page.mouse.down();
-    await page.mouse.move(box.x + box.width * 0.5, box.y - 150, { steps: 12 });
+    await page.mouse.move(panBox.x + panBox.width * 0.5, panBox.y - 150, { steps: 12 });
     await page.mouse.up();
     await expect
       .poll(() => container.evaluate((el) => el.scrollTop))

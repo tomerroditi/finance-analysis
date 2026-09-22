@@ -22,6 +22,33 @@ export const API_BASE = process.env.E2E_API_BASE ?? "http://localhost:8000/api";
 const DEMO_MODE_STORAGE_KEY = "fad_demo_mode";
 
 /**
+ * Ensure the demo database exists, once per worker process.
+ *
+ * `demo/prepare` is idempotent, but inside the suite it still cost ~0.8 s a
+ * call — it queues behind whatever the previous test's page left the backend
+ * computing — and `enableDemoMode` runs before every test. Nothing in the
+ * suite deletes the demo DB (`demo/reset` rebuilds it in place), so once it
+ * exists for this worker's backend it stays. A failed call clears the memo so
+ * the next test retries instead of inheriting the rejection.
+ */
+let demoPrepared: Promise<void> | null = null;
+
+function ensureDemoDatabase(): Promise<void> {
+  demoPrepared ??= (async () => {
+    const ctx: APIRequestContext = await request.newContext();
+    try {
+      await ctx.post(`${API_BASE}/testing/demo/prepare`);
+    } finally {
+      await ctx.dispose();
+    }
+  })().catch((err) => {
+    demoPrepared = null;
+    throw err;
+  });
+  return demoPrepared;
+}
+
+/**
  * Put a browser context into Demo Mode.
  *
  * Demo Mode is per-client and lives in localStorage, so it must be seeded
@@ -30,12 +57,7 @@ const DEMO_MODE_STORAGE_KEY = "fad_demo_mode";
  * disturb another context already browsing demo data.
  */
 export async function enableDemoMode(page: Page) {
-  const ctx: APIRequestContext = await request.newContext();
-  try {
-    await ctx.post(`${API_BASE}/testing/demo/prepare`);
-  } finally {
-    await ctx.dispose();
-  }
+  await ensureDemoDatabase();
   await page.addInitScript(
     ([key]) => localStorage.setItem(key, "1"),
     [DEMO_MODE_STORAGE_KEY],

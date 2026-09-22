@@ -133,6 +133,12 @@ export default defineConfig({
     baseURL: process.env.BASE_URL ?? "http://localhost:5173",
     trace: "on-first-retry",
     screenshot: "only-on-failure",
+    // CI serves the production build (`vite preview`), where the PWA service
+    // worker is real and runtime-caches `/api` GETs — a spec would then read
+    // a response cached by an earlier page instead of the backend's current
+    // answer. The dev server never registers one, so this changes nothing
+    // there.
+    serviceWorkers: "block",
   },
   projects: [
     {

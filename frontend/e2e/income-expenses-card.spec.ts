@@ -175,7 +175,10 @@ test.describe("Income & Expenses dashboard card", () => {
     // Pooling income and expenses under one cap let the lumpy series (income
     // carries the bonuses and windfalls) set the scale the steady one had to
     // live on, pinning every expense bar to the bottom of its column.
-    const scales = await page.evaluate(() => {
+    //
+    // The ledger draws as soon as either series lands, with the other one
+    // reading 0 until its own query does, so poll rather than read once.
+    const readScales = () => page.evaluate(() => {
       const impliedCaps = (kind: string) =>
         Array.from(
           document.querySelectorAll(
@@ -195,6 +198,13 @@ test.describe("Income & Expenses dashboard card", () => {
           .map((b) => (b.value / b.pct) * 100);
       return { income: impliedCaps("income"), expense: impliedCaps("expense") };
     });
+    await expect
+      .poll(async () => {
+        const { income, expense } = await readScales();
+        return Math.min(income.length, expense.length);
+      })
+      .toBeGreaterThan(1);
+    const scales = await readScales();
 
     // Every uncapped bar in a column implies the same cap — i.e. length stays
     // strictly proportional to ₪ within the column.

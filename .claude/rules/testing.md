@@ -341,7 +341,8 @@ python .claude/scripts/with_server.py -- bash -c \
 
 `npm run test:e2e` is a bare `playwright test` — it runs every project
 **serially** and is always safe. read-only and mutating are both plain,
-shardable projects (CI runs `playwright test --shard=X/4` across 4 jobs); each
+shardable projects (CI splits the spec files 4 ways by recorded duration —
+`e2e_shard_files.py`); each
 spec self-heals its own browser's Demo Mode flag in its own `beforeAll` (a
 no-op once the flag is already set), so they can run in any order or
 interleave within a shard without one spec's teardown pulling the demo DB out
@@ -387,8 +388,9 @@ so every shard runs concurrently and the only ceiling is real CPU cores. It
 auto-picks a shard count (~1 per 3 cores, clamped 2–6); override with
 `--shards N`, and forward Playwright args after `--`
 (`… e2e_parallel_isolated.py --shards 4 -- categories`). This is an **opt-in
-local tool** — it does not touch CI, which keeps its proven single-backend
-`--shard=X/4` matrix. It needs the worktree's `.venv` (auto-detected) and
+local tool** — CI keeps its 4-job matrix (one backend per job), but packs
+those jobs' spec files with the same duration table via
+`.claude/scripts/e2e_shard_files.py`. It needs the worktree's `.venv` (auto-detected) and
 `npm`; each pair costs a uvicorn + a Vite dev server, so it's for multi-core
 dev boxes, not the 4-core sandbox.
 
