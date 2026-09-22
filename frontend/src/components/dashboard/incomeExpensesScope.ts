@@ -161,6 +161,33 @@ export function yearlyKpi(rows: { month: string; value: number }[]): YearlyKpi |
 }
 
 
+/**
+ * Build the totals ledger from the two breakdown series.
+ *
+ * The card derives its totals from the very rows its breakdown tabs draw,
+ * rather than from a separate totals endpoint, so the Totals tab, the two
+ * breakdowns and the KPI cards cannot disagree about a month — they are one
+ * number summed three ways. They used to be three endpoints with three
+ * definitions of "expenses", which put three different all-time totals on one
+ * screen (see `.claude/rules/kpi_calculations.md`).
+ *
+ * The month set is the union of both series: a month with income and no
+ * spending is still a month, and so is the reverse.
+ */
+export function toLedger(income: CompositionRow[], expenses: CompositionRow[]): LedgerRow[] {
+  const sum = (values: Record<string, number>) =>
+    Object.values(values).reduce((total, value) => total + value, 0);
+  const rows = new Map<string, LedgerRow>();
+  const row = (month: string) => {
+    const existing = rows.get(month) ?? { month, income: 0, expenses: 0 };
+    rows.set(month, existing);
+    return existing;
+  };
+  for (const entry of income) row(entry.month).income += sum(entry.values);
+  for (const entry of expenses) row(entry.month).expenses += sum(entry.values);
+  return [...rows.values()].sort(byPeriod);
+}
+
 /** Sum every monthly totals row into the single all-scope row. */
 export function toAllLedger(rows: LedgerRow[]): LedgerRow[] {
   if (rows.length === 0) return [];

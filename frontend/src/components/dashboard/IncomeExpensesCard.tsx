@@ -14,6 +14,7 @@ import {
   sliceWindow,
   toAllComposition,
   toAllLedger,
+  toLedger,
   toYearlyComposition,
   toYearlyLedger,
   yearlyKpi,
@@ -140,10 +141,15 @@ function windowed<T extends { month: string }>(rows: T[], all: boolean, range: R
   return all ? sliceWindow(rows, range) : rows;
 }
 
-/** Mean of a numeric field over a slice of months (0 when empty). */
-function avgOf(rows: { income: number }[] | undefined): number {
-  if (!rows || rows.length === 0) return 0;
-  return rows.reduce((s, d) => s + d.income, 0) / rows.length;
+/** Mean of one ledger field over a slice of periods (0 when empty). */
+function avgOf(rows: LedgerRow[], field: "income" | "expenses"): number {
+  if (rows.length === 0) return 0;
+  return rows.reduce((total, row) => total + row[field], 0) / rows.length;
+}
+
+/** One ledger field as the `{month, value}` series the KPI folds want. */
+function seriesOf(rows: LedgerRow[], field: "income" | "expenses") {
+  return rows.map((row) => ({ month: row.month, value: row[field] }));
 }
 
 /**
@@ -193,34 +199,43 @@ export function IncomeExpensesCard() {
   };
   const [excludePendingRefunds, setExcludePendingRefunds] = useState(true);
   const [includeProjects, setIncludeProjects] = useState(false);
+  // Debt payments are money that left the account, so they count by default;
+  // the chip takes the envelope view, where loan principal is a transfer into
+  // net worth rather than spending. It governs loan *receipts* on the income
+  // side too — dropping the payments while keeping the money the loan paid in
+  // would report the household as having saved the whole loan.
+  const [includeDebt, setIncludeDebt] = useState(true);
 
-  const { data: incomeOutcome } = useQuery({
-    queryKey: qk.analytics.incomeExpensesOverTime(includeProjects, excludePendingRefunds),
-    queryFn: async () =>
-      (await analyticsApi.getIncomeExpensesOverTime(!includeProjects, false, excludePendingRefunds)).data,
-  });
+  // Both series come from the same itemized classification, filtered the same
+  // way, so every view in this card is one number summed three ways. The card
+  // used to read a separate totals endpoint and a separate expense-average
+  // endpoint, each with its own definition of "expenses" — which put three
+  // different all-time totals on one screen, and left the projects chip
+  // filtering a series whose credit-card rows have no category to filter on.
+  // See `.claude/rules/kpi_calculations.md` → "The Income & Expenses card".
   const { data: expensesByCategoryOverTime } = useQuery({
-    queryKey: qk.analytics.expensesByCategoryOverTime(excludePendingRefunds),
+    queryKey: qk.analytics.expensesByCategoryOverTime(
+      excludePendingRefunds,
+      !includeProjects,
+      !includeDebt,
+    ),
     queryFn: async () =>
-      (await analyticsApi.getExpensesByCategoryOverTime(excludePendingRefunds)).data,
+      (
+        await analyticsApi.getExpensesByCategoryOverTime(
+          excludePendingRefunds,
+          !includeProjects,
+          !includeDebt,
+        )
+      ).data,
   });
   const { data: incomeBySourceData } = useQuery({
-    queryKey: qk.analytics.incomeBySourceOverTime(excludePendingRefunds),
+    queryKey: qk.analytics.incomeBySourceOverTime(excludePendingRefunds, !includeDebt),
     queryFn: async () =>
-      (await analyticsApi.getIncomeBySourceOverTime(excludePendingRefunds)).data,
-  });
-  const { data: monthlyExpenses } = useQuery({
-    queryKey: qk.analytics.monthlyExpenses(excludePendingRefunds, includeProjects),
-    queryFn: async () => (await analyticsApi.getMonthlyExpenses(excludePendingRefunds, includeProjects)).data,
+      (await analyticsApi.getIncomeBySourceOverTime(excludePendingRefunds, !includeDebt)).data,
   });
 
   const yearly = scope === "yearly";
   const all = scope === "all";
-  const ledgerRows: LedgerRow[] = useMemo(() => {
-    const rows = windowed(incomeOutcome ?? [], all, range);
-    if (all) return toAllLedger(rows);
-    return yearly ? toYearlyLedger(rows) : rows;
-  }, [yearly, all, range, incomeOutcome]);
   const rawSourceRows: CompositionRow[] = useMemo(
     () => (incomeBySourceData ?? []).map((d) => ({ month: d.month, values: d.sources })),
     [incomeBySourceData],
@@ -229,6 +244,15 @@ export function IncomeExpensesCard() {
     () => (expensesByCategoryOverTime ?? []).map((d) => ({ month: d.month, values: d.categories })),
     [expensesByCategoryOverTime],
   );
+  const rawLedgerRows: LedgerRow[] = useMemo(
+    () => toLedger(rawSourceRows, rawCategoryRows),
+    [rawSourceRows, rawCategoryRows],
+  );
+  const ledgerRows: LedgerRow[] = useMemo(() => {
+    const rows = windowed(rawLedgerRows, all, range);
+    if (all) return toAllLedger(rows);
+    return yearly ? toYearlyLedger(rows) : rows;
+  }, [yearly, all, range, rawLedgerRows]);
   const sourceRows: CompositionRow[] = useMemo(() => {
     const rows = windowed(rawSourceRows, all, range);
     if (all) return toAllComposition(rows);
@@ -250,22 +274,13 @@ export function IncomeExpensesCard() {
   const sourceColorOf = useMemo(() => colorLookup(sourceSeries, CHART_COLORS), [sourceSeries]);
   const categoryColorOf = useMemo(() => colorLookup(categorySeries, CATEGORY_COLORS), [categorySeries]);
 
-  const yearlyIncome = useMemo(
-    () => yearlyKpi((incomeOutcome ?? []).map((d) => ({ month: d.month, value: d.income }))),
-    [incomeOutcome],
-  );
-  // The yearly expense KPI folds the very series the monthly one averages, so
-  // the two scopes can never disagree about a year; project spend arrives as
-  // its own field there and is only counted when the chip asks for it.
+  // Every KPI folds the very rows the ledger draws, so no scope can disagree
+  // with another — or with the tab below it — about a month, a year or a
+  // household's whole history.
+  const yearlyIncome = useMemo(() => yearlyKpi(seriesOf(rawLedgerRows, "income")), [rawLedgerRows]);
   const yearlyExpenses = useMemo(
-    () =>
-      yearlyKpi(
-        (monthlyExpenses?.months ?? []).map((m) => ({
-          month: m.month,
-          value: m.expenses + (includeProjects ? (m.project_expenses ?? 0) : 0),
-        })),
-      ),
-    [monthlyExpenses, includeProjects],
+    () => yearlyKpi(seriesOf(rawLedgerRows, "expenses")),
+    [rawLedgerRows],
   );
 
   const monthlySummary = (avg3: number, avg6: number, avg12: number): KpiSummary => ({
@@ -306,38 +321,30 @@ export function IncomeExpensesCard() {
   });
 
   const allIncome = useMemo(
-    () => allTimeKpi(windowed(incomeOutcome ?? [], all, range).map((d) => ({ month: d.month, value: d.income }))),
-    [incomeOutcome, all, range],
+    () => allTimeKpi(seriesOf(windowed(rawLedgerRows, all, range), "income")),
+    [rawLedgerRows, all, range],
   );
   const allExpenses = useMemo(
-    () =>
-      allTimeKpi(
-        windowed(monthlyExpenses?.months ?? [], all, range).map((m) => ({
-          month: m.month,
-          value: m.expenses + (includeProjects ? (m.project_expenses ?? 0) : 0),
-        })),
-      ),
-    [monthlyExpenses, includeProjects, all, range],
+    () => allTimeKpi(seriesOf(windowed(rawLedgerRows, all, range), "expenses")),
+    [rawLedgerRows, all, range],
   );
 
+  const rollingSummary = (field: "income" | "expenses") =>
+    monthlySummary(
+      avgOf(rawLedgerRows.slice(-3), field),
+      avgOf(rawLedgerRows.slice(-6), field),
+      avgOf(rawLedgerRows.slice(-12), field),
+    );
   const incomeSummary = all
     ? allSummary(allIncome)
     : yearly
       ? yearlySummary(yearlyIncome)
-      : monthlySummary(
-          avgOf(incomeOutcome?.slice(-3)),
-          avgOf(incomeOutcome?.slice(-6)),
-          avgOf(incomeOutcome?.slice(-12)),
-        );
+      : rollingSummary("income");
   const expenseSummary = all
     ? allSummary(allExpenses)
     : yearly
       ? yearlySummary(yearlyExpenses)
-      : monthlySummary(
-          monthlyExpenses?.avg_3_months ?? 0,
-          monthlyExpenses?.avg_6_months ?? 0,
-          monthlyExpenses?.avg_12_months ?? 0,
-        );
+      : rollingSummary("expenses");
 
   // Whichever view is on screen scrolls inside this box, and the box keeps
   // its offset when the view is swapped. Reaching a legend row means
@@ -435,6 +442,17 @@ export function IncomeExpensesCard() {
                 {includeProjects
                   ? t("dashboard.projectExpensesIncluded")
                   : t("dashboard.projectExpensesExcluded")}
+              </button>
+              <button
+                onClick={() => setIncludeDebt(!includeDebt)}
+                className={`rounded-lg px-3 py-1.5 text-xs font-medium border transition-colors ${
+                  includeDebt
+                    ? "bg-amber-500/10 border-amber-500/20 text-amber-400"
+                    : "bg-[var(--surface-light)] border-[var(--surface-light)] text-[var(--text-muted)]"
+                }`}
+                title={t("dashboard.debtChipTitle")}
+              >
+                {includeDebt ? t("dashboard.debtIncluded") : t("dashboard.debtExcluded")}
               </button>
             </div>
             <div className="flex items-center gap-2">
@@ -620,7 +638,12 @@ function KpiCard({
           <TrendChip value={data.primary} baseline={data.trendBaseline} kind={kind} title={data.trendTitle} />
         )}
       </div>
-      <div className="text-lg md:text-2xl font-extrabold tabular-nums leading-none">{formatCurrency(data.primary)}</div>
+      <div
+        data-testid="kpi-primary"
+        className="text-lg md:text-2xl font-extrabold tabular-nums leading-none"
+      >
+        {formatCurrency(data.primary)}
+      </div>
       <div className="text-[10px] text-slate-500 mt-1">{data.primaryLabel}</div>
       {data.stats.length > 0 && (
         <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-2 pt-2 border-t border-[var(--surface-light)]">

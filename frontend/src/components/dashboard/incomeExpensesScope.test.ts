@@ -7,6 +7,7 @@ import {
   sliceWindow,
   toAllComposition,
   toAllLedger,
+  toLedger,
   toYearlyComposition,
   toYearlyLedger,
   totalsByYear,
@@ -253,5 +254,45 @@ describe("barCap", () => {
   it("falls back to 1 when nothing is positive", () => {
     expect(barCap([])).toBe(1);
     expect(barCap([0, -1])).toBe(1);
+  });
+});
+
+
+describe("toLedger", () => {
+  it("totals each month from the same rows the breakdown tabs draw", () => {
+    const income: CompositionRow[] = [
+      { month: "2026-01", values: { Salary: 100, Bonus: 20 } },
+      { month: "2026-02", values: { Salary: 100 } },
+    ];
+    const expenses: CompositionRow[] = [
+      { month: "2026-01", values: { Food: 30, Rent: 50 } },
+      { month: "2026-02", values: { Food: 40 } },
+    ];
+
+    expect(toLedger(income, expenses)).toEqual([
+      { month: "2026-01", income: 120, expenses: 80 },
+      { month: "2026-02", income: 100, expenses: 40 },
+    ]);
+  });
+
+  it("keeps a month that only one side has, oldest first", () => {
+    const rows = toLedger(
+      [{ month: "2026-03", values: { Salary: 100 } }],
+      [{ month: "2026-01", values: { Food: 10 } }],
+    );
+
+    expect(rows).toEqual([
+      { month: "2026-01", income: 0, expenses: 10 },
+      { month: "2026-03", income: 100, expenses: 0 },
+    ]);
+  });
+
+  it("carries a category left in credit through to the month's total", () => {
+    // A refund with no purchase to match nets against its own category, which
+    // can leave the month's spending negative. Dropping it here would report
+    // the month as having spent money it got back.
+    expect(
+      toLedger([], [{ month: "2026-01", values: { Food: 50, Shopping: -70 } }]),
+    ).toEqual([{ month: "2026-01", income: 0, expenses: -20 }]);
   });
 });

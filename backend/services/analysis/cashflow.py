@@ -393,18 +393,37 @@ class CashflowMixin:
         income_df["source_label"] = np.where(is_loan, loan_label, non_loan_label)
         return income_df
 
-    def get_expenses_by_category_over_time(self, exclude_pending_refunds: bool = True):
+    def get_expenses_by_category_over_time(
+        self,
+        exclude_pending_refunds: bool = True,
+        exclude_projects: bool = False,
+        exclude_liabilities: bool = False,
+    ):
         """
         Get monthly expenses broken down by category over time.
 
         A refund is netted against the category of the purchase it repays, not
         its own: the refund row is zeroed wherever it sits and the purchase is
-        reduced, so the money never moves between categories.
+        reduced, so the money never moves between categories. A refund with no
+        purchase to match is netted against the category it lands in, which is
+        why a month's category total can come out negative — more money came
+        back than went out. Callers that draw a category (a bar segment, a pie
+        slice) skip those; callers that total a month must keep them, or the
+        refund silently disappears from the month it belongs to.
 
         Parameters
         ----------
         exclude_pending_refunds : bool, optional
             Passed to :meth:`_net_matched_refunds`. Defaults to True.
+        exclude_projects : bool, optional
+            If True, drop categories that are project-budget names — planned
+            lumpy spending the caller may want out of its ordinary-spend view.
+            Defaults to False.
+        exclude_liabilities : bool, optional
+            If True, drop debt payments (negative ``Liabilities`` rows).
+            Defaults to False, because the money did leave the account; a
+            caller taking the envelope view of spending (where loan principal
+            is a transfer into net worth rather than consumption) passes True.
 
         Returns
         -------
@@ -412,7 +431,8 @@ class CashflowMixin:
             Chronologically sorted list of monthly dicts with keys:
 
             - ``month`` – period in ``YYYY-MM`` format.
-            - ``categories`` – dict mapping category name to expense amount (positive).
+            - ``categories`` – dict mapping category name to expense amount
+              (positive for spend, negative for a category left in credit).
         """
         df = self.repo.get_itemized_transactions()
 
@@ -421,11 +441,30 @@ class CashflowMixin:
 
         df = self._net_matched_refunds(df, exclude_pending_refunds)
 
-        # Regular expenses + negative liabilities (debt payments)
-        regular_expense_mask = ~df["category"].isin(NON_EXPENSE_CATEGORIES) & (df["amount"] < 0)
+        # Expense categories at any sign — a positive row in one is a refund,
+        # and it belongs in its category's total, not dropped. Liabilities is
+        # the exception: a positive one is a loan receipt, which is income.
+        regular_expense_mask = ~df["category"].isin(NON_EXPENSE_CATEGORIES)
         debt_payment_mask = (df["category"] == LIABILITIES_CATEGORY) & (df["amount"] < 0)
-        expense_mask = regular_expense_mask | debt_payment_mask
+        expense_mask = (
+            regular_expense_mask
+            if exclude_liabilities
+            else regular_expense_mask | debt_payment_mask
+        )
         expenses = df[expense_mask].copy()
+
+        if exclude_projects:
+            from backend.services.budget_service import ProjectBudgetService
+
+            project_names = ProjectBudgetService(self.db).get_all_projects_names()
+            if project_names:
+                expenses = expenses[
+                    ~expenses[TransactionsTableFields.CATEGORY.value].isin(project_names)
+                ]
+
+        if expenses.empty:
+            return []
+
         # Use tag as label for liabilities to show loan names
         liabilities_mask = expenses["category"] == LIABILITIES_CATEGORY
         expenses.loc[liabilities_mask, "category"] = expenses.loc[liabilities_mask, TransactionsTableFields.TAG.value].fillna(LIABILITIES_CATEGORY)
@@ -435,12 +474,12 @@ class CashflowMixin:
         pivot = expenses.groupby(["month", "category"])["amount"].sum().mul(-1).unstack(fill_value=0)
 
         return [
-            {"month": month, "categories": {cat: round(float(val), 2) for cat, val in row.items() if val > 0}}
+            {"month": month, "categories": {cat: round(float(val), 2) for cat, val in row.items() if val != 0}}
             for month, row in pivot.iterrows()
         ]
 
     def get_income_by_source_over_time(
-        self, exclude_pending_refunds: bool = True
+        self, exclude_pending_refunds: bool = True, exclude_liabilities: bool = False
     ) -> list[dict]:
         """
         Get monthly income broken down by source (category+tag combination).
@@ -451,6 +490,12 @@ class CashflowMixin:
             Passed to :meth:`_net_matched_refunds`. A refund that landed in an
             income category is money coming back, not earnings, so netting it
             keeps it out of the breakdown. Defaults to True.
+        exclude_liabilities : bool, optional
+            If True, drop loan receipts (positive ``Liabilities`` rows). This
+            is the income half of the same switch that drops debt payments
+            from the expense breakdown: taking a loan out of the outflow while
+            leaving the money it paid in as income would report a household as
+            saving the whole loan. Defaults to False.
 
         Returns
         -------
@@ -477,6 +522,9 @@ class CashflowMixin:
 
         # Exclude Prior Wealth transactions
         income_df = income_df[income_df["tag"] != PRIOR_WEALTH_TAG]
+
+        if exclude_liabilities:
+            income_df = income_df[income_df["category"] != LIABILITIES_CATEGORY]
 
         if income_df.empty:
             return []

@@ -21,9 +21,10 @@ import { enableDemoMode, navigateTo, resetDemoData } from "./helpers";
  *
  * This spec guards that each tab renders, that the ledger is ordered
  * newest-first, that the scope toggle folds months into years, that the
- * filter row carries only the pending-refund and
- * project chips and that the pending-refund one actually moves the
- * breakdown, that tab switches never crash the card, and that hovering a
+ * filter row carries the pending-refund, project and loans-and-debt chips and
+ * that the pending-refund one actually moves the breakdown, that the KPI, the
+ * ledger and the breakdown legend report the *same* money (they are one
+ * number summed three ways), that tab switches never crash the card, and that hovering a
  * composition slice pops the cursor-following tooltip — the only readout the
  * bars have now that both the in-bar labels and the colour legend are gone, so
  * it must name the slice with its amount *and* its share. Demo Mode supplies
@@ -284,13 +285,16 @@ test.describe("Income & Expenses dashboard card", () => {
     await expect.poll(() => rows.allTextContents()).toEqual(monthlyNets);
     await expect(income.getByText("3-mo avg")).toBeVisible();
 
-    // --- Filter chips: pending-refunds and projects only ---
+    // --- Filter chips: pending-refunds, projects, loans & debt ---
     // "Refunds Included/Excluded" is gone: a refund is a positive amount in an
     // expense category, so it already nets off the month it lands in, and the
     // opt-out only ever reached the ledger and the income KPI — never the
     // expense KPI beside them or either breakdown tab.
     await expect(
       card.getByRole("button", { name: /^Pending Refunds (Ex|In)cluded$/ }),
+    ).toBeVisible();
+    await expect(
+      card.getByRole("button", { name: /^Loans & Debt (Ex|In)cluded$/ }),
     ).toBeVisible();
     await expect(
       card.getByRole("button", { name: /^Refunds (Ex|In)cluded$/ }),
@@ -359,6 +363,14 @@ test.describe("Income & Expenses dashboard card", () => {
     ).toBeVisible();
 
     // --- An over-scale month's meter is dashed, and legibly so ---
+    // Project spend is the lumpy kind — a wedding lands in two months — so
+    // the chip has to be on for a month to run past the median-anchored cap
+    // at all. It is off by default now that it reaches this tab: the
+    // breakdown, the ledger and the KPI answer to the same chips, so a
+    // category one of them excludes is excluded from all of them.
+    await card.getByRole("button", { name: "Projects Excluded" }).click();
+    await expect(card.getByRole("button", { name: "Projects Included" })).toBeVisible();
+
     // The meter is 3px tall with a 2px rounded cap. A diagonal hatch is all
     // but vertical over three pixels and the cap sheared both ends into
     // ragged points, so the bar read as torn rather than hatched — and which
@@ -367,10 +379,13 @@ test.describe("Income & Expenses dashboard card", () => {
     const overScaleFill = card
       .locator('[data-testid="composition-row"] div[title]:not([title=""]) > div')
       .first();
-    await expect(overScaleFill).toBeVisible();
+    await expect(overScaleFill).toBeVisible({ timeout: 20_000 });
     expect(
       await overScaleFill.evaluate((el) => getComputedStyle(el).backgroundImage),
     ).toContain("90deg");
+
+    await card.getByRole("button", { name: "Projects Included" }).click();
+    await expect(card.getByRole("button", { name: "Projects Excluded" })).toBeVisible();
 
     // Slices carry their readout here as well, and still print nothing.
     const expenseSegments = compositionRows.first().getByTestId("composition-segment");
@@ -492,6 +507,98 @@ test.describe("Income & Expenses dashboard card", () => {
     await expect(card.getByTestId("composition-row").first()).toBeVisible();
   });
 
+  test("the KPI, the ledger and the legend report one number, and the chips move all three", async ({
+    page,
+  }) => {
+    const card = await openCard(page);
+    await card.getByTestId("scope-toggle").getByRole("button", { name: "All time" }).click();
+
+    /**
+     * What the card says its expenses are, read in each of the three places.
+     *
+     * A chip toggles two queries at once, and they land independently, so a
+     * reading taken the instant a chip is clicked can catch one series
+     * refreshed and the other not. `settle` waits for the figure to stop
+     * being the one from before the click.
+     */
+    const readings = async () => {
+      await card.getByRole("button", { name: "Totals" }).click();
+      const ledger = await card
+        .locator('[data-testid="ledger-bar"][data-kind="expense"]')
+        .first()
+        .textContent();
+      const kpi = await card.getByTestId("kpi-expense").getByTestId("kpi-primary").textContent();
+
+      await card.getByRole("button", { name: "Expenses Breakdown" }).click();
+      await expect(card.getByTestId("donut-chart")).toBeVisible({ timeout: 45_000 });
+      const legendToggle = card.getByRole("button", { name: "Breakdown", exact: true });
+      if ((await legendToggle.getAttribute("aria-expanded")) === "false") {
+        await legendToggle.click();
+      }
+      const legend = await card
+        .getByTestId("breakdown-legend-scroll")
+        .locator("tfoot td")
+        .nth(1)
+        .textContent();
+      return { ledger: ledger?.trim(), kpi: kpi?.trim(), legend: legend?.trim() };
+    };
+
+    /** Read again until the card has stopped showing `previous`, then report. */
+    const settled = async (previous?: string) => {
+      let current = await readings();
+      if (previous !== undefined) {
+        await expect
+          .poll(
+            async () => {
+              current = await readings();
+              return current.ledger;
+            },
+            { timeout: 30_000 },
+          )
+          .not.toBe(previous);
+      }
+      // One more pass once the figures have moved: the three readings are
+      // taken from three tabs in sequence, and only the last of them is
+      // guaranteed to have been read after the refetch finished.
+      current = await readings();
+      return current;
+    };
+
+    // The three used to be three endpoints with three definitions of
+    // "expenses" — a budget-filtered KPI, a bank-bill ledger and a raw
+    // itemized breakdown — which put three different all-time totals on one
+    // screen. They are now one series summed three ways, so they must agree
+    // to the shekel.
+    const all = await settled();
+    expect(all.kpi).toBe(all.ledger);
+    expect(all.legend).toBe(all.ledger);
+    expect(all.ledger).toMatch(/\d/);
+
+    // --- And the chips move all three together ---
+    // The projects chip used to reach only the ledger, and could not even
+    // reach the project spend paid by credit card there: a bill row carries
+    // the category "Credit Cards", so no category filter can see inside it.
+    await card.getByRole("button", { name: "Projects Excluded" }).click();
+    await expect(card.getByRole("button", { name: "Projects Included" })).toBeVisible();
+    const withProjects = await settled(all.ledger);
+    expect(withProjects.kpi).toBe(withProjects.ledger);
+    expect(withProjects.legend).toBe(withProjects.ledger);
+    expect(withProjects.ledger).not.toBe(all.ledger);
+
+    // Debt payments are money out by default; excluding them takes the
+    // envelope view, and must move every reading at once.
+    await card.getByRole("button", { name: "Loans & Debt Included" }).click();
+    await expect(card.getByRole("button", { name: "Loans & Debt Excluded" })).toBeVisible();
+    const withoutDebt = await settled(withProjects.ledger);
+    expect(withoutDebt.kpi).toBe(withoutDebt.ledger);
+    expect(withoutDebt.legend).toBe(withoutDebt.ledger);
+    expect(withoutDebt.ledger).not.toBe(withProjects.ledger);
+    // Demo data's mortgage and car loan are a big share of the outflow, so
+    // dropping them can only make the figure smaller.
+    const digits = (value: string | undefined) => Number((value ?? "").replace(/\D/g, ""));
+    expect(digits(withoutDebt.ledger)).toBeLessThan(digits(withProjects.ledger));
+  });
+
   // Its own test on purpose: it needs Hebrew seeded before the app boots, so
   // it cannot share the journey test's page.
   test("an over-scale bar marks its growing tip under RTL", async ({ page }) => {
@@ -582,13 +689,18 @@ test.describe("Income & Expenses dashboard card", () => {
     const bordersBefore = await barBorders();
     expect(bordersBefore.length).toBeGreaterThan(0);
 
-    const projectsChip = card.getByRole("button", { name: /^Projects (Ex|In)cluded$/ });
-    await projectsChip.click();
+    // The loans chip is the one that reliably moves the cap: it takes a
+    // steady few thousand out of *every* month, which shifts the median the
+    // scale is anchored to, so bars cross the cap in both directions. The
+    // projects chip moves two lumpy months and can leave the capped set
+    // exactly as it was.
+    const loansChip = card.getByRole("button", { name: /^Loans & Debt (Ex|In)cluded$/ });
+    await loansChip.click();
     await expect.poll(() => expenseKpi.textContent(), { timeout: 20_000 }).not.toBe(kpiBefore);
     // Some bar has to take a cap here, or the round trip proves nothing.
     expect(await barBorders()).not.toEqual(bordersBefore);
 
-    await projectsChip.click();
+    await loansChip.click();
     await expect.poll(() => expenseKpi.textContent(), { timeout: 20_000 }).toBe(kpiBefore);
     // Read the settled state once: polling until the borders matched would
     // pass on the first frame that happened to agree, which is the transient

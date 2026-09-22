@@ -45,18 +45,23 @@ export function IncomeExpensesDonut({
   const { t } = useTranslation();
   const [legendOpen, setLegendOpen] = useState(isTouchDevice);
 
-  const slices = Object.entries(values)
-    .filter(([, value]) => value > 0)
+  const entries = Object.entries(values)
     .map(([name, value]) => ({ name, value }))
     .sort((a, b) => b.value - a.value);
-  const total = slices.reduce((sum, s) => sum + s.value, 0);
+  // A pie cannot draw a negative share, but the window's total has to stay the
+  // total: a category left in credit by a refund is real money, and the
+  // figure in the middle of this ring is the same one the Totals tab and the
+  // KPI above it show. So the ring draws what it can and the legend — a
+  // table, which has no such limit — carries every row.
+  const slices = entries.filter((entry) => entry.value > 0);
+  const total = entries.reduce((sum, entry) => sum + entry.value, 0);
 
   // Capped only once the cap hides a row: a table that scrolls by a hair
   // swallows the drag meant for the page (see `useScrollCap`). Re-measured
   // when the legend opens, since it has no height while collapsed.
-  const [legendRef, legendCapped] = useScrollCap(320, legendOpen ? slices.length : 0);
+  const [legendRef, legendCapped] = useScrollCap(320, legendOpen ? entries.length : 0);
 
-  if (slices.length === 0) return <p className="text-[var(--text-muted)] text-sm">{t("common.noData")}</p>;
+  if (entries.length === 0) return <p className="text-[var(--text-muted)] text-sm">{t("common.noData")}</p>;
 
   return (
     <div className="flex flex-col gap-4">
@@ -115,7 +120,7 @@ export function IncomeExpensesDonut({
                   </tr>
                 </thead>
                 <tbody>
-                  {slices.map((slice) => (
+                  {entries.map((slice) => (
                     <tr key={slice.name} className="border-b border-[var(--surface-light)]/50">
                       <td className="text-start px-2 py-2 w-full max-w-0">
                         <button
@@ -138,7 +143,7 @@ export function IncomeExpensesDonut({
                         {formatCurrency(slice.value)}
                       </td>
                       <td className="text-center px-2 py-2 whitespace-nowrap tabular-nums text-[var(--text-muted)]">
-                        {((slice.value / total) * 100).toFixed(1)}%
+                        {total !== 0 ? ((slice.value / total) * 100).toFixed(1) : "0.0"}%
                       </td>
                     </tr>
                   ))}

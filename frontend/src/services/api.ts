@@ -689,45 +689,40 @@ export const analyticsApi = {
     api.get<{ month: string; net_change: number; cumulative_balance: number }[]>(
       "/analytics/net-balance-over-time"
     ),
-  getIncomeExpensesOverTime: (excludeProjects = false, excludeLiabilities = false, excludePendingRefunds = true) =>
-    api.get<{ month: string; income: number; expenses: number }[]>(
-      "/analytics/income-expenses-over-time",
-      {
-        params: {
-          exclude_projects: excludeProjects,
-          exclude_liabilities: excludeLiabilities,
-          exclude_pending_refunds: excludePendingRefunds,
-        },
-      }
-    ),
   getDebtPaymentsOverTime: () =>
     api.get<{ month: string; amount: number; tags: Record<string, number> }[]>(
       "/analytics/debt-payments-over-time"
     ),
-  getExpensesByCategoryOverTime: (excludePendingRefunds = true) =>
+  getExpensesByCategoryOverTime: (
+    excludePendingRefunds = true,
+    excludeProjects = false,
+    excludeLiabilities = false,
+  ) =>
     api.get<{ month: string; categories: Record<string, number> }[]>(
       "/analytics/expenses-by-category-over-time",
-      { params: { exclude_pending_refunds: excludePendingRefunds } }
+      {
+        params: {
+          exclude_pending_refunds: excludePendingRefunds,
+          exclude_projects: excludeProjects,
+          exclude_liabilities: excludeLiabilities,
+        },
+      }
     ),
   getSankeyData: () => api.get("/analytics/sankey"),
   getNetWorthOverTime: () =>
     api.get<{ month: string; bank_balance: number; investment_value: number; cash: number; net_worth: number }[]>(
       "/analytics/net-worth-over-time"
     ),
-  getIncomeBySourceOverTime: (excludePendingRefunds = true) =>
+  getIncomeBySourceOverTime: (excludePendingRefunds = true, excludeLiabilities = false) =>
     api.get<{ month: string; sources: Record<string, number>; total: number }[]>(
       "/analytics/income-by-source-over-time",
-      { params: { exclude_pending_refunds: excludePendingRefunds } }
+      {
+        params: {
+          exclude_pending_refunds: excludePendingRefunds,
+          exclude_liabilities: excludeLiabilities,
+        },
+      }
     ),
-  getMonthlyExpenses: (excludePendingRefunds = true, includeProjects = false) =>
-    api.get<{
-      months: { month: string; expenses: number; project_expenses?: number }[];
-      avg_3_months: number;
-      avg_6_months: number;
-      avg_12_months: number;
-    }>("/analytics/monthly-expenses", {
-      params: { exclude_pending_refunds: excludePendingRefunds, include_projects: includeProjects },
-    }),
   getCashFlowForecast: () =>
     api.get<CashFlowForecast>("/analytics/cash-flow-forecast"),
   getRecurring: (includeDismissed = false) =>
