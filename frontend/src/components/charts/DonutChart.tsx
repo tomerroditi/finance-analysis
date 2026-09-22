@@ -23,6 +23,12 @@ interface DonutChartProps {
   showLegend?: boolean;
   /** Slice labels: none, percent inside the ring, or name+percent outside. */
   labelMode?: "none" | "percent" | "label-percent-outside";
+  /**
+   * Makes the slices clickable, called with the clicked slice's name. A slice
+   * is not a focusable element, so a chart that acts on clicks must offer the
+   * same action somewhere reachable by keyboard (a legend row, a select).
+   */
+  onSliceClick?: (name: string) => void;
 }
 
 interface SliceLabelProps {
@@ -95,8 +101,8 @@ function outsideLabel({ cx = 0, cy = 0, midAngle = 0, outerRadius = 0, percent =
 /**
  * Shared donut chart — segments separated by thin surface-coloured gaps, an
  * optional centered total in the hole, and a currency+percent tooltip. Covers
- * the income-by-source, portfolio-allocation, debt-allocation, and
- * insurance-allocation donuts with one implementation.
+ * the income-and-expense breakdowns, portfolio-allocation, debt-allocation,
+ * and insurance-allocation donuts with one implementation.
  */
 export function DonutChart({
   data,
@@ -106,6 +112,7 @@ export function DonutChart({
   centerLabel,
   showLegend = false,
   labelMode = "none",
+  onSliceClick,
 }: DonutChartProps) {
   const slices = sorted ? [...data].sort((a, b) => b.value - a.value) : data;
   const total = slices.reduce((sum, s) => sum + s.value, 0);
@@ -133,6 +140,12 @@ export function DonutChart({
               stroke={CHART_SURFACE_COLOR}
               strokeWidth={2}
               isAnimationActive={false}
+              style={onSliceClick ? { cursor: "pointer" } : undefined}
+              onClick={
+                onSliceClick
+                  ? (_data: unknown, index: number) => onSliceClick(slices[index].name)
+                  : undefined
+              }
               labelLine={false}
               label={
                 labelMode === "percent"

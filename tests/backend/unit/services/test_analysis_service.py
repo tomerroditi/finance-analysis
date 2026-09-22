@@ -1767,3 +1767,150 @@ class TestRefundNettingAcrossMonths:
         march_sources = self._month(by_source, "2024-03")["sources"]
         assert sum(march_sources.values()) == 8000.0
         assert not any("Other Income" in label for label in march_sources)
+
+
+class TestExpenseBreakdownFilters:
+    """``get_expenses_by_category_over_time`` filters, and what they guarantee.
+
+    The Income & Expenses card totals these very rows rather than reading a
+    separate totals endpoint, so a filter that cannot reach part of the data
+    is not a cosmetic gap — it is the card showing two different answers for
+    the same money. See ``.claude/rules/kpi_calculations.md``.
+    """
+
+    @staticmethod
+    def _total(rows) -> float:
+        return round(sum(sum(r["categories"].values()) for r in rows), 2)
+
+    def test_project_categories_are_dropped_including_spend_put_on_a_card(
+        self, db_session, seed_base_transactions, seed_project_transactions
+    ):
+        """The projects filter reaches project spend paid by credit card.
+
+        This is why the card reads the itemized breakdown: on the bank-side
+        view a card purchase is folded into a bill row categorised
+        ``Credit Cards``, so no category filter can ever see it. The Wedding
+        rows in the fixture are credit-card transactions precisely so this
+        test fails if the filter is ever moved back onto a bill-based series.
+        """
+        service = AnalysisService(db_session)
+
+        kept = service.get_expenses_by_category_over_time()
+        dropped = service.get_expenses_by_category_over_time(exclude_projects=True)
+
+        assert any("Wedding" in r["categories"] for r in kept)
+        assert all("Wedding" not in r["categories"] for r in dropped)
+        assert all("Renovation" not in r["categories"] for r in dropped)
+        assert self._total(dropped) < self._total(kept)
+
+    def test_debt_payments_leave_the_breakdown_with_their_loan_name(
+        self, db_session
+    ):
+        """The liabilities filter drops debt payments, which carry the loan's tag."""
+        db_session.add_all([
+            BankTransaction(
+                id="dbt_mortgage", date="2024-01-05", provider="leumi",
+                account_name="Checking", description="Mortgage",
+                amount=-4000.0, category="Liabilities", tag="Mortgage",
+                source="bank_transactions",
+            ),
+            BankTransaction(
+                id="dbt_food", date="2024-01-06", provider="leumi",
+                account_name="Checking", description="Groceries",
+                amount=-300.0, category="Food", tag=None,
+                source="bank_transactions",
+            ),
+        ])
+        db_session.commit()
+        service = AnalysisService(db_session)
+
+        with_debt = service.get_expenses_by_category_over_time()
+        without = service.get_expenses_by_category_over_time(exclude_liabilities=True)
+
+        assert with_debt[0]["categories"]["Mortgage"] == 4000.0
+        assert "Mortgage" not in without[0]["categories"]
+        assert without[0]["categories"]["Food"] == 300.0
+
+    def test_loan_receipts_leave_the_income_breakdown_with_the_same_switch(
+        self, db_session
+    ):
+        """Excluding debt drops the loan's money in as well as its payments out.
+
+        Taking the payments out of the outflow while leaving the money the
+        loan paid in as income would report the household as having saved the
+        whole loan.
+        """
+        db_session.add_all([
+            BankTransaction(
+                id="loan_in", date="2024-01-02", provider="leumi",
+                account_name="Checking", description="Mortgage drawdown",
+                amount=900000.0, category="Liabilities", tag="Mortgage",
+                source="bank_transactions",
+            ),
+            BankTransaction(
+                id="loan_salary", date="2024-01-03", provider="leumi",
+                account_name="Checking", description="Salary",
+                amount=10000.0, category="Salary", tag=None,
+                source="bank_transactions",
+            ),
+        ])
+        db_session.commit()
+        service = AnalysisService(db_session)
+
+        with_loan = service.get_income_by_source_over_time()
+        without = service.get_income_by_source_over_time(exclude_liabilities=True)
+
+        assert any("Loans / Mortgage" in r["sources"] for r in with_loan)
+        assert all(
+            not any(label.startswith("Loans") for label in r["sources"])
+            for r in without
+        )
+        assert without[0]["sources"]["Salary"] == 10000.0
+
+    def test_an_unmatched_refund_can_leave_a_category_in_credit(self, db_session):
+        """A refund with no purchase to match nets against the category it lands in.
+
+        The month total is what the card's ledger shows, so a category left in
+        credit has to survive into the payload: dropping it would report a
+        month as having spent money that came back.
+        """
+        db_session.add_all([
+            BankTransaction(
+                id="ref_buy", date="2024-01-05", provider="leumi",
+                account_name="Checking", description="Jacket",
+                amount=-200.0, category="Shopping", tag=None,
+                source="bank_transactions",
+            ),
+            BankTransaction(
+                id="ref_back", date="2024-01-20", provider="leumi",
+                account_name="Checking", description="Jacket returned",
+                amount=500.0, category="Shopping", tag=None,
+                source="bank_transactions",
+            ),
+        ])
+        db_session.commit()
+
+        rows = AnalysisService(db_session).get_expenses_by_category_over_time()
+
+        assert rows[0]["categories"]["Shopping"] == -300.0
+
+    def test_both_filters_on_reproduces_the_budget_views_expense_figure(
+        self, db_session, seed_base_transactions, seed_project_transactions
+    ):
+        """One definition, two switches — the envelope view is a position on it.
+
+        With projects and debt both excluded the breakdown must agree, month by
+        month, with ``get_monthly_expenses`` (which the Budget page uses). That
+        equality is what makes the card's chips a view of one number rather
+        than a fourth definition of "expenses".
+        """
+        service = AnalysisService(db_session)
+
+        breakdown = service.get_expenses_by_category_over_time(
+            exclude_projects=True, exclude_liabilities=True
+        )
+        budget = service.get_monthly_expenses()
+
+        by_month = {r["month"]: round(sum(r["categories"].values()), 2) for r in breakdown}
+        for month in budget["months"]:
+            assert by_month.get(month["month"], 0.0) == round(month["expenses"], 2)

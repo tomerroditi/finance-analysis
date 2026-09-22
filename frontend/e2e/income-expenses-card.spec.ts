@@ -9,15 +9,22 @@ import { enableDemoMode, navigateTo, resetDemoData } from "./helpers";
  *   - Income/Expenses → 100%-composition rows (`data-testid="composition-row"`)
  *                       whose slices carry no text at all.
  *
- * A Monthly/Yearly scope toggle in the title row re-folds every view: the
- * ledger and both breakdowns collapse to one row per calendar year, and the
- * KPI cards swap their rolling averages for per-year totals.
+ * A Monthly/Yearly/All-time scope toggle in the title row re-folds every view:
+ * the ledger and both breakdowns collapse to one row per calendar year (or to
+ * a single row over the whole window), and the KPI cards swap their rolling
+ * averages for per-year — or all-time — totals. In the all scope a breakdown
+ * is drawn as a donut with a collapsible legend instead of a composition bar,
+ * because a single period has no movement for a bar to show.
+ *
+ * Either breakdown can also be filtered to one series — click a slice, a donut
+ * slice or a legend row — which replaces the mix with that series over time.
  *
  * This spec guards that each tab renders, that the ledger is ordered
  * newest-first, that the scope toggle folds months into years, that the
- * filter row carries only the pending-refund and
- * project chips and that the pending-refund one actually moves the
- * breakdown, that tab switches never crash the card, and that hovering a
+ * filter row carries the pending-refund, project and loans chips and
+ * that the pending-refund one actually moves the breakdown, that the KPI, the
+ * ledger and the breakdown legend report the *same* money (they are one
+ * number summed three ways), that tab switches never crash the card, and that hovering a
  * composition slice pops the cursor-following tooltip — the only readout the
  * bars have now that both the in-bar labels and the colour legend are gone, so
  * it must name the slice with its amount *and* its share. Demo Mode supplies
@@ -278,14 +285,21 @@ test.describe("Income & Expenses dashboard card", () => {
     await expect.poll(() => rows.allTextContents()).toEqual(monthlyNets);
     await expect(income.getByText("3-mo avg")).toBeVisible();
 
-    // --- Filter chips: pending-refunds and projects only ---
+    // --- Filter chips: pending-refunds, projects, loans ---
     // "Refunds Included/Excluded" is gone: a refund is a positive amount in an
     // expense category, so it already nets off the month it lands in, and the
     // opt-out only ever reached the ledger and the income KPI — never the
     // expense KPI beside them or either breakdown tab.
-    await expect(
-      card.getByRole("button", { name: /^Pending Refunds (Ex|In)cluded$/ }),
-    ).toBeVisible();
+    //
+    // Every chip is an exclusion and every one starts off, so the card opens
+    // on everything the household did and each chip takes something out. A
+    // chip phrased the other way round would sit in the same grey as its
+    // neighbours while meaning the opposite of them.
+    for (const name of ["Pending Refunds Included", "Projects Included", "Loans Included"]) {
+      const chip = card.getByRole("button", { name, exact: true });
+      await expect(chip).toBeVisible();
+      await expect(chip).toHaveAttribute("aria-pressed", "false");
+    }
     await expect(
       card.getByRole("button", { name: /^Refunds (Ex|In)cluded$/ }),
     ).toHaveCount(0);
@@ -338,21 +352,23 @@ test.describe("Income & Expenses dashboard card", () => {
     // it. Demo data carries open credit-card refund expectations in the
     // recent months, so flipping the chip must change what a month cost.
     const totalsBefore = await compositionRows.allTextContents();
-    await card.getByRole("button", { name: "Pending Refunds Excluded" }).click();
-    await expect(
-      card.getByRole("button", { name: "Pending Refunds Included" }),
-    ).toBeVisible();
+    const refundsChip = card.getByRole("button", { name: /^Pending Refunds (Ex|In)cluded$/ });
+    await refundsChip.click();
+    await expect(refundsChip).toHaveAttribute("aria-pressed", "true");
+    await expect(refundsChip).toHaveText("Pending Refunds Excluded");
     await expect
       .poll(() => compositionRows.allTextContents(), { timeout: 20_000 })
       .not.toEqual(totalsBefore);
 
     // Put it back so the rest of the journey sees the default view.
-    await card.getByRole("button", { name: "Pending Refunds Included" }).click();
-    await expect(
-      card.getByRole("button", { name: "Pending Refunds Excluded" }),
-    ).toBeVisible();
+    await refundsChip.click();
+    await expect(refundsChip).toHaveAttribute("aria-pressed", "false");
 
     // --- An over-scale month's meter is dashed, and legibly so ---
+    // Project spend is the lumpy kind — a wedding lands in two months — and
+    // it is what takes a month past the median-anchored cap. It is in the
+    // view by default, because every chip starts off.
+    //
     // The meter is 3px tall with a 2px rounded cap. A diagonal hatch is all
     // but vertical over three pixels and the cap sheared both ends into
     // ragged points, so the bar read as torn rather than hatched — and which
@@ -361,7 +377,7 @@ test.describe("Income & Expenses dashboard card", () => {
     const overScaleFill = card
       .locator('[data-testid="composition-row"] div[title]:not([title=""]) > div')
       .first();
-    await expect(overScaleFill).toBeVisible();
+    await expect(overScaleFill).toBeVisible({ timeout: 20_000 });
     expect(
       await overScaleFill.evaluate((el) => getComputedStyle(el).backgroundImage),
     ).toContain("90deg");
@@ -374,9 +390,219 @@ test.describe("Income & Expenses dashboard card", () => {
     }
 
     await expenseSegments.first().hover();
-    await expect(page.getByTestId("composition-tooltip")).toBeVisible({
-      timeout: 1_000,
-    });
+    const expenseTooltip = page.getByTestId("composition-tooltip");
+    await expect(expenseTooltip).toBeVisible({ timeout: 1_000 });
+    // Nothing about a coloured band says it can be clicked, so the readout
+    // that names the slice has to say it.
+    await expect(expenseTooltip).toContainText("Click to filter");
+
+    // --- Clicking a slice filters the tab down to that one series ---
+    // The composition rows answer "what did this month consist of"; following
+    // one colour down a stack of differently-ordered bars is the comparison
+    // the eye is worst at, so the slice is also the control that pulls its
+    // own series out over time.
+    const clicked = await expenseSegments.first().getAttribute("aria-label");
+    const clickedName = clicked!.split(":")[0];
+    await expenseSegments.first().click();
+
+    const focusRows = card.getByTestId("series-focus-row");
+    await expect(focusRows.first()).toBeVisible({ timeout: 45_000 });
+    await expect(card.getByTestId("series-focus-chip")).toContainText(clickedName);
+    // One row per period, newest first, each with the series' share of that
+    // period — the reading a composition bar cannot give.
+    expect(await focusRows.count()).toBeGreaterThan(1);
+    const focusMonths = await focusRows.evaluateAll((els) =>
+      els.map((el) => el.getAttribute("data-month")),
+    );
+    expect(focusMonths[0]! > focusMonths[focusMonths.length - 1]!).toBe(true);
+    await expect(focusRows.first()).toContainText("%");
+    // The composition rows are gone while the filter is on.
+    await expect(compositionRows).toHaveCount(0);
+
+    // Escape is the dismissal people try without looking, and the focused
+    // view is not a dialog, so nothing else would handle it.
+    await page.keyboard.press("Escape");
+    await expect(focusRows).toHaveCount(0);
+    await expect(compositionRows.first()).toBeVisible();
+
+    // A tab switch drops the filter too: the two tabs share no series names,
+    // so a name carried across is a filter that matches nothing.
+    await expenseSegments.first().click();
+    await expect(card.getByTestId("series-focus-chip")).toBeVisible();
+    await card.getByRole("button", { name: "Income Breakdown" }).click();
+    await expect(card.getByTestId("series-focus-chip")).toHaveCount(0);
+    await expect(compositionRows.first()).toBeVisible();
+  });
+
+  test("the all-time scope draws a donut with a legend, and both filter a series", async ({
+    page,
+  }) => {
+    const card = await openCard(page);
+
+    const scope = card.getByTestId("scope-toggle");
+    await scope.getByRole("button", { name: "All time" }).click();
+
+    // --- Totals: the whole history folds to a single labelled row ---
+    // Income against expenses is not a part-whole relation, so this tab keeps
+    // its bars and its Net — a donut here would be a lie about the figures.
+    const rows = card.getByTestId("ledger-row");
+    await expect(rows).toHaveCount(1);
+    await expect(rows.first()).toHaveAttribute("data-month", "all");
+    await expect(rows.first()).toContainText("All time");
+
+    // The KPI drops its trend chip: there is no earlier "all time" to compare
+    // against, and a 0% chip would read as "flat" rather than "not asked".
+    const income = card.getByTestId("kpi-income");
+    await expect(income.getByText("Per month")).toBeVisible();
+    await expect(income.locator("span[title]")).toHaveCount(0);
+
+    // --- Income Breakdown: a donut, with the legend closed by default ---
+    await card.getByRole("button", { name: "Income Breakdown" }).click();
+    await expect(card.getByTestId("donut-chart")).toBeVisible({ timeout: 45_000 });
+    await expect(card.getByTestId("composition-row")).toHaveCount(0);
+    await expect(card.getByTestId("breakdown-legend-row")).toHaveCount(0);
+
+    await card.getByRole("button", { name: "Breakdown", exact: true }).click();
+    const legendRows = card.getByTestId("breakdown-legend-row");
+    await expect(legendRows.first()).toBeVisible();
+    expect(await legendRows.count()).toBeGreaterThan(0);
+    // The legend states the shares the donut only draws, and they add up.
+    await expect(card.getByTestId("breakdown-legend-scroll")).toContainText("100.0%");
+
+    // --- The window chips narrow what the donut folds ---
+    const ranges = card.getByTestId("range-chips");
+    const legendBefore = await legendRows.allTextContents();
+    await ranges.getByRole("button", { name: "This year" }).click();
+    await expect
+      .poll(() => legendRows.allTextContents(), { timeout: 20_000 })
+      .not.toEqual(legendBefore);
+    await ranges.getByRole("button", { name: "All time" }).click();
+
+    // --- A legend row filters, and drops back to months to have periods ---
+    // A slice under a few percent is hard to hit, so the legend is the
+    // reachable way to the same filter; and the focused view needs periods,
+    // which the all scope by definition does not have.
+    const firstLegend = await legendRows.first().textContent();
+    await legendRows.first().click();
+
+    const focusRows = card.getByTestId("series-focus-row");
+    await expect(focusRows.first()).toBeVisible({ timeout: 45_000 });
+    expect(await focusRows.count()).toBeGreaterThan(1);
+    await expect(card.getByTestId("series-focus-chip")).toContainText(
+      firstLegend!.trim().split(/\s{2,}/)[0],
+    );
+    await expect(scope.getByRole("button", { name: "Monthly" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+
+    // The chip's ✕ is the visible dismissal; clicking it restores the mix.
+    await card.getByTestId("series-focus-chip").click();
+    await expect(focusRows).toHaveCount(0);
+    await expect(card.getByTestId("composition-row").first()).toBeVisible();
+  });
+
+  test("the KPI, the ledger and the legend report one number, and the chips move all three", async ({
+    page,
+  }) => {
+    const card = await openCard(page);
+    await card.getByTestId("scope-toggle").getByRole("button", { name: "All time" }).click();
+
+    /**
+     * What the card says its expenses are, read in each of the three places.
+     *
+     * A chip toggles two queries at once, and they land independently, so a
+     * reading taken the instant a chip is clicked can catch one series
+     * refreshed and the other not. `settle` waits for the figure to stop
+     * being the one from before the click.
+     */
+    const readings = async () => {
+      await card.getByRole("button", { name: "Totals" }).click();
+      const ledger = await card
+        .locator('[data-testid="ledger-bar"][data-kind="expense"]')
+        .first()
+        .textContent();
+      const kpi = await card.getByTestId("kpi-expense").getByTestId("kpi-primary").textContent();
+
+      await card.getByRole("button", { name: "Expenses Breakdown" }).click();
+      await expect(card.getByTestId("donut-chart")).toBeVisible({ timeout: 45_000 });
+      const legendToggle = card.getByRole("button", { name: "Breakdown", exact: true });
+      if ((await legendToggle.getAttribute("aria-expanded")) === "false") {
+        await legendToggle.click();
+      }
+      await expect(card.getByTestId("breakdown-legend-scroll")).toBeVisible();
+      const legend = await card
+        .getByTestId("breakdown-legend-scroll")
+        .locator("tfoot td")
+        .nth(1)
+        .textContent();
+      return { ledger: ledger?.trim(), kpi: kpi?.trim(), legend: legend?.trim() };
+    };
+
+    /** Read again until the card has stopped showing `previous`, then report. */
+    const settled = async (previous?: string) => {
+      let current = await readings();
+      if (previous !== undefined) {
+        await expect
+          .poll(
+            async () => {
+              current = await readings();
+              return current.ledger;
+            },
+            { timeout: 30_000 },
+          )
+          .not.toBe(previous);
+      }
+      // One more pass once the figures have moved: the three readings are
+      // taken from three tabs in sequence, and only the last of them is
+      // guaranteed to have been read after the refetch finished.
+      current = await readings();
+      return current;
+    };
+
+    // The three used to be three endpoints with three definitions of
+    // "expenses" — a budget-filtered KPI, a bank-bill ledger and a raw
+    // itemized breakdown — which put three different all-time totals on one
+    // screen. They are now one series summed three ways, so they must agree
+    // to the shekel.
+    const all = await settled();
+    expect(all.kpi).toBe(all.ledger);
+    expect(all.legend).toBe(all.ledger);
+    expect(all.ledger).toMatch(/\d/);
+
+    // --- And the chips move all three together ---
+    // The projects chip used to reach only the ledger, and could not even
+    // reach the project spend paid by credit card there: a bill row carries
+    // the category "Credit Cards", so no category filter can see inside it.
+    await card.getByRole("button", { name: "Projects Included" }).click();
+    await expect(card.getByRole("button", { name: "Projects Excluded" })).toBeVisible();
+    const noProjects = await settled(all.ledger);
+    expect(noProjects.kpi).toBe(noProjects.ledger);
+    expect(noProjects.legend).toBe(noProjects.ledger);
+    expect(noProjects.ledger).not.toBe(all.ledger);
+
+    // An opened legend survives a chip toggle. Each chip is part of the query
+    // key, so a toggle is a different query with no data of its own — without
+    // `keepPreviousData` the card empties out, the "no data" line flashes and
+    // the remount closes the legend under the reader.
+    await expect(
+      card.getByRole("button", { name: "Breakdown", exact: true }),
+    ).toHaveAttribute("aria-expanded", "true");
+    await expect(card.getByTestId("breakdown-legend-row").first()).toBeVisible();
+
+    // Loan payments are money out until this chip says otherwise, and it must
+    // move every reading at once.
+    await card.getByRole("button", { name: "Loans Included" }).click();
+    await expect(card.getByRole("button", { name: "Loans Excluded" })).toBeVisible();
+    const noLoans = await settled(noProjects.ledger);
+    expect(noLoans.kpi).toBe(noLoans.ledger);
+    expect(noLoans.legend).toBe(noLoans.ledger);
+
+    // Each chip only ever takes money out, so the figure walks down: the
+    // whole outflow, then without the projects, then without the loans too.
+    const digits = (value: string | undefined) => Number((value ?? "").replace(/\D/g, ""));
+    expect(digits(noProjects.ledger)).toBeLessThan(digits(all.ledger));
+    expect(digits(noLoans.ledger)).toBeLessThan(digits(noProjects.ledger));
   });
 
   // Its own test on purpose: it needs Hebrew seeded before the app boots, so
@@ -461,22 +687,36 @@ test.describe("Income & Expenses dashboard card", () => {
         return out;
       });
 
-    // The expense KPI has its own query and can still read the zero
-    // placeholder here; it is what tells us a toggle's refetch has landed.
+    // A chip refetches income and expenses as two independent queries, and
+    // the bars sampled below are scaled per column — the income bars by the
+    // income series, the expense bars by the expense one. Waiting on a single
+    // KPI therefore reads the bars while half the card is still on the
+    // previous answer, which is exactly the transient this test is otherwise
+    // about. Both KPIs have to be back before the borders mean anything.
     const expenseKpi = card.getByTestId("kpi-expense");
+    const incomeKpi = card.getByTestId("kpi-income");
     await expect(expenseKpi).toContainText(/\d,\d{3}/, { timeout: 45_000 });
-    const kpiBefore = await expenseKpi.textContent();
+    await expect(incomeKpi).toContainText(/\d,\d{3}/, { timeout: 45_000 });
+    const kpis = async () =>
+      `${await incomeKpi.textContent()}|${await expenseKpi.textContent()}`;
+    const kpiBefore = await kpis();
     const bordersBefore = await barBorders();
     expect(bordersBefore.length).toBeGreaterThan(0);
 
+    // The projects chip is the one that moves a cap *among the rows on
+    // screen*. The scale is anchored to the median of the whole history, but
+    // the ledger shows the last 12 periods, so a toggle only shows here if it
+    // flips a bar inside that window: project spend lands in recent months
+    // and takes four expense bars over the cap, while the loans chip's
+    // capped months are all older than the window.
     const projectsChip = card.getByRole("button", { name: /^Projects (Ex|In)cluded$/ });
     await projectsChip.click();
-    await expect.poll(() => expenseKpi.textContent(), { timeout: 20_000 }).not.toBe(kpiBefore);
+    await expect.poll(kpis, { timeout: 20_000 }).not.toBe(kpiBefore);
     // Some bar has to take a cap here, or the round trip proves nothing.
     expect(await barBorders()).not.toEqual(bordersBefore);
 
     await projectsChip.click();
-    await expect.poll(() => expenseKpi.textContent(), { timeout: 20_000 }).toBe(kpiBefore);
+    await expect.poll(kpis, { timeout: 20_000 }).toBe(kpiBefore);
     // Read the settled state once: polling until the borders matched would
     // pass on the first frame that happened to agree, which is the transient
     // this defect hides behind.

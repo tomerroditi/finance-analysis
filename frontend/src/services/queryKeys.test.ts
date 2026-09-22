@@ -40,13 +40,6 @@ describe("makeQueryKeys", () => {
     expect(k.credentials.accounts()[0]).toBe("credentials-accounts");
   });
 
-  it("gives the two income-by-source endpoints distinct keys", () => {
-    const k = makeQueryKeys(false);
-    expect(k.analytics.incomeBySourceOverTime(true)).not.toEqual(
-      k.analytics.incomeBySource(undefined, undefined),
-    );
-  });
-
   it("transactionsList prefix matches list keys but not the count key", () => {
     const k = makeQueryKeys(false);
     const list = k.transactions.list("all", false);

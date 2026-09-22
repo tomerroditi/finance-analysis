@@ -139,4 +139,9 @@ export function shouldDehydrateQuery(query: Query): boolean {
 // v8: investment analysis swapped `monthly_transactions` for per-date `flows`
 // and its metrics gained `opening_balance`. A hydrated v7 snapshot would show
 // a Keren Hishtalmut's snapshot table with no deposits at all.
-export const PERSIST_BUSTER = "v8";
+// v9: the Income & Expenses card dropped two endpoints and re-keyed the two it
+// kept (they carry the project and loans filters now). The old entries can
+// never be read again, so they would sit in IndexedDB until something else
+// bumped this; the category breakdown also started reporting a category left
+// in credit as a negative, which a v8 snapshot has no way to show.
+export const PERSIST_BUSTER = "v9";

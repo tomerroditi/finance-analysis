@@ -79,7 +79,7 @@ const READ_ONLY_SPECS = [
   "**/dashboard-mobile-kpis.spec.ts",
   "**/data-flow.spec.ts",
   "**/flows/demo-mode-isolation.spec.ts",
-  "**/income-by-source-card.spec.ts",
+  "**/income-expenses-touch.spec.ts",
   "**/info-tooltip-aria-label.spec.ts",
   "**/insurances.spec.ts",
   "**/investment-analysis-kpi-overflow.spec.ts",

@@ -49,7 +49,6 @@ test.describe("Dashboard half-width blocks", () => {
     "recurring",
     "goals",
     "heatmap",
-    "income_by_source",
     "income_expenses",
   ];
 
@@ -194,7 +193,11 @@ test.describe("Dashboard half-width blocks", () => {
     expect(Math.abs(boxes.recurring.height - boxes.goals.height)).toBeLessThan(
       2,
     );
-    expect(Math.abs(boxes.heatmap.y - boxes.income_by_source.y)).toBeLessThan(4);
+    // `heatmap` is the last half card before a full one now that the
+    // income-by-source card is gone (its all-time donut lives inside
+    // `income_expenses`), so it sits alone on its row and the full card
+    // starts below it.
+    expect(boxes.income_expenses.y).toBeGreaterThan(boxes.heatmap.y);
 
     // Every block enables internal scrolling.
     const allOverflows = await page

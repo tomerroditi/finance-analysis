@@ -27,7 +27,6 @@
   "e2e/flows/demo-mode-toggle.spec.ts": 3.19,
   "e2e/flows/investment-snapshot.spec.ts": 1.739,
   "e2e/flows/settings-language-rtl.spec.ts": 1.453,
-  "e2e/income-by-source-card.spec.ts": 4.471,
   "e2e/income-expenses-card.spec.ts": 3.718,
   "e2e/info-tooltip-aria-label.spec.ts": 0.529,
   "e2e/insurances.spec.ts": 1.346,

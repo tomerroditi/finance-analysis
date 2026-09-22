@@ -162,16 +162,27 @@ export function makeQueryKeys(demo: boolean) {
       netWorthOverTime: () => ["analytics", "net-worth-over-time", demo] as const,
       debtPayments: () => ["analytics", "debt-payments-over-time", demo] as const,
       sankey: () => ["analytics", "sankey", demo] as const,
-      incomeExpensesOverTime: (includeProjects: boolean, excludePendingRefunds: boolean) =>
-        ["analytics", "income-expenses-over-time", includeProjects, excludePendingRefunds, demo] as const,
-      expensesByCategoryOverTime: (excludePendingRefunds: boolean) =>
-        ["analytics", "expenses-by-category-over-time", excludePendingRefunds, demo] as const,
-      incomeBySourceOverTime: (excludePendingRefunds: boolean) =>
-        ["analytics", "income-by-source-over-time", excludePendingRefunds, demo] as const,
-      incomeBySource: (start: string | undefined, end: string | undefined) =>
-        ["analytics", "income-by-source", start ?? "all", end ?? "all", demo] as const,
-      monthlyExpenses: (excludePendingRefunds: boolean, includeProjects: boolean) =>
-        ["analytics", "monthly-expenses", excludePendingRefunds, includeProjects, demo] as const,
+      expensesByCategoryOverTime: (
+        excludePendingRefunds: boolean,
+        excludeProjects: boolean,
+        excludeLiabilities: boolean,
+      ) =>
+        [
+          "analytics",
+          "expenses-by-category-over-time",
+          excludePendingRefunds,
+          excludeProjects,
+          excludeLiabilities,
+          demo,
+        ] as const,
+      incomeBySourceOverTime: (excludePendingRefunds: boolean, excludeLiabilities: boolean) =>
+        [
+          "analytics",
+          "income-by-source-over-time",
+          excludePendingRefunds,
+          excludeLiabilities,
+          demo,
+        ] as const,
       recurring: (includeDismissed = false) =>
         ["analytics", "recurring", includeDismissed, demo] as const,
       insights: () => ["analytics", "insights", demo] as const,

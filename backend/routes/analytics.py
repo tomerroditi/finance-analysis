@@ -138,6 +138,8 @@ def get_debt_payments_over_time(
 def get_expenses_by_category_over_time(
     db: Session = Depends(get_database),
     exclude_pending_refunds: bool = True,
+    exclude_projects: bool = False,
+    exclude_liabilities: bool = False,
 ):
     """Return monthly expenses broken down by category.
 
@@ -147,10 +149,16 @@ def get_expenses_by_category_over_time(
         If True, a purchase still awaiting its refund is left out. Refunds
         already matched to a purchase are netted against that purchase's
         category either way.
+    exclude_projects : bool
+        If True, categories owned by a project budget are left out.
+    exclude_liabilities : bool
+        If True, debt payments (loan principal) are left out.
     """
     service = AnalysisService(db)
     return service.get_expenses_by_category_over_time(
-        exclude_pending_refunds=exclude_pending_refunds
+        exclude_pending_refunds=exclude_pending_refunds,
+        exclude_projects=exclude_projects,
+        exclude_liabilities=exclude_liabilities,
     )
 
 
@@ -184,6 +192,7 @@ def get_sankey_data(
 def get_income_by_source_over_time(
     db: Session = Depends(get_database),
     exclude_pending_refunds: bool = True,
+    exclude_liabilities: bool = False,
 ):
     """Return monthly income broken down by source (category+tag).
 
@@ -192,6 +201,9 @@ def get_income_by_source_over_time(
     exclude_pending_refunds : bool
         If True, a purchase still awaiting its refund is left out. Refunds
         already matched to a purchase are netted out either way.
+    exclude_liabilities : bool
+        If True, loan receipts are left out — the income half of the switch
+        that drops debt payments from the expense breakdown.
 
     Returns
     -------
@@ -201,7 +213,8 @@ def get_income_by_source_over_time(
     """
     service = AnalysisService(db)
     return service.get_income_by_source_over_time(
-        exclude_pending_refunds=exclude_pending_refunds
+        exclude_pending_refunds=exclude_pending_refunds,
+        exclude_liabilities=exclude_liabilities,
     )
 
 

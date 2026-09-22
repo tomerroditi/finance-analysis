@@ -25,7 +25,6 @@ test.describe("Dashboard strip cards", () => {
       "budget",
       "recent",
       "heatmap",
-      "income_by_source",
       "income_expenses",
       "net_worth",
     ],

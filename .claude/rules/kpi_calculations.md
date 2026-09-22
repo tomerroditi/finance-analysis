@@ -80,6 +80,67 @@ Causes: timing differences, pending transactions, fees, foreign currency roundin
 - For **aggregate totals** (income, expenses, balances): use bank transactions only, exclude CC source.
 - For **category breakdowns** (pie charts, per-category): use itemized CC transactions, exclude the "Credit Cards" bank category.
 - For **flow diagrams** (Sankey): use both to detect the CC gap, then filter.
+- For **anything the user can filter by category**: itemized, always — see below.
+
+### A filterable total cannot use the bank view
+
+The bank view's unit is a *bill*, and a bill's category is `Credit Cards`. So
+no category-level filter can see inside it: a "hide project spend" switch over
+a bill-based series silently hides only the project spend that was paid
+straight from the bank, and keeps every shekel of it that went on a card. On
+the demo database that is 65,000 of 135,894 — the switch looks like it works,
+and is wrong by more than half.
+
+This is why **the Income & Expenses card reads the itemized series for every
+one of its views**, against the aggregate rule above. It is the one surface
+that offers per-category switches over a total, so it is the one place the
+bank view cannot be used. The balance-type series (`get_net_balance_over_time`,
+`get_net_worth_over_time`) keep the bank view: they carry no category filter,
+and they must agree with what the account actually did.
+
+## The Income & Expenses card: one number, summed three ways
+
+The card shows a total (the Totals ledger), an average (the KPI cards) and a
+composition (the two breakdown tabs) of the same money. They therefore read
+**one series**, filtered one way:
+
+- `get_income_by_source_over_time()` and `get_expenses_by_category_over_time()`
+  are the only two endpoints it calls. The ledger rows are those two summed
+  per month (`toLedger` in `incomeExpensesScope.ts`), and every KPI folds
+  those ledger rows. Nothing in the card can disagree with anything else,
+  because there is only one number.
+- Two switches move all of it at once: **projects** (`exclude_projects`) and
+  **loans** (`exclude_liabilities`, which drops loan payments from the expense
+  side *and* loan receipts from the income side — dropping only the payments
+  would report the household as having saved the whole loan). The switch moves
+  a loan's *flows*, which is all this card holds; what a loan costs and what is
+  left on it belong to the Liabilities page, which derives them from the loan's
+  own terms (`liabilities_service`'s amortisation schedule) rather than from a
+  debit.
+- **Every chip is an exclusion, and every one starts off** — pending refunds
+  included too. The card opens on everything the household actually did, and
+  each chip takes something out of that; they share one accent colour, so
+  nothing coloured means nothing is being left out. A chip phrased the other
+  way round ("include projects") sat in the same grey as its neighbours while
+  meaning the opposite of them, which is unreadable in a row of three.
+- Switching *both* the projects and loans chips on gives the envelope view,
+  where loan principal is a transfer into net worth rather than spending, and
+  the card's expense figure then equals `get_monthly_expenses()` to the
+  shekel — what the Budget page shows. That equality is pinned by
+  `TestExpenseBreakdownFilters::test_both_filters_on_reproduces_the_budget_views_expense_figure`.
+
+It used to read three endpoints with three definitions of "expenses" — a
+budget-filtered KPI, a bank-bill ledger and a raw itemized breakdown — which
+put three different all-time totals (541,862 / 778,932 / 838,185 on demo data)
+on one screen the moment the card grew an all-time scope. Monthly rows had
+hidden the same disagreement all along: the ledger billed a purchase to the
+month its *card statement* was paid, while the breakdown billed it to the
+month it was bought.
+
+**A category can come out negative.** An unmatched refund nets against the
+category it lands in, so a month can end in credit. Anything that draws a
+category (a bar segment, a pie slice) skips those; anything that totals a
+month must keep them, or the refund vanishes from the month it belongs to.
 
 ## Prior Wealth
 

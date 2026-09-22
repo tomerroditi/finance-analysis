@@ -482,14 +482,6 @@ export const handlers = [
       { month: "2026-03", bank_balance: 50000, investment_value: 35000, cash: 500, net_worth: 85500 },
     ]),
   ),
-  http.get("/api/analytics/income-by-source", () =>
-    HttpResponse.json({
-      sources: [{ label: "Salary", amount: 15000, share: 1 }],
-      total: 15000,
-      start: null,
-      end: null,
-    }),
-  ),
   http.get("/api/analytics/income-by-source-over-time", () =>
     HttpResponse.json([
       { month: "2026-03", sources: { Salary: 15000 }, total: 15000 },

@@ -1,22 +1,32 @@
-import { useMemo, useState, type MouseEvent as ReactMouseEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import { createPortal } from "react-dom";
-import { useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { TrendingUp, TrendingDown, ArrowUp, ArrowDown, Minus, ChevronDown, ChevronUp } from "lucide-react";
 import { analyticsApi } from "../../services/api";
 import { useQueryKeys } from "../../hooks/useQueryKeys";
 import { useTranslation } from "react-i18next";
 import { formatCurrency, formatChange } from "../../utils/numberFormatting";
-import { CHART_COLORS } from "../../utils/chartStyle";
+import { CHART_COLORS, isTouchDevice } from "../../utils/chartStyle";
 import {
+  allTimeKpi,
+  barCap,
   formatPeriodLabel,
+  sliceWindow,
+  toAllComposition,
+  toAllLedger,
+  toLedger,
   toYearlyComposition,
   toYearlyLedger,
   yearlyKpi,
+  type AllKpi,
   type CompositionRow,
   type LedgerRow,
+  type RangeWindow,
   type Scope,
   type YearlyKpi,
 } from "./incomeExpensesScope";
+import { IncomeExpensesDonut } from "./IncomeExpensesDonut";
+import { IncomeExpensesFocus } from "./IncomeExpensesFocus";
 
 const INCOME_COLOR = "#10b981";
 const EXPENSE_COLOR = "#f43f5e";
@@ -43,6 +53,13 @@ const CATEGORY_COLORS = [
  */
 const OVER_SCALE_HATCH =
   "repeating-linear-gradient(90deg, var(--text-muted) 0 3px, transparent 3px 6px)";
+
+/** Label for each all-scope window, used by both the chips and the KPI caption. */
+const RANGE_LABEL_KEYS: Record<RangeWindow, string> = {
+  all: "dashboard.scopeAll",
+  year: "dashboard.rangeThisYear",
+  last12m: "dashboard.rangeLast12m",
+};
 
 /** How many recent periods the ledger / breakdown views show before "Show earlier". */
 const DEFAULT_VISIBLE_PERIODS = 12;
@@ -95,36 +112,69 @@ type KpiSummary = {
   trendTitle: string;
 };
 
-/** Mean of a numeric field over a slice of months (0 when empty). */
-function avgOf(rows: { income: number }[] | undefined): number {
-  if (!rows || rows.length === 0) return 0;
-  return rows.reduce((s, d) => s + d.income, 0) / rows.length;
+/**
+ * Every series name across a set of breakdown rows, in the order their
+ * colours are assigned from. Expense categories are sorted so the warm→cool
+ * palette walks them predictably; income sources keep the order they arrive
+ * in, which is the backend's own.
+ */
+function seriesOrder(rows: CompositionRow[], sorted: boolean): string[] {
+  const names = Array.from(new Set(rows.flatMap((d) => Object.keys(d.values))));
+  return sorted ? names.sort() : names;
+}
+
+/** Colour lookup over a fixed series order, cycling the palette. */
+function colorLookup(series: string[], palette: string[]): (name: string) => string {
+  return (name: string) => {
+    const index = series.indexOf(name);
+    return palette[(index < 0 ? 0 : index) % palette.length];
+  };
 }
 
 /**
- * Bar-scale cap = median(positive values) × `multiplier`. Anchoring to the
- * median (not the max or a high percentile) keeps typical months in the
- * mid-range with headroom, even when the data clusters on one value (e.g. a
- * constant salary) where a percentile would collapse onto the cluster and max
- * out every bar. Values above the cap are drawn full-width and flagged as
- * outliers — their exact ₪ label still tells the true story.
- *
- * Feed this one series at a time. The ledger derives a cap per column rather
- * than one over income and expenses together — see `LedgerView`.
+ * Narrow a monthly series to the all-scope window. The monthly and yearly
+ * scopes show every period they hold and let the pager walk back through
+ * them, so only the all scope — a single row with nothing to page — needs a
+ * window at all.
  */
-function barCap(values: number[], multiplier = 1.6): number {
-  const positives = values.filter((v) => v > 0).sort((a, b) => a - b);
-  if (positives.length === 0) return 1;
-  const median = positives[Math.floor(positives.length / 2)];
-  return (median || positives[positives.length - 1] || 1) * multiplier;
+function windowed<T extends { month: string }>(rows: T[], all: boolean, range: RangeWindow): T[] {
+  return all ? sliceWindow(rows, range) : rows;
 }
 
-/** Income & Expenses dashboard card (monthly/yearly scope, KPI summaries, refund/project filters, Totals/Income/Expenses sub-views). */
+/** Mean of one ledger field over a slice of periods (0 when empty). */
+function avgOf(rows: LedgerRow[], field: "income" | "expenses"): number {
+  if (rows.length === 0) return 0;
+  return rows.reduce((total, row) => total + row[field], 0) / rows.length;
+}
+
+/** One ledger field as the `{month, value}` series the KPI folds want. */
+function seriesOf(rows: LedgerRow[], field: "income" | "expenses") {
+  return rows.map((row) => ({ month: row.month, value: row[field] }));
+}
+
+/**
+ * Income & Expenses dashboard card: monthly / yearly / all-time scope, KPI
+ * summaries, refund and project filters, and Totals / Income / Expenses
+ * sub-views.
+ *
+ * The all scope folds the whole window into one period, so a breakdown there
+ * is a donut with a collapsible legend rather than a composition bar — which
+ * is what the separate "Income by source" card used to be, now reachable for
+ * expenses too. Either breakdown can be filtered to a single series (click a
+ * slice or a legend row), which is the one reading a stack of composition
+ * bars cannot give.
+ */
 export function IncomeExpensesCard() {
   const { t } = useTranslation();
   const qk = useQueryKeys();
-  const [incomeView, setIncomeView] = useState<"overview" | "by_source" | "by_category">("overview");
+  const [incomeView, setIncomeViewState] = useState<"overview" | "by_source" | "by_category">("overview");
   const [scope, setScope] = useState<Scope>("monthly");
+  const [range, setRange] = useState<RangeWindow>("all");
+  // The one series the breakdown is narrowed to, or null for the full mix.
+  const [focus, setFocus] = useState<string | null>(null);
+  // Stable identity: the focused view keys its Escape listener off it, and a
+  // fresh function every render would re-subscribe on every render.
+  const clearFocus = useCallback(() => setFocus(null), []);
   const [visiblePeriods, setVisiblePeriods] = useState(DEFAULT_VISIBLE_PERIODS);
   const showMore = () => setVisiblePeriods((v) => v + DEFAULT_VISIBLE_PERIODS);
   const showLess = () => setVisiblePeriods(DEFAULT_VISIBLE_PERIODS);
@@ -134,59 +184,117 @@ export function IncomeExpensesCard() {
     setScope(next);
     setVisiblePeriods(DEFAULT_VISIBLE_PERIODS);
   };
-  const [excludePendingRefunds, setExcludePendingRefunds] = useState(true);
-  const [includeProjects, setIncludeProjects] = useState(false);
+  // A focused series is a name out of the tab's own series, and the two tabs
+  // share none, so the filter cannot survive a tab switch.
+  const setIncomeView = (next: typeof incomeView) => {
+    setIncomeViewState(next);
+    setFocus(null);
+  };
+  // Picked from the all-scope donut, where the focused view would have a
+  // single row to draw. Months are what "over time" means here, so the click
+  // lands on them.
+  const focusOverTime = (name: string) => {
+    if (scope === "all") changeScope("monthly");
+    setFocus(name);
+  };
+  // Every chip is an exclusion, and every one starts off: the card opens on
+  // everything the household actually did, and each chip takes something out
+  // of that. Phrasing one of them the other way round (an "include projects"
+  // switch) made the row unreadable — three chips in the same grey, two of
+  // them meaning "off, so included" and one meaning "off, so excluded".
+  const [excludePendingRefunds, setExcludePendingRefunds] = useState(false);
+  const [excludeProjects, setExcludeProjects] = useState(false);
+  // Loan payments are money that left the account, so they count until this
+  // is switched on, which takes the envelope view — loan principal as a
+  // transfer into net worth rather than spending. It governs loan *receipts*
+  // on the income side too: dropping the payments while keeping the money the
+  // loan paid in would report the household as having saved the whole loan.
+  // It moves the loan's flows and nothing else — what a loan costs and what
+  // is left on it are the Liabilities page's, from the loan's own terms.
+  const [excludeLoans, setExcludeLoans] = useState(false);
 
-  const { data: incomeOutcome } = useQuery({
-    queryKey: qk.analytics.incomeExpensesOverTime(includeProjects, excludePendingRefunds),
-    queryFn: async () =>
-      (await analyticsApi.getIncomeExpensesOverTime(!includeProjects, false, excludePendingRefunds)).data,
-  });
+  // Both series come from the same itemized classification, filtered the same
+  // way, so every view in this card is one number summed three ways. The card
+  // used to read a separate totals endpoint and a separate expense-average
+  // endpoint, each with its own definition of "expenses" — which put three
+  // different all-time totals on one screen, and left the projects chip
+  // filtering a series whose credit-card rows have no category to filter on.
+  // See `.claude/rules/kpi_calculations.md` → "The Income & Expenses card".
   const { data: expensesByCategoryOverTime } = useQuery({
-    queryKey: qk.analytics.expensesByCategoryOverTime(excludePendingRefunds),
+    queryKey: qk.analytics.expensesByCategoryOverTime(
+      excludePendingRefunds,
+      excludeProjects,
+      excludeLoans,
+    ),
     queryFn: async () =>
-      (await analyticsApi.getExpensesByCategoryOverTime(excludePendingRefunds)).data,
+      (
+        await analyticsApi.getExpensesByCategoryOverTime(
+          excludePendingRefunds,
+          excludeProjects,
+          excludeLoans,
+        )
+      ).data,
+    // Every chip is part of the key, so a toggle is a *different* query with
+    // no data of its own. Without this the card empties out and rebuilds
+    // itself on every toggle: the "no data" line flashes, and because that
+    // unmounts the breakdown, an opened legend closes and a focused series is
+    // dropped — the reader loses their place for the length of a refetch.
+    placeholderData: keepPreviousData,
   });
   const { data: incomeBySourceData } = useQuery({
-    queryKey: qk.analytics.incomeBySourceOverTime(excludePendingRefunds),
+    queryKey: qk.analytics.incomeBySourceOverTime(excludePendingRefunds, excludeLoans),
     queryFn: async () =>
-      (await analyticsApi.getIncomeBySourceOverTime(excludePendingRefunds)).data,
-  });
-  const { data: monthlyExpenses } = useQuery({
-    queryKey: qk.analytics.monthlyExpenses(excludePendingRefunds, includeProjects),
-    queryFn: async () => (await analyticsApi.getMonthlyExpenses(excludePendingRefunds, includeProjects)).data,
+      (await analyticsApi.getIncomeBySourceOverTime(excludePendingRefunds, excludeLoans)).data,
+    placeholderData: keepPreviousData,
   });
 
   const yearly = scope === "yearly";
-  const ledgerRows: LedgerRow[] = useMemo(
-    () => (yearly ? toYearlyLedger(incomeOutcome ?? []) : (incomeOutcome ?? [])),
-    [yearly, incomeOutcome],
+  const all = scope === "all";
+  const rawSourceRows: CompositionRow[] = useMemo(
+    () => (incomeBySourceData ?? []).map((d) => ({ month: d.month, values: d.sources })),
+    [incomeBySourceData],
   );
+  const rawCategoryRows: CompositionRow[] = useMemo(
+    () => (expensesByCategoryOverTime ?? []).map((d) => ({ month: d.month, values: d.categories })),
+    [expensesByCategoryOverTime],
+  );
+  const rawLedgerRows: LedgerRow[] = useMemo(
+    () => toLedger(rawSourceRows, rawCategoryRows),
+    [rawSourceRows, rawCategoryRows],
+  );
+  const ledgerRows: LedgerRow[] = useMemo(() => {
+    const rows = windowed(rawLedgerRows, all, range);
+    if (all) return toAllLedger(rows);
+    return yearly ? toYearlyLedger(rows) : rows;
+  }, [yearly, all, range, rawLedgerRows]);
   const sourceRows: CompositionRow[] = useMemo(() => {
-    const rows = (incomeBySourceData ?? []).map((d) => ({ month: d.month, values: d.sources }));
+    const rows = windowed(rawSourceRows, all, range);
+    if (all) return toAllComposition(rows);
     return yearly ? toYearlyComposition(rows) : rows;
-  }, [yearly, incomeBySourceData]);
+  }, [yearly, all, range, rawSourceRows]);
   const categoryRows: CompositionRow[] = useMemo(() => {
-    const rows = (expensesByCategoryOverTime ?? []).map((d) => ({ month: d.month, values: d.categories }));
+    const rows = windowed(rawCategoryRows, all, range);
+    if (all) return toAllComposition(rows);
     return yearly ? toYearlyComposition(rows) : rows;
-  }, [yearly, expensesByCategoryOverTime]);
+  }, [yearly, all, range, rawCategoryRows]);
 
-  const yearlyIncome = useMemo(
-    () => yearlyKpi((incomeOutcome ?? []).map((d) => ({ month: d.month, value: d.income }))),
-    [incomeOutcome],
-  );
-  // The yearly expense KPI folds the very series the monthly one averages, so
-  // the two scopes can never disagree about a year; project spend arrives as
-  // its own field there and is only counted when the chip asks for it.
+  // Series order — and with it every series' colour — is derived from the
+  // whole monthly history, never from the rows on screen. Derived per view it
+  // would be derived from a *different* set each time: a window that drops a
+  // category shifts every alphabetically-later one onto a new colour, so the
+  // same category changed hue between the scope toggle's three positions.
+  const sourceSeries = useMemo(() => seriesOrder(rawSourceRows, false), [rawSourceRows]);
+  const categorySeries = useMemo(() => seriesOrder(rawCategoryRows, true), [rawCategoryRows]);
+  const sourceColorOf = useMemo(() => colorLookup(sourceSeries, CHART_COLORS), [sourceSeries]);
+  const categoryColorOf = useMemo(() => colorLookup(categorySeries, CATEGORY_COLORS), [categorySeries]);
+
+  // Every KPI folds the very rows the ledger draws, so no scope can disagree
+  // with another — or with the tab below it — about a month, a year or a
+  // household's whole history.
+  const yearlyIncome = useMemo(() => yearlyKpi(seriesOf(rawLedgerRows, "income")), [rawLedgerRows]);
   const yearlyExpenses = useMemo(
-    () =>
-      yearlyKpi(
-        (monthlyExpenses?.months ?? []).map((m) => ({
-          month: m.month,
-          value: m.expenses + (includeProjects ? (m.project_expenses ?? 0) : 0),
-        })),
-      ),
-    [monthlyExpenses, includeProjects],
+    () => yearlyKpi(seriesOf(rawLedgerRows, "expenses")),
+    [rawLedgerRows],
   );
 
   const monthlySummary = (avg3: number, avg6: number, avg12: number): KpiSummary => ({
@@ -212,20 +320,106 @@ export function IncomeExpensesCard() {
     trendTitle: kpi?.partial ? t("dashboard.yearTrendTitleYtd") : t("dashboard.yearTrendTitle"),
   });
 
-  const incomeSummary = yearly
-    ? yearlySummary(yearlyIncome)
-    : monthlySummary(
-        avgOf(incomeOutcome?.slice(-3)),
-        avgOf(incomeOutcome?.slice(-6)),
-        avgOf(incomeOutcome?.slice(-12)),
+  // The all-scope KPI is the window's own total. Its secondary figure is the
+  // per-month average rather than a second window: the whole point of the
+  // scope is that there is only one period, and a total on its own says
+  // nothing about the size of the household behind it.
+  const allSummary = (kpi: AllKpi): KpiSummary => ({
+    primary: kpi.total,
+    primaryLabel: t(RANGE_LABEL_KEYS[range]),
+    stats: [{ label: t("dashboard.perMonthAvg"), value: kpi.perMonth }],
+    // No like-for-like baseline exists for an all-time total — there is no
+    // earlier "all time" to compare it against — so the trend chip stays off.
+    trendBaseline: 0,
+    trendTitle: "",
+  });
+
+  const allIncome = useMemo(
+    () => allTimeKpi(seriesOf(windowed(rawLedgerRows, all, range), "income")),
+    [rawLedgerRows, all, range],
+  );
+  const allExpenses = useMemo(
+    () => allTimeKpi(seriesOf(windowed(rawLedgerRows, all, range), "expenses")),
+    [rawLedgerRows, all, range],
+  );
+
+  const rollingSummary = (field: "income" | "expenses") =>
+    monthlySummary(
+      avgOf(rawLedgerRows.slice(-3), field),
+      avgOf(rawLedgerRows.slice(-6), field),
+      avgOf(rawLedgerRows.slice(-12), field),
+    );
+  const incomeSummary = all
+    ? allSummary(allIncome)
+    : yearly
+      ? yearlySummary(yearlyIncome)
+      : rollingSummary("income");
+  const expenseSummary = all
+    ? allSummary(allExpenses)
+    : yearly
+      ? yearlySummary(yearlyExpenses)
+      : rollingSummary("expenses");
+
+  // Whichever view is on screen scrolls inside this box, and the box keeps
+  // its offset when the view is swapped. Reaching a legend row means
+  // scrolling down to it, so filtering from there opened the focused view
+  // already scrolled past its own filter chip and column headings — the two
+  // things that say what is being looked at.
+  const viewportRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    viewportRef.current?.scrollTo({ top: 0 });
+  }, [focus, incomeView, scope, range]);
+
+  // The periods the pager walks, whichever tab is open.
+  const activeRows =
+    incomeView === "overview" ? ledgerRows : incomeView === "by_source" ? sourceRows : categoryRows;
+
+  /**
+   * A breakdown tab, in one of its three forms: one series over time when the
+   * chart has been filtered to one, a donut over the whole window in the all
+   * scope, and a composition row per period otherwise.
+   */
+  const breakdown = (
+    rows: CompositionRow[],
+    series: string[],
+    colorOf: (name: string) => string,
+    seriesHeading: string,
+    emptyMessage: string,
+  ) => {
+    if (rows.length === 0) return <p className="text-[var(--text-muted)] text-sm">{emptyMessage}</p>;
+    if (focus) {
+      return (
+        <IncomeExpensesFocus
+          rows={rows}
+          series={focus}
+          color={colorOf(focus)}
+          scope={scope}
+          limit={visiblePeriods}
+          allLabel={t("dashboard.scopeAll")}
+          onClear={clearFocus}
+        />
       );
-  const expenseSummary = yearly
-    ? yearlySummary(yearlyExpenses)
-    : monthlySummary(
-        monthlyExpenses?.avg_3_months ?? 0,
-        monthlyExpenses?.avg_6_months ?? 0,
-        monthlyExpenses?.avg_12_months ?? 0,
+    }
+    if (all) {
+      return (
+        <IncomeExpensesDonut
+          values={rows[0].values}
+          colorOf={colorOf}
+          seriesHeading={seriesHeading}
+          onSelect={focusOverTime}
+        />
       );
+    }
+    return (
+      <CompositionView
+        rows={rows}
+        series={series}
+        colorOf={colorOf}
+        limit={visiblePeriods}
+        onSelect={setFocus}
+      />
+    );
+  };
 
   return (
     <div className="bg-[var(--surface)] rounded-2xl border border-[var(--surface-light)] overflow-hidden flex flex-col">
@@ -238,31 +432,30 @@ export function IncomeExpensesCard() {
           <KpiCards income={incomeSummary} expenses={expenseSummary} />
 
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-2 mb-3">
-            <div className="flex flex-wrap gap-2">
-              <button
-                onClick={() => setExcludePendingRefunds(!excludePendingRefunds)}
-                className={`rounded-lg px-3 py-1.5 text-xs font-medium border transition-colors ${
-                  excludePendingRefunds
-                    ? "bg-[var(--primary)]/10 border-[var(--primary)]/20 text-[var(--primary)]"
-                    : "bg-[var(--surface-light)] border-[var(--surface-light)] text-[var(--text-muted)]"
-                }`}
-              >
-                {excludePendingRefunds
-                  ? t("dashboard.pendingRefundsExcluded")
-                  : t("dashboard.pendingRefundsIncluded")}
-              </button>
-              <button
-                onClick={() => setIncludeProjects(!includeProjects)}
-                className={`rounded-lg px-3 py-1.5 text-xs font-medium border transition-colors ${
-                  includeProjects
-                    ? "bg-indigo-500/10 border-indigo-500/20 text-indigo-400"
-                    : "bg-[var(--surface-light)] border-[var(--surface-light)] text-[var(--text-muted)]"
-                }`}
-              >
-                {includeProjects
-                  ? t("dashboard.projectExpensesIncluded")
-                  : t("dashboard.projectExpensesExcluded")}
-              </button>
+            {/* One line, scrolled rather than wrapped: the chips are a set to
+                scan across, and wrapping pushed the third onto a row of its
+                own on a phone, where it read as a heading for the tabs under
+                it rather than as one more filter. */}
+            <div className="flex min-w-0 gap-2 overflow-x-auto scrollbar-auto-hide">
+              <FilterChip
+                active={excludePendingRefunds}
+                onToggle={() => setExcludePendingRefunds(!excludePendingRefunds)}
+                activeLabel={t("dashboard.pendingRefundsExcluded")}
+                inactiveLabel={t("dashboard.pendingRefundsIncluded")}
+              />
+              <FilterChip
+                active={excludeProjects}
+                onToggle={() => setExcludeProjects(!excludeProjects)}
+                activeLabel={t("dashboard.projectExpensesExcluded")}
+                inactiveLabel={t("dashboard.projectExpensesIncluded")}
+              />
+              <FilterChip
+                active={excludeLoans}
+                onToggle={() => setExcludeLoans(!excludeLoans)}
+                activeLabel={t("dashboard.loansExcluded")}
+                inactiveLabel={t("dashboard.loansIncluded")}
+                title={t("dashboard.loansChipTitle")}
+              />
             </div>
             <div className="flex items-center gap-2">
               <div className="bg-[var(--surface-light)] rounded-xl overflow-hidden">
@@ -289,50 +482,36 @@ export function IncomeExpensesCard() {
             </div>
           </div>
 
-          {incomeView === "overview" && (
-            <div className="flex-1 min-h-0 overflow-y-auto">
-              <LedgerView
-                rows={ledgerRows}
-                scope={scope}
-                limit={visiblePeriods}
-                onShowMore={showMore}
-                onShowLess={showLess}
-              />
-            </div>
-          )}
-          {incomeView === "by_source" && (
-            <div className="flex-1 min-h-0 overflow-y-auto">
-              {sourceRows.length > 0 ? (
-                <CompositionView
-                  rows={sourceRows}
-                  palette={CHART_COLORS}
-                  scope={scope}
-                  limit={visiblePeriods}
-                  onShowMore={showMore}
-                  onShowLess={showLess}
-                />
-              ) : (
-                <p className="text-[var(--text-muted)] text-sm">📭 {t("dashboard.noIncomeSourceData")}</p>
+          {all && <RangeChips range={range} onChange={setRange} />}
+
+          <div ref={viewportRef} className="flex-1 min-h-0 overflow-y-auto">
+            {incomeView === "overview" && (
+              <LedgerView rows={ledgerRows} scope={scope} limit={visiblePeriods} />
+            )}
+            {incomeView === "by_source" &&
+              breakdown(
+                sourceRows,
+                sourceSeries,
+                sourceColorOf,
+                t("dashboard.breakdownSource"),
+                `📭 ${t("dashboard.noIncomeSourceData")}`,
               )}
-            </div>
-          )}
-          {incomeView === "by_category" && (
-            <div className="flex-1 min-h-0 overflow-y-auto">
-              {categoryRows.length > 0 ? (
-                <CompositionView
-                  rows={categoryRows}
-                  palette={CATEGORY_COLORS}
-                  sortSeries
-                  scope={scope}
-                  limit={visiblePeriods}
-                  onShowMore={showMore}
-                  onShowLess={showLess}
-                />
-              ) : (
-                <p className="text-[var(--text-muted)]">{t("common.noData")}</p>
+            {incomeView === "by_category" &&
+              breakdown(
+                categoryRows,
+                categorySeries,
+                categoryColorOf,
+                t("dashboard.breakdownCategory"),
+                t("common.noData"),
               )}
-            </div>
-          )}
+            <PeriodPager
+              total={activeRows.length}
+              visible={Math.min(activeRows.length, visiblePeriods)}
+              scope={scope}
+              onShowMore={showMore}
+              onShowLess={showLess}
+            />
+          </div>
         </div>
       </div>
     </div>
@@ -340,8 +519,8 @@ export function IncomeExpensesCard() {
 }
 
 /**
- * Monthly / yearly scope switch, in the card's title row. It re-folds the
- * series the card already holds, so flipping it costs no request.
+ * Monthly / yearly / all-time scope switch, in the card's title row. It
+ * re-folds the series the card already holds, so flipping it costs no request.
  */
 function ScopeToggle({ scope, onChange }: { scope: Scope; onChange: (next: Scope) => void }) {
   const { t } = useTranslation();
@@ -350,6 +529,7 @@ function ScopeToggle({ scope, onChange }: { scope: Scope; onChange: (next: Scope
       {([
         { key: "monthly" as const, label: t("dashboard.scopeMonthly") },
         { key: "yearly" as const, label: t("dashboard.scopeYearly") },
+        { key: "all" as const, label: t("dashboard.scopeAll") },
       ]).map(({ key, label }) => (
         <button
           key={key}
@@ -364,6 +544,87 @@ function ScopeToggle({ scope, onChange }: { scope: Scope; onChange: (next: Scope
           {label}
         </button>
       ))}
+    </div>
+  );
+}
+
+/**
+ * One filter chip: off is "included", on is "excluded".
+ *
+ * All three read the same way round and light up in the same colour, so the
+ * row says what it is at a glance — nothing coloured means nothing is being
+ * left out. A chip is a toggle rather than a link, so it carries
+ * `aria-pressed`: the label alone changes between two readings of the same
+ * state ("Included" / "Excluded") and cannot tell a screen reader which of
+ * them is the button's current position.
+ */
+function FilterChip({
+  active,
+  onToggle,
+  activeLabel,
+  inactiveLabel,
+  title,
+}: {
+  active: boolean;
+  onToggle: () => void;
+  /** Shown while the chip is excluding something. */
+  activeLabel: string;
+  /** Shown while everything is counted. */
+  inactiveLabel: string;
+  title?: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      aria-pressed={active}
+      title={title}
+      className={`shrink-0 whitespace-nowrap rounded-lg px-3 py-1.5 text-xs font-medium border transition-colors ${
+        active
+          ? "bg-[var(--primary)]/10 border-[var(--primary)]/20 text-[var(--primary)]"
+          : "bg-[var(--surface-light)] border-[var(--surface-light)] text-[var(--text-muted)]"
+      }`}
+    >
+      {active ? activeLabel : inactiveLabel}
+    </button>
+  );
+}
+
+/**
+ * How much history the all scope folds.
+ *
+ * The other two scopes answer a shorter span by scrolling to the period that
+ * covers it; a single all-time figure has no such row, so the window is the
+ * only way to ask it about one. Day-level bounds are deliberately absent:
+ * every series the card holds is keyed by month, so a stray day could only
+ * ever be rounded to one.
+ */
+function RangeChips({
+  range,
+  onChange,
+}: {
+  range: RangeWindow;
+  onChange: (next: RangeWindow) => void;
+}) {
+  const { t } = useTranslation();
+  return (
+    <div data-testid="range-chips" className="bg-[var(--surface-light)] rounded-xl overflow-hidden self-start mb-3">
+      <div className="flex gap-1 p-1 overflow-x-auto scrollbar-auto-hide">
+        {(Object.keys(RANGE_LABEL_KEYS) as RangeWindow[]).map((key) => (
+          <button
+            key={key}
+            onClick={() => onChange(key)}
+            aria-pressed={range === key}
+            className={`shrink-0 whitespace-nowrap px-2 md:px-3 py-1 rounded-lg text-xs font-bold transition-all ${
+              range === key
+                ? "bg-[var(--surface)] text-[var(--primary)] shadow-sm"
+                : "text-[var(--text-muted)] hover:text-[var(--text-default)]"
+            }`}
+          >
+            {t(RANGE_LABEL_KEYS[key])}
+          </button>
+        ))}
+      </div>
     </div>
   );
 }
@@ -415,9 +676,18 @@ function KpiCard({
         </div>
         <span className="text-[11px] md:text-xs font-bold text-[var(--text-muted)] truncate">{label}</span>
         <div className="flex-1" />
-        <TrendChip value={data.primary} baseline={data.trendBaseline} kind={kind} title={data.trendTitle} />
+        {/* An all-time total has no earlier all-time to measure against, and a
+            0% chip beside it would read as "flat" rather than "not asked". */}
+        {data.trendBaseline !== 0 && (
+          <TrendChip value={data.primary} baseline={data.trendBaseline} kind={kind} title={data.trendTitle} />
+        )}
       </div>
-      <div className="text-lg md:text-2xl font-extrabold tabular-nums leading-none">{formatCurrency(data.primary)}</div>
+      <div
+        data-testid="kpi-primary"
+        className="text-lg md:text-2xl font-extrabold tabular-nums leading-none"
+      >
+        {formatCurrency(data.primary)}
+      </div>
       <div className="text-[10px] text-slate-500 mt-1">{data.primaryLabel}</div>
       {data.stats.length > 0 && (
         <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-2 pt-2 border-t border-[var(--surface-light)]">
@@ -488,14 +758,10 @@ function LedgerView({
   rows,
   scope,
   limit,
-  onShowMore,
-  onShowLess,
 }: {
   rows: LedgerRow[];
   scope: Scope;
   limit: number;
-  onShowMore: () => void;
-  onShowLess: () => void;
 }) {
   const { t } = useTranslation();
   if (rows.length === 0) return <p className="text-[var(--text-muted)] text-sm">{t("common.noData")}</p>;
@@ -520,7 +786,13 @@ function LedgerView({
     <div className="min-w-[300px]">
       <div className="grid gap-x-1" style={{ gridTemplateColumns: `${LEDGER_COLUMNS}` }}>
         <div className="col-span-4 grid grid-cols-subgrid px-1 pb-2 text-[10px] font-bold uppercase tracking-wide text-[var(--text-muted)]">
-          <div>{scope === "yearly" ? t("dashboard.ledgerYear") : t("dashboard.ledgerMonth")}</div>
+          <div>
+            {scope === "yearly"
+              ? t("dashboard.ledgerYear")
+              : scope === "all"
+                ? t("dashboard.ledgerPeriod")
+                : t("dashboard.ledgerMonth")}
+          </div>
           <div className="text-end">{t("dashboard.income")}</div>
           <div>{t("dashboard.expenses")}</div>
           <div className="text-end">{t("dashboard.ledgerNet")}</div>
@@ -537,7 +809,7 @@ function LedgerView({
               className={`col-span-4 grid grid-cols-subgrid items-center px-1 py-1.5 rounded-lg ${isCurrent ? "bg-[var(--primary)]/10" : ""}`}
             >
               <div className="text-xs font-bold text-[var(--text-muted)] whitespace-nowrap">
-                {formatPeriodLabel(d.month)}
+                {formatPeriodLabel(d.month, t("dashboard.scopeAll"))}
               </div>
               {/* income grows toward the centre; expenses mirror outward */}
               <LedgerBar value={d.income} kind="income" cap={incomeCap} />
@@ -553,13 +825,6 @@ function LedgerView({
           );
         })}
       </div>
-      <PeriodPager
-        total={rows.length}
-        visible={visible.length}
-        scope={scope}
-        onShowMore={onShowMore}
-        onShowLess={onShowLess}
-      />
     </div>
   );
 }
@@ -672,44 +937,84 @@ function LedgerBar({
  * tooltip that follows the cursor and appears instantly (the native `title`
  * attribute made you wait a second per slice, which is unusable for hunting a
  * category).
+ *
+ * A slice is also the control that filters the view down to its own series:
+ * the readout that names it is already under the cursor, so the click that
+ * follows needs nothing added around the chart. The tooltip says so, since a
+ * bar gives no other hint that it can be clicked.
  */
 function CompositionView({
   rows,
-  palette,
-  sortSeries = false,
-  scope,
+  series,
+  colorOf,
   limit,
-  onShowMore,
-  onShowLess,
+  onSelect,
 }: {
   rows: CompositionRow[];
-  palette: string[];
-  sortSeries?: boolean;
-  scope: Scope;
+  /** Series names in colour order, shared with the donut and focus views. */
+  series: string[];
+  colorOf: (name: string) => string;
   limit: number;
-  onShowMore: () => void;
-  onShowLess: () => void;
+  /** Filter the tab down to one series. */
+  onSelect: (name: string) => void;
 }) {
   const { t } = useTranslation();
   // Cursor-following tooltip: the only way to name a slice now that the legend
   // is gone, so it has to be instant. Portalled to <body> because the bar clips
   // its children (`overflow-hidden`) and the card may sit in a scroll container.
   const [tip, setTip] = useState<Tip | null>(null);
-  const showTip = (e: ReactMouseEvent, name: string, val: number, pct: number, color: string) =>
+  const showTip = (
+    e: ReactMouseEvent,
+    name: string,
+    val: number,
+    pct: number,
+    color: string,
+    pinned = false,
+  ) =>
     setTip({
       x: Math.min(Math.max(e.clientX, 90), window.innerWidth - 90),
       // Above the cursor, unless the row sits so close to the top of the
       // viewport that the panel would be cut off — then flip below it.
       y: e.clientY < 56 ? e.clientY + 20 : e.clientY - 12,
       below: e.clientY < 56,
+      name,
       text: `${name}: ${formatCurrency(val)} (${Math.round(pct)}%)`,
       color,
+      pinned,
     });
-  // Stable series order + colour, shared by every row so a category keeps its
-  // colour month to month.
-  let series = Array.from(new Set(rows.flatMap((d) => Object.keys(d.values))));
-  if (sortSeries) series = series.sort();
-  const colorOf = (name: string) => palette[series.indexOf(name) % palette.length];
+
+  /**
+   * Dismiss the readout, unless a tap pinned it.
+   *
+   * A tap does not only synthesize a click: Chromium sends the whole mouse
+   * sequence, and the `mouseleave` that ends it arrives *after* the click
+   * that pinned the readout. Clearing unconditionally therefore closed the
+   * panel a phone had just opened, in the same gesture — the very failure the
+   * pinning exists to prevent.
+   */
+  const hideTip = () => setTip((cur) => (cur?.pinned ? cur : null));
+
+  /**
+   * What a tap does, which is not what a click does.
+   *
+   * A touch has no hover to precede it: the browser synthesizes the mouse
+   * events and the click from the same tap, so filtering on click would mean
+   * a phone could never read a slice at all — the readout naming it would be
+   * replaced by the filtered view in the same gesture. So a tap *pins* the
+   * readout instead, and the filter becomes a button inside it. That is the
+   * repo's tap-to-reveal pattern (`frontend_responsive.md`), and it is why
+   * the desktop tooltip can stay a plain hover with no controls in it.
+   */
+  const onSegmentClick = (
+    e: ReactMouseEvent,
+    name: string,
+    val: number,
+    pct: number,
+    color: string,
+  ) => {
+    if (isTouchDevice) showTip(e, name, val, pct, color, true);
+    else onSelect(name);
+  };
 
   const totalOf = (v: Record<string, number>) => series.reduce((s, name) => s + (v[name] || 0), 0);
   // Median-anchored meter cap over the FULL history so widths stay stable across
@@ -719,7 +1024,7 @@ function CompositionView({
   const visible = rows.slice(-limit).reverse();
 
   return (
-    <div className="min-w-[320px]" onMouseLeave={() => setTip(null)}>
+    <div className="min-w-[320px]" onMouseLeave={hideTip}>
       {visible.map((d) => {
         const total = totalOf(d.values);
         const isCurrent = d.month === lastPeriod;
@@ -732,7 +1037,7 @@ function CompositionView({
             style={{ gridTemplateColumns: "56px 1fr 112px" }}
           >
             <div className="text-xs font-bold text-[var(--text-muted)] whitespace-nowrap">
-              {formatPeriodLabel(d.month)}
+              {formatPeriodLabel(d.month, t("dashboard.scopeAll"))}
             </div>
             <div className="flex h-6 rounded-md overflow-hidden bg-[var(--background)]">
               {series.map((name) => {
@@ -741,15 +1046,17 @@ function CompositionView({
                 const pct = (val / total) * 100;
                 const segColor = colorOf(name);
                 return (
-                  <div
+                  <button
                     key={name}
+                    type="button"
                     data-testid="composition-segment"
                     aria-label={`${name}: ${formatCurrency(val)} (${Math.round(pct)}%)`}
                     className="h-full"
                     style={{ width: `${pct}%`, background: segColor }}
+                    onClick={(e) => onSegmentClick(e, name, val, pct, segColor)}
                     onMouseEnter={(e) => showTip(e, name, val, pct, segColor)}
                     onMouseMove={(e) => showTip(e, name, val, pct, segColor)}
-                    onMouseLeave={() => setTip(null)}
+                    onMouseLeave={hideTip}
                   />
                 );
               })}
@@ -773,44 +1080,99 @@ function CompositionView({
           </div>
         );
       })}
-      <PeriodPager
-        total={rows.length}
-        visible={visible.length}
-        scope={scope}
-        onShowMore={onShowMore}
-        onShowLess={onShowLess}
+      <SegmentTooltip
+        tip={tip}
+        hint={t(isTouchDevice ? "dashboard.tapToFilter" : "dashboard.clickToFilter")}
+        onFilter={() => {
+          const name = tip?.name;
+          setTip(null);
+          if (name) onSelect(name);
+        }}
+        onDismiss={() => setTip(null)}
       />
-      <SegmentTooltip tip={tip} />
     </div>
   );
 }
 
 /**
- * A slice's hover readout: viewport coordinates, whether the panel hangs below
- * the cursor (top-of-viewport flip), the text, and the slice colour.
+ * A slice's readout: viewport coordinates, whether the panel hangs below the
+ * cursor (top-of-viewport flip), the slice's name, its text, its colour, and
+ * whether it is pinned — a pinned readout was opened by a tap, stays until
+ * dismissed, and carries the filter button a hover readout does not need.
  */
-type Tip = { x: number; y: number; below: boolean; text: string; color: string };
+type Tip = {
+  x: number;
+  y: number;
+  below: boolean;
+  name: string;
+  text: string;
+  color: string;
+  pinned: boolean;
+};
 
 /**
  * The cursor-following slice tooltip, rendered into <body> so no ancestor's
  * `overflow-hidden` can clip it. Sits above the cursor (below it near the top
  * of the viewport) and is horizontally clamped so it never runs off an edge.
  */
-function SegmentTooltip({ tip }: { tip: Tip | null }) {
+function SegmentTooltip({
+  tip,
+  hint,
+  onFilter,
+  onDismiss,
+}: {
+  tip: Tip | null;
+  hint: string;
+  onFilter: () => void;
+  onDismiss: () => void;
+}) {
+  const { t } = useTranslation();
   if (!tip) return null;
   return createPortal(
-    <div
-      data-testid="composition-tooltip"
-      className="pointer-events-none fixed z-50 flex items-center gap-1.5 whitespace-nowrap rounded-lg border border-white/10 bg-[var(--surface-light)] px-2.5 py-1.5 text-[11px] font-semibold text-white shadow-xl"
-      style={{
-        left: tip.x,
-        top: tip.y,
-        transform: `translate(-50%, ${tip.below ? "0" : "-100%"})`,
-      }}
-    >
-      <i className="h-2 w-2 flex-none rounded-sm" style={{ background: tip.color }} />
-      {tip.text}
-    </div>,
+    <>
+      {/* A pinned readout is dismissed by tapping anywhere off it, so it needs
+          something off it to tap. */}
+      {tip.pinned && (
+        <div
+          data-testid="composition-tooltip-backdrop"
+          className="fixed inset-0 z-40"
+          onClick={onDismiss}
+        />
+      )}
+      <div
+        data-testid="composition-tooltip"
+        className={`fixed z-50 whitespace-nowrap rounded-lg border border-white/10 bg-[var(--surface-light)] px-2.5 py-1.5 text-[11px] font-semibold text-white shadow-xl ${
+          tip.pinned ? "" : "pointer-events-none"
+        }`}
+        style={{
+          left: tip.x,
+          top: tip.y,
+          transform: `translate(-50%, ${tip.below ? "0" : "-100%"})`,
+        }}
+      >
+        <span className="flex items-center gap-1.5">
+          <i className="h-2 w-2 flex-none rounded-sm" style={{ background: tip.color }} />
+          {tip.text}
+        </span>
+        {tip.pinned ? (
+          // The filter is a button here because the tap that opened this
+          // readout is the only gesture a phone has: spend it on the reading,
+          // and let the filter be a second, deliberate one.
+          <button
+            type="button"
+            data-testid="composition-tooltip-filter"
+            onClick={onFilter}
+            className="mt-1.5 w-full rounded-md bg-[var(--primary)]/15 px-2 py-1 text-[11px] font-bold text-[var(--primary)]"
+          >
+            {t("dashboard.filterToSeries")}
+          </button>
+        ) : (
+          /* Nothing about a coloured band says it can be clicked, and the
+             readout naming it is already under the cursor. */
+          <span className="block text-[10px] font-medium text-[var(--text-muted)]">{hint}</span>
+        )}
+      </div>
+    </>,
     document.body,
   );
 }

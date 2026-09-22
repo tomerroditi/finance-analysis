@@ -21,7 +21,6 @@ test.describe("Dashboard insight dismissal", () => {
       "goals",
       "cash_flow",
       "category",
-      "income_by_source",
       "income_expenses",
       "net_worth",
     ],

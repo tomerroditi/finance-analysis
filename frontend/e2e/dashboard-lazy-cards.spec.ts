@@ -33,12 +33,11 @@ test.describe("Dashboard lazy card mounting", () => {
       timeout: 45_000,
     });
 
-    // The first eager chart card (Income by source, row 2) renders its plot
-    // without any scrolling.
+    // The eager cards render their own content without any scrolling — the
+    // budget card's tab bar only exists once the card itself has mounted, so
+    // it cannot be satisfied by the reserved placeholder.
     await expect(
-      page
-        .locator('[data-card-id="income_by_source"] .recharts-wrapper')
-        .first(),
+      page.locator('[data-card-id="budget"] [data-testid="dashboard-budget-tabs"]'),
     ).toBeVisible({ timeout: 45_000 });
 
     // The trailing Net Worth card exists (placeholder reserves its height) but
