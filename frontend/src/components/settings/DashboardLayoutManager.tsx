@@ -67,6 +67,7 @@ function SortableCardRow({
   betaLabel,
   onHide,
   hideLabel,
+  dragLabel,
 }: {
   id: DashboardCardId;
   label: string;
@@ -74,41 +75,45 @@ function SortableCardRow({
   betaLabel: string;
   onHide: () => void;
   hideLabel: string;
+  dragLabel: string;
 }) {
   const {
     attributes,
     listeners,
     setNodeRef,
+    setActivatorNodeRef,
     transform,
     transition,
     isDragging,
   } = useSortable({ id });
 
-  const style: React.CSSProperties = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-    // @dnd-kit spreads role="button" onto the row, which makes the global
-    // `[role="button"] { touch-action: manipulation }` rule (index.css) win
-    // over Tailwind's `touch-none`. That lets the browser claim pan gestures
-    // on touch / trackpad so the PointerSensor never sees the move → dragging
-    // silently dies. An inline style beats the stylesheet regardless of
-    // specificity, so force it here.
-    touchAction: "none",
-  };
-
   return (
     <div
       ref={setNodeRef}
-      style={style}
-      {...attributes}
-      {...listeners}
-      className={`flex items-center gap-2 rounded-lg border px-3 py-2.5 bg-[var(--surface-light)] touch-none select-none cursor-grab active:cursor-grabbing ${
+      style={{ transform: CSS.Transform.toString(transform), transition }}
+      className={`flex items-center gap-2 rounded-lg border px-3 py-2.5 bg-[var(--surface-light)] ${
         isDragging
           ? "border-[var(--primary)] shadow-lg z-10 relative opacity-95"
           : "border-[var(--surface-light)]"
       }`}
     >
-      <GripVertical size={16} className="text-[var(--text-muted)] shrink-0" />
+      <button
+        type="button"
+        ref={setActivatorNodeRef}
+        {...attributes}
+        {...listeners}
+        aria-label={dragLabel}
+        data-testid={`drag-handle-${id}`}
+        // The global `[role="button"] { touch-action: manipulation }` rule
+        // (index.css) would win over Tailwind's `touch-none` and let the
+        // browser claim pan gestures on touch / trackpad, so the PointerSensor
+        // never sees the move and dragging silently dies. An inline style
+        // beats the stylesheet regardless of specificity.
+        style={{ touchAction: "none" }}
+        className="-ms-1 p-1 rounded-md shrink-0 text-[var(--text-muted)] hover:text-[var(--text-default)] hover:bg-[var(--surface)] select-none cursor-grab active:cursor-grabbing"
+      >
+        <GripVertical size={16} />
+      </button>
       <span className="min-w-0 flex-1 text-sm text-[var(--text-default)] truncate" dir="auto">
         {label}
       </span>
@@ -116,8 +121,6 @@ function SortableCardRow({
       <SizeBadge size={cardSize(id)} />
       <button
         type="button"
-        // Don't let a press on the eye button begin a drag; keep it clickable.
-        onPointerDown={(e) => e.stopPropagation()}
         onClick={onHide}
         aria-label={hideLabel}
         className="p-1.5 rounded-md text-[var(--text-muted)] hover:text-[var(--text-default)] hover:bg-[var(--surface)] transition-colors"
@@ -133,7 +136,7 @@ function SortableCardRow({
  *
  * - Visible cards: a smooth, animated sortable list (@dnd-kit) whose order maps
  *   directly to the dashboard's top-to-bottom card order. Only the grip handle
- *   initiates a drag; neighbours slide out of the way with a spring transition.
+ *   initiates a drag, so presses elsewhere on a row never move it; neighbours slide out of the way with a spring transition.
  * - Hidden cards: a separate, non-sortable list. Hiding a card removes it from
  *   the sortable area; showing it appends it back to the bottom of the order.
  *
@@ -202,6 +205,7 @@ export function DashboardLayoutManager() {
                     beta={isBetaCard(id)}
                     betaLabel={t("settings.beta")}
                     hideLabel={t("settings.dashboardHideCard")}
+                    dragLabel={t("settings.dashboardDragCard")}
                     onHide={() => toggleHidden(id)}
                   />
                 ))}
