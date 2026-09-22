@@ -11,6 +11,7 @@ poetry run pytest                                      # All tests
 poetry run pytest tests/backend/unit/                  # Unit tests only
 poetry run pytest -k "test_budget"                     # By keyword
 poetry run pytest <path> --no-cov                     # Targeted run (repo's 40% coverage gate fails small runs without --no-cov)
+poetry run pytest <path> --no-cov -n0                 # Serial run (pytest-xdist parallelism is on by default; -n0 for pdb/print debugging)
 
 # Frontend (from frontend/)
 npm run dev                                            # Dev server (port 5173)
