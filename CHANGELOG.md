@@ -1,3 +1,9 @@
+## v1.85.0 (2026-09-22)
+
+### Feat
+
+- **dashboard**: all-time scope, per-series filter, and one definition of "expenses" (#344)
+
 ## v1.84.0 (2026-09-22)
 
 ### Feat
