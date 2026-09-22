@@ -78,7 +78,11 @@ test.describe("Income & Expenses dashboard card", () => {
     await expect(
       card.getByText("Month", { exact: true }).first(),
     ).toBeVisible();
-    await expect(card.getByText("Net", { exact: true }).first()).toBeVisible();
+    // Exact, not a substring: the heading carries the column's unit, and a
+    // bare "Net" would mean the ₪ had quietly moved back onto every row.
+    await expect(
+      card.getByText("Net (₪)", { exact: true }).first(),
+    ).toBeVisible();
 
     const rows = card.getByTestId("ledger-row");
     await expect(rows.first()).toBeVisible({ timeout: 45_000 });
@@ -91,20 +95,74 @@ test.describe("Income & Expenses dashboard card", () => {
     expect(firstMonth && lastMonth).toBeTruthy();
     expect(firstMonth! > lastMonth!).toBe(true); // "YYYY-MM" strings sort lexically
 
-    // --- Heading row and data rows share one grid track list ---
-    // They are two separate grids, so a column width edited in one and not the
-    // other slides every heading off the column it names — and nothing else in
-    // this suite would notice, because both grids still render.
-    const trackLists = await page.evaluate(() => {
-      const row = document.querySelector('[data-testid="ledger-row"]')!;
-      const head = row.parentElement!.querySelector(":scope > div.grid")!;
-      const read = (el: Element) => {
-        const cs = getComputedStyle(el);
-        return `${cs.gridTemplateColumns} / ${cs.columnGap}`;
+    // --- Headings sit on the columns they name, and those columns are snug ---
+    // Assert the geometry rather than the CSS: the headings and the rows are
+    // separate elements subgridded onto one track list, and what actually
+    // matters is that a heading's box lines up with its column's, however the
+    // tracks come to be declared.
+    const columns = await page.evaluate(() => {
+      const rows = Array.from(
+        document.querySelectorAll('[data-testid="ledger-row"]'),
+      );
+      const head = rows[0].parentElement!.querySelector(
+        ":scope > div.grid-cols-subgrid",
+      )!;
+      const edges = (el: Element) =>
+        Array.from(el.children).map((c) => {
+          const r = c.getBoundingClientRect();
+          return [Math.round(r.left), Math.round(r.right)].join(":");
+        });
+      // Widest rendered text in a column vs the column box that holds it —
+      // a fixed width sized for content nobody has shows up as slack here.
+      const slack = (index: number) => {
+        const widest = Math.max(
+          ...rows.map((r) => {
+            const range = document.createRange();
+            range.selectNodeContents(r.children[index]);
+            return range.getBoundingClientRect().width;
+          }),
+        );
+        const box = rows[0].children[index].getBoundingClientRect().width;
+        return box - widest;
       };
-      return { head: read(head), row: read(row) };
+      return {
+        head: edges(head),
+        row: edges(rows[0]),
+        periodSlack: slack(0),
+        netSlack: slack(3),
+      };
     });
-    expect(trackLists.row).toBe(trackLists.head);
+    expect(columns.row).toEqual(columns.head);
+    // Shrink-wrapped: the widest label fills its column. Sub-pixel text
+    // metrics and the row's own padding leave a little, never a column's worth.
+    expect(columns.periodSlack).toBeLessThan(6);
+    expect(columns.netSlack).toBeLessThan(6);
+
+    // --- The Net column names its unit once, in the heading ---
+    // ₪ and its NBSP are real glyphs, so a per-row symbol is width every row
+    // pays to repeat what the column already says.
+    const currency = await page.evaluate(() => {
+      const rows = Array.from(
+        document.querySelectorAll('[data-testid="ledger-row"]'),
+      );
+      const head = rows[0].parentElement!.querySelector(
+        ":scope > div.grid-cols-subgrid",
+      )!;
+      return {
+        heading: head.children[3].textContent || "",
+        rowsWithShekel: rows.filter((r) =>
+          (r.children[3].textContent || "").includes("₪"),
+        ).length,
+        // Every net still carries its own sign, with nothing between the
+        // sign and the digits that bidi could reorder.
+        allSigned: rows.every((r) =>
+          /^[+-]\d/.test((r.children[3].textContent || "").replace(/[\u2066\u2069]/g, "")),
+        ),
+      };
+    });
+    expect(currency.heading).toContain("₪");
+    expect(currency.rowsWithShekel).toBe(0);
+    expect(currency.allSigned).toBe(true);
 
     // --- Each column scales off its own series, proportionally ---
     // Pooling income and expenses under one cap let the lumpy series (income

@@ -215,7 +215,7 @@
     "expensesBreakdown": "פירוט הוצאות",
     "ledgerMonth": "חודש",
     "ledgerYear": "שנה",
-    "ledgerNet": "נטו",
+    "ledgerNet": "נטו (₪)",
     "scopeMonthly": "חודשי",
     "scopeYearly": "שנתי",
     "showEarlierMonths": "הצג חודשים קודמים ({{count}})",

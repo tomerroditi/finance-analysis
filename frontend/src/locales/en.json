@@ -215,7 +215,7 @@
     "expensesBreakdown": "Expenses Breakdown",
     "ledgerMonth": "Month",
     "ledgerYear": "Year",
-    "ledgerNet": "Net",
+    "ledgerNet": "Net (₪)",
     "scopeMonthly": "Monthly",
     "scopeYearly": "Yearly",
     "showEarlierMonths": "Show earlier months ({{count}})",

@@ -50,14 +50,36 @@ const DEFAULT_VISIBLE_PERIODS = 12;
 /**
  * Ledger grid: period label, income bar, expense bar, net.
  *
- * The two fixed columns are sized to their own widest content and no wider —
- * a bar grows toward the label beside it, so every spare pixel in the label
+ * A bar grows toward the label beside it, so every spare pixel in a label
  * column reads as a gap between the bar's tip and the text it belongs to.
- * 56px fits "Sep '26" at text-xs/bold, 88px fits a six-figure net with its
- * sign and ₪. Both grids that use this (header + rows) must share it or the
- * column headings drift off their columns.
+ * Fixed widths could not get that to zero, because they had to hold the
+ * widest content any household might ever have: the 56px period column
+ * carried 4px of air on every row, and the 88px net column — sized for a
+ * seven-figure net almost nobody has — carried about 17px.
+ *
+ * `max-content` sizes each column to the widest label actually on screen, so
+ * that air goes away and a net that really is seven figures still cannot be
+ * clipped. It also stops the period column from being a bet on font metrics:
+ * 56px was measured against the English labels, and the Hebrew ones ("ספט׳ '26")
+ * came within 2px of outgrowing it.
+ *
+ * The heading row and the data rows hold no track list of their own — they
+ * subgrid onto this one — so a column can no longer be resized in one and
+ * not the other, which used to slide every heading off the column it names.
+ *
+ * The trade is that a column is sized by the rows on screen, so revealing
+ * earlier periods can widen one and shift the bars. It takes an earlier
+ * period whose net is wider than anything currently shown, and it costs a
+ * few pixels once; a fixed width pays its slack on every row forever.
+ *
+ * The net column carries its ₪ in the heading ("Net (₪)") rather than on
+ * every row, which is the one thing `max-content` could not shave: the
+ * symbol and its NBSP are real glyphs, so twelve rows paid for them twelve
+ * times to say what the column says once. The bars keep theirs — they are
+ * read individually, and the label sits at a bar's anchored end where it
+ * costs no gap.
  */
-const LEDGER_COLUMNS = "56px 1fr 1fr 88px";
+const LEDGER_COLUMNS = "max-content 1fr 1fr max-content";
 
 /**
  * What one KPI summary card shows: a headline figure with its caption, up to
@@ -496,42 +518,41 @@ function LedgerView({
 
   return (
     <div className="min-w-[300px]">
-      <div
-        className="grid gap-1.5 px-1 pb-2 text-[10px] font-bold uppercase tracking-wide text-[var(--text-muted)]"
-        style={{ gridTemplateColumns: `${LEDGER_COLUMNS}` }}
-      >
-        <div>{scope === "yearly" ? t("dashboard.ledgerYear") : t("dashboard.ledgerMonth")}</div>
-        <div className="text-end">{t("dashboard.income")}</div>
-        <div>{t("dashboard.expenses")}</div>
-        <div className="text-end">{t("dashboard.ledgerNet")}</div>
-      </div>
-      {visible.map((d) => {
-        const net = d.income - Math.abs(d.expenses);
-        const isCurrent = d.month === lastPeriod;
-        const expenseColor = d.expenses < 0 ? EXPENSE_LIGHT : EXPENSE_COLOR;
-        return (
-          <div
-            key={d.month}
-            data-testid="ledger-row"
-            data-month={d.month}
-            className={`grid gap-1.5 items-center px-1 py-1.5 rounded-lg ${isCurrent ? "bg-[var(--primary)]/10" : ""}`}
-            style={{ gridTemplateColumns: `${LEDGER_COLUMNS}` }}
-          >
-            <div className="text-xs font-bold text-[var(--text-muted)] whitespace-nowrap">
-              {formatPeriodLabel(d.month)}
-            </div>
-            {/* income grows toward the centre; expenses mirror outward */}
-            <LedgerBar value={d.income} kind="income" cap={incomeCap} />
-            <LedgerBar value={d.expenses} kind="expense" cap={expenseCap} color={expenseColor} />
+      <div className="grid gap-x-1" style={{ gridTemplateColumns: `${LEDGER_COLUMNS}` }}>
+        <div className="col-span-4 grid grid-cols-subgrid px-1 pb-2 text-[10px] font-bold uppercase tracking-wide text-[var(--text-muted)]">
+          <div>{scope === "yearly" ? t("dashboard.ledgerYear") : t("dashboard.ledgerMonth")}</div>
+          <div className="text-end">{t("dashboard.income")}</div>
+          <div>{t("dashboard.expenses")}</div>
+          <div className="text-end">{t("dashboard.ledgerNet")}</div>
+        </div>
+        {visible.map((d) => {
+          const net = d.income - Math.abs(d.expenses);
+          const isCurrent = d.month === lastPeriod;
+          const expenseColor = d.expenses < 0 ? EXPENSE_LIGHT : EXPENSE_COLOR;
+          return (
             <div
-              className="text-xs font-extrabold text-end whitespace-nowrap tabular-nums"
-              style={{ color: net >= 0 ? INCOME_COLOR : EXPENSE_COLOR }}
+              key={d.month}
+              data-testid="ledger-row"
+              data-month={d.month}
+              className={`col-span-4 grid grid-cols-subgrid items-center px-1 py-1.5 rounded-lg ${isCurrent ? "bg-[var(--primary)]/10" : ""}`}
             >
-              {formatChange(net, { compact: false })}
+              <div className="text-xs font-bold text-[var(--text-muted)] whitespace-nowrap">
+                {formatPeriodLabel(d.month)}
+              </div>
+              {/* income grows toward the centre; expenses mirror outward */}
+              <LedgerBar value={d.income} kind="income" cap={incomeCap} />
+              <LedgerBar value={d.expenses} kind="expense" cap={expenseCap} color={expenseColor} />
+              {/* The ₪ lives in the column heading — see LEDGER_COLUMNS. */}
+              <div
+                className="text-xs font-extrabold text-end whitespace-nowrap tabular-nums"
+                style={{ color: net >= 0 ? INCOME_COLOR : EXPENSE_COLOR }}
+              >
+                {formatChange(net, { compact: false, currency: false })}
+              </div>
             </div>
-          </div>
-        );
-      })}
+          );
+        })}
+      </div>
       <PeriodPager
         total={rows.length}
         visible={visible.length}
@@ -545,7 +566,7 @@ function LedgerView({
 
 /**
  * One ledger bar. Income grows toward the centre, expenses mirror outward. A
- * value above the shared cap is drawn full-width and flagged as an outlier: a
+ * value above its column's cap is drawn full-width and flagged as an outlier: a
  * hatched strip at the growing tip plus a dashed edge signal "off the scale",
  * while the exact ₪ still shows the real figure. Which physical edge that tip
  * is flips with the document direction, so everything marking it is logical.
