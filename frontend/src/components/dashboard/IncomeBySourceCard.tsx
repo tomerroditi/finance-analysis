@@ -9,6 +9,7 @@ import { formatCurrency, formatCompactCurrency } from "../../utils/numberFormatt
 import { CHART_COLORS } from "../../utils/chartStyle";
 import { DonutChart } from "../charts/DonutChart";
 import { resolveRangePreset, type DateRange } from "../../utils/dateRanges";
+import { useScrollCap } from "../../hooks/useScrollCap";
 
 type RangePreset = "all" | "year" | "last12m" | "custom";
 
@@ -67,6 +68,13 @@ export function IncomeBySourceCard() {
   );
 
   const sources = data?.sources ?? [];
+  // Capped only once the cap hides a row: a table that scrolls by a hair
+  // swallows the drag meant for the page (see `useScrollCap`). Re-measured
+  // when the breakdown opens, since it has no height while collapsed.
+  const [breakdownRef, breakdownCapped] = useScrollCap(
+    320,
+    tableOpen ? sources.length : 0,
+  );
   const total = data?.total ?? 0;
 
   return (
@@ -168,8 +176,11 @@ export function IncomeBySourceCard() {
                  under a sticky row. */
               <div className="rounded-xl border border-[var(--surface-light)] overflow-hidden">
               <div
+                ref={breakdownRef}
                 data-testid="income-by-source-breakdown-scroll"
-                className="max-h-[20rem] overflow-auto overscroll-contain"
+                className={`overflow-x-auto ${
+                  breakdownCapped ? "max-h-[20rem] overflow-y-auto overscroll-contain" : ""
+                }`}
               >
                 <table className="w-full min-w-[240px] text-sm">
                   <thead>

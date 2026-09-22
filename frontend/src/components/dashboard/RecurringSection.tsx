@@ -9,6 +9,7 @@ import {
   type RecurringSummary,
 } from "../../services/api";
 import { useQueryKeys } from "../../hooks/useQueryKeys";
+import { useScrollCap } from "../../hooks/useScrollCap";
 import { applyDecisions } from "./recurringOptimistic";
 import { qkPrefix } from "../../services/queryKeys";
 import { Skeleton } from "../common/Skeleton";
@@ -100,6 +101,11 @@ export function RecurringSection() {
     .filter((item) => item.confirmation === "pending")
     .sort((a, b) => b.confidence - a.confidence);
   const confirmed = live.filter((item) => item.confirmation === "confirmed");
+  // Both lists cap themselves, and only once a cap would hide a row — see
+  // `useScrollCap`: a list that scrolls by a hair swallows the drag meant for
+  // the page.
+  const [pendingListRef, pendingCapped] = useScrollCap(220, pending.length);
+  const [confirmedListRef, confirmedCapped] = useScrollCap(360, confirmed.length);
   // Deliberately off `items`, not `live`: "show dismissed" is an explicit
   // request to see everything that was ruled out, and its count comes from
   // the backend over every candidate. Filtering it by `showEnded` too would
@@ -192,8 +198,13 @@ export function RecurringSection() {
               </div>
 
               {/* Capped so a long backlog of candidates cannot push the
-                  confirmed charges out of the card's own scroll view. */}
-              <div className="space-y-1.5 max-h-[220px] overflow-y-auto pe-1">
+                  confirmed charges out of the card's own scroll view — but
+                  only once the cap hides a row, so a short list still lets a
+                  drag across it scroll the page. */}
+              <div
+                ref={pendingListRef}
+                className={`space-y-1.5 ${pendingCapped ? "max-h-[220px] overflow-y-auto pe-1" : ""}`}
+              >
                 {pending.map((item) => (
                   <div
                     key={item.normalized}
@@ -267,7 +278,10 @@ export function RecurringSection() {
               )}
             </p>
           ) : (
-            <div className="space-y-1.5 max-h-[360px] overflow-y-auto pe-1">
+            <div
+              ref={confirmedListRef}
+              className={`space-y-1.5 ${confirmedCapped ? "max-h-[360px] overflow-y-auto pe-1" : ""}`}
+            >
               {confirmed.map((item) => (
                 <div
                   key={item.normalized}

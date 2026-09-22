@@ -243,7 +243,12 @@ not closed.
   reorder arrows, `this_month_allocation`, `utilized`/`available`,
   `clawed_back`, `investment_backed`, the redistribute preview, and the
   free-cash pool on a dashed row below the goals (`GET
-  /savings-goals/free-cash`, its own query key). The bank icon on a row opens
+  /savings-goals/free-cash`, its own query key). The waterfall **scrolls in
+  place** past about 26rem of rows, so a household with a dozen goals does not
+  push the pool row and the history panel off the card — but only once the cap
+  hides about a row's worth (`useScrollCap`), because a list that scrolls by a
+  hair swallows the drag meant for the page (`frontend_pitfalls.md` →
+  "Capped Scroll Regions"). The bank icon on a row opens
   `InvestmentBackingModal`, which mutates earmarks immediately rather than
   staging behind a Save — they are their own resources, not fields on the
   goal, so there is no half-finished state to be in. A goal's **name owns its
@@ -253,19 +258,30 @@ not closed.
 - **Dashboard history** (`AllocationHistory` in the same file) — the same
   ledger read the other way round, from `GET /savings-goals/timeline?months=N`
   (`0` = all time; `total_months` is what tells the UI whether "All" would
-  add anything). Stacked bars carry each month's per-goal funding, a negative
-  segment is a clawback, and the free-cash pool gets **its own panel below**,
-  on the same months. Those are two panels rather than one chart with two
-  y-scales on purpose: a monthly flow and a standing balance do not share a
-  scale, and the pool is usually orders of magnitude larger than a month's
-  allocation. Series colour is keyed by goal **id**, not by priority, so
-  reordering the waterfall never repaints the chart. Only the outer segment of
-  a month's stack is rounded (`charts/stackedBarShape.tsx`, shared with the
-  retirement income chart) — rounding every segment renders a column as a
-  string of beads — and the pool panel's y-axis is a
-  silent gutter: its domain is fitted to the range so month-to-month movement
-  is visible, fitted bounds make tick values nobody can read, and the gutter
-  still has to be there for both panels to sit on the same months.
+  add anything). It is **collapsed by default**: the standings above answer
+  "where is each goal now", which is what the card is opened for, and the
+  ledger behind them is a second question that costs a chart and a request.
+  The timeline query is `enabled` on the panel being open, so a card nobody
+  expands never fetches a window.
+
+  Stacked bars carry each month's per-goal funding **with the free-cash pool
+  stacked on top**; a negative segment is a clawback. The pool is a standing
+  balance and the allocations are monthly flows, so on a household with real
+  savings the pool towers over them — which is why **the legend is
+  clickable**: a click hides a series (the pool included) and the y-axis
+  refits to what is left, and a double-click narrows to one series, with a
+  second double-click on that same one bringing the rest back. Isolation is
+  tracked explicitly rather than inferred from "everything else is hidden", so
+  a double-click never undoes a selection the reader built click by click.
+  Hidden series dim in the legend rather than disappearing from it, so the way
+  back is where the way out was.
+
+  Series colour is keyed by goal **id**, not by priority, so reordering the
+  waterfall never repaints the chart. Only the outer segment of a month's
+  stack is rounded (`charts/stackedBarShape.tsx`, shared with the retirement
+  income chart) — rounding every segment renders a column as a string of
+  beads — and the rounding follows the *visible* stack, as does the zero
+  line.
 - **Monthly budget** (`SavingsGoalsBudgetSection.tsx`) — what each goal
   received that month, below the ledger rows. A deficit month reads in
   reverse: an amber banner explains the clawback and the per-goal rows go

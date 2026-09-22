@@ -54,6 +54,7 @@ Custom React hooks for shared data fetching and stateful logic.
 | `useCategoryTagCreate()` | Category/tag creation mutation logic | N/A (mutation) |
 | `useScraping()` | Scraping progress state machine | N/A (state) |
 | `useScrollLock(isOpen)` | Body scroll prevention for modals | N/A (side effect) |
+| `useScrollCap(capPx, contentKey?, slackPx?)` | Height cap that only becomes a scroll region once it hides about a row — an always-on cap swallows the page's scroll (`frontend_pitfalls.md`) | N/A (measurement) |
 | `usePendingRows()` | Per-row pending state for a list's shared mutation | N/A (local state) |
 
 **When to create a new shared hook:**
