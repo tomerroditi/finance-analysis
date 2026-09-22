@@ -10,7 +10,7 @@ from backend.constants.budget import (
 )
 from backend.constants.tables import Tables
 from backend.models.budget import BudgetRule
-from backend.models.transaction import CreditCardTransaction
+from backend.models.transaction import BankTransaction, CreditCardTransaction
 from backend.services.insights_service import InsightsService
 from backend.services.recurring_service import RecurringService
 
@@ -732,3 +732,49 @@ class TestLargeTransactionRefundNetting:
         result = InsightsService(db_session)._large_transaction_insight()
 
         assert [c["data"]["amount"] for c in result] == [4200.0]
+
+
+class TestPaceInsightOverTheRealForecast:
+    """The pace card against a real forecast, not a stubbed one."""
+
+    def test_a_windfall_three_months_ago_is_not_this_month_s_savings(
+        self, db_session
+    ):
+        """One extraordinary month must not become the savings projection.
+
+        The card read the forecast's averaged income baseline, so a household
+        that banked a year of wedding gifts in June was told all summer it was
+        on track to save six figures. Detected income streams replaced the
+        average; the windfall has no cadence, so it projects nothing.
+        """
+        for n in range(1, 7):
+            db_session.add(
+                BankTransaction(
+                    id=f"pace-salary-{n}",
+                    date=_months_ago(n),
+                    provider="leumi",
+                    account_name="Checking",
+                    description="MONTHLY SALARY",
+                    amount=12000.0,
+                    category="Salary",
+                    source=Tables.BANK.value,
+                )
+            )
+        db_session.add(
+            BankTransaction(
+                id="pace-windfall",
+                date=_months_ago(3, day=14),
+                provider="leumi",
+                account_name="Checking",
+                description="WEDDING GIFTS",
+                amount=400000.0,
+                category="Other Income",
+                source=Tables.BANK.value,
+            )
+        )
+        db_session.commit()
+
+        cards = InsightsService(db_session)._pace_insight()
+
+        assert [c["code"] for c in cards] == ["onTrack"]
+        assert cards[0]["data"]["amount"] < 40000.0

@@ -812,16 +812,28 @@ export interface InsightDismissal {
   dismissed: boolean;
 }
 
+export interface RecurringIncomeDue {
+  label: string;
+  normalized: string;
+  amount: number;
+  cadence: string;
+  expected_date: string;
+}
+
 export interface CashFlowForecast {
   month: string;
   days_in_month: number;
   day_of_month: number;
   days_remaining: number;
+  observed_through: string | null;
   actual_income: number;
   actual_expenses: number;
   expected_income: number;
   expected_expenses: number;
   projected_net: number;
+  income_basis: "recurring" | "trend";
+  recurring_income_due: number;
+  recurring_income_items: RecurringIncomeDue[];
   current_bank_balance: number;
   projected_end_balance: number;
   safe_to_spend: number;

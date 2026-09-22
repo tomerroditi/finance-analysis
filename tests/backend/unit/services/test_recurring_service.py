@@ -5,7 +5,7 @@ import pytest
 
 from backend.constants.tables import Tables
 from backend.errors import ValidationException
-from backend.models.transaction import CreditCardTransaction
+from backend.models.transaction import BankTransaction, CreditCardTransaction
 from backend.services.recurring_service import RecurringService
 
 
@@ -859,3 +859,186 @@ class TestDetectionIsCachedAcrossRequests:
         second = service.get_recurring(today)
         assert second["items"]
         assert second["total_monthly"] != 999.0
+
+
+def _add_income(
+    db_session, description, amount, date, category="Salary", tag=None,
+):
+    """Insert one bank deposit."""
+    db_session.add(
+        BankTransaction(
+            id=f"{description}-{date}-{amount}",
+            date=date,
+            provider="leumi",
+            account_name="Checking",
+            description=description,
+            amount=amount,
+            category=category,
+            tag=tag,
+            source=Tables.BANK.value,
+        )
+    )
+
+
+class TestRecurringIncomeDetection:
+    """Tests for RecurringService.get_recurring_income."""
+
+    def test_empty_db(self, db_session):
+        """No transactions yields an empty, well-shaped result."""
+        assert RecurringService(db_session).get_recurring_income() == {
+            "items": [],
+            "total_monthly": 0.0,
+        }
+
+    def test_a_steady_salary_is_a_stream(self, db_session):
+        """A salary landing every month is detected with its median amount."""
+        for n in range(6):
+            _add_income(db_session, "MONTHLY SALARY", 12000.0, _months_ago(n))
+        db_session.commit()
+
+        items = RecurringService(db_session).get_recurring_income()["items"]
+
+        assert len(items) == 1
+        assert items[0]["cadence"] == "monthly"
+        assert items[0]["amount"] == 12000.0
+        assert items[0]["amount_kind"] == "fixed"
+
+    def test_a_salary_that_swings_still_counts_at_its_low_end(self, db_session):
+        """An income that varies past every amount band qualifies on schedule
+        alone, and is planned around a low quantile rather than its median."""
+        amounts = [4000.0, 6000.0, 18000.0, 9000.0, 5000.0, 21000.0, 7000.0]
+        for n, amount in enumerate(reversed(amounts)):
+            _add_income(
+                db_session, "RESERVE DUTY ALLOWANCE", amount,
+                _months_ago(len(amounts) - 1 - n),
+            )
+        db_session.commit()
+
+        items = RecurringService(db_session).get_recurring_income()["items"]
+
+        assert len(items) == 1
+        assert items[0]["amount_kind"] == "variable"
+        assert items[0]["expected_amount"] < items[0]["amount"]
+
+    def test_a_windfall_is_not_a_stream(self, db_session):
+        """Gifts banked on one day are one event, however many deposits it took."""
+        for n in range(30):
+            _add_income(
+                db_session, f"WEDDING GIFT {n}", 5000.0, _months_ago(3),
+                category="Other Income", tag="Wedding",
+            )
+        db_session.commit()
+
+        assert RecurringService(db_session).get_recurring_income()["items"] == []
+
+    def test_scattered_deposits_are_not_a_stream(self, db_session):
+        """Money arriving at no particular rhythm has no cadence to project."""
+        for days in (0, 9, 51, 58, 140, 155, 310):
+            _add_income(
+                db_session, "FREELANCE CLIENT", 3000.0, _days_ago(days),
+                category="Other Income",
+            )
+        db_session.commit()
+
+        assert RecurringService(db_session).get_recurring_income()["items"] == []
+
+    def test_transfers_between_own_accounts_are_not_income(self, db_session):
+        """``Ignore`` marks a move between the user's own accounts — the most
+        metronomic thing in most histories, and no income at all."""
+        for n in range(6):
+            _add_income(
+                db_session, "STANDING TRANSFER", 4000.0, _months_ago(n),
+                category="Ignore",
+            )
+        db_session.commit()
+
+        assert RecurringService(db_session).get_recurring_income()["items"] == []
+
+    def test_expense_detection_ignores_income_streams(self, db_session):
+        """A salary must never surface as a recurring charge."""
+        for n in range(6):
+            _add_income(db_session, "MONTHLY SALARY", 12000.0, _months_ago(n))
+        db_session.commit()
+
+        assert RecurringService(db_session).get_recurring()["items"] == []
+
+
+class TestIncomeDueRemaining:
+    """Tests for RecurringService.get_income_due_remaining."""
+
+    def _seed_monthly_salary(self, db_session, day, amount=12000.0, months=6):
+        """A salary paid on ``day`` of each of the last ``months`` months."""
+        anchor = pd.Timestamp.today().normalize().replace(day=day)
+        for n in range(1, months + 1):
+            date = (anchor - pd.DateOffset(months=n)).strftime("%Y-%m-%d")
+            _add_income(db_session, "MONTHLY SALARY", amount, date)
+        db_session.commit()
+
+    def test_a_salary_not_yet_paid_this_month_is_still_due(self, db_session):
+        """Nothing banked from the stream yet means its whole amount is owed."""
+        today = pd.Timestamp.today().normalize().replace(day=1) + pd.Timedelta(days=4)
+        self._seed_monthly_salary(db_session, day=10)
+
+        due = RecurringService(db_session).get_income_due_remaining(today=today)
+
+        assert due["amount"] == 12000.0
+        assert [i["label"] for i in due["items"]] == ["MONTHLY SALARY"]
+
+    def test_a_salary_already_paid_this_month_owes_nothing(self, db_session):
+        """Money in hand is in ``actual_income`` — counting it again doubles it."""
+        today = pd.Timestamp.today().normalize().replace(day=1) + pd.Timedelta(days=20)
+        self._seed_monthly_salary(db_session, day=10)
+        _add_income(
+            db_session, "MONTHLY SALARY", 12000.0,
+            today.replace(day=10).strftime("%Y-%m-%d"),
+        )
+        db_session.commit()
+
+        due = RecurringService(db_session).get_income_due_remaining(today=today)
+
+        assert due["amount"] == 0.0
+        assert due["items"] == []
+
+    def test_a_part_paid_salary_owes_the_rest(self, db_session):
+        """A stream that has paid half of what it usually does still owes half."""
+        today = pd.Timestamp.today().normalize().replace(day=1) + pd.Timedelta(days=20)
+        self._seed_monthly_salary(db_session, day=10)
+        _add_income(
+            db_session, "MONTHLY SALARY", 5000.0,
+            today.replace(day=10).strftime("%Y-%m-%d"),
+        )
+        db_session.commit()
+
+        assert RecurringService(db_session).get_income_due_remaining(
+            today=today
+        )["amount"] == 7000.0
+
+    def test_a_stream_that_has_stopped_owes_nothing(self, db_session):
+        """Past its cadence and gone quiet, an income is history, not a promise."""
+        today = pd.Timestamp.today().normalize()
+        for n in range(6, 12):
+            date = (today - pd.DateOffset(months=n)).replace(day=10)
+            _add_income(
+                db_session, "OLD SALARY", 12000.0, date.strftime("%Y-%m-%d")
+            )
+        db_session.commit()
+
+        assert RecurringService(db_session).get_income_due_remaining(
+            today=today
+        ) == {"amount": 0.0, "items": [], "has_streams": False}
+
+    def test_a_quarterly_stream_only_counts_in_the_month_it_falls(self, db_session):
+        """A longer cadence is read off its next expected date, not the calendar."""
+        today = pd.Timestamp.today().normalize()
+        for n in range(1, 5):
+            date = today - pd.Timedelta(days=91 * n + 40)
+            _add_income(
+                db_session, "QUARTERLY DIVIDEND", 5000.0,
+                date.strftime("%Y-%m-%d"), category="Other Income",
+            )
+        db_session.commit()
+
+        # Next expected lands ~50 days out — a different month entirely.
+        assert RecurringService(db_session).get_income_due_remaining(
+            today=today
+        )["amount"] == 0.0

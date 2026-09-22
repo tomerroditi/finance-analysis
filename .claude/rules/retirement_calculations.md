@@ -28,6 +28,23 @@ the `retirement/` frontend components, or the demo retirement goal.
   worth vs today-shekels FIRE number, inflating expenses vs frozen
   incomes), which declared FIRE years too early.
 
+## The status baselines are MEDIANS, not means
+
+`get_current_status` derives `avg_monthly_income` (6 complete months) and
+`avg_monthly_expenses` (12 complete months) from
+`get_income_expenses_over_time`, and takes the **median** of each window.
+
+`monthly_savings = avg_monthly_income - avg_monthly_expenses` is then
+compounded for the whole horizon, so one freak month is not a rounding error
+in this model — it moves the FIRE date, the savings rate, `monthly_savings_needed`
+and every solver suggestion. A mean did exactly that: an inheritance banked in
+one month read as ₪108k/month income and a 65% savings rate against a ₪25k
+salary. A windfall is not a salary, and a wedding is not a cost of living;
+the number that survives one is the middle month.
+
+Don't "simplify" either side back to `sum(...) / len(...)`. Pinned by
+`TestCurrentStatusBaselines`.
+
 ## Keren Hishtalmut — counted exactly once (the double-count trap)
 
 **Both scraped AND manually-created KH investments are part of the
