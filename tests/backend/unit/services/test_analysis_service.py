@@ -2113,61 +2113,82 @@ class TestForecastExpensesUseOneDefinition:
         )
 
     @staticmethod
-    def _sync(service, date):
+    def _sync(service, provider, account, date):
         """One `get_last_scrape_dates` entry."""
         return {
             "service": service,
-            "provider": "p",
-            "account_name": "a",
+            "provider": provider,
+            "account_name": account,
             "last_scrape_date": date,
         }
 
-    def _seed_history(self, db_session, per_month=-3000.0):
-        """Three prior months of spend, so there is a trend to project."""
+    def _seed_history(self, db_session, card=-3000.0, bank=-3000.0):
+        """Three complete months of spend, split evenly over two accounts.
+
+        Gives the projection both a trend to scale and a share to split it by.
+        """
         for n in range(1, 4):
             db_session.add(
                 CreditCardTransaction(
-                    id=f"hist-{n}",
+                    id=f"hist-card-{n}",
                     date=_months_ago(n),
                     provider="visa",
                     account_name="card-1",
-                    description=f"SHOP {n}",
-                    amount=per_month,
+                    description=f"CARD SHOP {n}",
+                    amount=card,
                     category="Food",
                     source=Tables.CREDIT_CARD.value,
                 )
             )
+            db_session.add(
+                BankTransaction(
+                    id=f"hist-bank-{n}",
+                    date=_months_ago(n),
+                    provider="leumi",
+                    account_name="acct-1",
+                    description=f"BANK DEBIT {n}",
+                    amount=bank,
+                    category="Household",
+                    source=Tables.BANK.value,
+                )
+            )
         db_session.commit()
+
+    @staticmethod
+    def _projected(result):
+        """What the forecast expects to still be spent this month."""
+        return result["expected_expenses"] - result["actual_expenses"]
+
+    @staticmethod
+    def _calendar_share(result):
+        """The whole-household projection over the days left on the calendar."""
+        return (
+            result["avg_monthly_expenses"]
+            / result["days_in_month"]
+            * result["days_remaining"]
+        )
 
     def test_days_no_account_has_synced_are_projected_not_counted_as_zero(
         self, db_session, monkeypatch
     ):
         """A scrape that stopped a week ago is a week of unknown spending, not
         a week of savings."""
-        import pytest
-
         today = pd.Timestamp.today().normalize()
         if today.day < 12:
             pytest.skip("too early in the month to leave a stale gap")
 
         self._seed_history(db_session)
+        stale = today.replace(day=2).isoformat()
         self._pin_sync(
             monkeypatch,
-            self._sync("banks", today.replace(day=2).isoformat()),
+            self._sync("credit_cards", "visa", "card-1", stale),
+            self._sync("banks", "leumi", "acct-1", stale),
         )
 
         result = AnalysisService(db_session).get_cash_flow_forecast()
 
         assert result["observed_through"] == today.replace(day=2).strftime("%Y-%m-%d")
-        # Projected from the 2nd onward, not merely over the days left on the
-        # calendar — so the projection covers more than days_remaining/month.
-        projected = result["expected_expenses"] - result["actual_expenses"]
-        calendar_share = (
-            result["avg_monthly_expenses"]
-            / result["days_in_month"]
-            * result["days_remaining"]
-        )
-        assert projected > calendar_share
+        assert self._projected(result) > self._calendar_share(result)
 
     def test_a_quiet_stretch_on_a_current_sync_is_not_unobserved(
         self, db_session, monkeypatch
@@ -2175,11 +2196,9 @@ class TestForecastExpensesUseOneDefinition:
         """Days with no transactions are not days with no data.
 
         Reading the edge off the last transaction could not tell a household
-        that spent nothing since the 17th from an account that stopped syncing
-        on the 17th, and projected a week of spending over the quiet one.
+        that spent nothing since the 2nd from accounts that stopped syncing on
+        the 2nd, and projected weeks of spending over the quiet one.
         """
-        import pytest
-
         today = pd.Timestamp.today().normalize()
         if today.day < 12:
             pytest.skip("too early in the month for a quiet stretch")
@@ -2192,48 +2211,8 @@ class TestForecastExpensesUseOneDefinition:
                 date=today.replace(day=2).strftime("%Y-%m-%d"),
                 provider="visa",
                 account_name="card-1",
-                description="SHOP now",
+                description="CARD SHOP now",
                 amount=-100.0,
-                category="Food",
-                source=Tables.CREDIT_CARD.value,
-            )
-        )
-        db_session.commit()
-        self._pin_sync(monkeypatch, self._sync("banks", today.isoformat()))
-
-        result = AnalysisService(db_session).get_cash_flow_forecast()
-
-        assert result["observed_through"] == today.strftime("%Y-%m-%d")
-        projected = result["expected_expenses"] - result["actual_expenses"]
-        calendar_share = (
-            result["avg_monthly_expenses"]
-            / result["days_in_month"]
-            * result["days_remaining"]
-        )
-        assert projected == pytest.approx(calendar_share)
-
-    def test_a_fresher_account_s_spend_is_not_projected_on_top_of_itself(
-        self, db_session, monkeypatch
-    ):
-        """Accounts sync at different times, so the window the weakest link
-        opens already holds what the fresher ones reported in it."""
-        import pytest
-
-        today = pd.Timestamp.today().normalize()
-        if today.day < 12:
-            pytest.skip("too early in the month to leave a stale gap")
-
-        self._seed_history(db_session, per_month=-3000.0)
-        # The card is current and has already reported heavily inside the
-        # window the stale bank opens on the 2nd.
-        db_session.add(
-            CreditCardTransaction(
-                id="card-current",
-                date=today.replace(day=10).strftime("%Y-%m-%d"),
-                provider="visa",
-                account_name="card-1",
-                description="BIG SHOP",
-                amount=-9000.0,
                 category="Food",
                 source=Tables.CREDIT_CARD.value,
             )
@@ -2241,18 +2220,108 @@ class TestForecastExpensesUseOneDefinition:
         db_session.commit()
         self._pin_sync(
             monkeypatch,
-            self._sync("banks", today.replace(day=2).isoformat()),
-            self._sync("credit_cards", today.isoformat()),
+            self._sync("credit_cards", "visa", "card-1", today.isoformat()),
+            self._sync("banks", "leumi", "acct-1", today.isoformat()),
         )
 
         result = AnalysisService(db_session).get_cash_flow_forecast()
 
-        # The 9,000 already seen swallows the whole window's expectation, so
-        # nothing is projected on top of it.
-        assert result["observed_through"] == today.replace(day=2).strftime("%Y-%m-%d")
-        assert result["expected_expenses"] == pytest.approx(
-            result["actual_expenses"]
+        assert result["observed_through"] == today.strftime("%Y-%m-%d")
+        assert self._projected(result) == pytest.approx(self._calendar_share(result))
+
+    def test_each_account_is_projected_over_its_own_unsynced_days(
+        self, db_session, monkeypatch
+    ):
+        """Staleness is per account: one card current to today beside a bank
+        three weeks behind is two different holes in the month, not one."""
+        today = pd.Timestamp.today().normalize()
+        if today.day < 12:
+            pytest.skip("too early in the month to leave a stale gap")
+
+        self._seed_history(db_session)
+        self._pin_sync(
+            monkeypatch,
+            self._sync("credit_cards", "visa", "card-1", today.isoformat()),
+            self._sync("banks", "leumi", "acct-1", today.replace(day=2).isoformat()),
         )
+
+        result = AnalysisService(db_session).get_cash_flow_forecast()
+        days_in_month = result["days_in_month"]
+        daily = result["avg_monthly_expenses"] / days_in_month
+
+        # The two accounts spent equally over the trend window, so each
+        # carries half the daily rate over its own remaining days.
+        expected = daily * 0.5 * (days_in_month - today.day) + daily * 0.5 * (
+            days_in_month - 2
+        )
+        assert self._projected(result) == pytest.approx(expected)
+
+    def test_a_fresh_account_s_spending_does_not_cancel_a_stale_one_s_gap(
+        self, db_session, monkeypatch
+    ):
+        """What the card already reported says nothing about the bank.
+
+        Rolling both accounts into one household window and subtracting what
+        had already landed in it let one big card purchase swallow the whole
+        month's expectation — including the stale bank's direct debits, which
+        nothing had reported at all.
+        """
+        today = pd.Timestamp.today().normalize()
+        if today.day < 12:
+            pytest.skip("too early in the month to leave a stale gap")
+
+        self._seed_history(db_session)
+        db_session.add(
+            CreditCardTransaction(
+                id="card-blowout",
+                date=today.replace(day=10).strftime("%Y-%m-%d"),
+                provider="visa",
+                account_name="card-1",
+                description="CARD BIG SHOP",
+                amount=-99000.0,
+                category="Food",
+                source=Tables.CREDIT_CARD.value,
+            )
+        )
+        db_session.commit()
+        self._pin_sync(
+            monkeypatch,
+            self._sync("credit_cards", "visa", "card-1", today.isoformat()),
+            self._sync("banks", "leumi", "acct-1", today.replace(day=2).isoformat()),
+        )
+
+        result = AnalysisService(db_session).get_cash_flow_forecast()
+        days_in_month = result["days_in_month"]
+        daily = result["avg_monthly_expenses"] / days_in_month
+
+        # The bank's half still projects over the 3rd onward, untouched by the
+        # card's blowout.
+        assert self._projected(result) >= daily * 0.5 * (days_in_month - 2)
+
+    def test_an_account_that_is_not_scraped_at_all_is_never_behind(
+        self, db_session, monkeypatch
+    ):
+        """Cash and manual entries are typed in, so they are current by
+        definition — only the scraped card here has a gap to project."""
+        today = pd.Timestamp.today().normalize()
+        if today.day < 12:
+            pytest.skip("too early in the month to leave a stale gap")
+
+        self._seed_history(db_session)
+        # The bank has no credential row at all.
+        self._pin_sync(
+            monkeypatch,
+            self._sync("credit_cards", "visa", "card-1", today.replace(day=2).isoformat()),
+        )
+
+        result = AnalysisService(db_session).get_cash_flow_forecast()
+        days_in_month = result["days_in_month"]
+        daily = result["avg_monthly_expenses"] / days_in_month
+
+        expected = daily * 0.5 * (days_in_month - 2) + daily * 0.5 * (
+            days_in_month - today.day
+        )
+        assert self._projected(result) == pytest.approx(expected)
 
     def test_insurance_never_holds_the_edge_back(self, db_session, monkeypatch):
         """Insurance is scraped but produces no budget transactions, so a
@@ -2261,13 +2330,18 @@ class TestForecastExpensesUseOneDefinition:
         self._seed_history(db_session)
         self._pin_sync(
             monkeypatch,
-            self._sync("insurances", (today - pd.Timedelta(days=200)).isoformat()),
-            self._sync("banks", today.isoformat()),
+            self._sync(
+                "insurances", "hafenix", "Tomer",
+                (today - pd.Timedelta(days=200)).isoformat(),
+            ),
+            self._sync("credit_cards", "visa", "card-1", today.isoformat()),
+            self._sync("banks", "leumi", "acct-1", today.isoformat()),
         )
 
-        assert AnalysisService(db_session).get_cash_flow_forecast()[
-            "observed_through"
-        ] == today.strftime("%Y-%m-%d")
+        result = AnalysisService(db_session).get_cash_flow_forecast()
+
+        assert result["observed_through"] == today.strftime("%Y-%m-%d")
+        assert self._projected(result) == pytest.approx(self._calendar_share(result))
 
     def test_a_never_synced_account_does_not_blank_the_month(
         self, db_session, monkeypatch
@@ -2279,13 +2353,14 @@ class TestForecastExpensesUseOneDefinition:
         self._seed_history(db_session)
         self._pin_sync(
             monkeypatch,
-            self._sync("banks", None),
-            self._sync("credit_cards", today.isoformat()),
+            self._sync("banks", "leumi", "acct-1", None),
+            self._sync("credit_cards", "visa", "card-1", today.isoformat()),
         )
 
-        assert AnalysisService(db_session).get_cash_flow_forecast()[
-            "observed_through"
-        ] == today.strftime("%Y-%m-%d")
+        result = AnalysisService(db_session).get_cash_flow_forecast()
+
+        assert result["observed_through"] == today.strftime("%Y-%m-%d")
+        assert self._projected(result) == pytest.approx(self._calendar_share(result))
 
     def test_nothing_scrapable_means_nothing_stale(self, db_session, monkeypatch):
         """A cash-only household has no sync to be behind on."""
@@ -2295,13 +2370,7 @@ class TestForecastExpensesUseOneDefinition:
         result = AnalysisService(db_session).get_cash_flow_forecast()
 
         assert result["observed_through"] is None
-        projected = result["expected_expenses"] - result["actual_expenses"]
-        calendar_share = (
-            result["avg_monthly_expenses"]
-            / result["days_in_month"]
-            * result["days_remaining"]
-        )
-        assert projected == pytest.approx(calendar_share)
+        assert self._projected(result) == pytest.approx(self._calendar_share(result))
 
     def test_a_committed_bill_is_counted_once(self, db_session):
         """A confirmed recurring charge is added at its due date and taken out

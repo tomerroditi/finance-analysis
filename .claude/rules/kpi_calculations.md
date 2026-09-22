@@ -176,28 +176,45 @@ Confirmed recurring charges come **out** of the daily trend
 dates as `committed_remaining` — a bill lands once, on its day, not smeared
 across the month on top of itself.
 
-Both projections span `days_in_month - observed_day`, where `observed_through`
-is the **weakest-link sync** across scrapable accounts, read from
-`scraping_history` via `ScrapingHistoryService.get_last_scrape_dates`. Accounts
-are scraped on their own schedule; the days after the oldest sync are
-unobserved, not spend-free, and treating them as observed turned a week-old
-scrape into a week of savings.
+### Staleness is per account, not per household
+
+The trend projection spans the days each account has not reported, not the days
+left on the calendar. Accounts are scraped on their own schedule, so a card
+current to the 23rd beside a bank current to the 5th is **two different holes**
+in the month.
+
+`_account_sync_edges` reads `ScrapingHistoryService.get_last_scrape_dates()` and
+keys it by `(provider, account_name)` — the pair the scraper writes into both
+the credential row and every transaction it produces, so the join is exact.
+`_project_per_account` then splits the household baseline by each account's
+share of the last 6 complete months and projects each slice over its own
+unsynced days. Shares sum to 1, so equal freshness collapses back exactly to
+`baseline / days_in_month * unobserved_days`.
 
 **Read the edge from the scrape trail, never from the last transaction.** A
 household that simply did not spend for three days leaves exactly the same gap
 at the end of the ledger as an account that stopped syncing three days ago, and
-only one of those is missing data. Same exclusions the budget's freshness badge
-uses (`useBudgetFreshness`): insurance is scraped but produces no budget
-transactions, and a never-synced account is skipped — it contributed nothing to
-the trend baseline either, so counting it would project spending no month in
-the history ever contained. No scrapable accounts at all (cash-only, Demo Mode)
-means no staleness: the edge is today.
+only one of those is missing data.
 
-Because accounts sync at different times, the window the weakest link opens
-already holds whatever the fresher accounts reported inside it — that spend is
-in `actual_expenses` too. `_project_unobserved` subtracts it, so a card current
-to the 23rd beside a bank current to the 5th is not billed twice for the 6th
-through the 23rd.
+Exclusions, matching the budget's freshness badge (`useBudgetFreshness`):
+
+| case | treatment | why |
+|---|---|---|
+| insurance | excluded | scraped, but produces no budget transactions |
+| never synced | skipped | contributed nothing to the trend baseline either, so counting it would project spending no month ever contained |
+| no credential (cash, manual) | current | the user types it in; it cannot be behind |
+| nothing scrapable at all | no staleness | edge is today |
+
+`observed_through` in the response is the weakest link across all of them — it
+drives the card's "data through" caption and the cutoff for which committed
+charges are still due, not the projection itself.
+
+**Do not collapse this back to one household-wide window.** The intermediate
+version did, and corrected for the skew by subtracting what the fresher
+accounts had already reported inside the shared window — which let one big card
+purchase swallow the whole month's expectation, including the stale bank's
+direct debits that nothing had reported at all. Pinned by
+`test_a_fresh_account_s_spending_does_not_cancel_a_stale_one_s_gap`.
 
 ## Prior Wealth
 
