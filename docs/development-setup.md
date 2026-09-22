@@ -100,16 +100,21 @@ Open <http://localhost:5173>. Press **Ctrl+C** to stop.
   account that owns this machine is let in (`TAILNET_ALLOWED_USERS` overrides that, as
   a comma-separated list of logins). Other tailnet users and shared-in devices still need
   the API token. The server itself only listens on this machine, so nothing is exposed to
-  your local network. Without tailnet
+  your local network. `tailscale serve` is pointed at a loopback port of its own, and the
+  tailnet identity is only believed there — so don't put another reverse proxy in front
+  of it, and never forward the app with a raw TCP tunnel (`ssh -L`, socat,
+  `tailscale serve --tcp`): those carry no proxy headers, so the backend would take
+  every relayed client for a local one. Without tailnet
   HTTPS certificates (admin console → DNS → HTTPS Certificates) it shares over plain
   HTTP, which works but can't install the app as a PWA.
-- **Auto-update.** Every 60 seconds it fast-forwards the checkout from its upstream
-  branch, and whenever the commit changes it rebuilds the frontend in the background,
-  re-syncs dependencies if the lock files changed, and restarts the server (a couple of
-  seconds of downtime). A failed build keeps the current version running. It skips the
-  pull while you have uncommitted changes or the branch has diverged, and still
-  redeploys after a pull you do yourself. `PROD_AUTO_PULL=0` turns off pulling;
-  `PROD_POLL_SECONDS` changes the interval.
+- **Auto-update.** Whenever the checked-out commit changes (you `git pull`), it
+  rebuilds the frontend in the background, re-syncs dependencies if the lock files
+  changed, and restarts the server (a couple of seconds of downtime). A failed build
+  keeps the current version running. `PROD_AUTO_PULL=1` also makes it fast-forward from
+  the upstream branch on every check — off by default, because it then runs whatever
+  lands on that branch (including `npm ci` install scripts) unreviewed, on the machine
+  that holds your bank passwords. It skips the pull while you have uncommitted changes
+  or the branch has diverged. `PROD_POLL_SECONDS` changes the interval.
 - **Self-healing.** It checks `/health` every 10 seconds and restarts the server if it
   crashes or stops answering three checks in a row, so an unreachable backend comes back
   on its own within about 30 seconds.

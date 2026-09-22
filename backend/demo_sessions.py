@@ -59,6 +59,16 @@ TEMPLATE_FILENAME = "demo_template.db"
 #: revalidation covers all of them. Short enough that a write on another
 #: instance is visible by the time its client refetches.
 REVALIDATE_WINDOW_SECONDS = 0.25
+#: Sandboxes one instance keeps on local disk. Ids are client-minted, so
+#: without a cap a client cycling through fresh ids fills ``/tmp`` (~512 MB
+#: on Vercel, ~1.3 MB per sandbox) and every visitor on the instance gets a
+#: 503. The least recently used idle ones are dropped first; a persisted one
+#: is simply restored from Blob on its next request.
+MAX_LOCAL_ENV = "FAD_DEMO_MAX_LOCAL_SESSIONS"
+DEFAULT_MAX_LOCAL_SESSIONS = 100
+#: A sandbox larger than this is not uploaded: the template is ~1.3 MB, and
+#: only a visitor deliberately bloating theirs grows it past a few MB.
+MAX_PERSISTED_BYTES = 16 * 1024 * 1024
 
 #: Path-safe, unguessable, and long enough that a client cannot collide with
 #: another visitor by accident. UUIDs (with or without dashes) fit.
@@ -163,6 +173,10 @@ class DemoSessionStore:
         self._etags: dict[str, str | None] = {}
         #: Monotonic time of each sandbox's last successful revalidation.
         self._checked_at: dict[str, float] = {}
+        #: Monotonic time each sandbox last started serving a request.
+        self._last_used: dict[str, float] = {}
+        #: Requests currently being served per sandbox; never evicted.
+        self._active: dict[str, int] = {}
 
     @property
     def durable(self) -> bool:
@@ -172,6 +186,46 @@ class DemoSessionStore:
     def _lock_for(self, session_id: str) -> threading.Lock:
         with self._locks_guard:
             return self._locks.setdefault(session_id, threading.Lock())
+
+    def enter(self, session_id: str) -> None:
+        """Mark a request for ``session_id`` as in flight."""
+        with self._locks_guard:
+            self._active[session_id] = self._active.get(session_id, 0) + 1
+            self._last_used[session_id] = time.monotonic()
+
+    def leave(self, session_id: str) -> None:
+        """Mark a request for ``session_id`` as done and trim idle sandboxes."""
+        with self._locks_guard:
+            remaining = self._active.get(session_id, 1) - 1
+            if remaining > 0:
+                self._active[session_id] = remaining
+            else:
+                self._active.pop(session_id, None)
+            self._evict_idle()
+
+    def _evict_idle(self) -> None:
+        """Drop the least recently used idle sandboxes beyond the local cap.
+
+        Runs under ``_locks_guard``, so no request can :meth:`enter` a
+        sandbox while its files and bookkeeping are being removed.
+        """
+        limit = int(os.environ.get(MAX_LOCAL_ENV, DEFAULT_MAX_LOCAL_SESSIONS))
+        excess = len(self._last_used) - limit
+        if excess <= 0:
+            return
+        idle = sorted(
+            (used, sid) for sid, used in self._last_used.items() if sid not in self._active
+        )
+        for _, sid in idle[:excess]:
+            path = self.local_db_path(sid)
+            _forget_database(path)
+            for stale in [path, *_sidecar_paths(path)]:
+                try:
+                    os.remove(stale)
+                except FileNotFoundError:
+                    pass
+            for bookkeeping in (self._last_used, self._etags, self._checked_at, self._locks):
+                bookkeeping.pop(sid, None)
 
     @staticmethod
     def template_path() -> str:
@@ -308,6 +362,15 @@ class DemoSessionStore:
         path = self.local_db_path(session_id)
         if not os.path.exists(path):
             return False
+        size = os.path.getsize(path)
+        if size > MAX_PERSISTED_BYTES:
+            logger.warning(
+                "Demo sandbox %s is %d bytes, over the %d-byte cap; not persisting",
+                session_id,
+                size,
+                MAX_PERSISTED_BYTES,
+            )
+            return False
         try:
             with open(path, "rb") as fh:
                 data = fh.read()
@@ -424,6 +487,7 @@ async def serve_in_session(request: Request, call_next, session_id: str) -> Resp
     store = get_store()
     config = AppConfig()
     token = config.set_demo_session(session_id)
+    store.enter(session_id)
     try:
         try:
             await run_in_threadpool(store.sync, session_id)
@@ -442,4 +506,5 @@ async def serve_in_session(request: Request, call_next, session_id: str) -> Resp
             await run_in_threadpool(store.persist, session_id)
         return response
     finally:
+        await run_in_threadpool(store.leave, session_id)
         config.reset_demo_session(token)

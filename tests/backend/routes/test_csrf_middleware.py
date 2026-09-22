@@ -112,3 +112,18 @@ class TestCsrfMiddleware:
         """Verify the guard is scoped to /api/ and does not affect the SPA."""
         response = test_client.get("/health", headers={"Origin": EVIL})
         assert response.status_code == 200
+
+    def test_wildcard_host_allowlist_keeps_the_origin_check(
+        self, test_client, fake_backup, monkeypatch
+    ):
+        """Verify ``ALLOWED_HOSTS=*`` switches off only the Host check.
+
+        It is set behind reverse proxies that rewrite ``Host``; letting it
+        also accept any ``Origin`` would hand every website a write channel.
+        """
+        import backend.main as main
+
+        monkeypatch.setattr(main, "_allowed_hosts", {"*"})
+        response = test_client.post("/api/backups/", headers={"Origin": EVIL})
+        assert response.status_code == 403
+        fake_backup.assert_not_called()

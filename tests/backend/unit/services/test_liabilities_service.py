@@ -391,6 +391,28 @@ class TestPrimeBasedLoans:
                 loan_type="prime_linked",
             )
 
+    def test_create_rejects_a_term_past_the_cap(self, db_session):
+        """Verify an absurd term is refused before it can break every list read.
+
+        A term of ~96,000 months puts a payment date past year 9999, so a
+        stored one would make ``GET /liabilities`` fail until deleted.
+        """
+        import pytest
+
+        from backend.errors import ValidationException
+        from backend.services.liabilities_service import MAX_TERM_MONTHS
+
+        service = LiabilitiesService(db_session)
+        with pytest.raises(ValidationException):
+            service.create_liability(
+                name="Forever Loan",
+                tag="Forever",
+                principal_amount=1000.0,
+                term_months=MAX_TERM_MONTHS + 1,
+                start_date="2024-01-01",
+                interest_rate=3.0,
+            )
+
     def test_create_variable_requires_reset_months(self, db_session):
         """Verify creating a variable loan without reset months raises ValidationException."""
         import pytest

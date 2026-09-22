@@ -194,3 +194,26 @@ class TestVercelCronDeclarations:
         for path in declared:
             assert path in mounted, f"{path} is not a mounted route"
             assert "get" in mounted[path], f"{path} does not answer GET"
+
+
+class TestVercelSecurityHeaders:
+    """Tests that the CDN-served demo SPA carries the backend's security headers."""
+
+    def test_every_path_forbids_framing_and_sniffing(self):
+        """Verify ``vercel.json`` sets the headers the FastAPI middleware cannot.
+
+        On Vercel the built SPA is served straight from the CDN, so the
+        backend's ``add_security_headers`` middleware never runs for it — and
+        ``frame-ancestors`` is ignored in a ``<meta>`` CSP.
+        """
+        project_root = Path(__file__).resolve().parents[2]
+        config = json.loads((project_root / "vercel.json").read_text())
+        catch_all = next(
+            rule for rule in config.get("headers", []) if rule["source"] == "/(.*)"
+        )
+        headers = {h["key"].lower(): h["value"] for h in catch_all["headers"]}
+
+        assert headers["x-frame-options"] == "DENY"
+        assert "frame-ancestors 'none'" in headers["content-security-policy"]
+        assert headers["x-content-type-options"] == "nosniff"
+        assert headers["referrer-policy"] == "no-referrer"

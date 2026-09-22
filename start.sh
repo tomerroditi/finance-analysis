@@ -5,7 +5,8 @@
 #   ./start.sh              # dev: backend (hot-reload) + frontend dev server
 #   ./start.sh prod         # prod: build frontend, serve everything from backend,
 #                           # share it on the tailnet via `tailscale serve`, and
-#                           # auto-pull + redeploy whenever the branch moves
+#                           # redeploy whenever HEAD moves (PROD_AUTO_PULL=1 to
+#                           # also pull from upstream automatically)
 #   ./start.sh prod 9000    # positional port still accepted (sets BACKEND_PORT)
 #
 # Ports are env-driven (BACKEND_PORT / FRONTEND_PORT), with non-clashing
@@ -77,8 +78,8 @@ case "$MODE" in
       echo "Open:  http://<this-machine-ip>:$BACKEND_PORT/?apiToken=$TOKEN"
       echo "Allowed hosts: $ALLOWED_HOSTS (override with ALLOWED_HOSTS env)"
     fi
-    # Serve, share on the tailnet, and follow the branch (auto-pull +
-    # redeploy on every new commit) — see .claude/scripts/prod_server.py.
+    # Serve, share on the tailnet, and redeploy on every new commit (opt-in
+    # auto-pull with PROD_AUTO_PULL=1) — see .claude/scripts/prod_server.py.
     exec "$VENV_BIN/python" .claude/scripts/prod_server.py --host "$BIND_HOST" --port "$BACKEND_PORT"
     ;;
   *)
@@ -86,8 +87,8 @@ case "$MODE" in
     echo ""
     echo "  dev  - Run backend + frontend dev servers (default)"
     echo "  prod - Build frontend and serve everything from backend; shares it on"
-    echo "         the tailnet via 'tailscale serve' and auto-pulls + redeploys"
-    echo "         new commits (PROD_AUTO_PULL=0 / PROD_POLL_SECONDS to tune)"
+    echo "         the tailnet via 'tailscale serve' and redeploys new commits"
+    echo "         (PROD_AUTO_PULL=1 to auto-pull / PROD_POLL_SECONDS to tune)"
     echo ""
     echo "Ports (BACKEND_PORT/FRONTEND_PORT env override): dev 8000/5173, prod 8080"
     exit 1

@@ -416,6 +416,79 @@ class TestPersist:
         assert store.persist(SID_A) is False
 
 
+class TestPersistSizeCap:
+    """Tests for refusing to upload a bloated sandbox."""
+
+    def test_oversized_sandbox_is_not_uploaded(self, user_dir, template, monkeypatch):
+        """Verify a sandbox past the cap never reaches Blob storage."""
+        import backend.demo_sessions as demo_sessions
+
+        backend = FakeBlobBackend()
+        store = DemoSessionStore(backend)
+        store.ensure_local(SID_A)
+        monkeypatch.setattr(demo_sessions, "MAX_PERSISTED_BYTES", 10)
+
+        assert store.persist(SID_A) is False
+        assert backend.puts == 0
+
+
+class TestLocalEviction:
+    """Tests for bounding how many sandboxes one instance keeps on disk."""
+
+    def _serve(self, store, session_id):
+        store.enter(session_id)
+        store.sync(session_id)
+        store.leave(session_id)
+
+    def test_least_recently_used_idle_sandbox_is_evicted(
+        self, user_dir, template, monkeypatch
+    ):
+        """Verify fresh ids cannot fill the disk: the oldest idle one goes."""
+        monkeypatch.setenv("FAD_DEMO_MAX_LOCAL_SESSIONS", "1")
+        store = DemoSessionStore(None)
+
+        self._serve(store, SID_A)
+        self._serve(store, SID_B)
+
+        assert not os.path.exists(store.local_db_path(SID_A))
+        assert os.path.exists(store.local_db_path(SID_B))
+        assert SID_A not in store._last_used and SID_A not in store._locks
+
+    def test_sandbox_serving_a_request_is_never_evicted(
+        self, user_dir, template, monkeypatch
+    ):
+        """Verify a sandbox mid-request keeps its file whatever the cap."""
+        monkeypatch.setenv("FAD_DEMO_MAX_LOCAL_SESSIONS", "1")
+        store = DemoSessionStore(None)
+
+        store.enter(SID_A)
+        store.sync(SID_A)
+        self._serve(store, SID_B)
+
+        assert os.path.exists(store.local_db_path(SID_A))
+        store.leave(SID_A)
+
+    def test_evicted_persisted_sandbox_is_restored(
+        self, user_dir, template, monkeypatch
+    ):
+        """Verify eviction only drops the local copy of a durable sandbox."""
+        monkeypatch.setenv("FAD_DEMO_MAX_LOCAL_SESSIONS", "1")
+        backend = FakeBlobBackend()
+        store = DemoSessionStore(backend)
+        store.enter(SID_A)
+        store.sync(SID_A)
+        _make_sqlite(store.local_db_path(SID_A) + ".src", "edited")
+        os.replace(store.local_db_path(SID_A) + ".src", store.local_db_path(SID_A))
+        store.persist(SID_A)
+        store.leave(SID_A)
+
+        self._serve(store, SID_B)
+        assert not os.path.exists(store.local_db_path(SID_A))
+
+        store.sync(SID_A)
+        assert _read_marker(store.local_db_path(SID_A)) == "edited"
+
+
 class TestReset:
     """Tests for discarding a sandbox."""
 

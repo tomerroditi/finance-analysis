@@ -154,6 +154,27 @@ class TestBackupDb:
         if sys.platform != "win32":
             assert stat.S_IMODE(dest.stat().st_mode) == 0o600
 
+    def test_backups_in_the_same_second_do_not_overwrite(self, tmp_path, monkeypatch):
+        """Two backups within one second get distinct, restorable names."""
+        from datetime import datetime as real_datetime
+
+        import backend.utils.backup as backup_module
+
+        class _FrozenDatetime(real_datetime):
+            @classmethod
+            def now(cls, tz=None):
+                return real_datetime(2026, 1, 1, 12, 0, 0)
+
+        monkeypatch.setattr(backup_module, "datetime", _FrozenDatetime)
+        _install_live_db(tmp_path)
+
+        first = backup_db(max_backups=0)
+        second = backup_db(max_backups=0)
+
+        assert first.name == "data_20260101_120000.db"
+        assert second.name == "data_20260101_120000_1.db"
+        assert backup_module._BACKUP_FILENAME_RE.fullmatch(second.name)
+
     def test_prunes_oldest_backups_beyond_the_limit(self, tmp_path):
         """Only ``max_backups`` newest files survive; the oldest are unlinked."""
         _install_live_db(tmp_path)

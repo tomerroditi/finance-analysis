@@ -41,6 +41,11 @@ _PROXY_HEADERS = (
     "forwarded",
     "x-real-ip",
     "tailscale-user-login",
+    "x-forwarded-host",
+    "x-forwarded-proto",
+    "via",
+    "cf-connecting-ip",
+    "true-client-ip",
 )
 
 _DEFAULT_ALLOWED_HOSTS = {
@@ -89,10 +94,13 @@ def get_or_create_api_token() -> str:
     if existing:
         return existing
     user_dir = _base_user_dir()
-    os.makedirs(user_dir, exist_ok=True)
+    os.makedirs(user_dir, mode=0o700, exist_ok=True)
     token = secrets.token_urlsafe(32)
     token_path = os.path.join(user_dir, API_TOKEN_FILENAME)
-    with open(token_path, "w", encoding="utf-8") as f:
+    # Created owner-only rather than chmod-ed after the write, which would
+    # leave the token readable under the default umask in between.
+    fd = os.open(token_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
         f.write(token)
     try:
         os.chmod(token_path, 0o600)
@@ -116,20 +124,26 @@ def is_trusted_client(client_host: Optional[str]) -> bool:
     if client_host in ("localhost", "testclient"):
         return True
     try:
-        return ipaddress.ip_address(client_host).is_loopback
+        address = ipaddress.ip_address(client_host)
     except ValueError:
         return False
+    mapped = getattr(address, "ipv4_mapped", None)
+    return (mapped or address).is_loopback
 
 
 def is_proxied_request(headers: Mapping[str, str]) -> bool:
     """Return True when a local proxy relayed the request from elsewhere.
 
-    A reverse proxy on this machine (``tailscale serve``, Caddy, an SSH
-    tunnel) connects from loopback, so without this check whatever it
-    relays would inherit local trust. Proxies announce the real client in
-    one of these headers; uvicorn must run with ``--no-proxy-headers`` for
-    the TCP peer to still be the proxy — with proxy headers on, uvicorn
-    already reports the forwarded client, which is then simply not local.
+    A reverse proxy on this machine (``tailscale serve``, Caddy, nginx)
+    connects from loopback, so without this check whatever it relays would
+    inherit local trust. HTTP proxies announce themselves in one of these
+    headers; uvicorn must run with ``--no-proxy-headers`` for the TCP peer
+    to still be the proxy — with proxy headers on, uvicorn already reports
+    the forwarded client, which is then simply not local.
+
+    Raw TCP forwarders (``ssh -L``, socat, ``tailscale serve --tcp``) add no
+    headers and cannot be told apart from a local client: never point one
+    at this server.
 
     Parameters
     ----------
@@ -158,6 +172,57 @@ def build_tailnet_users(env_value: Optional[str] = None) -> Set[str]:
         else os.environ.get("TAILNET_ALLOWED_USERS", "")
     )
     return {entry.strip().lower() for entry in raw.split(",") if entry.strip()}
+
+
+def build_tailnet_ingress_port(env_value: Optional[str] = None) -> Optional[int]:
+    """Read the loopback port reserved for ``tailscale serve`` traffic.
+
+    Parameters
+    ----------
+    env_value : Optional[str]
+        Value of ``TAILNET_INGRESS_PORT``; read from the environment when
+        None.
+
+    Returns
+    -------
+    Optional[int]
+        The port, or None when unset or malformed — which trusts no
+        ``Tailscale-User-Login`` header at all.
+    """
+    raw = (
+        env_value
+        if env_value is not None
+        else os.environ.get("TAILNET_INGRESS_PORT", "")
+    )
+    try:
+        port = int(raw.strip())
+    except ValueError:
+        return None
+    return port if 0 < port < 65536 else None
+
+
+def arrived_on_tailnet_ingress(
+    server: Optional[tuple], ingress_port: Optional[int]
+) -> bool:
+    """Return True when a request came in on the ``tailscale serve`` listener.
+
+    ``tailscale serve`` strips any client copy of ``Tailscale-User-Login``,
+    but another local proxy (Caddy, ngrok, cloudflared) passes it through,
+    so the header is only proof of identity on a listener nothing but
+    tailscaled connects to. ``./start.sh prod`` opens that listener on its
+    own loopback port and points ``tailscale serve`` at it.
+
+    Parameters
+    ----------
+    server : Optional[tuple]
+        The ASGI scope's ``server`` — the local ``(host, port)`` the
+        connection was accepted on.
+    ingress_port : Optional[int]
+        From ``build_tailnet_ingress_port``.
+    """
+    if ingress_port is None or not server or len(server) < 2:
+        return False
+    return server[1] == ingress_port
 
 
 def tailnet_user_allowed(login: Optional[str], allowed: Iterable[str]) -> bool:
@@ -289,7 +354,6 @@ def origin_allowed(
     origin: Optional[str],
     host_header: Optional[str],
     cors_origins: Iterable[str],
-    allowed_hosts: Iterable[str],
 ) -> bool:
     """Return True when a state-changing request's ``Origin`` is trustworthy.
 
@@ -316,14 +380,11 @@ def origin_allowed(
     cors_origins : Iterable[str]
         Configured ``CORS_ORIGINS`` entries — the dev server proxies with
         ``changeOrigin``, so its ``Origin`` (``http://localhost:5173``)
-        never matches ``Host`` and must be allowlisted explicitly.
-    allowed_hosts : Iterable[str]
-        The ``Host`` allowlist, consulted only for the ``*`` wildcard that
-        disables the guard. A trusted hostname alone is no longer enough:
-        the tailnet URL that ``./start.sh prod`` shares via ``tailscale
-        serve`` is accepted through ``CORS_ORIGINS``, which that script
-        sets, so a hostile page on another port of a trusted host cannot
-        issue writes.
+        never matches ``Host`` and must be allowlisted explicitly. So is
+        the tailnet URL ``./start.sh prod`` shares via ``tailscale serve``.
+        A Host-allowlisted hostname is never enough on its own — not even
+        ``ALLOWED_HOSTS=*``, which only switches off the Host check — so a
+        hostile page on another port of a trusted host cannot issue writes.
 
     Returns
     -------
@@ -337,10 +398,6 @@ def origin_allowed(
         return False
 
     if origin in set(cors_origins):
-        return True
-
-    allowed_host_set = {h.lower() for h in allowed_hosts}
-    if "*" in allowed_host_set:
         return True
 
     try:
