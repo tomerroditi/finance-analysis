@@ -19,7 +19,7 @@ npm run lint                                           # ESLint
 
 # Both servers
 ./start.sh                                             # Dev: backend + frontend together (auto-bootstraps venv; BACKEND_PORT / FRONTEND_PORT env to override ports)
-./start.sh prod                                        # Prod on :8080: build frontend, serve everything from backend, share it on the tailnet via `tailscale serve`, redeploy new commits (auto-pull is opt-in: `PROD_AUTO_PULL=1`) (.claude/scripts/prod_server.py)
+./start.sh prod                                        # Prod on :8080: build frontend, serve everything from backend, share it on the tailnet via `tailscale serve`, auto-pull + redeploy new commits (`PROD_AUTO_PULL=0` opts out) (.claude/scripts/prod_server.py)
 python .claude/scripts/with_server.py -- <command>     # Start both, run command, tear down
 
 # Scaffolding

@@ -17,11 +17,10 @@ prod environment first). One process owns the whole prod lifecycle:
    listener on which the backend believes the ``Tailscale-User-Login``
    identity it vouches for — another local proxy in front of ``--port``
    could otherwise relay a forged one.
-3. **Follow the branch.** Every ``--poll`` seconds it checks HEAD, and
-   whenever HEAD moves — by a manual pull/checkout, or, with ``--auto-pull``
-   (``PROD_AUTO_PULL=1``), by fast-forwarding the checkout from its upstream
-   (skipped when there are uncommitted changes or the branch diverged) — it
-   redeploys: rebuild the frontend into
+3. **Follow the branch.** Every ``--poll`` seconds it fast-forwards the
+   checkout from its upstream (skipped when there are uncommitted changes or
+   the branch diverged), and whenever HEAD moves — by that pull or by a
+   manual pull/checkout — it redeploys: rebuild the frontend into
    ``dist-next/`` while the old server keeps serving, then stop the server,
    re-sync Python deps if ``poetry.lock`` changed, swap ``dist-next/`` into
    ``dist/`` and start the new code. A failed build leaves the running
@@ -34,16 +33,16 @@ prod environment first). One process owns the whole prod lifecycle:
    is therefore a bare server restart rather than a second ``npm ci`` and
    bundle build. See ``plan_redeploy``.
 
-   Auto-pull is opt-in because it runs whatever reaches the upstream branch
-   — including ``npm ci`` install scripts — within seconds, unreviewed, on
-   the machine that holds the financial database and the keyring. Signature
-   checks cannot vouch for it: the branch head is always the release job's
-   ``bump:`` commit, which CI pushes with a token.
+   Auto-pull runs whatever reaches the upstream branch — including
+   ``npm ci`` install scripts — within seconds, unreviewed, on the machine
+   that holds the financial database and the keyring, so the branch is
+   only as trustworthy as the GitHub account and the release workflow's
+   token. ``--no-pull`` (``PROD_AUTO_PULL=0``) turns it off.
 
 Usage::
 
     python .claude/scripts/prod_server.py --port 8080 [--host 127.0.0.1]
-        [--poll 15] [--auto-pull]
+        [--poll 15] [--no-pull]
 """
 
 from __future__ import annotations
@@ -657,7 +656,7 @@ class Supervisor:
         mode = (
             "pulling from upstream and redeploying"
             if self.auto_pull
-            else "redeploying (auto-pull off; PROD_AUTO_PULL=1 turns it on)"
+            else "redeploying"
         )
         log(f"Checking every {self.poll_seconds}s - {mode} when HEAD moves.")
 
@@ -746,17 +745,14 @@ def main() -> int:
         help="seconds between upstream checks (env PROD_POLL_SECONDS)",
     )
     parser.add_argument(
-        "--auto-pull",
+        "--no-pull",
         action="store_true",
-        default=os.environ.get("PROD_AUTO_PULL", "0") == "1",
-        help=(
-            "fast-forward from upstream and deploy whatever lands there, "
-            "unreviewed (env PROD_AUTO_PULL=1); off by default"
-        ),
+        default=os.environ.get("PROD_AUTO_PULL", "1") == "0",
+        help="only redeploy on manual pulls; never fetch (env PROD_AUTO_PULL=0)",
     )
     args = parser.parse_args()
 
-    supervisor = Supervisor(args.host, args.port, args.poll, auto_pull=args.auto_pull)
+    supervisor = Supervisor(args.host, args.port, args.poll, auto_pull=not args.no_pull)
     signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
     try:
         return supervisor.run()

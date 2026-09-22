@@ -107,14 +107,15 @@ Open <http://localhost:5173>. Press **Ctrl+C** to stop.
   every relayed client for a local one. Without tailnet
   HTTPS certificates (admin console → DNS → HTTPS Certificates) it shares over plain
   HTTP, which works but can't install the app as a PWA.
-- **Auto-update.** Whenever the checked-out commit changes (you `git pull`), it
-  rebuilds the frontend in the background, re-syncs dependencies if the lock files
-  changed, and restarts the server (a couple of seconds of downtime). A failed build
-  keeps the current version running. `PROD_AUTO_PULL=1` also makes it fast-forward from
-  the upstream branch on every check — off by default, because it then runs whatever
-  lands on that branch (including `npm ci` install scripts) unreviewed, on the machine
-  that holds your bank passwords. It skips the pull while you have uncommitted changes
-  or the branch has diverged. `PROD_POLL_SECONDS` changes the interval.
+- **Auto-update.** Every 60 seconds it fast-forwards the checkout from its upstream
+  branch, and whenever the commit changes it rebuilds the frontend in the background,
+  re-syncs dependencies if the lock files changed, and restarts the server (a couple of
+  seconds of downtime). A failed build keeps the current version running. It skips the
+  pull while you have uncommitted changes or the branch has diverged, and still
+  redeploys after a pull you do yourself. Whatever lands on that branch (including
+  `npm ci` install scripts) runs unreviewed on the machine that holds your bank
+  passwords, so keep the GitHub account and the release token locked down.
+  `PROD_AUTO_PULL=0` turns off pulling; `PROD_POLL_SECONDS` changes the interval.
 - **Self-healing.** It checks `/health` every 10 seconds and restarts the server if it
   crashes or stops answering three checks in a row, so an unreachable backend comes back
   on its own within about 30 seconds.
