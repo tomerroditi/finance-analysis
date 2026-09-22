@@ -32,9 +32,16 @@ test.describe("Dashboard", () => {
     await expect(page.getByText(/Net Worth/i).first()).toBeVisible();
     await expect(page.getByText(/Bank Balance/i).first()).toBeVisible();
 
-    // Chart containers render (Recharts renders into div.recharts-wrapper)
-    await expect(page.locator(".recharts-wrapper").first()).toBeVisible({
-      timeout: 10_000,
+    // Chart containers render (Recharts renders into div.recharts-wrapper).
+    // Every Recharts chart on the dashboard now sits below the fold and
+    // mounts lazily — the card that used to draw one eagerly was "Income by
+    // source", whose all-time donut moved inside the Income & Expenses card —
+    // so the chart has to be scrolled to before it exists at all.
+    const netWorthCard = page.locator('[data-card-id="net_worth"]');
+    await expect(netWorthCard).toBeVisible({ timeout: 45_000 });
+    await netWorthCard.scrollIntoViewIfNeeded();
+    await expect(netWorthCard.locator(".recharts-wrapper").first()).toBeVisible({
+      timeout: 45_000,
     });
 
     // Recent transactions feed. Cold-cache navigation queues ~30 React Query
