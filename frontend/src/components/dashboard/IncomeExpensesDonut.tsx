@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 import { formatCompactCurrency, formatCurrency } from "../../utils/numberFormatting";
 import { DonutChart } from "../charts/DonutChart";
 import { useScrollCap } from "../../hooks/useScrollCap";
+import { isTouchDevice } from "../../utils/chartStyle";
 
 /**
  * The all-scope breakdown: one hollow pie over the whole window plus a
@@ -15,11 +16,17 @@ import { useScrollCap } from "../../hooks/useScrollCap";
  * a donut states the same shares in a form the eye can actually compare, and
  * frees the centre for the total.
  *
- * The legend is closed by default (the donut is the headline; the per-series
- * figures are detail the reader opts into) and every row is a button: the
- * donut's slices are hard to hit once a share drops under a few percent, so
- * the legend is the accessible way to reach the same filter. Both call
- * `onSelect`.
+ * Every legend row is a button: a slice is hard to hit once its share drops
+ * under a few percent, so the legend is the reachable way to the same filter —
+ * by keyboard, and on a phone.
+ *
+ * On a pointer device the legend starts closed (the donut is the headline; the
+ * per-series figures are detail the reader opts into) and a slice can be
+ * clicked to filter. On a touch device it starts open and the slices are not
+ * clickable at all: a tap is the same gesture that opens Recharts' own
+ * tooltip, so a tap-to-filter slice would both name a series and navigate away
+ * from it at once. The legend gives a phone both readings — every amount and
+ * share in text — and one deliberate tap per row to filter.
  */
 export function IncomeExpensesDonut({
   values,
@@ -36,7 +43,7 @@ export function IncomeExpensesDonut({
   onSelect: (name: string) => void;
 }) {
   const { t } = useTranslation();
-  const [legendOpen, setLegendOpen] = useState(false);
+  const [legendOpen, setLegendOpen] = useState(isTouchDevice);
 
   const slices = Object.entries(values)
     .filter(([, value]) => value > 0)
@@ -58,7 +65,7 @@ export function IncomeExpensesDonut({
           data={slices}
           colors={slices.map((s) => colorOf(s.name))}
           height={240}
-          onSliceClick={onSelect}
+          onSliceClick={isTouchDevice ? undefined : onSelect}
           centerLabel={
             <span className="text-base font-semibold text-[var(--text-default)]">
               {formatCompactCurrency(total)}

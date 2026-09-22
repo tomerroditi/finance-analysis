@@ -6,7 +6,7 @@ import { analyticsApi } from "../../services/api";
 import { useQueryKeys } from "../../hooks/useQueryKeys";
 import { useTranslation } from "react-i18next";
 import { formatCurrency, formatChange } from "../../utils/numberFormatting";
-import { CHART_COLORS } from "../../utils/chartStyle";
+import { CHART_COLORS, isTouchDevice } from "../../utils/chartStyle";
 import {
   allTimeKpi,
   barCap,
@@ -896,16 +896,58 @@ function CompositionView({
   // is gone, so it has to be instant. Portalled to <body> because the bar clips
   // its children (`overflow-hidden`) and the card may sit in a scroll container.
   const [tip, setTip] = useState<Tip | null>(null);
-  const showTip = (e: ReactMouseEvent, name: string, val: number, pct: number, color: string) =>
+  const showTip = (
+    e: ReactMouseEvent,
+    name: string,
+    val: number,
+    pct: number,
+    color: string,
+    pinned = false,
+  ) =>
     setTip({
       x: Math.min(Math.max(e.clientX, 90), window.innerWidth - 90),
       // Above the cursor, unless the row sits so close to the top of the
       // viewport that the panel would be cut off — then flip below it.
       y: e.clientY < 56 ? e.clientY + 20 : e.clientY - 12,
       below: e.clientY < 56,
+      name,
       text: `${name}: ${formatCurrency(val)} (${Math.round(pct)}%)`,
       color,
+      pinned,
     });
+
+  /**
+   * Dismiss the readout, unless a tap pinned it.
+   *
+   * A tap does not only synthesize a click: Chromium sends the whole mouse
+   * sequence, and the `mouseleave` that ends it arrives *after* the click
+   * that pinned the readout. Clearing unconditionally therefore closed the
+   * panel a phone had just opened, in the same gesture — the very failure the
+   * pinning exists to prevent.
+   */
+  const hideTip = () => setTip((cur) => (cur?.pinned ? cur : null));
+
+  /**
+   * What a tap does, which is not what a click does.
+   *
+   * A touch has no hover to precede it: the browser synthesizes the mouse
+   * events and the click from the same tap, so filtering on click would mean
+   * a phone could never read a slice at all — the readout naming it would be
+   * replaced by the filtered view in the same gesture. So a tap *pins* the
+   * readout instead, and the filter becomes a button inside it. That is the
+   * repo's tap-to-reveal pattern (`frontend_responsive.md`), and it is why
+   * the desktop tooltip can stay a plain hover with no controls in it.
+   */
+  const onSegmentClick = (
+    e: ReactMouseEvent,
+    name: string,
+    val: number,
+    pct: number,
+    color: string,
+  ) => {
+    if (isTouchDevice) showTip(e, name, val, pct, color, true);
+    else onSelect(name);
+  };
 
   const totalOf = (v: Record<string, number>) => series.reduce((s, name) => s + (v[name] || 0), 0);
   // Median-anchored meter cap over the FULL history so widths stay stable across
@@ -915,7 +957,7 @@ function CompositionView({
   const visible = rows.slice(-limit).reverse();
 
   return (
-    <div className="min-w-[320px]" onMouseLeave={() => setTip(null)}>
+    <div className="min-w-[320px]" onMouseLeave={hideTip}>
       {visible.map((d) => {
         const total = totalOf(d.values);
         const isCurrent = d.month === lastPeriod;
@@ -944,10 +986,10 @@ function CompositionView({
                     aria-label={`${name}: ${formatCurrency(val)} (${Math.round(pct)}%)`}
                     className="h-full"
                     style={{ width: `${pct}%`, background: segColor }}
-                    onClick={() => onSelect(name)}
+                    onClick={(e) => onSegmentClick(e, name, val, pct, segColor)}
                     onMouseEnter={(e) => showTip(e, name, val, pct, segColor)}
                     onMouseMove={(e) => showTip(e, name, val, pct, segColor)}
-                    onMouseLeave={() => setTip(null)}
+                    onMouseLeave={hideTip}
                   />
                 );
               })}
@@ -971,42 +1013,99 @@ function CompositionView({
           </div>
         );
       })}
-      <SegmentTooltip tip={tip} hint={t("dashboard.clickToFilter")} />
+      <SegmentTooltip
+        tip={tip}
+        hint={t(isTouchDevice ? "dashboard.tapToFilter" : "dashboard.clickToFilter")}
+        onFilter={() => {
+          const name = tip?.name;
+          setTip(null);
+          if (name) onSelect(name);
+        }}
+        onDismiss={() => setTip(null)}
+      />
     </div>
   );
 }
 
 /**
- * A slice's hover readout: viewport coordinates, whether the panel hangs below
- * the cursor (top-of-viewport flip), the text, and the slice colour.
+ * A slice's readout: viewport coordinates, whether the panel hangs below the
+ * cursor (top-of-viewport flip), the slice's name, its text, its colour, and
+ * whether it is pinned — a pinned readout was opened by a tap, stays until
+ * dismissed, and carries the filter button a hover readout does not need.
  */
-type Tip = { x: number; y: number; below: boolean; text: string; color: string };
+type Tip = {
+  x: number;
+  y: number;
+  below: boolean;
+  name: string;
+  text: string;
+  color: string;
+  pinned: boolean;
+};
 
 /**
  * The cursor-following slice tooltip, rendered into <body> so no ancestor's
  * `overflow-hidden` can clip it. Sits above the cursor (below it near the top
  * of the viewport) and is horizontally clamped so it never runs off an edge.
  */
-function SegmentTooltip({ tip, hint }: { tip: Tip | null; hint: string }) {
+function SegmentTooltip({
+  tip,
+  hint,
+  onFilter,
+  onDismiss,
+}: {
+  tip: Tip | null;
+  hint: string;
+  onFilter: () => void;
+  onDismiss: () => void;
+}) {
+  const { t } = useTranslation();
   if (!tip) return null;
   return createPortal(
-    <div
-      data-testid="composition-tooltip"
-      className="pointer-events-none fixed z-50 whitespace-nowrap rounded-lg border border-white/10 bg-[var(--surface-light)] px-2.5 py-1.5 text-[11px] font-semibold text-white shadow-xl"
-      style={{
-        left: tip.x,
-        top: tip.y,
-        transform: `translate(-50%, ${tip.below ? "0" : "-100%"})`,
-      }}
-    >
-      <span className="flex items-center gap-1.5">
-        <i className="h-2 w-2 flex-none rounded-sm" style={{ background: tip.color }} />
-        {tip.text}
-      </span>
-      {/* Nothing about a coloured band says it can be clicked, and the
-          readout naming it is already under the cursor. */}
-      <span className="block text-[10px] font-medium text-[var(--text-muted)]">{hint}</span>
-    </div>,
+    <>
+      {/* A pinned readout is dismissed by tapping anywhere off it, so it needs
+          something off it to tap. */}
+      {tip.pinned && (
+        <div
+          data-testid="composition-tooltip-backdrop"
+          className="fixed inset-0 z-40"
+          onClick={onDismiss}
+        />
+      )}
+      <div
+        data-testid="composition-tooltip"
+        className={`fixed z-50 whitespace-nowrap rounded-lg border border-white/10 bg-[var(--surface-light)] px-2.5 py-1.5 text-[11px] font-semibold text-white shadow-xl ${
+          tip.pinned ? "" : "pointer-events-none"
+        }`}
+        style={{
+          left: tip.x,
+          top: tip.y,
+          transform: `translate(-50%, ${tip.below ? "0" : "-100%"})`,
+        }}
+      >
+        <span className="flex items-center gap-1.5">
+          <i className="h-2 w-2 flex-none rounded-sm" style={{ background: tip.color }} />
+          {tip.text}
+        </span>
+        {tip.pinned ? (
+          // The filter is a button here because the tap that opened this
+          // readout is the only gesture a phone has: spend it on the reading,
+          // and let the filter be a second, deliberate one.
+          <button
+            type="button"
+            data-testid="composition-tooltip-filter"
+            onClick={onFilter}
+            className="mt-1.5 w-full rounded-md bg-[var(--primary)]/15 px-2 py-1 text-[11px] font-bold text-[var(--primary)]"
+          >
+            {t("dashboard.filterToSeries")}
+          </button>
+        ) : (
+          /* Nothing about a coloured band says it can be clicked, and the
+             readout naming it is already under the cursor. */
+          <span className="block text-[10px] font-medium text-[var(--text-muted)]">{hint}</span>
+        )}
+      </div>
+    </>,
     document.body,
   );
 }

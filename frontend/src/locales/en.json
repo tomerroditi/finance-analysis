@@ -213,6 +213,8 @@
     "breakdownShare": "Share",
     "breakdownTotal": "Total",
     "clickToFilter": "Click to filter",
+    "tapToFilter": "Tap to filter",
+    "filterToSeries": "Filter to this",
     "clearFilter": "Clear filter",
     "focusPerMonth": "per month",
     "focusPerYear": "per year",
