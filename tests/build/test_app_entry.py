@@ -92,7 +92,7 @@ class TestSetupEnv:
         assert (tmp_user_dir / "logs").is_dir()
 
     def test_does_not_touch_playwright_browsers_path(
-        self, tmp_user_dir: Path, monkeypatch: pytest.MonkeyPatch
+        self, app_entry, tmp_user_dir: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """We don't bundle Chromium, so we mustn't touch this env var.
 
@@ -144,31 +144,33 @@ class TestCli:
         assert app_entry.main(["--smoke-test"]) == 0
         spy.assert_called_once()
 
-    def test_uninstall_cleanup_wipe(self, app_entry, monkeypatch: pytest.MonkeyPatch) -> None:
-        """``--uninstall-cleanup --wipe`` → cleanup with wipe_data=True."""
+    @pytest.mark.parametrize(
+        "flag,wipe_data",
+        [("--wipe", True), ("--keep-data", False)],
+    )
+    def test_uninstall_cleanup_forwards_the_wipe_choice(
+        self, app_entry, monkeypatch: pytest.MonkeyPatch, flag: str, wipe_data: bool
+    ) -> None:
+        """``--uninstall-cleanup --wipe|--keep-data`` → cleanup with the matching wipe_data."""
         spy = MagicMock(return_value=0)
         monkeypatch.setattr(app_entry, "_run_uninstall_cleanup", spy)
 
-        assert app_entry.main(["--uninstall-cleanup", "--wipe"]) == 0
-        spy.assert_called_once_with(wipe_data=True)
+        assert app_entry.main(["--uninstall-cleanup", flag]) == 0
+        spy.assert_called_once_with(wipe_data=wipe_data)
 
-    def test_uninstall_cleanup_keep_data(self, app_entry, monkeypatch: pytest.MonkeyPatch) -> None:
-        """``--uninstall-cleanup --keep-data`` → cleanup with wipe_data=False."""
-        spy = MagicMock(return_value=0)
-        monkeypatch.setattr(app_entry, "_run_uninstall_cleanup", spy)
-
-        assert app_entry.main(["--uninstall-cleanup", "--keep-data"]) == 0
-        spy.assert_called_once_with(wipe_data=False)
-
-    def test_uninstall_cleanup_requires_wipe_or_keep_data(self, app_entry) -> None:
-        """``--uninstall-cleanup`` without --wipe or --keep-data must error."""
+    @pytest.mark.parametrize(
+        "extra",
+        [
+            pytest.param([], id="neither-flag"),
+            pytest.param(["--wipe", "--keep-data"], id="both-flags"),
+        ],
+    )
+    def test_uninstall_cleanup_requires_exactly_one_data_choice(
+        self, app_entry, extra: list[str]
+    ) -> None:
+        """``--uninstall-cleanup`` needs exactly one of --wipe / --keep-data."""
         with pytest.raises(SystemExit):
-            app_entry.main(["--uninstall-cleanup"])
-
-    def test_uninstall_cleanup_rejects_both_flags(self, app_entry) -> None:
-        """``--uninstall-cleanup --wipe --keep-data`` is a contradiction."""
-        with pytest.raises(SystemExit):
-            app_entry.main(["--uninstall-cleanup", "--wipe", "--keep-data"])
+            app_entry.main(["--uninstall-cleanup", *extra])
 
 
 # ---------------------------------------------------------------------------
@@ -180,7 +182,7 @@ class TestRunUninstallCleanup:
     """Tests for ``_run_uninstall_cleanup``."""
 
     def test_delegates_to_cleanup_run_with_wipe_flag(
-        self, capsys: pytest.CaptureFixture[str], tmp_user_dir: Path
+        self, app_entry, capsys: pytest.CaptureFixture[str], tmp_user_dir: Path
     ) -> None:
         """``_run_uninstall_cleanup(True)`` calls ``cleanup.run(wipe_data=True)``."""
         from backend.uninstall.cleanup import CleanupReport
@@ -209,7 +211,7 @@ class TestRunUninstallCleanup:
         assert body["user_dir_removed"] is True
 
     def test_returns_1_on_cleanup_errors(
-        self, capsys: pytest.CaptureFixture[str], tmp_user_dir: Path
+        self, app_entry, capsys: pytest.CaptureFixture[str], tmp_user_dir: Path
     ) -> None:
         """A non-empty ``errors`` list flips the exit code to 1."""
         from backend.uninstall.cleanup import CleanupReport
