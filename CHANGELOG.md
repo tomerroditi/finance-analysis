@@ -1,3 +1,9 @@
+## v1.85.1 (2026-09-22)
+
+### Fix
+
+- **settings**: drag dashboard cards only by the grip handle (#346)
+
 ## v1.85.0 (2026-09-22)
 
 ### Feat
