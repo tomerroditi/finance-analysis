@@ -117,11 +117,16 @@ composition (the two breakdown tabs) of the same money. They therefore read
   left on it belong to the Liabilities page, which derives them from the loan's
   own terms (`liabilities_service`'s amortisation schedule) rather than from a
   debit.
-- Loans are **included by default**: the money left the account. Excluding it
-  takes the envelope view, where loan principal is a transfer into net worth
-  rather than spending — and with projects excluded as well, the card's
-  expense figure then equals `get_monthly_expenses()` to the shekel, which is
-  what the Budget page shows. That equality is pinned by
+- **Every chip is an exclusion, and every one starts off** — pending refunds
+  included too. The card opens on everything the household actually did, and
+  each chip takes something out of that; they share one accent colour, so
+  nothing coloured means nothing is being left out. A chip phrased the other
+  way round ("include projects") sat in the same grey as its neighbours while
+  meaning the opposite of them, which is unreadable in a row of three.
+- Switching *both* the projects and loans chips on gives the envelope view,
+  where loan principal is a transfer into net worth rather than spending, and
+  the card's expense figure then equals `get_monthly_expenses()` to the
+  shekel — what the Budget page shows. That equality is pinned by
   `TestExpenseBreakdownFilters::test_both_filters_on_reproduces_the_budget_views_expense_figure`.
 
 It used to read three endpoints with three definitions of "expenses" — a

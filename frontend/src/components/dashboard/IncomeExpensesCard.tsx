@@ -197,16 +197,21 @@ export function IncomeExpensesCard() {
     if (scope === "all") changeScope("monthly");
     setFocus(name);
   };
-  const [excludePendingRefunds, setExcludePendingRefunds] = useState(true);
-  const [includeProjects, setIncludeProjects] = useState(false);
-  // Loan payments are money that left the account, so they count by default;
-  // the chip takes the envelope view, where loan principal is a transfer into
-  // net worth rather than spending. It governs loan *receipts* on the income
-  // side too — dropping the payments while keeping the money the loan paid in
-  // would report the household as having saved the whole loan. It moves the
-  // loan's flows and nothing else: what a loan costs and what is left on it
-  // are the Liabilities page's, computed from the loan's own terms.
-  const [includeLoans, setIncludeLoans] = useState(true);
+  // Every chip is an exclusion, and every one starts off: the card opens on
+  // everything the household actually did, and each chip takes something out
+  // of that. Phrasing one of them the other way round (an "include projects"
+  // switch) made the row unreadable — three chips in the same grey, two of
+  // them meaning "off, so included" and one meaning "off, so excluded".
+  const [excludePendingRefunds, setExcludePendingRefunds] = useState(false);
+  const [excludeProjects, setExcludeProjects] = useState(false);
+  // Loan payments are money that left the account, so they count until this
+  // is switched on, which takes the envelope view — loan principal as a
+  // transfer into net worth rather than spending. It governs loan *receipts*
+  // on the income side too: dropping the payments while keeping the money the
+  // loan paid in would report the household as having saved the whole loan.
+  // It moves the loan's flows and nothing else — what a loan costs and what
+  // is left on it are the Liabilities page's, from the loan's own terms.
+  const [excludeLoans, setExcludeLoans] = useState(false);
 
   // Both series come from the same itemized classification, filtered the same
   // way, so every view in this card is one number summed three ways. The card
@@ -218,15 +223,15 @@ export function IncomeExpensesCard() {
   const { data: expensesByCategoryOverTime } = useQuery({
     queryKey: qk.analytics.expensesByCategoryOverTime(
       excludePendingRefunds,
-      !includeProjects,
-      !includeLoans,
+      excludeProjects,
+      excludeLoans,
     ),
     queryFn: async () =>
       (
         await analyticsApi.getExpensesByCategoryOverTime(
           excludePendingRefunds,
-          !includeProjects,
-          !includeLoans,
+          excludeProjects,
+          excludeLoans,
         )
       ).data,
     // Every chip is part of the key, so a toggle is a *different* query with
@@ -237,9 +242,9 @@ export function IncomeExpensesCard() {
     placeholderData: keepPreviousData,
   });
   const { data: incomeBySourceData } = useQuery({
-    queryKey: qk.analytics.incomeBySourceOverTime(excludePendingRefunds, !includeLoans),
+    queryKey: qk.analytics.incomeBySourceOverTime(excludePendingRefunds, excludeLoans),
     queryFn: async () =>
-      (await analyticsApi.getIncomeBySourceOverTime(excludePendingRefunds, !includeLoans)).data,
+      (await analyticsApi.getIncomeBySourceOverTime(excludePendingRefunds, excludeLoans)).data,
     placeholderData: keepPreviousData,
   });
 
@@ -427,42 +432,30 @@ export function IncomeExpensesCard() {
           <KpiCards income={incomeSummary} expenses={expenseSummary} />
 
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-2 mb-3">
-            <div className="flex flex-wrap gap-2">
-              <button
-                onClick={() => setExcludePendingRefunds(!excludePendingRefunds)}
-                className={`rounded-lg px-3 py-1.5 text-xs font-medium border transition-colors ${
-                  excludePendingRefunds
-                    ? "bg-[var(--primary)]/10 border-[var(--primary)]/20 text-[var(--primary)]"
-                    : "bg-[var(--surface-light)] border-[var(--surface-light)] text-[var(--text-muted)]"
-                }`}
-              >
-                {excludePendingRefunds
-                  ? t("dashboard.pendingRefundsExcluded")
-                  : t("dashboard.pendingRefundsIncluded")}
-              </button>
-              <button
-                onClick={() => setIncludeProjects(!includeProjects)}
-                className={`rounded-lg px-3 py-1.5 text-xs font-medium border transition-colors ${
-                  includeProjects
-                    ? "bg-indigo-500/10 border-indigo-500/20 text-indigo-400"
-                    : "bg-[var(--surface-light)] border-[var(--surface-light)] text-[var(--text-muted)]"
-                }`}
-              >
-                {includeProjects
-                  ? t("dashboard.projectExpensesIncluded")
-                  : t("dashboard.projectExpensesExcluded")}
-              </button>
-              <button
-                onClick={() => setIncludeLoans(!includeLoans)}
-                className={`rounded-lg px-3 py-1.5 text-xs font-medium border transition-colors ${
-                  includeLoans
-                    ? "bg-amber-500/10 border-amber-500/20 text-amber-400"
-                    : "bg-[var(--surface-light)] border-[var(--surface-light)] text-[var(--text-muted)]"
-                }`}
+            {/* One line, scrolled rather than wrapped: the chips are a set to
+                scan across, and wrapping pushed the third onto a row of its
+                own on a phone, where it read as a heading for the tabs under
+                it rather than as one more filter. */}
+            <div className="flex min-w-0 gap-2 overflow-x-auto scrollbar-auto-hide">
+              <FilterChip
+                active={excludePendingRefunds}
+                onToggle={() => setExcludePendingRefunds(!excludePendingRefunds)}
+                activeLabel={t("dashboard.pendingRefundsExcluded")}
+                inactiveLabel={t("dashboard.pendingRefundsIncluded")}
+              />
+              <FilterChip
+                active={excludeProjects}
+                onToggle={() => setExcludeProjects(!excludeProjects)}
+                activeLabel={t("dashboard.projectExpensesExcluded")}
+                inactiveLabel={t("dashboard.projectExpensesIncluded")}
+              />
+              <FilterChip
+                active={excludeLoans}
+                onToggle={() => setExcludeLoans(!excludeLoans)}
+                activeLabel={t("dashboard.loansExcluded")}
+                inactiveLabel={t("dashboard.loansIncluded")}
                 title={t("dashboard.loansChipTitle")}
-              >
-                {includeLoans ? t("dashboard.loansIncluded") : t("dashboard.loansExcluded")}
-              </button>
+              />
             </div>
             <div className="flex items-center gap-2">
               <div className="bg-[var(--surface-light)] rounded-xl overflow-hidden">
@@ -552,6 +545,48 @@ function ScopeToggle({ scope, onChange }: { scope: Scope; onChange: (next: Scope
         </button>
       ))}
     </div>
+  );
+}
+
+/**
+ * One filter chip: off is "included", on is "excluded".
+ *
+ * All three read the same way round and light up in the same colour, so the
+ * row says what it is at a glance — nothing coloured means nothing is being
+ * left out. A chip is a toggle rather than a link, so it carries
+ * `aria-pressed`: the label alone changes between two readings of the same
+ * state ("Included" / "Excluded") and cannot tell a screen reader which of
+ * them is the button's current position.
+ */
+function FilterChip({
+  active,
+  onToggle,
+  activeLabel,
+  inactiveLabel,
+  title,
+}: {
+  active: boolean;
+  onToggle: () => void;
+  /** Shown while the chip is excluding something. */
+  activeLabel: string;
+  /** Shown while everything is counted. */
+  inactiveLabel: string;
+  title?: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      aria-pressed={active}
+      title={title}
+      className={`shrink-0 whitespace-nowrap rounded-lg px-3 py-1.5 text-xs font-medium border transition-colors ${
+        active
+          ? "bg-[var(--primary)]/10 border-[var(--primary)]/20 text-[var(--primary)]"
+          : "bg-[var(--surface-light)] border-[var(--surface-light)] text-[var(--text-muted)]"
+      }`}
+    >
+      {active ? activeLabel : inactiveLabel}
+    </button>
   );
 }
 
