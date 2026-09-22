@@ -1,3 +1,9 @@
+## v1.84.0 (2026-09-22)
+
+### Feat
+
+- **dashboard**: collapsible goals history, a stacked free-cash pool, and a scroll-cap rule (#340)
+
 ## v1.83.3 (2026-09-21)
 
 ### Fix
