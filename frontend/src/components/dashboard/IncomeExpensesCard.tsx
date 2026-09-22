@@ -199,12 +199,14 @@ export function IncomeExpensesCard() {
   };
   const [excludePendingRefunds, setExcludePendingRefunds] = useState(true);
   const [includeProjects, setIncludeProjects] = useState(false);
-  // Debt payments are money that left the account, so they count by default;
+  // Loan payments are money that left the account, so they count by default;
   // the chip takes the envelope view, where loan principal is a transfer into
   // net worth rather than spending. It governs loan *receipts* on the income
   // side too — dropping the payments while keeping the money the loan paid in
-  // would report the household as having saved the whole loan.
-  const [includeDebt, setIncludeDebt] = useState(true);
+  // would report the household as having saved the whole loan. It moves the
+  // loan's flows and nothing else: what a loan costs and what is left on it
+  // are the Liabilities page's, computed from the loan's own terms.
+  const [includeLoans, setIncludeLoans] = useState(true);
 
   // Both series come from the same itemized classification, filtered the same
   // way, so every view in this card is one number summed three ways. The card
@@ -217,14 +219,14 @@ export function IncomeExpensesCard() {
     queryKey: qk.analytics.expensesByCategoryOverTime(
       excludePendingRefunds,
       !includeProjects,
-      !includeDebt,
+      !includeLoans,
     ),
     queryFn: async () =>
       (
         await analyticsApi.getExpensesByCategoryOverTime(
           excludePendingRefunds,
           !includeProjects,
-          !includeDebt,
+          !includeLoans,
         )
       ).data,
     // Every chip is part of the key, so a toggle is a *different* query with
@@ -235,9 +237,9 @@ export function IncomeExpensesCard() {
     placeholderData: keepPreviousData,
   });
   const { data: incomeBySourceData } = useQuery({
-    queryKey: qk.analytics.incomeBySourceOverTime(excludePendingRefunds, !includeDebt),
+    queryKey: qk.analytics.incomeBySourceOverTime(excludePendingRefunds, !includeLoans),
     queryFn: async () =>
-      (await analyticsApi.getIncomeBySourceOverTime(excludePendingRefunds, !includeDebt)).data,
+      (await analyticsApi.getIncomeBySourceOverTime(excludePendingRefunds, !includeLoans)).data,
     placeholderData: keepPreviousData,
   });
 
@@ -451,15 +453,15 @@ export function IncomeExpensesCard() {
                   : t("dashboard.projectExpensesExcluded")}
               </button>
               <button
-                onClick={() => setIncludeDebt(!includeDebt)}
+                onClick={() => setIncludeLoans(!includeLoans)}
                 className={`rounded-lg px-3 py-1.5 text-xs font-medium border transition-colors ${
-                  includeDebt
+                  includeLoans
                     ? "bg-amber-500/10 border-amber-500/20 text-amber-400"
                     : "bg-[var(--surface-light)] border-[var(--surface-light)] text-[var(--text-muted)]"
                 }`}
-                title={t("dashboard.debtChipTitle")}
+                title={t("dashboard.loansChipTitle")}
               >
-                {includeDebt ? t("dashboard.debtIncluded") : t("dashboard.debtExcluded")}
+                {includeLoans ? t("dashboard.loansIncluded") : t("dashboard.loansExcluded")}
               </button>
             </div>
             <div className="flex items-center gap-2">

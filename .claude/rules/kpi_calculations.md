@@ -110,10 +110,14 @@ composition (the two breakdown tabs) of the same money. They therefore read
   those ledger rows. Nothing in the card can disagree with anything else,
   because there is only one number.
 - Two switches move all of it at once: **projects** (`exclude_projects`) and
-  **loans & debt** (`exclude_liabilities`, which drops debt payments from the
-  expense side *and* loan receipts from the income side — dropping only the
-  payments would report the household as having saved the whole loan).
-- Debt is **included by default**: the money left the account. Excluding it
+  **loans** (`exclude_liabilities`, which drops loan payments from the expense
+  side *and* loan receipts from the income side — dropping only the payments
+  would report the household as having saved the whole loan). The switch moves
+  a loan's *flows*, which is all this card holds; what a loan costs and what is
+  left on it belong to the Liabilities page, which derives them from the loan's
+  own terms (`liabilities_service`'s amortisation schedule) rather than from a
+  debit.
+- Loans are **included by default**: the money left the account. Excluding it
   takes the envelope view, where loan principal is a transfer into net worth
   rather than spending — and with projects excluded as well, the card's
   expense figure then equals `get_monthly_expenses()` to the shekel, which is

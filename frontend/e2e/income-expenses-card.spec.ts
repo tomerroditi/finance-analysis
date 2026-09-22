@@ -21,7 +21,7 @@ import { enableDemoMode, navigateTo, resetDemoData } from "./helpers";
  *
  * This spec guards that each tab renders, that the ledger is ordered
  * newest-first, that the scope toggle folds months into years, that the
- * filter row carries the pending-refund, project and loans-and-debt chips and
+ * filter row carries the pending-refund, project and loans chips and
  * that the pending-refund one actually moves the breakdown, that the KPI, the
  * ledger and the breakdown legend report the *same* money (they are one
  * number summed three ways), that tab switches never crash the card, and that hovering a
@@ -285,7 +285,7 @@ test.describe("Income & Expenses dashboard card", () => {
     await expect.poll(() => rows.allTextContents()).toEqual(monthlyNets);
     await expect(income.getByText("3-mo avg")).toBeVisible();
 
-    // --- Filter chips: pending-refunds, projects, loans & debt ---
+    // --- Filter chips: pending-refunds, projects, loans ---
     // "Refunds Included/Excluded" is gone: a refund is a positive amount in an
     // expense category, so it already nets off the month it lands in, and the
     // opt-out only ever reached the ledger and the income KPI — never the
@@ -294,7 +294,7 @@ test.describe("Income & Expenses dashboard card", () => {
       card.getByRole("button", { name: /^Pending Refunds (Ex|In)cluded$/ }),
     ).toBeVisible();
     await expect(
-      card.getByRole("button", { name: /^Loans & Debt (Ex|In)cluded$/ }),
+      card.getByRole("button", { name: /^Loans (Ex|In)cluded$/ }),
     ).toBeVisible();
     await expect(
       card.getByRole("button", { name: /^Refunds (Ex|In)cluded$/ }),
@@ -597,8 +597,8 @@ test.describe("Income & Expenses dashboard card", () => {
 
     // Debt payments are money out by default; excluding them takes the
     // envelope view, and must move every reading at once.
-    await card.getByRole("button", { name: "Loans & Debt Included" }).click();
-    await expect(card.getByRole("button", { name: "Loans & Debt Excluded" })).toBeVisible();
+    await card.getByRole("button", { name: "Loans Included" }).click();
+    await expect(card.getByRole("button", { name: "Loans Excluded" })).toBeVisible();
     const withoutDebt = await settled(withProjects.ledger);
     expect(withoutDebt.kpi).toBe(withoutDebt.ledger);
     expect(withoutDebt.legend).toBe(withoutDebt.ledger);
