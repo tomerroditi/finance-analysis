@@ -14,15 +14,18 @@ Every test in the tree runs under two autouse guards defined here:
   never reach a developer's Keychain or a plaintext keyring file.
 """
 
-import pytest
-
-from typing import Generator
+import sqlite3
+import threading
+from collections.abc import Generator
+from typing import Any
 
 import keyring
 import keyring.backend
 import keyring.errors
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker, Session
+import pytest
+from sqlalchemy import Engine, create_engine, event
+from sqlalchemy.orm import Session, sessionmaker
+
 from backend.models.base import Base
 
 
@@ -105,13 +108,48 @@ def _isolated_app_config(tmp_path, monkeypatch) -> Generator[str, None, None]:
         _demo_mode_ctx.reset(token)
 
 
+_schema_template: sqlite3.Connection | None = None
+_schema_template_lock = threading.Lock()
+
+
+def _copy_schema(dbapi_connection: sqlite3.Connection, _record: Any) -> None:
+    """Clone the pre-built schema into a freshly opened in-memory connection.
+
+    ``Base.metadata.create_all`` costs ~13 ms per database (a PRAGMA probe and
+    a CREATE per table); SQLite's backup API copies the finished schema in
+    well under 1 ms. The template is built once per process, on first use.
+    """
+    global _schema_template
+    with _schema_template_lock:
+        if _schema_template is None:
+            builder = create_engine("sqlite://")
+            Base.metadata.create_all(builder)
+            template = sqlite3.connect(":memory:", check_same_thread=False)
+            with builder.connect() as connection:
+                connection.connection.driver_connection.backup(template)
+            builder.dispose()
+            _schema_template = template
+        _schema_template.backup(dbapi_connection)
+
+
+def make_memory_engine(**kwargs: Any) -> Engine:
+    """Create an in-memory SQLite engine that starts with every table.
+
+    Keyword arguments are forwarded to ``create_engine`` (e.g. ``poolclass``).
+    """
+    engine = create_engine(
+        "sqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        **kwargs,
+    )
+    event.listen(engine, "connect", _copy_schema)
+    return engine
+
+
 @pytest.fixture(scope="function")
 def db_engine():
     """Create an in-memory SQLite engine with all tables."""
-    engine = create_engine(
-        "sqlite:///:memory:", connect_args={"check_same_thread": False}
-    )
-    Base.metadata.create_all(engine)
+    engine = make_memory_engine()
     yield engine
     engine.dispose()
 
