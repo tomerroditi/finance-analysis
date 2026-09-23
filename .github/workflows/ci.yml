@@ -41,6 +41,11 @@ jobs:
       - name: Install dependencies
         run: poetry install --no-root
 
+      - name: Lint backend (ruff)
+        run: |
+          poetry run ruff check backend --output-format github
+          poetry run ruff format --check backend
+
       - name: Run backend tests
         run: poetry run pytest
 

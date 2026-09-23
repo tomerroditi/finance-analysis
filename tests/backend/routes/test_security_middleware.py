@@ -2,7 +2,7 @@
 
 import pytest
 
-import backend.main as backend_main
+import backend.middleware.security as security_middleware
 from backend.utils import auth
 
 
@@ -37,7 +37,7 @@ class TestHostAllowlistMiddleware:
     def test_allowed_hosts_extension(self, test_client, monkeypatch):
         """Verify an ALLOWED_HOSTS entry admits an extra hostname."""
         monkeypatch.setattr(
-            backend_main,
+            security_middleware,
             "_allowed_hosts",
             auth.build_allowed_hosts(env_value="100.64.0.7"),
         )
@@ -131,11 +131,11 @@ class TestProxiedLocalRequests:
     def owner_allowlisted(self, monkeypatch, tmp_path):
         """Allowlist one tailnet user and leave no token configured."""
         monkeypatch.setattr(
-            backend_main,
+            security_middleware,
             "_tailnet_users",
             auth.build_tailnet_users(env_value="me@example.com"),
         )
-        monkeypatch.setattr(backend_main, "_tailnet_ingress_port", 80)
+        monkeypatch.setattr(security_middleware, "_tailnet_ingress_port", 80)
         monkeypatch.setenv("FAD_USER_DIR", str(tmp_path))
         monkeypatch.delenv("FAD_API_TOKEN", raising=False)
 
@@ -161,7 +161,7 @@ class TestProxiedLocalRequests:
         ``Tailscale-User-Login`` through untouched; only the listener that
         ``tailscale serve`` alone connects to may believe it.
         """
-        monkeypatch.setattr(backend_main, "_tailnet_ingress_port", 8081)
+        monkeypatch.setattr(security_middleware, "_tailnet_ingress_port", 8081)
         response = test_client.get(
             "/api/transactions/",
             headers={**self.RELAYED, "Tailscale-User-Login": "me@example.com"},
@@ -172,7 +172,7 @@ class TestProxiedLocalRequests:
         self, test_client, monkeypatch
     ):
         """Verify no tailnet identity is trusted until an ingress port is set."""
-        monkeypatch.setattr(backend_main, "_tailnet_ingress_port", None)
+        monkeypatch.setattr(security_middleware, "_tailnet_ingress_port", None)
         response = test_client.get(
             "/api/transactions/",
             headers={**self.RELAYED, "Tailscale-User-Login": "me@example.com"},
@@ -238,7 +238,7 @@ class TestRequestSizeLimitMiddleware:
 
     def test_declared_oversize_body_is_rejected(self, test_client, monkeypatch):
         """A Content-Length above the cap returns 413."""
-        monkeypatch.setattr(backend_main, "_MAX_REQUEST_BYTES", 1024)
+        monkeypatch.setattr(security_middleware, "_MAX_REQUEST_BYTES", 1024)
         response = test_client.post(
             "/api/transactions/",
             content=b"x" * 4096,
@@ -261,7 +261,7 @@ class TestRequestSizeLimitMiddleware:
         Without a Content-Length header the middleware previously waved the
         request through and the full body was buffered and parsed.
         """
-        monkeypatch.setattr(backend_main, "_MAX_REQUEST_BYTES", 1024)
+        monkeypatch.setattr(security_middleware, "_MAX_REQUEST_BYTES", 1024)
         response = test_client.post(
             "/api/transactions/",
             content=self._chunked(64 * 1024),

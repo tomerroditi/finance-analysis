@@ -43,10 +43,14 @@ logger = logging.getLogger(__name__)
 
 
 class UninstallRequest(BaseModel):
+    """Request body for the in-app uninstall."""
+
     wipe_data: bool = False
 
 
 class UninstallResponse(BaseModel):
+    """Outcome of the synchronous cleanup plus what the deferred script will remove."""
+
     status: str
     keyring_entries_deleted: int
     user_dir_will_be_removed: bool
@@ -111,8 +115,7 @@ def _write_deferred_script(*, wipe_data: bool, user_dir: str) -> Path:
     """
     parent_pid = os.getppid() or os.getpid()
     body = (
-        _DEFERRED_SCRIPT
-        .replace("__USER_DIR__", user_dir)
+        _DEFERRED_SCRIPT.replace("__USER_DIR__", user_dir)
         .replace("__WIPE_DATA__", "1" if wipe_data else "0")
         .replace("__PARENT_PID__", str(parent_pid))
     )
@@ -158,7 +161,7 @@ def uninstall(req: UninstallRequest) -> UninstallResponse:
             detail="In-app uninstall is supported on macOS only.",
         )
 
-    base = Path(AppConfig()._base_user_dir).expanduser()  # noqa: SLF001
+    base = Path(AppConfig()._base_user_dir).expanduser()
     report = run_cleanup(wipe_data=req.wipe_data)
     logger.info("Uninstall cleanup report: %s", report.as_dict())
 

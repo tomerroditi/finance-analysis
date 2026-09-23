@@ -6,6 +6,7 @@ import pytest
 from backend.constants.tables import Tables
 from backend.errors import ValidationException
 from backend.models.transaction import BankTransaction, CreditCardTransaction
+from backend.services import recurring_detection
 from backend.services.recurring_service import RecurringService
 
 
@@ -312,7 +313,7 @@ class TestRecurringConfirmation:
         norm = self._seed_netflix(db_session)
         service = RecurringService(db_session)
 
-        service.set_decision(norm, "confirmed")
+        service.set_decisions([{"normalized": norm, "decision": "confirmed"}])
 
         result = RecurringService(db_session).get_recurring()
         assert result["items"][0]["confirmation"] == "confirmed"
@@ -325,14 +326,16 @@ class TestRecurringConfirmation:
         service = RecurringService(db_session)
         assert service.get_confirmed_items() == []
 
-        service.set_decision(norm, "confirmed")
+        service.set_decisions([{"normalized": norm, "decision": "confirmed"}])
         confirmed = RecurringService(db_session).get_confirmed_items()
         assert [item["normalized"] for item in confirmed] == [norm]
 
     def test_dismissed_candidate_is_hidden_by_default(self, db_session):
         """A dismissed charge drops out of the list but is still counted."""
         norm = self._seed_netflix(db_session)
-        RecurringService(db_session).set_decision(norm, "dismissed")
+        RecurringService(db_session).set_decisions(
+            [{"normalized": norm, "decision": "dismissed"}]
+        )
 
         result = RecurringService(db_session).get_recurring()
         assert result["items"] == []
@@ -346,7 +349,9 @@ class TestRecurringConfirmation:
     def test_verdict_survives_new_charges(self, db_session):
         """A later charge on a confirmed merchant does not reopen the question."""
         norm = self._seed_netflix(db_session)
-        RecurringService(db_session).set_decision(norm, "confirmed")
+        RecurringService(db_session).set_decisions(
+            [{"normalized": norm, "decision": "confirmed"}]
+        )
 
         _add_charge(db_session, "NETFLIX.COM 9981", -45.0, _days_ago(1))
         db_session.commit()
@@ -359,8 +364,8 @@ class TestRecurringConfirmation:
         """Setting ``pending`` puts a decided candidate back up for review."""
         norm = self._seed_netflix(db_session)
         service = RecurringService(db_session)
-        service.set_decision(norm, "dismissed")
-        service.set_decision(norm, "pending")
+        service.set_decisions([{"normalized": norm, "decision": "dismissed"}])
+        service.set_decisions([{"normalized": norm, "decision": "pending"}])
 
         result = RecurringService(db_session).get_recurring()
         assert result["items"][0]["confirmation"] == "pending"
@@ -414,7 +419,9 @@ class TestRecurringConfirmation:
             item["label"]: item["normalized"]
             for item in service.get_recurring()["items"]
         }
-        service.set_decision(keys["GYM MEMBERSHIP"], "dismissed")
+        service.set_decisions(
+            [{"normalized": keys["GYM MEMBERSHIP"], "decision": "dismissed"}]
+        )
 
         service.set_decisions([
             {"normalized": keys["NETFLIX.COM 1234"], "decision": "confirmed"},
@@ -440,7 +447,7 @@ class TestRecurringConfirmation:
         review". The row simply waits until detection produces the key.
         """
         service = RecurringService(db_session)
-        service.set_decision("netflix com", "confirmed")
+        service.set_decisions([{"normalized": "netflix com", "decision": "confirmed"}])
 
         # Nothing to act on yet — the charges have not been seen.
         assert service.get_recurring()["items"] == []
@@ -455,13 +462,17 @@ class TestRecurringConfirmation:
     def test_a_blank_key_is_rejected(self, db_session):
         """A verdict still has to say what it applies to."""
         with pytest.raises(ValidationException):
-            RecurringService(db_session).set_decision("   ", "confirmed")
+            RecurringService(db_session).set_decisions(
+                [{"normalized": "   ", "decision": "confirmed"}]
+            )
 
     def test_invalid_decision_is_rejected(self, db_session):
         """Only the three known verdicts are accepted."""
         norm = self._seed_netflix(db_session)
         with pytest.raises(ValidationException):
-            RecurringService(db_session).set_decision(norm, "maybe")
+            RecurringService(db_session).set_decisions(
+                [{"normalized": norm, "decision": "maybe"}]
+            )
 
 
 def _from(base: str, offsets: list[int]) -> list[str]:
@@ -473,52 +484,49 @@ def _from(base: str, offsets: list[int]) -> list[str]:
 class TestCadenceMatching:
     """The cadence bands are tight and do not overlap."""
 
-    def test_each_cadence_claims_its_own_period(self, db_session):
+    def test_each_cadence_claims_its_own_period(self):
         """A gap at the centre of a band is matched to that band."""
-        service = RecurringService(db_session)
-        for name, days, _tolerance in service._CADENCES:
-            assert service._match_cadence(days) == (name, days)
+        for name, days, _tolerance in recurring_detection.CADENCES:
+            assert recurring_detection.match_cadence(days) == (name, days)
 
-    def test_a_gap_between_two_bands_is_not_a_cadence(self, db_session):
+    def test_a_gap_between_two_bands_is_not_a_cadence(self):
         """38 and 45 days belong to nothing — they are not rounded to monthly.
 
         The old single ±35% tolerance stretched "monthly" from 19.5 to 40.5
         days, which is where most of the false positives lived.
         """
-        service = RecurringService(db_session)
-        assert service._match_cadence(38) is None
-        assert service._match_cadence(45) is None
-        assert service._match_cadence(20) is None
+        assert recurring_detection.match_cadence(38) is None
+        assert recurring_detection.match_cadence(45) is None
+        assert recurring_detection.match_cadence(20) is None
 
-    def test_sub_monthly_gaps_belong_to_no_band(self, db_session):
+    def test_sub_monthly_gaps_belong_to_no_band(self):
         """Nothing below a month is a billing cadence."""
-        service = RecurringService(db_session)
-        assert service._match_cadence(7) is None
-        assert service._match_cadence(14) is None
-        assert service._match_cadence(24) is None
+        assert recurring_detection.match_cadence(7) is None
+        assert recurring_detection.match_cadence(14) is None
+        assert recurring_detection.match_cadence(24) is None
 
-    def test_bimonthly_is_no_longer_swallowed_by_quarterly(self, db_session):
+    def test_bimonthly_is_no_longer_swallowed_by_quarterly(self):
         """A two-month gap matches bimonthly, not quarterly."""
-        assert RecurringService(db_session)._match_cadence(61) == ("bimonthly", 61)
+        assert recurring_detection.match_cadence(61) == ("bimonthly", 61)
 
 
 class TestAnchorScore:
     """Charges are scored on how tightly they land on one billing day."""
 
-    def test_a_fixed_day_of_month_scores_perfectly(self, db_session):
+    def test_a_fixed_day_of_month_scores_perfectly(self):
         """Every charge on the 12th anchors completely."""
         dates = pd.Series(pd.to_datetime(["2026-01-12", "2026-02-12", "2026-03-12"]))
-        assert RecurringService(db_session)._anchor_score(dates) == 1.0
+        assert recurring_detection.anchor_score(dates) == 1.0
 
-    def test_the_month_wrap_is_measured_circularly(self, db_session):
+    def test_the_month_wrap_is_measured_circularly(self):
         """The 1st and the 30th are two days apart, not twenty-nine."""
         dates = pd.Series(pd.to_datetime(["2026-01-30", "2026-03-01", "2026-03-31"]))
-        assert RecurringService(db_session)._anchor_score(dates) == 1.0
+        assert recurring_detection.anchor_score(dates) == 1.0
 
-    def test_scattered_days_score_low(self, db_session):
+    def test_scattered_days_score_low(self):
         """Days spread across the month do not anchor."""
         dates = pd.Series(pd.to_datetime(["2026-01-03", "2026-02-14", "2026-03-27"]))
-        assert RecurringService(db_session)._anchor_score(dates) < 0.7
+        assert recurring_detection.anchor_score(dates) < 0.7
 
 
 

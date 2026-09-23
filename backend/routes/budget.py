@@ -4,17 +4,22 @@ Budget API routes.
 Provides endpoints for budget rule management, analysis, and project management.
 """
 
-from datetime import date
-from typing import Any, List, Optional
+from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Path, Query
-from pydantic import BaseModel, Field, model_validator
+from fastapi import APIRouter, Depends, Path, Query
+from pydantic import Field, model_validator
 from sqlalchemy.orm import Session
 
 from backend.dependencies import get_database
 from backend.errors import EntityNotFoundException
-from backend.routes.schemas import ApiRequestModel
-from backend.services.budget_service import (
+from backend.routes.schemas import (
+    MAX_YEAR,
+    MIN_YEAR,
+    ApiRequestModel,
+    MonthPath,
+    YearPath,
+)
+from backend.services.budget import (
     BudgetOverviewService,
     BudgetService,
     MonthlyBudgetService,
@@ -24,27 +29,20 @@ from backend.services.budget_service import (
 
 router = APIRouter()
 
-# Calendar bounds shared by request bodies and path parameters. Years outside
-# this window are typos, not budgets, and used to reach the service layer as
-# real rows (or, for auto-fill, hundreds of them).
-MIN_YEAR = 2000
-MAX_YEAR = 2100
-
-YearPath = Path(ge=MIN_YEAR, le=MAX_YEAR)
-MonthPath = Path(ge=1, le=12)
-
 
 class BudgetRuleCreate(ApiRequestModel):
+    """Request body for creating a monthly or project budget rule."""
+
     name: str
     amount: float
     category: str
-    tags: str | List[str]
-    month: Optional[int] = Field(None, ge=1, le=12)
-    year: Optional[int] = Field(None, ge=MIN_YEAR, le=MAX_YEAR)
+    tags: str | list[str]
+    month: int | None = Field(None, ge=1, le=12)
+    year: int | None = Field(None, ge=MIN_YEAR, le=MAX_YEAR)
 
     @model_validator(mode="after")
     def _month_and_year_together(self) -> "BudgetRuleCreate":
-        """A monthly rule needs both ``month`` and ``year``; a project rule neither.
+        """Require ``month`` and ``year`` together (monthly) or neither (project).
 
         ``year`` alone would mint a yearly row through the monthly endpoint
         (bypassing the yearly service's validation), and ``month`` alone a
@@ -56,48 +54,62 @@ class BudgetRuleCreate(ApiRequestModel):
 
 
 class BudgetRuleUpdate(ApiRequestModel):
-    name: Optional[str] = None
-    amount: Optional[float] = None
-    category: Optional[str] = None
-    tags: Optional[str | List[str]] = None
+    """Partial update of a monthly or project rule; ``None`` fields are kept."""
+
+    name: str | None = None
+    amount: float | None = None
+    category: str | None = None
+    tags: str | list[str] | None = None
 
 
 class YearlyRuleCreate(ApiRequestModel):
+    """Request body for creating a yearly budget rule."""
+
     name: str
     amount: float
     category: str
-    tags: str | List[str]
+    tags: str | list[str]
     year: int = Field(ge=MIN_YEAR, le=MAX_YEAR)
 
 
 class YearlyRuleUpdate(ApiRequestModel):
-    name: Optional[str] = None
-    amount: Optional[float] = None
-    category: Optional[str] = None
-    tags: Optional[str | List[str]] = None
+    """Partial update of a yearly rule; ``None`` fields are kept."""
+
+    name: str | None = None
+    amount: float | None = None
+    category: str | None = None
+    tags: str | list[str] | None = None
 
 
 class YearlyRuleClosedUpdate(ApiRequestModel):
+    """Request body for closing or reopening a yearly envelope."""
+
     closed: bool
 
 
 class ProjectCreate(ApiRequestModel):
+    """Request body for creating a project budget."""
+
     category: str
     total_budget: float
 
 
 class ProjectUpdate(ApiRequestModel):
+    """Request body for changing a project's total budget."""
+
     total_budget: float
 
 
 class ProjectClosedUpdate(ApiRequestModel):
+    """Request body for closing or reopening a project."""
+
     closed: bool
 
 
 @router.get("/rules")
 def get_budget_rules(
     db: Session = Depends(get_database),
-) -> list[dict]:
+) -> list[dict[str, Any]]:
     """Get all budget rules."""
     service = BudgetService(db)
     df = service.get_all_rules()
@@ -109,7 +121,7 @@ def get_budget_rules_by_month(
     year: int = YearPath,
     month: int = MonthPath,
     db: Session = Depends(get_database),
-) -> list[dict]:
+) -> list[dict[str, Any]]:
     """Get budget rules for a specific month."""
     service = MonthlyBudgetService(db)
     df = service.get_month_rules(year, month)
@@ -122,13 +134,10 @@ def create_budget_rule(
 ) -> dict[str, str]:
     """Create a new budget rule."""
     service = MonthlyBudgetService(db)
-    try:
-        service.create_rule(
-            rule.name, rule.amount, rule.category, rule.tags, rule.month, rule.year
-        )
-        return {"status": "success"}
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    service.create_rule(
+        rule.name, rule.amount, rule.category, rule.tags, rule.month, rule.year
+    )
+    return {"status": "success"}
 
 
 @router.put("/rules/{rule_id}")
@@ -146,11 +155,8 @@ def update_budget_rule(
     """
     service = MonthlyBudgetService(db)
     updates = {k: v for k, v in rule.model_dump().items() if v is not None}
-    try:
-        service.update_rule(rule_id, **updates)
-        return {"status": "success"}
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    service.update_rule(rule_id, **updates)
+    return {"status": "success"}
 
 
 @router.delete("/rules/{rule_id}")
@@ -185,20 +191,13 @@ def copy_previous_month_rules(
 
     Raises
     ------
-    HTTPException
+    EntityNotFoundException
         404 if the previous month has no rules to copy.
     """
-    service = MonthlyBudgetService(db)
-    budget_rules = service.get_all_rules()
-    result = service.copy_last_month_rules(year, month, budget_rules)
+    result = MonthlyBudgetService(db).copy_last_month_rules(year, month)
     if result is None:
-        raise HTTPException(
-            status_code=404, detail="No rules found in the previous month to copy."
-        )
+        raise EntityNotFoundException("No rules found in the previous month to copy.")
     return {"status": "success", "message": result}
-
-
-# --- Analysis Endpoints ---
 
 
 @router.get("/analysis/{year}/{month}")
@@ -273,7 +272,7 @@ def get_budget_trend(
 @router.get("/overview/{year}/{month}")
 def get_budget_overview(
     year: int = Path(ge=1900, le=2999),
-    month: int = Path(ge=1, le=12),
+    month: int = MonthPath,
     include_split_parents: bool = Query(False),
     db: Session = Depends(get_database),
 ) -> dict[str, Any]:
@@ -305,9 +304,6 @@ def get_budget_overview(
     return BudgetOverviewService(db).get_overview(year, month, include_split_parents)
 
 
-# --- Alert Endpoints ---
-
-
 @router.get("/alerts")
 def get_current_month_alerts(
     threshold: float = Query(0.8, ge=0.0, le=1.0),
@@ -328,10 +324,9 @@ def get_current_month_alerts(
         ``rule_id``, ``name``, ``category``, ``tags``, ``amount``, ``spent``,
         ``percentage``, and ``severity`` (``"warning"`` or ``"critical"``).
     """
-    today = date.today()
-    service = MonthlyBudgetService(db)
-    alerts = service.get_alerts(today.year, today.month, warning_threshold=threshold)
-    return {"year": today.year, "month": today.month, "alerts": alerts}
+    return MonthlyBudgetService(db).get_current_month_alerts(
+        warning_threshold=threshold
+    )
 
 
 @router.get("/alerts/{year}/{month}")
@@ -362,9 +357,6 @@ def get_month_alerts(
     return {"year": year, "month": month, "alerts": alerts}
 
 
-# --- Yearly Budget Endpoints ---
-
-
 @router.get("/yearly/{year}")
 def get_yearly_view(
     year: int = YearPath,
@@ -374,7 +366,7 @@ def get_yearly_view(
     """Return the yearly budget view (rule rows) for a calendar year."""
     service = YearlyBudgetService(db)
     view = service.get_yearly_budget_view(year, include_split_parents)
-    return {"rules": view if view else []}
+    return {"rules": view or []}
 
 
 @router.get("/yearly/{year}/analysis")
@@ -392,12 +384,10 @@ def create_yearly_rule(
     rule: YearlyRuleCreate, db: Session = Depends(get_database)
 ) -> dict[str, str]:
     """Create a yearly budget rule (409-style conflicts surface as 400)."""
-    service = YearlyBudgetService(db)
-    try:
-        service.create_rule(rule.name, rule.amount, rule.category, rule.tags, rule.year)
-        return {"status": "success"}
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    YearlyBudgetService(db).create_rule(
+        rule.name, rule.amount, rule.category, rule.tags, rule.year
+    )
+    return {"status": "success"}
 
 
 @router.put("/yearly/rules/{rule_id}")
@@ -405,13 +395,9 @@ def update_yearly_rule(
     rule_id: int, rule: YearlyRuleUpdate, db: Session = Depends(get_database)
 ) -> dict[str, str]:
     """Update a yearly budget rule."""
-    service = YearlyBudgetService(db)
     updates = {k: v for k, v in rule.model_dump().items() if v is not None}
-    try:
-        service.update_rule(rule_id, **updates)
-        return {"status": "success"}
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    YearlyBudgetService(db).update_rule(rule_id, **updates)
+    return {"status": "success"}
 
 
 @router.put("/yearly/rules/{rule_id}/closed")
@@ -458,7 +444,7 @@ def copy_previous_year_rules(
     service = YearlyBudgetService(db)
     result = service.force_copy_from_prior_year(year)
     if result is None:
-        raise HTTPException(status_code=404, detail="No prior year rules to copy.")
+        raise EntityNotFoundException("No prior year rules to copy.")
     return {"status": "success", **result}
 
 
@@ -471,9 +457,6 @@ def get_yearly_alerts(
     """Return yearly budget alerts for a calendar year."""
     alerts = YearlyBudgetService(db).get_alerts(year, warning_threshold=threshold)
     return {"year": year, "alerts": alerts}
-
-
-# --- Project Endpoints ---
 
 
 @router.get("/projects")
@@ -511,41 +494,14 @@ def create_project(
     project: ProjectCreate, db: Session = Depends(get_database)
 ) -> dict[str, str]:
     """Create a new project."""
-    service = ProjectBudgetService(db)
-    try:
-        service.create_project(project.category, project.total_budget)
-        return {"status": "success"}
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    ProjectBudgetService(db).create_project(project.category, project.total_budget)
+    return {"status": "success"}
 
 
 @router.get("/category-conflicts")
 def get_category_conflicts(db: Session = Depends(get_database)) -> dict[str, Any]:
     """Categories currently in BOTH a project and a monthly/yearly budget."""
     return {"conflicts": BudgetService(db).find_category_overlaps()}
-
-
-def _ensure_project_exists(service: ProjectBudgetService, name: str) -> None:
-    """Raise a 404-mapped error when no project budget is named ``name``.
-
-    Deleting an unknown project reported ``{"status": "success"}`` and
-    updating one surfaced a raw ``ValueError`` as a 500. Every other delete
-    endpoint in the API 404s on a missing entity — match them.
-
-    Parameters
-    ----------
-    service : ProjectBudgetService
-        Service used to list existing project names.
-    name : str
-        Project (category) name from the URL.
-
-    Raises
-    ------
-    EntityNotFoundException
-        If no project budget rules exist for ``name``.
-    """
-    if name not in service.get_all_projects_names():
-        raise EntityNotFoundException(f"Project '{name}' not found")
 
 
 @router.put("/projects/{name}")
@@ -559,9 +515,7 @@ def update_project(
     EntityNotFoundException
         404 if no project with ``name`` exists.
     """
-    service = ProjectBudgetService(db)
-    _ensure_project_exists(service, name)
-    service.update_project(name, project.total_budget)
+    ProjectBudgetService(db).update_project(name, project.total_budget)
     return {"status": "success"}
 
 
@@ -579,16 +533,12 @@ def set_project_closed(
     EntityNotFoundException
         404 if no project with ``name`` exists.
     """
-    service = ProjectBudgetService(db)
-    _ensure_project_exists(service, name)
-    service.set_project_closed(name, body.closed)
+    ProjectBudgetService(db).set_project_closed(name, body.closed)
     return {"status": "success", "name": name, "closed": body.closed}
 
 
 @router.delete("/projects/{name}")
-def delete_project(
-    name: str, db: Session = Depends(get_database)
-) -> dict[str, str]:
+def delete_project(name: str, db: Session = Depends(get_database)) -> dict[str, str]:
     """Delete a project.
 
     Raises
@@ -596,9 +546,7 @@ def delete_project(
     EntityNotFoundException
         404 if no project with ``name`` exists.
     """
-    service = ProjectBudgetService(db)
-    _ensure_project_exists(service, name)
-    service.delete_project(name)
+    ProjectBudgetService(db).delete_project(name)
     return {"status": "success"}
 
 
@@ -609,9 +557,4 @@ def get_project_details(
     db: Session = Depends(get_database),
 ) -> dict[str, Any]:
     """Get project details including rules and transactions."""
-    service = ProjectBudgetService(db)
-    try:
-        return service.get_project_budget_view(name, include_split_parents)
-    except ValueError as e:
-        # Service raises ValueError when no rules exist for the project name.
-        raise HTTPException(status_code=404, detail=str(e))
+    return ProjectBudgetService(db).get_project_budget_view(name, include_split_parents)

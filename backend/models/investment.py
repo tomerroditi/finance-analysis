@@ -1,11 +1,9 @@
-"""
-Investment tracking model.
-"""
+"""Investment tracking model."""
 
-from sqlalchemy import Column, Integer, String, Float, Text
+from sqlalchemy import Column, Float, Integer, String, Text
 
-from backend.models.base import Base, TimestampMixin
 from backend.constants.tables import Tables
+from backend.models.base import Base, TimestampMixin
 
 
 class Investment(Base, TimestampMixin):
@@ -55,6 +53,9 @@ class Investment(Base, TimestampMixin):
         Free-text notes.
     prior_wealth_amount : float
         Total amount invested before the app started tracking (non-negative).
+    insurance_policy_id : str, optional
+        Policy ID of the scraped insurance account (e.g. a Keren Hishtalmut)
+        this investment was auto-synced from; ``NULL`` for user-created ones.
     """
 
     __tablename__ = Tables.INVESTMENTS.value
@@ -65,7 +66,6 @@ class Investment(Base, TimestampMixin):
     type = Column(String, nullable=False)
     name = Column(String, nullable=False)
 
-    # Financial details
     interest_rate = Column(Float, nullable=True)
     interest_rate_type = Column(String, default="fixed")
     rate_spread = Column(Float, nullable=True)
@@ -73,12 +73,11 @@ class Investment(Base, TimestampMixin):
     commission_management = Column(Float, nullable=True)
     commission_withdrawal = Column(Float, nullable=True)
 
-    # Dates stored as text YYYY-MM-DD
     liquidity_date = Column(String, nullable=True)
     maturity_date = Column(String, nullable=True)
 
     is_closed = Column(Integer, default=0)
-    created_date = Column(String, nullable=False)  # Original creation date
+    created_date = Column(String, nullable=False)
     closed_date = Column(String, nullable=True)
     notes = Column(Text, nullable=True)
     prior_wealth_amount = Column(Float, nullable=False, default=0.0)

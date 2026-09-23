@@ -913,7 +913,7 @@ class TestActivePendingIdentifiers:
         ``unique_id`` is a per-table auto-increment, so bank #1 and
         credit-card #1 are unrelated transactions.
         """
-        from backend.services.budget_service import BudgetService
+        from backend.services.budget import BudgetService
 
         db_session.add(
             BankTransaction(

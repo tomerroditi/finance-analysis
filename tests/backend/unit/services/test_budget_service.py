@@ -14,7 +14,8 @@ from backend.constants.budget import (
     YEAR,
 )
 from backend.constants.tables import TransactionsTableFields
-from backend.services.budget_service import (
+from backend.errors import EntityNotFoundException, ValidationException
+from backend.services.budget import (
     BudgetService,
     MonthlyBudgetService,
     ProjectBudgetService,
@@ -252,7 +253,7 @@ class TestMonthlyBudgetService:
         assert "Home Expenses" in rules[NAME].tolist()
 
         # Invalid rule (exceeds total budget) should raise ValueError
-        with pytest.raises(ValueError, match="exceeded"):
+        with pytest.raises(ValidationException, match="exceeded"):
             service.create_rule(
                 name="Way Too Much",
                 amount=50000.0,
@@ -275,6 +276,15 @@ class TestMonthlyBudgetService:
         assert len(feb_rules) == 4
         feb_names = set(feb_rules[NAME].tolist())
         assert feb_names == {"Total Budget", "Food", "Transport", "Entertainment"}
+
+    def test_copy_last_month_rules_reads_rules_when_omitted(
+        self, db_session, seed_budget_rules
+    ):
+        """Verify the service reads the existing rules itself when none are passed."""
+        service = MonthlyBudgetService(db_session)
+
+        assert service.copy_last_month_rules(2024, 2) == "Copied 4 rules from 2024-1"
+        assert len(service.get_month_rules(2024, 2)) == 4
 
     def test_copy_last_month_rules_none_when_empty(self, db_session):
         """Verify None returned when previous month has no rules."""
@@ -456,6 +466,15 @@ class TestMonthlyBudgetServiceAlerts:
             year=2024,
         )
 
+    def test_get_current_month_alerts_reports_todays_month(self, db_session):
+        """Verify the current-month variant stamps today's year and month."""
+        from datetime import date
+
+        today = date.today()
+        result = MonthlyBudgetService(db_session).get_current_month_alerts()
+
+        assert result == {"year": today.year, "month": today.month, "alerts": []}
+
     def test_get_alerts_returns_empty_when_no_rules(self, db_session):
         """Verify empty list when the month has no budget rules."""
         service = MonthlyBudgetService(db_session)
@@ -578,7 +597,11 @@ class TestProjectBudgetService:
         service.create_project(project_name, 10000.0)
 
         # Ensure "Other" rule is deleted if it was auto-created, to test unmatched behavior
-        service.delete_project_tag_rule(project_name, "Other")
+        rules = service.budget_repository.read_all()
+        for rule_id in rules.loc[
+            (rules["category"] == project_name) & (rules["tags"] == "Other"), "id"
+        ]:
+            service.budget_repository.delete(int(rule_id))
 
         # Create a specific rule for "Venue"
         service.add_rule(
@@ -764,7 +787,7 @@ class TestProjectBudgetService:
 
         # Fetching the deleted project's view must raise (route maps to 404),
         # not silently recreate its rules.
-        with pytest.raises(ValueError):
+        with pytest.raises(EntityNotFoundException):
             service.get_project_budget_view("Wedding")
 
         # No Wedding rules were resurrected, and it's gone from the projects
@@ -948,50 +971,6 @@ class TestBudgetServiceValidation:
 class TestMonthlyBudgetServiceExtended:
     """Extended tests for MonthlyBudgetService."""
 
-    def test_get_available_tags_removes_all_tags_category(self, db_session):
-        """Verify category is removed from available when ALL_TAGS rule exists."""
-        service = MonthlyBudgetService(db_session)
-
-        # Create a rule with ALL_TAGS for Food
-        service.add_rule(
-            name="Food All",
-            amount=2000.0,
-            category="Food",
-            tags=[ALL_TAGS],
-            month=5,
-            year=2024,
-        )
-
-        rules = service.get_month_rules(2024, 5)
-        available = service.get_available_tags_for_each_category(rules)
-
-        # Food should be completely removed since ALL_TAGS is used
-        assert "Food" not in available
-
-    def test_get_available_tags_reduces_specific_tags(self, db_session):
-        """Verify specific used tags are excluded from available list."""
-        service = MonthlyBudgetService(db_session)
-
-        # Create a rule that uses specific tags
-        service.add_rule(
-            name="Food Groceries",
-            amount=1000.0,
-            category="Food",
-            tags=["Groceries"],
-            month=5,
-            year=2024,
-        )
-
-        rules = service.get_month_rules(2024, 5)
-        available = service.get_available_tags_for_each_category(rules)
-
-        # Food should still be present but without "Groceries"
-        assert "Food" in available
-        assert "Groceries" not in available["Food"]
-        # Remaining tags should still be there
-        assert "Restaurants" in available["Food"]
-        assert "Coffee" in available["Food"]
-
     def test_copy_last_month_rules_year_boundary(self, db_session):
         """Verify copying from December of previous year when month is January."""
         service = MonthlyBudgetService(db_session)
@@ -1032,7 +1011,7 @@ class TestProjectBudgetServiceExtended:
         """Verify ValueError raised when project has no rules."""
         service = ProjectBudgetService(db_session)
 
-        with pytest.raises(ValueError, match="not found"):
+        with pytest.raises(EntityNotFoundException, match="not found"):
             service.get_rules_for_project("Nonexistent Project")
 
     def test_get_available_categories_for_new_project(self, db_session):
@@ -1090,7 +1069,7 @@ class TestProjectClosedState:
         service = ProjectBudgetService(db_session)
         service.create_project("Wedding", 50000.0)
 
-        assert service.is_project_closed("Wedding") is False
+        assert "Wedding" not in service.get_closed_projects_names()
         assert service.get_closed_projects_names() == []
 
     def test_close_flags_every_rule_of_the_project(self, db_session):
@@ -1110,10 +1089,10 @@ class TestProjectClosedState:
         service.create_project("Wedding", 50000.0)
 
         service.set_project_closed("Wedding", True)
-        assert service.is_project_closed("Wedding") is True
+        assert "Wedding" in service.get_closed_projects_names()
 
         service.set_project_closed("Wedding", False)
-        assert service.is_project_closed("Wedding") is False
+        assert "Wedding" not in service.get_closed_projects_names()
 
     def test_close_leaves_rules_and_the_project_listing_intact(self, db_session):
         """Closing is not a delete — the project keeps its rules and its name."""
@@ -1144,7 +1123,32 @@ class TestProjectClosedState:
         service.set_project_closed("Wedding", True)
 
         assert service.get_closed_projects_names() == ["Wedding"]
-        assert service.is_project_closed("Renovation") is False
+        assert "Renovation" not in service.get_closed_projects_names()
+
+    @pytest.mark.parametrize(
+        "call",
+        [
+            lambda svc: svc.update_project("Nonexistent", 1000.0),
+            lambda svc: svc.delete_project("Nonexistent"),
+        ],
+        ids=["update", "delete"],
+    )
+    def test_write_to_unknown_project_raises_not_found(self, db_session, call):
+        """Updating or deleting a project that does not exist is a 404.
+
+        Deleting an unknown project used to report success, and updating one
+        surfaced a raw error as a 500.
+        """
+        with pytest.raises(EntityNotFoundException, match="'Nonexistent' not found"):
+            call(ProjectBudgetService(db_session))
+
+    def test_update_project_rejects_non_positive_total(self, db_session):
+        """A non-positive project total fails rule validation as a 400."""
+        service = ProjectBudgetService(db_session)
+        service.create_project("Wedding", 50000.0)
+
+        with pytest.raises(ValidationException, match="positive"):
+            service.update_project("Wedding", -5.0)
 
     def test_close_unknown_project_raises_not_found(self, db_session):
         """Closing a project that does not exist is a 404, not a silent no-op."""
@@ -1188,7 +1192,7 @@ class TestProjectClosedState:
             year=None,
         )
 
-        assert service.is_project_closed("Wedding") is True
+        assert "Wedding" in service.get_closed_projects_names()
 
 
 class TestAutoFillEmptyMonths:
@@ -1386,7 +1390,7 @@ class TestUpdateRuleValidation:
         service = MonthlyBudgetService(db_session)
         food_id = self._food_id(service)
 
-        with pytest.raises(ValueError, match="positive"):
+        with pytest.raises(ValidationException, match="positive"):
             service.update_rule(food_id, amount=amount)
 
         rules = service.get_all_rules()
@@ -1396,13 +1400,13 @@ class TestUpdateRuleValidation:
     def test_update_blank_name_rejected(self, db_session, seed_budget_rules, name):
         """Verify an empty or whitespace-only name is rejected on update."""
         service = MonthlyBudgetService(db_session)
-        with pytest.raises(ValueError, match="name"):
+        with pytest.raises(ValidationException, match="name"):
             service.update_rule(self._food_id(service), name=name)
 
     def test_update_duplicate_name_rejected(self, db_session, seed_budget_rules):
         """Verify renaming a rule to a sibling's name in the same month is rejected."""
         service = MonthlyBudgetService(db_session)
-        with pytest.raises(ValueError, match="already exists"):
+        with pytest.raises(ValidationException, match="already exists"):
             service.update_rule(self._food_id(service), name="Transport")
 
     def test_update_name_is_stripped(self, db_session, seed_budget_rules):
@@ -1422,7 +1426,7 @@ class TestUpdateRuleValidation:
         the month at 10300 against a 10000 cap.
         """
         service = MonthlyBudgetService(db_session)
-        with pytest.raises(ValueError, match="exceeded"):
+        with pytest.raises(ValidationException, match="exceeded"):
             service.update_rule(self._food_id(service), amount=9500.0)
 
     def test_update_category_rule_within_cap_allowed(
@@ -1440,7 +1444,7 @@ class TestUpdateRuleValidation:
     ):
         """Verify the Total Budget can't be lowered under the sum of its rules (2800)."""
         service = MonthlyBudgetService(db_session)
-        with pytest.raises(ValueError, match="greater"):
+        with pytest.raises(ValidationException, match="greater"):
             service.update_rule(self._total_id(service), amount=2000.0)
 
     @pytest.mark.parametrize(
@@ -1450,7 +1454,7 @@ class TestUpdateRuleValidation:
     def test_update_malformed_tags_rejected(self, db_session, seed_budget_rules, tags):
         """Verify empty tag lists, blank tags and ';'-containing tags are rejected."""
         service = MonthlyBudgetService(db_session)
-        with pytest.raises(ValueError, match="(?i)tag"):
+        with pytest.raises(ValidationException, match="(?i)tag"):
             service.update_rule(self._food_id(service), tags=tags)
 
     def test_update_unknown_id_raises_not_found(self, db_session, seed_budget_rules):
@@ -1787,26 +1791,6 @@ class TestValidateMonthlyBudgetHierarchyAndCap:
             id_=food_id,
         )
         assert valid is True
-
-
-class TestGetAvailableTagsCategoryRemoval:
-    """Tests for category removal when all of its tags are already allocated."""
-
-    def test_category_removed_when_all_specific_tags_used(self, db_session):
-        """Verify category is removed when all its specific tags are allocated to rules."""
-        service = MonthlyBudgetService(db_session)
-
-        # Food has tags: Groceries, Restaurants, Coffee
-        # Use all three with individual rules
-        service.add_rule("Food Groceries", 500.0, "Food", ["Groceries"], 9, 2024)
-        service.add_rule("Food Restaurants", 500.0, "Food", ["Restaurants"], 9, 2024)
-        service.add_rule("Food Coffee", 200.0, "Food", ["Coffee"], 9, 2024)
-
-        rules = service.get_month_rules(2024, 9)
-        available = service.get_available_tags_for_each_category(rules)
-
-        # All Food tags used, so Food category should be removed entirely
-        assert "Food" not in available
 
 
 class TestGetMonthlyAnalysisAutoFill:
@@ -2189,7 +2173,7 @@ class TestMonthlyYearlyIntegration:
         """A monthly rule reusing a yearly tag for the same year is rejected."""
         YearlyBudgetService(db_session).create_rule("Vacations", 20000.0, "Travel", ["Hotels"], 2026)
         MonthlyBudgetService(db_session).create_rule("Total Budget", 9999.0, "Total Budget", ["all_tags"], 3, 2026)
-        with pytest.raises(ValueError, match="yearly budget"):
+        with pytest.raises(ValidationException, match="yearly budget"):
             MonthlyBudgetService(db_session).create_rule("Hotels M", 1000.0, "Travel", ["Hotels"], 3, 2026)
 
     def test_monthly_create_total_budget_bypasses_yearly_check(self, db_session):
@@ -2307,7 +2291,7 @@ class TestMonthlyUpdateRuleYearlyConflict:
         travel_rule_id = int(
             service.get_month_rules(2026, 5).set_index(NAME).loc["Travel M", ID]
         )
-        with pytest.raises(ValueError, match="Hotels"):
+        with pytest.raises(ValidationException, match="Hotels"):
             service.update_rule(travel_rule_id, tags=["Car rental", "Hotels"])
 
         # Rule is untouched — the failed edit didn't partially apply.
@@ -2420,7 +2404,7 @@ class TestProjectCategoryExclusion:
         MonthlyBudgetService(db_session).create_rule(
             "Food M", 500.0, "Food", ["Groceries"], 5, 2026
         )
-        with pytest.raises(ValueError, match="Food"):
+        with pytest.raises(ValidationException, match="Food"):
             ProjectBudgetService(db_session).create_project("Food", 5000.0)
 
     def test_available_categories_excludes_budget_used(self, db_session):
@@ -2446,7 +2430,7 @@ class TestProjectCategoryExclusion:
         """A monthly rule on a project-owned category is rejected."""
         self._make_project(db_session, "Renovation")
         MonthlyBudgetService(db_session).create_rule("Total Budget", 9999.0, "Total Budget", ["all_tags"], 5, 2026)
-        with pytest.raises(ValueError, match="project"):
+        with pytest.raises(ValidationException, match="project"):
             MonthlyBudgetService(db_session).create_rule("Reno M", 500.0, "Renovation", ["Materials"], 5, 2026)
 
     def test_monthly_edit_into_project_category_raises(self, db_session):
@@ -2457,7 +2441,7 @@ class TestProjectCategoryExclusion:
         self._make_project(db_session, "Renovation")
         rules = svc.get_all_rules()
         rid = int(rules.loc[rules[NAME] == "Food M"].iloc[0][ID])
-        with pytest.raises(ValueError, match="project"):
+        with pytest.raises(ValidationException, match="project"):
             svc.update_rule(rid, category="Renovation", tags=["Materials"])
 
     def test_shared_put_route_blocks_project_edit_into_budget_used_category(self, db_session):
@@ -2482,7 +2466,7 @@ class TestProjectCategoryExclusion:
             project_rules.loc[project_rules[CATEGORY] == "Renovation"].iloc[0][ID]
         )
 
-        with pytest.raises(ValueError, match="Food"):
+        with pytest.raises(ValidationException, match="Food"):
             MonthlyBudgetService(db_session).update_rule(
                 project_rule_id, category="Food", tags=["Materials"]
             )

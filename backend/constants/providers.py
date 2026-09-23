@@ -1,5 +1,7 @@
-from enum import Enum
+"""Financial service providers, their services, and credential login fields."""
 
+from enum import Enum
+from typing import ClassVar
 
 cc_providers = [
     "amex",
@@ -35,8 +37,7 @@ insurance_providers = [
 
 
 class Services(Enum):
-    """
-    Enum defining the types of financial services supported by the application.
+    """Enum defining the types of financial services supported by the application.
 
     Attributes
     ----------
@@ -60,8 +61,7 @@ class Services(Enum):
 
 
 class CreditCards(Enum):
-    """
-    Enum defining supported credit card providers.
+    """Enum defining supported credit card providers.
 
     Attributes
     ----------
@@ -90,8 +90,7 @@ class CreditCards(Enum):
 
 
 class Banks(Enum):
-    """
-    Enum defining supported bank providers.
+    """Enum defining supported bank providers.
 
     Attributes
     ----------
@@ -135,8 +134,7 @@ class Banks(Enum):
 
 
 class Fields(Enum):
-    """
-    Enum defining field names used for credential information.
+    """Enum defining field names used for credential information.
 
     These fields represent different types of credential information required
     by various financial service providers.
@@ -175,8 +173,7 @@ class Fields(Enum):
 
 
 class LoginFields:
-    """
-    Class defining the required login fields for different financial service providers.
+    """Class defining the required login fields for different financial service providers.
 
     This class maintains a mapping of providers to their required login fields,
     and provides a method to retrieve the fields for a specific provider.
@@ -187,7 +184,7 @@ class LoginFields:
         Dictionary mapping provider names to lists of required field names.
     """
 
-    providers_fields = {
+    providers_fields: ClassVar[dict[str, list[str]]] = {
         # cards
         "max": ["username", "password", "id"],
         "visa cal": ["username", "password"],
@@ -224,8 +221,7 @@ class LoginFields:
 
     @staticmethod
     def get_fields(provider: str) -> list[str]:
-        """
-        Get the login fields for a specific provider, optional ones last.
+        """Get the login fields for a specific provider, optional ones last.
 
         Looks up the provider in the scraper framework's ``PROVIDER_CONFIGS``
         first, falling back to the hardcoded ``providers_fields`` dict for
@@ -245,10 +241,15 @@ class LoginFields:
         import importlib
         import os
         import sys
-        project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+        project_root = os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
         if project_root not in sys.path:
             sys.path.insert(0, project_root)
-        PROVIDER_CONFIGS = importlib.import_module("scraper.models.credentials").PROVIDER_CONFIGS
+        PROVIDER_CONFIGS = importlib.import_module(
+            "scraper.models.credentials"
+        ).PROVIDER_CONFIGS
 
         config = PROVIDER_CONFIGS.get(provider)
         if config:

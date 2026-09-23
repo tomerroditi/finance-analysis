@@ -14,15 +14,15 @@ Revises: b7d4f1a9c3e2
 Create Date: 2026-09-06
 """
 
-from typing import Sequence, Union
+from collections.abc import Sequence
 
 import sqlalchemy as sa
 from alembic import op
 
 revision: str = "c1a3e5b7d9f2"
-down_revision: Union[str, Sequence[str], None] = "b7d4f1a9c3e2"
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+down_revision: str | Sequence[str] | None = "b7d4f1a9c3e2"
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
 
 BACKINGS = "savings_goal_investments"
 

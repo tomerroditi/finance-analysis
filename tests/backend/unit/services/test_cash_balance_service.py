@@ -3,6 +3,7 @@
 import pytest
 from sqlalchemy.orm import Session
 
+from backend.errors import EntityNotFoundException, ValidationException
 from backend.models.cash_balance import CashBalance
 from backend.models.transaction import CashTransaction
 from backend.services.cash_balance_service import CashBalanceService
@@ -75,7 +76,7 @@ class TestCashBalanceService:
         """Verify set_balance rejects negative balance values."""
         service = CashBalanceService(db_session)
 
-        with pytest.raises(ValueError, match="Balance must be >= 0"):
+        with pytest.raises(ValidationException, match="Balance must be >= 0"):
             service.set_balance("Main Wallet", -100.0)
 
     def test_recalculate_current_balance_updates_balance_keeps_prior_wealth(
@@ -208,12 +209,22 @@ class TestCashBalanceService:
         ).first()
         assert migrated_txn.account_name == "Wallet"
 
+    def test_delete_unknown_account_raises_not_found(self, db_session: Session):
+        """Verify deleting an account with no balance record raises and changes nothing."""
+        service = CashBalanceService(db_session)
+        service.set_balance("Wallet", 500.0)
+
+        with pytest.raises(EntityNotFoundException, match="Nope"):
+            service.delete_for_account("Nope")
+
+        assert service.get_by_account_name("Wallet")["balance"] == 500.0
+
     def test_delete_wallet_raises_error(self, db_session: Session):
         """Verify delete_for_account prevents deletion of the default Wallet account."""
         service = CashBalanceService(db_session)
         service.set_balance("Wallet", 500.0)
 
-        with pytest.raises(ValueError, match="Cannot delete the default 'Wallet' account"):
+        with pytest.raises(ValidationException, match="Cannot delete the default 'Wallet' account"):
             service.delete_for_account("Wallet")
 
         # Verify it still exists

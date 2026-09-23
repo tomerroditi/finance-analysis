@@ -1,15 +1,8 @@
-"""
-Text formatting utilities for consistent string handling.
-
-This module provides utilities for standardizing text formats,
-particularly for category and tag names.
-"""
+"""Text formatting utilities for category and tag names."""
 
 import re
-from typing import Optional
 
-# Common initialisms that should remain in all capitals
-# These are preserved when converting to title case
+# Initialisms kept in all capitals by ``to_title_case``.
 INITIALISMS = frozenset(
     {
         "ATM",
@@ -25,9 +18,8 @@ INITIALISMS = frozenset(
 )
 
 
-def to_title_case(text: Optional[str]) -> Optional[str]:
-    """
-    Convert a string to title case while preserving initialisms.
+def to_title_case(text: str | None) -> str | None:
+    """Convert a string to title case while preserving initialisms.
 
     Title case means the first letter of each word is capitalized.
     Common initialisms (like ATM, DJ, GPT) are kept in all capitals.
@@ -50,8 +42,8 @@ def to_title_case(text: Optional[str]) -> Optional[str]:
     'ATM Withdrawal'
     >>> to_title_case("chat-gpt subscription")
     'Chat-GPT Subscription'
-    >>> to_title_case(None)
-    None
+    >>> to_title_case(None) is None
+    True
     """
     if text is None:
         return None
@@ -59,37 +51,16 @@ def to_title_case(text: Optional[str]) -> Optional[str]:
     if not text or not text.strip():
         return text
 
-    def process_word(word: str) -> str:
-        """Process a single word, handling hyphens."""
-        if not word:
-            return word
+    def process_part(part: str) -> str:
+        """Upper-case an initialism, capitalize anything else."""
+        return part.upper() if part.upper() in INITIALISMS else part.capitalize()
 
-        # Check if the entire word is an initialism
+    def process_word(word: str) -> str:
+        """Title-case one word, treating each hyphen-separated part separately."""
         if word.upper() in INITIALISMS:
             return word.upper()
+        return "-".join(process_part(part) for part in word.split("-"))
 
-        # Handle hyphenated words (e.g., "chat-gpt" -> "Chat-GPT")
-        if "-" in word:
-            parts = word.split("-")
-            processed_parts = []
-            for part in parts:
-                if part.upper() in INITIALISMS:
-                    processed_parts.append(part.upper())
-                else:
-                    processed_parts.append(part.capitalize())
-            return "-".join(processed_parts)
-
-        # Standard word capitalization
-        return word.capitalize()
-
-    # Split by whitespace while preserving multiple spaces
+    # The capturing split keeps whitespace runs so spacing survives verbatim.
     words = re.split(r"(\s+)", text)
-    result = []
-
-    for word in words:
-        if word.isspace():
-            result.append(word)
-        else:
-            result.append(process_word(word))
-
-    return "".join(result)
+    return "".join(word if word.isspace() else process_word(word) for word in words)

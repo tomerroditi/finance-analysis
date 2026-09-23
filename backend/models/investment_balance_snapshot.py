@@ -1,10 +1,17 @@
-"""
-Investment balance snapshot model.
-"""
+"""Investment balance snapshot model."""
 
-from sqlalchemy import Column, Integer, Float, String, ForeignKey, Index, UniqueConstraint
-from backend.models.base import Base, TimestampMixin
+from sqlalchemy import (
+    Column,
+    Float,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    UniqueConstraint,
+)
+
 from backend.constants.tables import Tables
+from backend.models.base import Base, TimestampMixin
 
 
 class InvestmentBalanceSnapshot(Base, TimestampMixin):
@@ -22,7 +29,9 @@ class InvestmentBalanceSnapshot(Base, TimestampMixin):
     balance : float
         Market value of the investment on this date.
     source : str
-        How the snapshot was created: ``"manual"``, ``"scraped"``, or ``"calculated"``.
+        How the snapshot was created: ``"manual"``, ``"scraped"``,
+        ``"calculated"``, or ``"closed"`` (the zero written when an investment
+        is closed).
     """
 
     __tablename__ = Tables.INVESTMENT_BALANCE_SNAPSHOTS.value

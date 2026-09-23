@@ -1,19 +1,19 @@
-"""
-Budget rule model.
-"""
+"""Budget rule model."""
 
-from sqlalchemy import Column, Integer, String, Float
-from backend.models.base import Base, TimestampMixin
+from sqlalchemy import Column, Float, Integer, String
+
 from backend.constants.tables import Tables
+from backend.models.base import Base, TimestampMixin
 
 
 class BudgetRule(Base, TimestampMixin):
-    """ORM model for budget rules covering both monthly limits and project budgets.
+    """ORM model for budget rules: monthly limits, yearly envelopes and projects.
 
-    Monthly rules have ``year`` and ``month`` set; project budget rules leave both
-    ``NULL``. The ``tags`` field stores a semicolon-separated list of tag names
-    (e.g. ``"Groceries;Restaurants"``). The special category ``"Total Budget"``
-    represents an overall monthly spending cap.
+    Monthly rules have ``year`` and ``month`` set, yearly rules set only
+    ``year``, and project rules leave both ``NULL``; ``period_type`` is the
+    explicit discriminator. The ``tags`` field stores a semicolon-separated
+    list of tag names (e.g. ``"Groceries;Restaurants"``). The special category
+    ``"Total Budget"`` represents an overall monthly spending cap.
 
     Attributes
     ----------
@@ -26,16 +26,17 @@ class BudgetRule(Base, TimestampMixin):
     tags : str, optional
         Semicolon-separated tag names within the category.
     year : int, optional
-        Year of the monthly budget rule; ``NULL`` for project budgets.
+        Year of a monthly or yearly rule; ``NULL`` for project budgets.
     month : int, optional
-        Month (1–12) of the monthly budget rule; ``NULL`` for project budgets.
+        Month (1–12) of a monthly rule; ``NULL`` for yearly and project rules.
     period_type : str, optional
         Rule kind discriminator: ``"monthly"``, ``"yearly"``, or ``"project"``.
     is_closed : int, optional
-        ``1`` once the project this rule belongs to has been closed, ``0`` (or
-        ``NULL``, for rows predating the column) while it is still running.
-        Only project rules ever carry it — a closed project keeps its rules and
-        history but drops out of the budget Overview.
+        ``1`` once the project (or yearly envelope) this rule belongs to has
+        been closed, ``0`` (or ``NULL``, for rows predating the column) while
+        it is still running. Only project and yearly rules ever carry it — a
+        closed one keeps its rules and history but drops out of the budget
+        Overview.
     """
 
     __tablename__ = Tables.BUDGET_RULES.value

@@ -15,8 +15,8 @@ import logging
 import os
 import re
 from dataclasses import dataclass
-from datetime import datetime, timezone
-from typing import Protocol
+from datetime import UTC, datetime
+from typing import Any, Protocol
 
 import httpx
 
@@ -68,7 +68,7 @@ class BlobBackend(Protocol):
     def delete(self, urls: list[str]) -> None:
         """Delete every blob in ``urls``. Unknown URLs are ignored."""
 
-    def list(self, prefix: str) -> list[dict]:
+    def list(self, prefix: str) -> list[dict[str, Any]]:
         """Return metadata (``url``, ``pathname``, ``uploadedAt``) under ``prefix``."""
 
     def url_for(self, pathname: str) -> str:
@@ -164,7 +164,9 @@ class VercelBlobClient:
         Mirrors the SDK's ``constructBlobUrl``: the host encodes the store id
         and the access mode.
         """
-        return f"https://{self.store_id}.{self.access}.blob.vercel-storage.com/{pathname}"
+        return (
+            f"https://{self.store_id}.{self.access}.blob.vercel-storage.com/{pathname}"
+        )
 
     def _learn_access_from_url(self, url: str) -> None:
         """Adopt the access mode the server reports, if it differs from ours."""
@@ -182,6 +184,7 @@ class VercelBlobClient:
             self.access = match.group(2)
 
     def _api_headers(self) -> dict[str, str]:
+        """Return the auth and versioning headers every Blob API call carries."""
         return {
             "authorization": f"Bearer {self._token}",
             "x-api-version": API_VERSION,
@@ -222,7 +225,7 @@ class VercelBlobClient:
         self._learn_access_from_url(url)
         return BlobPutResult(url=url, etag=payload.get("etag"))
 
-    def list(self, prefix: str) -> list[dict]:
+    def list(self, prefix: str) -> list[dict[str, Any]]:
         """List every blob whose pathname starts with ``prefix``.
 
         Parameters
@@ -235,7 +238,7 @@ class VercelBlobClient:
         list[dict]
             Raw blob records (``url``, ``pathname``, ``size``, ``uploadedAt``).
         """
-        blobs: list[dict] = []
+        blobs: list[dict[str, Any]] = []
         cursor: str | None = None
         while True:
             params: dict[str, str] = {"prefix": prefix, "limit": "1000"}
@@ -318,7 +321,7 @@ def parse_uploaded_at(value: str | float | None) -> datetime | None:
         return None
     try:
         if isinstance(value, (int, float)):
-            return datetime.fromtimestamp(value / 1000, tz=timezone.utc)
-        return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+            return datetime.fromtimestamp(value / 1000, tz=UTC)
+        return datetime.fromisoformat(str(value))
     except (TypeError, ValueError, OSError):
         return None

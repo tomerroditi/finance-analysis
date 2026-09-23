@@ -1,7 +1,7 @@
 """Pending refunds repository with SQLAlchemy ORM."""
 
 import pandas as pd
-from sqlalchemy import select, delete
+from sqlalchemy import ColumnElement, delete, select
 from sqlalchemy.orm import Session
 
 from backend.models.pending_refund import (
@@ -9,15 +9,7 @@ from backend.models.pending_refund import (
     RefundLink,
     RefundSourceNote,
 )
-
-# SQLite caps bound parameters per statement; chunk long IN lists.
-_IN_CHUNK = 500
-
-
-def _chunked(values: list, size: int = _IN_CHUNK):
-    """Yield ``values`` in slices small enough for a SQL ``IN`` clause."""
-    for start in range(0, len(values), size):
-        yield values[start:start + size]
+from backend.repositories._sql import chunked
 
 
 class PendingRefundsRepository:
@@ -27,7 +19,7 @@ class PendingRefundsRepository:
     Handles CRUD operations for pending refunds and refund links.
     """
 
-    def __init__(self, db: Session):
+    def __init__(self, db: Session) -> None:
         self.db = db
 
     def create_pending_refund(
@@ -36,7 +28,7 @@ class PendingRefundsRepository:
         source_id: int,
         source_table: str,
         expected_amount: float,
-        notes: str = None,
+        notes: str | None = None,
     ) -> PendingRefund:
         """
         Create a new pending refund record.
@@ -48,7 +40,7 @@ class PendingRefundsRepository:
         source_id : int
             ID of the source transaction/split.
         source_table : str
-            Table where source lives: 'banks', 'credit_cards', 'cash'.
+            Canonical table where the source lives (e.g. 'bank_transactions').
         expected_amount : float
             Amount expected to be refunded.
         notes : str, optional
@@ -71,7 +63,7 @@ class PendingRefundsRepository:
         self.db.refresh(pending)
         return pending
 
-    def get_all_pending_refunds(self, status: str = None) -> pd.DataFrame:
+    def get_all_pending_refunds(self, status: str | None = None) -> pd.DataFrame:
         """
         Get all pending refunds, optionally filtered by status.
 
@@ -211,9 +203,7 @@ class PendingRefundsRepository:
         """
         if not pending_ids:
             return pd.DataFrame()
-        stmt = select(RefundLink).where(
-            RefundLink.pending_refund_id.in_(pending_ids)
-        )
+        stmt = select(RefundLink).where(RefundLink.pending_refund_id.in_(pending_ids))
         return pd.read_sql(stmt, self.db.bind)
 
     def get_all_links(self) -> pd.DataFrame:
@@ -264,9 +254,7 @@ class PendingRefundsRepository:
         stmt = (
             select(RefundSourceNote)
             .where(RefundSourceNote.refund_source == refund_source)
-            .where(
-                RefundSourceNote.refund_transaction_id == refund_transaction_id
-            )
+            .where(RefundSourceNote.refund_transaction_id == refund_transaction_id)
             .order_by(RefundSourceNote.id.asc())
         )
         # Lowest id wins rather than raising — see the note in
@@ -367,7 +355,6 @@ class PendingRefundsRepository:
             delete(RefundLink).where(RefundLink.pending_refund_id == pending_id)
         )
 
-        # Delete pending refund
         pending = self.db.get(PendingRefund, pending_id)
         if pending:
             self.db.delete(pending)
@@ -397,26 +384,12 @@ class PendingRefundsRepository:
         if not unique_ids:
             return
 
-        for chunk in _chunked(unique_ids):
-            orphan_ids = [
-                row_id
-                for (row_id,) in self.db.execute(
-                    select(PendingRefund.id).where(
-                        PendingRefund.source_type == "transaction",
-                        PendingRefund.source_id.in_(chunk),
-                        PendingRefund.source_table.in_(source_tables),
-                    )
-                ).all()
-            ]
-            if orphan_ids:
-                self.db.execute(
-                    delete(RefundLink).where(
-                        RefundLink.pending_refund_id.in_(orphan_ids)
-                    )
-                )
-                self.db.execute(
-                    delete(PendingRefund).where(PendingRefund.id.in_(orphan_ids))
-                )
+        for chunk in chunked(unique_ids):
+            self._purge_pending(
+                PendingRefund.source_type == "transaction",
+                PendingRefund.source_id.in_(chunk),
+                PendingRefund.source_table.in_(source_tables),
+            )
 
             # A transaction may also have funded someone else's refund.
             self.db.execute(
@@ -450,26 +423,25 @@ class PendingRefundsRepository:
         if not split_ids:
             return
 
-        for chunk in _chunked(split_ids):
-            orphan_ids = [
-                row_id
-                for (row_id,) in self.db.execute(
-                    select(PendingRefund.id).where(
-                        PendingRefund.source_type == "split",
-                        PendingRefund.source_id.in_(chunk),
-                    )
-                ).all()
-            ]
-            if orphan_ids:
-                self.db.execute(
-                    delete(RefundLink).where(
-                        RefundLink.pending_refund_id.in_(orphan_ids)
-                    )
-                )
-                self.db.execute(
-                    delete(PendingRefund).where(PendingRefund.id.in_(orphan_ids))
-                )
+        for chunk in chunked(split_ids):
+            self._purge_pending(
+                PendingRefund.source_type == "split",
+                PendingRefund.source_id.in_(chunk),
+            )
         self.db.commit()
+
+    def _purge_pending(self, *criteria: ColumnElement[bool]) -> None:
+        """Delete pending refunds matching ``criteria`` and their links (no commit)."""
+        orphan_ids = list(
+            self.db.execute(select(PendingRefund.id).where(*criteria)).scalars()
+        )
+        if orphan_ids:
+            self.db.execute(
+                delete(RefundLink).where(RefundLink.pending_refund_id.in_(orphan_ids))
+            )
+            self.db.execute(
+                delete(PendingRefund).where(PendingRefund.id.in_(orphan_ids))
+            )
 
     def delete_refund_link(self, link_id: int) -> RefundLink | None:
         """

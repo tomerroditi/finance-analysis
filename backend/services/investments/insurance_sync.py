@@ -7,6 +7,8 @@ from persisted insurance accounts. Mixed into ``InvestmentsService``
 (see ``core.py``).
 """
 
+from typing import Any
+
 import pandas as pd
 
 from backend.constants.categories import INVESTMENTS_CATEGORY
@@ -17,7 +19,7 @@ from backend.services.investments.valuation import HISHTALMUT_TYPE
 class InsuranceSyncMixin:
     """Insurance-sync methods for ``InvestmentsService``."""
 
-    def sync_from_insurance(self, insurance_meta: dict) -> None:
+    def sync_from_insurance(self, insurance_meta: dict[str, Any]) -> None:
         """Create or update an Investment from scraped insurance account metadata.
 
         Only processes hishtalmut policies. Creates the Investment if not found
@@ -100,7 +102,9 @@ class InsuranceSyncMixin:
             if not date_match.empty and date_match.iloc[0]["source"] == "manual":
                 return
 
-        self.snapshots_repo.upsert_snapshot(inv_id, balance_date, balance, source="scraped")
+        self.snapshots_repo.upsert_snapshot(
+            inv_id, balance_date, balance, source="scraped"
+        )
 
     def backfill_from_insurance_accounts(self) -> int:
         """Sync investments for all existing hishtalmut insurance accounts.
@@ -115,16 +119,18 @@ class InsuranceSyncMixin:
         """
         rows = InsuranceAccountRepository(self.db).get_by_policy_type("hishtalmut")
         for row in rows:
-            self.sync_from_insurance({
-                "policy_type": row.policy_type,
-                "policy_id": row.policy_id,
-                "provider": row.provider,
-                "account_name": row.account_name,
-                "custom_name": row.custom_name,
-                "balance": row.balance,
-                "balance_date": row.balance_date,
-                "commission_deposits_pct": row.commission_deposits_pct,
-                "commission_savings_pct": row.commission_savings_pct,
-                "liquidity_date": row.liquidity_date,
-            })
+            self.sync_from_insurance(
+                {
+                    "policy_type": row.policy_type,
+                    "policy_id": row.policy_id,
+                    "provider": row.provider,
+                    "account_name": row.account_name,
+                    "custom_name": row.custom_name,
+                    "balance": row.balance,
+                    "balance_date": row.balance_date,
+                    "commission_deposits_pct": row.commission_deposits_pct,
+                    "commission_savings_pct": row.commission_savings_pct,
+                    "liquidity_date": row.liquidity_date,
+                }
+            )
         return len(rows)

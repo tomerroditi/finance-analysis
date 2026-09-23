@@ -1,11 +1,17 @@
-"""
-Liability tracking model.
-"""
+"""Liability tracking model."""
 
-from sqlalchemy import Column, Integer, String, Float, Text, UniqueConstraint, ForeignKey
+from sqlalchemy import (
+    Column,
+    Float,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+)
 
-from backend.models.base import Base, TimestampMixin
 from backend.constants.tables import Tables
+from backend.models.base import Base, TimestampMixin
 
 
 class Liability(Base, TimestampMixin):
@@ -104,7 +110,9 @@ class LiabilityTransaction(Base, TimestampMixin):
     __tablename__ = Tables.LIABILITY_TRANSACTIONS.value
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    liability_id = Column(Integer, ForeignKey("liabilities.id", ondelete="CASCADE"), nullable=False)
+    liability_id = Column(
+        Integer, ForeignKey("liabilities.id", ondelete="CASCADE"), nullable=False
+    )
     date = Column(String, nullable=False)
     amount = Column(Float, nullable=False)
     payment_number = Column(Integer, nullable=False)

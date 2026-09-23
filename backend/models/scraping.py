@@ -1,11 +1,9 @@
-"""
-Scraping history model.
-"""
+"""Scraping history model."""
 
 from sqlalchemy import Column, Index, Integer, String
 
-from backend.models.base import Base, TimestampMixin
 from backend.constants.tables import Tables
+from backend.models.base import Base, TimestampMixin
 
 
 class ScrapingHistory(Base, TimestampMixin):
@@ -56,16 +54,11 @@ class ScrapingHistory(Base, TimestampMixin):
     )
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-
     service_name = Column(String, nullable=False)
     provider_name = Column(String, nullable=False)
     account_name = Column(String, nullable=False)
-    date = Column(String, nullable=False)  # Timestamp of scrape
+    date = Column(String, nullable=False)
     status = Column(String, nullable=False)
-    start_date = Column(
-        String, nullable=True
-    )  # The 'start_date' parameter used for scraping
-    # Technical detail for failed scrapes (provider message / exception text).
+    start_date = Column(String, nullable=True)
     error_message = Column(String, nullable=True)
-    # Failure category driving the user-facing message; see class docstring.
     error_type = Column(String, nullable=True)

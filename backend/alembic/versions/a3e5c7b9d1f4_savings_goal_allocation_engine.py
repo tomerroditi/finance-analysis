@@ -11,28 +11,41 @@ Create Date: 2026-09-04
 
 """
 
-from typing import Sequence, Union
+from collections.abc import Sequence
 
 import sqlalchemy as sa
 from alembic import op
+from sqlalchemy.engine import Connection, Inspector
 
 revision: str = "a3e5c7b9d1f4"
-down_revision: Union[str, Sequence[str], None] = "f2a4c6e8b0d3"
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+down_revision: str | Sequence[str] | None = "f2a4c6e8b0d3"
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
 
 GOALS = "savings_goals"
 ALLOCATIONS = "savings_goal_allocations"
 LINKS = "savings_goal_links"
 
 NEW_GOAL_COLUMNS = [
-    ("opening_balance", sa.Column("opening_balance", sa.Float(), nullable=False, server_default="0")),
-    ("priority", sa.Column("priority", sa.Integer(), nullable=False, server_default="0")),
+    (
+        "opening_balance",
+        sa.Column("opening_balance", sa.Float(), nullable=False, server_default="0"),
+    ),
+    (
+        "priority",
+        sa.Column("priority", sa.Integer(), nullable=False, server_default="0"),
+    ),
     ("monthly_cap", sa.Column("monthly_cap", sa.Float(), nullable=True)),
     ("start_month", sa.Column("start_month", sa.String(), nullable=True)),
-    ("contribution_category", sa.Column("contribution_category", sa.String(), nullable=True)),
+    (
+        "contribution_category",
+        sa.Column("contribution_category", sa.String(), nullable=True),
+    ),
     ("contribution_tags", sa.Column("contribution_tags", sa.String(), nullable=True)),
-    ("status", sa.Column("status", sa.String(), nullable=False, server_default="active")),
+    (
+        "status",
+        sa.Column("status", sa.String(), nullable=False, server_default="active"),
+    ),
     ("closed_month", sa.Column("closed_month", sa.String(), nullable=True)),
 ]
 
@@ -51,7 +64,7 @@ CARRY_CURRENT_AMOUNT = (
 )
 
 
-def _upgrade_goals_table(conn, inspector) -> None:
+def _upgrade_goals_table(conn: Connection, inspector: Inspector) -> None:
     """Add the new goal columns and retire ``current_amount``."""
     existing = {c["name"] for c in inspector.get_columns(GOALS)}
     missing = [(name, col) for name, col in NEW_GOAL_COLUMNS if name not in existing]
@@ -108,7 +121,9 @@ def upgrade() -> None:
             sa.Column("created_at", sa.DateTime(), nullable=True),
             sa.Column("updated_at", sa.DateTime(), nullable=True),
             sa.UniqueConstraint(
-                "source_type", "source_id", "source_table",
+                "source_type",
+                "source_id",
+                "source_table",
                 name="uq_savings_goal_link_source",
             ),
         )

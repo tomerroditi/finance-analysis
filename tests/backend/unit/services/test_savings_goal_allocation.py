@@ -24,7 +24,7 @@ from backend.models.savings_goal import (
 )
 from backend.models.bank_balance import BankBalance
 from backend.models.transaction import BankTransaction
-from backend.services.savings_goal_service import SavingsGoalService
+from backend.services.savings_goals import SavingsGoalService
 
 
 def _month_str(offset_back: int) -> str:

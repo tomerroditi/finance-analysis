@@ -7,13 +7,16 @@ operations. Mixed into ``TransactionsRepository`` (see ``core.py``).
 """
 
 import logging
+from typing import Any
 
 import pandas as pd
 from sqlalchemy import delete, select, update
 from sqlalchemy.exc import SQLAlchemyError
 
 from backend.constants.tables import SplitTransactionsTableFields
+from backend.errors import ValidationException
 from backend.models.transaction import SplitTransaction
+from backend.repositories._sql import chunked
 from backend.repositories.transactions.service_repositories import T_service
 from backend.utils.log_sanitize import scrub
 
@@ -70,7 +73,7 @@ class SplitsMixin:
         # Batch: one SELECT ... WHERE unique_id IN (...) per source table
         # instead of one query per split row — this runs inside get_table(),
         # i.e. on essentially every analytics/budget/transactions request.
-        parents_by_key: dict[tuple[str, int], dict] = {}
+        parents_by_key: dict[tuple[str, int], dict[str, Any]] = {}
         for source, group in splits_df.groupby(src_col):
             repo = self.get_repo_by_source(source)
             if repo is None:
@@ -79,24 +82,14 @@ class SplitsMixin:
                 )
                 continue
             ids = [int(v) for v in group[tid_col].unique()]
-            rows = (
-                self.db.execute(
-                    select(repo.model).where(repo.model.unique_id.in_(ids))
-                )
-                .scalars()
-                .all()
-            )
-            for parent in rows:
+            for parent in self.get_records(source, ids):
                 parents_by_key[(source, parent.unique_id)] = {
-                    c.name: getattr(parent, c.name)
-                    for c in parent.__table__.columns
+                    c.name: getattr(parent, c.name) for c in parent.__table__.columns
                 }
 
-        children = []
+        children: list[dict[str, Any]] = []
         for _, split in splits_df.iterrows():
-            parent_dict = parents_by_key.get(
-                (split[src_col], int(split[tid_col]))
-            )
+            parent_dict = parents_by_key.get((split[src_col], int(split[tid_col])))
             if parent_dict is None:
                 continue
             children.append(
@@ -110,9 +103,7 @@ class SplitsMixin:
                     # BudgetService matched on `split_id` and, finding it
                     # always empty, silently kept refunded slices in the
                     # budget.
-                    "split_id": int(
-                        split[SplitTransactionsTableFields.ID.value]
-                    ),
+                    "split_id": int(split[SplitTransactionsTableFields.ID.value]),
                     "amount": split[SplitTransactionsTableFields.AMOUNT.value],
                     "category": split[SplitTransactionsTableFields.CATEGORY.value],
                     "tag": split[SplitTransactionsTableFields.TAG.value],
@@ -199,16 +190,16 @@ class SplitsMixin:
             return []
         ids = [int(v) for v in unique_ids]
         split_ids: list[int] = []
-        for start in range(0, len(ids), 500):
+        for chunk in chunked(ids):
             stmt = select(SplitTransaction.id).where(
                 SplitTransaction.source == source,
-                SplitTransaction.transaction_id.in_(ids[start:start + 500]),
+                SplitTransaction.transaction_id.in_(chunk),
             )
             split_ids.extend(int(row[0]) for row in self.db.execute(stmt).all())
         return split_ids
 
     def split_transaction(
-        self, unique_id: int, source: str, splits: list[dict]
+        self, unique_id: int, source: str, splits: list[dict[str, Any]]
     ) -> bool:
         """Split a transaction into multiple partial amounts across categories.
 
@@ -223,7 +214,7 @@ class SplitsMixin:
             unique_id of the transaction to split.
         source : str
             Table name of the source repository.
-        splits : list[dict]
+        splits : list[dict[str, Any]]
             List of split dicts, each with keys: amount, category, tag.
 
         Returns
@@ -233,7 +224,7 @@ class SplitsMixin:
 
         Raises
         ------
-        ValueError
+        ValidationException
             If ``source`` is unknown or no row with ``unique_id`` exists in it.
         SQLAlchemyError
             On database failure, after rolling back.
@@ -246,7 +237,7 @@ class SplitsMixin:
         """
         repo = self.get_repo_by_source(source)
         if repo is None:
-            raise ValueError(f"Unknown source '{source}'")
+            raise ValidationException(f"Unknown source '{source}'")
         try:
             parent_updated = self.db.execute(
                 update(repo.model)
@@ -255,7 +246,7 @@ class SplitsMixin:
             )
             if parent_updated.rowcount == 0:
                 self.db.rollback()
-                raise ValueError(
+                raise ValidationException(
                     f"Cannot split: no {source} row with unique_id={unique_id}"
                 )
 
@@ -301,7 +292,7 @@ class SplitsMixin:
 
         Raises
         ------
-        ValueError
+        ValidationException
             If ``source`` is unknown or no row with ``unique_id`` exists in it.
         SQLAlchemyError
             On database failure, after rolling back.
@@ -313,7 +304,7 @@ class SplitsMixin:
         """
         repo = self.get_repo_by_source(source)
         if repo is None:
-            raise ValueError(f"Unknown source '{source}'")
+            raise ValidationException(f"Unknown source '{source}'")
         try:
             parent_updated = self.db.execute(
                 update(repo.model)
@@ -322,7 +313,7 @@ class SplitsMixin:
             )
             if parent_updated.rowcount == 0:
                 self.db.rollback()
-                raise ValueError(
+                raise ValidationException(
                     f"Cannot revert split: no {source} row with unique_id={unique_id}"
                 )
             self.db.execute(
@@ -335,7 +326,9 @@ class SplitsMixin:
             return True
         except SQLAlchemyError:
             logger.exception(
-                "Revert split failed for unique_id=%s in %s", scrub(unique_id), scrub(source)
+                "Revert split failed for unique_id=%s in %s",
+                scrub(unique_id),
+                scrub(source),
             )
             self.db.rollback()
             raise

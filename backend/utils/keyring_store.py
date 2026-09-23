@@ -18,7 +18,6 @@ block below.
 
 import logging
 import os
-from typing import Optional
 
 try:
     import keyring
@@ -31,7 +30,8 @@ except ImportError:  # pragma: no cover - exercised only without keyring
     # so it never needs a password. This module sits on the import path of
     # every credentials route (routes -> service -> repository -> here), so a
     # hard import made the WHOLE /api/credentials group vanish through
-    # main.py's `except ImportError: pass` — the Data Sources page 404'd its
+    # the optional-router import guard (now in backend/router_registry.py) —
+    # the Data Sources page 404'd its
     # account list and rendered empty.
     #
     # Reads degrade to "nothing stored"; writes raise rather than silently
@@ -141,12 +141,12 @@ def credential_secret_name(
     return f"{service}_{provider}_{account_name}_{field}"
 
 
-def get_secret(service_name: str, secret_name: str) -> Optional[str]:
+def get_secret(service_name: str, secret_name: str) -> str | None:
     """Read a secret from the OS keyring.
 
     Returns
     -------
-    Optional[str]
+    str or None
         The stored value, or None when no entry exists — including when
         this environment has no keyring at all.
     """

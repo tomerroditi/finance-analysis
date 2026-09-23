@@ -5,17 +5,17 @@ Revises: b8d0f2a4c6e8
 Create Date: 2026-07-21 12:00:00.000000
 
 """
-from typing import Sequence, Union
 
-from alembic import op
+from collections.abc import Sequence
+
 import sqlalchemy as sa
-
+from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "c9d1e3f5a7b9"
-down_revision: Union[str, Sequence[str], None] = "b8d0f2a4c6e8"
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+down_revision: str | Sequence[str] | None = "b8d0f2a4c6e8"
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
 
 _NEW_LIABILITY_COLUMNS = [
     ("loan_type", sa.String()),

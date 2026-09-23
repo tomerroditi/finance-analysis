@@ -4,6 +4,8 @@ RetirementGoal data access.
 Single-row upsert pattern — only one retirement goal profile per user.
 """
 
+from typing import Any
+
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -13,7 +15,7 @@ from backend.models.retirement_goal import RetirementGoal
 class RetirementGoalRepository:
     """RetirementGoal database operations (single-row upsert)."""
 
-    def __init__(self, db: Session):
+    def __init__(self, db: Session) -> None:
         self.db = db
 
     def get(self) -> RetirementGoal | None:
@@ -21,7 +23,7 @@ class RetirementGoalRepository:
         stmt = select(RetirementGoal)
         return self.db.execute(stmt).scalars().first()
 
-    def upsert(self, **fields) -> RetirementGoal:
+    def upsert(self, **fields: Any) -> RetirementGoal:
         """Create or update the retirement goal profile.
 
         Parameters
@@ -49,7 +51,7 @@ class RetirementGoalRepository:
         return item
 
     def delete(self) -> bool:
-        """Delete the retirement goal profile."""
+        """Delete the retirement goal profile; return whether one existed."""
         item = self.get()
         if not item:
             return False

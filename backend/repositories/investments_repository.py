@@ -1,40 +1,25 @@
-"""
-Investments repository with SQLAlchemy ORM.
-"""
+"""Investments repository with SQLAlchemy ORM."""
 
 from datetime import datetime
+from typing import Any
 
 import pandas as pd
-from sqlalchemy import select, update, delete
+from sqlalchemy import delete, select, update
 from sqlalchemy.orm import Session
+
 from backend.errors import EntityNotFoundException
+from backend.models.investment import Investment
+from backend.models.investment_balance_snapshot import InvestmentBalanceSnapshot
 from backend.utils.policy_ids import policy_id_key
 from backend.utils.session_cache import session_cache_get, session_cache_set
 
-from backend.models.investment import Investment
-from backend.models.investment_balance_snapshot import InvestmentBalanceSnapshot
-from backend.constants.tables import InvestmentsTableFields, Tables
-
 
 class InvestmentsRepository:
-    """
-    Repository for managing investment tracking records using ORM.
-    """
+    """Repository for managing investment tracking records using ORM."""
 
-    table = Tables.INVESTMENTS.value
+    def __init__(self, db: Session) -> None:
+        """Initialize the repository.
 
-    id_col = InvestmentsTableFields.ID.value
-    category_col = InvestmentsTableFields.CATEGORY.value
-    tag_col = InvestmentsTableFields.TAG.value
-    type_col = InvestmentsTableFields.TYPE.value
-    name_col = InvestmentsTableFields.NAME.value
-    is_closed_col = InvestmentsTableFields.IS_CLOSED.value
-    created_date_col = InvestmentsTableFields.CREATED_DATE.value
-    closed_date_col = InvestmentsTableFields.CLOSED_DATE.value
-    notes_col = InvestmentsTableFields.NOTES.value
-
-    def __init__(self, db: Session):
-        """
         Parameters
         ----------
         db : Session
@@ -42,25 +27,22 @@ class InvestmentsRepository:
         """
         self.db = db
 
-    def _assure_table_exists(self) -> None:
-        pass
-
     def create_investment(
         self,
         category: str,
         tag: str,
         type_: str,
         name: str,
-        interest_rate: float = None,
+        interest_rate: float | None = None,
         interest_rate_type: str = "fixed",
-        rate_spread: float = None,
-        commission_deposit: float = None,
-        commission_management: float = None,
-        commission_withdrawal: float = None,
-        liquidity_date: str = None,
-        maturity_date: str = None,
-        notes: str = None,
-        insurance_policy_id: str = None,
+        rate_spread: float | None = None,
+        commission_deposit: float | None = None,
+        commission_management: float | None = None,
+        commission_withdrawal: float | None = None,
+        liquidity_date: str | None = None,
+        maturity_date: str | None = None,
+        notes: str | None = None,
+        insurance_policy_id: str | None = None,
     ) -> int:
         """Create a new investment record.
 
@@ -225,9 +207,7 @@ class InvestmentsRepository:
         ``backend.utils.policy_ids``) when no exact match exists, so a
         provider restyling its policy IDs cannot fork a duplicate investment.
         """
-        stmt = select(Investment).where(
-            Investment.insurance_policy_id == policy_id
-        )
+        stmt = select(Investment).where(Investment.insurance_policy_id == policy_id)
         exact = pd.read_sql(stmt, self.db.bind)
         if not exact.empty:
             return exact
@@ -245,7 +225,7 @@ class InvestmentsRepository:
             linked["insurance_policy_id"].map(policy_id_key) == key
         ].reset_index(drop=True)
 
-    def update_investment(self, investment_id: int, **fields) -> None:
+    def update_investment(self, investment_id: int, **fields: Any) -> None:
         """Update an investment by ID.
 
         Parameters

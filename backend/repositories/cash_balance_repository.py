@@ -1,6 +1,4 @@
-"""
-Cash balance repository for cash envelope balance snapshots.
-"""
+"""Cash balance repository for cash envelope balance snapshots."""
 
 import pandas as pd
 from sqlalchemy import select
@@ -12,8 +10,9 @@ from backend.models.cash_balance import CashBalance
 class CashBalanceRepository:
     """Repository for cash envelope balance snapshots."""
 
-    def __init__(self, db: Session):
-        """
+    def __init__(self, db: Session) -> None:
+        """Initialize the repository.
+
         Parameters
         ----------
         db : Session
@@ -82,16 +81,15 @@ class CashBalanceRepository:
                 existing.last_manual_update = last_manual_update
             self.db.commit()
             return existing
-        else:
-            record = CashBalance(
-                account_name=account_name,
-                balance=balance,
-                prior_wealth_amount=prior_wealth_amount,
-                last_manual_update=last_manual_update,
-            )
-            self.db.add(record)
-            self.db.commit()
-            return record
+        record = CashBalance(
+            account_name=account_name,
+            balance=balance,
+            prior_wealth_amount=prior_wealth_amount,
+            last_manual_update=last_manual_update,
+        )
+        self.db.add(record)
+        self.db.commit()
+        return record
 
     def delete_by_account_name(self, account_name: str) -> bool:
         """Delete balance record for a cash account.

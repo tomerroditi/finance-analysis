@@ -7,91 +7,20 @@ therefore do not *switch* anything — they only manage the demo database's
 lifecycle and report whether the deployment pins the mode.
 """
 
-import hmac
 import os
 
 from fastapi import APIRouter, Header, HTTPException
 
-from backend import database, demo_sessions
+from backend import demo_sessions
 from backend.config import AppConfig
-from backend.database import get_db_context
 from backend.demo_setup import (
-    DEMO_REFERENCE_DATE,
-    prepare_demo_database,
-    sync_missing_columns,
+    build_demo_database,
+    demo_database_exists,
+    sync_demo_schema,
 )
-from backend.models.base import Base
-from backend.services.tagging_service import CategoriesTagsService
+from backend.utils import auth
 
 router = APIRouter()
-
-# Re-exported for backwards compatibility with tests/integrations that
-# import this constant from the route module.
-__all__ = ["DEMO_REFERENCE_DATE", "router"]
-
-
-def _demo_db_exists() -> bool:
-    """Return ``True`` when the demo database file is already on disk.
-
-    Returns
-    -------
-    bool
-        Whether the demo-mode database path exists.
-    """
-    config = AppConfig()
-    token = config.set_demo_mode(True)
-    try:
-        return os.path.exists(config.get_db_path())
-    finally:
-        config.reset_demo_mode(token)
-
-
-def _sync_demo_schema() -> None:
-    """Bring an existing demo database up to the current schema.
-
-    Startup migrations only ever run against the database the process opened
-    — the real one — and ``/demo/prepare`` deliberately does not rebuild a
-    demo DB that is already on disk. Without this, a demo database built by an
-    older version keeps that version's schema forever, and every read of a
-    table or column added since answers 500. Creating what is missing is
-    additive and leaves the demo data alone, so it is safe on every prepare.
-    """
-    config = AppConfig()
-    token = config.set_demo_mode(True)
-    try:
-        engine = database.get_engine()
-        Base.metadata.create_all(bind=engine)
-        sync_missing_columns(engine)
-    finally:
-        config.reset_demo_mode(token)
-
-
-def _build_demo_database() -> None:
-    """Copy the frozen snapshot into place and seed demo credentials.
-
-    Forces demo context for its own duration rather than trusting the
-    caller's header, so the snapshot can never be copied over the real
-    database.
-    """
-    # Imported here, not at module level: credentials_service pulls in
-    # keyring, which the Vercel runtime does not ship. A top-level import
-    # made this whole router silently fail to mount there (main.py wraps
-    # the include in ``except ImportError``), taking demo reset with it.
-    from backend.services.credentials_service import CredentialsService
-
-    config = AppConfig()
-    token = config.set_demo_mode(True)
-    try:
-        database.reset_engines()
-        CredentialsService.clear_cache()
-        CategoriesTagsService.clear_cache()
-
-        prepare_demo_database()
-
-        with get_db_context() as demo_db:
-            CredentialsService(demo_db).seed_demo_credentials()
-    finally:
-        config.reset_demo_mode(token)
 
 
 @router.post("/demo/prepare")
@@ -112,11 +41,11 @@ def prepare_demo() -> dict[str, str | bool]:
     if AppConfig._forced_mode is not None:
         return {"status": "success", "created": False}
 
-    if _demo_db_exists():
-        _sync_demo_schema()
+    if demo_database_exists():
+        sync_demo_schema()
         return {"status": "success", "created": False}
 
-    _build_demo_database()
+    build_demo_database()
     return {"status": "success", "created": True}
 
 
@@ -142,7 +71,7 @@ def reset_demo() -> dict[str, str]:
     if AppConfig._forced_mode is not None:
         return {"status": "success"}
 
-    _build_demo_database()
+    build_demo_database()
     return {"status": "success"}
 
 
@@ -165,8 +94,7 @@ def prune_demo_sessions(
     secret = os.environ.get("CRON_SECRET", "")
     if not secret:
         raise HTTPException(status_code=404, detail="Not Found")
-    supplied = (authorization or "").removeprefix("Bearer ").strip()
-    if not hmac.compare_digest(supplied, secret):
+    if not auth.token_matches(auth.extract_bearer_token(authorization), secret):
         raise HTTPException(status_code=401, detail="Unauthorized")
     return {"deleted": demo_sessions.get_store().prune()}
 

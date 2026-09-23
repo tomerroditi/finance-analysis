@@ -12,7 +12,7 @@ from backend.repositories.investment_snapshots_repository import (
     InvestmentSnapshotsRepository,
 )
 from backend.repositories.investments_repository import InvestmentsRepository
-from backend.services.investments_service import InvestmentsService
+from backend.services.investments import InvestmentsService
 
 
 def _create_investment(db_session: Session, tag: str = "Test Fund", **kwargs) -> int:

@@ -24,13 +24,15 @@ the e2e suite keep the single shared demo database.
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import os
 import re
 import shutil
 import threading
 import time
-from datetime import datetime, timedelta, timezone
+from collections.abc import Awaitable, Callable
+from datetime import UTC, datetime, timedelta
 
 from fastapi import Request, Response
 from fastapi.responses import JSONResponse
@@ -38,6 +40,7 @@ from starlette.concurrency import run_in_threadpool
 
 from backend import database
 from backend.config import AppConfig
+from backend.demo_setup import prepare_demo_database, sqlite_sidecar_paths
 from backend.utils.vercel_blob import (
     BlobBackend,
     VercelBlobClient,
@@ -127,11 +130,6 @@ def blob_pathname(session_id: str) -> str:
     return f"{BLOB_PREFIX}{session_id}.db"
 
 
-def _sidecar_paths(db_path: str) -> list[str]:
-    """SQLite journal files that must be removed together with ``db_path``."""
-    return [f"{db_path}-journal", f"{db_path}-wal", f"{db_path}-shm"]
-
-
 def _forget_database(db_path: str) -> None:
     """Drop everything the process remembers about a replaced DB file.
 
@@ -150,6 +148,14 @@ def _forget_database(db_path: str) -> None:
         # import there — and then its cache cannot hold anything either.
         return
     CredentialsService.clear_cache_for(db_path)
+
+
+def _discard_local_copy(db_path: str) -> None:
+    """Forget a sandbox's cached state and delete its DB file and sidecars."""
+    _forget_database(db_path)
+    for stale in [db_path, *sqlite_sidecar_paths(db_path)]:
+        with contextlib.suppress(FileNotFoundError):
+            os.remove(stale)
 
 
 class DemoSessionStore:
@@ -184,6 +190,7 @@ class DemoSessionStore:
         return self.backend is not None
 
     def _lock_for(self, session_id: str) -> threading.Lock:
+        """Return the lock serializing work on one sandbox, creating it on first use."""
         with self._locks_guard:
             return self._locks.setdefault(session_id, threading.Lock())
 
@@ -214,17 +221,18 @@ class DemoSessionStore:
         if excess <= 0:
             return
         idle = sorted(
-            (used, sid) for sid, used in self._last_used.items() if sid not in self._active
+            (used, sid)
+            for sid, used in self._last_used.items()
+            if sid not in self._active
         )
         for _, sid in idle[:excess]:
-            path = self.local_db_path(sid)
-            _forget_database(path)
-            for stale in [path, *_sidecar_paths(path)]:
-                try:
-                    os.remove(stale)
-                except FileNotFoundError:
-                    pass
-            for bookkeeping in (self._last_used, self._etags, self._checked_at, self._locks):
+            _discard_local_copy(self.local_db_path(sid))
+            for bookkeeping in (
+                self._last_used,
+                self._etags,
+                self._checked_at,
+                self._locks,
+            ):
                 bookkeeping.pop(sid, None)
 
     @staticmethod
@@ -243,10 +251,6 @@ class DemoSessionStore:
         finally:
             config.reset_demo_session(session_token)
             config.reset_demo_mode(mode_token)
-
-    # ------------------------------------------------------------------
-    # Materialization
-    # ------------------------------------------------------------------
 
     def sync(self, session_id: str) -> None:
         """Make the local sandbox match the persisted copy before serving.
@@ -267,13 +271,17 @@ class DemoSessionStore:
                 return
 
             now = time.monotonic()
-            fresh = now - self._checked_at.get(session_id, -1.0) < REVALIDATE_WINDOW_SECONDS
+            fresh = (
+                now - self._checked_at.get(session_id, -1.0) < REVALIDATE_WINDOW_SECONDS
+            )
             if fresh and os.path.exists(path):
                 return
 
             local_etag = self._etags.get(session_id) if os.path.exists(path) else None
             try:
-                remote = self.backend.get(blob_pathname(session_id), if_none_match=local_etag)
+                remote = self.backend.get(
+                    blob_pathname(session_id), if_none_match=local_etag
+                )
             except Exception:
                 logger.warning(
                     "Could not revalidate demo sandbox %s; serving local copy",
@@ -307,16 +315,9 @@ class DemoSessionStore:
                 self._etags[session_id] = remote.etag
                 logger.info("Restored demo sandbox %s from blob storage", session_id)
 
-    def ensure_local(self, session_id: str) -> None:
-        """Make sure the sandbox exists locally, restoring it if persisted.
-
-        Equivalent to :meth:`sync`; kept as the explicit name for callers
-        that only care about existence (tests, tooling).
-        """
-        self.sync(session_id)
-
     @staticmethod
     def _write_atomically(path: str, data: bytes) -> None:
+        """Replace ``path`` with ``data`` via a temp file and forget the old DB."""
         os.makedirs(os.path.dirname(path), exist_ok=True)
         tmp = f"{path}.tmp"
         with open(tmp, "wb") as fh:
@@ -325,6 +326,7 @@ class DemoSessionStore:
         _forget_database(path)
 
     def _seed(self, session_id: str, path: str) -> None:
+        """Create a fresh sandbox at ``path`` from the template, or build one."""
         os.makedirs(os.path.dirname(path), exist_ok=True)
         template = self.template_path()
         if os.path.exists(template):
@@ -334,8 +336,6 @@ class DemoSessionStore:
         # No template (local dev / tests): build straight into the sandbox.
         # prepare_demo_database resolves its target through AppConfig, which
         # honours the bound session id.
-        from backend.demo_setup import prepare_demo_database
-
         config = AppConfig()
         session_token = config.set_demo_session(session_id)
         try:
@@ -343,10 +343,6 @@ class DemoSessionStore:
         finally:
             config.reset_demo_session(session_token)
         _forget_database(path)
-
-    # ------------------------------------------------------------------
-    # Persistence
-    # ------------------------------------------------------------------
 
     def persist(self, session_id: str) -> bool:
         """Upload the sandbox database to the backend.
@@ -393,13 +389,12 @@ class DemoSessionStore:
         """
         path = self.local_db_path(session_id)
         with self._lock_for(session_id):
-            _forget_database(path)
-            for stale in [path, *_sidecar_paths(path)]:
-                if os.path.exists(stale):
-                    os.remove(stale)
+            _discard_local_copy(path)
             if self.backend is not None:
                 try:
-                    self.backend.delete([self.backend.url_for(blob_pathname(session_id))])
+                    self.backend.delete(
+                        [self.backend.url_for(blob_pathname(session_id))]
+                    )
                 except Exception:
                     logger.warning(
                         "Could not delete persisted demo sandbox %s",
@@ -427,8 +422,8 @@ class DemoSessionStore:
             return 0
         if max_age_days is None:
             max_age_days = int(os.environ.get(TTL_ENV, DEFAULT_TTL_DAYS))
-        cutoff = datetime.now(timezone.utc) - timedelta(days=max_age_days)
-        stale = []
+        cutoff = datetime.now(UTC) - timedelta(days=max_age_days)
+        stale: list[str] = []
         for blob in self.backend.list(BLOB_PREFIX):
             uploaded = parse_uploaded_at(blob.get("uploadedAt"))
             if uploaded is not None and uploaded < cutoff:
@@ -476,7 +471,11 @@ def snapshot_template() -> None:
         shutil.copy2(source, DemoSessionStore.template_path())
 
 
-async def serve_in_session(request: Request, call_next, session_id: str) -> Response:
+async def serve_in_session(
+    request: Request,
+    call_next: Callable[[Request], Awaitable[Response]],
+    session_id: str,
+) -> Response:
     """Run ``request`` against ``session_id``'s sandbox and persist writes.
 
     Binds the sandbox id for the request's context, syncs the local database

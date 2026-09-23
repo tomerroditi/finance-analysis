@@ -5,17 +5,17 @@ Revises: d0e2f4a6b8c1
 Create Date: 2026-07-24 12:00:00.000000
 
 """
-from typing import Sequence, Union
 
-from alembic import op
+from collections.abc import Sequence
+
 import sqlalchemy as sa
-
+from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "e1f3a5b7c9d2"
-down_revision: Union[str, Sequence[str], None] = "d0e2f4a6b8c1"
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+down_revision: str | Sequence[str] | None = "d0e2f4a6b8c1"
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
 
 # (table, constraint name, natural-key columns)
 _TARGETS: list[tuple[str, str, list[str]]] = [
@@ -57,9 +57,7 @@ def upgrade() -> None:
     for table, constraint, columns in _TARGETS:
         if table not in table_names:
             continue
-        existing = {
-            uc["name"] for uc in inspector.get_unique_constraints(table)
-        }
+        existing = {uc["name"] for uc in inspector.get_unique_constraints(table)}
         if constraint in existing:
             continue
 

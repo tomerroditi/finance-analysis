@@ -1,4 +1,10 @@
-from backend.scraper.adapter import InsuranceScraperAdapter, ScraperAdapter, create_adapter
+"""Backend bridge to the root ``scraper`` package: adapters and 2FA lookup."""
+
+from backend.scraper.adapter import (
+    InsuranceScraperAdapter,
+    ScraperAdapter,
+    create_adapter,
+)
 
 # Providers that can request 2FA. Kept in sync with the ``requires_2fa`` flag
 # on ``scraper.models.credentials.PROVIDER_CONFIGS``. The duplication is a
@@ -36,4 +42,9 @@ def is_2fa_required(service_name: str, provider_name: str) -> bool:
     return provider_name in _2FA_PROVIDERS
 
 
-__all__ = ["InsuranceScraperAdapter", "ScraperAdapter", "create_adapter", "is_2fa_required"]
+__all__ = [
+    "InsuranceScraperAdapter",
+    "ScraperAdapter",
+    "create_adapter",
+    "is_2fa_required",
+]

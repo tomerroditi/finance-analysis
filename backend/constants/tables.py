@@ -1,10 +1,12 @@
+"""Database table names and column-name enums."""
+
 from enum import Enum
-from typing import Type
+
+from backend.constants.providers import Services
 
 
 class Tables(Enum):
-    """
-    Enum defining database table names used in the application.
+    """Enum defining database table names used in the application.
 
     Attributes
     ----------
@@ -21,7 +23,8 @@ class Tables(Enum):
     SPLIT_TRANSACTIONS : str
         Name of the table storing split transactions.
     SCRAPING_HISTORY : str
-        Name of the table storing scraping history and daily limits.
+        Name of the table storing scraping history (the next scrape window's
+        watermark).
     INVESTMENTS : str
         Name of the table storing investment tracking data.
     INVESTMENT_BALANCE_SNAPSHOTS : str
@@ -90,9 +93,65 @@ class Tables(Enum):
     INSIGHT_DISMISSALS = "insight_dismissals"
 
 
-def _create_enum(name: str, fields: list[tuple[str, str]]) -> Type[Enum]:
+# The five transaction tables, keyed by the service name the frontend and API
+# use for them. This is the one source of truth for the service <-> table
+# pairing; every other mapping in the backend is derived from it.
+SERVICE_TO_TABLE: dict[str, str] = {
+    Services.CREDIT_CARD.value: Tables.CREDIT_CARD.value,
+    Services.BANK.value: Tables.BANK.value,
+    Services.CASH.value: Tables.CASH.value,
+    Services.MANUAL_INVESTMENTS.value: Tables.MANUAL_INVESTMENT_TRANSACTIONS.value,
+    Services.INSURANCE.value: Tables.INSURANCE.value,
+}
+
+TABLE_TO_SERVICE: dict[str, str] = {
+    table: service for service, table in SERVICE_TO_TABLE.items()
+}
+
+# Every spelling that identifies a transaction table: the table names plus the
+# service names that older rows (refunds, overrides) and clients still send.
+TRANSACTION_SOURCES: frozenset[str] = frozenset(SERVICE_TO_TABLE) | frozenset(
+    TABLE_TO_SERVICE
+)
+
+
+def canonical_table(source: str) -> str:
+    """Normalize a transaction source to its table name.
+
+    Parameters
+    ----------
+    source : str
+        Table name (``"bank_transactions"``) or legacy service name
+        (``"banks"``).
+
+    Returns
+    -------
+    str
+        The table name when ``source`` is a known spelling, ``source``
+        unchanged otherwise.
     """
-    Create an Enum class dynamically with the given name and fields.
+    return SERVICE_TO_TABLE.get(source, source)
+
+
+def table_aliases(table: str) -> list[str]:
+    """Return every stored spelling of a transaction table.
+
+    Parameters
+    ----------
+    table : str
+        Canonical table name.
+
+    Returns
+    -------
+    list[str]
+        ``[table]`` followed by its legacy service name, when it has one.
+    """
+    service = TABLE_TO_SERVICE.get(table)
+    return [table, service] if service else [table]
+
+
+def _create_enum(name: str, fields: list[tuple[str, str]]) -> type[Enum]:
+    """Create an Enum class dynamically with the given name and fields.
 
     Parameters
     ----------
@@ -103,7 +162,7 @@ def _create_enum(name: str, fields: list[tuple[str, str]]) -> Type[Enum]:
 
     Returns
     -------
-    Type[Enum]
+    type[Enum]
         A new Enum class with the specified name and fields.
     """
     return Enum(name, fields)
@@ -145,8 +204,7 @@ SplitTransactionsTableFields = _create_enum(
 
 
 class InvestmentsTableFields(Enum):
-    """
-    Enum defining field names for the investments tracking table.
+    """Enum defining field names for the investments tracking table.
 
     Attributes
     ----------

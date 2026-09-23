@@ -24,12 +24,14 @@ its security model is connection-based:
   the response, but the request still executes. See ``origin_allowed``.
 """
 
+import contextlib
 import hmac
 import ipaddress
 import logging
 import os
 import secrets
-from typing import Iterable, Mapping, Optional, Set
+from collections.abc import Iterable, Mapping
+from typing import Any
 from urllib.parse import urlsplit
 
 logger = logging.getLogger(__name__)
@@ -66,7 +68,7 @@ def _base_user_dir() -> str:
     )
 
 
-def get_api_token() -> Optional[str]:
+def get_api_token() -> str | None:
     """Return the configured API token, or None when remote access is off.
 
     Resolution order: ``FAD_API_TOKEN`` env var, then the
@@ -78,7 +80,7 @@ def get_api_token() -> Optional[str]:
         return env_token
     token_path = os.path.join(_base_user_dir(), API_TOKEN_FILENAME)
     try:
-        with open(token_path, "r", encoding="utf-8") as f:
+        with open(token_path, encoding="utf-8") as f:
             token = f.read().strip()
         return token or None
     except OSError:
@@ -102,20 +104,18 @@ def get_or_create_api_token() -> str:
     fd = os.open(token_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     with os.fdopen(fd, "w", encoding="utf-8") as f:
         f.write(token)
-    try:
+    with contextlib.suppress(OSError):  # e.g. exotic filesystems
         os.chmod(token_path, 0o600)
-    except OSError:  # pragma: no cover - e.g. exotic filesystems
-        pass
     logger.info("Generated new API access token at %s", token_path)
     return token
 
 
-def is_trusted_client(client_host: Optional[str]) -> bool:
+def is_trusted_client(client_host: str | None) -> bool:
     """Return True when the TCP peer is the local machine itself.
 
     Parameters
     ----------
-    client_host : Optional[str]
+    client_host : str or None
         ``request.client.host`` — None for unix-socket connections (local
         by definition), ``"testclient"`` under Starlette's TestClient.
     """
@@ -153,17 +153,17 @@ def is_proxied_request(headers: Mapping[str, str]) -> bool:
     return any(headers.get(name) for name in _PROXY_HEADERS)
 
 
-def build_tailnet_users(env_value: Optional[str] = None) -> Set[str]:
+def build_tailnet_users(env_value: str | None = None) -> set[str]:
     """Build the tailnet-login allowlist from ``TAILNET_ALLOWED_USERS``.
 
     Parameters
     ----------
-    env_value : Optional[str]
+    env_value : str or None
         Comma-separated Tailscale login names (e.g. ``me@example.com``).
 
     Returns
     -------
-    Set[str]
+    set of str
         Lowercased logins; empty when unset, which admits nobody.
     """
     raw = (
@@ -174,18 +174,18 @@ def build_tailnet_users(env_value: Optional[str] = None) -> Set[str]:
     return {entry.strip().lower() for entry in raw.split(",") if entry.strip()}
 
 
-def build_tailnet_ingress_port(env_value: Optional[str] = None) -> Optional[int]:
+def build_tailnet_ingress_port(env_value: str | None = None) -> int | None:
     """Read the loopback port reserved for ``tailscale serve`` traffic.
 
     Parameters
     ----------
-    env_value : Optional[str]
+    env_value : str | None
         Value of ``TAILNET_INGRESS_PORT``; read from the environment when
         None.
 
     Returns
     -------
-    Optional[int]
+    int | None
         The port, or None when unset or malformed — which trusts no
         ``Tailscale-User-Login`` header at all.
     """
@@ -202,7 +202,7 @@ def build_tailnet_ingress_port(env_value: Optional[str] = None) -> Optional[int]
 
 
 def arrived_on_tailnet_ingress(
-    server: Optional[tuple], ingress_port: Optional[int]
+    server: tuple[Any, ...] | None, ingress_port: int | None
 ) -> bool:
     """Return True when a request came in on the ``tailscale serve`` listener.
 
@@ -214,18 +214,23 @@ def arrived_on_tailnet_ingress(
 
     Parameters
     ----------
-    server : Optional[tuple]
+    server : tuple | None
         The ASGI scope's ``server`` — the local ``(host, port)`` the
         connection was accepted on.
-    ingress_port : Optional[int]
+    ingress_port : int | None
         From ``build_tailnet_ingress_port``.
+
+    Returns
+    -------
+    bool
+        Whether the connection was accepted on ``ingress_port``.
     """
     if ingress_port is None or not server or len(server) < 2:
         return False
     return server[1] == ingress_port
 
 
-def tailnet_user_allowed(login: Optional[str], allowed: Iterable[str]) -> bool:
+def tailnet_user_allowed(login: str | None, allowed: Iterable[str]) -> bool:
     """Return True when ``tailscale serve`` vouched for an allowlisted user.
 
     ``tailscale serve`` sets ``Tailscale-User-Login`` to the verified
@@ -236,7 +241,7 @@ def tailnet_user_allowed(login: Optional[str], allowed: Iterable[str]) -> bool:
 
     Parameters
     ----------
-    login : Optional[str]
+    login : str or None
         The ``Tailscale-User-Login`` header value.
     allowed : Iterable[str]
         Lowercased logins from ``build_tailnet_users``.
@@ -244,14 +249,14 @@ def tailnet_user_allowed(login: Optional[str], allowed: Iterable[str]) -> bool:
     return bool(login) and login.strip().lower() in set(allowed)
 
 
-def token_matches(supplied: Optional[str], expected: Optional[str]) -> bool:
+def token_matches(supplied: str | None, expected: str | None) -> bool:
     """Constant-time comparison of a supplied bearer token."""
     if not supplied or not expected:
         return False
     return hmac.compare_digest(supplied.encode(), expected.encode())
 
 
-def extract_bearer_token(authorization_header: Optional[str]) -> Optional[str]:
+def extract_bearer_token(authorization_header: str | None) -> str | None:
     """Pull the token out of an ``Authorization: Bearer <token>`` header."""
     if not authorization_header:
         return None
@@ -261,18 +266,18 @@ def extract_bearer_token(authorization_header: Optional[str]) -> Optional[str]:
     return value.strip() or None
 
 
-def build_allowed_hosts(env_value: Optional[str] = None) -> Set[str]:
+def build_allowed_hosts(env_value: str | None = None) -> set[str]:
     """Build the Host-header allowlist from the ``ALLOWED_HOSTS`` env var.
 
     Parameters
     ----------
-    env_value : Optional[str]
+    env_value : str or None
         Comma-separated extra hostnames/IPs. ``"*"`` disables host
         checking entirely (the set then contains ``"*"``).
 
     Returns
     -------
-    Set[str]
+    set of str
         Lowercased allowed hostnames, always including the localhost
         defaults.
     """
@@ -285,7 +290,7 @@ def build_allowed_hosts(env_value: Optional[str] = None) -> Set[str]:
     return allowed
 
 
-def hostname_from_host_header(host_header: Optional[str]) -> str:
+def hostname_from_host_header(host_header: str | None) -> str:
     """Extract the bare hostname from a ``Host`` header (strip the port).
 
     Handles bracketed IPv6 literals (``[::1]:8000`` → ``[::1]``).
@@ -301,7 +306,7 @@ def hostname_from_host_header(host_header: Optional[str]) -> str:
     return host_header
 
 
-def port_from_host_header(host_header: Optional[str]) -> Optional[int]:
+def port_from_host_header(host_header: str | None) -> int | None:
     """Extract the port from a ``Host`` header, or None when it omits one.
 
     Handles bracketed IPv6 literals (``[::1]:8000`` -> 8000). A malformed
@@ -310,7 +315,7 @@ def port_from_host_header(host_header: Optional[str]) -> Optional[int]:
 
     Parameters
     ----------
-    host_header : Optional[str]
+    host_header : str or None
         The request's ``Host`` header.
 
     Returns
@@ -336,7 +341,7 @@ def port_from_host_header(host_header: Optional[str]) -> Optional[int]:
         return None
 
 
-def host_allowed(host_header: Optional[str], allowed: Iterable[str]) -> bool:
+def host_allowed(host_header: str | None, allowed: Iterable[str]) -> bool:
     """Return True when the request's Host header is on the allowlist."""
     allowed_set = set(allowed)
     if "*" in allowed_set:
@@ -351,8 +356,8 @@ UNSAFE_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
 
 
 def origin_allowed(
-    origin: Optional[str],
-    host_header: Optional[str],
+    origin: str | None,
+    host_header: str | None,
     cors_origins: Iterable[str],
 ) -> bool:
     """Return True when a state-changing request's ``Origin`` is trustworthy.
@@ -367,13 +372,13 @@ def origin_allowed(
 
     Parameters
     ----------
-    origin : Optional[str]
+    origin : str or None
         The request's ``Origin`` header. ``None``/empty means a non-browser
         client (curl, the desktop app, Playwright's request context) and is
         allowed — those cannot be driven by a hostile web page. The literal
         string ``"null"`` (sandboxed iframe, ``file://`` document) is
         rejected, since it is an origin an attacker can arrange.
-    host_header : Optional[str]
+    host_header : str or None
         The request's ``Host`` header, used for the same-origin comparison.
         This is what lets the packaged desktop app work on whatever random
         port it picked at launch without any configuration.
@@ -424,10 +429,7 @@ def origin_allowed(
     host_port = port_from_host_header(host_header)
     if host_port is None:
         host_port = 80
-    if (
+    return (
         origin_hostname == hostname_from_host_header(host_header).strip("[]")
         and origin_port == host_port
-    ):
-        return True
-
-    return False
+    )

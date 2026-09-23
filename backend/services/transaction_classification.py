@@ -1,10 +1,8 @@
 """Shared income/investment/expense classification for transaction frames.
 
 Single source of truth for the category masks described in
-``.claude/rules/kpi_calculations.md``. Previously this logic was duplicated
-across AnalysisService, TransactionsService, and (inline, twice)
-BudgetService — any change to the Liabilities-override rule needed four
-edits and the copies could drift.
+``.claude/rules/kpi_calculations.md``, so the Liabilities-override rule lives
+in one place for every service that classifies transactions.
 
 Classification rules
 --------------------
@@ -41,18 +39,9 @@ EXPENSE_EXCLUDED_CATEGORIES: list[str] = [
     *INCOME_CATEGORY_VALUES,
 ]
 
-# The base non-expense set used when partitioning a frame into
-# expenses/investments/income/liabilities groups (no Credit Cards here —
-# the partition keys on category type, not on CC dedup).
-NON_EXPENSE_BASE_CATEGORIES: list[str] = [
-    INVESTMENTS_CATEGORY,
-    LIABILITIES_CATEGORY,
-    *INCOME_CATEGORY_VALUES,
-]
-
 
 def income_mask(df: pd.DataFrame) -> pd.Series:
-    """Boolean mask of income rows.
+    """Return a boolean mask of income rows.
 
     A row is income if its category is in ``IncomeCategories``, or its
     category is ``Liabilities`` with a positive amount (loan receipt).
@@ -73,7 +62,7 @@ def income_mask(df: pd.DataFrame) -> pd.Series:
 
 
 def investment_mask(df: pd.DataFrame) -> pd.Series:
-    """Boolean mask of investment rows (category is exactly ``Investments``).
+    """Return a boolean mask of investment rows (category is exactly ``Investments``).
 
     Parameters
     ----------
@@ -89,7 +78,7 @@ def investment_mask(df: pd.DataFrame) -> pd.Series:
 
 
 def transactions_masks(df: pd.DataFrame) -> dict[str, pd.Series]:
-    """Income/investments/expenses masks for a transactions frame.
+    """Return the income/investments/expenses masks for a transactions frame.
 
     Parameters
     ----------

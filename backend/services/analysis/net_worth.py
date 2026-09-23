@@ -7,33 +7,37 @@ two-layer Sankey cash-flow data. Mixed into ``AnalysisService`` (see
 ``core.py``).
 """
 
+from typing import Any
+
 import pandas as pd
 
-from backend.utils.dataframe_dates import to_month_series
 from backend.constants.categories import (
-    PRIOR_WEALTH_TAG,
     CREDIT_CARDS,
     IGNORE_CATEGORY,
     INVESTMENTS_CATEGORY,
     LIABILITIES_CATEGORY,
+    PRIOR_WEALTH_TAG,
     IncomeCategories,
 )
 from backend.constants.tables import Tables
+from backend.utils.dataframe_dates import to_month_series
 
 
 class NetWorthMixin:
     """Net-balance, net-worth, and Sankey methods for ``AnalysisService``."""
 
-    def get_net_balance_over_time(self) -> list[dict]:
+    def get_net_balance_over_time(self) -> list[dict[str, Any]]:
         """
         Get monthly net balance and cumulative balance over time.
 
-        Credit card transactions are excluded to avoid double-counting.
-        Cumulative balance is the running total starting from 0.
+        Credit card transactions are excluded to avoid double-counting. The
+        cumulative balance starts from the combined bank, investment and cash
+        prior wealth, shown as an anchor entry one month before the earliest
+        transaction.
 
         Returns
         -------
-        list[dict]
+        list[dict[str, Any]]
             Chronologically sorted list with one entry per month containing:
 
             - ``month`` – period in ``YYYY-MM`` format.
@@ -52,15 +56,15 @@ class NetWorthMixin:
         df["month"] = to_month_series(df["date"])
         cumulative = bank_prior_wealth + investment_prior_wealth + cash_prior_wealth
 
-
-        trend = []
-        trend.append(
+        trend = [
             {
-                "month": (pd.to_datetime(df["date"].min()) - pd.DateOffset(months=1)).strftime("%Y-%m"),
+                "month": (
+                    pd.to_datetime(df["date"].min()) - pd.DateOffset(months=1)
+                ).strftime("%Y-%m"),
                 "net_change": 0.0,
                 "cumulative_balance": round(cumulative, 2),
             }
-        )
+        ]
 
         for month, group in df.groupby("month", sort=True):
             net_change = float(group["amount"].sum())
@@ -76,7 +80,7 @@ class NetWorthMixin:
 
         return trend
 
-    def get_sankey_data(self, exclude_pending_refunds: bool = True) -> dict:
+    def get_sankey_data(self, exclude_pending_refunds: bool = True) -> dict[str, Any]:
         """
         Get data for a two-layer Sankey (flow) diagram.
 
@@ -107,7 +111,7 @@ class NetWorthMixin:
 
         Returns
         -------
-        dict
+        dict[str, Any]
             Dictionary with keys:
 
             - ``nodes`` – list of node names sorted with ``Total Income`` first.
@@ -123,43 +127,41 @@ class NetWorthMixin:
         # Calculate CC gap before filtering out Credit Cards category — and
         # before netting, which would otherwise shrink only the itemized side.
         bank_cc_payments = abs(df[df["category"] == CREDIT_CARDS]["amount"].sum())
-        itemized_cc_total = abs(df[df["source"] == Tables.CREDIT_CARD.value]["amount"].sum())
+        itemized_cc_total = abs(
+            df[df["source"] == Tables.CREDIT_CARD.value]["amount"].sum()
+        )
         cc_gap = bank_cc_payments - itemized_cc_total
 
         df = self._net_matched_refunds(df, exclude_pending_refunds)
 
-        df = df[df['category'] != CREDIT_CARDS]
+        df = df[df["category"] != CREDIT_CARDS]
 
-        # --- Processing ---
         SALARY = IncomeCategories.SALARY.value
         OTHER_INCOME = IncomeCategories.OTHER_INCOME.value
 
         total_income_node = "Total Income"
 
-        # Initialize Aggregates
-        sources = {}  # name -> amount
-        destinations = {}  # name -> amount
-        helpers = {}  # name -> amount
+        sources: dict[str, float] = {}
+        destinations: dict[str, float] = {}
 
         sources[SALARY] = df[df["category"] == SALARY]["amount"].sum()
-        # Split out Prior Wealth from Other Income
         other_income_df = df[df["category"] == OTHER_INCOME]
-        # Note: txn_prior_wealth now comes from cash_balances table instead of synthetic transaction
-        from backend.services.cash_balance_service import CashBalanceService
-        cash_prior_wealth = CashBalanceService(self.db).get_total_prior_wealth()
-        txn_prior_wealth = cash_prior_wealth
-        bank_prior_wealth = self.bank_balance_service.get_total_prior_wealth()
-        investment_prior_wealth = self.investments_service.get_total_prior_wealth()
-        sources[PRIOR_WEALTH_TAG] = txn_prior_wealth + bank_prior_wealth + investment_prior_wealth
+        sources[PRIOR_WEALTH_TAG] = (
+            self.cash_balance_service.get_total_prior_wealth()
+            + self.bank_balance_service.get_total_prior_wealth()
+            + self.investments_service.get_total_prior_wealth()
+        )
         sources[OTHER_INCOME] = other_income_df[
             other_income_df["tag"] != PRIOR_WEALTH_TAG
         ]["amount"].sum()
-        sources["Loans"] = df[(df["category"] == LIABILITIES_CATEGORY) & (df["amount"] > 0)][
-            "amount"
-        ].sum()
+        sources["Loans"] = df[
+            (df["category"] == LIABILITIES_CATEGORY) & (df["amount"] > 0)
+        ]["amount"].sum()
 
         destinations["Paid Debt"] = abs(
-            df[(df["category"] == LIABILITIES_CATEGORY) & (df["amount"] < 0)]["amount"].sum()
+            df[(df["category"] == LIABILITIES_CATEGORY) & (df["amount"] < 0)][
+                "amount"
+            ].sum()
         )
 
         # Ignore covers internal transfers and CC bill summaries. Its two legs
@@ -183,20 +185,18 @@ class NetWorthMixin:
         if cc_gap > 0:
             destinations["Unknown"] = cc_gap
 
-        # TODO: we need to account for payments and allocations from filtered out data to correctly calculate it
-        helpers["Debt To Be Paid"] = df[(df["category"] == LIABILITIES_CATEGORY)]["amount"].sum()
         net = sum(sources.values()) - sum(destinations.values())
         if net < 0:
             sources["Wealth Deficit"] = abs(net)
         else:
             destinations["Wealth Growth"] = net
 
-        # --- Calculate Flows ---
         nodes: list[str] = []
         node_idx: dict[str, int] = {}
-        links: list[dict] = []
+        links: list[dict[str, Any]] = []
 
-        def get_node_idx(name) -> int:
+        def get_node_idx(name: str) -> int:
+            """Return ``name``'s node index, registering it on first sight."""
             idx = node_idx.get(name)
             if idx is None:
                 idx = len(nodes)
@@ -204,7 +204,7 @@ class NetWorthMixin:
                 node_idx[name] = idx
             return idx
 
-        # Layer 1: Sources (income) -> grouped sources (salary, debt, wealth deficit)
+        # Layer 1: income sources -> Total Income.
         for name, val in sources.items():
             links.append(
                 {
@@ -215,7 +215,7 @@ class NetWorthMixin:
                 }
             )
 
-        # Layer 2: Total Budget -> Destinations
+        # Layer 2: Total Income -> destinations.
         for name, val in destinations.items():
             links.append(
                 {
@@ -232,7 +232,7 @@ class NetWorthMixin:
             "links": links,
         }
 
-    def get_net_worth_over_time(self) -> list[dict]:
+    def get_net_worth_over_time(self) -> list[dict[str, Any]]:
         """
         Get monthly net worth (bank balance + investment value + cash) over time.
 
@@ -247,7 +247,7 @@ class NetWorthMixin:
 
         Returns
         -------
-        list[dict]
+        list[dict[str, Any]]
             List of monthly snapshots (anchor + one per month in range) with keys:
 
             - ``month`` – period in ``YYYY-MM`` format.
@@ -281,19 +281,22 @@ class NetWorthMixin:
         bank_df = df[~cash_mask]
 
         # --- Prior-wealth anchor point (1 month before earliest data) ---
-        anchor_month = (pd.to_datetime(months[0] + "-01") - pd.DateOffset(months=1)).strftime("%Y-%m")
+        anchor_month = (
+            pd.to_datetime(months[0] + "-01") - pd.DateOffset(months=1)
+        ).strftime("%Y-%m")
 
-        result = [{
-            "month": anchor_month,
-            "bank_balance": round(prior_wealth_total, 2),
-            "investment_value": 0.0,
-            "cash": round(cash_prior_wealth, 2),
-            "net_worth": round(prior_wealth_total + cash_prior_wealth, 2),
-        }]
+        result = [
+            {
+                "month": anchor_month,
+                "bank_balance": round(prior_wealth_total, 2),
+                "investment_value": 0.0,
+                "cash": round(cash_prior_wealth, 2),
+                "net_worth": round(prior_wealth_total + cash_prior_wealth, 2),
+            }
+        ]
 
         # Value the portfolio at every month end in a single pass rather than
-        # one snapshot/transaction database walk per month (the old per-month
-        # call re-fetched every investment and its snapshots for each month).
+        # re-fetching every investment and its snapshots once per month.
         month_ends = {
             month: (pd.to_datetime(month + "-01") + pd.offsets.MonthEnd(0))
             for month in months
@@ -312,16 +315,23 @@ class NetWorthMixin:
 
             inv_value = inv_values[month_end_str]
 
-            cash_balance = cash_prior_wealth + float(
-                cash_df.loc[cash_df["date_parsed"] <= month_end, "amount"].sum()
-            ) if not cash_df.empty else cash_prior_wealth
+            cash_balance = (
+                cash_prior_wealth
+                + float(
+                    cash_df.loc[cash_df["date_parsed"] <= month_end, "amount"].sum()
+                )
+                if not cash_df.empty
+                else cash_prior_wealth
+            )
 
-            result.append({
-                "month": month,
-                "bank_balance": round(bank_balance, 2),
-                "investment_value": round(inv_value, 2),
-                "cash": round(cash_balance, 2),
-                "net_worth": round(bank_balance + inv_value + cash_balance, 2),
-            })
+            result.append(
+                {
+                    "month": month,
+                    "bank_balance": round(bank_balance, 2),
+                    "investment_value": round(inv_value, 2),
+                    "cash": round(cash_balance, 2),
+                    "net_worth": round(bank_balance + inv_value + cash_balance, 2),
+                }
+            )
 
         return result

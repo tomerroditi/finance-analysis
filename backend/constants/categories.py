@@ -1,5 +1,6 @@
-from enum import Enum
+"""Category and tag names with special meaning to the app."""
 
+from enum import Enum
 
 PRIOR_WEALTH_TAG = "Prior Wealth"
 CREDIT_CARDS = "Credit Cards"
@@ -19,9 +20,7 @@ PROTECTED_CATEGORIES = [
 
 
 class IncomeCategories(Enum):
-    """
-    Enum defining categories that are considered income.
-    """
+    """Categories that count as income."""
 
     SALARY = "Salary"
     OTHER_INCOME = "Other Income"

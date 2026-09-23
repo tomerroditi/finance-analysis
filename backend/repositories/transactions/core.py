@@ -9,15 +9,17 @@ view, with scraped-data ingestion (``ingestion.py``) and split handling
 
 import logging
 from datetime import datetime
-from typing import Optional
+from typing import Any, ClassVar
 
 import pandas as pd
-from sqlalchemy import exists, func, or_, select
+from sqlalchemy import exists, func, or_, select, update
 from sqlalchemy.orm import Session
 
-from backend.models.transaction import SplitTransaction
 from backend.constants.providers import Services
-from backend.constants.tables import Tables, TransactionsTableFields
+from backend.constants.tables import SERVICE_TO_TABLE, Tables, TransactionsTableFields
+from backend.errors import EntityNotFoundException, ValidationException
+from backend.models.transaction import SplitTransaction, TransactionBase
+from backend.repositories._sql import chunked, orm_to_dict
 from backend.repositories.split_transactions_repository import (
     SplitTransactionsRepository,
 )
@@ -40,11 +42,9 @@ logger = logging.getLogger(__name__)
 
 
 class TransactionsRepository(IngestionMixin, SplitsMixin):
-    """
-    Main repository aggregating all transaction types.
-    """
+    """Main repository aggregating all transaction types."""
 
-    tables = [
+    tables: ClassVar[list[str]] = [
         Tables.CREDIT_CARD.value,
         Tables.BANK.value,
         Tables.CASH.value,
@@ -52,19 +52,22 @@ class TransactionsRepository(IngestionMixin, SplitsMixin):
         Tables.INSURANCE.value,
     ]
 
-    unique_columns = ["id", "provider", "date", "amount"]
+    unique_columns: ClassVar[list[str]] = ["id", "provider", "date", "amount"]
 
     UNCATEGORIZED_VALUES = ("", "Uncategorized")
 
     # Services excluded from aggregate cashflow calculations (CC double-counts
     # bank debits; insurance deposits are not regular expenses).
-    _CASHFLOW_EXCLUDED = [Tables.CREDIT_CARD.value, Tables.INSURANCE.value]
+    _CASHFLOW_EXCLUDED: ClassVar[list[str]] = [
+        Tables.CREDIT_CARD.value,
+        Tables.INSURANCE.value,
+    ]
 
     # Services excluded from itemized category breakdowns (insurance deposits
     # are not regular expenses, but CC items are kept for per-category detail).
-    _ITEMIZED_EXCLUDED = [Tables.INSURANCE.value]
+    _ITEMIZED_EXCLUDED: ClassVar[list[str]] = [Tables.INSURANCE.value]
 
-    def __init__(self, db: Session):
+    def __init__(self, db: Session) -> None:
         """Initialize the repository with sub-repositories for each transaction type.
 
         Parameters
@@ -86,18 +89,24 @@ class TransactionsRepository(IngestionMixin, SplitsMixin):
         self.insurance_repo = InsuranceRepository(db)
         self.split_repo = SplitTransactionsRepository(db)
 
-        self.repo_map = {
-            Tables.CREDIT_CARD.value: self.cc_repo,
-            Tables.BANK.value: self.bank_repo,
-            Tables.CASH.value: self.cash_repo,
-            Tables.MANUAL_INVESTMENT_TRANSACTIONS.value: self.manual_investments_repo,
-            Tables.INSURANCE.value: self.insurance_repo,
-            Services.CREDIT_CARD.value: self.cc_repo,
-            Services.BANK.value: self.bank_repo,
-            Services.CASH.value: self.cash_repo,
-            Services.MANUAL_INVESTMENTS.value: self.manual_investments_repo,
-            Services.INSURANCE.value: self.insurance_repo,
+        by_table = {repo.table: repo for repo in self._all_repos()}
+        self.repo_map: dict[str, ServiceRepository] = {
+            **by_table,
+            **{service: by_table[table] for service, table in SERVICE_TO_TABLE.items()},
         }
+
+    def _non_insurance_repos(self) -> list[ServiceRepository]:
+        """Return the four sub-repositories behind the merged non-insurance view."""
+        return [
+            self.cc_repo,
+            self.bank_repo,
+            self.cash_repo,
+            self.manual_investments_repo,
+        ]
+
+    def _all_repos(self) -> list[ServiceRepository]:
+        """Return all five transaction sub-repositories."""
+        return [*self._non_insurance_repos(), self.insurance_repo]
 
     def add_transaction(
         self,
@@ -120,19 +129,18 @@ class TransactionsRepository(IngestionMixin, SplitsMixin):
 
         Raises
         ------
-        ValueError
+        ValidationException
             If ``service`` is not ``"cash"`` or ``"manual_investments"``.
         """
         if service == Services.CASH.value:
             return self.cash_repo.add_transaction(transaction)
-        elif service == Services.MANUAL_INVESTMENTS.value:
+        if service == Services.MANUAL_INVESTMENTS.value:
             return self.manual_investments_repo.add_transaction(transaction)
-        else:
-            raise ValueError(
-                f"service must be 'cash' or 'manual_investments'. Got '{service}'"
-            )
+        raise ValidationException(
+            f"service must be 'cash' or 'manual_investments'. Got '{service}'"
+        )
 
-    def get_cashflow_transactions(self, **kwargs) -> pd.DataFrame:
+    def get_cashflow_transactions(self, **kwargs: Any) -> pd.DataFrame:
         """Get transactions for aggregate totals (income, expenses, balances).
 
         Excludes credit card items (already captured as bank CC bill payments)
@@ -150,7 +158,7 @@ class TransactionsRepository(IngestionMixin, SplitsMixin):
         """
         return self.get_table(exclude_services=self._CASHFLOW_EXCLUDED, **kwargs)
 
-    def get_itemized_transactions(self, **kwargs) -> pd.DataFrame:
+    def get_itemized_transactions(self, **kwargs: Any) -> pd.DataFrame:
         """Get transactions for category breakdowns with itemized CC detail.
 
         Keeps credit card items for per-category analysis but excludes
@@ -247,13 +255,13 @@ class TransactionsRepository(IngestionMixin, SplitsMixin):
 
         Raises
         ------
-        ValueError
+        ValidationException
             If ``service`` does not match any registered source.
         """
         if service is not None:
             repo = self.get_repo_by_source(service)
             if repo is None:
-                raise ValueError(f"Unknown service '{service}'")
+                raise ValidationException(f"Unknown service '{service}'")
             return repo.get_table()
 
         excluded_repos = {
@@ -262,24 +270,13 @@ class TransactionsRepository(IngestionMixin, SplitsMixin):
             if (repo := self.get_repo_by_source(s)) is not None
         }
 
-        all_repos = [
-            self.cc_repo,
-            self.bank_repo,
-            self.cash_repo,
-            self.manual_investments_repo,
-            self.insurance_repo,
-        ]
         dfs = [
-            repo.get_table()
-            for repo in all_repos
-            if repo not in excluded_repos
+            repo.get_table() for repo in self._all_repos() if repo not in excluded_repos
         ]
         dfs = [df for df in dfs if not df.empty]
 
         if not dfs:
-            return pd.DataFrame(
-                columns=[f.value for f in TransactionsTableFields]
-            )
+            return pd.DataFrame(columns=[f.value for f in TransactionsTableFields])
 
         return pd.concat(dfs, ignore_index=True)
 
@@ -327,26 +324,149 @@ class TransactionsRepository(IngestionMixin, SplitsMixin):
         """
         return self.repo_map.get(source)
 
-    def bulk_update_tagging(
-        self, transactions: list[dict], category: Optional[str], tag: Optional[str]
-    ) -> None:
-        """Update category and tag for a batch of transactions.
+    def get_record(self, source: str, unique_id: int) -> TransactionBase | None:
+        """Return one transaction's ORM row from its source table.
 
         Parameters
         ----------
-        transactions : list[dict]
-            Each dict must have keys ``"source"`` (table name) and
-            ``"unique_id"`` identifying the transaction to update.
-        category : str | None
-            New category to assign (None clears the field).
-        tag : str | None
-            New tag to assign (None clears the field).
+        source : str
+            Table or service name the transaction lives in.
+        unique_id : int
+            The transaction's per-table ``unique_id``.
+
+        Returns
+        -------
+        TransactionBase or None
+            The row, or ``None`` when ``source`` is unknown or no row has
+            that ``unique_id`` in it.
         """
-        for tx in transactions:
-            repo = self.get_repo_by_source(tx["source"])
-            if repo is None:
-                raise ValueError(f"Invalid source: '{tx['source']}'")
-            repo.update_tagging_by_unique_id(tx["unique_id"], category, tag)
+        repo = self.get_repo_by_source(source)
+        if repo is None:
+            return None
+        return self.db.execute(
+            select(repo.model).where(repo.model.unique_id == unique_id)
+        ).scalar_one_or_none()
+
+    def get_records(self, source: str, unique_ids: list[int]) -> list[TransactionBase]:
+        """Return the ORM rows of many transactions from one source table.
+
+        Parameters
+        ----------
+        source : str
+            Table or service name the transactions live in.
+        unique_ids : list[int]
+            Per-table ``unique_id`` values; queried in ``IN`` chunks.
+
+        Returns
+        -------
+        list[TransactionBase]
+            The rows that exist; empty when ``source`` is unknown.
+        """
+        repo = self.get_repo_by_source(source)
+        if repo is None:
+            return []
+        rows: list[TransactionBase] = []
+        for chunk in chunked(unique_ids):
+            rows.extend(
+                self.db.execute(
+                    select(repo.model).where(repo.model.unique_id.in_(chunk))
+                )
+                .scalars()
+                .all()
+            )
+        return rows
+
+    def get_split_with_parent(
+        self, split_id: int
+    ) -> tuple[SplitTransaction, TransactionBase | None] | None:
+        """Return a split slice together with the transaction it was cut from.
+
+        Parameters
+        ----------
+        split_id : int
+            Primary key of the ``split_transactions`` row.
+
+        Returns
+        -------
+        tuple[SplitTransaction, TransactionBase or None] or None
+            ``None`` when the slice does not exist; otherwise the slice and its
+            parent row, the latter ``None`` when the slice's source is unknown
+            or its parent is gone.
+        """
+        split = self.split_repo.get_split(split_id)
+        if split is None:
+            return None
+        return split, self.get_record(split.source, split.transaction_id)
+
+    def get_account_names(self, source: str, unique_ids: list[int]) -> list[str | None]:
+        """Return the ``account_name`` of each existing transaction in a batch.
+
+        Parameters
+        ----------
+        source : str
+            Table or service name the transactions live in.
+        unique_ids : list[int]
+            Per-table ``unique_id`` values; queried in ``IN`` chunks.
+
+        Returns
+        -------
+        list[str or None]
+            One entry per matched row (unordered, may repeat).
+
+        Raises
+        ------
+        ValidationException
+            If ``source`` is not a known table/service name.
+        """
+        repo = self._require_repo(source)
+        names: list[str | None] = []
+        for chunk in chunked(unique_ids):
+            names.extend(
+                self.db.execute(
+                    select(repo.model.account_name).where(
+                        repo.model.unique_id.in_(chunk)
+                    )
+                )
+                .scalars()
+                .all()
+            )
+        return names
+
+    def bulk_update_fields(
+        self, source: str, unique_ids: list[int], values: dict[str, Any]
+    ) -> None:
+        """Write the same field values to many transactions in one commit.
+
+        Parameters
+        ----------
+        source : str
+            Table or service name the transactions live in.
+        unique_ids : list[int]
+            Per-table ``unique_id`` values; ids that do not exist are simply
+            not matched. Updated in ``IN`` chunks.
+        values : dict[str, Any]
+            Column name to new value.
+
+        Raises
+        ------
+        ValidationException
+            If ``source`` is not a known table/service name.
+        """
+        repo = self._require_repo(source)
+        for chunk in chunked(unique_ids):
+            self.db.execute(
+                update(repo.model)
+                .where(repo.model.unique_id.in_(chunk))
+                .values(**values)
+            )
+        self.db.commit()
+
+    def _require_repo(self, source: str) -> ServiceRepository:
+        """Return the sub-repository for ``source`` or raise ``ValidationException``."""
+        repo = self.get_repo_by_source(source)
+        if repo is None:
+            raise ValidationException(f"Invalid source: '{source}'")
+        return repo
 
     def get_latest_date_from_table(self, table_name: str) -> datetime | None:
         """Get the most recent transaction date in a given table.
@@ -366,39 +486,12 @@ class TransactionsRepository(IngestionMixin, SplitsMixin):
         result = self.db.execute(
             select(repo.model.date).order_by(repo.model.date.desc()).limit(1)
         ).scalar()
-
-        if result is not None:
-            try:
-                return datetime.strptime(result, "%Y-%m-%d")
-            except ValueError:
-                return None
-        return None
-
-    def get_earliest_date_from_table(self, table_name: str) -> datetime | None:
-        """Get the earliest transaction date in a given table.
-
-        Parameters
-        ----------
-        table_name : str
-            Source table name to query.
-
-        Returns
-        -------
-        datetime | None
-            Earliest transaction date parsed from ``YYYY-MM-DD``, or None if
-            the table is empty or the date cannot be parsed.
-        """
-        repo = self.get_repo_by_source(table_name)
-        result = self.db.execute(
-            select(repo.model.date).order_by(repo.model.date.asc()).limit(1)
-        ).scalar()
-
-        if result is not None:
-            try:
-                return datetime.strptime(result, "%Y-%m-%d")
-            except ValueError:
-                return None
-        return None
+        if result is None:
+            return None
+        try:
+            return datetime.strptime(result, "%Y-%m-%d")
+        except ValueError:
+            return None
 
     def get_all_table_names(self) -> list[str]:
         """Return the list of all transaction table names.
@@ -433,12 +526,7 @@ class TransactionsRepository(IngestionMixin, SplitsMixin):
             Number of uncategorized transactions in the merged view.
         """
         total = 0
-        for repo in [
-            self.cc_repo,
-            self.bank_repo,
-            self.cash_repo,
-            self.manual_investments_repo,
-        ]:
+        for repo in self._non_insurance_repos():
             model = repo.model
             stmt = (
                 select(func.count())
@@ -502,12 +590,7 @@ class TransactionsRepository(IngestionMixin, SplitsMixin):
             if current is None or date_value > current:
                 last_used[category] = date_value
 
-        for repo in [
-            self.cc_repo,
-            self.bank_repo,
-            self.cash_repo,
-            self.manual_investments_repo,
-        ]:
+        for repo in self._non_insurance_repos():
             model = repo.model
 
             direct_stmt = (
@@ -550,11 +633,8 @@ class TransactionsRepository(IngestionMixin, SplitsMixin):
         Delegates to all five sub-repositories (credit card, bank, cash,
         manual investments, insurance).
         """
-        self.cc_repo.nullify_category_and_tag(category, tag)
-        self.bank_repo.nullify_category_and_tag(category, tag)
-        self.cash_repo.nullify_category_and_tag(category, tag)
-        self.manual_investments_repo.nullify_category_and_tag(category, tag)
-        self.insurance_repo.nullify_category_and_tag(category, tag)
+        for repo in self._all_repos():
+            repo.nullify_category_and_tag(category, tag)
 
     def update_category_for_tag(
         self, old_category: str, new_category: str, tag: str
@@ -574,13 +654,8 @@ class TransactionsRepository(IngestionMixin, SplitsMixin):
         -----
         Delegates to all five sub-repositories.
         """
-        self.cc_repo.update_category_for_tag(old_category, new_category, tag)
-        self.bank_repo.update_category_for_tag(old_category, new_category, tag)
-        self.cash_repo.update_category_for_tag(old_category, new_category, tag)
-        self.manual_investments_repo.update_category_for_tag(
-            old_category, new_category, tag
-        )
-        self.insurance_repo.update_category_for_tag(old_category, new_category, tag)
+        for repo in self._all_repos():
+            repo.update_category_for_tag(old_category, new_category, tag)
 
     def nullify_category(self, category: str) -> None:
         """Set category and tag to NULL for all transactions in a category.
@@ -594,27 +669,18 @@ class TransactionsRepository(IngestionMixin, SplitsMixin):
         -----
         Delegates to all five sub-repositories.
         """
-        self.cc_repo.nullify_category(category)
-        self.bank_repo.nullify_category(category)
-        self.cash_repo.nullify_category(category)
-        self.manual_investments_repo.nullify_category(category)
-        self.insurance_repo.nullify_category(category)
+        for repo in self._all_repos():
+            repo.nullify_category(category)
 
     def rename_category(self, old_name: str, new_name: str) -> None:
         """Rename category across all transaction tables."""
-        self.cc_repo.rename_category(old_name, new_name)
-        self.bank_repo.rename_category(old_name, new_name)
-        self.cash_repo.rename_category(old_name, new_name)
-        self.manual_investments_repo.rename_category(old_name, new_name)
-        self.insurance_repo.rename_category(old_name, new_name)
+        for repo in self._all_repos():
+            repo.rename_category(old_name, new_name)
 
     def rename_tag(self, category: str, old_tag: str, new_tag: str) -> None:
         """Rename tag across all transaction tables."""
-        self.cc_repo.rename_tag(category, old_tag, new_tag)
-        self.bank_repo.rename_tag(category, old_tag, new_tag)
-        self.cash_repo.rename_tag(category, old_tag, new_tag)
-        self.manual_investments_repo.rename_tag(category, old_tag, new_tag)
-        self.insurance_repo.rename_tag(category, old_tag, new_tag)
+        for repo in self._all_repos():
+            repo.rename_tag(category, old_tag, new_tag)
 
     def get_transaction_by_id(self, transaction_id: int, source: str) -> pd.Series:
         """Retrieve a single transaction row by its per-table unique_id.
@@ -639,20 +705,18 @@ class TransactionsRepository(IngestionMixin, SplitsMixin):
 
         Raises
         ------
-        ValueError
+        EntityNotFoundException
             If ``source`` is not a known table/service name, or no
             transaction with that unique_id exists in it.
         """
         repo = self.repo_map.get(source)
         if repo is None:
-            raise ValueError(f"Invalid source: {source}")
+            raise EntityNotFoundException(f"Invalid source: {source}")
         record = self.db.get(repo.model, int(transaction_id))
         if record is None:
-            raise ValueError(
+            raise EntityNotFoundException(
                 f"Transaction with ID {transaction_id} not found in {source}."
             )
-        row = {
-            k: v for k, v in record.__dict__.items() if k != "_sa_instance_state"
-        }
+        row = orm_to_dict(record)
         row["source"] = repo.model.__tablename__
         return pd.Series(row)

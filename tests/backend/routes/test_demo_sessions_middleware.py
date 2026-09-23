@@ -1,6 +1,6 @@
 """Tests for routing requests into per-visitor demo sandboxes.
 
-The middleware in ``backend.main`` hands a request to
+The middleware in ``backend.middleware.demo`` hands a request to
 ``demo_sessions.serve_in_session`` only when sandboxes are enabled, the
 request is in demo mode, and the ``X-FAD-Demo-Session`` header is
 well-formed. These tests pin that gate and the persist-after-write contract

@@ -1,5 +1,4 @@
-"""
-Demo database preparation helpers.
+"""Demo database preparation and lifecycle helpers.
 
 Both the ``/api/testing/demo/prepare`` / ``/api/testing/demo/reset`` routes
 and the Vercel serverless entrypoint (``index.py``) need to copy the frozen
@@ -14,17 +13,17 @@ ended up with budget rules pinned to ``DEMO_REFERENCE_DATE``.
 
 from __future__ import annotations
 
+import contextlib
 import os
 import shutil
 from datetime import date, timedelta
 
 from sqlalchemy import inspect, text
-from sqlalchemy.engine import Engine
+from sqlalchemy.engine import Connection, Engine
 
 from backend import database
 from backend.config import AppConfig
 from backend.models import Base
-
 
 # Reference date used when generating ``backend/resources/demo_data.db``.
 # Every date column in that file is anchored to this point; on copy we apply
@@ -34,9 +33,7 @@ DEMO_REFERENCE_DATE = date(2026, 2, 25)
 
 def _source_db_path() -> str:
     """Resolve the path to the frozen demo DB shipped in the repo."""
-    return os.path.join(
-        os.path.dirname(__file__), "resources", "demo_data.db"
-    )
+    return os.path.join(os.path.dirname(__file__), "resources", "demo_data.db")
 
 
 #: Columns removed from a model that the frozen demo snapshot may still carry.
@@ -179,7 +176,9 @@ _TXN_TABLES = {
 }
 
 
-def _resolve_override_txn_date(conn, source_type: str, source_id: int, source_table: str):
+def _resolve_override_txn_date(
+    conn: Connection, source_type: str, source_id: int, source_table: str
+) -> str | None:
     """Return the original ISO date of the transaction an override points at.
 
     Returns ``None`` if it cannot be resolved (unknown table, missing row).
@@ -209,7 +208,7 @@ def _resolve_override_txn_date(conn, source_type: str, source_id: int, source_ta
     return None
 
 
-def _shift_budget_month_overrides(conn, offset_days: int) -> None:
+def _shift_budget_month_overrides(conn: Connection, offset_days: int) -> None:
     """Re-anchor each budget month override to its (shifted) transaction's month.
 
     Call this *before* the transaction date columns are shifted — it relies on
@@ -234,9 +233,7 @@ def _shift_budget_month_overrides(conn, offset_days: int) -> None:
         if not txn_date:
             continue
         orig_txn = date.fromisoformat(txn_date[:10])
-        direction = (oy * 12 + (om - 1)) - (
-            orig_txn.year * 12 + (orig_txn.month - 1)
-        )
+        direction = (oy * 12 + (om - 1)) - (orig_txn.year * 12 + (orig_txn.month - 1))
         new_txn = orig_txn + timedelta(days=offset_days)
         new_index = (new_txn.year * 12 + (new_txn.month - 1)) + direction
         new_year, new_month0 = divmod(new_index, 12)
@@ -270,9 +267,7 @@ def _shift_dates(engine: Engine, offset_days: int) -> None:
     if offset_days == 0:
         return
 
-    offset_str = (
-        f"+{offset_days} days" if offset_days > 0 else f"{offset_days} days"
-    )
+    offset_str = f"+{offset_days} days" if offset_days > 0 else f"{offset_days} days"
     shifted_reference = DEMO_REFERENCE_DATE + timedelta(days=offset_days)
     year_offset = shifted_reference.year - DEMO_REFERENCE_DATE.year
     month_offset = year_offset * 12 + (
@@ -305,9 +300,7 @@ def _shift_dates(engine: Engine, offset_days: int) -> None:
         # Order avoids UNIQUE collisions on (investment_id, date) snapshots.
         order = "DESC" if offset_days > 0 else "ASC"
         snapshot_ids = conn.execute(
-            text(
-                f"SELECT id FROM investment_balance_snapshots ORDER BY date {order}"
-            )
+            text(f"SELECT id FROM investment_balance_snapshots ORDER BY date {order}")
         ).fetchall()
         for (sid,) in snapshot_ids:
             conn.execute(
@@ -386,8 +379,7 @@ def _shift_dates(engine: Engine, offset_days: int) -> None:
         for column in ("start_month", "closed_month"):
             months = conn.execute(
                 text(
-                    f"SELECT id, {column} FROM savings_goals "
-                    f"WHERE {column} IS NOT NULL"
+                    f"SELECT id, {column} FROM savings_goals WHERE {column} IS NOT NULL"
                 )
             ).fetchall()
             for goal_id, value in months:
@@ -398,9 +390,7 @@ def _shift_dates(engine: Engine, offset_days: int) -> None:
                 except (TypeError, ValueError):
                     continue
                 conn.execute(
-                    text(
-                        f"UPDATE savings_goals SET {column} = :value WHERE id = :id"
-                    ),
+                    text(f"UPDATE savings_goals SET {column} = :value WHERE id = :id"),
                     {"value": f"{year:04d}-{month:02d}", "id": goal_id},
                 )
 
@@ -424,6 +414,11 @@ def _shift_dates(engine: Engine, offset_days: int) -> None:
         conn.commit()
 
 
+def sqlite_sidecar_paths(db_path: str) -> list[str]:
+    """Return the SQLite journal files that must be removed with ``db_path``."""
+    return [f"{db_path}-journal", f"{db_path}-wal", f"{db_path}-shm"]
+
+
 def _install_snapshot(source: str, destination: str) -> None:
     """Put the frozen snapshot in place without tearing it under live readers.
 
@@ -445,11 +440,9 @@ def _install_snapshot(source: str, destination: str) -> None:
     """
     staging = f"{destination}.incoming"
     shutil.copy2(source, staging)
-    for sidecar in (f"{destination}-journal", f"{destination}-wal", f"{destination}-shm"):
-        try:
+    for sidecar in sqlite_sidecar_paths(destination):
+        with contextlib.suppress(FileNotFoundError):
             os.remove(sidecar)
-        except FileNotFoundError:
-            pass
     os.replace(staging, destination)
 
 
@@ -469,13 +462,9 @@ def prepare_demo_database() -> None:
     # demo DB file with the frozen snapshot — if it ever resolved
     # get_db_path()/get_engine() while the ambient context was real mode, it
     # would copy demo data straight over the user's real data.db, a total
-    # loss with no undo. Demo mode is now per-request/context-local rather
-    # than a single global toggle, which makes that mistake easier for a
-    # future caller to make than it used to be, so this must not rely on
-    # the caller having pinned it first. Existing callers
-    # (backend/routes/testing.py, index.py) already pin demo mode before
-    # calling this — that is intentional defense in depth, not redundant
-    # dead code, and stays as-is.
+    # loss with no undo. Demo mode is context-local, so this must not rely
+    # on the caller having pinned it first; the callers that already do
+    # (build_demo_database below, index.py) are defense in depth.
     token = config.set_demo_mode(True)
     try:
         demo_db_path = config.get_db_path()
@@ -495,5 +484,69 @@ def prepare_demo_database() -> None:
 
         offset_days = (date.today() - DEMO_REFERENCE_DATE).days
         _shift_dates(engine, offset_days)
+    finally:
+        config.reset_demo_mode(token)
+
+
+def demo_database_exists() -> bool:
+    """Return ``True`` when the demo database file is already on disk.
+
+    Returns
+    -------
+    bool
+        Whether the demo-mode database path exists.
+    """
+    config = AppConfig()
+    token = config.set_demo_mode(True)
+    try:
+        return os.path.exists(config.get_db_path())
+    finally:
+        config.reset_demo_mode(token)
+
+
+def sync_demo_schema() -> None:
+    """Bring an existing demo database up to the current schema.
+
+    Startup migrations only ever run against the database the process opened
+    — the real one — and ``/demo/prepare`` deliberately does not rebuild a
+    demo DB that is already on disk. Without this, a demo database built by an
+    older version keeps that version's schema forever, and every read of a
+    table or column added since answers 500. Creating what is missing is
+    additive and leaves the demo data alone, so it is safe on every prepare.
+    """
+    config = AppConfig()
+    token = config.set_demo_mode(True)
+    try:
+        engine = database.get_engine()
+        Base.metadata.create_all(bind=engine)
+        sync_missing_columns(engine)
+    finally:
+        config.reset_demo_mode(token)
+
+
+def build_demo_database() -> None:
+    """Copy the frozen snapshot into place and seed demo credentials.
+
+    Forces demo context for its own duration rather than trusting the
+    caller's header, so the snapshot can never be copied over the real
+    database.
+    """
+    # Imported here, not at module level: credentials_service pulls in
+    # keyring, which the Vercel runtime does not ship, and this module is
+    # imported by index.py and backend.demo_sessions on every cold start.
+    from backend.services.credentials_service import CredentialsService
+    from backend.services.tagging_service import CategoriesTagsService
+
+    config = AppConfig()
+    token = config.set_demo_mode(True)
+    try:
+        database.reset_engines()
+        CredentialsService.clear_cache()
+        CategoriesTagsService.clear_cache()
+
+        prepare_demo_database()
+
+        with database.get_db_context() as demo_db:
+            CredentialsService(demo_db).seed_demo_credentials()
     finally:
         config.reset_demo_mode(token)

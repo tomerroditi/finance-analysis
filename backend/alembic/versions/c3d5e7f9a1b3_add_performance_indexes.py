@@ -5,17 +5,17 @@ Revises: b2c4d6e8f0a1
 Create Date: 2026-06-01 12:00:00.000000
 
 """
-from typing import Sequence, Union
 
-from alembic import op
+from collections.abc import Sequence
+
 import sqlalchemy as sa
-
+from alembic import op
 
 # revision identifiers, used by Alembic.
-revision: str = 'c3d5e7f9a1b3'
-down_revision: Union[str, Sequence[str], None] = 'b2c4d6e8f0a1'
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+revision: str = "c3d5e7f9a1b3"
+down_revision: str | Sequence[str] | None = "b2c4d6e8f0a1"
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
 
 
 # Transaction tables sharing the same index layout (date, source,
@@ -28,9 +28,12 @@ _TRANSACTION_TABLES = (
     "insurance_transactions",
 )
 
-# (index_name, table_name, [columns]) for every index this migration owns,
-# ordered so creation is safe; downgrade drops them in reverse.
+
 def _index_specs() -> list[tuple[str, str, list[str]]]:
+    """Return ``(index_name, table_name, columns)`` for every index this migration owns.
+
+    Ordered so creation is safe; downgrade drops them in reverse.
+    """
     specs: list[tuple[str, str, list[str]]] = []
     for table in _TRANSACTION_TABLES:
         specs.append((f"ix_{table}_date", table, ["date"]))

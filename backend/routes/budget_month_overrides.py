@@ -5,7 +5,7 @@ Endpoints for reassigning a transaction to an adjacent month in the monthly
 budget view without changing its real transaction date.
 """
 
-from typing import Literal
+from typing import Any, Literal
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
@@ -31,7 +31,7 @@ class SetMonthOverrideRequest(BaseModel):
 def set_month_override(
     request: SetMonthOverrideRequest,
     db: Session = Depends(get_database),
-):
+) -> dict[str, Any]:
     """Reassign a transaction to an adjacent month for the monthly budget."""
     service = BudgetMonthOverrideService(db)
     return service.set_override(
@@ -44,7 +44,7 @@ def set_month_override(
 
 
 @router.get("/")
-def get_month_overrides(db: Session = Depends(get_database)):
+def get_month_overrides(db: Session = Depends(get_database)) -> list[dict[str, Any]]:
     """Get all budget month overrides."""
     service = BudgetMonthOverrideService(db)
     return service.get_all()
@@ -54,7 +54,7 @@ def get_month_overrides(db: Session = Depends(get_database)):
 def delete_month_override(
     override_id: int,
     db: Session = Depends(get_database),
-):
+) -> dict[str, str]:
     """Remove a budget month override (transaction reverts to its real month)."""
     service = BudgetMonthOverrideService(db)
     service.remove_override(override_id)

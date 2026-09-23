@@ -62,10 +62,6 @@ class TestAppConfig:
                 "get_categories_path", "FAD_CATEGORIES_PATH",
                 "categories.yaml", "categories.yaml", id="categories",
             ),
-            pytest.param(
-                "get_categories_icons_path", "FAD_CATEGORIES_ICONS_PATH",
-                "categories_icons.yaml", "categories_icons.yaml", id="categories_icons",
-            ),
         ],
     )
     def test_path_resolution(

@@ -3,6 +3,12 @@
 import pytest
 from unittest.mock import patch, MagicMock
 
+from backend.errors import (
+    EntityNotFoundException,
+    ForbiddenException,
+    ValidationException,
+)
+
 
 class TestTransactionsRoutes:
     """Tests for transaction API endpoints."""
@@ -337,31 +343,33 @@ class TestTransactionsRoutesErrors:
         ],
         ids=["create", "update", "split", "revert-split", "bulk-tag", "legacy-tag"],
     )
-    def test_service_value_error_returns_400(
+    def test_service_validation_error_returns_400(
         self, test_client, service_method, http_method, url, body
     ):
-        """Verify a ValueError from the service maps to 400 with its message."""
+        """Verify a ValidationException from the service maps to 400 with its message."""
         with patch("backend.routes.transactions.TransactionsService") as mock_cls:
             mock_svc = MagicMock()
             mock_cls.return_value = mock_svc
-            getattr(mock_svc, service_method).side_effect = ValueError("Bad input")
+            getattr(mock_svc, service_method).side_effect = ValidationException(
+                "Bad input"
+            )
             kwargs = {"json": body} if body is not None else {}
             response = getattr(test_client, http_method)(url, **kwargs)
             assert response.status_code == 400
             assert "Bad input" in response.json()["detail"]
 
-    def test_create_transaction_runtime_error(self, test_client):
+    def test_create_transaction_runtime_error(self, test_client_no_raise):
         """Verify a RuntimeError 500s without echoing the exception text.
 
         The message can carry SQL fragments, file paths, or credential
-        values, so the response body stays opaque and the detail goes to
-        the server log instead.
+        values, so the global handler keeps the response body opaque and
+        the detail goes to the server log instead.
         """
         with patch("backend.routes.transactions.TransactionsService") as mock_cls:
             mock_svc = MagicMock()
             mock_cls.return_value = mock_svc
             mock_svc.create_transaction.side_effect = RuntimeError("DB write failed")
-            response = test_client.post(
+            response = test_client_no_raise.post(
                 "/api/transactions/",
                 json={
                     "date": "2024-01-01",
@@ -374,6 +382,24 @@ class TestTransactionsRoutesErrors:
             assert response.status_code == 500
             assert response.json()["detail"] == "Internal server error"
             assert "DB write failed" not in response.text
+
+    def test_internal_value_error_is_not_a_400(self, test_client_no_raise):
+        """Verify a bare ValueError from the service is an opaque 500, not a 400.
+
+        Routes no longer translate ``ValueError``: an internal (e.g. pandas)
+        ``ValueError`` is a server bug, and echoing its text as a 400 would
+        both misreport it and leak its message.
+        """
+        with patch("backend.routes.transactions.TransactionsService") as mock_cls:
+            mock_svc = MagicMock()
+            mock_cls.return_value = mock_svc
+            mock_svc.update_transaction.side_effect = ValueError("secret detail")
+            response = test_client_no_raise.put(
+                "/api/transactions/1",
+                json={"category": "Food", "source": "credit_card_transactions"},
+            )
+        assert response.status_code == 500
+        assert "secret detail" not in response.text
 
     # -- PUT /{unique_id} error path --
 
@@ -396,11 +422,11 @@ class TestTransactionsRoutesErrors:
     # -- DELETE /{unique_id} error paths --
 
     def test_delete_transaction_permission_error(self, test_client):
-        """Verify 403 when delete_transaction raises PermissionError."""
+        """Verify 403 when delete_transaction raises ForbiddenException."""
         with patch("backend.routes.transactions.TransactionsService") as mock_cls:
             mock_svc = MagicMock()
             mock_cls.return_value = mock_svc
-            mock_svc.delete_transaction.side_effect = PermissionError(
+            mock_svc.delete_transaction.side_effect = ForbiddenException(
                 "Cannot delete scraped transactions"
             )
             response = test_client.delete(
@@ -409,12 +435,12 @@ class TestTransactionsRoutesErrors:
             assert response.status_code == 403
             assert "Cannot delete" in response.json()["detail"]
 
-    def test_delete_transaction_value_error(self, test_client):
-        """Verify 404 when delete_transaction raises ValueError."""
+    def test_delete_transaction_not_found(self, test_client):
+        """Verify 404 when delete_transaction raises EntityNotFoundException."""
         with patch("backend.routes.transactions.TransactionsService") as mock_cls:
             mock_svc = MagicMock()
             mock_cls.return_value = mock_svc
-            mock_svc.delete_transaction.side_effect = ValueError(
+            mock_svc.delete_transaction.side_effect = EntityNotFoundException(
                 "Transaction not found"
             )
             response = test_client.delete(

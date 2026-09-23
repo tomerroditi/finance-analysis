@@ -2,7 +2,7 @@
 
 import pytest
 
-from backend.services.budget_service import (
+from backend.services.budget import (
     BudgetOverviewService,
     MonthlyBudgetService,
     ProjectBudgetService,

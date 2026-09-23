@@ -78,27 +78,6 @@ class TestCredentialsService:
         assert cc_password == "secret123"
         assert bank_password == "secret123"
 
-    def test_get_available_data_sources(self, mock_repo):
-        """Verify data sources list format: 'service - provider - account'."""
-        service = CredentialsService(MagicMock())
-        sources = service.get_available_data_sources()
-
-        assert len(sources) == 2
-        assert "credit_cards - isracard - Account 1" in sources
-        assert "banks - hapoalim - Main Account" in sources
-
-    def test_get_data_sources_credentials_filters(self, mock_repo):
-        """Verify filtering credentials by selected data sources."""
-        service = CredentialsService(MagicMock())
-        filtered = service.get_data_sources_credentials(
-            ["credit_cards - isracard - Account 1"]
-        )
-
-        assert "credit_cards" in filtered
-        assert "isracard" in filtered["credit_cards"]
-        assert "Account 1" in filtered["credit_cards"]["isracard"]
-        assert "banks" not in filtered
-
     def test_get_safe_credentials_no_passwords(self, mock_repo):
         """Verify safe credentials contain no password fields."""
         service = CredentialsService(MagicMock())
@@ -554,6 +533,12 @@ class TestRemoveData:
         assert res["transactions_deleted"] == 1
         remaining = db_session.query(BankTransaction).all()
         assert [t.account_name for t in remaining] == ["Other"]
+
+    def test_bank_balance_goes_with_the_data(self, db_session, monkeypatch):
+        """The balance row (and its prior wealth) is dropped with the history."""
+        svc, _ = _seed_account(db_session, monkeypatch)
+        svc.delete_credential("banks", "hapoalim", "Main", delete_data=True)
+        assert BankBalanceRepository(db_session).get_by_account("hapoalim", "Main") is None
 
     def test_dependent_records_are_purged(self, db_session, monkeypatch):
         """A pending refund on a deleted transaction does not survive."""

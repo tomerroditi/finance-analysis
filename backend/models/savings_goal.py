@@ -3,7 +3,7 @@
 A savings goal is a **virtual earmark** over money that already sits in the
 user's tracked accounts — it never adds to net worth. Progress is derived, not
 typed: each closed month's realized surplus is distributed across goals by
-priority (see ``backend.services.savings_goal_service``), and the resulting
+priority (see ``backend.services.savings_goals``), and the resulting
 per-month amounts are persisted in ``savings_goal_allocations`` so history stays
 stable when priorities later change.
 
@@ -14,10 +14,10 @@ goal, which consumes that month's surplus before the waterfall runs) or as a
 goal's target).
 """
 
-from sqlalchemy import Column, Integer, Float, String, UniqueConstraint
+from sqlalchemy import Column, Float, Integer, String, UniqueConstraint
 
-from backend.models.base import Base, TimestampMixin
 from backend.constants.tables import Tables
+from backend.models.base import Base, TimestampMixin
 
 #: Goal lifecycle states.
 GOAL_STATUS_ACTIVE = "active"
@@ -88,7 +88,7 @@ class SavingsGoal(Base, TimestampMixin):
     closed_month = Column(String, nullable=True)
     notes = Column(String, nullable=True)
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return (
             f"<SavingsGoal(id={self.id}, name={self.name!r}, "
             f"target={self.target_amount}, priority={self.priority})>"
@@ -135,7 +135,7 @@ class SavingsGoalAllocation(Base, TimestampMixin):
         ),
     )
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return (
             f"<SavingsGoalAllocation(goal_id={self.goal_id}, "
             f"{self.year}-{self.month:02d}, amount={self.amount})>"
@@ -176,12 +176,14 @@ class SavingsGoalLink(Base, TimestampMixin):
     # A transaction belongs to at most one goal, in one role.
     __table_args__ = (
         UniqueConstraint(
-            "source_type", "source_id", "source_table",
+            "source_type",
+            "source_id",
+            "source_table",
             name="uq_savings_goal_link_source",
         ),
     )
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return (
             f"<SavingsGoalLink(goal_id={self.goal_id}, {self.link_type}, "
             f"{self.source_table}#{self.source_id})>"
@@ -224,12 +226,10 @@ class SavingsGoalInvestment(Base, TimestampMixin):
 
     # One earmark per (goal, investment) — re-earmarking updates the amount.
     __table_args__ = (
-        UniqueConstraint(
-            "goal_id", "investment_id", name="uq_savings_goal_investment"
-        ),
+        UniqueConstraint("goal_id", "investment_id", name="uq_savings_goal_investment"),
     )
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return (
             f"<SavingsGoalInvestment(goal_id={self.goal_id}, "
             f"investment_id={self.investment_id}, amount={self.amount})>"

@@ -1,10 +1,13 @@
 """Data access for savings goals: allocations, transaction links, investment earmarks."""
 
+from typing import Any
+
 import pandas as pd
 from sqlalchemy import delete, func, select
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.orm import Session
 
+from backend.errors import EntityNotFoundException
 from backend.models.savings_goal import (
     GOAL_STATUS_ACTIVE,
     SavingsGoal,
@@ -12,6 +15,7 @@ from backend.models.savings_goal import (
     SavingsGoalInvestment,
     SavingsGoalLink,
 )
+from backend.repositories._sql import orm_rows_to_frame
 
 GOAL_COLUMNS = [
     "id",
@@ -31,23 +35,22 @@ GOAL_COLUMNS = [
 
 ALLOCATION_COLUMNS = ["id", "goal_id", "year", "month", "amount", "source"]
 
-LINK_COLUMNS = ["id", "goal_id", "source_type", "source_id", "source_table", "link_type"]
+LINK_COLUMNS = [
+    "id",
+    "goal_id",
+    "source_type",
+    "source_id",
+    "source_table",
+    "link_type",
+]
 
 BACKING_COLUMNS = ["id", "goal_id", "investment_id", "amount"]
-
-
-def _to_frame(records: list, columns: list[str]) -> pd.DataFrame:
-    """Build a DataFrame from ORM rows, preserving column order when empty."""
-    if not records:
-        return pd.DataFrame(columns=columns)
-    df = pd.DataFrame([r.__dict__ for r in records])
-    return df.drop(columns=["_sa_instance_state"], errors="ignore")
 
 
 class SavingsGoalRepository:
     """Repository for ``savings_goals`` CRUD operations."""
 
-    def __init__(self, db: Session):
+    def __init__(self, db: Session) -> None:
         """Initialize the repository.
 
         Parameters
@@ -60,7 +63,7 @@ class SavingsGoalRepository:
     def get_all(self) -> pd.DataFrame:
         """Return all savings goals as a DataFrame (empty with no rows)."""
         records = self.db.execute(select(SavingsGoal)).scalars().all()
-        return _to_frame(records, GOAL_COLUMNS)
+        return orm_rows_to_frame(records, GOAL_COLUMNS)
 
     def get(self, goal_id: int) -> SavingsGoal | None:
         """Return a single goal by id, or None."""
@@ -71,7 +74,7 @@ class SavingsGoalRepository:
         priorities = self.db.execute(select(SavingsGoal.priority)).scalars().all()
         return max(priorities) + 1 if priorities else 0
 
-    def add(self, **fields) -> SavingsGoal:
+    def add(self, **fields: Any) -> SavingsGoal:
         """Insert a new goal and return the persisted row."""
         goal = SavingsGoal(**fields)
         self.db.add(goal)
@@ -79,16 +82,21 @@ class SavingsGoalRepository:
         self.db.refresh(goal)
         return goal
 
-    def update(self, goal_id: int, **fields) -> SavingsGoal:
+    def update(self, goal_id: int, **fields: Any) -> SavingsGoal:
         """Update an existing goal and return it.
 
         ``None`` values are applied rather than skipped, so a caller can clear
         an optional field (a target date, a monthly cap). Callers that only
         want to touch supplied fields should pass ``exclude_unset`` data.
+
+        Raises
+        ------
+        EntityNotFoundException
+            If no goal with ``goal_id`` exists.
         """
         goal = self.db.get(SavingsGoal, goal_id)
         if not goal:
-            raise ValueError(f"No savings goal with id {goal_id}")
+            raise EntityNotFoundException(f"Savings goal {goal_id} not found")
         for key, value in fields.items():
             setattr(goal, key, value)
         self.db.commit()
@@ -101,10 +109,15 @@ class SavingsGoalRepository:
         The investment earmarks have to go too: an orphaned row would keep
         consuming its holding's headroom, so a deleted goal would silently
         block anyone else from ever earmarking that investment again.
+
+        Raises
+        ------
+        EntityNotFoundException
+            If no goal with ``goal_id`` exists.
         """
         goal = self.db.get(SavingsGoal, goal_id)
         if not goal:
-            raise ValueError(f"No savings goal with id {goal_id}")
+            raise EntityNotFoundException(f"Savings goal {goal_id} not found")
         self.db.query(SavingsGoalAllocation).filter(
             SavingsGoalAllocation.goal_id == goal_id
         ).delete()
@@ -126,23 +139,23 @@ class SavingsGoalRepository:
                 goal.priority = position
         self.db.commit()
 
-    # ------------------------------------------------------------------
-    # Allocations
-    # ------------------------------------------------------------------
-
     def get_allocations(self, goal_id: int | None = None) -> pd.DataFrame:
         """Return allocation rows, optionally scoped to a single goal."""
         stmt = select(SavingsGoalAllocation)
         if goal_id is not None:
             stmt = stmt.where(SavingsGoalAllocation.goal_id == goal_id)
-        return _to_frame(self.db.execute(stmt).scalars().all(), ALLOCATION_COLUMNS)
+        return orm_rows_to_frame(
+            self.db.execute(stmt).scalars().all(), ALLOCATION_COLUMNS
+        )
 
     def get_month_allocations(self, year: int, month: int) -> pd.DataFrame:
         """Return every goal's allocation for one calendar month."""
         stmt = select(SavingsGoalAllocation).where(
             SavingsGoalAllocation.year == year, SavingsGoalAllocation.month == month
         )
-        return _to_frame(self.db.execute(stmt).scalars().all(), ALLOCATION_COLUMNS)
+        return orm_rows_to_frame(
+            self.db.execute(stmt).scalars().all(), ALLOCATION_COLUMNS
+        )
 
     def upsert_allocation(
         self, goal_id: int, year: int, month: int, amount: float, source: str
@@ -197,16 +210,12 @@ class SavingsGoalRepository:
                 self.db.delete(row)
         self.db.commit()
 
-    # ------------------------------------------------------------------
-    # Transaction links
-    # ------------------------------------------------------------------
-
     def get_links(self, goal_id: int | None = None) -> pd.DataFrame:
         """Return transaction links, optionally scoped to a single goal."""
         stmt = select(SavingsGoalLink)
         if goal_id is not None:
             stmt = stmt.where(SavingsGoalLink.goal_id == goal_id)
-        return _to_frame(self.db.execute(stmt).scalars().all(), LINK_COLUMNS)
+        return orm_rows_to_frame(self.db.execute(stmt).scalars().all(), LINK_COLUMNS)
 
     def get_link_by_source(
         self, source_type: str, source_id: int, source_table: str
@@ -251,16 +260,12 @@ class SavingsGoalRepository:
         return link
 
     def delete_link(self, link_id: int) -> None:
-        """Delete a transaction link by id."""
+        """Delete a transaction link by id; raise ``EntityNotFoundException`` if missing."""
         link = self.db.get(SavingsGoalLink, link_id)
         if not link:
-            raise ValueError(f"No savings goal link with id {link_id}")
+            raise EntityNotFoundException(f"Savings goal link {link_id} not found")
         self.db.delete(link)
         self.db.commit()
-
-    # ------------------------------------------------------------------
-    # Investment earmarks
-    # ------------------------------------------------------------------
 
     def get_backings(self, goal_id: int | None = None) -> pd.DataFrame:
         """Return investment earmarks, optionally scoped to a single goal.
@@ -271,7 +276,7 @@ class SavingsGoalRepository:
         stmt = select(SavingsGoalInvestment).order_by(SavingsGoalInvestment.id)
         if goal_id is not None:
             stmt = stmt.where(SavingsGoalInvestment.goal_id == goal_id)
-        return _to_frame(self.db.execute(stmt).scalars().all(), BACKING_COLUMNS)
+        return orm_rows_to_frame(self.db.execute(stmt).scalars().all(), BACKING_COLUMNS)
 
     def get_backing(
         self, goal_id: int, investment_id: int
@@ -301,10 +306,12 @@ class SavingsGoalRepository:
         return backing
 
     def delete_backing(self, backing_id: int) -> None:
-        """Delete an investment earmark by id."""
+        """Delete an investment earmark; raise ``EntityNotFoundException`` if missing."""
         backing = self.db.get(SavingsGoalInvestment, backing_id)
         if not backing:
-            raise ValueError(f"No savings goal investment with id {backing_id}")
+            raise EntityNotFoundException(
+                f"Savings goal investment {backing_id} not found"
+            )
         self.db.delete(backing)
         self.db.commit()
 

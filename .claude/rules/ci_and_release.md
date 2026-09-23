@@ -29,7 +29,9 @@ Don't merge them into one workflow.
 
 ## What runs on a PR (`ci.yml`)
 
-- Backend: `poetry run pytest`
+- Backend: `poetry run ruff check backend`, `poetry run ruff format --check backend`,
+  `poetry run pytest` (the ruff pair is also asserted by
+  `tests/backend/unit/test_code_quality.py`, so a local pytest run catches it)
 - Frontend: `npm run lint`, `npm run build` (`tsc -b && vite build`),
   `npm test` (vitest)
 - **E2E: `npx playwright test` sharded 4 ways** (`E2E (Playwright, shard N/4)`),

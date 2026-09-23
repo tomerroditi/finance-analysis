@@ -1,5 +1,7 @@
 """Project budget service — time-unbounded per-category project budgets."""
 
+from typing import Any
+
 import pandas as pd
 
 from backend.constants.budget import (
@@ -60,16 +62,36 @@ class ProjectBudgetService(BudgetService):
 
         Raises
         ------
-        ValueError
+        EntityNotFoundException
             If no rules exist for the given project category.
         """
         rules = self.get_all_rules()
         if not rules.empty:
             rules = rules.loc[rules[CATEGORY] == category]
         if rules.empty:
-            raise ValueError(f"Project {category} not found")
+            raise EntityNotFoundException(f"Project {category} not found")
 
         return rules
+
+    def _require_project(self, category: str) -> None:
+        """Raise when no project budget is named ``category``.
+
+        Deleting an unknown project used to report success and updating one
+        surfaced a raw error as a 500; every other delete in the API 404s on
+        a missing entity.
+
+        Parameters
+        ----------
+        category : str
+            Project (category) name.
+
+        Raises
+        ------
+        EntityNotFoundException
+            If no project budget rules exist for ``category``.
+        """
+        if category not in self.get_all_projects_names():
+            raise EntityNotFoundException(f"Project '{category}' not found")
 
     def create_project(self, category: str, total_budget: float) -> None:
         """
@@ -92,7 +114,7 @@ class ProjectBudgetService(BudgetService):
         ValidationException
             If ``category`` is not a known category, so no rules are written
             for a name that can't be tagged against.
-        ValueError
+        ValidationException
             If ``category`` already has a monthly or yearly budget rule. A
             category can't be in both a project and a monthly/yearly budget.
         """
@@ -101,7 +123,7 @@ class ProjectBudgetService(BudgetService):
                 f"A project for the '{category}' category already exists."
             )
         if self.category_used_by_monthly_or_yearly(category):
-            raise ValueError(
+            raise ValidationException(
                 f"The '{category}' category is already used by a monthly or "
                 f"yearly budget. A category can't be in both a project and a "
                 f"monthly/yearly budget."
@@ -136,7 +158,15 @@ class ProjectBudgetService(BudgetService):
             Project category name.
         total_budget : float
             New overall spending limit for the project.
+
+        Raises
+        ------
+        EntityNotFoundException
+            If no project with ``category`` exists.
+        ValidationException
+            If ``total_budget`` fails rule validation.
         """
+        self._require_project(category)
         rules = self.get_rules_for_project(category)
         total_rule = rules.loc[rules[TAGS].apply(self._is_all_tags)]
         if total_rule.empty:
@@ -154,21 +184,14 @@ class ProjectBudgetService(BudgetService):
         ----------
         category : str
             Project category name whose rules should be deleted.
+
+        Raises
+        ------
+        EntityNotFoundException
+            If no project with ``category`` exists.
         """
+        self._require_project(category)
         self.budget_repository.delete_by_category(category)
-
-    def delete_project_tag_rule(self, category: str, tag: str) -> None:
-        """
-        Delete a specific tag rule from a project.
-
-        Parameters
-        ----------
-        category : str
-            Project category name.
-        tag : str
-            Tag whose budget rule should be deleted.
-        """
-        self.budget_repository.delete_by_category_and_tags(category, tag)
 
     def set_project_closed(self, category: str, closed: bool) -> None:
         """Mark a project as closed (finished) or reopen it.
@@ -190,8 +213,7 @@ class ProjectBudgetService(BudgetService):
         EntityNotFoundException
             If no project budget rules exist for ``category``.
         """
-        if category not in self.get_all_projects_names():
-            raise EntityNotFoundException(f"Project '{category}' not found")
+        self._require_project(category)
         self.budget_repository.set_closed_by_category(category, closed)
 
     @staticmethod
@@ -208,15 +230,8 @@ class ProjectBudgetService(BudgetService):
             return False
         return bool(rules[IS_CLOSED].fillna(0).astype(int).max() == 1)
 
-    def is_project_closed(self, category: str) -> bool:
-        """Whether ``category``'s project budget has been closed."""
-        rules = self.get_all_rules()
-        if rules.empty:
-            return False
-        return self._rules_are_closed(rules.loc[rules[CATEGORY] == category])
-
     def get_closed_projects_names(self) -> list[str]:
-        """Names of the project categories that have been closed.
+        """Return the names of the project categories that have been closed.
 
         Returns
         -------
@@ -232,12 +247,12 @@ class ProjectBudgetService(BudgetService):
             if self._rules_are_closed(group)
         ]
 
-    def get_projects_status(self) -> list[dict]:
-        """All projects with their closed flag, in one read.
+    def get_projects_status(self) -> list[dict[str, Any]]:
+        """Return all projects with their closed flag, in one read.
 
         Returns
         -------
-        list[dict]
+        list[dict[str, Any]]
             One ``{"name": str, "closed": bool}`` entry per project, so a
             caller listing projects does not need a second request to tell
             the finished ones apart.
@@ -273,9 +288,7 @@ class ProjectBudgetService(BudgetService):
         all_data = self.transactions_service.get_data_for_analysis(
             include_split_parents
         )
-        rows = all_data.loc[
-            all_data[TransactionsTableFields.CATEGORY.value] == project
-        ]
+        rows = all_data.loc[all_data[TransactionsTableFields.CATEGORY.value] == project]
         # A project envelope reports what the project cost, net of refunds
         # matched to their purchase — the definition the monthly and yearly
         # envelopes and the dashboard already use. The gross amount rides
@@ -326,15 +339,13 @@ class ProjectBudgetService(BudgetService):
             ) - {TOTAL_BUDGET}
         return [
             cat
-            for cat in self.categories_tags_service.get_categories_and_tags(
-                copy=True
-            ).keys()
+            for cat in self.categories_tags_service.get_categories_and_tags(copy=True)
             if cat not in current_projects and cat not in claimed
         ]
 
     def get_project_budget_view(
         self, project: str, include_split_parents: bool = False
-    ) -> dict:
+    ) -> dict[str, Any]:
         """
         Get project details including rules and transactions.
 
@@ -367,7 +378,6 @@ class ProjectBudgetService(BudgetService):
 
         view = []
 
-        # Total Project Rule
         total_rule = pd.DataFrame()
         if not rules.empty:
             total_rule = rules[rules[TAGS].apply(self._is_all_tags)]
@@ -375,49 +385,42 @@ class ProjectBudgetService(BudgetService):
         # Ensure transactions is JSON serializable (handle NaNs)
         transactions_processed = transactions.where(pd.notnull(transactions), None)
 
-        # Exclude split_parent transactions from total calculation
-        if "type" in transactions.columns:
-            non_parent_txns = transactions[transactions["type"] != "split_parent"]
-        else:
-            non_parent_txns = transactions
-        total_spent = non_parent_txns[TransactionsTableFields.AMOUNT.value].sum() * -1
+        total_spent = (
+            self._drop_split_parents(transactions)[
+                TransactionsTableFields.AMOUNT.value
+            ].sum()
+            * -1
+        )
 
         if not total_rule.empty:
             view.append(
                 {
                     "rule": total_rule.iloc[0].to_dict(),
                     "current_amount": total_spent,
-                    "data": restore_gross_amounts(transactions_processed).to_dict(orient="records"),
+                    "data": restore_gross_amounts(transactions_processed).to_dict(
+                        orient="records"
+                    ),
                     "allow_edit": True,
                     "allow_delete": False,
                 }
             )
             rules = rules.drop(total_rule.index)
 
-        # Track transactions that have been matched to a rule
-        matched_txns_indices = set()
+        matched_txns_indices: set[int] = set()
 
-        # Per tag rules
         for _, rule in rules.iterrows():
             tags = rule[TAGS]
-            # Filter transactions for these tags using original DataFrame for calculation
             tag_txns_orig = transactions[
                 transactions[TransactionsTableFields.TAG.value].isin(tags)
             ]
-
-            # Record indices of matched transactions
             matched_txns_indices.update(tag_txns_orig.index)
+            spent = (
+                self._drop_split_parents(tag_txns_orig)[
+                    TransactionsTableFields.AMOUNT.value
+                ].sum()
+                * -1
+            )
 
-            # Exclude split_parent transactions from spent calculation
-            if "type" in tag_txns_orig.columns:
-                tag_txns_for_calc = tag_txns_orig[
-                    tag_txns_orig["type"] != "split_parent"
-                ]
-            else:
-                tag_txns_for_calc = tag_txns_orig
-            spent = tag_txns_for_calc[TransactionsTableFields.AMOUNT.value].sum() * -1
-
-            # Filter processed transactions for display
             tag_txns_display = transactions_processed[
                 transactions_processed[TransactionsTableFields.TAG.value].isin(tags)
             ]
@@ -426,7 +429,9 @@ class ProjectBudgetService(BudgetService):
                 {
                     "rule": rule.to_dict(),
                     "current_amount": spent,
-                    "data": restore_gross_amounts(tag_txns_display).to_dict(orient="records"),
+                    "data": restore_gross_amounts(tag_txns_display).to_dict(
+                        orient="records"
+                    ),
                     "allow_edit": True,
                     "allow_delete": True,
                 }
@@ -438,9 +443,7 @@ class ProjectBudgetService(BudgetService):
         ]
 
         if not unmatched_txns.empty:
-            groups = list(
-                unmatched_txns.groupby(TransactionsTableFields.TAG.value)
-            )
+            groups = list(unmatched_txns.groupby(TransactionsTableFields.TAG.value))
             # Create all missing zero-amount rules first, then re-read the
             # rules table once — instead of a full read after every insert.
             for tag, _group in groups:
@@ -455,12 +458,12 @@ class ProjectBudgetService(BudgetService):
             new_rule_df = self.budget_repository.read_all()
 
             for tag, group in groups:
-                if "type" in group.columns:
-                    group_for_calc = group[group["type"] != "split_parent"]
-                else:
-                    group_for_calc = group
-
-                spent = group_for_calc[TransactionsTableFields.AMOUNT.value].sum() * -1
+                spent = (
+                    self._drop_split_parents(group)[
+                        TransactionsTableFields.AMOUNT.value
+                    ].sum()
+                    * -1
+                )
 
                 group_display = transactions_processed.loc[group.index]
 
@@ -470,10 +473,8 @@ class ProjectBudgetService(BudgetService):
                     & (new_rule_df[NAME] == tag)
                 ]
 
-                rule_dict = {}
                 if not new_rule.empty:
-                    r = new_rule.iloc[0]
-                    rule_dict = r.to_dict()
+                    rule_dict = new_rule.iloc[0].to_dict()
                     if isinstance(rule_dict[TAGS], str):
                         rule_dict[TAGS] = rule_dict[TAGS].split(";")
                 else:
@@ -489,7 +490,9 @@ class ProjectBudgetService(BudgetService):
                     {
                         "rule": rule_dict,
                         "current_amount": spent,
-                        "data": restore_gross_amounts(group_display).to_dict(orient="records"),
+                        "data": restore_gross_amounts(group_display).to_dict(
+                            orient="records"
+                        ),
                         "allow_edit": True,
                         "allow_delete": True,
                     }

@@ -21,7 +21,7 @@ passes them through unchanged and the startup migration
 import json
 import logging
 import threading
-from typing import Dict
+from typing import Any
 
 try:
     from cryptography.fernet import Fernet, InvalidToken
@@ -93,36 +93,36 @@ def get_fernet() -> Fernet:
     return _fernet
 
 
-def encrypt_fields(fields: Dict) -> Dict:
+def encrypt_fields(fields: dict[str, Any]) -> dict[str, str]:
     """Encrypt a credential fields dict into the on-disk envelope format.
 
     Parameters
     ----------
-    fields : Dict
+    fields : dict
         Plaintext credential fields (no passwords — those live in the
         keyring directly).
 
     Returns
     -------
-    Dict
+    dict
         ``{"__encrypted__": "<fernet token>"}`` envelope.
     """
     token = get_fernet().encrypt(json.dumps(fields).encode()).decode()
     return {ENCRYPTED_MARKER: token}
 
 
-def decrypt_fields(stored: Dict) -> Dict:
+def decrypt_fields(stored: dict[str, Any]) -> dict[str, Any]:
     """Decrypt a stored fields dict, passing legacy plaintext rows through.
 
     Parameters
     ----------
-    stored : Dict
+    stored : dict
         The value of the ``fields`` JSON column — either an encryption
         envelope or a legacy plaintext dict.
 
     Returns
     -------
-    Dict
+    dict
         The plaintext credential fields.
 
     Raises
@@ -135,15 +135,15 @@ def decrypt_fields(stored: Dict) -> Dict:
         return dict(stored)
     try:
         return json.loads(get_fernet().decrypt(stored[ENCRYPTED_MARKER].encode()))
-    except InvalidToken:
+    except InvalidToken as exc:
         raise ValidationException(
             "Stored credentials could not be decrypted — the encryption key "
             "in the OS keyring is missing or was replaced. Edit the account "
             "on the Data Sources page and re-enter its details."
-        )
+        ) from exc
 
 
-def is_encrypted(stored: Dict) -> bool:
+def is_encrypted(stored: dict[str, Any]) -> bool:
     """Return True when a stored fields dict is an encryption envelope."""
     return ENCRYPTED_MARKER in stored
 

@@ -18,7 +18,7 @@ def _clear_forced_mode():
 def _isolate_demo_user_dir(tmp_path, monkeypatch) -> None:
     """Point ``FAD_USER_DIR`` at a throwaway directory for this test.
 
-    ``_build_demo_database`` forces real demo context and opens a session
+    ``build_demo_database`` forces real demo context and opens a session
     against whatever path ``AppConfig`` resolves — outside this isolation
     that is the developer's *actual* ``~/.finance-analysis/demo_env``, which
     a test must never touch. ``prepare_demo_database`` is mocked away in
@@ -75,7 +75,7 @@ class TestDemoSchemaSync:
         import sqlalchemy as sa
 
         from backend.constants.tables import Tables
-        from backend.routes.testing import _sync_demo_schema
+        from backend.demo_setup import sync_demo_schema
 
         _isolate_demo_user_dir(tmp_path, monkeypatch)
         config = AppConfig()
@@ -100,7 +100,7 @@ class TestDemoSchemaSync:
                 engine
             ).get_table_names()
 
-            _sync_demo_schema()
+            sync_demo_schema()
 
             engine = get_engine()
             assert Tables.INSIGHT_DISMISSALS.value in sa.inspect(
@@ -125,11 +125,11 @@ class TestDemoPrepare:
         _isolate_demo_user_dir(tmp_path, monkeypatch)
         calls = []
         monkeypatch.setattr(
-            "backend.routes.testing.prepare_demo_database",
+            "backend.demo_setup.prepare_demo_database",
             lambda: calls.append("built"),
         )
         monkeypatch.setattr(
-            "backend.routes.testing._demo_db_exists", lambda: False
+            "backend.routes.testing.demo_database_exists", lambda: False
         )
 
         response = test_client.post("/api/testing/demo/prepare")
@@ -142,11 +142,11 @@ class TestDemoPrepare:
         """Verify a second call does not rebuild and wipe a live demo session."""
         calls = []
         monkeypatch.setattr(
-            "backend.routes.testing.prepare_demo_database",
+            "backend.demo_setup.prepare_demo_database",
             lambda: calls.append("built"),
         )
         monkeypatch.setattr(
-            "backend.routes.testing._demo_db_exists", lambda: True
+            "backend.routes.testing.demo_database_exists", lambda: True
         )
 
         response = test_client.post("/api/testing/demo/prepare")
@@ -160,13 +160,13 @@ class TestDemoPrepare:
         """A demo DB from an older version gains tables added since, keeping its data."""
         calls = []
         monkeypatch.setattr(
-            "backend.routes.testing.prepare_demo_database",
+            "backend.demo_setup.prepare_demo_database",
             lambda: calls.append("built"),
         )
-        monkeypatch.setattr("backend.routes.testing._demo_db_exists", lambda: True)
+        monkeypatch.setattr("backend.routes.testing.demo_database_exists", lambda: True)
         synced = []
         monkeypatch.setattr(
-            "backend.routes.testing._sync_demo_schema", lambda: synced.append("synced")
+            "backend.routes.testing.sync_demo_schema", lambda: synced.append("synced")
         )
 
         response = test_client.post("/api/testing/demo/prepare")
@@ -179,7 +179,7 @@ class TestDemoPrepare:
         """Verify a pinned deployment never rebuilds on a client's request."""
         calls = []
         monkeypatch.setattr(
-            "backend.routes.testing.prepare_demo_database",
+            "backend.demo_setup.prepare_demo_database",
             lambda: calls.append("built"),
         )
         AppConfig._forced_mode = True
@@ -205,7 +205,7 @@ class TestDemoReset:
 
         built = []
         monkeypatch.setattr(
-            "backend.routes.testing.prepare_demo_database",
+            "backend.demo_setup.prepare_demo_database",
             lambda: built.append("built"),
         )
         monkeypatch.setenv(demo_sessions.SESSIONS_ENV, "1")
@@ -253,11 +253,11 @@ class TestDemoReset:
         _isolate_demo_user_dir(tmp_path, monkeypatch)
         calls = []
         monkeypatch.setattr(
-            "backend.routes.testing.prepare_demo_database",
+            "backend.demo_setup.prepare_demo_database",
             lambda: calls.append("built"),
         )
         monkeypatch.setattr(
-            "backend.routes.testing._demo_db_exists", lambda: True
+            "backend.routes.testing.demo_database_exists", lambda: True
         )
 
         response = test_client.post("/api/testing/demo/reset")
@@ -269,7 +269,7 @@ class TestDemoReset:
         """Verify a pinned deployment refuses a client-triggered rebuild."""
         calls = []
         monkeypatch.setattr(
-            "backend.routes.testing.prepare_demo_database",
+            "backend.demo_setup.prepare_demo_database",
             lambda: calls.append("built"),
         )
         AppConfig._forced_mode = True

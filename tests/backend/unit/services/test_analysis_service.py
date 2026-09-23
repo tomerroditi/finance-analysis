@@ -7,9 +7,10 @@ import pytest
 
 from backend.constants.tables import Tables
 from backend.models.transaction import BankTransaction, CreditCardTransaction
-from backend.services.analysis_service import AnalysisService
+from backend.services.analysis import AnalysisService
 from backend.services.pending_refunds_service import PendingRefundsService
 from backend.services.recurring_service import RecurringService
+from backend.services.transaction_classification import income_mask, investment_mask
 
 
 def _months_ago(n: int, day: int = 10) -> str:
@@ -220,7 +221,7 @@ class TestAnalysisServiceNetWorthOverTime:
         up to that month-end. Cash transactions belong in the cash line, not
         bundled into bank_balance.
         """
-        from backend.repositories.transactions_repository import TransactionsRepository
+        from backend.repositories.transactions import TransactionsRepository
 
         repo = TransactionsRepository(db_session)
         bank_only = repo.get_cashflow_transactions()
@@ -267,7 +268,7 @@ class TestAnalysisServiceIncomeExpenses:
         df = service.repo.get_table()
         df = df[df["source"] != "credit_card_transactions"]
 
-        mask = service._get_income_mask(df)
+        mask = income_mask(df)
         income_rows = df[mask]
 
         # Salary rows should be in income
@@ -283,7 +284,7 @@ class TestAnalysisServiceIncomeExpenses:
         df = service.repo.get_table()
         df = df[df["source"] != "credit_card_transactions"]
 
-        mask = service._get_income_mask(df)
+        mask = income_mask(df)
         income_rows = df[mask]
 
         # Other Income rows should be in income
@@ -642,7 +643,7 @@ class TestAnalysisServiceIncomeBySource:
         assert result == []
 
 class TestIncomeMaskPositiveLiabilities:
-    """Tests for _get_income_mask handling of positive liabilities (loan receipts)."""
+    """Tests for income_mask handling of positive liabilities (loan receipts)."""
 
     def test_mixed_liabilities_only_positive_is_income(self, db_session):
         """Verify only positive Liabilities rows are income when mixed with negative."""
@@ -679,7 +680,7 @@ class TestIncomeMaskPositiveLiabilities:
 
         service = AnalysisService(db_session)
         df = service.repo.get_table()
-        mask = service._get_income_mask(df)
+        mask = income_mask(df)
 
         income_rows = df[mask]
         assert len(income_rows) == 1
@@ -687,7 +688,7 @@ class TestIncomeMaskPositiveLiabilities:
 
 
 class TestInvestmentMask:
-    """Tests for _get_investment_mask identifying investment transactions."""
+    """Tests for investment_mask identifying investment transactions."""
 
     def test_non_investment_category_not_classified(self, db_session):
         """Verify non-investment categories are excluded by the investment mask."""
@@ -724,7 +725,7 @@ class TestInvestmentMask:
 
         service = AnalysisService(db_session)
         df = service.repo.get_table()
-        mask = service._get_investment_mask(df)
+        mask = investment_mask(df)
 
         investment_rows = df[mask]
         assert investment_rows.empty
@@ -777,7 +778,7 @@ class TestInvestmentMask:
 
         service = AnalysisService(db_session)
         df = service.repo.get_table()
-        mask = service._get_investment_mask(df)
+        mask = investment_mask(df)
 
         investment_rows = df[mask]
         assert len(investment_rows) == 1
@@ -1020,9 +1021,8 @@ class TestCashFlowForecast:
             "committed_remaining"
         ] == 0.0
 
-        recurring.set_decision(
-            recurring.get_recurring()["items"][0]["normalized"], "confirmed"
-        )
+        key = recurring.get_recurring()["items"][0]["normalized"]
+        recurring.set_decisions([{"normalized": key, "decision": "confirmed"}])
 
         result = AnalysisService(db_session).get_cash_flow_forecast()
         assert result["committed_remaining"] >= 45.0
@@ -2190,9 +2190,8 @@ class TestForecastExpensesUseOneDefinition:
         db_session.commit()
 
         recurring = RecurringService(db_session)
-        recurring.set_decision(
-            recurring.get_recurring()["items"][0]["normalized"], "confirmed"
-        )
+        key = recurring.get_recurring()["items"][0]["normalized"]
+        recurring.set_decisions([{"normalized": key, "decision": "confirmed"}])
 
         result = AnalysisService(db_session).get_cash_flow_forecast()
         projected = result["expected_expenses"] - result["actual_expenses"]

@@ -12,7 +12,7 @@ here is user state: user data lives in `~/.finance-analysis/` (SQLite at
 | File | Purpose | Read by |
 |------|---------|---------|
 | `default_categories.yaml` | Default category → tags hierarchy, seeded on first run | `repositories/tagging_repository.py` |
-| `categories_icons.yaml` | Emoji per category, for UI rendering | `config.py`, `tagging_repository.py`, `routes/tagging.py`, `services/tagging_service.py` |
+| `categories_icons.yaml` | Emoji per category, for UI rendering | `tagging_repository.py`, `routes/tagging.py`, `services/tagging_service.py` |
 | `boi_rates.yaml` | Bank of Israel rate history, seeded into `interest_rates` (series `boi_rate`) | `services/rates_service.py` |
 | `demo_data.db` | Frozen SQLite snapshot backing Demo Mode | `demo_setup.py`, `config.py`, `routes/testing.py` |
 | `test_credentials.yaml` | Fake creds for the dummy 2FA scrapers — no real accounts | `tests/.../test_scraper_base.py` |

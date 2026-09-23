@@ -7,7 +7,7 @@ snapshot generator (daily compounding). Mixed into ``InvestmentsService``
 """
 
 from datetime import date, datetime, timedelta
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -39,7 +39,7 @@ class SnapshotsMixin:
         """
         self.snapshots_repo.upsert_snapshot(investment_id, date, balance, source)
 
-    def get_balance_snapshots(self, investment_id: int) -> List[Dict[str, Any]]:
+    def get_balance_snapshots(self, investment_id: int) -> list[dict[str, Any]]:
         """Get all balance snapshots for an investment.
 
         Parameters
@@ -64,7 +64,7 @@ class SnapshotsMixin:
         df = df.replace({np.nan: None})
         return df.to_dict(orient="records")
 
-    def update_balance_snapshot(self, snapshot_id: int, **fields) -> None:
+    def update_balance_snapshot(self, snapshot_id: int, **fields: Any) -> None:
         """Update a balance snapshot.
 
         Parameters
@@ -89,7 +89,7 @@ class SnapshotsMixin:
     def calculate_fixed_rate_snapshots(
         self,
         investment_id: int,
-        end_date: Optional[str] = None,
+        end_date: str | None = None,
     ) -> None:
         """Generate calculated balance snapshots for a rate-bearing investment.
 
@@ -144,18 +144,17 @@ class SnapshotsMixin:
 
         start = transactions_df["date"].min().date()
         end = (
-            datetime.strptime(end_date, "%Y-%m-%d").date()
-            if end_date
-            else date.today()
+            datetime.strptime(end_date, "%Y-%m-%d").date() if end_date else date.today()
         )
 
         # Piecewise-constant daily-rate curve: [(effective_date, daily_rate)],
         # ascending. Fixed investments get a single step; prime-linked ones
         # get one step per Bank of Israel decision (prime + spread).
         def _daily(annual_pct: float) -> float:
+            """Convert an annual percentage rate to a daily compounding rate."""
             return (1 + annual_pct / 100.0) ** (1 / 365) - 1
 
-        rate_curve: List[tuple] = []
+        rate_curve: list[tuple[date, float]] = []
         if is_prime:
             from backend.services.rates_service import RatesService
 
@@ -176,25 +175,20 @@ class SnapshotsMixin:
                 return
             rate_curve = [(start, _daily(float(flat_rate)))]
 
-        # Build a dict of date -> total transaction amount for that day.
-        # ``date`` is a datetime dtype here (parsed via ``pd.to_datetime`` above),
-        # so ``.dt.date`` yields the same per-row ``date`` objects the prior
-        # ``row["date"].date()`` loop produced. Vectorized groupby replaces the
-        # row-wise iterrows accumulation.
         txn_by_date = (
             transactions_df.groupby(transactions_df["date"].dt.date)["amount"]
             .sum()
             .to_dict()
         )
 
-        # Clear previous calculated snapshots
         self.snapshots_repo.delete_snapshots_for_investment(
             investment_id, source="calculated"
         )
 
-        # Collect dates with manual/scraped snapshots to avoid overwriting
+        # Every snapshot left after the clear is manual/scraped/closed and must
+        # not be overwritten by a calculated one.
         existing_df = self.snapshots_repo.get_snapshots_for_investment(investment_id)
-        protected_dates: set = set()
+        protected_dates: set[str] = set()
         if not existing_df.empty:
             protected_dates = set(existing_df["date"].tolist())
 
@@ -217,11 +211,10 @@ class SnapshotsMixin:
             if current in txn_by_date:
                 balance = max(balance - txn_by_date[current], 0.0)
 
-            # Apply daily interest
             if balance > 0:
                 balance *= 1 + daily_rate
 
-            # Store monthly snapshots (first of month or end date)
+            # Monthly snapshots: first of each month, plus the end date.
             date_str = current.strftime("%Y-%m-%d")
             if (current.day == 1 or current == end) and date_str not in protected_dates:
                 self.snapshots_repo.upsert_snapshot(

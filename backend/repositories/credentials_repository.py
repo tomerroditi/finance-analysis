@@ -10,7 +10,7 @@ All keyring access goes through ``backend.utils.keyring_store``.
 
 import logging
 import os
-from typing import Dict, List, Optional
+from typing import Any
 
 import yaml
 from sqlalchemy import select
@@ -29,8 +29,9 @@ _SENSITIVE_FIELDS = ("password", "otpLongTermToken")
 class CredentialsRepository:
     """Repository for credential storage backed by SQLite + OS Keyring."""
 
-    def __init__(self, db: Session):
-        """
+    def __init__(self, db: Session) -> None:
+        """Initialize the repository.
+
         Parameters
         ----------
         db : Session
@@ -78,7 +79,7 @@ class CredentialsRepository:
         return cred
 
     @staticmethod
-    def _try_decrypt(row: Credential) -> Optional[Dict]:
+    def _try_decrypt(row: Credential) -> dict[str, Any] | None:
         """Decrypt a row's fields, or return None when they cannot be read.
 
         A row becomes unreadable when the field-encryption key in the OS
@@ -113,7 +114,7 @@ class CredentialsRepository:
 
     def get_credentials(
         self, service: str, provider: str, account_name: str
-    ) -> Dict:
+    ) -> dict[str, Any]:
         """Get credentials for an account, merging in keyring password.
 
         Parameters
@@ -127,7 +128,7 @@ class CredentialsRepository:
 
         Returns
         -------
-        Dict
+        dict[str, Any]
             Credential fields dict for the account with the password merged in
             from the OS Keyring. The "password" key is always present; it is an
             empty string if no password has been stored in the keyring.
@@ -147,7 +148,7 @@ class CredentialsRepository:
         service: str,
         provider: str,
         account_name: str,
-        credentials: Dict,
+        credentials: dict[str, Any],
     ) -> None:
         """Persist credentials for an account, routing sensitive fields to the OS Keyring.
 
@@ -159,12 +160,8 @@ class CredentialsRepository:
             Provider name within the service (e.g. "isracard", "hapoalim").
         account_name : str
             Identifier of the account.
-        credentials : Dict
+        credentials : dict[str, Any]
             All credential fields for the account, including the password.
-
-        Returns
-        -------
-        None
 
         Notes
         -----
@@ -246,12 +243,12 @@ class CredentialsRepository:
                 ),
             )
 
-    def list_accounts(self) -> List[Dict[str, str]]:
+    def list_accounts(self) -> list[dict[str, str]]:
         """Get a flat list of all configured accounts.
 
         Returns
         -------
-        List[Dict[str, str]]
+        list[dict[str, str]]
             List of dicts, one per stored credential row, each containing the
             keys: service, provider, and account_name.
         """
@@ -265,12 +262,12 @@ class CredentialsRepository:
             for row in rows
         ]
 
-    def list_account_statuses(self) -> List[Dict]:
+    def list_account_statuses(self) -> list[dict[str, Any]]:
         """List every account with the health of its stored credentials.
 
         Returns
         -------
-        List[Dict]
+        list[dict[str, Any]]
             One dict per credential row with ``service``, ``provider``,
             ``account_name``, ``fields_readable`` (False when the encrypted
             fields cannot be decrypted with the current keyring key) and
@@ -290,12 +287,12 @@ class CredentialsRepository:
             for row in rows
         ]
 
-    def get_all_credentials(self) -> Dict:
+    def get_all_credentials(self) -> dict[str, dict[str, dict[str, dict[str, Any]]]]:
         """Get all credentials as nested dict with keyring passwords filled in.
 
         Returns
         -------
-        Dict
+        dict[str, dict[str, dict[str, dict[str, Any]]]]
             Nested dict in the form
             ``{service: {provider: {account_name: {field: value}}}}``
             for all stored credential rows, with the "password" field for each
@@ -305,7 +302,7 @@ class CredentialsRepository:
             that password key, so the rest of the accounts stay usable.
         """
         rows = self.db.execute(select(Credential)).scalars().all()
-        result: Dict = {}
+        result: dict[str, dict[str, dict[str, dict[str, Any]]]] = {}
         for row in rows:
             result.setdefault(row.service, {}).setdefault(row.provider, {})
             fields = self._try_decrypt(row) or {}
@@ -333,7 +330,7 @@ class CredentialsRepository:
         if not os.path.exists(credentials_path):
             return
 
-        with open(credentials_path, "r") as f:
+        with open(credentials_path) as f:
             all_creds = yaml.safe_load(f) or {}
 
         for service, providers in all_creds.items():
@@ -346,9 +343,7 @@ class CredentialsRepository:
                     if not isinstance(fields, dict):
                         continue
                     clean_fields = {
-                        k: v
-                        for k, v in fields.items()
-                        if k not in _SENSITIVE_FIELDS
+                        k: v for k, v in fields.items() if k not in _SENSITIVE_FIELDS
                     }
                     self.db.add(
                         Credential(

@@ -14,7 +14,7 @@ from backend.errors import EntityNotFoundException, ValidationException
 from backend.models.investment import Investment
 from backend.models.investment_balance_snapshot import InvestmentBalanceSnapshot
 from backend.models.transaction import BankTransaction
-from backend.services.savings_goal_service import SavingsGoalService
+from backend.services.savings_goals import SavingsGoalService
 
 
 def _month_str(offset_back: int) -> str:

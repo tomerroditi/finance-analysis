@@ -20,6 +20,8 @@ router = APIRouter()
 
 
 class UpdateInfoModel(BaseModel):
+    """Update-availability status shared by the cached and forced probes."""
+
     current: str
     latest: str | None = None
     is_outdated: bool = False
@@ -29,19 +31,15 @@ class UpdateInfoModel(BaseModel):
     error: str | None = None
 
 
-def _service() -> UpdateService:
-    return UpdateService()
-
-
 @router.get("/check", response_model=UpdateInfoModel)
 def check_for_update() -> UpdateInfoModel:
     """Return the cached or freshly fetched update status."""
-    info = _service().check(force=False)
+    info = UpdateService().check(force=False)
     return UpdateInfoModel(**info.as_dict())
 
 
 @router.post("/check", response_model=UpdateInfoModel)
 def force_check_for_update() -> UpdateInfoModel:
     """Force a fresh GitHub probe (bypassing the 24h cache)."""
-    info = _service().check(force=True)
+    info = UpdateService().check(force=True)
     return UpdateInfoModel(**info.as_dict())

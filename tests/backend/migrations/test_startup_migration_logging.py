@@ -13,7 +13,7 @@ import pytest
 import sqlalchemy as sa
 from alembic import command
 
-from backend.main import _startup_alembic_config
+from backend.migrations_runner import in_process_alembic_config
 from backend.models import Base
 
 ALEMBIC_INI = Path(__file__).resolve().parents[3] / "alembic.ini"
@@ -40,7 +40,7 @@ class TestStartupMigrationLogging:
         probe = logging.getLogger("backend.startup_logging_probe")
         probe.disabled = False
 
-        command.upgrade(_startup_alembic_config(ALEMBIC_INI), "head")
+        command.upgrade(in_process_alembic_config(ALEMBIC_INI), "head")
 
         assert probe.disabled is False
 
@@ -50,13 +50,13 @@ class TestStartupMigrationLogging:
         sentinel = logging.NullHandler()
         root.addHandler(sentinel)
         try:
-            command.upgrade(_startup_alembic_config(ALEMBIC_INI), "head")
+            command.upgrade(in_process_alembic_config(ALEMBIC_INI), "head")
             assert sentinel in root.handlers
         finally:
             root.removeHandler(sentinel)
 
     def test_config_opts_out_of_file_logging(self):
         """The startup config carries the flag ``env.py`` checks."""
-        config = _startup_alembic_config(ALEMBIC_INI)
+        config = in_process_alembic_config(ALEMBIC_INI)
 
         assert config.attributes["configure_logger"] is False

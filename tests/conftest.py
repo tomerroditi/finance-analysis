@@ -90,7 +90,6 @@ def _isolated_app_config(tmp_path, monkeypatch) -> Generator[str, None, None]:
         "FAD_DB_PATH",
         "FAD_CREDENTIALS_PATH",
         "FAD_CATEGORIES_PATH",
-        "FAD_CATEGORIES_ICONS_PATH",
     ):
         monkeypatch.delenv(var, raising=False)
 

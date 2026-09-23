@@ -30,6 +30,7 @@ import select
 import selectors
 import sys
 import time
+from collections.abc import Iterable
 
 from uvicorn.loops.auto import auto_loop_factory
 
@@ -42,6 +43,8 @@ _WSAENOBUFS = 10055
 _NO_BUFFER_BACKOFF_SECONDS = 0.05
 _CHUNKED_POLL_INTERVAL_SECONDS = 0.01
 _WARNING_INTERVAL_SECONDS = 5.0
+
+_SelectResult = tuple[list[int], list[int], list[int]]
 
 
 def _is_no_buffer_space(exc: OSError) -> bool:
@@ -67,7 +70,13 @@ class ResilientSelectSelector(selectors.SelectSelector):
         super().__init__()
         self._last_warning = float("-inf")
 
-    def _select(self, r, w, _, timeout=None):
+    def _select(
+        self,
+        r: Iterable[int],
+        w: Iterable[int],
+        _: Iterable[int],
+        timeout: float | None = None,
+    ) -> _SelectResult:
         """Wait for readiness like ``select.select``, without killing the loop.
 
         Parameters
@@ -105,20 +114,26 @@ class ResilientSelectSelector(selectors.SelectSelector):
             return [], [], []
 
     @staticmethod
-    def _select_once(r: list, w: list, timeout):
+    def _select_once(
+        r: list[int], w: list[int], timeout: float | None
+    ) -> _SelectResult:
         """One ``select.select`` call, folding the exceptional set into writers."""
         ready_r, ready_w, ready_x = select.select(r, w, w, timeout)
         return ready_r, ready_w + ready_x, []
 
-    def _select_chunked(self, r: list, w: list, timeout):
+    def _select_chunked(
+        self, r: list[int], w: list[int], timeout: float | None
+    ) -> _SelectResult:
         """Poll descriptors in ``FD_SETSIZE`` chunks until one is ready or time runs out."""
         deadline = None if timeout is None else time.monotonic() + timeout
         step = _SELECT_FD_LIMIT
         while True:
-            ready_r: list = []
-            ready_w: list = []
+            ready_r: list[int] = []
+            ready_w: list[int] = []
             for start in range(0, max(len(r), len(w)), step):
-                cr, cw, _ = self._select_once(r[start:start + step], w[start:start + step], 0)
+                cr, cw, _ = self._select_once(
+                    r[start : start + step], w[start : start + step], 0
+                )
                 ready_r += cr
                 ready_w += cw
             if ready_r or ready_w:

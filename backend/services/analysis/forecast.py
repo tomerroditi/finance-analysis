@@ -6,11 +6,14 @@ projection ("This Month" hero) and the monthly-expense trend helper it
 builds on. Mixed into ``AnalysisService`` (see ``core.py``).
 """
 
+from typing import Any
+
 import pandas as pd
 
-from backend.utils.dataframe_dates import to_month_series
 from backend.constants.providers import Services
 from backend.constants.tables import TransactionsTableFields
+from backend.services.transaction_classification import transactions_masks
+from backend.utils.dataframe_dates import to_month_series
 
 
 class ForecastMixin:
@@ -22,7 +25,7 @@ class ForecastMixin:
     #: what it earned before.
     _TREND_MONTHS = 6
 
-    def get_cash_flow_forecast(self) -> dict:
+    def get_cash_flow_forecast(self) -> dict[str, Any]:
         """Forecast the current month's cash flow from what is due plus actuals.
 
         Projects where the month will end by combining what has already
@@ -50,9 +53,9 @@ class ForecastMixin:
         from the last transaction on file: a household that simply did not
         spend for three days leaves exactly the same gap at the end of the
         ledger as an account that stopped syncing three days ago, and only one
-        of those is missing data. What the fresher accounts have already
-        reported inside that window is subtracted, so a card current to the
-        23rd beside a bank current to the 5th is not billed twice.
+        of those is missing data. Each account is projected over its own
+        unsynced days (:meth:`_project_per_account`), so a card current to the
+        23rd beside a bank current to the 5th is two different holes, not one.
 
         Money-in and money-out are measured on their own terms, and the two
         are not interchangeable. ``actual_expenses`` and the trend behind
@@ -160,7 +163,9 @@ class ForecastMixin:
 
         # --- Current bank balance ---
         balances = self.bank_balance_service.get_all_balances()
-        current_bank_balance = float(sum(b["balance"] for b in balances)) if balances else 0.0
+        current_bank_balance = (
+            float(sum(b["balance"] for b in balances)) if balances else 0.0
+        )
 
         # --- Known upcoming recurring charges still due this month ---
         # User-confirmed subscriptions/bills whose next expected charge falls
@@ -197,7 +202,7 @@ class ForecastMixin:
         income_due = recurring.get_income_due_remaining(today=today)
         ie_over_time = self.get_income_expenses_over_time()
         complete_months = [m for m in ie_over_time if m["month"] < month_str]
-        recent = complete_months[-self._TREND_MONTHS:]
+        recent = complete_months[-self._TREND_MONTHS :]
         # Median, not mean: the point of the fallback is to survive the month
         # the household sold a car or married off a child.
         avg_monthly_income = (
@@ -217,7 +222,9 @@ class ForecastMixin:
 
         # --- Bank-balance trajectory, on the account's own terms ---
         cash_out_baseline = (
-            float(pd.Series([m["expenses"] for m in recent]).median()) if recent else 0.0
+            float(pd.Series([m["expenses"] for m in recent]).median())
+            if recent
+            else 0.0
         )
         projected_remaining_cash_out = self._project_per_account(
             cash_out_baseline,
@@ -232,7 +239,9 @@ class ForecastMixin:
             - projected_remaining_cash_out
         )
 
-        safe_to_spend = max(0.0, expected_income - actual_expenses - committed_remaining)
+        safe_to_spend = max(
+            0.0, expected_income - actual_expenses - committed_remaining
+        )
         safe_to_spend_daily = (
             safe_to_spend / days_remaining if days_remaining > 0 else safe_to_spend
         )
@@ -244,7 +253,7 @@ class ForecastMixin:
             if days_remaining > 0
             else 0.0
         )
-        daily = []
+        daily: list[dict[str, Any]] = []
         cumulative = 0.0
         last_actual_balance = month_start_balance
         for d in range(1, days_in_month + 1):
@@ -253,19 +262,25 @@ class ForecastMixin:
                 cumulative += float(per_day_net.get(d, 0.0))
                 bal = month_start_balance + cumulative
                 last_actual_balance = bal
-                daily.append({
-                    "date": date_str,
-                    "actual_balance": round(bal, 2),
-                    # anchor the projected line to today so the two segments join
-                    "projected_balance": round(bal, 2) if d == day_of_month else None,
-                })
+                daily.append(
+                    {
+                        "date": date_str,
+                        "actual_balance": round(bal, 2),
+                        # anchor the projected line to today so the two segments join
+                        "projected_balance": round(bal, 2)
+                        if d == day_of_month
+                        else None,
+                    }
+                )
             else:
                 proj = last_actual_balance + remaining_daily_net * (d - day_of_month)
-                daily.append({
-                    "date": date_str,
-                    "actual_balance": None,
-                    "projected_balance": round(proj, 2),
-                })
+                daily.append(
+                    {
+                        "date": date_str,
+                        "actual_balance": None,
+                        "projected_balance": round(proj, 2),
+                    }
+                )
 
         return {
             "month": month_str,
@@ -298,7 +313,7 @@ class ForecastMixin:
     def _account_sync_edges(
         self, today: pd.Timestamp
     ) -> dict[tuple[str, str], pd.Timestamp]:
-        """How far each account has been synced, keyed by provider + name.
+        """Return how far each account has been synced, keyed by provider + name.
 
         Staleness is **per account**, not per household: accounts are scraped
         on their own schedule, so a card current to yesterday and a bank three
@@ -401,9 +416,7 @@ class ForecastMixin:
         return sum(
             daily
             * share
-            * self._unobserved_days(
-                edges.get(key), today, month_start, days_in_month
-            )
+            * self._unobserved_days(edges.get(key), today, month_start, days_in_month)
             for key, share in shares.items()
         )
 
@@ -414,7 +427,7 @@ class ForecastMixin:
         month_start: pd.Timestamp,
         days_in_month: int,
     ) -> int:
-        """Days of the running month an account has not reported.
+        """Count the days of the running month an account has not reported.
 
         Parameters
         ----------
@@ -442,7 +455,7 @@ class ForecastMixin:
     def _itemized_spend_shares(
         self, month_start: pd.Timestamp
     ) -> dict[tuple[str, str], float]:
-        """Each account's share of budget-basis spend over the trend window.
+        """Return each account's share of budget-basis spend over the trend window.
 
         The same filtered frame ``get_monthly_expenses`` totals, so the split
         and the baseline it splits are measured the same way. Complete months
@@ -461,7 +474,7 @@ class ForecastMixin:
             ``(provider, account_name)`` -> share, summing to 1. Empty when
             there is no history to split.
         """
-        from backend.services.budget_service import MonthlyBudgetService
+        from backend.services.budget import MonthlyBudgetService
 
         return self._spend_shares(
             MonthlyBudgetService(self.db).get_filtered_expenses(
@@ -473,7 +486,7 @@ class ForecastMixin:
     def _cashflow_spend_shares(
         self, month_start: pd.Timestamp
     ) -> dict[tuple[str, str], float]:
-        """Each account's share of bank-basis outflow over the trend window.
+        """Return each account's share of bank-basis outflow over the trend window.
 
         The balance trajectory's own basis, where a card statement is one
         debit on the account that paid it.
@@ -491,7 +504,7 @@ class ForecastMixin:
         df = self.repo.get_cashflow_transactions()
         if df.empty:
             return {}
-        return self._spend_shares(df[self.get_transactions_masks(df)["expenses"]], month_start)
+        return self._spend_shares(df[transactions_masks(df)["expenses"]], month_start)
 
     def _spend_shares(
         self, frame: pd.DataFrame, month_start: pd.Timestamp
@@ -540,7 +553,7 @@ class ForecastMixin:
         exclude_pending_refunds: bool = True,
         include_projects: bool = False,
         net_refunds: bool = False,
-    ) -> dict:
+    ) -> dict[str, Any]:
         """
         Get monthly expense totals and rolling averages, calculated like the monthly budget.
 
@@ -574,10 +587,7 @@ class ForecastMixin:
             - ``avg_6_months`` -- average monthly expenses over the last 6 months.
             - ``avg_12_months`` -- average monthly expenses over the last 12 months.
         """
-        from backend.services.budget_service import (
-            MonthlyBudgetService,
-            ProjectBudgetService,
-        )
+        from backend.services.budget import MonthlyBudgetService
 
         empty_result = {
             "months": [],
@@ -595,7 +605,6 @@ class ForecastMixin:
         if expenses.empty:
             return empty_result
 
-        # Group by month and sum (amounts are negative, multiply by -1)
         expenses = expenses.copy()
         expenses["month"] = to_month_series(
             expenses[TransactionsTableFields.DATE.value]
@@ -608,45 +617,58 @@ class ForecastMixin:
             .sort_index()
         )
 
-        # Optionally compute project expenses per month
         monthly_project: pd.Series | None = None
         if include_projects:
-            project_service = ProjectBudgetService(self.db)
-            project_names = project_service.get_all_projects_names()
+            project_names = (
+                budget_service.budget_repository.read_project_category_names()
+            )
             if project_names:
                 all_data = budget_service.transactions_service.get_data_for_analysis()
                 project_txns = all_data.loc[
-                    (~all_data[TransactionsTableFields.TYPE.value].isin(["split_parent"]))
-                    & all_data[TransactionsTableFields.CATEGORY.value].isin(project_names)
+                    (
+                        ~all_data[TransactionsTableFields.TYPE.value].isin(
+                            ["split_parent"]
+                        )
+                    )
+                    & all_data[TransactionsTableFields.CATEGORY.value].isin(
+                        project_names
+                    )
                 ].copy()
                 if not project_txns.empty:
                     project_txns["month"] = to_month_series(
                         project_txns[TransactionsTableFields.DATE.value]
                     )
                     monthly_project = (
-                        project_txns.groupby("month")[TransactionsTableFields.AMOUNT.value]
+                        project_txns.groupby("month")[
+                            TransactionsTableFields.AMOUNT.value
+                        ]
                         .sum()
                         .mul(-1)
                     )
 
-        # Build months list
-        all_months = sorted(set(monthly.index) | (set(monthly_project.index) if monthly_project is not None else set()))
-        months_list = []
+        all_months = sorted(
+            set(monthly.index)
+            | (set(monthly_project.index) if monthly_project is not None else set())
+        )
+        months_list: list[dict[str, Any]] = []
         for month in all_months:
-            entry: dict = {
+            entry: dict[str, Any] = {
                 "month": month,
                 "expenses": round(float(monthly.get(month, 0.0)), 2),
             }
             if include_projects:
                 entry["project_expenses"] = round(
-                    float(monthly_project.get(month, 0.0)) if monthly_project is not None else 0.0, 2
+                    float(monthly_project.get(month, 0.0))
+                    if monthly_project is not None
+                    else 0.0,
+                    2,
                 )
             months_list.append(entry)
 
-        # Calculate averages relative to current month
         today = pd.Timestamp.today()
 
         def avg_last_n_months(n: int) -> float:
+            """Average spend over the ``n`` complete months before this one."""
             # Complete months only — start at i=1. Including the running month
             # divided a few days of spend by a full month and dragged the
             # trend baseline down (a 3-month average of three 3,000 months

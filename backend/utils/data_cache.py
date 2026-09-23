@@ -41,18 +41,19 @@ from __future__ import annotations
 
 import os
 import threading
-from typing import Any, Callable, Hashable, TypeVar
+from collections.abc import Callable, Hashable
+from typing import Any
 
 from sqlalchemy import event
 from sqlalchemy.orm import Session
 
-T = TypeVar("T")
+_Version = tuple[int, int, int]
 
 #: Bumped on every commit/rollback anywhere in the process.
 _write_counter = 0
 
 #: ``db_path -> (version, {key: value})``. One generation per database.
-_generations: dict[str, tuple[tuple, dict[tuple[Hashable, ...], Any]]] = {}
+_generations: dict[str, tuple[_Version, dict[tuple[Hashable, ...], Any]]] = {}
 
 #: One lock per cache key, so concurrent misses collapse into one
 #: computation (see ``_single_flight_lock``).
@@ -87,7 +88,7 @@ def _db_path(db: Session) -> str:
     return database
 
 
-def _version(path: str) -> tuple:
+def _version(path: str) -> _Version:
     """Build the invalidation token for a database path.
 
     Parameters
@@ -149,7 +150,9 @@ def _single_flight_lock(full_key: tuple[Hashable, ...]) -> threading.Lock:
         return _key_locks.setdefault(full_key, threading.Lock())
 
 
-def _lookup(path: str, version: tuple, key: tuple[Hashable, ...]) -> tuple[bool, Any]:
+def _lookup(
+    path: str, version: _Version, key: tuple[Hashable, ...]
+) -> tuple[bool, Any]:
     """Read one entry, if the stored generation still matches.
 
     Parameters
@@ -175,7 +178,7 @@ def _lookup(path: str, version: tuple, key: tuple[Hashable, ...]) -> tuple[bool,
     return False, None
 
 
-def cached(db: Session, key: tuple[Hashable, ...], compute: Callable[[], T]) -> T:
+def cached[T](db: Session, key: tuple[Hashable, ...], compute: Callable[[], T]) -> T:
     """Return ``compute()``'s result, reusing it across requests when valid.
 
     Parameters
@@ -193,7 +196,7 @@ def cached(db: Session, key: tuple[Hashable, ...], compute: Callable[[], T]) -> 
 
     Returns
     -------
-    Any
+    T
         The cached or freshly computed value. Callers that mutate the result
         must copy it first; nothing is copied on their behalf.
     """

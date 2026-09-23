@@ -1,8 +1,7 @@
 """
 Investments service package.
 
-Decomposed from the former single-module ``backend/services/
-investments_service.py``:
+Modules:
 
 - ``snapshots`` — balance-snapshot CRUD + fixed-rate snapshot generation.
 - ``valuation`` — balance resolution, balance-over-time, profit/loss,
@@ -10,9 +9,6 @@ investments_service.py``:
 - ``insurance_sync`` — Keren Hishtalmut sync from insurance accounts.
 - ``core`` — the public ``InvestmentsService`` class (lifecycle +
   prior-wealth recalc) assembling the mixins.
-
-The old module path remains as a compatibility shim re-exporting
-``InvestmentsService``.
 """
 
 from backend.services.investments.core import InvestmentsService

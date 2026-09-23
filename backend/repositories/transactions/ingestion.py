@@ -11,19 +11,10 @@ import logging
 import pandas as pd
 from sqlalchemy import select
 
-from backend.constants.providers import Services
-from backend.constants.tables import Tables
+from backend.constants.tables import table_aliases
 from backend.models.pending_refund import PendingRefund, RefundLink
 from backend.models.transaction import TransactionBase
-
-# Refund records may store either the table name or the older service name.
-SERVICE_BY_TABLE: dict[str, str] = {
-    Tables.BANK.value: Services.BANK.value,
-    Tables.CREDIT_CARD.value: Services.CREDIT_CARD.value,
-    Tables.CASH.value: Services.CASH.value,
-    Tables.MANUAL_INVESTMENT_TRANSACTIONS.value: Services.MANUAL_INVESTMENTS.value,
-    Tables.INSURANCE.value: Services.INSURANCE.value,
-}
+from backend.repositories.transactions.service_repositories import ServiceRepository
 
 logger = logging.getLogger(__name__)
 
@@ -45,7 +36,7 @@ class IngestionMixin:
             DataFrame of scraped transactions to insert.  Must contain columns:
             id, provider, date, amount plus any other transaction fields.
         table_name : str
-            Target table name; must be one of the four supported tables.
+            Target table name; must be one of the five transaction tables.
         scrape_start_date : str, optional
             Start of the scraped window (``YYYY-MM-DD``). When provided,
             existing ``pending`` rows for the scraped provider/account from
@@ -78,23 +69,25 @@ class IngestionMixin:
 
         carried_tags = self._reconcile_pending_rows(repo, df, scrape_start_date)
 
-        # Using pandas for the merge logic as in original code is robust for the
-        # duplicate check. Read through the session's own connection so the
-        # uncommitted pending-row deletions above are visible — otherwise
-        # re-reported pending rows would be deduped against the rows just
-        # deleted and silently dropped.
+        # Read through the session's own connection so the uncommitted
+        # pending-row deletions above are visible — otherwise re-reported
+        # pending rows would be deduped against the rows just deleted and
+        # silently dropped.
         stmt = select(
             repo.model.id, repo.model.provider, repo.model.date, repo.model.amount
         )
         existing_data = pd.read_sql(stmt, self.db.connection())
 
-        # Make sure columns align for merge
-        df = df.astype({col: str for col in self.unique_columns})
-        existing_data = existing_data.astype({col: str for col in self.unique_columns})
+        # Compare the key columns as strings so DB and scraped dtypes align.
+        df = df.astype(dict.fromkeys(self.unique_columns, str))
+        existing_data = existing_data.astype(dict.fromkeys(self.unique_columns, str))
 
         if carried_tags is not None and not carried_tags.empty:
             df = df.merge(
-                carried_tags, on=self.unique_columns, how="left", suffixes=("", "_carried")
+                carried_tags,
+                on=self.unique_columns,
+                how="left",
+                suffixes=("", "_carried"),
             )
             for col in ("category", "tag"):
                 carried_col = f"{col}_carried"
@@ -116,38 +109,36 @@ class IngestionMixin:
             self.db.commit()
             return
 
-        # Prepare list of model instances
         model_columns = {c.name for c in repo.model.__table__.columns}
         extra_columns = model_columns - TransactionBase.BASE_COLUMN_NAMES
 
-        instances = []
+        instances: list[TransactionBase] = []
         for _, row in new_rows.iterrows():
-            kwargs = dict(
-                id=row["id"],
-                date=row["date"],
-                provider=row["provider"],
-                account_name=row["account_name"],
-                account_number=row.get("account_number"),
-                description=row.get("description"),
-                amount=float(row["amount"]),
-                category=row.get("category"),
-                tag=row.get("tag"),
-                source=row.get("source", repo.table),
-                type=row.get("type", "normal"),
-                status=row.get("status", "completed"),
-            )
+            kwargs = {
+                "id": row["id"],
+                "date": row["date"],
+                "provider": row["provider"],
+                "account_name": row["account_name"],
+                "account_number": row.get("account_number"),
+                "description": row.get("description"),
+                "amount": float(row["amount"]),
+                "category": row.get("category"),
+                "tag": row.get("tag"),
+                "source": row.get("source", repo.table),
+                "type": row.get("type", "normal"),
+                "status": row.get("status", "completed"),
+            }
             for col in extra_columns:
                 if col in row:
                     kwargs[col] = row.get(col)
-            instance = repo.model(**kwargs)
-            instances.append(instance)
+            instances.append(repo.model(**kwargs))
 
         self.db.add_all(instances)
         self.db.commit()
 
     def _reconcile_pending_rows(
         self,
-        repo,
+        repo: ServiceRepository,
         df: pd.DataFrame,
         scrape_start_date: str | None,
     ) -> pd.DataFrame | None:
@@ -158,7 +149,7 @@ class IngestionMixin:
 
         Parameters
         ----------
-        repo
+        repo : ServiceRepository
             Sub-repository whose model/table is being written to.
         df : pd.DataFrame
             Incoming scraped transactions.
@@ -207,17 +198,14 @@ class IngestionMixin:
         #
         # Legacy rows may store the service name ("banks") rather than the
         # table name ("bank_transactions"), so both spellings are accepted.
-        table_aliases = [repo.table]
-        service_alias = SERVICE_BY_TABLE.get(repo.table)
-        if service_alias:
-            table_aliases.append(service_alias)
+        aliases = table_aliases(repo.table)
 
         refund_locked = {
             row[0]
             for row in self.db.execute(
                 select(PendingRefund.source_id).where(
                     PendingRefund.source_type == "transaction",
-                    PendingRefund.source_table.in_(table_aliases),
+                    PendingRefund.source_table.in_(aliases),
                 )
             ).all()
         }
@@ -225,12 +213,12 @@ class IngestionMixin:
             row[0]
             for row in self.db.execute(
                 select(RefundLink.refund_transaction_id).where(
-                    RefundLink.refund_source.in_(table_aliases)
+                    RefundLink.refund_source.in_(aliases)
                 )
             ).all()
         }
 
-        carried = []
+        carried: list[dict[str, str | None]] = []
         for row in stale:
             if row.unique_id in refund_locked:
                 continue

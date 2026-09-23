@@ -35,23 +35,23 @@ the only figure here that adds the three together.
 """
 
 from calendar import monthrange
-from typing import Any, Optional
+from typing import Any
 
 import pandas as pd
 
-from backend.constants.budget import ALL_TAGS, AMOUNT, CATEGORY, NAME, TAGS, TOTAL_BUDGET
+from backend.constants.budget import (
+    AMOUNT,
+    CATEGORY,
+    NAME,
+    TAGS,
+    TOTAL_BUDGET,
+)
 from backend.constants.tables import TransactionsTableFields
 from backend.services.budget.core import BudgetService, _today
 from backend.services.budget.monthly import MonthlyBudgetService
 from backend.services.budget.project import ProjectBudgetService
 from backend.services.budget.yearly import YearlyBudgetService
 from backend.services.recurring_service import RecurringService
-
-
-def _is_all_tags(tags: Optional[list[str]]) -> bool:
-    """Whether a rule's tags are the ``all_tags`` marker rather than real tags."""
-    parsed = list(tags or [])
-    return [str(tag).lower() for tag in parsed] == [ALL_TAGS.lower()]
 
 
 class BudgetOverviewService(BudgetService):
@@ -147,11 +147,15 @@ class BudgetOverviewService(BudgetService):
 
         long_envelopes = self._long_envelopes(year, month, include_split_parents)
         yearly_month_spent = float(
-            sum(e["month_contribution"] for e in long_envelopes if e["kind"] == "yearly")
+            sum(
+                e["month_contribution"] for e in long_envelopes if e["kind"] == "yearly"
+            )
         )
         projects_month_spent = float(
             sum(
-                e["month_contribution"] for e in long_envelopes if e["kind"] == "project"
+                e["month_contribution"]
+                for e in long_envelopes
+                if e["kind"] == "project"
             )
         )
         # The totals above count every envelope, closed ones included — that
@@ -197,7 +201,7 @@ class BudgetOverviewService(BudgetService):
 
     def _monthly_totals(
         self, year: int, month: int, include_split_parents: bool
-    ) -> tuple[float, float, list[dict]]:
+    ) -> tuple[float, float, list[dict[str, Any]]]:
         """Return ``(spent, budget, transactions)`` for the monthly pool.
 
         The Total Budget row already carries the month's monthly-pool
@@ -230,7 +234,7 @@ class BudgetOverviewService(BudgetService):
 
     @staticmethod
     def _split_fixed_variable(
-        month_data: list[dict], recurring: list[dict]
+        month_data: list[dict[str, Any]], recurring: list[dict[str, Any]]
     ) -> tuple[float, float, int]:
         """Split a month's transactions into recurring and day-to-day spend.
 
@@ -265,8 +269,8 @@ class BudgetOverviewService(BudgetService):
 
     @staticmethod
     def _charges_due(
-        recurring: list[dict], year: int, month: int, today_iso: str
-    ) -> list[dict]:
+        recurring: list[dict[str, Any]], year: int, month: int, today_iso: str
+    ) -> list[dict[str, Any]]:
         """List recurring charges expected between today and the month's end.
 
         ``next_expected_date`` is the detector's last sighting plus one period,
@@ -301,8 +305,8 @@ class BudgetOverviewService(BudgetService):
 
     def _long_envelopes(
         self, year: int, month: int, include_split_parents: bool
-    ) -> list[dict]:
-        """Yearly and project envelopes, each with its month share and standing.
+    ) -> list[dict[str, Any]]:
+        """Return yearly and project envelopes, each with its month share and standing.
 
         ``month_contribution`` is scoped to the viewed month; ``spent`` and
         ``budget`` describe the envelope as a whole and therefore always
@@ -315,8 +319,8 @@ class BudgetOverviewService(BudgetService):
 
     def _yearly_envelopes(
         self, year: int, month: int, include_split_parents: bool
-    ) -> list[dict]:
-        """Yearly rules with their year-to-date spend and this month's share.
+    ) -> list[dict[str, Any]]:
+        """Return yearly rules with their year-to-date spend and this month's share.
 
         The month share is taken on the transaction's own date rather than its
         budget month: a month override moves spend between *monthly* envelopes,
@@ -346,7 +350,9 @@ class BudgetOverviewService(BudgetService):
 
         view = yearly.get_yearly_budget_view(year, include_split_parents) or []
         spent_by_name = {
-            (entry.get("rule") or {}).get(NAME): float(entry.get("current_amount") or 0.0)
+            (entry.get("rule") or {}).get(NAME): float(
+                entry.get("current_amount") or 0.0
+            )
             for entry in view
         }
 
@@ -363,15 +369,15 @@ class BudgetOverviewService(BudgetService):
                     "budget": round(float(rule[AMOUNT] or 0.0), 2),
                     # Measured either way; get_overview is what drops the
                     # closed ones, so their spend still reaches the totals.
-                    "closed": yearly._rule_is_closed(rule),
+                    "closed": yearly.rule_is_closed(rule),
                 }
             )
         return envelopes
 
     def _project_envelopes(
         self, year: int, month: int, include_split_parents: bool
-    ) -> list[dict]:
-        """Open projects with their lifetime spend and this month's share.
+    ) -> list[dict[str, Any]]:
+        """Return projects with their lifetime spend and this month's share.
 
         A project has no calendar at all, so ``spent`` is lifetime-to-date by
         definition, never bounded to the viewed month.
@@ -396,17 +402,14 @@ class BudgetOverviewService(BudgetService):
         all_data = projects.transactions_service.get_data_for_analysis(
             include_split_parents
         )
-        if not all_data.empty and "type" in all_data.columns:
-            all_data = all_data[all_data["type"] != "split_parent"]
+        all_data = self._drop_split_parents(all_data)
 
         category = TransactionsTableFields.CATEGORY.value
         envelopes = []
         for name in names:
             budget = self._project_budget(rules[rules[CATEGORY] == name])
             rows = (
-                all_data[all_data[category] == name]
-                if not all_data.empty
-                else all_data
+                all_data[all_data[category] == name] if not all_data.empty else all_data
             )
             envelopes.append(
                 {
@@ -425,7 +428,7 @@ class BudgetOverviewService(BudgetService):
 
     @staticmethod
     def _project_budget(project_rules: pd.DataFrame) -> float:
-        """The total budget for one project, across both rule shapes in the wild.
+        """Return one project's total budget, across both rule shapes in the wild.
 
         ``create_project`` writes an anchor rule tagged ``all_tags`` holding the
         whole budget, with a zero-budget rule per tag beside it — that anchor is
@@ -439,7 +442,7 @@ class BudgetOverviewService(BudgetService):
         """
         if project_rules.empty:
             return 0.0
-        anchor = project_rules[project_rules[TAGS].apply(_is_all_tags)]
+        anchor = project_rules[project_rules[TAGS].apply(BudgetService._is_all_tags)]
         if not anchor.empty:
             return float(anchor.iloc[0][AMOUNT] or 0.0)
         return float(project_rules[AMOUNT].max() or 0.0)
@@ -458,13 +461,13 @@ class BudgetOverviewService(BudgetService):
 
     @staticmethod
     def _rows_for_rule(
-        rows: pd.DataFrame, category: str, tags: Optional[list[str]]
+        rows: pd.DataFrame, category: str, tags: list[str] | None
     ) -> pd.DataFrame:
         """Restrict rows to those a ``(category, tags)`` envelope claims."""
         if rows is None or rows.empty:
             return rows
         matched = rows[rows[TransactionsTableFields.CATEGORY.value] == category]
-        if not _is_all_tags(tags):
+        if not BudgetService._is_all_tags(tags):
             matched = matched[
                 matched[TransactionsTableFields.TAG.value].isin(list(tags or []))
             ]

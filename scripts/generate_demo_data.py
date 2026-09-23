@@ -3199,7 +3199,7 @@ def main():
         # commit because the generator inserts InsuranceAccount rows directly
         # (bypassing the scraper's _post_save_hook that normally triggers this).
         print("  Syncing hishtalmut investments...")
-        from backend.services.investments_service import InvestmentsService
+        from backend.services.investments import InvestmentsService
         synced = InvestmentsService(session).backfill_from_insurance_accounts()
         session.commit()
         print(f"    Synced {synced} hishtalmut policies to investments")

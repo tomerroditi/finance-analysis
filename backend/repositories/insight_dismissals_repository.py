@@ -9,7 +9,7 @@ from backend.models.insight_dismissal import InsightDismissal
 class InsightDismissalsRepository:
     """Read and write the set of dismissed insight keys."""
 
-    def __init__(self, db: Session):
+    def __init__(self, db: Session) -> None:
         """Initialize the repository.
 
         Parameters

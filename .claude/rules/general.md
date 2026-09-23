@@ -60,7 +60,10 @@ every user-visible string in both locale files.
 ```
 backend/       constants/ routes/ services/ repositories/ models/ scraper/
                resources/ (default-category YAML) uninstall/ utils/ alembic/
-               database.py demo_setup.py errors.py main.py
+               middleware/ (security + demo-mode middlewares)
+               main.py (app + lifespan) startup.py router_registry.py
+               exception_handlers.py spa.py runtime.py migrations_runner.py
+               database.py demo_setup.py errors.py
 scraper/       Pure-Python provider framework (Playwright + httpx) — 19 providers
 frontend/src/  components/ pages/ services/ hooks/ stores/ context/ utils/
                locales/ queryClient.ts

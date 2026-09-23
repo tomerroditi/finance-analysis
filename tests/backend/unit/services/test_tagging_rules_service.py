@@ -12,6 +12,7 @@ from backend.errors import BadRequestException, EntityNotFoundException
 from backend.models.category import Category
 from backend.models.tagging_rules import TaggingRule
 from backend.models.transaction import BankTransaction, CreditCardTransaction
+from backend.repositories.tagging_rule_match_repository import build_single_filter
 from backend.services.tagging_rules_service import TaggingRulesService
 
 # Every category/tag pair a rule in this module assigns. Rules may only target
@@ -282,89 +283,13 @@ class TestOperatorSemantics:
     def test_service_field_returns_true(self, service):
         """Verify the 'service' field defers to table selection (matches all)."""
         condition = {"field": "service", "operator": "equals", "value": "bank"}
-        assert service._build_single_filter(condition, CreditCardTransaction) is True
+        assert build_single_filter(condition, CreditCardTransaction) is True
 
     def test_unrecognized_operator_matches_nothing(self, service):
         """An unrecognised operator fails closed instead of matching everything."""
         condition = {"field": "description", "operator": "regex_match", "value": ".*"}
-        assert service._build_single_filter(condition, CreditCardTransaction) is False
+        assert build_single_filter(condition, CreditCardTransaction) is False
         assert service.preview_rule(condition) == []
-
-
-class TestBuildRecursiveFilter:
-    """Tests for _build_recursive_filter handling nested condition trees."""
-
-    @pytest.fixture
-    def service(self, db_session):
-        """Create TaggingRulesService instance."""
-        return TaggingRulesService(db_session)
-
-    def _compile(self, filter_expr):
-        """Compile a SQLAlchemy filter to a readable SQL string."""
-        return str(filter_expr.compile(compile_kwargs={"literal_binds": True}))
-
-    def test_empty_subconditions_matches_nothing(self, service, db_session):
-        """An empty AND/OR group fails closed: it matches no transaction."""
-        _cc(db_session, "e1", "anything")
-        conditions = {"type": "AND", "subconditions": []}
-
-        assert service._build_recursive_filter(conditions, CreditCardTransaction) is False
-        assert service.preview_rule({"type": "OR", "subconditions": []}) == []
-
-    def test_unknown_type_returns_false(self, service):
-        """Verify unknown condition type matches nothing."""
-        result = service._build_recursive_filter({"type": "UNKNOWN"}, CreditCardTransaction)
-
-        assert result is False
-
-    def test_deeply_nested_conditions(self, service):
-        """Verify deeply nested AND(OR(CONDITION, CONDITION), CONDITION) works."""
-        conditions = {
-            "type": "AND",
-            "subconditions": [
-                {
-                    "type": "OR",
-                    "subconditions": [_contains("food"), _contains("grocery")],
-                },
-                _condition("amount", "lt", -20),
-            ],
-        }
-        result = service._build_recursive_filter(conditions, CreditCardTransaction)
-        compiled = self._compile(result)
-
-        assert "AND" in compiled
-        assert "OR" in compiled
-        assert "%food%" in compiled
-        assert "%grocery%" in compiled
-
-
-class TestGetModelColumn:
-    """Tests for _get_model_column mapping field names to ORM columns."""
-
-    @pytest.fixture
-    def service(self, db_session):
-        """Create TaggingRulesService instance."""
-        return TaggingRulesService(db_session)
-
-    @pytest.mark.parametrize(
-        "field, model, expected",
-        [
-            ("description", CreditCardTransaction, "description"),
-            ("amount", CreditCardTransaction, "amount"),
-            ("provider", BankTransaction, "provider"),
-            ("account_name", BankTransaction, "account_name"),
-            ("service", CreditCardTransaction, None),
-        ],
-    )
-    def test_field_maps_to_its_model_column(self, service, field, model, expected):
-        """Each real field maps to the same-named column; ``service`` maps to None.
-
-        ``service`` is a pseudo-field handled by table selection, so it has no
-        column of its own.
-        """
-        col = service._get_model_column(field, model)
-
-        assert (col.key if col is not None else None) == expected
 
 
 class TestPreviewRule:
@@ -1213,7 +1138,7 @@ class TestApplyingRulesRealignsClosedInvestments:
         transfer onto the investment, the zero has to follow it or the closed
         fund is carried below zero in net worth.
         """
-        from backend.services.investments_service import InvestmentsService
+        from backend.services.investments import InvestmentsService
 
         investments = InvestmentsService(db_session)
         stock_fund = seed_investments["investments"][0]

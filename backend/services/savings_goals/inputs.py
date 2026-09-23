@@ -1,0 +1,305 @@
+"""Inputs to the savings-goal allocation engine.
+
+Provides ``InputsMixin``: the goals in waterfall order, the per-month
+realized surplus and goal-linked amounts derived from transactions (the
+*context*), live investment backing, and the free-cash pool that predates
+every goal. Mixed into ``SavingsGoalService`` (see ``core.py``).
+"""
+
+from typing import Any
+
+import pandas as pd
+
+from backend.constants.categories import PRIOR_WEALTH_TAG
+from backend.constants.tables import TransactionsTableFields
+from backend.models.savings_goal import LINK_CONTRIBUTION, SavingsGoal
+from backend.services.bank_balance_service import BankBalanceService
+from backend.services.cash_balance_service import CashBalanceService
+from backend.services.investments import InvestmentsService
+from backend.services.transaction_classification import transactions_masks
+
+# Rows synthesised from prior-wealth balances are opening capital, not income.
+# Counting them would hand one month an enormous phantom surplus.
+_PRIOR_WEALTH_SOURCES = {"bank_balances", "investments"}
+
+# Itemized credit-card rows duplicate the bank-side bill payment, and insurance
+# rows are not cash flow. Same exclusion the cashflow analysis applies.
+_SURPLUS_EXCLUDED_SOURCES = {"credit_card_transactions", "insurance_transactions"}
+
+_ALL_TAGS = "all_tags"
+
+#: ``(source_table, unique_id, split_id)`` — identifies one analysis row.
+_RowKey = tuple[Any, Any, int | None]
+
+
+class InputsMixin:
+    """Context-building and pool-input methods for ``SavingsGoalService``."""
+
+    def _goals_in_order(self) -> list[SavingsGoal]:
+        """Return every goal (active and closed) in waterfall order."""
+        df = self.repo.get_all()
+        if df.empty:
+            return []
+        ids = df.sort_values(["priority", "id"])["id"].tolist()
+        return [self.repo.get(int(i)) for i in ids]
+
+    def _investment_backing(self) -> dict[int, float]:
+        """Value every goal's investment earmarks, as ``{goal_id: amount}``.
+
+        A holding is valued live (``calculate_current_balance``), so an earmark
+        tracks the market and falls to zero the moment the investment is
+        closed — which is exactly what should happen when the user finally
+        sells it and the proceeds show up as cash instead.
+
+        Earmarks against one holding are resolved oldest first: explicit
+        amounts take their share in creation order, and an earmark with no
+        amount claims whatever is left. A holding that loses value therefore
+        shortchanges the most recent claim rather than silently over-earmarking
+        itself.
+
+        Returns
+        -------
+        dict[int, float]
+            Backing per goal. Goals with no earmarks are absent.
+        """
+        if self._backing_cache is not None:
+            return self._backing_cache
+
+        backings = self.repo.get_backings()
+        totals: dict[int, float] = {}
+        if backings.empty:
+            self._backing_cache = totals
+            return totals
+
+        investments = InvestmentsService(self.db)
+        for investment_id, group in backings.groupby("investment_id"):
+            remaining = float(investments.calculate_current_balance(int(investment_id)))
+            explicit = group[group["amount"].notna()]
+            whole = group[group["amount"].isna()]
+            for row in explicit.itertuples(index=False):
+                take = min(float(row.amount), max(0.0, remaining))
+                totals[int(row.goal_id)] = totals.get(int(row.goal_id), 0.0) + take
+                remaining -= take
+            for row in whole.itertuples(index=False):
+                take = max(0.0, remaining)
+                totals[int(row.goal_id)] = totals.get(int(row.goal_id), 0.0) + take
+                remaining = 0.0
+
+        self._backing_cache = totals
+        return totals
+
+    def _opening_free_cash(self) -> float:
+        """Return the liquid money that existed before any transaction was tracked.
+
+        Bank and cash *prior wealth* is exactly that opening balance — each
+        account stores ``current balance - sum(its tracked transactions)`` —
+        so walking the realized surplus forward from here reconstructs the
+        liquid balance, the same way the net-worth chart does. Investment
+        prior wealth is deliberately left out: money sitting in an investment
+        is not free cash, which is also why transfers into one reduce the
+        pool as they happen.
+
+        Returns
+        -------
+        float
+            Combined bank + cash prior wealth, ``0.0`` when neither is set up.
+        """
+        bank = BankBalanceService(self.db).get_total_prior_wealth()
+        cash = CashBalanceService(self.db).get_total_prior_wealth()
+        return float(bank) + float(cash)
+
+    def _pool_before(self, month: tuple[int, int], context: dict[str, Any]) -> float:
+        """Return the free cash at the start of ``month``, when no goal has started yet.
+
+        Prior wealth walked forward through every month before ``month``,
+        floored at zero month by month.
+
+        Parameters
+        ----------
+        month : tuple
+            ``(year, month)`` the pool is measured at the start of.
+        context : dict
+            The transaction context from :meth:`_build_context`.
+
+        Returns
+        -------
+        float
+            The pool, never negative.
+        """
+        free_cash = self._opening_free_cash()
+        for month_key in sorted(context["surplus"]):
+            if month_key >= month:
+                break
+            free_cash = max(0.0, free_cash + context["surplus"][month_key])
+        return free_cash
+
+    def _build_context(self) -> dict[str, Any]:
+        """Compute per-month surplus and per-month goal-linked amounts, memoised.
+
+        Goal-linked transactions are pulled out of the surplus calculation
+        before it runs, then reintroduced explicitly — a contribution consumes
+        the pool, a utilization draws down what was set aside earlier. Leaving
+        them in would deduct the same shekel twice.
+
+        Returns
+        -------
+        dict
+            ``surplus`` — ``{(year, month): float}``; ``direct`` and
+            ``utilized`` — ``{(year, month): {goal_id: amount}}``.
+        """
+        if self._context_cache is not None:
+            return self._context_cache
+        self._context_cache = self._compute_context()
+        return self._context_cache
+
+    def _compute_context(self) -> dict[str, Any]:
+        """Do the actual transaction scan behind :meth:`_build_context`."""
+        df = self.transactions_service.get_data_for_analysis()
+        empty: dict[str, Any] = {"surplus": {}, "direct": {}, "utilized": {}}
+        if df.empty:
+            return empty
+
+        source_col = TransactionsTableFields.SOURCE.value
+        date_col = TransactionsTableFields.DATE.value
+        amount_col = TransactionsTableFields.AMOUNT.value
+        tag_col = TransactionsTableFields.TAG.value
+
+        df = df[~df[source_col].isin(_SURPLUS_EXCLUDED_SOURCES | _PRIOR_WEALTH_SOURCES)]
+        if tag_col in df.columns:
+            df = df[df[tag_col] != PRIOR_WEALTH_TAG]
+        if df.empty:
+            return empty
+
+        df = df.copy()
+        parsed = pd.to_datetime(df[date_col], errors="coerce")
+        df = df[parsed.notna()]
+        if df.empty:
+            return empty
+        parsed = parsed[parsed.notna()]
+        df["_year"] = parsed.dt.year.astype(int)
+        df["_month"] = parsed.dt.month.astype(int)
+
+        keys = self._row_keys(df)
+        goal_of = self._goal_by_transaction(df, keys)
+        df["_goal_id"] = [goal_of.get(k, (None, None))[0] for k in keys]
+        df["_link_type"] = [goal_of.get(k, (None, None))[1] for k in keys]
+
+        linked = df[df["_goal_id"].notna()]
+        unlinked = df[df["_goal_id"].isna()]
+
+        surplus: dict[tuple[int, int], float] = {}
+        if not unlinked.empty:
+            masks = transactions_masks(unlinked)
+            income = (
+                unlinked[masks["income"]].groupby(["_year", "_month"])[amount_col].sum()
+            )
+            expenses = (
+                unlinked[masks["expenses"]]
+                .groupby(["_year", "_month"])[amount_col]
+                .sum()
+            )
+            investments = (
+                unlinked[masks["investments"]]
+                .groupby(["_year", "_month"])[amount_col]
+                .sum()
+            )
+            # Expenses and investments are negative in the raw convention, so
+            # summing all three straight through already nets them out.
+            combined = income.add(expenses, fill_value=0).add(investments, fill_value=0)
+            surplus = {(int(y), int(m)): float(v) for (y, m), v in combined.items()}
+
+        direct: dict[tuple[int, int], dict[int, float]] = {}
+        utilized: dict[tuple[int, int], dict[int, float]] = {}
+        for _, row in linked.iterrows():
+            key = (int(row["_year"]), int(row["_month"]))
+            goal_id = int(row["_goal_id"])
+            amount = abs(float(row[amount_col]))
+            bucket = direct if row["_link_type"] == LINK_CONTRIBUTION else utilized
+            bucket.setdefault(key, {})
+            bucket[key][goal_id] = bucket[key].get(goal_id, 0.0) + amount
+
+        return {"surplus": surplus, "direct": direct, "utilized": utilized}
+
+    @staticmethod
+    def _row_keys(df: pd.DataFrame) -> list[_RowKey]:
+        """Build ``(source_table, unique_id, split_id)`` keys for each row.
+
+        ``unique_id`` is a per-table auto-increment, so it only identifies a
+        transaction when paired with its table — see
+        ``.claude/rules/backend_repositories.md``.
+        """
+        source_col = TransactionsTableFields.SOURCE.value
+        uid_col = TransactionsTableFields.UNIQUE_ID.value
+        split_col = TransactionsTableFields.SPLIT_ID.value
+        splits = (
+            df[split_col] if split_col in df.columns else pd.Series([None] * len(df))
+        )
+        return [
+            (src, uid, None if pd.isna(sid) else int(sid))
+            for src, uid, sid in zip(df[source_col], df[uid_col], splits, strict=True)
+        ]
+
+    def _goal_by_transaction(
+        self, df: pd.DataFrame, keys: list[_RowKey]
+    ) -> dict[_RowKey, tuple[int, str]]:
+        """Map each linked transaction key to its ``(goal_id, link_type)``.
+
+        Explicit per-transaction links win over a goal's category/tag rule, so
+        a single correction on one transaction always beats the broad rule.
+
+        Parameters
+        ----------
+        df : pd.DataFrame
+            Analysis rows.
+        keys : list
+            :meth:`_row_keys` of ``df``, positionally aligned with it.
+
+        Returns
+        -------
+        dict
+            Row key -> ``(goal_id, link_type)`` for every linked row.
+        """
+        mapping: dict[_RowKey, tuple[int, str]] = {}
+
+        category_col = TransactionsTableFields.CATEGORY.value
+        tag_col = TransactionsTableFields.TAG.value
+
+        for goal in self._goals_in_order():
+            if not goal.contribution_category:
+                continue
+            matches = df[category_col] == goal.contribution_category
+            tags = self._split_tags(goal.contribution_tags)
+            if tags and tags != [_ALL_TAGS] and tag_col in df.columns:
+                matches &= df[tag_col].isin(tags)
+            for key, matched in zip(keys, matches, strict=True):
+                if matched:
+                    mapping[key] = (goal.id, LINK_CONTRIBUTION)
+
+        links = self.repo.get_links()
+        if not links.empty:
+            for _, link in links.iterrows():
+                if link["source_type"] == "split":
+                    key = (None, None, int(link["source_id"]))
+                    for candidate in keys:
+                        if candidate[2] == key[2]:
+                            mapping[candidate] = (
+                                int(link["goal_id"]),
+                                link["link_type"],
+                            )
+                else:
+                    for candidate in keys:
+                        if candidate[0] == link["source_table"] and str(
+                            candidate[1]
+                        ) == str(link["source_id"]):
+                            mapping[candidate] = (
+                                int(link["goal_id"]),
+                                link["link_type"],
+                            )
+        return mapping
+
+    @staticmethod
+    def _split_tags(tags: str | None) -> list[str]:
+        """Split the semicolon-separated tag string budgets also use."""
+        if not tags:
+            return []
+        return [t.strip() for t in str(tags).split(";") if t.strip()]
