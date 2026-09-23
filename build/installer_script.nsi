@@ -29,8 +29,15 @@ InstallDirRegKey HKCU "${APP_REG_KEY}" "InstallDir"
 ; the in-INSTDIR .venv lives somewhere we can write to without ACL pain.
 RequestExecutionLevel user
 
+; CI's build smoke test defines FAD_UNCOMPRESSED: it only needs the script
+; to compile, never ships the installer, and LZMA over the ~200 MB bundle
+; is the slowest step of that job.
+!ifdef FAD_UNCOMPRESSED
+SetCompress off
+!else
 SetCompress auto
 SetCompressor lzma
+!endif
 CRCCheck on
 XPStyle on
 Unicode true
