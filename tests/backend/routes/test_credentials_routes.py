@@ -124,14 +124,6 @@ class TestCredentialsRoutes:
         assert response.status_code == 200
         assert response.json()["status"] == "success"
 
-    def test_delete_credential(self, test_client):
-        """DELETE /api/credentials/{service}/{provider}/{account_name} deletes credential."""
-        response = test_client.delete(
-            "/api/credentials/credit_cards/isracard/Main Card"
-        )
-        assert response.status_code == 200
-        assert response.json()["status"] == "success"
-
 
 class TestDeleteAccountDataChoice:
     """The delete endpoint distinguishes disconnecting from erasing."""
@@ -142,6 +134,7 @@ class TestDeleteAccountDataChoice:
             "/api/credentials/banks/hapoalim/Main"
         )
         assert response.status_code == 200
+        assert response.json()["status"] == "success"
         assert response.json()["transactions_deleted"] == 0
         _, kwargs = mock_credentials_deps.delete_credential.call_args
         assert kwargs["delete_data"] is False

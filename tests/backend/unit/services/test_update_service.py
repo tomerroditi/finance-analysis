@@ -248,8 +248,11 @@ class TestPickAssetUrl:
             == "https://github.com/tomerroditi/finance-analysis/releases/download/v1/installer.exe"
         )
 
-    def test_darwin_returns_none(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """macOS no longer ships a downloadable artifact — return None.
+    @pytest.mark.parametrize("platform", ["darwin", "linux"])
+    def test_non_windows_returns_none(
+        self, monkeypatch: pytest.MonkeyPatch, platform: str
+    ) -> None:
+        """macOS and Linux have no downloadable artifact — return None.
 
         Even when a legacy ``.dmg`` asset is still present on an older
         release, we don't surface it as an in-app download. Tahoe blocks
@@ -259,13 +262,7 @@ class TestPickAssetUrl:
         ``None`` makes the update toast link to the release page
         instead, where the README explains the source build flow.
         """
-        monkeypatch.setattr(update_service.sys, "platform", "darwin")
-
-        assert update_service._pick_asset_url(self._assets()) is None
-
-    def test_linux_returns_none(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """Linux has no shipping artifact — return None."""
-        monkeypatch.setattr(update_service.sys, "platform", "linux")
+        monkeypatch.setattr(update_service.sys, "platform", platform)
 
         assert update_service._pick_asset_url(self._assets()) is None
 

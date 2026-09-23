@@ -7,9 +7,27 @@ paths:
 
 # Testing Standards
 
-**~2,080 backend tests across 128 files; the gate is 40% coverage**
+**~3,000 backend tests across ~170 files; the gate is 40% coverage**
 (`fail_under = 40` in `pyproject.toml`). Run with `poetry run pytest`.
 A targeted run needs `--no-cov` or the gate fails it (see `CLAUDE.md` → Commands).
+
+**The suite runs in parallel.** `addopts` carries `-n auto --dist loadgroup`
+(pytest-xdist), and coverage uses the `sysmon` core (`sys.monitoring`), which
+traces for a fraction of settrace's cost. The full run with coverage takes
+~30 s on 4 cores (it took ~3.5 min serial under settrace). Consequences:
+
+- Pass `-n0` to run serially (`pdb`, `print` debugging, `-x` on the first
+  failure in file order).
+- **A test must not assume what ran before it on its worker.** Any
+  module-level cache or registry a test asserts on must be emptied in
+  `setup_method` (not only `teardown_method`), because the test before it
+  may belong to another file. Re-importing a module (`importlib`) must also
+  restore the parent package attribute, not just `sys.modules`. See
+  `test_serverless_optional_deps.py::_reimport`.
+- A module whose tests share an expensive `scope="module"` fixture pins
+  itself to one worker with `pytestmark = pytest.mark.xdist_group("<name>")`,
+  or each worker pays for the fixture (`test_vercel_entry.py`).
+
 Frontend adds ~46 vitest files (colocated in `frontend/src`) and 45 Playwright
 specs in `frontend/e2e/` — different layers, all three required before a PR.
 
@@ -63,6 +81,11 @@ class TestClassName:
 
 ### Root conftest (`tests/conftest.py`)
 Provides `db_engine` and `db_session` using in-memory SQLite. All unit/integration tests share this.
+Engines come from `make_memory_engine(**create_engine_kwargs)`, which copies a
+schema built once per process into each new connection through SQLite's
+backup API (<1 ms, versus ~13 ms for `Base.metadata.create_all`). Use it for
+any test that needs an empty in-memory DB with every table; call
+`create_all` yourself only for a file-backed or partial schema.
 
 ### Seed fixtures (`tests/backend/conftest.py`)
 Composable, function-scoped seed data — tests pick only what they need:
@@ -81,7 +104,7 @@ Composable, function-scoped seed data — tests pick only what they need:
 | `sample_credentials_yaml` | Fake credentials dict (no DB — name is legacy; credentials are DB+Keyring now) |
 
 ### Route conftest (`tests/backend/routes/conftest.py`)
-Overrides `db_engine` with **StaticPool** (required for TestClient sharing the same in-memory DB) and provides `test_client` fixture with dependency overrides.
+Overrides `db_engine` with **StaticPool** (`make_memory_engine(poolclass=StaticPool)`, required for TestClient sharing the same in-memory DB) and provides `test_client` fixture with dependency overrides.
 
 ## Unit Test Patterns
 

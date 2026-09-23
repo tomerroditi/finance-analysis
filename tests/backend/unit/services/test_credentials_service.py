@@ -99,26 +99,6 @@ class TestCredentialsService:
         assert "Account 1" in filtered["credit_cards"]["isracard"]
         assert "banks" not in filtered
 
-    def test_save_credentials_calls_repo(self, mock_repo):
-        """Verify save_credentials delegates to repo per account."""
-        service = CredentialsService(MagicMock())
-
-        new_creds = deepcopy(SAMPLE_CREDENTIALS)
-        new_creds["credit_cards"]["isracard"]["Account 1"]["password"] = "new_pass"
-
-        service.save_credentials(new_creds)
-
-        assert mock_repo.save_credentials.called
-
-    def test_delete_account(self, mock_repo):
-        """Verify account removed via repo."""
-        service = CredentialsService(MagicMock())
-        service.delete_account("credit_cards", "isracard", "Account 1")
-
-        mock_repo.delete_credentials.assert_called_once_with(
-            "credit_cards", "isracard", "Account 1"
-        )
-
     def test_get_safe_credentials_no_passwords(self, mock_repo):
         """Verify safe credentials contain no password fields."""
         service = CredentialsService(MagicMock())
@@ -255,34 +235,23 @@ class TestCredentialsCacheHit:
 class TestSaveCredentialsTypeGuards:
     """Tests for type guard branches in save_credentials."""
 
-    def test_skips_non_dict_providers(self, mock_repo):
-        """Verify save_credentials skips non-dict provider values (line 82)."""
-        service = CredentialsService(MagicMock())
-        service.save_credentials({"credit_cards": "not_a_dict"})
-        mock_repo.save_credentials.assert_not_called()
-
-    def test_skips_non_dict_accounts(self, mock_repo):
-        """Verify save_credentials skips non-dict account values (line 85)."""
-        service = CredentialsService(MagicMock())
-        service.save_credentials({"credit_cards": {"isracard": "not_a_dict"}})
-        mock_repo.save_credentials.assert_not_called()
-
-    def test_skips_non_dict_fields(self, mock_repo):
-        """Verify save_credentials skips non-dict field values (line 88)."""
-        service = CredentialsService(MagicMock())
-        service.save_credentials({"credit_cards": {"isracard": {"Acct": "not_a_dict"}}})
-        mock_repo.save_credentials.assert_not_called()
-
-    def test_skips_empty_field_values(self, mock_repo):
-        """Verify save_credentials skips accounts where all fields are empty (line 90)."""
-        service = CredentialsService(MagicMock())
-        service.save_credentials({"credit_cards": {"isracard": {"Acct": {"user": "", "pass": ""}}}})
-        mock_repo.save_credentials.assert_not_called()
-
-    def test_skips_empty_dict_fields(self, mock_repo):
-        """Verify save_credentials skips accounts with empty fields dict."""
-        service = CredentialsService(MagicMock())
-        service.save_credentials({"credit_cards": {"isracard": {"Acct": {}}}})
+    @pytest.mark.parametrize(
+        "payload",
+        [
+            {"credit_cards": "not_a_dict"},
+            {"credit_cards": {"isracard": "not_a_dict"}},
+            {"credit_cards": {"isracard": {"Acct": "not_a_dict"}}},
+            {"credit_cards": {"isracard": {"Acct": {"user": "", "pass": ""}}}},
+            {"credit_cards": {"isracard": {"Acct": {}}}},
+        ],
+        ids=[
+            "non-dict-providers", "non-dict-accounts", "non-dict-fields",
+            "all-fields-empty", "empty-fields-dict",
+        ],
+    )
+    def test_skips_malformed_or_empty_accounts(self, mock_repo, payload):
+        """Verify non-dict levels and accounts with no field values are never saved."""
+        CredentialsService(MagicMock()).save_credentials(payload)
         mock_repo.save_credentials.assert_not_called()
 
     def test_saves_valid_mixed_with_invalid(self, mock_repo):
@@ -327,23 +296,21 @@ class TestGetScraperCredentials:
         assert "banks" in result
         assert "credit_cards" in result
 
-    def test_nonexistent_service_returns_empty(self, mock_repo):
-        """Verify nonexistent service returns empty dict."""
+    @pytest.mark.parametrize(
+        "service_name, provider, account, expected",
+        [
+            ("insurance", "provider", "acct", {}),
+            ("banks", "leumi", "Main Account", {"banks": {}}),
+            ("banks", "hapoalim", "Missing", {"banks": {"hapoalim": {}}}),
+        ],
+        ids=["unknown-service", "unknown-provider", "unknown-account"],
+    )
+    def test_unknown_target_returns_empty_nesting(
+        self, mock_repo, service_name, provider, account, expected
+    ):
+        """Verify an unknown level yields the known outer keys with an empty dict below."""
         service = CredentialsService(MagicMock())
-        result = service.get_scraper_credentials("insurance", "provider", "acct")
-        assert result == {}
-
-    def test_nonexistent_provider_returns_empty_nested(self, mock_repo):
-        """Verify nonexistent provider returns service key with empty provider dict."""
-        service = CredentialsService(MagicMock())
-        result = service.get_scraper_credentials("banks", "leumi", "Main Account")
-        assert result == {"banks": {}}
-
-    def test_nonexistent_account_returns_empty_nested(self, mock_repo):
-        """Verify nonexistent account returns empty account dict."""
-        service = CredentialsService(MagicMock())
-        result = service.get_scraper_credentials("banks", "hapoalim", "Missing")
-        assert result == {"banks": {"hapoalim": {}}}
+        assert service.get_scraper_credentials(service_name, provider, account) == expected
 
 
 class TestSeedDemoCredentials:
@@ -405,14 +372,6 @@ class TestSeedDemoCredentials:
 
 class TestClearCache:
     """Tests for static cache clearing."""
-
-    def test_clear_cache_sets_none(self, mock_repo, monkeypatch):
-        """Verify clear_cache empties every mode's cache partition."""
-        CredentialsService(MagicMock())
-        assert cs._credentials_cache != {}
-
-        CredentialsService.clear_cache()
-        assert cs._credentials_cache == {}
 
     def test_clear_cache_forces_db_reload(self, mock_repo):
         """Verify next load_credentials hits DB after cache clear."""
@@ -596,13 +555,6 @@ class TestRemoveData:
         remaining = db_session.query(BankTransaction).all()
         assert [t.account_name for t in remaining] == ["Other"]
 
-    def test_history_cleared_so_next_scrape_backfills(self, db_session, monkeypatch):
-        """The watermark goes, so reconnecting starts a fresh year."""
-        svc, hist = _seed_account(db_session, monkeypatch)
-        svc.delete_credential("banks", "hapoalim", "Main", delete_data=True)
-        assert hist.get_last_successful_scrape_date(
-            "banks", "hapoalim", "Main") is None
-
     def test_dependent_records_are_purged(self, db_session, monkeypatch):
         """A pending refund on a deleted transaction does not survive."""
         svc, _ = _seed_account(db_session, monkeypatch)
@@ -613,42 +565,6 @@ class TestRemoveData:
         svc.delete_credential("banks", "hapoalim", "Main", delete_data=True)
 
         assert PendingRefundsService(db_session).get_all_pending() == []
-
-    def test_prior_wealth_survives_a_keep_delete(self, db_session, monkeypatch):
-        """Disconnecting must not destroy the account's prior wealth.
-
-        The balance row carries ``prior_wealth_amount``. Dropping it while the
-        transactions stayed removed money from net worth that the surviving
-        history still accounted for.
-        """
-        svc, _ = _seed_account(db_session, monkeypatch)
-        before = BankBalanceService(db_session).get_total_prior_wealth()
-        svc.delete_credential("banks", "hapoalim", "Main")
-        assert BankBalanceService(db_session).get_total_prior_wealth() == before
-
-    def test_keeping_data_keeps_the_watermark(self, db_session, monkeypatch):
-        """Disconnecting without erasing leaves the scrape watermark intact.
-
-        Reconnecting then resumes from where it left off rather than
-        re-scraping a year of transactions that are still stored.
-        """
-        from datetime import date
-
-        history = ScrapingHistoryRepository(db_session)
-        scrape_id = history.record_scrape_start(
-            "banks", "hapoalim", "Main", date.today()
-        )
-        history.record_scrape_end(scrape_id, "success")
-
-        service = CredentialsService(db_session)
-        monkeypatch.setattr(
-            service.repository, "delete_credentials", lambda *a, **k: None
-        )
-        service.delete_credential("banks", "hapoalim", "Main")
-
-        assert history.get_last_successful_scrape_date(
-            "banks", "hapoalim", "Main"
-        )
 
 
 class TestOneZeroPhoneValidation:

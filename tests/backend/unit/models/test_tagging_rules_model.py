@@ -7,7 +7,6 @@ from sqlalchemy import null
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from backend.constants.tables import Tables
 from backend.models.tagging_rules import TaggingRule
 
 
@@ -28,10 +27,6 @@ def _valid_fields() -> dict:
 
 class TestTaggingRule:
     """Tests for TaggingRule model."""
-
-    def test_table_name(self):
-        """Test that table name matches Tables enum."""
-        assert TaggingRule.__tablename__ == Tables.TAGGING_RULES.value
 
     def test_conditions_stored_as_json(self, db_session: Session):
         """A nested condition tree round-trips through the JSON column."""

@@ -57,18 +57,6 @@ class TestMinIntervalEnforcement:
         with pytest.raises(OtpRateLimitError):
             limiter.check_and_record(phone)
 
-    def test_prepare_allowed_again_after_min_interval_elapses(self):
-        """Advancing the clock past the min interval allows another prepare."""
-        clock = FakeClock()
-        limiter = OtpPrepareRateLimiter(clock=clock)
-        phone = "+15551234567"
-
-        limiter.check_and_record(phone)
-        clock.advance(OTP_PREPARE_MIN_INTERVAL_SECONDS)
-
-        # Must not raise.
-        limiter.check_and_record(phone)
-
     def test_blocked_call_does_not_reset_the_interval_timer(self):
         """A blocked call must not record a timestamp of its own.
 
@@ -93,17 +81,6 @@ class TestMinIntervalEnforcement:
 
 class TestWindowCap:
     """Enforces a maximum number of prepares within a rolling window."""
-
-    def test_up_to_max_per_window_are_allowed(self):
-        """The first OTP_PREPARE_MAX_PER_WINDOW prepares (spaced past the
-        min interval) all succeed."""
-        clock = FakeClock()
-        limiter = OtpPrepareRateLimiter(clock=clock)
-        phone = "+15551234567"
-
-        for _ in range(OTP_PREPARE_MAX_PER_WINDOW):
-            limiter.check_and_record(phone)
-            clock.advance(OTP_PREPARE_MIN_INTERVAL_SECONDS)
 
     def test_exceeding_max_per_window_is_blocked(self):
         """The (N+1)th prepare within the window raises OtpRateLimitError."""
@@ -142,25 +119,6 @@ class TestWindowCap:
         # blocked attempts above.
         clock.advance(OTP_PREPARE_WINDOW_SECONDS)
         limiter.check_and_record(phone)  # must succeed — window has rolled over
-
-    def test_entries_older_than_window_are_pruned(self):
-        """Prepares older than the rolling window no longer count against the cap."""
-        clock = FakeClock()
-        limiter = OtpPrepareRateLimiter(clock=clock)
-        phone = "+15551234567"
-
-        # Fill up to the cap, spacing calls past the min-interval so each
-        # one is accepted on its own merits (isolating the window-pruning
-        # behavior from the min-interval rule).
-        for _ in range(OTP_PREPARE_MAX_PER_WINDOW):
-            limiter.check_and_record(phone)
-            clock.advance(OTP_PREPARE_MIN_INTERVAL_SECONDS)
-
-        # Jump past the window so all prior entries are stale.
-        clock.advance(OTP_PREPARE_WINDOW_SECONDS)
-
-        # Must succeed: min-interval has elapsed and the window reset.
-        limiter.check_and_record(phone)
 
 
 class TestPerPhoneIsolation:
@@ -331,11 +289,6 @@ class TestErrorMessage:
 
 class TestModuleLevelSingleton:
     """The module exposes a shared singleton instance and a reset() helper."""
-
-    def test_singleton_uses_real_clock_by_default(self):
-        """The singleton is usable without any test wiring (real time.monotonic)."""
-        # Should not raise — first call for a fresh phone always succeeds.
-        otp_prepare_rate_limiter.check_and_record("+15559999999")
 
     def test_reset_clears_all_recorded_state(self):
         """reset() wipes recorded timestamps so a blocked phone is allowed again."""

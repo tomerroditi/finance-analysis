@@ -37,6 +37,46 @@ def _adapter(process_id: int = 1) -> ScraperAdapter:
     )
 
 
+_FAILED = SimpleNamespace(success=False, error_message="boom", error_type=None)
+_SUCCEEDED = SimpleNamespace(success=True, accounts=[])
+
+
+def _run_with_scrape_result(adapter: ScraperAdapter, scrape_result) -> None:
+    """Drive ``adapter.run()`` against a fake scraper returning ``scrape_result``."""
+    fake_scraper = MagicMock()
+    fake_scraper.scrape = AsyncMock(return_value=scrape_result)
+    fake_scraper.refreshed_otp_long_term_token = None
+
+    fake_scraper_pkg = SimpleNamespace(
+        create_scraper=MagicMock(return_value=fake_scraper),
+        is_2fa_required=MagicMock(return_value=False),
+    )
+    fake_base_scraper_mod = SimpleNamespace(ScraperOptions=MagicMock())
+
+    def fake_import(module_name):
+        if module_name == "scraper":
+            return fake_scraper_pkg
+        if module_name == "scraper.base.base_scraper":
+            return fake_base_scraper_mod
+        raise AssertionError(f"Unexpected import: {module_name}")
+
+    @contextmanager
+    def fake_db_context():
+        yield MagicMock()
+
+    with patch(
+        "backend.scraper.adapter._import_scraper_module",
+        side_effect=fake_import,
+    ), patch(
+        "backend.scraper.adapter.get_db_context",
+        side_effect=fake_db_context,
+    ), patch(
+        "backend.scraper.adapter.ScrapingHistoryRepository",
+        return_value=MagicMock(),
+    ):
+        asyncio.run(adapter.run())
+
+
 class TestRunPopsActiveScrapers:
     """ScraperAdapter.run()'s finally block removes the active-scraper entry.
 
@@ -45,138 +85,25 @@ class TestRunPopsActiveScrapers:
     ScrapingService.start_scraping_single's single-flight check.
     """
 
-    def test_run_pops_active_scrapers_on_failure(self):
-        """A failed scrape still pops its _active_scrapers entry in finally."""
-        adapter = _adapter(process_id=101)
+    @pytest.mark.parametrize(
+        "scrape_result,registered",
+        [
+            pytest.param(_FAILED, True, id="failure"),
+            pytest.param(_SUCCEEDED, True, id="success-no-transactions"),
+            pytest.param(_FAILED, False, id="already-unregistered"),
+        ],
+    )
+    def test_run_pops_active_scrapers(self, scrape_result, registered):
+        """run() leaves no _active_scrapers entry behind, whatever the outcome.
+
+        The unregistered case covers an entry already removed (e.g. by an
+        abort): the finally block must not raise on the missing key.
+        """
+        adapter = _adapter()
         key = scraper_registry_key(False, "credit_cards", "isracard", "Card1")
-        _active_scrapers[key] = adapter
+        if registered:
+            _active_scrapers[key] = adapter
 
-        fake_scraper = MagicMock()
-        fake_scraper.scrape = AsyncMock(
-            return_value=SimpleNamespace(
-                success=False, error_message="boom", error_type=None,
-            )
-        )
-
-        fake_scraper_pkg = SimpleNamespace(
-            create_scraper=MagicMock(return_value=fake_scraper),
-            is_2fa_required=MagicMock(return_value=False),
-        )
-        fake_base_scraper_mod = SimpleNamespace(ScraperOptions=MagicMock())
-
-        def fake_import(module_name):
-            if module_name == "scraper":
-                return fake_scraper_pkg
-            if module_name == "scraper.base.base_scraper":
-                return fake_base_scraper_mod
-            raise AssertionError(f"Unexpected import: {module_name}")
-
-        mock_history_repo = MagicMock()
-
-        @contextmanager
-        def fake_db_context():
-            yield MagicMock()
-
-        with patch(
-            "backend.scraper.adapter._import_scraper_module",
-            side_effect=fake_import,
-        ), patch(
-            "backend.scraper.adapter.get_db_context",
-            side_effect=fake_db_context,
-        ), patch(
-            "backend.scraper.adapter.ScrapingHistoryRepository",
-            return_value=mock_history_repo,
-        ):
-            asyncio.run(adapter.run())
+        _run_with_scrape_result(adapter, scrape_result)
 
         assert key not in _active_scrapers
-
-    def test_run_pops_active_scrapers_on_success(self):
-        """A successful scrape with no transactions also pops its entry."""
-        adapter = _adapter(process_id=102)
-        key = scraper_registry_key(False, "credit_cards", "isracard", "Card1")
-        _active_scrapers[key] = adapter
-
-        fake_scraper = MagicMock()
-        fake_scraper.scrape = AsyncMock(
-            return_value=SimpleNamespace(success=True, accounts=[])
-        )
-        fake_scraper.refreshed_otp_long_term_token = None
-
-        fake_scraper_pkg = SimpleNamespace(
-            create_scraper=MagicMock(return_value=fake_scraper),
-            is_2fa_required=MagicMock(return_value=False),
-        )
-        fake_base_scraper_mod = SimpleNamespace(ScraperOptions=MagicMock())
-
-        def fake_import(module_name):
-            if module_name == "scraper":
-                return fake_scraper_pkg
-            if module_name == "scraper.base.base_scraper":
-                return fake_base_scraper_mod
-            raise AssertionError(f"Unexpected import: {module_name}")
-
-        mock_history_repo = MagicMock()
-
-        @contextmanager
-        def fake_db_context():
-            yield MagicMock()
-
-        with patch(
-            "backend.scraper.adapter._import_scraper_module",
-            side_effect=fake_import,
-        ), patch(
-            "backend.scraper.adapter.get_db_context",
-            side_effect=fake_db_context,
-        ), patch(
-            "backend.scraper.adapter.ScrapingHistoryRepository",
-            return_value=mock_history_repo,
-        ):
-            asyncio.run(adapter.run())
-
-        assert key not in _active_scrapers
-
-    def test_run_pops_active_scrapers_even_when_not_registered(self):
-        """run() must not raise if the entry is already absent (e.g. aborted)."""
-        adapter = _adapter(process_id=103)
-        # Deliberately NOT registered in _active_scrapers.
-
-        fake_scraper = MagicMock()
-        fake_scraper.scrape = AsyncMock(
-            return_value=SimpleNamespace(
-                success=False, error_message="boom", error_type=None,
-            )
-        )
-
-        fake_scraper_pkg = SimpleNamespace(
-            create_scraper=MagicMock(return_value=fake_scraper),
-            is_2fa_required=MagicMock(return_value=False),
-        )
-        fake_base_scraper_mod = SimpleNamespace(ScraperOptions=MagicMock())
-
-        def fake_import(module_name):
-            if module_name == "scraper":
-                return fake_scraper_pkg
-            if module_name == "scraper.base.base_scraper":
-                return fake_base_scraper_mod
-            raise AssertionError(f"Unexpected import: {module_name}")
-
-        mock_history_repo = MagicMock()
-
-        @contextmanager
-        def fake_db_context():
-            yield MagicMock()
-
-        with patch(
-            "backend.scraper.adapter._import_scraper_module",
-            side_effect=fake_import,
-        ), patch(
-            "backend.scraper.adapter.get_db_context",
-            side_effect=fake_db_context,
-        ), patch(
-            "backend.scraper.adapter.ScrapingHistoryRepository",
-            return_value=mock_history_repo,
-        ):
-            asyncio.run(adapter.run())  # must not raise
-
-        assert scraper_registry_key(False, "credit_cards", "isracard", "Card1") not in _active_scrapers

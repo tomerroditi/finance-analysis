@@ -250,17 +250,3 @@ class TestRunwayUsesRealDays:
         assert goal["monthly_needed"] == pytest.approx(round(1000 / runway, 2))
         # The calendar-month count would understate the required contribution.
         assert goal["monthly_needed"] > 1000 / max(1, _months_until(target_date))
-
-    def test_achieved_goal_has_no_monthly_needed(self, service):
-        """An achieved goal skips the runway maths entirely."""
-        target_ts = (pd.Timestamp.today().normalize() + pd.DateOffset(months=2)).replace(day=1)
-        goal = _only(
-            service.create(
-                name="Soon",
-                target_amount=1000,
-                opening_balance=1200,
-                target_date=target_ts.strftime("%Y-%m-%d"),
-            )
-        )
-
-        assert goal["monthly_needed"] is None

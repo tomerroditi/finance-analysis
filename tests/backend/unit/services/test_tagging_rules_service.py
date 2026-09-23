@@ -822,34 +822,25 @@ class TestValidateRuleIntegrityEdgeCases:
         with pytest.raises(BadRequestException, match="Group must have subconditions"):
             service.validate_rule_integrity({"type": group, "subconditions": []})
 
-    def test_condition_missing_field_raises(self, service):
-        """Verify a CONDITION without field raises BadRequestException."""
-        conditions = {"type": "CONDITION", "operator": "contains", "value": "test"}
-
-        with pytest.raises(BadRequestException, match="missing field or operator"):
+    @pytest.mark.parametrize(
+        "conditions, message",
+        [
+            ({"type": "CONDITION", "operator": "contains", "value": "test"}, "missing field or operator"),
+            ({"type": "CONDITION", "field": "description", "value": "test"}, "missing field or operator"),
+            (_condition("amount", "contains", "100"), "not valid for numeric field"),
+            (_condition("amount", "between", 100), "list of 2 numbers"),
+            (_condition("amount", "between", ["abc", "def"]), "must be numbers"),
+            (_condition("amount", "gt", "not_a_number"), "must be a number"),
+        ],
+        ids=[
+            "missing-field", "missing-operator", "text-operator-on-amount",
+            "between-not-a-list", "between-non-numeric", "non-numeric-amount",
+        ],
+    )
+    def test_malformed_condition_raises(self, service, conditions, message):
+        """A structurally or numerically malformed condition is a BadRequestException."""
+        with pytest.raises(BadRequestException, match=message):
             service.validate_rule_integrity(conditions)
-
-    def test_condition_missing_operator_raises(self, service):
-        """Verify a CONDITION without operator raises BadRequestException."""
-        conditions = {"type": "CONDITION", "field": "description", "value": "test"}
-
-        with pytest.raises(BadRequestException, match="missing field or operator"):
-            service.validate_rule_integrity(conditions)
-
-    def test_invalid_numeric_operator_on_amount_raises(self, service):
-        """Verify a text operator on a numeric field raises BadRequestException."""
-        with pytest.raises(BadRequestException, match="not valid for numeric field"):
-            service.validate_rule_integrity(_condition("amount", "contains", "100"))
-
-    def test_between_operator_requires_list_of_two(self, service):
-        """Verify 'between' operator with non-list value raises BadRequestException."""
-        with pytest.raises(BadRequestException, match="list of 2 numbers"):
-            service.validate_rule_integrity(_condition("amount", "between", 100))
-
-    def test_between_operator_with_non_numeric_values_raises(self, service):
-        """Verify 'between' operator with non-numeric list values raises BadRequestException."""
-        with pytest.raises(BadRequestException, match="must be numbers"):
-            service.validate_rule_integrity(_condition("amount", "between", ["abc", "def"]))
 
     def test_between_operator_valid(self, service):
         """Verify 'between' operator with valid numeric list passes validation."""
@@ -957,46 +948,35 @@ class TestGetTablesNamesForConditions:
         """Create TaggingRulesService instance."""
         return TaggingRulesService(db_session)
 
-    def test_no_service_condition_returns_all_tables(self, service):
-        """Verify conditions without service field return both tables."""
-        tables = service._get_tables_names_for_conditions(_contains("test"))
+    @pytest.mark.parametrize(
+        "conditions, expected",
+        [
+            (_contains("test"), {"credit_card_transactions", "bank_transactions"}),
+            (
+                {"type": "AND", "subconditions": [
+                    _condition("service", "equals", "credit_card"), _contains("test"),
+                ]},
+                {"credit_card_transactions"},
+            ),
+            (
+                {"type": "AND", "subconditions": [
+                    _condition("service", "equals", "bank"), _contains("test"),
+                ]},
+                {"bank_transactions"},
+            ),
+            (_condition("service", "equals", "Credit Card"), {"credit_card_transactions"}),
+        ],
+        ids=["no-service", "credit-card", "bank", "spaced-value-normalized"],
+    )
+    def test_service_condition_selects_tables(self, service, conditions, expected):
+        """A ``service`` condition narrows the tables; without one both are searched.
 
-        assert "credit_card_transactions" in tables
-        assert "bank_transactions" in tables
-
-    def test_credit_card_service_filter(self, service):
-        """Verify service=credit_card limits to credit card table only."""
-        conditions = {
-            "type": "AND",
-            "subconditions": [
-                _condition("service", "equals", "credit_card"),
-                _contains("test"),
-            ],
-        }
+        The value is normalized, so ``"Credit Card"`` means ``credit_card``.
+        """
         tables = service._get_tables_names_for_conditions(conditions)
 
-        assert tables == ["credit_card_transactions"]
-
-    def test_bank_service_filter(self, service):
-        """Verify service=bank limits to bank table only."""
-        conditions = {
-            "type": "AND",
-            "subconditions": [
-                _condition("service", "equals", "bank"),
-                _contains("test"),
-            ],
-        }
-        tables = service._get_tables_names_for_conditions(conditions)
-
-        assert tables == ["bank_transactions"]
-
-    def test_service_value_normalized_with_spaces(self, service):
-        """Verify service value with spaces is normalized (e.g. 'Credit Card' -> 'credit_card')."""
-        tables = service._get_tables_names_for_conditions(
-            _condition("service", "equals", "Credit Card")
-        )
-
-        assert tables == ["credit_card_transactions"]
+        assert set(tables) == expected
+        assert len(tables) == len(expected)
 
 
 class TestCollectServices:

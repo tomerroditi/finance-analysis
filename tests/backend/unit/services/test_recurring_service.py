@@ -93,6 +93,7 @@ class TestRecurringDetection:
         assert result["total_monthly"] == 0.0
         assert result["pending_monthly"] == 45.0
         assert result["pending_count"] == 1
+        assert result["confirmed_count"] == 0
 
     def test_ignores_one_off_charges(self, db_session):
         """Charges that appear fewer than three times are not recurring."""
@@ -305,15 +306,6 @@ class TestRecurringConfirmation:
             _add_charge(db_session, "NETFLIX.COM 1234", -45.0, _months_ago(n))
         db_session.commit()
         return RecurringService(db_session).get_recurring()["items"][0]["normalized"]
-
-    def test_new_candidate_is_pending(self, db_session):
-        """A freshly detected charge is reported as pending, not confirmed."""
-        self._seed_netflix(db_session)
-
-        result = RecurringService(db_session).get_recurring()
-        assert result["items"][0]["confirmation"] == "pending"
-        assert result["confirmed_count"] == 0
-        assert result["pending_count"] == 1
 
     def test_confirming_moves_it_into_the_total(self, db_session):
         """Confirming flips the verdict and adds the item to the monthly total."""
@@ -725,6 +717,26 @@ class TestConfidence:
         assert scores["JUST STARTED"] < scores["LONG RUNNING"]
 
 
+@pytest.fixture(scope="module")
+def recurring_template_db(tmp_path_factory):
+    """Build the schema and seed one monthly subscription, once per module."""
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+
+    from backend.models.base import Base
+
+    path = tmp_path_factory.mktemp("recurring") / "template.db"
+    engine = create_engine(f"sqlite:///{path}")
+    Base.metadata.create_all(engine)
+    session = sessionmaker(bind=engine)()
+    for months in range(6):
+        _add_charge(session, "NETFLIX", -49.9, _months_ago(months))
+    session.commit()
+    session.close()
+    engine.dispose()
+    return path
+
+
 class TestDetectionIsCachedAcrossRequests:
     """Detection is the most expensive read in the app — it must run once.
 
@@ -741,20 +753,19 @@ class TestDetectionIsCachedAcrossRequests:
     """
 
     @pytest.fixture
-    def file_session(self, tmp_path):
-        """A session on a real file, seeded with one monthly subscription."""
+    def file_session(self, tmp_path, recurring_template_db):
+        """A session on a private copy of the seeded template file."""
+        import shutil
+
         from sqlalchemy import create_engine
         from sqlalchemy.orm import sessionmaker
 
-        from backend.models.base import Base
         from backend.utils import data_cache
 
-        engine = create_engine(f"sqlite:///{tmp_path / 'recurring.db'}")
-        Base.metadata.create_all(engine)
+        db_path = tmp_path / "recurring.db"
+        shutil.copyfile(recurring_template_db, db_path)
+        engine = create_engine(f"sqlite:///{db_path}")
         session = sessionmaker(bind=engine)()
-        for months in range(6):
-            _add_charge(session, "NETFLIX", -49.9, _months_ago(months))
-        session.commit()
         data_cache.clear()
         try:
             yield session

@@ -5,7 +5,7 @@ import time
 
 import pytest
 from sqlalchemy import Column, Integer, create_engine, text
-from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.orm import sessionmaker
 
 from backend.models.base import Base
 from backend.utils import data_cache
@@ -28,7 +28,7 @@ def file_session(tmp_path):
     """
     db_path = tmp_path / "cache.db"
     engine = create_engine(f"sqlite:///{db_path}")
-    Base.metadata.create_all(engine)
+    _CacheProbe.__table__.create(engine)
     session = sessionmaker(bind=engine)()
     data_cache.clear()
     try:
@@ -44,7 +44,7 @@ def second_file_session(tmp_path):
     """A session on a *different* file, to prove entries are not shared."""
     db_path = tmp_path / "other.db"
     engine = create_engine(f"sqlite:///{db_path}")
-    Base.metadata.create_all(engine)
+    _CacheProbe.__table__.create(engine)
     session = sessionmaker(bind=engine)()
     try:
         yield session
@@ -179,7 +179,7 @@ class TestIsolation:
     def test_in_memory_session_is_never_cached(self):
         """An in-memory database has no file identity, so it is not cached."""
         engine = create_engine("sqlite:///:memory:")
-        Base.metadata.create_all(engine)
+        _CacheProbe.__table__.create(engine)
         session = sessionmaker(bind=engine)()
         try:
             compute = _Counter()
@@ -209,7 +209,7 @@ class TestSingleFlight:
         """The dashboard's ~25 simultaneous cold requests share one result."""
         db_path = tmp_path / "flight.db"
         engine = create_engine(f"sqlite:///{db_path}")
-        Base.metadata.create_all(engine)
+        _CacheProbe.__table__.create(engine)
         factory = sessionmaker(bind=engine)
         data_cache.clear()
 

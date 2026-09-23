@@ -11,20 +11,16 @@ class TestGZipMiddleware:
     """Compression must be on, honour the client, and leave small bodies alone."""
 
     def test_large_response_is_compressed(self, test_client):
-        """A body over the threshold comes back gzipped for a willing client."""
+        """A body over the threshold comes back gzipped for a willing client.
+
+        Compression is transport-only, so the decoded payload is unchanged.
+        """
         response = test_client.get(
             "/openapi.json", headers={"accept-encoding": "gzip"}
         )
 
         assert response.status_code == 200
         assert response.headers["content-encoding"] == "gzip"
-
-    def test_compressed_response_still_decodes(self, test_client):
-        """Compression is transport-only — the payload must be unchanged."""
-        response = test_client.get(
-            "/openapi.json", headers={"accept-encoding": "gzip"}
-        )
-
         assert response.json()["info"]["title"] == "Finance Analysis API"
 
     def test_client_that_cannot_decompress_gets_plain_bytes(self, test_client):

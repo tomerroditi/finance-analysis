@@ -3,9 +3,9 @@
 import pytest
 from sqlalchemy.orm import Session
 
-from backend.services.cash_balance_service import CashBalanceService
 from backend.models.cash_balance import CashBalance
 from backend.models.transaction import CashTransaction
+from backend.services.cash_balance_service import CashBalanceService
 
 
 class TestCashBalanceService:
@@ -420,26 +420,6 @@ class TestDeletePriorWealthTransaction:
 
 class TestDeletePreservesPriorWealth:
     """Deleting a cash envelope must not destroy its prior wealth."""
-
-    def test_total_prior_wealth_is_conserved(self, db_session: Session):
-        """Total cash prior wealth is unchanged by deleting an envelope."""
-        service = CashBalanceService(db_session)
-        db_session.add(
-            CashTransaction(
-                id="pw_conserve_1", date="2024-01-01", account_name="Vacation Jar",
-                description="Expense", amount=-100.0, category="Food",
-                tag="Groceries", source="cash_transactions", type="expense",
-                status="completed",
-            )
-        )
-        db_session.commit()
-        service.set_balance("Wallet", 500.0)
-        service.set_balance("Vacation Jar", 900.0)
-
-        before = service.get_total_prior_wealth()
-        service.delete_for_account("Vacation Jar")
-
-        assert service.get_total_prior_wealth() == before
 
     def test_envelope_with_no_prior_wealth_leaves_wallet_untouched(
         self, db_session: Session

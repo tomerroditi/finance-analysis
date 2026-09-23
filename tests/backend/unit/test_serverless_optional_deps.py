@@ -25,7 +25,16 @@ def _block(monkeypatch, *names):
 
 
 def _reimport(monkeypatch, module):
-    """Re-execute a module's top level under the current import conditions."""
+    """Re-execute a module's top level under the current import conditions.
+
+    The import also rebinds the module on its parent package, which
+    ``sys.modules`` restoration alone does not undo — a later
+    ``from backend.utils import crypto`` would get the stripped copy.
+    """
+    parent_name, _, child = module.rpartition(".")
+    parent = importlib.import_module(parent_name)
+    if hasattr(parent, child):
+        monkeypatch.setattr(parent, child, getattr(parent, child))
     monkeypatch.delitem(sys.modules, module, raising=False)
     return importlib.import_module(module)
 
