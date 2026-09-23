@@ -37,6 +37,7 @@ from backend.models import (  # noqa: E402
     CashBalance,
     CashTransaction,
     Category,
+    ClearingHouseReport,
     Credential,
     CreditCardTransaction,
     InsuranceAccount,
@@ -60,6 +61,13 @@ from backend.models import (  # noqa: E402
 # Constants
 # ---------------------------------------------------------------------------
 REFERENCE_DATE = date(2026, 2, 25)
+
+# The Cohens' pension and Keren Hishtalmut data comes from the pension
+# clearing house (HaPhoenix is deprecated in its favour).
+INSURANCE_PROVIDER = "mislaka"
+# Ages drive both the retirement goal and the funds' retirement forecasts.
+TECH_AGE = 38
+TEACHER_AGE = 36
 START_DATE = REFERENCE_DATE - timedelta(days=365 * 3 + 1)  # ~3 years back
 DB_PATH = PROJECT_ROOT / "backend" / "resources" / "demo_data.db"
 
@@ -2616,7 +2624,7 @@ def create_retirement_goal(session):
     kh_total_monthly = 1_571.0 + 1_400.0                # 2,971
 
     session.add(RetirementGoal(
-        current_age=38,
+        current_age=TECH_AGE,
         gender="male",
         target_retirement_age=55,
         life_expectancy=90,
@@ -2664,7 +2672,7 @@ def create_demo_credentials(session):
         ("credit_cards", "visa cal", "Online Shopping", {"username": "demo"}),
         (
             "insurance",
-            "hafenix",
+            INSURANCE_PROVIDER,
             "The Cohens",
             {"id": "demo", "phoneNumber": "050-1234567"},
         ),
@@ -2749,6 +2757,49 @@ def create_scraping_history(session):
 # ---------------------------------------------------------------------------
 # Insurance accounts & transactions
 # ---------------------------------------------------------------------------
+
+def _clearing_house_forecast(
+    balance, monthly_deposit, deposit_fee_pct, savings_fee_pct, age, retirement_age
+):
+    """Forecast a fund the way the clearing house publishes it.
+
+    Real terms: today's balance and (if any) today's monthly deposit grow at
+    an assumed 4% a year net of the savings fee until retirement age; the
+    deposit loses its deposit fee first. Pensions are the capital over an
+    annuity factor of 200 — about what Israeli funds publish for a 67-year-old.
+
+    Returns a dict with the ``balance_forecast`` /
+    ``balance_forecast_no_deposits`` capitals and the matching
+    ``monthly_pension_forecast`` / ``monthly_pension_forecast_no_deposits``.
+    """
+    assumed_yield = 4.0
+    growth = 1 + (assumed_yield - savings_fee_pct) / 100
+    years = retirement_age - age
+    no_deposits = balance * growth**years
+    annual_deposit = monthly_deposit * 12 * (1 - deposit_fee_pct / 100)
+    with_deposits = no_deposits + annual_deposit * (growth**years - 1) / (growth - 1)
+    return {
+        "retirement_age": float(retirement_age),
+        "forecast_yield_pct": assumed_yield,
+        "balance_forecast": round(with_deposits, 2),
+        "balance_forecast_no_deposits": round(no_deposits, 2),
+        "monthly_pension_forecast": round(with_deposits / 200),
+        "monthly_pension_forecast_no_deposits": round(no_deposits / 200, 2),
+    }
+
+
+def _shpitzer_payment(principal, annual_rate_pct, months):
+    """Monthly payment of a fixed-payment (Shpitzer) loan."""
+    rate = annual_rate_pct / 100 / 12
+    return principal * rate / (1 - (1 + rate) ** -months)
+
+
+def _shpitzer_balance(principal, annual_rate_pct, months, paid):
+    """Outstanding principal after ``paid`` payments of a Shpitzer loan."""
+    rate = annual_rate_pct / 100 / 12
+    payment = _shpitzer_payment(principal, annual_rate_pct, months)
+    return principal * (1 + rate) ** paid - payment * ((1 + rate) ** paid - 1) / rate
+
 
 def generate_insurance_data(session):
     """Generate insurance accounts (pension + keren hishtalmut) and monthly deposit transactions.
@@ -2862,7 +2913,7 @@ def generate_insurance_data(session):
     # Balances reflect ~5 years of contributions (2 prior + 3 tracked)
     # plus ~5-6%/year real growth. Rough target: monthly × 60 × 1.13..1.19.
     pension_tech_makifa = InsuranceAccount(
-        provider="hafenix",
+        provider=INSURANCE_PROVIDER,
         policy_id="PN-DEMO-001",
         policy_type="pension",
         pension_type="makifa",
@@ -2900,7 +2951,7 @@ def generate_insurance_data(session):
     # (i.e. only the slice above 25,000 has been routed here). Much smaller
     # balance than the Makifa account because the contribution base is small.
     pension_tech_mashlima = InsuranceAccount(
-        provider="hafenix",
+        provider=INSURANCE_PROVIDER,
         policy_id="PN-DEMO-003",
         policy_type="pension",
         pension_type="mashlima",
@@ -2921,7 +2972,7 @@ def generate_insurance_data(session):
     # The policy_id slot PN-DEMO-002 was previously a (wrong) Mashlima account;
     # reusing the id to stay stable across regenerations.
     pension_teacher_makifa = InsuranceAccount(
-        provider="hafenix",
+        provider=INSURANCE_PROVIDER,
         policy_id="PN-DEMO-002",
         policy_type="pension",
         pension_type="makifa",
@@ -2954,7 +3005,7 @@ def generate_insurance_data(session):
     session.add(pension_teacher_makifa)
 
     kh_active = InsuranceAccount(
-        provider="hafenix",
+        provider=INSURANCE_PROVIDER,
         policy_id="KH-DEMO-001",
         policy_type="hishtalmut",
         account_name="Keren Hishtalmut - Tech Company",
@@ -2971,7 +3022,7 @@ def generate_insurance_data(session):
     session.add(kh_active)
 
     kh_spouse = InsuranceAccount(
-        provider="hafenix",
+        provider=INSURANCE_PROVIDER,
         policy_id="KH-DEMO-002",
         policy_type="hishtalmut",
         account_name="Keren Hishtalmut - School District",
@@ -2989,7 +3040,7 @@ def generate_insurance_data(session):
     # Inactive KH — Tech employee's previous employer (gross ~12k at that job)
     # for ~3 years, then frozen. Modest growth ≈ 4%/yr since then.
     kh_old = InsuranceAccount(
-        provider="hafenix",
+        provider=INSURANCE_PROVIDER,
         policy_id="KH-DEMO-OLD",
         policy_type="hishtalmut",
         account_name="Keren Hishtalmut - Previous Employer",
@@ -3044,7 +3095,7 @@ def generate_insurance_data(session):
             txn = InsuranceTransaction(
                 id=f"demo-ins-{txn_counter:04d}",
                 date=rand_date_in_month(year, month_num, 1, 10),
-                provider="hafenix",
+                provider=INSURANCE_PROVIDER,
                 account_name=account_name,
                 account_number=policy_id,
                 description=description,
@@ -3068,7 +3119,7 @@ def generate_insurance_data(session):
         txn = InsuranceTransaction(
             id=f"demo-ins-{txn_counter:04d}",
             date=rand_date_in_month(year, month_num, 1, 10),
-            provider="hafenix",
+            provider=INSURANCE_PROVIDER,
             account_name="Keren Hishtalmut - Previous Employer",
             account_number="KH-DEMO-OLD",
             description="הפקדה",
@@ -3081,7 +3132,197 @@ def generate_insurance_data(session):
         )
         session.add(txn)
 
+    # --- Clearing-house extras: per-policy details and household reports ---
+    # The newest monthly report is as of the last month end before the
+    # reference date; the one before it, a month earlier.
+    report_date = REFERENCE_DATE.replace(day=1) - timedelta(days=1)
+    previous_report_date = report_date.replace(day=1) - timedelta(days=1)
+    tech_employer, teacher_employer = "Cohen Technologies", "Tel Aviv School District"
+    tech_agent = {
+        "name": "Cohen Family Insurance Agency",
+        "id": "512345678",
+        "role": "סוכן",
+        "can_act": True,
+        "appointed": (REFERENCE_DATE - timedelta(days=700)).isoformat(),
+        "expires": (REFERENCE_DATE + timedelta(days=3000)).isoformat(),
+    }
+    loan_months, loan_rate, loan_amount = 60, 3.2, 40_000.0
+    loan_received = REFERENCE_DATE - timedelta(days=395)
+    loan_paid = 13
+    kh_loan = {
+        "amount": loan_amount,
+        "balance": round(
+            _shpitzer_balance(loan_amount, loan_rate, loan_months, loan_paid), 2
+        ),
+        "interest_pct": loan_rate,
+        "monthly_payment": round(
+            _shpitzer_payment(loan_amount, loan_rate, loan_months), 2
+        ),
+        "payments_months": loan_months,
+        "received": loan_received.isoformat(),
+        "ends": (loan_received + timedelta(days=round(loan_months * 30.44))).isoformat(),
+        "scope": "Policy",
+    }
+
+    def details_for(
+        account, monthly_deposit, split, employer, age, retirement_age,
+        manufacturer, active=True, agent=None, loans=(), covers=None,
+    ):
+        """One policy's clearing-house details, derived from its own figures."""
+        forecast = _clearing_house_forecast(
+            account.balance,
+            monthly_deposit if active else 0.0,
+            account.commission_deposits_pct,
+            account.commission_savings_pct,
+            age,
+            retirement_age,
+        )
+        track_yield = json.loads(account.investment_tracks)[0]["yield_pct"]
+        month_fee = (
+            account.balance * account.commission_savings_pct / 100 / 12
+            + (monthly_deposit if active else 0.0) * account.commission_deposits_pct / 100
+        )
+        details = {
+            "source_date": report_date.isoformat(),
+            "status": "פעיל" if active else "לא פעיל",
+            "manufacturer": manufacturer,
+            "product_type": (
+                "קרן השתלמות" if account.policy_type == "hishtalmut"
+                else "פנסיה חדשה מקיפה" if account.pension_type == "makifa"
+                else "פנסיה חדשה כללית"
+            ),
+            "employer": employer,
+            "employer_status": "מעסיק נוכחי" if active else "מעסיק קודם",
+            "last_deposit_date": (
+                report_date.replace(day=5).isoformat() if active else None
+            ),
+            "last_deposit": split if active else {
+                "employee": 0.0, "employer": 0.0, "compensation": 0.0,
+            },
+            "net_yield_pct": track_yield,
+            "ytd_profit": round(account.balance * track_yield / 100 / 12, 2),
+            "last_month_management_fee": round(month_fee, 2),
+            "representative": agent,
+            "loans": list(loans),
+            "pledge": "לא",
+            "confiscation": "לא",
+            **forecast,
+        }
+        if account.policy_type == "pension":
+            details["disability_cover_pct"] = 75.0 if covers else None
+        else:
+            del details["monthly_pension_forecast"]
+            del details["monthly_pension_forecast_no_deposits"]
+        return details
+
+    pension_split = {
+        "PN-DEMO-001": {"employee": pn_tech_makifa_employee,
+                        "employer": pn_tech_makifa_employer,
+                        "compensation": pn_tech_makifa_severance},
+        "PN-DEMO-003": {"employee": pn_tech_mashlima_employee,
+                        "employer": pn_tech_mashlima_employer,
+                        "compensation": pn_tech_mashlima_severance},
+        "PN-DEMO-002": {"employee": pn_teacher_makifa_employee,
+                        "employer": pn_teacher_makifa_employer,
+                        "compensation": pn_teacher_makifa_severance},
+    }
+    kh_split = lambda total: {  # noqa: E731
+        "employee": round(total / kh_total_pct * kh_employee_pct, 2),
+        "employer": round(total / kh_total_pct * kh_employer_pct, 2),
+        "compensation": 0.0,
+    }
+    fund_a, fund_b = "Horizon Pension & Provident Ltd", "Meridian Provident Funds Ltd"
+    policies = [
+        (pension_tech_makifa, pn_tech_makifa_total, pension_split["PN-DEMO-001"],
+         tech_employer, TECH_AGE, 67, fund_a, True, tech_agent, (), True),
+        (pension_tech_mashlima, pn_tech_mashlima_total, pension_split["PN-DEMO-003"],
+         tech_employer, TECH_AGE, 67, fund_a, True, tech_agent, (), False),
+        (pension_teacher_makifa, pn_teacher_makifa_total, pension_split["PN-DEMO-002"],
+         teacher_employer, TEACHER_AGE, 65, fund_b, True, None, (), True),
+        (kh_active, kh_tech_total, kh_split(kh_tech_total),
+         tech_employer, TECH_AGE, 67, fund_a, True, tech_agent, (kh_loan,), False),
+        (kh_spouse, kh_teacher_total, kh_split(kh_teacher_total),
+         teacher_employer, TEACHER_AGE, 65, fund_b, True, None, (), False),
+        (kh_old, old_kh_monthly, kh_split(old_kh_monthly),
+         "Previous Employer Ltd", TECH_AGE, 67, fund_b, False, None, (), False),
+    ]
+    all_details = {}
+    for (account, deposit, split, employer, age, retirement_age, manufacturer,
+         active, agent, loans, covered) in policies:
+        details = details_for(
+            account, deposit, split, employer, age, retirement_age, manufacturer,
+            active=active, agent=agent, loans=loans, covers=covered,
+        )
+        account.details = json.dumps(details, ensure_ascii=False)
+        all_details[account.policy_id] = details
+
+    # Household totals, as the clearing house reports them per monthly report.
+    # Survivor annuities split 60/40 between spouse and children.
+    pensions = [d for p, d in all_details.items() if p.startswith("PN-")]
+    funds = [d for p, d in all_details.items() if p.startswith("KH-")]
+    survivors = 15_000.0 + 8_400.0  # the Makifa accounts' survivor covers
+    newest = {
+        "calc_date": report_date.isoformat(),
+        "total_savings": sum(
+            a.balance for a, *_ in policies
+        ),
+        "forecast_total_balance": round(
+            sum(d["balance_forecast"] for d in all_details.values()), 2
+        ),
+        "forecast_monthly_pension": float(
+            sum(d["monthly_pension_forecast"] for d in pensions)
+        ),
+        "forecast_lump_sum": round(sum(d["balance_forecast"] for d in funds), 2),
+        "disability_monthly": 18_750.0 + 10_500.0,
+        "survivor_spouse_monthly": round(survivors * 0.6, 2),
+        "survivor_child_monthly": round(survivors * 0.4, 2),
+        "death_lump_sum": 0.0,
+        "report_number": 11,
+        "report_count": 12,
+        "subscription_expires": (REFERENCE_DATE + timedelta(days=40)).isoformat(),
+        "subscription_months_left": 1,
+        "license_holder": "Cohen Family Insurance Agency",
+    }
+    previous = {
+        **newest,
+        "calc_date": previous_report_date.isoformat(),
+        "total_savings": round(newest["total_savings"] * 0.985, 2),
+        "forecast_total_balance": round(newest["forecast_total_balance"] * 0.995, 2),
+        "forecast_monthly_pension": round(newest["forecast_monthly_pension"] * 0.995),
+        "forecast_lump_sum": round(newest["forecast_lump_sum"] * 0.995, 2),
+        "report_number": 10,
+        "subscription_expires": None,
+        "subscription_months_left": None,
+        "license_holder": None,
+    }
+    for report in (previous, newest):
+        session.add(
+            ClearingHouseReport(
+                provider=INSURANCE_PROVIDER, account_name="The Cohens", **report
+            )
+        )
+
     session.flush()
+
+
+def sync_demo_pension_loans(session):
+    """Mirror the demo's Keren Hishtalmut loan onto the Liabilities page.
+
+    Runs the same service a real clearing-house scrape calls, so the demo's
+    liability, its tag and its link key are exactly what a user would get.
+    """
+    from backend.services.liabilities_service import LiabilitiesService
+
+    service = LiabilitiesService(session)
+    for account in session.query(InsuranceAccount).all():
+        loans = json.loads(account.details or "{}").get("loans") or []
+        if loans:
+            service.sync_insurance_loans(
+                account.policy_id,
+                account.account_name,
+                json.loads(account.details)["manufacturer"],
+                loans,
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -3204,6 +3445,10 @@ def main():
         session.commit()
         print(f"    Synced {synced} hishtalmut policies to investments")
 
+        print("  Syncing pension-policy loans to liabilities...")
+        sync_demo_pension_loans(session)
+        session.commit()
+
         print("\nDemo database created successfully!")
 
         # Print summary counts
@@ -3215,6 +3460,7 @@ def main():
             "manual_investment_transactions",
             "insurance_transactions",
             "insurance_accounts",
+            "clearing_house_reports",
             "categories",
             "budget_rules",
             "tagging_rules",

@@ -504,7 +504,7 @@ class TestFrozenDemoSnapshotContents:
         assert ("banks", "hapoalim", "Main Account") in accounts
         assert ("credit_cards", "max", "Family Card") in accounts
         assert ("credit_cards", "visa cal", "Online Shopping") in accounts
-        assert ("insurance", "hafenix", "The Cohens") in accounts
+        assert ("insurance", "mislaka", "The Cohens") in accounts
 
     def test_every_seeded_account_can_resolve_a_scrape_watermark(self):
         """Account names must line up with the scrape history.
@@ -627,3 +627,80 @@ class TestInstallSnapshotIsAtomic:
         _install_snapshot(str(source), str(destination))
 
         assert destination.read_bytes() == b"fresh"
+
+
+class TestShiftClearingHouseData:
+    """``_shift_dates`` moves the clearing-house reports and policy details."""
+
+    def _seed(self, engine) -> None:
+        """Two monthly reports and a policy whose details carry dates."""
+        details = {
+            "source_date": "2026-01-31",
+            "join_date": "2020-03-15",
+            "loans": [{"received": "2025-01-26", "ends": "2030-01-26"}],
+            "representative": {"appointed": "2024-03-27", "name": "Agency"},
+        }
+        with engine.begin() as conn:
+            for calc_date, expires in (("2025-12-31", None), ("2026-01-31", "2026-04-06")):
+                conn.execute(
+                    text(
+                        "INSERT INTO clearing_house_reports (provider, account_name, "
+                        "calc_date, subscription_expires, created_at, updated_at) "
+                        "VALUES ('mislaka', 'The Cohens', :d, :e, "
+                        "CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
+                    ),
+                    {"d": calc_date, "e": expires},
+                )
+            conn.execute(
+                text(
+                    "INSERT INTO insurance_accounts (provider, policy_id, policy_type, "
+                    "account_name, details, created_at, updated_at) VALUES ('mislaka', "
+                    "'KH-1', 'hishtalmut', 'KH', :d, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
+                ),
+                {"d": json.dumps(details)},
+            )
+
+    @pytest.mark.parametrize("offset", [31, 59, 211])
+    def test_report_months_stay_month_ends_without_colliding(self, offset):
+        """Verify reports land on month ends, one month apart, for any offset."""
+        engine = _make_engine()
+        self._seed(engine)
+
+        _shift_dates(engine, offset)
+
+        with engine.connect() as conn:
+            rows = conn.execute(
+                text("SELECT calc_date FROM clearing_house_reports ORDER BY calc_date")
+            ).fetchall()
+        first, second = (date.fromisoformat(r[0]) for r in rows)
+        assert (first + timedelta(days=1)).day == 1
+        assert (second + timedelta(days=1)).day == 1
+        assert (second.year * 12 + second.month) - (first.year * 12 + first.month) == 1
+
+    def test_expiry_and_detail_dates_move_by_days(self):
+        """Verify moments in time move by the raw offset, source_date by months."""
+        engine = _make_engine()
+        self._seed(engine)
+
+        _shift_dates(engine, 211)
+
+        with engine.connect() as conn:
+            expires = conn.execute(
+                text(
+                    "SELECT subscription_expires FROM clearing_house_reports "
+                    "WHERE subscription_expires IS NOT NULL"
+                )
+            ).scalar()
+            details = json.loads(
+                conn.execute(text("SELECT details FROM insurance_accounts")).scalar()
+            )
+            newest = conn.execute(
+                text("SELECT MAX(calc_date) FROM clearing_house_reports")
+            ).scalar()
+        assert expires == (date(2026, 4, 6) + timedelta(days=211)).isoformat()
+        assert details["join_date"] == (date(2020, 3, 15) + timedelta(days=211)).isoformat()
+        assert details["loans"][0]["received"] == (
+            date(2025, 1, 26) + timedelta(days=211)
+        ).isoformat()
+        assert details["representative"]["name"] == "Agency"
+        assert details["source_date"] == newest
