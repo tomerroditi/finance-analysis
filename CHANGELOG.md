@@ -1,3 +1,9 @@
+## v1.86.1 (2026-09-23)
+
+### Perf
+
+- **e2e**: balance CI shards by duration and run them on the production build (#349)
+
 ## v1.86.0 (2026-09-22)
 
 ### Feat
