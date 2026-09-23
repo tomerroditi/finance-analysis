@@ -1,3 +1,9 @@
+## v1.86.0 (2026-09-22)
+
+### Feat
+
+- **dashboard**: project income from recurring streams, not averages (#345)
+
 ## v1.85.1 (2026-09-22)
 
 ### Fix

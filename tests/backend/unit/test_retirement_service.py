@@ -1154,3 +1154,46 @@ class TestKerenHishtalmutSingleCount:
 
         assert tracked == pytest.approx(68957.0)
         assert suggested == pytest.approx(tracked)
+
+
+class TestCurrentStatusBaselines:
+    """How get_current_status turns history into a monthly income/expense."""
+
+    @staticmethod
+    def _service_with_months(months):
+        """A RetirementService whose income/expense history is ``months``."""
+        service = RetirementService(MagicMock())
+        service.analysis_service = MagicMock()
+        service.analysis_service.get_income_expenses_over_time.return_value = months
+        service.analysis_service.get_net_worth_over_time.return_value = []
+        service.analysis_service.get_overview.return_value = {}
+        service.investments_service = MagicMock()
+        service.investments_service.get_hishtalmut_total_balance.return_value = 0.0
+        return service
+
+    def test_one_windfall_month_does_not_set_the_baseline(self):
+        """A FIRE projection compounds monthly_savings for decades, so the
+        middle month has to set it — not an average one inheritance can move."""
+        months = [
+            {"month": f"2026-0{n}", "income": 25000.0, "expenses": 15000.0}
+            for n in range(1, 6)
+        ]
+        months.append({"month": "2026-06", "income": 400000.0, "expenses": 15000.0})
+
+        status = self._service_with_months(months).get_current_status()
+
+        assert status["avg_monthly_income"] == 25000.0
+        assert status["monthly_savings"] == 10000.0
+
+    def test_one_extraordinary_spend_does_not_set_the_expense_baseline(self):
+        """The same protection on the way out — a wedding is not a cost of
+        living."""
+        months = [
+            {"month": f"2026-0{n}", "income": 25000.0, "expenses": 15000.0}
+            for n in range(1, 6)
+        ]
+        months.append({"month": "2026-06", "income": 25000.0, "expenses": 300000.0})
+
+        status = self._service_with_months(months).get_current_status()
+
+        assert status["avg_monthly_expenses"] == 15000.0

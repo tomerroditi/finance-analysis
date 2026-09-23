@@ -240,7 +240,9 @@
       "projected": "Projected",
       "expectedIncome": "Expected income",
       "expectedExpenses": "Expected expenses",
-      "projectedNet": "Projected net"
+"incomeStillDue": "incl. {{amount}} still due",
+      "dataThrough": "data through {{date}}",
+            "projectedNet": "Projected net"
     },
     "insights": {
       "title": "Insights",

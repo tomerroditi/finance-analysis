@@ -9,21 +9,58 @@ builds on. Mixed into ``AnalysisService`` (see ``core.py``).
 import pandas as pd
 
 from backend.utils.dataframe_dates import to_month_series
+from backend.constants.providers import Services
 from backend.constants.tables import TransactionsTableFields
 
 
 class ForecastMixin:
     """Forecasting methods for ``AnalysisService``."""
 
+    #: Complete months behind the median baselines the forecast falls back on.
+    #: Six is long enough for a median to mean something and short enough that
+    #: a household whose income changed last spring is not still described by
+    #: what it earned before.
+    _TREND_MONTHS = 6
+
     def get_cash_flow_forecast(self) -> dict:
-        """Forecast the current month's cash flow from trend + month-to-date actuals.
+        """Forecast the current month's cash flow from what is due plus actuals.
 
         Projects where the month will end by combining what has already
-        happened this month (income received, expenses spent) with a
-        trend-based estimate of the remaining days. The expense trend is the
-        rolling 3-month average (falling back to 6/12-month when sparse); the
-        income trend is the average of the last 3 complete months. The
-        projection never dips below money already spent.
+        happened this month with what is still *owed* to it — not with an
+        average of recent months.
+
+        **Income comes from detected recurring streams.** A salary, an
+        allowance, a benefit: money that arrives on a schedule, found by
+        :meth:`~backend.services.recurring_service.RecurringService.get_recurring_income`
+        and added only for the streams that have not yet paid this month. An
+        average cannot do this job, because one windfall poisons it for three
+        months — a household that banked a year of wedding gifts in June was
+        told all summer that it earned 166k a month and would save 145k this
+        month, on a salary of 22k. The median fallback below is only reached
+        when no stream is detected at all.
+
+        **Expenses still use a trend**, because discretionary spending has no
+        schedule — but the part that *does* is taken out of the trend and
+        added back at its own due dates (``committed_remaining``), so a bill
+        is counted once, when it falls, rather than smeared across the month.
+
+        Both projections run over the days the data has *not* seen rather than
+        the days left on the calendar. That edge comes from the **scrape audit
+        trail** — the weakest-link sync across scrapable accounts — and not
+        from the last transaction on file: a household that simply did not
+        spend for three days leaves exactly the same gap at the end of the
+        ledger as an account that stopped syncing three days ago, and only one
+        of those is missing data. What the fresher accounts have already
+        reported inside that window is subtracted, so a card current to the
+        23rd beside a bank current to the 5th is not billed twice.
+
+        Money-in and money-out are measured on their own terms, and the two
+        are not interchangeable. ``actual_expenses`` and the trend behind
+        ``expected_expenses`` are itemized, credit-card-deduped spending —
+        what the household *bought* this month. ``current_bank_balance`` and
+        the ``daily`` trajectory are what the *account* did, where a card
+        statement lands as one debit for last month's shopping. Mixing the two
+        is what made "expenses so far" read as last month's card bill.
 
         This is the data behind the dashboard "This Month" hero — the
         month-end balance projection and the "safe to spend" figure that
@@ -36,11 +73,20 @@ class ForecastMixin:
 
             - ``month`` – current month in ``YYYY-MM`` format.
             - ``days_in_month`` / ``day_of_month`` / ``days_remaining`` – ints.
-            - ``actual_income`` / ``actual_expenses`` – month-to-date totals
-              (non-negative; expenses are the absolute value of outflows).
+            - ``observed_through`` – ``YYYY-MM-DD`` the accounts are synced
+              through (weakest link), or null when nothing is scrapable.
+            - ``actual_income`` – month-to-date income banked.
+            - ``actual_expenses`` – month-to-date itemized spend (the same
+              figure the Budget page shows).
             - ``expected_income`` / ``expected_expenses`` – projected
               full-month totals.
             - ``projected_net`` – ``expected_income - expected_expenses``.
+            - ``income_basis`` – ``recurring`` when income streams were
+              detected, ``trend`` when the median fallback was used.
+            - ``recurring_income_due`` – recurring income still expected
+              before month end.
+            - ``recurring_income_items`` – the streams behind it, each
+              ``{label, normalized, amount, cadence, expected_date}``.
             - ``current_bank_balance`` – sum of tracked bank balances now.
             - ``projected_end_balance`` – bank balance projected to month end.
             - ``safe_to_spend`` – money left to spend freely this month:
@@ -49,21 +95,26 @@ class ForecastMixin:
             - ``safe_to_spend_daily`` – ``safe_to_spend`` spread over the
               remaining days.
             - ``avg_monthly_income`` / ``avg_monthly_expenses`` – the trend
-              baselines used.
-            - ``committed_remaining`` – detected recurring charges whose next
-              due date falls in the remainder of this month.
+              baselines: a median of complete months for income, the rolling
+              mean for expenses.
+            - ``committed_remaining`` – confirmed recurring charges whose next
+              due date falls in the unobserved remainder of this month.
             - ``daily`` – per-day list of ``{date, actual_balance,
               projected_balance}`` for the trajectory chart (one is null
               depending on whether the day is past or future).
         """
+        from backend.services.recurring_service import RecurringService
+
         today = pd.Timestamp.today().normalize()
         month_str = today.strftime("%Y-%m")
         month_start = today.replace(day=1)
+        month_end = today + pd.offsets.MonthEnd(0)
         days_in_month = int(today.days_in_month)
         day_of_month = int(today.day)
         days_remaining = days_in_month - day_of_month
+        recurring = RecurringService(self.db)
 
-        # --- Trend baselines (complete months only) ---
+        # --- Expense trend baseline and month-to-date spend (one basis) ---
         monthly_exp = self.get_monthly_expenses(exclude_pending_refunds=True)
         avg_monthly_expenses = monthly_exp.get("avg_3_months", 0.0) or 0.0
         if avg_monthly_expenses <= 0:
@@ -72,25 +123,37 @@ class ForecastMixin:
                 or monthly_exp.get("avg_12_months", 0.0)
                 or 0.0
             )
-
-        ie_over_time = self.get_income_expenses_over_time()
-        complete_months = [m for m in ie_over_time if m["month"] < month_str]
-        recent = complete_months[-3:] if len(complete_months) >= 3 else complete_months
-        avg_monthly_income = (
-            sum(m["income"] for m in recent) / len(recent) if recent else 0.0
+        actual_expenses = next(
+            (
+                float(m["expenses"])
+                for m in monthly_exp["months"]
+                if m["month"] == month_str
+            ),
+            0.0,
         )
 
-        # --- Month-to-date actuals (non-CC cashflow) ---
+        # --- How far the accounts have actually been synced ---
+        # Accounts are scraped on their own schedule, so the days after the
+        # last sync carry no evidence either way. Counting them as observed
+        # reads them as days of spending nothing, which is how a week-old
+        # scrape quietly turned into a week of savings.
+        sync_edges = self._account_sync_edges(today)
+        observed_through = min(sync_edges.values()) if sync_edges else None
+        observed_edge = observed_through if observed_through is not None else today
+
+        # --- Bank-side month-to-date, for the balance trajectory ---
         df = self.repo.get_cashflow_transactions()
         actual_income = 0.0
-        actual_expenses = 0.0
+        cash_out_to_date = 0.0
         per_day_net: dict[int, float] = {}
         if not df.empty:
             df = df.copy()
             df["date_parsed"] = pd.to_datetime(df["date"])
             mtd = df[(df["date_parsed"] >= month_start) & (df["date_parsed"] <= today)]
             if not mtd.empty:
-                actual_income, _, actual_expenses = self.get_income_investments_and_expenses(mtd)
+                actual_income, _, cash_out_to_date = (
+                    self.get_income_investments_and_expenses(mtd)
+                )
                 per_day_net = (
                     mtd.groupby(mtd["date_parsed"].dt.day)["amount"].sum().to_dict()
                 )
@@ -99,33 +162,75 @@ class ForecastMixin:
         balances = self.bank_balance_service.get_all_balances()
         current_bank_balance = float(sum(b["balance"] for b in balances)) if balances else 0.0
 
-        # --- Projection ---
-        trend_daily_expense = avg_monthly_expenses / days_in_month if days_in_month else 0.0
-        projected_remaining_expenses = max(0.0, trend_daily_expense * days_remaining)
-        expected_expenses = actual_expenses + projected_remaining_expenses
-        expected_income = max(actual_income, avg_monthly_income)
-        projected_remaining_income = max(0.0, expected_income - actual_income)
-        projected_net = expected_income - expected_expenses
-        projected_end_balance = (
-            current_bank_balance + projected_remaining_income - projected_remaining_expenses
-        )
-
         # --- Known upcoming recurring charges still due this month ---
-        # User-confirmed subscriptions/bills whose next expected charge falls in
-        # the remainder of the month. Subtracted from "safe to spend" so the
-        # figure reflects money still earmarked for committed bills, not just
-        # income minus what's been spent so far. Candidates awaiting review are
-        # excluded — a false positive would quietly shrink safe-to-spend.
-        from backend.services.recurring_service import RecurringService
-
-        month_end = today + pd.offsets.MonthEnd(0)
+        # User-confirmed subscriptions/bills whose next expected charge falls
+        # in the part of the month the data has not seen. Candidates awaiting
+        # review are excluded — a false positive would quietly shrink
+        # safe-to-spend.
         committed_remaining = 0.0
-        for item in RecurringService(self.db).get_confirmed_items():
+        committed_monthly = 0.0
+        for item in recurring.get_confirmed_items():
             if item["status"] == "ended":
                 continue
+            committed_monthly += item["monthly_equivalent"]
             next_due = pd.Timestamp(item["next_expected_date"])
-            if today < next_due <= month_end:
+            if observed_edge < next_due <= month_end:
                 committed_remaining += item["amount"]
+
+        # --- Expense projection: trend for the unscheduled part only ---
+        # The committed bills are added back at their own due dates just
+        # below, so leaving them in the daily trend would bill them twice.
+        discretionary_monthly = max(0.0, avg_monthly_expenses - committed_monthly)
+        projected_remaining_expenses = (
+            self._project_per_account(
+                discretionary_monthly,
+                self._itemized_spend_shares(month_start),
+                sync_edges,
+                today,
+                month_start,
+            )
+            + committed_remaining
+        )
+        expected_expenses = actual_expenses + projected_remaining_expenses
+
+        # --- Income projection: what is still due, not what is typical ---
+        income_due = recurring.get_income_due_remaining(today=today)
+        ie_over_time = self.get_income_expenses_over_time()
+        complete_months = [m for m in ie_over_time if m["month"] < month_str]
+        recent = complete_months[-self._TREND_MONTHS:]
+        # Median, not mean: the point of the fallback is to survive the month
+        # the household sold a car or married off a child.
+        avg_monthly_income = (
+            float(pd.Series([m["income"] for m in recent]).median()) if recent else 0.0
+        )
+        # A stream that has already paid this month owes nothing and still
+        # counts as evidence — otherwise the basis would flip to the trend
+        # (and the median with it) the moment the salary landed.
+        if income_due["has_streams"]:
+            income_basis = "recurring"
+            expected_income = actual_income + income_due["amount"]
+        else:
+            income_basis = "trend"
+            expected_income = max(actual_income, avg_monthly_income)
+        projected_remaining_income = max(0.0, expected_income - actual_income)
+        projected_net = expected_income - expected_expenses
+
+        # --- Bank-balance trajectory, on the account's own terms ---
+        cash_out_baseline = (
+            float(pd.Series([m["expenses"] for m in recent]).median()) if recent else 0.0
+        )
+        projected_remaining_cash_out = self._project_per_account(
+            cash_out_baseline,
+            self._cashflow_spend_shares(month_start),
+            sync_edges,
+            today,
+            month_start,
+        )
+        projected_end_balance = (
+            current_bank_balance
+            + projected_remaining_income
+            - projected_remaining_cash_out
+        )
 
         safe_to_spend = max(0.0, expected_income - actual_expenses - committed_remaining)
         safe_to_spend_daily = (
@@ -133,9 +238,9 @@ class ForecastMixin:
         )
 
         # --- Daily trajectory for the chart ---
-        month_start_balance = current_bank_balance - (actual_income - actual_expenses)
+        month_start_balance = current_bank_balance - (actual_income - cash_out_to_date)
         remaining_daily_net = (
-            (projected_remaining_income - projected_remaining_expenses) / days_remaining
+            (projected_remaining_income - projected_remaining_cash_out) / days_remaining
             if days_remaining > 0
             else 0.0
         )
@@ -167,11 +272,19 @@ class ForecastMixin:
             "days_in_month": days_in_month,
             "day_of_month": day_of_month,
             "days_remaining": days_remaining,
+            "observed_through": (
+                observed_through.strftime("%Y-%m-%d")
+                if observed_through is not None
+                else None
+            ),
             "actual_income": round(actual_income, 2),
             "actual_expenses": round(actual_expenses, 2),
             "expected_income": round(expected_income, 2),
             "expected_expenses": round(expected_expenses, 2),
             "projected_net": round(projected_net, 2),
+            "income_basis": income_basis,
+            "recurring_income_due": round(income_due["amount"], 2),
+            "recurring_income_items": income_due["items"],
             "current_bank_balance": round(current_bank_balance, 2),
             "projected_end_balance": round(projected_end_balance, 2),
             "safe_to_spend": round(safe_to_spend, 2),
@@ -180,6 +293,246 @@ class ForecastMixin:
             "avg_monthly_expenses": round(avg_monthly_expenses, 2),
             "committed_remaining": round(committed_remaining, 2),
             "daily": daily,
+        }
+
+    def _account_sync_edges(
+        self, today: pd.Timestamp
+    ) -> dict[tuple[str, str], pd.Timestamp]:
+        """How far each account has been synced, keyed by provider + name.
+
+        Staleness is **per account**, not per household: accounts are scraped
+        on their own schedule, so a card current to yesterday and a bank three
+        weeks behind leave two different holes in the month. The scrape audit
+        trail is the only thing that knows which — reading the edge off the
+        last transaction cannot tell a household that spent nothing for three
+        days from an account that stopped syncing three days ago.
+
+        The key is ``(provider, account_name)`` because that is what the
+        transaction tables carry; the scraper writes both from the same
+        credential row, so the join is exact. An account with no credential at
+        all (cash, manual investments) is simply absent, and callers read that
+        as "the user types it in, so it is never behind".
+
+        Insurance is excluded on the same grounds the budget's freshness badge
+        excludes it (``useBudgetFreshness``): it is scraped but produces no
+        budget transactions, so a stale insurance sync says nothing about how
+        complete the month is. An account that has *never* synced is skipped
+        rather than treated as infinitely stale — it contributed nothing to
+        the trend baseline either, so counting it would project spending that
+        no month in the history ever contained.
+
+        Parameters
+        ----------
+        today : pd.Timestamp
+            Upper bound — a clock-skewed scrape row cannot observe the future.
+
+        Returns
+        -------
+        dict[tuple[str, str], pd.Timestamp]
+            ``(provider, account_name)`` -> the day it is synced through.
+        """
+        from backend.services.scraping_history_service import ScrapingHistoryService
+
+        edges: dict[tuple[str, str], pd.Timestamp] = {}
+        for entry in ScrapingHistoryService(self.db).get_last_scrape_dates():
+            if entry["service"] == Services.INSURANCE.value:
+                continue
+            if not entry["last_scrape_date"]:
+                continue
+            key = (entry["provider"], entry["account_name"])
+            day = min(pd.Timestamp(entry["last_scrape_date"]).normalize(), today)
+            # Two credentials on one key would be odd, but the weaker link
+            # is the honest answer for the transactions they share.
+            edges[key] = min(edges[key], day) if key in edges else day
+        return edges
+
+    def _project_per_account(
+        self,
+        monthly_baseline: float,
+        shares: dict[tuple[str, str], float],
+        edges: dict[tuple[str, str], pd.Timestamp],
+        today: pd.Timestamp,
+        month_start: pd.Timestamp,
+    ) -> float:
+        """Project a monthly baseline over each account's own unsynced days.
+
+        The household's typical month is split across the accounts that
+        produced it (``shares``), and each slice is projected over the days
+        *that* account has not reported. A card synced to the 23rd contributes
+        seven days; a bank synced to the 5th contributes twenty-five. Rolling
+        both into one household-wide window is what made the two
+        indistinguishable — and the correction for it (subtracting what the
+        fresher account had already reported inside the shared window) let a
+        big card purchase cancel out the stale bank's missing direct debits,
+        which is a different wrong answer.
+
+        Shares sum to 1, so when every account is equally fresh this collapses
+        exactly to ``baseline / days_in_month * unobserved_days``. With no
+        history to split (a first month, an empty database), it falls back to
+        that whole-household form against the weakest link.
+
+        Parameters
+        ----------
+        monthly_baseline : float
+            Typical spend for a whole month, on the basis being projected.
+        shares : dict[tuple[str, str], float]
+            Each account's share of that baseline, summing to 1.
+        edges : dict[tuple[str, str], pd.Timestamp]
+            Per-account sync days from :meth:`_account_sync_edges`.
+        today : pd.Timestamp
+            Reference day.
+        month_start : pd.Timestamp
+            First day of the running month.
+
+        Returns
+        -------
+        float
+            Projected spend for the rest of the month.
+        """
+        days_in_month = int(today.days_in_month)
+        if days_in_month <= 0 or monthly_baseline <= 0:
+            return 0.0
+        daily = monthly_baseline / days_in_month
+        if not shares:
+            weakest = min(edges.values()) if edges else None
+            return daily * self._unobserved_days(
+                weakest, today, month_start, days_in_month
+            )
+        return sum(
+            daily
+            * share
+            * self._unobserved_days(
+                edges.get(key), today, month_start, days_in_month
+            )
+            for key, share in shares.items()
+        )
+
+    @staticmethod
+    def _unobserved_days(
+        edge: pd.Timestamp | None,
+        today: pd.Timestamp,
+        month_start: pd.Timestamp,
+        days_in_month: int,
+    ) -> int:
+        """Days of the running month an account has not reported.
+
+        Parameters
+        ----------
+        edge : pd.Timestamp or None
+            The day it is synced through. None means it is not scraped at all
+            (cash, manual entry) and is therefore current by definition.
+        today : pd.Timestamp
+            Reference day.
+        month_start : pd.Timestamp
+            First day of the running month.
+        days_in_month : int
+            Length of the running month.
+
+        Returns
+        -------
+        int
+            Days from the edge to month end.
+        """
+        if edge is None:
+            return days_in_month - int(today.day)
+        if edge < month_start:
+            return days_in_month
+        return days_in_month - int(edge.day)
+
+    def _itemized_spend_shares(
+        self, month_start: pd.Timestamp
+    ) -> dict[tuple[str, str], float]:
+        """Each account's share of budget-basis spend over the trend window.
+
+        The same filtered frame ``get_monthly_expenses`` totals, so the split
+        and the baseline it splits are measured the same way. Complete months
+        only — the running month is exactly the one whose accounts are
+        unevenly reported, so letting it weight the shares would hand the
+        freshest account the largest slice of what the stalest one still owes.
+
+        Parameters
+        ----------
+        month_start : pd.Timestamp
+            First day of the running month; the window ends the day before.
+
+        Returns
+        -------
+        dict[tuple[str, str], float]
+            ``(provider, account_name)`` -> share, summing to 1. Empty when
+            there is no history to split.
+        """
+        from backend.services.budget_service import MonthlyBudgetService
+
+        return self._spend_shares(
+            MonthlyBudgetService(self.db).get_filtered_expenses(
+                exclude_pending_refunds=True
+            ),
+            month_start,
+        )
+
+    def _cashflow_spend_shares(
+        self, month_start: pd.Timestamp
+    ) -> dict[tuple[str, str], float]:
+        """Each account's share of bank-basis outflow over the trend window.
+
+        The balance trajectory's own basis, where a card statement is one
+        debit on the account that paid it.
+
+        Parameters
+        ----------
+        month_start : pd.Timestamp
+            First day of the running month; the window ends the day before.
+
+        Returns
+        -------
+        dict[tuple[str, str], float]
+            ``(provider, account_name)`` -> share, summing to 1.
+        """
+        df = self.repo.get_cashflow_transactions()
+        if df.empty:
+            return {}
+        return self._spend_shares(df[self.get_transactions_masks(df)["expenses"]], month_start)
+
+    def _spend_shares(
+        self, frame: pd.DataFrame, month_start: pd.Timestamp
+    ) -> dict[tuple[str, str], float]:
+        """Normalize a frame of expense rows into per-account shares.
+
+        Parameters
+        ----------
+        frame : pd.DataFrame
+            Expense rows carrying ``date``, ``amount``, ``provider`` and
+            ``account_name``.
+        month_start : pd.Timestamp
+            Exclusive upper bound — complete months only.
+
+        Returns
+        -------
+        dict[tuple[str, str], float]
+            ``(provider, account_name)`` -> share, summing to 1.
+        """
+        if frame.empty:
+            return {}
+        date_col = TransactionsTableFields.DATE.value
+        amount_col = TransactionsTableFields.AMOUNT.value
+        parsed = pd.to_datetime(frame[date_col])
+        window_start = month_start - pd.DateOffset(months=self._TREND_MONTHS)
+        window = frame[(parsed >= window_start) & (parsed < month_start)]
+        if window.empty:
+            return {}
+        outflow = (
+            window[window[amount_col] < 0]
+            .groupby(["provider", "account_name"])[amount_col]
+            .sum()
+            .mul(-1)
+        )
+        total = float(outflow.sum())
+        if total <= 0:
+            return {}
+        return {
+            (str(provider), str(account)): float(value) / total
+            for (provider, account), value in outflow.items()
+            if value > 0
         }
 
     def get_monthly_expenses(

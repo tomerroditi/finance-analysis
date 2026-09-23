@@ -1,17 +1,21 @@
-"""Recurring-charge (subscription) detection.
+"""Recurring-charge (subscription) and recurring-income detection.
 
 Pure heuristic over scraped transaction history — no open-banking merchant
-feed required. Groups expense transactions by a normalized merchant label and
-looks for a stable cadence (monthly through annual) across at least three
-occurrences. This powers the dashboard subscriptions view and feeds the
-insights engine with "new subscription" / "price increase" signals.
+feed required. Groups transactions by a normalized merchant label and looks
+for a stable cadence (monthly through annual) across at least three
+occurrences. On the expense side this powers the dashboard subscriptions view
+and feeds the insights engine with "new subscription" / "price increase"
+signals; on the income side it tells the forecast which money is actually
+*due* this month rather than merely typical of recent ones.
 
 Detection only ever produces a *candidate*. A candidate becomes a recurring
 charge the rest of the app acts on — committed spend in the budget overview,
 the forecast's safe-to-spend, insight cards — only once the user confirms it
 (:class:`~backend.repositories.recurring_decisions_repository.RecurringDecisionsRepository`).
 Unconfirmed candidates are reported as ``pending`` so the UI can ask, and
-dismissed ones are suppressed for good.
+dismissed ones are suppressed for good. Income streams carry no verdict — see
+:meth:`RecurringService.get_recurring_income` for why the asymmetry is
+deliberate.
 """
 
 import copy
@@ -36,11 +40,16 @@ from backend.repositories.recurring_decisions_repository import (
     RecurringDecisionsRepository,
 )
 from backend.repositories.transactions_repository import TransactionsRepository
+from backend.services.transaction_classification import income_mask
 from backend.utils import data_cache
+
+#: Which side of zero counts as an occurrence, for :meth:`_detect_streams`.
+OUTFLOW = "outflow"
+INFLOW = "inflow"
 
 
 class RecurringService:
-    """Detect recurring charges from itemized transaction history."""
+    """Detect recurring charges and recurring income from transaction history."""
 
     # Cadences we recognise, as ``(name, period_days, tolerance)``. Tolerance is
     # per-cadence and tight enough that the bands never touch: a gap that falls
@@ -108,6 +117,21 @@ class RecurringService:
     _MIN_COVERAGE = 0.5
     # Relative amount change that counts as a price change.
     _PRICE_CHANGE_THRESHOLD = 0.10
+    # What a stream whose amount moves is worth planning around: a low
+    # quantile of its recent occurrences rather than their middle. Half the
+    # months coming in under the projection is the wrong failure mode for a
+    # number the user spends against, and the quarter-point costs little —
+    # across the demo history it reads a varying allowance about 15% under its
+    # median. The window is six occurrences: long enough to see the spread,
+    # short enough that a stream which has since grown is not held to what it
+    # paid two years ago.
+    _EXPECTED_AMOUNT_QUANTILE = 0.25
+    _EXPECTED_AMOUNT_WINDOW = 6
+    # Longest period still treated as "once a month" when working out what a
+    # stream still owes the running month. The monthly band's own tolerance
+    # reaches 35 days, and a 30-day period walks backwards through a 31-day
+    # month, so the next expected date alone cannot answer the question.
+    _MONTHLY_PERIOD_MAX_DAYS = 35
     # Spread of the middle half of the gaps. A robust median absolute deviation
     # reads a strictly alternating rhythm (26, 34, 26, 34 days) as *perfectly*
     # regular, because most gaps sit exactly on the median — this notices the
@@ -420,20 +444,84 @@ class RecurringService:
         if df.empty:
             return empty
 
-        df["date_parsed"] = pd.to_datetime(df["date"]).dt.normalize()
-        df["norm"] = df["description"].apply(self._normalize)
-        df = df[df["norm"] != ""]
-        if df.empty:
+        streams = self._detect_streams(df, today, OUTFLOW)
+        if not streams:
             return empty
 
         verdicts = self.decisions.get_all()
         items: list[dict] = []
         dismissed_count = 0
+        for stream in streams:
+            verdict = verdicts.get(stream["normalized"])
+            confirmation = verdict.decision if verdict else PENDING
+            if confirmation == "dismissed":
+                dismissed_count += 1
+                if not include_dismissed:
+                    continue
+            items.append({**stream, "confirmation": confirmation})
+
+        live = [i for i in items if i["status"] != "ended"]
+        total_monthly = sum(
+            i["monthly_equivalent"] for i in live if i["confirmation"] == "confirmed"
+        )
+        pending_monthly = sum(
+            i["monthly_equivalent"] for i in live if i["confirmation"] == PENDING
+        )
+        return {
+            "items": items,
+            "total_monthly": round(total_monthly, 2),
+            "pending_monthly": round(pending_monthly, 2),
+            "pending_count": sum(1 for i in items if i["confirmation"] == PENDING),
+            "confirmed_count": sum(
+                1 for i in items if i["confirmation"] == "confirmed"
+            ),
+            "dismissed_count": dismissed_count,
+        }
+
+    def _detect_streams(
+        self, df: pd.DataFrame, today: pd.Timestamp, direction: str
+    ) -> list[dict]:
+        """Find the repeating money streams in a transactions frame.
+
+        The cadence machinery both recurring *charges* and recurring *income*
+        are built on. ``direction`` picks which side of zero counts as an
+        occurrence and how a candidate qualifies on its amount — see
+        :meth:`_qualifies_on_amount`.
+
+        Parameters
+        ----------
+        df : pd.DataFrame
+            Rows already narrowed to the side being detected (expense rows for
+            ``OUTFLOW``, income rows for ``INFLOW``), carrying ``date``,
+            ``description``, ``amount`` and ``category`` columns.
+        today : pd.Timestamp
+            Normalized reference day, for the ``new`` / ``ended`` verdict.
+        direction : str
+            ``OUTFLOW`` or ``INFLOW``.
+
+        Returns
+        -------
+        list[dict]
+            Stream dicts as documented on :meth:`get_recurring`'s ``items``,
+            minus ``confirmation`` — a verdict is the caller's business —
+            sorted by ``monthly_equivalent`` descending.
+        """
+        df = df.copy()
+        df["date_parsed"] = pd.to_datetime(df["date"]).dt.normalize()
+        df["norm"] = df["description"].apply(self._normalize)
+        df = df[df["norm"] != ""]
+        if df.empty:
+            return []
+
+        inflow = direction == INFLOW
+        streams: list[dict] = []
 
         # Net same-day charges and refunds: sum signed amounts per merchant-day,
         # then keep only net-outflow days as charge occurrences. A same-day (or
         # same-statement-day) refund shrinks the charge; a fully-refunded day
-        # drops out entirely instead of masquerading as a recurring hit.
+        # drops out entirely instead of masquerading as a recurring hit. The
+        # same netting on the income side makes a same-day reversal cancel the
+        # deposit it undoes.
         #
         # One grouping over both keys rather than a per-merchant groupby nested
         # inside the merchant loop: pandas charges a fixed ~1 ms to set up each
@@ -447,13 +535,14 @@ class RecurringService:
 
         for norm, norm_daily in daily_by_norm.groupby(level=0):
             daily_net = norm_daily.droplevel(0)
-            charges = daily_net[daily_net < 0]
+            charges = daily_net[daily_net > 0] if inflow else daily_net[daily_net < 0]
             if len(charges) < self._MIN_OCCURRENCES:
                 continue
 
             dates = charges.index.to_series().reset_index(drop=True)
-            # Net charge magnitudes (positive), aligned to date order.
-            amounts = pd.Series(-charges.to_numpy())
+            # Net magnitudes (positive), aligned to date order.
+            magnitudes = charges.to_numpy()
+            amounts = pd.Series(magnitudes if inflow else -magnitudes)
 
             diffs = dates.diff().dropna().dt.days
             median_interval = float(diffs.median())
@@ -480,22 +569,12 @@ class RecurringService:
             if amount <= 0:
                 continue
 
-            # Two ways to qualify: a fixed-price subscription, or a metered bill
-            # whose amount moves but whose schedule is exact. See the constants.
-            fixed_consistency = self._amount_consistency(
-                amounts, amount, self._AMOUNT_BAND
+            qualified = self._qualifies_on_amount(
+                amounts, amount, interval_spread, len(charges), direction
             )
-            is_fixed = fixed_consistency >= self._MIN_AMOUNT_CONSISTENCY
-            metered_consistency = self._amount_consistency(
-                amounts, amount, self._VARIABLE_AMOUNT_BAND
-            )
-            is_metered = (
-                metered_consistency >= self._MIN_VARIABLE_AMOUNT_CONSISTENCY
-                and interval_spread <= self._VARIABLE_MAX_INTERVAL_MAD_CV
-                and len(charges) >= self._MIN_METERED_OCCURRENCES
-            )
-            if not (is_fixed or is_metered):
+            if qualified is None:
                 continue
+            amount_kind, amount_score = qualified
 
             # Coverage: how many of the periods this history spans actually
             # carry a charge. Three sightings across two years are not monthly,
@@ -506,8 +585,6 @@ class RecurringService:
             if coverage < self._MIN_COVERAGE:
                 continue
 
-            amount_kind = "fixed" if is_fixed else "metered"
-            amount_score = fixed_consistency if is_fixed else metered_consistency
             interval_shape = self._interval_shape(diffs, median_interval)
             weights = self._CONFIDENCE_WEIGHTS
             confidence = round(
@@ -555,17 +632,13 @@ class RecurringService:
 
             monthly_equivalent = amount * 30.0 / period_days
 
-            verdict = verdicts.get(norm)
-            confirmation = verdict.decision if verdict else PENDING
-            if confirmation == "dismissed":
-                dismissed_count += 1
-                if not include_dismissed:
-                    continue
-
-            items.append({
+            streams.append({
                 "label": label,
                 "normalized": norm,
                 "amount": round(amount, 2),
+                "expected_amount": round(
+                    self._expected_amount(amounts, amount, amount_kind), 2
+                ),
                 "last_amount": round(last_amount, 2),
                 "cadence": cadence_name,
                 "period_days": period_days,
@@ -577,29 +650,305 @@ class RecurringService:
                 "next_expected_date": next_expected.strftime("%Y-%m-%d"),
                 "status": status,
                 "price_change": price_change,
-                "confirmation": confirmation,
                 "confidence": confidence,
                 "amount_kind": amount_kind,
             })
 
-        items.sort(key=lambda i: i["monthly_equivalent"], reverse=True)
-        live = [i for i in items if i["status"] != "ended"]
+        streams.sort(key=lambda i: i["monthly_equivalent"], reverse=True)
+        return streams
+
+    def _qualifies_on_amount(
+        self,
+        amounts: pd.Series,
+        median_amount: float,
+        interval_spread: float,
+        occurrences: int,
+        direction: str,
+    ) -> tuple[str, float] | None:
+        """Decide whether a candidate's amounts back up its schedule.
+
+        Outflows have two ways in — a flat subscription price, or a metered
+        bill whose amount swings but whose schedule is exact (see the
+        constants). Inflows get a third: a **variable** income. A salary with
+        overtime, a reserve-duty allowance, a benefit recomputed every month —
+        these arrive on a metronome and vary by a multiple, so no amount band
+        admits them. Demanding one only ever *dropped* income, and income the
+        forecast drops is income it quietly assumes will never arrive.
+
+        Losing that gate is safe here because nothing is inferred from a
+        variable stream's amount: it is projected at :meth:`_expected_amount`'s
+        conservative low quantile rather than its median, so the schedule is
+        what earns the stream its place and the amount can only understate it.
+        The schedule in exchange has to be exact — the metered path's tighter
+        spread and higher evidence bar, with no amount evidence to trade
+        against them.
+
+        Parameters
+        ----------
+        amounts : pd.Series
+            Net magnitudes (positive), in date order.
+        median_amount : float
+            Median of those magnitudes.
+        interval_spread : float
+            Robust spread of the gaps, from :meth:`_interval_spread`.
+        occurrences : int
+            How many times the stream was seen.
+        direction : str
+            ``OUTFLOW`` or ``INFLOW``.
+
+        Returns
+        -------
+        tuple[str, float] or None
+            ``(amount_kind, amount_score)`` where ``amount_kind`` is one of
+            ``fixed`` / ``metered`` / ``variable``, or None when the candidate
+            does not qualify on any path.
+        """
+        fixed_consistency = self._amount_consistency(
+            amounts, median_amount, self._AMOUNT_BAND
+        )
+        if fixed_consistency >= self._MIN_AMOUNT_CONSISTENCY:
+            return "fixed", fixed_consistency
+
+        metered_consistency = self._amount_consistency(
+            amounts, median_amount, self._VARIABLE_AMOUNT_BAND
+        )
+        exact_schedule = (
+            interval_spread <= self._VARIABLE_MAX_INTERVAL_MAD_CV
+            and occurrences >= self._MIN_METERED_OCCURRENCES
+        )
+        if (
+            metered_consistency >= self._MIN_VARIABLE_AMOUNT_CONSISTENCY
+            and exact_schedule
+        ):
+            return "metered", metered_consistency
+        if direction == INFLOW and exact_schedule:
+            return "variable", metered_consistency
+        return None
+
+    def _expected_amount(
+        self, amounts: pd.Series, median_amount: float, amount_kind: str
+    ) -> float:
+        """What one more occurrence of a stream is worth planning around.
+
+        A stream whose amount holds still is worth its median. One that swings
+        is worth its **low** end: a forecast spends this number, and guessing
+        an inflow too high (a safe-to-spend figure built on money that never
+        arrives) costs far more than guessing it too low. Only the recent
+        window counts — a stream that has grown should not be planned around
+        what it paid two years ago.
+
+        Parameters
+        ----------
+        amounts : pd.Series
+            Net magnitudes (positive), in date order.
+        median_amount : float
+            Median of those magnitudes.
+        amount_kind : str
+            ``fixed`` / ``metered`` / ``variable``.
+
+        Returns
+        -------
+        float
+            Amount to expect from the next occurrence.
+        """
+        if amount_kind == "fixed":
+            return median_amount
+        recent = amounts.tail(self._EXPECTED_AMOUNT_WINDOW)
+        return float(recent.quantile(self._EXPECTED_AMOUNT_QUANTILE))
+
+    def get_recurring_income(
+        self, today: date | pd.Timestamp | None = None
+    ) -> dict:
+        """Detect the household's repeating income streams.
+
+        Salaries, allowances, benefits, a standing transfer — money that
+        arrives on a schedule, found with the same cadence machinery that
+        finds recurring charges (:meth:`_detect_streams`), run over income
+        rows instead of expense ones.
+
+        Unlike a recurring *charge*, an income stream carries no user verdict.
+        The confirm/dismiss flow exists because a false-positive charge
+        silently shrinks safe-to-spend, and the user is the only one who can
+        say whether a bill is really a commitment. A stream here is never
+        trusted for more than its schedule: what it is worth comes from
+        :meth:`_expected_amount`, which reads a variable stream at its low end,
+        so a false positive nudges the forecast rather than steering it.
+
+        ``Ignore`` rows are out — that category marks transfers between the
+        user's own accounts, and a standing transfer from savings into the
+        current account is the single most metronomic thing in most histories
+        while being no income at all.
+
+        Parameters
+        ----------
+        today : date or pd.Timestamp, optional
+            Reference day for the ``new`` / ``ended`` status and the next
+            expected date. Defaults to the current day; tests pin it so the
+            verdict does not drift with the calendar.
+
+        Returns
+        -------
+        dict
+            Dictionary with keys:
+
+            - ``items`` – stream dicts shaped like :meth:`get_recurring`'s,
+              minus ``confirmation``, plus ``expected_amount`` (what to plan
+              around — see :meth:`_expected_amount`). Sorted by
+              ``monthly_equivalent`` descending.
+            - ``total_monthly`` – sum of ``monthly_equivalent`` over the
+              non-ended streams.
+        """
+        today = (
+            pd.Timestamp.today() if today is None else pd.Timestamp(today)
+        ).normalize()
+
+        return copy.deepcopy(
+            data_cache.cached(
+                self.db,
+                ("recurring.get_recurring_income", today),
+                lambda: self._detect_income(today),
+            )
+        )
+
+    def _detect_income(self, today: pd.Timestamp) -> dict:
+        """Run the detection behind :meth:`get_recurring_income`'s cache.
+
+        Parameters
+        ----------
+        today : pd.Timestamp
+            Normalized reference day.
+
+        Returns
+        -------
+        dict
+            The summary documented on :meth:`get_recurring_income`.
+        """
+        empty = {"items": [], "total_monthly": 0.0}
+
+        df = self.repo.get_itemized_transactions()
+        if df.empty:
+            return empty
+
+        df = df[income_mask(df) & (df["category"] != IGNORE_CATEGORY)]
+        if df.empty:
+            return empty
+
+        streams = self._detect_streams(df, today, INFLOW)
         total_monthly = sum(
-            i["monthly_equivalent"] for i in live if i["confirmation"] == "confirmed"
+            s["monthly_equivalent"] for s in streams if s["status"] != "ended"
         )
-        pending_monthly = sum(
-            i["monthly_equivalent"] for i in live if i["confirmation"] == PENDING
-        )
+        return {"items": streams, "total_monthly": round(total_monthly, 2)}
+
+    def get_income_due_remaining(
+        self, today: date | pd.Timestamp | None = None
+    ) -> dict:
+        """Recurring income still expected before the end of ``today``'s month.
+
+        The income half of ``committed_remaining``: what the forecast may add
+        to money already in hand without guessing. A monthly stream is due
+        once a month, so what it still owes is its expected amount less
+        whatever it has already paid this month — which also absorbs the drift
+        of a 30-day period against a 31-day month, where the next expected date
+        slides out of the month the payment will actually land in. Longer
+        cadences have no such slack and are read straight off their next
+        expected date.
+
+        A stream that has gone quiet past its cadence is ``ended`` and owes
+        nothing. One merely late still counts: the common reason a live
+        monthly stream has not shown up yet is that the account behind it has
+        not been scraped since it did.
+
+        Parameters
+        ----------
+        today : date or pd.Timestamp, optional
+            Reference day. Defaults to the current day.
+
+        Returns
+        -------
+        dict
+            Dictionary with keys:
+
+            - ``amount`` – total still expected this month.
+            - ``items`` – the contributing streams, each
+              ``{label, normalized, amount, cadence, expected_date}``, largest
+              first.
+            - ``has_streams`` – whether any income stream is live at all.
+              Distinct from ``amount > 0``: a salary already banked this month
+              leaves nothing due while still being exactly the evidence a
+              caller needs to prefer detection over a trend.
+        """
+        today = (
+            pd.Timestamp.today() if today is None else pd.Timestamp(today)
+        ).normalize()
+        month_start = today.replace(day=1)
+        month_end = today + pd.offsets.MonthEnd(0)
+
+        streams = self.get_recurring_income(today=today)["items"]
+        live = [s for s in streams if s["status"] != "ended"]
+        if not live:
+            return {"amount": 0.0, "items": [], "has_streams": False}
+
+        received = self._income_received_this_month(month_start, today)
+
+        items = []
+        for stream in live:
+            expected = float(stream["expected_amount"])
+            next_expected = pd.Timestamp(stream["next_expected_date"])
+            if stream["period_days"] <= self._MONTHLY_PERIOD_MAX_DAYS:
+                due = expected - received.get(stream["normalized"], 0.0)
+                expected_date = min(max(next_expected, today), month_end)
+            elif today < next_expected <= month_end:
+                due = expected
+                expected_date = next_expected
+            else:
+                continue
+            if due <= 0:
+                continue
+            items.append({
+                "label": stream["label"],
+                "normalized": stream["normalized"],
+                "amount": round(due, 2),
+                "cadence": stream["cadence"],
+                "expected_date": expected_date.strftime("%Y-%m-%d"),
+            })
+
+        items.sort(key=lambda i: i["amount"], reverse=True)
         return {
+            "amount": round(sum(i["amount"] for i in items), 2),
             "items": items,
-            "total_monthly": round(total_monthly, 2),
-            "pending_monthly": round(pending_monthly, 2),
-            "pending_count": sum(1 for i in items if i["confirmation"] == PENDING),
-            "confirmed_count": sum(
-                1 for i in items if i["confirmation"] == "confirmed"
-            ),
-            "dismissed_count": dismissed_count,
+            "has_streams": True,
         }
+
+    def _income_received_this_month(
+        self, month_start: pd.Timestamp, today: pd.Timestamp
+    ) -> dict[str, float]:
+        """Income banked so far this month, per stream key.
+
+        Parameters
+        ----------
+        month_start : pd.Timestamp
+            First day of the running month.
+        today : pd.Timestamp
+            Last day to count, inclusive.
+
+        Returns
+        -------
+        dict[str, float]
+            Normalized merchant key -> net inflow so far this month.
+        """
+        df = self.repo.get_itemized_transactions()
+        if df.empty:
+            return {}
+        df = df[income_mask(df) & (df["category"] != IGNORE_CATEGORY)]
+        if df.empty:
+            return {}
+        parsed = pd.to_datetime(df["date"]).dt.normalize()
+        df = df[(parsed >= month_start) & (parsed <= today)]
+        if df.empty:
+            return {}
+        df = df.assign(norm=df["description"].apply(self._normalize))
+        totals = df.groupby("norm")["amount"].sum()
+        return {k: float(v) for k, v in totals.items() if v > 0}
 
     def get_confirmed_items(
         self, today: date | pd.Timestamp | None = None
