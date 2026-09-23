@@ -743,6 +743,18 @@ export const handlers = [
 
   // ── Insurance Accounts API ──
   http.get("/api/insurance-accounts/", () => HttpResponse.json([])),
+  http.get("/api/insurance-accounts/clearing-house-reports", () =>
+    HttpResponse.json([]),
+  ),
+  http.get("/api/retirement/pension-forecast", () =>
+    HttpResponse.json({
+      estimate: null,
+      with_deposits: 0,
+      no_deposits: 0,
+      as_of: null,
+      funds: 0,
+    }),
+  ),
 
   // ── Backups API ──
   http.get("/api/backups/", () => HttpResponse.json([])),

@@ -33,5 +33,13 @@ test.describe("Liabilities", () => {
     // effective interest-rate line.
     await expect(page.getByText("Fixed Rate").first()).toBeVisible();
     await expect(page.getByText(/% interest/).first()).toBeVisible();
+
+    // --- a loan against a pension policy, synced from the clearing house ---
+    // The demo's Keren Hishtalmut loan is mirrored as its own liability.
+    const badge = page.getByTestId("liability-clearing-house-badge");
+    await expect(badge).toHaveCount(1);
+    await expect(
+      page.getByRole("heading", { name: "Keren Hishtalmut - Tech Company — loan" }),
+    ).toBeVisible();
   });
 });

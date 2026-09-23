@@ -109,6 +109,8 @@ export function makeQueryKeys(demo: boolean) {
       projections: () => ["retirement", "projections", demo] as const,
       suggestions: () => ["retirement", "suggestions", demo] as const,
       scrapedDefaults: () => ["retirement", "scraped-defaults", demo] as const,
+      pensionForecast: (currentAge: number, targetRetirementAge: number) =>
+        ["retirement", "pension-forecast", currentAge, targetRetirementAge, demo] as const,
     },
     balances: {
       bank: () => ["bank-balances", demo] as const,
@@ -142,6 +144,8 @@ export function makeQueryKeys(demo: boolean) {
     },
     insurance: {
       accounts: () => ["insurance-accounts", demo] as const,
+      clearingHouseReports: () =>
+        ["insurance-accounts", "clearing-house-reports", demo] as const,
     },
     savingsGoals: {
       all: () => ["savings-goals", demo] as const,

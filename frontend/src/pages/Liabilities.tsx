@@ -95,6 +95,14 @@ function LiabilityCard({
                 {liability.lender}
               </p>
             )}
+            {liability.insurance_loan_key && (
+              <p
+                data-testid="liability-clearing-house-badge"
+                className="text-[10px] font-bold text-blue-400 mt-0.5"
+              >
+                {t("liabilities.fromClearingHouse")}
+              </p>
+            )}
           </div>
         </div>
         <div

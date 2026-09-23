@@ -34,14 +34,14 @@ test.describe("DataSources", () => {
     await expectPageTitle(page, /Data Sources/);
     await expect(page.locator("main")).toBeVisible();
 
-    // The four demo accounts (Hapoalim, Max, Visa Cal, HaPhoenix) each render
+    // The four demo accounts (Hapoalim, Max, Visa Cal, Pension Clearing House) each render
     // a <ProviderLogo> with alt text set to the humanized provider name. We
     // verify the image actually loaded — naturalWidth > 0 only holds once the
     // browser has decoded a real image, so a broken/missing logo would fail
     // here even with width/height set in HTML. (Vite inlines small SVGs as
     // data: URIs and emits larger ones as hashed assets, so checking the src
     // attribute itself isn't portable.)
-    for (const alt of ["Hapoalim", "Max", "Visa Cal", "HaPhoenix"]) {
+    for (const alt of ["Hapoalim", "Max", "Visa Cal", "Pension Clearing House"]) {
       const img = page.getByRole("img", { name: alt }).first();
       await expect(img).toBeVisible();
       await expect
@@ -108,9 +108,8 @@ test.describe("DataSources", () => {
     }
 
     // Insurance offers the Pension Clearing House, and no longer HaPhoenix —
-    // it is deprecated for new accounts. The demo's existing HaPhoenix card
-    // behind the modal keeps working and still shows its logo, so the check is
-    // on the chooser's provider buttons, which no account card button names.
+    // it is deprecated for new accounts. The check is on the chooser's
+    // provider buttons, which no account card button names.
     await page.getByRole("button", { name: "Back" }).click();
     await page.getByRole("button", { name: /^insurance/i }).click();
     const clearingHouse = page.getByRole("button", { name: /Pension Clearing House/ });
