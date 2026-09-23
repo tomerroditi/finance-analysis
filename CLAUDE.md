@@ -12,6 +12,7 @@ poetry run pytest tests/backend/unit/                  # Unit tests only
 poetry run pytest -k "test_budget"                     # By keyword
 poetry run pytest <path> --no-cov                     # Targeted run (repo's 40% coverage gate fails small runs without --no-cov)
 poetry run pytest <path> --no-cov -n0                 # Serial run (pytest-xdist parallelism is on by default; -n0 for pdb/print debugging)
+poetry run ruff check backend --fix && poetry run ruff format backend  # Lint + format (config in pyproject.toml; guarded by tests/backend/unit/test_code_quality.py)
 
 # Frontend (from frontend/)
 npm run dev                                            # Dev server (port 5173)
@@ -95,7 +96,7 @@ Routes (FastAPI) -> Services (Business Logic) -> Repositories (Data Access) -> S
 
 ## Code Style
 
-- Python: type hints, NumPy-style docstrings
+- Python: type hints on every parameter and return, NumPy-style docstrings on every module, public class and function — enforced by ruff (`ANN` + `D` rules in `pyproject.toml`), which `tests/backend/unit/test_code_quality.py` and the CI backend job run over `backend/`
 - TypeScript: strict mode, no unused locals/parameters
 - Tests: always use test classes, every test needs a docstring
 - No business logic in routes or components — services handle all logic
@@ -115,7 +116,8 @@ Routes (FastAPI) -> Services (Business Logic) -> Repositories (Data Access) -> S
 Run these locally and get them **all green before opening a PR** — CI runs the same checks and a red PR wastes a round-trip. Run from the repo root unless noted. See `.claude/rules/ci_and_release.md` (CI parity) and `.claude/rules/testing.md` (e2e details).
 
 ```bash
-# 1. Backend tests (full suite — matches CI's `poetry run pytest`)
+# 1. Backend lint + tests (full suite — matches CI's backend job)
+poetry run ruff check backend && poetry run ruff format --check backend
 poetry run pytest
 
 # 2. Frontend lint + type-check/build + unit tests (matches CI). NOTE: this
