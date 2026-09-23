@@ -41,6 +41,7 @@ class LiabilitiesRepository:
         rate_reset_months: int | None = None,
         lender: str | None = None,
         notes: str | None = None,
+        insurance_loan_key: str | None = None,
     ) -> None:
         """Create a new liability record.
 
@@ -71,6 +72,8 @@ class LiabilitiesRepository:
             Name of the lending institution.
         notes : str, optional
             Free-text notes about the liability.
+        insurance_loan_key : str, optional
+            Key of the pension/Keren Hishtalmut loan the row mirrors.
 
         Raises
         ------
@@ -92,6 +95,7 @@ class LiabilitiesRepository:
             rate_reset_months=rate_reset_months,
             lender=lender,
             notes=notes,
+            insurance_loan_key=insurance_loan_key,
             created_date=datetime.today().strftime("%Y-%m-%d"),
         )
         self.db.add(new_liability)
@@ -102,6 +106,22 @@ class LiabilitiesRepository:
             raise EntityAlreadyExistsException(
                 f"A liability tagged '{tag}' already exists"
             ) from exc
+
+    def get_by_insurance_loan_key(self, key: str) -> Liability | None:
+        """Return the liability mirroring a pension/KH loan, if any.
+
+        Parameters
+        ----------
+        key : str
+            The loan's ``insurance_loan_key``.
+
+        Returns
+        -------
+        Liability or None
+            The linked row, or ``None`` when the loan was never synced.
+        """
+        stmt = select(Liability).where(Liability.insurance_loan_key == key)
+        return self.db.execute(stmt).scalars().first()
 
     def get_all_liabilities(self, include_paid_off: bool = False) -> pd.DataFrame:
         """Get all liabilities, optionally including paid-off ones.

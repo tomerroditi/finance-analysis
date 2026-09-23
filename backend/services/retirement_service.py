@@ -114,6 +114,68 @@ def _accumulation_step(
     return nw * (1 + rate) + annual_savings, kh * (1 + rate) + kh_monthly * 12
 
 
+def project_pension_payout(
+    forecast: dict[str, Any], current_age: float, stop_age: float
+) -> float:
+    """Re-derive one fund's monthly pension for deposits stopping at ``stop_age``.
+
+    Everything comes from the provider's own two forecasts, so its return,
+    fee and annuity assumptions carry over unchanged:
+
+    - the annual growth factor ``g`` is the one that turns today's balance
+      into the no-deposit capital over the years to retirement age;
+    - the deposits' contribution is the gap between the two forecasts, and a
+      stream stopped after ``k`` of ``N`` years is worth the share
+      ``(g^k − 1) / (g^N − 1) × g^(N − k)`` of it at retirement age;
+    - a pension is its capital over one annuity factor, so the same share of
+      the gap between the two *pensions* is added to the no-deposit pension
+      (interpolating the pensions rather than the capitals keeps both ends
+      exact when the provider's two factors differ in their last digit).
+
+    ``stop_age`` at or past retirement age gives the provider's "deposits
+    continue" pension; ``stop_age`` equal to ``current_age`` gives its
+    "no further deposits" pension.
+
+    Parameters
+    ----------
+    forecast : dict
+        One entry of ``InsuranceAccountService.get_pension_forecasts``.
+    current_age : float
+        The user's age today.
+    stop_age : float
+        The age deposits stop.
+
+    Returns
+    -------
+    float
+        The monthly pension at the fund's retirement age.
+    """
+    with_deposits = forecast["pension_with_deposits"]
+    capital_with = forecast["capital_with_deposits"]
+    capital_without = forecast["capital_no_deposits"]
+    if not with_deposits or not capital_with:
+        return forecast["pension_no_deposits"]
+    years = (forecast.get("retirement_age") or FULL_PENSION_AGE_MALE) - current_age
+    if years <= 0:
+        return with_deposits
+    deposit_years = min(max(stop_age - current_age, 0), years)
+    without_deposits = forecast["pension_no_deposits"]
+    balance = forecast["balance"]
+    if balance > 0 and capital_without > 0:
+        growth = (capital_without / balance) ** (1 / years)
+    else:
+        growth = 1.04
+    if abs(growth - 1) < 1e-9:
+        stopped_share = deposit_years / years
+    else:
+        stopped_share = (
+            (growth**deposit_years - 1)
+            / (growth**years - 1)
+            * growth ** (years - deposit_years)
+        )
+    return without_deposits + max(with_deposits - without_deposits, 0.0) * stopped_share
+
+
 class RetirementService:
     """Retirement planning projections and status calculations.
 
@@ -211,6 +273,68 @@ class RetirementService:
                 )
             ),
             "avg_monthly_salary": self.analysis_service.get_avg_monthly_salary(),
+        }
+
+    def get_pension_forecast(
+        self,
+        current_age: int | None = None,
+        target_retirement_age: int | None = None,
+    ) -> dict[str, Any]:
+        """Estimate the monthly pension from the providers' own forecasts.
+
+        The pension clearing house publishes, per pension fund, the capital
+        and monthly pension at retirement age both if deposits continue and if
+        they stop today. Deposits really stop at the user's *target*
+        retirement age, which sits anywhere between the two, so each fund's
+        pension is re-derived for that age from its own figures (see
+        ``project_pension_payout``) and summed. Ages default to the saved goal;
+        without one, the "deposits continue" figure is returned.
+
+        Parameters
+        ----------
+        current_age : int, optional
+            The user's age today.
+        target_retirement_age : int, optional
+            The age deposits stop.
+
+        Returns
+        -------
+        dict
+            ``estimate`` (None when no fund publishes a forecast),
+            ``with_deposits`` and ``no_deposits`` totals, the forecast's
+            ``as_of`` date, and the number of ``funds``.
+        """
+        forecasts = self.insurance_account_service.get_pension_forecasts()
+        goal = (
+            self.repo.get()
+            if current_age is None or target_retirement_age is None
+            else None
+        )
+        if goal is not None:
+            current_age = current_age if current_age is not None else goal.current_age
+            target_retirement_age = (
+                target_retirement_age
+                if target_retirement_age is not None
+                else goal.target_retirement_age
+            )
+        with_deposits = sum(f["pension_with_deposits"] for f in forecasts)
+        no_deposits = sum(f["pension_no_deposits"] for f in forecasts)
+        if not forecasts:
+            estimate = None
+        elif current_age is None or target_retirement_age is None:
+            estimate = with_deposits
+        else:
+            estimate = sum(
+                project_pension_payout(f, current_age, target_retirement_age)
+                for f in forecasts
+            )
+        as_of = max((f["as_of"] for f in forecasts if f["as_of"]), default=None)
+        return {
+            "estimate": round(estimate) if estimate is not None else None,
+            "with_deposits": round(with_deposits),
+            "no_deposits": round(no_deposits),
+            "as_of": as_of,
+            "funds": len(forecasts),
         }
 
     def get_current_status(self) -> dict[str, float]:

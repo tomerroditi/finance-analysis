@@ -21,6 +21,11 @@ class Liability(Base, TimestampMixin):
     corresponds to the category/tag used on existing transactions tagged
     under the Liabilities category.
 
+    A loan taken against a pension or Keren Hishtalmut policy is created by
+    the pension clearing house's scrape rather than by the user; its
+    ``insurance_loan_key`` ties the row to that loan so later scrapes update
+    it instead of adding another.
+
     Attributes
     ----------
     name : str
@@ -85,6 +90,7 @@ class Liability(Base, TimestampMixin):
     paid_off_date = Column(String, nullable=True)
     notes = Column(Text, nullable=True)
     created_date = Column(String, nullable=False)
+    insurance_loan_key = Column(String, nullable=True, unique=True)
 
 
 class LiabilityTransaction(Base, TimestampMixin):

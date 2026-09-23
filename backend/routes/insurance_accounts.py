@@ -36,6 +36,7 @@ class InsuranceAccountResponse(BaseModel):
     insurance_covers: str | None = None
     insurance_costs: str | None = None
     liquidity_date: str | None = None
+    details: str | None = None
 
     model_config = ConfigDict(from_attributes=True)
 

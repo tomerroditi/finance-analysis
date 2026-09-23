@@ -27,6 +27,8 @@ from backend.errors import ValidationException
 from backend.repositories.liabilities_repository import LiabilitiesRepository
 from backend.repositories.transactions import TransactionsRepository
 from backend.services.rates_service import RatesService
+from backend.utils.policy_ids import policy_id_key
+from backend.utils.text_utils import to_title_case
 
 #: 100 years. Beyond roughly 96,000 months a payment date passes year 9999,
 #: and every later read of the liabilities list would fail on it.
@@ -43,6 +45,14 @@ def _optional_number(value: Any) -> float | None:
     except (TypeError, ValueError):
         pass
     return float(value)
+
+
+def _months_between(start: str, end: str | None) -> int:
+    """Whole months from ``start`` to ``end`` (``YYYY-MM-DD``), at least 1."""
+    if not end:
+        return 1
+    first, last = date.fromisoformat(start), date.fromisoformat(end)
+    return max((last.year - first.year) * 12 + last.month - first.month, 1)
 
 
 class LiabilitiesService:
@@ -145,6 +155,7 @@ class LiabilitiesService:
         rate_reset_months: int | None = None,
         lender: str | None = None,
         notes: str | None = None,
+        insurance_loan_key: str | None = None,
     ) -> None:
         """
         Create a new liability record.
@@ -243,6 +254,7 @@ class LiabilitiesService:
             rate_reset_months=rate_reset_months,
             lender=lender,
             notes=notes,
+            insurance_loan_key=insurance_loan_key,
         )
 
     def update_liability(self, liability_id: int, **fields: Any) -> None:
@@ -257,6 +269,83 @@ class LiabilitiesService:
             Field names and new values forwarded to the repository.
         """
         self.liabilities_repo.update_liability(liability_id, **fields)
+
+    def sync_insurance_loans(
+        self,
+        policy_id: str,
+        account_name: str,
+        lender: str | None,
+        loans: list[dict[str, Any]],
+    ) -> int:
+        """Mirror loans taken against a pension/KH policy as liabilities.
+
+        Each loan becomes a liability tagged ``Pension Loan <policy>`` (the
+        tag is created under Liabilities when missing), keyed by policy and
+        start date so a re-scrape updates it rather than adding another. A
+        loan the provider reports as fully repaid is marked paid off. Only
+        the rate is refreshed on an existing row, so a user's own name or
+        notes survive.
+
+        Parameters
+        ----------
+        policy_id : str
+            The policy the loans were taken against.
+        account_name : str
+            The policy's display name, for the liability's name.
+        lender : str, optional
+            The fund manager lending the money.
+        loans : list[dict]
+            Scraped loans: ``amount``, ``balance``, ``interest_pct``,
+            ``payments_months``, ``received``, ``ends``.
+
+        Returns
+        -------
+        int
+            Number of liabilities created.
+        """
+        from backend.services.tagging_service import CategoriesTagsService
+
+        created = 0
+        for loan in loans:
+            received = loan.get("received")
+            if not loan.get("amount") or not received:
+                continue
+            key = f"{policy_id_key(policy_id)}:{received}"
+            existing = self.liabilities_repo.get_by_insurance_loan_key(key)
+            if existing is None:
+                tag = to_title_case(
+                    f"Pension Loan {policy_id}"
+                    + (f" {received}" if len(loans) > 1 else "")
+                )
+                tags_service = CategoriesTagsService(self.db)
+                existing_tags = tags_service.categories_and_tags.get(
+                    LIABILITIES_CATEGORY
+                )
+                if existing_tags is None:
+                    tags_service.add_category(LIABILITIES_CATEGORY, [tag])
+                elif tag not in existing_tags:
+                    tags_service.add_tag(LIABILITIES_CATEGORY, tag)
+                self.create_liability(
+                    name=f"{account_name} — loan",
+                    tag=tag,
+                    principal_amount=loan["amount"],
+                    term_months=loan.get("payments_months")
+                    or _months_between(received, loan.get("ends")),
+                    start_date=received,
+                    interest_rate=loan.get("interest_pct") or 0.0,
+                    lender=lender,
+                    notes="Synced from the Pension Clearing House",
+                    insurance_loan_key=key,
+                )
+                existing = self.liabilities_repo.get_by_insurance_loan_key(key)
+                created += 1
+            elif loan.get("interest_pct") is not None:
+                self.update_liability(existing.id, interest_rate=loan["interest_pct"])
+            if loan.get("balance") == 0 and not existing.is_paid_off:
+                self.mark_paid_off(
+                    existing.id, loan.get("ends") or date.today().isoformat()
+                )
+        return created
 
     def mark_paid_off(self, liability_id: int, paid_off_date: str) -> None:
         """
