@@ -1,3 +1,9 @@
+## v1.86.3 (2026-09-23)
+
+### Refactor
+
+- **backend**: tidy and restructure the backend — ruff gate, layering, modules, dead code (#351)
+
 ## v1.86.2 (2026-09-23)
 
 ### Fix
