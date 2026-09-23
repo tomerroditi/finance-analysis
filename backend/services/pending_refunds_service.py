@@ -1,14 +1,15 @@
 """Pending refunds service with business logic."""
 
 import logging
-from typing import Literal
+from typing import Any, Literal
 
 import pandas as pd
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.constants.tables import TransactionsTableFields
 from backend.errors import EntityNotFoundException, ValidationException
-from backend.models.transaction import SplitTransaction
+from backend.models.transaction import SplitTransaction, TransactionBase
 from backend.repositories.pending_refunds_repository import PendingRefundsRepository
 from backend.repositories.transactions import TransactionsRepository
 
@@ -21,17 +22,14 @@ class PendingRefundsService:
 
     Coordinates marking transactions as pending refunds,
     linking actual refunds, and calculating budget adjustments.
+
+    Parameters
+    ----------
+    db : Session
+        SQLAlchemy session for database operations.
     """
 
-    def __init__(self, db: Session):
-        """
-        Initialize the pending refunds service.
-
-        Parameters
-        ----------
-        db : Session
-            SQLAlchemy session for database operations.
-        """
+    def __init__(self, db: Session) -> None:
         self.db = db
         self.repo = PendingRefundsRepository(db)
         self.transactions_repo = TransactionsRepository(db)
@@ -43,7 +41,7 @@ class PendingRefundsService:
         source_table: str,
         expected_amount: float,
         notes: str | None = None,
-    ) -> dict:
+    ) -> dict[str, Any]:
         """
         Mark a transaction or split as expecting a refund.
 
@@ -93,7 +91,6 @@ class PendingRefundsService:
                 f"amount ({abs(source_amount):.2f})"
             )
 
-        # Check if already marked
         existing = self.repo.get_pending_for_source(
             source_type, source_id, source_table
         )
@@ -161,7 +158,9 @@ class PendingRefundsService:
             )
         return float(txn.amount)
 
-    def _get_refund_transaction(self, transaction_id: int, source: str):
+    def _get_refund_transaction(
+        self, transaction_id: int, source: str
+    ) -> TransactionBase | None:
         """
         Resolve a refund transaction ORM row from its id and source table.
 
@@ -174,12 +173,10 @@ class PendingRefundsService:
 
         Returns
         -------
-        object or None
+        TransactionBase or None
             The ORM transaction row, or None when the source/transaction
             can't be resolved.
         """
-        from sqlalchemy import select
-
         repo = self.transactions_repo.repo_map.get(source)
         if not repo:
             return None
@@ -189,7 +186,7 @@ class PendingRefundsService:
 
     def get_allocated_for_transaction(self, transaction_id: int, source: str) -> float:
         """
-        Total amount of a refund transaction already allocated to refunds.
+        Return the total amount of a refund transaction allocated to refunds.
 
         Sums link amounts across ALL pending refunds this transaction funds.
         Source strings are normalized (table vs service name variants), so
@@ -240,7 +237,7 @@ class PendingRefundsService:
         refund_transaction_id: int,
         refund_source: str,
         amount: float,
-    ) -> dict:
+    ) -> dict[str, Any]:
         """
         Link a refund transaction to a pending refund.
 
@@ -322,15 +319,14 @@ class PendingRefundsService:
                     "available for refund matching"
                 )
 
-        # Clamp to the pending refund's remaining expectation
         already_refunded = (
             existing_links["amount"].sum() if not existing_links.empty else 0
         )
         remaining = max(0, pending.expected_amount - already_refunded)
         actual_link_amount = min(amount, remaining) if remaining > 0 else amount
 
-        # Add the link (store the canonical table name so links of the same
-        # transaction always group together)
+        # Store the canonical table name so links of the same transaction
+        # always group together.
         self.repo.add_refund_link(
             pending_refund_id=pending_refund_id,
             refund_transaction_id=refund_transaction_id,
@@ -338,11 +334,9 @@ class PendingRefundsService:
             amount=actual_link_amount,
         )
 
-        # Calculate total refunded
         links = self.repo.get_links_for_pending(pending_refund_id)
         total_refunded = links["amount"].sum() if not links.empty else 0
 
-        # Determine new status
         if total_refunded >= pending.expected_amount:
             new_status = "resolved"
         else:
@@ -360,7 +354,7 @@ class PendingRefundsService:
             "remaining": remaining,
         }
 
-    def update_notes(self, pending_refund_id: int, notes: str | None) -> dict:
+    def update_notes(self, pending_refund_id: int, notes: str | None) -> dict[str, Any]:
         """
         Update the note on a pending refund.
 
@@ -393,7 +387,7 @@ class PendingRefundsService:
 
     def set_source_note(
         self, refund_source: str, refund_transaction_id: int, note: str | None
-    ) -> dict:
+    ) -> dict[str, Any]:
         """
         Create, update, or clear the note on a refund source transaction.
 
@@ -447,7 +441,7 @@ class PendingRefundsService:
 
         self.repo.delete_pending_refund(pending_refund_id)
 
-    def get_all_pending(self, status: str | None = None) -> list[dict]:
+    def get_all_pending(self, status: str | None = None) -> list[dict[str, Any]]:
         """
         Get all pending refunds enriched with source details.
 
@@ -461,8 +455,6 @@ class PendingRefundsService:
         list[dict]
             List of pending refund records with source transaction details.
         """
-        from sqlalchemy import select
-
         df = self.repo.get_all_pending_refunds(status=status)
         pending_list = df.to_dict(orient="records") if not df.empty else []
 
@@ -471,17 +463,13 @@ class PendingRefundsService:
 
         trans_repo = self.transactions_repo
 
-        # Group by source table/type to batch fetch
-        # format: { (table, type): [ids] }
-        sources = {}
+        # Group ids by (table, type) so each table is fetched in one query.
+        sources: dict[tuple[str, str], list[int]] = {}
         for p in pending_list:
             key = (p["source_table"], p["source_type"])
-            if key not in sources:
-                sources[key] = []
-            sources[key].append(p["source_id"])
+            sources.setdefault(key, []).append(p["source_id"])
 
-        # Fetch details
-        details_map = {}  # (table, type, id) -> details dict
+        details_map: dict[tuple[str, str, int], dict[str, Any]] = {}
 
         for (table, type_), ids in sources.items():
             if type_ == "transaction":
@@ -489,7 +477,6 @@ class PendingRefundsService:
                     repo = trans_repo.repo_map.get(table)
                     if repo:
                         model = repo.model
-                        # Fetch transactions
                         stmt = select(model).where(model.unique_id.in_(ids))
                         results = self.db.execute(stmt).scalars().all()
                         for tx in results:
@@ -507,17 +494,11 @@ class PendingRefundsService:
                         "Failed to enrich pending refunds from %s", table, exc_info=True
                     )
             elif type_ == "split":
-                # For splits, we need to get the split record to find the parent transaction
-                # Then get details from the parent
+                # A split's display details come from its parent transaction.
                 try:
-                    # We can't batch efficiently across mixed split IDs easily without ORM for splits
-                    # But we can iterate. Optimally we'd use SplitTransactionsRepository.
-                    # Since split repo is SQL-based/Pandas in parts, let's use the DB directly for efficiency if possible
-                    # or just use the repo.
                     for split_id in ids:
                         split = self.db.get(SplitTransaction, split_id)
                         if split:
-                            # Get parent
                             repo = trans_repo.repo_map.get(split.source)
                             if repo:
                                 parent = self.db.execute(
@@ -542,7 +523,6 @@ class PendingRefundsService:
                         exc_info=True,
                     )
 
-        # Apply details to pending items
         for p in pending_list:
             details = details_map.get(
                 (p["source_table"], p["source_type"], p["source_id"]), {}
@@ -553,7 +533,7 @@ class PendingRefundsService:
         # pending item instead of one query per item.
         missing_link_ids = [p["id"] for p in pending_list if "links" not in p]
         all_links_df = self.repo.get_links_for_pendings(missing_link_ids)
-        links_by_pending: dict[int, list[dict]] = {}
+        links_by_pending: dict[int, list[dict[str, Any]]] = {}
         if not all_links_df.empty:
             for pending_id, group in all_links_df.groupby("pending_refund_id"):
                 links_by_pending[int(pending_id)] = group.to_dict(orient="records")
@@ -567,25 +547,19 @@ class PendingRefundsService:
             for link in p["links"]:
                 link["refund_source"] = self._canonical_source(link["refund_source"])
 
-            # Compute totals from links
             total_refunded = sum(link["amount"] for link in p["links"])
             p["total_refunded"] = total_refunded
             p["remaining"] = max(0, p["expected_amount"] - total_refunded)
 
-            # Now enrich links
-            link_sources = {}
+            # A link always points at a transaction (never a split).
+            link_sources: dict[str, list[int]] = {}
             for link in p["links"]:
-                k = (
-                    link["refund_source"],
-                    "transaction",
-                )  # Links are always transactions? Yes, refund_transaction_id.
-                if k not in link_sources:
-                    link_sources[k] = []
-                link_sources[k].append(link["refund_transaction_id"])
+                link_sources.setdefault(link["refund_source"], []).append(
+                    link["refund_transaction_id"]
+                )
 
-            # Fetch details for links
-            link_details_map = {}
-            for (table, _), ids in link_sources.items():
+            link_details_map: dict[tuple[str, int], dict[str, Any]] = {}
+            for table, ids in link_sources.items():
                 try:
                     repo = trans_repo.repo_map.get(table)
                     if repo:
@@ -609,7 +583,6 @@ class PendingRefundsService:
                         "Failed to enrich refund links from %s", table, exc_info=True
                     )
 
-            # Apply details to links
             for link in p["links"]:
                 details = link_details_map.get(
                     (link["refund_source"], link["refund_transaction_id"]), {}
@@ -618,7 +591,7 @@ class PendingRefundsService:
 
         return pending_list
 
-    def get_refund_sources(self) -> list[dict]:
+    def get_refund_sources(self) -> list[dict[str, Any]]:
         """
         Summarize every refund transaction used as a refund source.
 
@@ -652,7 +625,7 @@ class PendingRefundsService:
                     )
                 ] = row["note"]
 
-        sources: dict[tuple[str, int], dict] = {}
+        sources: dict[tuple[str, int], dict[str, Any]] = {}
         for p in pendings:
             for link in p.get("links", []):
                 key = (
@@ -700,7 +673,7 @@ class PendingRefundsService:
         result.sort(key=lambda e: str(e["date"] or ""), reverse=True)
         return result
 
-    def get_pending_by_id(self, pending_refund_id: int) -> dict:
+    def get_pending_by_id(self, pending_refund_id: int) -> dict[str, Any]:
         """
         Get a pending refund with its links.
 
@@ -776,7 +749,7 @@ class PendingRefundsService:
 
         return pending_total + partial_remaining
 
-    def close_pending_refund(self, pending_refund_id: int) -> dict:
+    def close_pending_refund(self, pending_refund_id: int) -> dict[str, Any]:
         """
         Close a pending refund, accepting whatever has been refunded so far.
 
@@ -821,7 +794,7 @@ class PendingRefundsService:
             "remaining": max(0, pending.expected_amount - total_refunded),
         }
 
-    def unlink_refund(self, link_id: int) -> dict:
+    def unlink_refund(self, link_id: int) -> dict[str, Any]:
         """
         Unlink a refund transaction from its pending refund and recalculate status.
 
@@ -839,6 +812,8 @@ class PendingRefundsService:
         ------
         EntityNotFoundException
             If link not found.
+        ValidationException
+            If the pending refund is closed.
         """
         link = self.repo.get_link_by_id(link_id)
         if not link:
@@ -877,7 +852,7 @@ class PendingRefundsService:
             "remaining": remaining,
         }
 
-    def get_active_pending_identifiers(self) -> dict[str, set]:
+    def get_active_pending_identifiers(self) -> dict[str, set[Any]]:
         """
         Get sets of identifiers for active pending refunds.
 
@@ -901,7 +876,6 @@ class PendingRefundsService:
         if pending_df.empty:
             return {"transaction_keys": set(), "split_ids": set()}
 
-        # Filter for active pending refunds (pending or partial)
         active_pending = pending_df[~pending_df["status"].isin(["resolved", "closed"])]
 
         # Pair each transaction id with its canonical source table so the
@@ -914,7 +888,6 @@ class PendingRefundsService:
             for _, row in transaction_pending.iterrows()
         }
 
-        # Get split ids
         split_pending = active_pending[active_pending["source_type"] == "split"]
         split_ids = set(split_pending["source_id"].tolist())
 
@@ -922,12 +895,11 @@ class PendingRefundsService:
 
     def get_refund_amount_adjustments(
         self, exclude_open: bool = True
-    ) -> dict[str, dict]:
+    ) -> dict[str, dict[Any, float]]:
         """
-        Build per-row amount adjustments that net matched refunds against the
-        purchases they pay back, whatever months the two landed in.
+        Build per-row amount adjustments netting matched refunds against purchases.
 
-        A refund is not the receiving month's income, and the purchase it
+        The netting applies whatever months the two landed in. A refund is not the receiving month's income, and the purchase it
         cancels is not the spending month's expense. Netting by date — what an
         unlinked positive amount in an expense category does — only works when
         both fall in the same month; a January purchase refunded in March
@@ -955,7 +927,7 @@ class PendingRefundsService:
             ``{"transactions": {(table, unique_id): adjustment},
             "splits": {split_id: adjustment}}``.
         """
-        empty: dict[str, dict] = {"transactions": {}, "splits": {}}
+        empty: dict[str, dict[Any, float]] = {"transactions": {}, "splits": {}}
         pending_df = self.repo.get_all_pending_refunds()
         if pending_df.empty:
             return empty
@@ -1044,7 +1016,7 @@ def restore_gross_amounts(df: pd.DataFrame) -> pd.DataFrame:
 
 def apply_refund_amount_adjustments(
     df: pd.DataFrame,
-    adjustments: dict[str, dict],
+    adjustments: dict[str, dict[Any, float]],
     keep_gross_in: str | None = None,
 ) -> pd.DataFrame:
     """
@@ -1093,7 +1065,9 @@ def apply_refund_amount_adjustments(
     if tx_adj:
         # `unique_id` is a per-table auto-increment, so it only identifies a
         # row alongside its source table.
-        keys = pd.Series(list(zip(df[source_col], df[unique_id_col])), index=df.index)
+        keys = pd.Series(
+            list(zip(df[source_col], df[unique_id_col], strict=True)), index=df.index
+        )
         adj = adj.add(keys.map(tx_adj).fillna(0.0).astype(float))
     if split_adj and split_id_col in df.columns:
         adj = adj.add(df[split_id_col].map(split_adj).fillna(0.0).astype(float))

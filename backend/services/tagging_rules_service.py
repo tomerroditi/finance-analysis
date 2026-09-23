@@ -1,10 +1,16 @@
+"""Rule-based transaction tagging: rule CRUD, conflict detection and application.
+
+Also hosts the credit-card bill auto-tagger, which matches bank debits to the
+monthly total of each known card.
+"""
+
 import json
 import logging
 from typing import Any
 
 import pandas as pd
-from sqlalchemy import and_, func, or_, select, update
-from sqlalchemy.orm import Session
+from sqlalchemy import ColumnElement, and_, func, or_, select, update
+from sqlalchemy.orm import InstrumentedAttribute, Session
 
 from backend.constants.tables import Tables, TransactionsTableFields
 from backend.errors import BadRequestException, EntityNotFoundException
@@ -44,11 +50,11 @@ logger = logging.getLogger(__name__)
 
 
 def _escape_like(value: Any) -> str:
-    """Escape SQL ``LIKE`` metacharacters in a user-supplied search value.
+    r"""Escape SQL ``LIKE`` metacharacters in a user-supplied search value.
 
     ``%`` and ``_`` are wildcards inside a ``LIKE`` pattern, so a rule
     searching for a literal ``"50%"`` would otherwise match ``"5000"`` too.
-    Callers must pass ``escape="\\\\"`` to the ``like()`` call.
+    Callers must pass ``escape="\\"`` to the ``like()`` call.
 
     Parameters
     ----------
@@ -58,7 +64,7 @@ def _escape_like(value: Any) -> str:
     Returns
     -------
     str
-        The value with ``\\``, ``%``, and ``_`` backslash-escaped.
+        The value with ``\``, ``%``, and ``_`` backslash-escaped.
     """
     return str(value).replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
@@ -78,17 +84,14 @@ class TaggingRulesService:
     are blocked at creation time by ``check_conflicts``, so ordering only
     matters for transactions that arrive later and happen to match several
     rules.
+
+    Parameters
+    ----------
+    db : Session
+        SQLAlchemy session for database operations.
     """
 
-    def __init__(self, db: Session):
-        """
-        Initialize the tagging rules service.
-
-        Parameters
-        ----------
-        db : Session
-            SQLAlchemy session for database operations.
-        """
+    def __init__(self, db: Session) -> None:
         self.db = db
         self.rules_repo = TaggingRulesRepository(db)
         self.transactions_repo = TransactionsRepository(db)
@@ -178,38 +181,43 @@ class TaggingRulesService:
             If condition validation or conflict checking fails, or the
             category/tag pair does not exist.
         """
-        # 1. Integrity Check
         self.validate_rule_integrity(conditions)
         self._validate_target(category, tag)
-
-        # 2. Conflict Check
         self.check_conflicts(conditions, category, tag)
 
-        # 3. Create Rule
         rule_id = self.rules_repo.add_rule(
             name=name,
             conditions=conditions,
             category=category,
             tag=tag,
         )
-
-        # 4. Apply immediately
         n_tagged = self.apply_rule_by_id(rule_id)
         return rule_id, n_tagged
 
     def _normalize_conditions(self, conditions: Any) -> dict[str, Any]:
         """
-        Normalize legacy condition formats to the new recursive dict format.
-        - List format: [...] -> {"type": "AND", "subconditions": [...]}
-        - Simple dict: {"field": ...} -> {"type": "CONDITION", ...}
-        - Recursive dict: {"type": "AND", "subconditions": [...]} (unchanged)
+        Normalize legacy condition formats to the recursive dict format.
+
+        - List format: ``[...]`` -> ``{"type": "AND", "subconditions": [...]}``
+        - Simple dict: ``{"field": ...}`` -> ``{"type": "CONDITION", ...}``
+        - Recursive dict: ``{"type": "AND", "subconditions": [...]}`` (unchanged)
+
+        Parameters
+        ----------
+        conditions : Any
+            Condition tree in any supported format, or its JSON string.
+
+        Returns
+        -------
+        dict[str, Any]
+            The recursive condition tree.
 
         Raises
         ------
         ValueError
             If ``conditions`` is a string that is not valid JSON. Such a rule
             is broken; callers that iterate stored rules skip it rather than
-            guess at what it meant (it used to be silently rewritten into a
+            guess at what it meant (e.g. by rewriting it into a
             ``description contains "<garbage>"`` match).
         """
         if isinstance(conditions, str):
@@ -229,14 +237,12 @@ class TaggingRulesService:
 
         if isinstance(conditions, dict):
             if "type" in conditions:
-                # Already new format, but recursively normalize subconditions if any
                 if conditions["type"] in ["AND", "OR"]:
                     conditions["subconditions"] = [
                         self._normalize_conditions(c)
                         for c in conditions.get("subconditions", [])
                     ]
                 return conditions
-            # Single condition dict without 'type'
             return {
                 "type": "CONDITION",
                 "field": conditions.get("field", "description"),
@@ -244,7 +250,6 @@ class TaggingRulesService:
                 "value": conditions.get("value", ""),
             }
 
-        # Last resort fallback
         return {
             "type": "CONDITION",
             "field": "description",
@@ -252,7 +257,7 @@ class TaggingRulesService:
             "value": "",
         }
 
-    def update_rule(self, rule_id: int, **kwargs) -> int:
+    def update_rule(self, rule_id: int, **kwargs: Any) -> int:
         """
         Update an existing tagging rule with validation and conflict checks.
 
@@ -288,7 +293,6 @@ class TaggingRulesService:
 
         old_category, old_tag = rule.category, rule.tag
 
-        # Determine new values or keep existing
         new_conditions = kwargs.get("conditions", rule.conditions)
         new_category = kwargs.get("category", old_category)
         new_tag = kwargs.get("tag", old_tag)
@@ -298,7 +302,6 @@ class TaggingRulesService:
         if "category" in kwargs or "tag" in kwargs:
             self._validate_target(new_category, new_tag)
 
-        # Check conflicts excluding self (pass rule_id to exclude)
         self.check_conflicts(
             new_conditions, new_category, new_tag, exclude_rule_id=rule_id
         )
@@ -412,7 +415,9 @@ class TaggingRulesService:
             "category": rule.category,
             "tag": rule.tag,
         }
-        count = self._apply_single_rule(rule_dict, overwrite=overwrite)
+        count = len(
+            self._apply_single_rule_returning_ids(rule_dict, overwrite=overwrite)
+        )
         self.transactions_service.realign_closed_investments()
         return count
 
@@ -420,9 +425,19 @@ class TaggingRulesService:
         self, conditions: dict[str, Any], limit: int | None = None
     ) -> list[dict[str, Any]]:
         """
-        Preview which transactions would match given conditions without modifying them.
-        Returns list of matching transactions with key fields. When ``limit`` is None,
-        all matches are returned.
+        Preview which transactions would match given conditions, without writing.
+
+        Parameters
+        ----------
+        conditions : dict
+            Condition tree to evaluate.
+        limit : int, optional
+            Maximum number of matches to return; ``None`` returns all.
+
+        Returns
+        -------
+        list[dict]
+            Matching transactions (key fields plus ``source``), newest first.
         """
         conditions = self._normalize_conditions(conditions)
         tables = self._get_tables_names_for_conditions(conditions)
@@ -458,11 +473,24 @@ class TaggingRulesService:
             combined = combined.head(limit)
         return combined.to_dict(orient="records")
 
-    def validate_rule_integrity(self, conditions: dict[str, Any]):
+    def validate_rule_integrity(self, conditions: dict[str, Any]) -> None:
         """
-        Validates that conditions matches field types.
-        e.g. 'amount' must be numeric, 'date' must be valid date format,
-        operators must match type.
+        Validate a condition tree's fields, operators and values.
+
+        Every group needs subconditions, every leaf a known field, an operator
+        valid for that field's type, and a value of the right shape (numeric
+        for ``amount``, a known service for ``service``, non-blank text
+        otherwise).
+
+        Parameters
+        ----------
+        conditions : dict
+            Condition tree to validate.
+
+        Raises
+        ------
+        BadRequestException
+            If any node is malformed.
         """
         conditions = self._normalize_conditions(conditions)
         if conditions.get("type") in ["AND", "OR"]:
@@ -481,23 +509,21 @@ class TaggingRulesService:
             if not field or not operator:
                 raise BadRequestException("Condition missing field or operator")
 
-            # Type Validation Logic
-            valid_text_ops = VALID_TEXT_OPERATORS
-            valid_num_ops = VALID_NUMERIC_OPERATORS
-
-            text_fields = TEXT_CONDITION_FIELDS
-            num_fields = NUMERIC_CONDITION_FIELDS
-
             # Reject unknown fields loudly. Left unchecked, a typo'd field name
-            # builds a filter that matches nothing (previously: everything).
-            if field not in text_fields and field not in num_fields:
+            # builds a filter that silently matches nothing.
+            if (
+                field not in TEXT_CONDITION_FIELDS
+                and field not in NUMERIC_CONDITION_FIELDS
+            ):
                 raise BadRequestException(
                     f"Unknown condition field '{field}'. Valid fields: "
-                    + ", ".join(sorted(text_fields + num_fields))
+                    + ", ".join(
+                        sorted(TEXT_CONDITION_FIELDS + NUMERIC_CONDITION_FIELDS)
+                    )
                 )
 
-            if field in num_fields:
-                if operator not in valid_num_ops:
+            if field in NUMERIC_CONDITION_FIELDS:
+                if operator not in VALID_NUMERIC_OPERATORS:
                     raise BadRequestException(
                         f"Operator '{operator}' not valid for numeric field '{field}'"
                     )
@@ -507,22 +533,22 @@ class TaggingRulesService:
                             "Value for between must be list of 2 numbers"
                         )
                     # TypeError too: a JSON null reaches float() as None and
-                    # raises TypeError, which used to escape validation and
-                    # 500 the request instead of returning 400.
+                    # raises TypeError, which would otherwise escape validation
+                    # and 500 the request instead of returning 400.
                     try:
                         float(value[0])
                         float(value[1])
-                    except (TypeError, ValueError):
+                    except (TypeError, ValueError) as exc:
                         raise BadRequestException(
                             "Values for numeric field must be numbers"
-                        )
+                        ) from exc
                 else:
                     try:
                         float(value)
-                    except (TypeError, ValueError):
+                    except (TypeError, ValueError) as exc:
                         raise BadRequestException(
                             f"Value '{value}' must be a number for field '{field}'"
-                        )
+                        ) from exc
 
             if field == "service":
                 # The table selector only honours ``equals`` with a known
@@ -537,8 +563,8 @@ class TaggingRulesService:
                         f"Unknown service '{value}'. Valid services: "
                         + ", ".join(sorted(VALID_SERVICE_VALUES))
                     )
-            elif field in text_fields:
-                if operator not in valid_text_ops:
+            elif field in TEXT_CONDITION_FIELDS:
+                if operator not in VALID_TEXT_OPERATORS:
                     raise BadRequestException(
                         f"Operator '{operator}' not valid for text field '{field}'"
                     )
@@ -555,15 +581,34 @@ class TaggingRulesService:
         category: str,
         tag: str,
         exclude_rule_id: int | None = None,
-    ):
+    ) -> None:
         """
-        Checks if the new rule overlaps with any EXISTING rule on ANY transaction,
-        AND matches to a DIFFERENT category/tag.
+        Reject a rule that overlaps an existing rule assigning a different pair.
+
+        Two rules overlap when at least one current transaction matches both.
+        Overlap with a rule assigning the same category/tag is harmless and
+        allowed; stored rules whose conditions cannot be parsed are ignored.
+
+        Parameters
+        ----------
+        conditions : dict
+            Condition tree of the new (or edited) rule.
+        category : str
+            Category the rule assigns.
+        tag : str
+            Tag the rule assigns.
+        exclude_rule_id : int, optional
+            Rule to leave out of the comparison — the rule being edited.
+
+        Raises
+        ------
+        BadRequestException
+            If an overlapping rule assigns a different category/tag.
         """
         conditions = self._normalize_conditions(conditions)
         tables = self._get_tables_names_for_conditions(conditions)
 
-        matching_tx_ids_by_table = {}
+        matching_tx_ids_by_table: dict[str, set[int]] = {}
 
         for table in tables:
             model = TABLE_TO_MODEL[table]
@@ -603,9 +648,8 @@ class TaggingRulesService:
                 model = TABLE_TO_MODEL[table]
                 r_filter = self._build_recursive_filter(rule_conds, model)
 
-                batch_size = 900
-                for i in range(0, len(ids_to_check), batch_size):
-                    batch = ids_to_check[i : i + batch_size]
+                for i in range(0, len(ids_to_check), _SQL_IN_BATCH_SIZE):
+                    batch = ids_to_check[i : i + _SQL_IN_BATCH_SIZE]
                     stmt = (
                         select(func.count())
                         .select_from(model)
@@ -617,27 +661,6 @@ class TaggingRulesService:
                             f"Conflict detected: This rule matches transactions that are also matched by existing rule '{rule['name']}' "
                             f"which assigns a different tag ('{rule['category']} - {rule['tag']}')."
                         )
-
-    def _apply_single_rule(self, rule: dict[str, Any], overwrite: bool = False) -> int:
-        """
-        Apply a single rule dict and return the count of modified transactions.
-
-        Legacy wrapper around ``_apply_single_rule_returning_ids``.
-
-        Parameters
-        ----------
-        rule : dict
-            Rule dict with ``conditions``, ``category``, and ``tag`` keys.
-        overwrite : bool, optional
-            When ``True``, re-tags already-tagged transactions. Default is ``False``.
-
-        Returns
-        -------
-        int
-            Number of transactions modified.
-        """
-        ids = self._apply_single_rule_returning_ids(rule, overwrite=overwrite)
-        return len(ids)
 
     def _stored_conditions(self, rule: dict[str, Any]) -> dict[str, Any] | None:
         """
@@ -768,14 +791,26 @@ class TaggingRulesService:
 
     def _build_recursive_filter(
         self, condition_node: dict[str, Any], model: type[TransactionBase]
-    ):
+    ) -> ColumnElement[bool] | bool:
         """
-        Recursively builds a SQLAlchemy filter expression from a condition tree.
+        Build a SQLAlchemy filter expression from a condition tree, recursively.
 
         Fails closed: an empty group or an unknown node type matches nothing.
         ``validate_rule_integrity`` rejects both before a rule is stored, so
         reaching them here means the stored rule is malformed — matching
         every transaction would be the worst possible interpretation.
+
+        Parameters
+        ----------
+        condition_node : dict
+            Group or leaf node of the condition tree.
+        model : type[TransactionBase]
+            Transaction model to build the filter against.
+
+        Returns
+        -------
+        ColumnElement[bool] or bool
+            Filter clause, or ``False`` for a malformed node.
         """
         c_type = condition_node.get("type")
 
@@ -796,7 +831,7 @@ class TaggingRulesService:
 
     def _build_single_filter(
         self, condition: dict[str, Any], model: type[TransactionBase]
-    ):
+    ) -> ColumnElement[bool] | bool:
         """
         Build a single SQLAlchemy filter expression from a leaf condition dict.
 
@@ -804,12 +839,12 @@ class TaggingRulesService:
         ----------
         condition : dict
             Leaf condition with ``field``, ``operator``, and ``value`` keys.
-        model : type
+        model : type[TransactionBase]
             SQLAlchemy model class to build the filter against.
 
         Returns
         -------
-        SQLAlchemy expression
+        ColumnElement[bool] or bool
             Filter clause. ``True`` for the ``service`` pseudo-field (handled
             by table selection); ``False`` for an unknown field or operator
             so a malformed rule matches nothing rather than everything.
@@ -849,7 +884,9 @@ class TaggingRulesService:
 
         return False
 
-    def _get_model_column(self, field: str, model: type[TransactionBase]):
+    def _get_model_column(
+        self, field: str | None, model: type[TransactionBase]
+    ) -> InstrumentedAttribute[Any] | None:
         """
         Map a condition field name to the corresponding SQLAlchemy model column.
 
@@ -857,14 +894,14 @@ class TaggingRulesService:
         ----------
         field : str
             Condition field name (e.g. ``"description"``, ``"amount"``).
-        model : type
+        model : type[TransactionBase]
             SQLAlchemy model class.
 
         Returns
         -------
-        SQLAlchemy column or None
-            The model column, or ``None`` for the ``"service"`` field
-            (which is handled at the table-selection level).
+        InstrumentedAttribute or None
+            The model column, or ``None`` for the ``"service"`` field (which
+            is handled at the table-selection level) and unknown fields.
         """
         field_mapping = {
             "description": model.description,
@@ -877,21 +914,29 @@ class TaggingRulesService:
 
     def _get_tables_names_for_conditions(self, conditions: dict[str, Any]) -> list[str]:
         """
-        Determine which tables to apply based on 'service' fields in conditions.
-        Traverses the tree to find any 'service' restrictions.
-        Default: All tables.
-        """
-        # Simple traversal to find service constraints.
-        # This is a heuristic: if ANY condition says service=credit_card, we limit to credit_card.
-        # If strict logic is needed (e.g. service=bank OR service=card), we might need robust logic.
-        # For now, let's collect all requested services.
+        Determine which tables a condition tree runs against.
 
-        services_found = set()
+        A heuristic: every ``service equals`` condition anywhere in the tree
+        is collected regardless of its ``AND``/``OR`` position, and the rule
+        runs against the union of the named services' tables.
+
+        Parameters
+        ----------
+        conditions : dict
+            Normalized condition tree.
+
+        Returns
+        -------
+        list[str]
+            Table names; both transaction tables when no service is named.
+        """
+        services_found: set[str] = set()
         self._collect_services(conditions, services_found)
 
-        tables = []
         if not services_found:
             return [Tables.CREDIT_CARD.value, Tables.BANK.value]
+
+        tables = []
 
         if "credit_card" in services_found:
             tables.append(Tables.CREDIT_CARD.value)
@@ -914,10 +959,12 @@ class TaggingRulesService:
         if node.get("type") in ["AND", "OR"]:
             for sub in node.get("subconditions", []):
                 self._collect_services(sub, services)
-        elif node.get("type") == "CONDITION":
-            if node.get("field") == "service" and node.get("operator") == "equals":
-                val = str(node.get("value")).lower().replace(" ", "_")
-                services.add(val)
+        elif (
+            node.get("type") == "CONDITION"
+            and node.get("field") == "service"
+            and node.get("operator") == "equals"
+        ):
+            services.add(str(node.get("value")).lower().replace(" ", "_"))
 
     def auto_tag_credit_cards_bills(self) -> int:
         """
@@ -940,9 +987,9 @@ class TaggingRulesService:
         A TODO in the implementation notes frequent mismatches between the CC monthly
         total and the bank debit amount; this function may under-tag in practice.
         """
-        # TODO: figure out why we have so many missmatches between credit card monthly amount and bank cc bill
+        # TODO: figure out why we have so many mismatches between credit card monthly amount and bank cc bill
         bank_data = self.transactions_repo.get_table(service=Tables.BANK.value)
-        bank_data = bank_data[bank_data["category"].isna()]
+        bank_data = bank_data[bank_data["category"].isna()].copy()
         bank_data["date"] = pd.to_datetime(bank_data["date"])
         bank_data["month"] = bank_data["date"].dt.strftime("%Y-%m")
 
@@ -950,9 +997,11 @@ class TaggingRulesService:
             return 0
 
         cc_data = self.transactions_repo.get_table(service=Tables.CREDIT_CARD.value)
-        cc_data["date"] = (
-            pd.to_datetime(cc_data["date"]) + pd.DateOffset(months=1, days=1)
-        )  # cc is billed on the next month and we have an issue where all data is one day early
+        # A card is billed the following month, and its scraped dates run one
+        # day early, so shift by a month and a day to land on the bill's month.
+        cc_data["date"] = pd.to_datetime(cc_data["date"]) + pd.DateOffset(
+            months=1, days=1
+        )
         cc_data["month"] = cc_data["date"].dt.strftime("%Y-%m")
 
         if cc_data.empty:
@@ -992,7 +1041,7 @@ class TaggingRulesService:
                     )
                 ][TransactionsTableFields.AMOUNT.value].sum()
 
-                # find if we have some bank transaction with equal amount, it should be taged as credit card bill
+                # A bank debit of exactly the card's monthly total is its bill.
                 bank_tag_month_data_amount = bank_month_data[
                     (
                         bank_month_data[TransactionsTableFields.AMOUNT.value]

@@ -47,19 +47,15 @@ def _optional_number(value: Any) -> float | None:
 
 class LiabilitiesService:
     """
-    Service for managing liabilities with business logic for amortization
-    calculations, payment tracking, and loan lifecycle management.
+    Manage liabilities: amortization, payment tracking and loan lifecycle.
+
+    Parameters
+    ----------
+    db : Session
+        SQLAlchemy session for database operations.
     """
 
-    def __init__(self, db: Session):
-        """
-        Initialize the liabilities service.
-
-        Parameters
-        ----------
-        db : Session
-            SQLAlchemy session for database operations.
-        """
+    def __init__(self, db: Session) -> None:
         self.db = db
         self.liabilities_repo = LiabilitiesRepository(db)
         self.transactions_repo = TransactionsRepository(db)
@@ -249,7 +245,7 @@ class LiabilitiesService:
             notes=notes,
         )
 
-    def update_liability(self, liability_id: int, **fields) -> None:
+    def update_liability(self, liability_id: int, **fields: Any) -> None:
         """
         Update a liability record.
 
@@ -323,7 +319,6 @@ class LiabilitiesService:
         transactions = self.get_liability_transactions(liability_id)
 
         schedule = self._schedule_for_record(record)
-
         actual_vs_expected = self._compare_actual_vs_expected(schedule, transactions)
 
         receipts = [t for t in transactions if t["amount"] > 0]
@@ -338,7 +333,6 @@ class LiabilitiesService:
             else record["principal_amount"]
         )
 
-        # Interest split: already paid vs projected remaining
         interest_paid = sum(e["interest_portion"] for e in schedule[:num_payments])
         interest_remaining = sum(e["interest_portion"] for e in schedule[num_payments:])
         total_interest_cost = interest_paid + interest_remaining
@@ -917,10 +911,9 @@ class LiabilitiesService:
             Number of transactions created.
         """
         record = self.get_liability(liability_id)
-
         schedule = self._schedule_for_record(record)
 
-        # Get existing payment months from all sources (real + generated)
+        # Real and previously generated payments both count as "paid".
         transactions = self.get_liability_transactions(
             liability_id, tag=record.get("tag")
         )
@@ -981,7 +974,7 @@ class LiabilitiesService:
         for txn in transactions:
             amount = txn.get("amount", 0)
             if amount is not None and amount < 0:
-                month_key = str(txn["date"])[:7]  # YYYY-MM
+                month_key = str(txn["date"])[:7]
                 actual_by_month[month_key] = actual_by_month.get(month_key, 0.0) + abs(
                     amount
                 )

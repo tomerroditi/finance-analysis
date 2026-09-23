@@ -32,8 +32,10 @@ never be pulled back out, even by a rebuild.
 """
 
 import math
+from collections.abc import Iterator
 from dataclasses import dataclass, field
 from datetime import date
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -48,6 +50,7 @@ from backend.models.savings_goal import (
     GOAL_STATUS_CLOSED,
     LINK_CONTRIBUTION,
     LINK_UTILIZATION,
+    SavingsGoal,
 )
 from backend.repositories.savings_goal_repository import SavingsGoalRepository
 from backend.services.bank_balance_service import BankBalanceService
@@ -78,8 +81,11 @@ _SURPLUS_EXCLUDED_SOURCES = {"credit_card_transactions", "insurance_transactions
 
 _ALL_TAGS = "all_tags"
 
+#: ``(source_table, unique_id, split_id)`` — identifies one analysis row.
+_RowKey = tuple[Any, Any, int | None]
 
-def _month_key(value) -> tuple[int, int] | None:
+
+def _month_key(value: object) -> tuple[int, int] | None:
     """Parse ``YYYY-MM`` (or ``YYYY-MM-DD``) into a ``(year, month)`` tuple."""
     if not value or (isinstance(value, float) and math.isnan(value)):
         return None
@@ -96,7 +102,7 @@ def _month_str(key: tuple[int, int]) -> str:
 
 
 def _same_amount(stored: float, computed: float) -> bool:
-    """Whether a recomputed allocation is the same money as the stored one.
+    """Check whether a recomputed allocation is the same money as the stored one.
 
     Compared with a tolerance rather than ``==``: allocations are the result
     of a float waterfall, so an identical ledger can reproduce to the last
@@ -115,10 +121,12 @@ def _same_amount(stored: float, computed: float) -> bool:
     bool
         True when the two round to the same displayed value.
     """
-    return abs(stored - computed) < 0.005
+    return abs(stored - computed) < ROUNDING_EPSILON
 
 
-def _iter_months(start: tuple[int, int], end: tuple[int, int]):
+def _iter_months(
+    start: tuple[int, int], end: tuple[int, int]
+) -> Iterator[tuple[int, int]]:
     """Yield every ``(year, month)`` from ``start`` through ``end`` inclusive."""
     year, month = start
     while (year, month) <= end:
@@ -133,30 +141,29 @@ class _Plan:
     """Outcome of one simulation pass over the goal timeline."""
 
     #: ``{(goal_id, year, month): amount}`` for months the pass recomputed.
-    computed: dict = field(default_factory=dict)
+    computed: dict[tuple[int, int, int], float] = field(default_factory=dict)
     #: ``{goal_id: total funded}`` after the whole timeline.
-    funded: dict = field(default_factory=dict)
+    funded: dict[int, float] = field(default_factory=dict)
     #: ``{goal_id: total utilized}`` after the whole timeline.
-    utilized: dict = field(default_factory=dict)
+    utilized: dict[int, float] = field(default_factory=dict)
     #: ``{goal_id: "YYYY-MM"}`` for goals that auto-closed during the pass.
-    closed_month: dict = field(default_factory=dict)
+    closed_month: dict[int, str] = field(default_factory=dict)
     #: ``{(year, month): surplus}`` pool available before any goal took a share.
-    surplus: dict = field(default_factory=dict)
+    surplus: dict[tuple[int, int], float] = field(default_factory=dict)
     #: ``{(year, month): free cash}`` left unearmarked at the end of each month.
-    free_cash: dict = field(default_factory=dict)
+    free_cash: dict[tuple[int, int], float] = field(default_factory=dict)
 
 
 class SavingsGoalService:
-    """Service for managing savings goals and distributing monthly surplus."""
+    """Manage savings goals and distribute each month's surplus across them.
 
-    def __init__(self, db: Session):
-        """Initialize the service.
+    Parameters
+    ----------
+    db : Session
+        SQLAlchemy session for database operations.
+    """
 
-        Parameters
-        ----------
-        db : Session
-            SQLAlchemy session for database operations.
-        """
+    def __init__(self, db: Session) -> None:
         self.db = db
         self.repo = SavingsGoalRepository(db)
         self.transactions_service = TransactionsService(db)
@@ -164,7 +171,7 @@ class SavingsGoalService:
         # needs it more than once (the allocation pass, then the enrichment).
         # The service is constructed per request, so caching it here is
         # request-scoped and never goes stale mid-call.
-        self._context_cache: dict | None = None
+        self._context_cache: dict[str, Any] | None = None
         # The last simulation pass, kept so the free-cash pool and the
         # per-month deficit figures can be read back without walking the
         # whole timeline a second time.
@@ -177,7 +184,7 @@ class SavingsGoalService:
     # Public API
     # ------------------------------------------------------------------
 
-    def get_all(self) -> list[dict]:
+    def get_all(self) -> list[dict[str, Any]]:
         """Return all goals enriched with progress metrics, in waterfall order.
 
         Running this refreshes the allocation ledger first, so the numbers a
@@ -191,7 +198,7 @@ class SavingsGoalService:
         self.ensure_allocations()
         return self._enriched_goals()
 
-    def get_month_allocations(self, year: int, month: int) -> dict:
+    def get_month_allocations(self, year: int, month: int) -> dict[str, Any]:
         """Return what each goal received in one month, for the budget view.
 
         Parameters
@@ -233,7 +240,7 @@ class SavingsGoalService:
         self.ensure_allocations()
         allocations = self.repo.get_month_allocations(year, month)
         by_goal = (
-            dict(zip(allocations["goal_id"], allocations["amount"]))
+            dict(zip(allocations["goal_id"], allocations["amount"], strict=True))
             if not allocations.empty
             else {}
         )
@@ -277,7 +284,7 @@ class SavingsGoalService:
             "is_provisional": is_provisional,
         }
 
-    def get_free_cash(self) -> dict:
+    def get_free_cash(self) -> dict[str, float | bool]:
         """Return the pool of tracked money that no goal has earmarked.
 
         The pool is the counterweight to the goals: liquid money (bank + cash)
@@ -333,7 +340,9 @@ class SavingsGoalService:
             "has_goals": True,
         }
 
-    def get_free_cash_before(self, month: str, goal_id: int | None = None) -> dict:
+    def get_free_cash_before(
+        self, month: str, goal_id: int | None = None
+    ) -> dict[str, str | float]:
         """Return the free cash a goal starting in ``month`` could take over.
 
         Goals only ever draw on each month's *new* surplus, so money that was
@@ -356,6 +365,11 @@ class SavingsGoalService:
         dict
             ``month`` (echoed) and ``free_cash`` — the pool at the start of
             that month, never negative.
+
+        Raises
+        ------
+        ValidationException
+            If ``month`` is not a parseable ``YYYY-MM`` string.
         """
         key = _month_key(month)
         if key is None:
@@ -386,14 +400,14 @@ class SavingsGoalService:
         # of the same money first, exactly as the walk does.
         same_month = sum(
             float(g.opening_balance or 0.0)
-            for g, start in zip(others, starts)
+            for g, start in zip(others, starts, strict=True)
             if min(start, current) == min(key, current)
         )
         amount = max(0.0, amount - same_month)
 
         return {"month": _month_str(key), "free_cash": round(amount, 2) + 0.0}
 
-    def get_timeline(self, months: int | None = 12) -> dict:
+    def get_timeline(self, months: int | None = 12) -> dict[str, Any]:
         """Return the month-by-month history of the waterfall.
 
         The dashboard card shows a goal's *current* standing; this is the same
@@ -497,8 +511,26 @@ class SavingsGoalService:
             ],
         }
 
-    def create(self, **fields) -> dict:
-        """Create a new savings goal at the bottom of the waterfall."""
+    def create(self, **fields: Any) -> list[dict[str, Any]]:
+        """Create a new savings goal at the bottom of the waterfall.
+
+        Parameters
+        ----------
+        **fields : Any
+            Goal columns. ``priority`` defaults to the bottom of the waterfall
+            and ``start_month`` to the current month; ``None`` values are
+            dropped.
+
+        Returns
+        -------
+        list[dict]
+            Every goal, refreshed.
+
+        Raises
+        ------
+        ValidationException
+            If ``start_month`` is not a parseable ``YYYY-MM`` string.
+        """
         fields.setdefault("priority", self.repo.next_priority())
         if not fields.get("start_month"):
             today = date.today()
@@ -507,41 +539,102 @@ class SavingsGoalService:
         self.repo.add(**{k: v for k, v in fields.items() if v is not None})
         return self._after_write()
 
-    def update(self, goal_id: int, **fields) -> dict:
-        """Update an existing savings goal."""
+    def update(self, goal_id: int, **fields: Any) -> list[dict[str, Any]]:
+        """Update an existing savings goal.
+
+        Parameters
+        ----------
+        goal_id : int
+            Goal to update.
+        **fields : Any
+            Columns to change; ``None`` clears a column.
+
+        Returns
+        -------
+        list[dict]
+            Every goal, refreshed.
+
+        Raises
+        ------
+        EntityNotFoundException
+            If the goal does not exist.
+        ValidationException
+            If ``start_month`` is not a parseable ``YYYY-MM`` string.
+        """
         if "start_month" in fields:
             self._validate_month(fields["start_month"], "start_month")
         try:
             self.repo.update(goal_id, **fields)
-        except ValueError:
-            raise EntityNotFoundException(f"Savings goal {goal_id} not found")
+        except ValueError as exc:
+            raise EntityNotFoundException(f"Savings goal {goal_id} not found") from exc
         return self._after_write()
 
     def delete(self, goal_id: int) -> None:
-        """Delete a savings goal and everything attached to it."""
+        """Delete a savings goal and everything attached to it.
+
+        Parameters
+        ----------
+        goal_id : int
+            Goal to delete.
+
+        Raises
+        ------
+        EntityNotFoundException
+            If the goal does not exist.
+        """
         try:
             self.repo.delete(goal_id)
-        except ValueError:
-            raise EntityNotFoundException(f"Savings goal {goal_id} not found")
+        except ValueError as exc:
+            raise EntityNotFoundException(f"Savings goal {goal_id} not found") from exc
 
-    def reorder(self, ordered_ids: list[int]) -> list[dict]:
+    def reorder(self, ordered_ids: list[int]) -> list[dict[str, Any]]:
         """Set the waterfall order; the first id is funded first.
 
         New priorities take effect from the next allocation run forward.
         Already-written months keep their amounts until an explicit
         :meth:`rebuild` restates them.
+
+        Parameters
+        ----------
+        ordered_ids : list[int]
+            Goal ids, highest priority first.
+
+        Returns
+        -------
+        list[dict]
+            Every goal, refreshed.
+
+        Raises
+        ------
+        EntityNotFoundException
+            If any id is not a known goal.
         """
-        known = (
-            set(self.repo.get_all()["id"]) if not self.repo.get_all().empty else set()
-        )
+        all_goals = self.repo.get_all()
+        known = set(all_goals["id"]) if not all_goals.empty else set()
         unknown = [gid for gid in ordered_ids if gid not in known]
         if unknown:
             raise EntityNotFoundException(f"Unknown savings goal ids: {unknown}")
         self.repo.set_priorities(ordered_ids)
         return self._after_write()
 
-    def close(self, goal_id: int) -> dict:
-        """Close a goal by hand, freezing its allocation history."""
+    def close(self, goal_id: int) -> list[dict[str, Any]]:
+        """Close a goal by hand, freezing its allocation history.
+
+        Parameters
+        ----------
+        goal_id : int
+            Goal to close.
+
+        Returns
+        -------
+        list[dict]
+            Every goal, refreshed.
+
+        Raises
+        ------
+        EntityNotFoundException
+            If the goal does not exist.
+        """
         goal = self.repo.get(goal_id)
         if not goal:
             raise EntityNotFoundException(f"Savings goal {goal_id} not found")
@@ -553,8 +646,24 @@ class SavingsGoalService:
         )
         return self._after_write()
 
-    def reopen(self, goal_id: int) -> dict:
-        """Reopen a closed goal so it absorbs surplus again."""
+    def reopen(self, goal_id: int) -> list[dict[str, Any]]:
+        """Reopen a closed goal so it absorbs surplus again.
+
+        Parameters
+        ----------
+        goal_id : int
+            Goal to reopen.
+
+        Returns
+        -------
+        list[dict]
+            Every goal, refreshed.
+
+        Raises
+        ------
+        EntityNotFoundException
+            If the goal does not exist.
+        """
         goal = self.repo.get(goal_id)
         if not goal:
             raise EntityNotFoundException(f"Savings goal {goal_id} not found")
@@ -572,8 +681,35 @@ class SavingsGoalService:
         source_id: int,
         source_table: str,
         link_type: str,
-    ) -> dict:
-        """Attach a transaction to a goal as a contribution or a utilization."""
+    ) -> list[dict[str, Any]]:
+        """Attach a transaction to a goal as a contribution or a utilization.
+
+        Parameters
+        ----------
+        goal_id : int
+            Goal the transaction belongs to.
+        source_type : str
+            ``"transaction"`` or ``"split"``.
+        source_id : int
+            ``unique_id`` of the transaction, or the split's id.
+        source_table : str
+            Table the transaction lives in (ignored for splits, whose ids are
+            global).
+        link_type : str
+            ``LINK_CONTRIBUTION`` or ``LINK_UTILIZATION``.
+
+        Returns
+        -------
+        list[dict]
+            Every goal, refreshed.
+
+        Raises
+        ------
+        ValidationException
+            If ``link_type`` is not one of the two accepted values.
+        EntityNotFoundException
+            If the goal does not exist.
+        """
         if link_type not in (LINK_CONTRIBUTION, LINK_UTILIZATION):
             raise ValidationException(
                 f"link_type must be '{LINK_CONTRIBUTION}' or '{LINK_UTILIZATION}'"
@@ -585,16 +721,34 @@ class SavingsGoalService:
         self._context_cache = None
         return self._after_write()
 
-    def unlink_transaction(self, link_id: int) -> dict:
-        """Detach a transaction from its goal."""
+    def unlink_transaction(self, link_id: int) -> list[dict[str, Any]]:
+        """Detach a transaction from its goal.
+
+        Parameters
+        ----------
+        link_id : int
+            Link to remove.
+
+        Returns
+        -------
+        list[dict]
+            Every goal, refreshed.
+
+        Raises
+        ------
+        EntityNotFoundException
+            If the link does not exist.
+        """
         try:
             self.repo.delete_link(link_id)
-        except ValueError:
-            raise EntityNotFoundException(f"Savings goal link {link_id} not found")
+        except ValueError as exc:
+            raise EntityNotFoundException(
+                f"Savings goal link {link_id} not found"
+            ) from exc
         self._context_cache = None
         return self._after_write()
 
-    def get_links(self, goal_id: int | None = None) -> list[dict]:
+    def get_links(self, goal_id: int | None = None) -> list[dict[str, Any]]:
         """Return transaction links, optionally scoped to one goal."""
         links = self.repo.get_links(goal_id)
         if links.empty:
@@ -608,7 +762,7 @@ class SavingsGoalService:
 
     def link_investment(
         self, goal_id: int, investment_id: int, amount: float | None = None
-    ) -> list[dict]:
+    ) -> list[dict[str, Any]]:
         """Earmark an investment holding against a goal.
 
         Parameters
@@ -649,18 +803,36 @@ class SavingsGoalService:
         self._backing_cache = None
         return self._after_write()
 
-    def unlink_investment(self, backing_id: int) -> list[dict]:
-        """Release an investment earmark."""
+    def unlink_investment(self, backing_id: int) -> list[dict[str, Any]]:
+        """Release an investment earmark.
+
+        Parameters
+        ----------
+        backing_id : int
+            Earmark to remove.
+
+        Returns
+        -------
+        list[dict]
+            Every goal, refreshed.
+
+        Raises
+        ------
+        EntityNotFoundException
+            If the earmark does not exist.
+        """
         try:
             self.repo.delete_backing(backing_id)
-        except ValueError:
+        except ValueError as exc:
             raise EntityNotFoundException(
                 f"Savings goal investment {backing_id} not found"
-            )
+            ) from exc
         self._backing_cache = None
         return self._after_write()
 
-    def get_investment_backings(self, goal_id: int | None = None) -> list[dict]:
+    def get_investment_backings(
+        self, goal_id: int | None = None
+    ) -> list[dict[str, Any]]:
         """Return investment earmarks, each with the holding's live value.
 
         Parameters
@@ -708,11 +880,18 @@ class SavingsGoalService:
             )
         return rows
 
-    def get_available_investments(self) -> list[dict]:
+    def get_available_investments(self) -> list[dict[str, Any]]:
         """Return open investments with how much of each is still unearmarked.
 
         Backs the picker: a holding already fully spoken for should not look
         available, and one partly earmarked should show only its headroom.
+
+        Returns
+        -------
+        list[dict]
+            One row per open investment: ``id``, ``name``, ``type``, live
+            ``value``, explicitly ``earmarked`` amount, ``available`` headroom
+            and ``fully_claimed`` (a goal holds the whole-remainder earmark).
         """
         backings = self.repo.get_backings()
         claimed: dict[int, float] = {}
@@ -748,7 +927,7 @@ class SavingsGoalService:
             )
         return rows
 
-    def _require_open_investment(self, investment_id: int) -> dict:
+    def _require_open_investment(self, investment_id: int) -> dict[str, Any]:
         """Return an open investment's record plus its live balance.
 
         Looked up through the full listing rather than ``get_investment``,
@@ -836,7 +1015,9 @@ class SavingsGoalService:
         self._last_plan = plan
         self._persist(plan)
 
-    def rebuild(self, from_month: str | None = None, dry_run: bool = False) -> dict:
+    def rebuild(
+        self, from_month: str | None = None, dry_run: bool = False
+    ) -> dict[str, Any]:
         """Recompute allocation history under the current priorities.
 
         Parameters
@@ -854,7 +1035,13 @@ class SavingsGoalService:
             ``from_month``, ``dry_run``, and a ``changes`` list of per-goal
             before/after totals over the rebuilt range. Closed goals never
             appear: their allocations are frozen and money can't be taken back
-            out of them.
+            out of them. ``goals`` carries the refreshed goals (empty on a
+            dry run).
+
+        Raises
+        ------
+        ValidationException
+            If ``from_month`` is not a parseable ``YYYY-MM`` string.
         """
         start = _month_key(from_month) if from_month else None
         if from_month and start is None:
@@ -903,7 +1090,9 @@ class SavingsGoalService:
     # ------------------------------------------------------------------
 
     def _simulate(
-        self, recompute_from: tuple[int, int] | None, goals: list | None = None
+        self,
+        recompute_from: tuple[int, int] | None,
+        goals: list[SavingsGoal] | None = None,
     ) -> _Plan:
         """Walk the timeline month by month, allocating surplus to goals.
 
@@ -963,7 +1152,7 @@ class SavingsGoalService:
         # A goal closed by the user is frozen from the outset; one that fills
         # and is fully spent closes partway through the walk.
         frozen = {g.id: g.status == GOAL_STATUS_CLOSED for g in goals}
-        start_of = dict(zip((g.id for g in goals), starts))
+        start_of = dict(zip((g.id for g in goals), starts, strict=True))
         # An opening balance is money the goal held when it started, so it
         # leaves the pool in that month. Taking every opening balance out when
         # the *earliest* goal started drained a pool that later history still
@@ -1131,7 +1320,7 @@ class SavingsGoalService:
         (``backend/utils/data_cache.py``) mid-load, the one moment they are
         worth the most.
         """
-        existing = self._persisted_allocations()
+        existing = self._stored_allocations()
         for (goal_id, year, month), amount in plan.computed.items():
             current = existing.get((goal_id, year, month))
             if current is not None and _same_amount(current, amount):
@@ -1143,22 +1332,6 @@ class SavingsGoalService:
                 self.repo.update(
                     goal_id, status=GOAL_STATUS_CLOSED, closed_month=closed_month
                 )
-
-    def _persisted_allocations(self) -> dict[tuple[int, int, int], float]:
-        """The allocation ledger as ``{(goal_id, year, month): amount}``.
-
-        Returns
-        -------
-        dict
-            One entry per stored allocation row. Empty when the ledger is.
-        """
-        rows = self.repo.get_allocations()
-        if rows.empty:
-            return {}
-        return {
-            (int(row.goal_id), int(row.year), int(row.month)): float(row.amount)
-            for row in rows.itertuples(index=False)
-        }
 
     # ------------------------------------------------------------------
     # Inputs
@@ -1210,7 +1383,7 @@ class SavingsGoalService:
         return totals
 
     def _opening_free_cash(self) -> float:
-        """Liquid money that existed before any transaction was tracked.
+        """Return the liquid money that existed before any transaction was tracked.
 
         Bank and cash *prior wealth* is exactly that opening balance — each
         account stores ``current balance - sum(its tracked transactions)`` —
@@ -1229,8 +1402,8 @@ class SavingsGoalService:
         cash = CashBalanceService(self.db).get_total_prior_wealth()
         return float(bank) + float(cash)
 
-    def _pool_before(self, month: tuple[int, int], context: dict) -> float:
-        """Free cash at the start of ``month``, when no goal has started yet.
+    def _pool_before(self, month: tuple[int, int], context: dict[str, Any]) -> float:
+        """Return the free cash at the start of ``month``, when no goal has started yet.
 
         Prior wealth walked forward through every month before ``month``,
         floored at zero month by month.
@@ -1254,7 +1427,7 @@ class SavingsGoalService:
             free_cash = max(0.0, free_cash + context["surplus"][month_key])
         return free_cash
 
-    def _build_context(self) -> dict:
+    def _build_context(self) -> dict[str, Any]:
         """Compute per-month surplus and per-month goal-linked amounts, memoised.
 
         Goal-linked transactions are pulled out of the surplus calculation
@@ -1273,10 +1446,10 @@ class SavingsGoalService:
         self._context_cache = self._compute_context()
         return self._context_cache
 
-    def _compute_context(self) -> dict:
+    def _compute_context(self) -> dict[str, Any]:
         """Do the actual transaction scan behind :meth:`_build_context`."""
         df = self.transactions_service.get_data_for_analysis()
-        empty = {"surplus": {}, "direct": {}, "utilized": {}}
+        empty: dict[str, Any] = {"surplus": {}, "direct": {}, "utilized": {}}
         if df.empty:
             return empty
 
@@ -1300,9 +1473,10 @@ class SavingsGoalService:
         df["_year"] = parsed.dt.year.astype(int)
         df["_month"] = parsed.dt.month.astype(int)
 
-        goal_of = self._goal_by_transaction(df)
-        df["_goal_id"] = [goal_of.get(k, (None, None))[0] for k in self._row_keys(df)]
-        df["_link_type"] = [goal_of.get(k, (None, None))[1] for k in self._row_keys(df)]
+        keys = self._row_keys(df)
+        goal_of = self._goal_by_transaction(df, keys)
+        df["_goal_id"] = [goal_of.get(k, (None, None))[0] for k in keys]
+        df["_link_type"] = [goal_of.get(k, (None, None))[1] for k in keys]
 
         linked = df[df["_goal_id"].notna()]
         unlinked = df[df["_goal_id"].isna()]
@@ -1341,7 +1515,7 @@ class SavingsGoalService:
         return {"surplus": surplus, "direct": direct, "utilized": utilized}
 
     @staticmethod
-    def _row_keys(df: pd.DataFrame) -> list[tuple]:
+    def _row_keys(df: pd.DataFrame) -> list[_RowKey]:
         """Build ``(source_table, unique_id, split_id)`` keys for each row.
 
         ``unique_id`` is a per-table auto-increment, so it only identifies a
@@ -1356,20 +1530,33 @@ class SavingsGoalService:
         )
         return [
             (src, uid, None if pd.isna(sid) else int(sid))
-            for src, uid, sid in zip(df[source_col], df[uid_col], splits)
+            for src, uid, sid in zip(df[source_col], df[uid_col], splits, strict=True)
         ]
 
-    def _goal_by_transaction(self, df: pd.DataFrame) -> dict[tuple, tuple[int, str]]:
+    def _goal_by_transaction(
+        self, df: pd.DataFrame, keys: list[_RowKey]
+    ) -> dict[_RowKey, tuple[int, str]]:
         """Map each linked transaction key to its ``(goal_id, link_type)``.
 
         Explicit per-transaction links win over a goal's category/tag rule, so
         a single correction on one transaction always beats the broad rule.
+
+        Parameters
+        ----------
+        df : pd.DataFrame
+            Analysis rows.
+        keys : list
+            :meth:`_row_keys` of ``df``, positionally aligned with it.
+
+        Returns
+        -------
+        dict
+            Row key -> ``(goal_id, link_type)`` for every linked row.
         """
-        mapping: dict[tuple, tuple[int, str]] = {}
+        mapping: dict[_RowKey, tuple[int, str]] = {}
 
         category_col = TransactionsTableFields.CATEGORY.value
         tag_col = TransactionsTableFields.TAG.value
-        keys = self._row_keys(df)
 
         for goal in self._goals_in_order():
             if not goal.contribution_category:
@@ -1378,7 +1565,7 @@ class SavingsGoalService:
             tags = self._split_tags(goal.contribution_tags)
             if tags and tags != [_ALL_TAGS] and tag_col in df.columns:
                 matches &= df[tag_col].isin(tags)
-            for key, matched in zip(keys, matches):
+            for key, matched in zip(keys, matches, strict=True):
                 if matched:
                     mapping[key] = (goal.id, LINK_CONTRIBUTION)
 
@@ -1415,7 +1602,7 @@ class SavingsGoalService:
     # Helpers
     # ------------------------------------------------------------------
 
-    def _goals_in_order(self) -> list:
+    def _goals_in_order(self) -> list[SavingsGoal]:
         """Return every goal (active and closed) in waterfall order."""
         df = self.repo.get_all()
         if df.empty:
@@ -1441,20 +1628,20 @@ class SavingsGoalService:
                 totals[goal_id] = totals.get(goal_id, 0.0) + amount
         return totals
 
-    def _after_write(self) -> list[dict]:
+    def _after_write(self) -> list[dict[str, Any]]:
         """Refresh the ledger after a mutation and return the enriched goals."""
         self.ensure_allocations()
         return self._enriched_goals()
 
     @staticmethod
-    def _validate_month(value, field_name: str) -> None:
+    def _validate_month(value: object, field_name: str) -> None:
         """Reject a month string the engine could not parse."""
         if value is not None and _month_key(value) is None:
             raise ValidationException(
                 f"{field_name} must look like 'YYYY-MM', got {value!r}"
             )
 
-    def _enriched_goals(self) -> list[dict]:
+    def _enriched_goals(self) -> list[dict[str, Any]]:
         """Build the API payload for every goal from the current ledger."""
         goals = self._goals_in_order()
         if not goals:
@@ -1463,7 +1650,7 @@ class SavingsGoalService:
         allocations = self.repo.get_allocations()
         totals: dict[int, float] = {}
         reclaimed: dict[int, float] = {}
-        history: dict[int, list[dict]] = {}
+        history: dict[int, list[dict[str, Any]]] = {}
         if not allocations.empty:
             for row in allocations.sort_values(["year", "month"]).itertuples(
                 index=False
@@ -1526,15 +1713,15 @@ class SavingsGoalService:
 
     @staticmethod
     def _enrich(
-        goal,
-        totals: dict,
-        contributed: dict,
-        utilized: dict,
-        history: dict,
-        provisional: dict,
-        reclaimed: dict,
-        backing: dict,
-    ) -> dict:
+        goal: SavingsGoal,
+        totals: dict[int, float],
+        contributed: dict[int, float],
+        utilized: dict[int, float],
+        history: dict[int, list[dict[str, Any]]],
+        provisional: dict[int, float],
+        reclaimed: dict[int, float],
+        backing: dict[int, float],
+    ) -> dict[str, Any]:
         """Assemble one goal's derived progress metrics."""
         target = float(goal.target_amount or 0.0)
         opening = float(goal.opening_balance or 0.0)

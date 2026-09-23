@@ -21,6 +21,7 @@ deliberate.
 import copy
 import re
 from datetime import date
+from typing import Any, ClassVar
 
 import numpy as np
 import pandas as pd
@@ -49,7 +50,13 @@ INFLOW = "inflow"
 
 
 class RecurringService:
-    """Detect recurring charges and recurring income from transaction history."""
+    """Detect recurring charges and recurring income from transaction history.
+
+    Parameters
+    ----------
+    db : Session
+        SQLAlchemy session for database operations.
+    """
 
     # Cadences we recognise, as ``(name, period_days, tolerance)``. Tolerance is
     # per-cadence and tight enough that the bands never touch: a gap that falls
@@ -62,7 +69,7 @@ class RecurringService:
     # only ever matched habits — the Monday coffee, the Friday supermarket run
     # — which is the pattern most easily mistaken for a subscription, so a gap
     # shorter than about 25 days is now no cadence at all.
-    _CADENCES = [
+    _CADENCES: ClassVar[list[tuple[str, int, float]]] = [
         ("monthly", 30, 0.18),
         # Israeli utilities (water, electricity, arnona) bill every two months.
         # With no band of their own they landed inside the old quarterly band,
@@ -86,7 +93,7 @@ class RecurringService:
     # (streaming, gym, childcare, internet, electricity, water, arnona,
     # national insurance, quarterly home insurance) scores at most 0.133, while
     # the tightest piece of ordinary shopping scores 0.208. 0.15 sits in that
-    # gap. The old standard-deviation gate at 0.5 was nowhere near it.
+    # gap.
     _MAX_INTERVAL_MAD_CV = 0.15
     # How near the same day of the month a charge has to land to count as
     # anchored. This only scores a candidate, it never rejects one: real bills
@@ -139,28 +146,23 @@ class RecurringService:
     # alternate too, so the candidate is ranked down, not thrown away.
     _INTERVAL_SHAPE_REFERENCE = 0.60
     # How the confidence score weighs the five kinds of evidence. Sums to 1.
-    _CONFIDENCE_WEIGHTS = {
+    _CONFIDENCE_WEIGHTS: ClassVar[dict[str, float]] = {
         "regularity": 0.25,
         "shape": 0.15,
         "anchor": 0.20,
         "amount": 0.25,
         "evidence": 0.15,
     }
+    #: Days in an average month, the cycle day-of-month anchoring wraps around.
+    _MONTH_CYCLE_DAYS = 30.44
 
-    def __init__(self, db: Session):
-        """Initialize the recurring service.
-
-        Parameters
-        ----------
-        db : Session
-            SQLAlchemy session for database operations.
-        """
+    def __init__(self, db: Session) -> None:
         self.db = db
         self.repo = TransactionsRepository(db)
         self.decisions = RecurringDecisionsRepository(db)
 
     @staticmethod
-    def _normalize(desc) -> str:
+    def _normalize(desc: object) -> str:
         """Normalize a transaction description into a merchant grouping key.
 
         Strips digits, punctuation and collapses whitespace so that
@@ -169,8 +171,8 @@ class RecurringService:
 
         Parameters
         ----------
-        desc : Any
-            Raw transaction description.
+        desc : object
+            Raw transaction description (any pandas cell value).
 
         Returns
         -------
@@ -185,8 +187,8 @@ class RecurringService:
         return re.sub(r"\s+", " ", s).strip()
 
     @staticmethod
-    def normalize_description(desc) -> str:
-        """Public entry point to the merchant grouping key.
+    def normalize_description(desc: object) -> str:
+        """Normalize a description exactly as detection groups it.
 
         Callers outside this service — the budget overview, which has to decide
         whether a transaction is one of these recurring charges — must group
@@ -195,8 +197,8 @@ class RecurringService:
 
         Parameters
         ----------
-        desc : Any
-            Raw transaction description.
+        desc : object
+            Raw transaction description (any pandas cell value).
 
         Returns
         -------
@@ -235,7 +237,7 @@ class RecurringService:
 
     @staticmethod
     def _interval_spread(diffs: pd.Series, median_interval: float) -> float:
-        """Robust coefficient of variation of the gaps between charges.
+        """Return the robust coefficient of variation of the gaps between charges.
 
         Median absolute deviation over the median, rather than std over the
         median: a single outlying gap — one skipped billing period — leaves
@@ -258,7 +260,7 @@ class RecurringService:
 
     @staticmethod
     def _interval_shape(diffs: pd.Series, median_interval: float) -> float:
-        """Interquartile spread of the gaps, over their median.
+        """Return the interquartile spread of the gaps, over their median.
 
         Complements :meth:`_interval_spread`, which a strictly alternating
         rhythm fools: with half the gaps long and half short, most still sit on
@@ -280,12 +282,9 @@ class RecurringService:
         iqr = float(diffs.quantile(0.75) - diffs.quantile(0.25))
         return iqr / median_interval
 
-    #: Days in an average month, the cycle day-of-month anchoring wraps around.
-    _MONTH_CYCLE_DAYS = 30.44
-
     @classmethod
     def _anchor_score(cls, dates: pd.Series) -> float:
-        """Fraction of charges landing on one day of the month.
+        """Score the fraction of charges landing on one day of the month.
 
         Distance is circular — the 1st and the 30th are two days apart, not
         twenty-nine — so a bill that slips over a month boundary still reads as
@@ -315,7 +314,7 @@ class RecurringService:
     def _amount_consistency(
         amounts: pd.Series, median_amount: float, band: float
     ) -> float:
-        """Share of charges sitting within ``band`` of the median amount.
+        """Return the share of charges sitting within ``band`` of the median amount.
 
         Parameters
         ----------
@@ -337,7 +336,7 @@ class RecurringService:
         self,
         today: date | pd.Timestamp | None = None,
         include_dismissed: bool = False,
-    ) -> dict:
+    ) -> dict[str, Any]:
         """Detect recurring-charge candidates across itemized expenses.
 
         Every candidate carries the user's verdict on it. Nothing here is
@@ -396,7 +395,9 @@ class RecurringService:
             )
         )
 
-    def _detect_recurring(self, today: pd.Timestamp, include_dismissed: bool) -> dict:
+    def _detect_recurring(
+        self, today: pd.Timestamp, include_dismissed: bool
+    ) -> dict[str, Any]:
         """Run the detection behind :meth:`get_recurring`'s cache.
 
         Parameters
@@ -411,7 +412,7 @@ class RecurringService:
         dict
             The summary documented on :meth:`get_recurring`.
         """
-        empty = {
+        empty: dict[str, Any] = {
             "items": [],
             "total_monthly": 0.0,
             "pending_monthly": 0.0,
@@ -432,7 +433,8 @@ class RecurringService:
             *IncomeCategories._value2member_map_.keys(),
         ]
         # Time-boxed project budgets (renovation, wedding…) are one-off arcs,
-        # not ongoing commitments — keep them out of "recurring".
+        # not ongoing commitments — keep them out of "recurring". Imported
+        # here because the budget package imports this module.
         from backend.services.budget import ProjectBudgetService
 
         exclude += ProjectBudgetService(self.db).get_all_projects_names()
@@ -446,7 +448,7 @@ class RecurringService:
             return empty
 
         verdicts = self.decisions.get_all()
-        items: list[dict] = []
+        items: list[dict[str, Any]] = []
         dismissed_count = 0
         for stream in streams:
             verdict = verdicts.get(stream["normalized"])
@@ -477,7 +479,7 @@ class RecurringService:
 
     def _detect_streams(
         self, df: pd.DataFrame, today: pd.Timestamp, direction: str
-    ) -> list[dict]:
+    ) -> list[dict[str, Any]]:
         """Find the repeating money streams in a transactions frame.
 
         The cadence machinery both recurring *charges* and recurring *income*
@@ -511,7 +513,7 @@ class RecurringService:
             return []
 
         inflow = direction == INFLOW
-        streams: list[dict] = []
+        streams: list[dict[str, Any]] = []
 
         # Net same-day charges and refunds: sum signed amounts per merchant-day,
         # then keep only net-outflow days as charge occurrences. A same-day (or
@@ -731,7 +733,7 @@ class RecurringService:
     def _expected_amount(
         self, amounts: pd.Series, median_amount: float, amount_kind: str
     ) -> float:
-        """What one more occurrence of a stream is worth planning around.
+        """Return the amount one more occurrence of a stream is worth planning around.
 
         A stream whose amount holds still is worth its median. One that swings
         is worth its **low** end: a forecast spends this number, and guessing
@@ -759,7 +761,9 @@ class RecurringService:
         recent = amounts.tail(self._EXPECTED_AMOUNT_WINDOW)
         return float(recent.quantile(self._EXPECTED_AMOUNT_QUANTILE))
 
-    def get_recurring_income(self, today: date | pd.Timestamp | None = None) -> dict:
+    def get_recurring_income(
+        self, today: date | pd.Timestamp | None = None
+    ) -> dict[str, Any]:
         """Detect the household's repeating income streams.
 
         Salaries, allowances, benefits, a standing transfer — money that
@@ -811,7 +815,7 @@ class RecurringService:
             )
         )
 
-    def _detect_income(self, today: pd.Timestamp) -> dict:
+    def _detect_income(self, today: pd.Timestamp) -> dict[str, Any]:
         """Run the detection behind :meth:`get_recurring_income`'s cache.
 
         Parameters
@@ -824,7 +828,7 @@ class RecurringService:
         dict
             The summary documented on :meth:`get_recurring_income`.
         """
-        empty = {"items": [], "total_monthly": 0.0}
+        empty: dict[str, Any] = {"items": [], "total_monthly": 0.0}
 
         df = self.repo.get_itemized_transactions()
         if df.empty:
@@ -842,8 +846,8 @@ class RecurringService:
 
     def get_income_due_remaining(
         self, today: date | pd.Timestamp | None = None
-    ) -> dict:
-        """Recurring income still expected before the end of ``today``'s month.
+    ) -> dict[str, Any]:
+        """Return the recurring income still expected before the end of ``today``'s month.
 
         The income half of ``committed_remaining``: what the forecast may add
         to money already in hand without guessing. A monthly stream is due
@@ -925,7 +929,7 @@ class RecurringService:
     def _income_received_this_month(
         self, month_start: pd.Timestamp, today: pd.Timestamp
     ) -> dict[str, float]:
-        """Income banked so far this month, per stream key.
+        """Sum the income banked so far this month, per stream key.
 
         Parameters
         ----------
@@ -955,7 +959,7 @@ class RecurringService:
 
     def get_confirmed_items(
         self, today: date | pd.Timestamp | None = None
-    ) -> list[dict]:
+    ) -> list[dict[str, Any]]:
         """Return only the recurring charges the user has confirmed.
 
         The single entry point for everything that *acts* on a recurring
@@ -987,7 +991,7 @@ class RecurringService:
         label: str | None = None,
         amount: float | None = None,
         cadence: str | None = None,
-    ) -> dict:
+    ) -> dict[str, str]:
         """Record the user's verdict on one candidate.
 
         Parameters
@@ -1024,7 +1028,9 @@ class RecurringService:
             ]
         )["updated"][0]
 
-    def set_decisions(self, decisions: list[dict]) -> dict:
+    def set_decisions(
+        self, decisions: list[dict[str, Any]]
+    ) -> dict[str, list[dict[str, str]]]:
         """Record several verdicts at once (the "confirm all" path).
 
         A pure write. It deliberately does **not** run detection to check
