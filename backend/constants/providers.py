@@ -45,6 +45,11 @@ insurance_providers = [
 # a newer one.
 SUPERSEDED_INSURANCE_PROVIDERS = {"hafenix": "mislaka"}
 
+# ``ScrapingResult.extras`` key under which the clearing-house scraper hands
+# back its monthly household summaries (mirrors
+# ``scraper.providers.insurances.mislaka.CLEARING_HOUSE_REPORTS``).
+CLEARING_HOUSE_REPORTS_EXTRA = "clearing_house_reports"
+
 
 class Services(Enum):
     """Enum defining the types of financial services supported by the application.

@@ -24,7 +24,7 @@ from typing import TYPE_CHECKING, Any
 import pandas as pd
 
 from backend.config import AppConfig
-from backend.constants.providers import Services
+from backend.constants.providers import CLEARING_HOUSE_REPORTS_EXTRA, Services
 from backend.constants.tables import SERVICE_TO_TABLE, TransactionsTableFields
 from backend.database import get_db_context
 from backend.errors import EntityNotFoundException
@@ -1036,6 +1036,29 @@ class InsuranceScraperAdapter(ScraperAdapter):
             if account.metadata:
                 account.metadata["policy_id"] = policy_id
 
+    def _save_clearing_house_reports(self, result: "ScrapingResult") -> None:
+        """Store the household summaries a clearing-house scrape handed back."""
+        from backend.services.insurance_account_service import (
+            InsuranceAccountService,
+        )
+
+        reports = (getattr(result, "extras", None) or {}).get(
+            CLEARING_HOUSE_REPORTS_EXTRA
+        )
+        if not reports:
+            return
+        try:
+            with get_db_context() as db:
+                InsuranceAccountService(db).save_clearing_house_reports(
+                    self.provider_name, self.account_name, reports
+                )
+        except Exception as exc:
+            logger.error(
+                "%s: Error saving clearing-house reports — %s",
+                scrub(self._log_id),
+                scrub(exc),
+            )
+
     def _post_save_hook(self, result: "ScrapingResult") -> None:
         """Persist insurance account metadata from AccountResult.metadata."""
         from backend.services.insurance_account_service import (
@@ -1043,6 +1066,7 @@ class InsuranceScraperAdapter(ScraperAdapter):
         )
         from backend.services.investments import InvestmentsService
 
+        self._save_clearing_house_reports(result)
         accounts_to_upsert = [
             dict(account.metadata) for account in result.accounts if account.metadata
         ]

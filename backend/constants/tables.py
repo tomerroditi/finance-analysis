@@ -59,6 +59,9 @@ class Tables(Enum):
         Name of the table storing user verdicts on detected recurring charges.
     INSIGHT_DISMISSALS : str
         Name of the table storing insight cards the user has dismissed.
+    CLEARING_HOUSE_REPORTS : str
+        Name of the table storing the pension clearing house's monthly
+        household summaries.
     """
 
     CREDIT_CARD = "credit_card_transactions"
@@ -91,6 +94,7 @@ class Tables(Enum):
     SAVINGS_GOAL_INVESTMENTS = "savings_goal_investments"
     RECURRING_DECISIONS = "recurring_decisions"
     INSIGHT_DISMISSALS = "insight_dismissals"
+    CLEARING_HOUSE_REPORTS = "clearing_house_reports"
 
 
 # The five transaction tables, keyed by the service name the frontend and API

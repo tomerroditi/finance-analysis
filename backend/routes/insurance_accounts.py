@@ -40,6 +40,29 @@ class InsuranceAccountResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class ClearingHouseReportResponse(BaseModel):
+    """Response body for one monthly clearing-house household summary."""
+
+    provider: str
+    account_name: str
+    calc_date: str
+    total_savings: float | None = None
+    forecast_total_balance: float | None = None
+    forecast_monthly_pension: float | None = None
+    forecast_lump_sum: float | None = None
+    disability_monthly: float | None = None
+    survivor_spouse_monthly: float | None = None
+    survivor_child_monthly: float | None = None
+    death_lump_sum: float | None = None
+    report_number: int | None = None
+    report_count: int | None = None
+    subscription_expires: str | None = None
+    subscription_months_left: int | None = None
+    license_holder: str | None = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 class InsuranceAccountRename(BaseModel):
     """Request body for renaming an insurance account."""
 
@@ -82,6 +105,21 @@ def rename_insurance_account(
         string to clear the override.
     """
     return InsuranceAccountService(db).rename(policy_id, body.custom_name)
+
+
+@router.get("/clearing-house-reports", response_model=list[ClearingHouseReportResponse])
+def get_clearing_house_reports(
+    db: Session = Depends(get_database),
+) -> list[ClearingHouseReportResponse]:
+    """Return the pension clearing house's monthly household summaries.
+
+    Returns
+    -------
+    list[ClearingHouseReportResponse]
+        One row per credential and report month, oldest first.
+    """
+    reports = InsuranceAccountService(db).get_clearing_house_reports()
+    return [ClearingHouseReportResponse.model_validate(r) for r in reports]
 
 
 @router.post("/sync-investments")

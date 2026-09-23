@@ -15,14 +15,19 @@ import pytest
 from scraper.exceptions import CredentialsError, InvalidOtpError, ScraperError
 from scraper.providers.insurances.hafenix import HaPhoenixScraper
 from scraper.providers.insurances.mislaka import (
+    CLEARING_HOUSE_REPORTS,
     MislakaScraper,
     build_deposit_transactions,
+    build_household_report,
+    build_loans,
+    build_representative,
     build_investment_tracks,
     build_pension_covers,
     build_statement,
     complete_snapshots,
     months_charged_this_year,
     policy_type_of,
+    ytd_profit,
 )
 from scraper.utils.policy_ids import policy_id_key
 
@@ -126,6 +131,53 @@ class FakePortal:
                     "compensationTotalDeposits": 0.0}
         if path == "api/holdings/getBDPolicyEmployerFees":
             return {"totalManagementFee": 30.5, "totalRiskFeeAmount": 0.0}
+        if path == "api/holdings/getSavingConcentrations":
+            return {
+                "eventInfo": {"numberOfIterations": 2 if july else 3, "allIterations": 7},
+                "savingConcentration": {
+                    "total_CurrentSavings": 10500.0 if july else 12000.0,
+                    "total_AccumulatedOldAgePensions": 9000.0,
+                    "total_AccumulatedBalanceForecastOnePayment": 250000.0,
+                    "total_WorkDisabilityAmountMonthly": 7000.0,
+                },
+                "productsDetails": {
+                    "savingProductsdetailsList": [
+                        {"policy_Key": 501, "actualManagementFeeAmount": 4.2}
+                    ]
+                },
+            }
+        if path == "api/holdings/getCorrespondenceShowSpecificIncident":
+            return {
+                "originalExpireDate": "2027-04-11T00:00:00",
+                "monthLeft": 7,
+                "licenseHolder": "Some Bank",
+            }
+        if path == "api/holdings/getPolicyYield":
+            return {"netYieldPercent": 5.1, "netProfitPercent": 480.0, "profitTypeName": "רווח"}
+        if path == "api/holdings/getPolicyLoans":
+            return [
+                {
+                    "loanAmount": 20000,
+                    "loanBalanceAmount": 12500.5,
+                    "interestPercent": 3.1,
+                    "refundPaymentAmount": 450.0,
+                    "paymentsInMonths": 48,
+                    "loanReceiveDate": "2025-02-01T00:00:00",
+                    "loanEndDate": "2029-02-01T00:00:00",
+                    "isLoanExistsState": True,
+                    "policyLoanLevelName": "Policy",
+                }
+            ]
+        if path == "api/holdings/getPolicyRepresentative":
+            return {
+                "hasRepresentativeState": True,
+                "representativeName": "Agency Ltd",
+                "representativeId": "123",
+                "representativeIdentityType": "סוכן",
+                "actionExecutionPermission": "כן",
+                "agentAppointmentDate": "2025-12-16T00:00:00",
+                "representativeExpireDate": "2035-12-16T00:00:00",
+            }
         raise AssertionError(f"unexpected endpoint {path}")
 
 
@@ -246,17 +298,59 @@ class TestMetadataBuilders:
 
     def test_statement_reports_fees_as_a_deduction(self):
         """Verify the management fee is negative so the classifier counts it."""
-        rows = build_statement(1000.0, 500.0, 12.5, None, 8, 1480.0)
+        rows = build_statement(1000.0, 500.0, None, 12.5, None, 8, 1480.0)
 
         assert {"title": "דמי ניהול", "amount": -12.5} in rows
         assert rows[-1] == {"title": "יתרה נוכחית", "amount": 1480.0}
 
     def test_monthly_risk_premium_is_extrapolated_over_the_months_charged(self):
         """Verify the one-month premium becomes a titled year-to-date estimate."""
-        rows = build_statement(1000.0, 500.0, 12.5, 194.39, 8, 1480.0)
+        rows = build_statement(1000.0, 500.0, None, 12.5, 194.39, 8, 1480.0)
 
         [risk] = [r for r in rows if r["title"].startswith("עלות הביטוח")]
         assert risk == {"title": "עלות הביטוח (הערכה: 8 חודשים)", "amount": -1555.12}
+
+    def test_statement_carries_the_ytd_profit_row(self):
+        """Verify year-to-date profit lands in the statement as "רווחים"."""
+        rows = build_statement(1000.0, 500.0, 120.0, 12.5, None, 8, 1607.5)
+
+        assert {"title": "רווחים", "amount": 120.0} in rows
+
+    def test_ytd_profit_is_signed_by_the_profit_type(self):
+        """Verify a reported loss comes back negative, and no figure as None."""
+        assert ytd_profit({"netProfitPercent": 50.0, "profitTypeName": "הפסד"}) == -50.0
+        assert ytd_profit({"netYieldPercent": 5.1}) is None
+
+    def test_the_no_loan_placeholder_row_is_dropped(self):
+        """Verify the portal's zero-filled "no loan" row yields no loans."""
+        placeholder = {
+            "loanAmount": 0,
+            "loanReceiveDate": "0001-01-01T00:00:00",
+            "loanEndDate": "0001-01-01T00:00:00",
+            "isLoanExistsState": False,
+        }
+
+        assert build_loans([placeholder]) == []
+        assert build_loans(None) == []
+
+    def test_representative_is_none_when_no_agent_is_appointed(self):
+        """Verify a policy without an agent carries no representative."""
+        assert build_representative({"hasRepresentativeState": False}) is None
+
+    def test_household_report_reads_totals_and_subscription(self):
+        """Verify the summary maps the portal's totals and subscription fields."""
+        report = build_household_report(
+            "2026-08-31",
+            {
+                "eventInfo": {"numberOfIterations": 1, "allIterations": 7},
+                "savingConcentration": {"total_DeathAmountMonthlyPartner": 23400.0},
+            },
+            {"originalExpireDate": "2027-04-11T00:00:00", "monthLeft": 7},
+        )
+
+        assert report["survivor_spouse_monthly"] == 23400.0
+        assert (report["report_number"], report["report_count"]) == (1, 7)
+        assert report["subscription_expires"] == "2027-04-11"
 
     @pytest.mark.parametrize(
         ("calc_date", "join_date", "expected"),
@@ -298,6 +392,42 @@ class TestFetchData:
         assert json.loads(meta["investment_tracks"]) == [
             {"name": "S&P 500", "yield_pct": 5.1, "allocation_pct": 100.0, "sum": 12000.0}
         ]
+
+    def test_every_report_yields_a_household_summary(self):
+        """Verify one summary per report, with the subscription on the newest."""
+        scraper = _scraper_with(FakePortal())
+
+        asyncio.run(scraper.fetch_data())
+
+        reports = scraper.extras[CLEARING_HOUSE_REPORTS]
+        assert [r["calc_date"] for r in reports] == ["2026-07-31", "2026-08-31"]
+        assert [r["total_savings"] for r in reports] == [10500.0, 12000.0]
+        assert reports[0]["subscription_expires"] is None
+        assert reports[1]["subscription_expires"] == "2027-04-11"
+
+    def test_newest_report_adds_profit_fees_agent_and_loans(self):
+        """Verify the per-policy extras land in the details and statement."""
+        [account] = asyncio.run(_scraper_with(FakePortal()).fetch_data())
+
+        details = json.loads(account.metadata["details"])
+        assert details["ytd_profit"] == 480.0
+        assert details["last_month_management_fee"] == 4.2
+        assert details["representative"]["name"] == "Agency Ltd"
+        assert details["representative"]["can_act"] is True
+        assert details["loans"] == [
+            {
+                "amount": 20000.0,
+                "balance": 12500.5,
+                "interest_pct": 3.1,
+                "monthly_payment": 450.0,
+                "payments_months": 48,
+                "received": "2025-02-01",
+                "ends": "2029-02-01",
+                "scope": "Policy",
+            }
+        ]
+        statement = json.loads(account.metadata["insurance_costs"])
+        assert {"title": "רווחים", "amount": 480.0} in statement
 
     def test_details_endpoints_are_only_read_for_the_newest_report(self):
         """Verify older reports cost only the product and deposit reads."""

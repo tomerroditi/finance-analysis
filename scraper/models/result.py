@@ -1,6 +1,6 @@
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Optional
+from typing import Any, Optional
 
 from scraper.models.account import AccountResult
 
@@ -20,3 +20,6 @@ class ScrapingResult:
     accounts: list[AccountResult] = field(default_factory=list)
     error_type: Optional[str] = None
     error_message: Optional[str] = None
+    # Provider data that belongs to no single account (e.g. the pension
+    # clearing house's household-wide forecast), keyed by what it is.
+    extras: dict[str, Any] = field(default_factory=dict)

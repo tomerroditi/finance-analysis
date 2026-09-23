@@ -248,3 +248,39 @@ class TestSyncInvestments:
 
         assert response.status_code == 500
         assert "secret db path" not in response.text
+
+
+class TestClearingHouseReportsRoute:
+    """Tests for GET /api/insurance-accounts/clearing-house-reports."""
+
+    def test_lists_stored_reports_oldest_first(self, test_client, db_session):
+        """Verify stored monthly summaries come back in date order."""
+        from backend.models.clearing_house_report import ClearingHouseReport
+
+        db_session.add_all(
+            [
+                ClearingHouseReport(
+                    provider="mislaka", account_name="Me", calc_date="2026-08-31",
+                    forecast_monthly_pension=40691.0,
+                ),
+                ClearingHouseReport(
+                    provider="mislaka", account_name="Me", calc_date="2026-07-31",
+                    forecast_monthly_pension=40490.0,
+                ),
+            ]
+        )
+        db_session.commit()
+
+        response = test_client.get("/api/insurance-accounts/clearing-house-reports")
+
+        assert response.status_code == 200
+        body = response.json()
+        assert [r["calc_date"] for r in body] == ["2026-07-31", "2026-08-31"]
+        assert body[1]["forecast_monthly_pension"] == 40691.0
+
+    def test_empty_when_nothing_was_scraped(self, test_client):
+        """Verify the route answers an empty list on a fresh database."""
+        response = test_client.get("/api/insurance-accounts/clearing-house-reports")
+
+        assert response.status_code == 200
+        assert response.json() == []
