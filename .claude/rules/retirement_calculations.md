@@ -186,39 +186,40 @@ null so legacy stored overrides get cleared.
   `readiness == "on_track"` — 0 extra savings can coexist with off_track
   (FIRE reached but the portfolio depletes in drawdown).
 
-## Future work — auto-calculate the monthly pension payout
+## The pension payout offered from the funds' own forecasts
 
-**Not implemented. Noted so we remember to build it; do not treat any of
-this as current behaviour.**
+`pension_monthly_payout_estimate` is still user-entered, but the form now
+*offers* a figure: a "Use the funds' forecast for retiring at N" button under
+the field, fed by `GET /retirement/pension-forecast`
+(`RetirementService.get_pension_forecast`). It is never auto-applied — the
+user's own statement figure wins until they click.
 
-`pension_monthly_payout_estimate` is user-entered today, and it is one of
-the highest-leverage inputs in the whole model: it feeds retirement
-income directly, and with the four-state readiness ladder it is often
-what decides `funded` vs `off_track`. Asking a user to guess it is bad —
-most people have no idea what their fund will pay out.
+The figure comes from the pension clearing house, which publishes per pension
+fund the capital and monthly pension at retirement age **both** with deposits
+continuing and with deposits stopping today (`insurance_accounts.details`,
+see `InsuranceAccountService.get_pension_forecasts`). Deposits really stop at
+`target_retirement_age`, somewhere in between, so `project_pension_payout`
+re-derives each fund's pension for that age from its own two figures:
 
-We should derive it instead, from data we already scrape:
+- the fund's growth factor is the one that turns today's balance into the
+  no-deposit capital over the years to its retirement age;
+- a deposit stream stopped after `k` of `N` years is worth the share
+  `(g^k − 1) / (g^N − 1) × g^(N − k)` of the gap between the two forecasts;
+- that share of the gap between the two *pensions* is added to the
+  no-deposit pension (interpolating pensions, not capitals, keeps both ends
+  exact when the provider's two annuity factors differ in their last digit).
 
-- Current accumulated pension balance (scraped).
-- Ongoing monthly deposits (scraped — `pension_monthly_deposit`).
-- Deposits **stop** when the user stops working, i.e. at
-  `target_retirement_age`, not at `full_pension_age`. The balance keeps
-  compounding through the gap years but nothing is added.
-- Assume ~4% annual real growth of the accumulated balance.
-- Convert the projected balance at pension age into a monthly payout via
-  the מקדם קצבה (annuity conversion factor).
-- **Preferred when available:** many providers publish their own
-  projected monthly payout on the scraped statement. Use that directly
-  in preference to our estimate, and fall back to the computation above.
+Stopping at retirement age reproduces the provider's "deposits continue"
+figure, stopping today its "no further deposits" figure — pinned by
+`TestProjectPensionPayout`. The provider's assumptions (real terms, its own
+return and fees, its annuity factor) carry over unchanged. Every fund is
+projected with the plan holder's ages, so a household plan that also holds a
+spouse's fund treats it as the holder's — the demo does exactly that.
 
-Keep the existing guard intact when building this: the scraped
-`pension_monthly_deposit` must never be written straight into
-`pension_monthly_payout_estimate` — that autofill shipped once and seeded
-materially wrong retirement income (see the bullet above). The derived
-payout is a *computed projection*, not the deposit.
-
-Whatever lands should stay overridable: the user's own statement figure
-must still win over anything we compute.
+Keep the existing guard intact: the scraped `pension_monthly_deposit` must
+never be written into `pension_monthly_payout_estimate` — that autofill
+shipped once and seeded materially wrong retirement income. The forecast is a
+projected *payout*, not the deposit.
 
 ## Demo Mode invariant
 

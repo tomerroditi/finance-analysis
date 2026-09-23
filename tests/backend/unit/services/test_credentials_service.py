@@ -299,7 +299,7 @@ class TestSeedDemoCredentials:
         """Verify every demo credential is created when none exist.
 
         Seeds cover bank (hapoalim), credit cards (max, visa cal) and insurance
-        (hafenix) — four accounts in total. Each should trigger a save.
+        (mislaka) — four accounts in total. Each should trigger a save.
         """
         from backend.errors import EntityNotFoundException
 
@@ -315,7 +315,7 @@ class TestSeedDemoCredentials:
         assert ("banks", "hapoalim", "Main Account") in saved_targets
         assert ("credit_cards", "max", "Family Card") in saved_targets
         assert ("credit_cards", "visa cal", "Online Shopping") in saved_targets
-        assert ("insurances", "hafenix", "The Cohens") in saved_targets
+        assert ("insurances", "mislaka", "The Cohens") in saved_targets
 
     def test_skips_existing_credentials(self, mock_repo):
         """Verify existing demo credentials are not re-inserted."""

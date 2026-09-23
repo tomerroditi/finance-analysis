@@ -130,6 +130,9 @@ const ROUTE_PREFETCH: Record<string, RoutePrefetch> = {
     warm(qc, k.insurance.accounts(), () =>
       insuranceAccountsApi.getAll().then((r) => r.data),
     );
+    warm(qc, k.insurance.clearingHouseReports(), () =>
+      insuranceAccountsApi.getClearingHouseReports().then((r) => r.data),
+    );
     warm(qc, k.transactions.list("insurances", false), () =>
       transactionsApi.getAll("insurances").then((r) => r.data),
     );

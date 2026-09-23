@@ -13,6 +13,7 @@ import concurrent.futures
 import contextlib
 import datetime
 import importlib
+import json
 import logging
 import os
 import sys
@@ -37,6 +38,8 @@ from backend.services.tagging_service import CategoriesTagsService
 from backend.utils.log_sanitize import scrub
 
 if TYPE_CHECKING:
+    from sqlalchemy.orm import Session
+
     from scraper.base.base_scraper import BaseScraper, ScraperOptions
     from scraper.models.account import AccountResult
     from scraper.models.result import ScrapingResult
@@ -1059,6 +1062,39 @@ class InsuranceScraperAdapter(ScraperAdapter):
                 scrub(exc),
             )
 
+    def _sync_policy_loans(self, db: "Session", accounts: list) -> None:
+        """Mirror loans taken against the scraped policies as liabilities.
+
+        Parameters
+        ----------
+        db : Session
+            Open database session.
+        accounts : list[InsuranceAccount]
+            The accounts just upserted; their ``details`` carry any loans.
+        """
+        from backend.services.liabilities_service import LiabilitiesService
+
+        for account in accounts:
+            try:
+                details = json.loads(account.details or "{}")
+            except (TypeError, ValueError):
+                continue
+            if not details.get("loans"):
+                continue
+            try:
+                LiabilitiesService(db).sync_insurance_loans(
+                    account.policy_id,
+                    account.custom_name or account.account_name,
+                    details.get("manufacturer"),
+                    details["loans"],
+                )
+            except Exception:
+                logger.exception(
+                    "%s: Failed to sync loans for policy %s",
+                    scrub(self._log_id),
+                    scrub(account.policy_id),
+                )
+
     def _post_save_hook(self, result: "ScrapingResult") -> None:
         """Persist insurance account metadata from AccountResult.metadata."""
         from backend.services.insurance_account_service import (
@@ -1086,6 +1122,7 @@ class InsuranceScraperAdapter(ScraperAdapter):
                     len(accounts_to_upsert),
                 )
 
+                self._sync_policy_loans(db, [account for account, _ in saved])
                 inv_service = InvestmentsService(db)
                 for account, history in saved:
                     if account.policy_type != "hishtalmut":

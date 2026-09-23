@@ -64,6 +64,28 @@ test.describe("Insurances", () => {
     // --- opening deposits closes covers, so the card never doubles ---
     await page.getByTestId("insurance-deposits-toggle").first().click();
     await expect(page.getByTestId("insurance-cover-row")).toHaveCount(0);
+
+    // --- the clearing house's household summary and renewal notice ---
+    // Demo: three pensions forecast 31,556/month in total; the Makifa covers
+    // pay 29,250/month on disability; the subscription is on its last report.
+    await expect(page.getByTestId("clearing-house-summary")).toBeVisible();
+    await expect(page.getByTestId("clearing-house-monthly-pension")).toContainText("31,556");
+    await expect(page.getByTestId("clearing-house-disability")).toContainText("29,250");
+    await expect(page.getByTestId("clearing-house-subscription-notice")).toContainText(
+      "1 monthly report left",
+    );
+
+    // --- a policy's clearing-house details: forecast, agent and its loan ---
+    // Only the Tech employee's Keren Hishtalmut carries a loan in the demo.
+    const loanCard = page
+      .getByTestId("insurance-account-card")
+      .filter({ has: page.getByTestId("insurance-loan-badge") });
+    await expect(loanCard).toHaveCount(1);
+    await loanCard.getByTestId("insurance-details-toggle").click();
+    const details = loanCard.getByTestId("policy-details-section");
+    await expect(details).toContainText("Balance, deposits continue");
+    await expect(details).toContainText("Cohen Family Insurance Agency");
+    await expect(details.getByTestId("policy-loan-row")).toContainText("40,000");
   });
 
   /**

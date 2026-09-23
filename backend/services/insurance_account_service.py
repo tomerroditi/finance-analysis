@@ -8,6 +8,7 @@ into ``type='hishtalmut'`` investments, and
 ``InvestmentsService.get_hishtalmut_total_balance`` is the single source.
 """
 
+import json
 from datetime import date, timedelta
 from typing import Any
 
@@ -194,6 +195,45 @@ class InsuranceAccountService:
             fields = dict(report)
             calc_date = fields.pop("calc_date")
             self.reports_repo.upsert(provider, account_name, calc_date, **fields)
+
+    def get_pension_forecasts(self) -> list[dict[str, Any]]:
+        """Return each pension policy's provider-published retirement forecast.
+
+        Only policies whose ``details`` carry the clearing house's forecast
+        (capital and monthly pension, with and without further deposits) are
+        returned.
+
+        Returns
+        -------
+        list[dict]
+            ``policy_id``, ``balance``, ``as_of``, ``retirement_age``,
+            ``capital_no_deposits``, ``capital_with_deposits``,
+            ``pension_no_deposits`` and ``pension_with_deposits`` per policy.
+        """
+        forecasts = []
+        for account in self.repo.get_by_policy_type("pension"):
+            try:
+                details = json.loads(account.details or "{}")
+            except (TypeError, ValueError):
+                continue
+            with_deposits = details.get("monthly_pension_forecast")
+            no_deposits = details.get("monthly_pension_forecast_no_deposits")
+            if not with_deposits and not no_deposits:
+                continue
+            forecasts.append(
+                {
+                    "policy_id": account.policy_id,
+                    "balance": account.balance or 0.0,
+                    "as_of": details.get("source_date"),
+                    "retirement_age": details.get("retirement_age"),
+                    "capital_no_deposits": details.get("balance_forecast_no_deposits")
+                    or 0.0,
+                    "capital_with_deposits": details.get("balance_forecast") or 0.0,
+                    "pension_no_deposits": no_deposits or 0.0,
+                    "pension_with_deposits": with_deposits or 0.0,
+                }
+            )
+        return forecasts
 
     def get_clearing_house_reports(self) -> list[ClearingHouseReport]:
         """Return every stored clearing-house report, oldest first."""

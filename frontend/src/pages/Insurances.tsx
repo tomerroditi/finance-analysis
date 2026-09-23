@@ -39,6 +39,9 @@ import { DemoModeConfirmPopover } from "../components/common/DemoModeConfirmPopo
 import { useQueryKeys } from "../hooks/useQueryKeys";
 import { qkPrefix } from "../services/queryKeys";
 import { useScrollCap } from "../hooks/useScrollCap";
+import { ClearingHouseSummary, SubscriptionNotice } from "../components/insurance/ClearingHouseSummary";
+import { PolicyDetailsSection } from "../components/insurance/PolicyDetailsSection";
+import { isInactive, parsePolicyDetails } from "../utils/policyDetails";
 
 // ─── Types ───────────────────────────────────────────────────────────────
 interface InsuranceTransaction {
@@ -207,13 +210,16 @@ function AccountCardFull({
 }) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
-  // One slot, so opening covers closes deposits (and vice versa) — the card
-  // can never grow by both sections at once.
-  const [expandedSection, setExpandedSection] = useState<"covers" | "deposits" | null>(null);
-  const toggleSection = (section: "covers" | "deposits") =>
+  // One slot, so opening one section closes the others — the card can never
+  // grow by more than one section at once.
+  const [expandedSection, setExpandedSection] = useState<"covers" | "deposits" | "details" | null>(null);
+  const toggleSection = (section: "covers" | "deposits" | "details") =>
     setExpandedSection((current) => (current === section ? null : section));
   const coversSectionId = `covers-${account.policy_id}`;
   const depositsSectionId = `deposits-${account.policy_id}`;
+  const detailsSectionId = `details-${account.policy_id}`;
+  const details = parsePolicyDetails(account.details);
+  const loanCount = details?.loans?.length ?? 0;
   const [isEditingName, setIsEditingName] = useState(false);
   const [draftName, setDraftName] = useState("");
   const tracks = parseTracks(account.investment_tracks);
@@ -260,7 +266,10 @@ function AccountCardFull({
   };
 
   return (
-    <div className="bg-[var(--surface)] rounded-2xl border border-[var(--surface-light)] overflow-hidden relative">
+    <div
+      data-testid="insurance-account-card"
+      className="bg-[var(--surface)] rounded-2xl border border-[var(--surface-light)] overflow-hidden relative"
+    >
       {/* Policy-type accent stripe */}
       <div className={`absolute inset-y-0 start-0 w-1 ${stripeColor}`} />
 
@@ -328,6 +337,19 @@ function AccountCardFull({
                   {displayName}
                 </h3>
                 {policyTypeBadge(account.policy_type, account.pension_type, t)}
+                {isInactive(details) && (
+                  <span className="px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider bg-[var(--surface-light)] text-[var(--text-muted)]">
+                    {t("insurance.inactive")}
+                  </span>
+                )}
+                {loanCount > 0 && (
+                  <span
+                    data-testid="insurance-loan-badge"
+                    className="px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider bg-rose-500/15 text-rose-400"
+                  >
+                    {t("insurance.hasLoan", { count: loanCount })}
+                  </span>
+                )}
                 <button
                   type="button"
                   onClick={startEditing}
@@ -530,6 +552,23 @@ function AccountCardFull({
               {expandedSection === "covers" ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
             </button>
           )}
+          {details && (
+            <button
+              type="button"
+              data-testid="insurance-details-toggle"
+              aria-expanded={expandedSection === "details"}
+              aria-controls={detailsSectionId}
+              onClick={() => toggleSection("details")}
+              className="flex-1 px-6 py-3 flex items-center justify-between text-sm text-[var(--text-muted)] hover:text-white transition-colors"
+            >
+              <span>
+                {expandedSection === "details"
+                  ? t("insurance.hidePolicyDetails")
+                  : t("insurance.showPolicyDetails")}
+              </span>
+              {expandedSection === "details" ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+            </button>
+          )}
           <button
             type="button"
             data-testid="insurance-deposits-toggle"
@@ -548,6 +587,13 @@ function AccountCardFull({
           </button>
         </div>
         {expandedSection === "covers" && <CoversSection id={coversSectionId} covers={covers} />}
+        {expandedSection === "details" && details && (
+          <PolicyDetailsSection
+            id={detailsSectionId}
+            details={details}
+            isPension={account.policy_type === "pension"}
+          />
+        )}
         {expandedSection === "deposits" && (
           <div
             id={depositsSectionId}
@@ -625,6 +671,11 @@ export function Insurances() {
   const { data: accountsData, isLoading: accountsLoading } = useQuery({
     queryKey: qk.insurance.accounts(),
     queryFn: () => insuranceAccountsApi.getAll().then((r) => r.data),
+  });
+
+  const { data: clearingHouseReports } = useQuery({
+    queryKey: qk.insurance.clearingHouseReports(),
+    queryFn: () => insuranceAccountsApi.getClearingHouseReports().then((r) => r.data),
   });
 
   const { data: transactionsData, isLoading: txLoading } = useQuery({
@@ -705,6 +756,13 @@ export function Insurances() {
   return (
     <div className="flex flex-col gap-1.5">
       {/* KPI Cards */}
+      {clearingHouseReports && clearingHouseReports.length > 0 && (
+        <>
+          <SubscriptionNotice reports={clearingHouseReports} />
+          <ClearingHouseSummary reports={clearingHouseReports} />
+        </>
+      )}
+
       <div className="grid grid-cols-1 sm:grid-cols-4 gap-1.5">
         <StatCard title={t("insurance.totalBalance")} value={formatCurrency(totalBalance)} icon={Landmark} color="bg-blue-500/10 text-blue-400" />
         <StatCard

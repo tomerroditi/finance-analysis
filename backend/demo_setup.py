@@ -13,10 +13,14 @@ ended up with budget rules pinned to ``DEMO_REFERENCE_DATE``.
 
 from __future__ import annotations
 
+import calendar
 import contextlib
+import json
 import os
+import re
 import shutil
 from datetime import date, timedelta
+from typing import Any
 
 from sqlalchemy import inspect, text
 from sqlalchemy.engine import Connection, Engine
@@ -252,6 +256,109 @@ def _shift_month(year: int, month: int, month_offset: int) -> tuple[int, int]:
     return new_year, new_month0 + 1
 
 
+def _shift_month_end(value: str, month_offset: int) -> date:
+    """Move a ``YYYY-MM-DD`` date by whole months and land on that month's end."""
+    year, month = _shift_month(int(value[:4]), int(value[5:7]), month_offset)
+    return date(year, month, calendar.monthrange(year, month)[1])
+
+
+_ISO_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
+
+def _shift_json_dates(value: Any, offset_days: int) -> Any:
+    """Shift every ``YYYY-MM-DD`` string inside a decoded JSON value.
+
+    Parameters
+    ----------
+    value : Any
+        Decoded JSON (dict, list or scalar).
+    offset_days : int
+        Days to move each date by.
+
+    Returns
+    -------
+    Any
+        The same structure with its dates moved.
+    """
+    if isinstance(value, dict):
+        return {k: _shift_json_dates(v, offset_days) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_shift_json_dates(v, offset_days) for v in value]
+    if isinstance(value, str) and _ISO_DATE_RE.match(value):
+        try:
+            return (date.fromisoformat(value) + timedelta(days=offset_days)).isoformat()
+        except ValueError:
+            return value
+    return value
+
+
+def _shift_clearing_house_data(
+    conn: Connection, offset_days: int, month_offset: int
+) -> None:
+    """Move the clearing-house reports and the dates inside policy details.
+
+    A report's ``calc_date`` is a month end ("as of 31/01"), so it moves by
+    whole months and stays a month end — a day offset would land it
+    mid-month. A policy's ``details.source_date`` is that same report date
+    and moves the same way. The subscription expiry and every other date
+    inside ``details`` are moments in time and move by days.
+    Reports are rewritten newest-first (or oldest-first when moving back) so
+    no row lands on a month another row still holds, which the
+    ``(provider, account_name, calc_date)`` constraint would reject.
+
+    Parameters
+    ----------
+    conn : Connection
+        Open connection on the demo database.
+    offset_days : int
+        The day offset every real date moves by.
+    month_offset : int
+        The whole-month distance calendar periods move by.
+    """
+    tables = set(inspect(conn).get_table_names())
+    if "clearing_house_reports" in tables:
+        order = "DESC" if month_offset > 0 else "ASC"
+        reports = conn.execute(
+            text(
+                "SELECT id, calc_date, subscription_expires FROM clearing_house_reports "
+                f"ORDER BY calc_date {order}"
+            )
+        ).fetchall()
+        for report_id, calc_date, expires in reports:
+            month_end = _shift_month_end(calc_date, month_offset)
+            conn.execute(
+                text(
+                    "UPDATE clearing_house_reports SET calc_date = :calc_date, "
+                    "subscription_expires = :expires WHERE id = :id"
+                ),
+                {
+                    "calc_date": month_end.isoformat(),
+                    "expires": _shift_json_dates(expires, offset_days),
+                    "id": report_id,
+                },
+            )
+    if "details" in {
+        c["name"] for c in inspect(conn).get_columns("insurance_accounts")
+    }:
+        rows = conn.execute(
+            text("SELECT id, details FROM insurance_accounts WHERE details IS NOT NULL")
+        ).fetchall()
+        for account_id, details in rows:
+            try:
+                decoded = json.loads(details)
+            except ValueError:
+                continue
+            shifted = _shift_json_dates(decoded, offset_days)
+            if isinstance(decoded, dict) and decoded.get("source_date"):
+                shifted["source_date"] = _shift_month_end(
+                    decoded["source_date"], month_offset
+                ).isoformat()
+            conn.execute(
+                text("UPDATE insurance_accounts SET details = :details WHERE id = :id"),
+                {"details": json.dumps(shifted, ensure_ascii=False), "id": account_id},
+            )
+
+
 def _shift_dates(engine: Engine, offset_days: int) -> None:
     """Shift every shiftable date column by ``offset_days`` days.
 
@@ -350,6 +457,8 @@ def _shift_dates(engine: Engine, offset_days: int) -> None:
                 ),
                 {"offset": offset_str},
             )
+
+        _shift_clearing_house_data(conn, offset_days, month_offset)
 
         # categories.created_at is a full DateTime (not a YYYY-MM-DD date
         # string), so it needs SQLite's datetime() rather than date() —

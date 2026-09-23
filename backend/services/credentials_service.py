@@ -473,7 +473,7 @@ class CredentialsService:
         )
         ensure_dummy_cred(
             Services.INSURANCE.value,
-            "hafenix",
+            "mislaka",
             "The Cohens",
             {Fields.ID.value: "demo", Fields.PHONE_NUMBER.value: "050-1234567"},
         )

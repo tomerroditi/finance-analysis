@@ -224,3 +224,26 @@ class TestScrapedDefaults:
         response = test_client.get("/api/retirement/scraped-defaults")
         assert response.status_code == 200
         assert response.json()["avg_monthly_salary"] == pytest.approx((8000 + 8500 + 8200) / 3)
+
+
+class TestPensionForecastRoute:
+    """Tests for GET /api/retirement/pension-forecast."""
+
+    def test_forecast_is_null_without_clearing_house_data(self, test_client):
+        """Verify the estimate is null when no pension publishes a forecast."""
+        response = test_client.get(
+            "/api/retirement/pension-forecast",
+            params={"current_age": 30, "target_retirement_age": 50},
+        )
+
+        assert response.status_code == 200
+        assert response.json()["estimate"] is None
+        assert response.json()["funds"] == 0
+
+    def test_ages_are_validated(self, test_client):
+        """Verify an impossible age is rejected."""
+        response = test_client.get(
+            "/api/retirement/pension-forecast", params={"current_age": -1}
+        )
+
+        assert response.status_code == 422

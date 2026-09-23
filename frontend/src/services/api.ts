@@ -533,10 +533,34 @@ export interface InsuranceAccount {
   /** Provider's year-to-date movement statement, not a cost list — read only via `utils/insuranceStatement.ts`. */
   insurance_costs: string | null;
   liquidity_date: string | null;
+  /** JSON object of provider facts (forecasts, profit, agent, loans) — read via `utils/policyDetails.ts`. */
+  details: string | null;
+}
+
+/** One monthly household summary from the pension clearing house. */
+export interface ClearingHouseReport {
+  provider: string;
+  account_name: string;
+  calc_date: string;
+  total_savings: number | null;
+  forecast_total_balance: number | null;
+  forecast_monthly_pension: number | null;
+  forecast_lump_sum: number | null;
+  disability_monthly: number | null;
+  survivor_spouse_monthly: number | null;
+  survivor_child_monthly: number | null;
+  death_lump_sum: number | null;
+  report_number: number | null;
+  report_count: number | null;
+  subscription_expires: string | null;
+  subscription_months_left: number | null;
+  license_holder: string | null;
 }
 
 export const insuranceAccountsApi = {
   getAll: () => api.get<InsuranceAccount[]>("/insurance-accounts/"),
+  getClearingHouseReports: () =>
+    api.get<ClearingHouseReport[]>("/insurance-accounts/clearing-house-reports"),
   rename: (policyId: string, customName: string | null) =>
     api.patch<InsuranceAccount>(
       `/insurance-accounts/${encodeURIComponent(policyId)}/rename`,
@@ -635,6 +659,8 @@ export interface Liability {
   percent_paid: number;
   payments_made: number;
   current_rate: number;
+  /** Set when the liability mirrors a loan against a pension/KH policy. */
+  insurance_loan_key?: string | null;
 }
 
 export const liabilitiesApi = {
@@ -1049,6 +1075,15 @@ export interface ScrapedDefaults {
   avg_monthly_salary: number | null;
 }
 
+/** Monthly pension estimated from the funds' own published forecasts. */
+export interface PensionForecast {
+  estimate: number | null;
+  with_deposits: number;
+  no_deposits: number;
+  as_of: string | null;
+  funds: number;
+}
+
 export interface RetirementProjections {
   fire_number: number;
   years_to_fire: number;
@@ -1091,6 +1126,10 @@ export const retirementApi = {
     api.post<RetirementProjections>("/retirement/projections", data),
   getScrapedDefaults: () =>
     api.get<ScrapedDefaults>("/retirement/scraped-defaults"),
+  getPensionForecast: (currentAge: number, targetRetirementAge: number) =>
+    api.get<PensionForecast>("/retirement/pension-forecast", {
+      params: { current_age: currentAge, target_retirement_age: targetRetirementAge },
+    }),
   getSuggestions: () =>
     api.get<RetirementSuggestions>("/retirement/suggestions"),
   previewSuggestions: (data: Omit<RetirementGoal, "id">) =>

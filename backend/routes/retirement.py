@@ -7,7 +7,7 @@ FIRE projections with Israeli-specific savings vehicles.
 
 from typing import Any
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.orm import Session
 
@@ -140,6 +140,16 @@ class KerenHishtalmutBalanceResponse(BaseModel):
     balance: float | None = None
 
 
+class PensionForecastResponse(BaseModel):
+    """Monthly pension estimated from the providers' own forecasts."""
+
+    estimate: float | None = None
+    with_deposits: float
+    no_deposits: float
+    as_of: str | None = None
+    funds: int
+
+
 class ScrapedDefaultsResponse(BaseModel):
     """Response body for auto-fillable values from scraped insurance data."""
 
@@ -223,6 +233,23 @@ def get_keren_hishtalmut_balance(
     service = RetirementService(db)
     balance = service.get_keren_hishtalmut_scraped_balance()
     return {"balance": balance}
+
+
+@router.get("/pension-forecast", response_model=PensionForecastResponse)
+def get_pension_forecast(
+    current_age: int | None = Query(None, ge=0, le=120),
+    target_retirement_age: int | None = Query(None, ge=0, le=120),
+    db: Session = Depends(get_database),
+) -> dict[str, Any]:
+    """Estimate the monthly pension for a retirement plan's ages.
+
+    Derived from each pension fund's published forecast (via the pension
+    clearing house), with deposits stopping at ``target_retirement_age``.
+    Ages default to the saved plan's.
+    """
+    return RetirementService(db).get_pension_forecast(
+        current_age, target_retirement_age
+    )
 
 
 @router.get("/scraped-defaults", response_model=ScrapedDefaultsResponse)
