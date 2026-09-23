@@ -1,3 +1,9 @@
+## v1.86.2 (2026-09-23)
+
+### Fix
+
+- **security**: harden tailnet trust, prod deploys and the Vercel demo (#348)
+
 ## v1.86.1 (2026-09-23)
 
 ### Perf
