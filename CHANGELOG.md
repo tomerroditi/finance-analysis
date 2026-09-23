@@ -1,3 +1,9 @@
+## v1.89.0 (2026-09-23)
+
+### Feat
+
+- **scraper**: keep the clearing house's retirement forecasts, cover totals and policy extras (#354)
+
 ## v1.88.0 (2026-09-23)
 
 ### Feat
