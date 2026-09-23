@@ -6,6 +6,7 @@ from backend.models.budget import BudgetRule
 from backend.models.budget_month_override import BudgetMonthOverride
 from backend.models.cash_balance import CashBalance
 from backend.models.category import Category
+from backend.models.clearing_house_report import ClearingHouseReport
 from backend.models.credential import Credential
 from backend.models.insight_dismissal import InsightDismissal
 from backend.models.insurance_account import InsuranceAccount
@@ -42,6 +43,7 @@ __all__ = [
     "CashBalance",
     "CashTransaction",
     "Category",
+    "ClearingHouseReport",
     "Credential",
     "CreditCardTransaction",
     "InsightDismissal",

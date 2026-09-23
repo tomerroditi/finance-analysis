@@ -15,7 +15,11 @@ from sqlalchemy.orm import Session
 
 from backend.constants.providers import SUPERSEDED_INSURANCE_PROVIDERS
 from backend.errors import EntityNotFoundException
+from backend.models.clearing_house_report import ClearingHouseReport
 from backend.models.insurance_account import InsuranceAccount
+from backend.repositories.clearing_house_report_repository import (
+    ClearingHouseReportRepository,
+)
 from backend.repositories.insurance_account_repository import (
     InsuranceAccountRepository,
 )
@@ -30,6 +34,7 @@ class InsuranceAccountService:
         self.db = db
         self.repo = InsuranceAccountRepository(db)
         self.insurance_transactions_repo = InsuranceRepository(db)
+        self.reports_repo = ClearingHouseReportRepository(db)
 
     def get_all(self) -> list[InsuranceAccount]:
         """Get all insurance account records."""
@@ -167,6 +172,32 @@ class InsuranceAccountService:
                     name=normalized or account.account_name,
                 )
         return account
+
+    def save_clearing_house_reports(
+        self, provider: str, account_name: str, reports: list[dict[str, Any]]
+    ) -> None:
+        """Store the clearing house's monthly household summaries.
+
+        A report the portal serves again (it keeps about two) overwrites its
+        stored row, so a re-scrape never duplicates a month.
+
+        Parameters
+        ----------
+        provider : str
+            Scraping provider.
+        account_name : str
+            Credential label.
+        reports : list[dict]
+            One summary per report, each with a ``calc_date``.
+        """
+        for report in reports:
+            fields = dict(report)
+            calc_date = fields.pop("calc_date")
+            self.reports_repo.upsert(provider, account_name, calc_date, **fields)
+
+    def get_clearing_house_reports(self) -> list[ClearingHouseReport]:
+        """Return every stored clearing-house report, oldest first."""
+        return self.reports_repo.get_all()
 
     def get_monthly_contribution_by_type(self, policy_type: str) -> float | None:
         """Get estimated monthly contribution for a policy type.

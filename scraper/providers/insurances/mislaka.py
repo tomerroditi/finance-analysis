@@ -81,8 +81,18 @@ _READ_ENDPOINTS = frozenset(
         "api/holdings/getBDPolicyEmployerOpenBalance",
         "api/holdings/getBDPolicyTotalYearlyDepositsInfo",
         "api/holdings/getCoversPolicies",
+        "api/holdings/getSavingConcentrations",
+        "api/holdings/getCorrespondenceShowSpecificIncident",
+        "api/holdings/getPolicyYield",
+        "api/holdings/getPolicyRepresentative",
+        "api/holdings/getPolicyRetirementAgeForecast",
+        "api/holdings/getPolicyRetirementAgeForecastFunds",
     }
 )
+
+# Key under which ``ScrapingResult.extras`` carries the per-report household
+# summaries (see ``build_household_report``).
+CLEARING_HOUSE_REPORTS = "clearing_house_reports"
 
 # ``dataRecieveStatusCode`` of a request whose data arrived in full.
 _FULL_DATA_STATUS = 100000002
@@ -423,6 +433,7 @@ def months_charged_this_year(calc_date: str, join_date: Optional[str]) -> int:
 def build_statement(
     opening_balance: Optional[float],
     yearly_deposits: float,
+    profit: Optional[float],
     management_fee: Optional[float],
     monthly_risk_fee: Optional[float],
     months_charged: int,
@@ -443,6 +454,8 @@ def build_statement(
         Balance at the end of last year.
     yearly_deposits : float
         Deposits since the start of the year.
+    profit : float, optional
+        Year-to-date profit net of fees (negative for a loss).
     management_fee : float, optional
         Management fees charged since the start of the year.
     monthly_risk_fee : float, optional
@@ -462,6 +475,8 @@ def build_statement(
         rows.append({"title": "יתרה לתחילת שנה", "amount": opening_balance})
     if yearly_deposits:
         rows.append({"title": "הפקדות", "amount": yearly_deposits})
+    if profit:
+        rows.append({"title": "רווחים", "amount": profit})
     if management_fee:
         rows.append({"title": "דמי ניהול", "amount": -abs(management_fee)})
     if monthly_risk_fee and months_charged:
@@ -473,6 +488,105 @@ def build_statement(
         )
     rows.append({"title": "יתרה נוכחית", "amount": closing_balance})
     return rows
+
+
+def ytd_profit(policy_yield: Optional[dict]) -> Optional[float]:
+    """Return a policy's year-to-date profit (negative for a loss).
+
+    The portal names the field ``netProfitPercent`` but it is an amount: it
+    equals the standard file's ``REVACH-HEFSED-BENIKOI-HOZAHOT`` (profit net
+    of fees) and HaPhoenix's "רווחים" row for the same months.
+
+    Parameters
+    ----------
+    policy_yield : dict, optional
+        ``getPolicyYield`` response.
+
+    Returns
+    -------
+    float or None
+        The signed amount, or ``None`` when the policy reports none.
+    """
+    if not policy_yield or policy_yield.get("netProfitPercent") is None:
+        return None
+    amount = _money(policy_yield["netProfitPercent"])
+    return -amount if policy_yield.get("profitTypeName") == "הפסד" else amount
+
+
+def build_representative(representative: Optional[dict]) -> Optional[dict]:
+    """Summarize who holds power of attorney over a policy.
+
+    Parameters
+    ----------
+    representative : dict, optional
+        ``getPolicyRepresentative`` response.
+
+    Returns
+    -------
+    dict or None
+        Name, id, role, whether they may act, and the appointment window;
+        ``None`` when no one is appointed.
+    """
+    if not representative or not representative.get("hasRepresentativeState"):
+        return None
+    return {
+        "name": representative.get("representativeName"),
+        "id": representative.get("representativeId"),
+        "role": representative.get("representativeIdentityType"),
+        "can_act": representative.get("actionExecutionPermission") == "כן",
+        "appointed": _iso_date(representative.get("agentAppointmentDate")),
+        "expires": _iso_date(representative.get("representativeExpireDate")),
+    }
+
+
+def build_household_report(
+    calc_date: str, concentrations: dict, incident: Optional[dict] = None
+) -> dict:
+    """Build one monthly report's household-wide summary.
+
+    Parameters
+    ----------
+    calc_date : str
+        The report's ``YYYY-MM-DD`` date.
+    concentrations : dict
+        ``getSavingConcentrations`` response for the report.
+    incident : dict, optional
+        ``getCorrespondenceShowSpecificIncident`` response, for the
+        subscription's expiry (only read for the newest report).
+
+    Returns
+    -------
+    dict
+        Totals at retirement, current savings, disability and survivor cover,
+        and subscription status — the fields of ``clearing_house_reports``.
+    """
+    totals = concentrations.get("savingConcentration") or {}
+    event = concentrations.get("eventInfo") or {}
+    incident = incident or {}
+    return {
+        "calc_date": calc_date,
+        "total_savings": _money(totals.get("total_CurrentSavings")),
+        "forecast_total_balance": _money(
+            totals.get("total_AccumulatedBalanceForecasts")
+        ),
+        "forecast_monthly_pension": _money(
+            totals.get("total_AccumulatedOldAgePensions")
+        ),
+        "forecast_lump_sum": _money(
+            totals.get("total_AccumulatedBalanceForecastOnePayment")
+        ),
+        "disability_monthly": _money(totals.get("total_WorkDisabilityAmountMonthly")),
+        "survivor_spouse_monthly": _money(
+            totals.get("total_DeathAmountMonthlyPartner")
+        ),
+        "survivor_child_monthly": _money(totals.get("total_DeathAmountMonthlyChild")),
+        "death_lump_sum": _money(totals.get("total_LifeInsuranceOneTimePayment")),
+        "report_number": event.get("numberOfIterations"),
+        "report_count": event.get("allIterations"),
+        "subscription_expires": _iso_date(incident.get("originalExpireDate")),
+        "subscription_months_left": incident.get("monthLeft"),
+        "license_holder": incident.get("licenseHolder"),
+    }
 
 
 def build_details(product: dict, calc_date: str) -> dict:
@@ -534,6 +648,7 @@ class MislakaScraper(BrowserScraper):
     """
 
     _token: Optional[str] = None
+    _last_month_fees: dict = {}
 
     async def login(self) -> LoginResult:
         """Authenticate with ID number, phone and an SMS code.
@@ -733,10 +848,16 @@ class MislakaScraper(BrowserScraper):
             )
 
         policies: dict[str, dict[str, Any]] = {}
+        reports: list[dict] = []
         for index, snapshot in enumerate(snapshots):
             is_latest = index == len(snapshots) - 1
             calc_date = _iso_date(snapshot["calcDate"])
             self._emit_progress(f"reading report as of {calc_date}")
+            reports.append(
+                await self._household_report(
+                    snapshot["swiftnessKey"], calc_date, is_latest
+                )
+            )
             products = (
                 await self._api(
                     "api/holdings/getSavingProductsDetails",
@@ -769,11 +890,55 @@ class MislakaScraper(BrowserScraper):
                 if is_latest:
                     entry["latest"] = (product, calc_date, policy_type, pension_type)
 
+        self.extras[CLEARING_HOUSE_REPORTS] = reports
         return [
             self._to_account_result(policy_id, entry)
             for policy_id, entry in policies.items()
             if entry["latest"] is not None
         ]
+
+    async def _household_report(
+        self, swiftness_key: str, calc_date: str, is_latest: bool
+    ) -> dict:
+        """Read one report's household summary (and, if newest, subscription).
+
+        Also remembers the newest report's last-month management fee per
+        policy, which the portal only serves inside this response.
+
+        Parameters
+        ----------
+        swiftness_key : str
+            The report being read.
+        calc_date : str
+            The report's date.
+        is_latest : bool
+            Whether this is the newest report.
+
+        Returns
+        -------
+        dict
+            See ``build_household_report``.
+        """
+        concentrations = (
+            await self._api(
+                "api/holdings/getSavingConcentrations", {"SwiftnessKey": swiftness_key}
+            )
+            or {}
+        )
+        incident = None
+        if is_latest:
+            incident = await self._api(
+                "api/holdings/getCorrespondenceShowSpecificIncident",
+                {"swiftnessKey": swiftness_key},
+            )
+            products = (concentrations.get("productsDetails") or {}).get(
+                "savingProductsdetailsList"
+            ) or []
+            self._last_month_fees = {
+                p.get("policy_Key"): p.get("actualManagementFeeAmount")
+                for p in products
+            }
+        return build_household_report(calc_date, concentrations, incident)
 
     async def _collect_policy(
         self,
@@ -854,23 +1019,63 @@ class MislakaScraper(BrowserScraper):
             entry["deposits"][txn.identifier] = txn
 
         if is_latest:
+            profit = ytd_profit(await self._api("api/holdings/getPolicyYield", ids))
             entry["tracks"] = build_investment_tracks(
                 routes, product.get("netYieldPercent")
             )
             entry["statement"] = build_statement(
                 opening_balance,
                 round(yearly_deposits, 2),
+                profit,
                 management_fee,
                 risk_fee,
                 months_charged_this_year(calc_date, _iso_date(product.get("joinDate"))),
                 _money(product.get("accumulatedBalance")),
             )
+            details = build_details(product, calc_date)
+            details["ytd_profit"] = profit
+            details["last_month_management_fee"] = self._last_month_fees.get(policy_key)
+            details["representative"] = build_representative(
+                await self._api("api/holdings/getPolicyRepresentative", ids)
+            )
             if product.get("productTypeCode") == _PRODUCT_NEW_PENSION:
                 risks = await self._api("api/holdings/getCoversPolicies", ids) or []
-                entry["plan_risks"] = [
+                details["plan_risks"] = [
                     r.get("riskName") for r in risks if r.get("riskName")
                 ]
-            entry["details"] = build_details(product, calc_date)
+                details["forecast_yield_pct"] = await self._forecast_yield(ids)
+            entry["details"] = details
+
+    async def _forecast_yield(self, ids: dict) -> Optional[float]:
+        """Return the return rate the pension's retirement forecast assumes.
+
+        Parameters
+        ----------
+        ids : dict
+            ``policyKey`` and ``swiftnessHandlerId``.
+
+        Returns
+        -------
+        float or None
+            The assumed annual return, in percent.
+        """
+        forecasts = await self._api("api/holdings/getPolicyRetirementAgeForecast", ids)
+        if not forecasts:
+            return None
+        funds = (
+            await self._api(
+                "api/holdings/getPolicyRetirementAgeForecastFunds",
+                {
+                    **ids,
+                    "policyRetirementAgeForecastKey": forecasts[0].get("recordKey"),
+                },
+            )
+            or []
+        )
+        return next(
+            (f["yieldForecastPercent"] for f in funds if f.get("yieldForecastPercent")),
+            None,
+        )
 
     async def _fetch_all_deposits(self, employer_ids: dict) -> list[dict]:
         """Page through one employer's deposits for the snapshot's year.
@@ -924,8 +1129,6 @@ class MislakaScraper(BrowserScraper):
         product, calc_date, policy_type, pension_type = entry["latest"]
         balance = _money(product.get("accumulatedBalance"))
         details = entry.get("details") or {}
-        if entry.get("plan_risks"):
-            details["plan_risks"] = entry["plan_risks"]
         is_pension = policy_type == "pension"
         return AccountResult(
             account_number=policy_id,

@@ -15,6 +15,7 @@ from unittest.mock import patch
 import pandas as pd
 from sqlalchemy import select
 
+from backend.models.clearing_house_report import ClearingHouseReport
 from backend.models.insurance_account import InsuranceAccount
 from backend.models.investment import Investment
 from backend.models.investment_balance_snapshot import InvestmentBalanceSnapshot
@@ -267,6 +268,45 @@ class TestHaPhoenixAfterTakeover:
 
         _mislaka_scrape(db_session)
         assert set(_transactions(db_session)["provider"]) == {"mislaka"}
+
+
+class TestClearingHouseReports:
+    """The household summaries a clearing-house scrape hands back."""
+
+    def _scrape_reports(self, db_session, forecast: float) -> None:
+        """Run a scrape whose extras carry two monthly reports."""
+        result = ScrapingResult(
+            success=True,
+            accounts=[],
+            extras={
+                "clearing_house_reports": [
+                    {"calc_date": "2026-07-31", "forecast_monthly_pension": 40490.0},
+                    {
+                        "calc_date": "2026-08-31",
+                        "forecast_monthly_pension": forecast,
+                        "subscription_expires": "2027-04-11",
+                    },
+                ]
+            },
+        )
+        _scrape(db_session, "mislaka", "Clearing house", result)
+
+    def test_each_report_month_is_stored_once(self, db_session):
+        """Verify a re-scrape updates a month rather than duplicating it."""
+        self._scrape_reports(db_session, 40691.0)
+        self._scrape_reports(db_session, 40700.0)
+
+        rows = db_session.execute(
+            select(ClearingHouseReport).order_by(ClearingHouseReport.calc_date)
+        ).scalars().all()
+        assert [(r.calc_date, r.forecast_monthly_pension) for r in rows] == [
+            ("2026-07-31", 40490.0),
+            ("2026-08-31", 40700.0),
+        ]
+        assert rows[1].subscription_expires == "2027-04-11"
+        assert {(r.provider, r.account_name) for r in rows} == {
+            ("mislaka", "Clearing house")
+        }
 
 
 class TestSyncFromInsuranceAccount:
