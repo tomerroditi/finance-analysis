@@ -388,6 +388,7 @@ class ScraperAdapter:
 
                 if result.success:
                     self._accounts_fetched = len(result.accounts)
+                    self._pre_save_hook(result)
                     self._data = self._result_to_dataframe(result, self.service_name)
                     if self._accounts_fetched > 0:
                         # An empty window is still an authoritative scrape of
@@ -915,6 +916,9 @@ class ScraperAdapter:
                 scrub(exc),
             )
 
+    def _pre_save_hook(self, result: "ScrapingResult") -> None:
+        """Run subclass-specific logic before the result becomes rows."""
+
     def _post_save_hook(self, result: "ScrapingResult") -> None:
         """Run subclass-specific logic after the transactions are saved."""
 
@@ -996,6 +1000,42 @@ class InsuranceScraperAdapter(ScraperAdapter):
 
         return df
 
+    def _pre_save_hook(self, result: "ScrapingResult") -> None:
+        """Re-key the scrape onto stored policy IDs and adopt predecessors' rows.
+
+        See ``InsuranceAccountService.claim_policies``. Runs before the rows
+        are built so every deposit carries the policy ID the other tables
+        join on, and before the save so re-reported deposits dedup against
+        the adopted ones.
+        """
+        from backend.services.insurance_account_service import (
+            InsuranceAccountService,
+        )
+
+        if not result.accounts:
+            return
+        try:
+            with get_db_context() as db:
+                stored = InsuranceAccountService(db).claim_policies(
+                    self.provider_name,
+                    self.account_name,
+                    [account.account_number for account in result.accounts],
+                )
+        except Exception as exc:
+            logger.error(
+                "%s: Error resolving stored insurance policies — %s",
+                scrub(self._log_id),
+                scrub(exc),
+            )
+            return
+        for account in result.accounts:
+            policy_id = stored.get(account.account_number)
+            if policy_id is None:
+                continue
+            account.account_number = policy_id
+            if account.metadata:
+                account.metadata["policy_id"] = policy_id
+
     def _post_save_hook(self, result: "ScrapingResult") -> None:
         """Persist insurance account metadata from AccountResult.metadata."""
         from backend.services.insurance_account_service import (
@@ -1004,7 +1044,7 @@ class InsuranceScraperAdapter(ScraperAdapter):
         from backend.services.investments import InvestmentsService
 
         accounts_to_upsert = [
-            account.metadata for account in result.accounts if account.metadata
+            dict(account.metadata) for account in result.accounts if account.metadata
         ]
         if not accounts_to_upsert:
             return
@@ -1012,8 +1052,10 @@ class InsuranceScraperAdapter(ScraperAdapter):
         try:
             with get_db_context() as db:
                 service = InsuranceAccountService(db)
+                saved = []
                 for meta in accounts_to_upsert:
-                    service.upsert(**meta)
+                    history = meta.pop("balance_history", None)
+                    saved.append((service.upsert(**meta), history))
                 logger.info(
                     "%s: Saved metadata for %d insurance accounts",
                     scrub(self._log_id),
@@ -1021,21 +1063,21 @@ class InsuranceScraperAdapter(ScraperAdapter):
                 )
 
                 inv_service = InvestmentsService(db)
-                for meta in accounts_to_upsert:
-                    if meta.get("policy_type") != "hishtalmut":
+                for account, history in saved:
+                    if account.policy_type != "hishtalmut":
                         continue
                     try:
-                        inv_service.sync_from_insurance(meta)
+                        inv_service.sync_from_insurance_account(account, history)
                         logger.info(
                             "%s: Synced hishtalmut investment for policy %s",
                             scrub(self._log_id),
-                            scrub(meta["policy_id"]),
+                            scrub(account.policy_id),
                         )
                     except Exception:
                         logger.exception(
                             "%s: Failed to sync hishtalmut investment for policy %s",
                             scrub(self._log_id),
-                            scrub(meta["policy_id"]),
+                            scrub(account.policy_id),
                         )
         except Exception as exc:
             logger.error(

@@ -50,8 +50,10 @@ class IngestionMixin:
 
         Notes
         -----
-        Deduplication is based on the composite key (id, provider, date, amount).
-        Only rows not already present in the DB are inserted.
+        Deduplication is based on the target table's composite key —
+        (id, provider, date, amount), or (id, date, amount) for insurance,
+        whose policies two providers can report. Only rows not already present
+        in the DB are inserted.
 
         Pending reconciliation: a transaction scraped while still pending can
         settle with a different date or amount (FX conversion, card holds), so
@@ -81,6 +83,7 @@ class IngestionMixin:
         # Compare the key columns as strings so DB and scraped dtypes align.
         df = df.astype(dict.fromkeys(self.unique_columns, str))
         existing_data = existing_data.astype(dict.fromkeys(self.unique_columns, str))
+        dedup_columns = repo.unique_columns
 
         if carried_tags is not None and not carried_tags.empty:
             df = df.merge(
@@ -96,7 +99,10 @@ class IngestionMixin:
 
         if not existing_data.empty:
             merged_df = df.merge(
-                existing_data, on=self.unique_columns, how="left", indicator=True
+                existing_data[dedup_columns].drop_duplicates(),
+                on=dedup_columns,
+                how="left",
+                indicator=True,
             )
             new_rows = merged_df[merged_df["_merge"] == "left_only"].drop(
                 columns="_merge"
