@@ -61,6 +61,7 @@ class SafeJSONResponse(JSONResponse):
     """
 
     def render(self, content: Any) -> bytes:
+        """Serialise ``content`` to UTF-8 JSON with non-finite floats as ``null``."""
         return json.dumps(
             sanitize_non_finite(content),
             ensure_ascii=False,

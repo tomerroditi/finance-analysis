@@ -34,7 +34,7 @@ _TRUNCATION_MARKER = "…[truncated]"
 
 
 def scrub(value: object) -> str:
-    """Render ``value`` as a single-line, control-character-free string.
+    r"""Render ``value`` as a single-line, control-character-free string.
 
     Parameters
     ----------
@@ -45,7 +45,7 @@ def scrub(value: object) -> str:
     Returns
     -------
     str
-        The value with line breaks replaced by a literal ``\\n`` marker,
+        The value with line breaks replaced by a literal ``\n`` marker,
         other control characters removed, and the result capped at
         :data:`MAX_VALUE_LENGTH` characters.
 
@@ -53,8 +53,8 @@ def scrub(value: object) -> str:
     --------
     >>> scrub("Main Account")
     'Main Account'
-    >>> scrub("ok\\nERROR forged")
-    'ok\\\\nERROR forged'
+    >>> scrub("ok\nERROR forged")
+    'ok\\nERROR forged'
     """
     text = str(value)
     # The two most important separators are removed with explicit

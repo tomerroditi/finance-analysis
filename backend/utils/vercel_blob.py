@@ -16,7 +16,7 @@ import os
 import re
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Protocol
+from typing import Any, Protocol
 
 import httpx
 
@@ -68,7 +68,7 @@ class BlobBackend(Protocol):
     def delete(self, urls: list[str]) -> None:
         """Delete every blob in ``urls``. Unknown URLs are ignored."""
 
-    def list(self, prefix: str) -> list[dict]:
+    def list(self, prefix: str) -> list[dict[str, Any]]:
         """Return metadata (``url``, ``pathname``, ``uploadedAt``) under ``prefix``."""
 
     def url_for(self, pathname: str) -> str:
@@ -184,6 +184,7 @@ class VercelBlobClient:
             self.access = match.group(2)
 
     def _api_headers(self) -> dict[str, str]:
+        """Return the auth and versioning headers every Blob API call carries."""
         return {
             "authorization": f"Bearer {self._token}",
             "x-api-version": API_VERSION,
@@ -224,7 +225,7 @@ class VercelBlobClient:
         self._learn_access_from_url(url)
         return BlobPutResult(url=url, etag=payload.get("etag"))
 
-    def list(self, prefix: str) -> list[dict]:
+    def list(self, prefix: str) -> list[dict[str, Any]]:
         """List every blob whose pathname starts with ``prefix``.
 
         Parameters
@@ -237,7 +238,7 @@ class VercelBlobClient:
         list[dict]
             Raw blob records (``url``, ``pathname``, ``size``, ``uploadedAt``).
         """
-        blobs: list[dict] = []
+        blobs: list[dict[str, Any]] = []
         cursor: str | None = None
         while True:
             params: dict[str, str] = {"prefix": prefix, "limit": "1000"}

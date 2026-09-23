@@ -15,6 +15,7 @@ from collections.abc import Sequence
 
 import sqlalchemy as sa
 from alembic import op
+from sqlalchemy.engine import Connection, Inspector
 
 revision: str = "a3e5c7b9d1f4"
 down_revision: str | Sequence[str] | None = "f2a4c6e8b0d3"
@@ -63,7 +64,7 @@ CARRY_CURRENT_AMOUNT = (
 )
 
 
-def _upgrade_goals_table(conn, inspector) -> None:
+def _upgrade_goals_table(conn: Connection, inspector: Inspector) -> None:
     """Add the new goal columns and retire ``current_amount``."""
     existing = {c["name"] for c in inspector.get_columns(GOALS)}
     missing = [(name, col) for name, col in NEW_GOAL_COLUMNS if name not in existing]

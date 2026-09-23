@@ -11,6 +11,7 @@ import re
 import sqlite3
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 from backend.config import AppConfig
 from backend.utils.log_sanitize import scrub
@@ -81,7 +82,6 @@ def backup_db(max_backups: int = MAX_BACKUPS) -> Path | None:
         logger.exception("Database backup failed")
         return None
 
-    # Prune oldest backups beyond the limit
     if max_backups > 0:
         backups = sorted(backup_dir.glob("data_*.db"), key=lambda f: f.stat().st_mtime)
         while len(backups) > max_backups:
@@ -113,7 +113,9 @@ def _claim_backup_path(backup_dir: Path, timestamp: str) -> Path | None:
         The claimed (empty) file, or None if every suffix is taken.
     """
     for n in range(1000):
-        dest = backup_dir / (f"data_{timestamp}.db" if n == 0 else f"data_{timestamp}_{n}.db")
+        dest = backup_dir / (
+            f"data_{timestamp}.db" if n == 0 else f"data_{timestamp}_{n}.db"
+        )
         try:
             with open(dest, "x"):
                 return dest
@@ -122,7 +124,7 @@ def _claim_backup_path(backup_dir: Path, timestamp: str) -> Path | None:
     return None
 
 
-def list_backups() -> list[dict]:
+def list_backups() -> list[dict[str, Any]]:
     """List available backup files.
 
     Returns
@@ -135,7 +137,7 @@ def list_backups() -> list[dict]:
     if not backup_dir.exists():
         return []
 
-    backups = []
+    backups: list[dict[str, Any]] = []
     for f in backup_dir.glob("data_*.db"):
         stat = f.stat()
         backups.append(
@@ -185,7 +187,7 @@ def restore_backup(filename: str) -> None:
     # (still tainted, in its view) raw filename keeps reading as attacker
     # controlled. Picking the path out of a trusted enumeration instead gives
     # the value a provenance the analyzer does recognise as sanitised.
-    backup_path = None
+    backup_path: Path | None = None
     if backup_dir.is_dir():
         for entry in backup_dir.iterdir():
             if entry.name == filename:
@@ -227,7 +229,6 @@ def restore_backup(filename: str) -> None:
 
     reset_engines()
 
-    # Restore: copy backup over the active database
     src_conn = sqlite3.connect(str(backup_path))
     try:
         dst_conn = sqlite3.connect(str(db_path))

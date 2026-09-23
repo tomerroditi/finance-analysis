@@ -21,11 +21,11 @@ _MONTH_PATTERN = r"^\d{4}-\d{2}$"
 
 
 def to_month_series(dates: pd.Series) -> pd.Series:
-    """Format a date column as ``YYYY-MM``.
+    r"""Format a date column as ``YYYY-MM``.
 
     Takes the fast path — a string slice — only when the column really is
     made of canonical ``YYYY-MM-DD`` strings, which is verified rather than
-    assumed: the slice is checked against ``\\d{4}-\\d{2}`` before being
+    assumed: the slice is checked against ``\d{4}-\d{2}`` before being
     returned. A datetime column, a differently-formatted string column, or
     anything that fails that check falls back to the full pandas conversion,
     so this is a drop-in replacement with no precondition on the caller.

@@ -10,6 +10,7 @@ from collections.abc import Sequence
 
 import sqlalchemy as sa
 from alembic import op
+from sqlalchemy.engine import Connection
 
 # revision identifiers, used by Alembic.
 revision: str = "d4f6a8c0e2b5"
@@ -36,7 +37,7 @@ _LEGACY_UNIQUE_CONSTRAINTS = (
 )
 
 
-def _unique_constraint_names(conn, table: str) -> set[str]:
+def _unique_constraint_names(conn: Connection, table: str) -> set[str]:
     """Return the set of named unique-constraint names on ``table``.
 
     Parameters

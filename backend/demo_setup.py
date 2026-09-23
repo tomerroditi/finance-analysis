@@ -1,5 +1,4 @@
-"""
-Demo database preparation helpers.
+"""Demo database preparation helpers.
 
 Both the ``/api/testing/demo/prepare`` / ``/api/testing/demo/reset`` routes
 and the Vercel serverless entrypoint (``index.py``) need to copy the frozen
@@ -14,12 +13,13 @@ ended up with budget rules pinned to ``DEMO_REFERENCE_DATE``.
 
 from __future__ import annotations
 
+import contextlib
 import os
 import shutil
 from datetime import date, timedelta
 
 from sqlalchemy import inspect, text
-from sqlalchemy.engine import Engine
+from sqlalchemy.engine import Connection, Engine
 
 from backend import database
 from backend.config import AppConfig
@@ -177,8 +177,8 @@ _TXN_TABLES = {
 
 
 def _resolve_override_txn_date(
-    conn, source_type: str, source_id: int, source_table: str
-):
+    conn: Connection, source_type: str, source_id: int, source_table: str
+) -> str | None:
     """Return the original ISO date of the transaction an override points at.
 
     Returns ``None`` if it cannot be resolved (unknown table, missing row).
@@ -208,7 +208,7 @@ def _resolve_override_txn_date(
     return None
 
 
-def _shift_budget_month_overrides(conn, offset_days: int) -> None:
+def _shift_budget_month_overrides(conn: Connection, offset_days: int) -> None:
     """Re-anchor each budget month override to its (shifted) transaction's month.
 
     Call this *before* the transaction date columns are shifted — it relies on
@@ -414,6 +414,11 @@ def _shift_dates(engine: Engine, offset_days: int) -> None:
         conn.commit()
 
 
+def sqlite_sidecar_paths(db_path: str) -> list[str]:
+    """Return the SQLite journal files that must be removed with ``db_path``."""
+    return [f"{db_path}-journal", f"{db_path}-wal", f"{db_path}-shm"]
+
+
 def _install_snapshot(source: str, destination: str) -> None:
     """Put the frozen snapshot in place without tearing it under live readers.
 
@@ -435,15 +440,9 @@ def _install_snapshot(source: str, destination: str) -> None:
     """
     staging = f"{destination}.incoming"
     shutil.copy2(source, staging)
-    for sidecar in (
-        f"{destination}-journal",
-        f"{destination}-wal",
-        f"{destination}-shm",
-    ):
-        try:
+    for sidecar in sqlite_sidecar_paths(destination):
+        with contextlib.suppress(FileNotFoundError):
             os.remove(sidecar)
-        except FileNotFoundError:
-            pass
     os.replace(staging, destination)
 
 
@@ -463,13 +462,9 @@ def prepare_demo_database() -> None:
     # demo DB file with the frozen snapshot — if it ever resolved
     # get_db_path()/get_engine() while the ambient context was real mode, it
     # would copy demo data straight over the user's real data.db, a total
-    # loss with no undo. Demo mode is now per-request/context-local rather
-    # than a single global toggle, which makes that mistake easier for a
-    # future caller to make than it used to be, so this must not rely on
-    # the caller having pinned it first. Existing callers
-    # (backend/routes/testing.py, index.py) already pin demo mode before
-    # calling this — that is intentional defense in depth, not redundant
-    # dead code, and stays as-is.
+    # loss with no undo. Demo mode is context-local, so this must not rely
+    # on the caller having pinned it first; the callers that already do
+    # (backend/routes/testing.py, index.py) are defense in depth.
     token = config.set_demo_mode(True)
     try:
         demo_db_path = config.get_db_path()

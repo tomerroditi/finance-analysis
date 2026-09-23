@@ -1,5 +1,4 @@
-"""
-Constants package for the finance-analysis backend.
+"""Constants package for the finance-analysis backend.
 
 Domain modules:
 - tables: Database table names and field enums
@@ -9,9 +8,8 @@ Domain modules:
 
 Constants are re-exported from this package so callers can simply do
 ``from backend.constants import <name>`` instead of importing from each
-sub-module. New names must be added explicitly to ``__all__`` below — wildcard
-re-exports were intentionally removed so the public surface is discoverable
-from one place.
+sub-module. New names must be added explicitly to ``__all__`` below, so the
+public surface is discoverable from one place.
 """
 
 from backend.constants.budget import (
@@ -62,14 +60,12 @@ __all__ = [
     "AMOUNT",
     "CATEGORY",
     "CREDIT_CARDS",
-    # budget
     "ID",
     "IGNORE_CATEGORY",
     "INVESTMENTS_CATEGORY",
     "LIABILITIES_CATEGORY",
     "MONTH",
     "NAME",
-    # categories
     "PRIOR_WEALTH_TAG",
     "PROTECTED_CATEGORIES",
     "PROTECTED_TAGS",
@@ -89,11 +85,9 @@ __all__ = [
     "LoginFields",
     "Services",
     "SplitTransactionsTableFields",
-    # tables
     "Tables",
     "TransactionsTableFields",
     "bank_providers",
-    # providers
     "cc_providers",
     "insurance_providers",
 ]

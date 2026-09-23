@@ -20,6 +20,7 @@ import logging
 import shutil
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -51,7 +52,7 @@ class CleanupReport:
     errors: list[str] = field(default_factory=list)
     dry_run: bool = False
 
-    def as_dict(self) -> dict:
+    def as_dict(self) -> dict[str, Any]:
         """Return a plain-dict view suitable for ``json.dumps``."""
         return asdict(self)
 
@@ -69,12 +70,11 @@ def _resolve_user_dir() -> Path:
         from backend.config import AppConfig
 
         config = AppConfig()
-        # We always operate on the *base* user dir, never the demo subdir,
-        # so a wipe nukes both production and demo state.
-        base = Path(config._base_user_dir)
+        # Always the *base* user dir, never the demo subdir, so a wipe
+        # removes both production and demo state.
+        return Path(config._base_user_dir)
     except Exception:
-        base = Path.home() / ".finance-analysis"
-    return base
+        return Path.home() / ".finance-analysis"
 
 
 def _enumerate_credential_keys_from_db(
@@ -130,22 +130,15 @@ def _delete_keyring_entries(
         errors.append(f"keyring unavailable: {exc}")
         return 0, 0, errors
 
+    keys = [
+        f"{svc}_{provider}_{account}_{field_name}"
+        for svc, provider, account in triples
+        for field_name in CREDENTIAL_FIELDS
+    ]
+    keys.extend(SERVICE_LEVEL_KEYS)
+
     for service in KEYRING_SERVICE_NAMES:
-        for triple in triples:
-            svc, provider, account = triple
-            for field_name in CREDENTIAL_FIELDS:
-                key = f"{svc}_{provider}_{account}_{field_name}"
-                attempted += 1
-                if dry_run:
-                    continue
-                try:
-                    keyring.delete_password(service, key)
-                    deleted += 1
-                except keyring.errors.PasswordDeleteError:
-                    pass
-                except Exception as exc:
-                    errors.append(f"{service}/{key}: {exc}")
-        for key in SERVICE_LEVEL_KEYS:
+        for key in keys:
             attempted += 1
             if dry_run:
                 continue
@@ -224,7 +217,7 @@ def run(
 
 
 def cli(argv: list[str] | None = None) -> int:
-    """Module entry point for ``python -m backend.uninstall``.
+    """Run the ``python -m backend.uninstall`` command line.
 
     Returns 0 on success, 1 if any non-fatal errors were collected.
     Always prints a JSON report to stdout so the calling installer can
@@ -255,5 +248,6 @@ def cli(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     report = run(wipe_data=args.wipe, dry_run=args.dry_run)
-    print(json.dumps(report.as_dict(), indent=2))
+    # The CLI's contract with the installer scripts is a JSON report on stdout.
+    print(json.dumps(report.as_dict(), indent=2))  # noqa: T201
     return 1 if report.errors else 0

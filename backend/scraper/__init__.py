@@ -1,3 +1,5 @@
+"""Backend bridge to the root ``scraper`` package: adapters and 2FA lookup."""
+
 from backend.scraper.adapter import (
     InsuranceScraperAdapter,
     ScraperAdapter,

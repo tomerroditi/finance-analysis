@@ -145,7 +145,7 @@ def get_secret(service_name: str, secret_name: str) -> str | None:
 
     Returns
     -------
-    Optional[str]
+    str or None
         The stored value, or None when no entry exists — including when
         this environment has no keyring at all.
     """

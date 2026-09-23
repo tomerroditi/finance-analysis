@@ -12,13 +12,9 @@ falsely promising an upgrade.
 from __future__ import annotations
 
 import logging
+import tomllib
 from functools import lru_cache
 from pathlib import Path
-
-try:
-    import tomllib  # type: ignore[unused-ignore]
-except ModuleNotFoundError:  # Python <3.11 (we require 3.12, but be safe)
-    import tomli as tomllib  # type: ignore[no-redef]
 
 logger = logging.getLogger(__name__)
 

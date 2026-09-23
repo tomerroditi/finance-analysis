@@ -1,9 +1,10 @@
+"""Database table names and column-name enums."""
+
 from enum import Enum
 
 
 class Tables(Enum):
-    """
-    Enum defining database table names used in the application.
+    """Enum defining database table names used in the application.
 
     Attributes
     ----------
@@ -20,7 +21,8 @@ class Tables(Enum):
     SPLIT_TRANSACTIONS : str
         Name of the table storing split transactions.
     SCRAPING_HISTORY : str
-        Name of the table storing scraping history and daily limits.
+        Name of the table storing scraping history (the next scrape window's
+        watermark).
     INVESTMENTS : str
         Name of the table storing investment tracking data.
     INVESTMENT_BALANCE_SNAPSHOTS : str
@@ -90,8 +92,7 @@ class Tables(Enum):
 
 
 def _create_enum(name: str, fields: list[tuple[str, str]]) -> type[Enum]:
-    """
-    Create an Enum class dynamically with the given name and fields.
+    """Create an Enum class dynamically with the given name and fields.
 
     Parameters
     ----------
@@ -102,7 +103,7 @@ def _create_enum(name: str, fields: list[tuple[str, str]]) -> type[Enum]:
 
     Returns
     -------
-    Type[Enum]
+    type[Enum]
         A new Enum class with the specified name and fields.
     """
     return Enum(name, fields)
@@ -144,8 +145,7 @@ SplitTransactionsTableFields = _create_enum(
 
 
 class InvestmentsTableFields(Enum):
-    """
-    Enum defining field names for the investments tracking table.
+    """Enum defining field names for the investments tracking table.
 
     Attributes
     ----------

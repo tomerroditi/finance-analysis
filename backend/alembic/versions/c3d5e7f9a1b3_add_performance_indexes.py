@@ -29,9 +29,11 @@ _TRANSACTION_TABLES = (
 )
 
 
-# (index_name, table_name, [columns]) for every index this migration owns,
-# ordered so creation is safe; downgrade drops them in reverse.
 def _index_specs() -> list[tuple[str, str, list[str]]]:
+    """Return ``(index_name, table_name, columns)`` for every index this migration owns.
+
+    Ordered so creation is safe; downgrade drops them in reverse.
+    """
     specs: list[tuple[str, str, list[str]]] = []
     for table in _TRANSACTION_TABLES:
         specs.append((f"ix_{table}_date", table, ["date"]))

@@ -27,6 +27,7 @@ from collections import defaultdict
 
 import sqlalchemy as sa
 from alembic import op
+from sqlalchemy.engine import Connection
 
 revision = "b7d4f1a9c3e2"
 down_revision = "a3e5c7b9d1f4"
@@ -37,7 +38,7 @@ _PAREN_SUFFIX_RE = re.compile(r"\s*\([^()]*\)\s*$")
 _DIGIT_RUN_RE = re.compile(r"\d+")
 
 
-def _normalize_policy_id(raw):
+def _normalize_policy_id(raw: object) -> str:
     """Drop a trailing parenthesised internal ID; keep leading zeros."""
     if raw is None:
         return ""
@@ -46,7 +47,7 @@ def _normalize_policy_id(raw):
     return stripped or value
 
 
-def _policy_id_key(value):
+def _policy_id_key(value: object) -> str:
     """Normalize, then strip insignificant leading zeros from each digit run."""
     normalized = _normalize_policy_id(value)
     if not normalized:
@@ -56,11 +57,12 @@ def _policy_id_key(value):
     ).casefold()
 
 
-def _table_exists(bind, name):
+def _table_exists(bind: Connection, name: str) -> bool:
+    """Return whether ``name`` is a table in the bound database."""
     return name in sa.inspect(bind).get_table_names()
 
 
-def _merge_insurance_accounts(bind):
+def _merge_insurance_accounts(bind: Connection) -> None:
     """Collapse accounts whose policy IDs share a key; keep the oldest row."""
     rows = (
         bind.execute(
@@ -105,7 +107,7 @@ def _merge_insurance_accounts(bind):
             )
 
 
-def _merge_investments(bind):
+def _merge_investments(bind: Connection) -> None:
     """Collapse insurance-linked investments; move the losers' snapshots over."""
     rows = (
         bind.execute(
@@ -171,7 +173,7 @@ def _merge_investments(bind):
         )
 
 
-def _rekey_insurance_transactions(bind):
+def _rekey_insurance_transactions(bind: Connection) -> None:
     """Rewrite scraped dedup IDs to the policy key, then drop the duplicates."""
     rows = (
         bind.execute(

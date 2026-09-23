@@ -24,6 +24,7 @@ its security model is connection-based:
   the response, but the request still executes. See ``origin_allowed``.
 """
 
+import contextlib
 import hmac
 import ipaddress
 import logging
@@ -102,10 +103,8 @@ def get_or_create_api_token() -> str:
     fd = os.open(token_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     with os.fdopen(fd, "w", encoding="utf-8") as f:
         f.write(token)
-    try:
+    with contextlib.suppress(OSError):  # e.g. exotic filesystems
         os.chmod(token_path, 0o600)
-    except OSError:  # pragma: no cover - e.g. exotic filesystems
-        pass
     logger.info("Generated new API access token at %s", token_path)
     return token
 
@@ -115,7 +114,7 @@ def is_trusted_client(client_host: str | None) -> bool:
 
     Parameters
     ----------
-    client_host : Optional[str]
+    client_host : str or None
         ``request.client.host`` — None for unix-socket connections (local
         by definition), ``"testclient"`` under Starlette's TestClient.
     """
@@ -158,12 +157,12 @@ def build_tailnet_users(env_value: str | None = None) -> set[str]:
 
     Parameters
     ----------
-    env_value : Optional[str]
+    env_value : str or None
         Comma-separated Tailscale login names (e.g. ``me@example.com``).
 
     Returns
     -------
-    Set[str]
+    set of str
         Lowercased logins; empty when unset, which admits nobody.
     """
     raw = (
@@ -234,7 +233,7 @@ def tailnet_user_allowed(login: str | None, allowed: Iterable[str]) -> bool:
 
     Parameters
     ----------
-    login : Optional[str]
+    login : str or None
         The ``Tailscale-User-Login`` header value.
     allowed : Iterable[str]
         Lowercased logins from ``build_tailnet_users``.
@@ -264,13 +263,13 @@ def build_allowed_hosts(env_value: str | None = None) -> set[str]:
 
     Parameters
     ----------
-    env_value : Optional[str]
+    env_value : str or None
         Comma-separated extra hostnames/IPs. ``"*"`` disables host
         checking entirely (the set then contains ``"*"``).
 
     Returns
     -------
-    Set[str]
+    set of str
         Lowercased allowed hostnames, always including the localhost
         defaults.
     """
@@ -308,7 +307,7 @@ def port_from_host_header(host_header: str | None) -> int | None:
 
     Parameters
     ----------
-    host_header : Optional[str]
+    host_header : str or None
         The request's ``Host`` header.
 
     Returns
@@ -365,13 +364,13 @@ def origin_allowed(
 
     Parameters
     ----------
-    origin : Optional[str]
+    origin : str or None
         The request's ``Origin`` header. ``None``/empty means a non-browser
         client (curl, the desktop app, Playwright's request context) and is
         allowed — those cannot be driven by a hostile web page. The literal
         string ``"null"`` (sandboxed iframe, ``file://`` document) is
         rejected, since it is an origin an attacker can arrange.
-    host_header : Optional[str]
+    host_header : str or None
         The request's ``Host`` header, used for the same-origin comparison.
         This is what lets the packaged desktop app work on whatever random
         port it picked at launch without any configuration.
@@ -422,10 +421,7 @@ def origin_allowed(
     host_port = port_from_host_header(host_header)
     if host_port is None:
         host_port = 80
-    if (
+    return (
         origin_hostname == hostname_from_host_header(host_header).strip("[]")
         and origin_port == host_port
-    ):
-        return True
-
-    return False
+    )
