@@ -9,7 +9,7 @@ from typing import ClassVar, Self
 
 #: Per-request demo-mode flag. Context-local so two clients on one backend
 #: can read different databases in the same process. Set by the
-#: ``resolve_demo_mode`` middleware in ``backend/main.py`` from the
+#: ``resolve_demo_mode`` middleware in ``backend/middleware/demo.py`` from the
 #: ``X-FAD-Demo`` header; defaults to real mode everywhere else (startup,
 #: scripts, background work that has not explicitly opted in).
 _demo_mode_ctx: ContextVar[bool] = ContextVar("fad_demo_mode", default=False)

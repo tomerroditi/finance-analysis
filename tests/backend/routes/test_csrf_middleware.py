@@ -1,7 +1,7 @@
 """Middleware-level CSRF tests.
 
 ``tests/backend/unit/utils/test_auth.py`` covers ``origin_allowed`` in
-isolation; these exercise the wiring in ``backend.main`` so a middleware
+isolation; these exercise the wiring ``backend.main`` mounts so a middleware
 that stops being registered (or starts running after the route) fails the
 suite rather than silently reopening the hole.
 
@@ -121,9 +121,9 @@ class TestCsrfMiddleware:
         It is set behind reverse proxies that rewrite ``Host``; letting it
         also accept any ``Origin`` would hand every website a write channel.
         """
-        import backend.main as main
+        import backend.middleware.security as security
 
-        monkeypatch.setattr(main, "_allowed_hosts", {"*"})
+        monkeypatch.setattr(security, "_allowed_hosts", {"*"})
         response = test_client.post("/api/backups/", headers={"Origin": EVIL})
         assert response.status_code == 403
         fake_backup.assert_not_called()

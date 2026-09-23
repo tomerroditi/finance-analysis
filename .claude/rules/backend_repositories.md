@@ -82,7 +82,7 @@ class MyModel(Base, TimestampMixin):
     name = Column(String, nullable=False)
 ```
 
-Tables auto-create on startup via `Base.metadata.create_all(engine)` in `backend/main.py`.
+Tables auto-create on startup via `Base.metadata.create_all(engine)` in `backend/startup.py` (called from the `backend/main.py` lifespan).
 
 ## Existing Repositories
 

@@ -30,7 +30,8 @@ except ImportError:  # pragma: no cover - exercised only without keyring
     # so it never needs a password. This module sits on the import path of
     # every credentials route (routes -> service -> repository -> here), so a
     # hard import made the WHOLE /api/credentials group vanish through
-    # main.py's `except ImportError: pass` — the Data Sources page 404'd its
+    # the optional-router import guard (now in backend/router_registry.py) —
+    # the Data Sources page 404'd its
     # account list and rendered empty.
     #
     # Reads degrade to "nothing stored"; writes raise rather than silently

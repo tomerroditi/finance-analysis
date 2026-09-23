@@ -4,14 +4,18 @@ Backup management API routes.
 Provides endpoints for creating, listing, and restoring database backups.
 """
 
-from datetime import datetime
 from typing import Any
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from backend.errors import BadRequestException, EntityNotFoundException
-from backend.utils.backup import backup_db, list_backups, restore_backup
+from backend.utils.backup import (
+    backup_db,
+    describe_backup,
+    list_backups,
+    restore_backup,
+)
 
 router = APIRouter()
 
@@ -49,12 +53,7 @@ def create_backup() -> BackupInfo:
     if path is None:
         raise HTTPException(status_code=500, detail="Backup failed")
 
-    stat = path.stat()
-    return BackupInfo(
-        filename=path.name,
-        created_at=datetime.fromtimestamp(stat.st_mtime).isoformat(),
-        size_bytes=stat.st_size,
-    )
+    return BackupInfo(**describe_backup(path))
 
 
 @router.post("/restore")

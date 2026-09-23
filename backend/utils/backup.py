@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any
 
 from backend.config import AppConfig
+from backend.migrations_runner import upgrade_to_head
 from backend.utils.log_sanitize import scrub
 
 logger = logging.getLogger(__name__)
@@ -124,6 +125,28 @@ def _claim_backup_path(backup_dir: Path, timestamp: str) -> Path | None:
     return None
 
 
+def describe_backup(path: Path) -> dict[str, Any]:
+    """Describe one backup file for the API.
+
+    Parameters
+    ----------
+    path : Path
+        The backup file.
+
+    Returns
+    -------
+    dict
+        ``filename``, ``created_at`` (ISO string of the file's mtime) and
+        ``size_bytes``.
+    """
+    stat = path.stat()
+    return {
+        "filename": path.name,
+        "created_at": datetime.fromtimestamp(stat.st_mtime).isoformat(),
+        "size_bytes": stat.st_size,
+    }
+
+
 def list_backups() -> list[dict[str, Any]]:
     """List available backup files.
 
@@ -137,17 +160,7 @@ def list_backups() -> list[dict[str, Any]]:
     if not backup_dir.exists():
         return []
 
-    backups: list[dict[str, Any]] = []
-    for f in backup_dir.glob("data_*.db"):
-        stat = f.stat()
-        backups.append(
-            {
-                "filename": f.name,
-                "created_at": datetime.fromtimestamp(stat.st_mtime).isoformat(),
-                "size_bytes": stat.st_size,
-            }
-        )
-
+    backups = [describe_backup(f) for f in backup_dir.glob("data_*.db")]
     backups.sort(key=lambda b: b["created_at"], reverse=True)
     return backups
 
@@ -255,26 +268,11 @@ def restore_backup(filename: str) -> None:
 def _upgrade_restored_db() -> None:
     """Run Alembic upgrade head against the freshly restored database.
 
-    Mirrors the startup migration path in ``backend/main.py``. Failures are
-    logged, not raised — the restore itself succeeded, and the migrations
-    will run again on next startup.
+    Uses the same runner as startup. Failures are logged, not raised — the
+    restore itself succeeded, and the migrations will run again on next
+    startup.
     """
-    import sys
-
-    from alembic import command
-    from alembic.config import Config
-
-    if getattr(sys, "frozen", False):
-        alembic_ini = Path(getattr(sys, "_MEIPASS", "")) / "alembic.ini"
-    else:
-        alembic_ini = Path(__file__).resolve().parents[2] / "alembic.ini"
-
-    if not alembic_ini.is_file():
-        logger.warning(
-            "alembic.ini not found at %s — restored DB not migrated", alembic_ini
-        )
-        return
     try:
-        command.upgrade(Config(str(alembic_ini)), "head")
+        upgrade_to_head()
     except Exception:
         logger.exception("Failed to migrate restored database")

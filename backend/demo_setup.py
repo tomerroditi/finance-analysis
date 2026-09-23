@@ -1,4 +1,4 @@
-"""Demo database preparation helpers.
+"""Demo database preparation and lifecycle helpers.
 
 Both the ``/api/testing/demo/prepare`` / ``/api/testing/demo/reset`` routes
 and the Vercel serverless entrypoint (``index.py``) need to copy the frozen
@@ -464,7 +464,7 @@ def prepare_demo_database() -> None:
     # would copy demo data straight over the user's real data.db, a total
     # loss with no undo. Demo mode is context-local, so this must not rely
     # on the caller having pinned it first; the callers that already do
-    # (backend/routes/testing.py, index.py) are defense in depth.
+    # (build_demo_database below, index.py) are defense in depth.
     token = config.set_demo_mode(True)
     try:
         demo_db_path = config.get_db_path()
@@ -484,5 +484,69 @@ def prepare_demo_database() -> None:
 
         offset_days = (date.today() - DEMO_REFERENCE_DATE).days
         _shift_dates(engine, offset_days)
+    finally:
+        config.reset_demo_mode(token)
+
+
+def demo_database_exists() -> bool:
+    """Return ``True`` when the demo database file is already on disk.
+
+    Returns
+    -------
+    bool
+        Whether the demo-mode database path exists.
+    """
+    config = AppConfig()
+    token = config.set_demo_mode(True)
+    try:
+        return os.path.exists(config.get_db_path())
+    finally:
+        config.reset_demo_mode(token)
+
+
+def sync_demo_schema() -> None:
+    """Bring an existing demo database up to the current schema.
+
+    Startup migrations only ever run against the database the process opened
+    — the real one — and ``/demo/prepare`` deliberately does not rebuild a
+    demo DB that is already on disk. Without this, a demo database built by an
+    older version keeps that version's schema forever, and every read of a
+    table or column added since answers 500. Creating what is missing is
+    additive and leaves the demo data alone, so it is safe on every prepare.
+    """
+    config = AppConfig()
+    token = config.set_demo_mode(True)
+    try:
+        engine = database.get_engine()
+        Base.metadata.create_all(bind=engine)
+        sync_missing_columns(engine)
+    finally:
+        config.reset_demo_mode(token)
+
+
+def build_demo_database() -> None:
+    """Copy the frozen snapshot into place and seed demo credentials.
+
+    Forces demo context for its own duration rather than trusting the
+    caller's header, so the snapshot can never be copied over the real
+    database.
+    """
+    # Imported here, not at module level: credentials_service pulls in
+    # keyring, which the Vercel runtime does not ship, and this module is
+    # imported by index.py and backend.demo_sessions on every cold start.
+    from backend.services.credentials_service import CredentialsService
+    from backend.services.tagging_service import CategoriesTagsService
+
+    config = AppConfig()
+    token = config.set_demo_mode(True)
+    try:
+        database.reset_engines()
+        CredentialsService.clear_cache()
+        CategoriesTagsService.clear_cache()
+
+        prepare_demo_database()
+
+        with database.get_db_context() as demo_db:
+            CredentialsService(demo_db).seed_demo_credentials()
     finally:
         config.reset_demo_mode(token)

@@ -330,10 +330,9 @@ NEXT STEPS:
 
    from backend.models.{names.snake_case} import {names.pascal_case}
 
-3. Register router in backend/main.py:
+3. Register the router in ROUTERS in backend/router_registry.py (order = matching order):
 
-   from backend.routes import {names.snake_case}
-   app.include_router({names.snake_case}.router, prefix="/api/{names.kebab_case}", tags=["{names.pascal_case}"])
+   RouterMount("{names.snake_case}", "/api/{names.kebab_case}", "{names.pascal_case}"),
 
 4. Update model columns in backend/models/{names.snake_case}.py
 
