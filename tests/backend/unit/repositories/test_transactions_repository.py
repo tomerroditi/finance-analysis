@@ -7,6 +7,7 @@ import pandas as pd
 import pytest
 
 from backend.constants.tables import Tables
+from backend.errors import EntityNotFoundException, ValidationException
 from backend.models.transaction import (
     BankTransaction,
     CashTransaction,
@@ -270,54 +271,11 @@ class TestAddTransactionExceptionHandler:
                 repo.add_transaction(dto)
 
 
-class TestBulkUpdateTagging:
-    """Tests for TransactionsRepository.bulk_update_tagging."""
-
-    def test_bulk_update_tagging_delegates_to_sub_repos(self, db_session):
-        """Verify bulk_update_tagging iterates and delegates to each sub-repo."""
-        # Add a cash transaction
-        tx = CashTransaction(
-            id="1", date="2024-01-01", amount=-10.0,
-            description="Test", account_name="Cash",
-            provider="manual", source="cash_transactions",
-        )
-        db_session.add(tx)
-        db_session.commit()
-        db_session.refresh(tx)
-
-        repo = TransactionsRepository(db_session)
-        repo.bulk_update_tagging(
-            [{"source": "cash_transactions", "unique_id": tx.unique_id}],
-            category="Food",
-            tag="Groceries",
-        )
-
-        db_session.expire_all()
-        updated = db_session.query(CashTransaction).filter_by(unique_id=tx.unique_id).first()
-        assert updated.category == "Food"
-        assert updated.tag == "Groceries"
-
-    def test_bulk_update_tagging_invalid_source_raises(self, db_session):
-        """Verify an unrecognized source raises a clean ValueError.
-
-        Regression: ``get_repo_by_source`` returns ``None`` for unknown
-        sources, so bulk_update_tagging must guard against it instead of
-        dereferencing ``None`` (which produced an opaque AttributeError/500).
-        """
-        repo = TransactionsRepository(db_session)
-        with pytest.raises(ValueError):
-            repo.bulk_update_tagging(
-                [{"source": "not_a_real_source", "unique_id": 1}],
-                category="Food",
-                tag="Groceries",
-            )
-
-
 class TestGetDateFromTable:
-    """Tests for get_latest_date_from_table and get_earliest_date_from_table."""
+    """Tests for get_latest_date_from_table."""
 
-    def test_returns_bounds_as_datetime(self, db_session):
-        """Both lookups return the extreme stored date parsed to a datetime."""
+    def test_returns_latest_as_datetime(self, db_session):
+        """The lookup returns the latest stored date parsed to a datetime."""
         db_session.add_all([
             CashTransaction(
                 id="1", date="2024-01-01", amount=-10.0,
@@ -334,16 +292,14 @@ class TestGetDateFromTable:
 
         repo = TransactionsRepository(db_session)
         assert repo.get_latest_date_from_table("cash_transactions") == datetime(2024, 6, 15)
-        assert repo.get_earliest_date_from_table("cash_transactions") == datetime(2024, 1, 1)
 
     def test_empty_table_returns_none(self, db_session):
-        """Both lookups return None for an empty table."""
+        """The lookup returns None for an empty table."""
         repo = TransactionsRepository(db_session)
         assert repo.get_latest_date_from_table("cash_transactions") is None
-        assert repo.get_earliest_date_from_table("cash_transactions") is None
 
     def test_invalid_format_returns_none(self, db_session):
-        """Both lookups return None when the stored date is unparseable."""
+        """The lookup returns None when the stored date is unparseable."""
         db_session.add(CashTransaction(
             id="1", date="not-a-date", amount=-10.0,
             description="Bad date", account_name="Cash",
@@ -353,7 +309,6 @@ class TestGetDateFromTable:
 
         repo = TransactionsRepository(db_session)
         assert repo.get_latest_date_from_table("cash_transactions") is None
-        assert repo.get_earliest_date_from_table("cash_transactions") is None
 
 
 class TestAddScrapedTransactionsDistinctDuplicates:
@@ -468,7 +423,7 @@ class TestGetTransactionById:
     def test_get_transaction_by_id_not_found_raises(self, db_session):
         """Verify get_transaction_by_id raises ValueError when not found."""
         repo = TransactionsRepository(db_session)
-        with pytest.raises(ValueError, match="not found"):
+        with pytest.raises(EntityNotFoundException, match="not found"):
             repo.get_transaction_by_id(99999, "cash_transactions")
 
     def test_get_transaction_by_id_scoped_to_source_table(self, db_session):
@@ -503,7 +458,7 @@ class TestGetTransactionById:
     def test_get_transaction_by_id_invalid_source_raises(self, db_session):
         """Verify an unknown source name raises ValueError."""
         repo = TransactionsRepository(db_session)
-        with pytest.raises(ValueError, match="Invalid source"):
+        with pytest.raises(EntityNotFoundException, match="Invalid source"):
             repo.get_transaction_by_id(1, "bogus_table")
 
 
@@ -1205,7 +1160,7 @@ class TestRecordLookups:
         db_session.expire_all()
 
         assert (a.category, b.category, untouched.category) == ("Food", "Food", None)
-        with pytest.raises(ValueError, match="Invalid source"):
+        with pytest.raises(ValidationException, match="Invalid source"):
             repo.bulk_update_fields("nonsense", [a.unique_id], {"category": "X"})
 
 

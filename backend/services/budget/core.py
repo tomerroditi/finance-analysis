@@ -171,7 +171,7 @@ class BudgetService:
             If any key in ``fields`` is not one of the allowed field names.
         EntityNotFoundException
             If no rule with ``id_`` exists.
-        ValueError
+        ValidationException
             If the merged rule fails validation.
         """
         valid_fields = {NAME, AMOUNT, CATEGORY, TAGS}
@@ -202,7 +202,7 @@ class BudgetService:
                 all_rules, name, category, parsed_tags, amount, year, month, id_
             )
             if not is_valid:
-                raise ValueError(msg)
+                raise ValidationException(msg)
 
         if TAGS in fields and isinstance(fields[TAGS], list):
             fields[TAGS] = ";".join(fields[TAGS])

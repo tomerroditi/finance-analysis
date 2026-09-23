@@ -9,6 +9,7 @@ from typing import Any
 import pandas as pd
 from sqlalchemy.orm import Session
 
+from backend.errors import EntityNotFoundException, ValidationException
 from backend.models.cash_balance import CashBalance
 from backend.repositories.cash_balance_repository import CashBalanceRepository
 from backend.repositories.transactions import CashRepository
@@ -64,11 +65,11 @@ class CashBalanceService:
 
         Raises
         ------
-        ValueError
+        ValidationException
             If balance is negative.
         """
         if balance < 0:
-            raise ValueError("Balance must be >= 0")
+            raise ValidationException("Balance must be >= 0")
 
         txn_sum = self._get_account_transaction_sum(account_name)
         prior_wealth = balance - txn_sum
@@ -165,19 +166,23 @@ class CashBalanceService:
 
         Raises
         ------
-        ValueError
+        EntityNotFoundException
+            If no cash balance record exists for ``account_name``.
+        ValidationException
             If attempting to delete the "Wallet" account.
         """
+        deleted = self.cash_balance_repo.get_by_account_name(account_name)
+        if deleted is None:
+            raise EntityNotFoundException(
+                f"Cash balance for account '{account_name}' not found"
+            )
         if account_name == "Wallet":
-            raise ValueError("Cannot delete the default 'Wallet' account")
+            raise ValidationException("Cannot delete the default 'Wallet' account")
 
         # Carry the envelope's prior wealth over to Wallet. Deleting the row
         # without this silently destroys money that predates tracked
         # transactions — the migrated transactions alone don't represent it.
-        deleted = self.cash_balance_repo.get_by_account_name(account_name)
-        carried_prior_wealth = (
-            float(deleted.prior_wealth_amount or 0.0) if deleted else 0.0
-        )
+        carried_prior_wealth = float(deleted.prior_wealth_amount or 0.0)
 
         self._migrate_transactions_to_wallet(account_name)
         self.cash_balance_repo.delete_by_account_name(account_name)

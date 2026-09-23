@@ -62,16 +62,36 @@ class ProjectBudgetService(BudgetService):
 
         Raises
         ------
-        ValueError
+        EntityNotFoundException
             If no rules exist for the given project category.
         """
         rules = self.get_all_rules()
         if not rules.empty:
             rules = rules.loc[rules[CATEGORY] == category]
         if rules.empty:
-            raise ValueError(f"Project {category} not found")
+            raise EntityNotFoundException(f"Project {category} not found")
 
         return rules
+
+    def _require_project(self, category: str) -> None:
+        """Raise when no project budget is named ``category``.
+
+        Deleting an unknown project used to report success and updating one
+        surfaced a raw error as a 500; every other delete in the API 404s on
+        a missing entity.
+
+        Parameters
+        ----------
+        category : str
+            Project (category) name.
+
+        Raises
+        ------
+        EntityNotFoundException
+            If no project budget rules exist for ``category``.
+        """
+        if category not in self.get_all_projects_names():
+            raise EntityNotFoundException(f"Project '{category}' not found")
 
     def create_project(self, category: str, total_budget: float) -> None:
         """
@@ -94,7 +114,7 @@ class ProjectBudgetService(BudgetService):
         ValidationException
             If ``category`` is not a known category, so no rules are written
             for a name that can't be tagged against.
-        ValueError
+        ValidationException
             If ``category`` already has a monthly or yearly budget rule. A
             category can't be in both a project and a monthly/yearly budget.
         """
@@ -103,7 +123,7 @@ class ProjectBudgetService(BudgetService):
                 f"A project for the '{category}' category already exists."
             )
         if self.category_used_by_monthly_or_yearly(category):
-            raise ValueError(
+            raise ValidationException(
                 f"The '{category}' category is already used by a monthly or "
                 f"yearly budget. A category can't be in both a project and a "
                 f"monthly/yearly budget."
@@ -138,7 +158,15 @@ class ProjectBudgetService(BudgetService):
             Project category name.
         total_budget : float
             New overall spending limit for the project.
+
+        Raises
+        ------
+        EntityNotFoundException
+            If no project with ``category`` exists.
+        ValidationException
+            If ``total_budget`` fails rule validation.
         """
+        self._require_project(category)
         rules = self.get_rules_for_project(category)
         total_rule = rules.loc[rules[TAGS].apply(self._is_all_tags)]
         if total_rule.empty:
@@ -156,21 +184,14 @@ class ProjectBudgetService(BudgetService):
         ----------
         category : str
             Project category name whose rules should be deleted.
+
+        Raises
+        ------
+        EntityNotFoundException
+            If no project with ``category`` exists.
         """
+        self._require_project(category)
         self.budget_repository.delete_by_category(category)
-
-    def delete_project_tag_rule(self, category: str, tag: str) -> None:
-        """
-        Delete a specific tag rule from a project.
-
-        Parameters
-        ----------
-        category : str
-            Project category name.
-        tag : str
-            Tag whose budget rule should be deleted.
-        """
-        self.budget_repository.delete_by_category_and_tags(category, tag)
 
     def set_project_closed(self, category: str, closed: bool) -> None:
         """Mark a project as closed (finished) or reopen it.
@@ -192,8 +213,7 @@ class ProjectBudgetService(BudgetService):
         EntityNotFoundException
             If no project budget rules exist for ``category``.
         """
-        if category not in self.get_all_projects_names():
-            raise EntityNotFoundException(f"Project '{category}' not found")
+        self._require_project(category)
         self.budget_repository.set_closed_by_category(category, closed)
 
     @staticmethod
@@ -209,13 +229,6 @@ class ProjectBudgetService(BudgetService):
         if rules.empty or IS_CLOSED not in rules.columns:
             return False
         return bool(rules[IS_CLOSED].fillna(0).astype(int).max() == 1)
-
-    def is_project_closed(self, category: str) -> bool:
-        """Whether ``category``'s project budget has been closed."""
-        rules = self.get_all_rules()
-        if rules.empty:
-            return False
-        return self._rules_are_closed(rules.loc[rules[CATEGORY] == category])
 
     def get_closed_projects_names(self) -> list[str]:
         """Return the names of the project categories that have been closed.

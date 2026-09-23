@@ -2,6 +2,8 @@ from datetime import date
 
 import pytest
 
+from backend.errors import ValidationException
+
 
 class TestYearlyBudgetView:
     """The yearly view accumulates spend across the whole calendar year."""
@@ -125,7 +127,7 @@ class TestYearlyValidation:
         from backend.services.budget import YearlyBudgetService
 
         svc = YearlyBudgetService(db_session)
-        with pytest.raises(ValueError, match=f"(?i){expected}"):
+        with pytest.raises(ValidationException, match=f"(?i){expected}"):
             svc._validate(name, category, tags, amount, 2026, None)
         assert svc.get_year_rules(2026).empty
 
@@ -147,7 +149,7 @@ class TestYearlyValidation:
         MonthlyBudgetService(db_session).create_rule(
             "Food M", 500.0, "Food", ["Groceries"], 5, 2026
         )
-        with pytest.raises(ValueError, match="Groceries"):
+        with pytest.raises(ValidationException, match="Groceries"):
             YearlyBudgetService(db_session).create_rule(
                 "Food Y", 6000.0, "Food", ["Groceries"], 2026
             )
@@ -158,7 +160,7 @@ class TestYearlyValidation:
 
         svc = YearlyBudgetService(db_session)
         svc.create_rule("Vacations", 20000.0, "Travel", ["Hotels"], 2026)
-        with pytest.raises(ValueError, match="already exists"):
+        with pytest.raises(ValidationException, match="already exists"):
             svc.create_rule("Vacations", 100.0, "Travel", ["Activities"], 2026)
 
 
@@ -326,7 +328,7 @@ class TestYearlyVsYearlyExclusion:
 
         svc = YearlyBudgetService(db_session)
         svc.create_rule("VacA", 5000.0, "Travel", ["Hotels", "Flights"], 2026)
-        with pytest.raises(ValueError, match="Hotels"):
+        with pytest.raises(ValidationException, match="Hotels"):
             svc.create_rule("VacB", 3000.0, "Travel", ["Hotels"], 2026)
 
     def test_non_overlapping_tags_same_category_ok(self, db_session):
@@ -344,7 +346,7 @@ class TestYearlyVsYearlyExclusion:
 
         svc = YearlyBudgetService(db_session)
         svc.create_rule("VacA", 5000.0, "Travel", ["Hotels"], 2026)
-        with pytest.raises(ValueError, match="Travel"):
+        with pytest.raises(ValidationException, match="Travel"):
             svc.create_rule("VacAll", 3000.0, "Travel", ["all_tags"], 2026)
 
     def test_existing_all_tags_blocks_new_specific(self, db_session):
@@ -353,7 +355,7 @@ class TestYearlyVsYearlyExclusion:
 
         svc = YearlyBudgetService(db_session)
         svc.create_rule("VacAll", 5000.0, "Travel", ["all_tags"], 2026)
-        with pytest.raises(ValueError, match="Hotels"):
+        with pytest.raises(ValidationException, match="Hotels"):
             svc.create_rule("VacB", 3000.0, "Travel", ["Hotels"], 2026)
 
     def test_same_tag_different_category_ok(self, db_session):
@@ -393,7 +395,7 @@ class TestYearlyVsYearlyExclusion:
         svc.create_rule("VacB", 3000.0, "Travel", ["Flights"], 2026)
         rules = svc.get_year_rules(2026)
         rid_b = int(rules.loc[rules["name"] == "VacB"].iloc[0]["id"])
-        with pytest.raises(ValueError, match="Hotels"):
+        with pytest.raises(ValidationException, match="Hotels"):
             svc.update_rule(rid_b, tags=["Flights", "Hotels"])
 
 
@@ -448,7 +450,7 @@ class TestYearlyProjectCategoryExclusion:
 
         ProjectBudgetService(db_session).budget_repository.add(
             "Total Budget", 5000.0, "Renovation", "all_tags", None, None, period_type="project")
-        with pytest.raises(ValueError, match="project"):
+        with pytest.raises(ValidationException, match="project"):
             YearlyBudgetService(db_session).create_rule("Reno Y", 3000.0, "Renovation", ["Materials"], 2026)
 
     def test_yearly_edit_into_project_category_raises(self, db_session):
@@ -460,7 +462,7 @@ class TestYearlyProjectCategoryExclusion:
         ProjectBudgetService(db_session).budget_repository.add(
             "Total Budget", 5000.0, "Renovation", "all_tags", None, None, period_type="project")
         rid = int(svc.get_year_rules(2026).iloc[0]["id"])
-        with pytest.raises(ValueError, match="project"):
+        with pytest.raises(ValidationException, match="project"):
             svc.update_rule(rid, category="Renovation", tags=["Materials"])
 
 
@@ -499,28 +501,31 @@ class TestClosingAYearlyRule:
         rules = svc.get_year_rules(2026)
         return svc, int(rules.loc[rules["name"] == name].iloc[0]["id"])
 
+    @staticmethod
+    def _is_closed(svc, rule_id):
+        """Read a 2026 rule's closed flag back through the yearly view."""
+        return next(
+            e for e in svc.get_yearly_budget_view(2026) if e["rule"]["id"] == rule_id
+        )["closed"]
+
     def test_new_rule_is_open(self, db_session):
         """A rule is open until it is explicitly closed."""
         svc, rule_id = self._service_with_rule(db_session)
-        assert svc.is_rule_closed(rule_id) is False
+        assert self._is_closed(svc, rule_id) is False
 
     def test_close_sets_the_flag(self, db_session):
         """Closing is visible through the service and the view."""
         svc, rule_id = self._service_with_rule(db_session)
         svc.set_rule_closed(rule_id, True)
 
-        assert svc.is_rule_closed(rule_id) is True
-        entry = next(
-            e for e in svc.get_yearly_budget_view(2026) if e["rule"]["id"] == rule_id
-        )
-        assert entry["closed"] is True
+        assert self._is_closed(svc, rule_id) is True
 
     def test_reopen_clears_the_flag(self, db_session):
         """Closing is reversible."""
         svc, rule_id = self._service_with_rule(db_session)
         svc.set_rule_closed(rule_id, True)
         svc.set_rule_closed(rule_id, False)
-        assert svc.is_rule_closed(rule_id) is False
+        assert self._is_closed(svc, rule_id) is False
 
     def test_closed_rule_keeps_its_row_and_spend(self, db_session):
         """The year's own tab still reports the envelope in full."""
@@ -571,7 +576,7 @@ class TestClosingAYearlyRule:
 
         monthly = MonthlyBudgetService(db_session)
         monthly.create_rule("Total Budget", 9999.0, "Total Budget", ["all_tags"], 3, 2026)
-        with pytest.raises(ValueError, match="Insurance"):
+        with pytest.raises(ValidationException, match="Insurance"):
             monthly.create_rule("Car M", 500.0, "Transport", ["Insurance"], 3, 2026)
 
     def test_carry_forward_reopens_the_copy(self, db_session, monkeypatch):

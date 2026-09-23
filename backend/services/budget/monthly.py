@@ -21,6 +21,7 @@ from backend.constants.budget import (
     YEAR,
 )
 from backend.constants.tables import TransactionsTableFields
+from backend.errors import ValidationException
 from backend.services.budget.core import BudgetService, _auto_fill_lock
 from backend.services.budget.yearly import YearlyBudgetService
 from backend.services.pending_refunds_service import restore_gross_amounts
@@ -55,43 +56,8 @@ class MonthlyBudgetService(BudgetService):
         """
         self.budget_repository.delete_by_month(year, month)
 
-    def get_available_tags_for_each_category(
-        self, budget_rules: pd.DataFrame
-    ) -> dict[str, list[str]]:
-        """
-        Get tags available for new budget rules (not already fully covered).
-
-        Removes categories and tags that are already allocated in the given
-        budget rules. If a rule uses ``all_tags``, the entire category is removed.
-
-        Parameters
-        ----------
-        budget_rules : pd.DataFrame
-            Existing budget rules for the relevant month or project.
-
-        Returns
-        -------
-        dict[str, list[str]]
-            Mapping of category name to remaining available tags.
-        """
-        cats_n_tags = self.categories_tags_service.get_categories_and_tags(copy=True)
-        for _, rule in budget_rules.iterrows():
-            used_tags = rule[TAGS]
-            if self._is_all_tags(used_tags):
-                cats_n_tags.pop(rule[CATEGORY], None)
-                continue
-
-            available_tags = cats_n_tags.get(rule[CATEGORY], [])
-            available_tags = [tag for tag in available_tags if tag not in used_tags]
-            if not available_tags:
-                cats_n_tags.pop(rule[CATEGORY], None)
-            else:
-                cats_n_tags[rule[CATEGORY]] = available_tags
-
-        return cats_n_tags
-
     def copy_last_month_rules(
-        self, year: int, month: int, budget_rules: pd.DataFrame
+        self, year: int, month: int, budget_rules: pd.DataFrame | None = None
     ) -> str | None:
         """
         Copy budget rules from the previous month to the target month.
@@ -105,8 +71,9 @@ class MonthlyBudgetService(BudgetService):
             Target year to copy rules into.
         month : int
             Target month (1–12) to copy rules into.
-        budget_rules : pd.DataFrame
-            All existing monthly budget rules (from ``get_all_rules``).
+        budget_rules : pd.DataFrame, optional
+            All existing monthly budget rules (from ``get_all_rules``); read
+            here when omitted.
 
         Returns
         -------
@@ -118,6 +85,8 @@ class MonthlyBudgetService(BudgetService):
             rules.
         """
         self._last_copy_skipped = []
+        if budget_rules is None:
+            budget_rules = self.get_all_rules()
         last_month = month - 1 if month != 1 else 12
         last_year = year if month != 1 else year - 1
 
@@ -318,14 +287,14 @@ class MonthlyBudgetService(BudgetService):
 
         Raises
         ------
-        ValueError
+        ValidationException
             If validation fails (invalid inputs or budget cap exceeded), or if
             any tag is already claimed by a yearly rule for the same ``year``.
         """
         name = str(name).strip()
         parsed_tags = self._parse_tags(tags)
         if category != TOTAL_BUDGET and self.is_category_project_owned(category):
-            raise ValueError(
+            raise ValidationException(
                 f"The '{category}' category belongs to a project budget. "
                 f"A monthly rule can't target a project category."
             )
@@ -335,7 +304,7 @@ class MonthlyBudgetService(BudgetService):
             )
             if conflicts:
                 joined = ", ".join(conflicts)
-                raise ValueError(
+                raise ValidationException(
                     f"{joined} is already used by your yearly budget for {year}. "
                     f"A tag can't be in both for the same year."
                 )
@@ -345,7 +314,7 @@ class MonthlyBudgetService(BudgetService):
             budget_rules, name, category, parsed_tags, amount, year, month, None
         )
         if not is_valid:
-            raise ValueError(msg)
+            raise ValidationException(msg)
 
         self.add_rule(name, amount, category, tags, month, year)
 
@@ -380,7 +349,7 @@ class MonthlyBudgetService(BudgetService):
 
         Raises
         ------
-        ValueError
+        ValidationException
             If the edit would claim a tag already owned by a yearly rule for
             the same year, or (for a project rule) would move it onto a
             category already used by a monthly or yearly budget.
@@ -394,7 +363,7 @@ class MonthlyBudgetService(BudgetService):
                 category = fields.get(CATEGORY, row[CATEGORY])
                 if pd.notnull(year) and category != TOTAL_BUDGET:
                     if self.is_category_project_owned(category):
-                        raise ValueError(
+                        raise ValidationException(
                             f"The '{category}' category belongs to a project "
                             f"budget. A monthly rule can't target a project category."
                         )
@@ -411,7 +380,7 @@ class MonthlyBudgetService(BudgetService):
                     )
                     if conflicts:
                         joined = ", ".join(conflicts)
-                        raise ValueError(
+                        raise ValidationException(
                             f"{joined} is already used by your yearly budget for "
                             f"{int(year)}. A tag can't be in both for the same year."
                         )
@@ -419,7 +388,7 @@ class MonthlyBudgetService(BudgetService):
                     pd.isnull(year) and CATEGORY in fields and category != row[CATEGORY]
                 ):
                     if self.category_used_by_monthly_or_yearly(category):
-                        raise ValueError(
+                        raise ValidationException(
                             f"The '{category}' category is already used by a "
                             f"monthly or yearly budget and can't be assigned to a "
                             f"project rule."
@@ -954,6 +923,29 @@ class MonthlyBudgetService(BudgetService):
             "projects": projects_summary,
             "total_spent": float(project_txns[amount_col].sum() * -1),
         }
+
+    def get_current_month_alerts(
+        self, warning_threshold: float = 0.8
+    ) -> dict[str, Any]:
+        """Return the budget alerts for today's calendar month.
+
+        Parameters
+        ----------
+        warning_threshold : float, optional
+            Fraction of the budget at which an alert fires; see
+            :meth:`get_alerts`. Default is ``0.8``.
+
+        Returns
+        -------
+        dict[str, Any]
+            ``{"year": Y, "month": M, "alerts": [...]}`` for the current
+            month, alerts shaped as :meth:`get_alerts` returns them.
+        """
+        today = date.today()
+        alerts = self.get_alerts(
+            today.year, today.month, warning_threshold=warning_threshold
+        )
+        return {"year": today.year, "month": today.month, "alerts": alerts}
 
     def get_alerts(
         self,

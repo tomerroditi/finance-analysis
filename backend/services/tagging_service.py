@@ -12,6 +12,7 @@ from backend.constants.categories import (
     PROTECTED_TAGS,
     UNUSED_CATEGORY_MONTHS,
 )
+from backend.errors import EntityNotFoundException, ValidationException
 from backend.repositories.budget_repository import BudgetRepository
 from backend.repositories.split_transactions_repository import (
     SplitTransactionsRepository,
@@ -221,7 +222,7 @@ class CategoriesTagsService:
         self._invalidate_cache()
         return True
 
-    def delete_category(self, category: str) -> bool:
+    def delete_category(self, category: str) -> None:
         """Delete a category and nullify it on all related transactions and rules.
 
         Protected categories (``PROTECTED_CATEGORIES``) cannot be deleted.
@@ -234,23 +235,26 @@ class CategoriesTagsService:
         category : str
             Name of the category to delete.
 
-        Returns
-        -------
-        bool
-            ``True`` if the category was deleted, ``False`` if it is protected
-            or not found. Nothing is touched when ``False`` is returned.
+        Raises
+        ------
+        EntityNotFoundException
+            If no such category exists.
+        ValidationException
+            If the category is protected. Nothing is touched when either is
+            raised.
         """
-        if category in PROTECTED_CATEGORIES:
-            return False
         if category not in self.categories_and_tags:
-            return False
+            raise EntityNotFoundException(f"Category '{category}' not found")
+        if category in PROTECTED_CATEGORIES:
+            raise ValidationException(
+                f"Category '{category}' is protected and cannot be deleted"
+            )
 
         self.transactions_repo.nullify_category(category)
         self.split_transactions_repo.nullify_category(category)
         self.tagging_rules_repo.delete_rules_by_category(category)
         self.tagging_repo.delete_category(category)
         self._invalidate_cache()
-        return True
 
     def rename_category(self, old_name: str, new_name: str) -> bool:
         """Rename a category and cascade across all tables.
@@ -334,7 +338,7 @@ class CategoriesTagsService:
         self._invalidate_cache()
         return True
 
-    def reallocate_tag(self, old_category: str, new_category: str, tag: str) -> bool:
+    def reallocate_tag(self, old_category: str, new_category: str, tag: str) -> None:
         """Move a tag from one category to another.
 
         Updates transactions, split transactions, tagging rules and budget
@@ -349,20 +353,26 @@ class CategoriesTagsService:
         tag : str
             Tag to relocate.
 
-        Returns
-        -------
-        bool
-            ``True`` if the tag was moved, ``False`` if either category does
-            not exist, the tag is not in ``old_category``, or both categories
-            are the same. Nothing is touched when ``False`` is returned.
+        Raises
+        ------
+        EntityNotFoundException
+            If either category does not exist, or the tag is not in
+            ``old_category``.
+        ValidationException
+            If both categories are the same. Nothing is touched when either
+            is raised.
         """
-        if (
-            old_category not in self.categories_and_tags
-            or new_category not in self.categories_and_tags
-            or old_category == new_category
-            or tag not in self.categories_and_tags[old_category]
-        ):
-            return False
+        categories = self.categories_and_tags
+        if old_category not in categories or new_category not in categories:
+            raise EntityNotFoundException("Category not found")
+        if tag not in categories[old_category]:
+            raise EntityNotFoundException(
+                f"Tag '{tag}' not found in category '{old_category}'"
+            )
+        if old_category == new_category:
+            raise ValidationException(
+                f"Cannot move tag '{tag}' from '{old_category}' to itself"
+            )
 
         self.transactions_repo.update_category_for_tag(old_category, new_category, tag)
         self.split_transactions_repo.update_category_for_tag(
@@ -373,13 +383,11 @@ class CategoriesTagsService:
 
         self.tagging_repo.relocate_tag(tag, old_category, new_category)
         self._invalidate_cache()
-        return True
 
-    def add_tag(self, category: str, tag: str) -> bool:
+    def add_tag(self, category: str, tag: str) -> None:
         """Add a new tag to an existing category.
 
-        The tag is normalised to title case. Returns ``False`` if the category
-        does not exist or the tag is already present.
+        The tag is normalised to title case.
 
         Parameters
         ----------
@@ -388,14 +396,41 @@ class CategoriesTagsService:
         tag : str
             Tag name to add.
 
+        Raises
+        ------
+        EntityNotFoundException
+            If the category does not exist.
+        ValidationException
+            If the tag name is blank or contains ``;``, or the tag already
+            exists in the category.
+        """
+        if category not in self.categories_and_tags:
+            raise EntityNotFoundException(f"Category '{category}' not found")
+        if not self._add_tag_if_new(category, tag):
+            raise ValidationException(
+                f"Cannot add tag '{tag}' to '{category}'. The name may be "
+                "blank or invalid, or the tag may already exist."
+            )
+
+    def _add_tag_if_new(self, category: str, tag: str) -> bool:
+        """Add ``tag`` to an existing ``category`` unless it is unusable or present.
+
+        The non-raising path for internal callers (credit-card tag discovery)
+        that treat "already exists" as success rather than an error.
+
+        Parameters
+        ----------
+        category : str
+            Existing category to add the tag to.
+        tag : str
+            Tag name to add; normalised to title case.
+
         Returns
         -------
         bool
-            ``True`` if the tag was added, ``False`` if rejected — unknown
-            category, blank or ``;``-containing name, or a duplicate tag.
+            ``True`` if the tag was added, ``False`` if it was blank,
+            ``;``-containing, or already present.
         """
-        if category not in self.categories_and_tags:
-            return False
         tag = _clean_name(tag)
         if tag is None or tag in self.categories_and_tags[category]:
             return False
@@ -458,5 +493,5 @@ class CategoriesTagsService:
             self.add_category("Credit Cards", cc_accounts)
             return True
         for account in cc_accounts:
-            self.add_tag("Credit Cards", account)
+            self._add_tag_if_new("Credit Cards", account)
         return True

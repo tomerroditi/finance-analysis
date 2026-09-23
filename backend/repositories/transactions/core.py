@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session
 
 from backend.constants.providers import Services
 from backend.constants.tables import SERVICE_TO_TABLE, Tables, TransactionsTableFields
+from backend.errors import EntityNotFoundException, ValidationException
 from backend.models.transaction import SplitTransaction, TransactionBase
 from backend.repositories._sql import chunked, orm_to_dict
 from backend.repositories.split_transactions_repository import (
@@ -128,14 +129,14 @@ class TransactionsRepository(IngestionMixin, SplitsMixin):
 
         Raises
         ------
-        ValueError
+        ValidationException
             If ``service`` is not ``"cash"`` or ``"manual_investments"``.
         """
         if service == Services.CASH.value:
             return self.cash_repo.add_transaction(transaction)
         if service == Services.MANUAL_INVESTMENTS.value:
             return self.manual_investments_repo.add_transaction(transaction)
-        raise ValueError(
+        raise ValidationException(
             f"service must be 'cash' or 'manual_investments'. Got '{service}'"
         )
 
@@ -254,13 +255,13 @@ class TransactionsRepository(IngestionMixin, SplitsMixin):
 
         Raises
         ------
-        ValueError
+        ValidationException
             If ``service`` does not match any registered source.
         """
         if service is not None:
             repo = self.get_repo_by_source(service)
             if repo is None:
-                raise ValueError(f"Unknown service '{service}'")
+                raise ValidationException(f"Unknown service '{service}'")
             return repo.get_table()
 
         excluded_repos = {
@@ -414,7 +415,7 @@ class TransactionsRepository(IngestionMixin, SplitsMixin):
 
         Raises
         ------
-        ValueError
+        ValidationException
             If ``source`` is not a known table/service name.
         """
         repo = self._require_repo(source)
@@ -448,7 +449,7 @@ class TransactionsRepository(IngestionMixin, SplitsMixin):
 
         Raises
         ------
-        ValueError
+        ValidationException
             If ``source`` is not a known table/service name.
         """
         repo = self._require_repo(source)
@@ -461,40 +462,11 @@ class TransactionsRepository(IngestionMixin, SplitsMixin):
         self.db.commit()
 
     def _require_repo(self, source: str) -> ServiceRepository:
-        """Return the sub-repository for ``source`` or raise ``ValueError``."""
+        """Return the sub-repository for ``source`` or raise ``ValidationException``."""
         repo = self.get_repo_by_source(source)
         if repo is None:
-            raise ValueError(f"Invalid source: '{source}'")
+            raise ValidationException(f"Invalid source: '{source}'")
         return repo
-
-    def bulk_update_tagging(
-        self,
-        transactions: list[dict[str, Any]],
-        category: str | None,
-        tag: str | None,
-    ) -> None:
-        """Update category and tag for a batch of transactions.
-
-        Parameters
-        ----------
-        transactions : list[dict[str, Any]]
-            Each dict must have keys ``"source"`` (table name) and
-            ``"unique_id"`` identifying the transaction to update.
-        category : str | None
-            New category to assign (None clears the field).
-        tag : str | None
-            New tag to assign (None clears the field).
-
-        Raises
-        ------
-        ValueError
-            If a transaction's ``source`` is not a known table/service name.
-        """
-        for tx in transactions:
-            repo = self.get_repo_by_source(tx["source"])
-            if repo is None:
-                raise ValueError(f"Invalid source: '{tx['source']}'")
-            repo.update_tagging_by_unique_id(tx["unique_id"], category, tag)
 
     def get_latest_date_from_table(self, table_name: str) -> datetime | None:
         """Get the most recent transaction date in a given table.
@@ -510,30 +482,9 @@ class TransactionsRepository(IngestionMixin, SplitsMixin):
             Latest transaction date parsed from ``YYYY-MM-DD``, or None if
             the table is empty or the date cannot be parsed.
         """
-        return self._edge_date(table_name, latest=True)
-
-    def get_earliest_date_from_table(self, table_name: str) -> datetime | None:
-        """Get the earliest transaction date in a given table.
-
-        Parameters
-        ----------
-        table_name : str
-            Source table name to query.
-
-        Returns
-        -------
-        datetime | None
-            Earliest transaction date parsed from ``YYYY-MM-DD``, or None if
-            the table is empty or the date cannot be parsed.
-        """
-        return self._edge_date(table_name, latest=False)
-
-    def _edge_date(self, table_name: str, latest: bool) -> datetime | None:
-        """Return a table's latest or earliest date, or None if empty/unparsable."""
         repo = self.get_repo_by_source(table_name)
-        order = repo.model.date.desc() if latest else repo.model.date.asc()
         result = self.db.execute(
-            select(repo.model.date).order_by(order).limit(1)
+            select(repo.model.date).order_by(repo.model.date.desc()).limit(1)
         ).scalar()
         if result is None:
             return None
@@ -754,16 +705,16 @@ class TransactionsRepository(IngestionMixin, SplitsMixin):
 
         Raises
         ------
-        ValueError
+        EntityNotFoundException
             If ``source`` is not a known table/service name, or no
             transaction with that unique_id exists in it.
         """
         repo = self.repo_map.get(source)
         if repo is None:
-            raise ValueError(f"Invalid source: {source}")
+            raise EntityNotFoundException(f"Invalid source: {source}")
         record = self.db.get(repo.model, int(transaction_id))
         if record is None:
-            raise ValueError(
+            raise EntityNotFoundException(
                 f"Transaction with ID {transaction_id} not found in {source}."
             )
         row = orm_to_dict(record)

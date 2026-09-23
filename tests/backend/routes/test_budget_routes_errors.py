@@ -411,6 +411,21 @@ class TestProjectNotFoundErrors:
         )
         assert response.status_code == 404
 
+    def test_update_project_invalid_total_returns_400(
+        self, test_client, seed_project_transactions
+    ):
+        """PUT /api/budget/projects/{name} with a non-positive total is a 400.
+
+        The rule validation behind it raised a bare ``ValueError``, which the
+        route did not translate, so a client mistake surfaced as a 500.
+        """
+        name = test_client.get("/api/budget/projects").json()[0]
+        response = test_client.put(
+            f"/api/budget/projects/{name}", json={"total_budget": -5.0}
+        )
+        assert response.status_code == 400
+        assert "positive" in response.json()["detail"]
+
 
 class TestProjectRoutesUnhandledErrors:
     """Unexpected service failures surface as a sanitized 500.
@@ -424,9 +439,6 @@ class TestProjectRoutesUnhandledErrors:
 
     def _mock_project_service(self, **side_effects):
         mock_svc = MagicMock()
-        # The update/delete routes 404 on an unknown project before calling
-        # the service; make "Wedding" look real.
-        mock_svc.get_all_projects_names.return_value = ["Wedding"]
         for method, exc in side_effects.items():
             getattr(mock_svc, method).side_effect = exc
         return mock_svc

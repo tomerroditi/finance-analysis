@@ -8,7 +8,11 @@ import pytest
 
 from backend.constants.categories import PRIOR_WEALTH_TAG, IncomeCategories
 from backend.constants.tables import Tables, TransactionsTableFields
-from backend.errors import EntityNotFoundException, ValidationException
+from backend.errors import (
+    EntityNotFoundException,
+    ForbiddenException,
+    ValidationException,
+)
 from backend.models.cash_balance import CashBalance
 from backend.models.transaction import (
     BankTransaction,
@@ -161,22 +165,6 @@ class TestTransactionsServiceDataRetrieval:
         assert not cc_data.empty
         assert all(cc_data[source_col] == "credit_card_transactions")
 
-    def test_get_all_transactions_invalid_service(self, db_session):
-        """Verify ValueError for invalid service name."""
-        service = TransactionsService(db_session)
-        with pytest.raises(ValueError, match="service must be one of"):
-            service.get_all_transactions("invalid_service")
-
-    def test_get_untagged_transactions(self, db_session, seed_untagged_transactions):
-        """Verify only untagged (null category) transactions returned."""
-        service = TransactionsService(db_session)
-        result = service.get_untagged_transactions("credit_cards")
-
-        category_col = TransactionsTableFields.CATEGORY.value
-        assert not result.empty
-        assert result[category_col].isna().all()
-        assert len(result) == 4
-
     def test_get_transactions_by_tag(self, db_session, seed_base_transactions):
         """Verify filtering by category and optional tag."""
         service = TransactionsService(db_session)
@@ -232,7 +220,7 @@ class TestTransactionsServiceCRUD:
         }
         service.create_transaction(data, "cash")
 
-        result = service.get_all_transactions("cash")
+        result = service.get_merged_transactions(service="cash")
         user_rows = result[result["tag"] != PRIOR_WEALTH_TAG]
         assert len(user_rows) == 1
         assert user_rows.iloc[0]["description"] == "Test cash purchase"
@@ -259,7 +247,7 @@ class TestTransactionsServiceCRUD:
         assert user_rows.iloc[0]["description"] == "Monthly deposit"
 
     def test_create_transaction_invalid_service(self, db_session):
-        """Verify ValueError for unsupported service."""
+        """Verify ValidationException for unsupported service."""
         service = TransactionsService(db_session)
         data = {
             "date": date(2024, 4, 1),
@@ -267,7 +255,7 @@ class TestTransactionsServiceCRUD:
             "description": "Test",
             "amount": -100.0,
         }
-        with pytest.raises(ValueError, match="Can only create cash or manual_investments"):
+        with pytest.raises(ValidationException, match="Can only create cash or manual_investments"):
             service.create_transaction(data, "credit_cards")
 
     def test_update_transaction_manual_source(self, db_session):
@@ -282,7 +270,7 @@ class TestTransactionsServiceCRUD:
         }
         assert service.update_transaction(unique_id, "cash_transactions", updates) is True
 
-        updated_df = service.get_all_transactions("cash")
+        updated_df = service.get_merged_transactions(service="cash")
         updated_row = updated_df[updated_df["unique_id"] == unique_id].iloc[0]
         assert updated_row["description"] == "Updated description"
         assert updated_row["amount"] == -75.0
@@ -294,7 +282,7 @@ class TestTransactionsServiceCRUD:
         """Verify scraped sources only take category/tag; description, date and account are ignored."""
         service = TransactionsService(db_session)
 
-        cc_df = service.get_all_transactions("credit_cards")
+        cc_df = service.get_merged_transactions(service="credit_cards")
         unique_id = int(cc_df.iloc[0]["unique_id"])
         original_description = cc_df.iloc[0]["description"]
         original_date = cc_df.iloc[0]["date"]
@@ -310,7 +298,7 @@ class TestTransactionsServiceCRUD:
             unique_id, "credit_card_transactions", updates
         ) is True
 
-        updated_df = service.get_all_transactions("credit_cards")
+        updated_df = service.get_merged_transactions(service="credit_cards")
         updated_row = updated_df[updated_df["unique_id"] == unique_id].iloc[0]
         assert updated_row["description"] == original_description
         assert str(updated_row["date"]) == str(original_date)
@@ -327,7 +315,7 @@ class TestTransactionsServiceCRUD:
             unique_id, "cash_transactions", {"date": "2024-06-15"}
         ) is True
 
-        updated_df = service.get_all_transactions("cash")
+        updated_df = service.get_merged_transactions(service="cash")
         updated_row = updated_df[updated_df["unique_id"] == unique_id].iloc[0]
         assert str(updated_row["date"]) == "2024-06-15"
 
@@ -372,7 +360,7 @@ class TestTransactionsServiceCRUD:
         service = TransactionsService(db_session)
         unique_id = _add_cash(db_session)
 
-        with pytest.raises(ValueError, match="YYYY-MM-DD"):
+        with pytest.raises(ValidationException, match="YYYY-MM-DD"):
             service.update_transaction(
                 unique_id, "cash_transactions", {"date": "15/06/2024"}
             )
@@ -405,15 +393,43 @@ class TestTransactionsServiceCRUD:
     def test_delete_transaction_scraped_source_forbidden(
         self, db_session, seed_base_transactions, service_name, source
     ):
-        """Verify PermissionError when deleting a scraped (CC/bank) transaction."""
+        """Verify ForbiddenException when deleting a scraped (CC/bank) transaction."""
         service = TransactionsService(db_session)
-        uid = int(service.get_all_transactions(service_name).iloc[0]["unique_id"])
+        uid = int(service.get_merged_transactions(service=service_name).iloc[0]["unique_id"])
 
-        with pytest.raises(PermissionError, match="Deletion of .* prohibited"):
+        with pytest.raises(ForbiddenException, match="Deletion of .* prohibited"):
             service.delete_transaction(uid, source)
 
+    def test_delete_transaction_unknown_source_is_a_bad_request(self, db_session):
+        """An unknown source is a ValidationException, not a permission failure."""
+        with pytest.raises(ValidationException, match="Valid sources"):
+            TransactionsService(db_session).delete_transaction(1, "not_a_table")
+
+    @pytest.mark.parametrize(
+        "call, error",
+        [
+            (
+                lambda svc: svc.update_transaction("abc", "cash_transactions", {}),
+                ValidationException,
+            ),
+            (
+                lambda svc: svc.delete_transaction("abc", "cash_transactions"),
+                EntityNotFoundException,
+            ),
+            (
+                lambda svc: svc.update_tagging_by_id("banks", "abc", "Food", "X"),
+                ValidationException,
+            ),
+        ],
+        ids=["update", "delete", "tag"],
+    )
+    def test_non_integer_unique_id_rejected(self, db_session, call, error):
+        """A non-numeric unique_id raises the exception its endpoint answers with."""
+        with pytest.raises(error, match="invalid literal"):
+            call(TransactionsService(db_session))
+
     def test_delete_transaction_protected_tag(self, db_session):
-        """Verify PermissionError when deleting a system-generated Prior Wealth transaction."""
+        """Verify ForbiddenException when deleting a system-generated Prior Wealth transaction."""
         service = TransactionsService(db_session)
         unique_id = _add_cash(
             db_session, tx_id="pw_test_1", date="2024-01-01", provider="MANUAL",
@@ -421,14 +437,15 @@ class TestTransactionsServiceCRUD:
             amount=100.0, category="Other Income", tag=PRIOR_WEALTH_TAG,
         )
 
-        with pytest.raises(PermissionError, match="Cannot manually delete .*system-generated"):
+        with pytest.raises(ForbiddenException, match="Cannot manually delete .*system-generated"):
             service.delete_transaction(unique_id, "cash_transactions")
 
     def test_bulk_tag_transactions(self, db_session, seed_untagged_transactions):
         """Verify bulk tagging updates multiple transactions."""
         service = TransactionsService(db_session)
 
-        untagged = service.get_untagged_transactions("credit_cards")
+        cc_before = service.get_merged_transactions(service="credit_cards")
+        untagged = cc_before[cc_before["category"].isna()]
         unique_ids = untagged["unique_id"].astype(int).tolist()
         assert len(unique_ids) >= 2
 
@@ -436,7 +453,7 @@ class TestTransactionsServiceCRUD:
             unique_ids, "credit_card_transactions", "Food", "Groceries",
         )
 
-        cc_df = service.get_all_transactions("credit_cards")
+        cc_df = service.get_merged_transactions(service="credit_cards")
         tagged = cc_df[cc_df["unique_id"].isin(unique_ids)]
         assert all(tagged["category"] == "Food")
         assert all(tagged["tag"] == "Groceries")
@@ -498,11 +515,11 @@ class TestTransactionsServiceTaggingById:
     ):
         """Verify tagging update by table name lands on the right row."""
         service = TransactionsService(db_session)
-        uid = int(service.get_all_transactions(service_name).iloc[0]["unique_id"])
+        uid = int(service.get_merged_transactions(service=service_name).iloc[0]["unique_id"])
 
         service.update_tagging_by_id(table_name, uid, "Transport", "Gas")
 
-        updated = service.get_all_transactions(service_name)
+        updated = service.get_merged_transactions(service=service_name)
         row = updated[updated["unique_id"] == uid].iloc[0]
         assert row["category"] == "Transport"
         assert row["tag"] == "Gas"
@@ -516,7 +533,7 @@ class TestTransactionsServiceTaggingById:
         service only matched table names, so a documented value was a 400.
         """
         service = TransactionsService(db_session)
-        uid = int(service.get_all_transactions("credit_cards").iloc[0]["unique_id"])
+        uid = int(service.get_merged_transactions(service="credit_cards").iloc[0]["unique_id"])
 
         service.update_tagging_by_id("credit_cards", uid, "Entertainment", "Cinema")
 
@@ -524,14 +541,14 @@ class TestTransactionsServiceTaggingById:
         assert (row.category, row.tag) == ("Entertainment", "Cinema")
 
     def test_update_tagging_invalid_table_raises(self, db_session):
-        """Verify ValueError raised for an invalid table name."""
+        """Verify ValidationException raised for an invalid table name."""
         service = TransactionsService(db_session)
-        with pytest.raises(ValueError, match="Invalid table name"):
+        with pytest.raises(ValidationException, match="Invalid table name"):
             service.update_tagging_by_id("nonexistent_table", 1, "Food", "Coffee")
 
 
 class TestTransactionsServiceDateMethods:
-    """Tests for get_latest_data_date and get_earliest_data_date methods."""
+    """Tests for the get_latest_data_date method."""
 
     def test_get_latest_data_date_with_data(self, db_session, seed_base_transactions):
         """Verify latest date is the earliest of the populated tables' max dates.
@@ -543,38 +560,13 @@ class TestTransactionsServiceDateMethods:
         service = TransactionsService(db_session)
         assert service.get_latest_data_date() == datetime(2024, 3, 10)
 
-    def test_get_earliest_data_date_with_data(self, db_session, seed_base_transactions):
-        """Verify earliest date returns the minimum date across all tables."""
-        service = TransactionsService(db_session)
-        assert service.get_earliest_data_date() == datetime(2024, 1, 1)
-
     def test_get_latest_data_date_empty_db(self, db_session):
         """Verify None is returned when no table has any data."""
         service = TransactionsService(db_session)
         assert service.get_latest_data_date() is None
 
-    def test_get_earliest_data_date_empty_db(self, db_session):
-        """Verify fallback to current datetime when no data exists."""
-        service = TransactionsService(db_session)
-        earliest = service.get_earliest_data_date()
-
-        assert isinstance(earliest, datetime)
-        assert abs((datetime.now() - earliest).total_seconds()) < 5
-
-
 class TestTransactionsServiceStaticMethods:
     """Tests for static utility methods on TransactionsService."""
-
-    def test_get_table_columns_for_display(self, db_session):
-        """Verify returned column list includes all expected display columns."""
-        service = TransactionsService(db_session)
-        columns = service.get_table_columns_for_display()
-
-        assert columns == [
-            "provider", "account_name", "account_number", "date", "description",
-            "amount", "category", "tag", "id", "status", "type", "unique_id",
-            "source",
-        ]
 
     @pytest.mark.parametrize(
         ("value", "expected"), [("", None), ("Food", "Food"), (None, None)]
@@ -590,7 +582,7 @@ class TestTransactionsServiceStaticMethods:
     ):
         """Verify update_transaction returns False when no valid updates provided."""
         service = TransactionsService(db_session)
-        unique_id = int(service.get_all_transactions("credit_cards").iloc[0]["unique_id"])
+        unique_id = int(service.get_merged_transactions(service="credit_cards").iloc[0]["unique_id"])
 
         assert service.update_transaction(
             unique_id, "credit_card_transactions", {}
@@ -627,7 +619,7 @@ class TestBulkTagTransactionsOptionalFields:
         db_session.commit()
 
         service = TransactionsService(db_session)
-        cash_df = service.get_all_transactions("cash")
+        cash_df = service.get_merged_transactions(service="cash")
         uids = [int(cash_df.iloc[0]["unique_id"]), int(cash_df.iloc[1]["unique_id"])]
 
         service.bulk_tag_transactions(
@@ -635,7 +627,7 @@ class TestBulkTagTransactionsOptionalFields:
             tag="Bulk", description="Bulk Updated", amount=-99.0,
         )
 
-        updated = service.get_all_transactions("cash")
+        updated = service.get_merged_transactions(service="cash")
         for uid in uids:
             row = updated[updated["unique_id"] == uid].iloc[0]
             assert row["category"] == "Food"
@@ -655,7 +647,7 @@ class TestBulkTagTransactionsOptionalFields:
         db_session.commit()
 
         service = TransactionsService(db_session)
-        uid = int(service.get_all_transactions("cash").iloc[0]["unique_id"])
+        uid = int(service.get_merged_transactions(service="cash").iloc[0]["unique_id"])
 
         service.bulk_tag_transactions(
             transaction_ids=[uid], source="cash_transactions", category="Transport",
@@ -670,7 +662,7 @@ class TestBulkTagTransactionsOptionalFields:
     ):
         """Scraped rows take the tag but silently keep their amount and date."""
         service = TransactionsService(db_session)
-        uid = int(service.get_all_transactions("credit_cards").iloc[0]["unique_id"])
+        uid = int(service.get_merged_transactions(service="credit_cards").iloc[0]["unique_id"])
         before = db_session.get(CreditCardTransaction, uid)
         original = (before.amount, before.date, before.description)
 
@@ -710,31 +702,6 @@ class TestBulkTagTransactionsOptionalFields:
         assert db_session.get(CashTransaction, 99999) is None
         recalc.assert_called_once()
         assert recalc.call_args.args[-1] == "Wallet"
-
-
-class TestGetUntaggedTransactionsAccountFilter:
-    """Tests for get_untagged_transactions with account_number filter for banks."""
-
-    def test_untagged_bank_transactions_filtered_by_account(
-        self, db_session, seed_untagged_transactions
-    ):
-        """Verify untagged bank transactions filtered by account_number."""
-        service = TransactionsService(db_session)
-
-        assert not service.get_untagged_transactions("banks").empty
-        assert service.get_untagged_transactions(
-            "banks", account_number="nonexistent_account"
-        ).empty
-
-    def test_untagged_cc_transactions_ignores_account_filter(
-        self, db_session, seed_untagged_transactions
-    ):
-        """Verify account_number filter is ignored for credit card transactions."""
-        service = TransactionsService(db_session)
-        untagged = service.get_untagged_transactions(
-            "credit_cards", account_number="anything"
-        )
-        assert not untagged.empty
 
 
 class TestGetTableForAnalysisSplitExpansion:
@@ -1009,9 +976,9 @@ class TestSplitTransactionValidation:
                 [{"amount": -1.0, "category": "Food", "tag": None}],
             )
 
-    def test_split_unknown_source_raises_value_error(self, db_session):
+    def test_split_unknown_source_raises_validation_error(self, db_session):
         """An unknown source is a bad request, not a missing row."""
-        with pytest.raises(ValueError, match="Invalid source"):
+        with pytest.raises(ValidationException, match="Invalid source"):
             TransactionsService(db_session).split_transaction(
                 1, "not_a_table",
                 [{"amount": -1.0, "category": "Food", "tag": None}],
@@ -1268,7 +1235,7 @@ class TestDeleteAccountData:
 
     def test_unknown_service_raises(self, db_session):
         """An unknown service name is rejected before anything is touched."""
-        with pytest.raises(ValueError, match="Unknown service"):
+        with pytest.raises(ValidationException, match="Unknown service"):
             TransactionsService(db_session).delete_account_data(
                 "not_a_service", "hapoalim", "Checking"
             )

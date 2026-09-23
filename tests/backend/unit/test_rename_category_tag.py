@@ -12,6 +12,7 @@ from sqlalchemy import select
 
 import backend.services.tagging_service as ts
 from backend.constants.categories import PROTECTED_CATEGORIES, PROTECTED_TAGS
+from backend.errors import EntityNotFoundException
 from backend.models.budget import BudgetRule
 from backend.models.category import Category
 from backend.models.tagging_rules import TaggingRule
@@ -272,7 +273,7 @@ class TestRenameAndReallocateCascadeOnRealDb:
         category; one that budgets several tags keeps its envelope where it is
         and simply drops the tag it no longer owns.
         """
-        assert seeded.reallocate_tag("Food", "Transport", "Groceries") is True
+        seeded.reallocate_tag("Food", "Transport", "Groceries")
 
         assert self._pairs(db_session, CreditCardTransaction) == {
             "cc-1": ("Transport", "Groceries")
@@ -301,7 +302,8 @@ class TestRenameAndReallocateCascadeOnRealDb:
         before_txns = self._pairs(db_session, BankTransaction)
         before_budgets = self._budgets(db_session)
 
-        assert seeded.reallocate_tag("Food", "Nope", "Groceries") is False
+        with pytest.raises(EntityNotFoundException):
+            seeded.reallocate_tag("Food", "Nope", "Groceries")
 
         assert self._pairs(db_session, BankTransaction) == before_txns
         assert self._budgets(db_session) == before_budgets
@@ -318,7 +320,8 @@ class TestRenameAndReallocateCascadeOnRealDb:
         before_txns = self._pairs(db_session, BankTransaction)
         before_rules = self._pairs(db_session, TaggingRule)
 
-        assert seeded.delete_category("Fod") is False
+        with pytest.raises(EntityNotFoundException):
+            seeded.delete_category("Fod")
 
         assert self._pairs(db_session, BankTransaction) == before_txns
         assert self._pairs(db_session, TaggingRule) == before_rules

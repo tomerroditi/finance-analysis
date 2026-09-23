@@ -103,16 +103,6 @@ class YearlyBudgetService(BudgetService):
         self._yearly_row(id_)
         self.budget_repository.set_closed_by_id(id_, closed, PERIOD_YEARLY)
 
-    def is_rule_closed(self, id_: int) -> bool:
-        """Whether the yearly rule ``id_`` has been closed.
-
-        Raises
-        ------
-        EntityNotFoundException
-            If ``id_`` is not a yearly rule.
-        """
-        return self._rule_is_closed(self._yearly_row(id_))
-
     def _validate(
         self,
         name: str,
@@ -122,21 +112,21 @@ class YearlyBudgetService(BudgetService):
         year: int,
         id_: int | None,
     ) -> None:
-        """Validate a yearly rule; raise ``ValueError`` on failure.
+        """Validate a yearly rule; raise ``ValidationException`` on failure.
 
         Checks: non-blank name/category, well-formed tags, positive amount,
         name uniqueness within the year, and mutual exclusion against monthly
         rules for the year.
         """
         if not name or not str(name).strip():
-            raise ValueError("Please enter a name")
+            raise ValidationException("Please enter a name")
         if not category:
-            raise ValueError("Please select a category")
+            raise ValidationException("Please select a category")
         tags_error = self._tags_error(tags)
         if tags_error is not None:
-            raise ValueError(tags_error)
+            raise ValidationException(tags_error)
         if amount <= 0:
-            raise ValueError("Amount must be a positive number")
+            raise ValidationException("Amount must be a positive number")
 
         existing = self.get_year_rules(year)
         if not existing.empty:
@@ -144,7 +134,7 @@ class YearlyBudgetService(BudgetService):
             if id_ is not None:
                 dupes = dupes.loc[dupes[ID] != id_]
             if not dupes.empty:
-                raise ValueError(
+                raise ValidationException(
                     f"A yearly rule with the name '{name}' already exists for {year}."
                 )
 
@@ -153,7 +143,7 @@ class YearlyBudgetService(BudgetService):
         )
         if conflicts:
             joined = ", ".join(conflicts)
-            raise ValueError(
+            raise ValidationException(
                 f"{joined} is already used by your monthly budget for {year}. "
                 f"A tag can't be in both for the same year."
             )
@@ -167,18 +157,18 @@ class YearlyBudgetService(BudgetService):
         )
         if yearly_conflicts:
             if yearly_conflicts == [ALL_TAGS]:
-                raise ValueError(
+                raise ValidationException(
                     f"Another yearly rule already covers the '{category}' "
                     f"category for {year}."
                 )
             joined = ", ".join(yearly_conflicts)
-            raise ValueError(
+            raise ValidationException(
                 f"{joined} is already used by another yearly rule for {year}. "
                 f"A tag can't be in two yearly rules for the same year."
             )
 
         if self.is_category_project_owned(category):
-            raise ValueError(
+            raise ValidationException(
                 f"The '{category}' category belongs to a project budget. "
                 f"A yearly rule can't target a project category."
             )
@@ -191,7 +181,7 @@ class YearlyBudgetService(BudgetService):
         tags: str | list[str],
         year: int,
     ) -> None:
-        """Create a yearly rule after validation. Raises ``ValueError`` if invalid."""
+        """Create a yearly rule after validation. Raises ``ValidationException`` if invalid."""
         name = str(name).strip()
         parsed_tags = self._parse_tags(tags)
         self._validate(name, category, parsed_tags, amount, year, None)

@@ -5,14 +5,14 @@ Provides endpoints for account credential management.
 
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from backend.constants.providers import LoginFields, Services
+from backend.constants.providers import LoginFields
 from backend.dependencies import get_database
+from backend.errors import EntityNotFoundException
 from backend.routes.schemas import StatusResponse
-from backend.services.bank_balance_service import BankBalanceService
 from backend.services.credentials_service import CredentialsService
 
 router = APIRouter()
@@ -81,7 +81,7 @@ def get_credential_details(
     creds_service = CredentialsService(db)
     fields = creds_service.get_masked_credentials(service, provider, account_name)
     if not fields:
-        raise HTTPException(status_code=404, detail="Credential not found")
+        raise EntityNotFoundException("Credential not found")
     return fields
 
 
@@ -163,21 +163,13 @@ def delete_credential(
 
     Raises
     ------
-    HTTPException
+    EntityNotFoundException
         404 if the credential does not exist.
     """
-    creds_service = CredentialsService(db)
-    try:
-        result = creds_service.delete_credential(
-            service, provider, account_name, delete_data=delete_data
-        )
-        # The balance row carries `prior_wealth_amount`, so it may only be
-        # dropped when the transactions it was derived from go too.
-        if delete_data and service == Services.BANK.value:
-            BankBalanceService(db).delete_for_account(provider, account_name)
-        return {
-            "status": "success",
-            "transactions_deleted": result.get("transactions_deleted", 0),
-        }
-    except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e)) from e
+    result = CredentialsService(db).delete_credential(
+        service, provider, account_name, delete_data=delete_data
+    )
+    return {
+        "status": "success",
+        "transactions_deleted": result.get("transactions_deleted", 0),
+    }

@@ -10,6 +10,7 @@ from sqlalchemy import func, select
 
 import backend.services.tagging_service as ts
 from backend.constants.categories import PROTECTED_CATEGORIES
+from backend.errors import EntityNotFoundException, ValidationException
 from backend.models.transaction import BankTransaction, CreditCardTransaction
 from backend.services.tagging_service import CategoriesTagsService
 
@@ -142,9 +143,8 @@ class TestCategoriesTagsServiceCategories:
         assert "Food" in categories_service.categories_and_tags
         assert _tagged_count(db_session, "Food") > 0
 
-        result = categories_service.delete_category("Food")
+        categories_service.delete_category("Food")
 
-        assert result is True
         assert "Food" not in categories_service.categories_and_tags
         assert _tagged_count(db_session, "Food") == 0
         # Other categories' rows are untouched.
@@ -156,11 +156,12 @@ class TestCategoriesTagsServiceCategories:
         """A category that does not exist is refused before any row is cleared.
 
         The nullify calls used to run before the existence check, so a typo
-        untagged nothing visible but still returned ``False``.
+        untagged nothing visible but still reported a failure.
         """
         before = _tagged_count(db_session, "Food")
 
-        assert categories_service.delete_category("Fooood") is False
+        with pytest.raises(EntityNotFoundException, match="Fooood"):
+            categories_service.delete_category("Fooood")
 
         assert _tagged_count(db_session, "Food") == before
 
@@ -187,10 +188,22 @@ class TestCategoriesTagsServiceCategories:
         assert categories_service.categories_and_tags["Health"] == ["Doctor"]
 
     def test_delete_category_protected(self, categories_service):
-        """Verify protected categories cannot be deleted."""
+        """Verify protected categories cannot be deleted.
+
+        A protected name that is not configured is reported as missing, the
+        same order the API's 404-before-400 answer has always used.
+        """
         for protected in PROTECTED_CATEGORIES:
-            result = categories_service.delete_category(protected)
-            assert result is False, f"Protected category '{protected}' should not be deletable"
+            expected = (
+                ValidationException
+                if protected in categories_service.categories_and_tags
+                else EntityNotFoundException
+            )
+            with pytest.raises(expected):
+                categories_service.delete_category(protected)
+            assert (
+                protected in categories_service.categories_and_tags
+            ) == (expected is ValidationException)
 
 
 # ---------------------------------------------------------------------------
@@ -203,29 +216,29 @@ class TestCategoriesTagsServiceTags:
 
     def test_add_tag(self, categories_service):
         """Verify adding a new tag to an existing category."""
-        result = categories_service.add_tag("Food", "Bakery")
+        categories_service.add_tag("Food", "Bakery")
 
-        assert result is True
         assert "Bakery" in categories_service.categories_and_tags["Food"]
 
     def test_add_tag_duplicate_rejected(self, categories_service):
-        """Verify adding a duplicate tag to a category returns False."""
+        """Verify adding a duplicate tag to a category raises ValidationException."""
         # "Groceries" already exists under "Food"
-        result = categories_service.add_tag("Food", "Groceries")
-
-        assert result is False
+        with pytest.raises(ValidationException, match="Groceries"):
+            categories_service.add_tag("Food", "Groceries")
 
     @pytest.mark.parametrize("name", ["", "   ", "Fast;Food"])
     def test_add_tag_invalid_name_rejected(self, categories_service, name):
         """Blank and ``;``-containing tag names are refused."""
         before = list(categories_service.categories_and_tags["Food"])
 
-        assert categories_service.add_tag("Food", name) is False
+        with pytest.raises(ValidationException):
+            categories_service.add_tag("Food", name)
         assert categories_service.categories_and_tags["Food"] == before
 
     def test_add_tag_unknown_category_rejected(self, categories_service):
         """A tag cannot be added to a category that does not exist."""
-        assert categories_service.add_tag("Nope", "Bakery") is False
+        with pytest.raises(EntityNotFoundException, match="Nope"):
+            categories_service.add_tag("Nope", "Bakery")
 
     def test_delete_tag(
         self, categories_service, db_session, seed_base_transactions
@@ -261,35 +274,39 @@ class TestCategoriesTagsServiceTags:
         moved = _tagged_count(db_session, "Food", "Groceries")
         assert moved > 0
 
-        result = categories_service.reallocate_tag("Food", "Home", "Groceries")
+        categories_service.reallocate_tag("Food", "Home", "Groceries")
 
-        assert result is True
         assert "Groceries" not in categories_service.categories_and_tags["Food"]
         assert "Groceries" in categories_service.categories_and_tags["Home"]
         assert _tagged_count(db_session, "Food", "Groceries") == 0
         assert _tagged_count(db_session, "Home", "Groceries") == moved
 
     @pytest.mark.parametrize(
-        "old_category, new_category, tag",
+        "old_category, new_category, tag, error",
         [
-            ("Food", "NonExistent", "Groceries"),
-            ("NonExistent", "Home", "Groceries"),
-            ("Food", "Home", "NotATag"),
-            ("Food", "Food", "Groceries"),
+            ("Food", "NonExistent", "Groceries", EntityNotFoundException),
+            ("NonExistent", "Home", "Groceries", EntityNotFoundException),
+            ("Food", "Home", "NotATag", EntityNotFoundException),
+            ("Food", "Food", "Groceries", ValidationException),
+            ("Food", "Food", "NotATag", EntityNotFoundException),
         ],
-        ids=["unknown-new", "unknown-old", "unknown-tag", "same-category"],
+        ids=[
+            "unknown-new",
+            "unknown-old",
+            "unknown-tag",
+            "same-category",
+            "same-category-unknown-tag",
+        ],
     )
     def test_reallocate_tag_rejected(
         self, categories_service, db_session, seed_base_transactions,
-        old_category, new_category, tag,
+        old_category, new_category, tag, error,
     ):
-        """A refused reallocate leaves both the config and the rows unchanged."""
+        """A refused reallocate raises and leaves both the config and the rows unchanged."""
         before = _tagged_count(db_session, "Food", "Groceries")
 
-        assert (
+        with pytest.raises(error):
             categories_service.reallocate_tag(old_category, new_category, tag)
-            is False
-        )
 
         assert "Groceries" in categories_service.categories_and_tags["Food"]
         assert _tagged_count(db_session, "Food", "Groceries") == before

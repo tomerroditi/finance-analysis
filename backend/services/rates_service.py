@@ -46,6 +46,7 @@ class RatesService:
     """
 
     def __init__(self, db: Session) -> None:
+        self.db = db
         self.rates_repo = InterestRatesRepository(db)
 
     def ensure_seeded(self) -> None:
@@ -113,29 +114,6 @@ class RatesService:
             "as_of": latest["date"],
         }
 
-    def get_prime_at(self, at_date: str) -> float | None:
-        """Get the prime rate in effect on a given date.
-
-        Parameters
-        ----------
-        at_date : str
-            Date in YYYY-MM-DD format.
-
-        Returns
-        -------
-        float or None
-            Prime rate (BoI + 1.5) at that date, or ``None`` when the
-            series has no point on or before the date.
-        """
-        history = self.get_history(BOI_RATE_SERIES)
-        value: float | None = None
-        for point in history:
-            if point["date"] <= at_date:
-                value = point["value"]
-            else:
-                break
-        return None if value is None else round(value + PRIME_SPREAD_PCT, 4)
-
     def get_prime_steps(self, from_date: str) -> list[dict[str, Any]]:
         """Get prime as a step function starting at ``from_date``.
 
@@ -175,15 +153,18 @@ class RatesService:
         """Fetch the current key rate from the BoI public API.
 
         Appends a new step point (dated today, source ``fetched``) when
-        the fetched rate differs from the latest known point. Any
-        failure — offline, HTTP error, unexpected payload — returns
-        ``{"status": "unavailable"}`` without raising.
+        the fetched rate differs from the latest known point, then
+        recalculates prime-linked investment balances so they pick up the
+        change immediately. Any failure — offline, HTTP error, unexpected
+        payload — returns ``{"status": "unavailable"}`` without raising.
 
         Returns
         -------
         dict[str, Any]
             ``status`` (``updated`` / ``unchanged`` / ``unavailable``)
-            plus the current rate info on success.
+            plus the current rate info on success; an ``updated`` result
+            also carries ``investments_recalculated``, the number of
+            prime-linked investments whose snapshots were rebuilt.
         """
         try:
             response = httpx.get(BOI_PUBLIC_API_URL, timeout=HTTP_TIMEOUT_SECONDS)
@@ -205,4 +186,14 @@ class RatesService:
         self.rates_repo.upsert_points(
             BOI_RATE_SERIES, [{"date": today, "value": rate}], source="fetched"
         )
-        return {"status": "updated", **self.get_current()}
+        # Lazy: the investments package imports this module (prime-linked
+        # snapshot pricing), so a top-level import would be circular.
+        from backend.services.investments import InvestmentsService
+
+        return {
+            "status": "updated",
+            **self.get_current(),
+            "investments_recalculated": InvestmentsService(
+                self.db
+            ).recalculate_prime_linked_snapshots(),
+        }

@@ -76,13 +76,6 @@ class TestRatesLookups:
         assert current["prime"] == 5.5
         assert current["as_of"] == "2024-01-01"
 
-    def test_get_prime_at_walks_step_function(self, seeded):
-        """Verify get_prime_at returns the step in effect at the date."""
-        assert seeded.get_prime_at("2022-06-01") == 1.6      # 0.1 + 1.5
-        assert seeded.get_prime_at("2023-01-01") == 6.0      # step day inclusive
-        assert seeded.get_prime_at("2025-01-01") == 5.5      # latest holds
-        assert seeded.get_prime_at("2021-01-01") is None     # before the series
-
     def test_get_prime_steps_anchors_at_from_date(self, seeded):
         """Verify get_prime_steps starts exactly at from_date with the in-effect rate."""
         steps = seeded.get_prime_steps("2022-06-15")
@@ -119,6 +112,8 @@ class TestRatesRefresh:
 
         assert result["status"] == "updated"
         assert result["boi_rate"] == 4.25
+        # No prime-linked investments exist — the count proves the recalc ran.
+        assert result["investments_recalculated"] == 0
         history = seeded.get_history("boi_rate")
         assert len(history) == 2
         assert history[-1]["value"] == 4.25

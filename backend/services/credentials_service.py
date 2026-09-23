@@ -21,6 +21,7 @@ from backend.repositories.credentials_repository import (
     CredentialsRepository,
 )
 from backend.repositories.scraping_history_repository import ScrapingHistoryRepository
+from backend.services.bank_balance_service import BankBalanceService
 from backend.utils.db_path_cache import cache_key
 from backend.utils.phone_numbers import ISRAELI_MOBILE_RE, normalize_israeli_mobile
 
@@ -158,52 +159,6 @@ class CredentialsService:
 
         self._invalidate_cache()
 
-    def get_available_data_sources(self) -> list[str]:
-        """Get a flat list of all configured data source identifiers.
-
-        Returns
-        -------
-        list[str]
-            Strings in the format ``"service - provider - account_name"``
-            for every account in the loaded credentials.
-        """
-        return [
-            f"{service} - {provider} - {account}"
-            for service, providers in self.credentials.items()
-            for provider, accounts in providers.items()
-            for account in accounts
-        ]
-
-    def get_data_sources_credentials(self, data_sources: list[str]) -> CredentialsTree:
-        """Filter the credentials dict to only include the selected data sources.
-
-        Parameters
-        ----------
-        data_sources : list[str]
-            Account identifiers in the form ``"service - provider - account_name"``
-            to keep.
-
-        Returns
-        -------
-        CredentialsTree
-            Filtered credentials dict containing only the specified accounts.
-        """
-        credentials = deepcopy(self.credentials)
-
-        for service, providers in list(credentials.items()):
-            for provider, accounts in list(providers.items()):
-                for account in list(accounts.keys()):
-                    if f"{service} - {provider} - {account}" not in data_sources:
-                        del credentials[service][provider][account]
-
-                if not accounts:
-                    del credentials[service][provider]
-
-            if not providers:
-                del credentials[service]
-
-        return credentials
-
     def delete_account(
         self,
         service: str,
@@ -231,7 +186,8 @@ class CredentialsService:
             transactions, balances and scrape history are all kept, so
             re-adding the account resumes where it left off. When ``True`` the
             account's transactions and everything referencing them are deleted
-            as well, and the next connection starts with a fresh one-year
+            as well — plus a bank account's balance row and the scrape
+            history — and the next connection starts with a fresh one-year
             backfill.
 
         Returns
@@ -239,6 +195,11 @@ class CredentialsService:
         dict[str, int]
             ``{"transactions_deleted": int}`` — zero when ``delete_data`` is
             ``False``.
+
+        Raises
+        ------
+        EntityNotFoundException
+            If no credential exists for the account.
         """
         result = {"transactions_deleted": 0}
 
@@ -249,7 +210,7 @@ class CredentialsService:
 
             # A service with no transaction table of its own (nothing to
             # delete) must not block disconnecting the account.
-            with contextlib.suppress(ValueError):
+            with contextlib.suppress(ValidationException):
                 result = TransactionsService(self.db).delete_account_data(
                     service, provider, account
                 )
@@ -263,6 +224,10 @@ class CredentialsService:
             ScrapingHistoryRepository(self.db).delete_for_account(
                 service, provider, account
             )
+            # The balance row carries `prior_wealth_amount`, so it may only be
+            # dropped when the transactions it was derived from go too.
+            if service == Services.BANK.value:
+                BankBalanceService(self.db).delete_for_account(provider, account)
 
         self._invalidate_cache()
         return result

@@ -6,11 +6,10 @@ Provides endpoints for managing cash account balances and prior wealth.
 
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from backend.dependencies import get_database
-from backend.errors import EntityNotFoundException
 from backend.routes.schemas import ApiRequestModel
 from backend.services.cash_balance_service import CashBalanceService
 
@@ -42,17 +41,13 @@ def set_cash_balance(
 
     Raises
     ------
-    HTTPException
-        400 when the service rejects the balance.
+    ValidationException
+        400 when the balance is negative.
     """
-    service = CashBalanceService(db)
-    try:
-        return service.set_balance(
-            account_name=request.account_name,
-            balance=request.balance,
-        )
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e)) from e
+    return CashBalanceService(db).set_balance(
+        account_name=request.account_name,
+        balance=request.balance,
+    )
 
 
 @router.post("/migrate")
@@ -82,16 +77,8 @@ def delete_cash_balance(
     ------
     EntityNotFoundException
         404 if no cash balance record exists for ``account_name``.
-    HTTPException
-        400 when the account cannot be deleted (e.g. the default "Wallet").
+    ValidationException
+        400 when the account cannot be deleted (the default "Wallet").
     """
-    service = CashBalanceService(db)
-    if service.get_by_account_name(account_name) is None:
-        raise EntityNotFoundException(
-            f"Cash balance for account '{account_name}' not found"
-        )
-    try:
-        service.delete_for_account(account_name)
-        return {"status": "deleted", "account_name": account_name}
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e)) from e
+    CashBalanceService(db).delete_for_account(account_name)
+    return {"status": "deleted", "account_name": account_name}

@@ -4,15 +4,13 @@ Liabilities API routes.
 Provides endpoints for liability (loan/debt) tracking.
 """
 
-from datetime import date
 from typing import Any
 
 from fastapi import APIRouter, Depends
-from pydantic import field_validator
 from sqlalchemy.orm import Session
 
 from backend.dependencies import get_database
-from backend.routes.schemas import ApiRequestModel
+from backend.routes.schemas import ApiRequestModel, IsoDateStr
 from backend.services.liabilities_service import LiabilitiesService
 
 router = APIRouter()
@@ -25,7 +23,7 @@ class LiabilityCreate(ApiRequestModel):
     tag: str
     principal_amount: float
     term_months: int
-    start_date: str
+    start_date: IsoDateStr
     interest_rate: float | None = None
     loan_type: str = "fixed_unlinked"
     amortization_method: str = "shpitzer"
@@ -33,13 +31,6 @@ class LiabilityCreate(ApiRequestModel):
     rate_reset_months: int | None = None
     lender: str | None = None
     notes: str | None = None
-
-    @field_validator("start_date")
-    @classmethod
-    def validate_start_date(cls, v: str) -> str:
-        """Ensure start_date is a valid ISO date string."""
-        date.fromisoformat(v)
-        return v
 
 
 class LiabilityUpdate(ApiRequestModel):

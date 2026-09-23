@@ -14,6 +14,7 @@ from sqlalchemy import delete, select, update
 from sqlalchemy.exc import SQLAlchemyError
 
 from backend.constants.tables import SplitTransactionsTableFields
+from backend.errors import ValidationException
 from backend.models.transaction import SplitTransaction
 from backend.repositories._sql import chunked
 from backend.repositories.transactions.service_repositories import T_service
@@ -223,7 +224,7 @@ class SplitsMixin:
 
         Raises
         ------
-        ValueError
+        ValidationException
             If ``source`` is unknown or no row with ``unique_id`` exists in it.
         SQLAlchemyError
             On database failure, after rolling back.
@@ -236,7 +237,7 @@ class SplitsMixin:
         """
         repo = self.get_repo_by_source(source)
         if repo is None:
-            raise ValueError(f"Unknown source '{source}'")
+            raise ValidationException(f"Unknown source '{source}'")
         try:
             parent_updated = self.db.execute(
                 update(repo.model)
@@ -245,7 +246,7 @@ class SplitsMixin:
             )
             if parent_updated.rowcount == 0:
                 self.db.rollback()
-                raise ValueError(
+                raise ValidationException(
                     f"Cannot split: no {source} row with unique_id={unique_id}"
                 )
 
@@ -291,7 +292,7 @@ class SplitsMixin:
 
         Raises
         ------
-        ValueError
+        ValidationException
             If ``source`` is unknown or no row with ``unique_id`` exists in it.
         SQLAlchemyError
             On database failure, after rolling back.
@@ -303,7 +304,7 @@ class SplitsMixin:
         """
         repo = self.get_repo_by_source(source)
         if repo is None:
-            raise ValueError(f"Unknown source '{source}'")
+            raise ValidationException(f"Unknown source '{source}'")
         try:
             parent_updated = self.db.execute(
                 update(repo.model)
@@ -312,7 +313,7 @@ class SplitsMixin:
             )
             if parent_updated.rowcount == 0:
                 self.db.rollback()
-                raise ValueError(
+                raise ValidationException(
                     f"Cannot revert split: no {source} row with unique_id={unique_id}"
                 )
             self.db.execute(

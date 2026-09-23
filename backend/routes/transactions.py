@@ -4,69 +4,19 @@ Transactions API routes.
 Provides endpoints for transaction CRUD operations.
 """
 
-import logging
 from datetime import date
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from backend.constants.providers import Services
-from backend.constants.tables import Tables
 from backend.dependencies import get_database
-from backend.errors import ValidationException
 from backend.routes.schemas import ApiRequestModel, StatusResponse
 from backend.services.transactions_service import TransactionsService
 
-logger = logging.getLogger(__name__)
-
 router = APIRouter()
-
-# Every accepted ``source``/``service`` identifier: both the table names and
-# the service aliases the repository dispatches on. An unrecognized value used
-# to reach the repository lookup, which returns ``None`` and was then
-# dereferenced — a 500 for what is plainly a client mistake.
-_VALID_SOURCES = frozenset(
-    {
-        Tables.CREDIT_CARD.value,
-        Tables.BANK.value,
-        Tables.CASH.value,
-        Tables.MANUAL_INVESTMENT_TRANSACTIONS.value,
-        Tables.INSURANCE.value,
-        Services.CREDIT_CARD.value,
-        Services.BANK.value,
-        Services.CASH.value,
-        Services.MANUAL_INVESTMENTS.value,
-        Services.INSURANCE.value,
-    }
-)
-
-
-def _validate_source(source: str) -> str:
-    """Reject a ``source`` the transactions repository cannot dispatch on.
-
-    Parameters
-    ----------
-    source : str
-        Table or service identifier supplied by the client.
-
-    Returns
-    -------
-    str
-        The unchanged ``source`` when it is recognized.
-
-    Raises
-    ------
-    ValidationException
-        If ``source`` is not a known table or service name.
-    """
-    if source not in _VALID_SOURCES:
-        raise ValidationException(
-            f"Invalid source: '{source}'. Valid sources: "
-            + ", ".join(sorted(_VALID_SOURCES))
-        )
-    return source
 
 
 class TransactionCreate(ApiRequestModel):
@@ -149,16 +99,11 @@ def get_transactions(
     db: Session = Depends(get_database),
 ) -> list[dict[str, Any]]:
     """Get all transactions, optionally filtered by service."""
-    txn_service = TransactionsService(db)
-    try:
-        df = txn_service.get_merged_transactions(
-            service=service,
-            include_split_parents=include_split_parents,
-            exclude_services=[Services.INSURANCE.value],
-        )
-    except ValueError as e:
-        # Unknown / malformed `service` query param.
-        raise HTTPException(status_code=400, detail=str(e)) from e
+    df = TransactionsService(db).get_merged_transactions(
+        service=service,
+        include_split_parents=include_split_parents,
+        exclude_services=[Services.INSURANCE.value],
+    )
     return df.to_dict(orient="records")
 
 
@@ -167,19 +112,8 @@ def create_transaction(
     data: TransactionCreate, db: Session = Depends(get_database)
 ) -> dict[str, str]:
     """Create a new manual transaction."""
-    service = TransactionsService(db)
-    try:
-        service.create_transaction(data.model_dump(), data.service)
-        return {"status": "success"}
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e)) from e
-    except RuntimeError:
-        # Don't echo the exception text: a 500 here is an unhandled server
-        # fault, and its message can carry SQL fragments, file paths, or
-        # credential values. Log it and return the same opaque body the
-        # global handler uses.
-        logger.exception("Failed to create transaction")
-        raise HTTPException(status_code=500, detail="Internal server error") from None
+    TransactionsService(db).create_transaction(data.model_dump(), data.service)
+    return {"status": "success"}
 
 
 @router.put("/{unique_id}", response_model=StatusResponse)
@@ -208,17 +142,12 @@ def update_transaction(
         ``{"status": "no_changes"}`` if nothing changed. A ``unique_id``
         that does not exist in ``source`` is a 404.
     """
-    _validate_source(data.source)
-    service = TransactionsService(db)
-    try:
-        updated = service.update_transaction(
-            int(unique_id),
-            data.source,
-            data.model_dump(exclude={"source"}, exclude_none=True),
-        )
-        return {"status": "success" if updated else "no_changes"}
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e)) from e
+    updated = TransactionsService(db).update_transaction(
+        unique_id,
+        data.source,
+        data.model_dump(exclude={"source"}, exclude_none=True),
+    )
+    return {"status": "success" if updated else "no_changes"}
 
 
 @router.delete("/{unique_id}", response_model=StatusResponse)
@@ -228,19 +157,8 @@ def delete_transaction(
     db: Session = Depends(get_database),
 ) -> dict[str, str]:
     """Delete a transaction (only for manual entries)."""
-    # An unrecognised source is a malformed request, not a permission
-    # problem — without this it surfaced as 403 "Deletion of X transactions
-    # is prohibited", which reads as "you may not delete this" rather than
-    # "that table does not exist".
-    _validate_source(source)
-    service = TransactionsService(db)
-    try:
-        service.delete_transaction(int(unique_id), source)
-        return {"status": "success"}
-    except PermissionError as e:
-        raise HTTPException(status_code=403, detail=str(e)) from e
-    except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e)) from e
+    TransactionsService(db).delete_transaction(unique_id, source)
+    return {"status": "success"}
 
 
 @router.post("/{unique_id}/split", response_model=StatusResponse)
@@ -253,14 +171,9 @@ def split_transaction(
     (``ValidationException`` → 400) and a parent that doesn't exist
     (``EntityNotFoundException`` → 404).
     """
-    _validate_source(data.source)
-    service = TransactionsService(db)
-    try:
-        splits = [s.model_dump() for s in data.splits]
-        service.split_transaction(unique_id, data.source, splits)
-        return {"status": "success"}
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e)) from e
+    splits = [s.model_dump() for s in data.splits]
+    TransactionsService(db).split_transaction(unique_id, data.source, splits)
+    return {"status": "success"}
 
 
 @router.delete("/{unique_id}/split", response_model=StatusResponse)
@@ -270,13 +183,8 @@ def revert_split(
     db: Session = Depends(get_database),
 ) -> dict[str, str]:
     """Revert a transaction split."""
-    _validate_source(source)
-    service = TransactionsService(db)
-    try:
-        service.revert_split(unique_id, source)
-        return {"status": "success"}
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e)) from e
+    TransactionsService(db).revert_split(unique_id, source)
+    return {"status": "success"}
 
 
 @router.post("/bulk-tag", response_model=StatusResponse)
@@ -284,21 +192,17 @@ def bulk_tag_transactions(
     data: BulkTagUpdate, db: Session = Depends(get_database)
 ) -> dict[str, str]:
     """Apply tagging and optional field updates to multiple transactions of the same source."""
-    service = TransactionsService(db)
-    try:
-        service.bulk_tag_transactions(
-            data.transaction_ids,
-            data.source,
-            data.category,
-            data.tag,
-            data.description,
-            data.account_name,
-            data.date,
-            data.amount,
-        )
-        return {"status": "success"}
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e)) from e
+    TransactionsService(db).bulk_tag_transactions(
+        data.transaction_ids,
+        data.source,
+        data.category,
+        data.tag,
+        data.description,
+        data.account_name,
+        data.date,
+        data.amount,
+    )
+    return {"status": "success"}
 
 
 @router.get("/latest-date", response_model=LatestDateResponse)
@@ -329,12 +233,7 @@ def get_transaction(
     db: Session = Depends(get_database),
 ) -> dict[str, Any]:
     """Get a specific transaction by its per-table ID and source table."""
-    txn_service = TransactionsService(db)
-    try:
-        transaction = txn_service.get_transaction(transaction_id, source)
-        return transaction.to_dict()
-    except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e)) from e
+    return TransactionsService(db).get_transaction(transaction_id, source).to_dict()
 
 
 @router.put("/{transaction_id}/tag", response_model=StatusResponse)
@@ -364,9 +263,5 @@ def update_transaction_tag(
         Table name (``credit_card_transactions``) or service alias
         (``credit_cards``) used to target the correct table.
     """
-    tx_service = TransactionsService(db)
-    try:
-        tx_service.update_tagging_by_id(service, transaction_id, category, tag)
-        return {"status": "success"}
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e)) from e
+    TransactionsService(db).update_tagging_by_id(service, transaction_id, category, tag)
+    return {"status": "success"}

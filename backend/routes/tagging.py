@@ -104,13 +104,7 @@ def delete_category(name: str, db: Session = Depends(get_database)) -> dict[str,
     ValidationException
         400 if the category is protected.
     """
-    service = CategoriesTagsService(db)
-    if not service.delete_category(name):
-        if name not in service.categories_and_tags:
-            raise EntityNotFoundException(f"Category '{name}' not found")
-        raise ValidationException(
-            f"Category '{name}' is protected and cannot be deleted"
-        )
+    CategoriesTagsService(db).delete_category(name)
     return {"status": "success"}
 
 
@@ -125,14 +119,7 @@ def create_tag(tag: TagCreate, db: Session = Depends(get_database)) -> dict[str,
     ValidationException
         400 if the tag name is blank or invalid, or already exists.
     """
-    service = CategoriesTagsService(db)
-    if not service.add_tag(tag.category, tag.name):
-        if tag.category not in service.categories_and_tags:
-            raise EntityNotFoundException(f"Category '{tag.category}' not found")
-        raise ValidationException(
-            f"Cannot add tag '{tag.name}' to '{tag.category}'. The name may be "
-            "blank or invalid, or the tag may already exist."
-        )
+    CategoriesTagsService(db).add_tag(tag.category, tag.name)
     return {"status": "success"}
 
 
@@ -174,18 +161,9 @@ def relocate_tag(
     ValidationException
         400 if both categories are the same.
     """
-    service = CategoriesTagsService(db)
-    if not service.reallocate_tag(data.old_category, data.new_category, data.tag):
-        categories = service.categories_and_tags
-        if data.old_category not in categories or data.new_category not in categories:
-            raise EntityNotFoundException("Category not found")
-        if data.tag not in categories[data.old_category]:
-            raise EntityNotFoundException(
-                f"Tag '{data.tag}' not found in category '{data.old_category}'"
-            )
-        raise ValidationException(
-            f"Cannot move tag '{data.tag}' from '{data.old_category}' to itself"
-        )
+    CategoriesTagsService(db).reallocate_tag(
+        data.old_category, data.new_category, data.tag
+    )
     return {"status": "success"}
 
 
