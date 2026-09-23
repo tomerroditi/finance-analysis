@@ -1,3 +1,9 @@
+## v1.87.0 (2026-09-23)
+
+### Feat
+
+- **dashboard**: scrollable net-worth change chips with 10Y and 9M periods (#352)
+
 ## v1.86.3 (2026-09-23)
 
 ### Refactor
