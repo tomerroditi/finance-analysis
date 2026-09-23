@@ -87,7 +87,7 @@ def _run(cmd: list[str], *, cwd: Path | None = None, env: dict | None = None) ->
 
 def _step_frontend() -> None:
     """Build the React app into ``frontend/dist/``."""
-    _run(["npm", "ci"], cwd=ROOT / "frontend")
+    _run(["npm", "ci", "--no-audit", "--no-fund"], cwd=ROOT / "frontend")
     _run(["npm", "run", "build"], cwd=ROOT / "frontend")
 
 
@@ -167,9 +167,14 @@ def _step_wrap_darwin() -> None:
     _run(["bash", str(BUILD_DIR / "build_dmg.sh")])
 
 
-def _step_wrap_windows() -> None:
-    """Run ``makensis`` to produce ``FinanceAppInstaller.exe``."""
-    _run(["makensis", str(BUILD_DIR / "installer_script.nsi")])
+def _step_wrap_windows(*, uncompressed: bool = False) -> None:
+    """Run ``makensis`` to produce ``FinanceAppInstaller.exe``.
+
+    ``uncompressed`` skips LZMA — the installer still compiles, so the
+    script is validated, in seconds rather than over a minute.
+    """
+    defines = ["/DFAD_UNCOMPRESSED"] if uncompressed else []
+    _run(["makensis", *defines, str(BUILD_DIR / "installer_script.nsi")])
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -184,6 +189,11 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Skip the DMG / NSIS wrapping step.",
     )
+    parser.add_argument(
+        "--uncompressed-installer",
+        action="store_true",
+        help="Compile the NSIS installer without compression (CI smoke test).",
+    )
     args = parser.parse_args(argv)
 
     print(f"build_app.py - platform={sys.platform} arch={platform.machine()}")
@@ -196,7 +206,7 @@ def main(argv: list[str] | None = None) -> int:
         if sys.platform == "darwin":
             _step_wrap_darwin()
         elif sys.platform == "win32":
-            _step_wrap_windows()
+            _step_wrap_windows(uncompressed=args.uncompressed_installer)
         else:
             print(f"no wrapping step defined for {sys.platform}; skipping")
 

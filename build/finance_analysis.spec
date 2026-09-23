@@ -127,6 +127,28 @@ excludes = [
     "ipykernel",
     "notebook",
     "matplotlib",
+    # setuptools is never imported at runtime; it only gets in because
+    # it is installed, and drags ~150 modules plus a runtime hook along.
+    # Not "distutils": on 3.12 that name is setuptools' shim, and
+    # PyInstaller's distutils hook fails the build when it tries to alias
+    # it to setuptools._distutils and finds it already excluded. With
+    # setuptools out, distutils resolves to nothing anyway.
+    "setuptools",
+    "pkg_resources",
+    "_distutils_hack",
+    # Dev-group tools that optional imports reach when the build venv
+    # has them: httpx's CLI (rich, pygments), pydantic's hypothesis
+    # plugin, pandas' Styler (jinja2), schemathesis (werkzeug). CI
+    # installs `--only main,build`; this keeps local builds from a dev
+    # venv identical.
+    "hypothesis",
+    "rich",
+    "pygments",
+    "markdown_it",
+    "jinja2",
+    "werkzeug",
+    # uvicorn's auto-reloader; the bundle never runs with reload.
+    "watchfiles",
 ]
 
 
