@@ -85,6 +85,7 @@ _READ_ENDPOINTS = frozenset(
         "api/holdings/getCorrespondenceShowSpecificIncident",
         "api/holdings/getPolicyYield",
         "api/holdings/getPolicyRepresentative",
+        "api/holdings/getPolicyLoans",
         "api/holdings/getPolicyRetirementAgeForecast",
         "api/holdings/getPolicyRetirementAgeForecastFunds",
     }
@@ -511,6 +512,40 @@ def ytd_profit(policy_yield: Optional[dict]) -> Optional[float]:
         return None
     amount = _money(policy_yield["netProfitPercent"])
     return -amount if policy_yield.get("profitTypeName") == "הפסד" else amount
+
+
+def build_loans(loans: Optional[list]) -> list[dict]:
+    """Summarize the loans taken against a policy.
+
+    The portal answers with a placeholder row even when there is no loan
+    (zero amounts, ``0001-01-01`` dates, ``isLoanExistsState`` false); only
+    rows describing a real loan are kept.
+
+    Parameters
+    ----------
+    loans : list, optional
+        ``getPolicyLoans`` response.
+
+    Returns
+    -------
+    list[dict]
+        One entry per loan: amount, outstanding balance, interest, monthly
+        repayment, number of payments, start and end dates, and scope.
+    """
+    return [
+        {
+            "amount": _money(loan.get("loanAmount")),
+            "balance": _money(loan.get("loanBalanceAmount")),
+            "interest_pct": loan.get("interestPercent"),
+            "monthly_payment": _money(loan.get("refundPaymentAmount")),
+            "payments_months": loan.get("paymentsInMonths"),
+            "received": _iso_date(loan.get("loanReceiveDate")),
+            "ends": _iso_date(loan.get("loanEndDate")),
+            "scope": loan.get("policyLoanLevelName"),
+        }
+        for loan in loans or []
+        if loan.get("isLoanExistsState") or _money(loan.get("loanAmount"))
+    ]
 
 
 def build_representative(representative: Optional[dict]) -> Optional[dict]:
@@ -1037,6 +1072,9 @@ class MislakaScraper(BrowserScraper):
             details["last_month_management_fee"] = self._last_month_fees.get(policy_key)
             details["representative"] = build_representative(
                 await self._api("api/holdings/getPolicyRepresentative", ids)
+            )
+            details["loans"] = build_loans(
+                await self._api("api/holdings/getPolicyLoans", ids)
             )
             if product.get("productTypeCode") == _PRODUCT_NEW_PENSION:
                 risks = await self._api("api/holdings/getCoversPolicies", ids) or []

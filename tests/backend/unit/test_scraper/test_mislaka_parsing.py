@@ -19,6 +19,7 @@ from scraper.providers.insurances.mislaka import (
     MislakaScraper,
     build_deposit_transactions,
     build_household_report,
+    build_loans,
     build_representative,
     build_investment_tracks,
     build_pension_covers,
@@ -153,6 +154,20 @@ class FakePortal:
             }
         if path == "api/holdings/getPolicyYield":
             return {"netYieldPercent": 5.1, "netProfitPercent": 480.0, "profitTypeName": "רווח"}
+        if path == "api/holdings/getPolicyLoans":
+            return [
+                {
+                    "loanAmount": 20000,
+                    "loanBalanceAmount": 12500.5,
+                    "interestPercent": 3.1,
+                    "refundPaymentAmount": 450.0,
+                    "paymentsInMonths": 48,
+                    "loanReceiveDate": "2025-02-01T00:00:00",
+                    "loanEndDate": "2029-02-01T00:00:00",
+                    "isLoanExistsState": True,
+                    "policyLoanLevelName": "Policy",
+                }
+            ]
         if path == "api/holdings/getPolicyRepresentative":
             return {
                 "hasRepresentativeState": True,
@@ -306,6 +321,18 @@ class TestMetadataBuilders:
         assert ytd_profit({"netProfitPercent": 50.0, "profitTypeName": "הפסד"}) == -50.0
         assert ytd_profit({"netYieldPercent": 5.1}) is None
 
+    def test_the_no_loan_placeholder_row_is_dropped(self):
+        """Verify the portal's zero-filled "no loan" row yields no loans."""
+        placeholder = {
+            "loanAmount": 0,
+            "loanReceiveDate": "0001-01-01T00:00:00",
+            "loanEndDate": "0001-01-01T00:00:00",
+            "isLoanExistsState": False,
+        }
+
+        assert build_loans([placeholder]) == []
+        assert build_loans(None) == []
+
     def test_representative_is_none_when_no_agent_is_appointed(self):
         """Verify a policy without an agent carries no representative."""
         assert build_representative({"hasRepresentativeState": False}) is None
@@ -378,7 +405,7 @@ class TestFetchData:
         assert reports[0]["subscription_expires"] is None
         assert reports[1]["subscription_expires"] == "2027-04-11"
 
-    def test_newest_report_adds_profit_fees_and_agent(self):
+    def test_newest_report_adds_profit_fees_agent_and_loans(self):
         """Verify the per-policy extras land in the details and statement."""
         [account] = asyncio.run(_scraper_with(FakePortal()).fetch_data())
 
@@ -387,6 +414,18 @@ class TestFetchData:
         assert details["last_month_management_fee"] == 4.2
         assert details["representative"]["name"] == "Agency Ltd"
         assert details["representative"]["can_act"] is True
+        assert details["loans"] == [
+            {
+                "amount": 20000.0,
+                "balance": 12500.5,
+                "interest_pct": 3.1,
+                "monthly_payment": 450.0,
+                "payments_months": 48,
+                "received": "2025-02-01",
+                "ends": "2029-02-01",
+                "scope": "Policy",
+            }
+        ]
         statement = json.loads(account.metadata["insurance_costs"])
         assert {"title": "רווחים", "amount": 480.0} in statement
 
