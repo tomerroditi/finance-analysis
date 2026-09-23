@@ -177,13 +177,44 @@ test.describe("dashboard budget card", () => {
     expect(headlineParts[0]).not.toContain("/");
   });
 
-  test("'open budget' lands on the tab the card was showing", async ({
+  // Both halves boot the same English desktop dashboard, so they share one
+  // load: the project round trip stays on the dashboard, then "open budget"
+  // navigates away.
+  test("closes and reopens a project in place, and 'open budget' lands on the card's tab", async ({
     page,
   }) => {
     await navigateTo(page, "/");
     const card = budgetCard(page);
     await card.scrollIntoViewIfNeeded();
 
+    // --- Closing a project from the card reaches the backend ---
+    await card.getByRole("button", { name: /Project Budgets/i }).click();
+    const toggle = card.getByTestId("card-project-closed-toggle");
+    await expect(toggle).toBeVisible({ timeout: 30_000 });
+    await expect(toggle).toHaveAttribute("aria-label", /close project/i);
+
+    await toggle.click();
+    const dialog = page.locator("div.modal-overlay", {
+      hasText: /stops appearing in the budget overview/i,
+    });
+    await expect(dialog).toBeVisible();
+    await dialog.getByRole("button", { name: /^Close project$/i }).click();
+
+    // The card keeps the project — closing is not a delete — and says why it
+    // left the Overview.
+    await expect(card.getByTestId("card-project-closed-notice")).toBeVisible({
+      timeout: 15_000,
+    });
+    await expect(toggle).toHaveAttribute("aria-label", /reopen project/i);
+
+    // Reopening is a plain undo, with no confirmation step.
+    await toggle.click();
+    await expect(card.getByTestId("card-project-closed-notice")).toBeHidden({
+      timeout: 15_000,
+    });
+    await expect(toggle).toHaveAttribute("aria-label", /close project/i);
+
+    // --- 'Open budget' lands on the tab the card was showing ---
     await card.getByRole("button", { name: /Monthly Budget/i }).click();
     await expect(card.getByTestId("budget-total-bar")).toBeVisible({
       timeout: 30_000,
@@ -219,40 +250,6 @@ test.describe("dashboard budget card", () => {
     await expect(
       page.getByRole("button", { name: /^Yearly$/i }).first(),
     ).toHaveAttribute("aria-pressed", "true", { timeout: 30_000 });
-  });
-
-  test("closes and reopens a project without leaving the dashboard", async ({
-    page,
-  }) => {
-    await navigateTo(page, "/");
-    const card = budgetCard(page);
-    await card.scrollIntoViewIfNeeded();
-
-    await card.getByRole("button", { name: /Project Budgets/i }).click();
-    const toggle = card.getByTestId("card-project-closed-toggle");
-    await expect(toggle).toBeVisible({ timeout: 30_000 });
-    await expect(toggle).toHaveAttribute("aria-label", /close project/i);
-
-    await toggle.click();
-    const dialog = page.locator("div.modal-overlay", {
-      hasText: /stops appearing in the budget overview/i,
-    });
-    await expect(dialog).toBeVisible();
-    await dialog.getByRole("button", { name: /^Close project$/i }).click();
-
-    // The card keeps the project — closing is not a delete — and says why it
-    // left the Overview.
-    await expect(card.getByTestId("card-project-closed-notice")).toBeVisible({
-      timeout: 15_000,
-    });
-    await expect(toggle).toHaveAttribute("aria-label", /reopen project/i);
-
-    // Reopening is a plain undo, with no confirmation step.
-    await toggle.click();
-    await expect(card.getByTestId("card-project-closed-notice")).toBeHidden({
-      timeout: 15_000,
-    });
-    await expect(toggle).toHaveAttribute("aria-label", /close project/i);
   });
 
   test("edits, closes and reopens a yearly rule from its row panel", async ({

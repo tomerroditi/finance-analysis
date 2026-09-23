@@ -152,8 +152,8 @@ failing only when run after its siblings). A rebuild is ~22 ms — under a
 second across the whole project. Finally,
 `demo-teardown` rebuilds the demo DB from its frozen snapshot at the end
 (`POST /api/testing/demo/reset`) so it's pristine for the next run. read-only
-and mutating are both plain, shardable projects (CI runs `playwright test
---shard=X/4`); each spec self-heals its own browser's Demo Mode flag in its
+and mutating are both plain, shardable projects (CI runs one 4-way split of
+the spec files — see below); each spec self-heals its own browser's Demo Mode flag in its
 own `beforeAll`, so any order or per-shard interleaving is safe.
 
 **`playwright.config.ts` is serial (`workers: 1`, `fullyParallel: false`)** —
@@ -185,7 +185,8 @@ shared DB → no cross-shard races → every shard runs concurrently.
 
 **Measured 2026-09-05 on a 12-core M-series Mac (8P+4E): 72 s for 4 shards vs
 ~240 s serial — 3.3×.** This is the local default in the checklist above; CI
-keeps its single-backend `--shard=X/4` matrix.
+keeps its single-backend-per-job 4-shard matrix, but packs its shards the same
+way (below) and serves the production build rather than the dev server.
 
 **The runner only ever drives servers it started.** A shard pinned to a
 leftover server from a previous run silently tests *that* checkout's source —
@@ -224,7 +225,14 @@ measured ≥80 % of the suite, so a `--grep` cannot shrink the table; forwarding
 a positional filter falls back to `--shard`. Because each shard is given
 explicit files, `demo.setup.ts` and `demo.teardown.ts` must be in every
 shard's list — their projects match nothing otherwise and Demo Mode is never
-enabled. Every direct-to-backend
+enabled. CI uses the same packing: each matrix job runs
+`playwright test $(python3 ../.claude/scripts/e2e_shard_files.py N 4)` —
+count-based `--shard=N/4` had left one job at 2.5 min of tests beside another
+at 1 min. CI also runs against `vite build` + `vite preview` instead of
+`npm run dev` (each test's fresh browser context otherwise re-fetches hundreds
+of unbundled dev modules; ~16 % faster per test), which is why the config sets
+`serviceWorkers: "block"` — the production build's PWA worker would otherwise
+serve `/api` reads from its cache. Every direct-to-backend
 API call in a spec must go through the env-driven `API_BASE` exported from
 `frontend/e2e/helpers.ts` (never hardcode `http://localhost:8000`) or that call
 will hit the wrong shard's backend.
