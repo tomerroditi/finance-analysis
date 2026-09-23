@@ -1,17 +1,13 @@
 """
 Transactions repository package.
 
-Decomposed from the former single-module ``backend/repositories/
-transactions_repository.py``:
+Modules:
 
 - ``service_repositories`` — ``ServiceRepository`` base + the five
   per-table repositories + ``ManualTransactionDTO``.
 - ``ingestion`` — scraped-transaction insert + pending-row reconciliation.
 - ``splits`` — batched split-children builder + split/revert operations.
 - ``core`` — the aggregating ``TransactionsRepository``.
-
-The old module path remains as a compatibility shim re-exporting the
-public names from here.
 """
 
 from backend.repositories.transactions.core import TransactionsRepository

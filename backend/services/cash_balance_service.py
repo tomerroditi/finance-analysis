@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from backend.models.transaction import CashTransaction
 from backend.repositories.cash_balance_repository import CashBalanceRepository
-from backend.repositories.transactions_repository import CashRepository
+from backend.repositories.transactions import CashRepository
 
 
 class CashBalanceService:

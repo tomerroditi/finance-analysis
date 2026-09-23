@@ -13,7 +13,7 @@ from backend.models.transaction import (
     InsuranceTransaction,
     ManualInvestmentTransaction,
 )
-from backend.services.investments_service import InvestmentsService
+from backend.services.investments import InvestmentsService
 from backend.services.transactions_service import TransactionsService
 
 

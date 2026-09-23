@@ -10,7 +10,7 @@ from backend.constants.tables import TransactionsTableFields
 from backend.errors import EntityNotFoundException, ValidationException
 from backend.models.transaction import SplitTransaction
 from backend.repositories.pending_refunds_repository import PendingRefundsRepository
-from backend.repositories.transactions_repository import TransactionsRepository
+from backend.repositories.transactions import TransactionsRepository
 
 logger = logging.getLogger(__name__)
 

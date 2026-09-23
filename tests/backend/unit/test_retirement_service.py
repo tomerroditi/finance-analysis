@@ -14,7 +14,7 @@ from backend.services.retirement_service import (
     FULL_PENSION_AGE_FEMALE,
     _get_full_pension_age,
 )
-from backend.services.investments_service import InvestmentsService
+from backend.services.investments import InvestmentsService
 
 
 @pytest.fixture

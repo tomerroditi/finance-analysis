@@ -39,8 +39,8 @@ from backend.constants.categories import NON_EXPENSE_CATEGORIES
 from backend.repositories.insight_dismissals_repository import (
     InsightDismissalsRepository,
 )
-from backend.repositories.transactions_repository import TransactionsRepository
-from backend.services.analysis_service import AnalysisService
+from backend.repositories.transactions import TransactionsRepository
+from backend.services.analysis import AnalysisService
 from backend.services.budget.core import BudgetService
 from backend.services.pending_refunds_service import (
     PendingRefundsService,

@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 from backend.repositories.split_transactions_repository import (
     SplitTransactionsRepository,
 )
-from backend.repositories.transactions_repository import TransactionsRepository
+from backend.repositories.transactions import TransactionsRepository
 from backend.services.transactions_service import TransactionsService
 
 

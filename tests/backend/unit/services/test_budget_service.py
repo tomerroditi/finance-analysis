@@ -14,7 +14,7 @@ from backend.constants.budget import (
     YEAR,
 )
 from backend.constants.tables import TransactionsTableFields
-from backend.services.budget_service import (
+from backend.services.budget import (
     BudgetService,
     MonthlyBudgetService,
     ProjectBudgetService,

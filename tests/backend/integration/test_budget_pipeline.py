@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 
 from backend.constants.budget import ALL_TAGS, TOTAL_BUDGET
 from backend.models.transaction import CreditCardTransaction
-from backend.services.budget_service import (
+from backend.services.budget import (
     MonthlyBudgetService,
     ProjectBudgetService,
 )

@@ -25,7 +25,7 @@ from backend.constants.tables import LiabilityTransactionsTableFields as LTF
 from backend.constants.tables import Tables
 from backend.errors import ValidationException
 from backend.repositories.liabilities_repository import LiabilitiesRepository
-from backend.repositories.transactions_repository import TransactionsRepository
+from backend.repositories.transactions import TransactionsRepository
 from backend.services.rates_service import RatesService
 
 #: 100 years. Beyond roughly 96,000 months a payment date passes year 9999,

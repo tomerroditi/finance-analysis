@@ -11,7 +11,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from backend.dependencies import get_database
-from backend.services.analysis_service import AnalysisService
+from backend.services.analysis import AnalysisService
 from backend.services.insights_service import InsightsService
 from backend.services.recurring_service import RecurringService
 

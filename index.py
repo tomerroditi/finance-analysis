@@ -59,7 +59,7 @@ prepare_demo_database()
 # auto-sync from insurance accounts existed, so its three hishtalmut policies
 # have no linked Investment records. Idempotent (matches by policy_id).
 from backend.database import get_db_context  # noqa: E402
-from backend.services.investments_service import InvestmentsService  # noqa: E402
+from backend.services.investments import InvestmentsService  # noqa: E402
 
 with get_db_context() as _db:
     InvestmentsService(_db).backfill_from_insurance_accounts()

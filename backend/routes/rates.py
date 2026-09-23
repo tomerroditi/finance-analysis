@@ -50,7 +50,7 @@ def refresh_rates(db: Session = Depends(get_database)) -> dict[str, Any]:
     service = RatesService(db)
     result = service.refresh_from_boi()
     if result.get("status") == "updated":
-        from backend.services.investments_service import InvestmentsService
+        from backend.services.investments import InvestmentsService
 
         result["investments_recalculated"] = InvestmentsService(
             db

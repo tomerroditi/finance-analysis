@@ -24,7 +24,7 @@ from backend.repositories.investment_snapshots_repository import (
 )
 from backend.repositories.investments_repository import InvestmentsRepository
 from backend.repositories.savings_goal_repository import SavingsGoalRepository
-from backend.repositories.transactions_repository import TransactionsRepository
+from backend.repositories.transactions import TransactionsRepository
 from backend.services.investments.insurance_sync import InsuranceSyncMixin
 from backend.services.investments.snapshots import SnapshotsMixin
 from backend.services.investments.valuation import CLOSED_SOURCE, ValuationMixin

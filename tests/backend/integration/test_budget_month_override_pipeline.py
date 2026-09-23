@@ -16,7 +16,7 @@ from backend.constants.budget import ALL_TAGS, TOTAL_BUDGET
 from backend.services.budget_month_override_service import (
     BudgetMonthOverrideService,
 )
-from backend.services.budget_service import MonthlyBudgetService
+from backend.services.budget import MonthlyBudgetService
 from backend.services.transactions_service import TransactionsService
 
 
@@ -135,7 +135,7 @@ class TestBudgetMonthOverridePipeline:
         totals, and moving a project transaction must not move it between
         months of the project spending summary.
         """
-        from backend.services.budget_service import YearlyBudgetService
+        from backend.services.budget import YearlyBudgetService
 
         yearly_svc = YearlyBudgetService(db_session)
         yearly_svc.create_rule("Other Y", 5000.0, "Other", ["all_tags"], 2024)

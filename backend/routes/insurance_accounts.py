@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 
 from backend.dependencies import get_database
 from backend.services.insurance_account_service import InsuranceAccountService
-from backend.services.investments_service import InvestmentsService
+from backend.services.investments import InvestmentsService
 
 router = APIRouter()
 

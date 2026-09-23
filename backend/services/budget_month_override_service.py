@@ -11,7 +11,7 @@ from backend.models.transaction import SplitTransaction
 from backend.repositories.budget_month_override_repository import (
     BudgetMonthOverrideRepository,
 )
-from backend.repositories.transactions_repository import TransactionsRepository
+from backend.repositories.transactions import TransactionsRepository
 
 
 class BudgetMonthOverrideService:

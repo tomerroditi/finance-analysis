@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 from backend.dependencies import get_database
 from backend.errors import ValidationException
 from backend.routes.schemas import ApiRequestModel
-from backend.services.investments_service import InvestmentsService
+from backend.services.investments import InvestmentsService
 
 router = APIRouter()
 

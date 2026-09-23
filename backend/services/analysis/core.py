@@ -11,13 +11,13 @@ from sqlalchemy.orm import Session
 
 from backend.repositories.bank_balance_repository import BankBalanceRepository
 from backend.repositories.investments_repository import InvestmentsRepository
-from backend.repositories.transactions_repository import TransactionsRepository
+from backend.repositories.transactions import TransactionsRepository
 from backend.services.analysis.cashflow import CashflowMixin
 from backend.services.analysis.forecast import ForecastMixin
 from backend.services.analysis.net_worth import NetWorthMixin
 from backend.services.bank_balance_service import BankBalanceService
 from backend.services.cash_balance_service import CashBalanceService
-from backend.services.investments_service import InvestmentsService
+from backend.services.investments import InvestmentsService
 
 
 class AnalysisService(CashflowMixin, NetWorthMixin, ForecastMixin):

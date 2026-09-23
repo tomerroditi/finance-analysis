@@ -19,11 +19,11 @@ from sqlalchemy.orm import Session
 
 from backend.errors import EntityNotFoundException, ValidationException
 from backend.repositories.retirement_goal_repository import RetirementGoalRepository
-from backend.services.analysis_service import AnalysisService
+from backend.services.analysis import AnalysisService
 from backend.services.bank_balance_service import BankBalanceService
 from backend.services.cash_balance_service import CashBalanceService
 from backend.services.insurance_account_service import InsuranceAccountService
-from backend.services.investments_service import InvestmentsService
+from backend.services.investments import InvestmentsService
 
 # Israeli pension milestones
 FULL_PENSION_AGE_MALE = 67

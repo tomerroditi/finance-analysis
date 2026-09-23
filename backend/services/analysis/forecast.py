@@ -471,7 +471,7 @@ class ForecastMixin:
             ``(provider, account_name)`` -> share, summing to 1. Empty when
             there is no history to split.
         """
-        from backend.services.budget_service import MonthlyBudgetService
+        from backend.services.budget import MonthlyBudgetService
 
         return self._spend_shares(
             MonthlyBudgetService(self.db).get_filtered_expenses(
@@ -586,7 +586,7 @@ class ForecastMixin:
             - ``avg_6_months`` -- average monthly expenses over the last 6 months.
             - ``avg_12_months`` -- average monthly expenses over the last 12 months.
         """
-        from backend.services.budget_service import (
+        from backend.services.budget import (
             MonthlyBudgetService,
             ProjectBudgetService,
         )

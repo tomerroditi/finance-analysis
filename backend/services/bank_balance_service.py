@@ -10,7 +10,7 @@ from backend.constants.providers import Services
 from backend.errors import ValidationException
 from backend.repositories.bank_balance_repository import BankBalanceRepository
 from backend.repositories.scraping_history_repository import ScrapingHistoryRepository
-from backend.repositories.transactions_repository import TransactionsRepository
+from backend.repositories.transactions import TransactionsRepository
 
 
 class BankBalanceService:

@@ -14,7 +14,7 @@ from backend.models.transaction import (
     TransactionBase,
 )
 from backend.repositories.tagging_rules_repository import TaggingRulesRepository
-from backend.repositories.transactions_repository import TransactionsRepository
+from backend.repositories.transactions import TransactionsRepository
 from backend.services.tagging_service import CategoriesTagsService
 from backend.services.transactions_service import TransactionsService
 

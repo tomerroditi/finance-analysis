@@ -1,7 +1,7 @@
 import pytest
 
 from backend.constants.budget import PERIOD_YEARLY
-from backend.services.budget_service import BudgetService, MonthlyBudgetService
+from backend.services.budget import BudgetService, MonthlyBudgetService
 
 
 class TestFindConflictingTags:
@@ -81,7 +81,7 @@ class TestProjectCategoryHelpers:
 
     def test_is_category_project_owned(self, db_session):
         """A category with a project rule is project-owned; others are not."""
-        from backend.services.budget_service import ProjectBudgetService
+        from backend.services.budget import ProjectBudgetService
 
         ProjectBudgetService(db_session).budget_repository.add(
             "Total Budget", 100.0, "Reno", "all_tags", None, None, period_type="project")

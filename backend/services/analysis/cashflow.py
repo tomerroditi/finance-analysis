@@ -143,7 +143,7 @@ class CashflowMixin:
         df = self._net_matched_refunds(df, exclude_pending_refunds)
 
         if exclude_projects:
-            from backend.services.budget_service import ProjectBudgetService
+            from backend.services.budget import ProjectBudgetService
 
             project_names = ProjectBudgetService(self.db).get_all_projects_names()
             if project_names:
@@ -467,7 +467,7 @@ class CashflowMixin:
         expenses = df[expense_mask].copy()
 
         if exclude_projects:
-            from backend.services.budget_service import ProjectBudgetService
+            from backend.services.budget import ProjectBudgetService
 
             project_names = ProjectBudgetService(self.db).get_all_projects_names()
             if project_names:

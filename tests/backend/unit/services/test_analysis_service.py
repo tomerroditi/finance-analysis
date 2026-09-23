@@ -7,7 +7,7 @@ import pytest
 
 from backend.constants.tables import Tables
 from backend.models.transaction import BankTransaction, CreditCardTransaction
-from backend.services.analysis_service import AnalysisService
+from backend.services.analysis import AnalysisService
 from backend.services.pending_refunds_service import PendingRefundsService
 from backend.services.recurring_service import RecurringService
 
@@ -220,7 +220,7 @@ class TestAnalysisServiceNetWorthOverTime:
         up to that month-end. Cash transactions belong in the cash line, not
         bundled into bank_balance.
         """
-        from backend.repositories.transactions_repository import TransactionsRepository
+        from backend.repositories.transactions import TransactionsRepository
 
         repo = TransactionsRepository(db_session)
         bank_only = repo.get_cashflow_transactions()

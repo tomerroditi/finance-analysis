@@ -20,7 +20,7 @@ from backend.constants.tables import Tables, TransactionsTableFields
 from backend.errors import EntityNotFoundException, ValidationException
 from backend.repositories.bank_balance_repository import BankBalanceRepository
 from backend.repositories.investments_repository import InvestmentsRepository
-from backend.repositories.transactions_repository import (
+from backend.repositories.transactions import (
     ManualTransactionDTO,
     TransactionsRepository,
 )
@@ -280,7 +280,7 @@ class TransactionsService:
         transactions calls this — see
         ``InvestmentsService.realign_closing_snapshots``.
         """
-        from backend.services.investments_service import InvestmentsService
+        from backend.services.investments import InvestmentsService
 
         InvestmentsService(self.db).realign_closing_snapshots()
 
@@ -486,7 +486,7 @@ class TransactionsService:
             category = data.get("category")
             tag = data.get("tag")
             if category and tag:
-                from backend.services.investments_service import InvestmentsService
+                from backend.services.investments import InvestmentsService
 
                 InvestmentsService(self.db).recalculate_prior_wealth_by_tag(
                     category, tag
@@ -696,7 +696,7 @@ class TransactionsService:
             and inv_category
             and inv_tag
         ):
-            from backend.services.investments_service import InvestmentsService
+            from backend.services.investments import InvestmentsService
 
             InvestmentsService(self.db).recalculate_prior_wealth_by_tag(
                 inv_category, inv_tag

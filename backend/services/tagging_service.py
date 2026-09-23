@@ -21,7 +21,7 @@ from backend.repositories.split_transactions_repository import (
 )
 from backend.repositories.tagging_repository import TaggingRepository
 from backend.repositories.tagging_rules_repository import TaggingRulesRepository
-from backend.repositories.transactions_repository import (
+from backend.repositories.transactions import (
     CreditCardRepository,
     TransactionsRepository,
 )

@@ -1,7 +1,7 @@
 ---
 paths:
   - "backend/services/transactions_service.py"
-  - "backend/repositories/transactions_repository.py"
+  - "backend/repositories/transactions/**/*.py"
   - "backend/repositories/split_transactions_repository.py"
   - "backend/routes/transactions.py"
   - "frontend/src/components/modals/SplitTransactionModal.tsx"

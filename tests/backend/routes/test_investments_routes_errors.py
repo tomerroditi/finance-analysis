@@ -270,7 +270,7 @@ class TestInvestmentBusinessRuleErrors:
         self, test_client, db_session
     ):
         """Verify the API rejects reclassifying an insurance-linked investment."""
-        from backend.services.investments_service import InvestmentsService
+        from backend.services.investments import InvestmentsService
 
         inv_id = InvestmentsService(db_session).investments_repo.create_investment(
             category="Investments",

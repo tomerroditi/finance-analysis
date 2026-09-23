@@ -15,7 +15,7 @@ from backend.models.transaction import (
     ManualInvestmentTransaction,
     SplitTransaction,
 )
-from backend.repositories.transactions_repository import (
+from backend.repositories.transactions import (
     CashRepository,
     ManualTransactionDTO,
     TransactionsRepository,
@@ -707,7 +707,7 @@ class TestGetTableSessionCache:
         self, db_session, seed_base_transactions, monkeypatch
     ):
         """Two identical get_table calls perform the 5-table read only once."""
-        from backend.repositories import transactions_repository as tr_module
+        from backend.repositories import transactions as tr_module
 
         repo = tr_module.TransactionsRepository(db_session)
         calls = {"n": 0}

@@ -465,7 +465,7 @@ class TestBudgetOverviewRoute:
         Matched on category, exactly as ``get_monthly_budget_view`` does, so the
         Overview can never claim a budget the Monthly tab does not show.
         """
-        from backend.services.budget_service import MonthlyBudgetService
+        from backend.services.budget import MonthlyBudgetService
 
         MonthlyBudgetService(db_session).create_rule(
             "Total Budget", 12345.0, "Total Budget", ["all_tags"], 4, 2026

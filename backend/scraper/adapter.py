@@ -27,7 +27,7 @@ from backend.database import get_db_context
 from backend.errors import EntityNotFoundException
 from backend.repositories.credentials_repository import CredentialsRepository
 from backend.repositories.scraping_history_repository import ScrapingHistoryRepository
-from backend.repositories.transactions_repository import TransactionsRepository
+from backend.repositories.transactions import TransactionsRepository
 from backend.services.bank_balance_service import BankBalanceService
 from backend.services.tagging_rules_service import TaggingRulesService
 from backend.services.tagging_service import CategoriesTagsService
@@ -1008,7 +1008,7 @@ class InsuranceScraperAdapter(ScraperAdapter):
         from backend.services.insurance_account_service import (
             InsuranceAccountService,
         )
-        from backend.services.investments_service import InvestmentsService
+        from backend.services.investments import InvestmentsService
 
         accounts_to_upsert = [
             account.metadata for account in result.accounts if account.metadata

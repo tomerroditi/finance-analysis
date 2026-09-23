@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 from backend.dependencies import get_database
 from backend.errors import EntityNotFoundException
 from backend.routes.schemas import ApiRequestModel
-from backend.services.budget_service import (
+from backend.services.budget import (
     BudgetOverviewService,
     BudgetService,
     MonthlyBudgetService,

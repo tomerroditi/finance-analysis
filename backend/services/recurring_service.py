@@ -39,7 +39,7 @@ from backend.repositories.recurring_decisions_repository import (
     PENDING,
     RecurringDecisionsRepository,
 )
-from backend.repositories.transactions_repository import TransactionsRepository
+from backend.repositories.transactions import TransactionsRepository
 from backend.services.transaction_classification import income_mask
 from backend.utils import data_cache
 
@@ -433,7 +433,7 @@ class RecurringService:
         ]
         # Time-boxed project budgets (renovation, wedding…) are one-off arcs,
         # not ongoing commitments — keep them out of "recurring".
-        from backend.services.budget_service import ProjectBudgetService
+        from backend.services.budget import ProjectBudgetService
 
         exclude += ProjectBudgetService(self.db).get_all_projects_names()
 

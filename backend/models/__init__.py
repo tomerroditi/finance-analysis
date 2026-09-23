@@ -1,8 +1,4 @@
-"""
-SQLAlchemy ORM Models
-
-This package contains SQLAlchemy ORM models for database tables.
-"""
+"""SQLAlchemy ORM models, one module per table (or tightly coupled table group)."""
 
 from backend.models.bank_balance import BankBalance
 from backend.models.base import Base, TimestampMixin
@@ -38,13 +34,9 @@ from backend.models.transaction import (
 )
 
 __all__ = [
-    # Other models
     "BankBalance",
-    # Transactions
     "BankTransaction",
-    # Base
     "Base",
-    # Budget month override
     "BudgetMonthOverride",
     "BudgetRule",
     "CashBalance",
@@ -52,22 +44,19 @@ __all__ = [
     "Category",
     "Credential",
     "CreditCardTransaction",
-    # Dashboard insights
     "InsightDismissal",
     "InsuranceAccount",
     "InsuranceTransaction",
+    "InterestRate",
     "Investment",
     "InvestmentBalanceSnapshot",
     "Liability",
     "LiabilityTransaction",
     "ManualInvestmentTransaction",
-    # Refund linking
     "PendingRefund",
-    # Recurring charges
     "RecurringDecision",
     "RefundLink",
     "RetirementGoal",
-    # Savings goals
     "SavingsGoal",
     "SavingsGoalAllocation",
     "SavingsGoalInvestment",

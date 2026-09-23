@@ -1213,7 +1213,7 @@ class TestApplyingRulesRealignsClosedInvestments:
         transfer onto the investment, the zero has to follow it or the closed
         fund is carried below zero in net worth.
         """
-        from backend.services.investments_service import InvestmentsService
+        from backend.services.investments import InvestmentsService
 
         investments = InvestmentsService(db_session)
         stock_fund = seed_investments["investments"][0]
