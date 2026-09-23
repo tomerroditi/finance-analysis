@@ -1,7 +1,7 @@
 """Pending refunds service with business logic."""
 
 import logging
-from typing import Literal, Optional
+from typing import Literal
 
 import pandas as pd
 from sqlalchemy.orm import Session
@@ -42,7 +42,7 @@ class PendingRefundsService:
         source_id: int,
         source_table: str,
         expected_amount: float,
-        notes: Optional[str] = None,
+        notes: str | None = None,
     ) -> dict:
         """
         Mark a transaction or split as expecting a refund.
@@ -187,9 +187,7 @@ class PendingRefundsService:
             select(repo.model).where(repo.model.unique_id == transaction_id)
         ).scalar_one_or_none()
 
-    def get_allocated_for_transaction(
-        self, transaction_id: int, source: str
-    ) -> float:
+    def get_allocated_for_transaction(self, transaction_id: int, source: str) -> float:
         """
         Total amount of a refund transaction already allocated to refunds.
 
@@ -362,7 +360,7 @@ class PendingRefundsService:
             "remaining": remaining,
         }
 
-    def update_notes(self, pending_refund_id: int, notes: Optional[str]) -> dict:
+    def update_notes(self, pending_refund_id: int, notes: str | None) -> dict:
         """
         Update the note on a pending refund.
 
@@ -394,7 +392,7 @@ class PendingRefundsService:
         return {"id": pending_refund_id, "notes": cleaned}
 
     def set_source_note(
-        self, refund_source: str, refund_transaction_id: int, note: Optional[str]
+        self, refund_source: str, refund_transaction_id: int, note: str | None
     ) -> dict:
         """
         Create, update, or clear the note on a refund source transaction.
@@ -418,9 +416,7 @@ class PendingRefundsService:
         canonical = self._canonical_source(refund_source)
         cleaned = (note or "").strip()
         if cleaned:
-            self.repo.upsert_source_note(
-                canonical, refund_transaction_id, cleaned
-            )
+            self.repo.upsert_source_note(canonical, refund_transaction_id, cleaned)
         else:
             self.repo.delete_source_note(canonical, refund_transaction_id)
         return {
@@ -451,7 +447,7 @@ class PendingRefundsService:
 
         self.repo.delete_pending_refund(pending_refund_id)
 
-    def get_all_pending(self, status: Optional[str] = None) -> list[dict]:
+    def get_all_pending(self, status: str | None = None) -> list[dict]:
         """
         Get all pending refunds enriched with source details.
 
@@ -569,9 +565,7 @@ class PendingRefundsService:
             # Normalize legacy source-name variants so the frontend can key
             # links of the same transaction consistently.
             for link in p["links"]:
-                link["refund_source"] = self._canonical_source(
-                    link["refund_source"]
-                )
+                link["refund_source"] = self._canonical_source(link["refund_source"])
 
             # Compute totals from links
             total_refunded = sum(link["amount"] for link in p["links"])
@@ -768,7 +762,9 @@ class PendingRefundsService:
             Total amount expecting refund (to exclude from budget).
         """
         pending_df = self.repo.get_all_pending_refunds(status="pending")
-        pending_total = pending_df["expected_amount"].sum() if not pending_df.empty else 0.0
+        pending_total = (
+            pending_df["expected_amount"].sum() if not pending_df.empty else 0.0
+        )
 
         partial_df = self.repo.get_all_pending_refunds(status="partial")
         partial_remaining = 0.0
@@ -994,9 +990,7 @@ class PendingRefundsService:
 
             credit = matched
             if exclude_open and pending["status"] in ("pending", "partial"):
-                credit += max(
-                    0.0, float(pending["expected_amount"]) - matched
-                )
+                credit += max(0.0, float(pending["expected_amount"]) - matched)
             if credit <= 0:
                 continue
 
@@ -1099,9 +1093,7 @@ def apply_refund_amount_adjustments(
     if tx_adj:
         # `unique_id` is a per-table auto-increment, so it only identifies a
         # row alongside its source table.
-        keys = pd.Series(
-            list(zip(df[source_col], df[unique_id_col])), index=df.index
-        )
+        keys = pd.Series(list(zip(df[source_col], df[unique_id_col])), index=df.index)
         adj = adj.add(keys.map(tx_adj).fillna(0.0).astype(float))
     if split_adj and split_id_col in df.columns:
         adj = adj.add(df[split_id_col].map(split_adj).fillna(0.0).astype(float))
@@ -1110,7 +1102,5 @@ def apply_refund_amount_adjustments(
     if keep_gross_in is not None:
         df[keep_gross_in] = original
     netted = original + adj
-    df["amount"] = netted.clip(upper=0.0).where(
-        original < 0, netted.clip(lower=0.0)
-    )
+    df["amount"] = netted.clip(upper=0.0).where(original < 0, netted.clip(lower=0.0))
     return df

@@ -5,10 +5,10 @@ Stores the user's early retirement planning parameters, including
 Israeli-specific savings vehicles (pension, Keren Hishtalmut, Bituach Leumi).
 """
 
-from sqlalchemy import Column, Integer, Float, Boolean, String
+from sqlalchemy import Boolean, Column, Float, Integer, String
 
-from backend.models.base import Base, TimestampMixin
 from backend.constants.tables import Tables
+from backend.models.base import Base, TimestampMixin
 
 
 class RetirementGoal(Base, TimestampMixin):

@@ -62,9 +62,7 @@ class InterestRatesRepository:
         int
             Number of stored points.
         """
-        stmt = select(func.count(InterestRate.id)).where(
-            InterestRate.series == series
-        )
+        stmt = select(func.count(InterestRate.id)).where(InterestRate.series == series)
         return int(self.db.execute(stmt).scalar_one())
 
     def upsert_points(

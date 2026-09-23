@@ -2,19 +2,25 @@
 Budget repository with SQLAlchemy ORM.
 """
 
-from typing import Optional
-
 import pandas as pd
-from sqlalchemy import select, update, delete
+from sqlalchemy import delete, select, update
 from sqlalchemy.orm import Session
 
-from backend.errors import EntityNotFoundException
-from backend.models.budget import BudgetRule
 from backend.constants.budget import (
-    AMOUNT, CATEGORY, ID, MONTH, NAME, TAGS, YEAR,
-    PERIOD_MONTHLY, PERIOD_YEARLY, PERIOD_PROJECT,
+    AMOUNT,
+    CATEGORY,
+    ID,
+    MONTH,
+    NAME,
+    PERIOD_MONTHLY,
+    PERIOD_PROJECT,
+    PERIOD_YEARLY,
+    TAGS,
+    YEAR,
 )
 from backend.constants.tables import Tables
+from backend.errors import EntityNotFoundException
+from backend.models.budget import BudgetRule
 from backend.utils.session_cache import session_cache_get, session_cache_set
 
 
@@ -47,9 +53,9 @@ class BudgetRepository:
         amount: float,
         category: str,
         tags: str,
-        month: Optional[int],
-        year: Optional[int],
-        period_type: Optional[str] = None,
+        month: int | None,
+        year: int | None,
+        period_type: str | None = None,
     ) -> None:
         """Create a new budget rule.
 

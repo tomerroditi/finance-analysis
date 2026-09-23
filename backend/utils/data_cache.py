@@ -41,7 +41,8 @@ from __future__ import annotations
 
 import os
 import threading
-from typing import Any, Callable, Hashable, TypeVar
+from collections.abc import Callable, Hashable
+from typing import Any, TypeVar
 
 from sqlalchemy import event
 from sqlalchemy.orm import Session
@@ -175,7 +176,7 @@ def _lookup(path: str, version: tuple, key: tuple[Hashable, ...]) -> tuple[bool,
     return False, None
 
 
-def cached(db: Session, key: tuple[Hashable, ...], compute: Callable[[], T]) -> T:
+def cached[T](db: Session, key: tuple[Hashable, ...], compute: Callable[[], T]) -> T:
     """Return ``compute()``'s result, reusing it across requests when valid.
 
     Parameters

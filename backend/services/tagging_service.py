@@ -15,10 +15,10 @@ from backend.constants.categories import (
     PROTECTED_TAGS,
     UNUSED_CATEGORY_MONTHS,
 )
+from backend.repositories.budget_repository import BudgetRepository
 from backend.repositories.split_transactions_repository import (
     SplitTransactionsRepository,
 )
-from backend.repositories.budget_repository import BudgetRepository
 from backend.repositories.tagging_repository import TaggingRepository
 from backend.repositories.tagging_rules_repository import TaggingRulesRepository
 from backend.repositories.transactions_repository import (
@@ -26,7 +26,6 @@ from backend.repositories.transactions_repository import (
     TransactionsRepository,
 )
 from backend.utils.text_utils import to_title_case
-
 
 # In-memory categories cache, partitioned by the resolved database path.
 # Real mode, demo mode and every per-visitor demo sandbox (see
@@ -38,7 +37,6 @@ _categories_cache: dict[str, dict] = {}
 def cache_key() -> str:
     """Return the cache partition for the current context (its DB path)."""
     return AppConfig().get_db_path()
-
 
 
 def _clean_name(name: object) -> str | None:
@@ -226,7 +224,7 @@ class CategoriesTagsService:
         category = _clean_name(category)
         if category is None:
             return False
-        if category.lower() in [k.lower() for k in self.categories_and_tags.keys()]:
+        if category.lower() in [k.lower() for k in self.categories_and_tags]:
             return False
         clean_tags: list[str] = []
         for tag in tags or []:
@@ -298,7 +296,7 @@ class CategoriesTagsService:
             return False
         if new_name == old_name:
             return True
-        if new_name.lower() in [k.lower() for k in self.categories_and_tags.keys()]:
+        if new_name.lower() in [k.lower() for k in self.categories_and_tags]:
             if new_name.lower() != old_name.lower():
                 return False
 
@@ -383,15 +381,11 @@ class CategoriesTagsService:
         ):
             return False
 
-        self.transactions_repo.update_category_for_tag(
-            old_category, new_category, tag
-        )
+        self.transactions_repo.update_category_for_tag(old_category, new_category, tag)
         self.split_transactions_repo.update_category_for_tag(
             old_category, new_category, tag
         )
-        self.tagging_rules_repo.update_category_for_tag(
-            old_category, new_category, tag
-        )
+        self.tagging_rules_repo.update_category_for_tag(old_category, new_category, tag)
         self.budget_repo.reallocate_tag(old_category, new_category, tag)
 
         self.tagging_repo.relocate_tag(tag, old_category, new_category)

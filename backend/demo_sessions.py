@@ -30,7 +30,7 @@ import re
 import shutil
 import threading
 import time
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from fastapi import Request, Response
 from fastapi.responses import JSONResponse
@@ -267,13 +267,17 @@ class DemoSessionStore:
                 return
 
             now = time.monotonic()
-            fresh = now - self._checked_at.get(session_id, -1.0) < REVALIDATE_WINDOW_SECONDS
+            fresh = (
+                now - self._checked_at.get(session_id, -1.0) < REVALIDATE_WINDOW_SECONDS
+            )
             if fresh and os.path.exists(path):
                 return
 
             local_etag = self._etags.get(session_id) if os.path.exists(path) else None
             try:
-                remote = self.backend.get(blob_pathname(session_id), if_none_match=local_etag)
+                remote = self.backend.get(
+                    blob_pathname(session_id), if_none_match=local_etag
+                )
             except Exception:
                 logger.warning(
                     "Could not revalidate demo sandbox %s; serving local copy",
@@ -399,7 +403,9 @@ class DemoSessionStore:
                     os.remove(stale)
             if self.backend is not None:
                 try:
-                    self.backend.delete([self.backend.url_for(blob_pathname(session_id))])
+                    self.backend.delete(
+                        [self.backend.url_for(blob_pathname(session_id))]
+                    )
                 except Exception:
                     logger.warning(
                         "Could not delete persisted demo sandbox %s",
@@ -427,7 +433,7 @@ class DemoSessionStore:
             return 0
         if max_age_days is None:
             max_age_days = int(os.environ.get(TTL_ENV, DEFAULT_TTL_DAYS))
-        cutoff = datetime.now(timezone.utc) - timedelta(days=max_age_days)
+        cutoff = datetime.now(UTC) - timedelta(days=max_age_days)
         stale = []
         for blob in self.backend.list(BLOB_PREFIX):
             uploaded = parse_uploaded_at(blob.get("uploadedAt"))

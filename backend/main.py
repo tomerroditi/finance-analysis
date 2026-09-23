@@ -31,7 +31,6 @@ from backend.errors import (
     ValidationException,
 )
 from backend.models import Base
-from backend.utils import auth
 from backend.routes import (
     analytics,
     backup,
@@ -51,8 +50,11 @@ from backend.routes import (
     tagging_rules,
     transactions,
     updates,
+)
+from backend.routes import (
     version as version_route,
 )
+from backend.utils import auth
 from backend.utils.json_response import SafeJSONResponse
 from backend.utils.version import get_app_version
 
@@ -110,9 +112,9 @@ async def lifespan(app: FastAPI):
 
     from backend.repositories.credentials_repository import CredentialsRepository
     from backend.repositories.tagging_repository import (
-        TaggingRepository,
-        DEFAULT_CATEGORIES_PATH,
         DEFAULT_CATEGORIES_ICONS_PATH,
+        DEFAULT_CATEGORIES_PATH,
+        TaggingRepository,
     )
 
     # Startup
@@ -136,9 +138,7 @@ async def lifespan(app: FastAPI):
     if alembic_ini.is_file():
         command.upgrade(_startup_alembic_config(alembic_ini), "head")
     else:
-        logger.warning(
-            "alembic.ini not found at %s — skipping migrations", alembic_ini
-        )
+        logger.warning("alembic.ini not found at %s — skipping migrations", alembic_ini)
 
     # Seed categories and migrate credentials
     with get_db_context() as db:
@@ -393,11 +393,7 @@ _tailnet_ingress_port = auth.build_tailnet_ingress_port()
 
 def _needs_remote_token(path: str) -> bool:
     """Return whether ``path`` is guarded by the remote-client token check."""
-    return (
-        path.startswith("/api/")
-        or path in _DOC_PATHS
-        or path.startswith("/docs/")
-    )
+    return path.startswith(("/api/", "/docs/")) or path in _DOC_PATHS
 
 
 @app.middleware("http")
@@ -539,14 +535,19 @@ app.include_router(updates.router, prefix="/api/updates", tags=["Updates"])
 try:
     from backend.routes import uninstall as uninstall_route
 
-    app.include_router(uninstall_route.router, prefix="/api/uninstall", tags=["Uninstall"])
+    app.include_router(
+        uninstall_route.router, prefix="/api/uninstall", tags=["Uninstall"]
+    )
 except ImportError:
     pass
 
 # Optional routes — gated for serverless where keyring is absent
 try:
     from backend.routes import credentials
-    app.include_router(credentials.router, prefix="/api/credentials", tags=["Credentials"])
+
+    app.include_router(
+        credentials.router, prefix="/api/credentials", tags=["Credentials"]
+    )
 except ImportError:
     pass
 
@@ -555,12 +556,12 @@ except ImportError:
 # otherwise every data source on the hosted demo reports "never synced".
 # Mounted first so the gated router below can override nothing it owns.
 from backend.routes import scraping_readonly
-app.include_router(
-    scraping_readonly.router, prefix="/api/scraping", tags=["Scraping"]
-)
+
+app.include_router(scraping_readonly.router, prefix="/api/scraping", tags=["Scraping"])
 
 try:
     from backend.routes import scraping
+
     app.include_router(scraping.router, prefix="/api/scraping", tags=["Scraping"])
 except ImportError:
     pass
@@ -574,6 +575,7 @@ _enable_testing_routes = (
 if _enable_testing_routes:
     try:
         from backend.routes import testing
+
         app.include_router(testing.router, prefix="/api/testing", tags=["Testing"])
     except ImportError:
         pass
@@ -710,7 +712,11 @@ def _resolve_frontend_dist() -> Path:
 
 _frontend_dist = _resolve_frontend_dist()
 if _frontend_dist.is_dir():
-    app.mount("/assets", StaticFiles(directory=_frontend_dist / "assets"), name="static-assets")
+    app.mount(
+        "/assets",
+        StaticFiles(directory=_frontend_dist / "assets"),
+        name="static-assets",
+    )
 
     _frontend_dist_resolved = _frontend_dist.resolve()
 

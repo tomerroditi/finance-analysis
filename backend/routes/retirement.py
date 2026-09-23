@@ -35,10 +35,10 @@ class RetirementGoalUpsert(ApiRequestModel):
     bituach_leumi_eligible: bool = True
     bituach_leumi_monthly_estimate: float = Field(2800.0, ge=0)
     other_passive_income: float = Field(0.0, ge=0)
-    monthly_income: Optional[float] = Field(None, ge=0)
-    net_worth_override: Optional[float] = Field(None, ge=0)
-    monthly_expenses_override: Optional[float] = Field(None, ge=0)
-    total_investments_override: Optional[float] = Field(None, ge=0)
+    monthly_income: float | None = Field(None, ge=0)
+    net_worth_override: float | None = Field(None, ge=0)
+    monthly_expenses_override: float | None = Field(None, ge=0)
+    total_investments_override: float | None = Field(None, ge=0)
 
 
 class RetirementGoalResponse(BaseModel):
@@ -59,10 +59,10 @@ class RetirementGoalResponse(BaseModel):
     bituach_leumi_eligible: bool
     bituach_leumi_monthly_estimate: float
     other_passive_income: float
-    monthly_income: Optional[float] = None
-    net_worth_override: Optional[float] = None
-    monthly_expenses_override: Optional[float] = None
-    total_investments_override: Optional[float] = None
+    monthly_income: float | None = None
+    net_worth_override: float | None = None
+    monthly_expenses_override: float | None = None
+    total_investments_override: float | None = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -110,7 +110,7 @@ class RetirementProjectionsResponse(BaseModel):
     monthly_savings_needed: float
     progress_pct: float
     readiness: str
-    portfolio_depleted_age: Optional[int] = None
+    portfolio_depleted_age: int | None = None
     target_retirement_age: int
     full_pension_age: int
     net_worth_projection: list[NetWorthProjectionPoint]
@@ -137,16 +137,16 @@ class SolveFieldResponse(BaseModel):
 class KerenHishtalmutBalanceResponse(BaseModel):
     """Response body for Keren Hishtalmut balance."""
 
-    balance: Optional[float] = None
+    balance: float | None = None
 
 
 class ScrapedDefaultsResponse(BaseModel):
     """Response body for auto-fillable values from scraped insurance data."""
 
-    keren_hishtalmut_balance: Optional[float] = None
-    keren_hishtalmut_monthly_contribution: Optional[float] = None
-    pension_monthly_deposit: Optional[float] = None
-    avg_monthly_salary: Optional[float] = None
+    keren_hishtalmut_balance: float | None = None
+    keren_hishtalmut_monthly_contribution: float | None = None
+    pension_monthly_deposit: float | None = None
+    avg_monthly_salary: float | None = None
 
 
 @router.get("/goal", response_model=Optional[RetirementGoalResponse])
@@ -157,9 +157,7 @@ def get_goal(db: Session = Depends(get_database)):
 
 
 @router.put("/goal", response_model=RetirementGoalResponse)
-def upsert_goal(
-    data: RetirementGoalUpsert, db: Session = Depends(get_database)
-):
+def upsert_goal(data: RetirementGoalUpsert, db: Session = Depends(get_database)):
     """Create or update the retirement goal profile."""
     service = RetirementService(db)
     return service.upsert_goal(**data.model_dump())

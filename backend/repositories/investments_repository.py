@@ -5,15 +5,15 @@ Investments repository with SQLAlchemy ORM.
 from datetime import datetime
 
 import pandas as pd
-from sqlalchemy import select, update, delete
+from sqlalchemy import delete, select, update
 from sqlalchemy.orm import Session
-from backend.errors import EntityNotFoundException
-from backend.utils.policy_ids import policy_id_key
-from backend.utils.session_cache import session_cache_get, session_cache_set
 
+from backend.constants.tables import InvestmentsTableFields, Tables
+from backend.errors import EntityNotFoundException
 from backend.models.investment import Investment
 from backend.models.investment_balance_snapshot import InvestmentBalanceSnapshot
-from backend.constants.tables import InvestmentsTableFields, Tables
+from backend.utils.policy_ids import policy_id_key
+from backend.utils.session_cache import session_cache_get, session_cache_set
 
 
 class InvestmentsRepository:
@@ -51,16 +51,16 @@ class InvestmentsRepository:
         tag: str,
         type_: str,
         name: str,
-        interest_rate: float = None,
+        interest_rate: float | None = None,
         interest_rate_type: str = "fixed",
-        rate_spread: float = None,
-        commission_deposit: float = None,
-        commission_management: float = None,
-        commission_withdrawal: float = None,
-        liquidity_date: str = None,
-        maturity_date: str = None,
-        notes: str = None,
-        insurance_policy_id: str = None,
+        rate_spread: float | None = None,
+        commission_deposit: float | None = None,
+        commission_management: float | None = None,
+        commission_withdrawal: float | None = None,
+        liquidity_date: str | None = None,
+        maturity_date: str | None = None,
+        notes: str | None = None,
+        insurance_policy_id: str | None = None,
     ) -> int:
         """Create a new investment record.
 
@@ -225,9 +225,7 @@ class InvestmentsRepository:
         ``backend.utils.policy_ids``) when no exact match exists, so a
         provider restyling its policy IDs cannot fork a duplicate investment.
         """
-        stmt = select(Investment).where(
-            Investment.insurance_policy_id == policy_id
-        )
+        stmt = select(Investment).where(Investment.insurance_policy_id == policy_id)
         exact = pd.read_sql(stmt, self.db.bind)
         if not exact.empty:
             return exact

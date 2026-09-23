@@ -5,17 +5,17 @@ Revises: c3d5e7f9a1b3
 Create Date: 2026-06-19 12:00:00.000000
 
 """
-from typing import Sequence, Union
 
-from alembic import op
+from collections.abc import Sequence
+
 import sqlalchemy as sa
-
+from alembic import op
 
 # revision identifiers, used by Alembic.
-revision: str = 'd4f6a8c0e2b5'
-down_revision: Union[str, Sequence[str], None] = 'c3d5e7f9a1b3'
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+revision: str = "d4f6a8c0e2b5"
+down_revision: str | Sequence[str] | None = "c3d5e7f9a1b3"
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
 
 
 # Legacy named UNIQUE constraints that exist only in on-disk databases created
@@ -53,9 +53,7 @@ def _unique_constraint_names(conn, table: str) -> set[str]:
     """
     inspector = sa.inspect(conn)
     return {
-        uc["name"]
-        for uc in inspector.get_unique_constraints(table)
-        if uc.get("name")
+        uc["name"] for uc in inspector.get_unique_constraints(table) if uc.get("name")
     }
 
 

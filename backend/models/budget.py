@@ -2,9 +2,10 @@
 Budget rule model.
 """
 
-from sqlalchemy import Column, Integer, String, Float
-from backend.models.base import Base, TimestampMixin
+from sqlalchemy import Column, Float, Integer, String
+
 from backend.constants.tables import Tables
+from backend.models.base import Base, TimestampMixin
 
 
 class BudgetRule(Base, TimestampMixin):

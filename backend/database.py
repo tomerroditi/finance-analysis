@@ -7,20 +7,19 @@ replacing the Streamlit-specific database connection used in the original app.
 
 import os
 import threading
+from collections.abc import Generator
 from contextlib import contextmanager
-from typing import Generator
 
 from sqlalchemy import create_engine
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import NullPool
 
-from backend.config import AppConfig
-
 # Importing for side effect: registers the Session event listeners that
 # clear the per-session DataFrame cache on commit/rollback. Everything that
 # opens a session imports this module, so registration is guaranteed.
 import backend.utils.session_cache  # noqa: F401  (side-effect import)
+from backend.config import AppConfig
 
 # Same guarantee for the cross-request cache, whose listeners version its
 # entries by write activity. Imported by name too — the engine resets below
@@ -28,7 +27,7 @@ import backend.utils.session_cache  # noqa: F401  (side-effect import)
 from backend.utils import data_cache
 
 
-def get_database_url(db_path: str = None) -> str:
+def get_database_url(db_path: str | None = None) -> str:
     """
     Get the SQLAlchemy database URL for SQLite.
 
@@ -47,7 +46,7 @@ def get_database_url(db_path: str = None) -> str:
     return f"sqlite:///{db_path}"
 
 
-def create_db_engine(db_path: str = None, echo: bool = False):
+def create_db_engine(db_path: str | None = None, echo: bool = False):
     """
     Create a SQLAlchemy engine for the database.
 
@@ -134,7 +133,7 @@ def _get_engine_locked(db_path: str) -> Engine:
     return _engines[db_path]
 
 
-def get_engine(db_path: str = None):
+def get_engine(db_path: str | None = None):
     """
     Get or create the engine for a database path.
 
@@ -155,7 +154,7 @@ def get_engine(db_path: str = None):
         return _get_engine_locked(db_path)
 
 
-def get_session_factory(db_path: str = None):
+def get_session_factory(db_path: str | None = None):
     """
     Get or create the session factory for a database path.
 

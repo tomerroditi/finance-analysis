@@ -8,9 +8,9 @@ builds on. Mixed into ``AnalysisService`` (see ``core.py``).
 
 import pandas as pd
 
-from backend.utils.dataframe_dates import to_month_series
 from backend.constants.providers import Services
 from backend.constants.tables import TransactionsTableFields
+from backend.utils.dataframe_dates import to_month_series
 
 
 class ForecastMixin:
@@ -160,7 +160,9 @@ class ForecastMixin:
 
         # --- Current bank balance ---
         balances = self.bank_balance_service.get_all_balances()
-        current_bank_balance = float(sum(b["balance"] for b in balances)) if balances else 0.0
+        current_bank_balance = (
+            float(sum(b["balance"] for b in balances)) if balances else 0.0
+        )
 
         # --- Known upcoming recurring charges still due this month ---
         # User-confirmed subscriptions/bills whose next expected charge falls
@@ -197,7 +199,7 @@ class ForecastMixin:
         income_due = recurring.get_income_due_remaining(today=today)
         ie_over_time = self.get_income_expenses_over_time()
         complete_months = [m for m in ie_over_time if m["month"] < month_str]
-        recent = complete_months[-self._TREND_MONTHS:]
+        recent = complete_months[-self._TREND_MONTHS :]
         # Median, not mean: the point of the fallback is to survive the month
         # the household sold a car or married off a child.
         avg_monthly_income = (
@@ -217,7 +219,9 @@ class ForecastMixin:
 
         # --- Bank-balance trajectory, on the account's own terms ---
         cash_out_baseline = (
-            float(pd.Series([m["expenses"] for m in recent]).median()) if recent else 0.0
+            float(pd.Series([m["expenses"] for m in recent]).median())
+            if recent
+            else 0.0
         )
         projected_remaining_cash_out = self._project_per_account(
             cash_out_baseline,
@@ -232,7 +236,9 @@ class ForecastMixin:
             - projected_remaining_cash_out
         )
 
-        safe_to_spend = max(0.0, expected_income - actual_expenses - committed_remaining)
+        safe_to_spend = max(
+            0.0, expected_income - actual_expenses - committed_remaining
+        )
         safe_to_spend_daily = (
             safe_to_spend / days_remaining if days_remaining > 0 else safe_to_spend
         )
@@ -253,19 +259,25 @@ class ForecastMixin:
                 cumulative += float(per_day_net.get(d, 0.0))
                 bal = month_start_balance + cumulative
                 last_actual_balance = bal
-                daily.append({
-                    "date": date_str,
-                    "actual_balance": round(bal, 2),
-                    # anchor the projected line to today so the two segments join
-                    "projected_balance": round(bal, 2) if d == day_of_month else None,
-                })
+                daily.append(
+                    {
+                        "date": date_str,
+                        "actual_balance": round(bal, 2),
+                        # anchor the projected line to today so the two segments join
+                        "projected_balance": round(bal, 2)
+                        if d == day_of_month
+                        else None,
+                    }
+                )
             else:
                 proj = last_actual_balance + remaining_daily_net * (d - day_of_month)
-                daily.append({
-                    "date": date_str,
-                    "actual_balance": None,
-                    "projected_balance": round(proj, 2),
-                })
+                daily.append(
+                    {
+                        "date": date_str,
+                        "actual_balance": None,
+                        "projected_balance": round(proj, 2),
+                    }
+                )
 
         return {
             "month": month_str,
@@ -401,9 +413,7 @@ class ForecastMixin:
         return sum(
             daily
             * share
-            * self._unobserved_days(
-                edges.get(key), today, month_start, days_in_month
-            )
+            * self._unobserved_days(edges.get(key), today, month_start, days_in_month)
             for key, share in shares.items()
         )
 
@@ -491,7 +501,9 @@ class ForecastMixin:
         df = self.repo.get_cashflow_transactions()
         if df.empty:
             return {}
-        return self._spend_shares(df[self.get_transactions_masks(df)["expenses"]], month_start)
+        return self._spend_shares(
+            df[self.get_transactions_masks(df)["expenses"]], month_start
+        )
 
     def _spend_shares(
         self, frame: pd.DataFrame, month_start: pd.Timestamp
@@ -616,21 +628,32 @@ class ForecastMixin:
             if project_names:
                 all_data = budget_service.transactions_service.get_data_for_analysis()
                 project_txns = all_data.loc[
-                    (~all_data[TransactionsTableFields.TYPE.value].isin(["split_parent"]))
-                    & all_data[TransactionsTableFields.CATEGORY.value].isin(project_names)
+                    (
+                        ~all_data[TransactionsTableFields.TYPE.value].isin(
+                            ["split_parent"]
+                        )
+                    )
+                    & all_data[TransactionsTableFields.CATEGORY.value].isin(
+                        project_names
+                    )
                 ].copy()
                 if not project_txns.empty:
                     project_txns["month"] = to_month_series(
                         project_txns[TransactionsTableFields.DATE.value]
                     )
                     monthly_project = (
-                        project_txns.groupby("month")[TransactionsTableFields.AMOUNT.value]
+                        project_txns.groupby("month")[
+                            TransactionsTableFields.AMOUNT.value
+                        ]
                         .sum()
                         .mul(-1)
                     )
 
         # Build months list
-        all_months = sorted(set(monthly.index) | (set(monthly_project.index) if monthly_project is not None else set()))
+        all_months = sorted(
+            set(monthly.index)
+            | (set(monthly_project.index) if monthly_project is not None else set())
+        )
         months_list = []
         for month in all_months:
             entry: dict = {
@@ -639,7 +662,10 @@ class ForecastMixin:
             }
             if include_projects:
                 entry["project_expenses"] = round(
-                    float(monthly_project.get(month, 0.0)) if monthly_project is not None else 0.0, 2
+                    float(monthly_project.get(month, 0.0))
+                    if monthly_project is not None
+                    else 0.0,
+                    2,
                 )
             months_list.append(entry)
 

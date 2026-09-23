@@ -76,8 +76,8 @@ class ScrapingHistoryRepository:
         self,
         scrape_id: int,
         status: str,
-        error_message: str = None,
-        error_type: str = None,
+        error_message: str | None = None,
+        error_type: str | None = None,
     ) -> None:
         """Update a scraping record with its final status and optional error.
 
@@ -165,9 +165,9 @@ class ScrapingHistoryRepository:
             written before the column existed — callers should fall back to
             displaying ``error_message``.
         """
-        stmt = select(
-            ScrapingHistory.error_message, ScrapingHistory.error_type
-        ).where(ScrapingHistory.id == scrape_id)
+        stmt = select(ScrapingHistory.error_message, ScrapingHistory.error_type).where(
+            ScrapingHistory.id == scrape_id
+        )
         row = self.db.execute(stmt).first()
         return (row[0], row[1]) if row else (None, None)
 

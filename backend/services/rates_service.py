@@ -19,7 +19,7 @@ Design choices (mirrors ``UpdateService``):
 import logging
 from datetime import date
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import httpx
 import yaml
@@ -64,7 +64,7 @@ class RatesService:
         if points:
             self.rates_repo.upsert_points(BOI_RATE_SERIES, points, source="seed")
 
-    def get_history(self, series: str = BOI_RATE_SERIES) -> List[Dict[str, Any]]:
+    def get_history(self, series: str = BOI_RATE_SERIES) -> list[dict[str, Any]]:
         """Get the full step-point history of a series.
 
         Parameters
@@ -96,7 +96,7 @@ class RatesService:
             for _, row in df.iterrows()
         ]
 
-    def get_current(self) -> Dict[str, Any]:
+    def get_current(self) -> dict[str, Any]:
         """Get the latest known BoI rate and derived prime.
 
         Returns
@@ -115,7 +115,7 @@ class RatesService:
             "as_of": latest["date"],
         }
 
-    def get_prime_at(self, at_date: str) -> Optional[float]:
+    def get_prime_at(self, at_date: str) -> float | None:
         """Get the prime rate in effect on a given date.
 
         Parameters
@@ -138,7 +138,7 @@ class RatesService:
                 break
         return None if value is None else round(value + PRIME_SPREAD_PCT, 4)
 
-    def get_prime_steps(self, from_date: str) -> List[Dict[str, Any]]:
+    def get_prime_steps(self, from_date: str) -> list[dict[str, Any]]:
         """Get prime as a step function starting at ``from_date``.
 
         The first step is anchored exactly at ``from_date`` (using the
@@ -173,7 +173,7 @@ class RatesService:
             anchor_value = steps[0]["value"] if steps else history[0]["value"]
         return [{"date": from_date, "value": anchor_value}] + steps
 
-    def refresh_from_boi(self) -> Dict[str, Any]:
+    def refresh_from_boi(self) -> dict[str, Any]:
         """Fetch the current key rate from the BoI public API.
 
         Appends a new step point (dated today, source ``fetched``) when
@@ -195,7 +195,7 @@ class RatesService:
             if rate is None:
                 rate = payload.get("interestRate")
             rate = float(rate)
-        except Exception as exc:  # noqa: BLE001 — never raise, degrade gracefully
+        except Exception as exc:
             logger.warning("BoI rate refresh failed: %s", exc)
             return {"status": "unavailable", **self.get_current()}
 

@@ -5,7 +5,7 @@ order, the per-month allocation view the budget page renders, transaction
 links, and the previewable history rebuild.
 """
 
-from typing import Literal, Optional
+from typing import Literal
 
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, Field
@@ -24,27 +24,27 @@ class SavingsGoalCreate(ApiRequestModel):
     name: str = Field(..., min_length=1, max_length=120)
     target_amount: float = Field(..., gt=0)
     opening_balance: float = Field(0.0, ge=0)
-    priority: Optional[int] = Field(None, ge=0)
-    monthly_cap: Optional[float] = Field(None, gt=0)
-    start_month: Optional[str] = None
-    target_date: Optional[str] = None
-    contribution_category: Optional[str] = None
-    contribution_tags: Optional[str] = None
-    notes: Optional[str] = None
+    priority: int | None = Field(None, ge=0)
+    monthly_cap: float | None = Field(None, gt=0)
+    start_month: str | None = None
+    target_date: str | None = None
+    contribution_category: str | None = None
+    contribution_tags: str | None = None
+    notes: str | None = None
 
 
 class SavingsGoalUpdate(ApiRequestModel):
     """Request body for updating a savings goal (all fields optional)."""
 
-    name: Optional[str] = Field(None, min_length=1, max_length=120)
-    target_amount: Optional[float] = Field(None, gt=0)
-    opening_balance: Optional[float] = Field(None, ge=0)
-    monthly_cap: Optional[float] = Field(None, gt=0)
-    start_month: Optional[str] = None
-    target_date: Optional[str] = None
-    contribution_category: Optional[str] = None
-    contribution_tags: Optional[str] = None
-    notes: Optional[str] = None
+    name: str | None = Field(None, min_length=1, max_length=120)
+    target_amount: float | None = Field(None, gt=0)
+    opening_balance: float | None = Field(None, ge=0)
+    monthly_cap: float | None = Field(None, gt=0)
+    start_month: str | None = None
+    target_date: str | None = None
+    contribution_category: str | None = None
+    contribution_tags: str | None = None
+    notes: str | None = None
 
 
 class SavingsGoalReorder(ApiRequestModel):
@@ -68,13 +68,13 @@ class SavingsGoalInvestmentCreate(ApiRequestModel):
     investment_id: int
     #: ``None`` earmarks whatever is left of the holding, so the goal keeps
     #: tracking its value without the user retyping a number.
-    amount: Optional[float] = Field(None, gt=0)
+    amount: float | None = Field(None, gt=0)
 
 
 class SavingsGoalRebuild(BaseModel):
     """Request body for restating allocation history."""
 
-    from_month: Optional[str] = None
+    from_month: str | None = None
     dry_run: bool = True
 
 
@@ -132,7 +132,7 @@ def get_free_cash(db: Session = Depends(get_database)):
 @router.get("/free-cash/before")
 def get_free_cash_before(
     month: str,
-    goal_id: Optional[int] = None,
+    goal_id: int | None = None,
     db: Session = Depends(get_database),
 ):
     """Return the free cash that existed when a goal starting in ``month`` began.
@@ -174,7 +174,7 @@ def rebuild_allocations(data: SavingsGoalRebuild, db: Session = Depends(get_data
 
 
 @router.get("/links")
-def list_links(goal_id: Optional[int] = None, db: Session = Depends(get_database)):
+def list_links(goal_id: int | None = None, db: Session = Depends(get_database)):
     """Return transaction links, optionally scoped to one goal."""
     return SavingsGoalService(db).get_links(goal_id)
 
@@ -201,7 +201,7 @@ def list_available_investments(db: Session = Depends(get_database)):
 
 @router.get("/investments")
 def list_investment_backings(
-    goal_id: Optional[int] = None, db: Session = Depends(get_database)
+    goal_id: int | None = None, db: Session = Depends(get_database)
 ):
     """Return investment earmarks, optionally scoped to one goal."""
     return SavingsGoalService(db).get_investment_backings(goal_id)

@@ -4,7 +4,7 @@ This module provides business logic for credential management.
 """
 
 from copy import deepcopy
-from typing import Any, Dict, List
+from typing import Any
 
 from sqlalchemy.orm import Session
 
@@ -17,8 +17,11 @@ from backend.constants.providers import (
     cc_providers,
     insurance_providers,
 )
-from backend.repositories.credentials_repository import _SENSITIVE_FIELDS, CredentialsRepository
 from backend.errors import ValidationException
+from backend.repositories.credentials_repository import (
+    _SENSITIVE_FIELDS,
+    CredentialsRepository,
+)
 from backend.repositories.scraping_history_repository import ScrapingHistoryRepository
 from backend.utils.phone_numbers import ISRAELI_MOBILE_RE, normalize_israeli_mobile
 
@@ -26,7 +29,7 @@ from backend.utils.phone_numbers import ISRAELI_MOBILE_RE, normalize_israeli_mob
 # Real mode, demo mode and every per-visitor demo sandbox resolve to a
 # different file, so keying by path keeps them from ever serving each
 # other's credentials.
-_credentials_cache: Dict[str, Dict] = {}
+_credentials_cache: dict[str, dict] = {}
 
 
 def cache_key() -> str:
@@ -43,7 +46,7 @@ MASK_SENTINEL = "__unchanged__"
 _INTERNATIONAL_PHONE_PROVIDERS = frozenset({"onezero"})
 
 
-def _require_israeli_mobile(fields: Dict[str, Any]) -> None:
+def _require_israeli_mobile(fields: dict[str, Any]) -> None:
     """Normalize ``fields["phoneNumber"]`` in place to ``+9725XXXXXXXX``.
 
     Parameters
@@ -90,7 +93,7 @@ class CredentialsService:
         self.repository = CredentialsRepository(db)
         self.credentials = self.load_credentials()
 
-    def load_credentials(self) -> Dict:
+    def load_credentials(self) -> dict:
         """
         Load all credentials with passwords retrieved from the OS Keyring.
 
@@ -112,7 +115,7 @@ class CredentialsService:
         _credentials_cache[key] = credentials
         return deepcopy(credentials)
 
-    def save_credentials(self, credentials: Dict) -> None:
+    def save_credentials(self, credentials: dict) -> None:
         """
         Save credentials for all provided accounts.
 
@@ -161,7 +164,7 @@ class CredentialsService:
         _credentials_cache.pop(cache_key(), None)
         self.credentials = self.load_credentials()
 
-    def get_available_data_sources(self) -> List[str]:
+    def get_available_data_sources(self) -> list[str]:
         """
         Get a flat list of all configured data source identifiers.
 
@@ -174,11 +177,11 @@ class CredentialsService:
         data_sources = []
         for service, providers in self.credentials.items():
             for provider, accounts in providers.items():
-                for account in accounts.keys():
+                for account in accounts:
                     data_sources.append(f"{service} - {provider} - {account}")
         return data_sources
 
-    def get_data_sources_credentials(self, data_sources: List[str]) -> Dict:
+    def get_data_sources_credentials(self, data_sources: list[str]) -> dict:
         """
         Filter the credentials dict to only include the selected data sources.
 
@@ -275,7 +278,7 @@ class CredentialsService:
         self._invalidate_cache()
         return result
 
-    def get_scraper_credentials(self, service, provider, account) -> Dict:
+    def get_scraper_credentials(self, service, provider, account) -> dict:
         """
         Fetch credentials for a specific scraper (or multiple scrapers).
 
@@ -317,7 +320,7 @@ class CredentialsService:
 
         return filtered
 
-    def get_masked_credentials(self, service: str, provider: str, account: str) -> Dict:
+    def get_masked_credentials(self, service: str, provider: str, account: str) -> dict:
         """
         Fetch a single account's credential fields with secrets masked.
 
@@ -343,9 +346,7 @@ class CredentialsService:
             field replaced by :data:`MASK_SENTINEL`. Empty if not found.
         """
         filtered = self.get_scraper_credentials(service, provider, account)
-        fields = (
-            filtered.get(service, {}).get(provider, {}).get(account)
-        )
+        fields = filtered.get(service, {}).get(provider, {}).get(account)
         if fields is None:
             return {}
         return {
@@ -353,7 +354,7 @@ class CredentialsService:
             for k, v in fields.items()
         }
 
-    def get_safe_credentials(self) -> Dict:
+    def get_safe_credentials(self) -> dict:
         """
         Get all credentials with sensitive data (passwords) removed.
 
@@ -365,13 +366,13 @@ class CredentialsService:
             Nested dict in the form ``{service: {provider: [account_names]}}``.
         """
         accounts = self.repository.list_accounts()
-        safe: Dict = {}
+        safe: dict = {}
         for a in accounts:
             safe.setdefault(a["service"], {}).setdefault(a["provider"], [])
             safe[a["service"]][a["provider"]].append(a["account_name"])
         return safe
 
-    def get_accounts_list(self) -> List[Dict[str, Any]]:
+    def get_accounts_list(self) -> list[dict[str, Any]]:
         """
         Get a flat list of all configured accounts with their credential health.
 
@@ -402,20 +403,22 @@ class CredentialsService:
             uses_password = Fields.PASSWORD.value in LoginFields.get_fields(
                 status["provider"]
             )
-            accounts.append({
-                "service": status["service"],
-                "provider": status["provider"],
-                "account_name": status["account_name"],
-                "needs_reentry": not demo
-                and (
-                    not status["fields_readable"]
-                    or (uses_password and not status["has_password"])
-                ),
-            })
+            accounts.append(
+                {
+                    "service": status["service"],
+                    "provider": status["provider"],
+                    "account_name": status["account_name"],
+                    "needs_reentry": not demo
+                    and (
+                        not status["fields_readable"]
+                        or (uses_password and not status["has_password"])
+                    ),
+                }
+            )
         return accounts
 
     @staticmethod
-    def get_available_providers() -> Dict[str, List[str]]:
+    def get_available_providers() -> dict[str, list[str]]:
         """
         Get available providers filtered by the current demo/production mode.
 
@@ -488,19 +491,27 @@ class CredentialsService:
                 self._invalidate_cache()
 
         ensure_dummy_cred(
-            Services.BANK.value, "hapoalim", "Main Account",
+            Services.BANK.value,
+            "hapoalim",
+            "Main Account",
             {Fields.USER_CODE.value: "demo", Fields.PASSWORD.value: "demo"},
         )
         ensure_dummy_cred(
-            Services.CREDIT_CARD.value, "max", "Family Card",
+            Services.CREDIT_CARD.value,
+            "max",
+            "Family Card",
             {Fields.USERNAME.value: "demo", Fields.PASSWORD.value: "demo"},
         )
         ensure_dummy_cred(
-            Services.CREDIT_CARD.value, "visa cal", "Online Shopping",
+            Services.CREDIT_CARD.value,
+            "visa cal",
+            "Online Shopping",
             {Fields.USERNAME.value: "demo", Fields.PASSWORD.value: "demo"},
         )
         ensure_dummy_cred(
-            Services.INSURANCE.value, "hafenix", "The Cohens",
+            Services.INSURANCE.value,
+            "hafenix",
+            "The Cohens",
             {Fields.ID.value: "demo", Fields.PHONE_NUMBER.value: "050-1234567"},
         )
 

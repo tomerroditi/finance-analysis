@@ -306,7 +306,9 @@ class InsightsService:
     def _monthly_category_spend(self) -> list[dict]:
         """Monthly expense totals per category (memoized)."""
         if "by_category" not in self._cache:
-            self._cache["by_category"] = self.analysis.get_expenses_by_category_over_time()
+            self._cache["by_category"] = (
+                self.analysis.get_expenses_by_category_over_time()
+            )
         return self._cache["by_category"]
 
     def _project_spend_this_month(self) -> float:
@@ -350,19 +352,27 @@ class InsightsService:
             gap = expenses - income
             if gap < floor or gap <= self._project_spend_this_month():
                 return []
-            return self._visible([{
-                "code": "overspendPace",
-                "key": f"overspendPace:{month}",
-                "severity": "warning",
-                "data": {"amount": round(gap, 2)},
-            }])
+            return self._visible(
+                [
+                    {
+                        "code": "overspendPace",
+                        "key": f"overspendPace:{month}",
+                        "severity": "warning",
+                        "data": {"amount": round(gap, 2)},
+                    }
+                ]
+            )
         if forecast["projected_net"] >= floor:
-            return self._visible([{
-                "code": "onTrack",
-                "key": f"onTrack:{month}",
-                "severity": "positive",
-                "data": {"amount": forecast["projected_net"]},
-            }])
+            return self._visible(
+                [
+                    {
+                        "code": "onTrack",
+                        "key": f"onTrack:{month}",
+                        "severity": "positive",
+                        "data": {"amount": forecast["projected_net"]},
+                    }
+                ]
+            )
         return []
 
     def _category_spike_insights(self) -> list[dict]:
@@ -384,7 +394,7 @@ class InsightsService:
             return []
 
         prior = [m for m in monthly if m["month"] < current_month][
-            -self._CATEGORY_BASELINE_MONTHS:
+            -self._CATEGORY_BASELINE_MONTHS :
         ]
         if len(prior) < self._CATEGORY_MIN_HISTORY:
             return []
@@ -412,17 +422,19 @@ class InsightsService:
                 continue
             if planned.within_monthly_budget(category, amount):
                 continue
-            results.append({
-                "code": "categorySpike",
-                "key": f"categorySpike:{category}:{current_month}",
-                "severity": "warning",
-                "data": {
-                    "category": category,
-                    "percent": round((amount / baseline - 1) * 100),
-                    "amount": round(amount, 2),
-                },
-                "_sort": delta,
-            })
+            results.append(
+                {
+                    "code": "categorySpike",
+                    "key": f"categorySpike:{category}:{current_month}",
+                    "severity": "warning",
+                    "data": {
+                        "category": category,
+                        "percent": round((amount / baseline - 1) * 100),
+                        "amount": round(amount, 2),
+                    },
+                    "_sort": delta,
+                }
+            )
 
         results.sort(key=lambda i: i.pop("_sort"), reverse=True)
         return self._visible(results)[: self._MAX_SPIKES]
@@ -442,30 +454,34 @@ class InsightsService:
         month = pd.Timestamp.today().strftime("%Y-%m")
         results = []
         if summary["pending_count"]:
-            results.append({
-                "code": "recurringToReview",
-                "key": f"recurringToReview:{month}",
-                "severity": "info",
-                "data": {
-                    "count": summary["pending_count"],
-                    "amount": summary["pending_monthly"],
-                },
-            })
+            results.append(
+                {
+                    "code": "recurringToReview",
+                    "key": f"recurringToReview:{month}",
+                    "severity": "info",
+                    "data": {
+                        "count": summary["pending_count"],
+                        "amount": summary["pending_monthly"],
+                    },
+                }
+            )
         for item in summary["items"]:
             if item["confirmation"] != "confirmed":
                 continue
             subject = item.get("normalized") or item["label"]
             if item["status"] == "new":
-                results.append({
-                    "code": "newRecurring",
-                    "key": f"newRecurring:{subject}",
-                    "severity": "info",
-                    "data": {
-                        "label": item["label"],
-                        "amount": item["amount"],
-                        "cadence": item["cadence"],
-                    },
-                })
+                results.append(
+                    {
+                        "code": "newRecurring",
+                        "key": f"newRecurring:{subject}",
+                        "severity": "info",
+                        "data": {
+                            "label": item["label"],
+                            "amount": item["amount"],
+                            "cadence": item["cadence"],
+                        },
+                    }
+                )
             elif item["status"] == "price_changed":
                 delta = abs(item["price_change"])
                 if delta < max(
@@ -475,18 +491,20 @@ class InsightsService:
                     continue
                 increased = item["price_change"] > 0
                 code = "priceIncrease" if increased else "priceDecrease"
-                results.append({
-                    "code": code,
-                    # The price itself is part of the identity: a dismissal
-                    # covers this change, not the next one.
-                    "key": f"{code}:{subject}:{item['last_amount']}",
-                    "severity": "warning" if increased else "info",
-                    "data": {
-                        "label": item["label"],
-                        "delta": delta,
-                        "amount": item["last_amount"],
-                    },
-                })
+                results.append(
+                    {
+                        "code": code,
+                        # The price itself is part of the identity: a dismissal
+                        # covers this change, not the next one.
+                        "key": f"{code}:{subject}:{item['last_amount']}",
+                        "severity": "warning" if increased else "info",
+                        "data": {
+                            "label": item["label"],
+                            "delta": delta,
+                            "amount": item["last_amount"],
+                        },
+                    }
+                )
         return self._visible(results)[:3]
 
     def _large_transaction_insight(self) -> list[dict]:
@@ -550,7 +568,10 @@ class InsightsService:
             category = row.get("category")
             if planned.is_long_envelope(category):
                 continue
-            if RecurringService.normalize_description(row.get("description")) in confirmed:
+            if (
+                RecurringService.normalize_description(row.get("description"))
+                in confirmed
+            ):
                 continue
             peers = history.loc[history["category"] == category, "amount_abs"]
             if not peers.empty and amount <= float(peers.max()):
@@ -560,14 +581,16 @@ class InsightsService:
             key = f"largeTransaction:{row.get('source')}:{row.get('unique_id')}"
             if key in self._dismissed():
                 continue
-            return [{
-                "code": "largeTransaction",
-                "key": key,
-                "severity": "info",
-                "data": {
-                    "label": row.get("description") or category or "",
-                    "amount": round(amount, 2),
-                    "category": category if isinstance(category, str) else "",
-                },
-            }]
+            return [
+                {
+                    "code": "largeTransaction",
+                    "key": key,
+                    "severity": "info",
+                    "data": {
+                        "label": row.get("description") or category or "",
+                        "amount": round(amount, 2),
+                        "category": category if isinstance(category, str) else "",
+                    },
+                }
+            ]
         return []

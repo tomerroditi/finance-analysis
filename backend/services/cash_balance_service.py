@@ -4,13 +4,12 @@ This module orchestrates cash balance operations including balance updates,
 prior wealth calculations, and balance recalculation based on transactions.
 """
 
-from typing import Optional
 import pandas as pd
 from sqlalchemy.orm import Session
 
+from backend.models.transaction import CashTransaction
 from backend.repositories.cash_balance_repository import CashBalanceRepository
 from backend.repositories.transactions_repository import CashRepository
-from backend.models.transaction import CashTransaction
 
 
 class CashBalanceService:
@@ -134,7 +133,7 @@ class CashBalanceService:
 
         return self._record_to_dict(record)
 
-    def get_by_account_name(self, account_name: str) -> Optional[dict]:
+    def get_by_account_name(self, account_name: str) -> dict | None:
         """
         Get balance record for a specific cash account.
 
@@ -275,7 +274,9 @@ class CashBalanceService:
                     continue
 
                 # Calculate prior wealth and balance
-                txn_sum = float(pd.to_numeric(group["amount"], errors="coerce").fillna(0).sum())
+                txn_sum = float(
+                    pd.to_numeric(group["amount"], errors="coerce").fillna(0).sum()
+                )
                 prior_wealth = max(0.0, -txn_sum)
                 balance = prior_wealth + txn_sum
 
@@ -286,13 +287,15 @@ class CashBalanceService:
                     prior_wealth_amount=prior_wealth,
                 )
 
-                migrated.append({
-                    "id": record.id,
-                    "account_name": record.account_name,
-                    "balance": record.balance,
-                    "prior_wealth_amount": record.prior_wealth_amount,
-                    "last_manual_update": record.last_manual_update,
-                })
+                migrated.append(
+                    {
+                        "id": record.id,
+                        "account_name": record.account_name,
+                        "balance": record.balance,
+                        "prior_wealth_amount": record.prior_wealth_amount,
+                        "last_manual_update": record.last_manual_update,
+                    }
+                )
 
         # Delete old synthetic Prior Wealth row
         self._delete_prior_wealth_transaction()
@@ -301,10 +304,11 @@ class CashBalanceService:
     def _delete_prior_wealth_transaction(self) -> None:
         """Delete the synthetic Prior Wealth offset row from cash_transactions."""
         from sqlalchemy import delete
+
         self.db.execute(
             delete(CashTransaction).where(
-                (CashTransaction.tag == "Prior Wealth") &
-                (CashTransaction.account_name == "Prior Wealth")
+                (CashTransaction.tag == "Prior Wealth")
+                & (CashTransaction.account_name == "Prior Wealth")
             )
         )
         self.db.commit()

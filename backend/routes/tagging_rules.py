@@ -6,7 +6,7 @@ in creation order (oldest first) and the first matching rule wins; overlapping
 rules that would assign different category/tag pairs are rejected on save.
 """
 
-from typing import Any, Dict, Optional
+from typing import Any
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
@@ -50,23 +50,23 @@ def _validate_conditions(service: TaggingRulesService, conditions: dict) -> None
 
 class RuleCreate(BaseModel):
     name: str
-    conditions: Dict[str, Any]
+    conditions: dict[str, Any]
     category: str
     tag: str
 
 
 class RuleUpdate(BaseModel):
-    name: Optional[str] = None
-    conditions: Optional[Dict[str, Any]] = None
-    category: Optional[str] = None
-    tag: Optional[str] = None
+    name: str | None = None
+    conditions: dict[str, Any] | None = None
+    category: str | None = None
+    tag: str | None = None
 
 
 class RuleValidate(BaseModel):
-    conditions: Dict[str, Any]
+    conditions: dict[str, Any]
     category: str
     tag: str
-    rule_id: Optional[int] = None
+    rule_id: int | None = None
 
 
 @router.get("/rules")
@@ -138,9 +138,7 @@ def delete_tagging_rule(rule_id: int, db: Session = Depends(get_database)):
 
 
 @router.post("/rules/apply")
-def apply_tagging_rules(
-    overwrite: bool = False, db: Session = Depends(get_database)
-):
+def apply_tagging_rules(overwrite: bool = False, db: Session = Depends(get_database)):
     """Manually trigger application of all active tagging rules.
 
     Parameters
@@ -187,9 +185,7 @@ def apply_single_tagging_rule(
 
 
 @router.post("/rules/validate")
-def validate_rule_conflicts(
-    rule: RuleValidate, db: Session = Depends(get_database)
-):
+def validate_rule_conflicts(rule: RuleValidate, db: Session = Depends(get_database)):
     """Check whether a rule's conditions conflict with existing rules.
 
     Optionally excludes a specific rule from the conflict check (used when
@@ -223,7 +219,7 @@ def validate_rule_conflicts(
 
 
 class RulePreview(BaseModel):
-    conditions: Dict[str, Any]
+    conditions: dict[str, Any]
     # Bounded: an unbounded default returned the whole table, and a negative
     # limit made SQLite ignore the LIMIT while pandas ``head(-1)`` dropped a
     # row — a preview that silently lied about what the rule matches.
@@ -231,9 +227,7 @@ class RulePreview(BaseModel):
 
 
 @router.post("/rules/preview")
-def preview_rule_matches(
-    preview: RulePreview, db: Session = Depends(get_database)
-):
+def preview_rule_matches(preview: RulePreview, db: Session = Depends(get_database)):
     """Preview which transactions would be matched by given rule conditions.
 
     Does not persist any changes — read-only dry run.

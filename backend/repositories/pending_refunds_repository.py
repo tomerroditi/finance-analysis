@@ -1,7 +1,7 @@
 """Pending refunds repository with SQLAlchemy ORM."""
 
 import pandas as pd
-from sqlalchemy import select, delete
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from backend.models.pending_refund import (
@@ -17,7 +17,7 @@ _IN_CHUNK = 500
 def _chunked(values: list, size: int = _IN_CHUNK):
     """Yield ``values`` in slices small enough for a SQL ``IN`` clause."""
     for start in range(0, len(values), size):
-        yield values[start:start + size]
+        yield values[start : start + size]
 
 
 class PendingRefundsRepository:
@@ -36,7 +36,7 @@ class PendingRefundsRepository:
         source_id: int,
         source_table: str,
         expected_amount: float,
-        notes: str = None,
+        notes: str | None = None,
     ) -> PendingRefund:
         """
         Create a new pending refund record.
@@ -71,7 +71,7 @@ class PendingRefundsRepository:
         self.db.refresh(pending)
         return pending
 
-    def get_all_pending_refunds(self, status: str = None) -> pd.DataFrame:
+    def get_all_pending_refunds(self, status: str | None = None) -> pd.DataFrame:
         """
         Get all pending refunds, optionally filtered by status.
 
@@ -211,9 +211,7 @@ class PendingRefundsRepository:
         """
         if not pending_ids:
             return pd.DataFrame()
-        stmt = select(RefundLink).where(
-            RefundLink.pending_refund_id.in_(pending_ids)
-        )
+        stmt = select(RefundLink).where(RefundLink.pending_refund_id.in_(pending_ids))
         return pd.read_sql(stmt, self.db.bind)
 
     def get_all_links(self) -> pd.DataFrame:
@@ -264,9 +262,7 @@ class PendingRefundsRepository:
         stmt = (
             select(RefundSourceNote)
             .where(RefundSourceNote.refund_source == refund_source)
-            .where(
-                RefundSourceNote.refund_transaction_id == refund_transaction_id
-            )
+            .where(RefundSourceNote.refund_transaction_id == refund_transaction_id)
             .order_by(RefundSourceNote.id.asc())
         )
         # Lowest id wins rather than raising — see the note in

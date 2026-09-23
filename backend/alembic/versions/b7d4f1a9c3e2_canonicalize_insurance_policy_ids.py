@@ -62,12 +62,16 @@ def _table_exists(bind, name):
 
 def _merge_insurance_accounts(bind):
     """Collapse accounts whose policy IDs share a key; keep the oldest row."""
-    rows = bind.execute(
-        sa.text(
-            "SELECT id, policy_id, balance, balance_date, custom_name "
-            "FROM insurance_accounts ORDER BY id"
+    rows = (
+        bind.execute(
+            sa.text(
+                "SELECT id, policy_id, balance, balance_date, custom_name "
+                "FROM insurance_accounts ORDER BY id"
+            )
         )
-    ).mappings().all()
+        .mappings()
+        .all()
+    )
 
     groups = defaultdict(list)
     for row in rows:
@@ -103,13 +107,17 @@ def _merge_insurance_accounts(bind):
 
 def _merge_investments(bind):
     """Collapse insurance-linked investments; move the losers' snapshots over."""
-    rows = bind.execute(
-        sa.text(
-            "SELECT id, category, tag, insurance_policy_id FROM investments "
-            "WHERE insurance_policy_id IS NOT NULL AND insurance_policy_id != '' "
-            "ORDER BY id"
+    rows = (
+        bind.execute(
+            sa.text(
+                "SELECT id, category, tag, insurance_policy_id FROM investments "
+                "WHERE insurance_policy_id IS NOT NULL AND insurance_policy_id != '' "
+                "ORDER BY id"
+            )
         )
-    ).mappings().all()
+        .mappings()
+        .all()
+    )
 
     groups = defaultdict(list)
     for row in rows:
@@ -165,12 +173,16 @@ def _merge_investments(bind):
 
 def _rekey_insurance_transactions(bind):
     """Rewrite scraped dedup IDs to the policy key, then drop the duplicates."""
-    rows = bind.execute(
-        sa.text(
-            "SELECT unique_id, id, account_number FROM insurance_transactions "
-            "ORDER BY unique_id"
+    rows = (
+        bind.execute(
+            sa.text(
+                "SELECT unique_id, id, account_number FROM insurance_transactions "
+                "ORDER BY unique_id"
+            )
         )
-    ).mappings().all()
+        .mappings()
+        .all()
+    )
 
     for row in rows:
         account_number = row["account_number"] or ""

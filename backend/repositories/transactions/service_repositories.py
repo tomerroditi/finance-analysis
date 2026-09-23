@@ -10,13 +10,14 @@ for manually inserted transactions.
 import logging
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Literal, Type
+from typing import Literal
 
 import pandas as pd
-from sqlalchemy import cast, delete, func, Integer, select, update
+from sqlalchemy import Integer, cast, delete, func, select, update
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
+from backend.constants.tables import Tables
 from backend.models.transaction import (
     BankTransaction,
     CashTransaction,
@@ -25,7 +26,6 @@ from backend.models.transaction import (
     ManualInvestmentTransaction,
     TransactionBase,
 )
-from backend.constants.tables import Tables
 
 logger = logging.getLogger(__name__)
 
@@ -67,7 +67,7 @@ class ServiceRepository:
     Base class for service-specific transaction repositories using ORM.
     """
 
-    model: Type[TransactionBase]
+    model: type[TransactionBase]
 
     unique_columns = ["id", "provider", "date", "amount"]
 
@@ -140,14 +140,14 @@ class ServiceRepository:
             return result.rowcount > 0
         except SQLAlchemyError:
             logger.exception(
-                "Delete failed for unique_id=%s in %s", unique_id, self.model.__tablename__
+                "Delete failed for unique_id=%s in %s",
+                unique_id,
+                self.model.__tablename__,
             )
             self.db.rollback()
             raise
 
-    def get_unique_ids_for_account(
-        self, provider: str, account_name: str
-    ) -> list[int]:
+    def get_unique_ids_for_account(self, provider: str, account_name: str) -> list[int]:
         """List the unique_ids of every transaction belonging to one account.
 
         Parameters
@@ -168,9 +168,7 @@ class ServiceRepository:
         )
         return [row[0] for row in self.db.execute(stmt).all()]
 
-    def delete_transactions_for_account(
-        self, provider: str, account_name: str
-    ) -> int:
+    def delete_transactions_for_account(self, provider: str, account_name: str) -> int:
         """Delete every transaction belonging to one account.
 
         The caller is responsible for purging records that reference these
@@ -246,7 +244,9 @@ class ServiceRepository:
             return result.rowcount > 0
         except SQLAlchemyError:
             logger.exception(
-                "Update failed for unique_id=%s in %s", unique_id, self.model.__tablename__
+                "Update failed for unique_id=%s in %s",
+                unique_id,
+                self.model.__tablename__,
             )
             self.db.rollback()
             raise
@@ -373,9 +373,7 @@ class ServiceRepository:
             self.db.commit()
             return True
         except SQLAlchemyError:
-            logger.exception(
-                "Insert failed in %s", self.model.__tablename__
-            )
+            logger.exception("Insert failed in %s", self.model.__tablename__)
             self.db.rollback()
             raise
 
@@ -401,11 +399,10 @@ class CreditCardRepository(ServiceRepository):
             .distinct()
             .all()
         )
-        accounts = [
+        return [
             " - ".join([provider, account_name, (account_number or "")[-4:]])
             for (provider, account_name, account_number) in accounts
         ]
-        return accounts
 
 
 class BankRepository(ServiceRepository):

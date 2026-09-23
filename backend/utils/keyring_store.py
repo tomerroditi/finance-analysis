@@ -18,7 +18,6 @@ block below.
 
 import logging
 import os
-from typing import Optional
 
 try:
     import keyring
@@ -141,7 +140,7 @@ def credential_secret_name(
     return f"{service}_{provider}_{account_name}_{field}"
 
 
-def get_secret(service_name: str, secret_name: str) -> Optional[str]:
+def get_secret(service_name: str, secret_name: str) -> str | None:
     """Read a secret from the OS keyring.
 
     Returns

@@ -138,11 +138,13 @@ def list_backups() -> list[dict]:
     backups = []
     for f in backup_dir.glob("data_*.db"):
         stat = f.stat()
-        backups.append({
-            "filename": f.name,
-            "created_at": datetime.fromtimestamp(stat.st_mtime).isoformat(),
-            "size_bytes": stat.st_size,
-        })
+        backups.append(
+            {
+                "filename": f.name,
+                "created_at": datetime.fromtimestamp(stat.st_mtime).isoformat(),
+                "size_bytes": stat.st_size,
+            }
+        )
 
     backups.sort(key=lambda b: b["created_at"], reverse=True)
     return backups
@@ -209,7 +211,9 @@ def restore_backup(filename: str) -> None:
         finally:
             test_conn.close()
     except sqlite3.DatabaseError as exc:
-        raise ValueError(f"Backup file is not a valid SQLite database: {filename}") from exc
+        raise ValueError(
+            f"Backup file is not a valid SQLite database: {filename}"
+        ) from exc
 
     config = AppConfig()
     db_path = Path(config.get_db_path())

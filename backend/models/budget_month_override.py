@@ -2,8 +2,8 @@
 
 from sqlalchemy import Column, Integer, String, UniqueConstraint
 
-from backend.models.base import Base, TimestampMixin
 from backend.constants.tables import Tables
+from backend.models.base import Base, TimestampMixin
 
 
 class BudgetMonthOverride(Base, TimestampMixin):
@@ -44,7 +44,9 @@ class BudgetMonthOverride(Base, TimestampMixin):
     # MultipleResultsFound — a permanent 500 with no way to repair it.
     __table_args__ = (
         UniqueConstraint(
-            "source_type", "source_id", "source_table",
+            "source_type",
+            "source_id",
+            "source_table",
             name="uq_budget_month_override_source",
         ),
     )

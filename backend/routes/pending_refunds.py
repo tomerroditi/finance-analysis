@@ -4,10 +4,9 @@ Pending Refunds API routes.
 Provides endpoints for managing pending refunds and linking refund transactions.
 """
 
-from typing import Literal, Optional
+from typing import Literal
 
 from fastapi import APIRouter, Depends
-from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from backend.dependencies import get_database
@@ -24,7 +23,7 @@ class CreatePendingRefundRequest(ApiRequestModel):
     source_id: int
     source_table: str
     expected_amount: float
-    notes: Optional[str] = None
+    notes: str | None = None
 
 
 class LinkRefundRequest(ApiRequestModel):
@@ -38,7 +37,7 @@ class LinkRefundRequest(ApiRequestModel):
 class UpdatePendingRefundRequest(ApiRequestModel):
     """Request to update a pending refund's note."""
 
-    notes: Optional[str] = None
+    notes: str | None = None
 
 
 class SourceNoteRequest(ApiRequestModel):
@@ -46,7 +45,7 @@ class SourceNoteRequest(ApiRequestModel):
 
     refund_source: str
     refund_transaction_id: int
-    note: Optional[str] = None
+    note: str | None = None
 
 
 @router.post("/")
@@ -67,7 +66,7 @@ def create_pending_refund(
 
 @router.get("/")
 def get_all_pending_refunds(
-    status: Optional[str] = None,
+    status: str | None = None,
     db: Session = Depends(get_database),
 ):
     """Get all pending refunds, optionally filtered by status."""

@@ -17,13 +17,13 @@ projection horizon.
 import pandas as pd
 from sqlalchemy.orm import Session
 
+from backend.errors import EntityNotFoundException, ValidationException
 from backend.repositories.retirement_goal_repository import RetirementGoalRepository
-from backend.services.insurance_account_service import InsuranceAccountService
 from backend.services.analysis_service import AnalysisService
-from backend.services.investments_service import InvestmentsService
 from backend.services.bank_balance_service import BankBalanceService
 from backend.services.cash_balance_service import CashBalanceService
-from backend.errors import EntityNotFoundException, ValidationException
+from backend.services.insurance_account_service import InsuranceAccountService
+from backend.services.investments_service import InvestmentsService
 
 # Israeli pension milestones
 FULL_PENSION_AGE_MALE = 67
@@ -208,7 +208,9 @@ class RetirementService:
         # amount must be moved out of the base portfolio to avoid double
         # counting. For users with no KH investment at all this is 0 and
         # their typed KH balance counts on top of net worth.
-        tracked_kh_value = self.investments_service.get_hishtalmut_total_balance() or 0.0
+        tracked_kh_value = (
+            self.investments_service.get_hishtalmut_total_balance() or 0.0
+        )
 
         return {
             "net_worth": current_net_worth,
@@ -331,9 +333,7 @@ class RetirementService:
             "target_retirement_age": goal_data["target_retirement_age"],
             # Gender-resolved (67 male / 65 female) — the chart's pension-age
             # marker must match where pension income actually starts.
-            "full_pension_age": _get_full_pension_age(
-                goal_data.get("gender", "male")
-            ),
+            "full_pension_age": _get_full_pension_age(goal_data.get("gender", "male")),
             "net_worth_projection": net_worth_projection,
             "income_projection": income_projection,
         }
@@ -362,7 +362,9 @@ class RetirementService:
             else status["avg_monthly_income"]
         )
 
-        if goal_data.get("monthly_income") or goal_data.get("monthly_expenses_override"):
+        if goal_data.get("monthly_income") or goal_data.get(
+            "monthly_expenses_override"
+        ):
             monthly_savings = effective_income - effective_expenses
             savings_rate = (
                 round(monthly_savings / effective_income * 100, 1)
@@ -466,9 +468,7 @@ class RetirementService:
                     if age >= full_pension_age:
                         annual_income += goal["pension_monthly_payout_estimate"] * 12
                         if goal["bituach_leumi_eligible"]:
-                            annual_income += (
-                                goal["bituach_leumi_monthly_estimate"] * 12
-                            )
+                            annual_income += goal["bituach_leumi_monthly_estimate"] * 12
 
                     withdrawal_needed = max(0, annual_expenses - annual_income)
 
@@ -578,7 +578,9 @@ class RetirementService:
 
         return {
             "target_retirement_age": age,
-            "monthly_expenses_in_retirement": round(expenses, 0) if expenses != -1 else -1,
+            "monthly_expenses_in_retirement": round(expenses, 0)
+            if expenses != -1
+            else -1,
             "expected_return_rate": round(rate, 4) if rate != -1 else -1,
             "life_expectancy": life_exp,
         }
@@ -823,7 +825,10 @@ class RetirementService:
             Age when portfolio is depleted, or None if it survives.
         """
         for point in net_worth_projection:
-            if target_retirement_age is not None and point["age"] < target_retirement_age:
+            if (
+                target_retirement_age is not None
+                and point["age"] < target_retirement_age
+            ):
                 continue
             if point["net_worth_baseline"] <= 0 and point["age"] <= life_expectancy:
                 return point["age"]
@@ -851,8 +856,7 @@ class RetirementService:
             goal["monthly_expenses_in_retirement"] * 12 / goal["withdrawal_rate"]
         )
         fire_reached_by_target = any(
-            point["age"] <= target_age
-            and point["net_worth_baseline"] >= fire_number
+            point["age"] <= target_age and point["net_worth_baseline"] >= fire_number
             for point in projection
         )
         if not fire_reached_by_target:
@@ -875,8 +879,7 @@ class RetirementService:
         # If portfolio never depletes within the projection, return -1
         # (meaning "no limit needed")
         depletes = any(
-            p["net_worth_baseline"] <= 0 and p["age"] > target_age
-            for p in projection
+            p["net_worth_baseline"] <= 0 and p["age"] > target_age for p in projection
         )
         if not depletes:
             return -1
@@ -932,8 +935,7 @@ class RetirementService:
             fv_factor = ((1 + rate) ** years - 1) / rate
 
         current_annual_contribution = (
-            status["monthly_savings"]
-            + goal["keren_hishtalmut_monthly_contribution"]
+            status["monthly_savings"] + goal["keren_hishtalmut_monthly_contribution"]
         ) * 12
         fv_contributions = current_annual_contribution * fv_factor
 

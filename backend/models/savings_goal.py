@@ -14,10 +14,10 @@ goal, which consumes that month's surplus before the waterfall runs) or as a
 goal's target).
 """
 
-from sqlalchemy import Column, Integer, Float, String, UniqueConstraint
+from sqlalchemy import Column, Float, Integer, String, UniqueConstraint
 
-from backend.models.base import Base, TimestampMixin
 from backend.constants.tables import Tables
+from backend.models.base import Base, TimestampMixin
 
 #: Goal lifecycle states.
 GOAL_STATUS_ACTIVE = "active"
@@ -176,7 +176,9 @@ class SavingsGoalLink(Base, TimestampMixin):
     # A transaction belongs to at most one goal, in one role.
     __table_args__ = (
         UniqueConstraint(
-            "source_type", "source_id", "source_table",
+            "source_type",
+            "source_id",
+            "source_table",
             name="uq_savings_goal_link_source",
         ),
     )
@@ -224,9 +226,7 @@ class SavingsGoalInvestment(Base, TimestampMixin):
 
     # One earmark per (goal, investment) — re-earmarking updates the amount.
     __table_args__ = (
-        UniqueConstraint(
-            "goal_id", "investment_id", name="uq_savings_goal_investment"
-        ),
+        UniqueConstraint("goal_id", "investment_id", name="uq_savings_goal_investment"),
     )
 
     def __repr__(self):

@@ -1,7 +1,7 @@
 """Budget month override repository with SQLAlchemy ORM."""
 
 import pandas as pd
-from sqlalchemy import select, delete
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from backend.models.budget_month_override import BudgetMonthOverride
@@ -162,7 +162,7 @@ class BudgetMonthOverrideRepository:
         if not source_ids:
             return
         for start in range(0, len(source_ids), 500):
-            chunk = source_ids[start:start + 500]
+            chunk = source_ids[start : start + 500]
             self.db.execute(
                 delete(BudgetMonthOverride).where(
                     BudgetMonthOverride.source_type == source_type,

@@ -3,7 +3,6 @@ import logging
 import sys
 import threading
 from datetime import date, datetime, timedelta
-from typing import Dict, List, Optional
 
 from sqlalchemy.orm import Session
 
@@ -13,7 +12,6 @@ from backend.errors import BadRequestException, EntityNotFoundException
 from backend.repositories.credentials_repository import CredentialsRepository
 from backend.repositories.scraping_history_repository import ScrapingHistoryRepository
 from backend.scraper import ScraperAdapter, create_adapter, is_2fa_required
-from backend.services.scraping_history_service import ScrapingHistoryService
 from backend.scraper.adapter import (
     OtpRateLimitError,
     ResendNotSupportedError,
@@ -21,7 +19,7 @@ from backend.scraper.adapter import (
     _tfa_scrapers_waiting,
     scraper_registry_key,
 )
-
+from backend.services.scraping_history_service import ScrapingHistoryService
 
 logger = logging.getLogger(__name__)
 
@@ -201,7 +199,7 @@ class ScrapingService:
         self.scraping_history_repo = ScrapingHistoryRepository(db)
         self.credentials_repo = CredentialsRepository(db)
 
-    def get_scraping_status(self, scraping_process_id: int) -> Dict[str, str | int]:
+    def get_scraping_status(self, scraping_process_id: int) -> dict[str, str | int]:
         """
         Get the current status of a scraping process.
 
@@ -240,7 +238,7 @@ class ScrapingService:
             "error_type": error_type,
         }
 
-    def get_last_scrape_dates(self) -> List[Dict]:
+    def get_last_scrape_dates(self) -> list[dict]:
         """Get last successful scrape dates for all configured accounts.
 
         Delegates to :class:`ScrapingHistoryService`, which carries the
@@ -256,7 +254,7 @@ class ScrapingService:
         """
         return ScrapingHistoryService(self.db).get_last_scrape_dates()
 
-    def get_active_scrapes(self) -> List[Dict[str, str | int]]:
+    def get_active_scrapes(self) -> list[dict[str, str | int]]:
         """List the scrapes currently running for the caller's demo mode.
 
         The UI's in-progress state lives in a React hook that is torn down
@@ -284,13 +282,11 @@ class ScrapingService:
             or ``"waiting_for_2fa"``). Empty when nothing is running.
         """
         demo = AppConfig().is_demo_mode
-        active: List[Dict[str, str | int]] = []
+        active: list[dict[str, str | int]] = []
         for adapter in list(_active_scrapers.values()):
             if adapter.demo_mode != demo:
                 continue
-            status = self.scraping_history_repo.get_scraping_status(
-                adapter.process_id
-            )
+            status = self.scraping_history_repo.get_scraping_status(adapter.process_id)
             active.append(
                 {
                     "process_id": adapter.process_id,
@@ -307,7 +303,7 @@ class ScrapingService:
         service: str,
         provider: str,
         account: str,
-        scraping_period_days: Optional[int] = None,
+        scraping_period_days: int | None = None,
         force_2fa: bool = False,
     ) -> int:
         """
@@ -347,9 +343,7 @@ class ScrapingService:
             The ``process_id`` of the (possibly already-running) scraping
             history record.
         """
-        key = scraper_registry_key(
-            AppConfig().is_demo_mode, service, provider, account
-        )
+        key = scraper_registry_key(AppConfig().is_demo_mode, service, provider, account)
         # Unlocked fast path: an obviously-running account costs no lock and no
         # keyring read. The authoritative check is the one inside the lock
         # below — this one may be stale the moment it returns.
@@ -391,7 +385,12 @@ class ScrapingService:
                 )
 
             adapter = create_adapter(
-                service, provider, account, creds, start_date, process_id,
+                service,
+                provider,
+                account,
+                creds,
+                start_date,
+                process_id,
                 force_2fa=force_2fa,
             )
 
@@ -463,9 +462,7 @@ class ScrapingService:
         EntityNotFoundException
             If no 2FA-waiting scraper is found for the given service/provider/account.
         """
-        key = scraper_registry_key(
-            AppConfig().is_demo_mode, service, provider, account
-        )
+        key = scraper_registry_key(AppConfig().is_demo_mode, service, provider, account)
         if key not in _tfa_scrapers_waiting:
             raise EntityNotFoundException("Scraping process not found")
 
@@ -484,9 +481,7 @@ class ScrapingService:
                 adapter.process_id, self.scraping_history_repo.IN_PROGRESS
             )
 
-    async def resend_2fa_code(
-        self, service: str, provider: str, account: str
-    ) -> dict:
+    async def resend_2fa_code(self, service: str, provider: str, account: str) -> dict:
         """Re-issue the OTP for an awaiting scraper without losing its process.
 
         Resolves the live adapter (``_active_scrapers`` first, then
@@ -527,9 +522,7 @@ class ScrapingService:
             If the resend is rate-limited (too many code requests too
             quickly). The message is the actionable wait-and-retry hint.
         """
-        key = scraper_registry_key(
-            AppConfig().is_demo_mode, service, provider, account
-        )
+        key = scraper_registry_key(AppConfig().is_demo_mode, service, provider, account)
         adapter = _active_scrapers.get(key) or _tfa_scrapers_waiting.get(key)
         if adapter is None:
             raise EntityNotFoundException("Scraping process not found")

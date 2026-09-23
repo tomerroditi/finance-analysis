@@ -8,7 +8,7 @@ Defines ``InvestmentsService``, assembling the snapshot
 """
 
 from datetime import date
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -19,8 +19,10 @@ from backend.constants.providers import Services
 from backend.errors import EntityAlreadyExistsException, ValidationException
 from backend.models.transaction import InsuranceTransaction
 from backend.repositories.insurance_account_repository import InsuranceAccountRepository
+from backend.repositories.investment_snapshots_repository import (
+    InvestmentSnapshotsRepository,
+)
 from backend.repositories.investments_repository import InvestmentsRepository
-from backend.repositories.investment_snapshots_repository import InvestmentSnapshotsRepository
 from backend.repositories.savings_goal_repository import SavingsGoalRepository
 from backend.repositories.transactions_repository import TransactionsRepository
 from backend.services.investments.insurance_sync import InsuranceSyncMixin
@@ -30,6 +32,7 @@ from backend.services.investments.valuation import CLOSED_SOURCE, ValuationMixin
 # TransactionsService is imported lazily inside __init__ to avoid a
 # module-level circular dependency (TransactionsService also lazy-imports
 # InvestmentsService inside its create/delete methods).
+
 
 class InvestmentsService(SnapshotsMixin, ValuationMixin, InsuranceSyncMixin):
     """
@@ -58,7 +61,7 @@ class InvestmentsService(SnapshotsMixin, ValuationMixin, InsuranceSyncMixin):
 
         self.transactions_service = TransactionsService(db)
 
-    def get_all_investments(self, include_closed: bool = False) -> List[Dict[str, Any]]:
+    def get_all_investments(self, include_closed: bool = False) -> list[dict[str, Any]]:
         """
         Get all investments as a list of JSON-safe dicts.
 
@@ -94,7 +97,9 @@ class InvestmentsService(SnapshotsMixin, ValuationMixin, InsuranceSyncMixin):
             dated = analysis_df.assign(_date=pd.to_datetime(analysis_df["date"]))
             manual_first_dates = {
                 key: first.strftime("%Y-%m-%d")
-                for key, first in dated.groupby(["category", "tag"])["_date"].min().items()
+                for key, first in dated.groupby(["category", "tag"])["_date"]
+                .min()
+                .items()
             }
 
         policy_ids = [
@@ -104,12 +109,14 @@ class InvestmentsService(SnapshotsMixin, ValuationMixin, InsuranceSyncMixin):
         ]
         insurance_first_dates: dict[str, str] = {}
         if policy_ids:
-            stmt = select(
-                InsuranceTransaction.account_number,
-                func.min(InsuranceTransaction.date),
-            ).where(
-                InsuranceTransaction.account_number.in_(policy_ids)
-            ).group_by(InsuranceTransaction.account_number)
+            stmt = (
+                select(
+                    InsuranceTransaction.account_number,
+                    func.min(InsuranceTransaction.date),
+                )
+                .where(InsuranceTransaction.account_number.in_(policy_ids))
+                .group_by(InsuranceTransaction.account_number)
+            )
             insurance_first_dates = {
                 account: first[:10]
                 for account, first in self.db.execute(stmt).all()
@@ -130,7 +137,7 @@ class InvestmentsService(SnapshotsMixin, ValuationMixin, InsuranceSyncMixin):
 
         return records
 
-    def get_investment(self, investment_id: int) -> Dict[str, Any]:
+    def get_investment(self, investment_id: int) -> dict[str, Any]:
         """
         Get a single investment by ID as a JSON-safe dict.
 
@@ -151,9 +158,9 @@ class InvestmentsService(SnapshotsMixin, ValuationMixin, InsuranceSyncMixin):
     def get_investment_analysis(
         self,
         investment_id: int,
-        start_date: Optional[str] = None,
-        end_date: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        start_date: str | None = None,
+        end_date: str | None = None,
+    ) -> dict[str, Any]:
         """
         Get detailed profit/loss metrics and balance history for an investment.
 
@@ -193,7 +200,7 @@ class InvestmentsService(SnapshotsMixin, ValuationMixin, InsuranceSyncMixin):
             "flows": self._calculate_daily_flows(investment_id),
         }
 
-    def _calculate_daily_flows(self, investment_id: int) -> List[Dict[str, Any]]:
+    def _calculate_daily_flows(self, investment_id: int) -> list[dict[str, Any]]:
         """Aggregate an investment's deposits and withdrawals by date.
 
         Includes an insurance-linked investment's scraped deposits and leaves
@@ -329,14 +336,14 @@ class InvestmentsService(SnapshotsMixin, ValuationMixin, InsuranceSyncMixin):
         """
         inv = self.investments_repo.get_by_id(investment_id).iloc[0]
         if inv["is_closed"]:
-            raise ValidationException(
-                f"Investment {investment_id} is already closed"
-            )
+            raise ValidationException(f"Investment {investment_id} is already closed")
         self.investments_repo.close_investment(investment_id, closed_date)
         zero_date = self._closing_snapshot_date(
             investment_id, inv["category"], inv["tag"], closed_date
         )
-        self.create_balance_snapshot(investment_id, zero_date, 0.0, source=CLOSED_SOURCE)
+        self.create_balance_snapshot(
+            investment_id, zero_date, 0.0, source=CLOSED_SOURCE
+        )
 
     def realign_closing_snapshots(self) -> None:
         """Move every closed investment's zero snapshot onto where it belongs now.
@@ -474,7 +481,9 @@ class InvestmentsService(SnapshotsMixin, ValuationMixin, InsuranceSyncMixin):
         """
         investment = self.investments_repo.get_by_id(investment_id)
         inv = investment.iloc[0]
-        all_inv_txns = self.transactions_repo.get_table(Services.MANUAL_INVESTMENTS.value)
+        all_inv_txns = self.transactions_repo.get_table(
+            Services.MANUAL_INVESTMENTS.value
+        )
         if all_inv_txns.empty:
             prior_wealth = 0.0
         else:
@@ -485,9 +494,7 @@ class InvestmentsService(SnapshotsMixin, ValuationMixin, InsuranceSyncMixin):
             if inv_txns.empty:
                 prior_wealth = 0.0
             else:
-                amounts = pd.to_numeric(
-                    inv_txns["amount"], errors="coerce"
-                ).fillna(0.0)
+                amounts = pd.to_numeric(inv_txns["amount"], errors="coerce").fillna(0.0)
                 prior_wealth = -float(amounts.sum())
         self.investments_repo.update_prior_wealth(investment_id, prior_wealth)
 

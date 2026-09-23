@@ -6,8 +6,6 @@ gemel) scraped from insurance providers and for syncing hishtalmut policies
 to investments.
 """
 
-from typing import Optional
-
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy.orm import Session
@@ -26,17 +24,17 @@ class InsuranceAccountResponse(BaseModel):
     provider: str
     policy_id: str
     policy_type: str
-    pension_type: Optional[str] = None
+    pension_type: str | None = None
     account_name: str
-    custom_name: Optional[str] = None
-    balance: Optional[float] = None
-    balance_date: Optional[str] = None
-    investment_tracks: Optional[str] = None
-    commission_deposits_pct: Optional[float] = None
-    commission_savings_pct: Optional[float] = None
-    insurance_covers: Optional[str] = None
-    insurance_costs: Optional[str] = None
-    liquidity_date: Optional[str] = None
+    custom_name: str | None = None
+    balance: float | None = None
+    balance_date: str | None = None
+    investment_tracks: str | None = None
+    commission_deposits_pct: float | None = None
+    commission_savings_pct: float | None = None
+    insurance_covers: str | None = None
+    insurance_costs: str | None = None
+    liquidity_date: str | None = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -44,7 +42,7 @@ class InsuranceAccountResponse(BaseModel):
 class InsuranceAccountRename(BaseModel):
     """Request body for renaming an insurance account."""
 
-    custom_name: Optional[str] = None
+    custom_name: str | None = None
 
 
 @router.get("/", response_model=list[InsuranceAccountResponse])

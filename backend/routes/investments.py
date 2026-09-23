@@ -5,7 +5,7 @@ Provides endpoints for investment tracking.
 """
 
 from datetime import date as date_type
-from typing import Any, Optional
+from typing import Any
 
 from fastapi import APIRouter, Depends
 from pydantic import field_validator
@@ -58,19 +58,19 @@ class InvestmentCreate(ApiRequestModel):
     tag: str
     type: str
     name: str
-    interest_rate: Optional[float] = None
+    interest_rate: float | None = None
     interest_rate_type: str = "fixed"
-    rate_spread: Optional[float] = None
-    commission_deposit: Optional[float] = None
-    commission_management: Optional[float] = None
-    commission_withdrawal: Optional[float] = None
-    liquidity_date: Optional[str] = None
-    maturity_date: Optional[str] = None
-    notes: Optional[str] = None
+    rate_spread: float | None = None
+    commission_deposit: float | None = None
+    commission_management: float | None = None
+    commission_withdrawal: float | None = None
+    liquidity_date: str | None = None
+    maturity_date: str | None = None
+    notes: str | None = None
 
     @field_validator("liquidity_date", "maturity_date")
     @classmethod
-    def validate_dates(cls, v: Optional[str]) -> Optional[str]:
+    def validate_dates(cls, v: str | None) -> str | None:
         """Ensure optional dates are valid ISO date strings."""
         if v is not None:
             date_type.fromisoformat(v)
@@ -78,20 +78,20 @@ class InvestmentCreate(ApiRequestModel):
 
 
 class InvestmentUpdate(ApiRequestModel):
-    name: Optional[str] = None
-    type: Optional[str] = None
-    interest_rate: Optional[float] = None
-    interest_rate_type: Optional[str] = None
-    rate_spread: Optional[float] = None
-    closed_date: Optional[str] = None
-    commission_deposit: Optional[float] = None
-    commission_management: Optional[float] = None
-    liquidity_date: Optional[str] = None
-    notes: Optional[str] = None
+    name: str | None = None
+    type: str | None = None
+    interest_rate: float | None = None
+    interest_rate_type: str | None = None
+    rate_spread: float | None = None
+    closed_date: str | None = None
+    commission_deposit: float | None = None
+    commission_management: float | None = None
+    liquidity_date: str | None = None
+    notes: str | None = None
 
     @field_validator("closed_date", "liquidity_date")
     @classmethod
-    def validate_optional_dates(cls, v: Optional[str]) -> Optional[str]:
+    def validate_optional_dates(cls, v: str | None) -> str | None:
         """Ensure optional dates are valid ISO date strings."""
         if v is not None:
             date_type.fromisoformat(v)
@@ -111,12 +111,12 @@ class BalanceSnapshotCreate(ApiRequestModel):
 
 
 class BalanceSnapshotUpdate(ApiRequestModel):
-    date: Optional[str] = None
-    balance: Optional[float] = None
+    date: str | None = None
+    balance: float | None = None
 
     @field_validator("date")
     @classmethod
-    def validate_date(cls, v: Optional[str]) -> Optional[str]:
+    def validate_date(cls, v: str | None) -> str | None:
         """Ensure the snapshot date is a valid ISO date string."""
         if v is not None:
             date_type.fromisoformat(v)
@@ -170,8 +170,8 @@ def get_portfolio_balance_history(
 @router.get("/{investment_id}/analysis")
 def get_investment_analysis(
     investment_id: int,
-    start_date: Optional[str] = None,
-    end_date: Optional[str] = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
     db: Session = Depends(get_database),
 ) -> dict[str, Any]:
     """Return detailed analysis for a specific investment.
@@ -301,7 +301,7 @@ def create_balance_snapshot(
 @router.post("/{investment_id}/balances/calculate")
 def calculate_fixed_rate_snapshots(
     investment_id: int,
-    end_date: Optional[str] = None,
+    end_date: str | None = None,
     db: Session = Depends(get_database),
 ) -> dict[str, str]:
     """Trigger fixed-rate auto-calculation of balance snapshots."""

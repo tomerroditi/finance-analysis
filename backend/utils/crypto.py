@@ -21,7 +21,6 @@ passes them through unchanged and the startup migration
 import json
 import logging
 import threading
-from typing import Dict
 
 try:
     from cryptography.fernet import Fernet, InvalidToken
@@ -93,7 +92,7 @@ def get_fernet() -> Fernet:
     return _fernet
 
 
-def encrypt_fields(fields: Dict) -> Dict:
+def encrypt_fields(fields: dict) -> dict:
     """Encrypt a credential fields dict into the on-disk envelope format.
 
     Parameters
@@ -111,7 +110,7 @@ def encrypt_fields(fields: Dict) -> Dict:
     return {ENCRYPTED_MARKER: token}
 
 
-def decrypt_fields(stored: Dict) -> Dict:
+def decrypt_fields(stored: dict) -> dict:
     """Decrypt a stored fields dict, passing legacy plaintext rows through.
 
     Parameters
@@ -143,7 +142,7 @@ def decrypt_fields(stored: Dict) -> Dict:
         )
 
 
-def is_encrypted(stored: Dict) -> bool:
+def is_encrypted(stored: dict) -> bool:
     """Return True when a stored fields dict is an encryption envelope."""
     return ENCRYPTED_MARKER in stored
 

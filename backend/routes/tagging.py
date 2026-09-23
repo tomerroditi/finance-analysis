@@ -4,8 +4,6 @@ Tagging API routes.
 Provides endpoints for category and tag management.
 """
 
-from typing import List
-
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
@@ -19,7 +17,7 @@ router = APIRouter()
 
 class CategoryCreate(BaseModel):
     name: str
-    tags: List[str] = []
+    tags: list[str] = []
 
 
 class TagCreate(BaseModel):
@@ -103,7 +101,9 @@ def delete_category(name: str, db: Session = Depends(get_database)):
     if not service.delete_category(name):
         if name not in service.categories_and_tags:
             raise EntityNotFoundException(f"Category '{name}' not found")
-        raise ValidationException(f"Category '{name}' is protected and cannot be deleted")
+        raise ValidationException(
+            f"Category '{name}' is protected and cannot be deleted"
+        )
     return {"status": "success"}
 
 
@@ -142,7 +142,9 @@ def delete_tag(category: str, name: str, db: Session = Depends(get_database)):
         404 if the category or tag does not exist.
     """
     if not CategoriesTagsService(db).delete_tag(category, name):
-        raise EntityNotFoundException(f"Tag '{name}' not found in category '{category}'")
+        raise EntityNotFoundException(
+            f"Tag '{name}' not found in category '{category}'"
+        )
     return {"status": "success"}
 
 
@@ -177,7 +179,9 @@ def relocate_tag(data: TagRelocate, db: Session = Depends(get_database)):
 
 
 @router.put("/categories/{name}")
-def rename_category(name: str, data: CategoryRename, db: Session = Depends(get_database)):
+def rename_category(
+    name: str, data: CategoryRename, db: Session = Depends(get_database)
+):
     """Rename a category and cascade the change across all tables."""
     success = CategoriesTagsService(db).rename_category(name, data.new_name)
     if not success:
@@ -188,7 +192,9 @@ def rename_category(name: str, data: CategoryRename, db: Session = Depends(get_d
 
 
 @router.put("/tags/{category}/{name}")
-def rename_tag(category: str, name: str, data: TagRename, db: Session = Depends(get_database)):
+def rename_tag(
+    category: str, name: str, data: TagRename, db: Session = Depends(get_database)
+):
     """Rename a tag and cascade the change across all tables."""
     success = CategoriesTagsService(db).rename_tag(category, name, data.new_name)
     if not success:
@@ -205,9 +211,7 @@ def get_category_icons(db: Session = Depends(get_database)):
 
 
 @router.put("/icons/{category}")
-def update_category_icon(
-    category: str, icon: str, db: Session = Depends(get_database)
-):
+def update_category_icon(category: str, icon: str, db: Session = Depends(get_database)):
     """Update a category's icon."""
     changed = CategoriesTagsService(db).update_category_icon(category, icon)
     return {"status": "success", "changed": changed}

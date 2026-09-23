@@ -6,7 +6,7 @@ Provides endpoints for transaction CRUD operations.
 
 import logging
 from datetime import date
-from typing import Any, List, Optional
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
@@ -42,6 +42,7 @@ _VALID_SOURCES = frozenset(
     }
 )
 
+
 def _validate_source(source: str) -> str:
     """Reject a ``source`` the transactions repository cannot dispatch on.
 
@@ -73,33 +74,33 @@ class TransactionCreate(ApiRequestModel):
     description: str
     amount: float
     account_name: str
-    provider: Optional[str] = None
-    account_number: Optional[str] = None
-    category: Optional[str] = None
-    tag: Optional[str] = None
+    provider: str | None = None
+    account_number: str | None = None
+    category: str | None = None
+    tag: str | None = None
     service: str  # 'cash' or 'manual_investments'
 
 
 class TransactionUpdate(ApiRequestModel):
-    date: Optional[str] = None
-    account_name: Optional[str] = None
-    description: Optional[str] = None
-    amount: Optional[float] = None
-    category: Optional[str] = None
-    tag: Optional[str] = None
-    provider: Optional[str] = None
+    date: str | None = None
+    account_name: str | None = None
+    description: str | None = None
+    amount: float | None = None
+    category: str | None = None
+    tag: str | None = None
+    provider: str | None = None
     source: str
 
 
 class BulkTagUpdate(ApiRequestModel):
-    transaction_ids: List[int]
+    transaction_ids: list[int]
     source: str
-    category: Optional[str] = None
-    tag: Optional[str] = None
-    description: Optional[str] = None
-    account_name: Optional[str] = None
-    date: Optional[str] = None
-    amount: Optional[float] = None
+    category: str | None = None
+    tag: str | None = None
+    description: str | None = None
+    account_name: str | None = None
+    date: str | None = None
+    amount: float | None = None
 
 
 class SplitItem(ApiRequestModel):
@@ -112,7 +113,7 @@ class SplitRequest(ApiRequestModel):
     source: str
     # A zero-slice split flipped the parent to ``split_parent`` with no
     # children, hiding the transaction from the merged view and every KPI.
-    splits: List[SplitItem] = Field(..., min_length=1)
+    splits: list[SplitItem] = Field(..., min_length=1)
 
 
 class StatusResponse(BaseModel):
@@ -120,7 +121,7 @@ class StatusResponse(BaseModel):
 
 
 class LatestDateResponse(BaseModel):
-    latest_date: Optional[str] = None
+    latest_date: str | None = None
 
 
 class UncategorizedCountResponse(BaseModel):
@@ -129,7 +130,7 @@ class UncategorizedCountResponse(BaseModel):
 
 @router.get("/")
 def get_transactions(
-    service: Optional[str] = Query(
+    service: str | None = Query(
         None, description="Filter by service: credit_card, bank, cash"
     ),
     include_split_parents: bool = Query(
@@ -331,7 +332,9 @@ def update_transaction_tag(
     transaction_id: str,
     category: str,
     tag: str,
-    service: str = Query(..., description="Source table or service alias, e.g. bank_transactions / banks"),
+    service: str = Query(
+        ..., description="Source table or service alias, e.g. bank_transactions / banks"
+    ),
     db: Session = Depends(get_database),
 ) -> dict[str, str]:
     """Update the category and tag of a single transaction.

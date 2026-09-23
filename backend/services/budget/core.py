@@ -8,7 +8,6 @@ the monthly, yearly, and project budget services.
 
 import threading
 from datetime import date
-from typing import Optional
 
 import pandas as pd
 from sqlalchemy.orm import Session
@@ -30,7 +29,6 @@ from backend.constants.budget import (
 )
 from backend.constants.tables import TransactionsTableFields
 from backend.errors import EntityNotFoundException, ValidationException
-from backend.services.transaction_classification import EXPENSE_EXCLUDED_CATEGORIES
 from backend.repositories.budget_repository import BudgetRepository
 from backend.services.budget_month_override_service import BudgetMonthOverrideService
 from backend.services.pending_refunds_service import (
@@ -39,8 +37,8 @@ from backend.services.pending_refunds_service import (
     apply_refund_amount_adjustments,
 )
 from backend.services.tagging_service import CategoriesTagsService
+from backend.services.transaction_classification import EXPENSE_EXCLUDED_CATEGORIES
 from backend.services.transactions_service import TransactionsService
-
 
 # Serializes the auto-fill of a month's budget rules across concurrent
 # requests. FastAPI runs the (synchronous) budget-analysis handlers in its
@@ -105,9 +103,9 @@ class BudgetService:
         amount: float,
         category: str,
         tags: str | list[str],
-        month: Optional[int] = None,
-        year: Optional[int] = None,
-        period_type: Optional[str] = None,
+        month: int | None = None,
+        year: int | None = None,
+        period_type: str | None = None,
     ) -> None:
         """
         Add a new budget rule, converting tags to semicolon-separated storage format.
@@ -134,7 +132,9 @@ class BudgetService:
             ``None``, the repository derives it from ``(year, month)``.
         """
         tags_str = ";".join(tags) if isinstance(tags, list) else tags
-        self.budget_repository.add(name, amount, category, tags_str, month, year, period_type)
+        self.budget_repository.add(
+            name, amount, category, tags_str, month, year, period_type
+        )
 
     @staticmethod
     def _parse_tags(tags: str | list[str] | None) -> list[str]:
@@ -182,7 +182,9 @@ class BudgetService:
         all_rules = BudgetService.get_all_rules(self)
         row = all_rules.loc[all_rules[ID] == id_] if not all_rules.empty else all_rules
         if row.empty:
-            raise EntityNotFoundException(f"No rule found with ID {id_}. Update failed.")
+            raise EntityNotFoundException(
+                f"No rule found with ID {id_}. Update failed."
+            )
         row = row.iloc[0]
 
         if NAME in fields:
@@ -368,7 +370,8 @@ class BudgetService:
 
     def category_used_by_monthly_or_yearly(self, category: str) -> bool:
         """True if any monthly or yearly rule uses ``category`` (excluding the
-        ``Total Budget`` cap category, which is not a real category)."""
+        ``Total Budget`` cap category, which is not a real category).
+        """
         if category == TOTAL_BUDGET:
             return False
         rules = BudgetService.get_all_rules(self)
@@ -400,14 +403,13 @@ class BudgetService:
         overlaps = []
         for cat in sorted(project_cats):
             kinds = sorted(
-                {
-                    pt
-                    for pt in rules.loc[
+                set(
+                    rules.loc[
                         (rules[CATEGORY] == cat)
                         & (rules[PERIOD_TYPE].isin([PERIOD_MONTHLY, PERIOD_YEARLY])),
                         PERIOD_TYPE,
                     ]
-                }
+                )
             )
             if kinds:
                 overlaps.append({"category": cat, "kinds": kinds})
@@ -443,8 +445,8 @@ class BudgetService:
         *,
         conflict_period_type: str,
         target_year: int,
-        target_month: Optional[int] = None,
-        period_type: Optional[str] = None,
+        target_month: int | None = None,
+        period_type: str | None = None,
         total_budget_passthrough: bool = False,
     ) -> list[str]:
         """Copy ``source_rules`` into a target period, stripping conflicting tags.
@@ -487,7 +489,9 @@ class BudgetService:
         skipped: list[str] = []
         for _, rule in source_rules.iterrows():
             tags = rule[TAGS]
-            if total_budget_passthrough and (rule[CATEGORY] == TOTAL_BUDGET or not tags):
+            if total_budget_passthrough and (
+                rule[CATEGORY] == TOTAL_BUDGET or not tags
+            ):
                 kept, dropped = tags, []
             else:
                 kept, dropped = self.strip_conflicting_tags(
@@ -762,10 +766,8 @@ class BudgetService:
         # (the refund transactions, and cross-month matches), so running both
         # would double-count the exclusion.
         if net_refunds:
-            adjustments = (
-                self.pending_refunds_service.get_refund_amount_adjustments(
-                    exclude_open=exclude_pending_refunds
-                )
+            adjustments = self.pending_refunds_service.get_refund_amount_adjustments(
+                exclude_open=exclude_pending_refunds
             )
             expenses = apply_refund_amount_adjustments(
                 expenses, adjustments, keep_gross_in=GROSS_AMOUNT_COLUMN

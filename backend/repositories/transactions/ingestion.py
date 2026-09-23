@@ -89,12 +89,15 @@ class IngestionMixin:
         existing_data = pd.read_sql(stmt, self.db.connection())
 
         # Make sure columns align for merge
-        df = df.astype({col: str for col in self.unique_columns})
-        existing_data = existing_data.astype({col: str for col in self.unique_columns})
+        df = df.astype(dict.fromkeys(self.unique_columns, str))
+        existing_data = existing_data.astype(dict.fromkeys(self.unique_columns, str))
 
         if carried_tags is not None and not carried_tags.empty:
             df = df.merge(
-                carried_tags, on=self.unique_columns, how="left", suffixes=("", "_carried")
+                carried_tags,
+                on=self.unique_columns,
+                how="left",
+                suffixes=("", "_carried"),
             )
             for col in ("category", "tag"):
                 carried_col = f"{col}_carried"
@@ -122,20 +125,20 @@ class IngestionMixin:
 
         instances = []
         for _, row in new_rows.iterrows():
-            kwargs = dict(
-                id=row["id"],
-                date=row["date"],
-                provider=row["provider"],
-                account_name=row["account_name"],
-                account_number=row.get("account_number"),
-                description=row.get("description"),
-                amount=float(row["amount"]),
-                category=row.get("category"),
-                tag=row.get("tag"),
-                source=row.get("source", repo.table),
-                type=row.get("type", "normal"),
-                status=row.get("status", "completed"),
-            )
+            kwargs = {
+                "id": row["id"],
+                "date": row["date"],
+                "provider": row["provider"],
+                "account_name": row["account_name"],
+                "account_number": row.get("account_number"),
+                "description": row.get("description"),
+                "amount": float(row["amount"]),
+                "category": row.get("category"),
+                "tag": row.get("tag"),
+                "source": row.get("source", repo.table),
+                "type": row.get("type", "normal"),
+                "status": row.get("status", "completed"),
+            }
             for col in extra_columns:
                 if col in row:
                     kwargs[col] = row.get(col)

@@ -6,7 +6,6 @@ particularly for category and tag names.
 """
 
 import re
-from typing import Optional
 
 # Common initialisms that should remain in all capitals
 # These are preserved when converting to title case
@@ -25,7 +24,7 @@ INITIALISMS = frozenset(
 )
 
 
-def to_title_case(text: Optional[str]) -> Optional[str]:
+def to_title_case(text: str | None) -> str | None:
     """
     Convert a string to title case while preserving initialisms.
 

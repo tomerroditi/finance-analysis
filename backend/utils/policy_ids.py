@@ -87,4 +87,6 @@ def policy_id_key(value: str | None) -> str:
     normalized = normalize_policy_id(value)
     if not normalized:
         return ""
-    return _DIGIT_RUN_RE.sub(lambda m: m.group(0).lstrip("0") or "0", normalized).casefold()
+    return _DIGIT_RUN_RE.sub(
+        lambda m: m.group(0).lstrip("0") or "0", normalized
+    ).casefold()

@@ -1,6 +1,5 @@
 from enum import Enum
 
-
 PRIOR_WEALTH_TAG = "Prior Wealth"
 CREDIT_CARDS = "Credit Cards"
 IGNORE_CATEGORY = "Ignore"

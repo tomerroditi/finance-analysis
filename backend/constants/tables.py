@@ -1,5 +1,4 @@
 from enum import Enum
-from typing import Type
 
 
 class Tables(Enum):
@@ -90,7 +89,7 @@ class Tables(Enum):
     INSIGHT_DISMISSALS = "insight_dismissals"
 
 
-def _create_enum(name: str, fields: list[tuple[str, str]]) -> Type[Enum]:
+def _create_enum(name: str, fields: list[tuple[str, str]]) -> type[Enum]:
     """
     Create an Enum class dynamically with the given name and fields.
 

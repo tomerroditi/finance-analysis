@@ -5,7 +5,6 @@ This repository handles DB-based storage for categories, tags, and icons.
 
 import os
 from datetime import datetime
-from typing import Optional
 
 import yaml
 from sqlalchemy import select
@@ -71,9 +70,7 @@ class TaggingRepository:
         rows = self.db.execute(select(Category)).scalars().all()
         return {row.name: list(row.tags) for row in rows}
 
-    def add_category(
-        self, name: str, tags: list[str], icon: Optional[str] = None
-    ) -> None:
+    def add_category(self, name: str, tags: list[str], icon: str | None = None) -> None:
         """Add a new category.
 
         Parameters
@@ -98,9 +95,7 @@ class TaggingRepository:
             select(Category).where(Category.name == name)
         ).scalar_one_or_none()
         if existing is not None:
-            raise EntityAlreadyExistsException(
-                f"Category '{name}' already exists"
-            )
+            raise EntityAlreadyExistsException(f"Category '{name}' already exists")
         self.db.add(Category(name=name, tags=tags, icon=icon))
         self.db.commit()
 
@@ -149,9 +144,7 @@ class TaggingRepository:
             select(Category).where(Category.name == new_name)
         ).scalar_one_or_none()
         if existing is not None:
-            raise EntityAlreadyExistsException(
-                f"Category '{new_name}' already exists"
-            )
+            raise EntityAlreadyExistsException(f"Category '{new_name}' already exists")
         cat = self._get_category(old_name)
         cat.name = new_name
         self.db.commit()
@@ -237,9 +230,7 @@ class TaggingRepository:
         cat.tags = [t for t in cat.tags if t != tag]
         self.db.commit()
 
-    def relocate_tag(
-        self, tag: str, old_category: str, new_category: str
-    ) -> None:
+    def relocate_tag(self, tag: str, old_category: str, new_category: str) -> None:
         """Move a tag from one category to another.
 
         Parameters
@@ -292,12 +283,7 @@ class TaggingRepository:
         dict[str, datetime]
             Mapping of category name to its ``created_at`` value.
         """
-        return {
-            name: created_at
-            for name, created_at in self.db.execute(
-                select(Category.name, Category.created_at)
-            ).all()
-        }
+        return dict(self.db.execute(select(Category.name, Category.created_at)).all())
 
     def update_category_icon(self, category: str, icon: str) -> bool:
         """Update a category's icon.
@@ -337,16 +323,14 @@ class TaggingRepository:
 
         categories = {}
         if os.path.exists(categories_path):
-            with open(categories_path, "r") as f:
+            with open(categories_path) as f:
                 categories = yaml.safe_load(f) or {}
 
         icons = {}
         if os.path.exists(icons_path):
-            with open(icons_path, "r") as f:
+            with open(icons_path) as f:
                 icons = yaml.safe_load(f) or {}
 
         for name, tags in categories.items():
-            self.db.add(
-                Category(name=name, tags=tags or [], icon=icons.get(name))
-            )
+            self.db.add(Category(name=name, tags=tags or [], icon=icons.get(name)))
         self.db.commit()

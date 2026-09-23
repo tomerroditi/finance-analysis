@@ -14,22 +14,14 @@ class AppException(Exception):
 class EntityNotFoundException(AppException):
     """Raised when a record is not found."""
 
-    pass
-
 
 class EntityAlreadyExistsException(AppException):
     """Raised when a record already exists."""
-
-    pass
 
 
 class ValidationException(AppException):
     """Raised for invalid inputs."""
 
-    pass
-
 
 class BadRequestException(AppException):
     """Raised for bad requests."""
-
-    pass

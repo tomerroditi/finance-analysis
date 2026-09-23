@@ -2,9 +2,18 @@
 Investment balance snapshot model.
 """
 
-from sqlalchemy import Column, Integer, Float, String, ForeignKey, Index, UniqueConstraint
-from backend.models.base import Base, TimestampMixin
+from sqlalchemy import (
+    Column,
+    Float,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    UniqueConstraint,
+)
+
 from backend.constants.tables import Tables
+from backend.models.base import Base, TimestampMixin
 
 
 class InvestmentBalanceSnapshot(Base, TimestampMixin):

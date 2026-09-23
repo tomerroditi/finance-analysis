@@ -2,8 +2,8 @@
 
 from sqlalchemy import Column, Float, Integer, String, UniqueConstraint
 
-from backend.models.base import Base, TimestampMixin
 from backend.constants.tables import Tables
+from backend.models.base import Base, TimestampMixin
 
 
 class PendingRefund(Base, TimestampMixin):
@@ -40,7 +40,9 @@ class PendingRefund(Base, TimestampMixin):
     # one, so a duplicate can only arrive via a race.
     __table_args__ = (
         UniqueConstraint(
-            "source_type", "source_id", "source_table",
+            "source_type",
+            "source_id",
+            "source_table",
             name="uq_pending_refund_source",
         ),
     )
@@ -74,7 +76,8 @@ class RefundSourceNote(Base, TimestampMixin):
     # One note per (source table, transaction) — upsert semantics.
     __table_args__ = (
         UniqueConstraint(
-            "refund_source", "refund_transaction_id",
+            "refund_source",
+            "refund_transaction_id",
             name="uq_refund_source_note",
         ),
     )

@@ -1,13 +1,13 @@
 import json
 import logging
-from typing import Any, Dict, List, Optional, Set, Tuple, Type
+from typing import Any
 
 import pandas as pd
 from sqlalchemy import and_, func, or_, select, update
 from sqlalchemy.orm import Session
 
-from backend.errors import BadRequestException, EntityNotFoundException
 from backend.constants.tables import Tables, TransactionsTableFields
+from backend.errors import BadRequestException, EntityNotFoundException
 from backend.models.transaction import (
     BankTransaction,
     CreditCardTransaction,
@@ -18,25 +18,24 @@ from backend.repositories.transactions_repository import TransactionsRepository
 from backend.services.tagging_service import CategoriesTagsService
 from backend.services.transactions_service import TransactionsService
 
-
-TABLE_TO_MODEL: Dict[str, Type[TransactionBase]] = {
+TABLE_TO_MODEL: dict[str, type[TransactionBase]] = {
     Tables.CREDIT_CARD.value: CreditCardTransaction,
     Tables.BANK.value: BankTransaction,
 }
 
 # Fields a condition may match on, and the operators each accepts.
-TEXT_CONDITION_FIELDS: List[str] = [
+TEXT_CONDITION_FIELDS: list[str] = [
     "description",
     "account_name",
     "provider",
     "service",
 ]
-NUMERIC_CONDITION_FIELDS: List[str] = ["amount"]
-VALID_TEXT_OPERATORS: List[str] = ["contains", "equals", "starts_with", "ends_with"]
-VALID_NUMERIC_OPERATORS: List[str] = ["gt", "lt", "gte", "lte", "equals", "between"]
+NUMERIC_CONDITION_FIELDS: list[str] = ["amount"]
+VALID_TEXT_OPERATORS: list[str] = ["contains", "equals", "starts_with", "ends_with"]
+VALID_NUMERIC_OPERATORS: list[str] = ["gt", "lt", "gte", "lte", "equals", "between"]
 # ``service`` is not a column: it selects which transaction table(s) a rule
 # runs against, so it only makes sense with ``equals`` and one of these values.
-VALID_SERVICE_VALUES: Set[str] = {"bank", "credit_card"}
+VALID_SERVICE_VALUES: set[str] = {"bank", "credit_card"}
 
 # SQLite caps bound parameters per statement; keep ``IN (...)`` lists under it.
 _SQL_IN_BATCH_SIZE = 900
@@ -61,12 +60,7 @@ def _escape_like(value: Any) -> str:
     str
         The value with ``\\``, ``%``, and ``_`` backslash-escaped.
     """
-    return (
-        str(value)
-        .replace("\\", "\\\\")
-        .replace("%", "\\%")
-        .replace("_", "\\_")
-    )
+    return str(value).replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
 
 class TaggingRulesService:
@@ -150,10 +144,10 @@ class TaggingRulesService:
     def add_rule(
         self,
         name: str,
-        conditions: Dict[str, Any],
+        conditions: dict[str, Any],
         category: str,
         tag: str,
-    ) -> Tuple[int, int]:
+    ) -> tuple[int, int]:
         """
         Add a new tagging rule with integrity and conflict checks.
 
@@ -203,7 +197,7 @@ class TaggingRulesService:
         n_tagged = self.apply_rule_by_id(rule_id)
         return rule_id, n_tagged
 
-    def _normalize_conditions(self, conditions: Any) -> Dict[str, Any]:
+    def _normalize_conditions(self, conditions: Any) -> dict[str, Any]:
         """
         Normalize legacy condition formats to the new recursive dict format.
         - List format: [...] -> {"type": "AND", "subconditions": [...]}
@@ -242,14 +236,13 @@ class TaggingRulesService:
                         for c in conditions.get("subconditions", [])
                     ]
                 return conditions
-            else:
-                # Single condition dict without 'type'
-                return {
-                    "type": "CONDITION",
-                    "field": conditions.get("field", "description"),
-                    "operator": conditions.get("operator", "contains"),
-                    "value": conditions.get("value", ""),
-                }
+            # Single condition dict without 'type'
+            return {
+                "type": "CONDITION",
+                "field": conditions.get("field", "description"),
+                "operator": conditions.get("operator", "contains"),
+                "value": conditions.get("value", ""),
+            }
 
         # Last resort fallback
         return {
@@ -378,8 +371,8 @@ class TaggingRulesService:
         # later overlapping rule would steal the rows the first rule already
         # agrees with. ``modified`` is the subset actually written, which is
         # what the caller counts.
-        claimed: Set[Tuple[str, int]] = set()
-        modified: Set[Tuple[str, int]] = set()
+        claimed: set[tuple[str, int]] = set()
+        modified: set[tuple[str, int]] = set()
         for rule in rules:
             modified |= self._apply_single_rule_returning_ids(
                 rule, overwrite=overwrite, claimed=claimed
@@ -424,8 +417,8 @@ class TaggingRulesService:
         return count
 
     def preview_rule(
-        self, conditions: Dict[str, Any], limit: Optional[int] = None
-    ) -> List[Dict[str, Any]]:
+        self, conditions: dict[str, Any], limit: int | None = None
+    ) -> list[dict[str, Any]]:
         """
         Preview which transactions would match given conditions without modifying them.
         Returns list of matching transactions with key fields. When ``limit`` is None,
@@ -439,8 +432,14 @@ class TaggingRulesService:
             model = TABLE_TO_MODEL[table]
             filter_expr = self._build_recursive_filter(conditions, model)
             stmt = select(
-                model.id, model.unique_id, model.date, model.description,
-                model.amount, model.category, model.tag, model.account_name,
+                model.id,
+                model.unique_id,
+                model.date,
+                model.description,
+                model.amount,
+                model.category,
+                model.tag,
+                model.account_name,
                 model.provider,
             ).where(filter_expr)
             if limit is not None:
@@ -459,7 +458,7 @@ class TaggingRulesService:
             combined = combined.head(limit)
         return combined.to_dict(orient="records")
 
-    def validate_rule_integrity(self, conditions: Dict[str, Any]):
+    def validate_rule_integrity(self, conditions: dict[str, Any]):
         """
         Validates that conditions matches field types.
         e.g. 'amount' must be numeric, 'date' must be valid date format,
@@ -552,10 +551,10 @@ class TaggingRulesService:
 
     def check_conflicts(
         self,
-        conditions: Dict[str, Any],
+        conditions: dict[str, Any],
         category: str,
         tag: str,
-        exclude_rule_id: Optional[int] = None,
+        exclude_rule_id: int | None = None,
     ):
         """
         Checks if the new rule overlaps with any EXISTING rule on ANY transaction,
@@ -607,8 +606,10 @@ class TaggingRulesService:
                 batch_size = 900
                 for i in range(0, len(ids_to_check), batch_size):
                     batch = ids_to_check[i : i + batch_size]
-                    stmt = select(func.count()).select_from(model).where(
-                        and_(model.unique_id.in_(batch), r_filter)
+                    stmt = (
+                        select(func.count())
+                        .select_from(model)
+                        .where(and_(model.unique_id.in_(batch), r_filter))
                     )
                     res = self.db.execute(stmt).scalar()
                     if res > 0:
@@ -617,7 +618,7 @@ class TaggingRulesService:
                             f"which assigns a different tag ('{rule['category']} - {rule['tag']}')."
                         )
 
-    def _apply_single_rule(self, rule: Dict[str, Any], overwrite: bool = False) -> int:
+    def _apply_single_rule(self, rule: dict[str, Any], overwrite: bool = False) -> int:
         """
         Apply a single rule dict and return the count of modified transactions.
 
@@ -638,7 +639,7 @@ class TaggingRulesService:
         ids = self._apply_single_rule_returning_ids(rule, overwrite=overwrite)
         return len(ids)
 
-    def _stored_conditions(self, rule: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    def _stored_conditions(self, rule: dict[str, Any]) -> dict[str, Any] | None:
         """
         Normalize a stored rule's conditions, or ``None`` if they are broken.
 
@@ -673,11 +674,11 @@ class TaggingRulesService:
 
     def _apply_single_rule_returning_ids(
         self,
-        rule: Dict[str, Any],
+        rule: dict[str, Any],
         overwrite: bool = False,
-        claimed: Optional[Set[Tuple[str, int]]] = None,
-        previous: Optional[Tuple[str, str]] = None,
-    ) -> Set[Tuple[str, int]]:
+        claimed: set[tuple[str, int]] | None = None,
+        previous: tuple[str, str] | None = None,
+    ) -> set[tuple[str, int]]:
         """
         Apply a single rule and return the ``(table, unique_id)`` pairs it updated.
 
@@ -710,7 +711,7 @@ class TaggingRulesService:
             return set()
         tables = self._get_tables_names_for_conditions(conditions)
 
-        modified_pairs: Set[Tuple[str, int]] = set()
+        modified_pairs: set[tuple[str, int]] = set()
         for table in tables:
             model = TABLE_TO_MODEL[table]
             base_filter = self._build_recursive_filter(conditions, model)
@@ -765,7 +766,9 @@ class TaggingRulesService:
 
         return modified_pairs
 
-    def _build_recursive_filter(self, condition_node: Dict[str, Any], model: Type[TransactionBase]):
+    def _build_recursive_filter(
+        self, condition_node: dict[str, Any], model: type[TransactionBase]
+    ):
         """
         Recursively builds a SQLAlchemy filter expression from a condition tree.
 
@@ -781,15 +784,19 @@ class TaggingRulesService:
             if not subconditions:
                 return False
 
-            clauses = [self._build_recursive_filter(sub, model) for sub in subconditions]
+            clauses = [
+                self._build_recursive_filter(sub, model) for sub in subconditions
+            ]
             return and_(*clauses) if c_type == "AND" else or_(*clauses)
 
-        elif c_type == "CONDITION":
+        if c_type == "CONDITION":
             return self._build_single_filter(condition_node, model)
 
         return False
 
-    def _build_single_filter(self, condition: Dict[str, Any], model: Type[TransactionBase]):
+    def _build_single_filter(
+        self, condition: dict[str, Any], model: type[TransactionBase]
+    ):
         """
         Build a single SQLAlchemy filter expression from a leaf condition dict.
 
@@ -823,26 +830,26 @@ class TaggingRulesService:
 
         if operator == "contains":
             return column.like(f"%{_escape_like(value)}%", escape="\\")
-        elif operator == "equals":
+        if operator == "equals":
             return column == value
-        elif operator == "starts_with":
+        if operator == "starts_with":
             return column.like(f"{_escape_like(value)}%", escape="\\")
-        elif operator == "ends_with":
+        if operator == "ends_with":
             return column.like(f"%{_escape_like(value)}", escape="\\")
-        elif operator == "gt":
+        if operator == "gt":
             return column > float(value)
-        elif operator == "lt":
+        if operator == "lt":
             return column < float(value)
-        elif operator == "gte":
+        if operator == "gte":
             return column >= float(value)
-        elif operator == "lte":
+        if operator == "lte":
             return column <= float(value)
-        elif operator == "between":
+        if operator == "between":
             return column.between(float(value[0]), float(value[1]))
 
         return False
 
-    def _get_model_column(self, field: str, model: Type[TransactionBase]):
+    def _get_model_column(self, field: str, model: type[TransactionBase]):
         """
         Map a condition field name to the corresponding SQLAlchemy model column.
 
@@ -868,7 +875,7 @@ class TaggingRulesService:
         }
         return field_mapping.get(field)
 
-    def _get_tables_names_for_conditions(self, conditions: Dict[str, Any]) -> List[str]:
+    def _get_tables_names_for_conditions(self, conditions: dict[str, Any]) -> list[str]:
         """
         Determine which tables to apply based on 'service' fields in conditions.
         Traverses the tree to find any 'service' restrictions.
@@ -893,7 +900,7 @@ class TaggingRulesService:
 
         return tables
 
-    def _collect_services(self, node: Dict[str, Any], services: Set[str]) -> None:
+    def _collect_services(self, node: dict[str, Any], services: set[str]) -> None:
         """
         Recursively collect ``service`` field values from a condition tree.
 

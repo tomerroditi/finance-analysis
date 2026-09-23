@@ -5,10 +5,10 @@ Provides endpoints for liability (loan/debt) tracking.
 """
 
 from datetime import date
-from typing import Any, Optional
+from typing import Any
 
 from fastapi import APIRouter, Depends
-from pydantic import BaseModel, field_validator
+from pydantic import field_validator
 from sqlalchemy.orm import Session
 
 from backend.dependencies import get_database
@@ -24,13 +24,13 @@ class LiabilityCreate(ApiRequestModel):
     principal_amount: float
     term_months: int
     start_date: str
-    interest_rate: Optional[float] = None
+    interest_rate: float | None = None
     loan_type: str = "fixed_unlinked"
     amortization_method: str = "shpitzer"
-    rate_spread: Optional[float] = None
-    rate_reset_months: Optional[int] = None
-    lender: Optional[str] = None
-    notes: Optional[str] = None
+    rate_spread: float | None = None
+    rate_reset_months: int | None = None
+    lender: str | None = None
+    notes: str | None = None
 
     @field_validator("start_date")
     @classmethod
@@ -41,13 +41,13 @@ class LiabilityCreate(ApiRequestModel):
 
 
 class LiabilityUpdate(ApiRequestModel):
-    name: Optional[str] = None
-    lender: Optional[str] = None
-    interest_rate: Optional[float] = None
-    rate_spread: Optional[float] = None
-    rate_reset_months: Optional[int] = None
-    paid_off_date: Optional[str] = None
-    notes: Optional[str] = None
+    name: str | None = None
+    lender: str | None = None
+    interest_rate: float | None = None
+    rate_spread: float | None = None
+    rate_reset_months: int | None = None
+    paid_off_date: str | None = None
+    notes: str | None = None
 
 
 @router.get("/")

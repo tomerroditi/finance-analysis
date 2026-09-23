@@ -44,7 +44,9 @@ def get_app_version() -> str:
     """
     pyproject = _project_root() / "pyproject.toml"
     if not pyproject.is_file():
-        logger.debug("pyproject.toml not found at %s; using fallback version", pyproject)
+        logger.debug(
+            "pyproject.toml not found at %s; using fallback version", pyproject
+        )
         return _FALLBACK
     try:
         with pyproject.open("rb") as fh:

@@ -7,7 +7,7 @@ snapshot generator (daily compounding). Mixed into ``InvestmentsService``
 """
 
 from datetime import date, datetime, timedelta
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -39,7 +39,7 @@ class SnapshotsMixin:
         """
         self.snapshots_repo.upsert_snapshot(investment_id, date, balance, source)
 
-    def get_balance_snapshots(self, investment_id: int) -> List[Dict[str, Any]]:
+    def get_balance_snapshots(self, investment_id: int) -> list[dict[str, Any]]:
         """Get all balance snapshots for an investment.
 
         Parameters
@@ -89,7 +89,7 @@ class SnapshotsMixin:
     def calculate_fixed_rate_snapshots(
         self,
         investment_id: int,
-        end_date: Optional[str] = None,
+        end_date: str | None = None,
     ) -> None:
         """Generate calculated balance snapshots for a rate-bearing investment.
 
@@ -144,9 +144,7 @@ class SnapshotsMixin:
 
         start = transactions_df["date"].min().date()
         end = (
-            datetime.strptime(end_date, "%Y-%m-%d").date()
-            if end_date
-            else date.today()
+            datetime.strptime(end_date, "%Y-%m-%d").date() if end_date else date.today()
         )
 
         # Piecewise-constant daily-rate curve: [(effective_date, daily_rate)],
@@ -155,7 +153,7 @@ class SnapshotsMixin:
         def _daily(annual_pct: float) -> float:
             return (1 + annual_pct / 100.0) ** (1 / 365) - 1
 
-        rate_curve: List[tuple] = []
+        rate_curve: list[tuple] = []
         if is_prime:
             from backend.services.rates_service import RatesService
 

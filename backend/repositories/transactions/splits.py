@@ -80,23 +80,18 @@ class SplitsMixin:
                 continue
             ids = [int(v) for v in group[tid_col].unique()]
             rows = (
-                self.db.execute(
-                    select(repo.model).where(repo.model.unique_id.in_(ids))
-                )
+                self.db.execute(select(repo.model).where(repo.model.unique_id.in_(ids)))
                 .scalars()
                 .all()
             )
             for parent in rows:
                 parents_by_key[(source, parent.unique_id)] = {
-                    c.name: getattr(parent, c.name)
-                    for c in parent.__table__.columns
+                    c.name: getattr(parent, c.name) for c in parent.__table__.columns
                 }
 
         children = []
         for _, split in splits_df.iterrows():
-            parent_dict = parents_by_key.get(
-                (split[src_col], int(split[tid_col]))
-            )
+            parent_dict = parents_by_key.get((split[src_col], int(split[tid_col])))
             if parent_dict is None:
                 continue
             children.append(
@@ -110,9 +105,7 @@ class SplitsMixin:
                     # BudgetService matched on `split_id` and, finding it
                     # always empty, silently kept refunded slices in the
                     # budget.
-                    "split_id": int(
-                        split[SplitTransactionsTableFields.ID.value]
-                    ),
+                    "split_id": int(split[SplitTransactionsTableFields.ID.value]),
                     "amount": split[SplitTransactionsTableFields.AMOUNT.value],
                     "category": split[SplitTransactionsTableFields.CATEGORY.value],
                     "tag": split[SplitTransactionsTableFields.TAG.value],
@@ -202,7 +195,7 @@ class SplitsMixin:
         for start in range(0, len(ids), 500):
             stmt = select(SplitTransaction.id).where(
                 SplitTransaction.source == source,
-                SplitTransaction.transaction_id.in_(ids[start:start + 500]),
+                SplitTransaction.transaction_id.in_(ids[start : start + 500]),
             )
             split_ids.extend(int(row[0]) for row in self.db.execute(stmt).all())
         return split_ids
@@ -335,7 +328,9 @@ class SplitsMixin:
             return True
         except SQLAlchemyError:
             logger.exception(
-                "Revert split failed for unique_id=%s in %s", scrub(unique_id), scrub(source)
+                "Revert split failed for unique_id=%s in %s",
+                scrub(unique_id),
+                scrub(source),
             )
             self.db.rollback()
             raise

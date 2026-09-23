@@ -10,16 +10,16 @@ comparison against actual transactions.
 
 import calendar
 from datetime import date
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import pandas as pd
 from sqlalchemy.orm import Session
 
 from backend.constants.categories import LIABILITIES_CATEGORY
 from backend.constants.loans import (
+    PRIME_BASED_LOAN_TYPES,
     AmortizationMethod,
     LoanType,
-    PRIME_BASED_LOAN_TYPES,
 )
 from backend.constants.tables import LiabilityTransactionsTableFields as LTF
 from backend.constants.tables import Tables
@@ -33,7 +33,7 @@ from backend.services.rates_service import RatesService
 MAX_TERM_MONTHS = 1200
 
 
-def _optional_number(value: Any) -> Optional[float]:
+def _optional_number(value: Any) -> float | None:
     """Normalize a possibly-NaN DataFrame value to ``float`` or ``None``."""
     if value is None:
         return None
@@ -79,7 +79,9 @@ class LiabilitiesService:
             return pd.DataFrame()
         return all_txns[all_txns["category"] == LIABILITIES_CATEGORY].copy()
 
-    def get_all_liabilities(self, include_paid_off: bool = False) -> List[Dict[str, Any]]:
+    def get_all_liabilities(
+        self, include_paid_off: bool = False
+    ) -> list[dict[str, Any]]:
         """
         Get all liabilities as a list of dicts with calculated fields.
 
@@ -98,7 +100,9 @@ class LiabilitiesService:
             ``total_interest``, ``remaining_balance``, ``total_paid``,
             ``percent_paid``, and ``current_rate``.
         """
-        df = self.liabilities_repo.get_all_liabilities(include_paid_off=include_paid_off)
+        df = self.liabilities_repo.get_all_liabilities(
+            include_paid_off=include_paid_off
+        )
         if df.empty:
             return []
 
@@ -110,7 +114,7 @@ class LiabilitiesService:
 
         return records
 
-    def get_liability(self, liability_id: int) -> Dict[str, Any]:
+    def get_liability(self, liability_id: int) -> dict[str, Any]:
         """
         Get a single liability by ID with calculated fields.
 
@@ -138,13 +142,13 @@ class LiabilitiesService:
         principal_amount: float,
         term_months: int,
         start_date: str,
-        interest_rate: Optional[float] = None,
+        interest_rate: float | None = None,
         loan_type: str = LoanType.FIXED_UNLINKED.value,
         amortization_method: str = AmortizationMethod.SHPITZER.value,
-        rate_spread: Optional[float] = None,
-        rate_reset_months: Optional[int] = None,
-        lender: Optional[str] = None,
-        notes: Optional[str] = None,
+        rate_spread: float | None = None,
+        rate_reset_months: int | None = None,
+        lender: str | None = None,
+        notes: str | None = None,
     ) -> None:
         """
         Create a new liability record.
@@ -226,9 +230,7 @@ class LiabilitiesService:
                 prime = prime_steps[0]["value"] if prime_steps else 0.0
                 interest_rate = round(prime + rate_spread, 4)
         elif interest_rate is None:
-            raise ValidationException(
-                "interest_rate is required for fixed-rate loans"
-            )
+            raise ValidationException("interest_rate is required for fixed-rate loans")
         if interest_rate < 0:
             raise ValidationException("interest_rate must not be negative")
 
@@ -295,7 +297,7 @@ class LiabilitiesService:
         """
         self.liabilities_repo.delete_liability(liability_id)
 
-    def get_liability_analysis(self, liability_id: int) -> Dict[str, Any]:
+    def get_liability_analysis(self, liability_id: int) -> dict[str, Any]:
         """
         Get detailed analysis for a liability.
 
@@ -370,7 +372,7 @@ class LiabilitiesService:
             "summary": summary,
         }
 
-    def detect_tag_transactions(self, tag: str) -> Dict[str, Any]:
+    def detect_tag_transactions(self, tag: str) -> dict[str, Any]:
         """
         Detect existing transactions for a liability tag.
 
@@ -403,7 +405,9 @@ class LiabilitiesService:
         if matched.empty:
             return {"receipt": None, "payments": [], "has_receipt": False}
 
-        matched["amount"] = pd.to_numeric(matched["amount"], errors="coerce").fillna(0.0)
+        matched["amount"] = pd.to_numeric(matched["amount"], errors="coerce").fillna(
+            0.0
+        )
         matched = matched.sort_values("date")
 
         positive = matched[matched["amount"] > 0]
@@ -426,8 +430,8 @@ class LiabilitiesService:
         }
 
     def get_liability_transactions(
-        self, liability_id: int, tag: Optional[str] = None
-    ) -> List[Dict[str, Any]]:
+        self, liability_id: int, tag: str | None = None
+    ) -> list[dict[str, Any]]:
         """
         Get all transactions associated with a liability.
 
@@ -488,19 +492,29 @@ class LiabilitiesService:
         if not liab_txns.empty:
             matched = liab_txns[liab_txns["tag"] == tag].copy()
             if not matched.empty:
-                matched["amount"] = pd.to_numeric(matched["amount"], errors="coerce").fillna(0.0)
+                matched["amount"] = pd.to_numeric(
+                    matched["amount"], errors="coerce"
+                ).fillna(0.0)
                 frames.append(matched)
 
         gen_txns = self.liabilities_repo.get_liability_transactions(liability_id)
         if gen_txns:
-            frames.append(pd.DataFrame([
-                {LTF.DATE.value: t.date, LTF.AMOUNT.value: t.amount,
-                 LTF.DESCRIPTION.value: t.description,
-                 "source": Tables.LIABILITY_TRANSACTIONS.value,
-                 "category": LIABILITIES_CATEGORY, "tag": tag,
-                 LTF.PAYMENT_NUMBER.value: t.payment_number}
-                for t in gen_txns
-            ]))
+            frames.append(
+                pd.DataFrame(
+                    [
+                        {
+                            LTF.DATE.value: t.date,
+                            LTF.AMOUNT.value: t.amount,
+                            LTF.DESCRIPTION.value: t.description,
+                            "source": Tables.LIABILITY_TRANSACTIONS.value,
+                            "category": LIABILITIES_CATEGORY,
+                            "tag": tag,
+                            LTF.PAYMENT_NUMBER.value: t.payment_number,
+                        }
+                        for t in gen_txns
+                    ]
+                )
+            )
 
         if not frames:
             return pd.DataFrame()
@@ -563,8 +577,8 @@ class LiabilitiesService:
         term_months: int,
         start_date: date,
         amortization_method: str = AmortizationMethod.SHPITZER.value,
-        rate_steps: Optional[List[Dict[str, Any]]] = None,
-    ) -> List[Dict[str, Any]]:
+        rate_steps: list[dict[str, Any]] | None = None,
+    ) -> list[dict[str, Any]]:
         """
         Calculate an amortization schedule.
 
@@ -608,9 +622,9 @@ class LiabilitiesService:
             - ``remaining_balance`` – outstanding balance after this payment.
             - ``annual_rate`` – annual rate applied to this payment (%).
         """
-        schedule: List[Dict[str, Any]] = []
+        schedule: list[dict[str, Any]] = []
         balance = principal
-        current_rate: Optional[float] = None
+        current_rate: float | None = None
         payment = 0.0
         fixed_principal_portion = principal / term_months if term_months else 0.0
 
@@ -652,19 +666,21 @@ class LiabilitiesService:
 
             balance = max(balance - principal_portion, 0.0)
 
-            schedule.append({
-                "payment_number": i,
-                "date": date_str,
-                "payment": round(payment, 2),
-                "principal_portion": round(principal_portion, 2),
-                "interest_portion": round(interest_portion, 2),
-                "remaining_balance": round(balance, 2),
-                "annual_rate": round(rate, 4),
-            })
+            schedule.append(
+                {
+                    "payment_number": i,
+                    "date": date_str,
+                    "payment": round(payment, 2),
+                    "principal_portion": round(principal_portion, 2),
+                    "interest_portion": round(interest_portion, 2),
+                    "remaining_balance": round(balance, 2),
+                    "annual_rate": round(rate, 4),
+                }
+            )
 
         return schedule
 
-    def _get_rate_steps(self, record: Dict[str, Any]) -> Optional[List[Dict[str, Any]]]:
+    def _get_rate_steps(self, record: dict[str, Any]) -> list[dict[str, Any]] | None:
         """Build the piecewise annual-rate curve for a liability record.
 
         Fixed-rate loans return ``None`` (flat ``interest_rate`` applies).
@@ -701,9 +717,7 @@ class LiabilitiesService:
             ]
 
         # Variable: rate locks at each reset date until the next reset.
-        reset_months = int(
-            _optional_number(record.get("rate_reset_months")) or 12
-        )
+        reset_months = int(_optional_number(record.get("rate_reset_months")) or 12)
         start = date.fromisoformat(start_date_str)
         term_months = int(record["term_months"])
         steps = []
@@ -720,7 +734,7 @@ class LiabilitiesService:
             steps.append({"date": reset_date, "value": round(prime + spread, 4)})
         return steps
 
-    def _schedule_for_record(self, record: Dict[str, Any]) -> List[Dict[str, Any]]:
+    def _schedule_for_record(self, record: dict[str, Any]) -> list[dict[str, Any]]:
         """Build the amortization schedule for a liability record.
 
         Parameters
@@ -744,7 +758,7 @@ class LiabilitiesService:
         )
 
     def _enrich_with_calculations(
-        self, record: Dict[str, Any], liab_txns: pd.DataFrame
+        self, record: dict[str, Any], liab_txns: pd.DataFrame
     ) -> None:
         """
         Enrich a liability record with amortization-based calculated fields.
@@ -823,7 +837,7 @@ class LiabilitiesService:
         record["payments_made"] = payment_count
         record["current_rate"] = round(current_rate, 4)
 
-    def get_debt_over_time(self) -> Dict[str, Any]:
+    def get_debt_over_time(self) -> dict[str, Any]:
         """Get debt-over-time data for all active liabilities using actual transactions.
 
         Returns a time series per liability showing the remaining balance after
@@ -860,10 +874,12 @@ class LiabilitiesService:
                     balance = (
                         schedule[pos - 1]["remaining_balance"] if pos > 0 else principal
                     )
-                    points.append({
-                        "date": str(txn["date"])[:10],
-                        "balance": balance,
-                    })
+                    points.append(
+                        {
+                            "date": str(txn["date"])[:10],
+                            "balance": balance,
+                        }
+                    )
 
             series.append({"name": record["name"], "points": points})
 
@@ -905,7 +921,9 @@ class LiabilitiesService:
         schedule = self._schedule_for_record(record)
 
         # Get existing payment months from all sources (real + generated)
-        transactions = self.get_liability_transactions(liability_id, tag=record.get("tag"))
+        transactions = self.get_liability_transactions(
+            liability_id, tag=record.get("tag")
+        )
         existing_months = set()
         for txn in transactions:
             if txn.get("amount") is not None and txn["amount"] < 0:
@@ -937,9 +955,9 @@ class LiabilitiesService:
 
     @staticmethod
     def _compare_actual_vs_expected(
-        schedule: List[Dict[str, Any]],
-        transactions: List[Dict[str, Any]],
-    ) -> List[Dict[str, Any]]:
+        schedule: list[dict[str, Any]],
+        transactions: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
         """
         Compare actual payments against the amortization schedule by month.
 
@@ -959,12 +977,14 @@ class LiabilitiesService:
             List of dicts with keys: ``date``, ``expected_payment``,
             ``actual_payment``, ``difference``.
         """
-        actual_by_month: Dict[str, float] = {}
+        actual_by_month: dict[str, float] = {}
         for txn in transactions:
             amount = txn.get("amount", 0)
             if amount is not None and amount < 0:
                 month_key = str(txn["date"])[:7]  # YYYY-MM
-                actual_by_month[month_key] = actual_by_month.get(month_key, 0.0) + abs(amount)
+                actual_by_month[month_key] = actual_by_month.get(month_key, 0.0) + abs(
+                    amount
+                )
 
         current_month = date.today().strftime("%Y-%m")
 
@@ -975,11 +995,13 @@ class LiabilitiesService:
                 break
             expected = entry["payment"]
             actual = actual_by_month.get(month_key, 0.0)
-            result.append({
-                "date": entry["date"],
-                "expected_payment": round(expected, 2),
-                "actual_payment": round(actual, 2),
-                "difference": round(actual - expected, 2),
-            })
+            result.append(
+                {
+                    "date": entry["date"],
+                    "expected_payment": round(expected, 2),
+                    "actual_payment": round(actual, 2),
+                    "difference": round(actual - expected, 2),
+                }
+            )
 
         return result

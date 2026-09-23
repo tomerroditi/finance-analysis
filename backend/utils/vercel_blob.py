@@ -15,7 +15,7 @@ import logging
 import os
 import re
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Protocol
 
 import httpx
@@ -164,7 +164,9 @@ class VercelBlobClient:
         Mirrors the SDK's ``constructBlobUrl``: the host encodes the store id
         and the access mode.
         """
-        return f"https://{self.store_id}.{self.access}.blob.vercel-storage.com/{pathname}"
+        return (
+            f"https://{self.store_id}.{self.access}.blob.vercel-storage.com/{pathname}"
+        )
 
     def _learn_access_from_url(self, url: str) -> None:
         """Adopt the access mode the server reports, if it differs from ours."""
@@ -318,7 +320,7 @@ def parse_uploaded_at(value: str | float | None) -> datetime | None:
         return None
     try:
         if isinstance(value, (int, float)):
-            return datetime.fromtimestamp(value / 1000, tz=timezone.utc)
-        return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+            return datetime.fromtimestamp(value / 1000, tz=UTC)
+        return datetime.fromisoformat(str(value))
     except (TypeError, ValueError, OSError):
         return None

@@ -15,9 +15,9 @@ from backend.repositories.transactions_repository import TransactionsRepository
 from backend.services.analysis.cashflow import CashflowMixin
 from backend.services.analysis.forecast import ForecastMixin
 from backend.services.analysis.net_worth import NetWorthMixin
-from backend.services.investments_service import InvestmentsService
 from backend.services.bank_balance_service import BankBalanceService
 from backend.services.cash_balance_service import CashBalanceService
+from backend.services.investments_service import InvestmentsService
 
 
 class AnalysisService(CashflowMixin, NetWorthMixin, ForecastMixin):
@@ -72,7 +72,11 @@ class AnalysisService(CashflowMixin, NetWorthMixin, ForecastMixin):
         )
 
         income, investments, expenses = self.get_income_investments_and_expenses(df)
-        prior_wealth = self.bank_balance_service.get_total_prior_wealth() + self.investments_service.get_total_prior_wealth() + self.cash_balance_service.get_total_prior_wealth()
+        prior_wealth = (
+            self.bank_balance_service.get_total_prior_wealth()
+            + self.investments_service.get_total_prior_wealth()
+            + self.cash_balance_service.get_total_prior_wealth()
+        )
         income += prior_wealth
 
         return {

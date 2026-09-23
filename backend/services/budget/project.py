@@ -273,9 +273,7 @@ class ProjectBudgetService(BudgetService):
         all_data = self.transactions_service.get_data_for_analysis(
             include_split_parents
         )
-        rows = all_data.loc[
-            all_data[TransactionsTableFields.CATEGORY.value] == project
-        ]
+        rows = all_data.loc[all_data[TransactionsTableFields.CATEGORY.value] == project]
         # A project envelope reports what the project cost, net of refunds
         # matched to their purchase — the definition the monthly and yearly
         # envelopes and the dashboard already use. The gross amount rides
@@ -326,9 +324,7 @@ class ProjectBudgetService(BudgetService):
             ) - {TOTAL_BUDGET}
         return [
             cat
-            for cat in self.categories_tags_service.get_categories_and_tags(
-                copy=True
-            ).keys()
+            for cat in self.categories_tags_service.get_categories_and_tags(copy=True)
             if cat not in current_projects and cat not in claimed
         ]
 
@@ -387,7 +383,9 @@ class ProjectBudgetService(BudgetService):
                 {
                     "rule": total_rule.iloc[0].to_dict(),
                     "current_amount": total_spent,
-                    "data": restore_gross_amounts(transactions_processed).to_dict(orient="records"),
+                    "data": restore_gross_amounts(transactions_processed).to_dict(
+                        orient="records"
+                    ),
                     "allow_edit": True,
                     "allow_delete": False,
                 }
@@ -426,7 +424,9 @@ class ProjectBudgetService(BudgetService):
                 {
                     "rule": rule.to_dict(),
                     "current_amount": spent,
-                    "data": restore_gross_amounts(tag_txns_display).to_dict(orient="records"),
+                    "data": restore_gross_amounts(tag_txns_display).to_dict(
+                        orient="records"
+                    ),
                     "allow_edit": True,
                     "allow_delete": True,
                 }
@@ -438,9 +438,7 @@ class ProjectBudgetService(BudgetService):
         ]
 
         if not unmatched_txns.empty:
-            groups = list(
-                unmatched_txns.groupby(TransactionsTableFields.TAG.value)
-            )
+            groups = list(unmatched_txns.groupby(TransactionsTableFields.TAG.value))
             # Create all missing zero-amount rules first, then re-read the
             # rules table once — instead of a full read after every insert.
             for tag, _group in groups:
@@ -489,7 +487,9 @@ class ProjectBudgetService(BudgetService):
                     {
                         "rule": rule_dict,
                         "current_amount": spent,
-                        "data": restore_gross_amounts(group_display).to_dict(orient="records"),
+                        "data": restore_gross_amounts(group_display).to_dict(
+                            orient="records"
+                        ),
                         "allow_edit": True,
                         "allow_delete": True,
                     }

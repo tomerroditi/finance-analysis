@@ -25,7 +25,6 @@ from backend import database
 from backend.config import AppConfig
 from backend.models import Base
 
-
 # Reference date used when generating ``backend/resources/demo_data.db``.
 # Every date column in that file is anchored to this point; on copy we apply
 # ``date.today() - DEMO_REFERENCE_DATE`` to every shiftable column.
@@ -34,9 +33,7 @@ DEMO_REFERENCE_DATE = date(2026, 2, 25)
 
 def _source_db_path() -> str:
     """Resolve the path to the frozen demo DB shipped in the repo."""
-    return os.path.join(
-        os.path.dirname(__file__), "resources", "demo_data.db"
-    )
+    return os.path.join(os.path.dirname(__file__), "resources", "demo_data.db")
 
 
 #: Columns removed from a model that the frozen demo snapshot may still carry.
@@ -179,7 +176,9 @@ _TXN_TABLES = {
 }
 
 
-def _resolve_override_txn_date(conn, source_type: str, source_id: int, source_table: str):
+def _resolve_override_txn_date(
+    conn, source_type: str, source_id: int, source_table: str
+):
     """Return the original ISO date of the transaction an override points at.
 
     Returns ``None`` if it cannot be resolved (unknown table, missing row).
@@ -234,9 +233,7 @@ def _shift_budget_month_overrides(conn, offset_days: int) -> None:
         if not txn_date:
             continue
         orig_txn = date.fromisoformat(txn_date[:10])
-        direction = (oy * 12 + (om - 1)) - (
-            orig_txn.year * 12 + (orig_txn.month - 1)
-        )
+        direction = (oy * 12 + (om - 1)) - (orig_txn.year * 12 + (orig_txn.month - 1))
         new_txn = orig_txn + timedelta(days=offset_days)
         new_index = (new_txn.year * 12 + (new_txn.month - 1)) + direction
         new_year, new_month0 = divmod(new_index, 12)
@@ -270,9 +267,7 @@ def _shift_dates(engine: Engine, offset_days: int) -> None:
     if offset_days == 0:
         return
 
-    offset_str = (
-        f"+{offset_days} days" if offset_days > 0 else f"{offset_days} days"
-    )
+    offset_str = f"+{offset_days} days" if offset_days > 0 else f"{offset_days} days"
     shifted_reference = DEMO_REFERENCE_DATE + timedelta(days=offset_days)
     year_offset = shifted_reference.year - DEMO_REFERENCE_DATE.year
     month_offset = year_offset * 12 + (
@@ -305,9 +300,7 @@ def _shift_dates(engine: Engine, offset_days: int) -> None:
         # Order avoids UNIQUE collisions on (investment_id, date) snapshots.
         order = "DESC" if offset_days > 0 else "ASC"
         snapshot_ids = conn.execute(
-            text(
-                f"SELECT id FROM investment_balance_snapshots ORDER BY date {order}"
-            )
+            text(f"SELECT id FROM investment_balance_snapshots ORDER BY date {order}")
         ).fetchall()
         for (sid,) in snapshot_ids:
             conn.execute(
@@ -386,8 +379,7 @@ def _shift_dates(engine: Engine, offset_days: int) -> None:
         for column in ("start_month", "closed_month"):
             months = conn.execute(
                 text(
-                    f"SELECT id, {column} FROM savings_goals "
-                    f"WHERE {column} IS NOT NULL"
+                    f"SELECT id, {column} FROM savings_goals WHERE {column} IS NOT NULL"
                 )
             ).fetchall()
             for goal_id, value in months:
@@ -398,9 +390,7 @@ def _shift_dates(engine: Engine, offset_days: int) -> None:
                 except (TypeError, ValueError):
                     continue
                 conn.execute(
-                    text(
-                        f"UPDATE savings_goals SET {column} = :value WHERE id = :id"
-                    ),
+                    text(f"UPDATE savings_goals SET {column} = :value WHERE id = :id"),
                     {"value": f"{year:04d}-{month:02d}", "id": goal_id},
                 )
 
@@ -445,7 +435,11 @@ def _install_snapshot(source: str, destination: str) -> None:
     """
     staging = f"{destination}.incoming"
     shutil.copy2(source, staging)
-    for sidecar in (f"{destination}-journal", f"{destination}-wal", f"{destination}-shm"):
+    for sidecar in (
+        f"{destination}-journal",
+        f"{destination}-wal",
+        f"{destination}-shm",
+    ):
         try:
             os.remove(sidecar)
         except FileNotFoundError:

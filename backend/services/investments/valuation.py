@@ -9,7 +9,7 @@ Mixed into ``InvestmentsService`` (see ``core.py``).
 
 from bisect import bisect_right
 from datetime import date, datetime
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -129,7 +129,7 @@ class ValuationMixin:
         """
         return self.get_total_values_at_dates([target_date])[target_date]
 
-    def get_total_values_at_dates(self, target_dates: List[str]) -> Dict[str, float]:
+    def get_total_values_at_dates(self, target_dates: list[str]) -> dict[str, float]:
         """Snapshot-resolved total portfolio value at many dates in one pass.
 
         Equivalent to calling :meth:`get_total_value_at_date` for each date,
@@ -158,7 +158,7 @@ class ValuationMixin:
             Mapping of each requested date to the total portfolio value as of
             that date.
         """
-        totals = {d: 0.0 for d in target_dates}
+        totals = dict.fromkeys(target_dates, 0.0)
         if not target_dates:
             return totals
 
@@ -239,7 +239,7 @@ class ValuationMixin:
     def _balance_at(
         index: tuple[np.ndarray, np.ndarray],
         as_of_date: str,
-        after_date: Optional[str] = None,
+        after_date: str | None = None,
     ) -> float:
         """Read a balance out of a :meth:`_balance_index`.
 
@@ -272,7 +272,7 @@ class ValuationMixin:
 
     def calculate_balance_over_time(
         self, investment_id: int, start_date: str, end_date: str
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """Calculate balance over time at the dates that actually move the line.
 
         Samples at month-starts plus the meaningful inflection points
@@ -323,7 +323,9 @@ class ValuationMixin:
         if inv["is_closed"] and not transactions_df.empty:
             last_txn_date = pd.to_datetime(transactions_df["date"]).max().date()
             requested_end_date = datetime.strptime(end_date, "%Y-%m-%d").date()
-            actual_end_date = min(last_txn_date, requested_end_date).strftime("%Y-%m-%d")
+            actual_end_date = min(last_txn_date, requested_end_date).strftime(
+                "%Y-%m-%d"
+            )
 
         start_ts = pd.Timestamp(start_date)
         end_ts = pd.Timestamp(actual_end_date)
@@ -405,7 +407,7 @@ class ValuationMixin:
 
         return balances
 
-    def calculate_profit_loss(self, investment_id: int) -> Dict[str, Any]:
+    def calculate_profit_loss(self, investment_id: int) -> dict[str, Any]:
         """
         Calculate comprehensive profit/loss metrics for an investment.
 
@@ -506,7 +508,9 @@ class ValuationMixin:
                     float(latest["balance"]), str(latest["date"]), transactions_df
                 )
             else:
-                current_balance = self._calculate_balance_from_transactions(transactions_df)
+                current_balance = self._calculate_balance_from_transactions(
+                    transactions_df
+                )
             absolute_profit_loss = current_balance - net_invested
 
         final_value = (
@@ -567,7 +571,7 @@ class ValuationMixin:
 
     def _build_allocation_entry(
         self, inv_id: int, inv_name: str, inv_type: str
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Build a single allocation entry with metrics and sparkline history."""
         metrics = self.calculate_profit_loss(inv_id)
 
@@ -599,7 +603,7 @@ class ValuationMixin:
             "history": [h["balance"] for h in condensed],
         }
 
-    def get_portfolio_overview(self) -> Dict[str, Any]:
+    def get_portfolio_overview(self) -> dict[str, Any]:
         """
         Get portfolio-level metrics and allocation data for all investments.
 
@@ -640,9 +644,7 @@ class ValuationMixin:
         # per-session (see backend/utils/session_cache.py), so the loop
         # performs the full multi-table merge once, not ~2*N times.
         for _, inv in all_investments.iterrows():
-            entry = self._build_allocation_entry(
-                inv["id"], inv["name"], inv["type"]
-            )
+            entry = self._build_allocation_entry(inv["id"], inv["name"], inv["type"])
             allocation.append(entry)
 
             # Only open investments contribute to portfolio totals
@@ -667,7 +669,7 @@ class ValuationMixin:
 
     def get_portfolio_balance_history(
         self, include_closed: bool = False
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Get balance-over-time data for all investments, aligned by month.
 
         Parameters
@@ -709,7 +711,9 @@ class ValuationMixin:
             # Downsample to monthly (first of each month + last point)
             df = pd.DataFrame(history)
             df["date"] = pd.to_datetime(df["date"])
-            monthly = df.groupby(df["date"].dt.to_period("M")).last().reset_index(drop=True)
+            monthly = (
+                df.groupby(df["date"].dt.to_period("M")).last().reset_index(drop=True)
+            )
             monthly["date"] = monthly["date"].dt.strftime("%Y-%m-%d")
 
             all_series.append(
@@ -743,7 +747,9 @@ class ValuationMixin:
 
         return {"series": all_series, "total": total}
 
-    def get_all_investment_transactions_combined(self, include_closed: bool = True) -> pd.DataFrame:
+    def get_all_investment_transactions_combined(
+        self, include_closed: bool = True
+    ) -> pd.DataFrame:
         """
         Fetch transactions for all investments in a single combined DataFrame.
 
@@ -758,13 +764,17 @@ class ValuationMixin:
             Combined transactions with a parsed ``date_parsed`` column and
             numeric ``amount``.  Empty DataFrame if no investments exist.
         """
-        investments = self.investments_repo.get_all_investments(include_closed=include_closed)
+        investments = self.investments_repo.get_all_investments(
+            include_closed=include_closed
+        )
         if investments.empty:
             return pd.DataFrame()
 
         frames = []
         for _, inv in investments.iterrows():
-            txns = self._get_all_transactions_for_investment(inv["category"], inv["tag"], investment_id=int(inv["id"]))
+            txns = self._get_all_transactions_for_investment(
+                inv["category"], inv["tag"], investment_id=int(inv["id"])
+            )
             if not txns.empty:
                 frames.append(txns)
 
@@ -773,11 +783,13 @@ class ValuationMixin:
 
         combined = pd.concat(frames, ignore_index=True)
         combined["date_parsed"] = pd.to_datetime(combined["date"])
-        combined["amount"] = pd.to_numeric(combined["amount"], errors="coerce").fillna(0.0)
+        combined["amount"] = pd.to_numeric(combined["amount"], errors="coerce").fillna(
+            0.0
+        )
         return combined
 
     def _get_all_transactions_for_investment(
-        self, category: str, tag: str, investment_id: Optional[int] = None
+        self, category: str, tag: str, investment_id: int | None = None
     ) -> pd.DataFrame:
         """
         Fetch all transactions for a given investment identified by category and tag.
@@ -875,7 +887,9 @@ class ValuationMixin:
         recorded = 0.0
         if not transactions_df.empty:
             dates = pd.to_datetime(transactions_df["date"])
-            amounts = pd.to_numeric(transactions_df["amount"], errors="coerce").fillna(0.0)
+            amounts = pd.to_numeric(transactions_df["amount"], errors="coerce").fillna(
+                0.0
+            )
             # Deposits are negative, so adding them leaves what they do not cover.
             recorded = float(amounts[dates <= first_date].sum())
             start = min(start, dates.min())
@@ -883,11 +897,15 @@ class ValuationMixin:
         if opening <= 0:
             return transactions_df
 
-        opening_row = pd.DataFrame([{
-            "date": (start - pd.Timedelta(days=1)).strftime("%Y-%m-%d"),
-            "amount": -opening,
-            OPENING_BALANCE_COLUMN: True,
-        }])
+        opening_row = pd.DataFrame(
+            [
+                {
+                    "date": (start - pd.Timedelta(days=1)).strftime("%Y-%m-%d"),
+                    "amount": -opening,
+                    OPENING_BALANCE_COLUMN: True,
+                }
+            ]
+        )
         if transactions_df.empty:
             return opening_row
         flagged = transactions_df.assign(**{OPENING_BALANCE_COLUMN: False})
@@ -898,7 +916,7 @@ class ValuationMixin:
         snapshot_balance: float,
         snapshot_date: str,
         transactions_df: pd.DataFrame,
-        as_of_date: Optional[str] = None,
+        as_of_date: str | None = None,
     ) -> float:
         """Resolve a balance from a snapshot plus the transactions after it.
 
@@ -932,8 +950,8 @@ class ValuationMixin:
     def _calculate_balance_from_transactions(
         self,
         transactions_df: pd.DataFrame,
-        as_of_date: Optional[str] = None,
-        after_date: Optional[str] = None,
+        as_of_date: str | None = None,
+        after_date: str | None = None,
     ) -> float:
         """
         Calculate balance from transactions.

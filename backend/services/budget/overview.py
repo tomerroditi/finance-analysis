@@ -35,11 +35,18 @@ the only figure here that adds the three together.
 """
 
 from calendar import monthrange
-from typing import Any, Optional
+from typing import Any
 
 import pandas as pd
 
-from backend.constants.budget import ALL_TAGS, AMOUNT, CATEGORY, NAME, TAGS, TOTAL_BUDGET
+from backend.constants.budget import (
+    ALL_TAGS,
+    AMOUNT,
+    CATEGORY,
+    NAME,
+    TAGS,
+    TOTAL_BUDGET,
+)
 from backend.constants.tables import TransactionsTableFields
 from backend.services.budget.core import BudgetService, _today
 from backend.services.budget.monthly import MonthlyBudgetService
@@ -48,7 +55,7 @@ from backend.services.budget.yearly import YearlyBudgetService
 from backend.services.recurring_service import RecurringService
 
 
-def _is_all_tags(tags: Optional[list[str]]) -> bool:
+def _is_all_tags(tags: list[str] | None) -> bool:
     """Whether a rule's tags are the ``all_tags`` marker rather than real tags."""
     parsed = list(tags or [])
     return [str(tag).lower() for tag in parsed] == [ALL_TAGS.lower()]
@@ -147,11 +154,15 @@ class BudgetOverviewService(BudgetService):
 
         long_envelopes = self._long_envelopes(year, month, include_split_parents)
         yearly_month_spent = float(
-            sum(e["month_contribution"] for e in long_envelopes if e["kind"] == "yearly")
+            sum(
+                e["month_contribution"] for e in long_envelopes if e["kind"] == "yearly"
+            )
         )
         projects_month_spent = float(
             sum(
-                e["month_contribution"] for e in long_envelopes if e["kind"] == "project"
+                e["month_contribution"]
+                for e in long_envelopes
+                if e["kind"] == "project"
             )
         )
         # The totals above count every envelope, closed ones included — that
@@ -346,7 +357,9 @@ class BudgetOverviewService(BudgetService):
 
         view = yearly.get_yearly_budget_view(year, include_split_parents) or []
         spent_by_name = {
-            (entry.get("rule") or {}).get(NAME): float(entry.get("current_amount") or 0.0)
+            (entry.get("rule") or {}).get(NAME): float(
+                entry.get("current_amount") or 0.0
+            )
             for entry in view
         }
 
@@ -404,9 +417,7 @@ class BudgetOverviewService(BudgetService):
         for name in names:
             budget = self._project_budget(rules[rules[CATEGORY] == name])
             rows = (
-                all_data[all_data[category] == name]
-                if not all_data.empty
-                else all_data
+                all_data[all_data[category] == name] if not all_data.empty else all_data
             )
             envelopes.append(
                 {
@@ -458,7 +469,7 @@ class BudgetOverviewService(BudgetService):
 
     @staticmethod
     def _rows_for_rule(
-        rows: pd.DataFrame, category: str, tags: Optional[list[str]]
+        rows: pd.DataFrame, category: str, tags: list[str] | None
     ) -> pd.DataFrame:
         """Restrict rows to those a ``(category, tags)`` envelope claims."""
         if rows is None or rows.empty:

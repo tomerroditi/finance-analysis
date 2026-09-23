@@ -86,9 +86,7 @@ class InsuranceAccountService:
                 )
         return account
 
-    def get_monthly_contribution_by_type(
-        self, policy_type: str
-    ) -> float | None:
+    def get_monthly_contribution_by_type(self, policy_type: str) -> float | None:
         """Get estimated monthly contribution for a policy type.
 
         Finds all accounts of the given type, checks which are active

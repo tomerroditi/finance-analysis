@@ -19,9 +19,7 @@ _demo_mode_ctx: ContextVar[bool] = ContextVar("fad_demo_mode", default=False)
 #: database. ``None`` (the default everywhere else) means the single shared
 #: demo database. Set by :mod:`backend.demo_sessions` from the
 #: ``X-FAD-Demo-Session`` header.
-_demo_session_ctx: ContextVar[str | None] = ContextVar(
-    "fad_demo_session", default=None
-)
+_demo_session_ctx: ContextVar[str | None] = ContextVar("fad_demo_session", default=None)
 
 
 class AppConfig:
@@ -53,7 +51,7 @@ class AppConfig:
     def __new__(cls):
         """Return the shared singleton instance, creating it on first call."""
         if cls._instance is None:
-            cls._instance = super(AppConfig, cls).__new__(cls)
+            cls._instance = super().__new__(cls)
             cls._instance._base_user_dir_override = None
         return cls._instance
 
@@ -89,6 +87,7 @@ class AppConfig:
             the filesystem themselves — e.g. the ``resolve_demo_mode``
             middleware, which otherwise pays a blocking ``os.makedirs``
             syscall on the event loop for every single demo-mode request.
+
         Returns
         -------
         Token[bool]

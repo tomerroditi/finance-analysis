@@ -9,15 +9,14 @@ view, with scraped-data ingestion (``ingestion.py``) and split handling
 
 import logging
 from datetime import datetime
-from typing import Optional
 
 import pandas as pd
 from sqlalchemy import exists, func, or_, select
 from sqlalchemy.orm import Session
 
-from backend.models.transaction import SplitTransaction
 from backend.constants.providers import Services
 from backend.constants.tables import Tables, TransactionsTableFields
+from backend.models.transaction import SplitTransaction
 from backend.repositories.split_transactions_repository import (
     SplitTransactionsRepository,
 )
@@ -125,12 +124,11 @@ class TransactionsRepository(IngestionMixin, SplitsMixin):
         """
         if service == Services.CASH.value:
             return self.cash_repo.add_transaction(transaction)
-        elif service == Services.MANUAL_INVESTMENTS.value:
+        if service == Services.MANUAL_INVESTMENTS.value:
             return self.manual_investments_repo.add_transaction(transaction)
-        else:
-            raise ValueError(
-                f"service must be 'cash' or 'manual_investments'. Got '{service}'"
-            )
+        raise ValueError(
+            f"service must be 'cash' or 'manual_investments'. Got '{service}'"
+        )
 
     def get_cashflow_transactions(self, **kwargs) -> pd.DataFrame:
         """Get transactions for aggregate totals (income, expenses, balances).
@@ -269,17 +267,11 @@ class TransactionsRepository(IngestionMixin, SplitsMixin):
             self.manual_investments_repo,
             self.insurance_repo,
         ]
-        dfs = [
-            repo.get_table()
-            for repo in all_repos
-            if repo not in excluded_repos
-        ]
+        dfs = [repo.get_table() for repo in all_repos if repo not in excluded_repos]
         dfs = [df for df in dfs if not df.empty]
 
         if not dfs:
-            return pd.DataFrame(
-                columns=[f.value for f in TransactionsTableFields]
-            )
+            return pd.DataFrame(columns=[f.value for f in TransactionsTableFields])
 
         return pd.concat(dfs, ignore_index=True)
 
@@ -328,7 +320,7 @@ class TransactionsRepository(IngestionMixin, SplitsMixin):
         return self.repo_map.get(source)
 
     def bulk_update_tagging(
-        self, transactions: list[dict], category: Optional[str], tag: Optional[str]
+        self, transactions: list[dict], category: str | None, tag: str | None
     ) -> None:
         """Update category and tag for a batch of transactions.
 
@@ -651,8 +643,6 @@ class TransactionsRepository(IngestionMixin, SplitsMixin):
             raise ValueError(
                 f"Transaction with ID {transaction_id} not found in {source}."
             )
-        row = {
-            k: v for k, v in record.__dict__.items() if k != "_sa_instance_state"
-        }
+        row = {k: v for k, v in record.__dict__.items() if k != "_sa_instance_state"}
         row["source"] = repo.model.__tablename__
         return pd.Series(row)

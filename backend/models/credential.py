@@ -1,6 +1,6 @@
 """Credential model for storing provider account credentials."""
 
-from sqlalchemy import Column, Integer, JSON, String, UniqueConstraint
+from sqlalchemy import JSON, Column, Integer, String, UniqueConstraint
 
 from backend.constants.tables import Tables
 from backend.models.base import Base, TimestampMixin

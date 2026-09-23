@@ -1,7 +1,5 @@
 """Yearly budget service — per-year category/tag envelopes."""
 
-from typing import Optional
-
 import pandas as pd
 
 from backend.constants.budget import (
@@ -195,8 +193,15 @@ class YearlyBudgetService(BudgetService):
         name = str(name).strip()
         parsed_tags = self._parse_tags(tags)
         self._validate(name, category, parsed_tags, amount, year, None)
-        self.add_rule(name, amount, category, parsed_tags, month=None, year=year,
-                      period_type=PERIOD_YEARLY)
+        self.add_rule(
+            name,
+            amount,
+            category,
+            parsed_tags,
+            month=None,
+            year=year,
+            period_type=PERIOD_YEARLY,
+        )
 
     def _yearly_row(self, id_: int) -> pd.Series:
         """Return the yearly rule with ``id_``.
@@ -250,7 +255,7 @@ class YearlyBudgetService(BudgetService):
 
     def get_yearly_budget_view(
         self, year: int, include_split_parents: bool = False
-    ) -> Optional[list[dict]]:
+    ) -> list[dict] | None:
         """Compute spend-vs-limit per yearly rule for a calendar year.
 
         Returns ``None`` when the year has no yearly rules. Otherwise a flat list
@@ -272,7 +277,8 @@ class YearlyBudgetService(BudgetService):
         )
         if not expenses.empty:
             year_data = expenses.loc[
-                pd.to_datetime(expenses[TransactionsTableFields.DATE.value]).dt.year == year
+                pd.to_datetime(expenses[TransactionsTableFields.DATE.value]).dt.year
+                == year
             ]
         else:
             year_data = expenses
@@ -343,7 +349,10 @@ class YearlyBudgetService(BudgetService):
             if amount > 0 and spent > amount:
                 over += 1
                 if biggest is None or pct > biggest["percentage"]:
-                    biggest = {"name": str(e["rule"].get(NAME) or ""), "percentage": pct}
+                    biggest = {
+                        "name": str(e["rule"].get(NAME) or ""),
+                        "percentage": pct,
+                    }
             else:
                 on_track += 1
         return {
@@ -395,7 +404,7 @@ class YearlyBudgetService(BudgetService):
         alerts.sort(key=lambda a: a["percentage"], reverse=True)
         return alerts
 
-    def auto_carry_forward(self, year: int) -> Optional[dict]:
+    def auto_carry_forward(self, year: int) -> dict | None:
         """Copy the latest prior year's yearly rules into an empty ``year``.
 
         Only runs for the current or a future year (never rewrites history) and
@@ -432,7 +441,7 @@ class YearlyBudgetService(BudgetService):
             )
             return {"copied_from": source_year, "skipped": skipped}
 
-    def force_copy_from_prior_year(self, year: int) -> Optional[dict]:
+    def force_copy_from_prior_year(self, year: int) -> dict | None:
         """Force-copy the latest prior year's yearly rules into ``year``.
 
         This is the explicit user-triggered "Copy from previous year" action
@@ -491,7 +500,7 @@ class YearlyBudgetService(BudgetService):
 
         view = self.get_yearly_budget_view(year, include_split_parents)
         return {
-            "rules": view if view else [],
+            "rules": view or [],
             "summary": self.get_year_summary(year),
             "alerts": self.get_alerts(year),
             "carried_from": carried_from,

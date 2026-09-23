@@ -11,11 +11,10 @@ from datetime import date
 
 import pandas as pd
 
-from backend.utils.dataframe_dates import to_month_series
 from backend.constants.categories import (
-    PRIOR_WEALTH_TAG,
     LIABILITIES_CATEGORY,
     NON_EXPENSE_CATEGORIES,
+    PRIOR_WEALTH_TAG,
     IncomeCategories,
 )
 from backend.constants.tables import TransactionsTableFields
@@ -24,6 +23,7 @@ from backend.services.transaction_classification import (
     investment_mask,
     transactions_masks,
 )
+from backend.utils.dataframe_dates import to_month_series
 
 
 class CashflowMixin:
@@ -212,7 +212,9 @@ class CashflowMixin:
         if df.empty:
             return None
 
-        salary_df = df[df[TransactionsTableFields.CATEGORY.value] == IncomeCategories.SALARY.value].copy()
+        salary_df = df[
+            df[TransactionsTableFields.CATEGORY.value] == IncomeCategories.SALARY.value
+        ].copy()
         if salary_df.empty:
             return None
 
@@ -254,15 +256,24 @@ class CashflowMixin:
             return []
 
         liabilities["month"] = to_month_series(liabilities["date"])
-        liabilities["tag"] = liabilities[TransactionsTableFields.TAG.value].fillna("Uncategorized")
+        liabilities["tag"] = liabilities[TransactionsTableFields.TAG.value].fillna(
+            "Uncategorized"
+        )
 
-        pivot = liabilities.groupby(["month", "tag"])[TransactionsTableFields.AMOUNT.value].sum().mul(-1).unstack(fill_value=0)
+        pivot = (
+            liabilities.groupby(["month", "tag"])[TransactionsTableFields.AMOUNT.value]
+            .sum()
+            .mul(-1)
+            .unstack(fill_value=0)
+        )
 
         return [
             {
                 "month": month,
                 "amount": round(float(row.sum()), 2),
-                "tags": {tag: round(float(val), 2) for tag, val in row.items() if val > 0},
+                "tags": {
+                    tag: round(float(val), 2) for tag, val in row.items() if val > 0
+                },
             }
             for month, row in pivot.iterrows()
         ]
@@ -289,7 +300,9 @@ class CashflowMixin:
         """
         df = df[~df["source"].isin(self.repo._CASHFLOW_EXCLUDED)]
 
-        income_mask, investment_mask, expenses_mask = self.get_transactions_masks(df).values()
+        income_mask, investment_mask, expenses_mask = self.get_transactions_masks(
+            df
+        ).values()
 
         income_df = df[income_mask]
         expense_df = df[expenses_mask]
@@ -384,9 +397,7 @@ class CashflowMixin:
         tag_str = tag.astype(object)
 
         is_loan = (category == LIABILITIES_CATEGORY) & (amount > 0)
-        loan_label = np.where(
-            tag_present, "Loans / " + tag_str.astype(str), "Loans"
-        )
+        loan_label = np.where(tag_present, "Loans / " + tag_str.astype(str), "Loans")
         non_loan_label = np.where(
             tag_present, category.astype(str) + " / " + tag_str.astype(str), category
         )
@@ -445,7 +456,9 @@ class CashflowMixin:
         # and it belongs in its category's total, not dropped. Liabilities is
         # the exception: a positive one is a loan receipt, which is income.
         regular_expense_mask = ~df["category"].isin(NON_EXPENSE_CATEGORIES)
-        debt_payment_mask = (df["category"] == LIABILITIES_CATEGORY) & (df["amount"] < 0)
+        debt_payment_mask = (df["category"] == LIABILITIES_CATEGORY) & (
+            df["amount"] < 0
+        )
         expense_mask = (
             regular_expense_mask
             if exclude_liabilities
@@ -459,7 +472,9 @@ class CashflowMixin:
             project_names = ProjectBudgetService(self.db).get_all_projects_names()
             if project_names:
                 expenses = expenses[
-                    ~expenses[TransactionsTableFields.CATEGORY.value].isin(project_names)
+                    ~expenses[TransactionsTableFields.CATEGORY.value].isin(
+                        project_names
+                    )
                 ]
 
         if expenses.empty:
@@ -467,14 +482,26 @@ class CashflowMixin:
 
         # Use tag as label for liabilities to show loan names
         liabilities_mask = expenses["category"] == LIABILITIES_CATEGORY
-        expenses.loc[liabilities_mask, "category"] = expenses.loc[liabilities_mask, TransactionsTableFields.TAG.value].fillna(LIABILITIES_CATEGORY)
+        expenses.loc[liabilities_mask, "category"] = expenses.loc[
+            liabilities_mask, TransactionsTableFields.TAG.value
+        ].fillna(LIABILITIES_CATEGORY)
         expenses["category"] = expenses["category"].fillna("Uncategorized")
         expenses["month"] = to_month_series(expenses["date"])
 
-        pivot = expenses.groupby(["month", "category"])["amount"].sum().mul(-1).unstack(fill_value=0)
+        pivot = (
+            expenses.groupby(["month", "category"])["amount"]
+            .sum()
+            .mul(-1)
+            .unstack(fill_value=0)
+        )
 
         return [
-            {"month": month, "categories": {cat: round(float(val), 2) for cat, val in row.items() if val != 0}}
+            {
+                "month": month,
+                "categories": {
+                    cat: round(float(val), 2) for cat, val in row.items() if val != 0
+                },
+            }
             for month, row in pivot.iterrows()
         ]
 

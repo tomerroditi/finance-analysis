@@ -10,8 +10,6 @@ data source there reports "Never synced".
 copy of the logic.
 """
 
-from typing import Dict, List
-
 from sqlalchemy.orm import Session
 
 from backend.repositories.credentials_repository import CredentialsRepository
@@ -33,7 +31,7 @@ class ScrapingHistoryService:
         self.credentials_repo = CredentialsRepository(db)
         self.scraping_history_repo = ScrapingHistoryRepository(db)
 
-    def get_last_scrape_dates(self) -> List[Dict]:
+    def get_last_scrape_dates(self) -> list[dict]:
         """Get the last successful scrape date for every configured account.
 
         Returns

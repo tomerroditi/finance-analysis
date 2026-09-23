@@ -12,9 +12,8 @@ from sqlalchemy.orm import Session
 
 from backend.dependencies import get_database
 from backend.services.analysis_service import AnalysisService
-from backend.services.recurring_service import RecurringService
 from backend.services.insights_service import InsightsService
-
+from backend.services.recurring_service import RecurringService
 
 router = APIRouter()
 
@@ -183,9 +182,7 @@ def get_sankey_data(
         suitable for rendering a Sankey diagram (income sources -> categories -> tags).
     """
     service = AnalysisService(db)
-    return service.get_sankey_data(
-        exclude_pending_refunds=exclude_pending_refunds
-    )
+    return service.get_sankey_data(exclude_pending_refunds=exclude_pending_refunds)
 
 
 @router.get("/income-by-source-over-time")
@@ -323,9 +320,7 @@ def set_recurring_decisions(
         ``{updated: [{normalized, decision}]}``.
     """
     service = RecurringService(db)
-    return service.set_decisions(
-        [entry.model_dump() for entry in payload.decisions]
-    )
+    return service.set_decisions([entry.model_dump() for entry in payload.decisions])
 
 
 @router.get("/insights")

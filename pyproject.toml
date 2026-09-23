@@ -85,6 +85,37 @@ exclude_lines = [
     "if TYPE_CHECKING:",
 ]
 
+[tool.ruff]
+target-version = "py312"
+line-length = 88
+# The backend is the linted surface: `poetry run ruff check` and the guard in
+# tests/backend/unit/test_code_quality.py both run against it.
+include = ["backend/**/*.py"]
+
+[tool.ruff.lint]
+select = [
+    "E", "W", "F", "I", "UP", "B", "C4", "PIE", "SIM", "RUF", "RET", "PERF",
+    "FURB", "LOG", "T20", "ERA",
+    "ANN",  # every function parameter and return type is annotated
+    "D",    # every public module, class, method and function has a docstring
+]
+ignore = [
+    "E501",   # the formatter owns line length; long strings stay readable
+    "B008",   # FastAPI's `Depends(...)` defaults are the framework idiom
+    "ANN401", # `Any` is the honest type for JSON payloads and pandas cells
+    "D105",   # magic methods are self-describing
+    "D107",   # NumPy style documents constructor parameters on the class
+    "RUF001", # Hebrew text and ₪ are legitimate in strings,
+    "RUF002", # docstrings
+    "RUF003", # and comments
+]
+
+[tool.ruff.lint.pydocstyle]
+convention = "numpy"
+
+[tool.ruff.lint.per-file-ignores]
+"backend/alembic/versions/*.py" = ["D103", "D400", "D205", "D415"]
+
 [tool.commitizen]
 name = "cz_conventional_commits"
 tag_format = "v$version"

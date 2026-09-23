@@ -1,6 +1,6 @@
 """Budget month override service with business logic."""
 
-from typing import Literal, Optional
+from typing import Literal
 
 import pandas as pd
 from sqlalchemy import select
@@ -41,7 +41,7 @@ class BudgetMonthOverrideService:
         source_type: str,
         source_id: int,
         source_table: str,
-    ) -> Optional[pd.Timestamp]:
+    ) -> pd.Timestamp | None:
         """
         Resolve the real transaction date for a source.
 

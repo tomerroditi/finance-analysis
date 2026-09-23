@@ -15,7 +15,7 @@ _IN_CHUNK = 500
 def _chunked(values: list, size: int = _IN_CHUNK):
     """Yield ``values`` in slices small enough for a SQL ``IN`` clause."""
     for start in range(0, len(values), size):
-        yield values[start:start + size]
+        yield values[start : start + size]
 
 
 class SplitTransactionsRepository:

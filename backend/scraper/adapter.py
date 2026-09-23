@@ -122,7 +122,9 @@ def _import_scraper_module(name: str):
     Ensures the project root is on ``sys.path`` so that the root-level
     ``scraper`` package is found instead of ``backend.scraper``.
     """
-    project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    project_root = os.path.dirname(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    )
     if project_root not in sys.path:
         sys.path.insert(0, project_root)
     return importlib.import_module(name)
@@ -203,10 +205,19 @@ def create_adapter(
     ScraperAdapter
         An ``InsuranceScraperAdapter`` for insurances, otherwise a base ``ScraperAdapter``.
     """
-    cls = InsuranceScraperAdapter if service_name == Services.INSURANCE.value else ScraperAdapter
+    cls = (
+        InsuranceScraperAdapter
+        if service_name == Services.INSURANCE.value
+        else ScraperAdapter
+    )
     return cls(
-        service_name, provider_name, account_name, credentials,
-        start_date, process_id, force_2fa=force_2fa,
+        service_name,
+        provider_name,
+        account_name,
+        credentials,
+        start_date,
+        process_id,
+        force_2fa=force_2fa,
     )
 
 
@@ -272,7 +283,7 @@ class ScraperAdapter:
         # worker thread — wake the parked scraper by marshaling the
         # ``asyncio.Event.set()`` back onto that loop (Event is not
         # thread-safe). ``None`` until ``run()`` starts.
-        self._loop: "asyncio.AbstractEventLoop | None" = None
+        self._loop: asyncio.AbstractEventLoop | None = None
         # The underlying scraper instance, set once ``run()`` builds it. Stays
         # ``None`` until then, so a resend that races ahead of scraper
         # construction can be rejected cleanly (see ``resend_otp``).
@@ -282,7 +293,7 @@ class ScraperAdapter:
         # abort reaches a scraper that is NOT parked on an OTP — the only
         # other abort channel is the OTP sentinel, which a non-2FA scraper
         # never reads.
-        self._run_future: "concurrent.futures.Future | None" = None
+        self._run_future: concurrent.futures.Future | None = None
         # Set when ``run()`` is cancelled mid-flight (user abort), so the
         # history row records CANCELED rather than a synthetic failure.
         self._canceled = False
@@ -360,7 +371,9 @@ class ScraperAdapter:
             ts = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             logger.info(
                 "[%s] %s: Scraping started (from %s)",
-                ts, scrub(self._log_id), self.start_date,
+                ts,
+                scrub(self._log_id),
+                self.start_date,
             )
 
             scraper = None
@@ -410,9 +423,10 @@ class ScraperAdapter:
                     logger.error(
                         "%s: Scraping failed — [%s] %s",
                         scrub(self._log_id),
-                        scrub(self._error_type), scrub(self._error),
+                        scrub(self._error_type),
+                        scrub(self._error),
                     )
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 self._error_type = "TIMEOUT"
                 self._error = (
                     f"Scraping exceeded the {SCRAPE_TIMEOUT_SECONDS}-second limit "
@@ -420,7 +434,8 @@ class ScraperAdapter:
                 )
                 logger.error(
                     "%s: Scraping timed out — %s",
-                    scrub(self._log_id), scrub(self._error),
+                    scrub(self._log_id),
+                    scrub(self._error),
                 )
                 # wait_for cancelled scrape() mid-flight, so the scraper's own
                 # terminate() in its finally may not have run — force browser
@@ -443,7 +458,8 @@ class ScraperAdapter:
                 self._error = _describe_exception(exc)
                 logger.error(
                     "%s: Unexpected error — %s",
-                    scrub(self._log_id), scrub(self._error),
+                    scrub(self._log_id),
+                    scrub(self._error),
                 )
             finally:
                 # Persist before anything that can raise, and regardless of how the
@@ -471,7 +487,8 @@ class ScraperAdapter:
                 ts = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 logger.info(
                     "[%s] %s: Scraping finished",
-                    ts, scrub(self._log_id),
+                    ts,
+                    scrub(self._log_id),
                 )
 
     def _unregister_from_2fa_waiting(self) -> None:
@@ -537,9 +554,7 @@ class ScraperAdapter:
             # materialises a ``password`` key (empty when none is stored), and
             # re-sending it would rewrite — or blank — the Keyring entry on
             # every token refresh. Omitted fields leave the Keyring untouched.
-            merged = {
-                k: v for k, v in self.credentials.items() if k != "password"
-            }
+            merged = {k: v for k, v in self.credentials.items() if k != "password"}
             merged["otpLongTermToken"] = token
             with get_db_context() as db:
                 CredentialsRepository(db).save_credentials(
@@ -552,7 +567,8 @@ class ScraperAdapter:
         except Exception as exc:
             logger.warning(
                 "%s: Failed to persist refreshed long-term token — %s",
-                scrub(self._log_id), scrub(exc),
+                scrub(self._log_id),
+                scrub(exc),
             )
 
     def set_otp_code(self, code: str) -> None:
@@ -640,7 +656,9 @@ class ScraperAdapter:
             DummyRegularScraper = _dummy_mod.DummyRegularScraper
 
             if self.service_name == Services.CREDIT_CARD.value:
-                return DummyCreditCardScraper(self.provider_name, self.credentials, options)
+                return DummyCreditCardScraper(
+                    self.provider_name, self.credentials, options
+                )
             return DummyRegularScraper(self.provider_name, self.credentials, options)
 
         return create_scraper_fn(self.provider_name, self.credentials, options)
@@ -698,7 +716,8 @@ class ScraperAdapter:
         except Exception as exc:
             logger.warning(
                 "%s: Failed to mark waiting_for_2fa — %s",
-                scrub(self._log_id), scrub(exc),
+                scrub(self._log_id),
+                scrub(exc),
             )
 
     # ------------------------------------------------------------------
@@ -768,7 +787,10 @@ class ScraperAdapter:
                 key_amount = _format_key_amount(txn.charged_amount)
 
                 unique_key = (
-                    str(account.account_number), txn_date, key_amount, identifier,
+                    str(account.account_number),
+                    txn_date,
+                    key_amount,
+                    identifier,
                 )
                 unique_n = unique_counts.get(unique_key, 0) + 1
                 unique_counts[unique_key] = unique_n
@@ -784,12 +806,10 @@ class ScraperAdapter:
                 else:
                     # Legacy format preserved verbatim for the first
                     # occurrence — see the note above on backward compat.
-                    row_id = (
-                        f"{account.account_number}_{txn_date}"
-                        f"_{txn.charged_amount}"
-                    )
+                    row_id = f"{account.account_number}_{txn_date}_{txn.charged_amount}"
                     fallback_key = (
-                        str(account.account_number), txn_date,
+                        str(account.account_number),
+                        txn_date,
                         str(txn.charged_amount),
                     )
                     fallback_n = fallback_counts.get(fallback_key, 0) + 1
@@ -876,12 +896,14 @@ class ScraperAdapter:
                 if count > 0:
                     logger.info(
                         "%s: Auto-tagged %d transactions",
-                        scrub(self._log_id), count,
+                        scrub(self._log_id),
+                        count,
                     )
         except Exception as exc:
             logger.error(
                 "%s: Error auto-tagging — %s",
-                scrub(self._log_id), scrub(exc),
+                scrub(self._log_id),
+                scrub(exc),
             )
 
     def _recalculate_bank_balances(self) -> None:
@@ -892,12 +914,14 @@ class ScraperAdapter:
             with get_db_context() as db:
                 balance_service = BankBalanceService(db)
                 balance_service.recalculate_for_account(
-                    self.provider_name, self.account_name,
+                    self.provider_name,
+                    self.account_name,
                 )
         except Exception as exc:
             logger.error(
                 "%s: Error recalculating bank balance — %s",
-                scrub(self._log_id), scrub(exc),
+                scrub(self._log_id),
+                scrub(exc),
             )
 
     def _post_save_hook(self, result) -> None:
@@ -925,7 +949,8 @@ class ScraperAdapter:
                 error_type = "NO_ACCOUNTS"
                 logger.error(
                     "%s: %s",
-                    scrub(self._log_id), NO_ACCOUNTS_ERROR,
+                    scrub(self._log_id),
+                    NO_ACCOUNTS_ERROR,
                 )
             else:
                 status = ScrapingHistoryRepository.SUCCESS
@@ -951,9 +976,7 @@ class ScraperAdapter:
                     scrub(self._log_id),
                 )
                 return
-            history_repo.record_scrape_end(
-                id_, status, error_message, error_type
-            )
+            history_repo.record_scrape_end(id_, status, error_message, error_type)
 
 
 class InsuranceScraperAdapter(ScraperAdapter):
@@ -988,9 +1011,7 @@ class InsuranceScraperAdapter(ScraperAdapter):
         from backend.services.investments_service import InvestmentsService
 
         accounts_to_upsert = [
-            account.metadata
-            for account in result.accounts
-            if account.metadata
+            account.metadata for account in result.accounts if account.metadata
         ]
         if not accounts_to_upsert:
             return
@@ -1002,7 +1023,8 @@ class InsuranceScraperAdapter(ScraperAdapter):
                     service.upsert(**meta)
                 logger.info(
                     "%s: Saved metadata for %d insurance accounts",
-                    scrub(self._log_id), len(accounts_to_upsert),
+                    scrub(self._log_id),
+                    len(accounts_to_upsert),
                 )
 
                 inv_service = InvestmentsService(db)
@@ -1013,15 +1035,18 @@ class InsuranceScraperAdapter(ScraperAdapter):
                         inv_service.sync_from_insurance(meta)
                         logger.info(
                             "%s: Synced hishtalmut investment for policy %s",
-                            scrub(self._log_id), scrub(meta["policy_id"]),
+                            scrub(self._log_id),
+                            scrub(meta["policy_id"]),
                         )
                     except Exception:
                         logger.exception(
                             "%s: Failed to sync hishtalmut investment for policy %s",
-                            scrub(self._log_id), scrub(meta["policy_id"]),
+                            scrub(self._log_id),
+                            scrub(meta["policy_id"]),
                         )
         except Exception as exc:
             logger.error(
                 "%s: Error saving insurance metadata — %s",
-                scrub(self._log_id), scrub(exc),
+                scrub(self._log_id),
+                scrub(exc),
             )

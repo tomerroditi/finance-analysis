@@ -5,10 +5,10 @@ Provides endpoints for budget rule management, analysis, and project management.
 """
 
 from datetime import date
-from typing import Any, List, Optional
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query
-from pydantic import BaseModel, Field, model_validator
+from pydantic import Field, model_validator
 from sqlalchemy.orm import Session
 
 from backend.dependencies import get_database
@@ -38,9 +38,9 @@ class BudgetRuleCreate(ApiRequestModel):
     name: str
     amount: float
     category: str
-    tags: str | List[str]
-    month: Optional[int] = Field(None, ge=1, le=12)
-    year: Optional[int] = Field(None, ge=MIN_YEAR, le=MAX_YEAR)
+    tags: str | list[str]
+    month: int | None = Field(None, ge=1, le=12)
+    year: int | None = Field(None, ge=MIN_YEAR, le=MAX_YEAR)
 
     @model_validator(mode="after")
     def _month_and_year_together(self) -> "BudgetRuleCreate":
@@ -56,25 +56,25 @@ class BudgetRuleCreate(ApiRequestModel):
 
 
 class BudgetRuleUpdate(ApiRequestModel):
-    name: Optional[str] = None
-    amount: Optional[float] = None
-    category: Optional[str] = None
-    tags: Optional[str | List[str]] = None
+    name: str | None = None
+    amount: float | None = None
+    category: str | None = None
+    tags: str | list[str] | None = None
 
 
 class YearlyRuleCreate(ApiRequestModel):
     name: str
     amount: float
     category: str
-    tags: str | List[str]
+    tags: str | list[str]
     year: int = Field(ge=MIN_YEAR, le=MAX_YEAR)
 
 
 class YearlyRuleUpdate(ApiRequestModel):
-    name: Optional[str] = None
-    amount: Optional[float] = None
-    category: Optional[str] = None
-    tags: Optional[str | List[str]] = None
+    name: str | None = None
+    amount: float | None = None
+    category: str | None = None
+    tags: str | list[str] | None = None
 
 
 class YearlyRuleClosedUpdate(ApiRequestModel):
@@ -374,7 +374,7 @@ def get_yearly_view(
     """Return the yearly budget view (rule rows) for a calendar year."""
     service = YearlyBudgetService(db)
     view = service.get_yearly_budget_view(year, include_split_parents)
-    return {"rules": view if view else []}
+    return {"rules": view or []}
 
 
 @router.get("/yearly/{year}/analysis")
@@ -586,9 +586,7 @@ def set_project_closed(
 
 
 @router.delete("/projects/{name}")
-def delete_project(
-    name: str, db: Session = Depends(get_database)
-) -> dict[str, str]:
+def delete_project(name: str, db: Session = Depends(get_database)) -> dict[str, str]:
     """Delete a project.
 
     Raises

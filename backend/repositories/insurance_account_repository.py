@@ -44,9 +44,7 @@ class InsuranceAccountRepository:
         The stored ``policy_id`` is deliberately left as first seen — other
         tables join on that string.
         """
-        stmt = select(InsuranceAccount).where(
-            InsuranceAccount.policy_id == policy_id
-        )
+        stmt = select(InsuranceAccount).where(InsuranceAccount.policy_id == policy_id)
         exact = self.db.execute(stmt).scalars().first()
         if exact is not None:
             return exact

@@ -4,8 +4,8 @@ Transaction models for different financial services.
 
 from sqlalchemy import Column, Float, Index, Integer, String
 
-from backend.models.base import Base, TimestampMixin
 from backend.constants.tables import Tables
+from backend.models.base import Base, TimestampMixin
 
 
 def _transaction_indexes(table_name: str) -> tuple:
@@ -84,8 +84,19 @@ class TransactionBase(TimestampMixin):
     # Column names defined by this base mixin (excluding TimestampMixin).
     # Used by TransactionsRepository to detect model-specific extra columns.
     BASE_COLUMN_NAMES = {
-        "unique_id", "id", "date", "provider", "account_name", "account_number",
-        "description", "amount", "category", "tag", "source", "type", "status",
+        "unique_id",
+        "id",
+        "date",
+        "provider",
+        "account_name",
+        "account_number",
+        "description",
+        "amount",
+        "category",
+        "tag",
+        "source",
+        "type",
+        "status",
     }
 
 

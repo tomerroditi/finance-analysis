@@ -1,6 +1,5 @@
 from enum import Enum
 
-
 cc_providers = [
     "amex",
     "behatsdaa",
@@ -245,10 +244,15 @@ class LoginFields:
         import importlib
         import os
         import sys
-        project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+        project_root = os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
         if project_root not in sys.path:
             sys.path.insert(0, project_root)
-        PROVIDER_CONFIGS = importlib.import_module("scraper.models.credentials").PROVIDER_CONFIGS
+        PROVIDER_CONFIGS = importlib.import_module(
+            "scraper.models.credentials"
+        ).PROVIDER_CONFIGS
 
         config = PROVIDER_CONFIGS.get(provider)
         if config:

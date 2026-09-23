@@ -2,7 +2,6 @@
 
 import calendar
 from datetime import date
-from typing import Optional
 
 import pandas as pd
 
@@ -21,11 +20,10 @@ from backend.constants.budget import (
     YEAR,
 )
 from backend.constants.tables import TransactionsTableFields
-from backend.services.transaction_classification import EXPENSE_EXCLUDED_CATEGORIES
 from backend.services.budget.core import BudgetService, _auto_fill_lock
-from backend.services.pending_refunds_service import restore_gross_amounts
 from backend.services.budget.yearly import YearlyBudgetService
-
+from backend.services.pending_refunds_service import restore_gross_amounts
+from backend.services.transaction_classification import EXPENSE_EXCLUDED_CATEGORIES
 
 # Auto-fill copies the newest month's rules into every empty month up to the
 # one being viewed. Past this many months of gap the target is almost
@@ -94,7 +92,7 @@ class MonthlyBudgetService(BudgetService):
 
     def copy_last_month_rules(
         self, year: int, month: int, budget_rules: pd.DataFrame
-    ) -> Optional[str]:
+    ) -> str | None:
         """
         Copy budget rules from the previous month to the target month.
 
@@ -145,7 +143,7 @@ class MonthlyBudgetService(BudgetService):
 
     def auto_fill_empty_months(
         self, current_year: int, current_month: int, budget_rules: pd.DataFrame
-    ) -> Optional[str]:
+    ) -> str | None:
         """
         Auto-fill budget rules for empty months between the latest month with
         rules and the current month.
@@ -200,13 +198,12 @@ class MonthlyBudgetService(BudgetService):
 
     def _auto_fill_empty_months_locked(
         self, current_year: int, current_month: int, budget_rules: pd.DataFrame
-    ) -> Optional[str]:
+    ) -> str | None:
         """Fill empty months from the latest prior month with rules.
 
         Must be called while holding ``_auto_fill_lock`` with a freshly-read
         ``budget_rules``. See :meth:`auto_fill_empty_months`.
         """
-
         # Find the latest month with rules, strictly before the current month
         monthly_rules = budget_rules.dropna(subset=[YEAR, MONTH])
         if monthly_rules.empty:
@@ -414,7 +411,10 @@ class MonthlyBudgetService(BudgetService):
                         tags.split(";") if isinstance(tags, str) else list(tags)
                     )
                     conflicts = self.find_conflicting_tags(
-                        category, parsed_tags, int(year), PERIOD_YEARLY,
+                        category,
+                        parsed_tags,
+                        int(year),
+                        PERIOD_YEARLY,
                         exclude_rule_id=id_,
                     )
                     if conflicts:
@@ -423,7 +423,9 @@ class MonthlyBudgetService(BudgetService):
                             f"{joined} is already used by your yearly budget for "
                             f"{int(year)}. A tag can't be in both for the same year."
                         )
-                elif pd.isnull(year) and CATEGORY in fields and category != row[CATEGORY]:
+                elif (
+                    pd.isnull(year) and CATEGORY in fields and category != row[CATEGORY]
+                ):
                     if self.category_used_by_monthly_or_yearly(category):
                         raise ValueError(
                             f"The '{category}' category is already used by a "
@@ -493,9 +495,12 @@ class MonthlyBudgetService(BudgetService):
             absolute = (year * 12 + month - 1) - offset
             point_year, point_month = divmod(absolute, 12)
             point_month += 1
-            view = self.get_monthly_budget_view(
-                point_year, point_month, include_split_parents
-            ) or []
+            view = (
+                self.get_monthly_budget_view(
+                    point_year, point_month, include_split_parents
+                )
+                or []
+            )
 
             # The "Total Budget" row is the source of truth for the headline
             # pair, exactly as the monthly gauge reads it. Summing the
@@ -607,7 +612,7 @@ class MonthlyBudgetService(BudgetService):
         skipped_yearly = sorted(set(getattr(self, "_auto_fill_skipped", [])))
 
         return {
-            "rules": view if view else [],
+            "rules": view or [],
             "project_spending": project_summary,
             "pending_refunds": {
                 "items": pending_refunds,
@@ -679,7 +684,9 @@ class MonthlyBudgetService(BudgetService):
         expenses["budget_month"] = budget_month.astype(int)
         return expenses
 
-    def _exclude_yearly_claimed(self, month_data: pd.DataFrame, year: int) -> pd.DataFrame:
+    def _exclude_yearly_claimed(
+        self, month_data: pd.DataFrame, year: int
+    ) -> pd.DataFrame:
         """Drop transactions whose (category, tag) is owned by a yearly rule for ``year``.
 
         Yearly-managed tags are mutually exclusive with monthly rules, so their
@@ -711,6 +718,7 @@ class MonthlyBudgetService(BudgetService):
         tag rule claimed — the category-level counterpart of "Other Expenses".
         Ties keep the rules' own order.
         """
+
         def priority(position: int) -> tuple[bool, int, int]:
             tags = rules.iloc[position][TAGS]
             return cls._is_all_tags(tags), len(tags), position
@@ -719,7 +727,7 @@ class MonthlyBudgetService(BudgetService):
 
     def get_monthly_budget_view(
         self, year: int, month: int, include_split_parents: bool = False
-    ) -> Optional[list[dict]]:
+    ) -> list[dict] | None:
         """
         Compute budget rule usage view for a given month.
 
@@ -765,8 +773,7 @@ class MonthlyBudgetService(BudgetService):
         if not expenses.empty:
             expenses = self._apply_month_overrides(expenses)
             month_data = expenses.loc[
-                (expenses["budget_year"] == year)
-                & (expenses["budget_month"] == month)
+                (expenses["budget_year"] == year) & (expenses["budget_month"] == month)
             ]
             month_data = self._exclude_yearly_claimed(month_data, year)
         else:
@@ -815,7 +822,9 @@ class MonthlyBudgetService(BudgetService):
             view.append(
                 {
                     "rule": rules.iloc[position].to_dict(),
-                    "current_amount": cat_data[TransactionsTableFields.AMOUNT.value].sum()
+                    "current_amount": cat_data[
+                        TransactionsTableFields.AMOUNT.value
+                    ].sum()
                     * -1,
                     "data": restore_gross_amounts(cat_data).to_dict(orient="records"),
                     "allow_edit": True,
@@ -843,7 +852,9 @@ class MonthlyBudgetService(BudgetService):
                         TransactionsTableFields.AMOUNT.value
                     ].sum()
                     * -1,
-                    "data": restore_gross_amounts(remaining_data).to_dict(orient="records"),
+                    "data": restore_gross_amounts(remaining_data).to_dict(
+                        orient="records"
+                    ),
                     "allow_edit": False,
                     "allow_delete": False,
                 }
@@ -853,7 +864,7 @@ class MonthlyBudgetService(BudgetService):
 
     def get_monthly_project_transactions(
         self, year: int, month: int, include_split_parents: bool = False
-    ) -> Optional[pd.DataFrame]:
+    ) -> pd.DataFrame | None:
         """
         Get expense transactions belonging to project categories for a specific month.
 

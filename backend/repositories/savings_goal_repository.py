@@ -31,7 +31,14 @@ GOAL_COLUMNS = [
 
 ALLOCATION_COLUMNS = ["id", "goal_id", "year", "month", "amount", "source"]
 
-LINK_COLUMNS = ["id", "goal_id", "source_type", "source_id", "source_table", "link_type"]
+LINK_COLUMNS = [
+    "id",
+    "goal_id",
+    "source_type",
+    "source_id",
+    "source_table",
+    "link_type",
+]
 
 BACKING_COLUMNS = ["id", "goal_id", "investment_id", "amount"]
 

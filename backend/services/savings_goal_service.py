@@ -531,7 +531,9 @@ class SavingsGoalService:
         Already-written months keep their amounts until an explicit
         :meth:`rebuild` restates them.
         """
-        known = set(self.repo.get_all()["id"]) if not self.repo.get_all().empty else set()
+        known = (
+            set(self.repo.get_all()["id"]) if not self.repo.get_all().empty else set()
+        )
         unknown = [gid for gid in ordered_ids if gid not in known]
         if unknown:
             raise EntityNotFoundException(f"Unknown savings goal ids: {unknown}")
@@ -578,9 +580,7 @@ class SavingsGoalService:
             )
         if not self.repo.get(goal_id):
             raise EntityNotFoundException(f"Savings goal {goal_id} not found")
-        self.repo.upsert_link(
-            goal_id, source_type, source_id, source_table, link_type
-        )
+        self.repo.upsert_link(goal_id, source_type, source_id, source_table, link_type)
         # Links feed the context, so anything cached before this write is stale.
         self._context_cache = None
         return self._after_write()
@@ -770,9 +770,7 @@ class SavingsGoalService:
             raise ValidationException(
                 f"Investment {investment_id} is closed and cannot back a goal"
             )
-        record["balance"] = float(
-            investments.calculate_current_balance(investment_id)
-        )
+        record["balance"] = float(investments.calculate_current_balance(investment_id))
         return record
 
     def _validate_backing_capacity(
@@ -872,7 +870,10 @@ class SavingsGoalService:
         goal_names = {g.id: g.name for g in self._goals_in_order()}
         changes = []
         for goal_id in sorted(set(before) | set(after)):
-            was, now = round(before.get(goal_id, 0.0), 2), round(after.get(goal_id, 0.0), 2)
+            was, now = (
+                round(before.get(goal_id, 0.0), 2),
+                round(after.get(goal_id, 0.0), 2),
+            )
             changes.append(
                 {
                     "goal_id": goal_id,
@@ -1193,9 +1194,7 @@ class SavingsGoalService:
 
         investments = InvestmentsService(self.db)
         for investment_id, group in backings.groupby("investment_id"):
-            remaining = float(
-                investments.calculate_current_balance(int(investment_id))
-            )
+            remaining = float(investments.calculate_current_balance(int(investment_id)))
             explicit = group[group["amount"].notna()]
             whole = group[group["amount"].isna()]
             for row in explicit.itertuples(index=False):
@@ -1311,10 +1310,18 @@ class SavingsGoalService:
         surplus: dict[tuple[int, int], float] = {}
         if not unlinked.empty:
             masks = transactions_masks(unlinked)
-            income = unlinked[masks["income"]].groupby(["_year", "_month"])[amount_col].sum()
-            expenses = unlinked[masks["expenses"]].groupby(["_year", "_month"])[amount_col].sum()
+            income = (
+                unlinked[masks["income"]].groupby(["_year", "_month"])[amount_col].sum()
+            )
+            expenses = (
+                unlinked[masks["expenses"]]
+                .groupby(["_year", "_month"])[amount_col]
+                .sum()
+            )
             investments = (
-                unlinked[masks["investments"]].groupby(["_year", "_month"])[amount_col].sum()
+                unlinked[masks["investments"]]
+                .groupby(["_year", "_month"])[amount_col]
+                .sum()
             )
             # Expenses and investments are negative in the raw convention, so
             # summing all three straight through already nets them out.
@@ -1383,16 +1390,17 @@ class SavingsGoalService:
                     for candidate in keys:
                         if candidate[2] == key[2]:
                             mapping[candidate] = (
-                                int(link["goal_id"]), link["link_type"]
+                                int(link["goal_id"]),
+                                link["link_type"],
                             )
                 else:
                     for candidate in keys:
-                        if (
-                            candidate[0] == link["source_table"]
-                            and str(candidate[1]) == str(link["source_id"])
-                        ):
+                        if candidate[0] == link["source_table"] and str(
+                            candidate[1]
+                        ) == str(link["source_id"]):
                             mapping[candidate] = (
-                                int(link["goal_id"]), link["link_type"]
+                                int(link["goal_id"]),
+                                link["link_type"],
                             )
         return mapping
 
@@ -1457,7 +1465,9 @@ class SavingsGoalService:
         reclaimed: dict[int, float] = {}
         history: dict[int, list[dict]] = {}
         if not allocations.empty:
-            for row in allocations.sort_values(["year", "month"]).itertuples(index=False):
+            for row in allocations.sort_values(["year", "month"]).itertuples(
+                index=False
+            ):
                 goal_id = int(row.goal_id)
                 amount = float(row.amount)
                 totals[goal_id] = totals.get(goal_id, 0.0) + amount
@@ -1476,7 +1486,10 @@ class SavingsGoalService:
         context = self._build_context()
         contributed: dict[int, float] = {}
         utilized: dict[int, float] = {}
-        for bucket, sink in ((context["direct"], contributed), (context["utilized"], utilized)):
+        for bucket, sink in (
+            (context["direct"], contributed),
+            (context["utilized"], utilized),
+        ):
             for per_goal in bucket.values():
                 for goal_id, amount in per_goal.items():
                     sink[goal_id] = sink.get(goal_id, 0.0) + amount
@@ -1535,7 +1548,9 @@ class SavingsGoalService:
         funded = opening + allocated + contributions + backed
         available = funded - spent
         remaining = max(0.0, target - funded)
-        progress_pct = round(min(100.0, (funded / target * 100) if target > 0 else 0.0), 1)
+        progress_pct = round(
+            min(100.0, (funded / target * 100) if target > 0 else 0.0), 1
+        )
         is_achieved = target > 0 and funded >= target - ROUNDING_EPSILON
 
         months_remaining = None
@@ -1543,7 +1558,9 @@ class SavingsGoalService:
         if goal.target_date and pd.notna(goal.target_date):
             today = pd.Timestamp.today().normalize()
             target_ts = pd.Timestamp(goal.target_date)
-            months = (target_ts.year - today.year) * 12 + (target_ts.month - today.month)
+            months = (target_ts.year - today.year) * 12 + (
+                target_ts.month - today.month
+            )
             months_remaining = max(0, int(months))
             if not is_achieved:
                 # Size the contribution off the real runway in days. A pure

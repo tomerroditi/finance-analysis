@@ -118,7 +118,9 @@ class ResilientSelectSelector(selectors.SelectSelector):
             ready_r: list = []
             ready_w: list = []
             for start in range(0, max(len(r), len(w)), step):
-                cr, cw, _ = self._select_once(r[start:start + step], w[start:start + step], 0)
+                cr, cw, _ = self._select_once(
+                    r[start : start + step], w[start : start + step], 0
+                )
                 ready_r += cr
                 ready_w += cw
             if ready_r or ready_w:

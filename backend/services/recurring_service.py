@@ -182,8 +182,7 @@ class RecurringService:
         s = desc.lower()
         s = re.sub(r"\d+", " ", s)
         s = re.sub(r"[^\w\s]", " ", s, flags=re.UNICODE)
-        s = re.sub(r"\s+", " ", s).strip()
-        return s
+        return re.sub(r"\s+", " ", s).strip()
 
     @staticmethod
     def normalize_description(desc) -> str:
@@ -397,9 +396,7 @@ class RecurringService:
             )
         )
 
-    def _detect_recurring(
-        self, today: pd.Timestamp, include_dismissed: bool
-    ) -> dict:
+    def _detect_recurring(self, today: pd.Timestamp, include_dismissed: bool) -> dict:
         """Run the detection behind :meth:`get_recurring`'s cache.
 
         Parameters
@@ -619,7 +616,11 @@ class RecurringService:
             prior = amounts.iloc[:-1]
             if len(prior) >= 1:
                 prior_med = float(prior.median())
-                if prior_med > 0 and abs(last_amount - prior_med) / prior_med > self._PRICE_CHANGE_THRESHOLD:
+                if (
+                    prior_med > 0
+                    and abs(last_amount - prior_med) / prior_med
+                    > self._PRICE_CHANGE_THRESHOLD
+                ):
                     price_change = round(last_amount - prior_med, 2)
                     if status == "active":
                         status = "price_changed"
@@ -632,27 +633,29 @@ class RecurringService:
 
             monthly_equivalent = amount * 30.0 / period_days
 
-            streams.append({
-                "label": label,
-                "normalized": norm,
-                "amount": round(amount, 2),
-                "expected_amount": round(
-                    self._expected_amount(amounts, amount, amount_kind), 2
-                ),
-                "last_amount": round(last_amount, 2),
-                "cadence": cadence_name,
-                "period_days": period_days,
-                "monthly_equivalent": round(monthly_equivalent, 2),
-                "occurrences": int(len(charges)),
-                "category": category,
-                "first_date": first_date.strftime("%Y-%m-%d"),
-                "last_date": last_date.strftime("%Y-%m-%d"),
-                "next_expected_date": next_expected.strftime("%Y-%m-%d"),
-                "status": status,
-                "price_change": price_change,
-                "confidence": confidence,
-                "amount_kind": amount_kind,
-            })
+            streams.append(
+                {
+                    "label": label,
+                    "normalized": norm,
+                    "amount": round(amount, 2),
+                    "expected_amount": round(
+                        self._expected_amount(amounts, amount, amount_kind), 2
+                    ),
+                    "last_amount": round(last_amount, 2),
+                    "cadence": cadence_name,
+                    "period_days": period_days,
+                    "monthly_equivalent": round(monthly_equivalent, 2),
+                    "occurrences": len(charges),
+                    "category": category,
+                    "first_date": first_date.strftime("%Y-%m-%d"),
+                    "last_date": last_date.strftime("%Y-%m-%d"),
+                    "next_expected_date": next_expected.strftime("%Y-%m-%d"),
+                    "status": status,
+                    "price_change": price_change,
+                    "confidence": confidence,
+                    "amount_kind": amount_kind,
+                }
+            )
 
         streams.sort(key=lambda i: i["monthly_equivalent"], reverse=True)
         return streams
@@ -756,9 +759,7 @@ class RecurringService:
         recent = amounts.tail(self._EXPECTED_AMOUNT_WINDOW)
         return float(recent.quantile(self._EXPECTED_AMOUNT_QUANTILE))
 
-    def get_recurring_income(
-        self, today: date | pd.Timestamp | None = None
-    ) -> dict:
+    def get_recurring_income(self, today: date | pd.Timestamp | None = None) -> dict:
         """Detect the household's repeating income streams.
 
         Salaries, allowances, benefits, a standing transfer — money that
@@ -904,13 +905,15 @@ class RecurringService:
                 continue
             if due <= 0:
                 continue
-            items.append({
-                "label": stream["label"],
-                "normalized": stream["normalized"],
-                "amount": round(due, 2),
-                "cadence": stream["cadence"],
-                "expected_date": expected_date.strftime("%Y-%m-%d"),
-            })
+            items.append(
+                {
+                    "label": stream["label"],
+                    "normalized": stream["normalized"],
+                    "amount": round(due, 2),
+                    "cadence": stream["cadence"],
+                    "expected_date": expected_date.strftime("%Y-%m-%d"),
+                }
+            )
 
         items.sort(key=lambda i: i["amount"], reverse=True)
         return {
@@ -1009,13 +1012,17 @@ class RecurringService:
             If ``decision`` is not one of the three accepted values, or the
             key is blank.
         """
-        return self.set_decisions([{
-            "normalized": normalized,
-            "decision": decision,
-            "label": label,
-            "amount": amount,
-            "cadence": cadence,
-        }])["updated"][0]
+        return self.set_decisions(
+            [
+                {
+                    "normalized": normalized,
+                    "decision": decision,
+                    "label": label,
+                    "amount": amount,
+                    "cadence": cadence,
+                }
+            ]
+        )["updated"][0]
 
     def set_decisions(self, decisions: list[dict]) -> dict:
         """Record several verdicts at once (the "confirm all" path).
@@ -1071,13 +1078,15 @@ class RecurringService:
                 raise ValidationException(
                     "A verdict needs the normalized merchant key it applies to."
                 )
-            entries.append({
-                "normalized": normalized,
-                "decision": decision,
-                "label": entry.get("label"),
-                "amount": entry.get("amount"),
-                "cadence": entry.get("cadence"),
-            })
+            entries.append(
+                {
+                    "normalized": normalized,
+                    "decision": decision,
+                    "label": entry.get("label"),
+                    "amount": entry.get("amount"),
+                    "cadence": entry.get("cadence"),
+                }
+            )
 
         self.decisions.apply(entries)
         return {

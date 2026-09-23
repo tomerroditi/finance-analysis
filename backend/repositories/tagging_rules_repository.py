@@ -1,5 +1,5 @@
 import pandas as pd
-from sqlalchemy import select, update, delete
+from sqlalchemy import delete, select, update
 from sqlalchemy.orm import Session
 
 from backend.models.tagging_rules import TaggingRule

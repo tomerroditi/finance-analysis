@@ -3,7 +3,7 @@
 Provides endpoints for account credential management.
 """
 
-from typing import Any, Dict, List
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
@@ -21,7 +21,7 @@ class CredentialCreate(BaseModel):
     service: str
     provider: str
     account_name: str
-    credentials: Dict[str, Any]
+    credentials: dict[str, Any]
 
 
 class StatusResponse(BaseModel):
@@ -29,7 +29,7 @@ class StatusResponse(BaseModel):
 
 
 class ProviderFieldsResponse(BaseModel):
-    fields: List[str]
+    fields: list[str]
 
 
 class DeleteAccountResponse(BaseModel):
@@ -97,18 +97,18 @@ def create_credential(
 ) -> dict[str, str]:
     """Create or update a credential."""
     creds_service = CredentialsService(db)
-    creds_service.save_credentials({
-        credential.service: {
-            credential.provider: {
-                credential.account_name: credential.credentials
+    creds_service.save_credentials(
+        {
+            credential.service: {
+                credential.provider: {credential.account_name: credential.credentials}
             }
         }
-    })
+    )
     return {"status": "success"}
 
 
 @router.get("/fields/{provider}", response_model=ProviderFieldsResponse)
-def get_provider_fields(provider: str) -> dict[str, List[str]]:
+def get_provider_fields(provider: str) -> dict[str, list[str]]:
     """Get the required fields for a provider login."""
     fields = LoginFields.get_fields(provider)
     return {"fields": fields}

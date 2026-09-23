@@ -6,15 +6,15 @@ Create Date: 2025-06-20
 
 """
 
-from typing import Sequence, Union
+from collections.abc import Sequence
 
 import sqlalchemy as sa
 from alembic import op
 
 revision: str = "e1f2a3b4c5d6"
-down_revision: Union[str, Sequence[str], None] = "f1e2d3c4b5a6"
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+down_revision: str | Sequence[str] | None = "f1e2d3c4b5a6"
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
@@ -27,9 +27,18 @@ def upgrade() -> None:
         return
     columns = {c["name"] for c in inspector.get_columns("retirement_goals")}
     new_cols = [
-        ("net_worth_override", sa.Column("net_worth_override", sa.Float(), nullable=True)),
-        ("monthly_expenses_override", sa.Column("monthly_expenses_override", sa.Float(), nullable=True)),
-        ("total_investments_override", sa.Column("total_investments_override", sa.Float(), nullable=True)),
+        (
+            "net_worth_override",
+            sa.Column("net_worth_override", sa.Float(), nullable=True),
+        ),
+        (
+            "monthly_expenses_override",
+            sa.Column("monthly_expenses_override", sa.Float(), nullable=True),
+        ),
+        (
+            "total_investments_override",
+            sa.Column("total_investments_override", sa.Float(), nullable=True),
+        ),
     ]
     missing = [(name, col) for name, col in new_cols if name not in columns]
     if missing:
@@ -41,5 +50,9 @@ def upgrade() -> None:
 def downgrade() -> None:
     """Remove status override columns."""
     with op.batch_alter_table("retirement_goals") as batch_op:
-        for col in ("net_worth_override", "monthly_expenses_override", "total_investments_override"):
+        for col in (
+            "net_worth_override",
+            "monthly_expenses_override",
+            "total_investments_override",
+        ):
             batch_op.drop_column(col)

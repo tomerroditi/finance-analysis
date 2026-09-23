@@ -1,12 +1,8 @@
 from logging.config import fileConfig
 
-from sqlalchemy import engine_from_config
-from sqlalchemy import pool
-
 from alembic import context
+from sqlalchemy import engine_from_config, pool
 
-# Import all models to register them with Base.metadata
-from backend.models.base import Base
 from backend.models import (  # noqa: F401
     bank_balance,
     budget,
@@ -19,6 +15,9 @@ from backend.models import (  # noqa: F401
     tagging_rules,
     transaction,
 )
+
+# Import all models to register them with Base.metadata
+from backend.models.base import Base
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
@@ -88,9 +87,7 @@ def run_migrations_online() -> None:
     )
 
     with connectable.connect() as connection:
-        context.configure(
-            connection=connection, target_metadata=target_metadata
-        )
+        context.configure(connection=connection, target_metadata=target_metadata)
 
         with context.begin_transaction():
             context.run_migrations()

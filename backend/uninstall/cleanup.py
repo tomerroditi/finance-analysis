@@ -20,7 +20,6 @@ import logging
 import shutil
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import List, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -49,7 +48,7 @@ class CleanupReport:
     user_dir_removed: bool
     keyring_entries_deleted: int
     keyring_entries_attempted: int
-    errors: List[str] = field(default_factory=list)
+    errors: list[str] = field(default_factory=list)
     dry_run: bool = False
 
     def as_dict(self) -> dict:
@@ -72,7 +71,7 @@ def _resolve_user_dir() -> Path:
         config = AppConfig()
         # We always operate on the *base* user dir, never the demo subdir,
         # so a wipe nukes both production and demo state.
-        base = Path(config._base_user_dir)  # noqa: SLF001
+        base = Path(config._base_user_dir)
     except Exception:
         base = Path.home() / ".finance-analysis"
     return base
@@ -80,7 +79,7 @@ def _resolve_user_dir() -> Path:
 
 def _enumerate_credential_keys_from_db(
     user_dir: Path,
-) -> List[tuple[str, str, str]]:
+) -> list[tuple[str, str, str]]:
     """List ``(service, provider, account_name)`` triples from the credentials DB.
 
     Used to delete the Keychain entries we know about. Best-effort: if the
@@ -105,10 +104,10 @@ def _enumerate_credential_keys_from_db(
 
 
 def _delete_keyring_entries(
-    triples: List[tuple[str, str, str]],
+    triples: list[tuple[str, str, str]],
     *,
     dry_run: bool,
-) -> tuple[int, int, List[str]]:
+) -> tuple[int, int, list[str]]:
     """Delete every keyring entry the credentials repository would create.
 
     Returns ``(deleted, attempted, errors)``. Treats both
@@ -122,7 +121,7 @@ def _delete_keyring_entries(
     """
     attempted = 0
     deleted = 0
-    errors: List[str] = []
+    errors: list[str] = []
 
     try:
         import keyring
@@ -164,7 +163,7 @@ def run(
     *,
     wipe_data: bool,
     dry_run: bool = False,
-    user_dir: Optional[Path] = None,
+    user_dir: Path | None = None,
 ) -> CleanupReport:
     """Remove Keychain entries and (optionally) the user-data directory.
 
@@ -224,7 +223,7 @@ def run(
     )
 
 
-def cli(argv: Optional[List[str]] = None) -> int:
+def cli(argv: list[str] | None = None) -> int:
     """Module entry point for ``python -m backend.uninstall``.
 
     Returns 0 on success, 1 if any non-fatal errors were collected.

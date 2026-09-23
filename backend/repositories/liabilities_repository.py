@@ -3,10 +3,9 @@ Liabilities repository with SQLAlchemy ORM.
 """
 
 from datetime import datetime
-from typing import Optional
 
 import pandas as pd
-from sqlalchemy import select, update, delete
+from sqlalchemy import delete, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -39,10 +38,10 @@ class LiabilitiesRepository:
         start_date: str,
         loan_type: str = "fixed_unlinked",
         amortization_method: str = "shpitzer",
-        rate_spread: Optional[float] = None,
-        rate_reset_months: Optional[int] = None,
-        lender: Optional[str] = None,
-        notes: Optional[str] = None,
+        rate_spread: float | None = None,
+        rate_reset_months: int | None = None,
+        lender: str | None = None,
+        notes: str | None = None,
     ) -> None:
         """Create a new liability record.
 
@@ -150,9 +149,7 @@ class LiabilitiesRepository:
         stmt = select(Liability).where(Liability.id == liability_id)
         records = self.db.execute(stmt).scalars().all()
         if not records:
-            raise EntityNotFoundException(
-                f"No liability found with ID {liability_id}"
-            )
+            raise EntityNotFoundException(f"No liability found with ID {liability_id}")
         df = pd.DataFrame([r.__dict__ for r in records])
         return df.drop(columns=["_sa_instance_state"], errors="ignore")
 
@@ -179,9 +176,7 @@ class LiabilitiesRepository:
 
         if result.rowcount == 0:
             self.db.rollback()
-            raise EntityNotFoundException(
-                f"No liability found with ID {liability_id}"
-            )
+            raise EntityNotFoundException(f"No liability found with ID {liability_id}")
 
         self.db.commit()
 
@@ -209,9 +204,7 @@ class LiabilitiesRepository:
 
         if result.rowcount == 0:
             self.db.rollback()
-            raise EntityNotFoundException(
-                f"No liability found with ID {liability_id}"
-            )
+            raise EntityNotFoundException(f"No liability found with ID {liability_id}")
 
         self.db.commit()
 
@@ -237,13 +230,13 @@ class LiabilitiesRepository:
 
         if result.rowcount == 0:
             self.db.rollback()
-            raise EntityNotFoundException(
-                f"No liability found with ID {liability_id}"
-            )
+            raise EntityNotFoundException(f"No liability found with ID {liability_id}")
 
         self.db.commit()
 
-    def get_liability_transactions(self, liability_id: int) -> list[LiabilityTransaction]:
+    def get_liability_transactions(
+        self, liability_id: int
+    ) -> list[LiabilityTransaction]:
         """Get all auto-generated transactions for a liability.
 
         Parameters
@@ -301,8 +294,6 @@ class LiabilitiesRepository:
 
         if result.rowcount == 0:
             self.db.rollback()
-            raise EntityNotFoundException(
-                f"No liability found with ID {liability_id}"
-            )
+            raise EntityNotFoundException(f"No liability found with ID {liability_id}")
 
         self.db.commit()
