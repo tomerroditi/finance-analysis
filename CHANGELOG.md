@@ -1,3 +1,9 @@
+## v1.88.0 (2026-09-23)
+
+### Feat
+
+- **scraper**: add the Pension Clearing House (Mislaka) and retire HaPhoenix into it (#353)
+
 ## v1.87.0 (2026-09-23)
 
 ### Feat
