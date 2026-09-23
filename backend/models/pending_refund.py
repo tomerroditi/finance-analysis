@@ -17,7 +17,9 @@ class PendingRefund(Base, TimestampMixin):
     source_id : int
         ID of the source (unique_id for transactions, id for splits).
     source_table : str
-        Table where the source lives: 'banks', 'credit_cards', 'cash'.
+        Canonical table where the source lives (e.g. 'bank_transactions');
+        rows written before canonicalization may hold the service name
+        ('banks', 'credit_cards', 'cash').
     expected_amount : float
         Positive amount expected to be refunded.
     status : str
@@ -29,7 +31,7 @@ class PendingRefund(Base, TimestampMixin):
     __tablename__ = Tables.PENDING_REFUNDS.value
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    source_type = Column(String, nullable=False)  # 'transaction' or 'split'
+    source_type = Column(String, nullable=False)
     source_id = Column(Integer, nullable=False)
     source_table = Column(String, nullable=False)
     expected_amount = Column(Float, nullable=False)
@@ -96,7 +98,8 @@ class RefundLink(Base, TimestampMixin):
     refund_transaction_id : int
         unique_id of the refund transaction.
     refund_source : str
-        Table where refund lives: 'banks', 'credit_cards', 'cash'.
+        Canonical table where the refund lives (e.g. 'bank_transactions');
+        older rows may hold the service name ('banks', 'credit_cards', 'cash').
     amount : float
         Amount this refund covers (may be partial).
     """

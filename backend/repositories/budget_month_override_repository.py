@@ -14,7 +14,7 @@ class BudgetMonthOverrideRepository:
     Handles CRUD operations for transaction/split budget-month reassignments.
     """
 
-    def __init__(self, db: Session):
+    def __init__(self, db: Session) -> None:
         self.db = db
 
     def get_all(self) -> pd.DataFrame:

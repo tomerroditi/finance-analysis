@@ -1,6 +1,6 @@
-"""
-Interest rates repository with SQLAlchemy ORM.
-"""
+"""Interest rates repository with SQLAlchemy ORM."""
+
+from typing import Any
 
 import pandas as pd
 from sqlalchemy import func, select
@@ -11,12 +11,11 @@ from backend.models.interest_rate import InterestRate
 
 
 class InterestRatesRepository:
-    """
-    Repository for interest rate series points.
-    """
+    """Repository for interest rate series points."""
 
-    def __init__(self, db: Session):
-        """
+    def __init__(self, db: Session) -> None:
+        """Initialize the repository.
+
         Parameters
         ----------
         db : Session
@@ -66,7 +65,7 @@ class InterestRatesRepository:
         return int(self.db.execute(stmt).scalar_one())
 
     def upsert_points(
-        self, series: str, points: list[dict], source: str = "seed"
+        self, series: str, points: list[dict[str, Any]], source: str = "seed"
     ) -> int:
         """Insert rate points, updating the value of existing dates.
 
@@ -74,7 +73,7 @@ class InterestRatesRepository:
         ----------
         series : str
             Series identifier.
-        points : list[dict]
+        points : list[dict[str, Any]]
             Dicts with ``date`` (YYYY-MM-DD) and ``value`` keys.
         source : str
             Provenance stamp for newly inserted points.

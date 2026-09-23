@@ -1,6 +1,6 @@
-"""
-Split transactions repository with SQLAlchemy ORM.
-"""
+"""Split transactions repository with SQLAlchemy ORM."""
+
+from collections.abc import Iterator
 
 import pandas as pd
 from sqlalchemy import delete, select, update
@@ -12,28 +12,24 @@ from backend.models.transaction import SplitTransaction
 _IN_CHUNK = 500
 
 
-def _chunked(values: list, size: int = _IN_CHUNK):
+def _chunked(values: list[int], size: int = _IN_CHUNK) -> Iterator[list[int]]:
     """Yield ``values`` in slices small enough for a SQL ``IN`` clause."""
     for start in range(0, len(values), size):
         yield values[start : start + size]
 
 
 class SplitTransactionsRepository:
-    """
-    Repository for managing split transaction records using ORM.
-    """
+    """Repository for managing split transaction records using ORM."""
 
-    def __init__(self, db: Session):
-        """
+    def __init__(self, db: Session) -> None:
+        """Initialize the repository.
+
         Parameters
         ----------
         db : Session
             SQLAlchemy database session.
         """
         self.db = db
-
-    def _assure_table_exists(self) -> None:
-        pass
 
     def get_data(self) -> pd.DataFrame:
         """Get all split transactions.
@@ -71,7 +67,12 @@ class SplitTransactionsRepository:
         return pd.read_sql(stmt, self.db.bind)
 
     def add_split(
-        self, transaction_id: int, source: str, amount: float, category: str, tag: str
+        self,
+        transaction_id: int,
+        source: str,
+        amount: float,
+        category: str | None,
+        tag: str | None,
     ) -> int:
         """Add a new split for a transaction.
 
@@ -105,7 +106,7 @@ class SplitTransactionsRepository:
         return split.id
 
     def update_split(
-        self, split_id: int, amount: float, category: str, tag: str
+        self, split_id: int, amount: float, category: str | None, tag: str | None
     ) -> None:
         """Update an existing split.
 

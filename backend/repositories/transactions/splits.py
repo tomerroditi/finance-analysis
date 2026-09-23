@@ -7,6 +7,7 @@ operations. Mixed into ``TransactionsRepository`` (see ``core.py``).
 """
 
 import logging
+from typing import Any
 
 import pandas as pd
 from sqlalchemy import delete, select, update
@@ -70,7 +71,7 @@ class SplitsMixin:
         # Batch: one SELECT ... WHERE unique_id IN (...) per source table
         # instead of one query per split row — this runs inside get_table(),
         # i.e. on essentially every analytics/budget/transactions request.
-        parents_by_key: dict[tuple[str, int], dict] = {}
+        parents_by_key: dict[tuple[str, int], dict[str, Any]] = {}
         for source, group in splits_df.groupby(src_col):
             repo = self.get_repo_by_source(source)
             if repo is None:
@@ -89,7 +90,7 @@ class SplitsMixin:
                     c.name: getattr(parent, c.name) for c in parent.__table__.columns
                 }
 
-        children = []
+        children: list[dict[str, Any]] = []
         for _, split in splits_df.iterrows():
             parent_dict = parents_by_key.get((split[src_col], int(split[tid_col])))
             if parent_dict is None:
@@ -201,7 +202,7 @@ class SplitsMixin:
         return split_ids
 
     def split_transaction(
-        self, unique_id: int, source: str, splits: list[dict]
+        self, unique_id: int, source: str, splits: list[dict[str, Any]]
     ) -> bool:
         """Split a transaction into multiple partial amounts across categories.
 
@@ -216,7 +217,7 @@ class SplitsMixin:
             unique_id of the transaction to split.
         source : str
             Table name of the source repository.
-        splits : list[dict]
+        splits : list[dict[str, Any]]
             List of split dicts, each with keys: amount, category, tag.
 
         Returns

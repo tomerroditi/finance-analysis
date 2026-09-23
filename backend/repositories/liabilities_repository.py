@@ -1,8 +1,7 @@
-"""
-Liabilities repository with SQLAlchemy ORM.
-"""
+"""Liabilities repository with SQLAlchemy ORM."""
 
 from datetime import datetime
+from typing import Any
 
 import pandas as pd
 from sqlalchemy import delete, select, update
@@ -15,12 +14,11 @@ from backend.models.liability import Liability, LiabilityTransaction
 
 
 class LiabilitiesRepository:
-    """
-    Repository for managing liability tracking records using ORM.
-    """
+    """Repository for managing liability tracking records using ORM."""
 
-    def __init__(self, db: Session):
-        """
+    def __init__(self, db: Session) -> None:
+        """Initialize the repository.
+
         Parameters
         ----------
         db : Session
@@ -98,11 +96,11 @@ class LiabilitiesRepository:
         self.db.add(new_liability)
         try:
             self.db.commit()
-        except IntegrityError:
+        except IntegrityError as exc:
             self.db.rollback()
             raise EntityAlreadyExistsException(
                 f"A liability tagged '{tag}' already exists"
-            )
+            ) from exc
 
     def get_all_liabilities(self, include_paid_off: bool = False) -> pd.DataFrame:
         """Get all liabilities, optionally including paid-off ones.
@@ -153,7 +151,7 @@ class LiabilitiesRepository:
         df = pd.DataFrame([r.__dict__ for r in records])
         return df.drop(columns=["_sa_instance_state"], errors="ignore")
 
-    def update_liability(self, liability_id: int, **fields) -> None:
+    def update_liability(self, liability_id: int, **fields: Any) -> None:
         """Update a liability by ID.
 
         Parameters
@@ -256,8 +254,10 @@ class LiabilitiesRepository:
         )
         return list(self.db.execute(stmt).scalars().all())
 
-    def add_liability_transaction(self, **fields) -> None:
-        """Create an auto-generated liability transaction.
+    def add_liability_transaction(self, **fields: Any) -> None:
+        """Stage an auto-generated liability transaction without committing.
+
+        Callers add a whole schedule and then call :meth:`commit` once.
 
         Parameters
         ----------

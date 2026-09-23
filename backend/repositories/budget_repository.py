@@ -1,45 +1,23 @@
-"""
-Budget repository with SQLAlchemy ORM.
-"""
+"""Budget rule repository (monthly, yearly and project rules)."""
+
+from typing import Any
 
 import pandas as pd
 from sqlalchemy import delete, select, update
 from sqlalchemy.orm import Session
 
-from backend.constants.budget import (
-    AMOUNT,
-    CATEGORY,
-    ID,
-    MONTH,
-    NAME,
-    PERIOD_MONTHLY,
-    PERIOD_PROJECT,
-    PERIOD_YEARLY,
-    TAGS,
-    YEAR,
-)
-from backend.constants.tables import Tables
+from backend.constants.budget import PERIOD_MONTHLY, PERIOD_PROJECT, PERIOD_YEARLY
 from backend.errors import EntityNotFoundException
 from backend.models.budget import BudgetRule
 from backend.utils.session_cache import session_cache_get, session_cache_set
 
 
 class BudgetRepository:
-    """
-    Repository for budget rule CRUD operations using ORM.
-    """
+    """Repository for budget rule CRUD operations using ORM."""
 
-    table = Tables.BUDGET_RULES.value
-    id_col = ID
-    name_col = NAME
-    amount_col = AMOUNT
-    category_col = CATEGORY
-    tags_col = TAGS
-    year_col = YEAR
-    month_col = MONTH
+    def __init__(self, db: Session) -> None:
+        """Initialize the repository.
 
-    def __init__(self, db: Session):
-        """
         Parameters
         ----------
         db : Session
@@ -61,12 +39,19 @@ class BudgetRepository:
 
         Parameters
         ----------
-        name, amount, category, tags : see class docstring.
-        month : Optional[int]
+        name : str
+            Human-readable rule name.
+        amount : float
+            Budget limit.
+        category : str
+            Category the rule applies to.
+        tags : str
+            Semicolon-separated tag names within the category.
+        month : int or None
             Calendar month (1-12). None for yearly/project rules.
-        year : Optional[int]
+        year : int or None
             Calendar year. None for project rules.
-        period_type : Optional[str]
+        period_type : str or None
             One of ``"monthly"``/``"yearly"``/``"project"``. When ``None`` it is
             derived: ``month`` set ⇒ monthly, ``year`` set only ⇒ yearly,
             neither ⇒ project.
@@ -97,7 +82,7 @@ class BudgetRepository:
         -------
         pd.DataFrame
             All budget rules with columns: id, name, amount, category, tags,
-            month, year, created_at, updated_at.
+            month, year, period_type, is_closed, created_at, updated_at.
         """
         # Cached for the request: the budget overview asks its rule set a
         # dozen times over while assembling one month (monthly totals, the
@@ -177,7 +162,7 @@ class BudgetRepository:
         stmt = select(BudgetRule).where(BudgetRule.period_type == period_type)
         return pd.read_sql(stmt, self.db.bind)
 
-    def update(self, id_: int, **fields) -> None:
+    def update(self, id_: int, **fields: Any) -> None:
         """Update a budget rule by ID.
 
         Parameters
@@ -414,8 +399,3 @@ class BudgetRepository:
             else:
                 rule.tags = ";".join(t for t in tags if t != tag)
         self.db.commit()
-
-    def _assure_table_exists(self) -> None:
-        # Kept for interface compatibility but does nothing as models handle schema
-        # Though ideally we rely on Base.metadata.create_all(bind=engine) called at app startup
-        pass

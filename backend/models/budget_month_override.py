@@ -33,7 +33,7 @@ class BudgetMonthOverride(Base, TimestampMixin):
     __tablename__ = Tables.BUDGET_MONTH_OVERRIDES.value
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    source_type = Column(String, nullable=False)  # 'transaction' or 'split'
+    source_type = Column(String, nullable=False)
     source_id = Column(Integer, nullable=False)
     source_table = Column(String, nullable=False)
     override_year = Column(Integer, nullable=False)

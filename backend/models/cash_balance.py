@@ -1,6 +1,4 @@
-"""
-Cash balance snapshot model.
-"""
+"""Cash balance snapshot model."""
 
 from sqlalchemy import Column, Float, Integer, String
 

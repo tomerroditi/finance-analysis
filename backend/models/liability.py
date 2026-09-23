@@ -1,6 +1,4 @@
-"""
-Liability tracking model.
-"""
+"""Liability tracking model."""
 
 from sqlalchemy import (
     Column,

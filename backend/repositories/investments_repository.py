@@ -1,14 +1,12 @@
-"""
-Investments repository with SQLAlchemy ORM.
-"""
+"""Investments repository with SQLAlchemy ORM."""
 
 from datetime import datetime
+from typing import Any
 
 import pandas as pd
 from sqlalchemy import delete, select, update
 from sqlalchemy.orm import Session
 
-from backend.constants.tables import InvestmentsTableFields, Tables
 from backend.errors import EntityNotFoundException
 from backend.models.investment import Investment
 from backend.models.investment_balance_snapshot import InvestmentBalanceSnapshot
@@ -17,33 +15,17 @@ from backend.utils.session_cache import session_cache_get, session_cache_set
 
 
 class InvestmentsRepository:
-    """
-    Repository for managing investment tracking records using ORM.
-    """
+    """Repository for managing investment tracking records using ORM."""
 
-    table = Tables.INVESTMENTS.value
+    def __init__(self, db: Session) -> None:
+        """Initialize the repository.
 
-    id_col = InvestmentsTableFields.ID.value
-    category_col = InvestmentsTableFields.CATEGORY.value
-    tag_col = InvestmentsTableFields.TAG.value
-    type_col = InvestmentsTableFields.TYPE.value
-    name_col = InvestmentsTableFields.NAME.value
-    is_closed_col = InvestmentsTableFields.IS_CLOSED.value
-    created_date_col = InvestmentsTableFields.CREATED_DATE.value
-    closed_date_col = InvestmentsTableFields.CLOSED_DATE.value
-    notes_col = InvestmentsTableFields.NOTES.value
-
-    def __init__(self, db: Session):
-        """
         Parameters
         ----------
         db : Session
             SQLAlchemy database session.
         """
         self.db = db
-
-    def _assure_table_exists(self) -> None:
-        pass
 
     def create_investment(
         self,
@@ -243,7 +225,7 @@ class InvestmentsRepository:
             linked["insurance_policy_id"].map(policy_id_key) == key
         ].reset_index(drop=True)
 
-    def update_investment(self, investment_id: int, **fields) -> None:
+    def update_investment(self, investment_id: int, **fields: Any) -> None:
         """Update an investment by ID.
 
         Parameters

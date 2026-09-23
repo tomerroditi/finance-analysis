@@ -1,6 +1,6 @@
-"""
-Investment balance snapshots repository with SQLAlchemy ORM.
-"""
+"""Investment balance snapshots repository with SQLAlchemy ORM."""
+
+from typing import Any
 
 import pandas as pd
 from sqlalchemy import delete, func, select, update
@@ -20,8 +20,9 @@ class InvestmentSnapshotsRepository:
     date via upsert semantics.
     """
 
-    def __init__(self, db: Session):
-        """
+    def __init__(self, db: Session) -> None:
+        """Initialize the repository.
+
         Parameters
         ----------
         db : Session
@@ -52,7 +53,7 @@ class InvestmentSnapshotsRepository:
             Market value of the investment on this date.
         source : str
             How the snapshot was created (``"manual"``, ``"scraped"``,
-            or ``"calculated"``). Defaults to ``"manual"``.
+            ``"calculated"`` or ``"closed"``). Defaults to ``"manual"``.
         """
 
         def _try_update() -> int:
@@ -145,7 +146,7 @@ class InvestmentSnapshotsRepository:
 
     def get_latest_snapshot_on_or_before(
         self, investment_id: int, target_date: str
-    ) -> dict | None:
+    ) -> dict[str, Any] | None:
         """Find the most recent snapshot on or before a target date.
 
         Parameters
@@ -181,7 +182,7 @@ class InvestmentSnapshotsRepository:
             "source": snapshot.source,
         }
 
-    def update_snapshot(self, snapshot_id: int, **fields) -> None:
+    def update_snapshot(self, snapshot_id: int, **fields: Any) -> None:
         """Update a snapshot by its ID.
 
         Parameters

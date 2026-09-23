@@ -1,6 +1,4 @@
-"""
-Cash balance repository for cash envelope balance snapshots.
-"""
+"""Cash balance repository for cash envelope balance snapshots."""
 
 import pandas as pd
 from sqlalchemy import select
@@ -12,8 +10,9 @@ from backend.models.cash_balance import CashBalance
 class CashBalanceRepository:
     """Repository for cash envelope balance snapshots."""
 
-    def __init__(self, db: Session):
-        """
+    def __init__(self, db: Session) -> None:
+        """Initialize the repository.
+
         Parameters
         ----------
         db : Session

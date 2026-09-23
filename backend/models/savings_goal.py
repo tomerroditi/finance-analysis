@@ -88,7 +88,7 @@ class SavingsGoal(Base, TimestampMixin):
     closed_month = Column(String, nullable=True)
     notes = Column(String, nullable=True)
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return (
             f"<SavingsGoal(id={self.id}, name={self.name!r}, "
             f"target={self.target_amount}, priority={self.priority})>"
@@ -135,7 +135,7 @@ class SavingsGoalAllocation(Base, TimestampMixin):
         ),
     )
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return (
             f"<SavingsGoalAllocation(goal_id={self.goal_id}, "
             f"{self.year}-{self.month:02d}, amount={self.amount})>"
@@ -183,7 +183,7 @@ class SavingsGoalLink(Base, TimestampMixin):
         ),
     )
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return (
             f"<SavingsGoalLink(goal_id={self.goal_id}, {self.link_type}, "
             f"{self.source_table}#{self.source_id})>"
@@ -229,7 +229,7 @@ class SavingsGoalInvestment(Base, TimestampMixin):
         UniqueConstraint("goal_id", "investment_id", name="uq_savings_goal_investment"),
     )
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return (
             f"<SavingsGoalInvestment(goal_id={self.goal_id}, "
             f"investment_id={self.investment_id}, amount={self.amount})>"

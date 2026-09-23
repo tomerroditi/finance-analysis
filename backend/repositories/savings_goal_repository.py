@@ -1,5 +1,8 @@
 """Data access for savings goals: allocations, transaction links, investment earmarks."""
 
+from collections.abc import Sequence
+from typing import Any
+
 import pandas as pd
 from sqlalchemy import delete, func, select
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
@@ -43,7 +46,7 @@ LINK_COLUMNS = [
 BACKING_COLUMNS = ["id", "goal_id", "investment_id", "amount"]
 
 
-def _to_frame(records: list, columns: list[str]) -> pd.DataFrame:
+def _to_frame(records: Sequence[Any], columns: list[str]) -> pd.DataFrame:
     """Build a DataFrame from ORM rows, preserving column order when empty."""
     if not records:
         return pd.DataFrame(columns=columns)
@@ -54,7 +57,7 @@ def _to_frame(records: list, columns: list[str]) -> pd.DataFrame:
 class SavingsGoalRepository:
     """Repository for ``savings_goals`` CRUD operations."""
 
-    def __init__(self, db: Session):
+    def __init__(self, db: Session) -> None:
         """Initialize the repository.
 
         Parameters
@@ -78,7 +81,7 @@ class SavingsGoalRepository:
         priorities = self.db.execute(select(SavingsGoal.priority)).scalars().all()
         return max(priorities) + 1 if priorities else 0
 
-    def add(self, **fields) -> SavingsGoal:
+    def add(self, **fields: Any) -> SavingsGoal:
         """Insert a new goal and return the persisted row."""
         goal = SavingsGoal(**fields)
         self.db.add(goal)
@@ -86,12 +89,17 @@ class SavingsGoalRepository:
         self.db.refresh(goal)
         return goal
 
-    def update(self, goal_id: int, **fields) -> SavingsGoal:
+    def update(self, goal_id: int, **fields: Any) -> SavingsGoal:
         """Update an existing goal and return it.
 
         ``None`` values are applied rather than skipped, so a caller can clear
         an optional field (a target date, a monthly cap). Callers that only
         want to touch supplied fields should pass ``exclude_unset`` data.
+
+        Raises
+        ------
+        ValueError
+            If no goal with ``goal_id`` exists.
         """
         goal = self.db.get(SavingsGoal, goal_id)
         if not goal:
@@ -108,6 +116,11 @@ class SavingsGoalRepository:
         The investment earmarks have to go too: an orphaned row would keep
         consuming its holding's headroom, so a deleted goal would silently
         block anyone else from ever earmarking that investment again.
+
+        Raises
+        ------
+        ValueError
+            If no goal with ``goal_id`` exists.
         """
         goal = self.db.get(SavingsGoal, goal_id)
         if not goal:
@@ -132,10 +145,6 @@ class SavingsGoalRepository:
             if goal:
                 goal.priority = position
         self.db.commit()
-
-    # ------------------------------------------------------------------
-    # Allocations
-    # ------------------------------------------------------------------
 
     def get_allocations(self, goal_id: int | None = None) -> pd.DataFrame:
         """Return allocation rows, optionally scoped to a single goal."""
@@ -204,10 +213,6 @@ class SavingsGoalRepository:
                 self.db.delete(row)
         self.db.commit()
 
-    # ------------------------------------------------------------------
-    # Transaction links
-    # ------------------------------------------------------------------
-
     def get_links(self, goal_id: int | None = None) -> pd.DataFrame:
         """Return transaction links, optionally scoped to a single goal."""
         stmt = select(SavingsGoalLink)
@@ -258,16 +263,12 @@ class SavingsGoalRepository:
         return link
 
     def delete_link(self, link_id: int) -> None:
-        """Delete a transaction link by id."""
+        """Delete a transaction link by id; raise ``ValueError`` if it is missing."""
         link = self.db.get(SavingsGoalLink, link_id)
         if not link:
             raise ValueError(f"No savings goal link with id {link_id}")
         self.db.delete(link)
         self.db.commit()
-
-    # ------------------------------------------------------------------
-    # Investment earmarks
-    # ------------------------------------------------------------------
 
     def get_backings(self, goal_id: int | None = None) -> pd.DataFrame:
         """Return investment earmarks, optionally scoped to a single goal.
@@ -308,7 +309,7 @@ class SavingsGoalRepository:
         return backing
 
     def delete_backing(self, backing_id: int) -> None:
-        """Delete an investment earmark by id."""
+        """Delete an investment earmark by id; raise ``ValueError`` if it is missing."""
         backing = self.db.get(SavingsGoalInvestment, backing_id)
         if not backing:
             raise ValueError(f"No savings goal investment with id {backing_id}")

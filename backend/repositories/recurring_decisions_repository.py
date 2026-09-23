@@ -1,5 +1,7 @@
 """Repository for user verdicts on detected recurring charges."""
 
+from typing import Any
+
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -14,7 +16,7 @@ PENDING = "pending"
 class RecurringDecisionsRepository:
     """Read and write the per-merchant recurring-charge verdicts."""
 
-    def __init__(self, db: Session):
+    def __init__(self, db: Session) -> None:
         """Initialize the repository.
 
         Parameters
@@ -35,7 +37,7 @@ class RecurringDecisionsRepository:
         rows = self.db.execute(select(RecurringDecision)).scalars().all()
         return {row.normalized: row for row in rows}
 
-    def apply(self, entries: list[dict]) -> None:
+    def apply(self, entries: list[dict[str, Any]]) -> None:
         """Apply a batch of verdicts in a single transaction.
 
         One commit for the whole batch, which is what the caller needs: every
@@ -45,7 +47,7 @@ class RecurringDecisionsRepository:
 
         Parameters
         ----------
-        entries : list[dict]
+        entries : list[dict[str, Any]]
             Each entry ``{"normalized": str, "decision": str}`` plus the
             optional display fields ``label``, ``amount`` and ``cadence``.
             A decision of ``'pending'`` deletes the stored verdict.

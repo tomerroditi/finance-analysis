@@ -1,8 +1,6 @@
-"""
-Scraping history repository with SQLAlchemy ORM.
-"""
+"""Scraping history repository with SQLAlchemy ORM."""
 
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 
 import pandas as pd
 from sqlalchemy import delete, select, update
@@ -12,9 +10,7 @@ from backend.models.scraping import ScrapingHistory
 
 
 class ScrapingHistoryRepository:
-    """
-    Repository for the scraping audit trail (one row per scrape attempt).
-    """
+    """Repository for the scraping audit trail (one row per scrape attempt)."""
 
     FAILED = "failed"
     SUCCESS = "success"
@@ -22,8 +18,9 @@ class ScrapingHistoryRepository:
     IN_PROGRESS = "in_progress"
     WAITING_FOR_2FA = "waiting_for_2fa"
 
-    def __init__(self, db: Session):
-        """
+    def __init__(self, db: Session) -> None:
+        """Initialize the repository.
+
         Parameters
         ----------
         db : Session
@@ -36,7 +33,7 @@ class ScrapingHistoryRepository:
         service_name: str,
         provider_name: str,
         account_name: str,
-        start_date: datetime.date,
+        start_date: date,
         status: str = IN_PROGRESS,
     ) -> int:
         """Record the start of a scraping operation and return its ID.
@@ -49,7 +46,7 @@ class ScrapingHistoryRepository:
             Name of the specific provider being scraped (e.g. "isracard", "hapoalim").
         account_name : str
             Identifier of the account being scraped.
-        start_date : datetime.date
+        start_date : date
             Start date for the data range to be scraped.
         status : str, optional
             Initial status to record for the operation, by default IN_PROGRESS.
@@ -96,10 +93,6 @@ class ScrapingHistoryRepository:
             ``GENERAL_ERROR``, …) used to pick the user-facing message, keeping
             ``error_message`` free to carry the raw provider text. By default
             None.
-
-        Returns
-        -------
-        None
         """
         stmt = (
             update(ScrapingHistory)
@@ -179,7 +172,7 @@ class ScrapingHistoryRepository:
         pd.DataFrame
             All scraping history rows ordered by date descending. Columns include:
             id, service_name, provider_name, account_name, date, status,
-            start_date, error_message.
+            start_date, error_message, error_type.
         """
         stmt = select(ScrapingHistory).order_by(ScrapingHistory.date.desc())
         return pd.read_sql(stmt, self.db.bind)
@@ -253,10 +246,6 @@ class ScrapingHistoryRepository:
         days_to_keep : int, optional
             Records whose date is older than this many days from now will be
             deleted, by default 30.
-
-        Returns
-        -------
-        None
         """
         cutoff_date = (datetime.now() - timedelta(days=days_to_keep)).isoformat()
         stmt = delete(ScrapingHistory).where(ScrapingHistory.date < cutoff_date)

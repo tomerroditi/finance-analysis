@@ -1,6 +1,4 @@
-"""
-Interest rate series model.
-"""
+"""Interest rate series model."""
 
 from sqlalchemy import Column, Float, Integer, String, UniqueConstraint
 

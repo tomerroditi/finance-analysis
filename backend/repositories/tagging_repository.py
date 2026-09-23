@@ -25,8 +25,9 @@ DEFAULT_CATEGORIES_ICONS_PATH = os.path.join(
 class TaggingRepository:
     """Repository for category and tag CRUD operations backed by SQLite."""
 
-    def __init__(self, db: Session):
-        """
+    def __init__(self, db: Session) -> None:
+        """Initialize the repository.
+
         Parameters
         ----------
         db : Session
@@ -81,10 +82,6 @@ class TaggingRepository:
             Initial list of tags to associate with the category.
         icon : str, optional
             Emoji icon for the category. Defaults to None.
-
-        Returns
-        -------
-        None
 
         Raises
         ------
@@ -299,6 +296,11 @@ class TaggingRepository:
         -------
         bool
             True if the icon was updated, False if it was already set to the same value.
+
+        Raises
+        ------
+        EntityNotFoundException
+            If no category with that name exists.
         """
         cat = self._get_category(category)
         if cat.icon == icon:
@@ -321,12 +323,12 @@ class TaggingRepository:
         if existing is not None:
             return
 
-        categories = {}
+        categories: dict[str, list[str] | None] = {}
         if os.path.exists(categories_path):
             with open(categories_path) as f:
                 categories = yaml.safe_load(f) or {}
 
-        icons = {}
+        icons: dict[str, str] = {}
         if os.path.exists(icons_path):
             with open(icons_path) as f:
                 icons = yaml.safe_load(f) or {}

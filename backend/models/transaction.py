@@ -1,6 +1,6 @@
-"""
-Transaction models for different financial services.
-"""
+"""Transaction models for different financial services."""
+
+from typing import ClassVar
 
 from sqlalchemy import Column, Float, Index, Integer, String
 
@@ -8,7 +8,7 @@ from backend.constants.tables import Tables
 from backend.models.base import Base, TimestampMixin
 
 
-def _transaction_indexes(table_name: str) -> tuple:
+def _transaction_indexes(table_name: str) -> tuple[Index, ...]:
     """Build the standard index set for a transaction table.
 
     Analytics filters/groups on ``date``, ``source``, ``provider``,
@@ -23,7 +23,7 @@ def _transaction_indexes(table_name: str) -> tuple:
 
     Returns
     -------
-    tuple
+    tuple of Index
         Tuple of :class:`sqlalchemy.Index` objects for ``__table_args__``.
     """
     return (
@@ -60,7 +60,7 @@ class TransactionBase(TimestampMixin):
     tag : str, optional
         User-assigned tag within the category (``NULL`` before tagging).
     source : str
-        Service source identifier (``bank``, ``credit_card``, ``cash``, etc.).
+        Table the row belongs to (e.g. ``bank_transactions``).
     type : str
         Transaction type: ``normal`` or ``split_parent``.
     status : str
@@ -68,8 +68,8 @@ class TransactionBase(TimestampMixin):
     """
 
     unique_id = Column(Integer, primary_key=True, autoincrement=True)
-    id = Column(String)  # Original ID from source
-    date = Column(String)  # Stored as string YYYY-MM-DD
+    id = Column(String)
+    date = Column(String)
     provider = Column(String)
     account_name = Column(String)
     account_number = Column(String, nullable=True)
@@ -77,13 +77,13 @@ class TransactionBase(TimestampMixin):
     amount = Column(Float)
     category = Column(String, nullable=True)
     tag = Column(String, nullable=True)
-    source = Column(String)  # 'bank', 'credit_card', etc.
-    type = Column(String, default="normal")  # 'normal', 'split_parent'
+    source = Column(String)
+    type = Column(String, default="normal")
     status = Column(String, default="completed")
 
     # Column names defined by this base mixin (excluding TimestampMixin).
     # Used by TransactionsRepository to detect model-specific extra columns.
-    BASE_COLUMN_NAMES = {
+    BASE_COLUMN_NAMES: ClassVar[set[str]] = {
         "unique_id",
         "id",
         "date",
@@ -170,8 +170,8 @@ class SplitTransaction(Base, TimestampMixin):
     )
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    transaction_id = Column(Integer)  # References unique_id of parent
-    source = Column(String)  # Source table of parent
+    transaction_id = Column(Integer)
+    source = Column(String)
     amount = Column(Float)
     category = Column(String, nullable=True)
     tag = Column(String, nullable=True)

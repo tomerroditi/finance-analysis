@@ -4,6 +4,8 @@ InsuranceAccount data access.
 CRUD operations for insurance account metadata (pension, keren hishtalmut, gemel).
 """
 
+from typing import Any
+
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -14,7 +16,7 @@ from backend.utils.policy_ids import policy_id_key
 class InsuranceAccountRepository:
     """InsuranceAccount database operations."""
 
-    def __init__(self, db: Session):
+    def __init__(self, db: Session) -> None:
         self.db = db
 
     def get_all(self) -> list[InsuranceAccount]:
@@ -82,7 +84,7 @@ class InsuranceAccountRepository:
         self.db.refresh(account)
         return account
 
-    def upsert(self, **fields) -> InsuranceAccount:
+    def upsert(self, **fields: Any) -> InsuranceAccount:
         """Create or update an insurance account by policy_id.
 
         Parameters
@@ -94,6 +96,11 @@ class InsuranceAccountRepository:
         -------
         InsuranceAccount
             The created or updated record.
+
+        Raises
+        ------
+        ValueError
+            If ``policy_id`` is missing or empty.
         """
         policy_id = fields.get("policy_id")
         if not policy_id:

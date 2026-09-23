@@ -10,7 +10,7 @@ for manually inserted transactions.
 import logging
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Literal
+from typing import Any, ClassVar, Literal
 
 import pandas as pd
 from sqlalchemy import Integer, cast, delete, func, select, update
@@ -63,15 +63,14 @@ T_service = Literal[
 
 
 class ServiceRepository:
-    """
-    Base class for service-specific transaction repositories using ORM.
-    """
+    """Base class for service-specific transaction repositories using ORM."""
 
     model: type[TransactionBase]
+    table: str
 
-    unique_columns = ["id", "provider", "date", "amount"]
+    unique_columns: ClassVar[list[str]] = ["id", "provider", "date", "amount"]
 
-    def __init__(self, db: Session):
+    def __init__(self, db: Session) -> None:
         """Initialize the repository with a database session.
 
         Parameters
@@ -93,7 +92,7 @@ class ServiceRepository:
         return pd.read_sql(stmt, self.db.bind)
 
     def update_tagging_by_unique_id(
-        self, unique_id: int, category: str, tag: str
+        self, unique_id: int, category: str | None, tag: str | None
     ) -> None:
         """Update category and tag for a transaction by unique_id.
 
@@ -101,10 +100,10 @@ class ServiceRepository:
         ----------
         unique_id : int
             Transaction unique_id to update.
-        category : str
-            New category value (may be None to clear).
-        tag : str
-            New tag value (may be None to clear).
+        category : str or None
+            New category value (None clears it).
+        tag : str or None
+            New tag value (None clears it).
         """
         stmt = (
             update(self.model)
@@ -209,14 +208,16 @@ class ServiceRepository:
             self.db.rollback()
             raise
 
-    def update_transaction_by_unique_id(self, unique_id: int, updates: dict) -> bool:
+    def update_transaction_by_unique_id(
+        self, unique_id: int, updates: dict[str, Any]
+    ) -> bool:
         """Update arbitrary fields of a transaction by unique_id.
 
         Parameters
         ----------
         unique_id : int
             unique_id of the transaction to update.
-        updates : dict
+        updates : dict[str, Any]
             Mapping of field names to new values. No-op if empty.
 
         Returns
@@ -341,7 +342,12 @@ class ServiceRepository:
         Returns
         -------
         bool
-            True if successfully inserted, False on error.
+            True once the row is inserted.
+
+        Raises
+        ------
+        SQLAlchemyError
+            On database failure, after rolling back.
 
         Notes
         -----
@@ -355,7 +361,6 @@ class ServiceRepository:
 
             new_id = str((int(max_id) + 1) if max_id is not None else 1)
 
-            # Create model instance
             new_tx = self.model(
                 date=transaction.date.strftime("%Y-%m-%d"),
                 provider=transaction.provider,
@@ -379,10 +384,12 @@ class ServiceRepository:
 
 
 class CreditCardRepository(ServiceRepository):
+    """Transactions in the ``credit_card_transactions`` table."""
+
     model = CreditCardTransaction
     table = Tables.CREDIT_CARD.value
 
-    def get_unique_accounts_tags(self) -> list:
+    def get_unique_accounts_tags(self) -> list[str]:
         """Get unique account tag strings for all credit card accounts.
 
         Returns
@@ -406,20 +413,28 @@ class CreditCardRepository(ServiceRepository):
 
 
 class BankRepository(ServiceRepository):
+    """Transactions in the ``bank_transactions`` table."""
+
     model = BankTransaction
     table = Tables.BANK.value
 
 
 class CashRepository(ServiceRepository):
+    """Transactions in the ``cash_transactions`` table."""
+
     model = CashTransaction
     table = Tables.CASH.value
 
 
 class ManualInvestmentTransactionsRepository(ServiceRepository):
+    """Transactions in the ``manual_investment_transactions`` table."""
+
     model = ManualInvestmentTransaction
     table = Tables.MANUAL_INVESTMENT_TRANSACTIONS.value
 
 
 class InsuranceRepository(ServiceRepository):
+    """Transactions in the ``insurance_transactions`` table."""
+
     model = InsuranceTransaction
     table = Tables.INSURANCE.value
