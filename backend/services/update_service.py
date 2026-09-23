@@ -32,6 +32,7 @@ import time
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 from urllib.parse import urlsplit
 
 import httpx
@@ -67,7 +68,8 @@ class UpdateInfo:
     checked_at: str | None = None
     error: str | None = None
 
-    def as_dict(self) -> dict:
+    def as_dict(self) -> dict[str, Any]:
+        """Return the result as a JSON-serializable dict."""
         return asdict(self)
 
 
@@ -128,7 +130,7 @@ def _safe_github_url(url: str | None) -> str | None:
     return url
 
 
-def _pick_asset_url(assets: list[dict]) -> str | None:
+def _pick_asset_url(assets: list[dict[str, Any]]) -> str | None:
     """Pick the OS-matching release asset download URL.
 
     Only Windows ships a downloadable artifact (``FinanceAppInstaller.exe``).
@@ -154,7 +156,18 @@ def _pick_asset_url(assets: list[dict]) -> str | None:
 
 
 class UpdateService:
-    """Coordinates GitHub probing + on-disk caching of the result."""
+    """Coordinates GitHub probing + on-disk caching of the result.
+
+    Parameters
+    ----------
+    cache_path : Path, optional
+        Cache file location; defaults to the base user dir.
+    cache_ttl_seconds : int
+        Age after which a cached result is refetched.
+    http_client : httpx.Client, optional
+        Injected client (tests); a short-lived one is created per probe
+        otherwise.
+    """
 
     def __init__(
         self,
@@ -193,11 +206,13 @@ class UpdateService:
         return info
 
     def _is_outdated(self, current: str, latest: str | None) -> bool:
+        """Return whether ``latest`` is a newer semver than ``current``."""
         if not latest:
             return False
         return _parse_semver(current) < _parse_semver(latest)
 
     def _probe_github(self, *, current: str) -> UpdateInfo:
+        """Fetch the latest release from GitHub; any failure is ``unavailable``."""
         client = self._http or httpx.Client(timeout=HTTP_TIMEOUT_SECONDS)
         owns_client = self._http is None
         try:
@@ -228,6 +243,7 @@ class UpdateService:
                 client.close()
 
     def _read_cache(self) -> UpdateInfo | None:
+        """Return the cached result, or ``None`` when missing, stale or corrupt."""
         try:
             stat = self._cache_path.stat()
         except FileNotFoundError:
@@ -242,6 +258,7 @@ class UpdateService:
             return None
 
     def _write_cache(self, info: UpdateInfo) -> None:
+        """Persist ``info`` to the cache file, ignoring write failures."""
         try:
             self._cache_path.write_text(json.dumps(info.as_dict()))
         except Exception as exc:

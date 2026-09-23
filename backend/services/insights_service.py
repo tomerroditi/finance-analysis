@@ -20,6 +20,7 @@ already told us to expect. Each rule below drops those before it fires.
 """
 
 from dataclasses import dataclass
+from typing import Any
 
 import pandas as pd
 from sqlalchemy.orm import Session
@@ -68,8 +69,8 @@ class _PlannedSpend:
     yearly_categories: frozenset[str]
     monthly_budgets: dict[str, float]
 
-    def is_long_envelope(self, category) -> bool:
-        """True when ``category`` belongs to a project or yearly envelope.
+    def is_long_envelope(self, category: object) -> bool:
+        """Return whether ``category`` belongs to a project or yearly envelope.
 
         Both are budgets the user deliberately spreads unevenly over months,
         so a month-over-month comparison says nothing about them.
@@ -78,8 +79,8 @@ class _PlannedSpend:
             return False
         return category in self.project_categories or category in self.yearly_categories
 
-    def within_monthly_budget(self, category, spent: float) -> bool:
-        """True when ``category`` has a monthly budget and ``spent`` is inside it."""
+    def within_monthly_budget(self, category: object, spent: float) -> bool:
+        """Return whether ``category`` has a monthly budget ``spent`` fits inside."""
         if not isinstance(category, str):
             return False
         budget = self.monthly_budgets.get(category, 0.0)
@@ -87,7 +88,13 @@ class _PlannedSpend:
 
 
 class InsightsService:
-    """Derive insight cards from forecast, category trends and recurring data."""
+    """Derive insight cards from forecast, category trends and recurring data.
+
+    Parameters
+    ----------
+    db : Session
+        SQLAlchemy session for database operations.
+    """
 
     # Thresholds for surfacing an insight. The ``_SHARE`` floors are fractions
     # of the household's typical monthly outflow — an absolute shekel floor
@@ -107,14 +114,7 @@ class InsightsService:
     _PACE_MIN_SHARE = 0.05
     _MAX_INSIGHTS = 6
 
-    def __init__(self, db: Session):
-        """Initialize the insights service.
-
-        Parameters
-        ----------
-        db : Session
-            SQLAlchemy session for database operations.
-        """
+    def __init__(self, db: Session) -> None:
         self.db = db
         self.analysis = AnalysisService(db)
         self.recurring = RecurringService(db)
@@ -124,14 +124,14 @@ class InsightsService:
         # Per-request memo: every rule below needs the forecast, the budget
         # rules or the recurring detection, and each is expensive enough that
         # recomputing it once per rule would be the dominant cost of the card.
-        self._cache: dict = {}
+        self._cache: dict[str, Any] = {}
 
-    def get_insights(self) -> list[dict]:
+    def get_insights(self) -> list[dict[str, Any]]:
         """Build the prioritized list of insight cards.
 
         Returns
         -------
-        list[dict]
+        list[dict[str, Any]]
             Up to ``_MAX_INSIGHTS`` insight dicts, each with:
 
             - ``code`` – stable identifier the frontend maps to a message.
@@ -139,7 +139,7 @@ class InsightsService:
             - ``severity`` – ``positive`` / ``info`` / ``warning``.
             - ``data`` – payload for message interpolation (amounts, labels).
         """
-        insights: list[dict] = []
+        insights: list[dict[str, Any]] = []
         insights.extend(self._pace_insight())
 
         spikes = self._category_spike_insights()
@@ -166,7 +166,7 @@ class InsightsService:
         )
         return insights[: self._MAX_INSIGHTS]
 
-    def dismiss(self, key: str) -> dict:
+    def dismiss(self, key: str) -> dict[str, str | bool]:
         """Wave one insight card away.
 
         Parameters
@@ -176,13 +176,13 @@ class InsightsService:
 
         Returns
         -------
-        dict
+        dict[str, str | bool]
             ``{key, dismissed}``.
         """
         self.dismissals.dismiss(key)
         return {"key": key, "dismissed": True}
 
-    def restore(self, key: str) -> dict:
+    def restore(self, key: str) -> dict[str, str | bool]:
         """Undo a dismissal, letting the card come back.
 
         Parameters
@@ -192,23 +192,19 @@ class InsightsService:
 
         Returns
         -------
-        dict
+        dict[str, str | bool]
             ``{key, dismissed}``.
         """
         self.dismissals.restore(key)
         return {"key": key, "dismissed": False}
 
-    # ------------------------------------------------------------------
-    # Shared, memoized inputs
-    # ------------------------------------------------------------------
-
     def _dismissed(self) -> set[str]:
-        """Insight keys the user has waved away (memoized)."""
+        """Return the insight keys the user has waved away (memoized)."""
         if "dismissed" not in self._cache:
             self._cache["dismissed"] = self.dismissals.get_keys()
         return self._cache["dismissed"]
 
-    def _visible(self, cards: list[dict]) -> list[dict]:
+    def _visible(self, cards: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """Drop dismissed cards, before a rule's own cap picks winners.
 
         Filtering here rather than at the end means a dismissal frees the slot
@@ -218,14 +214,14 @@ class InsightsService:
         dismissed = self._dismissed()
         return [card for card in cards if card["key"] not in dismissed]
 
-    def _forecast(self) -> dict:
-        """This month's cash-flow forecast (memoized)."""
+    def _forecast(self) -> dict[str, Any]:
+        """Return this month's cash-flow forecast (memoized)."""
         if "forecast" not in self._cache:
             self._cache["forecast"] = self.analysis.get_cash_flow_forecast()
         return self._cache["forecast"]
 
     def _spending_baseline(self) -> float:
-        """Typical monthly outflow, the yardstick every materiality floor uses."""
+        """Return the typical monthly outflow every materiality floor scales by."""
         forecast = self._forecast()
         baseline = float(forecast.get("avg_monthly_expenses") or 0.0)
         if baseline <= 0:
@@ -233,7 +229,7 @@ class InsightsService:
         return max(baseline, 0.0)
 
     def _planned_spend(self) -> _PlannedSpend:
-        """Categories and amounts the user's budget already accounts for."""
+        """Return the categories and amounts the budget already accounts for."""
         if "planned" in self._cache:
             return self._cache["planned"]
 
@@ -268,14 +264,14 @@ class InsightsService:
         self._cache["planned"] = planned
         return planned
 
-    def _recurring_summary(self) -> dict:
-        """Recurring detection for this session (memoized — detection is costly)."""
+    def _recurring_summary(self) -> dict[str, Any]:
+        """Return recurring detection for this request (memoized — it is costly)."""
         if "recurring" not in self._cache:
             self._cache["recurring"] = self.recurring.get_recurring()
         return self._cache["recurring"]
 
     def _confirmed_recurring_keys(self) -> set[str]:
-        """Normalized merchant keys of charges the user confirmed as recurring."""
+        """Return the merchant keys of charges the user confirmed as recurring."""
         if "recurring_keys" not in self._cache:
             self._cache["recurring_keys"] = {
                 item["normalized"]
@@ -303,8 +299,8 @@ class InsightsService:
             ).get_refund_amount_adjustments(exclude_open=True)
         return apply_refund_amount_adjustments(df, self._cache["refund_adjustments"])
 
-    def _monthly_category_spend(self) -> list[dict]:
-        """Monthly expense totals per category (memoized)."""
+    def _monthly_category_spend(self) -> list[dict[str, Any]]:
+        """Return monthly expense totals per category (memoized)."""
         if "by_category" not in self._cache:
             self._cache["by_category"] = (
                 self.analysis.get_expenses_by_category_over_time()
@@ -312,7 +308,7 @@ class InsightsService:
         return self._cache["by_category"]
 
     def _project_spend_this_month(self) -> float:
-        """What the running month's project budgets have drawn so far."""
+        """Return what the running month's project budgets have drawn so far."""
         planned = self._planned_spend()
         if not planned.project_categories:
             return 0.0
@@ -329,11 +325,7 @@ class InsightsService:
             if category in planned.project_categories
         )
 
-    # ------------------------------------------------------------------
-    # Rules
-    # ------------------------------------------------------------------
-
-    def _pace_insight(self) -> list[dict]:
+    def _pace_insight(self) -> list[dict[str, Any]]:
         """Flag whether the month is on pace to over- or under-spend.
 
         A gap smaller than ``_PACE_MIN_SHARE`` of expected income is inside the
@@ -375,7 +367,7 @@ class InsightsService:
             )
         return []
 
-    def _category_spike_insights(self) -> list[dict]:
+    def _category_spike_insights(self) -> list[dict[str, Any]]:
         """Flag categories whose current-month spend is well above their trend.
 
         Only categories that *have* a trend qualify: a project or yearly
@@ -405,7 +397,7 @@ class InsightsService:
             self._spending_baseline() * self._CATEGORY_SPIKE_MIN_SHARE,
         )
 
-        results = []
+        results: list[dict[str, Any]] = []
         for category, amount in current["categories"].items():
             if planned.is_long_envelope(category):
                 continue
@@ -439,7 +431,7 @@ class InsightsService:
         results.sort(key=lambda i: i.pop("_sort"), reverse=True)
         return self._visible(results)[: self._MAX_SPIKES]
 
-    def _recurring_insights(self) -> list[dict]:
+    def _recurring_insights(self) -> list[dict[str, Any]]:
         """Surface confirmed subscriptions that are new or repriced.
 
         Also nudges the user when candidates are waiting to be reviewed —
@@ -452,7 +444,7 @@ class InsightsService:
         """
         summary = self._recurring_summary()
         month = pd.Timestamp.today().strftime("%Y-%m")
-        results = []
+        results: list[dict[str, Any]] = []
         if summary["pending_count"]:
             results.append(
                 {
@@ -507,7 +499,7 @@ class InsightsService:
                 )
         return self._visible(results)[:3]
 
-    def _large_transaction_insight(self) -> list[dict]:
+    def _large_transaction_insight(self) -> list[dict[str, Any]]:
         """Flag an unusually large single expense in the current month.
 
         "Unusual" means unusual *for this household and this category*: a

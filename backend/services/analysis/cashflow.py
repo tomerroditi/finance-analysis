@@ -8,7 +8,9 @@ income/investment/expense mask helpers. Mixed into ``AnalysisService``
 """
 
 from datetime import date
+from typing import Any
 
+import numpy as np
 import pandas as pd
 
 from backend.constants.categories import (
@@ -103,7 +105,7 @@ class CashflowMixin:
         exclude_liabilities: bool = False,
         exclude_refunds: bool = False,
         exclude_pending_refunds: bool = True,
-    ):
+    ) -> list[dict[str, Any]]:
         """
         Aggregate income and expenses by month over time.
 
@@ -128,11 +130,13 @@ class CashflowMixin:
 
         Returns
         -------
-        list[dict]
+        list[dict[str, Any]]
             Chronologically sorted list of monthly dicts with keys:
 
             - ``month`` – period in ``YYYY-MM`` format.
             - ``income`` – total income for the month.
+            - ``investments`` – net money moved into investments (positive
+              for deposits).
             - ``expenses`` – total expenses for the month (absolute value).
         """
         df = self.repo.get_table()
@@ -226,7 +230,7 @@ class CashflowMixin:
 
         return float(recent.mean())
 
-    def get_debt_payments_over_time(self):
+    def get_debt_payments_over_time(self) -> list[dict[str, Any]]:
         """
         Aggregate debt (liability) payments by month over time.
 
@@ -235,11 +239,12 @@ class CashflowMixin:
 
         Returns
         -------
-        list[dict]
+        list[dict[str, Any]]
             Chronologically sorted list of monthly dicts with keys:
 
             - ``month`` – period in ``YYYY-MM`` format.
             - ``amount`` – total debt payments for the month (positive value).
+            - ``tags`` – payments per liability tag (positive values only).
         """
         df = self.repo.get_table()
 
@@ -300,19 +305,17 @@ class CashflowMixin:
         """
         df = df[~df["source"].isin(self.repo._CASHFLOW_EXCLUDED)]
 
-        income_mask, investment_mask, expenses_mask = self.get_transactions_masks(
-            df
-        ).values()
+        is_income, is_investment, is_expense = self.get_transactions_masks(df).values()
 
-        income_df = df[income_mask]
-        expense_df = df[expenses_mask]
+        income_df = df[is_income]
+        expense_df = df[is_expense]
 
         if exclude_refunds:
             income_df = income_df[income_df["amount"] > 0]
             expense_df = expense_df[expense_df["amount"] < 0]
 
         income = float(income_df["amount"].sum())
-        investments = float(df[investment_mask]["amount"].sum()) * -1
+        investments = float(df[is_investment]["amount"].sum()) * -1
         expenses = float(expense_df["amount"].sum()) * -1
         return income, investments, expenses
 
@@ -374,8 +377,7 @@ class CashflowMixin:
     def _add_source_label_column(self, income_df: pd.DataFrame) -> pd.DataFrame:
         """Add a vectorized ``source_label`` column to an income frame.
 
-        Vectorized equivalent of the per-row ``_income_source_label``:
-        loan receipts label as ``"Loans[ / tag]"``, everything else as
+        Loan receipts label as ``"Loans[ / tag]"``, everything else as
         ``"<category>[ / <tag>]"``.
 
         Parameters
@@ -388,8 +390,6 @@ class CashflowMixin:
         pd.DataFrame
             The same frame with ``source_label`` added.
         """
-        import numpy as np
-
         category = income_df["category"]
         tag = income_df["tag"]
         amount = income_df["amount"]
@@ -409,7 +409,7 @@ class CashflowMixin:
         exclude_pending_refunds: bool = True,
         exclude_projects: bool = False,
         exclude_liabilities: bool = False,
-    ):
+    ) -> list[dict[str, Any]]:
         """
         Get monthly expenses broken down by category over time.
 
@@ -438,7 +438,7 @@ class CashflowMixin:
 
         Returns
         -------
-        list[dict]
+        list[dict[str, Any]]
             Chronologically sorted list of monthly dicts with keys:
 
             - ``month`` – period in ``YYYY-MM`` format.
@@ -507,7 +507,7 @@ class CashflowMixin:
 
     def get_income_by_source_over_time(
         self, exclude_pending_refunds: bool = True, exclude_liabilities: bool = False
-    ) -> list[dict]:
+    ) -> list[dict[str, Any]]:
         """
         Get monthly income broken down by source (category+tag combination).
 
@@ -526,7 +526,7 @@ class CashflowMixin:
 
         Returns
         -------
-        list[dict]
+        list[dict[str, Any]]
             List of ``{month, sources: {label: amount}, total}`` records
             ordered chronologically. Prior Wealth transactions are excluded.
         """
@@ -537,17 +537,13 @@ class CashflowMixin:
 
         df = self._net_matched_refunds(df, exclude_pending_refunds)
 
-        # Exclude credit card and insurance transactions (same as other income methods)
+        # Credit card and insurance rows are excluded, as in the other income methods.
         df = df[~df["source"].isin(self.repo._CASHFLOW_EXCLUDED)]
 
         if df.empty:
             return []
 
-        # Filter to income rows only
-        income_mask = self._get_income_mask(df)
-        income_df = df[income_mask].copy()
-
-        # Exclude Prior Wealth transactions
+        income_df = df[self._get_income_mask(df)].copy()
         income_df = income_df[income_df["tag"] != PRIOR_WEALTH_TAG]
 
         if exclude_liabilities:
@@ -560,9 +556,9 @@ class CashflowMixin:
 
         income_df["month"] = to_month_series(income_df["date"])
 
-        result = []
+        result: list[dict[str, Any]] = []
         for month, month_df in income_df.groupby("month", sort=True):
-            sources = {}
+            sources: dict[str, float] = {}
             for label, group in month_df.groupby("source_label"):
                 # A source fully netted away by a matched refund contributes
                 # nothing; carrying it as a zero would only add a label the
@@ -577,7 +573,7 @@ class CashflowMixin:
 
     def get_income_by_source(
         self, start: date | None = None, end: date | None = None
-    ) -> dict:
+    ) -> dict[str, Any]:
         """
         Aggregate total income amount per source within a date window.
 

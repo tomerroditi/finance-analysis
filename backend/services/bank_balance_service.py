@@ -1,8 +1,7 @@
-"""
-Service for managing bank account balances and prior wealth calculations.
-"""
+"""Service for managing bank account balances and prior wealth calculations."""
 
 from datetime import date
+from typing import Any
 
 from sqlalchemy.orm import Session
 
@@ -16,19 +15,18 @@ from backend.repositories.transactions import TransactionsRepository
 class BankBalanceService:
     """Service for managing bank account balances and prior wealth calculations."""
 
-    def __init__(self, db: Session):
+    def __init__(self, db: Session) -> None:
         self.db = db
         self.balance_repo = BankBalanceRepository(db)
         self.transactions_repo = TransactionsRepository(db)
         self.scraping_history_repo = ScrapingHistoryRepository(db)
 
-    def get_all_balances(self) -> list[dict]:
-        """
-        Get all bank balance records.
+    def get_all_balances(self) -> list[dict[str, Any]]:
+        """Get all bank balance records.
 
         Returns
         -------
-        list[dict]
+        list[dict[str, Any]]
             List of balance records with all fields.
         """
         df = self.balance_repo.get_all()
@@ -36,9 +34,10 @@ class BankBalanceService:
             return []
         return df.to_dict(orient="records")
 
-    def set_balance(self, provider: str, account_name: str, balance: float) -> dict:
-        """
-        Set the current balance for a bank account.
+    def set_balance(
+        self, provider: str, account_name: str, balance: float
+    ) -> dict[str, Any]:
+        """Set the current balance for a bank account.
 
         Calculates prior_wealth as: balance - sum(all scraped bank txns for this account).
         Validates that the last successful scrape for this account is today.
@@ -54,7 +53,7 @@ class BankBalanceService:
 
         Returns
         -------
-        dict
+        dict[str, Any]
             The created/updated balance record.
 
         Raises
@@ -86,8 +85,7 @@ class BankBalanceService:
         }
 
     def recalculate_for_account(self, provider: str, account_name: str) -> None:
-        """
-        Recalculate balance after a scrape.
+        """Recalculate balance after a scrape.
 
         balance = prior_wealth (fixed) + sum(all scraped bank txns).
         Only acts if a balance record exists for this account.
@@ -115,8 +113,7 @@ class BankBalanceService:
         )
 
     def delete_for_account(self, provider: str, account_name: str) -> None:
-        """
-        Delete balance record when account is disconnected.
+        """Delete balance record when account is disconnected.
 
         Parameters
         ----------
@@ -139,7 +136,7 @@ class BankBalanceService:
                 "No successful scrape found for this account. Scrape today first."
             )
 
-        scrape_date = last_scrape[:10]  # Extract YYYY-MM-DD from ISO timestamp
+        scrape_date = last_scrape[:10]
         if scrape_date != date.today().isoformat():
             raise ValidationException(
                 "Last scrape is not from today. Scrape today first to set balance."

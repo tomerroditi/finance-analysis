@@ -9,6 +9,7 @@ into ``type='hishtalmut'`` investments, and
 """
 
 from datetime import date, timedelta
+from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -25,7 +26,7 @@ from backend.repositories.investments_repository import InvestmentsRepository
 class InsuranceAccountService:
     """Insurance account queries and balance aggregations."""
 
-    def __init__(self, db: Session):
+    def __init__(self, db: Session) -> None:
         self.db = db
         self.repo = InsuranceAccountRepository(db)
 
@@ -33,13 +34,18 @@ class InsuranceAccountService:
         """Get all insurance account records."""
         return self.repo.get_all()
 
-    def upsert(self, **fields) -> InsuranceAccount:
+    def upsert(self, **fields: Any) -> InsuranceAccount:
         """Create or update an insurance account by policy_id.
 
         Parameters
         ----------
         **fields
             Column values; must include ``policy_id``.
+
+        Returns
+        -------
+        InsuranceAccount
+            The created or updated record.
         """
         return self.repo.upsert(**fields)
 
@@ -108,7 +114,6 @@ class InsuranceAccountService:
         if not accounts:
             return None
 
-        # Determine the cutoff: first day of previous month
         today = date.today()
         first_of_this_month = today.replace(day=1)
         first_of_prev_month = (first_of_this_month - timedelta(days=1)).replace(day=1)
@@ -118,7 +123,7 @@ class InsuranceAccountService:
         found_active = False
 
         for account in accounts:
-            # Get the latest transaction for this account (by policy_id = account_number)
+            # Insurance transactions key the policy by ``account_number``.
             stmt = (
                 select(InsuranceTransaction)
                 .where(InsuranceTransaction.account_number == account.policy_id)
@@ -130,7 +135,6 @@ class InsuranceAccountService:
             if latest_txn is None:
                 continue
 
-            # Active = latest transaction date >= first of previous month
             if latest_txn.date >= cutoff:
                 found_active = True
                 total += abs(latest_txn.amount)

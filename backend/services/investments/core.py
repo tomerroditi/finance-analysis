@@ -29,18 +29,16 @@ from backend.services.investments.insurance_sync import InsuranceSyncMixin
 from backend.services.investments.snapshots import SnapshotsMixin
 from backend.services.investments.valuation import CLOSED_SOURCE, ValuationMixin
 
-# TransactionsService is imported lazily inside __init__ to avoid a
-# module-level circular dependency (TransactionsService also lazy-imports
-# InvestmentsService inside its create/delete methods).
-
 
 class InvestmentsService(SnapshotsMixin, ValuationMixin, InsuranceSyncMixin):
     """
-    Service for managing investments with business logic for balance calculations,
-    profit/loss tracking, and investment lifecycle management.
+    Service for managing investments and their lifecycle.
+
+    Covers balance calculations, profit/loss tracking, and the
+    create/update/close/reopen/delete lifecycle.
     """
 
-    def __init__(self, db: Session):
+    def __init__(self, db: Session) -> None:
         """
         Initialize the investments service.
 
@@ -126,7 +124,7 @@ class InvestmentsService(SnapshotsMixin, ValuationMixin, InsuranceSyncMixin):
         for record in records:
             record["latest_snapshot_date"] = snapshot_dates.get(record["id"])
 
-            candidates = []
+            candidates: list[str] = []
             manual_first = manual_first_dates.get((record["category"], record["tag"]))
             if manual_first:
                 candidates.append(manual_first)
@@ -187,9 +185,7 @@ class InvestmentsService(SnapshotsMixin, ValuationMixin, InsuranceSyncMixin):
         """
         metrics = self.calculate_profit_loss(investment_id)
         if not start_date:
-            start_date = metrics.get("first_transaction_date") or (
-                date.today().replace(year=date.today().year - 1).strftime(r"%Y-%m-%d")
-            )
+            start_date = self._default_history_start(metrics)
         if not end_date:
             end_date = date.today().strftime(r"%Y-%m-%d")
 
@@ -240,7 +236,7 @@ class InvestmentsService(SnapshotsMixin, ValuationMixin, InsuranceSyncMixin):
             if row["deposit"] > 0 or row["withdrawal"] > 0
         ]
 
-    def create_investment(self, **kwargs) -> None:
+    def create_investment(self, **kwargs: Any) -> None:
         """
         Create a new investment record.
 
@@ -264,7 +260,7 @@ class InvestmentsService(SnapshotsMixin, ValuationMixin, InsuranceSyncMixin):
             )
         self.investments_repo.create_investment(**kwargs)
 
-    def update_investment(self, investment_id: int, **updates) -> None:
+    def update_investment(self, investment_id: int, **updates: Any) -> None:
         """
         Update an investment record.
 
@@ -385,7 +381,7 @@ class InvestmentsService(SnapshotsMixin, ValuationMixin, InsuranceSyncMixin):
     def _closing_snapshot_date(
         self, investment_id: int, category: str, tag: str, closed_date: str
     ) -> str:
-        """Date the zero written by closing belongs on.
+        """Return the date the zero written by closing belongs on.
 
         The last transaction date (the closure date when there are none),
         pushed forward to the newest other snapshot if one is later —

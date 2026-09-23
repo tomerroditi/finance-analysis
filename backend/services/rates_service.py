@@ -37,17 +37,15 @@ HTTP_TIMEOUT_SECONDS = 5.0
 
 
 class RatesService:
-    """
-    Service for interest rate series — seeding, lookups, and refresh.
+    """Service for interest rate series — seeding, lookups, and refresh.
+
+    Parameters
+    ----------
+    db : Session
+        SQLAlchemy session for database operations.
     """
 
-    def __init__(self, db: Session):
-        """
-        Parameters
-        ----------
-        db : Session
-            SQLAlchemy session for database operations.
-        """
+    def __init__(self, db: Session) -> None:
         self.rates_repo = InterestRatesRepository(db)
 
     def ensure_seeded(self) -> None:
@@ -74,7 +72,7 @@ class RatesService:
 
         Returns
         -------
-        list[dict]
+        list[dict[str, Any]]
             Points with ``date`` and ``value``, ascending by date.
 
         Raises
@@ -101,7 +99,7 @@ class RatesService:
 
         Returns
         -------
-        dict
+        dict[str, Any]
             ``boi_rate``, ``prime``, and ``as_of`` (date of the latest
             point) — all ``None`` when the series is empty.
         """
@@ -130,7 +128,7 @@ class RatesService:
             series has no point on or before the date.
         """
         history = self.get_history(BOI_RATE_SERIES)
-        value = None
+        value: float | None = None
         for point in history:
             if point["date"] <= at_date:
                 value = point["value"]
@@ -153,7 +151,7 @@ class RatesService:
 
         Returns
         -------
-        list[dict]
+        list[dict[str, Any]]
             Points with ``date`` and ``value`` (prime, percent),
             ascending — empty when the series has no data at all.
         """
@@ -161,8 +159,8 @@ class RatesService:
         if not history:
             return []
 
-        anchor_value = None
-        steps = []
+        anchor_value: float | None = None
+        steps: list[dict[str, Any]] = []
         for point in history:
             if point["date"] <= from_date:
                 anchor_value = point["value"]
@@ -171,7 +169,7 @@ class RatesService:
         if anchor_value is None:
             # Loan predates the whole series — anchor at the earliest point.
             anchor_value = steps[0]["value"] if steps else history[0]["value"]
-        return [{"date": from_date, "value": anchor_value}] + steps
+        return [{"date": from_date, "value": anchor_value}, *steps]
 
     def refresh_from_boi(self) -> dict[str, Any]:
         """Fetch the current key rate from the BoI public API.
@@ -183,7 +181,7 @@ class RatesService:
 
         Returns
         -------
-        dict
+        dict[str, Any]
             ``status`` (``updated`` / ``unchanged`` / ``unavailable``)
             plus the current rate info on success.
         """

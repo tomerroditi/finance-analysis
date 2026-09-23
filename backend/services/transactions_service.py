@@ -1,13 +1,17 @@
 """
-Transactions service with pure SQLAlchemy (no Streamlit dependencies).
+Transactions service.
 
-This module provides business logic for transaction operations.
+This module provides business logic for transaction operations: the merged
+analysis frame (splits expanded, prior-wealth rows appended), manual
+transaction CRUD, splitting, bulk tagging, and the side effects every write
+must trigger.
 """
 
 from datetime import date, datetime
-from typing import Literal
+from typing import Any, ClassVar, Literal
 
 import pandas as pd
+from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
 from backend.constants.categories import (
@@ -22,6 +26,7 @@ from backend.repositories.bank_balance_repository import BankBalanceRepository
 from backend.repositories.investments_repository import InvestmentsRepository
 from backend.repositories.transactions import (
     ManualTransactionDTO,
+    ServiceRepository,
     TransactionsRepository,
 )
 from backend.utils.session_cache import session_cache_get, session_cache_set
@@ -49,11 +54,12 @@ class TransactionsService:
     """
     Service for transaction business logic.
 
-    Coordinates between TransactionsRepository and SplitTransactionsRepository
-    to provide transaction operations with split handling.
+    Wraps ``TransactionsRepository`` (and its split repository) with split
+    handling, prior-wealth rows, and the cash-balance / investment
+    recalculations that follow every write.
     """
 
-    ANALYSIS_COLUMNS: list[str] = [
+    ANALYSIS_COLUMNS: ClassVar[list[str]] = [
         TransactionsTableFields.ID.value,
         TransactionsTableFields.DATE.value,
         TransactionsTableFields.PROVIDER.value,
@@ -70,7 +76,7 @@ class TransactionsService:
         TransactionsTableFields.SPLIT_ID.value,
     ]
 
-    def __init__(self, db: Session):
+    def __init__(self, db: Session) -> None:
         """
         Initialize the transactions service.
 
@@ -174,34 +180,20 @@ class TransactionsService:
         if balances_df.empty:
             return pd.DataFrame()
 
-        rows = []
-        for _, bal in balances_df.iterrows():
-            if bal["prior_wealth_amount"] == 0:
-                continue
-            rows.append(
-                {
-                    TransactionsTableFields.ID.value: f"bank_pw_{bal['id']}",
-                    TransactionsTableFields.DATE.value: bal.get("last_manual_update")
-                    or bal.get("created_at", ""),
-                    TransactionsTableFields.PROVIDER.value: bal["provider"],
-                    TransactionsTableFields.ACCOUNT_NAME.value: bal["account_name"],
-                    TransactionsTableFields.ACCOUNT_NUMBER.value: None,
-                    TransactionsTableFields.DESCRIPTION.value: f"Prior Wealth ({bal['provider']} - {bal['account_name']})",
-                    TransactionsTableFields.AMOUNT.value: bal["prior_wealth_amount"],
-                    TransactionsTableFields.CATEGORY.value: IncomeCategories.OTHER_INCOME.value,
-                    TransactionsTableFields.TAG.value: PRIOR_WEALTH_TAG,
-                    TransactionsTableFields.UNIQUE_ID.value: f"bank_pw_{bal['id']}",
-                    TransactionsTableFields.SOURCE.value: "bank_balances",
-                    TransactionsTableFields.SPLIT_ID.value: None,
-                    TransactionsTableFields.TYPE.value: "normal",
-                }
+        rows = [
+            self._prior_wealth_row(
+                row_id=f"bank_pw_{bal['id']}",
+                date_value=bal.get("last_manual_update") or bal.get("created_at", ""),
+                provider=bal["provider"],
+                account_name=bal["account_name"],
+                description=f"Prior Wealth ({bal['provider']} - {bal['account_name']})",
+                amount=bal["prior_wealth_amount"],
+                source="bank_balances",
             )
-
-        if not rows:
-            return pd.DataFrame()
-        return pd.DataFrame(rows).astype(
-            {TransactionsTableFields.SPLIT_ID.value: SPLIT_ID_DTYPE}
-        )
+            for _, bal in balances_df.iterrows()
+            if bal["prior_wealth_amount"] != 0
+        ]
+        return self._prior_wealth_frame(rows)
 
     def _build_investment_prior_wealth_rows(self) -> pd.DataFrame:
         """Build synthetic prior wealth rows from Investment.prior_wealth_amount.
@@ -213,28 +205,52 @@ class TransactionsService:
         if investments_df.empty:
             return pd.DataFrame()
 
-        rows = []
-        for _, inv in investments_df.iterrows():
-            if inv["prior_wealth_amount"] == 0:
-                continue
-            rows.append(
-                {
-                    TransactionsTableFields.ID.value: f"inv_pw_{inv['id']}",
-                    TransactionsTableFields.DATE.value: inv.get("created_date", ""),
-                    TransactionsTableFields.PROVIDER.value: Services.MANUAL_INVESTMENTS.value,
-                    TransactionsTableFields.ACCOUNT_NAME.value: inv["name"],
-                    TransactionsTableFields.ACCOUNT_NUMBER.value: None,
-                    TransactionsTableFields.DESCRIPTION.value: f"Prior Wealth ({inv['name']})",
-                    TransactionsTableFields.AMOUNT.value: inv["prior_wealth_amount"],
-                    TransactionsTableFields.CATEGORY.value: IncomeCategories.OTHER_INCOME.value,
-                    TransactionsTableFields.TAG.value: PRIOR_WEALTH_TAG,
-                    TransactionsTableFields.UNIQUE_ID.value: f"inv_pw_{inv['id']}",
-                    TransactionsTableFields.SOURCE.value: "investments",
-                    TransactionsTableFields.SPLIT_ID.value: None,
-                    TransactionsTableFields.TYPE.value: "normal",
-                }
+        rows = [
+            self._prior_wealth_row(
+                row_id=f"inv_pw_{inv['id']}",
+                date_value=inv.get("created_date", ""),
+                provider=Services.MANUAL_INVESTMENTS.value,
+                account_name=inv["name"],
+                description=f"Prior Wealth ({inv['name']})",
+                amount=inv["prior_wealth_amount"],
+                source="investments",
             )
+            for _, inv in investments_df.iterrows()
+            if inv["prior_wealth_amount"] != 0
+        ]
+        return self._prior_wealth_frame(rows)
 
+    @staticmethod
+    def _prior_wealth_row(
+        *,
+        row_id: str,
+        date_value: Any,
+        provider: str,
+        account_name: str,
+        description: str,
+        amount: float,
+        source: str,
+    ) -> dict[str, Any]:
+        """Build one synthetic ``Other Income / Prior Wealth`` analysis row."""
+        return {
+            TransactionsTableFields.ID.value: row_id,
+            TransactionsTableFields.DATE.value: date_value,
+            TransactionsTableFields.PROVIDER.value: provider,
+            TransactionsTableFields.ACCOUNT_NAME.value: account_name,
+            TransactionsTableFields.ACCOUNT_NUMBER.value: None,
+            TransactionsTableFields.DESCRIPTION.value: description,
+            TransactionsTableFields.AMOUNT.value: amount,
+            TransactionsTableFields.CATEGORY.value: IncomeCategories.OTHER_INCOME.value,
+            TransactionsTableFields.TAG.value: PRIOR_WEALTH_TAG,
+            TransactionsTableFields.UNIQUE_ID.value: row_id,
+            TransactionsTableFields.SOURCE.value: source,
+            TransactionsTableFields.SPLIT_ID.value: None,
+            TransactionsTableFields.TYPE.value: "normal",
+        }
+
+    @staticmethod
+    def _prior_wealth_frame(rows: list[dict[str, Any]]) -> pd.DataFrame:
+        """Frame prior-wealth rows with the canonical ``split_id`` dtype."""
         if not rows:
             return pd.DataFrame()
         return pd.DataFrame(rows).astype(
@@ -407,7 +423,7 @@ class TransactionsService:
         return None if value == "" else value
 
     @staticmethod
-    def _validate_date(value) -> str:
+    def _validate_date(value: str | date | datetime) -> str:
         """Normalise a user-supplied date to the stored ``YYYY-MM-DD`` form.
 
         Dates are stored as strings and compared lexicographically, so an
@@ -436,7 +452,7 @@ class TransactionsService:
         except ValueError:
             raise ValueError(f"Invalid date '{value}': expected YYYY-MM-DD") from None
 
-    def create_transaction(self, data: dict, service: str) -> None:
+    def create_transaction(self, data: dict[str, Any], service: str) -> None:
         """
         Create a new manual transaction with validation and normalization.
 
@@ -458,7 +474,6 @@ class TransactionsService:
         if service not in [Services.CASH.value, Services.MANUAL_INVESTMENTS.value]:
             raise ValueError("Can only create cash or manual_investments transactions")
 
-        # For cash transactions, always set provider to "CASH"
         provider = "CASH" if service == Services.CASH.value else data.get("provider")
 
         tx = ManualTransactionDTO(
@@ -476,7 +491,6 @@ class TransactionsService:
             raise RuntimeError("Failed to create transaction")
 
         if service == Services.CASH.value:
-            # Recalculate cash balance if this is a cash transaction
             from backend.services.cash_balance_service import CashBalanceService
 
             CashBalanceService(self.db).recalculate_current_balance(
@@ -493,7 +507,9 @@ class TransactionsService:
                 )
         self.realign_closed_investments()
 
-    def _filter_updates_for_source(self, source: str, updates: dict) -> dict:
+    def _filter_updates_for_source(
+        self, source: str, updates: dict[str, Any]
+    ) -> dict[str, Any]:
         """Apply per-source permission rules and normalization to an update dict.
 
         Manual sources (cash, manual investments) may edit date/account_name/
@@ -522,7 +538,7 @@ class TransactionsService:
             Tables.CASH.value,
             Tables.MANUAL_INVESTMENT_TRANSACTIONS.value,
         ]
-        filtered_updates: dict = {}
+        filtered_updates: dict[str, Any] = {}
         if is_manual:
             if updates.get("date") is not None:
                 filtered_updates["date"] = self._validate_date(updates["date"])
@@ -532,7 +548,6 @@ class TransactionsService:
                 filtered_updates["description"] = updates["description"]
             if updates.get("amount") is not None:
                 filtered_updates["amount"] = updates["amount"]
-            # For cash transactions, always set provider to "CASH"
             if source == Tables.CASH.value:
                 filtered_updates["provider"] = "CASH"
             elif updates.get("provider") is not None:
@@ -546,7 +561,9 @@ class TransactionsService:
             filtered_updates["tag"] = self._normalize_empty_string(updates["tag"])
         return filtered_updates
 
-    def update_transaction(self, unique_id: int, source: str, updates: dict) -> bool:
+    def update_transaction(
+        self, unique_id: int, source: str, updates: dict[str, Any]
+    ) -> bool:
         """
         Update a transaction with source-based permission constraints.
 
@@ -581,8 +598,6 @@ class TransactionsService:
         EntityNotFoundException
             If no transaction with ``unique_id`` exists in ``source``.
         """
-        from sqlalchemy import select
-
         target_repo = self.transactions_repository.get_repo_by_source(source)
         if target_repo is None:
             raise ValueError(f"Invalid source: '{source}'")
@@ -590,9 +605,7 @@ class TransactionsService:
         # The row must exist before anything is filtered: a missing row is a
         # 404, not a silent "no_changes". Its account_name is also what the
         # old cash account's balance is recalculated from when it changes.
-        tx_before = self.transactions_repository.db.execute(
-            select(target_repo.model).where(target_repo.model.unique_id == unique_id)
-        ).scalar_one_or_none()
+        tx_before = self._get_record(target_repo, unique_id)
         if tx_before is None:
             raise EntityNotFoundException(
                 f"Transaction {unique_id} not found in {source}"
@@ -608,7 +621,6 @@ class TransactionsService:
             unique_id, filtered_updates
         )
 
-        # Recalculate cash balance(s) when a cash transaction is updated.
         if result and source == Tables.CASH.value:
             from backend.services.cash_balance_service import CashBalanceService
 
@@ -657,12 +669,7 @@ class TransactionsService:
             raise PermissionError(f"Deletion of {source} transactions is prohibited")
 
         target_repo = self.transactions_repository.get_repo_by_source(source)
-
-        from sqlalchemy import select
-
-        tx_record = self.transactions_repository.db.execute(
-            select(target_repo.model).where(target_repo.model.unique_id == unique_id)
-        ).scalar_one_or_none()
+        tx_record = self._get_record(target_repo, unique_id)
 
         if not tx_record:
             raise ValueError("Transaction not found")
@@ -687,7 +694,6 @@ class TransactionsService:
         self._purge_dependent_records([unique_id], source)
 
         if source == Tables.CASH.value:
-            # Recalculate cash balance if this was a cash transaction
             from backend.services.cash_balance_service import CashBalanceService
 
             CashBalanceService(self.db).recalculate_current_balance(account_name)
@@ -702,6 +708,12 @@ class TransactionsService:
                 inv_category, inv_tag
             )
         self.realign_closed_investments()
+
+    def _get_record(self, repo: ServiceRepository, unique_id: int) -> Any | None:
+        """Return the ORM row with ``unique_id`` in ``repo``'s table, or ``None``."""
+        return self.transactions_repository.db.execute(
+            select(repo.model).where(repo.model.unique_id == unique_id)
+        ).scalar_one_or_none()
 
     def _purge_dependent_records(self, unique_ids: list[int], source: str) -> None:
         """
@@ -803,7 +815,7 @@ class TransactionsService:
 
     def delete_account_data(
         self, service: str, provider: str, account_name: str
-    ) -> dict:
+    ) -> dict[str, Any]:
         """Delete every transaction for one account, plus its dependent records.
 
         Used when the user removes a connected account and chooses to discard
@@ -824,7 +836,7 @@ class TransactionsService:
 
         Returns
         -------
-        dict
+        dict[str, Any]
             ``{"transactions_deleted": int}``.
 
         Raises
@@ -877,7 +889,7 @@ class TransactionsService:
             raise EntityNotFoundException(str(exc)) from exc
 
     def split_transaction(
-        self, unique_id: int, source: str, splits: list[dict]
+        self, unique_id: int, source: str, splits: list[dict[str, Any]]
     ) -> None:
         """Split a transaction into multiple partial amounts across categories.
 
@@ -1006,9 +1018,7 @@ class TransactionsService:
         amount : float or None, optional
             Amount to apply. Only written for manual sources.
         """
-        from sqlalchemy import select, update
-
-        updates: dict = {
+        updates: dict[str, Any] = {
             "category": category,
             "tag": tag,
         }
@@ -1141,7 +1151,7 @@ class TransactionsService:
             The minimum date found across all transaction tables.
             Falls back to ``datetime.now()`` if no data exists.
         """
-        earliest_dates = []
+        earliest_dates: list[datetime] = []
         tables = self.transactions_repository.get_all_table_names()
 
         for table in tables:
@@ -1151,7 +1161,6 @@ class TransactionsService:
             if earliest_date is not None:
                 earliest_dates.append(earliest_date)
 
-        # Fallback if no data exists
         return min(earliest_dates) if earliest_dates else datetime.now()
 
     def get_table_for_analysis(

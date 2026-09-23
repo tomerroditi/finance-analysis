@@ -1,5 +1,5 @@
 """
-Core budget service with pure SQLAlchemy (no Streamlit dependencies).
+Core budget service.
 
 This module provides the base ``BudgetService`` — rule CRUD, tag parsing,
 validation, conflict helpers, and budget-style expense filtering shared by
@@ -8,6 +8,7 @@ the monthly, yearly, and project budget services.
 
 import threading
 from datetime import date
+from typing import Any
 
 import pandas as pd
 from sqlalchemy.orm import Session
@@ -64,7 +65,7 @@ class BudgetService:
     analyzing budget rules.
     """
 
-    def __init__(self, db: Session):
+    def __init__(self, db: Session) -> None:
         """
         Initialize the budget service.
 
@@ -145,7 +146,7 @@ class BudgetService:
             return tags.split(";")
         return list(tags)
 
-    def update_rule(self, id_: int, **fields):
+    def update_rule(self, id_: int, **fields: Any) -> None:
         """
         Update a budget rule with validation and tag list-to-string conversion.
 
@@ -249,7 +250,7 @@ class BudgetService:
     def _rules_of_type_for(
         self, category: str, year: int, period_type: str
     ) -> pd.DataFrame:
-        """All rules of ``period_type`` for a given category and year (tags as lists).
+        """Return all rules of ``period_type`` for a category and year (tags as lists).
 
         Reads through the base ``BudgetService.get_all_rules`` explicitly
         (bypassing any subclass override) since ``period_type`` here is a
@@ -270,7 +271,7 @@ class BudgetService:
 
     @staticmethod
     def _is_all_tags(tags: list[str] | str | None) -> bool:
-        """True when a tag list is the all-tags sentinel (case-insensitive).
+        """Return whether a tag list is the all-tags sentinel (case-insensitive).
 
         This is the single comparison point for the sentinel — legacy rows
         stored ``"All Tags"`` in mixed case, so exact matches against
@@ -356,7 +357,7 @@ class BudgetService:
         return sorted(conflicts)
 
     def is_category_project_owned(self, category: str) -> bool:
-        """True if any project rule uses ``category``.
+        """Return whether any project rule uses ``category``.
 
         Reads through the unfiltered base ``get_all_rules`` so it works from any
         subclass.
@@ -369,8 +370,10 @@ class BudgetService:
         ].empty
 
     def category_used_by_monthly_or_yearly(self, category: str) -> bool:
-        """True if any monthly or yearly rule uses ``category`` (excluding the
-        ``Total Budget`` cap category, which is not a real category).
+        """Return whether any monthly or yearly rule uses ``category``.
+
+        The ``Total Budget`` cap category is never counted — it is not a real
+        category.
         """
         if category == TOTAL_BUDGET:
             return False
@@ -383,12 +386,12 @@ class BudgetService:
             & (rules[CATEGORY] != TOTAL_BUDGET)
         ].empty
 
-    def find_category_overlaps(self) -> list[dict]:
-        """Categories that are BOTH project-owned and budget-used.
+    def find_category_overlaps(self) -> list[dict[str, Any]]:
+        """Find categories that are BOTH project-owned and budget-used.
 
         Returns
         -------
-        list[dict]
+        list[dict[str, Any]]
             One entry per overlapping category:
             ``{"category": str, "kinds": [<"monthly"|"yearly">, ...]}`` — the
             non-project kinds that collide, sorted. Empty when there is no
@@ -580,7 +583,6 @@ class BudgetService:
         if amount <= 0:
             return False, "Amount must be a positive number"
 
-        # Unique name check
         if pd.isnull(year) and pd.isnull(month):
             duplicate = budget_rules.loc[
                 (budget_rules[YEAR].isnull())
@@ -697,6 +699,26 @@ class BudgetService:
 
         return True, ""
 
+    @staticmethod
+    def _expense_rows(all_data: pd.DataFrame) -> pd.DataFrame:
+        """Return a copy of ``all_data`` without non-expense categories, dates parsed."""
+        expenses = all_data.loc[
+            ~all_data[TransactionsTableFields.CATEGORY.value].isin(
+                EXPENSE_EXCLUDED_CATEGORIES
+            )
+        ].copy()
+        expenses[TransactionsTableFields.DATE.value] = pd.to_datetime(
+            expenses[TransactionsTableFields.DATE.value]
+        )
+        return expenses
+
+    @staticmethod
+    def _drop_split_parents(rows: pd.DataFrame) -> pd.DataFrame:
+        """Return ``rows`` without split-parent transactions, whose splits carry the amount."""
+        if "type" not in rows.columns:
+            return rows
+        return rows[rows["type"] != "split_parent"]
+
     def get_filtered_expenses(
         self,
         exclude_pending_refunds: bool = True,
@@ -745,17 +767,7 @@ class BudgetService:
         if all_data.empty:
             return all_data
 
-        # Filter to expense categories
-        expenses = all_data.loc[
-            ~all_data[TransactionsTableFields.CATEGORY.value].isin(
-                EXPENSE_EXCLUDED_CATEGORIES
-            )
-        ].copy()
-        expenses[TransactionsTableFields.DATE.value] = pd.to_datetime(
-            expenses[TransactionsTableFields.DATE.value]
-        )
-
-        # Exclude project categories
+        expenses = self._expense_rows(all_data)
         projects = ProjectBudgetService(self.db).get_all_projects_names()
         if projects:
             expenses = expenses.loc[
@@ -786,6 +798,7 @@ class BudgetService:
                         zip(
                             expenses[TransactionsTableFields.SOURCE.value],
                             expenses[TransactionsTableFields.UNIQUE_ID.value],
+                            strict=True,
                         )
                     ),
                     index=expenses.index,
@@ -796,8 +809,4 @@ class BudgetService:
                     ~expenses[TransactionsTableFields.SPLIT_ID.value].isin(split_ids)
                 ]
 
-        # Exclude split_parent transactions from amounts
-        if "type" in expenses.columns:
-            expenses = expenses[expenses["type"] != "split_parent"]
-
-        return expenses
+        return self._drop_split_parents(expenses)

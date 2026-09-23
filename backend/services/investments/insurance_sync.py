@@ -7,6 +7,8 @@ from persisted insurance accounts. Mixed into ``InvestmentsService``
 (see ``core.py``).
 """
 
+from typing import Any
+
 import pandas as pd
 
 from backend.constants.categories import INVESTMENTS_CATEGORY
@@ -17,7 +19,7 @@ from backend.services.investments.valuation import HISHTALMUT_TYPE
 class InsuranceSyncMixin:
     """Insurance-sync methods for ``InvestmentsService``."""
 
-    def sync_from_insurance(self, insurance_meta: dict) -> None:
+    def sync_from_insurance(self, insurance_meta: dict[str, Any]) -> None:
         """Create or update an Investment from scraped insurance account metadata.
 
         Only processes hishtalmut policies. Creates the Investment if not found

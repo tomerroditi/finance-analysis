@@ -1,10 +1,8 @@
-"""Tagging service with pure SQLAlchemy (no Streamlit dependencies).
-
-This module provides business logic for category and tag management.
-"""
+"""Business logic for category and tag management."""
 
 from copy import deepcopy
 from datetime import date
+from typing import Any
 
 import pandas as pd
 from sqlalchemy.orm import Session
@@ -31,7 +29,7 @@ from backend.utils.text_utils import to_title_case
 # Real mode, demo mode and every per-visitor demo sandbox (see
 # backend/demo_sessions.py) each resolve to a different file, so keying by
 # path keeps them from ever serving each other's categories.
-_categories_cache: dict[str, dict] = {}
+_categories_cache: dict[str, dict[str, list[str]]] = {}
 
 
 def cache_key() -> str:
@@ -62,24 +60,20 @@ def _clean_name(name: object) -> str | None:
 
 
 class CategoriesTagsService:
-    """
-    Service for managing the categories and tags hierarchy.
+    """Service for managing the categories and tags hierarchy.
 
-    Categories and their associated tags are stored in a YAML file and
+    Categories and their associated tags are stored in the database and
     cached in memory via ``_categories_cache``. All mutation operations
     invalidate the cache after persisting changes. The in-memory
     ``categories_and_tags`` attribute is kept in sync with the cache.
+
+    Parameters
+    ----------
+    db : Session
+        SQLAlchemy session for database operations.
     """
 
-    def __init__(self, db: Session):
-        """
-        Initialize the categories/tags service.
-
-        Parameters
-        ----------
-        db : Session
-            SQLAlchemy session for database operations.
-        """
+    def __init__(self, db: Session) -> None:
         self.db = db
         self.tagging_repo = TaggingRepository(db)
         self.transactions_repo = TransactionsRepository(db)
@@ -90,8 +84,7 @@ class CategoriesTagsService:
         self.categories_and_tags = self.get_categories_and_tags()
 
     def get_categories_and_tags(self, copy: bool = False) -> dict[str, list[str]]:
-        """
-        Load categories and tags from the YAML file with in-memory caching.
+        """Load categories and tags from the database with in-memory caching.
 
         Parameters
         ----------
@@ -128,17 +121,17 @@ class CategoriesTagsService:
         _categories_cache.pop(db_path, None)
 
     def get_categories_icons(self) -> dict[str, str]:
-        """
-        Load category icons from the icons YAML file.
+        """Load the category icons.
 
         Returns
         -------
         dict[str, str]
-            Mapping of category name to emoji icon string.
+            Mapping of category name to emoji icon string; categories without
+            an icon are omitted.
         """
         return self.tagging_repo.get_categories_icons()
 
-    def get_category_usage(self) -> dict[str, dict]:
+    def get_category_usage(self) -> dict[str, dict[str, Any]]:
         """Return per-category usage info and the unused verdict.
 
         A category is unused when it has had no transaction for
@@ -149,7 +142,7 @@ class CategoriesTagsService:
 
         Returns
         -------
-        dict[str, dict]
+        dict[str, dict[str, Any]]
             Mapping of category name to ``{"last_used": str | None,
             "unused": bool}``. ``last_used`` is a ``YYYY-MM-DD`` string, or
             ``None`` when the category has never been used.
@@ -162,7 +155,7 @@ class CategoriesTagsService:
         last_used_map = self.transactions_repo.get_category_last_used()
         created_at_map = self.tagging_repo.get_categories_created_at()
 
-        usage: dict[str, dict] = {}
+        usage: dict[str, dict[str, Any]] = {}
         for name in self.get_categories_and_tags():
             last_used = last_used_map.get(name)
             created_at = created_at_map.get(name)
@@ -183,8 +176,7 @@ class CategoriesTagsService:
         return usage
 
     def update_category_icon(self, category: str, icon: str) -> bool:
-        """
-        Set or update the emoji icon for a category.
+        """Set or update the emoji icon for a category.
 
         Parameters
         ----------
@@ -201,8 +193,7 @@ class CategoriesTagsService:
         return self.tagging_repo.update_category_icon(category, icon)
 
     def add_category(self, category: str, tags: list[str]) -> bool:
-        """
-        Add a new category with an initial list of tags.
+        """Add a new category with an initial list of tags.
 
         The category name is normalised to title case. Returns ``False``
         if the name is blank or already exists (case-insensitive match).
@@ -238,8 +229,7 @@ class CategoriesTagsService:
         return True
 
     def delete_category(self, category: str) -> bool:
-        """
-        Delete a category and nullify it on all related transactions and rules.
+        """Delete a category and nullify it on all related transactions and rules.
 
         Protected categories (``PROTECTED_CATEGORIES``) cannot be deleted.
         All transactions and split transactions referencing this category
@@ -296,9 +286,10 @@ class CategoriesTagsService:
             return False
         if new_name == old_name:
             return True
-        if new_name.lower() in [k.lower() for k in self.categories_and_tags]:
-            if new_name.lower() != old_name.lower():
-                return False
+        if new_name.lower() != old_name.lower() and new_name.lower() in [
+            k.lower() for k in self.categories_and_tags
+        ]:
+            return False
 
         self.transactions_repo.rename_category(old_name, new_name)
         self.split_transactions_repo.rename_category(old_name, new_name)
@@ -351,8 +342,7 @@ class CategoriesTagsService:
         return True
 
     def reallocate_tag(self, old_category: str, new_category: str, tag: str) -> bool:
-        """
-        Move a tag from one category to another.
+        """Move a tag from one category to another.
 
         Updates transactions, split transactions, tagging rules and budget
         rules to use the new category, then moves the tag itself.
@@ -393,8 +383,7 @@ class CategoriesTagsService:
         return True
 
     def add_tag(self, category: str, tag: str) -> bool:
-        """
-        Add a new tag to an existing category.
+        """Add a new tag to an existing category.
 
         The tag is normalised to title case. Returns ``False`` if the category
         does not exist or the tag is already present.
@@ -422,8 +411,7 @@ class CategoriesTagsService:
         return True
 
     def delete_tag(self, category: str, tag: str) -> bool:
-        """
-        Delete a tag from a category and nullify it on related transactions and rules.
+        """Delete a tag from a category and nullify it on related transactions and rules.
 
         Transactions and split transactions with the matching category/tag have
         both fields set to ``NULL``. Associated tagging rules are deleted.
@@ -454,8 +442,7 @@ class CategoriesTagsService:
         return True
 
     def add_new_credit_card_tags(self) -> bool:
-        """
-        Add new credit card account tags to the ``Credit Cards`` category.
+        """Add new credit card account tags to the ``Credit Cards`` category.
 
         Queries unique ``provider - account_name - account_number`` combinations
         from credit card transactions and adds any that are not already present

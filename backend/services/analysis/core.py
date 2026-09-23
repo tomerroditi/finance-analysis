@@ -6,6 +6,8 @@ net-worth/Sankey (``net_worth.py``), and forecasting (``forecast.py``)
 mixins around the dashboard overview aggregation.
 """
 
+from typing import Any
+
 import pandas as pd
 from sqlalchemy.orm import Session
 
@@ -29,7 +31,7 @@ class AnalysisService(CashflowMixin, NetWorthMixin, ForecastMixin):
     transaction, bank balance, and investment repositories.
     """
 
-    def __init__(self, db: Session):
+    def __init__(self, db: Session) -> None:
         """
         Initialize the analysis service.
 
@@ -46,19 +48,20 @@ class AnalysisService(CashflowMixin, NetWorthMixin, ForecastMixin):
         self.bank_balance_service = BankBalanceService(db)
         self.cash_balance_service = CashBalanceService(db)
 
-    def get_overview(self):
+    def get_overview(self) -> dict[str, Any]:
         """
         Get a financial overview including totals and latest data date.
 
         Returns
         -------
-        dict
+        dict[str, Any]
             Dictionary with keys:
 
             - ``latest_data_date`` – latest transaction date across all data.
             - ``total_income`` – total income (positive amounts) plus prior wealth.
             - ``total_expenses`` – total expenses (absolute value of negative amounts).
-            - ``total_investments`` – current portfolio value across all open investments.
+            - ``total_investments`` – money directed to investments
+              (``-sum`` of investment transactions), not market value.
             - ``net_balance_change`` – income minus expenses.
         """
         df = self.repo.get_table()

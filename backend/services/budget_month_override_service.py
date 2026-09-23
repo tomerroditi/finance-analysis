@@ -1,12 +1,13 @@
 """Budget month override service with business logic."""
 
-from typing import Literal
+from typing import Any, Literal
 
 import pandas as pd
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.errors import EntityNotFoundException, ValidationException
+from backend.models.budget_month_override import BudgetMonthOverride
 from backend.models.transaction import SplitTransaction
 from backend.repositories.budget_month_override_repository import (
     BudgetMonthOverrideRepository,
@@ -15,23 +16,19 @@ from backend.repositories.transactions import TransactionsRepository
 
 
 class BudgetMonthOverrideService:
-    """
-    Service for reassigning a transaction to a different month in the budget.
+    """Service for reassigning a transaction to a different month in the budget.
 
     A transaction always keeps its real ``date``; an override only changes
     which month the monthly budget view counts it in. Movement is capped at
     one month before or after the transaction's real month.
+
+    Parameters
+    ----------
+    db : Session
+        SQLAlchemy session for database operations.
     """
 
-    def __init__(self, db: Session):
-        """
-        Initialize the budget month override service.
-
-        Parameters
-        ----------
-        db : Session
-            SQLAlchemy session for database operations.
-        """
+    def __init__(self, db: Session) -> None:
         self.db = db
         self.repo = BudgetMonthOverrideRepository(db)
         self.transactions_repo = TransactionsRepository(db)
@@ -42,8 +39,7 @@ class BudgetMonthOverrideService:
         source_id: int,
         source_table: str,
     ) -> pd.Timestamp | None:
-        """
-        Resolve the real transaction date for a source.
+        """Resolve the real transaction date for a source.
 
         Parameters
         ----------
@@ -93,9 +89,8 @@ class BudgetMonthOverrideService:
         source_table: str,
         override_year: int,
         override_month: int,
-    ) -> dict:
-        """
-        Reassign a transaction to a different budget month (capped at +/- 1 month).
+    ) -> dict[str, Any]:
+        """Reassign a transaction to a different budget month (capped at +/- 1 month).
 
         If the target month equals the transaction's real month, any existing
         override is removed instead (the transaction reverts to its natural month).
@@ -115,7 +110,7 @@ class BudgetMonthOverrideService:
 
         Returns
         -------
-        dict
+        dict[str, Any]
             The resulting override record, or ``{"removed": True}`` when the
             target is the transaction's real month.
 
@@ -159,8 +154,7 @@ class BudgetMonthOverrideService:
         return self._to_dict(override)
 
     def remove_override(self, override_id: int) -> None:
-        """
-        Remove a budget month override by id.
+        """Remove a budget month override by id.
 
         Parameters
         ----------
@@ -179,25 +173,23 @@ class BudgetMonthOverrideService:
             )
         self.repo.delete(override_id)
 
-    def get_all(self) -> list[dict]:
-        """
-        Get all budget month overrides.
+    def get_all(self) -> list[dict[str, Any]]:
+        """Get all budget month overrides.
 
         Returns
         -------
-        list[dict]
+        list[dict[str, Any]]
             List of override records.
         """
         df = self.repo.get_all()
         return df.to_dict(orient="records") if not df.empty else []
 
-    def get_override_map(self) -> dict[str, dict]:
-        """
-        Build lookup maps of active overrides for budget filtering.
+    def get_override_map(self) -> dict[str, dict[Any, tuple[int, int]]]:
+        """Build lookup maps of active overrides for budget filtering.
 
         Returns
         -------
-        dict[str, dict]
+        dict[str, dict[Any, tuple[int, int]]]
             Dictionary with keys 'transaction' and 'split'. The 'transaction'
             map is keyed by ``(source_table, source_id)`` — ``unique_id``
             values are per-table auto-increments, so the same integer exists
@@ -210,7 +202,10 @@ class BudgetMonthOverrideService:
         if df.empty:
             return {"transaction": {}, "split": {}}
 
-        result: dict[str, dict] = {"transaction": {}, "split": {}}
+        result: dict[str, dict[Any, tuple[int, int]]] = {
+            "transaction": {},
+            "split": {},
+        }
         for row in df.itertuples(index=False):
             bucket = result.get(row.source_type)
             if bucket is None:
@@ -223,7 +218,7 @@ class BudgetMonthOverrideService:
         return result
 
     @staticmethod
-    def _to_dict(override) -> dict:
+    def _to_dict(override: BudgetMonthOverride) -> dict[str, Any]:
         """Serialize a BudgetMonthOverride ORM object to a plain dict."""
         return {
             "id": override.id,

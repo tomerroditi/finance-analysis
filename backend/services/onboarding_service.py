@@ -15,6 +15,7 @@ from __future__ import annotations
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from backend.models.base import Base
 from backend.models.budget import BudgetRule
 from backend.models.credential import Credential
 from backend.models.investment import Investment
@@ -29,10 +30,10 @@ from backend.models.transaction import (
 class OnboardingService:
     """Compute first-run / onboarding status flags from the live DB."""
 
-    def __init__(self, db: Session):
+    def __init__(self, db: Session) -> None:
         self.db = db
 
-    def _has_any(self, model) -> bool:
+    def _has_any(self, model: type[Base]) -> bool:
         """Return True if at least one row exists for the given ORM model."""
         return self.db.execute(select(model).limit(1)).first() is not None
 

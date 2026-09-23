@@ -1,5 +1,7 @@
 """Project budget service — time-unbounded per-category project budgets."""
 
+from typing import Any
+
 import pandas as pd
 
 from backend.constants.budget import (
@@ -216,7 +218,7 @@ class ProjectBudgetService(BudgetService):
         return self._rules_are_closed(rules.loc[rules[CATEGORY] == category])
 
     def get_closed_projects_names(self) -> list[str]:
-        """Names of the project categories that have been closed.
+        """Return the names of the project categories that have been closed.
 
         Returns
         -------
@@ -232,12 +234,12 @@ class ProjectBudgetService(BudgetService):
             if self._rules_are_closed(group)
         ]
 
-    def get_projects_status(self) -> list[dict]:
-        """All projects with their closed flag, in one read.
+    def get_projects_status(self) -> list[dict[str, Any]]:
+        """Return all projects with their closed flag, in one read.
 
         Returns
         -------
-        list[dict]
+        list[dict[str, Any]]
             One ``{"name": str, "closed": bool}`` entry per project, so a
             caller listing projects does not need a second request to tell
             the finished ones apart.
@@ -330,7 +332,7 @@ class ProjectBudgetService(BudgetService):
 
     def get_project_budget_view(
         self, project: str, include_split_parents: bool = False
-    ) -> dict:
+    ) -> dict[str, Any]:
         """
         Get project details including rules and transactions.
 
@@ -363,7 +365,6 @@ class ProjectBudgetService(BudgetService):
 
         view = []
 
-        # Total Project Rule
         total_rule = pd.DataFrame()
         if not rules.empty:
             total_rule = rules[rules[TAGS].apply(self._is_all_tags)]
@@ -371,12 +372,12 @@ class ProjectBudgetService(BudgetService):
         # Ensure transactions is JSON serializable (handle NaNs)
         transactions_processed = transactions.where(pd.notnull(transactions), None)
 
-        # Exclude split_parent transactions from total calculation
-        if "type" in transactions.columns:
-            non_parent_txns = transactions[transactions["type"] != "split_parent"]
-        else:
-            non_parent_txns = transactions
-        total_spent = non_parent_txns[TransactionsTableFields.AMOUNT.value].sum() * -1
+        total_spent = (
+            self._drop_split_parents(transactions)[
+                TransactionsTableFields.AMOUNT.value
+            ].sum()
+            * -1
+        )
 
         if not total_rule.empty:
             view.append(
@@ -392,30 +393,21 @@ class ProjectBudgetService(BudgetService):
             )
             rules = rules.drop(total_rule.index)
 
-        # Track transactions that have been matched to a rule
-        matched_txns_indices = set()
+        matched_txns_indices: set[int] = set()
 
-        # Per tag rules
         for _, rule in rules.iterrows():
             tags = rule[TAGS]
-            # Filter transactions for these tags using original DataFrame for calculation
             tag_txns_orig = transactions[
                 transactions[TransactionsTableFields.TAG.value].isin(tags)
             ]
-
-            # Record indices of matched transactions
             matched_txns_indices.update(tag_txns_orig.index)
+            spent = (
+                self._drop_split_parents(tag_txns_orig)[
+                    TransactionsTableFields.AMOUNT.value
+                ].sum()
+                * -1
+            )
 
-            # Exclude split_parent transactions from spent calculation
-            if "type" in tag_txns_orig.columns:
-                tag_txns_for_calc = tag_txns_orig[
-                    tag_txns_orig["type"] != "split_parent"
-                ]
-            else:
-                tag_txns_for_calc = tag_txns_orig
-            spent = tag_txns_for_calc[TransactionsTableFields.AMOUNT.value].sum() * -1
-
-            # Filter processed transactions for display
             tag_txns_display = transactions_processed[
                 transactions_processed[TransactionsTableFields.TAG.value].isin(tags)
             ]
@@ -453,12 +445,12 @@ class ProjectBudgetService(BudgetService):
             new_rule_df = self.budget_repository.read_all()
 
             for tag, group in groups:
-                if "type" in group.columns:
-                    group_for_calc = group[group["type"] != "split_parent"]
-                else:
-                    group_for_calc = group
-
-                spent = group_for_calc[TransactionsTableFields.AMOUNT.value].sum() * -1
+                spent = (
+                    self._drop_split_parents(group)[
+                        TransactionsTableFields.AMOUNT.value
+                    ].sum()
+                    * -1
+                )
 
                 group_display = transactions_processed.loc[group.index]
 
@@ -468,10 +460,8 @@ class ProjectBudgetService(BudgetService):
                     & (new_rule_df[NAME] == tag)
                 ]
 
-                rule_dict = {}
                 if not new_rule.empty:
-                    r = new_rule.iloc[0]
-                    rule_dict = r.to_dict()
+                    rule_dict = new_rule.iloc[0].to_dict()
                     if isinstance(rule_dict[TAGS], str):
                         rule_dict[TAGS] = rule_dict[TAGS].split(";")
                 else:
