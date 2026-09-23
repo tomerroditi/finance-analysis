@@ -43,10 +43,14 @@ logger = logging.getLogger(__name__)
 
 
 class UninstallRequest(BaseModel):
+    """Request body for the in-app uninstall."""
+
     wipe_data: bool = False
 
 
 class UninstallResponse(BaseModel):
+    """Outcome of the synchronous cleanup plus what the deferred script will remove."""
+
     status: str
     keyring_entries_deleted: int
     user_dir_will_be_removed: bool

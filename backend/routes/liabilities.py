@@ -19,6 +19,8 @@ router = APIRouter()
 
 
 class LiabilityCreate(ApiRequestModel):
+    """Request body for creating a liability (loan)."""
+
     name: str
     tag: str
     principal_amount: float
@@ -41,6 +43,8 @@ class LiabilityCreate(ApiRequestModel):
 
 
 class LiabilityUpdate(ApiRequestModel):
+    """Partial update of a liability; only fields sent are applied."""
+
     name: str | None = None
     lender: str | None = None
     interest_rate: float | None = None
@@ -152,6 +156,8 @@ def update_liability(
 
 
 class PayOffRequest(ApiRequestModel):
+    """Request body for marking a liability as paid off."""
+
     paid_off_date: str
 
 

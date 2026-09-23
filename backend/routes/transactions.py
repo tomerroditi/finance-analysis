@@ -16,7 +16,7 @@ from backend.constants.providers import Services
 from backend.constants.tables import Tables
 from backend.dependencies import get_database
 from backend.errors import ValidationException
-from backend.routes.schemas import ApiRequestModel
+from backend.routes.schemas import ApiRequestModel, StatusResponse
 from backend.services.transactions_service import TransactionsService
 
 logger = logging.getLogger(__name__)
@@ -70,6 +70,8 @@ def _validate_source(source: str) -> str:
 
 
 class TransactionCreate(ApiRequestModel):
+    """Request body for creating a manual (cash or investment) transaction."""
+
     date: date
     description: str
     amount: float
@@ -82,6 +84,8 @@ class TransactionCreate(ApiRequestModel):
 
 
 class TransactionUpdate(ApiRequestModel):
+    """Partial update of a transaction; ``source`` selects the table."""
+
     date: str | None = None
     account_name: str | None = None
     description: str | None = None
@@ -93,6 +97,8 @@ class TransactionUpdate(ApiRequestModel):
 
 
 class BulkTagUpdate(ApiRequestModel):
+    """Request body for tagging/editing several transactions of one source."""
+
     transaction_ids: list[int]
     source: str
     category: str | None = None
@@ -104,27 +110,31 @@ class BulkTagUpdate(ApiRequestModel):
 
 
 class SplitItem(ApiRequestModel):
+    """One slice of a split transaction."""
+
     amount: float
     category: str
     tag: str
 
 
 class SplitRequest(ApiRequestModel):
+    """Request body for splitting a transaction into slices."""
+
     source: str
     # A zero-slice split flipped the parent to ``split_parent`` with no
     # children, hiding the transaction from the merged view and every KPI.
     splits: list[SplitItem] = Field(..., min_length=1)
 
 
-class StatusResponse(BaseModel):
-    status: str
-
-
 class LatestDateResponse(BaseModel):
+    """Latest transaction date across all tables, or ``None`` when empty."""
+
     latest_date: str | None = None
 
 
 class UncategorizedCountResponse(BaseModel):
+    """Number of transactions still missing a category."""
+
     count: int
 
 
@@ -148,7 +158,7 @@ def get_transactions(
         )
     except ValueError as e:
         # Unknown / malformed `service` query param.
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
     return df.to_dict(orient="records")
 
 
@@ -162,14 +172,14 @@ def create_transaction(
         service.create_transaction(data.model_dump(), data.service)
         return {"status": "success"}
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
     except RuntimeError:
         # Don't echo the exception text: a 500 here is an unhandled server
         # fault, and its message can carry SQL fragments, file paths, or
         # credential values. Log it and return the same opaque body the
         # global handler uses.
         logger.exception("Failed to create transaction")
-        raise HTTPException(status_code=500, detail="Internal server error")
+        raise HTTPException(status_code=500, detail="Internal server error") from None
 
 
 @router.put("/{unique_id}", response_model=StatusResponse)
@@ -208,7 +218,7 @@ def update_transaction(
         )
         return {"status": "success" if updated else "no_changes"}
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
 
 
 @router.delete("/{unique_id}", response_model=StatusResponse)
@@ -228,9 +238,9 @@ def delete_transaction(
         service.delete_transaction(int(unique_id), source)
         return {"status": "success"}
     except PermissionError as e:
-        raise HTTPException(status_code=403, detail=str(e))
+        raise HTTPException(status_code=403, detail=str(e)) from e
     except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
+        raise HTTPException(status_code=404, detail=str(e)) from e
 
 
 @router.post("/{unique_id}/split", response_model=StatusResponse)
@@ -250,7 +260,7 @@ def split_transaction(
         service.split_transaction(unique_id, data.source, splits)
         return {"status": "success"}
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
 
 
 @router.delete("/{unique_id}/split", response_model=StatusResponse)
@@ -266,7 +276,7 @@ def revert_split(
         service.revert_split(unique_id, source)
         return {"status": "success"}
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
 
 
 @router.post("/bulk-tag", response_model=StatusResponse)
@@ -288,7 +298,7 @@ def bulk_tag_transactions(
         )
         return {"status": "success"}
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
 
 
 @router.get("/latest-date", response_model=LatestDateResponse)
@@ -324,7 +334,7 @@ def get_transaction(
         transaction = txn_service.get_transaction(transaction_id, source)
         return transaction.to_dict()
     except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
+        raise HTTPException(status_code=404, detail=str(e)) from e
 
 
 @router.put("/{transaction_id}/tag", response_model=StatusResponse)
@@ -359,4 +369,4 @@ def update_transaction_tag(
         tx_service.update_tagging_by_id(service, transaction_id, category, tag)
         return {"status": "success"}
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e

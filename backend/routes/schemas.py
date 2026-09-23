@@ -1,4 +1,4 @@
-"""Shared Pydantic bases for route request schemas."""
+"""Shared Pydantic schemas for route requests and responses."""
 
 from pydantic import BaseModel, ConfigDict
 
@@ -13,3 +13,9 @@ class ApiRequestModel(BaseModel):
     """
 
     model_config = ConfigDict(allow_inf_nan=False)
+
+
+class StatusResponse(BaseModel):
+    """Generic ``{"status": ...}`` acknowledgement returned by write endpoints."""
+
+    status: str

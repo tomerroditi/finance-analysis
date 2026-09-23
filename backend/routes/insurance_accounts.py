@@ -11,6 +11,7 @@ from pydantic import BaseModel, ConfigDict
 from sqlalchemy.orm import Session
 
 from backend.dependencies import get_database
+from backend.models.insurance_account import InsuranceAccount
 from backend.services.insurance_account_service import InsuranceAccountService
 from backend.services.investments import InvestmentsService
 
@@ -48,7 +49,7 @@ class InsuranceAccountRename(BaseModel):
 @router.get("/", response_model=list[InsuranceAccountResponse])
 def get_insurance_accounts(
     db: Session = Depends(get_database),
-):
+) -> list[InsuranceAccount]:
     """Get all insurance account metadata records.
 
     Returns
@@ -65,7 +66,7 @@ def rename_insurance_account(
     policy_id: str,
     body: InsuranceAccountRename,
     db: Session = Depends(get_database),
-):
+) -> InsuranceAccount:
     """Set or clear the user-defined display name for an insurance account.
 
     The override persists across scrapes. For ``hishtalmut`` policies, the
@@ -86,7 +87,7 @@ def rename_insurance_account(
 @router.post("/sync-investments")
 def sync_hishtalmut_investments(
     db: Session = Depends(get_database),
-) -> dict:
+) -> dict[str, int]:
     """Backfill investments from existing hishtalmut insurance accounts.
 
     Creates or updates Investment records (with balance snapshots) for all

@@ -1,8 +1,4 @@
-"""
-API Routes Package
-
-This package contains FastAPI route handlers.
-"""
+"""FastAPI route handlers, one router module per API resource."""
 
 from backend.routes import (
     analytics,

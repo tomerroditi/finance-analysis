@@ -1,10 +1,11 @@
-"""
-Centralized configuration management for the Finance Analysis backend.
+"""Centralized configuration management for the Finance Analysis backend.
+
 Handles environment switching between production and demo modes.
 """
 
 import os
 from contextvars import ContextVar, Token
+from typing import ClassVar, Self
 
 #: Per-request demo-mode flag. Context-local so two clients on one backend
 #: can read different databases in the same process. Set by the
@@ -32,7 +33,7 @@ class AppConfig:
     (``FAD_USER_DIR``, ``FAD_DB_PATH``, ``FAD_CREDENTIALS_PATH``, etc.).
     """
 
-    _instance = None
+    _instance: ClassVar["AppConfig | None"] = None
 
     #: Process-wide pin that overrides both the contextvar and the request
     #: header. ``None`` means "defer to context". Set to ``True`` by the
@@ -48,7 +49,7 @@ class AppConfig:
     #: instance one, and "restore" a value that never changed.
     _base_user_dir_override: str | None
 
-    def __new__(cls):
+    def __new__(cls) -> Self:
         """Return the shared singleton instance, creating it on first call."""
         if cls._instance is None:
             cls._instance = super().__new__(cls)
@@ -144,9 +145,8 @@ class AppConfig:
     def _base_user_dir(self) -> str:
         """Base user directory, resolving ``FAD_USER_DIR`` at call time.
 
-        Previously this was read once at class-definition time, so any
-        caller that set the env var after importing the module silently got
-        the wrong directory.
+        Resolved on every access rather than at import, so a caller that sets
+        the env var after importing this module still gets its directory.
         """
         if self._base_user_dir_override is not None:
             return self._base_user_dir_override
@@ -187,32 +187,25 @@ class AppConfig:
             return demo_root
         return self._base_user_dir
 
+    def _resolve_path(self, env_var: str, filename: str) -> str:
+        """Resolve ``filename`` in the user dir, or ``env_var``'s override in real mode."""
+        if not self.is_demo_mode and (override := os.environ.get(env_var)):
+            return override
+        return os.path.join(self.get_user_dir(), filename)
+
     def get_db_path(self) -> str:
         """Get the current database path."""
-        # Allow override via env var in non-demo mode only
-        if not self.is_demo_mode and os.environ.get("FAD_DB_PATH"):
-            return os.environ.get("FAD_DB_PATH")
-
         filename = "demo_data.db" if self.is_demo_mode else "data.db"
-        return os.path.join(self.get_user_dir(), filename)
+        return self._resolve_path("FAD_DB_PATH", filename)
 
     def get_credentials_path(self) -> str:
         """Get the current credentials file path."""
-        if not self.is_demo_mode and os.environ.get("FAD_CREDENTIALS_PATH"):
-            return os.environ.get("FAD_CREDENTIALS_PATH")
-
-        return os.path.join(self.get_user_dir(), "credentials.yaml")
+        return self._resolve_path("FAD_CREDENTIALS_PATH", "credentials.yaml")
 
     def get_categories_path(self) -> str:
         """Get the current categories file path."""
-        if not self.is_demo_mode and os.environ.get("FAD_CATEGORIES_PATH"):
-            return os.environ.get("FAD_CATEGORIES_PATH")
-
-        return os.path.join(self.get_user_dir(), "categories.yaml")
+        return self._resolve_path("FAD_CATEGORIES_PATH", "categories.yaml")
 
     def get_categories_icons_path(self) -> str:
         """Get the current categories icons file path."""
-        if not self.is_demo_mode and os.environ.get("FAD_CATEGORIES_ICONS_PATH"):
-            return os.environ.get("FAD_CATEGORIES_ICONS_PATH")
-
-        return os.path.join(self.get_user_dir(), "categories_icons.yaml")
+        return self._resolve_path("FAD_CATEGORIES_ICONS_PATH", "categories_icons.yaml")

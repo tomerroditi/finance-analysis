@@ -1,14 +1,13 @@
-"""
-Database connection and session management for the FastAPI backend.
+"""Database connection and session management for the FastAPI backend.
 
-This module provides pure SQLAlchemy database connection handling,
-replacing the Streamlit-specific database connection used in the original app.
+Engines and session factories are cached per resolved database path, so the
+real and demo databases (and per-visitor demo sandboxes) each get their own.
 """
 
 import os
 import threading
 from collections.abc import Generator
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
 
 from sqlalchemy import create_engine
 from sqlalchemy.engine import Engine
@@ -46,14 +45,14 @@ def get_database_url(db_path: str | None = None) -> str:
     return f"sqlite:///{db_path}"
 
 
-def create_db_engine(db_path: str | None = None, echo: bool = False):
+def create_db_engine(db_path: str | None = None, echo: bool = False) -> Engine:
     """
     Create a SQLAlchemy engine for the database.
 
     Parameters
     ----------
-    db_path : str
-        Path to the SQLite database file.
+    db_path : str, optional
+        Path to the SQLite database file. If None, uses path from AppConfig.
     echo : bool
         If True, log all SQL statements.
 
@@ -72,19 +71,14 @@ def create_db_engine(db_path: str | None = None, echo: bool = False):
     # owner-only ACL (SYSTEM, Administrators, the user).
     db_dir = os.path.dirname(db_path)
     os.makedirs(db_dir, exist_ok=True)
-    try:
+    with suppress(OSError):
         os.chmod(db_dir, 0o700)
-    except OSError:
-        pass
 
-    # Create the database file if it doesn't exist
     if not os.path.exists(db_path):
         with open(db_path, "w"):
             pass
-        try:
+        with suppress(OSError):
             os.chmod(db_path, 0o600)
-        except OSError:
-            pass
 
     return create_engine(
         get_database_url(db_path),
@@ -99,7 +93,7 @@ def create_db_engine(db_path: str | None = None, echo: bool = False):
 # FAD_DB_PATH override without a special case, and two contexts that happen
 # to resolve to the same file correctly share one engine.
 _engines: dict[str, Engine] = {}
-_session_factories: dict[str, sessionmaker] = {}
+_session_factories: dict[str, sessionmaker[Session]] = {}
 
 # Guards lazy creation. Requests are served from a threadpool, so two threads
 # can miss the cache for the same path at once; without the lock they would
@@ -133,7 +127,7 @@ def _get_engine_locked(db_path: str) -> Engine:
     return _engines[db_path]
 
 
-def get_engine(db_path: str | None = None):
+def get_engine(db_path: str | None = None) -> Engine:
     """
     Get or create the engine for a database path.
 
@@ -154,7 +148,7 @@ def get_engine(db_path: str | None = None):
         return _get_engine_locked(db_path)
 
 
-def get_session_factory(db_path: str | None = None):
+def get_session_factory(db_path: str | None = None) -> sessionmaker[Session]:
     """
     Get or create the session factory for a database path.
 
@@ -185,20 +179,12 @@ def get_db() -> Generator[Session, None, None]:
     FastAPI dependency that provides a database session.
 
     Yields a database session and ensures it's closed after the request.
-    Use this as a dependency in FastAPI route handlers.
+    Routes depend on it through ``backend.dependencies.get_database``.
 
     Yields
     ------
     Session
         SQLAlchemy session instance.
-
-    Example
-    -------
-    ```python
-    @app.get("/items")
-    def get_items(db: Session = Depends(get_db)):
-        return db.execute(select(Item)).scalars().all()
-    ```
     """
     SessionLocal = get_session_factory()
     db = SessionLocal()
@@ -228,12 +214,7 @@ def get_db_context() -> Generator[Session, None, None]:
         result = db.execute(select(Item)).scalars().all()
     ```
     """
-    SessionLocal = get_session_factory()
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
+    yield from get_db()
 
 
 def reset_engine_for(db_path: str) -> None:

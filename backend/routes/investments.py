@@ -46,14 +46,16 @@ def _parse_iso_date(value: str, field_name: str) -> str:
     """
     try:
         date_type.fromisoformat(value)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError) as e:
         raise ValidationException(
             f"{field_name} must be a valid date in YYYY-MM-DD format"
-        )
+        ) from e
     return value
 
 
 class InvestmentCreate(ApiRequestModel):
+    """Request body for creating an investment."""
+
     category: str
     tag: str
     type: str
@@ -78,6 +80,8 @@ class InvestmentCreate(ApiRequestModel):
 
 
 class InvestmentUpdate(ApiRequestModel):
+    """Partial update of an investment; ``None`` fields are kept."""
+
     name: str | None = None
     type: str | None = None
     interest_rate: float | None = None
@@ -99,6 +103,8 @@ class InvestmentUpdate(ApiRequestModel):
 
 
 class BalanceSnapshotCreate(ApiRequestModel):
+    """Request body for recording a balance snapshot."""
+
     date: str
     balance: float
 
@@ -111,6 +117,8 @@ class BalanceSnapshotCreate(ApiRequestModel):
 
 
 class BalanceSnapshotUpdate(ApiRequestModel):
+    """Partial update of a balance snapshot; ``None`` fields are kept."""
+
     date: str | None = None
     balance: float | None = None
 
@@ -272,9 +280,6 @@ def delete_investment(
     service = InvestmentsService(db)
     service.delete_investment(investment_id)
     return {"status": "success"}
-
-
-# ── Balance Snapshot Routes ───────────────────────────────────────
 
 
 @router.get("/{investment_id}/balances")

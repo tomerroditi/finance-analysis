@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 
 from backend.constants.providers import LoginFields, Services
 from backend.dependencies import get_database
+from backend.routes.schemas import StatusResponse
 from backend.services.bank_balance_service import BankBalanceService
 from backend.services.credentials_service import CredentialsService
 
@@ -18,17 +19,17 @@ router = APIRouter()
 
 
 class CredentialCreate(BaseModel):
+    """Request body for creating or updating one account's credentials."""
+
     service: str
     provider: str
     account_name: str
     credentials: dict[str, Any]
 
 
-class StatusResponse(BaseModel):
-    status: str
-
-
 class ProviderFieldsResponse(BaseModel):
+    """Login fields a provider requires."""
+
     fields: list[str]
 
 
@@ -179,4 +180,4 @@ def delete_credential(
             "transactions_deleted": result.get("transactions_deleted", 0),
         }
     except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
+        raise HTTPException(status_code=404, detail=str(e)) from e

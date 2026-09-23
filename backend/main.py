@@ -8,9 +8,10 @@ import logging
 import math
 import os
 import sys
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, Request
@@ -18,8 +19,9 @@ from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
+from starlette.middleware.base import RequestResponseEndpoint
 
 from backend import demo_sessions
 from backend.config import AppConfig
@@ -46,6 +48,7 @@ from backend.routes import (
     rates,
     retirement,
     savings_goals,
+    scraping_readonly,
     tagging,
     tagging_rules,
     transactions,
@@ -63,10 +66,10 @@ if TYPE_CHECKING:
 
 load_dotenv()
 
-# Dev/uvicorn runs previously had no logging config at all — app loggers fell
-# through to Python's last-resort WARNING handler and every logger.info was
-# silently dropped. The packaged binary configures its own rotating file
-# handler (build/app_entry.py), so only configure when not frozen.
+# Without a logging config, app loggers fall through to Python's last-resort
+# WARNING handler and every logger.info is silently dropped. The packaged
+# binary configures its own rotating file handler (build/app_entry.py), so
+# only configure when not frozen.
 if not getattr(sys, "frozen", False):
     logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
 
@@ -98,8 +101,8 @@ def _startup_alembic_config(alembic_ini: Path) -> "Config":
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):
-    """Application lifespan manager for startup/shutdown events."""
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    """Run startup migrations and seeding, then shut the scraper loop down on exit."""
     # Skip startup migrations and scraper wiring in serverless (demo DB is
     # pre-built, and there's no keyring/browser to scrape with). This guard
     # MUST come before any import that transitively pulls in keyring-backed
@@ -117,7 +120,6 @@ async def lifespan(app: FastAPI):
         TaggingRepository,
     )
 
-    # Startup
     logger.info("Starting Finance Analysis API...")
     Base.metadata.create_all(bind=get_engine())
 
@@ -140,11 +142,10 @@ async def lifespan(app: FastAPI):
     else:
         logger.warning("alembic.ini not found at %s — skipping migrations", alembic_ini)
 
-    # Seed categories and migrate credentials
     with get_db_context() as db:
         config = AppConfig()
 
-        # Seed categories from YAML if DB table is empty
+        # Seed categories from YAML if the DB table is empty.
         tagging_repo = TaggingRepository(db)
         user_categories_path = config.get_categories_path()
         categories_path = (
@@ -162,7 +163,6 @@ async def lifespan(app: FastAPI):
         creds_repo.encrypt_plaintext_rows()
 
     yield
-    # Shutdown
     logger.info("Shutting down Finance Analysis API...")
     from backend.services.scraping_service import shutdown_scraper_loop
 
@@ -256,7 +256,9 @@ _DEMO_HEADER_TRUTHY = frozenset({"1", "true"})
 # after the host allowlist, bearer token, and same-origin checks have all
 # passed. Requests that those middlewares reject never resolve a mode.
 @app.middleware("http")
-async def resolve_demo_mode(request: Request, call_next):
+async def resolve_demo_mode(
+    request: Request, call_next: RequestResponseEndpoint
+) -> Response:
     """Bind the request's demo-mode flag from the ``X-FAD-Demo`` header.
 
     Demo Mode is per-client: the flag lives in a context variable rather
@@ -303,13 +305,15 @@ async def resolve_demo_mode(request: Request, call_next):
 
 
 @app.middleware("http")
-async def limit_request_size(request: Request, call_next):
+async def limit_request_size(
+    request: Request, call_next: RequestResponseEndpoint
+) -> Response:
     """Reject requests whose body exceeds ``MAX_REQUEST_BYTES``.
 
     A declared ``Content-Length`` is checked up front. Chunked bodies carry
     no such header, so their bytes are counted while the body is consumed and
-    the request is aborted the moment the cap is passed — previously they
-    bypassed the check entirely and were buffered and parsed in full.
+    the request is aborted the moment the cap is passed rather than being
+    buffered and parsed in full.
     """
     content_length = request.headers.get("content-length")
     if content_length is not None:
@@ -358,7 +362,9 @@ _allowed_hosts = auth.build_allowed_hosts()
 
 
 @app.middleware("http")
-async def enforce_host_allowlist(request: Request, call_next):
+async def enforce_host_allowlist(
+    request: Request, call_next: RequestResponseEndpoint
+) -> Response:
     """Reject requests whose Host header is not on the allowlist."""
     if os.environ.get("VERCEL"):
         return await call_next(request)
@@ -397,7 +403,9 @@ def _needs_remote_token(path: str) -> bool:
 
 
 @app.middleware("http")
-async def require_token_for_remote_clients(request: Request, call_next):
+async def require_token_for_remote_clients(
+    request: Request, call_next: RequestResponseEndpoint
+) -> Response:
     """Require a bearer token on /api and docs requests from non-local clients."""
     if (
         os.environ.get("VERCEL")
@@ -433,7 +441,9 @@ async def require_token_for_remote_clients(request: Request, call_next):
 # at all (curl, the desktop app, and other non-browser clients send none and
 # cannot be driven by a hostile page).
 @app.middleware("http")
-async def enforce_same_origin_for_writes(request: Request, call_next):
+async def enforce_same_origin_for_writes(
+    request: Request, call_next: RequestResponseEndpoint
+) -> Response:
     """Reject state-changing /api requests carrying a foreign Origin."""
     if (
         os.environ.get("VERCEL")
@@ -459,7 +469,9 @@ async def enforce_same_origin_for_writes(request: Request, call_next):
 
 
 @app.middleware("http")
-async def add_security_headers(request: Request, call_next):
+async def add_security_headers(
+    request: Request, call_next: RequestResponseEndpoint
+) -> Response:
     """Apply conservative security headers to every response."""
     response = await call_next(request)
     response.headers.setdefault("X-Content-Type-Options", "nosniff")
@@ -478,7 +490,6 @@ async def add_security_headers(request: Request, call_next):
     return response
 
 
-# Include routers
 app.include_router(
     transactions.router, prefix="/api/transactions", tags=["Transactions"]
 )
@@ -555,8 +566,6 @@ except ImportError:
 # scraper itself cannot be imported (serverless has no Playwright) —
 # otherwise every data source on the hosted demo reports "never synced".
 # Mounted first so the gated router below can override nothing it owns.
-from backend.routes import scraping_readonly
-
 app.include_router(scraping_readonly.router, prefix="/api/scraping", tags=["Scraping"])
 
 try:
@@ -584,7 +593,7 @@ if _enable_testing_routes:
 @app.exception_handler(EntityNotFoundException)
 async def entity_not_found_exception_handler(
     request: Request, exc: EntityNotFoundException
-):
+) -> JSONResponse:
     """Return a 404 JSON response for EntityNotFoundException."""
     return JSONResponse(
         status_code=404,
@@ -595,7 +604,7 @@ async def entity_not_found_exception_handler(
 @app.exception_handler(EntityAlreadyExistsException)
 async def entity_already_exists_exception_handler(
     request: Request, exc: EntityAlreadyExistsException
-):
+) -> JSONResponse:
     """Return a 409 JSON response for EntityAlreadyExistsException."""
     return JSONResponse(
         status_code=409,
@@ -604,7 +613,9 @@ async def entity_already_exists_exception_handler(
 
 
 @app.exception_handler(ValidationException)
-async def validation_exception_handler(request: Request, exc: ValidationException):
+async def validation_exception_handler(
+    request: Request, exc: ValidationException
+) -> JSONResponse:
     """Return a 400 JSON response for ValidationException."""
     return JSONResponse(
         status_code=400,
@@ -613,7 +624,9 @@ async def validation_exception_handler(request: Request, exc: ValidationExceptio
 
 
 @app.exception_handler(BadRequestException)
-async def bad_request_exception_handler(request: Request, exc: BadRequestException):
+async def bad_request_exception_handler(
+    request: Request, exc: BadRequestException
+) -> JSONResponse:
     """Return a 400 JSON response for BadRequestException."""
     return JSONResponse(
         status_code=400,
@@ -624,7 +637,7 @@ async def bad_request_exception_handler(request: Request, exc: BadRequestExcepti
 @app.exception_handler(RequestValidationError)
 async def request_validation_exception_handler(
     request: Request, exc: RequestValidationError
-):
+) -> JSONResponse:
     """422 handler that survives non-finite floats in the invalid input.
 
     Request models reject ``NaN``/``Infinity`` (``allow_inf_nan=False`` on
@@ -633,7 +646,8 @@ async def request_validation_exception_handler(
     float, turning the 422 into a 500. Stringify those values instead.
     """
 
-    def sanitize(value):
+    def sanitize(value: Any) -> Any:
+        """Replace non-finite floats with their ``repr``, recursing into containers."""
         if isinstance(value, float) and not math.isfinite(value):
             return repr(value)
         if isinstance(value, dict):
@@ -649,7 +663,7 @@ async def request_validation_exception_handler(
 
 
 @app.exception_handler(OverflowError)
-async def overflow_error_handler(request: Request, exc: OverflowError):
+async def overflow_error_handler(request: Request, exc: OverflowError) -> JSONResponse:
     """Map ``OverflowError`` to ``422 Unprocessable Entity``.
 
     SQLite INTEGER is 64-bit signed (max 2**63 - 1). When a path parameter
@@ -664,7 +678,7 @@ async def overflow_error_handler(request: Request, exc: OverflowError):
 
 
 @app.exception_handler(Exception)
-async def unhandled_exception_handler(request: Request, exc: Exception):
+async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
     """Swallow unexpected exceptions with a generic 500 response.
 
     Individual routes wrap ``ValueError`` / ``BadRequestException`` with their
@@ -674,8 +688,11 @@ async def unhandled_exception_handler(request: Request, exc: Exception):
     SQL fragments, file paths, or secrets present in the exception message.
     The real detail is kept in the server log for operators to inspect.
     """
-    logger.exception(
-        "Unhandled exception handling %s %s", request.method, request.url.path
+    logger.error(
+        "Unhandled exception handling %s %s",
+        request.method,
+        request.url.path,
+        exc_info=exc,
     )
     return JSONResponse(
         status_code=500,
@@ -684,24 +701,21 @@ async def unhandled_exception_handler(request: Request, exc: Exception):
 
 
 @app.get("/health")
-async def health_check():
-    """Health check endpoint."""
+async def health_check() -> dict[str, str]:
+    """Report that the API process is up."""
     return {"status": "healthy"}
 
 
-# Serve frontend static build in production.
-#
-# Two layouts to support:
-#   1. Dev / pip-install / Vercel  → frontend/dist sits next to backend/
-#                                    in the repo tree.
-#   2. PyInstaller-frozen bundle   → frontend/dist lives inside
-#                                    sys._MEIPASS (the temp dir the
-#                                    bootloader extracts into at launch).
-#
-# We probe the frozen path first when sys.frozen is set and fall back to
-# the source-tree path so unit tests that import ``backend.main`` from a
-# checkout still work without setting any env var.
 def _resolve_frontend_dist() -> Path:
+    """Locate the production frontend build served by the SPA routes below.
+
+    Two layouts are supported: in dev / pip-install / Vercel, ``frontend/dist``
+    sits next to ``backend/`` in the repo tree; in a PyInstaller-frozen bundle
+    it lives inside ``sys._MEIPASS`` (the temp dir the bootloader extracts
+    into at launch). The frozen path is probed first when ``sys.frozen`` is
+    set, falling back to the source tree so unit tests that import
+    ``backend.main`` from a checkout work without any env var.
+    """
     if getattr(sys, "frozen", False):
         meipass = Path(getattr(sys, "_MEIPASS", ""))
         bundled = meipass / "frontend" / "dist"
@@ -721,7 +735,7 @@ if _frontend_dist.is_dir():
     _frontend_dist_resolved = _frontend_dist.resolve()
 
     @app.exception_handler(404)
-    async def spa_fallback(request: Request, exc):
+    async def spa_fallback(request: Request, exc: Exception) -> Response:
         """Serve the React SPA for non-API 404s (client-side routing).
 
         Resolves the requested path and verifies it lives inside the frontend

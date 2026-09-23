@@ -1,12 +1,10 @@
-"""
-Custom application exceptions.
-"""
+"""Custom application exceptions, mapped to HTTP statuses in ``backend.main``."""
 
 
 class AppException(Exception):
     """Base exception for the application."""
 
-    def __init__(self, message: str):
+    def __init__(self, message: str) -> None:
         self.message = message
         super().__init__(self.message)
 

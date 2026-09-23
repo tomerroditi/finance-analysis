@@ -4,7 +4,7 @@ Pending Refunds API routes.
 Provides endpoints for managing pending refunds and linking refund transactions.
 """
 
-from typing import Literal
+from typing import Any, Literal
 
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
@@ -52,7 +52,7 @@ class SourceNoteRequest(ApiRequestModel):
 def create_pending_refund(
     request: CreatePendingRefundRequest,
     db: Session = Depends(get_database),
-):
+) -> dict[str, Any]:
     """Mark a transaction or split as expecting a refund."""
     service = PendingRefundsService(db)
     return service.mark_as_pending_refund(
@@ -68,7 +68,7 @@ def create_pending_refund(
 def get_all_pending_refunds(
     status: str | None = None,
     db: Session = Depends(get_database),
-):
+) -> list[dict[str, Any]]:
     """Get all pending refunds, optionally filtered by status."""
     service = PendingRefundsService(db)
     return service.get_all_pending(status=status)
@@ -79,7 +79,7 @@ def get_budget_adjustment(
     year: int,
     month: int,
     db: Session = Depends(get_database),
-):
+) -> dict[str, float]:
     """Return the total amount to exclude from budget expenses for pending refunds.
 
     Sums the ``expected_amount`` of all currently pending (unresolved) refunds.
@@ -108,7 +108,7 @@ def get_budget_adjustment(
 @router.get("/refund-sources")
 def get_refund_sources(
     db: Session = Depends(get_database),
-):
+) -> list[dict[str, Any]]:
     """Summarize refund transactions used as refund sources.
 
     Returns one entry per refund transaction with its total amount, the
@@ -123,7 +123,7 @@ def get_refund_sources(
 def set_refund_source_note(
     request: SourceNoteRequest,
     db: Session = Depends(get_database),
-):
+) -> dict[str, Any]:
     """Set or clear the user note on a refund source transaction."""
     service = PendingRefundsService(db)
     return service.set_source_note(
@@ -138,7 +138,7 @@ def update_pending_refund(
     pending_id: int,
     request: UpdatePendingRefundRequest,
     db: Session = Depends(get_database),
-):
+) -> dict[str, Any]:
     """Update the note on a pending refund."""
     service = PendingRefundsService(db)
     return service.update_notes(pending_id, request.notes)
@@ -148,7 +148,7 @@ def update_pending_refund(
 def get_pending_refund(
     pending_id: int,
     db: Session = Depends(get_database),
-):
+) -> dict[str, Any]:
     """Get a pending refund with its links."""
     service = PendingRefundsService(db)
     return service.get_pending_by_id(pending_id)
@@ -158,7 +158,7 @@ def get_pending_refund(
 def cancel_pending_refund(
     pending_id: int,
     db: Session = Depends(get_database),
-):
+) -> dict[str, str]:
     """Cancel a pending refund (remove pending status)."""
     service = PendingRefundsService(db)
     service.cancel_pending_refund(pending_id)
@@ -170,7 +170,7 @@ def link_refund(
     pending_id: int,
     request: LinkRefundRequest,
     db: Session = Depends(get_database),
-):
+) -> dict[str, Any]:
     """Link a refund transaction to a pending refund."""
     service = PendingRefundsService(db)
     return service.link_refund(
@@ -185,7 +185,7 @@ def link_refund(
 def close_pending_refund(
     pending_id: int,
     db: Session = Depends(get_database),
-):
+) -> dict[str, Any]:
     """Close a pending refund, accepting the current partial refund amount."""
     service = PendingRefundsService(db)
     return service.close_pending_refund(pending_id)
@@ -195,7 +195,7 @@ def close_pending_refund(
 def unlink_refund(
     link_id: int,
     db: Session = Depends(get_database),
-):
+) -> dict[str, Any]:
     """Remove a refund link (unlink transaction)."""
     service = PendingRefundsService(db)
     return service.unlink_refund(link_id)

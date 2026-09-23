@@ -11,6 +11,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from backend.dependencies import get_database
+from backend.services.investments import InvestmentsService
 from backend.services.rates_service import RatesService
 
 router = APIRouter()
@@ -50,8 +51,6 @@ def refresh_rates(db: Session = Depends(get_database)) -> dict[str, Any]:
     service = RatesService(db)
     result = service.refresh_from_boi()
     if result.get("status") == "updated":
-        from backend.services.investments import InvestmentsService
-
         result["investments_recalculated"] = InvestmentsService(
             db
         ).recalculate_prime_linked_snapshots()

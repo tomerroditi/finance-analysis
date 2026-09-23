@@ -5,7 +5,7 @@ order, the per-month allocation view the budget page renders, transaction
 links, and the previewable history rebuild.
 """
 
-from typing import Literal
+from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, Field
@@ -79,13 +79,15 @@ class SavingsGoalRebuild(BaseModel):
 
 
 @router.get("/")
-def list_goals(db: Session = Depends(get_database)):
+def list_goals(db: Session = Depends(get_database)) -> list[dict[str, Any]]:
     """Return all savings goals enriched with progress metrics."""
     return SavingsGoalService(db).get_all()
 
 
 @router.post("/")
-def create_goal(data: SavingsGoalCreate, db: Session = Depends(get_database)):
+def create_goal(
+    data: SavingsGoalCreate, db: Session = Depends(get_database)
+) -> list[dict[str, Any]]:
     """Create a new savings goal and return the refreshed goal list."""
     return SavingsGoalService(db).create(**data.model_dump(exclude_none=True))
 
@@ -93,38 +95,44 @@ def create_goal(data: SavingsGoalCreate, db: Session = Depends(get_database)):
 @router.put("/{goal_id}")
 def update_goal(
     goal_id: int, data: SavingsGoalUpdate, db: Session = Depends(get_database)
-):
-    """Update an existing savings goal."""
+) -> list[dict[str, Any]]:
+    """Update an existing savings goal and return the refreshed goal list."""
     return SavingsGoalService(db).update(goal_id, **data.model_dump(exclude_unset=True))
 
 
 @router.delete("/{goal_id}")
-def delete_goal(goal_id: int, db: Session = Depends(get_database)):
+def delete_goal(goal_id: int, db: Session = Depends(get_database)) -> dict[str, str]:
     """Delete a savings goal along with its allocations and links."""
     SavingsGoalService(db).delete(goal_id)
     return {"status": "deleted"}
 
 
 @router.post("/reorder")
-def reorder_goals(data: SavingsGoalReorder, db: Session = Depends(get_database)):
+def reorder_goals(
+    data: SavingsGoalReorder, db: Session = Depends(get_database)
+) -> list[dict[str, Any]]:
     """Set the waterfall order. Applies to future allocations only."""
     return SavingsGoalService(db).reorder(data.goal_ids)
 
 
 @router.post("/{goal_id}/close")
-def close_goal(goal_id: int, db: Session = Depends(get_database)):
+def close_goal(
+    goal_id: int, db: Session = Depends(get_database)
+) -> list[dict[str, Any]]:
     """Close a goal, freezing its allocation history."""
     return SavingsGoalService(db).close(goal_id)
 
 
 @router.post("/{goal_id}/reopen")
-def reopen_goal(goal_id: int, db: Session = Depends(get_database)):
+def reopen_goal(
+    goal_id: int, db: Session = Depends(get_database)
+) -> list[dict[str, Any]]:
     """Reopen a closed goal so it absorbs surplus again."""
     return SavingsGoalService(db).reopen(goal_id)
 
 
 @router.get("/free-cash")
-def get_free_cash(db: Session = Depends(get_database)):
+def get_free_cash(db: Session = Depends(get_database)) -> dict[str, Any]:
     """Return the pool of tracked money no goal has earmarked."""
     return SavingsGoalService(db).get_free_cash()
 
@@ -134,7 +142,7 @@ def get_free_cash_before(
     month: str,
     goal_id: int | None = None,
     db: Session = Depends(get_database),
-):
+) -> dict[str, Any]:
     """Return the free cash that existed when a goal starting in ``month`` began.
 
     ``goal_id`` leaves the goal being edited out of the figure, so it can be
@@ -146,7 +154,7 @@ def get_free_cash_before(
 @router.get("/timeline")
 def get_timeline(
     months: int = Query(12, ge=0, le=600), db: Session = Depends(get_database)
-):
+) -> dict[str, Any]:
     """Return the per-month allocation history plus the free-cash pool.
 
     ``months`` trims to the trailing window the dashboard chart shows;
@@ -156,13 +164,17 @@ def get_timeline(
 
 
 @router.get("/allocations/{year}/{month}")
-def get_month_allocations(year: int, month: int, db: Session = Depends(get_database)):
+def get_month_allocations(
+    year: int, month: int, db: Session = Depends(get_database)
+) -> dict[str, Any]:
     """Return how much each goal received in one month, for the budget view."""
     return SavingsGoalService(db).get_month_allocations(year, month)
 
 
 @router.post("/rebuild")
-def rebuild_allocations(data: SavingsGoalRebuild, db: Session = Depends(get_database)):
+def rebuild_allocations(
+    data: SavingsGoalRebuild, db: Session = Depends(get_database)
+) -> dict[str, Any]:
     """Restate allocation history under the current priorities.
 
     Defaults to a dry run so the caller can show the before/after diff before
@@ -174,7 +186,9 @@ def rebuild_allocations(data: SavingsGoalRebuild, db: Session = Depends(get_data
 
 
 @router.get("/links")
-def list_links(goal_id: int | None = None, db: Session = Depends(get_database)):
+def list_links(
+    goal_id: int | None = None, db: Session = Depends(get_database)
+) -> list[dict[str, Any]]:
     """Return transaction links, optionally scoped to one goal."""
     return SavingsGoalService(db).get_links(goal_id)
 
@@ -182,19 +196,23 @@ def list_links(goal_id: int | None = None, db: Session = Depends(get_database)):
 @router.post("/{goal_id}/links")
 def link_transaction(
     goal_id: int, data: SavingsGoalLinkCreate, db: Session = Depends(get_database)
-):
+) -> list[dict[str, Any]]:
     """Attach a transaction to a goal as a contribution or a utilization."""
     return SavingsGoalService(db).link_transaction(goal_id=goal_id, **data.model_dump())
 
 
 @router.delete("/links/{link_id}")
-def unlink_transaction(link_id: int, db: Session = Depends(get_database)):
+def unlink_transaction(
+    link_id: int, db: Session = Depends(get_database)
+) -> list[dict[str, Any]]:
     """Detach a transaction from its goal."""
     return SavingsGoalService(db).unlink_transaction(link_id)
 
 
 @router.get("/investments/available")
-def list_available_investments(db: Session = Depends(get_database)):
+def list_available_investments(
+    db: Session = Depends(get_database),
+) -> list[dict[str, Any]]:
     """Return open investments with how much of each is still unearmarked."""
     return SavingsGoalService(db).get_available_investments()
 
@@ -202,7 +220,7 @@ def list_available_investments(db: Session = Depends(get_database)):
 @router.get("/investments")
 def list_investment_backings(
     goal_id: int | None = None, db: Session = Depends(get_database)
-):
+) -> list[dict[str, Any]]:
     """Return investment earmarks, optionally scoped to one goal."""
     return SavingsGoalService(db).get_investment_backings(goal_id)
 
@@ -212,12 +230,14 @@ def link_investment(
     goal_id: int,
     data: SavingsGoalInvestmentCreate,
     db: Session = Depends(get_database),
-):
+) -> list[dict[str, Any]]:
     """Earmark an investment holding against a goal."""
     return SavingsGoalService(db).link_investment(goal_id=goal_id, **data.model_dump())
 
 
 @router.delete("/investments/{backing_id}")
-def unlink_investment(backing_id: int, db: Session = Depends(get_database)):
+def unlink_investment(
+    backing_id: int, db: Session = Depends(get_database)
+) -> list[dict[str, Any]]:
     """Release an investment earmark."""
     return SavingsGoalService(db).unlink_investment(backing_id)

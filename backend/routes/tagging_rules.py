@@ -19,7 +19,9 @@ from backend.services.tagging_rules_service import TaggingRulesService
 router = APIRouter()
 
 
-def _validate_conditions(service: TaggingRulesService, conditions: dict) -> None:
+def _validate_conditions(
+    service: TaggingRulesService, conditions: dict[str, Any]
+) -> None:
     """Run the shared rule-integrity check on client-supplied conditions.
 
     ``add_rule``/``update_rule`` validate their conditions before touching
@@ -45,10 +47,12 @@ def _validate_conditions(service: TaggingRulesService, conditions: dict) -> None
     try:
         service.validate_rule_integrity(conditions)
     except (TypeError, ValueError) as e:
-        raise ValidationException(f"Invalid rule conditions: {e}")
+        raise ValidationException(f"Invalid rule conditions: {e}") from e
 
 
 class RuleCreate(BaseModel):
+    """Request body for creating a tagging rule."""
+
     name: str
     conditions: dict[str, Any]
     category: str
@@ -56,6 +60,8 @@ class RuleCreate(BaseModel):
 
 
 class RuleUpdate(BaseModel):
+    """Partial update of a tagging rule; ``None`` fields are kept."""
+
     name: str | None = None
     conditions: dict[str, Any] | None = None
     category: str | None = None
@@ -63,6 +69,8 @@ class RuleUpdate(BaseModel):
 
 
 class RuleValidate(BaseModel):
+    """Request body for checking a rule against existing rules for conflicts."""
+
     conditions: dict[str, Any]
     category: str
     tag: str
@@ -70,7 +78,7 @@ class RuleValidate(BaseModel):
 
 
 @router.get("/rules")
-def get_tagging_rules(db: Session = Depends(get_database)):
+def get_tagging_rules(db: Session = Depends(get_database)) -> list[dict[str, Any]]:
     """Get all tagging rules."""
     service = TaggingRulesService(db)
     df = service.get_all_rules()
@@ -78,7 +86,9 @@ def get_tagging_rules(db: Session = Depends(get_database)):
 
 
 @router.post("/rules")
-def create_tagging_rule(rule: RuleCreate, db: Session = Depends(get_database)):
+def create_tagging_rule(
+    rule: RuleCreate, db: Session = Depends(get_database)
+) -> dict[str, Any]:
     """Create a new tagging rule and immediately apply it to existing transactions.
 
     Returns
@@ -105,7 +115,7 @@ def create_tagging_rule(rule: RuleCreate, db: Session = Depends(get_database)):
 @router.put("/rules/{rule_id}")
 def update_tagging_rule(
     rule_id: int, rule: RuleUpdate, db: Session = Depends(get_database)
-):
+) -> dict[str, Any]:
     """Update an existing tagging rule and re-apply it.
 
     Untagged transactions matching the updated rule are tagged; when the
@@ -130,7 +140,9 @@ def update_tagging_rule(
 
 
 @router.delete("/rules/{rule_id}")
-def delete_tagging_rule(rule_id: int, db: Session = Depends(get_database)):
+def delete_tagging_rule(
+    rule_id: int, db: Session = Depends(get_database)
+) -> dict[str, str]:
     """Delete a tagging rule."""
     service = TaggingRulesService(db)
     service.delete_rule(rule_id)
@@ -138,7 +150,9 @@ def delete_tagging_rule(rule_id: int, db: Session = Depends(get_database)):
 
 
 @router.post("/rules/apply")
-def apply_tagging_rules(overwrite: bool = False, db: Session = Depends(get_database)):
+def apply_tagging_rules(
+    overwrite: bool = False, db: Session = Depends(get_database)
+) -> dict[str, Any]:
     """Manually trigger application of all active tagging rules.
 
     Parameters
@@ -163,7 +177,7 @@ def apply_tagging_rules(overwrite: bool = False, db: Session = Depends(get_datab
 @router.post("/rules/{rule_id}/apply")
 def apply_single_tagging_rule(
     rule_id: int, overwrite: bool = False, db: Session = Depends(get_database)
-):
+) -> dict[str, Any]:
     """Apply a single tagging rule to all transactions.
 
     Parameters
@@ -185,7 +199,9 @@ def apply_single_tagging_rule(
 
 
 @router.post("/rules/validate")
-def validate_rule_conflicts(rule: RuleValidate, db: Session = Depends(get_database)):
+def validate_rule_conflicts(
+    rule: RuleValidate, db: Session = Depends(get_database)
+) -> dict[str, str]:
     """Check whether a rule's conditions conflict with existing rules.
 
     Optionally excludes a specific rule from the conflict check (used when
@@ -219,6 +235,8 @@ def validate_rule_conflicts(rule: RuleValidate, db: Session = Depends(get_databa
 
 
 class RulePreview(BaseModel):
+    """Request body for a dry-run preview of the transactions a rule matches."""
+
     conditions: dict[str, Any]
     # Bounded: an unbounded default returned the whole table, and a negative
     # limit made SQLite ignore the LIMIT while pandas ``head(-1)`` dropped a
@@ -227,7 +245,9 @@ class RulePreview(BaseModel):
 
 
 @router.post("/rules/preview")
-def preview_rule_matches(preview: RulePreview, db: Session = Depends(get_database)):
+def preview_rule_matches(
+    preview: RulePreview, db: Session = Depends(get_database)
+) -> dict[str, Any]:
     """Preview which transactions would be matched by given rule conditions.
 
     Does not persist any changes — read-only dry run.
@@ -255,7 +275,7 @@ def preview_rule_matches(preview: RulePreview, db: Session = Depends(get_databas
 
 
 @router.post("/rules/auto-tag-credit-cards-bills")
-def auto_tag_credit_cards_bills(db: Session = Depends(get_database)):
+def auto_tag_credit_cards_bills(db: Session = Depends(get_database)) -> dict[str, Any]:
     """Auto-tag bank transactions that represent credit card monthly bill payments.
 
     For each credit card account tag (discovered via ``add-new-credit-card-tags``),

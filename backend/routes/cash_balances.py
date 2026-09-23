@@ -4,6 +4,8 @@ Cash Balance API routes.
 Provides endpoints for managing cash account balances and prior wealth.
 """
 
+from typing import Any
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
@@ -16,6 +18,8 @@ router = APIRouter()
 
 
 class SetBalanceRequest(ApiRequestModel):
+    """Request body for setting a cash envelope's current balance."""
+
     account_name: str
     balance: float
 
@@ -23,7 +27,7 @@ class SetBalanceRequest(ApiRequestModel):
 @router.get("/")
 def get_cash_balances(
     db: Session = Depends(get_database),
-) -> list[dict]:
+) -> list[dict[str, Any]]:
     """Get all cash balance records."""
     service = CashBalanceService(db)
     return service.get_all_balances()
@@ -33,8 +37,14 @@ def get_cash_balances(
 def set_cash_balance(
     request: SetBalanceRequest,
     db: Session = Depends(get_database),
-) -> dict:
-    """Set current balance for a cash account."""
+) -> dict[str, Any]:
+    """Set current balance for a cash account.
+
+    Raises
+    ------
+    HTTPException
+        400 when the service rejects the balance.
+    """
     service = CashBalanceService(db)
     try:
         return service.set_balance(
@@ -42,13 +52,13 @@ def set_cash_balance(
             balance=request.balance,
         )
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
 
 
 @router.post("/migrate")
 def migrate_cash_balances(
     db: Session = Depends(get_database),
-) -> list[dict]:
+) -> list[dict[str, Any]]:
     """Migrate existing cash transactions to cash_balances table.
 
     Idempotent: skips accounts that are already migrated.
@@ -62,7 +72,7 @@ def migrate_cash_balances(
 def delete_cash_balance(
     account_name: str,
     db: Session = Depends(get_database),
-) -> dict:
+) -> dict[str, Any]:
     """Delete a cash balance record by account name.
 
     Migrates any transactions from the deleted account to "Wallet".
@@ -71,8 +81,9 @@ def delete_cash_balance(
     Raises
     ------
     EntityNotFoundException
-        404 if no cash balance record exists for ``account_name``. Deleting
-        an unknown envelope used to report success.
+        404 if no cash balance record exists for ``account_name``.
+    HTTPException
+        400 when the account cannot be deleted (e.g. the default "Wallet").
     """
     service = CashBalanceService(db)
     if service.get_by_account_name(account_name) is None:
@@ -83,4 +94,4 @@ def delete_cash_balance(
         service.delete_for_account(account_name)
         return {"status": "deleted", "account_name": account_name}
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e

@@ -5,6 +5,7 @@ Provides endpoints for financial analysis and reporting.
 """
 
 from datetime import date
+from typing import Any
 
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, Field
@@ -61,7 +62,7 @@ class RecurringDecisionsRequest(BaseModel):
 @router.get("/overview")
 def get_overview(
     db: Session = Depends(get_database),
-):
+) -> dict[str, Any]:
     """Return an aggregate financial overview across all available data.
 
     Returns
@@ -76,7 +77,7 @@ def get_overview(
 @router.get("/net-balance-over-time")
 def get_net_balance_over_time(
     db: Session = Depends(get_database),
-):
+) -> list[dict[str, Any]]:
     """Return the cumulative net balance trend over time.
 
     Returns
@@ -95,7 +96,7 @@ def get_income_expenses_over_time(
     exclude_liabilities: bool = False,
     exclude_refunds: bool = False,
     exclude_pending_refunds: bool = True,
-):
+) -> list[dict[str, Any]]:
     """Return monthly income and expense totals over time.
 
     Parameters
@@ -127,7 +128,7 @@ def get_income_expenses_over_time(
 @router.get("/debt-payments-over-time")
 def get_debt_payments_over_time(
     db: Session = Depends(get_database),
-):
+) -> list[dict[str, Any]]:
     """Return monthly debt payment totals over time."""
     service = AnalysisService(db)
     return service.get_debt_payments_over_time()
@@ -139,7 +140,7 @@ def get_expenses_by_category_over_time(
     exclude_pending_refunds: bool = True,
     exclude_projects: bool = False,
     exclude_liabilities: bool = False,
-):
+) -> list[dict[str, Any]]:
     """Return monthly expenses broken down by category.
 
     Parameters
@@ -165,7 +166,7 @@ def get_expenses_by_category_over_time(
 def get_sankey_data(
     db: Session = Depends(get_database),
     exclude_pending_refunds: bool = True,
-) -> dict:
+) -> dict[str, Any]:
     """Return Sankey chart data showing income-to-expense flow.
 
     Parameters
@@ -190,7 +191,7 @@ def get_income_by_source_over_time(
     db: Session = Depends(get_database),
     exclude_pending_refunds: bool = True,
     exclude_liabilities: bool = False,
-):
+) -> list[dict[str, Any]]:
     """Return monthly income broken down by source (category+tag).
 
     Parameters
@@ -220,7 +221,7 @@ def get_income_by_source(
     start: date | None = Query(None),
     end: date | None = Query(None),
     db: Session = Depends(get_database),
-) -> dict:
+) -> dict[str, Any]:
     """Return total income amount per source (category+tag) for a date window.
 
     Parameters
@@ -244,7 +245,7 @@ def get_monthly_expenses(
     exclude_pending_refunds: bool = Query(True),
     include_projects: bool = Query(False),
     db: Session = Depends(get_database),
-):
+) -> dict[str, Any]:
     """Return monthly expense totals and rolling averages.
 
     Calculates expenses using the same methodology as the monthly budget:
@@ -280,7 +281,7 @@ def get_recurring(
         False, description="Include candidates the user dismissed."
     ),
     db: Session = Depends(get_database),
-):
+) -> dict[str, Any]:
     """Return detected recurring-charge candidates (subscriptions, bills).
 
     Each item carries a ``confirmation`` verdict; only confirmed ones feed the
@@ -306,7 +307,7 @@ def get_recurring(
 def set_recurring_decisions(
     payload: RecurringDecisionsRequest,
     db: Session = Depends(get_database),
-):
+) -> dict[str, Any]:
     """Record the user's verdicts on detected recurring-charge candidates.
 
     Parameters
@@ -326,7 +327,7 @@ def set_recurring_decisions(
 @router.get("/insights")
 def get_insights(
     db: Session = Depends(get_database),
-):
+) -> list[dict[str, Any]]:
     """Return rule-based financial insight cards.
 
     Returns
@@ -343,7 +344,7 @@ def get_insights(
 def dismiss_insight(
     payload: InsightDismissalRequest,
     db: Session = Depends(get_database),
-):
+) -> dict[str, Any]:
     """Hide one insight card.
 
     The dismissal is keyed to what the card is *about*, so it lapses on its
@@ -368,7 +369,7 @@ def dismiss_insight(
 def restore_insight(
     payload: InsightDismissalRequest,
     db: Session = Depends(get_database),
-):
+) -> dict[str, Any]:
     """Undo a dismissal, letting the card come back.
 
     Parameters
@@ -388,7 +389,7 @@ def restore_insight(
 @router.get("/cash-flow-forecast")
 def get_cash_flow_forecast(
     db: Session = Depends(get_database),
-):
+) -> dict[str, Any]:
     """Return the current-month cash-flow forecast.
 
     Combines month-to-date actuals with trend-based projection to estimate
@@ -407,7 +408,7 @@ def get_cash_flow_forecast(
 @router.get("/net-worth-over-time")
 def get_net_worth_over_time(
     db: Session = Depends(get_database),
-):
+) -> list[dict[str, Any]]:
     """Return the net worth trend over time including investment balances.
 
     Returns

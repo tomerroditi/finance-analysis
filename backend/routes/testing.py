@@ -15,19 +15,11 @@ from fastapi import APIRouter, Header, HTTPException
 from backend import database, demo_sessions
 from backend.config import AppConfig
 from backend.database import get_db_context
-from backend.demo_setup import (
-    DEMO_REFERENCE_DATE,
-    prepare_demo_database,
-    sync_missing_columns,
-)
+from backend.demo_setup import prepare_demo_database, sync_missing_columns
 from backend.models.base import Base
 from backend.services.tagging_service import CategoriesTagsService
 
 router = APIRouter()
-
-# Re-exported for backwards compatibility with tests/integrations that
-# import this constant from the route module.
-__all__ = ["DEMO_REFERENCE_DATE", "router"]
 
 
 def _demo_db_exists() -> bool:
