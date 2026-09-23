@@ -31,6 +31,7 @@ import logging
 import os
 import secrets
 from collections.abc import Iterable, Mapping
+from typing import Any
 from urllib.parse import urlsplit
 
 logger = logging.getLogger(__name__)
@@ -178,13 +179,13 @@ def build_tailnet_ingress_port(env_value: str | None = None) -> int | None:
 
     Parameters
     ----------
-    env_value : Optional[str]
+    env_value : str | None
         Value of ``TAILNET_INGRESS_PORT``; read from the environment when
         None.
 
     Returns
     -------
-    Optional[int]
+    int | None
         The port, or None when unset or malformed — which trusts no
         ``Tailscale-User-Login`` header at all.
     """
@@ -200,7 +201,9 @@ def build_tailnet_ingress_port(env_value: str | None = None) -> int | None:
     return port if 0 < port < 65536 else None
 
 
-def arrived_on_tailnet_ingress(server: tuple | None, ingress_port: int | None) -> bool:
+def arrived_on_tailnet_ingress(
+    server: tuple[Any, ...] | None, ingress_port: int | None
+) -> bool:
     """Return True when a request came in on the ``tailscale serve`` listener.
 
     ``tailscale serve`` strips any client copy of ``Tailscale-User-Login``,
@@ -211,11 +214,16 @@ def arrived_on_tailnet_ingress(server: tuple | None, ingress_port: int | None) -
 
     Parameters
     ----------
-    server : Optional[tuple]
+    server : tuple | None
         The ASGI scope's ``server`` — the local ``(host, port)`` the
         connection was accepted on.
-    ingress_port : Optional[int]
+    ingress_port : int | None
         From ``build_tailnet_ingress_port``.
+
+    Returns
+    -------
+    bool
+        Whether the connection was accepted on ``ingress_port``.
     """
     if ingress_port is None or not server or len(server) < 2:
         return False
