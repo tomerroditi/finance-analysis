@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from backend.constants.categories import LIABILITIES_CATEGORY
 from backend.errors import EntityAlreadyExistsException, EntityNotFoundException
 from backend.models.liability import Liability, LiabilityTransaction
+from backend.repositories._sql import orm_rows_to_frame
 
 
 class LiabilitiesRepository:
@@ -121,10 +122,7 @@ class LiabilitiesRepository:
             stmt = stmt.where(Liability.is_paid_off == 0)
 
         records = self.db.execute(stmt).scalars().all()
-        if not records:
-            return pd.DataFrame()
-        df = pd.DataFrame([r.__dict__ for r in records])
-        return df.drop(columns=["_sa_instance_state"], errors="ignore")
+        return orm_rows_to_frame(records)
 
     def get_by_id(self, liability_id: int) -> pd.DataFrame:
         """Get a liability by its ID.
@@ -148,8 +146,7 @@ class LiabilitiesRepository:
         records = self.db.execute(stmt).scalars().all()
         if not records:
             raise EntityNotFoundException(f"No liability found with ID {liability_id}")
-        df = pd.DataFrame([r.__dict__ for r in records])
-        return df.drop(columns=["_sa_instance_state"], errors="ignore")
+        return orm_rows_to_frame(records)
 
     def update_liability(self, liability_id: int, **fields: Any) -> None:
         """Update a liability by ID.

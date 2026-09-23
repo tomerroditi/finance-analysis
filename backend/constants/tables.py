@@ -2,6 +2,8 @@
 
 from enum import Enum
 
+from backend.constants.providers import Services
+
 
 class Tables(Enum):
     """Enum defining database table names used in the application.
@@ -89,6 +91,63 @@ class Tables(Enum):
     SAVINGS_GOAL_INVESTMENTS = "savings_goal_investments"
     RECURRING_DECISIONS = "recurring_decisions"
     INSIGHT_DISMISSALS = "insight_dismissals"
+
+
+# The five transaction tables, keyed by the service name the frontend and API
+# use for them. This is the one source of truth for the service <-> table
+# pairing; every other mapping in the backend is derived from it.
+SERVICE_TO_TABLE: dict[str, str] = {
+    Services.CREDIT_CARD.value: Tables.CREDIT_CARD.value,
+    Services.BANK.value: Tables.BANK.value,
+    Services.CASH.value: Tables.CASH.value,
+    Services.MANUAL_INVESTMENTS.value: Tables.MANUAL_INVESTMENT_TRANSACTIONS.value,
+    Services.INSURANCE.value: Tables.INSURANCE.value,
+}
+
+TABLE_TO_SERVICE: dict[str, str] = {
+    table: service for service, table in SERVICE_TO_TABLE.items()
+}
+
+# Every spelling that identifies a transaction table: the table names plus the
+# service names that older rows (refunds, overrides) and clients still send.
+TRANSACTION_SOURCES: frozenset[str] = frozenset(SERVICE_TO_TABLE) | frozenset(
+    TABLE_TO_SERVICE
+)
+
+
+def canonical_table(source: str) -> str:
+    """Normalize a transaction source to its table name.
+
+    Parameters
+    ----------
+    source : str
+        Table name (``"bank_transactions"``) or legacy service name
+        (``"banks"``).
+
+    Returns
+    -------
+    str
+        The table name when ``source`` is a known spelling, ``source``
+        unchanged otherwise.
+    """
+    return SERVICE_TO_TABLE.get(source, source)
+
+
+def table_aliases(table: str) -> list[str]:
+    """Return every stored spelling of a transaction table.
+
+    Parameters
+    ----------
+    table : str
+        Canonical table name.
+
+    Returns
+    -------
+    list[str]
+        ``[table]`` followed by its legacy service name, when it has one.
+    """
+    service = TABLE_TO_SERVICE.get(table)
+    return [table, service] if service else [table]
 
 
 def _create_enum(name: str, fields: list[tuple[str, str]]) -> type[Enum]:

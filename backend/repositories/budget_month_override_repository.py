@@ -5,6 +5,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from backend.models.budget_month_override import BudgetMonthOverride
+from backend.repositories._sql import chunked
 
 
 class BudgetMonthOverrideRepository:
@@ -161,8 +162,7 @@ class BudgetMonthOverrideRepository:
         """
         if not source_ids:
             return
-        for start in range(0, len(source_ids), 500):
-            chunk = source_ids[start : start + 500]
+        for chunk in chunked(source_ids):
             self.db.execute(
                 delete(BudgetMonthOverride).where(
                     BudgetMonthOverride.source_type == source_type,

@@ -35,6 +35,7 @@ from backend.constants.categories import (
     IncomeCategories,
 )
 from backend.errors import ValidationException
+from backend.repositories.budget_repository import BudgetRepository
 from backend.repositories.recurring_decisions_repository import (
     DECISIONS,
     PENDING,
@@ -433,11 +434,8 @@ class RecurringService:
             *IncomeCategories._value2member_map_.keys(),
         ]
         # Time-boxed project budgets (renovation, wedding…) are one-off arcs,
-        # not ongoing commitments — keep them out of "recurring". Imported
-        # here because the budget package imports this module.
-        from backend.services.budget import ProjectBudgetService
-
-        exclude += ProjectBudgetService(self.db).get_all_projects_names()
+        # not ongoing commitments — keep them out of "recurring".
+        exclude += BudgetRepository(self.db).read_project_category_names()
 
         df = df[~df["category"].isin(exclude)].copy()
         if df.empty:

@@ -25,7 +25,7 @@ import pandas as pd
 
 from backend.config import AppConfig
 from backend.constants.providers import Services
-from backend.constants.tables import Tables, TransactionsTableFields
+from backend.constants.tables import SERVICE_TO_TABLE, TransactionsTableFields
 from backend.database import get_db_context
 from backend.errors import EntityNotFoundException
 from backend.repositories.credentials_repository import CredentialsRepository
@@ -154,13 +154,6 @@ OtpRateLimitError = _import_scraper_module(
 _describe_exception = _import_scraper_module(
     "scraper.base.base_scraper"
 ).describe_exception
-
-# Maps frontend service names to DB table / source column values.
-_SERVICE_TO_TABLE = {
-    Services.CREDIT_CARD.value: Tables.CREDIT_CARD.value,
-    Services.BANK.value: Tables.BANK.value,
-    Services.INSURANCE.value: Tables.INSURANCE.value,
-}
 
 
 def _format_key_amount(amount: float | str | None) -> str:
@@ -316,7 +309,7 @@ class ScraperAdapter:
         # so the UI can render friendly translated copy without the technical
         # text having to double as a user-facing message.
         self._error_type: str = ""
-        self._table_name: str = _SERVICE_TO_TABLE.get(service_name, "")
+        self._table_name: str = SERVICE_TO_TABLE.get(service_name, "")
         # Number of accounts the scraper reported, or None when the scrape
         # never produced a result. Distinguishes "an account with no
         # activity this window" (a real success) from "we fetched nothing
@@ -836,7 +829,7 @@ class ScraperAdapter:
         pd.DataFrame
             DataFrame with columns matching ``TransactionsTableFields``.
         """
-        source = _SERVICE_TO_TABLE.get(service_name, "")
+        source = SERVICE_TO_TABLE.get(service_name, "")
         rows: list[dict[str, Any]] = []
 
         for account, txn, txn_date, row_id, unique_id in self._iter_scraped_rows(

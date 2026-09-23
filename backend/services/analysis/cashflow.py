@@ -20,6 +20,7 @@ from backend.constants.categories import (
     IncomeCategories,
 )
 from backend.constants.tables import TransactionsTableFields
+from backend.repositories.budget_repository import BudgetRepository
 from backend.services.transaction_classification import (
     income_mask,
     investment_mask,
@@ -147,9 +148,7 @@ class CashflowMixin:
         df = self._net_matched_refunds(df, exclude_pending_refunds)
 
         if exclude_projects:
-            from backend.services.budget import ProjectBudgetService
-
-            project_names = ProjectBudgetService(self.db).get_all_projects_names()
+            project_names = BudgetRepository(self.db).read_project_category_names()
             if project_names:
                 df = df[~df[TransactionsTableFields.CATEGORY.value].isin(project_names)]
 
@@ -467,9 +466,7 @@ class CashflowMixin:
         expenses = df[expense_mask].copy()
 
         if exclude_projects:
-            from backend.services.budget import ProjectBudgetService
-
-            project_names = ProjectBudgetService(self.db).get_all_projects_names()
+            project_names = BudgetRepository(self.db).read_project_category_names()
             if project_names:
                 expenses = expenses[
                     ~expenses[TransactionsTableFields.CATEGORY.value].isin(

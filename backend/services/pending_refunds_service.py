@@ -4,12 +4,10 @@ import logging
 from typing import Any, Literal
 
 import pandas as pd
-from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.constants.tables import TransactionsTableFields
+from backend.constants.tables import TransactionsTableFields, canonical_table
 from backend.errors import EntityNotFoundException, ValidationException
-from backend.models.transaction import SplitTransaction, TransactionBase
 from backend.repositories.pending_refunds_repository import PendingRefundsRepository
 from backend.repositories.transactions import TransactionsRepository
 
@@ -78,7 +76,7 @@ class PendingRefundsService:
         # re-scrape purge guard in the ingestion repository matches on the
         # table name — a row saved as "banks" left its transaction unprotected
         # and the refund orphaned when the row was re-scraped.
-        source_table = self._canonical_source(source_table)
+        source_table = canonical_table(source_table)
 
         # A refund can only be expected on money that was actually spent: the
         # source must resolve, and the expectation is capped at its amount.
@@ -144,45 +142,19 @@ class PendingRefundsService:
             If the source table is unknown or the row does not exist.
         """
         if source_type == "split":
-            split = self.db.get(SplitTransaction, source_id)
+            split = self.transactions_repo.split_repo.get_split(source_id)
             if split is None:
                 raise ValidationException(f"Split {source_id} does not exist")
             return float(split.amount)
 
-        if self.transactions_repo.repo_map.get(source_table) is None:
+        if self.transactions_repo.get_repo_by_source(source_table) is None:
             raise ValidationException(f"Unknown source table '{source_table}'")
-        txn = self._get_refund_transaction(source_id, source_table)
+        txn = self.transactions_repo.get_record(source_table, source_id)
         if txn is None:
             raise ValidationException(
                 f"Transaction {source_id} does not exist in {source_table}"
             )
         return float(txn.amount)
-
-    def _get_refund_transaction(
-        self, transaction_id: int, source: str
-    ) -> TransactionBase | None:
-        """
-        Resolve a refund transaction ORM row from its id and source table.
-
-        Parameters
-        ----------
-        transaction_id : int
-            unique_id of the transaction.
-        source : str
-            Table or service name where the transaction lives.
-
-        Returns
-        -------
-        TransactionBase or None
-            The ORM transaction row, or None when the source/transaction
-            can't be resolved.
-        """
-        repo = self.transactions_repo.repo_map.get(source)
-        if not repo:
-            return None
-        return self.db.execute(
-            select(repo.model).where(repo.model.unique_id == transaction_id)
-        ).scalar_one_or_none()
 
     def get_allocated_for_transaction(self, transaction_id: int, source: str) -> float:
         """
@@ -208,28 +180,11 @@ class PendingRefundsService:
         links = self.repo.get_all_links()
         if links.empty:
             return 0.0
-        canonical = self._canonical_source(source)
+        canonical = canonical_table(source)
         mask = (links["refund_transaction_id"] == transaction_id) & (
-            links["refund_source"].map(self._canonical_source) == canonical
+            links["refund_source"].map(canonical_table) == canonical
         )
         return float(links.loc[mask, "amount"].sum())
-
-    def _canonical_source(self, source: str) -> str:
-        """
-        Normalize a source string to its canonical table name.
-
-        Parameters
-        ----------
-        source : str
-            Table or service name (e.g. ``"banks"`` or ``"bank_transactions"``).
-
-        Returns
-        -------
-        str
-            The table name when resolvable, the input otherwise.
-        """
-        repo = self.transactions_repo.repo_map.get(source)
-        return repo.model.__tablename__ if repo else source
 
     def link_refund(
         self,
@@ -285,20 +240,17 @@ class PendingRefundsService:
         if amount <= 0:
             raise ValidationException("Refund amount must be positive")
 
-        if self.transactions_repo.repo_map.get(refund_source) is None:
+        if self.transactions_repo.get_repo_by_source(refund_source) is None:
             raise ValidationException(f"Unknown refund source '{refund_source}'")
 
         # The same transaction may fund several pending refunds, but only
         # once per pending refund.
         existing_links = self.repo.get_links_for_pending(pending_refund_id)
         if not existing_links.empty:
-            canonical = self._canonical_source(refund_source)
+            canonical = canonical_table(refund_source)
             duplicate = (
                 (existing_links["refund_transaction_id"] == refund_transaction_id)
-                & (
-                    existing_links["refund_source"].map(self._canonical_source)
-                    == canonical
-                )
+                & (existing_links["refund_source"].map(canonical_table) == canonical)
             ).any()
             if duplicate:
                 raise ValidationException(
@@ -307,7 +259,7 @@ class PendingRefundsService:
 
         # Validate against the money still available on the transaction
         # (skipped when the transaction can't be resolved, e.g. manual data).
-        txn = self._get_refund_transaction(refund_transaction_id, refund_source)
+        txn = self.transactions_repo.get_record(refund_source, refund_transaction_id)
         if txn is not None:
             allocated = self.get_allocated_for_transaction(
                 refund_transaction_id, refund_source
@@ -330,7 +282,7 @@ class PendingRefundsService:
         self.repo.add_refund_link(
             pending_refund_id=pending_refund_id,
             refund_transaction_id=refund_transaction_id,
-            refund_source=self._canonical_source(refund_source),
+            refund_source=canonical_table(refund_source),
             amount=actual_link_amount,
         )
 
@@ -407,7 +359,7 @@ class PendingRefundsService:
             ``{"refund_source", "refund_transaction_id", "note"}`` with the
             stored (canonicalized) values.
         """
-        canonical = self._canonical_source(refund_source)
+        canonical = canonical_table(refund_source)
         cleaned = (note or "").strip()
         if cleaned:
             self.repo.upsert_source_note(canonical, refund_transaction_id, cleaned)
@@ -474,21 +426,16 @@ class PendingRefundsService:
         for (table, type_), ids in sources.items():
             if type_ == "transaction":
                 try:
-                    repo = trans_repo.repo_map.get(table)
-                    if repo:
-                        model = repo.model
-                        stmt = select(model).where(model.unique_id.in_(ids))
-                        results = self.db.execute(stmt).scalars().all()
-                        for tx in results:
-                            details_map[(table, type_, tx.unique_id)] = {
-                                "date": tx.date,
-                                "description": tx.description,
-                                "account_name": tx.account_name,
-                                "provider": tx.provider,
-                                "category": tx.category,
-                                "tag": tx.tag,
-                                "original_currency": "ILS",  # Assumption
-                            }
+                    for tx in trans_repo.get_records(table, ids):
+                        details_map[(table, type_, tx.unique_id)] = {
+                            "date": tx.date,
+                            "description": tx.description,
+                            "account_name": tx.account_name,
+                            "provider": tx.provider,
+                            "category": tx.category,
+                            "tag": tx.tag,
+                            "original_currency": "ILS",  # Assumption
+                        }
                 except Exception:
                     logger.warning(
                         "Failed to enrich pending refunds from %s", table, exc_info=True
@@ -497,25 +444,19 @@ class PendingRefundsService:
                 # A split's display details come from its parent transaction.
                 try:
                     for split_id in ids:
-                        split = self.db.get(SplitTransaction, split_id)
-                        if split:
-                            repo = trans_repo.repo_map.get(split.source)
-                            if repo:
-                                parent = self.db.execute(
-                                    select(repo.model).where(
-                                        repo.model.unique_id == split.transaction_id
-                                    )
-                                ).scalar_one_or_none()
-                                if parent:
-                                    details_map[(table, type_, split_id)] = {
-                                        "date": parent.date,
-                                        "description": f"Split: {parent.description}",
-                                        "account_name": parent.account_name,
-                                        "provider": parent.provider,
-                                        "category": split.category,
-                                        "tag": split.tag,
-                                        "original_currency": "ILS",
-                                    }
+                        found = trans_repo.get_split_with_parent(split_id)
+                        if found is None or found[1] is None:
+                            continue
+                        split, parent = found
+                        details_map[(table, type_, split_id)] = {
+                            "date": parent.date,
+                            "description": f"Split: {parent.description}",
+                            "account_name": parent.account_name,
+                            "provider": parent.provider,
+                            "category": split.category,
+                            "tag": split.tag,
+                            "original_currency": "ILS",
+                        }
                 except Exception:
                     logger.warning(
                         "Failed to enrich pending refund splits from %s",
@@ -545,7 +486,7 @@ class PendingRefundsService:
             # Normalize legacy source-name variants so the frontend can key
             # links of the same transaction consistently.
             for link in p["links"]:
-                link["refund_source"] = self._canonical_source(link["refund_source"])
+                link["refund_source"] = canonical_table(link["refund_source"])
 
             total_refunded = sum(link["amount"] for link in p["links"])
             p["total_refunded"] = total_refunded
@@ -561,23 +502,18 @@ class PendingRefundsService:
             link_details_map: dict[tuple[str, int], dict[str, Any]] = {}
             for table, ids in link_sources.items():
                 try:
-                    repo = trans_repo.repo_map.get(table)
-                    if repo:
-                        model = repo.model
-                        stmt = select(model).where(model.unique_id.in_(ids))
-                        results = self.db.execute(stmt).scalars().all()
-                        for tx in results:
-                            # NOTE: the link's own `amount` is the allocated
-                            # portion — never overwrite it with the full
-                            # transaction amount.
-                            link_details_map[(table, tx.unique_id)] = {
-                                "date": tx.date,
-                                "description": tx.description,
-                                "account_name": tx.account_name,
-                                "provider": tx.provider,
-                                "transaction_amount": tx.amount,
-                                "original_currency": "ILS",
-                            }
+                    for tx in trans_repo.get_records(table, ids):
+                        # NOTE: the link's own `amount` is the allocated
+                        # portion — never overwrite it with the full
+                        # transaction amount.
+                        link_details_map[(table, tx.unique_id)] = {
+                            "date": tx.date,
+                            "description": tx.description,
+                            "account_name": tx.account_name,
+                            "provider": tx.provider,
+                            "transaction_amount": tx.amount,
+                            "original_currency": "ILS",
+                        }
                 except Exception:
                     logger.warning(
                         "Failed to enrich refund links from %s", table, exc_info=True
@@ -620,7 +556,7 @@ class PendingRefundsService:
             for _, row in notes_df.iterrows():
                 notes_map[
                     (
-                        self._canonical_source(row["refund_source"]),
+                        canonical_table(row["refund_source"]),
                         int(row["refund_transaction_id"]),
                     )
                 ] = row["note"]
@@ -629,7 +565,7 @@ class PendingRefundsService:
         for p in pendings:
             for link in p.get("links", []):
                 key = (
-                    self._canonical_source(link["refund_source"]),
+                    canonical_table(link["refund_source"]),
                     int(link["refund_transaction_id"]),
                 )
                 entry = sources.setdefault(
@@ -884,7 +820,7 @@ class PendingRefundsService:
             active_pending["source_type"] == "transaction"
         ]
         transaction_keys = {
-            (self._canonical_source(row["source_table"]), row["source_id"])
+            (canonical_table(row["source_table"]), row["source_id"])
             for _, row in transaction_pending.iterrows()
         }
 
@@ -955,7 +891,7 @@ class PendingRefundsService:
             if links is not None:
                 for _, link in links.iterrows():
                     key = (
-                        self._canonical_source(link["refund_source"]),
+                        canonical_table(link["refund_source"]),
                         int(link["refund_transaction_id"]),
                     )
                     tx_adj[key] = tx_adj.get(key, 0.0) - float(link["amount"])
@@ -971,7 +907,7 @@ class PendingRefundsService:
                 split_adj[split_id] = split_adj.get(split_id, 0.0) + credit
             else:
                 key = (
-                    self._canonical_source(pending["source_table"]),
+                    canonical_table(pending["source_table"]),
                     int(pending["source_id"]),
                 )
                 tx_adj[key] = tx_adj.get(key, 0.0) + credit

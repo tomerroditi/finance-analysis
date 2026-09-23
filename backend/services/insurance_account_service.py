@@ -11,16 +11,15 @@ into ``type='hishtalmut'`` investments, and
 from datetime import date, timedelta
 from typing import Any
 
-from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.errors import EntityNotFoundException
 from backend.models.insurance_account import InsuranceAccount
-from backend.models.transaction import InsuranceTransaction
 from backend.repositories.insurance_account_repository import (
     InsuranceAccountRepository,
 )
 from backend.repositories.investments_repository import InvestmentsRepository
+from backend.repositories.transactions import InsuranceRepository
 
 
 class InsuranceAccountService:
@@ -29,6 +28,7 @@ class InsuranceAccountService:
     def __init__(self, db: Session) -> None:
         self.db = db
         self.repo = InsuranceAccountRepository(db)
+        self.insurance_transactions_repo = InsuranceRepository(db)
 
     def get_all(self) -> list[InsuranceAccount]:
         """Get all insurance account records."""
@@ -123,14 +123,9 @@ class InsuranceAccountService:
         found_active = False
 
         for account in accounts:
-            # Insurance transactions key the policy by ``account_number``.
-            stmt = (
-                select(InsuranceTransaction)
-                .where(InsuranceTransaction.account_number == account.policy_id)
-                .order_by(InsuranceTransaction.date.desc())
-                .limit(1)
+            latest_txn = self.insurance_transactions_repo.get_latest_for_policy(
+                account.policy_id
             )
-            latest_txn = self.db.execute(stmt).scalars().first()
 
             if latest_txn is None:
                 continue

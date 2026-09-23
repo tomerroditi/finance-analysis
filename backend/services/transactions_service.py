@@ -11,7 +11,6 @@ from datetime import date, datetime
 from typing import Any, ClassVar, Literal
 
 import pandas as pd
-from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
 from backend.constants.categories import (
@@ -20,13 +19,17 @@ from backend.constants.categories import (
     IncomeCategories,
 )
 from backend.constants.providers import Services
-from backend.constants.tables import Tables, TransactionsTableFields
+from backend.constants.tables import (
+    TRANSACTION_SOURCES,
+    Tables,
+    TransactionsTableFields,
+    table_aliases,
+)
 from backend.errors import EntityNotFoundException, ValidationException
 from backend.repositories.bank_balance_repository import BankBalanceRepository
 from backend.repositories.investments_repository import InvestmentsRepository
 from backend.repositories.transactions import (
     ManualTransactionDTO,
-    ServiceRepository,
     TransactionsRepository,
 )
 from backend.utils.session_cache import session_cache_get, session_cache_set
@@ -605,7 +608,7 @@ class TransactionsService:
         # The row must exist before anything is filtered: a missing row is a
         # 404, not a silent "no_changes". Its account_name is also what the
         # old cash account's balance is recalculated from when it changes.
-        tx_before = self._get_record(target_repo, unique_id)
+        tx_before = self.transactions_repository.get_record(source, unique_id)
         if tx_before is None:
             raise EntityNotFoundException(
                 f"Transaction {unique_id} not found in {source}"
@@ -669,7 +672,7 @@ class TransactionsService:
             raise PermissionError(f"Deletion of {source} transactions is prohibited")
 
         target_repo = self.transactions_repository.get_repo_by_source(source)
-        tx_record = self._get_record(target_repo, unique_id)
+        tx_record = self.transactions_repository.get_record(source, unique_id)
 
         if not tx_record:
             raise ValueError("Transaction not found")
@@ -709,12 +712,6 @@ class TransactionsService:
             )
         self.realign_closed_investments()
 
-    def _get_record(self, repo: ServiceRepository, unique_id: int) -> Any | None:
-        """Return the ORM row with ``unique_id`` in ``repo``'s table, or ``None``."""
-        return self.transactions_repository.db.execute(
-            select(repo.model).where(repo.model.unique_id == unique_id)
-        ).scalar_one_or_none()
-
     def _purge_dependent_records(self, unique_ids: list[int], source: str) -> None:
         """
         Remove every record that pointed at now-deleted transactions.
@@ -750,13 +747,7 @@ class TransactionsService:
 
         # Older rows may store the service name ("cash") rather than the table
         # name ("cash_transactions"); accept every spelling that resolves here.
-        aliases = {
-            name
-            for name, repo in self.transactions_repository.repo_map.items()
-            if repo.model.__tablename__ == source
-        }
-        aliases.add(source)
-        source_aliases = sorted(aliases)
+        source_aliases = sorted(set(table_aliases(source)))
 
         # Slices are about to go too; their ids must be known before the
         # DELETE so the records pointing at them can follow.
@@ -807,7 +798,7 @@ class TransactionsService:
 
         # Split ids are global, but the override table is keyed by source
         # table as well; accept every spelling a client may have stored.
-        spellings = sorted(self.transactions_repository.repo_map)
+        spellings = sorted(TRANSACTION_SOURCES)
         spellings.append(Tables.SPLIT_TRANSACTIONS.value)
         BudgetMonthOverrideRepository(self.db).delete_for_sources(
             "split", split_ids, spellings
@@ -1031,8 +1022,7 @@ class TransactionsService:
         if amount is not None:
             updates["amount"] = amount
 
-        repo = self.transactions_repository.get_repo_by_source(source)
-        if repo is None:
+        if self.transactions_repository.get_repo_by_source(source) is None:
             raise ValueError(f"Invalid source: '{source}'")
 
         filtered_updates = self._filter_updates_for_source(source, updates)
@@ -1045,25 +1035,14 @@ class TransactionsService:
         # names matter when account_name itself is being changed.
         affected_accounts: set[str] = set()
         if source == Tables.CASH.value:
-            rows = (
-                self.db.execute(
-                    select(repo.model.account_name).where(repo.model.unique_id.in_(ids))
-                )
-                .scalars()
-                .all()
-            )
-            affected_accounts.update(a for a in rows if a)
+            names = self.transactions_repository.get_account_names(source, ids)
+            affected_accounts.update(a for a in names if a)
             if filtered_updates.get("account_name"):
                 affected_accounts.add(filtered_updates["account_name"])
 
-        # One UPDATE ... WHERE unique_id IN (...) and one commit instead of a
-        # commit (plus a cash-balance recalculation) per row.
-        self.db.execute(
-            update(repo.model)
-            .where(repo.model.unique_id.in_(ids))
-            .values(**filtered_updates)
-        )
-        self.db.commit()
+        # One commit for the whole batch instead of a commit (plus a
+        # cash-balance recalculation) per row.
+        self.transactions_repository.bulk_update_fields(source, ids, filtered_updates)
 
         if affected_accounts:
             from backend.services.cash_balance_service import CashBalanceService

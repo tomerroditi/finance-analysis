@@ -143,12 +143,16 @@ class BankBalanceService:
             )
 
     def _get_account_transaction_sum(self, provider: str, account_name: str) -> float:
-        """Get the sum of all bank transactions for a specific account."""
-        df = self.transactions_repo.get_table(service=Services.BANK.value)
-        if df.empty:
+        """Get the sum of all bank transactions for a specific account.
+
+        Counted as the merged transactions view shows the account: split
+        parents are replaced by their slices.
+        """
+        if provider is None:
             return 0.0
-        mask = (df["provider"] == provider) & (df["account_name"] == account_name)
-        return float(df.loc[mask, "amount"].sum())
+        return self.transactions_repo.bank_repo.sum_amount(
+            account_name, provider, expand_splits=True
+        )
 
     def get_total_prior_wealth(self) -> float:
         """Get total prior wealth from all bank accounts."""

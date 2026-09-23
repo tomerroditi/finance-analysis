@@ -12,12 +12,10 @@ from typing import Any
 
 import numpy as np
 import pandas as pd
-from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from backend.constants.providers import Services
 from backend.errors import EntityAlreadyExistsException, ValidationException
-from backend.models.transaction import InsuranceTransaction
 from backend.repositories.insurance_account_repository import InsuranceAccountRepository
 from backend.repositories.investment_snapshots_repository import (
     InvestmentSnapshotsRepository,
@@ -105,21 +103,13 @@ class InvestmentsService(SnapshotsMixin, ValuationMixin, InsuranceSyncMixin):
             for record in records
             if record.get("insurance_policy_id")
         ]
-        insurance_first_dates: dict[str, str] = {}
-        if policy_ids:
-            stmt = (
-                select(
-                    InsuranceTransaction.account_number,
-                    func.min(InsuranceTransaction.date),
-                )
-                .where(InsuranceTransaction.account_number.in_(policy_ids))
-                .group_by(InsuranceTransaction.account_number)
-            )
-            insurance_first_dates = {
-                account: first[:10]
-                for account, first in self.db.execute(stmt).all()
-                if first
-            }
+        insurance_first_dates = {
+            account: first[:10]
+            for account, first in self.transactions_repo.insurance_repo.get_first_dates(
+                policy_ids
+            ).items()
+            if first
+        }
 
         for record in records:
             record["latest_snapshot_date"] = snapshot_dates.get(record["id"])

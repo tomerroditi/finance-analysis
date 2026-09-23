@@ -3,12 +3,10 @@
 from typing import Any, Literal
 
 import pandas as pd
-from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.errors import EntityNotFoundException, ValidationException
 from backend.models.budget_month_override import BudgetMonthOverride
-from backend.models.transaction import SplitTransaction
 from backend.repositories.budget_month_override_repository import (
     BudgetMonthOverrideRepository,
 )
@@ -56,23 +54,10 @@ class BudgetMonthOverrideService:
             The transaction's real date, or None if it could not be resolved.
         """
         if source_type == "split":
-            split = self.db.get(SplitTransaction, source_id)
-            if not split:
-                return None
-            repo = self.transactions_repo.repo_map.get(split.source)
-            if not repo:
-                return None
-            parent = self.db.execute(
-                select(repo.model).where(repo.model.unique_id == split.transaction_id)
-            ).scalar_one_or_none()
-            return pd.to_datetime(parent.date) if parent else None
-
-        repo = self.transactions_repo.repo_map.get(source_table)
-        if not repo:
-            return None
-        txn = self.db.execute(
-            select(repo.model).where(repo.model.unique_id == source_id)
-        ).scalar_one_or_none()
+            found = self.transactions_repo.get_split_with_parent(source_id)
+            txn = found[1] if found else None
+        else:
+            txn = self.transactions_repo.get_record(source_table, source_id)
         return pd.to_datetime(txn.date) if txn else None
 
     @staticmethod

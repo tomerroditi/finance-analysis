@@ -757,9 +757,6 @@ class BudgetService:
             negative (raw convention). The caller should negate to get
             positive expense values.
         """
-        # Local import: project.py subclasses this module's BudgetService.
-        from backend.services.budget.project import ProjectBudgetService
-
         all_data = self.transactions_service.get_data_for_analysis(
             include_split_parents
         )
@@ -768,7 +765,7 @@ class BudgetService:
             return all_data
 
         expenses = self._expense_rows(all_data)
-        projects = ProjectBudgetService(self.db).get_all_projects_names()
+        projects = self.budget_repository.read_project_category_names()
         if projects:
             expenses = expenses.loc[
                 ~expenses[TransactionsTableFields.CATEGORY.value].isin(projects)

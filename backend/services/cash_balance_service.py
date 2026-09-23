@@ -7,11 +7,9 @@ prior wealth calculations, and balance recalculation based on transactions.
 from typing import Any
 
 import pandas as pd
-from sqlalchemy import delete, update
 from sqlalchemy.orm import Session
 
 from backend.models.cash_balance import CashBalance
-from backend.models.transaction import CashTransaction
 from backend.repositories.cash_balance_repository import CashBalanceRepository
 from backend.repositories.transactions import CashRepository
 
@@ -209,15 +207,7 @@ class CashBalanceService:
         float
             Sum of all cash transaction amounts for the account.
         """
-        transactions_df = self.cash_repo.get_table()
-        if transactions_df.empty:
-            return 0.0
-
-        account_df = transactions_df[transactions_df["account_name"] == account_name]
-        if account_df.empty:
-            return 0.0
-
-        return float(account_df["amount"].sum())
+        return self.cash_repo.sum_amount(account_name)
 
     def migrate_from_transactions(self) -> list[dict[str, Any]]:
         """Seed cash_balances from existing cash transaction history.
@@ -264,13 +254,7 @@ class CashBalanceService:
 
     def _delete_prior_wealth_transaction(self) -> None:
         """Delete the synthetic Prior Wealth offset row from cash_transactions."""
-        self.db.execute(
-            delete(CashTransaction).where(
-                (CashTransaction.tag == "Prior Wealth")
-                & (CashTransaction.account_name == "Prior Wealth")
-            )
-        )
-        self.db.commit()
+        self.cash_repo.delete_by_account_and_tag("Prior Wealth", "Prior Wealth")
 
     def _migrate_transactions_to_wallet(self, account_name: str) -> None:
         """Migrate all transactions from a deleted account to "Wallet".
@@ -283,13 +267,7 @@ class CashBalanceService:
         account_name : str
             Source account name to migrate from.
         """
-        stmt = (
-            update(CashTransaction)
-            .where(CashTransaction.account_name == account_name)
-            .values(account_name="Wallet")
-        )
-        self.db.execute(stmt)
-        self.db.commit()
+        self.cash_repo.rename_account(account_name, "Wallet")
 
         self.recalculate_current_balance(account_name)
         self.recalculate_current_balance("Wallet")

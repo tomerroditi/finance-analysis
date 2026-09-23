@@ -146,6 +146,27 @@ class BudgetRepository:
         stmt = select(BudgetRule).where(BudgetRule.period_type == PERIOD_PROJECT)
         return pd.read_sql(stmt, self.db.bind)
 
+    def read_project_category_names(self) -> list[str]:
+        """List the categories that own project budget rules.
+
+        Reads through the request-cached ``read_all``, so asking repeatedly
+        within one request costs one table read.
+
+        Returns
+        -------
+        list[str]
+            Distinct categories of every ``period_type == "project"`` rule,
+            closed projects included, in first-seen (table) order.
+        """
+        rules = self.read_all()
+        if rules.empty:
+            return []
+        return (
+            rules.loc[rules["period_type"] == PERIOD_PROJECT, "category"]
+            .unique()
+            .tolist()
+        )
+
     def read_by_period_type(self, period_type: str) -> pd.DataFrame:
         """Read all budget rules of a given period_type.
 

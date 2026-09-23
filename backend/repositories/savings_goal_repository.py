@@ -1,6 +1,5 @@
 """Data access for savings goals: allocations, transaction links, investment earmarks."""
 
-from collections.abc import Sequence
 from typing import Any
 
 import pandas as pd
@@ -15,6 +14,7 @@ from backend.models.savings_goal import (
     SavingsGoalInvestment,
     SavingsGoalLink,
 )
+from backend.repositories._sql import orm_rows_to_frame
 
 GOAL_COLUMNS = [
     "id",
@@ -46,14 +46,6 @@ LINK_COLUMNS = [
 BACKING_COLUMNS = ["id", "goal_id", "investment_id", "amount"]
 
 
-def _to_frame(records: Sequence[Any], columns: list[str]) -> pd.DataFrame:
-    """Build a DataFrame from ORM rows, preserving column order when empty."""
-    if not records:
-        return pd.DataFrame(columns=columns)
-    df = pd.DataFrame([r.__dict__ for r in records])
-    return df.drop(columns=["_sa_instance_state"], errors="ignore")
-
-
 class SavingsGoalRepository:
     """Repository for ``savings_goals`` CRUD operations."""
 
@@ -70,7 +62,7 @@ class SavingsGoalRepository:
     def get_all(self) -> pd.DataFrame:
         """Return all savings goals as a DataFrame (empty with no rows)."""
         records = self.db.execute(select(SavingsGoal)).scalars().all()
-        return _to_frame(records, GOAL_COLUMNS)
+        return orm_rows_to_frame(records, GOAL_COLUMNS)
 
     def get(self, goal_id: int) -> SavingsGoal | None:
         """Return a single goal by id, or None."""
@@ -151,14 +143,18 @@ class SavingsGoalRepository:
         stmt = select(SavingsGoalAllocation)
         if goal_id is not None:
             stmt = stmt.where(SavingsGoalAllocation.goal_id == goal_id)
-        return _to_frame(self.db.execute(stmt).scalars().all(), ALLOCATION_COLUMNS)
+        return orm_rows_to_frame(
+            self.db.execute(stmt).scalars().all(), ALLOCATION_COLUMNS
+        )
 
     def get_month_allocations(self, year: int, month: int) -> pd.DataFrame:
         """Return every goal's allocation for one calendar month."""
         stmt = select(SavingsGoalAllocation).where(
             SavingsGoalAllocation.year == year, SavingsGoalAllocation.month == month
         )
-        return _to_frame(self.db.execute(stmt).scalars().all(), ALLOCATION_COLUMNS)
+        return orm_rows_to_frame(
+            self.db.execute(stmt).scalars().all(), ALLOCATION_COLUMNS
+        )
 
     def upsert_allocation(
         self, goal_id: int, year: int, month: int, amount: float, source: str
@@ -218,7 +214,7 @@ class SavingsGoalRepository:
         stmt = select(SavingsGoalLink)
         if goal_id is not None:
             stmt = stmt.where(SavingsGoalLink.goal_id == goal_id)
-        return _to_frame(self.db.execute(stmt).scalars().all(), LINK_COLUMNS)
+        return orm_rows_to_frame(self.db.execute(stmt).scalars().all(), LINK_COLUMNS)
 
     def get_link_by_source(
         self, source_type: str, source_id: int, source_table: str
@@ -279,7 +275,7 @@ class SavingsGoalRepository:
         stmt = select(SavingsGoalInvestment).order_by(SavingsGoalInvestment.id)
         if goal_id is not None:
             stmt = stmt.where(SavingsGoalInvestment.goal_id == goal_id)
-        return _to_frame(self.db.execute(stmt).scalars().all(), BACKING_COLUMNS)
+        return orm_rows_to_frame(self.db.execute(stmt).scalars().all(), BACKING_COLUMNS)
 
     def get_backing(
         self, goal_id: int, investment_id: int

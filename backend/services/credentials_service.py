@@ -21,21 +21,15 @@ from backend.repositories.credentials_repository import (
     CredentialsRepository,
 )
 from backend.repositories.scraping_history_repository import ScrapingHistoryRepository
+from backend.utils.db_path_cache import cache_key
 from backend.utils.phone_numbers import ISRAELI_MOBILE_RE, normalize_israeli_mobile
 
 # ``{service: {provider: {account_name: {field: value}}}}``
 CredentialsTree = dict[str, dict[str, dict[str, dict[str, Any]]]]
 
-# In-memory credentials cache, partitioned by the resolved database path.
-# Real mode, demo mode and every per-visitor demo sandbox resolve to a
-# different file, so keying by path keeps them from ever serving each
-# other's credentials.
+# In-memory credentials cache, partitioned by the resolved database path
+# (see ``backend.utils.db_path_cache``).
 _credentials_cache: dict[str, CredentialsTree] = {}
-
-
-def cache_key() -> str:
-    """Return the cache partition for the current context (its DB path)."""
-    return AppConfig().get_db_path()
 
 
 # Sentinel returned by the API in place of stored secret values. Clients send

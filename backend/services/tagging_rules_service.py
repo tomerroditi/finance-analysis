@@ -9,25 +9,17 @@ import logging
 from typing import Any
 
 import pandas as pd
-from sqlalchemy import ColumnElement, and_, func, or_, select, update
-from sqlalchemy.orm import InstrumentedAttribute, Session
+from sqlalchemy.orm import Session
 
 from backend.constants.tables import Tables, TransactionsTableFields
 from backend.errors import BadRequestException, EntityNotFoundException
-from backend.models.transaction import (
-    BankTransaction,
-    CreditCardTransaction,
-    TransactionBase,
+from backend.repositories.tagging_rule_match_repository import (
+    TaggingRuleMatchRepository,
 )
 from backend.repositories.tagging_rules_repository import TaggingRulesRepository
 from backend.repositories.transactions import TransactionsRepository
 from backend.services.tagging_service import CategoriesTagsService
 from backend.services.transactions_service import TransactionsService
-
-TABLE_TO_MODEL: dict[str, type[TransactionBase]] = {
-    Tables.CREDIT_CARD.value: CreditCardTransaction,
-    Tables.BANK.value: BankTransaction,
-}
 
 # Fields a condition may match on, and the operators each accepts.
 TEXT_CONDITION_FIELDS: list[str] = [
@@ -43,30 +35,7 @@ VALID_NUMERIC_OPERATORS: list[str] = ["gt", "lt", "gte", "lte", "equals", "betwe
 # runs against, so it only makes sense with ``equals`` and one of these values.
 VALID_SERVICE_VALUES: set[str] = {"bank", "credit_card"}
 
-# SQLite caps bound parameters per statement; keep ``IN (...)`` lists under it.
-_SQL_IN_BATCH_SIZE = 900
-
 logger = logging.getLogger(__name__)
-
-
-def _escape_like(value: Any) -> str:
-    r"""Escape SQL ``LIKE`` metacharacters in a user-supplied search value.
-
-    ``%`` and ``_`` are wildcards inside a ``LIKE`` pattern, so a rule
-    searching for a literal ``"50%"`` would otherwise match ``"5000"`` too.
-    Callers must pass ``escape="\\"`` to the ``like()`` call.
-
-    Parameters
-    ----------
-    value : Any
-        Raw condition value; coerced to ``str``.
-
-    Returns
-    -------
-    str
-        The value with ``\``, ``%``, and ``_`` backslash-escaped.
-    """
-    return str(value).replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
 
 class TaggingRulesService:
@@ -94,6 +63,7 @@ class TaggingRulesService:
     def __init__(self, db: Session) -> None:
         self.db = db
         self.rules_repo = TaggingRulesRepository(db)
+        self.match_repo = TaggingRuleMatchRepository(db)
         self.transactions_repo = TransactionsRepository(db)
         self.categories_tags_service = CategoriesTagsService(db)
         self.transactions_service = TransactionsService(db)
@@ -444,22 +414,7 @@ class TaggingRulesService:
 
         results = []
         for table in tables:
-            model = TABLE_TO_MODEL[table]
-            filter_expr = self._build_recursive_filter(conditions, model)
-            stmt = select(
-                model.id,
-                model.unique_id,
-                model.date,
-                model.description,
-                model.amount,
-                model.category,
-                model.tag,
-                model.account_name,
-                model.provider,
-            ).where(filter_expr)
-            if limit is not None:
-                stmt = stmt.limit(limit)
-            df = pd.read_sql(stmt, self.db.bind)
+            df = self.match_repo.preview(table, conditions, limit)
             if not df.empty:
                 df["source"] = table
                 results.append(df)
@@ -611,12 +566,9 @@ class TaggingRulesService:
         matching_tx_ids_by_table: dict[str, set[int]] = {}
 
         for table in tables:
-            model = TABLE_TO_MODEL[table]
-            filter_expr = self._build_recursive_filter(conditions, model)
-            stmt = select(model.unique_id).where(filter_expr)
-            df = pd.read_sql(stmt, self.db.bind)
-            if not df.empty:
-                matching_tx_ids_by_table[table] = set(df["unique_id"].tolist())
+            ids = self.match_repo.match_ids(table, conditions)
+            if ids:
+                matching_tx_ids_by_table[table] = set(ids)
 
         if not any(matching_tx_ids_by_table.values()):
             return
@@ -645,22 +597,11 @@ class TaggingRulesService:
                 if not ids_to_check:
                     continue
 
-                model = TABLE_TO_MODEL[table]
-                r_filter = self._build_recursive_filter(rule_conds, model)
-
-                for i in range(0, len(ids_to_check), _SQL_IN_BATCH_SIZE):
-                    batch = ids_to_check[i : i + _SQL_IN_BATCH_SIZE]
-                    stmt = (
-                        select(func.count())
-                        .select_from(model)
-                        .where(and_(model.unique_id.in_(batch), r_filter))
+                if self.match_repo.any_match_among(table, rule_conds, ids_to_check):
+                    raise BadRequestException(
+                        f"Conflict detected: This rule matches transactions that are also matched by existing rule '{rule['name']}' "
+                        f"which assigns a different tag ('{rule['category']} - {rule['tag']}')."
                     )
-                    res = self.db.execute(stmt).scalar()
-                    if res > 0:
-                        raise BadRequestException(
-                            f"Conflict detected: This rule matches transactions that are also matched by existing rule '{rule['name']}' "
-                            f"which assigns a different tag ('{rule['category']} - {rule['tag']}')."
-                        )
 
     def _stored_conditions(self, rule: dict[str, Any]) -> dict[str, Any] | None:
         """
@@ -736,30 +677,11 @@ class TaggingRulesService:
 
         modified_pairs: set[tuple[str, int]] = set()
         for table in tables:
-            model = TABLE_TO_MODEL[table]
-            base_filter = self._build_recursive_filter(conditions, model)
-
-            if overwrite:
-                extra_filter = or_(
-                    model.category.is_(None),
-                    model.category.isnot(rule["category"]),
-                    model.tag.isnot(rule["tag"]),
-                )
-            elif previous is not None:
-                extra_filter = or_(
-                    model.category.is_(None),
-                    and_(model.category == previous[0], model.tag == previous[1]),
-                )
-            else:
-                extra_filter = model.category.is_(None)
-
             # Claim first, then narrow to the rows that need writing: a row
             # already carrying this rule's pair is still this rule's.
             matched = {
                 uid
-                for uid in pd.read_sql(
-                    select(model.unique_id).where(base_filter), self.db.bind
-                )["unique_id"].tolist()
+                for uid in self.match_repo.match_ids(table, conditions)
                 if claimed is None or (table, uid) not in claimed
             }
             if claimed is not None:
@@ -767,150 +689,26 @@ class TaggingRulesService:
             if not matched:
                 continue
 
-            stmt = select(model.unique_id).where(and_(base_filter, extra_filter))
             ids_to_update = [
                 uid
-                for uid in pd.read_sql(stmt, self.db.bind)["unique_id"].tolist()
+                for uid in self.match_repo.match_writable_ids(
+                    table,
+                    conditions,
+                    rule["category"],
+                    rule["tag"],
+                    overwrite=overwrite,
+                    previous=previous,
+                )
                 if uid in matched
             ]
             if not ids_to_update:
                 continue
 
-            for start in range(0, len(ids_to_update), _SQL_IN_BATCH_SIZE):
-                batch = ids_to_update[start : start + _SQL_IN_BATCH_SIZE]
-                self.db.execute(
-                    update(model)
-                    .where(model.unique_id.in_(batch))
-                    .values(category=rule["category"], tag=rule["tag"])
-                )
-            self.db.commit()
+            self.match_repo.assign(table, ids_to_update, rule["category"], rule["tag"])
 
             modified_pairs.update((table, uid) for uid in ids_to_update)
 
         return modified_pairs
-
-    def _build_recursive_filter(
-        self, condition_node: dict[str, Any], model: type[TransactionBase]
-    ) -> ColumnElement[bool] | bool:
-        """
-        Build a SQLAlchemy filter expression from a condition tree, recursively.
-
-        Fails closed: an empty group or an unknown node type matches nothing.
-        ``validate_rule_integrity`` rejects both before a rule is stored, so
-        reaching them here means the stored rule is malformed — matching
-        every transaction would be the worst possible interpretation.
-
-        Parameters
-        ----------
-        condition_node : dict
-            Group or leaf node of the condition tree.
-        model : type[TransactionBase]
-            Transaction model to build the filter against.
-
-        Returns
-        -------
-        ColumnElement[bool] or bool
-            Filter clause, or ``False`` for a malformed node.
-        """
-        c_type = condition_node.get("type")
-
-        if c_type in ("AND", "OR"):
-            subconditions = condition_node.get("subconditions", [])
-            if not subconditions:
-                return False
-
-            clauses = [
-                self._build_recursive_filter(sub, model) for sub in subconditions
-            ]
-            return and_(*clauses) if c_type == "AND" else or_(*clauses)
-
-        if c_type == "CONDITION":
-            return self._build_single_filter(condition_node, model)
-
-        return False
-
-    def _build_single_filter(
-        self, condition: dict[str, Any], model: type[TransactionBase]
-    ) -> ColumnElement[bool] | bool:
-        """
-        Build a single SQLAlchemy filter expression from a leaf condition dict.
-
-        Parameters
-        ----------
-        condition : dict
-            Leaf condition with ``field``, ``operator``, and ``value`` keys.
-        model : type[TransactionBase]
-            SQLAlchemy model class to build the filter against.
-
-        Returns
-        -------
-        ColumnElement[bool] or bool
-            Filter clause. ``True`` for the ``service`` pseudo-field (handled
-            by table selection); ``False`` for an unknown field or operator
-            so a malformed rule matches nothing rather than everything.
-        """
-        field = condition.get("field")
-        operator = condition.get("operator")
-        value = condition.get("value")
-
-        if field == "service":
-            # Restriction handled at the table-selection level, not here.
-            return True
-
-        column = self._get_model_column(field, model)
-        if column is None:
-            # An unrecognised field is a broken rule. Matching nothing keeps it
-            # inert; returning True would silently re-tag every transaction.
-            return False
-
-        if operator == "contains":
-            return column.like(f"%{_escape_like(value)}%", escape="\\")
-        if operator == "equals":
-            return column == value
-        if operator == "starts_with":
-            return column.like(f"{_escape_like(value)}%", escape="\\")
-        if operator == "ends_with":
-            return column.like(f"%{_escape_like(value)}", escape="\\")
-        if operator == "gt":
-            return column > float(value)
-        if operator == "lt":
-            return column < float(value)
-        if operator == "gte":
-            return column >= float(value)
-        if operator == "lte":
-            return column <= float(value)
-        if operator == "between":
-            return column.between(float(value[0]), float(value[1]))
-
-        return False
-
-    def _get_model_column(
-        self, field: str | None, model: type[TransactionBase]
-    ) -> InstrumentedAttribute[Any] | None:
-        """
-        Map a condition field name to the corresponding SQLAlchemy model column.
-
-        Parameters
-        ----------
-        field : str
-            Condition field name (e.g. ``"description"``, ``"amount"``).
-        model : type[TransactionBase]
-            SQLAlchemy model class.
-
-        Returns
-        -------
-        InstrumentedAttribute or None
-            The model column, or ``None`` for the ``"service"`` field (which
-            is handled at the table-selection level) and unknown fields.
-        """
-        field_mapping = {
-            "description": model.description,
-            "amount": model.amount,
-            "provider": model.provider,
-            "account_name": model.account_name,
-            "service": None,  # Handled by table selection
-        }
-        return field_mapping.get(field)
 
     def _get_tables_names_for_conditions(self, conditions: dict[str, Any]) -> list[str]:
         """

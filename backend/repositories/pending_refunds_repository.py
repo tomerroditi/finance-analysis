@@ -1,7 +1,5 @@
 """Pending refunds repository with SQLAlchemy ORM."""
 
-from collections.abc import Iterator
-
 import pandas as pd
 from sqlalchemy import ColumnElement, delete, select
 from sqlalchemy.orm import Session
@@ -11,15 +9,7 @@ from backend.models.pending_refund import (
     RefundLink,
     RefundSourceNote,
 )
-
-# SQLite caps bound parameters per statement; chunk long IN lists.
-_IN_CHUNK = 500
-
-
-def _chunked(values: list[int], size: int = _IN_CHUNK) -> Iterator[list[int]]:
-    """Yield ``values`` in slices small enough for a SQL ``IN`` clause."""
-    for start in range(0, len(values), size):
-        yield values[start : start + size]
+from backend.repositories._sql import chunked
 
 
 class PendingRefundsRepository:
@@ -394,7 +384,7 @@ class PendingRefundsRepository:
         if not unique_ids:
             return
 
-        for chunk in _chunked(unique_ids):
+        for chunk in chunked(unique_ids):
             self._purge_pending(
                 PendingRefund.source_type == "transaction",
                 PendingRefund.source_id.in_(chunk),
@@ -433,7 +423,7 @@ class PendingRefundsRepository:
         if not split_ids:
             return
 
-        for chunk in _chunked(split_ids):
+        for chunk in chunked(split_ids):
             self._purge_pending(
                 PendingRefund.source_type == "split",
                 PendingRefund.source_id.in_(chunk),

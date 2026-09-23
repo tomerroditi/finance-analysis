@@ -12,12 +12,13 @@ from datetime import datetime
 from typing import Any, ClassVar
 
 import pandas as pd
-from sqlalchemy import exists, func, or_, select
+from sqlalchemy import exists, func, or_, select, update
 from sqlalchemy.orm import Session
 
 from backend.constants.providers import Services
-from backend.constants.tables import Tables, TransactionsTableFields
-from backend.models.transaction import SplitTransaction
+from backend.constants.tables import SERVICE_TO_TABLE, Tables, TransactionsTableFields
+from backend.models.transaction import SplitTransaction, TransactionBase
+from backend.repositories._sql import chunked, orm_to_dict
 from backend.repositories.split_transactions_repository import (
     SplitTransactionsRepository,
 )
@@ -87,17 +88,10 @@ class TransactionsRepository(IngestionMixin, SplitsMixin):
         self.insurance_repo = InsuranceRepository(db)
         self.split_repo = SplitTransactionsRepository(db)
 
+        by_table = {repo.table: repo for repo in self._all_repos()}
         self.repo_map: dict[str, ServiceRepository] = {
-            Tables.CREDIT_CARD.value: self.cc_repo,
-            Tables.BANK.value: self.bank_repo,
-            Tables.CASH.value: self.cash_repo,
-            Tables.MANUAL_INVESTMENT_TRANSACTIONS.value: self.manual_investments_repo,
-            Tables.INSURANCE.value: self.insurance_repo,
-            Services.CREDIT_CARD.value: self.cc_repo,
-            Services.BANK.value: self.bank_repo,
-            Services.CASH.value: self.cash_repo,
-            Services.MANUAL_INVESTMENTS.value: self.manual_investments_repo,
-            Services.INSURANCE.value: self.insurance_repo,
+            **by_table,
+            **{service: by_table[table] for service, table in SERVICE_TO_TABLE.items()},
         }
 
     def _non_insurance_repos(self) -> list[ServiceRepository]:
@@ -328,6 +322,150 @@ class TransactionsRepository(IngestionMixin, SplitsMixin):
             on the ``None`` return to skip them.
         """
         return self.repo_map.get(source)
+
+    def get_record(self, source: str, unique_id: int) -> TransactionBase | None:
+        """Return one transaction's ORM row from its source table.
+
+        Parameters
+        ----------
+        source : str
+            Table or service name the transaction lives in.
+        unique_id : int
+            The transaction's per-table ``unique_id``.
+
+        Returns
+        -------
+        TransactionBase or None
+            The row, or ``None`` when ``source`` is unknown or no row has
+            that ``unique_id`` in it.
+        """
+        repo = self.get_repo_by_source(source)
+        if repo is None:
+            return None
+        return self.db.execute(
+            select(repo.model).where(repo.model.unique_id == unique_id)
+        ).scalar_one_or_none()
+
+    def get_records(self, source: str, unique_ids: list[int]) -> list[TransactionBase]:
+        """Return the ORM rows of many transactions from one source table.
+
+        Parameters
+        ----------
+        source : str
+            Table or service name the transactions live in.
+        unique_ids : list[int]
+            Per-table ``unique_id`` values; queried in ``IN`` chunks.
+
+        Returns
+        -------
+        list[TransactionBase]
+            The rows that exist; empty when ``source`` is unknown.
+        """
+        repo = self.get_repo_by_source(source)
+        if repo is None:
+            return []
+        rows: list[TransactionBase] = []
+        for chunk in chunked(unique_ids):
+            rows.extend(
+                self.db.execute(
+                    select(repo.model).where(repo.model.unique_id.in_(chunk))
+                )
+                .scalars()
+                .all()
+            )
+        return rows
+
+    def get_split_with_parent(
+        self, split_id: int
+    ) -> tuple[SplitTransaction, TransactionBase | None] | None:
+        """Return a split slice together with the transaction it was cut from.
+
+        Parameters
+        ----------
+        split_id : int
+            Primary key of the ``split_transactions`` row.
+
+        Returns
+        -------
+        tuple[SplitTransaction, TransactionBase or None] or None
+            ``None`` when the slice does not exist; otherwise the slice and its
+            parent row, the latter ``None`` when the slice's source is unknown
+            or its parent is gone.
+        """
+        split = self.split_repo.get_split(split_id)
+        if split is None:
+            return None
+        return split, self.get_record(split.source, split.transaction_id)
+
+    def get_account_names(self, source: str, unique_ids: list[int]) -> list[str | None]:
+        """Return the ``account_name`` of each existing transaction in a batch.
+
+        Parameters
+        ----------
+        source : str
+            Table or service name the transactions live in.
+        unique_ids : list[int]
+            Per-table ``unique_id`` values; queried in ``IN`` chunks.
+
+        Returns
+        -------
+        list[str or None]
+            One entry per matched row (unordered, may repeat).
+
+        Raises
+        ------
+        ValueError
+            If ``source`` is not a known table/service name.
+        """
+        repo = self._require_repo(source)
+        names: list[str | None] = []
+        for chunk in chunked(unique_ids):
+            names.extend(
+                self.db.execute(
+                    select(repo.model.account_name).where(
+                        repo.model.unique_id.in_(chunk)
+                    )
+                )
+                .scalars()
+                .all()
+            )
+        return names
+
+    def bulk_update_fields(
+        self, source: str, unique_ids: list[int], values: dict[str, Any]
+    ) -> None:
+        """Write the same field values to many transactions in one commit.
+
+        Parameters
+        ----------
+        source : str
+            Table or service name the transactions live in.
+        unique_ids : list[int]
+            Per-table ``unique_id`` values; ids that do not exist are simply
+            not matched. Updated in ``IN`` chunks.
+        values : dict[str, Any]
+            Column name to new value.
+
+        Raises
+        ------
+        ValueError
+            If ``source`` is not a known table/service name.
+        """
+        repo = self._require_repo(source)
+        for chunk in chunked(unique_ids):
+            self.db.execute(
+                update(repo.model)
+                .where(repo.model.unique_id.in_(chunk))
+                .values(**values)
+            )
+        self.db.commit()
+
+    def _require_repo(self, source: str) -> ServiceRepository:
+        """Return the sub-repository for ``source`` or raise ``ValueError``."""
+        repo = self.get_repo_by_source(source)
+        if repo is None:
+            raise ValueError(f"Invalid source: '{source}'")
+        return repo
 
     def bulk_update_tagging(
         self,
@@ -628,6 +766,6 @@ class TransactionsRepository(IngestionMixin, SplitsMixin):
             raise ValueError(
                 f"Transaction with ID {transaction_id} not found in {source}."
             )
-        row = {k: v for k, v in record.__dict__.items() if k != "_sa_instance_state"}
+        row = orm_to_dict(record)
         row["source"] = repo.model.__tablename__
         return pd.Series(row)

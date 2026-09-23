@@ -13,9 +13,6 @@ from typing import Any
 
 import numpy as np
 import pandas as pd
-from sqlalchemy import select
-
-from backend.models.transaction import InsuranceTransaction
 
 #: One day as a numpy timedelta, for date arithmetic on datetime64 values.
 _ONE_DAY = np.timedelta64(1, "D")
@@ -821,10 +818,7 @@ class ValuationMixin:
         if not policy_id or pd.isna(policy_id):
             return manual_txns
 
-        stmt = select(InsuranceTransaction).where(
-            InsuranceTransaction.account_number == policy_id
-        )
-        ins_txns = pd.read_sql(stmt, self.db.bind)
+        ins_txns = self.transactions_repo.insurance_repo.get_for_policy(policy_id)
 
         if ins_txns.empty:
             combined = manual_txns

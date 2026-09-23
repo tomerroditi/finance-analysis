@@ -1135,3 +1135,126 @@ class TestGetCategoryLastUsed:
         db_session.commit()
         repo = TransactionsRepository(db_session)
         assert "Transport" not in repo.get_category_last_used()
+
+
+def _bank(db_session, id_: str, amount: float, **overrides) -> BankTransaction:
+    """Insert one bank transaction and return it."""
+    fields = {
+        "id": id_, "date": "2025-01-01", "provider": "hapoalim",
+        "account_name": "Main", "description": id_, "amount": amount,
+        "source": "bank_transactions", "type": "normal", "status": "completed",
+    }
+    fields.update(overrides)
+    row = BankTransaction(**fields)
+    db_session.add(row)
+    db_session.commit()
+    return row
+
+
+class TestRecordLookups:
+    """Source-aware row lookups and batched writes on TransactionsRepository."""
+
+    def test_get_record_resolves_table_and_service_names(self, db_session):
+        """Both spellings of a source find the row; unknown ones return None."""
+        row = _bank(db_session, "r1", -10.0)
+        repo = TransactionsRepository(db_session)
+
+        assert repo.get_record("bank_transactions", row.unique_id) is row
+        assert repo.get_record("banks", row.unique_id) is row
+        assert repo.get_record("credit_card_transactions", row.unique_id) is None
+        assert repo.get_record("nonsense", row.unique_id) is None
+
+    def test_get_records_chunks_long_id_lists(self, db_session):
+        """More ids than one IN chunk still returns every existing row."""
+        rows = [_bank(db_session, f"c{i}", -1.0) for i in range(3)]
+        repo = TransactionsRepository(db_session)
+        ids = [r.unique_id for r in rows] + list(range(100_000, 101_200))
+
+        found = repo.get_records("bank_transactions", ids)
+
+        assert {r.unique_id for r in found} == {r.unique_id for r in rows}
+        assert repo.get_records("nonsense", ids) == []
+
+    def test_get_split_with_parent(self, db_session):
+        """A slice comes back with its parent; a missing slice is None."""
+        parent = _bank(db_session, "sp", -30.0, type="split_parent")
+        split = SplitTransaction(
+            transaction_id=parent.unique_id, source="bank_transactions",
+            amount=-30.0, category="Food", tag="Groceries",
+        )
+        db_session.add(split)
+        db_session.commit()
+        repo = TransactionsRepository(db_session)
+
+        assert repo.get_split_with_parent(split.id) == (split, parent)
+        assert repo.get_split_with_parent(999_999) is None
+
+    def test_bulk_update_fields_and_account_names(self, db_session):
+        """One batched write updates every listed row and nothing else."""
+        a = _bank(db_session, "b1", -1.0, account_name="A")
+        b = _bank(db_session, "b2", -2.0, account_name="B")
+        untouched = _bank(db_session, "b3", -3.0, account_name="C")
+        repo = TransactionsRepository(db_session)
+
+        assert sorted(repo.get_account_names("banks", [a.unique_id, b.unique_id])) == [
+            "A", "B",
+        ]
+        repo.bulk_update_fields(
+            "bank_transactions", [a.unique_id, b.unique_id], {"category": "Food"}
+        )
+        db_session.expire_all()
+
+        assert (a.category, b.category, untouched.category) == ("Food", "Food", None)
+        with pytest.raises(ValueError, match="Invalid source"):
+            repo.bulk_update_fields("nonsense", [a.unique_id], {"category": "X"})
+
+
+class TestSumAmount:
+    """ServiceRepository.sum_amount matches the pandas sums it replaced."""
+
+    def test_plain_sum_counts_every_stored_row(self, db_session):
+        """Without split expansion, a split parent counts at its own amount."""
+        _bank(db_session, "p1", -100.0, type="split_parent")
+        _bank(db_session, "p2", 40.0)
+        _bank(db_session, "other", -7.0, account_name="Other")
+        repo = TransactionsRepository(db_session).bank_repo
+
+        assert repo.sum_amount("Main") == -60.0
+        assert repo.sum_amount("Main", "leumi") == 0.0
+        assert repo.sum_amount(None) == 0.0
+
+    def test_expanded_sum_equals_the_merged_view(self, db_session):
+        """Split expansion sums exactly what get_table(service) shows."""
+        parent = _bank(db_session, "sp", -100.0, type="split_parent")
+        _bank(db_session, "plain", 25.0, type=None)
+        _bank(db_session, "elsewhere", -9.0, provider="leumi")
+        db_session.add_all(
+            [
+                SplitTransaction(
+                    transaction_id=parent.unique_id, source=source,
+                    amount=amount, category="Food", tag=None,
+                )
+                for source, amount in (
+                    ("bank_transactions", -60.0),
+                    ("banks", -39.5),
+                    ("credit_card_transactions", -1000.0),
+                )
+            ]
+            + [
+                SplitTransaction(
+                    transaction_id=987_654, source="bank_transactions",
+                    amount=-500.0, category="Food", tag=None,
+                )
+            ]
+        )
+        db_session.commit()
+        transactions = TransactionsRepository(db_session)
+
+        merged = transactions.get_table(service="banks")
+        mask = (merged["provider"] == "hapoalim") & (merged["account_name"] == "Main")
+        expected = float(merged.loc[mask, "amount"].sum())
+
+        assert expected == pytest.approx(-74.5)
+        assert transactions.bank_repo.sum_amount(
+            "Main", "hapoalim", expand_splits=True
+        ) == pytest.approx(expected)

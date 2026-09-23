@@ -588,10 +588,7 @@ class ForecastMixin:
             - ``avg_6_months`` -- average monthly expenses over the last 6 months.
             - ``avg_12_months`` -- average monthly expenses over the last 12 months.
         """
-        from backend.services.budget import (
-            MonthlyBudgetService,
-            ProjectBudgetService,
-        )
+        from backend.services.budget import MonthlyBudgetService
 
         empty_result = {
             "months": [],
@@ -623,8 +620,9 @@ class ForecastMixin:
 
         monthly_project: pd.Series | None = None
         if include_projects:
-            project_service = ProjectBudgetService(self.db)
-            project_names = project_service.get_all_projects_names()
+            project_names = (
+                budget_service.budget_repository.read_project_category_names()
+            )
             if project_names:
                 all_data = budget_service.transactions_service.get_data_for_analysis()
                 project_txns = all_data.loc[

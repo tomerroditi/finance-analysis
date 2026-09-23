@@ -1,21 +1,11 @@
 """Split transactions repository with SQLAlchemy ORM."""
 
-from collections.abc import Iterator
-
 import pandas as pd
 from sqlalchemy import delete, select, update
 from sqlalchemy.orm import Session
 
 from backend.models.transaction import SplitTransaction
-
-# SQLite caps bound parameters per statement; chunk long IN lists.
-_IN_CHUNK = 500
-
-
-def _chunked(values: list[int], size: int = _IN_CHUNK) -> Iterator[list[int]]:
-    """Yield ``values`` in slices small enough for a SQL ``IN`` clause."""
-    for start in range(0, len(values), size):
-        yield values[start : start + size]
+from backend.repositories._sql import chunked
 
 
 class SplitTransactionsRepository:
@@ -42,6 +32,21 @@ class SplitTransactionsRepository:
         """
         stmt = select(SplitTransaction)
         return pd.read_sql(stmt, self.db.bind)
+
+    def get_split(self, split_id: int) -> SplitTransaction | None:
+        """Return one split slice by its primary key.
+
+        Parameters
+        ----------
+        split_id : int
+            Primary key of the ``split_transactions`` row.
+
+        Returns
+        -------
+        SplitTransaction or None
+            The slice, or ``None`` when it does not exist.
+        """
+        return self.db.get(SplitTransaction, split_id)
 
     def get_splits_for_transaction(
         self, transaction_id: int, source: str
@@ -172,7 +177,7 @@ class SplitTransactionsRepository:
         source : str
             Table name the parents live in.
         """
-        for chunk in _chunked(transaction_ids):
+        for chunk in chunked(transaction_ids):
             self.db.execute(
                 delete(SplitTransaction).where(
                     SplitTransaction.transaction_id.in_(chunk),

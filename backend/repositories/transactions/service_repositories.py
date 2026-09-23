@@ -13,17 +13,18 @@ from datetime import datetime
 from typing import Any, ClassVar, Literal
 
 import pandas as pd
-from sqlalchemy import Integer, cast, delete, func, select, update
+from sqlalchemy import Integer, cast, delete, func, or_, select, update
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
-from backend.constants.tables import Tables
+from backend.constants.tables import Tables, table_aliases
 from backend.models.transaction import (
     BankTransaction,
     CashTransaction,
     CreditCardTransaction,
     InsuranceTransaction,
     ManualInvestmentTransaction,
+    SplitTransaction,
     TransactionBase,
 )
 
@@ -90,6 +91,55 @@ class ServiceRepository:
         """
         stmt = select(self.model)
         return pd.read_sql(stmt, self.db.bind)
+
+    def sum_amount(
+        self,
+        account_name: str | None,
+        provider: str | None = None,
+        *,
+        expand_splits: bool = False,
+    ) -> float:
+        """Sum the amounts of one account's transactions in this table.
+
+        Parameters
+        ----------
+        account_name : str or None
+            Account name to match exactly; ``None`` matches no row.
+        provider : str or None, optional
+            When given, only rows of this provider count.
+        expand_splits : bool, optional
+            When ``True``, sum the account as the merged transactions view
+            shows it: ``split_parent`` rows are replaced by their split
+            slices (slices whose parent row is gone are dropped). When
+            ``False`` (default), every stored row counts as is.
+
+        Returns
+        -------
+        float
+            The total; ``0.0`` when nothing matches. NULL amounts are skipped.
+        """
+        if account_name is None:
+            return 0.0
+        filters = [self.model.account_name == account_name]
+        if provider is not None:
+            filters.append(self.model.provider == provider)
+
+        if not expand_splits:
+            stmt = select(func.sum(self.model.amount)).where(*filters)
+            return float(self.db.execute(stmt).scalar() or 0.0)
+
+        direct = select(func.sum(self.model.amount)).where(
+            *filters,
+            or_(self.model.type.is_(None), self.model.type != "split_parent"),
+        )
+        slices = (
+            select(func.sum(SplitTransaction.amount))
+            .join(self.model, self.model.unique_id == SplitTransaction.transaction_id)
+            .where(SplitTransaction.source.in_(table_aliases(self.table)), *filters)
+        )
+        return float(self.db.execute(direct).scalar() or 0.0) + float(
+            self.db.execute(slices).scalar() or 0.0
+        )
 
     def update_tagging_by_unique_id(
         self, unique_id: int, category: str | None, tag: str | None
@@ -425,6 +475,40 @@ class CashRepository(ServiceRepository):
     model = CashTransaction
     table = Tables.CASH.value
 
+    def delete_by_account_and_tag(self, account_name: str, tag: str) -> None:
+        """Delete every cash transaction of one account carrying one tag.
+
+        Parameters
+        ----------
+        account_name : str
+            Account name to match.
+        tag : str
+            Tag to match.
+        """
+        self.db.execute(
+            delete(self.model).where(
+                self.model.tag == tag, self.model.account_name == account_name
+            )
+        )
+        self.db.commit()
+
+    def rename_account(self, old_name: str, new_name: str) -> None:
+        """Move every cash transaction of one account to another account name.
+
+        Parameters
+        ----------
+        old_name : str
+            Current account name.
+        new_name : str
+            Account name to assign.
+        """
+        self.db.execute(
+            update(self.model)
+            .where(self.model.account_name == old_name)
+            .values(account_name=new_name)
+        )
+        self.db.commit()
+
 
 class ManualInvestmentTransactionsRepository(ServiceRepository):
     """Transactions in the ``manual_investment_transactions`` table."""
@@ -434,7 +518,71 @@ class ManualInvestmentTransactionsRepository(ServiceRepository):
 
 
 class InsuranceRepository(ServiceRepository):
-    """Transactions in the ``insurance_transactions`` table."""
+    """Transactions in the ``insurance_transactions`` table.
+
+    Insurance transactions key their policy by ``account_number``.
+    """
 
     model = InsuranceTransaction
     table = Tables.INSURANCE.value
+
+    def get_latest_for_policy(self, policy_id: str) -> InsuranceTransaction | None:
+        """Return a policy's most recent transaction.
+
+        Parameters
+        ----------
+        policy_id : str
+            Policy identifier, stored as the transaction's ``account_number``.
+
+        Returns
+        -------
+        InsuranceTransaction or None
+            The row with the latest ``date``, or ``None`` when the policy has
+            no transactions.
+        """
+        stmt = (
+            select(self.model)
+            .where(self.model.account_number == policy_id)
+            .order_by(self.model.date.desc())
+            .limit(1)
+        )
+        return self.db.execute(stmt).scalars().first()
+
+    def get_first_dates(self, policy_ids: list[str]) -> dict[str, str | None]:
+        """Return each policy's earliest transaction date.
+
+        Parameters
+        ----------
+        policy_ids : list[str]
+            Policy identifiers, stored as the transactions' ``account_number``.
+
+        Returns
+        -------
+        dict[str, str or None]
+            Policy id to its minimum stored ``date``; policies without
+            transactions are absent.
+        """
+        if not policy_ids:
+            return {}
+        stmt = (
+            select(self.model.account_number, func.min(self.model.date))
+            .where(self.model.account_number.in_(policy_ids))
+            .group_by(self.model.account_number)
+        )
+        return dict(self.db.execute(stmt).tuples().all())
+
+    def get_for_policy(self, policy_id: str) -> pd.DataFrame:
+        """Return every transaction of one policy.
+
+        Parameters
+        ----------
+        policy_id : str
+            Policy identifier, stored as the transactions' ``account_number``.
+
+        Returns
+        -------
+        pd.DataFrame
+            The policy's rows with all table columns (empty when none).
+        """
+        stmt = select(self.model).where(self.model.account_number == policy_id)
+        return pd.read_sql(stmt, self.db.bind)

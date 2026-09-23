@@ -15,6 +15,7 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from backend.constants.tables import SplitTransactionsTableFields
 from backend.models.transaction import SplitTransaction
+from backend.repositories._sql import chunked
 from backend.repositories.transactions.service_repositories import T_service
 from backend.utils.log_sanitize import scrub
 
@@ -80,12 +81,7 @@ class SplitsMixin:
                 )
                 continue
             ids = [int(v) for v in group[tid_col].unique()]
-            rows = (
-                self.db.execute(select(repo.model).where(repo.model.unique_id.in_(ids)))
-                .scalars()
-                .all()
-            )
-            for parent in rows:
+            for parent in self.get_records(source, ids):
                 parents_by_key[(source, parent.unique_id)] = {
                     c.name: getattr(parent, c.name) for c in parent.__table__.columns
                 }
@@ -193,10 +189,10 @@ class SplitsMixin:
             return []
         ids = [int(v) for v in unique_ids]
         split_ids: list[int] = []
-        for start in range(0, len(ids), 500):
+        for chunk in chunked(ids):
             stmt = select(SplitTransaction.id).where(
                 SplitTransaction.source == source,
-                SplitTransaction.transaction_id.in_(ids[start : start + 500]),
+                SplitTransaction.transaction_id.in_(chunk),
             )
             split_ids.extend(int(row[0]) for row in self.db.execute(stmt).all())
         return split_ids

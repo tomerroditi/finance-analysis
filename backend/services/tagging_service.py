@@ -7,7 +7,6 @@ from typing import Any
 import pandas as pd
 from sqlalchemy.orm import Session
 
-from backend.config import AppConfig
 from backend.constants.categories import (
     PROTECTED_CATEGORIES,
     PROTECTED_TAGS,
@@ -23,18 +22,12 @@ from backend.repositories.transactions import (
     CreditCardRepository,
     TransactionsRepository,
 )
+from backend.utils.db_path_cache import cache_key
 from backend.utils.text_utils import to_title_case
 
-# In-memory categories cache, partitioned by the resolved database path.
-# Real mode, demo mode and every per-visitor demo sandbox (see
-# backend/demo_sessions.py) each resolve to a different file, so keying by
-# path keeps them from ever serving each other's categories.
+# In-memory categories cache, partitioned by the resolved database path
+# (see ``backend.utils.db_path_cache``).
 _categories_cache: dict[str, dict[str, list[str]]] = {}
-
-
-def cache_key() -> str:
-    """Return the cache partition for the current context (its DB path)."""
-    return AppConfig().get_db_path()
 
 
 def _clean_name(name: object) -> str | None:

@@ -330,3 +330,25 @@ class TestReadAllIsRequestCached:
         first.loc[:, "name"] = "clobbered"
 
         assert "clobbered" not in set(repo.read_all()["name"])
+
+
+class TestReadProjectCategoryNames:
+    """BudgetRepository.read_project_category_names."""
+
+    def test_distinct_project_categories_in_table_order(self, db_session: Session):
+        """Only project rules count, closed ones included, each category once."""
+        repo = BudgetRepository(db_session)
+        assert repo.read_project_category_names() == []
+
+        repo.add("Total Budget", 100.0, "Wedding", "", None, None, "project")
+        repo.add("Food", 50.0, "Food", "", 1, 2024, "monthly")
+        repo.add("Venue", 60.0, "Wedding", "Venue", None, None, "project")
+        repo.add("Total Budget", 70.0, "Renovation", "", None, None, "project")
+        db_session.expire_all()
+        renovation = repo.read_by_period_type("project")
+        repo.update(
+            int(renovation.loc[renovation["category"] == "Renovation", "id"].iloc[0]),
+            is_closed=True,
+        )
+
+        assert repo.read_project_category_names() == ["Wedding", "Renovation"]

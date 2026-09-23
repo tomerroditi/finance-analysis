@@ -8,6 +8,7 @@ from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.orm import Session
 
 from backend.models.interest_rate import InterestRate
+from backend.repositories._sql import orm_rows_to_frame
 
 
 class InterestRatesRepository:
@@ -43,10 +44,7 @@ class InterestRatesRepository:
             .order_by(InterestRate.date)
         )
         records = self.db.execute(stmt).scalars().all()
-        if not records:
-            return pd.DataFrame()
-        df = pd.DataFrame([r.__dict__ for r in records])
-        return df.drop(columns=["_sa_instance_state"], errors="ignore")
+        return orm_rows_to_frame(records)
 
     def count_series(self, series: str) -> int:
         """Count the points stored for a series.
