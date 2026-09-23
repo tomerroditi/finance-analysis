@@ -197,7 +197,7 @@ class TestInvestmentsServiceCalculations:
 
         # A single-date call must agree with the batch call, entry for entry.
         for d in dates:
-            assert service.get_total_value_at_date(d) == pytest.approx(totals[d])
+            assert service.get_total_values_at_dates([d])[d] == pytest.approx(totals[d])
 
     def test_get_total_values_at_dates_snapshot_first(
         self, db_session, seed_investments
@@ -1364,39 +1364,6 @@ class TestProfitLossWithoutTransactions:
         assert metrics["current_balance"] == 4321.0
         assert metrics["first_transaction_date"] is None
 
-class TestCombinedInvestmentTransactions:
-    """``get_all_investment_transactions_combined`` across every investment."""
-
-    def test_empty_when_there_are_no_investments(self, db_session):
-        """No investments yields an empty DataFrame."""
-        result = InvestmentsService(db_session).get_all_investment_transactions_combined()
-        assert isinstance(result, pd.DataFrame)
-        assert result.empty
-
-    def test_empty_when_investments_have_no_transactions(self, db_session):
-        """Investments without any transactions contribute nothing."""
-        service = InvestmentsService(db_session)
-        service.create_investment(category="Investments", tag="Idle", type_="stock", name="Idle")
-
-        assert service.get_all_investment_transactions_combined().empty
-
-    def test_combines_all_investments_with_parsed_columns(self, db_session, seed_investments):
-        """Rows from every investment are stacked and numeric/date helper columns added."""
-        service = InvestmentsService(db_session)
-
-        combined = service.get_all_investment_transactions_combined(include_closed=True)
-
-        assert set(combined["tag"]) == {"Stock Fund", "Bond Fund"}
-        assert "date_parsed" in combined.columns and "amount" in combined.columns
-        assert pd.api.types.is_datetime64_any_dtype(combined["date_parsed"])
-        assert pd.api.types.is_float_dtype(combined["amount"])
-
-    def test_excludes_closed_investments_when_asked(self, db_session, seed_investments):
-        """``include_closed=False`` drops the closed Bond Fund's rows."""
-        combined = InvestmentsService(db_session).get_all_investment_transactions_combined(include_closed=False)
-        assert set(combined["tag"]) == {"Stock Fund"}
-
-
 class TestInsuranceAndManualTransactionMerge:
     """Insurance deposits are merged with manual rows for a linked investment."""
 
@@ -1635,7 +1602,7 @@ class TestBalanceOverTimeSnapshotBracketing:
         assert series["2024-01-20"] == pytest.approx(13000.0)
 
     def test_matches_the_single_date_resolver(self, db_session, seed_investments):
-        """The series agrees with `get_total_value_at_date` for one investment."""
+        """The series agrees with a single-date portfolio valuation."""
         service = InvestmentsService(db_session)
         bond_fund = seed_investments["investments"][1]
         service.delete_investment(seed_investments["investments"][0].id)
@@ -1643,4 +1610,6 @@ class TestBalanceOverTimeSnapshotBracketing:
         series = self._series(service, bond_fund.id, "2023-01-01", "2024-01-10")
 
         for day in ("2023-01-01", "2023-01-10", "2024-01-10"):
-            assert series[day] == pytest.approx(service.get_total_value_at_date(day))
+            assert series[day] == pytest.approx(
+                service.get_total_values_at_dates([day])[day]
+            )

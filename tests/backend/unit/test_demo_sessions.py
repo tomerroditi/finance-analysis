@@ -178,7 +178,7 @@ class TestEnsureLocal:
         backend.put(blob_pathname(SID_A), (user_dir / "src.db").read_bytes())
         store = DemoSessionStore(backend)
 
-        store.ensure_local(SID_A)
+        store.sync(SID_A)
 
         assert _read_marker(store.local_db_path(SID_A)) == "from-blob"
 
@@ -186,7 +186,7 @@ class TestEnsureLocal:
         """Verify a new visitor starts from the pristine template."""
         store = DemoSessionStore(FakeBlobBackend())
 
-        store.ensure_local(SID_A)
+        store.sync(SID_A)
 
         assert _read_marker(store.local_db_path(SID_A)) == "template"
 
@@ -194,8 +194,8 @@ class TestEnsureLocal:
         """Verify sandboxes still isolate visitors when Blob is not configured."""
         store = DemoSessionStore(None)
 
-        store.ensure_local(SID_A)
-        store.ensure_local(SID_B)
+        store.sync(SID_A)
+        store.sync(SID_B)
 
         assert store.local_db_path(SID_A) != store.local_db_path(SID_B)
         assert os.path.exists(store.local_db_path(SID_B))
@@ -208,7 +208,7 @@ class TestEnsureLocal:
         """
         store = DemoSessionStore(None)
 
-        store.ensure_local(SID_A)
+        store.sync(SID_A)
 
         path = store.local_db_path(SID_A)
         conn = sqlite3.connect(path)
@@ -222,14 +222,14 @@ class TestEnsureLocal:
     def test_is_idempotent(self, user_dir, template):
         """Verify a second call leaves an existing sandbox untouched."""
         store = DemoSessionStore(FakeBlobBackend())
-        store.ensure_local(SID_A)
+        store.sync(SID_A)
         path = store.local_db_path(SID_A)
         conn = sqlite3.connect(path)
         conn.execute("UPDATE marker SET value = 'edited'")
         conn.commit()
         conn.close()
 
-        store.ensure_local(SID_A)
+        store.sync(SID_A)
 
         assert _read_marker(path) == "edited"
 
@@ -391,7 +391,7 @@ class TestPersist:
         """Verify persist ships the sandbox file under its blob pathname."""
         backend = FakeBlobBackend()
         store = DemoSessionStore(backend)
-        store.ensure_local(SID_A)
+        store.sync(SID_A)
 
         assert store.persist(SID_A) is True
 
@@ -411,7 +411,7 @@ class TestPersist:
                 raise RuntimeError("quota")
 
         store = DemoSessionStore(BrokenBackend())
-        store.ensure_local(SID_A)
+        store.sync(SID_A)
 
         assert store.persist(SID_A) is False
 
@@ -425,7 +425,7 @@ class TestPersistSizeCap:
 
         backend = FakeBlobBackend()
         store = DemoSessionStore(backend)
-        store.ensure_local(SID_A)
+        store.sync(SID_A)
         monkeypatch.setattr(demo_sessions, "MAX_PERSISTED_BYTES", 10)
 
         assert store.persist(SID_A) is False
@@ -496,7 +496,7 @@ class TestReset:
         """Verify reset wipes the visitor's edits everywhere and re-clones."""
         backend = FakeBlobBackend()
         store = DemoSessionStore(backend)
-        store.ensure_local(SID_A)
+        store.sync(SID_A)
         path = store.local_db_path(SID_A)
         conn = sqlite3.connect(path)
         conn.execute("UPDATE marker SET value = 'edited'")
@@ -515,7 +515,7 @@ class TestReset:
         backend = FakeBlobBackend()
         store = DemoSessionStore(backend)
         for sid in (SID_A, SID_B):
-            store.ensure_local(sid)
+            store.sync(sid)
             store.persist(sid)
         conn = sqlite3.connect(store.local_db_path(SID_B))
         conn.execute("UPDATE marker SET value = 'b-edit'")
@@ -625,7 +625,7 @@ class TestNonDurableMode:
     def test_reset_reseeds_without_a_backend(self, user_dir, template):
         """Verify "Reset demo data" works on a deployment with no Blob store."""
         store = DemoSessionStore(None)
-        store.ensure_local(SID_A)
+        store.sync(SID_A)
         conn = sqlite3.connect(store.local_db_path(SID_A))
         conn.execute("UPDATE marker SET value = 'edited'")
         conn.commit()

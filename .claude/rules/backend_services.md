@@ -22,11 +22,13 @@ class BudgetService:
         self.transactions_service = TransactionsService(db)
 ```
 
-The three biggest domains are split into subpackages rather than one long
+The biggest domains are split into subpackages rather than one long
 module — `analysis/` (`core`, `cashflow`, `forecast`, `net_worth`),
 `budget/` (`core`, `monthly`, `project`, `yearly`), `investments/`
-(`core`, `snapshots`, `valuation`, `insurance_sync`). New logic in those
-domains goes in the matching module, not back into the flat `*_service.py`.
+(`core`, `snapshots`, `valuation`, `insurance_sync`), `savings_goals/`
+(`core`, `inputs`, `engine`, `goals`, `backings`, `read_models`, `common`).
+New logic in those domains goes in the matching module, not back into a flat
+`*_service.py`.
 
 Return `pd.DataFrame` for tabular data, primitives for scalar calculations,
 `dict`/`list` for structured payloads.

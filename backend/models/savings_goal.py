@@ -3,7 +3,7 @@
 A savings goal is a **virtual earmark** over money that already sits in the
 user's tracked accounts — it never adds to net worth. Progress is derived, not
 typed: each closed month's realized surplus is distributed across goals by
-priority (see ``backend.services.savings_goal_service``), and the resulting
+priority (see ``backend.services.savings_goals``), and the resulting
 per-month amounts are persisted in ``savings_goal_allocations`` so history stays
 stable when priorities later change.
 

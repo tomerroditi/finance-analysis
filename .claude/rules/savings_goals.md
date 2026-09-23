@@ -1,6 +1,6 @@
 ---
 paths:
-  - "backend/services/savings_goal_service.py"
+  - "backend/services/savings_goals/**/*.py"
   - "backend/routes/savings_goals.py"
   - "backend/models/savings_goal.py"
   - "frontend/src/components/dashboard/GoalsSection.tsx"
@@ -8,10 +8,15 @@ paths:
 ---
 # Savings Goals — the surplus waterfall
 
-How `backend/services/savings_goal_service.py` turns each month's leftover
-money into goal progress. Read this before touching the service, the
-`savings-goals` routes, `GoalsSection.tsx`, or the goals block on the monthly
-budget view.
+How the `backend/services/savings_goals/` package turns each month's leftover
+money into goal progress. `SavingsGoalService` (`core.py`) assembles mixins:
+`inputs` (goal order, the transaction context, investment backing, the
+pre-goal pool), `engine` (`_simulate`, `_persist`, `ensure_allocations`,
+`rebuild`), `goals` (CRUD + transaction links), `backings` (investment
+earmarks) and `read_models` (enriched goals, month view, free cash,
+timeline); `common` holds the pure month helpers and `ROUNDING_EPSILON`.
+Read this before touching the service, the `savings-goals` routes,
+`GoalsSection.tsx`, or the goals block on the monthly budget view.
 
 ## A goal is an earmark, never an asset
 

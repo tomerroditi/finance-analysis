@@ -300,7 +300,7 @@ the shared converter, not 18 copies.)
 ### 5.2 Untested backend modules — MED
 - `budget_month_override_service.py` (235) + its repository (162) — route tests only; add
   service-level precedence/merge tests.
-- `savings_goal_service.py` / `savings_goal_repository.py` / `retirement_goal_repository.py`
+- `services/savings_goals/` / `savings_goal_repository.py` / `retirement_goal_repository.py`
   (~230) — the retirement-goal repo has no test importing it at all.
 - `insurance_account_repository.py` + `routes/insurance_accounts.py` (~200) — the newest data
   path (hafenix → `InsuranceScraperAdapter._post_save_hook`, incl. hishtalmut sync) is

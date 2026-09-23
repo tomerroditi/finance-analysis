@@ -315,14 +315,6 @@ class DemoSessionStore:
                 self._etags[session_id] = remote.etag
                 logger.info("Restored demo sandbox %s from blob storage", session_id)
 
-    def ensure_local(self, session_id: str) -> None:
-        """Make sure the sandbox exists locally, restoring it if persisted.
-
-        Equivalent to :meth:`sync`; kept as the explicit name for callers
-        that only care about existence (tests, tooling).
-        """
-        self.sync(session_id)
-
     @staticmethod
     def _write_atomically(path: str, data: bytes) -> None:
         """Replace ``path`` with ``data`` via a temp file and forget the old DB."""

@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 
 from backend.dependencies import get_database
 from backend.routes.schemas import ApiRequestModel
-from backend.services.savings_goal_service import SavingsGoalService
+from backend.services.savings_goals import SavingsGoalService
 
 router = APIRouter()
 

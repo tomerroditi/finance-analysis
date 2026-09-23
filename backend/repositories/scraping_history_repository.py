@@ -1,8 +1,7 @@
 """Scraping history repository with SQLAlchemy ORM."""
 
-from datetime import date, datetime, timedelta
+from datetime import date, datetime
 
-import pandas as pd
 from sqlalchemy import delete, select, update
 from sqlalchemy.orm import Session
 
@@ -164,19 +163,6 @@ class ScrapingHistoryRepository:
         row = self.db.execute(stmt).first()
         return (row[0], row[1]) if row else (None, None)
 
-    def get_scraping_history(self) -> pd.DataFrame:
-        """Get the complete scraping history as a DataFrame.
-
-        Returns
-        -------
-        pd.DataFrame
-            All scraping history rows ordered by date descending. Columns include:
-            id, service_name, provider_name, account_name, date, status,
-            start_date, error_message, error_type.
-        """
-        stmt = select(ScrapingHistory).order_by(ScrapingHistory.date.desc())
-        return pd.read_sql(stmt, self.db.bind)
-
     def get_last_successful_scrape_date(
         self, service_name: str, provider_name: str, account_name: str
     ) -> str | None:
@@ -235,19 +221,5 @@ class ScrapingHistoryRepository:
             ScrapingHistory.provider_name == provider,
             ScrapingHistory.account_name == account,
         )
-        self.db.execute(stmt)
-        self.db.commit()
-
-    def clear_old_records(self, days_to_keep: int = 30) -> None:
-        """Clear scraping history records older than specified days.
-
-        Parameters
-        ----------
-        days_to_keep : int, optional
-            Records whose date is older than this many days from now will be
-            deleted, by default 30.
-        """
-        cutoff_date = (datetime.now() - timedelta(days=days_to_keep)).isoformat()
-        stmt = delete(ScrapingHistory).where(ScrapingHistory.date < cutoff_date)
         self.db.execute(stmt)
         self.db.commit()

@@ -4,7 +4,7 @@ Analysis service package.
 Modules:
 
 - ``cashflow`` — income/expenses/debt over time, by-source, by-category
-  over time, and the shared classification-mask helpers.
+  over time, and the income/investments/expenses totals.
 - ``net_worth`` — net balance / net worth over time and the Sankey data.
 - ``forecast`` — current-month cash-flow forecast + monthly-expense trend.
 - ``core`` — the public ``AnalysisService`` class assembling the mixins.

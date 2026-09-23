@@ -98,54 +98,6 @@ class BudgetRepository:
         session_cache_set(self.db, cache_key, df)
         return df
 
-    def read_by_id(self, id_: int) -> pd.DataFrame:
-        """Read a specific budget rule by ID.
-
-        Parameters
-        ----------
-        id_ : int
-            Primary key of the budget rule to retrieve.
-
-        Returns
-        -------
-        pd.DataFrame
-            Single-row DataFrame for the matching rule, or empty DataFrame if
-            not found.
-        """
-        stmt = select(BudgetRule).where(BudgetRule.id == id_)
-        return pd.read_sql(stmt, self.db.bind)
-
-    def read_by_month(self, year: int, month: int) -> pd.DataFrame:
-        """Read budget rules for a specific month.
-
-        Parameters
-        ----------
-        year : int
-            Calendar year to filter by.
-        month : int
-            Calendar month (1-12) to filter by.
-
-        Returns
-        -------
-        pd.DataFrame
-            Budget rules matching the given year and month.
-        """
-        stmt = select(BudgetRule).where(
-            BudgetRule.year == year, BudgetRule.month == month
-        )
-        return pd.read_sql(stmt, self.db.bind)
-
-    def read_project_rules(self) -> pd.DataFrame:
-        """Read project budget rules (period_type == "project").
-
-        Returns
-        -------
-        pd.DataFrame
-            Budget rules with period_type == "project".
-        """
-        stmt = select(BudgetRule).where(BudgetRule.period_type == PERIOD_PROJECT)
-        return pd.read_sql(stmt, self.db.bind)
-
     def read_project_category_names(self) -> list[str]:
         """List the categories that own project budget rules.
 
@@ -166,22 +118,6 @@ class BudgetRepository:
             .unique()
             .tolist()
         )
-
-    def read_by_period_type(self, period_type: str) -> pd.DataFrame:
-        """Read all budget rules of a given period_type.
-
-        Parameters
-        ----------
-        period_type : str
-            One of ``"monthly"``/``"yearly"``/``"project"``.
-
-        Returns
-        -------
-        pd.DataFrame
-            Matching budget rules (raw semicolon ``tags`` string).
-        """
-        stmt = select(BudgetRule).where(BudgetRule.period_type == period_type)
-        return pd.read_sql(stmt, self.db.bind)
 
     def update(self, id_: int, **fields: Any) -> None:
         """Update a budget rule by ID.

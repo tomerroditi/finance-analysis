@@ -11,7 +11,7 @@ import pandas as pd
 import pytest
 
 from backend.errors import EntityNotFoundException, ValidationException
-from backend.services.savings_goal_service import DAYS_PER_MONTH, SavingsGoalService
+from backend.services.savings_goals import DAYS_PER_MONTH, SavingsGoalService
 
 
 def _months_until(target_date: str) -> int:

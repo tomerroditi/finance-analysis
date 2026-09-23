@@ -2,9 +2,10 @@
 Cash-flow aggregations for the analysis service.
 
 Provides the ``CashflowMixin`` with income/expense/debt-over-time series,
-income-by-source and expenses-by-category-over-time breakdowns, and the shared
-income/investment/expense mask helpers. Mixed into ``AnalysisService``
-(see ``core.py``).
+income-by-source and expenses-by-category-over-time breakdowns, and the
+income/investments/expenses totals. Row classification itself lives in
+``backend.services.transaction_classification``. Mixed into
+``AnalysisService`` (see ``core.py``).
 """
 
 from datetime import date
@@ -23,7 +24,6 @@ from backend.constants.tables import TransactionsTableFields
 from backend.repositories.budget_repository import BudgetRepository
 from backend.services.transaction_classification import (
     income_mask,
-    investment_mask,
     transactions_masks,
 )
 from backend.utils.dataframe_dates import to_month_series
@@ -161,7 +161,7 @@ class CashflowMixin:
         months = sorted(df["month"].unique())
 
         flow = df[~df["source"].isin(self.repo._CASHFLOW_EXCLUDED)]
-        masks = self.get_transactions_masks(flow)
+        masks = transactions_masks(flow)
 
         income_amounts = flow["amount"].where(masks["income"], 0.0)
         expense_amounts = flow["amount"].where(masks["expenses"], 0.0)
@@ -304,7 +304,7 @@ class CashflowMixin:
         """
         df = df[~df["source"].isin(self.repo._CASHFLOW_EXCLUDED)]
 
-        is_income, is_investment, is_expense = self.get_transactions_masks(df).values()
+        is_income, is_investment, is_expense = transactions_masks(df).values()
 
         income_df = df[is_income]
         expense_df = df[is_expense]
@@ -317,61 +317,6 @@ class CashflowMixin:
         investments = float(df[is_investment]["amount"].sum()) * -1
         expenses = float(expense_df["amount"].sum()) * -1
         return income, investments, expenses
-
-    def get_transactions_masks(self, df: pd.DataFrame) -> dict[str, pd.Series]:
-        """
-        Get boolean masks for income, investments, and expenses.
-
-        Parameters
-        ----------
-        df : pd.DataFrame
-            Transactions DataFrame (typically the full merged table).
-
-        Returns
-        -------
-        dict[str, pd.Series]
-            Dictionary with keys "income", "investments", and "expenses" mapping to
-            boolean Series aligned with ``df``.
-        """
-        return transactions_masks(df)
-
-    def _get_income_mask(self, df: pd.DataFrame) -> pd.Series:
-        """
-        Build a boolean mask identifying income rows in a transactions DataFrame.
-
-        A row is classified as income if its category is in ``IncomeCategories``,
-        or if its category is exactly ``Liabilities_CATEGORY`` with a positive amount
-        (loan receipts / liability refunds).
-
-        Parameters
-        ----------
-        df : pd.DataFrame
-            Transactions DataFrame with at least ``category`` and ``amount`` columns.
-
-        Returns
-        -------
-        pd.Series
-            Boolean Series aligned with ``df`` — ``True`` for income rows.
-        """
-        return income_mask(df)
-
-    def _get_investment_mask(self, df: pd.DataFrame) -> pd.Series:
-        """
-        Build a boolean mask identifying investment rows in a transactions DataFrame.
-
-        A row is classified as an investment if its category is exactly ``INVESTMENTS_CATEGORY``.
-
-        Parameters
-        ----------
-        df : pd.DataFrame
-            Transactions DataFrame with at least a ``category`` column.
-
-        Returns
-        -------
-        pd.Series
-            Boolean Series aligned with ``df`` — ``True`` for investment rows.
-        """
-        return investment_mask(df)
 
     def _add_source_label_column(self, income_df: pd.DataFrame) -> pd.DataFrame:
         """Add a vectorized ``source_label`` column to an income frame.
@@ -540,7 +485,7 @@ class CashflowMixin:
         if df.empty:
             return []
 
-        income_df = df[self._get_income_mask(df)].copy()
+        income_df = df[income_mask(df)].copy()
         income_df = income_df[income_df["tag"] != PRIOR_WEALTH_TAG]
 
         if exclude_liabilities:
@@ -606,7 +551,7 @@ class CashflowMixin:
         if df.empty:
             return empty
 
-        income_df = df[self._get_income_mask(df)].copy()
+        income_df = df[income_mask(df)].copy()
         income_df = income_df[income_df["tag"] != PRIOR_WEALTH_TAG]
         if income_df.empty:
             return empty

@@ -205,7 +205,3 @@ class AppConfig:
     def get_categories_path(self) -> str:
         """Get the current categories file path."""
         return self._resolve_path("FAD_CATEGORIES_PATH", "categories.yaml")
-
-    def get_categories_icons_path(self) -> str:
-        """Get the current categories icons file path."""
-        return self._resolve_path("FAD_CATEGORIES_ICONS_PATH", "categories_icons.yaml")

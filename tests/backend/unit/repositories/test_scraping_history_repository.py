@@ -125,21 +125,6 @@ class TestScrapingHistoryRepository:
         repo.record_scrape_end(scrape_id, repo.FAILED, "something went wrong")
         assert repo.get_error(scrape_id) == ("something went wrong", None)
 
-    def test_get_scraping_history(self, db_session: Session):
-        """Verify getting full history as DataFrame."""
-        repo = ScrapingHistoryRepository(db_session)
-        repo.record_scrape_start(
-            "credit_cards", "isracard", "Card 1", date(2024, 1, 15)
-        )
-        repo.record_scrape_start(
-            "banks", "hapoalim", "Checking", date(2024, 1, 15)
-        )
-
-        history = repo.get_scraping_history()
-        assert len(history) == 2
-        assert "service_name" in history.columns
-        assert "status" in history.columns
-
     def test_get_last_successful_scrape_date(self, db_session: Session):
         """Verify getting last successful scrape date for an account."""
         repo = ScrapingHistoryRepository(db_session)
@@ -194,40 +179,3 @@ class TestScrapingHistoryRepositoryUpdateStatus:
         repo.update_status(scrape_id, repo.IN_PROGRESS)
 
         assert repo.get_scraping_status(scrape_id) == "in_progress"
-
-
-class TestScrapingHistoryRepositoryClearOldRecords:
-    """Tests for clear_old_records method."""
-
-    def test_clear_old_records_removes_old_entries(self, db_session: Session):
-        """Verify records older than the cutoff are deleted."""
-        from datetime import datetime, timedelta
-
-        from backend.models.scraping import ScrapingHistory
-
-        repo = ScrapingHistoryRepository(db_session)
-
-        old_record = ScrapingHistory(
-            service_name="banks",
-            provider_name="hapoalim",
-            account_name="Checking",
-            date=(datetime.now() - timedelta(days=60)).isoformat(),
-            status=repo.SUCCESS,
-            start_date="2024-01-01",
-        )
-        recent_record = ScrapingHistory(
-            service_name="credit_cards",
-            provider_name="isracard",
-            account_name="Main Card",
-            date=datetime.now().isoformat(),
-            status=repo.SUCCESS,
-            start_date="2024-03-01",
-        )
-        db_session.add_all([old_record, recent_record])
-        db_session.commit()
-
-        repo.clear_old_records(days_to_keep=30)
-
-        history = repo.get_scraping_history()
-        assert len(history) == 1
-        assert history.iloc[0]["account_name"] == "Main Card"

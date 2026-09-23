@@ -57,6 +57,63 @@ def _fire_reached_by(
     )
 
 
+def _opening_buckets(
+    goal: dict[str, Any], status: dict[str, float]
+) -> tuple[float, float]:
+    """Return the ``(portfolio, keren_hishtalmut)`` buckets a projection starts from.
+
+    KH is its own bucket, seeded from the goal's KH balance. Whatever KH value
+    is already inside the tracked net worth (scraped policies auto-synced into
+    the investments table — ``status["tracked_kh_value"]``) is taken out of the
+    portfolio so it is counted exactly once.
+
+    Parameters
+    ----------
+    goal : dict[str, Any]
+        Retirement goal parameters.
+    status : dict[str, float]
+        Current financial status from real data.
+
+    Returns
+    -------
+    tuple[float, float]
+        Opening portfolio (net worth less tracked KH) and opening KH balance.
+    """
+    return (
+        status["net_worth"] - status.get("tracked_kh_value", 0.0),
+        goal["keren_hishtalmut_balance"],
+    )
+
+
+def _accumulation_step(
+    nw: float, kh: float, rate: float, annual_savings: float, kh_monthly: float
+) -> tuple[float, float]:
+    """Advance both buckets through one pre-retirement year.
+
+    Each bucket compounds at the real ``rate``, then receives that year's
+    contributions.
+
+    Parameters
+    ----------
+    nw : float
+        Portfolio balance at the start of the year.
+    kh : float
+        Keren Hishtalmut balance at the start of the year.
+    rate : float
+        Real annual return.
+    annual_savings : float
+        Savings added to the portfolio over the year.
+    kh_monthly : float
+        Monthly KH contribution.
+
+    Returns
+    -------
+    tuple[float, float]
+        Portfolio and KH balances at the end of the year.
+    """
+    return nw * (1 + rate) + annual_savings, kh * (1 + rate) + kh_monthly * 12
+
+
 class RetirementService:
     """Retirement planning projections and status calculations.
 
@@ -437,9 +494,8 @@ class RetirementService:
         annual_savings = monthly_savings * 12
         full_pension_age = _get_full_pension_age(goal.get("gender", "male"))
 
-        kh_balance = goal["keren_hishtalmut_balance"]
         kh_monthly = goal["keren_hishtalmut_monthly_contribution"]
-        base_nw = status["net_worth"] - status.get("tracked_kh_value", 0.0)
+        base_nw, kh_balance = _opening_buckets(goal, status)
 
         annual_expenses = goal["monthly_expenses_in_retirement"] * 12
 
@@ -479,8 +535,9 @@ class RetirementService:
                     )
 
                 if age < target_age:
-                    nw = nw * (1 + rate) + annual_savings
-                    kh = kh * (1 + rate) + kh_monthly * 12
+                    nw, kh = _accumulation_step(
+                        nw, kh, rate, annual_savings, kh_monthly
+                    )
                 else:
                     # Drawdown phase: grow, then withdraw net-of-income needs
                     annual_income = goal["other_passive_income"] * 12
@@ -656,21 +713,6 @@ class RetirementService:
 
         raise ValidationException(f"Cannot auto-adjust field: {field}")
 
-    def _survives_drawdown(
-        self, goal: dict[str, Any], status: dict[str, float]
-    ) -> bool:
-        """Check if portfolio survives through life expectancy.
-
-        Runs the full projection and checks that baseline never hits zero.
-        """
-        projection = self._project_net_worth(goal, status)
-        return (
-            self._find_depletion_age(
-                projection, goal["life_expectancy"], goal["target_retirement_age"]
-            )
-            is None
-        )
-
     def _plan_on_track(self, goal: dict[str, Any], status: dict[str, float]) -> bool:
         """Return whether a plan reaches FIRE by its target age AND survives drawdown.
 
@@ -706,21 +748,17 @@ class RetirementService:
         rate = _real_rate(goal["expected_return_rate"], goal["inflation_rate"])
         monthly_savings = status["monthly_savings"]
         annual_savings = monthly_savings * 12
-        kh_balance = goal["keren_hishtalmut_balance"]
         kh_monthly = goal["keren_hishtalmut_monthly_contribution"]
 
-        # First find earliest age where FIRE number is reached (KH bucket
-        # swaps out any synced KH value — see _project_net_worth)
-        nw = status["net_worth"] - status.get("tracked_kh_value", 0.0)
-        kh = kh_balance
+        # First find earliest age where FIRE number is reached
+        nw, kh = _opening_buckets(goal, status)
         fire_eligible_age = None
         for year_offset in range(goal["life_expectancy"] - current_age + 1):
             total = nw + kh
             if total >= fire_number:
                 fire_eligible_age = current_age + year_offset
                 break
-            nw = nw * (1 + rate) + annual_savings
-            kh = kh * (1 + rate) + kh_monthly * 12
+            nw, kh = _accumulation_step(nw, kh, rate, annual_savings, kh_monthly)
 
         if fire_eligible_age is None:
             return -1
@@ -754,14 +792,11 @@ class RetirementService:
         rate = _real_rate(goal["expected_return_rate"], goal["inflation_rate"])
         monthly_savings = status["monthly_savings"]
         annual_savings = monthly_savings * 12
-        kh_balance = goal["keren_hishtalmut_balance"]
         kh_monthly = goal["keren_hishtalmut_monthly_contribution"]
 
-        nw = status["net_worth"] - status.get("tracked_kh_value", 0.0)
-        kh = kh_balance
+        nw, kh = _opening_buckets(goal, status)
         for _ in range(years):
-            nw = nw * (1 + rate) + annual_savings
-            kh = kh * (1 + rate) + kh_monthly * 12
+            nw, kh = _accumulation_step(nw, kh, rate, annual_savings, kh_monthly)
 
         projected_nw = nw + kh
         # Upper bound: FIRE formula max (may not survive drawdown)

@@ -10,6 +10,12 @@ from sqlalchemy.orm import Session
 from backend.repositories.budget_repository import BudgetRepository
 
 
+def _rule(repo: BudgetRepository, rule_id: int):
+    """Return the single-row frame for ``rule_id`` out of ``read_all``."""
+    rules = repo.read_all()
+    return rules[rules["id"] == rule_id].reset_index(drop=True)
+
+
 class TestBudgetRepository:
     """Tests for BudgetRepository CRUD operations."""
 
@@ -70,57 +76,6 @@ class TestBudgetRepository:
         assert len(result) == 3
         assert set(result["name"].tolist()) == {"Food", "Transport", "Wedding"}
 
-    def test_read_by_id(self, db_session: Session):
-        """Verify read_by_id returns correct rule."""
-        repo = BudgetRepository(db_session)
-        repo.add("Food", 2000.0, "Food", "Groceries", month=1, year=2024)
-        repo.add("Transport", 500.0, "Transport", "Gas", month=1, year=2024)
-
-        all_rules = repo.read_all()
-        target_id = int(all_rules.iloc[0]["id"])
-
-        result = repo.read_by_id(target_id)
-        assert len(result) == 1
-        assert result.iloc[0]["name"] == "Food"
-
-    def test_read_by_id_not_found(self, db_session: Session):
-        """Verify read_by_id returns empty DataFrame for nonexistent ID."""
-        repo = BudgetRepository(db_session)
-        result = repo.read_by_id(999)
-        assert result.empty
-
-    def test_read_by_month(self, db_session: Session):
-        """Verify read_by_month filters correctly."""
-        repo = BudgetRepository(db_session)
-        repo.add("Food Jan", 2000.0, "Food", "Groceries", month=1, year=2024)
-        repo.add("Food Feb", 2500.0, "Food", "Groceries", month=2, year=2024)
-        repo.add("Transport Jan", 500.0, "Transport", "Gas", month=1, year=2024)
-
-        result = repo.read_by_month(year=2024, month=1)
-        assert len(result) == 2
-        assert set(result["name"].tolist()) == {"Food Jan", "Transport Jan"}
-
-    def test_read_by_month_excludes_project_rules(self, db_session: Session):
-        """Verify read_by_month does not return project rules (null month/year)."""
-        repo = BudgetRepository(db_session)
-        repo.add("Food Jan", 2000.0, "Food", "Groceries", month=1, year=2024)
-        repo.add("Wedding", 50000.0, "Wedding", "Venue", month=None, year=None)
-
-        result = repo.read_by_month(year=2024, month=1)
-        assert len(result) == 1
-        assert result.iloc[0]["name"] == "Food Jan"
-
-    def test_read_project_rules(self, db_session: Session):
-        """Verify read_project_rules returns only rules with null month/year."""
-        repo = BudgetRepository(db_session)
-        repo.add("Food Jan", 2000.0, "Food", "Groceries", month=1, year=2024)
-        repo.add("Wedding", 50000.0, "Wedding", "Venue;Catering", month=None, year=None)
-        repo.add("Renovation", 25000.0, "Renovation", "Materials;Labor", month=None, year=None)
-
-        result = repo.read_project_rules()
-        assert len(result) == 2
-        assert set(result["name"].tolist()) == {"Wedding", "Renovation"}
-
     def test_update_rule(self, db_session: Session):
         """Verify update changes the specified fields."""
         repo = BudgetRepository(db_session)
@@ -131,7 +86,7 @@ class TestBudgetRepository:
 
         repo.update(rule_id, amount=3000.0, name="Food Updated")
 
-        updated = repo.read_by_id(rule_id)
+        updated = _rule(repo, rule_id)
         assert updated.iloc[0]["amount"] == 3000.0
         assert updated.iloc[0]["name"] == "Food Updated"
         # Unchanged fields remain the same
@@ -237,7 +192,7 @@ class TestBudgetRepositoryEmptyUpdate:
 
         repo.update(rule_id)
 
-        result = repo.read_by_id(rule_id)
+        result = _rule(repo, rule_id)
         assert result.iloc[0]["amount"] == 2000.0
         assert result.iloc[0]["name"] == "Food"
 
@@ -254,7 +209,7 @@ class TestBudgetRepositoryEmptyUpdate:
 
 
 class TestBudgetRepositoryPeriodType:
-    """period_type is derived on write and filterable on read."""
+    """period_type is derived on write."""
 
     def test_add_derives_period_type(self, db_session):
         """add() sets monthly/yearly/project from year/month when not passed."""
@@ -266,16 +221,6 @@ class TestBudgetRepositoryPeriodType:
 
         by_name = {r["name"]: r["period_type"] for r in repo.read_all().to_dict("records")}
         assert by_name == {"M": "monthly", "Y": "yearly", "P": "project"}
-
-    def test_read_by_period_type_filters(self, db_session):
-        """read_by_period_type returns only rows of that kind."""
-        from backend.repositories.budget_repository import BudgetRepository
-        repo = BudgetRepository(db_session)
-        repo.add("M", 10.0, "Food", "Groceries", month=5, year=2026)
-        repo.add("Y", 20.0, "Travel", "Hotels", month=None, year=2026)
-
-        yearly = repo.read_by_period_type("yearly")
-        assert list(yearly["name"]) == ["Y"]
 
 
 @contextmanager
@@ -345,7 +290,8 @@ class TestReadProjectCategoryNames:
         repo.add("Venue", 60.0, "Wedding", "Venue", None, None, "project")
         repo.add("Total Budget", 70.0, "Renovation", "", None, None, "project")
         db_session.expire_all()
-        renovation = repo.read_by_period_type("project")
+        rules = repo.read_all()
+        renovation = rules[rules["period_type"] == "project"]
         repo.update(
             int(renovation.loc[renovation["category"] == "Renovation", "id"].iloc[0]),
             is_closed=True,

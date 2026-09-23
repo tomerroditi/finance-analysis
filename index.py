@@ -69,7 +69,7 @@ with get_db_context() as _db:
 # first budget load (a dozen parallel month requests) would rebuild it
 # concurrently on a fresh file. Best-effort: a failure here must never
 # take the whole function down.
-from backend.services.savings_goal_service import SavingsGoalService  # noqa: E402
+from backend.services.savings_goals import SavingsGoalService  # noqa: E402
 
 try:
     with get_db_context() as _db:

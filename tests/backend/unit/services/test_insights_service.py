@@ -118,9 +118,8 @@ class TestInsights:
         assert "newRecurring" not in codes
 
         recurring = RecurringService(db_session)
-        recurring.set_decision(
-            recurring.get_recurring()["items"][0]["normalized"], "confirmed"
-        )
+        key = recurring.get_recurring()["items"][0]["normalized"]
+        recurring.set_decisions([{"normalized": key, "decision": "confirmed"}])
 
         codes = {i["code"] for i in InsightsService(db_session).get_insights()}
         assert "newRecurring" in codes
@@ -508,7 +507,9 @@ class TestLargeTransactionInsight:
         mortgage = next(
             i for i in recurring.get_recurring()["items"] if "mortgage" in i["normalized"]
         )
-        recurring.set_decision(mortgage["normalized"], "confirmed")
+        recurring.set_decisions(
+            [{"normalized": mortgage["normalized"], "decision": "confirmed"}]
+        )
 
         assert InsightsService(db_session)._large_transaction_insight() == []
 

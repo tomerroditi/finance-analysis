@@ -450,22 +450,6 @@ class TestLongevityCheck:
         result = RetirementService._find_depletion_age(projection, 90)
         assert result is None
 
-    @patch.object(RetirementService, "__init__", lambda self, db: None)
-    def test_survives_drawdown_healthy(self, sample_goal, sample_status):
-        """Portfolio with sufficient savings should survive drawdown."""
-        sample_status["net_worth"] = 10000000
-        service = RetirementService.__new__(RetirementService)
-        assert service._survives_drawdown(sample_goal, sample_status) is True
-
-    @patch.object(RetirementService, "__init__", lambda self, db: None)
-    def test_survives_drawdown_depleted(self, sample_goal, sample_status):
-        """Portfolio with tiny savings should not survive drawdown."""
-        sample_status["net_worth"] = 1000
-        sample_status["monthly_savings"] = 100
-        sample_goal["monthly_expenses_in_retirement"] = 50000
-        service = RetirementService.__new__(RetirementService)
-        assert service._survives_drawdown(sample_goal, sample_status) is False
-
 
 class TestLifeExpectancySolver:
     """Tests for life expectancy solver."""

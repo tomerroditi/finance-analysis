@@ -102,47 +102,24 @@ class ValuationMixin:
         )
         return total if total > 0 else None
 
-    def get_total_value_at_date(self, target_date: str) -> float:
-        """Sum snapshot-resolved balances for every investment as of a date.
-
-        Per investment, applies the same resolution as
-        ``calculate_current_balance``: latest snapshot on or before
-        ``target_date`` if present (plus the transactions recorded after
-        it, up to ``target_date``), otherwise the transaction-based
-        ``-sum(amounts up to target_date)``. Closed investments are
-        included — they auto-receive a 0-balance snapshot at close, so
-        the snapshot-first logic naturally returns 0 for dates after
-        the close, and their pre-close value for dates before.
-
-        Parameters
-        ----------
-        target_date : str
-            Cut-off date in ``YYYY-MM-DD`` format (inclusive).
-
-        Returns
-        -------
-        float
-            Total portfolio value as of ``target_date``.
-        """
-        return self.get_total_values_at_dates([target_date])[target_date]
-
     def get_total_values_at_dates(self, target_dates: list[str]) -> dict[str, float]:
         """Return the snapshot-resolved total portfolio value at many dates in one pass.
 
-        Equivalent to calling :meth:`get_total_value_at_date` for each date,
-        but fetches every investment's snapshots and transactions **once**
+        Fetches every investment's snapshots and transactions **once**
         instead of once per date. This turns the net-worth-over-time chart
         (which values the portfolio at each month end) from an O(months ×
         investments) database walk into O(investments) — the per-month
         resolution then happens in-memory.
 
-        Per investment and per date the resolution is identical to the
-        single-date method: the latest snapshot on or before the date if one
-        exists (snapshots are unique per ``(investment, date)`` and stored as
-        ``YYYY-MM-DD`` strings, so an ordered lexical search is exact),
-        carried forward by the transactions between the snapshot and the
-        date; otherwise the transaction-based ``-sum(amounts up to the
-        date)``.
+        Per investment and per date the resolution matches
+        ``calculate_current_balance``: the latest snapshot on or before the
+        date if one exists (snapshots are unique per ``(investment, date)``
+        and stored as ``YYYY-MM-DD`` strings, so an ordered lexical search is
+        exact), carried forward by the transactions between the snapshot and
+        the date; otherwise the transaction-based ``-sum(amounts up to the
+        date)``. Closed investments are included — they auto-receive a
+        0-balance snapshot at close, so they value at 0 after the close and at
+        their pre-close value before it.
 
         Parameters
         ----------
@@ -740,47 +717,6 @@ class ValuationMixin:
             total.append({"date": d, "balance": balance_sum})
 
         return {"series": all_series, "total": total}
-
-    def get_all_investment_transactions_combined(
-        self, include_closed: bool = True
-    ) -> pd.DataFrame:
-        """
-        Fetch transactions for all investments in a single combined DataFrame.
-
-        Parameters
-        ----------
-        include_closed : bool
-            Whether to include transactions for closed investments.
-
-        Returns
-        -------
-        pd.DataFrame
-            Combined transactions with a parsed ``date_parsed`` column and
-            numeric ``amount``.  Empty DataFrame if no investments exist.
-        """
-        investments = self.investments_repo.get_all_investments(
-            include_closed=include_closed
-        )
-        if investments.empty:
-            return pd.DataFrame()
-
-        frames: list[pd.DataFrame] = []
-        for _, inv in investments.iterrows():
-            txns = self._get_all_transactions_for_investment(
-                inv["category"], inv["tag"], investment_id=int(inv["id"])
-            )
-            if not txns.empty:
-                frames.append(txns)
-
-        if not frames:
-            return pd.DataFrame()
-
-        combined = pd.concat(frames, ignore_index=True)
-        combined["date_parsed"] = pd.to_datetime(combined["date"])
-        combined["amount"] = pd.to_numeric(combined["amount"], errors="coerce").fillna(
-            0.0
-        )
-        return combined
 
     def _get_all_transactions_for_investment(
         self, category: str, tag: str, investment_id: int | None = None

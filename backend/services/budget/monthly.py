@@ -591,7 +591,7 @@ class MonthlyBudgetService(BudgetService):
         # getting their own endpoint call from the budget page. The section
         # renders inside this view, so a separate per-month request would just
         # add another participant to every refresh of the same screen.
-        from backend.services.savings_goal_service import SavingsGoalService
+        from backend.services.savings_goals import SavingsGoalService
 
         savings_goals = SavingsGoalService(self.db).get_month_allocations(year, month)
 
