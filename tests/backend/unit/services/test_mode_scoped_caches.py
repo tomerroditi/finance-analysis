@@ -51,6 +51,10 @@ class TestCacheKey:
 class TestCredentialsCacheIsPathScoped:
     """Tests for the credentials cache partition."""
 
+    def setup_method(self):
+        """Start from an empty cache whatever ran earlier on this worker."""
+        credentials_service.CredentialsService.clear_cache()
+
     def teardown_method(self):
         """Drop every partition so tests do not leak cached credentials."""
         credentials_service.CredentialsService.clear_cache()
@@ -96,6 +100,10 @@ class TestCredentialsCacheIsPathScoped:
 
 class TestCategoriesCacheIsPathScoped:
     """Tests for the categories cache partition."""
+
+    def setup_method(self):
+        """Start from an empty cache whatever ran earlier on this worker."""
+        tagging_service.CategoriesTagsService.clear_cache()
 
     def teardown_method(self):
         """Drop every partition so tests do not leak cached categories."""

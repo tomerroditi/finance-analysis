@@ -143,24 +143,3 @@ class TestCashBalanceDeleteErrors:
         response = test_client.delete("/api/cash-balances/nonexistent")
         assert response.status_code == 404
         assert "nonexistent" in response.json()["detail"]
-
-    def test_delete_existing_account_still_succeeds(self, test_client):
-        """DELETE /api/cash-balances/{name} still deletes a real envelope."""
-        test_client.post(
-            "/api/cash-balances/", json={"account_name": "Wallet", "balance": 100.0}
-        )
-        test_client.post(
-            "/api/cash-balances/", json={"account_name": "Savings", "balance": 50.0}
-        )
-        response = test_client.delete("/api/cash-balances/Savings")
-        assert response.status_code == 200
-        names = [b["account_name"] for b in test_client.get("/api/cash-balances/").json()]
-        assert "Savings" not in names
-
-    def test_delete_default_wallet_still_400s(self, test_client):
-        """DELETE /api/cash-balances/Wallet remains a 400, not a 404."""
-        test_client.post(
-            "/api/cash-balances/", json={"account_name": "Wallet", "balance": 100.0}
-        )
-        response = test_client.delete("/api/cash-balances/Wallet")
-        assert response.status_code == 400

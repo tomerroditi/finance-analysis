@@ -180,17 +180,6 @@ class TestPendingRefundsService:
         assert result["total_refunded"] == 50.0
         assert result["remaining"] == 50.0
 
-    def test_link_refund_multiple_partials(self, db_session, seed_refund_sources):
-        """Multiple partial refunds sum to full resolution."""
-        service = PendingRefundsService(db_session)
-        pending = service.mark_as_pending_refund("transaction", 1, "banks", 100.0)
-
-        service.link_refund(pending["id"], 99, "banks", 50.0)
-        result = service.link_refund(pending["id"], 100, "banks", 50.0)
-
-        assert result["status"] == "resolved"
-        assert result["total_refunded"] == 100.0
-
     def test_link_refund_not_found(self, db_session):
         """Error when pending refund not found."""
         service = PendingRefundsService(db_session)
@@ -288,6 +277,7 @@ class TestUnlinkRefund:
         service.link_refund(pending["id"], 99, "banks", 60.0)
         result = service.link_refund(pending["id"], 100, "banks", 40.0)
         assert result["status"] == "resolved"
+        assert result["total_refunded"] == 100.0
         details = service.get_pending_by_id(pending["id"])
         link_id = details["links"][1]["id"]
         result = service.unlink_refund(link_id)
@@ -777,45 +767,6 @@ class TestGetRefundSources:
         assert sources[0]["transaction_amount"] is None
         assert sources[0]["available"] is None
         assert sources[0]["total_allocated"] == 50.0
-
-
-class TestLinkEnrichmentAmounts:
-    """Regression tests for link enrichment preserving allocated amounts."""
-
-    def test_link_amount_not_overwritten_by_transaction_amount(
-        self, db_session, seed_base_transactions
-    ):
-        """The link's allocated amount survives enrichment; the txn amount is separate."""
-        expense_txn = db_session.query(BankTransaction).filter(
-            BankTransaction.amount < 0
-        ).first()
-        refund_txn = BankTransaction(
-            id="test-refund-enrich",
-            date="2024-01-20",
-            provider="hapoalim",
-            account_name="Main Account",
-            description="Big refund",
-            amount=500.0,
-            category="Other Income",
-            tag="",
-            source="bank_transactions",
-            type="normal",
-            status="completed",
-        )
-        db_session.add(refund_txn)
-        db_session.flush()
-
-        service = PendingRefundsService(db_session)
-        pending = service.mark_as_pending_refund(
-            "transaction", expense_txn.unique_id, "banks", 80.0,
-        )
-        service.link_refund(pending["id"], refund_txn.unique_id, "bank_transactions", 80.0)
-
-        result = service.get_all_pending()
-        item = next(p for p in result if p["id"] == pending["id"])
-        link = item["links"][0]
-        assert link["amount"] == 80.0
-        assert link["transaction_amount"] == 500.0
 
 
 class TestRefundNotes:

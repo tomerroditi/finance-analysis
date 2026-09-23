@@ -316,8 +316,8 @@ class TestBulkUpdateTagging:
 class TestGetDateFromTable:
     """Tests for get_latest_date_from_table and get_earliest_date_from_table."""
 
-    def test_latest_date_returns_datetime(self, db_session):
-        """Verify get_latest_date_from_table returns the latest date as datetime."""
+    def test_returns_bounds_as_datetime(self, db_session):
+        """Both lookups return the extreme stored date parsed to a datetime."""
         db_session.add_all([
             CashTransaction(
                 id="1", date="2024-01-01", amount=-10.0,
@@ -333,68 +333,27 @@ class TestGetDateFromTable:
         db_session.commit()
 
         repo = TransactionsRepository(db_session)
-        result = repo.get_latest_date_from_table("cash_transactions")
-        assert result == datetime(2024, 6, 15)
+        assert repo.get_latest_date_from_table("cash_transactions") == datetime(2024, 6, 15)
+        assert repo.get_earliest_date_from_table("cash_transactions") == datetime(2024, 1, 1)
 
-    def test_earliest_date_returns_datetime(self, db_session):
-        """Verify get_earliest_date_from_table returns the earliest date as datetime."""
-        db_session.add_all([
-            CashTransaction(
-                id="1", date="2024-01-01", amount=-10.0,
-                description="Old", account_name="Cash",
-                provider="manual", source="cash_transactions",
-            ),
-            CashTransaction(
-                id="2", date="2024-06-15", amount=-20.0,
-                description="New", account_name="Cash",
-                provider="manual", source="cash_transactions",
-            ),
-        ])
-        db_session.commit()
-
+    def test_empty_table_returns_none(self, db_session):
+        """Both lookups return None for an empty table."""
         repo = TransactionsRepository(db_session)
-        result = repo.get_earliest_date_from_table("cash_transactions")
-        assert result == datetime(2024, 1, 1)
+        assert repo.get_latest_date_from_table("cash_transactions") is None
+        assert repo.get_earliest_date_from_table("cash_transactions") is None
 
-    def test_latest_date_empty_table_returns_none(self, db_session):
-        """Verify get_latest_date_from_table returns None for empty table."""
-        repo = TransactionsRepository(db_session)
-        result = repo.get_latest_date_from_table("cash_transactions")
-        assert result is None
-
-    def test_earliest_date_empty_table_returns_none(self, db_session):
-        """Verify get_earliest_date_from_table returns None for empty table."""
-        repo = TransactionsRepository(db_session)
-        result = repo.get_earliest_date_from_table("cash_transactions")
-        assert result is None
-
-    def test_latest_date_invalid_format_returns_none(self, db_session):
-        """Verify get_latest_date_from_table returns None for unparseable date."""
-        tx = CashTransaction(
+    def test_invalid_format_returns_none(self, db_session):
+        """Both lookups return None when the stored date is unparseable."""
+        db_session.add(CashTransaction(
             id="1", date="not-a-date", amount=-10.0,
             description="Bad date", account_name="Cash",
             provider="manual", source="cash_transactions",
-        )
-        db_session.add(tx)
+        ))
         db_session.commit()
 
         repo = TransactionsRepository(db_session)
-        result = repo.get_latest_date_from_table("cash_transactions")
-        assert result is None
-
-    def test_earliest_date_invalid_format_returns_none(self, db_session):
-        """Verify get_earliest_date_from_table returns None for unparseable date."""
-        tx = CashTransaction(
-            id="1", date="not-a-date", amount=-10.0,
-            description="Bad date", account_name="Cash",
-            provider="manual", source="cash_transactions",
-        )
-        db_session.add(tx)
-        db_session.commit()
-
-        repo = TransactionsRepository(db_session)
-        result = repo.get_earliest_date_from_table("cash_transactions")
-        assert result is None
+        assert repo.get_latest_date_from_table("cash_transactions") is None
+        assert repo.get_earliest_date_from_table("cash_transactions") is None
 
 
 class TestAddScrapedTransactionsDistinctDuplicates:

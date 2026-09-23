@@ -459,31 +459,18 @@ class TestPreviewLimitBounds:
             "value": "e",
         }
 
-    def test_negative_limit_is_rejected(self, test_client):
-        """POST /rules/preview with limit=-1 returns 422.
+    @pytest.mark.parametrize(
+        "limit", [-1, 0, 5000], ids=["negative", "zero", "above-cap"]
+    )
+    def test_out_of_range_limit_is_rejected(self, test_client, limit):
+        """POST /rules/preview with a limit outside 1..cap returns 422.
 
         A negative limit made SQLite ignore the LIMIT clause while pandas
         ``head(-1)`` silently dropped the last row.
         """
         response = test_client.post(
             "/api/tagging-rules/rules/preview",
-            json={"conditions": self._conditions(), "limit": -1},
-        )
-        assert response.status_code == 422
-
-    def test_zero_limit_is_rejected(self, test_client):
-        """POST /rules/preview with limit=0 returns 422."""
-        response = test_client.post(
-            "/api/tagging-rules/rules/preview",
-            json={"conditions": self._conditions(), "limit": 0},
-        )
-        assert response.status_code == 422
-
-    def test_excessive_limit_is_rejected(self, test_client):
-        """POST /rules/preview with limit above the cap returns 422."""
-        response = test_client.post(
-            "/api/tagging-rules/rules/preview",
-            json={"conditions": self._conditions(), "limit": 5000},
+            json={"conditions": self._conditions(), "limit": limit},
         )
         assert response.status_code == 422
 

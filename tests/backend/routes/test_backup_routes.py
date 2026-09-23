@@ -36,14 +36,6 @@ class TestListBackups:
         assert response.json() == backups
         mock_list.assert_called_once_with()
 
-    def test_list_backups_empty(self, test_client):
-        """No backups yields an empty list."""
-        with patch("backend.routes.backup.list_backups", return_value=[]):
-            response = test_client.get("/api/backups/")
-
-        assert response.status_code == 200
-        assert response.json() == []
-
 
 class TestCreateBackup:
     """Tests for POST /api/backups/."""

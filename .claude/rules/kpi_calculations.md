@@ -142,6 +142,80 @@ category it lands in, so a month can end in credit. Anything that draws a
 category (a bar segment, a pie slice) skips those; anything that totals a
 month must keep them, or the refund vanishes from the month it belongs to.
 
+## The "This Month" forecast: due money, not average money
+
+`get_cash_flow_forecast` projects the running month. Two rules keep it honest.
+
+**Income is what recurring streams still owe.** `RecurringService.get_income_due_remaining`
+runs the cadence detector over income rows and reports what has not yet landed
+this month; the forecast adds exactly that to what is already banked:
+
+```
+expected_income = actual_income + recurring_income_due
+```
+
+There is no averaging in that line, and that is the point. An averaged
+baseline carries a windfall for as many months as the window is long — one
+wedding, one inheritance, one sold car, and the card promises six figures of
+savings on a five-figure salary. The median-of-6-complete-months fallback runs
+**only** when no income stream is detected at all; `income_basis` reports which
+was used.
+
+**Expenses are measured on one basis, and only over unobserved days.**
+
+| figure | basis |
+|---|---|
+| `actual_expenses`, `avg_monthly_expenses`, `expected_expenses`, `safe_to_spend` | itemized, CC-deduped, project-excluded — the Budget page's figure |
+| `current_bank_balance`, `projected_end_balance`, `daily` | the bank account's own view, where a card statement is one debit |
+
+Mixing them reported last month's card bill as this month's spending. Keep
+each column in its own basis.
+
+Confirmed recurring charges come **out** of the daily trend
+(`avg_monthly_expenses - committed_monthly`) and are added back at their due
+dates as `committed_remaining` — a bill lands once, on its day, not smeared
+across the month on top of itself.
+
+### Staleness is per account, not per household
+
+The trend projection spans the days each account has not reported, not the days
+left on the calendar. Accounts are scraped on their own schedule, so a card
+current to the 23rd beside a bank current to the 5th is **two different holes**
+in the month.
+
+`_account_sync_edges` reads `ScrapingHistoryService.get_last_scrape_dates()` and
+keys it by `(provider, account_name)` — the pair the scraper writes into both
+the credential row and every transaction it produces, so the join is exact.
+`_project_per_account` then splits the household baseline by each account's
+share of the last 6 complete months and projects each slice over its own
+unsynced days. Shares sum to 1, so equal freshness collapses back exactly to
+`baseline / days_in_month * unobserved_days`.
+
+**Read the edge from the scrape trail, never from the last transaction.** A
+household that simply did not spend for three days leaves exactly the same gap
+at the end of the ledger as an account that stopped syncing three days ago, and
+only one of those is missing data.
+
+Exclusions, matching the budget's freshness badge (`useBudgetFreshness`):
+
+| case | treatment | why |
+|---|---|---|
+| insurance | excluded | scraped, but produces no budget transactions |
+| never synced | skipped | contributed nothing to the trend baseline either, so counting it would project spending no month ever contained |
+| no credential (cash, manual) | current | the user types it in; it cannot be behind |
+| nothing scrapable at all | no staleness | edge is today |
+
+`observed_through` in the response is the weakest link across all of them — it
+drives the card's "data through" caption and the cutoff for which committed
+charges are still due, not the projection itself.
+
+**Do not collapse this back to one household-wide window.** The intermediate
+version did, and corrected for the skew by subtracting what the fresher
+accounts had already reported inside the shared window — which let one big card
+purchase swallow the whole month's expectation, including the stale bank's
+direct debits that nothing had reported at all. Pinned by
+`test_a_fresh_account_s_spending_does_not_cancel_a_stale_one_s_gap`.
+
 ## Prior Wealth
 
 Prior wealth represents money that existed **before the system started tracking transactions**. Without it, cumulative balance charts would start at zero instead of the user's actual starting balance.

@@ -46,7 +46,7 @@ class TestSnapshotCRUD:
     """Tests for snapshot create/read/delete via the service layer."""
 
     def test_create_snapshot(self, db_session: Session):
-        """Verify creating a balance snapshot via the service."""
+        """Verify a created snapshot reads back as a JSON-safe dict."""
         inv_id = _create_investment(db_session)
         service = _make_service(db_session)
 
@@ -54,20 +54,9 @@ class TestSnapshotCRUD:
 
         snapshots = service.get_balance_snapshots(inv_id)
         assert len(snapshots) == 1
+        assert isinstance(snapshots[0], dict)
         assert snapshots[0]["balance"] == 50000.0
         assert snapshots[0]["source"] == "manual"
-
-    def test_get_balance_snapshots_returns_list_of_dicts(self, db_session: Session):
-        """Verify snapshots are returned as list of JSON-safe dicts."""
-        inv_id = _create_investment(db_session)
-        service = _make_service(db_session)
-
-        service.create_balance_snapshot(inv_id, "2025-01-01", 50000.0)
-        service.create_balance_snapshot(inv_id, "2025-02-01", 55000.0)
-
-        snapshots = service.get_balance_snapshots(inv_id)
-        assert len(snapshots) == 2
-        assert all(isinstance(s, dict) for s in snapshots)
 
     def test_delete_snapshot(self, db_session: Session):
         """Verify deleting a snapshot by ID."""

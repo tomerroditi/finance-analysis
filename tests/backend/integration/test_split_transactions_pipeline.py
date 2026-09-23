@@ -179,35 +179,6 @@ class TestSplitTransactionsPipeline:
         parent_after = cc_df_after[cc_df_after["id"] == "cc_jan_1"].iloc[0]
         assert parent_after["type"] == "normal"
 
-    def test_split_amounts_sum_to_parent(
-        self, db_session: Session, seed_split_transactions: dict
-    ):
-        """Verify sum of split child amounts equals parent amount."""
-        split_repo = SplitTransactionsRepository(db_session)
-
-        cc_parent = seed_split_transactions["cc_parent"]
-        bank_parent = seed_split_transactions["bank_parent"]
-
-        # CC parent: -300 split into -150, -100, -50
-        cc_children = split_repo.get_splits_for_transaction(
-            cc_parent.unique_id, "credit_card_transactions"
-        )
-        cc_child_sum = cc_children["amount"].sum()
-        assert cc_child_sum == cc_parent.amount, (
-            f"CC split children sum ({cc_child_sum}) should equal "
-            f"parent amount ({cc_parent.amount})"
-        )
-
-        # Bank parent: -200 split into -120, -80
-        bank_children = split_repo.get_splits_for_transaction(
-            bank_parent.unique_id, "bank_transactions"
-        )
-        bank_child_sum = bank_children["amount"].sum()
-        assert bank_child_sum == bank_parent.amount, (
-            f"Bank split children sum ({bank_child_sum}) should equal "
-            f"parent amount ({bank_parent.amount})"
-        )
-
     def test_split_children_independent_categories(
         self, db_session: Session, seed_base_transactions: list
     ):

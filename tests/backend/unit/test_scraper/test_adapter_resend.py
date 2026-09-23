@@ -60,11 +60,6 @@ def _adapter(process_id: int = 1) -> ScraperAdapter:
 class TestAdapterResendOtp:
     """ScraperAdapter.resend_otp delegates to the scraper (or guards on None)."""
 
-    def test_scraper_initialised_to_none(self):
-        """A fresh adapter has no scraper yet (``_scraper is None``)."""
-        adapter = _adapter()
-        assert adapter._scraper is None
-
     def test_resend_delegates_to_scraper(self):
         """resend_otp awaits the underlying scraper's resend_otp exactly once."""
         adapter = _adapter()

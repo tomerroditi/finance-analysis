@@ -274,24 +274,81 @@ class TestTransactionsRoutesErrors:
 
     # -- POST / error paths --
 
-    def test_create_transaction_value_error(self, test_client):
-        """Verify 400 when create_transaction raises ValueError."""
-        with patch("backend.routes.transactions.TransactionsService") as mock_cls:
-            mock_svc = MagicMock()
-            mock_cls.return_value = mock_svc
-            mock_svc.create_transaction.side_effect = ValueError("Invalid service")
-            response = test_client.post(
+    @pytest.mark.parametrize(
+        "service_method, http_method, url, body",
+        [
+            (
+                "create_transaction",
+                "post",
                 "/api/transactions/",
-                json={
+                {
                     "date": "2024-01-01",
                     "description": "Test",
                     "amount": -50.0,
                     "account_name": "Cash",
                     "service": "invalid",
                 },
-            )
+            ),
+            (
+                "update_transaction",
+                "put",
+                "/api/transactions/1",
+                {
+                    "category": "Food",
+                    "tag": "Groceries",
+                    "source": "credit_card_transactions",
+                },
+            ),
+            (
+                "split_transaction",
+                "post",
+                "/api/transactions/1/split",
+                {
+                    "source": "credit_card_transactions",
+                    "splits": [
+                        {"amount": -25.0, "category": "Food", "tag": "Groceries"},
+                        {"amount": -25.0, "category": "Transport", "tag": "Gas"},
+                    ],
+                },
+            ),
+            (
+                "revert_split",
+                "delete",
+                "/api/transactions/1/split?source=credit_card_transactions",
+                None,
+            ),
+            (
+                "bulk_tag_transactions",
+                "post",
+                "/api/transactions/bulk-tag",
+                {
+                    "transaction_ids": [1, 2],
+                    "source": "credit_card_transactions",
+                    "category": "Food",
+                    "tag": "Groceries",
+                },
+            ),
+            (
+                "update_tagging_by_id",
+                "put",
+                "/api/transactions/1/tag?category=Food&tag=Groceries&service=credit_cards",
+                None,
+            ),
+        ],
+        ids=["create", "update", "split", "revert-split", "bulk-tag", "legacy-tag"],
+    )
+    def test_service_value_error_returns_400(
+        self, test_client, service_method, http_method, url, body
+    ):
+        """Verify a ValueError from the service maps to 400 with its message."""
+        with patch("backend.routes.transactions.TransactionsService") as mock_cls:
+            mock_svc = MagicMock()
+            mock_cls.return_value = mock_svc
+            getattr(mock_svc, service_method).side_effect = ValueError("Bad input")
+            kwargs = {"json": body} if body is not None else {}
+            response = getattr(test_client, http_method)(url, **kwargs)
             assert response.status_code == 400
-            assert "Invalid service" in response.json()["detail"]
+            assert "Bad input" in response.json()["detail"]
 
     def test_create_transaction_runtime_error(self, test_client):
         """Verify a RuntimeError 500s without echoing the exception text.
@@ -336,23 +393,6 @@ class TestTransactionsRoutesErrors:
                     },
                 )
 
-    def test_update_transaction_value_error(self, test_client):
-        """Verify 400 when update_transaction raises ValueError."""
-        with patch("backend.routes.transactions.TransactionsService") as mock_cls:
-            mock_svc = MagicMock()
-            mock_cls.return_value = mock_svc
-            mock_svc.update_transaction.side_effect = ValueError("Bad source")
-            response = test_client.put(
-                "/api/transactions/1",
-                json={
-                    "category": "Food",
-                    "tag": "Groceries",
-                    "source": "credit_card_transactions",
-                },
-            )
-            assert response.status_code == 400
-            assert "Bad source" in response.json()["detail"]
-
     # -- DELETE /{unique_id} error paths --
 
     def test_delete_transaction_permission_error(self, test_client):
@@ -383,70 +423,6 @@ class TestTransactionsRoutesErrors:
             assert response.status_code == 404
             assert "not found" in response.json()["detail"]
 
-    # -- POST /{unique_id}/split error path --
-
-    def test_split_transaction_value_error(self, test_client):
-        """Verify 400 when split_transaction raises ValueError (e.g. failed commit)."""
-        with patch(
-            "backend.routes.transactions.TransactionsService"
-        ) as mock_cls:
-            mock_svc = MagicMock()
-            mock_cls.return_value = mock_svc
-            mock_svc.split_transaction.side_effect = ValueError(
-                "Failed to split transaction"
-            )
-            response = test_client.post(
-                "/api/transactions/1/split",
-                json={
-                    "source": "credit_card_transactions",
-                    "splits": [
-                        {"amount": -25.0, "category": "Food", "tag": "Groceries"},
-                        {"amount": -25.0, "category": "Transport", "tag": "Gas"},
-                    ],
-                },
-            )
-            assert response.status_code == 400
-            assert "Failed to split" in response.json()["detail"]
-
-    # -- DELETE /{unique_id}/split error path --
-
-    def test_revert_split_value_error(self, test_client):
-        """Verify 400 when revert_split raises ValueError (e.g. failed commit)."""
-        with patch(
-            "backend.routes.transactions.TransactionsService"
-        ) as mock_cls:
-            mock_svc = MagicMock()
-            mock_cls.return_value = mock_svc
-            mock_svc.revert_split.side_effect = ValueError("Failed to revert split")
-            response = test_client.delete(
-                "/api/transactions/1/split?source=credit_card_transactions"
-            )
-            assert response.status_code == 400
-            assert "Failed to revert" in response.json()["detail"]
-
-    # -- POST /bulk-tag error path --
-
-    def test_bulk_tag_value_error(self, test_client):
-        """Verify 400 when bulk_tag_transactions raises ValueError."""
-        with patch("backend.routes.transactions.TransactionsService") as mock_cls:
-            mock_svc = MagicMock()
-            mock_cls.return_value = mock_svc
-            mock_svc.bulk_tag_transactions.side_effect = ValueError(
-                "Bad input"
-            )
-            response = test_client.post(
-                "/api/transactions/bulk-tag",
-                json={
-                    "transaction_ids": [1, 2],
-                    "source": "credit_card_transactions",
-                    "category": "Food",
-                    "tag": "Groceries",
-                },
-            )
-            assert response.status_code == 400
-            assert "Bad input" in response.json()["detail"]
-
-
 class TestTransactionsRoutesAdditional:
     """Tests for additional and legacy transaction route endpoints."""
 
@@ -466,20 +442,6 @@ class TestTransactionsRoutesAdditional:
             mock_svc.update_tagging_by_id.assert_called_once_with(
                 "credit_cards", "1", "Food", "Groceries"
             )
-
-    def test_update_transaction_tag_value_error(self, test_client):
-        """Verify 400 when legacy tag update raises ValueError."""
-        with patch("backend.routes.transactions.TransactionsService") as mock_cls:
-            mock_svc = MagicMock()
-            mock_cls.return_value = mock_svc
-            mock_svc.update_tagging_by_id.side_effect = ValueError(
-                "Bad input"
-            )
-            response = test_client.put(
-                "/api/transactions/1/tag?category=Food&tag=Groceries&service=credit_cards"
-            )
-            assert response.status_code == 400
-            assert "Bad input" in response.json()["detail"]
 
     # -- GET / internal error --
 

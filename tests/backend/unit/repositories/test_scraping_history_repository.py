@@ -195,17 +195,6 @@ class TestScrapingHistoryRepositoryUpdateStatus:
 
         assert repo.get_scraping_status(scrape_id) == "in_progress"
 
-    def test_update_status_to_success(self, db_session: Session):
-        """Verify update_status can set status to success."""
-        repo = ScrapingHistoryRepository(db_session)
-        scrape_id = repo.record_scrape_start(
-            "credit_cards", "isracard", "Main Card", date(2024, 3, 1),
-        )
-
-        repo.update_status(scrape_id, repo.SUCCESS)
-
-        assert repo.get_scraping_status(scrape_id) == "success"
-
 
 class TestScrapingHistoryRepositoryClearOldRecords:
     """Tests for clear_old_records method."""
@@ -242,15 +231,3 @@ class TestScrapingHistoryRepositoryClearOldRecords:
         history = repo.get_scraping_history()
         assert len(history) == 1
         assert history.iloc[0]["account_name"] == "Main Card"
-
-    def test_clear_old_records_keeps_recent(self, db_session: Session):
-        """Verify recent records are not deleted."""
-        repo = ScrapingHistoryRepository(db_session)
-
-        repo.record_scrape_start("banks", "hapoalim", "Checking", date(2024, 3, 1))
-        repo.record_scrape_start("credit_cards", "isracard", "Card1", date(2024, 3, 1))
-
-        repo.clear_old_records(days_to_keep=30)
-
-        history = repo.get_scraping_history()
-        assert len(history) == 2

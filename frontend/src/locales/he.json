@@ -240,7 +240,9 @@
       "projected": "תחזית",
       "expectedIncome": "הכנסה צפויה",
       "expectedExpenses": "הוצאה צפויה",
-      "projectedNet": "מאזן צפוי"
+"incomeStillDue": "כולל {{amount}} שטרם התקבלו",
+      "dataThrough": "נתונים עד {{date}}",
+            "projectedNet": "מאזן צפוי"
     },
     "insights": {
       "title": "תובנות",

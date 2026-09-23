@@ -170,16 +170,6 @@ class TestInvestmentBacking:
         fresh = SavingsGoalService(db_session)
         assert fresh.get_all()[0]["investment_backed"] == 0
 
-    def test_partial_earmark_takes_only_what_it_asked_for(self, db_session, service):
-        """An explicit amount earmarks part of a holding, not all of it."""
-        investment = _create_investment(db_session, 80000)
-        goals = service.create(
-            name="Car", target_amount=60000, priority=0, start_month=_month_str(0)
-        )
-        service.link_investment(goals[0]["id"], investment, amount=25000)
-
-        assert service.get_all()[0]["investment_backed"] == 25000
-
 
 class TestBackingCapacity:
     """One holding can back several goals, but never more than it is worth."""

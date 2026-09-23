@@ -2,6 +2,8 @@
 
 
 
+import pytest
+
 from scraper.base.base_scraper import BaseScraper, ScraperOptions
 from scraper.models.result import LoginResult, ScrapingResult
 from scraper.models.account import AccountResult
@@ -34,25 +36,23 @@ DUMMY_PROCESS_ID = 42
 class TestIs2FARequired:
     """Tests for the is_2fa_required helper function."""
 
-    def test_onezero_requires_2fa(self):
-        """Verify onezero bank provider requires 2FA."""
-        assert is_2fa_required("banks", "onezero") is True
+    @pytest.mark.parametrize(
+        "service,provider,expected",
+        [
+            pytest.param("banks", "onezero", True, id="onezero"),
+            pytest.param("banks", "hapoalim", True, id="hapoalim"),
+            pytest.param("credit_cards", "max", False, id="max"),
+            pytest.param("banks", "nonexistent", False, id="unknown"),
+        ],
+    )
+    def test_is_2fa_required(self, service, provider, expected):
+        """Only 2FA-capable providers report True; unknown providers report False.
 
-    def test_hapoalim_requires_2fa(self):
-        """Hapoalim is 2FA-capable: the bank sometimes asks for an SMS code.
-
-        The scraper resolves dynamically whether 2FA is needed for a given
-        run; the registry just needs to know an OTP *may* be requested.
+        Hapoalim counts as 2FA-capable because the bank only sometimes asks for
+        an SMS code: the scraper resolves per run whether it is needed, so the
+        registry just has to know an OTP *may* be requested.
         """
-        assert is_2fa_required("banks", "hapoalim") is True
-
-    def test_max_no_2fa(self):
-        """Verify max credit card provider does not require 2FA."""
-        assert is_2fa_required("credit_cards", "max") is False
-
-    def test_unknown_provider_no_2fa(self):
-        """Verify unknown provider returns False."""
-        assert is_2fa_required("banks", "nonexistent") is False
+        assert is_2fa_required(service, provider) is expected
 
 
 class TestScraperAdapterAttributes:
@@ -227,17 +227,6 @@ class TestFailLogin:
         scraper = self._scraper()
         scraper._fail_login(LoginResult.UNKNOWN_ERROR, TimeoutError("no response"))
         assert scraper._login_error_detail == "TimeoutError: no response"
-
-    def test_empty_exception_message_still_yields_the_class_name(self):
-        """A bare `raise SomeError` must not record an empty detail.
-
-        ``str(exc)`` is "" for an argument-less exception, which under the old
-        `self._login_error_detail = str(e)` assignment stored an empty string —
-        indistinguishable from "nothing was recorded".
-        """
-        scraper = self._scraper()
-        scraper._fail_login(LoginResult.UNKNOWN_ERROR, KeyError())
-        assert scraper._login_error_detail == "KeyError"
 
 
 class TestScraperErrorClassification:

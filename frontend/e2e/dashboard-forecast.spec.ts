@@ -1,5 +1,5 @@
-import { test, expect } from "@playwright/test";
-import { enableDemoMode, resetDemoData } from "./helpers";
+import { test, expect, request } from "@playwright/test";
+import { API_BASE, enableDemoMode, resetDemoData } from "./helpers";
 
 /**
  * E2E coverage for the Israeli-finance-app feature additions:
@@ -69,6 +69,30 @@ test.describe("Dashboard — forecast, recurring, goals", () => {
     await expect(
       page.getByText(/Projected end balance/i).first(),
     ).toBeVisible();
+
+    // --- Income is what recurring streams still owe, not a recent average.
+    // The demo household is paid two monthly salaries, so the forecast must
+    // reach them by detection; an averaged baseline would carry the annual
+    // bonus into every month it sat in the window.
+    const forecast = await (
+      await request.newContext()
+    ).get(`${API_BASE}/analytics/cash-flow-forecast`, {
+      headers: { "X-FAD-Demo": "1" },
+    });
+    expect(forecast.ok()).toBeTruthy();
+    const data = await forecast.json();
+    expect(data.income_basis).toBe("recurring");
+    expect(data.expected_income).toBeCloseTo(
+      data.actual_income + data.recurring_income_due,
+      2,
+    );
+    expect(data.recurring_income_items.length).toBeGreaterThan(0);
+    // Every stream it leans on is due inside this month.
+    for (const item of data.recurring_income_items) {
+      expect(item.expected_date.slice(0, 7)).toBe(data.month);
+    }
+    // The card says where the number came from.
+    await expect(page.getByTestId("forecast-income-due")).toBeVisible();
 
     // The subscriptions / recurring panel.
     await expect(

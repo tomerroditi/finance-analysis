@@ -2,6 +2,8 @@
 
 from unittest.mock import patch
 
+import pytest
+
 from backend.models.insurance_account import InsuranceAccount
 from backend.models.investment import Investment
 from backend.models.investment_balance_snapshot import InvestmentBalanceSnapshot
@@ -76,25 +78,16 @@ class TestRenameInsuranceAccount:
         listed = test_client.get("/api/insurance-accounts/").json()
         assert listed[0]["custom_name"] == "My Pension"
 
-    def test_rename_null_clears_override(self, test_client, db_session):
-        """Sending null clears a previously set custom name."""
+    @pytest.mark.parametrize(
+        "custom_name", [None, "   "], ids=["null", "whitespace-only"]
+    )
+    def test_rename_blank_clears_override(self, test_client, db_session, custom_name):
+        """Sending null or a whitespace-only name clears a previously set override."""
         _seed_account(db_session, custom_name="Old Name")
 
         response = test_client.patch(
             "/api/insurance-accounts/pol-001/rename",
-            json={"custom_name": None},
-        )
-
-        assert response.status_code == 200
-        assert response.json()["custom_name"] is None
-
-    def test_rename_whitespace_only_clears_override(self, test_client, db_session):
-        """A whitespace-only name normalizes to a cleared override."""
-        _seed_account(db_session, custom_name="Old Name")
-
-        response = test_client.patch(
-            "/api/insurance-accounts/pol-001/rename",
-            json={"custom_name": "   "},
+            json={"custom_name": custom_name},
         )
 
         assert response.status_code == 200

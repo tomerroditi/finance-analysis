@@ -32,7 +32,10 @@ Don't merge them into one workflow.
 - Backend: `poetry run pytest`
 - Frontend: `npm run lint`, `npm run build` (`tsc -b && vite build`),
   `npm test` (vitest)
-- **E2E: `npx playwright test` sharded 4 ways** (`E2E (Playwright, shard N/4)`).
+- **E2E: `npx playwright test` sharded 4 ways** (`E2E (Playwright, shard N/4)`),
+  against the production build (`vite build` + `vite preview`), each job given
+  the spec files `.claude/scripts/e2e_shard_files.py` packs for it by the
+  durations in `e2e_shard_timings.json`.
   This runs the **entire** `frontend/e2e/` suite, not just the specs you added.
   It is a required check — a red shard blocks the merge.
 

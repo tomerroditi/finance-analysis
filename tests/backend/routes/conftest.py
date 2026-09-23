@@ -2,14 +2,13 @@
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from backend.main import app
 from backend.database import get_db
 from backend.dependencies import get_database
-from backend.models.base import Base
+from backend.main import app
+from tests.conftest import make_memory_engine
 
 
 @pytest.fixture(autouse=True)
@@ -37,12 +36,7 @@ def db_engine():
     which is required when the TestClient and test code use different
     connections to the same engine.
     """
-    engine = create_engine(
-        "sqlite:///:memory:",
-        connect_args={"check_same_thread": False},
-        poolclass=StaticPool,
-    )
-    Base.metadata.create_all(engine)
+    engine = make_memory_engine(poolclass=StaticPool)
     yield engine
     engine.dispose()
 

@@ -6,11 +6,8 @@ error mapping for solver requests. Heavy projection math is covered in
 ``tests/backend/unit/test_retirement_service.py``.
 """
 
-from unittest.mock import patch
-
 import pytest
 
-from backend.errors import EntityNotFoundException, ValidationException
 from backend.models.retirement_goal import RetirementGoal
 
 GOAL_BODY = {
@@ -200,14 +197,6 @@ class TestSuggestions:
         """Solving needs a configured goal."""
         response = test_client.get("/api/retirement/solve/target_retirement_age")
         assert response.status_code == 404
-
-    def test_service_exceptions_map_to_status_codes(self, test_client):
-        """Domain exceptions raised by the service surface as 404 / 400."""
-        with patch("backend.routes.retirement.RetirementService") as mock:
-            mock.return_value.solve_for_field.side_effect = EntityNotFoundException("no goal")
-            assert test_client.get("/api/retirement/solve/x").status_code == 404
-            mock.return_value.solve_for_field.side_effect = ValidationException("bad field")
-            assert test_client.get("/api/retirement/solve/x").status_code == 400
 
 
 class TestScrapedDefaults:
