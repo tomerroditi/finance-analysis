@@ -9,7 +9,6 @@ from typing import Any
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from backend.errors import BadRequestException, EntityNotFoundException
 from backend.utils.backup import (
     backup_db,
     describe_backup,
@@ -70,13 +69,6 @@ def restore_from_backup(request: RestoreRequest) -> dict[str, str]:
     BadRequestException
         400 for an invalid filename or a file that is not a SQLite database.
     """
-    try:
-        restore_backup(request.filename)
-    except FileNotFoundError as e:
-        raise EntityNotFoundException(str(e)) from e
-    except ValueError as e:
-        # Invalid/traversal filenames and non-SQLite files are client input
-        # problems — surface them as 400s, not sanitized 500s.
-        raise BadRequestException(str(e)) from e
+    restore_backup(request.filename)
 
     return {"status": "restored", "filename": request.filename}

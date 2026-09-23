@@ -76,10 +76,7 @@ class GoalCrudMixin:
         """
         if "start_month" in fields:
             self._validate_month(fields["start_month"], "start_month")
-        try:
-            self.repo.update(goal_id, **fields)
-        except ValueError as exc:
-            raise EntityNotFoundException(f"Savings goal {goal_id} not found") from exc
+        self.repo.update(goal_id, **fields)
         return self._after_write()
 
     def delete(self, goal_id: int) -> None:
@@ -95,10 +92,7 @@ class GoalCrudMixin:
         EntityNotFoundException
             If the goal does not exist.
         """
-        try:
-            self.repo.delete(goal_id)
-        except ValueError as exc:
-            raise EntityNotFoundException(f"Savings goal {goal_id} not found") from exc
+        self.repo.delete(goal_id)
 
     def reorder(self, ordered_ids: list[int]) -> list[dict[str, Any]]:
         """Set the waterfall order; the first id is funded first.
@@ -252,12 +246,7 @@ class GoalCrudMixin:
         EntityNotFoundException
             If the link does not exist.
         """
-        try:
-            self.repo.delete_link(link_id)
-        except ValueError as exc:
-            raise EntityNotFoundException(
-                f"Savings goal link {link_id} not found"
-            ) from exc
+        self.repo.delete_link(link_id)
         self._context_cache = None
         return self._after_write()
 

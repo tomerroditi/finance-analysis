@@ -145,22 +145,6 @@ class TestBudgetRepository:
         assert "Wedding Jan" in names
         assert "Renovation" in names
 
-    def test_delete_by_category_and_tags(self, db_session: Session):
-        """Verify delete_by_category_and_tags removes only matching project rules."""
-        repo = BudgetRepository(db_session)
-        repo.add("Wedding Venue", 30000.0, "Wedding", "Venue", month=None, year=None)
-        repo.add("Wedding Catering", 20000.0, "Wedding", "Catering", month=None, year=None)
-        # Monthly rule -- should NOT be deleted
-        repo.add("Wedding Jan", 5000.0, "Wedding", "Venue", month=1, year=2024)
-
-        repo.delete_by_category_and_tags("Wedding", "Venue")
-
-        result = repo.read_all()
-        assert len(result) == 2
-        names = set(result["name"].tolist())
-        assert "Wedding Venue" not in names
-        assert "Wedding Catering" in names
-        assert "Wedding Jan" in names
 
     def test_delete_by_category_spares_yearly_rule(self, db_session: Session):
         """Verify delete_by_category keys on period_type, not null year/month.

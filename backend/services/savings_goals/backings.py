@@ -79,12 +79,7 @@ class InvestmentBackingMixin:
         EntityNotFoundException
             If the earmark does not exist.
         """
-        try:
-            self.repo.delete_backing(backing_id)
-        except ValueError as exc:
-            raise EntityNotFoundException(
-                f"Savings goal investment {backing_id} not found"
-            ) from exc
+        self.repo.delete_backing(backing_id)
         self._backing_cache = None
         return self._after_write()
 

@@ -12,7 +12,11 @@ import pandas as pd
 from sqlalchemy.orm import Session
 
 from backend.constants.tables import Tables, TransactionsTableFields
-from backend.errors import BadRequestException, EntityNotFoundException
+from backend.errors import (
+    BadRequestException,
+    EntityNotFoundException,
+    ValidationException,
+)
 from backend.repositories.tagging_rule_match_repository import (
     TaggingRuleMatchRepository,
 )
@@ -446,14 +450,24 @@ class TaggingRulesService:
         ------
         BadRequestException
             If any node is malformed.
+        ValidationException
+            If a value cannot even be coerced for checking (e.g. ``null`` in a
+            numeric comparison, or conditions that are not valid JSON).
         """
+        try:
+            self._validate_node(conditions)
+        except (TypeError, ValueError) as e:
+            raise ValidationException(f"Invalid rule conditions: {e}") from e
+
+    def _validate_node(self, conditions: dict[str, Any]) -> None:
+        """Validate one node of a condition tree, recursing into groups."""
         conditions = self._normalize_conditions(conditions)
         if conditions.get("type") in ["AND", "OR"]:
             subconditions = conditions.get("subconditions", [])
             if not subconditions:
                 raise BadRequestException("Group must have subconditions")
             for sub in subconditions:
-                self.validate_rule_integrity(sub)
+                self._validate_node(sub)
             return
 
         if conditions.get("type") == "CONDITION":

@@ -267,28 +267,6 @@ class BudgetRepository:
             raise EntityNotFoundException(f"No rule found with ID {id_}.")
         self.db.commit()
 
-    def delete_by_category_and_tags(self, category: str, tags: str) -> None:
-        """Delete budget rules by category and tags (project rules only).
-
-        Parameters
-        ----------
-        category : str
-            Category name to match for deletion.
-        tags : str
-            Semicolon-separated tag string to match exactly.
-
-        Notes
-        -----
-        Only deletes project rules (``period_type == "project"``).
-        """
-        stmt = delete(BudgetRule).where(
-            BudgetRule.category == category,
-            BudgetRule.tags == tags,
-            BudgetRule.period_type == PERIOD_PROJECT,
-        )
-        self.db.execute(stmt)
-        self.db.commit()
-
     def rename_category(self, old_name: str, new_name: str) -> None:
         """Rename category across all budget rules."""
         stmt = (

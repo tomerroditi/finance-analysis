@@ -45,8 +45,10 @@ route -> TransactionsService.revert_split()       -> TransactionsRepository.reve
 - Routes call **service** methods only (`TransactionsService.split_transaction`,
   `TransactionsService.revert_split`). They never instantiate
   `TransactionsRepository` for split operations.
-- Service methods raise `ValueError` on failure; routes translate that to
-  `HTTP 400`. They never raise generic `Exception`.
+- Service methods raise the `AppException` subclasses from `backend/errors.py`
+  on failure (`ValidationException` → 400, `EntityNotFoundException` → 404);
+  the global handler maps them, so routes carry no try/except. They never
+  raise generic `Exception`.
 - The repository is the only layer that touches the DB and is responsible for
   committing or rolling back the multi-step split write.
 
@@ -87,6 +89,6 @@ linked to a split must not reduce the parent's balance again.
   the read-side dedup logic relies on that flag.
 - Don't call `TransactionsRepository.split_transaction` directly from a
   route — go through the service.
-- Don't catch `Exception` in the route layer for split errors. The service
-  raises `ValueError` for failure; let everything else propagate to the
-  global handler.
+- Don't catch anything in the route layer for split errors. The service
+  raises an `AppException` subclass for failure; let everything propagate to
+  the global handlers.

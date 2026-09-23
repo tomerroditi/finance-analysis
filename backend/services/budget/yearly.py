@@ -56,7 +56,7 @@ class YearlyBudgetService(BudgetService):
         return rules.loc[rules[YEAR] == year]
 
     @staticmethod
-    def _rule_is_closed(rule: pd.Series) -> bool:
+    def rule_is_closed(rule: pd.Series) -> bool:
         """Whether one yearly rule row carries the closed flag.
 
         Parameters
@@ -300,7 +300,7 @@ class YearlyBudgetService(BudgetService):
                     "data": restore_gross_amounts(cat_data).to_dict(orient="records"),
                     "allow_edit": True,
                     "allow_delete": True,
-                    "closed": self._rule_is_closed(rule),
+                    "closed": self.rule_is_closed(rule),
                 }
             )
         return view

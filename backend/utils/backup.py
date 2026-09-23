@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any
 
 from backend.config import AppConfig
+from backend.errors import BadRequestException, EntityNotFoundException
 from backend.migrations_runner import upgrade_to_head
 from backend.utils.log_sanitize import scrub
 
@@ -179,16 +180,16 @@ def restore_backup(filename: str) -> None:
 
     Raises
     ------
-    FileNotFoundError
-        If the backup file does not exist.
-    ValueError
+    EntityNotFoundException
+        If the backup file does not exist (404).
+    BadRequestException
         If the filename is not a valid backup name, escapes the backup
-        directory, or the file is not a readable SQLite database.
+        directory, or the file is not a readable SQLite database (400).
     """
     # Reject anything that isn't a plain backup filename — no slashes, no
     # traversal, no symlinks pointing elsewhere.
     if not _BACKUP_FILENAME_RE.fullmatch(filename):
-        raise ValueError(f"Invalid backup filename: {filename}")
+        raise BadRequestException(f"Invalid backup filename: {filename}")
 
     backup_dir = get_backup_dir().resolve()
 
@@ -207,15 +208,17 @@ def restore_backup(filename: str) -> None:
                 backup_path = entry.resolve()
                 break
     if backup_path is None:
-        raise FileNotFoundError(f"Backup file not found: {filename}")
+        raise EntityNotFoundException(f"Backup file not found: {filename}")
 
     try:
         backup_path.relative_to(backup_dir)
     except ValueError as exc:
-        raise ValueError(f"Backup path escapes backup directory: {filename}") from exc
+        raise BadRequestException(
+            f"Backup path escapes backup directory: {filename}"
+        ) from exc
 
     if not backup_path.is_file():
-        raise FileNotFoundError(f"Backup file not found: {filename}")
+        raise EntityNotFoundException(f"Backup file not found: {filename}")
 
     # Validate the file is actually a readable SQLite database before we
     # overwrite the live DB — prevents restoring a corrupt or hostile file.
@@ -226,7 +229,7 @@ def restore_backup(filename: str) -> None:
         finally:
             test_conn.close()
     except sqlite3.DatabaseError as exc:
-        raise ValueError(
+        raise BadRequestException(
             f"Backup file is not a valid SQLite database: {filename}"
         ) from exc
 

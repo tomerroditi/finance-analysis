@@ -114,10 +114,10 @@ async def overflow_error_handler(request: Request, exc: OverflowError) -> JSONRe
 async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
     """Swallow unexpected exceptions with a generic 500 response.
 
-    Individual routes wrap ``ValueError`` / ``BadRequestException`` with their
-    own ``HTTPException(detail=str(e))`` calls, which is fine for messages the
-    service layer intentionally surfaced. Anything that reaches this handler
-    is an unhandled bug — returning ``str(exc)`` would leak stack frames,
+    Messages the service layer intentionally surfaces travel as
+    ``AppException`` subclasses and are answered by
+    :func:`app_exception_handler`. Anything that reaches this handler is an
+    unhandled bug — returning ``str(exc)`` would leak stack frames,
     SQL fragments, file paths, or secrets present in the exception message.
     The real detail is kept in the server log for operators to inspect.
 

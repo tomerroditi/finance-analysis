@@ -7,6 +7,7 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.orm import Session
 
+from backend.errors import EntityNotFoundException
 from backend.models.savings_goal import (
     GOAL_STATUS_ACTIVE,
     SavingsGoal,
@@ -90,12 +91,12 @@ class SavingsGoalRepository:
 
         Raises
         ------
-        ValueError
+        EntityNotFoundException
             If no goal with ``goal_id`` exists.
         """
         goal = self.db.get(SavingsGoal, goal_id)
         if not goal:
-            raise ValueError(f"No savings goal with id {goal_id}")
+            raise EntityNotFoundException(f"Savings goal {goal_id} not found")
         for key, value in fields.items():
             setattr(goal, key, value)
         self.db.commit()
@@ -111,12 +112,12 @@ class SavingsGoalRepository:
 
         Raises
         ------
-        ValueError
+        EntityNotFoundException
             If no goal with ``goal_id`` exists.
         """
         goal = self.db.get(SavingsGoal, goal_id)
         if not goal:
-            raise ValueError(f"No savings goal with id {goal_id}")
+            raise EntityNotFoundException(f"Savings goal {goal_id} not found")
         self.db.query(SavingsGoalAllocation).filter(
             SavingsGoalAllocation.goal_id == goal_id
         ).delete()
@@ -259,10 +260,10 @@ class SavingsGoalRepository:
         return link
 
     def delete_link(self, link_id: int) -> None:
-        """Delete a transaction link by id; raise ``ValueError`` if it is missing."""
+        """Delete a transaction link by id; raise ``EntityNotFoundException`` if missing."""
         link = self.db.get(SavingsGoalLink, link_id)
         if not link:
-            raise ValueError(f"No savings goal link with id {link_id}")
+            raise EntityNotFoundException(f"Savings goal link {link_id} not found")
         self.db.delete(link)
         self.db.commit()
 
@@ -305,10 +306,12 @@ class SavingsGoalRepository:
         return backing
 
     def delete_backing(self, backing_id: int) -> None:
-        """Delete an investment earmark by id; raise ``ValueError`` if it is missing."""
+        """Delete an investment earmark; raise ``EntityNotFoundException`` if missing."""
         backing = self.db.get(SavingsGoalInvestment, backing_id)
         if not backing:
-            raise ValueError(f"No savings goal investment with id {backing_id}")
+            raise EntityNotFoundException(
+                f"Savings goal investment {backing_id} not found"
+            )
         self.db.delete(backing)
         self.db.commit()
 

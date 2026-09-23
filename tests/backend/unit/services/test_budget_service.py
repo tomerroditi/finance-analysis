@@ -597,7 +597,11 @@ class TestProjectBudgetService:
         service.create_project(project_name, 10000.0)
 
         # Ensure "Other" rule is deleted if it was auto-created, to test unmatched behavior
-        service.budget_repository.delete_by_category_and_tags(project_name, "Other")
+        rules = service.budget_repository.read_all()
+        for rule_id in rules.loc[
+            (rules["category"] == project_name) & (rules["tags"] == "Other"), "id"
+        ]:
+            service.budget_repository.delete(int(rule_id))
 
         # Create a specific rule for "Venue"
         service.add_rule(

@@ -13,41 +13,9 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from backend.dependencies import get_database
-from backend.errors import ValidationException
 from backend.services.tagging_rules_service import TaggingRulesService
 
 router = APIRouter()
-
-
-def _validate_conditions(
-    service: TaggingRulesService, conditions: dict[str, Any]
-) -> None:
-    """Run the shared rule-integrity check on client-supplied conditions.
-
-    ``add_rule``/``update_rule`` validate their conditions before touching
-    the DB; the read-only endpoints did not, so malformed values (a
-    non-numeric amount, ``null``, a one-element ``between``) reached the
-    query builder and crashed it with a 500.
-
-    Parameters
-    ----------
-    service : TaggingRulesService
-        Service owning the integrity rules.
-    conditions : dict
-        Condition tree supplied by the client.
-
-    Raises
-    ------
-    BadRequestException
-        If the conditions violate the rule schema (mapped to HTTP 400).
-    ValidationException
-        If a condition value has a type the validator itself cannot coerce
-        (e.g. ``null`` in a numeric comparison), also mapped to HTTP 400.
-    """
-    try:
-        service.validate_rule_integrity(conditions)
-    except (TypeError, ValueError) as e:
-        raise ValidationException(f"Invalid rule conditions: {e}") from e
 
 
 class RuleCreate(BaseModel):
@@ -224,7 +192,7 @@ def validate_rule_conflicts(
         400 if a conflicting rule exists.
     """
     service = TaggingRulesService(db)
-    _validate_conditions(service, rule.conditions)
+    service.validate_rule_integrity(rule.conditions)
     service.check_conflicts(
         conditions=rule.conditions,
         category=rule.category,
@@ -269,7 +237,7 @@ def preview_rule_matches(
         400 if the conditions are malformed.
     """
     service = TaggingRulesService(db)
-    _validate_conditions(service, preview.conditions)
+    service.validate_rule_integrity(preview.conditions)
     matches = service.preview_rule(preview.conditions, preview.limit)
     return {"matches": matches, "count": len(matches)}
 

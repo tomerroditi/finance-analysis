@@ -6,6 +6,7 @@ import pytest
 from sqlalchemy.orm import sessionmaker
 
 from backend.database import create_db_engine
+from backend.errors import EntityNotFoundException
 from backend.models.base import Base
 from backend.models.savings_goal import (
     GOAL_STATUS_CLOSED,
@@ -64,7 +65,7 @@ class TestSavingsGoalCrud:
 
     def test_update_missing_raises_value_error(self, repo):
         """Updating an unknown id raises for the service to translate."""
-        with pytest.raises(ValueError):
+        with pytest.raises(EntityNotFoundException):
             repo.update(9999, name="nope")
 
     def test_delete_removes_goal_with_allocations_and_links(self, repo):
@@ -81,7 +82,7 @@ class TestSavingsGoalCrud:
 
     def test_delete_missing_raises_value_error(self, repo):
         """Deleting an unknown id raises for the service to translate."""
-        with pytest.raises(ValueError):
+        with pytest.raises(EntityNotFoundException):
             repo.delete(9999)
 
     def test_set_priorities_rewrites_the_order(self, repo):
@@ -178,7 +179,7 @@ class TestLinks:
 
     def test_delete_link_missing_raises_value_error(self, repo):
         """Deleting an unknown link id raises for the service to translate."""
-        with pytest.raises(ValueError):
+        with pytest.raises(EntityNotFoundException):
             repo.delete_link(9999)
 
 

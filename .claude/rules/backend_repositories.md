@@ -53,10 +53,10 @@ class ExampleRepository:
         self.db.add(ExampleModel(name=name))
         self.db.commit()
 
-    def update(self, id: int, **fields) -> None:
+    def update(self, id: int, **fields: Any) -> None:
         record = self.db.get(ExampleModel, id)
         if not record:
-            raise ValueError(f"No record with ID {id}")
+            raise EntityNotFoundException(f"No record with ID {id}")
         for k, v in fields.items():
             setattr(record, k, v)
         self.db.commit()
@@ -64,7 +64,7 @@ class ExampleRepository:
     def delete(self, id: int) -> None:
         record = self.db.get(ExampleModel, id)
         if not record:
-            raise ValueError(f"No record with ID {id}")
+            raise EntityNotFoundException(f"No record with ID {id}")
         self.db.delete(record)
         self.db.commit()
 ```
@@ -159,7 +159,7 @@ try:
     self.db.commit()
 except sa.exc.IntegrityError:
     self.db.rollback()
-    raise ValueError("Constraint violation")
+    raise EntityAlreadyExistsException("Constraint violation") from None
 ```
 
 ## Best Practices

@@ -369,7 +369,7 @@ class BudgetOverviewService(BudgetService):
                     "budget": round(float(rule[AMOUNT] or 0.0), 2),
                     # Measured either way; get_overview is what drops the
                     # closed ones, so their spend still reaches the totals.
-                    "closed": yearly._rule_is_closed(rule),
+                    "closed": yearly.rule_is_closed(rule),
                 }
             )
         return envelopes

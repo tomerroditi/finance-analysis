@@ -4,7 +4,7 @@ Covers the ``restore_backup`` path-resolution fix for py/path-injection
 (CodeQL alerts #2/#3): the filename is matched against the backup
 directory's real listing rather than joined onto it directly, so a
 filename that passes the ``data_YYYYMMDD_HHMMSS.db`` shape check but has
-no matching file must still raise ``FileNotFoundError``, and a filename
+no matching file must still raise ``EntityNotFoundException``, and a filename
 that does match an existing backup must still restore successfully.
 
 Uses ``tmp_path`` + ``AppConfig._base_user_dir`` overrides exclusively —
@@ -24,6 +24,7 @@ from unittest.mock import patch
 import pytest
 
 from backend.config import AppConfig
+from backend.errors import BadRequestException, EntityNotFoundException
 from backend.utils.backup import (
     _upgrade_restored_db,
     backup_db,
@@ -48,7 +49,7 @@ class TestRestoreBackupMissingFile:
     """A filename shaped like a backup but absent from the directory."""
 
     def test_raises_file_not_found_when_no_matching_entry(self, tmp_path):
-        """Regex-valid filename with no directory entry raises FileNotFoundError.
+        """Regex-valid filename with no directory entry raises EntityNotFoundException.
 
         This is the behaviour the directory-listing lookup must preserve:
         CodeQL now sees the resolved path come from a trusted enumeration
@@ -60,16 +61,16 @@ class TestRestoreBackupMissingFile:
         config._base_user_dir = str(tmp_path)
         get_backup_dir().mkdir(parents=True, exist_ok=True)
 
-        with pytest.raises(FileNotFoundError, match="Backup file not found"):
+        with pytest.raises(EntityNotFoundException, match="Backup file not found"):
             restore_backup("data_20260101_000000.db")
 
     def test_raises_file_not_found_when_backup_dir_absent(self, tmp_path):
-        """No backup directory at all also raises FileNotFoundError, not OSError."""
+        """No backup directory at all also raises EntityNotFoundException, not OSError."""
         config = AppConfig()
         config._base_user_dir = str(tmp_path)
         assert not get_backup_dir().exists()
 
-        with pytest.raises(FileNotFoundError, match="Backup file not found"):
+        with pytest.raises(EntityNotFoundException, match="Backup file not found"):
             restore_backup("data_20260101_000000.db")
 
 
@@ -273,7 +274,7 @@ class TestRestoreBackupValidation:
         """Anything that is not exactly ``data_YYYYMMDD_HHMMSS.db`` is refused."""
         AppConfig()._base_user_dir = str(tmp_path)
 
-        with pytest.raises(ValueError, match="Invalid backup filename"):
+        with pytest.raises(BadRequestException, match="Invalid backup filename"):
             restore_backup(bad_name)
 
     def test_rejects_a_file_that_is_not_sqlite(self, tmp_path):
@@ -284,7 +285,7 @@ class TestRestoreBackupValidation:
         backup_dir.mkdir(parents=True)
         (backup_dir / "data_20260101_000000.db").write_bytes(b"definitely not a database")
 
-        with pytest.raises(ValueError, match="not a valid SQLite database"):
+        with pytest.raises(BadRequestException, match="not a valid SQLite database"):
             restore_backup("data_20260101_000000.db")
 
         assert db_path.read_bytes() == before
@@ -295,7 +296,7 @@ class TestRestoreBackupValidation:
         backup_dir = get_backup_dir()
         (backup_dir / "data_20260101_000000.db").mkdir(parents=True)
 
-        with pytest.raises(FileNotFoundError):
+        with pytest.raises(EntityNotFoundException):
             restore_backup("data_20260101_000000.db")
 
     def test_rejects_a_symlink_that_escapes_the_backup_directory(self, tmp_path):
@@ -307,7 +308,7 @@ class TestRestoreBackupValidation:
         _make_sqlite_file(outside)
         (backup_dir / "data_20260101_000000.db").symlink_to(outside)
 
-        with pytest.raises(ValueError, match="escapes backup directory"):
+        with pytest.raises(BadRequestException, match="escapes backup directory"):
             restore_backup("data_20260101_000000.db")
 
     def test_restore_takes_a_safety_backup_of_the_live_db_first(self, tmp_path):

@@ -591,7 +591,7 @@ class TestClosingAYearlyRule:
         copied = svc.get_year_rules(2027)
         assert not copied.empty
         assert [
-            svc._rule_is_closed(row) for _, row in copied.iterrows()
+            svc.rule_is_closed(row) for _, row in copied.iterrows()
         ] == [False] * len(copied)
 
     def test_closing_a_monthly_id_is_not_found(self, db_session):
