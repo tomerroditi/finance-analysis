@@ -260,6 +260,10 @@ export function NetWorthCard() {
           {netWorthData && netWorthData.length > 0 ? (
             <>
               <div className="flex flex-wrap items-center gap-2 md:gap-3 mb-3">
+                <div
+                  data-testid="net-worth-change-chips"
+                  className="flex w-full md:w-auto max-w-full min-w-0 gap-2 md:gap-3 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+                >
                 {(() => {
                   const latest = netWorthData[netWorthData.length - 1];
                   const findMonthsAgo = (n: number) => {
@@ -269,9 +273,11 @@ export function NetWorthCard() {
                     return [...netWorthData].reverse().find((d) => d.month <= target) ?? netWorthData[0];
                   };
                   const periods = [
+                    { label: t("dashboard.change10Y"), months: 120 },
                     { label: t("dashboard.change5Y"), months: 60 },
                     { label: t("dashboard.change3Y"), months: 36 },
                     { label: t("dashboard.change1Y"), months: 12 },
+                    { label: t("dashboard.change9M"), months: 9 },
                     { label: t("dashboard.change6M"), months: 6 },
                     { label: t("dashboard.change1M"), months: 1 },
                   ];
@@ -295,6 +301,7 @@ export function NetWorthCard() {
                     );
                   });
                 })()}
+                </div>
                 <div className="w-full md:w-auto md:ms-auto bg-[var(--surface-light)] rounded-xl overflow-hidden">
                 <div className="flex p-1 overflow-x-auto scrollbar-auto-hide">
                   {(

@@ -10,6 +10,7 @@ import { enableDemoMode } from "./helpers";
  *
  * This lives in its own file rather than as a block in `dashboard.spec.ts`
  * because it needs a mobile viewport, which must be set before the page boots.
+ * The Net Worth change-chip row is checked here too, for the same reason.
  * It performs no backend writes, so it is listed in READ_ONLY_SPECS.
  */
 test.describe("dashboard mobile KPI cards", () => {
@@ -78,6 +79,24 @@ test.describe("dashboard mobile KPI cards", () => {
         expect(box.overflow).toBeLessThanOrEqual(0);
       }
       expect(await grid.evaluate((el) => el.scrollWidth - el.clientWidth)).toBeLessThanOrEqual(0);
+
+      // --- Net Worth change chips: one horizontally scrollable row ---
+      // Seven periods (10Y..1M) never fit a phone, so the row scrolls sideways
+      // instead of wrapping onto a second line.
+      const netWorth = page.locator('[data-card-id="net_worth"]');
+      await netWorth.scrollIntoViewIfNeeded();
+      const chipRow = page.getByTestId("net-worth-change-chips");
+      await expect(chipRow).toBeVisible({ timeout: 45_000 });
+      const chips = chipRow.locator(":scope > div");
+      await expect(chips).toHaveCount(7);
+      const chipTops = await chips.evaluateAll((els) =>
+        els.map((el) => Math.round(el.getBoundingClientRect().top)),
+      );
+      expect(new Set(chipTops).size).toBe(1);
+      expect(await chipRow.evaluate((el) => el.scrollWidth - el.clientWidth)).toBeGreaterThan(0);
+      expect(
+        await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth),
+      ).toBeLessThanOrEqual(0);
     });
   }
 });
