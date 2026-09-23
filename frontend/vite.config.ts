@@ -21,6 +21,15 @@ export default defineConfig(({ mode }) => {
     plugins: [
       react(),
       tailwindcss(),
+      {
+        // index.html's CSP allows any ws:/wss: host for Vite's HMR socket;
+        // a production bundle opens no websocket, and leaving it would let
+        // injected script exfiltrate to any host.
+        name: "csp-drop-dev-websockets",
+        apply: "build",
+        transformIndexHtml: (html: string) =>
+          html.replace("connect-src 'self' ws: wss:", "connect-src 'self'"),
+      },
       VitePWA({
         // generateSW: Workbox builds the SW from JSON config. We previously
         // ran injectManifest with a hand-written src/sw.ts to use a custom

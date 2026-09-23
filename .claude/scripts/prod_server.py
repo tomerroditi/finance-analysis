@@ -12,8 +12,11 @@ prod environment first). One process owns the whole prod lifecycle:
    process that no longer takes connections.
 2. **Share.** When Tailscale is connected, runs ``tailscale serve`` in the
    foreground as a child, so the tailnet URL (a phone signed in to the same
-   tailnet) lives exactly as long as this process. tailscaled proxies from
-   loopback, so tailnet requests reach the server as trusted local clients.
+   tailnet) lives exactly as long as this process. ``tailscale serve`` is
+   pointed at a loopback port of its own (``TAILNET_INGRESS_PORT``), the only
+   listener on which the backend believes the ``Tailscale-User-Login``
+   identity it vouches for — another local proxy in front of ``--port``
+   could otherwise relay a forged one.
 3. **Follow the branch.** Every ``--poll`` seconds it fast-forwards the
    checkout from its upstream (skipped when there are uncommitted changes or
    the branch diverged), and whenever HEAD moves — by that pull or by a
@@ -30,6 +33,12 @@ prod environment first). One process owns the whole prod lifecycle:
    is therefore a bare server restart rather than a second ``npm ci`` and
    bundle build. See ``plan_redeploy``.
 
+   Auto-pull runs whatever reaches the upstream branch — including
+   ``npm ci`` install scripts — within seconds, unreviewed, on the machine
+   that holds the financial database and the keyring, so the branch is
+   only as trustworthy as the GitHub account and the release workflow's
+   token. ``--no-pull`` (``PROD_AUTO_PULL=0``) turns it off.
+
 Usage::
 
     python .claude/scripts/prod_server.py --port 8080 [--host 127.0.0.1]
@@ -44,6 +53,7 @@ import os
 import shlex
 import shutil
 import signal
+import socket
 import subprocess
 import sys
 import time
@@ -59,7 +69,6 @@ DIST = FRONTEND / "dist"
 DIST_NEXT = FRONTEND / "dist-next"
 DIST_OLD = FRONTEND / "dist-old"
 
-DEFAULT_CORS_ORIGINS = "http://localhost:5173,http://127.0.0.1:5173"
 TAILSCALE_FALLBACK_PATHS = (
     "/Applications/Tailscale.app/Contents/MacOS/Tailscale",
     r"C:\Program Files\Tailscale\tailscale.exe",
@@ -378,15 +387,29 @@ def prepare_tailnet_share() -> tuple[str | None, TailnetShare | None]:
             "('tailscale serve status' shows it, 'tailscale serve reset' clears it)."
         )
         return None, None
-    cors = os.environ.get("CORS_ORIGINS") or DEFAULT_CORS_ORIGINS
-    os.environ["CORS_ORIGINS"] = f"{cors},{share.url}"
+    cors = os.environ.get("CORS_ORIGINS", "")
+    os.environ["CORS_ORIGINS"] = f"{cors},{share.url}" if cors else share.url
     hosts = os.environ.get("ALLOWED_HOSTS", "")
     os.environ["ALLOWED_HOSTS"] = (
         f"{hosts},{share.hostname}" if hosts else share.hostname
     )
     if share.owner_login and not os.environ.get("TAILNET_ALLOWED_USERS"):
         os.environ["TAILNET_ALLOWED_USERS"] = share.owner_login
+    os.environ["TAILNET_INGRESS_PORT"] = str(free_loopback_port())
     return ts_bin, share
+
+
+def free_loopback_port() -> int:
+    """Return a loopback TCP port nothing is listening on right now."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.bind(("127.0.0.1", 0))
+        return sock.getsockname()[1]
+
+
+def tailnet_ingress_port() -> int | None:
+    """The loopback port reserved for ``tailscale serve``, when sharing."""
+    raw = os.environ.get("TAILNET_INGRESS_PORT", "")
+    return int(raw) if raw.isdigit() else None
 
 
 # --------------------------------------------------------------------------
@@ -417,23 +440,18 @@ class Server:
 
     def start(self) -> bool:
         """Start uvicorn and wait until ``/health`` answers."""
-        self.proc = subprocess.Popen(
-            [
-                sys.executable,
-                "-m",
-                "uvicorn",
-                "backend.main:app",
-                "--host",
-                self.host,
-                "--port",
-                str(self.port),
-                # Keep the TCP peer as the real connection: the backend
-                # tells a tailscaled-relayed request apart from a genuinely
-                # local one by its proxy headers (auth.is_proxied_request).
-                "--no-proxy-headers",
-            ],
-            cwd=ROOT,
-        )
+        argv = [
+            sys.executable,
+            str(ROOT / ".claude" / "scripts" / "serve_app.py"),
+            "--host",
+            self.host,
+            "--port",
+            str(self.port),
+        ]
+        ingress = tailnet_ingress_port()
+        if ingress is not None:
+            argv += ["--tailnet-port", str(ingress)]
+        self.proc = subprocess.Popen(argv, cwd=ROOT)
         deadline = time.monotonic() + HEALTH_TIMEOUT_SECONDS
         while time.monotonic() < deadline:
             if self.proc.poll() is not None:
@@ -636,7 +654,9 @@ class Supervisor:
             else:
                 log("No tailnet users allowlisted - set TAILNET_ALLOWED_USERS.")
         mode = (
-            "pulling from upstream and redeploying" if self.auto_pull else "redeploying"
+            "pulling from upstream and redeploying"
+            if self.auto_pull
+            else "redeploying"
         )
         log(f"Checking every {self.poll_seconds}s - {mode} when HEAD moves.")
 
@@ -694,7 +714,7 @@ class Supervisor:
                 self.ts_bin,
                 "serve",
                 self.share.serve_flag,
-                f"http://127.0.0.1:{self.server.port}",
+                f"http://127.0.0.1:{tailnet_ingress_port()}",
             ],
             stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,

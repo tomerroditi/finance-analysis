@@ -122,3 +122,16 @@ sandboxes stop persisting (warnings in the function logs), nothing 500s.
 - Local dev and the e2e suite keep the single shared demo DB —
   `FAD_DEMO_SESSIONS` is only set by `index.py`. Do not enable it under
   Playwright: the specs rely on `resetDemoData()` rebuilding one shared file.
+- Sandbox ids are client-minted, so nothing stops one client cycling through
+  fresh ids. Two bounds keep that from taking the instance down: each
+  instance keeps at most `FAD_DEMO_MAX_LOCAL_SESSIONS` (default 100)
+  sandboxes on disk, evicting the least recently used *idle* one
+  (`enter`/`leave` around every sandboxed request; a durable sandbox is just
+  restored from Blob next time), and a sandbox past `MAX_PERSISTED_BYTES`
+  (16 MB) is never uploaded. Blob growth per new id is still unbounded until
+  the prune cron — a per-IP rate-limit rule in the Vercel firewall is the
+  remaining control, and it lives in the dashboard, not the repo.
+- The SPA is served by the CDN, so FastAPI's security-header middleware
+  never touches it; `vercel.json`'s `headers` block carries the same
+  anti-framing / nosniff / referrer headers (a `<meta>` CSP cannot set
+  `frame-ancestors`). `test_vercel_entry.py` pins them.

@@ -13,18 +13,44 @@ class TestIsTrustedClient:
     """Tests for loopback/local client detection."""
 
     @pytest.mark.parametrize(
-        "host", [None, "127.0.0.1", "127.0.0.5", "::1", "localhost", "testclient"]
+        "host",
+        [None, "127.0.0.1", "127.0.0.5", "::1", "::ffff:127.0.0.1", "localhost", "testclient"],
     )
     def test_local_clients_are_trusted(self, host):
         """Verify loopback addresses and local sentinels are trusted."""
         assert auth.is_trusted_client(host) is True
 
     @pytest.mark.parametrize(
-        "host", ["192.168.1.10", "10.0.0.2", "203.0.113.5", "evil.example.com", ""]
+        "host",
+        ["192.168.1.10", "10.0.0.2", "203.0.113.5", "::ffff:192.168.1.10", "evil.example.com", ""],
     )
     def test_remote_clients_are_not_trusted(self, host):
         """Verify non-loopback peers are untrusted."""
         assert auth.is_trusted_client(host) is False
+
+
+class TestTailnetIngress:
+    """Tests for pinning tailnet identity to the tailscale serve listener."""
+
+    @pytest.mark.parametrize(
+        "raw, expected",
+        [("8081", 8081), (" 8081 ", 8081), ("", None), ("abc", None), ("0", None), ("70000", None)],
+    )
+    def test_ingress_port_parsing(self, raw, expected):
+        """Verify only a valid TCP port enables tailnet identity."""
+        assert auth.build_tailnet_ingress_port(env_value=raw) == expected
+
+    def test_request_on_the_ingress_port_is_recognised(self):
+        """Verify the listener tailscale serve targets is recognised."""
+        assert auth.arrived_on_tailnet_ingress(("127.0.0.1", 8081), 8081) is True
+
+    @pytest.mark.parametrize(
+        "server, port",
+        [(("127.0.0.1", 8080), 8081), (("127.0.0.1", 8081), None), (None, 8081)],
+    )
+    def test_other_listeners_are_not_the_ingress(self, server, port):
+        """Verify the main port, an unset ingress and a unix socket never match."""
+        assert auth.arrived_on_tailnet_ingress(server, port) is False
 
 
 class TestIsProxiedRequest:
@@ -186,15 +212,13 @@ class TestOriginAllowed:
     """Origin validation for state-changing requests (CSRF defence)."""
 
     CORS = ["http://localhost:5173", "http://127.0.0.1:5173"]
-    HOSTS = {"localhost", "127.0.0.1", "::1", "[::1]", "testserver"}
 
-    def _check(self, origin, host="localhost:8000", cors=None, hosts=None):
-        """Run origin_allowed with this class's default CORS/host allowlists."""
+    def _check(self, origin, host="localhost:8000", cors=None):
+        """Run origin_allowed with this class's default CORS allowlist."""
         return auth.origin_allowed(
             origin,
             host,
             self.CORS if cors is None else cors,
-            self.HOSTS if hosts is None else hosts,
         )
 
     def test_absent_origin_is_allowed(self):
@@ -253,8 +277,7 @@ class TestOriginAllowed:
         hostname on any port would hand every other service on that host a
         write channel.
         """
-        hosts = self.HOSTS | {"100.64.0.7"}
-        assert self._check("http://100.64.0.7:5174", hosts=hosts) is False
+        assert self._check("http://100.64.0.7:5174", host="100.64.0.7:8080") is False
 
     def test_tailnet_frontend_is_allowed_through_cors_origins(self):
         """Verify the tailnet share of the prod server still reaches the API.
@@ -276,10 +299,6 @@ class TestOriginAllowed:
     def test_ipv6_same_origin_is_allowed(self):
         """Verify bracketed IPv6 Host literals match their Origin form."""
         assert self._check("http://[::1]:8000", host="[::1]:8000") is True
-
-    def test_wildcard_host_allowlist_disables_check(self):
-        """Verify '*' (trusted-proxy deployments) accepts any origin."""
-        assert self._check("https://evil.example.com", hosts={"*"}) is True
 
     def test_malformed_origin_is_rejected(self):
         """Verify unparseable / hostless origins fail closed."""

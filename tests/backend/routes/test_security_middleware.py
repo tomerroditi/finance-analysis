@@ -120,7 +120,9 @@ class TestProxiedLocalRequests:
     """Tests for requests a local reverse proxy (tailscale serve) relayed.
 
     The TestClient connects as a local client, which is exactly what
-    tailscaled looks like when uvicorn runs with ``--no-proxy-headers``.
+    tailscaled looks like when uvicorn runs with ``--no-proxy-headers``. It
+    reports its listener as ``("testserver", 80)``, so port 80 stands in for
+    the ``tailscale serve`` ingress.
     """
 
     RELAYED = {"X-Forwarded-For": "100.101.102.103"}
@@ -133,6 +135,7 @@ class TestProxiedLocalRequests:
             "_tailnet_users",
             auth.build_tailnet_users(env_value="me@example.com"),
         )
+        monkeypatch.setattr(backend_main, "_tailnet_ingress_port", 80)
         monkeypatch.setenv("FAD_USER_DIR", str(tmp_path))
         monkeypatch.delenv("FAD_API_TOKEN", raising=False)
 
@@ -148,6 +151,42 @@ class TestProxiedLocalRequests:
             headers={**self.RELAYED, "Tailscale-User-Login": "me@example.com"},
         )
         assert response.status_code == 200
+
+    def test_login_header_off_the_tailnet_ingress_is_ignored(
+        self, test_client, monkeypatch
+    ):
+        """Verify another local proxy cannot forward a forged tailnet identity.
+
+        Caddy, ngrok or cloudflared in front of the main port pass a client's
+        ``Tailscale-User-Login`` through untouched; only the listener that
+        ``tailscale serve`` alone connects to may believe it.
+        """
+        monkeypatch.setattr(backend_main, "_tailnet_ingress_port", 8081)
+        response = test_client.get(
+            "/api/transactions/",
+            headers={**self.RELAYED, "Tailscale-User-Login": "me@example.com"},
+        )
+        assert response.status_code == 401
+
+    def test_login_header_without_an_ingress_is_ignored(
+        self, test_client, monkeypatch
+    ):
+        """Verify no tailnet identity is trusted until an ingress port is set."""
+        monkeypatch.setattr(backend_main, "_tailnet_ingress_port", None)
+        response = test_client.get(
+            "/api/transactions/",
+            headers={**self.RELAYED, "Tailscale-User-Login": "me@example.com"},
+        )
+        assert response.status_code == 401
+
+    @pytest.mark.parametrize(
+        "header",
+        ["Via", "X-Forwarded-Host", "X-Forwarded-Proto", "CF-Connecting-IP", "True-Client-IP"],
+    )
+    def test_other_proxy_headers_lose_local_trust(self, test_client, header):
+        """Verify proxies that send no X-Forwarded-For are still detected."""
+        response = test_client.get("/api/transactions/", headers={header: "x"})
+        assert response.status_code == 401
 
     def test_other_tailnet_user_is_rejected(self, test_client):
         """Verify a different tailnet user (e.g. a shared-in node) needs a token."""

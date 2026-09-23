@@ -28,6 +28,10 @@ from backend.repositories.liabilities_repository import LiabilitiesRepository
 from backend.repositories.transactions_repository import TransactionsRepository
 from backend.services.rates_service import RatesService
 
+#: 100 years. Beyond roughly 96,000 months a payment date passes year 9999,
+#: and every later read of the liabilities list would fail on it.
+MAX_TERM_MONTHS = 1200
+
 
 def _optional_number(value: Any) -> Optional[float]:
     """Normalize a possibly-NaN DataFrame value to ``float`` or ``None``."""
@@ -199,6 +203,10 @@ class LiabilitiesService:
             raise ValidationException("principal_amount must be positive")
         if term_months <= 0:
             raise ValidationException("term_months must be positive")
+        if term_months > MAX_TERM_MONTHS:
+            raise ValidationException(
+                f"term_months cannot exceed {MAX_TERM_MONTHS} (100 years)"
+            )
 
         if loan_type in PRIME_BASED_LOAN_TYPES:
             if rate_spread is None:

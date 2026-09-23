@@ -34,6 +34,12 @@ class RecordingStore:
         self.persisted.append(session_id)
         return True
 
+    def enter(self, session_id):
+        pass
+
+    def leave(self, session_id):
+        pass
+
 
 @pytest.fixture
 def store(monkeypatch, tmp_path):

@@ -55,7 +55,7 @@ jobs:
 
       - id: bump
         name: Run Commitizen bump
-        uses: commitizen-tools/commitizen-action@master
+        uses: commitizen-tools/commitizen-action@338bbd841b75aaee6bf5340e1fa12f6ab58ff9ff # 0.27.1
         with:
           github_token: ${{ secrets.PERSONAL_ACCESS_TOKEN }}
 
@@ -142,7 +142,7 @@ jobs:
           fi
 
       - name: Upload artifact to GitHub Release
-        uses: softprops/action-gh-release@v3
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
         with:
           tag_name: v${{ needs.bump-version.outputs.version }}
           name: Release v${{ needs.bump-version.outputs.version }}

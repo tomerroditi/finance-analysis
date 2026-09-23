@@ -19,10 +19,11 @@ logger = logging.getLogger(__name__)
 
 MAX_BACKUPS = 5
 
-# Backup filenames always follow ``data_YYYYMMDD_HHMMSS.db``. Restrict restore
-# input to this shape so a malicious filename cannot traverse out of the
-# backup directory (e.g. ``../../etc/passwd``) or point at arbitrary files.
-_BACKUP_FILENAME_RE = re.compile(r"^data_\d{8}_\d{6}\.db$")
+# Backup filenames always follow ``data_YYYYMMDD_HHMMSS.db``, with a ``_N``
+# suffix when several land in the same second. Restrict restore input to this
+# shape so a malicious filename cannot traverse out of the backup directory
+# (e.g. ``../../etc/passwd``) or point at arbitrary files.
+_BACKUP_FILENAME_RE = re.compile(r"^data_\d{8}_\d{6}(?:_\d{1,3})?\.db$")
 
 
 def get_backup_dir() -> Path:
@@ -56,7 +57,10 @@ def backup_db(max_backups: int = MAX_BACKUPS) -> Path | None:
     backup_dir.mkdir(parents=True, exist_ok=True)
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    dest = backup_dir / f"data_{timestamp}.db"
+    dest = _claim_backup_path(backup_dir, timestamp)
+    if dest is None:
+        logger.error("No free backup filename for %s", timestamp)
+        return None
 
     try:
         src_conn = sqlite3.connect(str(src))
@@ -86,6 +90,36 @@ def backup_db(max_backups: int = MAX_BACKUPS) -> Path | None:
             logger.info("Pruned old backup %s", old.name)
 
     return dest
+
+
+def _claim_backup_path(backup_dir: Path, timestamp: str) -> Path | None:
+    """Create and return a backup file no other backup is using.
+
+    Two backups in the same second used to share a name, so the second
+    overwrote the first — and a restore right after a backup replaced the
+    very file it was about to restore with its own safety backup. The file
+    is created exclusively, so concurrent callers cannot claim the same one.
+
+    Parameters
+    ----------
+    backup_dir : Path
+        The backup directory.
+    timestamp : str
+        ``YYYYMMDD_HHMMSS`` for the backup.
+
+    Returns
+    -------
+    Path or None
+        The claimed (empty) file, or None if every suffix is taken.
+    """
+    for n in range(1000):
+        dest = backup_dir / (f"data_{timestamp}.db" if n == 0 else f"data_{timestamp}_{n}.db")
+        try:
+            with open(dest, "x"):
+                return dest
+        except FileExistsError:
+            continue
+    return None
 
 
 def list_backups() -> list[dict]:

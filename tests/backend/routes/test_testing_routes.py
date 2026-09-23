@@ -228,6 +228,12 @@ class TestDemoReset:
                 self.persisted.append(session_id)
                 return True
 
+            def enter(self, session_id):
+                pass
+
+            def leave(self, session_id):
+                pass
+
         store = RecordingStore()
         demo_sessions.set_store(store)
         try:

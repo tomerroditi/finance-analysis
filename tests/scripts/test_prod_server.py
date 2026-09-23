@@ -391,3 +391,45 @@ class TestBuildEnv:
         env = prod.build_env(environ)
         assert "NODE_OPTIONS" not in env
         assert environ == {"NODE_OPTIONS": f"--require={self.BOOTLOADER}"}
+
+
+def _recording_popen(started: list):
+    """Stand in for Popen: record argv and return a process that stays up."""
+
+    class _Running:
+        def poll(self):
+            return None
+
+    def popen(argv, **_):
+        started.append(argv)
+        return _Running()
+
+    return popen
+
+
+class TestTailnetIngress:
+    """Tests for the loopback port reserved for ``tailscale serve``."""
+
+    def test_server_opens_the_ingress_listener_when_sharing(self, monkeypatch):
+        """Verify uvicorn is asked for the tailnet listener once one is reserved."""
+        monkeypatch.setenv("TAILNET_INGRESS_PORT", "18081")
+        started = []
+        monkeypatch.setattr(prod.subprocess, "Popen", _recording_popen(started))
+        monkeypatch.setattr(prod.Server, "healthy", lambda self, timeout=5: True)
+        prod.Server("127.0.0.1", 8080).start()
+        assert started[0][-2:] == ["--tailnet-port", "18081"]
+
+    def test_server_opens_no_ingress_without_a_share(self, monkeypatch):
+        """Verify nothing listens for tailnet traffic when not sharing."""
+        monkeypatch.delenv("TAILNET_INGRESS_PORT", raising=False)
+        started = []
+        monkeypatch.setattr(prod.subprocess, "Popen", _recording_popen(started))
+        monkeypatch.setattr(prod.Server, "healthy", lambda self, timeout=5: True)
+        prod.Server("127.0.0.1", 8080).start()
+        assert "--tailnet-port" not in started[0]
+
+    def test_free_loopback_port_is_bindable(self):
+        """Verify the reserved port is free for uvicorn to bind."""
+        port = prod.free_loopback_port()
+        with socket.socket() as sock:
+            sock.bind(("127.0.0.1", port))
