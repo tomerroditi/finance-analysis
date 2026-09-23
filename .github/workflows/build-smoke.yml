@@ -65,7 +65,7 @@ jobs:
           nsis_pid=$!
 
           pip install poetry
-          poetry install --no-root --with build
+          poetry install --no-root --only main,build  # as release.yml
 
           status=0
           wait "$frontend_pid" || status=1

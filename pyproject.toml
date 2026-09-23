@@ -47,7 +47,7 @@ schemathesis = "^4.24.3"
 
 # Build-only deps for producing the self-contained desktop bundle.
 # Kept out of the regular `poetry install` so dev installs stay slim;
-# the release workflow installs this group with `--with build`.
+# the release workflow installs it with `--only main,build`.
 # `playwright` itself is already in the main deps (it's a runtime dep
 # of the scraper); only `pyinstaller` is unique to building.
 [tool.poetry.group.build]
