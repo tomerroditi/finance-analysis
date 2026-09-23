@@ -521,10 +521,17 @@ class InsuranceRepository(ServiceRepository):
     """Transactions in the ``insurance_transactions`` table.
 
     Insurance transactions key their policy by ``account_number``.
+
+    Scraped rows dedup without ``provider``: two providers can report the same
+    policy (the pension clearing house re-reports what HaPhoenix scraped), and
+    a deposit's identifier is already scoped to its policy, so the same
+    deposit from either source is one row.
     """
 
     model = InsuranceTransaction
     table = Tables.INSURANCE.value
+
+    unique_columns: ClassVar[list[str]] = ["id", "date", "amount"]
 
     def get_latest_for_policy(self, policy_id: str) -> InsuranceTransaction | None:
         """Return a policy's most recent transaction.
@@ -586,3 +593,42 @@ class InsuranceRepository(ServiceRepository):
         """
         stmt = select(self.model).where(self.model.account_number == policy_id)
         return pd.read_sql(stmt, self.db.bind)
+
+    def reassign_policy(
+        self,
+        policy_id: str,
+        from_providers: list[str],
+        provider: str,
+        account_name: str,
+    ) -> int:
+        """Move a policy's rows from some providers' credentials to another's.
+
+        Parameters
+        ----------
+        policy_id : str
+            Policy identifier, stored as the transactions' ``account_number``.
+        from_providers : list[str]
+            Providers whose rows move.
+        provider : str
+            Provider the rows move to.
+        account_name : str
+            Credential label of the receiving account.
+
+        Returns
+        -------
+        int
+            Number of rows moved.
+        """
+        if not from_providers:
+            return 0
+        stmt = (
+            update(self.model)
+            .where(
+                self.model.account_number == policy_id,
+                self.model.provider.in_(from_providers),
+            )
+            .values(provider=provider, account_name=account_name)
+        )
+        moved = self.db.execute(stmt).rowcount
+        self.db.commit()
+        return moved

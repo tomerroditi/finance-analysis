@@ -652,7 +652,7 @@ export const handlers = [
     HttpResponse.json({
       banks: ["hapoalim", "leumi", "discount"],
       credit_cards: ["max", "visa_cal", "isracard"],
-      insurances: ["hafenix"],
+      insurances: ["mislaka"],
     }),
   ),
   http.get("/api/credentials/fields/:provider", () =>

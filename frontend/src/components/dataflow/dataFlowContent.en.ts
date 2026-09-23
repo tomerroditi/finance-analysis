@@ -14,7 +14,7 @@ const content: DataFlowContent = {
   nodes: {
     banks: { title: "Banks", desc: "12 Israeli bank providers \u2014 Hapoalim, Leumi, Discount, Mizrahi, OneZero\u2026" },
     "credit-cards": { title: "Credit Cards", desc: "6 providers \u2014 Max, Visa Cal, Isracard, Amex" },
-    insurance: { title: "Insurance", desc: "Keren Hishtalmut & pension \u2014 HaPhoenix." },
+    insurance: { title: "Insurance", desc: "Keren Hishtalmut & pension \u2014 the Pension Clearing House." },
     manual: { title: "Manual Entry", desc: "Cash, investments, liabilities, balance corrections" },
     "rates-feed": { title: "Bank of Israel", desc: "Key-rate series behind the Israeli prime rate. Drives prime-linked loans and savings." },
     scraper: { title: "Scraper Framework", desc: "BrowserScraper (Playwright) & ApiScraper (httpx). Login, 2FA, stealth, data fetch." },
@@ -88,11 +88,13 @@ const content: DataFlowContent = {
       ],
     },
     insurance: {
-      title: "Insurance", tag: "HaPhoenix",
+      title: "Insurance", tag: "Pension Clearing House",
       sections: [
+        { heading: "Providers", text: "The Pension Clearing House (Mislaka) reports every pension and Keren Hishtalmut the user holds, across all fund managers, from monthly month-end reports the portal keeps for about two months. HaPhoenix is deprecated: existing HaPhoenix accounts keep scraping, but new ones cannot be added." },
         { heading: "Data Produced", items: ["Pension/savings deposit transactions", "Memo field: deposit breakdown (employee/employer/compensation)", "Account metadata (policy type, investment tracks, commissions)"] },
         { heading: "Special Handling", text: "InsuranceScraperAdapter extends the base adapter with a post-save hook that persists insurance account metadata, which the Keren Hishtalmut sync then turns into a tracked investment." },
         { heading: "Policy IDs Drift", text: "A provider can restyle the internal ID it appends to a policy number without the account changing. Incoming IDs are normalized before being stored or matched \u2014 a stored ID is never rewritten, because other tables join on that exact string." },
+        { heading: "Takeover from HaPhoenix", text: "A Clearing House scrape adopts the HaPhoenix policies it also reports: their deposits, account row and linked investment move to the Clearing House account, keeping HaPhoenix's policy IDs. Deposits dedup across providers, so history the Clearing House cannot report survives and overlapping deposits are stored once. A later HaPhoenix scrape of an adopted policy only refreshes its balance, and a balance older than the stored one is ignored." },
       ],
     },
     manual: {

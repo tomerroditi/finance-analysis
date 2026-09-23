@@ -11,7 +11,7 @@ Two packages, one name. Keep them straight:
 
 | Package | Role |
 |---------|------|
-| `scraper/` (repo root) | The framework: base classes, 19 providers, models, exceptions. No backend imports. |
+| `scraper/` (repo root) | The framework: base classes, 20 providers, models, exceptions. No backend imports. |
 | `backend/scraper/` | Just `adapter.py` — bridges the async framework into the sync FastAPI pipeline. |
 
 ```
@@ -54,7 +54,7 @@ Don't "simplify" that back.
 
 `Transaction`, `InstallmentInfo`, `AccountResult`, `ScrapingResult`,
 `LoginResult`, `ProviderConfig`. `PROVIDER_CONFIGS` in `credentials.py` is the
-registry — 19 entries, and a provider that isn't there doesn't exist as far as
+registry — 20 entries, and a provider that isn't there doesn't exist as far as
 the app is concerned.
 
 ## Errors (`scraper/exceptions.py`)

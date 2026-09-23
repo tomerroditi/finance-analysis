@@ -13,6 +13,7 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
+from backend.constants.providers import SUPERSEDED_INSURANCE_PROVIDERS
 from backend.errors import EntityNotFoundException
 from backend.models.insurance_account import InsuranceAccount
 from backend.repositories.insurance_account_repository import (
@@ -37,6 +38,15 @@ class InsuranceAccountService:
     def upsert(self, **fields: Any) -> InsuranceAccount:
         """Create or update an insurance account by policy_id.
 
+        Two guards apply to an existing account:
+
+        - A scrape by a provider that has been replaced (see
+          ``SUPERSEDED_INSURANCE_PROVIDERS``) only refreshes the balance; the
+          replacement keeps ownership and the rest of the metadata.
+        - A balance dated before the stored one is ignored. The pension
+          clearing house reports month-end figures, so its balance can be
+          weeks older than one HaPhoenix already stored.
+
         Parameters
         ----------
         **fields
@@ -47,7 +57,73 @@ class InsuranceAccountService:
         InsuranceAccount
             The created or updated record.
         """
+        existing = (
+            self.repo.get_by_policy_id(fields["policy_id"])
+            if fields.get("policy_id")
+            else None
+        )
+        if existing is not None:
+            if (
+                SUPERSEDED_INSURANCE_PROVIDERS.get(fields.get("provider"))
+                == existing.provider
+            ):
+                fields = {
+                    key: value
+                    for key, value in fields.items()
+                    if key in ("policy_id", "balance", "balance_date")
+                }
+            incoming_date = fields.get("balance_date")
+            if (
+                incoming_date
+                and existing.balance_date
+                and incoming_date < existing.balance_date
+            ):
+                fields.pop("balance", None)
+                fields.pop("balance_date", None)
         return self.repo.upsert(**fields)
+
+    def claim_policies(
+        self, provider: str, account_name: str, policy_ids: list[str]
+    ) -> dict[str, str]:
+        """Resolve scraped policy IDs to stored ones and adopt predecessors' rows.
+
+        A provider can print a policy differently from the one that first
+        stored it (the clearing house's ``7-925-053655-0`` is HaPhoenix's
+        ``007-925-053655``). The stored string is what every table joins on,
+        so the scrape is re-keyed onto it. When the scraping provider replaced
+        the one whose credential owns the policy's deposits, those deposits
+        move to the scraping credential — history the new provider cannot
+        report itself survives, and the dedup then drops re-reported overlap.
+
+        Parameters
+        ----------
+        provider : str
+            The scraping provider.
+        account_name : str
+            The scraping credential's label.
+        policy_ids : list[str]
+            Policy IDs as the scraper reported them.
+
+        Returns
+        -------
+        dict[str, str]
+            Scraped policy ID -> stored policy ID, for already-known policies.
+        """
+        predecessors = [
+            old
+            for old, new in SUPERSEDED_INSURANCE_PROVIDERS.items()
+            if new == provider
+        ]
+        stored: dict[str, str] = {}
+        for policy_id in policy_ids:
+            account = self.repo.get_by_policy_id(policy_id)
+            if account is None:
+                continue
+            stored[policy_id] = account.policy_id
+            self.insurance_transactions_repo.reassign_policy(
+                account.policy_id, predecessors, provider, account_name
+            )
+        return stored
 
     def rename(self, policy_id: str, custom_name: str | None) -> InsuranceAccount:
         """Set the user-defined display name for a fund.

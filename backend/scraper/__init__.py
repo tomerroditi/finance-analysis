@@ -19,6 +19,7 @@ _2FA_PROVIDERS = {
     "hapoalim",
     "onezero",
     "hafenix",
+    "mislaka",
     "test_bank_2fa",
     "test_credit_card_2fa",
 }

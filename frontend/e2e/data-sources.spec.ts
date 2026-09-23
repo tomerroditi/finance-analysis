@@ -106,6 +106,19 @@ test.describe("DataSources", () => {
       const img = page.getByRole("img", { name: provider }).last();
       await expect(img).toBeVisible();
     }
+
+    // Insurance offers the Pension Clearing House, and no longer HaPhoenix —
+    // it is deprecated for new accounts. The demo's existing HaPhoenix card
+    // behind the modal keeps working and still shows its logo, so the check is
+    // on the chooser's provider buttons, which no account card button names.
+    await page.getByRole("button", { name: "Back" }).click();
+    await page.getByRole("button", { name: /^insurance/i }).click();
+    const clearingHouse = page.getByRole("button", { name: /Pension Clearing House/ });
+    await expect(clearingHouse).toBeVisible();
+    await expect(
+      clearingHouse.getByRole("img", { name: "Pension Clearing House" }),
+    ).toBeVisible();
+    await expect(page.getByRole("button", { name: /HaPhoenix/ })).toHaveCount(0);
   });
 
   // An account whose stored details are unreadable on this machine (a data

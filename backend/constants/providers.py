@@ -31,9 +31,19 @@ bank_providers = [
 ]
 
 
+# Providers offered when adding an insurance account. HaPhoenix is deprecated in
+# favour of the pension clearing house, which reports the same policies plus
+# every other fund the saver holds; it is left out of this list but stays in
+# the scraper registry, so an existing HaPhoenix credential keeps scraping.
 insurance_providers = [
-    "hafenix",
+    "mislaka",
 ]
+
+# Insurance provider -> the provider that replaced it. The replacement adopts
+# the policies, deposits and investments its predecessor created; a later
+# scrape by the predecessor may only refresh a policy's balance, and only with
+# a newer one.
+SUPERSEDED_INSURANCE_PROVIDERS = {"hafenix": "mislaka"}
 
 
 class Services(Enum):
@@ -212,6 +222,7 @@ class LoginFields:
         "clal": ["username", "password"],
         "harel": ["username", "password"],
         "hafenix": ["id", "phoneNumber"],
+        "mislaka": ["id", "phoneNumber"],
         # Test Providers
         "test_bank": ["username", "password"],
         "test_bank_2fa": ["email", "password", "phoneNumber"],

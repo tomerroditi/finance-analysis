@@ -22,6 +22,7 @@ from scraper.providers.credit_cards import (
 )
 from scraper.providers.insurances import (
     HaPhoenixScraper,
+    MislakaScraper,
 )
 
 __all__ = [
@@ -44,4 +45,5 @@ __all__ = [
     "MaxScraper",
     "VisaCalScraper",
     "HaPhoenixScraper",
+    "MislakaScraper",
 ]

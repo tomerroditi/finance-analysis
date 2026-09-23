@@ -54,6 +54,7 @@ const PROVIDER_LABELS: Record<string, string> = {
   yahav: "Yahav",
   fibi: "First International",
   hafenix: "HaPhoenix",
+  mislaka: "Pension Clearing House",
 };
 
 const PROVIDER_LABELS_HE: Record<string, string> = {
@@ -73,6 +74,7 @@ const PROVIDER_LABELS_HE: Record<string, string> = {
   yahav: "יהב",
   fibi: "הבינלאומי הראשון",
   hafenix: "הפניקס",
+  mislaka: "המסלקה הפנסיונית",
 };
 
 export function humanizeService(service: string): string {

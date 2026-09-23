@@ -16,7 +16,7 @@ class InsuranceAccount(Base, TimestampMixin):
     Attributes
     ----------
     provider : str
-        Insurance provider identifier (e.g. ``hafenix``).
+        Insurance provider identifier (e.g. ``mislaka``, ``hafenix``).
     policy_id : str
         Unique policy ID from the provider.
     policy_type : str
@@ -53,6 +53,10 @@ class InsuranceAccount(Base, TimestampMixin):
         produces a number several times larger than any real cost.
     liquidity_date : str, optional
         Earliest withdrawal date (hishtalmut only, YYYY-MM-DD).
+    details : str, optional
+        JSON object of provider facts without a column of their own — status,
+        manufacturer, employer, balance and pension forecasts, last-deposit
+        split (written by the Mislaka scraper).
     """
 
     __tablename__ = Tables.INSURANCE_ACCOUNTS.value
@@ -72,3 +76,4 @@ class InsuranceAccount(Base, TimestampMixin):
     insurance_covers = Column(Text, nullable=True)
     insurance_costs = Column(Text, nullable=True)
     liquidity_date = Column(String, nullable=True)
+    details = Column(Text, nullable=True)
