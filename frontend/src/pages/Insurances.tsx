@@ -3,12 +3,8 @@ import { useNavigate } from "react-router";
 import { useTranslation } from "react-i18next";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  ArrowUpRight,
-  Heart,
-  Percent,
   ChevronDown,
   ChevronUp,
-  Landmark,
   Lock,
   Loader2,
   Pencil,
@@ -41,6 +37,8 @@ import { qkPrefix } from "../services/queryKeys";
 import { useScrollCap } from "../hooks/useScrollCap";
 import { ClearingHouseSummary, SubscriptionNotice } from "../components/insurance/ClearingHouseSummary";
 import { PolicyDetailsSection } from "../components/insurance/PolicyDetailsSection";
+import { PensionKpiStrip } from "../components/insurance/PensionKpiStrip";
+import { computePensionKpis } from "../utils/pensionKpis";
 import { isInactive, parsePolicyDetails } from "../utils/policyDetails";
 
 // ─── Types ───────────────────────────────────────────────────────────────
@@ -139,30 +137,6 @@ function policyTypeBadge(type: string, pensionType: string | null, t: (key: stri
 }
 
 // ─── Shared Components ───────────────────────────────────────────────────
-function StatCard({
-  title,
-  value,
-  icon: Icon,
-  color,
-}: {
-  title: string;
-  value: string | number;
-  icon: React.ComponentType<{ size: number }>;
-  color: string;
-}) {
-  return (
-    <div className="bg-[var(--surface)] rounded-xl p-5 border border-[var(--surface-light)] flex items-center justify-between gap-3">
-      <div className="min-w-0 flex-1">
-        <p className="text-[var(--text-muted)] text-[10px] uppercase tracking-widest font-bold">{title}</p>
-        <p className="text-xl font-black mt-1 text-white break-words">{value}</p>
-      </div>
-      <div className={`p-3 rounded-xl shrink-0 ${color}`}>
-        <Icon size={20} />
-      </div>
-    </div>
-  );
-}
-
 function CoversSection({ id, covers }: { id: string; covers: Cover[] }) {
   const { t } = useTranslation();
   return (
@@ -719,16 +693,9 @@ export function Insurances() {
     );
   }
 
-  const totalBalance = accounts.reduce((s, a) => s + (a.balance ?? 0), 0);
   const allDeposits = transactions.filter((tx) => tx.amount > 0);
-  const totalDeposits = allDeposits.reduce((s, tx) => s + tx.amount, 0);
-  // Risk cost only — the management fee is shown per-card beside its own rate.
-  const totalRiskCost = accounts.reduce(
-    (s, a) => s + classifyStatement(a.insurance_costs).riskCost,
-    0,
-  );
-  const avgCommission =
-    accounts.reduce((s, a) => s + (a.commission_savings_pct ?? 0), 0) / accounts.length;
+  const kpis = computePensionKpis(accounts, allDeposits);
+  const totalBalance = kpis.totalBalance;
 
   // Monthly deposit aggregation for chart
   const monthlyDeposits: Record<string, number> = {};
@@ -755,7 +722,7 @@ export function Insurances() {
 
   return (
     <div className="flex flex-col gap-1.5">
-      {/* KPI Cards */}
+      {/* Retirement outlook + today's KPIs */}
       {clearingHouseReports && clearingHouseReports.length > 0 && (
         <>
           <SubscriptionNotice reports={clearingHouseReports} />
@@ -763,27 +730,7 @@ export function Insurances() {
         </>
       )}
 
-      <div className="grid grid-cols-1 sm:grid-cols-4 gap-1.5">
-        <StatCard title={t("insurance.totalBalance")} value={formatCurrency(totalBalance)} icon={Landmark} color="bg-blue-500/10 text-blue-400" />
-        <StatCard
-          title={t("insurance.totalDeposits")}
-          value={formatCurrency(totalDeposits)}
-          icon={ArrowUpRight}
-          color="bg-emerald-500/10 text-emerald-400"
-        />
-        <StatCard
-          title={t("insurance.riskCostsThisYear")}
-          value={formatCurrency(totalRiskCost)}
-          icon={Heart}
-          color="bg-rose-500/10 text-rose-400"
-        />
-        <StatCard
-          title={t("insurance.avgCommission")}
-          value={fmtPct(avgCommission)}
-          icon={Percent}
-          color="bg-amber-500/10 text-amber-400"
-        />
-      </div>
+      <PensionKpiStrip kpis={kpis} />
 
       {/* Charts Row */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-1.5">

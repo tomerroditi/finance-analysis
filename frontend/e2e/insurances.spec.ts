@@ -18,7 +18,7 @@ test.describe("Insurances", () => {
   }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await navigateTo(page, "/insurances");
-    await expectPageTitle(page, /Insurance/);
+    await expectPageTitle(page, /Pension Savings/);
 
     const summary = page.getByTestId("insurance-covers-summary").first();
     await expect(summary).toBeVisible({ timeout: 15_000 });
@@ -74,6 +74,14 @@ test.describe("Insurances", () => {
     await expect(page.getByTestId("clearing-house-subscription-notice")).toContainText(
       "1 monthly report left",
     );
+    // A cover the household does not hold reads "None", not a bare 0 ₪.
+    await expect(page.getByTestId("clearing-house-summary")).toContainText("None");
+
+    // --- today's KPI strip: household balance and this year's classified costs ---
+    // Demo: six funds totalling 798,000; risk 2,700 + fees 1,240 = 3,940.
+    await expect(page.getByTestId("pension-kpi-balance")).toContainText("798,000");
+    await expect(page.getByTestId("pension-kpi-balance")).toContainText("6 funds");
+    await expect(page.getByTestId("pension-kpi-costs")).toContainText("3,940");
 
     // --- a policy's clearing-house details: forecast, agent and its loan ---
     // Only the Tech employee's Keren Hishtalmut carries a loan in the demo.

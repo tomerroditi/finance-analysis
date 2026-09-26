@@ -10,7 +10,7 @@ import {
   Database,
   ChevronLeft,
   ChevronRight,
-  Shield,
+  PiggyBank,
   Landmark,
   Sunset,
   Settings as SettingsIcon,
@@ -36,7 +36,7 @@ const navItems = [
   { path: "/categories", icon: Tags, key: "categories" },
   { path: "/investments", icon: TrendingUp, key: "investments" },
   { path: "/liabilities", icon: Landmark, key: "liabilities" },
-  { path: "/insurances", icon: Shield, key: "insurance" },
+  { path: "/insurances", icon: PiggyBank, key: "insurance" },
   { path: "/early-retirement", icon: Sunset, key: "earlyRetirement" },
   { path: "/data-sources", icon: Database, key: "dataSources" },
 ];

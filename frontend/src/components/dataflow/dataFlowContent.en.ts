@@ -14,7 +14,7 @@ const content: DataFlowContent = {
   nodes: {
     banks: { title: "Banks", desc: "12 Israeli bank providers \u2014 Hapoalim, Leumi, Discount, Mizrahi, OneZero\u2026" },
     "credit-cards": { title: "Credit Cards", desc: "6 providers \u2014 Max, Visa Cal, Isracard, Amex" },
-    insurance: { title: "Insurance", desc: "Keren Hishtalmut & pension \u2014 the Pension Clearing House." },
+    insurance: { title: "Pension Savings", desc: "Keren Hishtalmut & pension \u2014 the Pension Clearing House." },
     manual: { title: "Manual Entry", desc: "Cash, investments, liabilities, balance corrections" },
     "rates-feed": { title: "Bank of Israel", desc: "Key-rate series behind the Israeli prime rate. Drives prime-linked loans and savings." },
     scraper: { title: "Scraper Framework", desc: "BrowserScraper (Playwright) & ApiScraper (httpx). Login, 2FA, stealth, data fetch." },
@@ -63,7 +63,7 @@ const content: DataFlowContent = {
     "categories-page": { title: "Categories", desc: "Category/tag management, drag-and-drop reorder, tagging rules." },
     "invest-page": { title: "Investments", desc: "Portfolio overview, allocation, balance history, P&L analysis." },
     "liab-page": { title: "Liabilities", desc: "Debt cards, payment timeline, amortization schedule." },
-    "insurance-page": { title: "Insurance", desc: "Insurance policy tracking, pension/savings accounts." },
+    "insurance-page": { title: "Pension Savings", desc: "Retirement outlook, savings KPIs, pension and Keren Hishtalmut funds." },
     "retire-page": { title: "Early Retirement", desc: "FIRE calculator, projections, status cards, suggestions." },
     "datasources-page": { title: "Data Sources", desc: "Bank/CC account management, scraping triggers, stale data alerts." },
     "settings-page": { title: "Settings", desc: "Dashboard layout, budget alerts, language, demo toggle, backups, updates, uninstall." },
@@ -88,7 +88,7 @@ const content: DataFlowContent = {
       ],
     },
     insurance: {
-      title: "Insurance", tag: "Pension Clearing House",
+      title: "Pension Savings", tag: "Pension Clearing House",
       sections: [
         { heading: "Providers", text: "The Pension Clearing House (Mislaka) reports every pension and Keren Hishtalmut the user holds, across all fund managers, from monthly month-end reports the portal keeps for about two months. HaPhoenix is deprecated: existing HaPhoenix accounts keep scraping, but new ones cannot be added." },
         { heading: "Data Produced", items: ["Pension/savings deposit transactions", "Memo field: deposit breakdown (employee/employer/compensation)", "Account metadata (policy type, investment tracks, commissions)"] },
@@ -455,9 +455,9 @@ const content: DataFlowContent = {
       ],
     },
     "insurance-page": {
-      title: "Insurance Page", tag: "Policies",
+      title: "Pension Savings Page", tag: "Funds",
       sections: [
-        { heading: "Features", items: ["Insurance policy cards", "Pension and Keren Hishtalmut account details", "Deposit history with the employee / employer / compensation breakdown", "Investment track information and commissions", "Rename a policy, and sync hishtalmut policies into tracked investments"] },
+        { heading: "Features", items: ["Retirement outlook from the clearing house: expected monthly pension, lump sum, projected savings and insurance cover", "Savings KPIs: total balance, deposits over the last 12 months, profit and costs this year, balance-weighted management fee", "Pension and Keren Hishtalmut fund cards", "Deposit history with the employee / employer / compensation breakdown", "Investment track information and commissions", "Rename a policy, and sync hishtalmut policies into tracked investments"] },
       ],
     },
     "demo-mode": {

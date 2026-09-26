@@ -40,6 +40,12 @@ describe("ClearingHouseSummary", () => {
     expect(screen.getByTestId("clearing-house-disability").textContent).toContain("29,250");
     expect(screen.getByText(/report 1 of 7/)).toBeTruthy();
     expect(screen.getByText(/since last report/).textContent).toContain("201");
+    expect(screen.getByText(/saved today/).textContent).toContain("367,776");
+  });
+
+  it("marks a cover the saver does not hold as none rather than a zero", () => {
+    render(<ClearingHouseSummary reports={[report({ death_lump_sum: 0 })]} />);
+    expect(screen.getByText("None")).toBeTruthy();
   });
 
   it("renders nothing without a report", () => {

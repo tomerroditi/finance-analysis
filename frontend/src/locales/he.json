@@ -84,7 +84,7 @@
     "categories": "קטגוריות",
     "investments": "השקעות",
     "liabilities": "התחייבויות",
-    "insurance": "ביטוח",
+    "insurance": "חיסכון פנסיוני",
     "dataSources": "מקורות מידע",
     "earlyRetirement": "פרישה מוקדמת",
     "dataFlow": "זרימת מידע"
@@ -242,9 +242,9 @@
       "projected": "תחזית",
       "expectedIncome": "הכנסה צפויה",
       "expectedExpenses": "הוצאה צפויה",
-"incomeStillDue": "כולל {{amount}} שטרם התקבלו",
+      "incomeStillDue": "כולל {{amount}} שטרם התקבלו",
       "dataThrough": "נתונים עד {{date}}",
-            "projectedNet": "מאזן צפוי"
+      "projectedNet": "מאזן צפוי"
     },
     "insights": {
       "title": "תובנות",
@@ -1053,8 +1053,8 @@
       "description": "הוסף הלוואה או חוב כדי לעקוב אחרי מה שאתה חייב."
     },
     "insurance": {
-      "title": "אין נתוני ביטוח עדיין",
-      "description": "חבר את חשבונות הביטוח שלך כדי להתחיל."
+      "title": "אין נתוני חיסכון פנסיוני עדיין",
+      "description": "חבר את המסלקה הפנסיונית כדי לראות את הפנסיה, קרנות ההשתלמות וקופות הגמל שלך."
     },
     "connectAccounts": "חבר חשבונות",
     "tryDemoMode": "נסה מצב הדגמה",
@@ -1175,8 +1175,8 @@
     "bankAccountDesc": "חבר את חשבון הבנק שלך",
     "creditCard": "כרטיס אשראי",
     "creditCardDesc": "חבר את כרטיס האשראי שלך",
-    "insurance": "ביטוח",
-    "insuranceDesc": "חבר את הביטוח שלך",
+    "insurance": "חיסכון פנסיוני",
+    "insuranceDesc": "פנסיה, קרנות השתלמות וקופות גמל",
     "selectProvider": "בחר ספק",
     "currentDetailsFor": "פרטים נוכחיים עבור",
     "enterDetailsFor": "הזן פרטים עבור",
@@ -1293,20 +1293,21 @@
     "showPolicyDetails": "הצג פרטים מהמסלקה",
     "hidePolicyDetails": "הסתר פרטים מהמסלקה",
     "clearingHouse": {
-      "title": "המסלקה הפנסיונית — תמונת מצב משפחתית",
+      "title": "תחזית לפרישה",
+      "source": "המסלקה הפנסיונית",
       "asOf": "נכון ל-{{date}}",
       "asOfReport": "נכון ל-{{date}} · דוח {{number}} מתוך {{count}}",
-      "atRetirement": "בגיל פרישה",
       "monthlyPension": "קצבה חודשית צפויה",
       "sinceLastReport": "{{change}} מהדוח הקודם",
       "lumpSum": "סכום חד-פעמי (קרנות השתלמות וקופות גמל)",
       "projectedSavings": "חיסכון צפוי",
-      "savedToday": "נחסך עד היום",
+      "fromToday": "מתוך {{amount}} שנחסכו עד היום",
       "cover": "כיסויים ביטוחיים",
       "disabilityMonthly": "אובדן כושר עבודה (חודשי)",
       "survivorSpouseMonthly": "פנסיית שארים — בן/בת זוג (חודשי)",
       "survivorChildMonthly": "פנסיית שארים — ילדים (חודשי)",
       "deathLumpSum": "ביטוח חיים (חד-פעמי)",
+      "noCover": "אין",
       "forecastNote": "התחזיות מניחות שההפקדות ימשיכו ללא שינוי עד גיל הפרישה, בשקלים של היום, כפי שפורסמו על ידי הקרנות.",
       "subscriptionEnding": "המינוי שלך במסלקה הפנסיונית מסתיים ב-{{date}} (נותרו {{count}} דוחות חודשיים). חדש אותו בפורטל המסלקה כדי שנתוני הפנסיה ימשיכו להתעדכן.",
       "subscriptionEnding_one": "המינוי שלך במסלקה הפנסיונית מסתיים ב-{{date}} (נותר דוח חודשי אחד). חדש אותו בפורטל המסלקה כדי שנתוני הפנסיה ימשיכו להתעדכן.",
@@ -1344,15 +1345,11 @@
       "loanPayment": "החזר חודשי",
       "loanEnds": "מסתיימת"
     },
-    "title": "ביטוח",
-    "subtitle": "עקוב אחר פוליסות הביטוח שלך",
+    "title": "חיסכון פנסיוני",
+    "subtitle": "הפנסיה, קרנות ההשתלמות וקופות הגמל שלך",
     "loadingData": "טוען נתונים...",
     "noAccountsFound": "לא נמצאו חשבונות ביטוח",
     "scrapeToGetStarted": "שלוף את נתוני הביטוח שלך להתחלה",
-    "totalBalance": "יתרה כוללת",
-    "totalDeposits": "סה\"כ הפקדות",
-    "riskCostsThisYear": "עלויות ביטוח · השנה",
-    "avgCommission": "עמלה ממוצעת",
     "depositTrends": "מגמות הפקדות",
     "depositTrendsDesc": "היסטוריית הפקדות חודשית",
     "investmentAllocation": "הקצאת השקעות",
@@ -1400,7 +1397,25 @@
     "renameFundHint": "הגדר שם ידידותי (למשל \"הפנסיה שלי\")",
     "resetToScrapedName": "אפס לשם המקורי",
     "save": "שמור",
-    "cancel": "ביטול"
+    "cancel": "ביטול",
+    "kpis": {
+      "totalSavings": "סך החיסכון",
+      "funds": "{{count}} קרנות",
+      "funds_one": "קרן אחת",
+      "funds_other": "{{count}} קרנות",
+      "fundsAsOf": "{{count}} קרנות · נכון ל-{{date}}",
+      "fundsAsOf_one": "קרן אחת · נכון ל-{{date}}",
+      "fundsAsOf_other": "{{count}} קרנות · נכון ל-{{date}}",
+      "recentDeposits": "הפקדות",
+      "monthlyAvg": "≈ {{amount}} לחודש · 12 חודשים אחרונים",
+      "noRecentDeposits": "אין הפקדות השנה",
+      "ytdProfit": "רווח השנה",
+      "sinceJanuary": "מתחילת השנה",
+      "costsThisYear": "עלויות השנה",
+      "costsBreakdown": "ביטוח {{risk}} · דמי ניהול {{fee}}",
+      "feeOnSavings": "דמי ניהול מצבירה",
+      "feeOnDeposits": "{{pct}} מהפקדה"
+    }
   },
   "modals": {
     "confirm": {

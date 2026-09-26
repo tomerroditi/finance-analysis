@@ -64,7 +64,7 @@ test.describe("DataSources", () => {
       page.getByRole("button", { name: /credit card/i }),
     ).toBeVisible();
     await expect(
-      page.getByRole("button", { name: /^insurance/i }),
+      page.getByRole("button", { name: /^pension savings/i }),
     ).toBeVisible();
 
     // Step 2: a representative subset of banks should appear with their logos.
@@ -107,11 +107,11 @@ test.describe("DataSources", () => {
       await expect(img).toBeVisible();
     }
 
-    // Insurance offers the Pension Clearing House, and no longer HaPhoenix —
+    // Pension Savings offers the Pension Clearing House, and no longer HaPhoenix —
     // it is deprecated for new accounts. The check is on the chooser's
     // provider buttons, which no account card button names.
     await page.getByRole("button", { name: "Back" }).click();
-    await page.getByRole("button", { name: /^insurance/i }).click();
+    await page.getByRole("button", { name: /^pension savings/i }).click();
     const clearingHouse = page.getByRole("button", { name: /Pension Clearing House/ });
     await expect(clearingHouse).toBeVisible();
     await expect(
