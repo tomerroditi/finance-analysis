@@ -332,7 +332,6 @@
       "monthlyNeeded": "{{amount}} לחודש במשך {{count}} ח׳",
       "thisMonth": "{{amount}} החודש",
       "utilized": "{{spent}} נוצלו · {{available}} נותרו",
-      "clawedBack": "{{amount}} הוחזרו לכיסוי הגירעון",
       "investmentBacked": "{{amount}} מגובים בהשקעות",
       "backWithInvestment": "גיבוי בהשקעות",
       "backingTitle": "השקעות שמגבות את \"{{name}}\"",

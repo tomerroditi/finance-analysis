@@ -805,7 +805,6 @@ function GoalRow({
       </div>
       {(goal.this_month_allocation > 0 ||
         goal.utilized > 0 ||
-        goal.clawed_back > 0 ||
         goal.investment_backed > 0) && (
         <div className="flex flex-wrap gap-x-3 gap-y-1 mt-1.5 text-[10px] md:text-xs text-[var(--text-muted)]">
           {goal.this_month_allocation > 0 && (
@@ -820,13 +819,6 @@ function GoalRow({
               {t("dashboard.goals.utilized", {
                 spent: formatCurrency(goal.utilized),
                 available: formatCurrency(goal.available),
-              })}
-            </span>
-          )}
-          {goal.clawed_back > 0 && (
-            <span className="text-amber-400">
-              {t("dashboard.goals.clawedBack", {
-                amount: formatCurrency(goal.clawed_back),
               })}
             </span>
           )}

@@ -332,7 +332,6 @@
       "monthlyNeeded": "{{amount}}/mo for {{count}} mo",
       "thisMonth": "{{amount}} this month",
       "utilized": "{{spent}} used · {{available}} left",
-      "clawedBack": "{{amount}} taken back to cover overspending",
       "investmentBacked": "{{amount}} backed by investments",
       "backWithInvestment": "Back with investments",
       "backingTitle": "Investments backing \"{{name}}\"",
