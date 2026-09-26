@@ -9,6 +9,7 @@ Covers:
 """
 
 import asyncio
+import threading
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -16,6 +17,7 @@ import pytest
 from backend.errors import EntityNotFoundException
 from backend.scraper.adapter import (
     scraper_registry_key,
+    ResendNotSupportedError,
     ScraperAdapter,
     _active_scrapers,
     _tfa_scrapers_waiting,
@@ -35,6 +37,18 @@ def reset_registries():
     _tfa_scrapers_waiting.clear()
 
 
+@pytest.fixture
+def background_loop():
+    """A running event loop on its own thread, standing in for the scraper loop."""
+    loop = asyncio.new_event_loop()
+    thread = threading.Thread(target=loop.run_forever, daemon=True)
+    thread.start()
+    yield loop
+    loop.call_soon_threadsafe(loop.stop)
+    thread.join(timeout=5)
+    loop.close()
+
+
 def _adapter(process_id: int = 1) -> ScraperAdapter:
     """Build a OneZero adapter for exercising resend / registry behaviour."""
     return ScraperAdapter(
@@ -45,11 +59,6 @@ def _adapter(process_id: int = 1) -> ScraperAdapter:
 
 class TestAdapterResendOtp:
     """ScraperAdapter.resend_otp delegates to the scraper (or guards on None)."""
-
-    def test_scraper_initialised_to_none(self):
-        """A fresh adapter has no scraper yet (``_scraper is None``)."""
-        adapter = _adapter()
-        assert adapter._scraper is None
 
     def test_resend_delegates_to_scraper(self):
         """resend_otp awaits the underlying scraper's resend_otp exactly once."""
@@ -68,6 +77,43 @@ class TestAdapterResendOtp:
         assert adapter._scraper is None
 
         with pytest.raises(EntityNotFoundException):
+            asyncio.run(adapter.resend_otp())
+
+
+class TestAdapterResendCrossesLoops:
+    """resend_otp runs on the loop run() is on, not on the caller's loop."""
+
+    def test_resend_runs_on_the_scrapers_loop(self, background_loop):
+        """A resend from the server loop executes on the scraper's own loop.
+
+        The scraper's HTTP client and browser belong to the loop that built
+        them; driving them from the server loop fails once the two differ.
+        """
+        adapter = _adapter()
+        adapter._loop = background_loop
+        observed = {}
+
+        async def resend():
+            observed["loop"] = asyncio.get_running_loop()
+
+        adapter._scraper = MagicMock(resend_otp=resend)
+
+        asyncio.run(adapter.resend_otp())
+
+        assert observed["loop"] is background_loop
+
+    def test_resend_error_propagates_to_the_caller(self, background_loop):
+        """A scraper that can't resend still surfaces ResendNotSupportedError.
+
+        The service relies on it to fall back to abort + relaunch.
+        """
+        adapter = _adapter()
+        adapter._loop = background_loop
+        adapter._scraper = MagicMock(
+            resend_otp=AsyncMock(side_effect=ResendNotSupportedError())
+        )
+
+        with pytest.raises(ResendNotSupportedError):
             asyncio.run(adapter.resend_otp())
 
 

@@ -81,7 +81,7 @@ describe("BudgetLedgerRow", () => {
       expect(container.textContent).not.toContain("-40%");
     });
 
-    it("shows an em dash when the envelope has no budget", () => {
+    it("shows an em dash when the rule has no budget", () => {
       const { container } = renderRow(500, 0);
       expect(container.textContent).toContain("—");
     });

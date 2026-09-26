@@ -49,6 +49,7 @@ class TestInsuranceAccountRepositoryQueries:
 
         assert [a.policy_id for a in pensions] == ["pol-001"]
         assert [a.policy_id for a in hishtalmut] == ["pol-002"]
+        assert repo.get_by_policy_type("gemel") == []
 
     def test_get_by_policy_id_returns_none_for_unknown(self, db_session):
         """An unknown policy_id resolves to None."""
@@ -91,6 +92,17 @@ class TestInsuranceAccountRepositoryUpsert:
         assert updated.balance == 160000.0
         assert updated.balance_date == "2026-07-31"
         assert len(repo.get_all()) == 1
+
+    def test_partial_upsert_keeps_unspecified_fields(self, db_session):
+        """An upsert carrying only policy_id and balance leaves other columns as they were."""
+        repo = InsuranceAccountRepository(db_session)
+        repo.upsert(**_pension_fields())
+
+        updated = repo.upsert(policy_id="pol-001", balance=200000.0)
+
+        assert updated.balance == 200000.0
+        assert updated.account_name == "Phoenix Pension"
+        assert updated.policy_type == "pension"
 
     def test_upsert_preserves_custom_name_when_not_provided(self, db_session):
         """A scrape upsert (no custom_name key) keeps the user's rename."""

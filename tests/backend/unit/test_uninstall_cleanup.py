@@ -13,6 +13,7 @@ Covers:
 
 from __future__ import annotations
 
+import json
 import sqlite3
 import sys
 from pathlib import Path
@@ -186,19 +187,41 @@ class TestCli:
     """Tests for the ``python -m backend.uninstall`` CLI."""
 
     def test_cli_keep_data_emits_json_report(
-        self, tmp_path: Path, fake_keyring: MagicMock, capsys: Any
+        self,
+        tmp_path: Path,
+        fake_keyring: MagicMock,
+        capsys: Any,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """CLI exits 0 and prints a JSON report when no errors occur."""
+        """CLI exits 0, prints a JSON report, and resolves ``FAD_USER_DIR``."""
+        monkeypatch.setenv("FAD_USER_DIR", str(tmp_path))
         rc = cleanup.cli(["--keep-data", "--dry-run"])
         captured = capsys.readouterr()
 
         assert rc == 0
-        # Stdout must be valid JSON.
-        import json
-
         payload = json.loads(captured.out)
         assert payload["wipe_data"] is False
         assert payload["dry_run"] is True
+        assert payload["user_dir"] == str(tmp_path)
+
+    def test_cli_exits_1_when_cleanup_records_errors(
+        self,
+        tmp_path: Path,
+        fake_keyring: MagicMock,
+        capsys: Any,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """A keyring failure is reported in the JSON and flips the exit code."""
+        monkeypatch.setenv("FAD_USER_DIR", str(tmp_path))
+        _seed_credentials_db(tmp_path / "data.db", [("banks", "leumi", "main")])
+        fake_keyring.delete_password.side_effect = RuntimeError("keychain locked")
+
+        rc = cleanup.cli(["--keep-data"])
+
+        payload = json.loads(capsys.readouterr().out)
+        assert rc == 1
+        assert any("keychain locked" in e for e in payload["errors"])
+        assert (tmp_path / "data.db").exists()
 
     def test_cli_requires_one_of_wipe_or_keep_data(self) -> None:
         """Missing --wipe / --keep-data → argparse SystemExit."""

@@ -1,6 +1,8 @@
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useRegisterSW } from "virtual:pwa-register/react";
 import { CloudCheck, Download, X } from "lucide-react";
+import { useServiceWorkerUpdateCheck } from "../hooks/useServiceWorkerUpdateCheck";
 
 /**
  * Floating toast that surfaces service worker lifecycle events:
@@ -11,18 +13,32 @@ import { CloudCheck, Download, X } from "lucide-react";
  * Registration uses the prompt strategy configured in `vite.config.ts`, so
  * the user is always in control of when the new bundle replaces the
  * current session.
+ *
+ * vite-plugin-pwa never looks for a new build on its own, and the browser
+ * only re-checks `sw.js` on a navigation — which an SPA does not perform.
+ * `useServiceWorkerUpdateCheck` supplies the missing poll, so a deploy
+ * reaches an already-open tab within a minute instead of waiting for a full
+ * page load.
  */
 export function ServiceWorkerUpdatePrompt() {
   const { t } = useTranslation();
+  const [registration, setRegistration] = useState<
+    ServiceWorkerRegistration | undefined
+  >();
   const {
     offlineReady: [offlineReady, setOfflineReady],
     needRefresh: [needRefresh, setNeedRefresh],
     updateServiceWorker,
   } = useRegisterSW({
+    onRegisteredSW(_swUrl, swRegistration) {
+      setRegistration(swRegistration);
+    },
     onRegisterError(error) {
       console.error("Service worker registration failed", error);
     },
   });
+
+  useServiceWorkerUpdateCheck(registration);
 
   if (!offlineReady && !needRefresh) return null;
 

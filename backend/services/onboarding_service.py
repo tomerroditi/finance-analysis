@@ -12,29 +12,17 @@ log lines.
 
 from __future__ import annotations
 
-from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.models.budget import BudgetRule
-from backend.models.credential import Credential
-from backend.models.investment import Investment
-from backend.models.transaction import (
-    BankTransaction,
-    CashTransaction,
-    CreditCardTransaction,
-    ManualInvestmentTransaction,
-)
+from backend.repositories.onboarding_repository import OnboardingRepository
 
 
 class OnboardingService:
     """Compute first-run / onboarding status flags from the live DB."""
 
-    def __init__(self, db: Session):
+    def __init__(self, db: Session) -> None:
         self.db = db
-
-    def _has_any(self, model) -> bool:
-        """Return True if at least one row exists for the given ORM model."""
-        return self.db.execute(select(model).limit(1)).first() is not None
+        self.repo = OnboardingRepository(db)
 
     def get_status(self) -> dict[str, bool]:
         """Return the onboarding status flags for the current database.
@@ -50,15 +38,10 @@ class OnboardingService:
             ``is_first_run``: none of the above are true. The frontend
                 uses this as the single signal for "show the wizard."
         """
-        has_credentials = self._has_any(Credential)
-        has_transactions = (
-            self._has_any(BankTransaction)
-            or self._has_any(CreditCardTransaction)
-            or self._has_any(CashTransaction)
-            or self._has_any(ManualInvestmentTransaction)
-        )
-        has_budgets = self._has_any(BudgetRule)
-        has_investments = self._has_any(Investment)
+        has_credentials = self.repo.has_credentials()
+        has_transactions = self.repo.has_transactions()
+        has_budgets = self.repo.has_budgets()
+        has_investments = self.repo.has_investments()
 
         return {
             "has_credentials": has_credentials,

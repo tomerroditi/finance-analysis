@@ -187,7 +187,7 @@ class TestPostSaveHookFailureIsolation:
             "backend.scraper.adapter.get_db_context",
             side_effect=lambda: _fake_db_context(db_session),
         ), patch(
-            "backend.services.investments_service.InvestmentsService"
+            "backend.services.investments.InvestmentsService"
             ".sync_from_insurance",
             side_effect=RuntimeError("sync exploded"),
         ):
@@ -211,7 +211,7 @@ class TestPostSaveHookFailureIsolation:
             "backend.scraper.adapter.get_db_context",
             side_effect=lambda: _fake_db_context(db_session),
         ), patch(
-            "backend.services.investments_service.InvestmentsService"
+            "backend.services.investments.InvestmentsService"
             ".sync_from_insurance",
             autospec=True,
             side_effect=selective_sync,

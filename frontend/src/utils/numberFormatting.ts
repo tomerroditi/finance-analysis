@@ -35,6 +35,29 @@ export function formatCurrency(value: number, maximumFractionDigits = 0): string
 }
 
 /**
+ * Format a bare amount — the digits alone, no currency sign.
+ *
+ * For a line that already says what unit it is in: the dashboard's envelope
+ * rows print "979 / 2,000 ₪" and "1,021 left", so one ₪ serves the whole row
+ * instead of three competing for the same line. Only reach for it where a ₪
+ * sits within a glance of the number; a figure standing on its own uses
+ * `formatCurrency`.
+ *
+ * Wrapped in LRI/PDI like every other helper here, so the digits and their
+ * minus sign keep their order under RTL. A caller that joins the output to
+ * anything else (" / ", a literal sign) still wraps the join in `dir="ltr"`.
+ * @param value - The numeric value to format
+ * @param maximumFractionDigits - Decimal places (default: 0)
+ * @returns Formatted amount without currency (e.g., "1,234")
+ */
+export function formatAmount(value: number, maximumFractionDigits = 0): string {
+  const v = value || 0;
+  const sign = v < 0 ? "-" : "";
+  const magnitude = Math.abs(v).toLocaleString("en-US", { maximumFractionDigits });
+  return `${LRI}${sign}${magnitude}${PDI}`;
+}
+
+/**
  * Format currency in compact form for small UI spaces (KPI cards, badges).
  * Canonical layout: sign-magnitude-currency (e.g., "12K ₪", "-1.5M ₪").
  * Uses K/M suffixes for large values; small values render in full but with the
@@ -57,21 +80,34 @@ export function formatCompactCurrency(value: number): string {
  * Format a delta/change value with explicit sign for KPI deltas and trend cards.
  * Canonical layout: sign-magnitude-currency (e.g., "+35K ₪", "-20K ₪", "+150 ₪").
  * Always includes a leading "+" or "-" so positive/negative changes look consistent.
+ *
+ * `currency: false` drops the ₪ and its NBSP, for a column whose heading
+ * already names the unit — the ledger's Net column says "Net (₪)" once rather
+ * than repeating the sign down every row. It is the signed sibling of
+ * `formatAmount`, and like it, only for a figure with a ₪ within a glance;
+ * a number standing on its own keeps the sign. The LRI/PDI wrapper stays
+ * either way, so the leading "+" cannot be reordered under RTL.
  * @param value - The change amount
  * @param options.compact - Use K/M suffixes (default: true)
+ * @param options.currency - Append the ₪ (default: true)
  * @returns Signed compact currency string
  */
-export function formatChange(value: number, options: { compact?: boolean } = {}): string {
-  const { compact = true } = options;
+export function formatChange(
+  value: number,
+  options: { compact?: boolean; currency?: boolean } = {},
+): string {
+  const { compact = true, currency = true } = options;
   const v = value || 0;
   const sign = v >= 0 ? "+" : "-";
   const abs = Math.abs(v);
+  const emit = (body: string) =>
+    currency ? wrapCurrency(sign, body) : `${LRI}${sign}${body}${PDI}`;
   if (compact) {
-    if (abs >= 1_000_000) return wrapCurrency(sign, `${(abs / 1_000_000).toFixed(1)}M`);
-    if (abs >= 10_000) return wrapCurrency(sign, `${(abs / 1_000).toFixed(0)}K`);
-    if (abs >= 1_000) return wrapCurrency(sign, `${(abs / 1_000).toFixed(1)}K`);
+    if (abs >= 1_000_000) return emit(`${(abs / 1_000_000).toFixed(1)}M`);
+    if (abs >= 10_000) return emit(`${(abs / 1_000).toFixed(0)}K`);
+    if (abs >= 1_000) return emit(`${(abs / 1_000).toFixed(1)}K`);
   }
-  return wrapCurrency(sign, abs.toLocaleString("en-US", { maximumFractionDigits: 0 }));
+  return emit(abs.toLocaleString("en-US", { maximumFractionDigits: 0 }));
 }
 
 /**

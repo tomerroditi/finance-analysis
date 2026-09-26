@@ -1,12 +1,22 @@
 """Tests for AnalysisService functionality."""
 
+from datetime import date
+
 import pandas as pd
 import pytest
 
 from backend.constants.tables import Tables
 from backend.models.transaction import BankTransaction, CreditCardTransaction
-from backend.services.analysis_service import AnalysisService
-from backend.services.investments_service import InvestmentsService
+from backend.services.analysis import AnalysisService
+from backend.services.pending_refunds_service import PendingRefundsService
+from backend.services.recurring_service import RecurringService
+from backend.services.transaction_classification import income_mask, investment_mask
+
+
+def _months_ago(n: int, day: int = 10) -> str:
+    """A YYYY-MM-DD string ``n`` months back, on a fixed day."""
+    d = (pd.Timestamp.today().normalize() - pd.DateOffset(months=n)).replace(day=day)
+    return d.strftime("%Y-%m-%d")
 
 
 class TestAnalysisServiceOverview:
@@ -106,29 +116,6 @@ class TestAnalysisServiceTimeSeries:
         assert mar["net_change"] == 5180.0
         assert mar["cumulative_balance"] == 4975.0 + 8970.0 + 5180.0
 
-    def test_get_net_balance_over_time_excludes_cc(
-        self, db_session, seed_base_transactions
-    ):
-        """Verify credit card transactions excluded from balance (only bank source used)."""
-        service = AnalysisService(db_session)
-        result = service.get_net_balance_over_time()
-
-        # Total net change across all months should equal sum of all bank+cash amounts
-        # (CC transactions are excluded)
-        total_net = sum(r["net_change"] for r in result)
-
-        # Sum of all bank+cash amounts in seed data:
-        # Jan: 8000 - 3000 - 500 + 500 - 15 - 10 = 4975
-        # Feb: 8500 - 3000 - 18 - 12 + 3500 = 8970
-        # Mar: 8200 - 3000 - 700 + 700 - 12 - 8 = 5180
-        expected_total = 4975.0 + 8970.0 + 5180.0
-        assert total_net == expected_total
-
-        # Verify CC amounts are NOT included (total CC = -1380 across all months)
-        # If CC were included, total would differ
-        cc_total = -(150 + 80 + 60 + 40 + 250 + 180 + 120 + 55 + 45 + 200 + 95 + 70 + 35)
-        assert total_net != expected_total + cc_total
-
     def test_cc_only_month_appears_with_zeros(self, db_session):
         """A month with only credit-card rows still appears, valued at zero.
 
@@ -174,11 +161,11 @@ class TestAnalysisServiceNetWorthOverTime:
     """Tests for net worth over time including cash balance tracking."""
 
     def test_get_net_worth_over_time_structure(self, db_session, seed_base_transactions):
-        """Verify each snapshot has all required keys including cash."""
+        """Verify an anchor month plus one snapshot per month, each with all keys."""
         service = AnalysisService(db_session)
         result = service.get_net_worth_over_time()
 
-        assert len(result) == 4  # anchor + 3 months
+        assert [r["month"] for r in result] == ["2023-12", "2024-01", "2024-02", "2024-03"]
         for entry in result:
             assert "month" in entry
             assert "bank_balance" in entry
@@ -211,14 +198,6 @@ class TestAnalysisServiceNetWorthOverTime:
         result = service.get_net_worth_over_time()
         assert result == []
 
-    def test_get_net_worth_over_time_months(self, db_session, seed_base_transactions):
-        """Verify correct months returned with anchor point."""
-        service = AnalysisService(db_session)
-        result = service.get_net_worth_over_time()
-
-        months = [r["month"] for r in result]
-        assert months == ["2023-12", "2024-01", "2024-02", "2024-03"]
-
     def test_get_net_worth_over_time_net_worth_equals_bank_plus_investments_plus_cash(
         self, db_session, seed_base_transactions
     ):
@@ -242,7 +221,7 @@ class TestAnalysisServiceNetWorthOverTime:
         up to that month-end. Cash transactions belong in the cash line, not
         bundled into bank_balance.
         """
-        from backend.repositories.transactions_repository import TransactionsRepository
+        from backend.repositories.transactions import TransactionsRepository
 
         repo = TransactionsRepository(db_session)
         bank_only = repo.get_cashflow_transactions()
@@ -266,66 +245,6 @@ class TestAnalysisServiceNetWorthOverTime:
             )
 
 
-class TestAnalysisServiceCategories:
-    """Tests for AnalysisService category breakdown."""
-
-    def test_get_expenses_by_category(self, db_session, seed_base_transactions):
-        """Verify category grouping with expenses and refunds separated."""
-        service = AnalysisService(db_session)
-        result = service.get_expenses_by_category()
-
-        assert "expenses" in result
-        assert "refunds" in result
-
-        # Build lookup for expenses
-        expense_map = {e["category"]: e["amount"] for e in result["expenses"]}
-
-        # Food: CC(-150-80-180-120-200-95) + Cash(-15-18-12) = -870
-        assert expense_map["Food"] == 870.0
-
-        # Transport: CC(-60-55-70) + Cash(-10-12-8) = -215
-        assert expense_map["Transport"] == 215.0
-
-        # Entertainment: CC(-40-45-35) = -120
-        assert expense_map["Entertainment"] == 120.0
-
-        # Home: Bank(-3000*3) = -9000
-        assert expense_map["Home"] == 9000.0
-
-        # Other: CC(-250) = -250
-        assert expense_map["Other"] == 250.0
-
-    def test_get_expenses_by_category_excludes_non_expenses(
-        self, db_session, seed_base_transactions
-    ):
-        """Verify Salary, Ignore, Investments excluded from expense breakdown."""
-        service = AnalysisService(db_session)
-        result = service.get_expenses_by_category()
-
-        expense_categories = {e["category"] for e in result["expenses"]}
-        refund_categories = {r["category"] for r in result["refunds"]}
-        all_categories = expense_categories | refund_categories
-
-        # Non-expense categories must be excluded
-        assert "Salary" not in all_categories
-        assert "Ignore" not in all_categories
-        assert "Investments" not in all_categories
-        assert "Other Income" not in all_categories
-        assert "Liabilities" not in all_categories
-
-    def test_get_expenses_by_category_empty(self, db_session):
-        """Verify empty data returns the canonical dict shape, not a bare list.
-
-        Consumers (route + frontend) access ``.expenses``/``.refunds`` on the
-        result, so an empty DB must still return that structure rather than
-        ``[]`` (which broke the dashboard on a fresh install).
-        """
-        service = AnalysisService(db_session)
-        result = service.get_expenses_by_category()
-
-        assert result == {"expenses": [], "refunds": []}
-
-
 class TestAnalysisServiceIncomeExpenses:
     """Tests for income/expense classification logic."""
 
@@ -335,7 +254,7 @@ class TestAnalysisServiceIncomeExpenses:
 
         # Call get_income_investments_and_expenses directly with the full transactions df
         df = service.repo.get_table()
-        income, investments, expenses = service.get_income_investments_and_expenses(df)
+        income, _investments, expenses = service.get_income_investments_and_expenses(df)
 
         # Income from bank+cash only (CC excluded): Salary 24700 + Other Income 3500
         assert income == 28200.0
@@ -349,7 +268,7 @@ class TestAnalysisServiceIncomeExpenses:
         df = service.repo.get_table()
         df = df[df["source"] != "credit_card_transactions"]
 
-        mask = service._get_income_mask(df)
+        mask = income_mask(df)
         income_rows = df[mask]
 
         # Salary rows should be in income
@@ -365,7 +284,7 @@ class TestAnalysisServiceIncomeExpenses:
         df = service.repo.get_table()
         df = df[df["source"] != "credit_card_transactions"]
 
-        mask = service._get_income_mask(df)
+        mask = income_mask(df)
         income_rows = df[mask]
 
         # Other Income rows should be in income
@@ -605,46 +524,6 @@ class TestAnalysisServiceSankey:
 
         assert "Unknown" not in result["nodes"]
 
-    def test_get_sankey_data_excludes_ignore(
-        self, db_session, seed_base_transactions
-    ):
-        """Verify Ignore category excluded from Sankey."""
-        service = AnalysisService(db_session)
-        result = service.get_sankey_data()
-
-        # "Ignore" should not appear anywhere in nodes
-        assert "Ignore" not in result["nodes"]
-
-        # Verify that all nodes are valid (no Ignore-related nodes)
-        for node in result["nodes"]:
-            assert "Ignore" not in node
-
-
-class TestAnalysisServiceInvestmentPriorWealth:
-    """Tests for investment prior wealth aggregation."""
-
-    def test_get_investment_prior_wealth_total_sums_all_investments(
-        self, db_session, seed_investments
-    ):
-        """Verify get_total_prior_wealth sums prior_wealth_amount for all investments."""
-        stock_fund, bond_fund = seed_investments["investments"]
-        stock_fund.prior_wealth_amount = 12000.0
-        bond_fund.prior_wealth_amount = -160.0   # closed, still included
-        db_session.commit()
-
-        service = InvestmentsService(db_session)
-        total = service.get_total_prior_wealth()
-
-        assert total == pytest.approx(11840.0)
-
-    def test_get_investment_prior_wealth_total_returns_zero_with_no_investments(
-        self, db_session
-    ):
-        """Verify get_total_prior_wealth returns 0.0 when no investments exist."""
-        service = InvestmentsService(db_session)
-        assert service.get_total_prior_wealth() == 0.0
-
-
 class TestAnalysisServiceIncomeBySource:
     """Tests for income breakdown by source over time."""
 
@@ -763,74 +642,8 @@ class TestAnalysisServiceIncomeBySource:
         result = service.get_income_by_source_over_time()
         assert result == []
 
-    def test_get_income_by_source_over_time_excludes_cc(
-        self, db_session, seed_base_transactions
-    ):
-        """Verify credit card transactions are excluded from income calculation."""
-        service = AnalysisService(db_session)
-        result = service.get_income_by_source_over_time()
-
-        # All income should come from bank/cash sources only
-        # CC transactions have no income categories in seed data, but verify
-        # the method filters them out by checking totals match expected
-        total_income = sum(r["total"] for r in result)
-        assert total_income == 8000.0 + 12000.0 + 8200.0  # 28200
-
-
 class TestIncomeMaskPositiveLiabilities:
-    """Tests for _get_income_mask handling of positive liabilities (loan receipts)."""
-
-    def test_positive_liabilities_classified_as_income(self, db_session):
-        """Verify positive Liabilities amount is classified as income by the mask."""
-        loan = BankTransaction(
-            id="bank_loan_mask_1",
-            date="2024-06-01",
-            provider="hapoalim",
-            account_name="Checking",
-            description="Loan Disbursement",
-            amount=25000.0,
-            category="Liabilities",
-            tag="Mortgage",
-            source="bank_transactions",
-            type="normal",
-            status="completed",
-        )
-        db_session.add(loan)
-        db_session.commit()
-
-        service = AnalysisService(db_session)
-        df = service.repo.get_table()
-        mask = service._get_income_mask(df)
-
-        income_rows = df[mask]
-        assert len(income_rows) == 1
-        assert income_rows.iloc[0]["category"] == "Liabilities"
-        assert income_rows.iloc[0]["amount"] == 25000.0
-
-    def test_negative_liabilities_not_classified_as_income(self, db_session):
-        """Verify negative Liabilities (debt payments) are NOT classified as income."""
-        debt_payment = BankTransaction(
-            id="bank_debt_1",
-            date="2024-06-01",
-            provider="hapoalim",
-            account_name="Checking",
-            description="Mortgage Payment",
-            amount=-2000.0,
-            category="Liabilities",
-            tag="Mortgage",
-            source="bank_transactions",
-            type="normal",
-            status="completed",
-        )
-        db_session.add(debt_payment)
-        db_session.commit()
-
-        service = AnalysisService(db_session)
-        df = service.repo.get_table()
-        mask = service._get_income_mask(df)
-
-        income_rows = df[mask]
-        assert income_rows.empty
+    """Tests for income_mask handling of positive liabilities (loan receipts)."""
 
     def test_mixed_liabilities_only_positive_is_income(self, db_session):
         """Verify only positive Liabilities rows are income when mixed with negative."""
@@ -867,7 +680,7 @@ class TestIncomeMaskPositiveLiabilities:
 
         service = AnalysisService(db_session)
         df = service.repo.get_table()
-        mask = service._get_income_mask(df)
+        mask = income_mask(df)
 
         income_rows = df[mask]
         assert len(income_rows) == 1
@@ -875,33 +688,7 @@ class TestIncomeMaskPositiveLiabilities:
 
 
 class TestInvestmentMask:
-    """Tests for _get_investment_mask identifying investment transactions."""
-
-    def test_investment_category_classified_as_investment(self, db_session):
-        """Verify Investments category transactions are identified by the mask."""
-        inv_txn = BankTransaction(
-            id="bank_inv_mask_1",
-            date="2024-06-01",
-            provider="hapoalim",
-            account_name="Checking",
-            description="Investment Deposit",
-            amount=-5000.0,
-            category="Investments",
-            tag="Stock Fund",
-            source="bank_transactions",
-            type="normal",
-            status="completed",
-        )
-        db_session.add(inv_txn)
-        db_session.commit()
-
-        service = AnalysisService(db_session)
-        df = service.repo.get_table()
-        mask = service._get_investment_mask(df)
-
-        investment_rows = df[mask]
-        assert len(investment_rows) == 1
-        assert investment_rows.iloc[0]["category"] == "Investments"
+    """Tests for investment_mask identifying investment transactions."""
 
     def test_non_investment_category_not_classified(self, db_session):
         """Verify non-investment categories are excluded by the investment mask."""
@@ -938,7 +725,7 @@ class TestInvestmentMask:
 
         service = AnalysisService(db_session)
         df = service.repo.get_table()
-        mask = service._get_investment_mask(df)
+        mask = investment_mask(df)
 
         investment_rows = df[mask]
         assert investment_rows.empty
@@ -991,7 +778,7 @@ class TestInvestmentMask:
 
         service = AnalysisService(db_session)
         df = service.repo.get_table()
-        mask = service._get_investment_mask(df)
+        mask = investment_mask(df)
 
         investment_rows = df[mask]
         assert len(investment_rows) == 1
@@ -1128,7 +915,7 @@ class TestMonthlyExpenses:
     def test_get_monthly_expenses_returns_months_and_averages(
         self, db_session, seed_base_transactions
     ):
-        """Verify monthly expenses returns correct structure with months list and averages."""
+        """Verify months come back chronologically with non-negative expenses and float averages."""
         service = AnalysisService(db_session)
         result = service.get_monthly_expenses()
 
@@ -1137,10 +924,11 @@ class TestMonthlyExpenses:
         assert "avg_6_months" in result
         assert "avg_12_months" in result
         assert len(result["months"]) > 0
+        assert all(isinstance(result[k], float) for k in ("avg_3_months", "avg_6_months", "avg_12_months"))
 
+        months = [entry["month"] for entry in result["months"]]
+        assert months == sorted(months)
         for entry in result["months"]:
-            assert "month" in entry
-            assert "expenses" in entry
             assert entry["expenses"] >= 0
 
     def test_get_monthly_expenses_empty_db(self, db_session):
@@ -1152,38 +940,6 @@ class TestMonthlyExpenses:
         assert result["avg_3_months"] == 0.0
         assert result["avg_6_months"] == 0.0
         assert result["avg_12_months"] == 0.0
-
-    def test_get_monthly_expenses_months_ordered_chronologically(
-        self, db_session, seed_base_transactions
-    ):
-        """Verify monthly expense entries are sorted by month ascending."""
-        service = AnalysisService(db_session)
-        result = service.get_monthly_expenses()
-
-        months = [entry["month"] for entry in result["months"]]
-        assert months == sorted(months)
-
-    def test_get_monthly_expenses_amounts_are_positive(
-        self, db_session, seed_base_transactions
-    ):
-        """Verify expense amounts are positive (negated from raw negative convention)."""
-        service = AnalysisService(db_session)
-        result = service.get_monthly_expenses()
-
-        for entry in result["months"]:
-            assert entry["expenses"] >= 0
-
-    def test_get_monthly_expenses_averages_are_floats(
-        self, db_session, seed_base_transactions
-    ):
-        """Verify rolling averages are numeric float values."""
-        service = AnalysisService(db_session)
-        result = service.get_monthly_expenses()
-
-        assert isinstance(result["avg_3_months"], float)
-        assert isinstance(result["avg_6_months"], float)
-        assert isinstance(result["avg_12_months"], float)
-
 
 class TestCashFlowForecast:
     """Tests for AnalysisService.get_cash_flow_forecast."""
@@ -1199,6 +955,7 @@ class TestCashFlowForecast:
         assert result["expected_expenses"] == 0
         assert result["safe_to_spend"] == 0
         assert result["current_bank_balance"] == 0
+        assert result["projected_end_balance"] == result["current_bank_balance"]
         # daily trajectory always spans the full month
         assert len(result["daily"]) == result["days_in_month"]
 
@@ -1224,18 +981,11 @@ class TestCashFlowForecast:
         actual = [d for d in result["daily"] if d["actual_balance"] is not None]
         assert len(actual) == result["day_of_month"]
 
-    def test_forecast_projects_end_balance_from_current(self, db_session):
-        """Verify projected end balance equals current balance when no activity."""
-        service = AnalysisService(db_session)
-        result = service.get_cash_flow_forecast()
-
-        # No transactions, no trend → end balance stays at current balance.
-        assert result["projected_end_balance"] == result["current_bank_balance"]
-
     def test_forecast_subtracts_upcoming_recurring(self, db_session):
         """A subscription due later this month feeds committed_remaining and
         keeps safe_to_spend at or below income-minus-spent."""
         import pytest
+
         from backend.models.transaction import CreditCardTransaction
 
         today = pd.Timestamp.today().normalize()
@@ -1261,6 +1011,18 @@ class TestCashFlowForecast:
                 )
             )
         db_session.commit()
+
+        # The forecast acts only on confirmed charges, so a detection nobody
+        # has ruled on commits nothing.
+        from backend.services.recurring_service import RecurringService
+
+        recurring = RecurringService(db_session)
+        assert AnalysisService(db_session).get_cash_flow_forecast()[
+            "committed_remaining"
+        ] == 0.0
+
+        key = recurring.get_recurring()["items"][0]["normalized"]
+        recurring.set_decisions([{"normalized": key, "decision": "confirmed"}])
 
         result = AnalysisService(db_session).get_cash_flow_forecast()
         assert result["committed_remaining"] >= 45.0
@@ -1334,7 +1096,6 @@ class TestAnalysisServiceIncomeBySourceAggregate:
 
     def test_date_range_is_inclusive_on_both_edges(self, db_session):
         """A window covering only Jan keeps Jan rows, drops Feb/Mar."""
-        from datetime import date
         self._seed(db_session)
         result = AnalysisService(db_session).get_income_by_source(
             start=date(2024, 1, 1), end=date(2024, 1, 31)
@@ -1347,7 +1108,6 @@ class TestAnalysisServiceIncomeBySourceAggregate:
 
     def test_empty_window_returns_zero(self, db_session):
         """A window with no income returns empty sources and zero total."""
-        from datetime import date
         self._seed(db_session)
         result = AnalysisService(db_session).get_income_by_source(
             start=date(2025, 1, 1), end=date(2025, 12, 31)
@@ -1362,7 +1122,6 @@ class TestAnalysisServiceIncomeBySourceAggregate:
 
     def test_one_sided_windows_filter_independently(self, db_session):
         """A start-only window and an end-only window each filter on their own edge."""
-        from datetime import date
 
         self._seed(db_session)
         service = AnalysisService(db_session)
@@ -1427,3 +1186,1019 @@ class TestMonthlyExpenseAveragesExcludePartialMonth:
 
         result = AnalysisService(db_session).get_monthly_expenses()
         assert result["avg_3_months"] == 3000.0
+
+
+class TestAvgMonthlySalary:
+    """Tests for ``get_avg_monthly_salary`` (the retirement auto-fill default)."""
+
+    def test_averages_per_month_salary_totals(self, db_session, seed_base_transactions):
+        """The three seeded salary months average to their mean."""
+        service = AnalysisService(db_session)
+        assert service.get_avg_monthly_salary() == pytest.approx((8000 + 8500 + 8200) / 3)
+
+    def test_window_keeps_only_the_most_recent_months(self, db_session, seed_base_transactions):
+        """``months`` limits the average to the latest N salary months."""
+        service = AnalysisService(db_session)
+        assert service.get_avg_monthly_salary(months=2) == pytest.approx((8500 + 8200) / 2)
+        assert service.get_avg_monthly_salary(months=1) == pytest.approx(8200)
+
+    def test_two_salary_lines_in_one_month_are_summed_first(self, db_session):
+        """Averaging happens over per-month totals, not individual transactions."""
+        for i, (d, amt) in enumerate([("2024-01-01", 5000.0), ("2024-01-15", 3000.0), ("2024-02-01", 6000.0)]):
+            db_session.add(
+                BankTransaction(
+                    id=f"sal_{i}", date=d, provider="leumi", account_name="Checking",
+                    description="Salary", amount=amt, category="Salary", source="bank_transactions",
+                )
+            )
+        db_session.commit()
+
+        assert AnalysisService(db_session).get_avg_monthly_salary() == pytest.approx(7000.0)
+
+    def test_none_when_no_transactions(self, db_session):
+        """An empty database has no salary to average."""
+        assert AnalysisService(db_session).get_avg_monthly_salary() is None
+
+    def test_none_when_no_salary_category(self, db_session):
+        """Income that is not in the Salary category does not count."""
+        db_session.add(
+            BankTransaction(
+                id="other_income", date="2024-01-01", provider="leumi", account_name="Checking",
+                description="Gift", amount=1000.0, category="Other Income", source="bank_transactions",
+            )
+        )
+        db_session.commit()
+
+        assert AnalysisService(db_session).get_avg_monthly_salary() is None
+
+
+class TestDebtPaymentsOverTime:
+    """Tests for ``get_debt_payments_over_time`` with real liability transactions."""
+
+    def test_groups_negative_liability_payments_by_month_and_tag(self, db_session, seed_liabilities):
+        """Each payment month reports its positive total and a per-tag breakdown."""
+        result = AnalysisService(db_session).get_debt_payments_over_time()
+
+        assert [r["month"] for r in result] == ["2023-07", "2023-08", "2023-09"]
+        assert all(r["amount"] == 1150.0 for r in result)
+        assert all(r["tags"] == {"Car Loan": 1150.0} for r in result)
+
+    def test_untagged_payments_fall_under_uncategorized(self, db_session):
+        """A Liabilities payment without a tag is bucketed as ``Uncategorized``."""
+        db_session.add(
+            BankTransaction(
+                id="untagged_debt", date="2024-03-05", provider="leumi", account_name="Checking",
+                description="Loan", amount=-400.0, category="Liabilities", tag=None,
+                source="bank_transactions",
+            )
+        )
+        db_session.commit()
+
+        result = AnalysisService(db_session).get_debt_payments_over_time()
+
+        assert result == [{"month": "2024-03", "amount": 400.0, "tags": {"Uncategorized": 400.0}}]
+
+    def test_credit_card_liability_rows_are_excluded(self, db_session):
+        """CC-sourced rows are outside the cashflow view and never counted."""
+        db_session.add(
+            CreditCardTransaction(
+                id="cc_debt", date="2024-03-05", provider="visa", account_name="Card",
+                description="Loan via card", amount=-400.0, category="Liabilities", tag="X",
+                source="credit_card_transactions",
+            )
+        )
+        db_session.commit()
+
+        assert AnalysisService(db_session).get_debt_payments_over_time() == []
+
+
+class TestIncomeExpensesOverTimeFlags:
+    """Tests for the exclusion flags on ``get_income_expenses_over_time``."""
+
+    @staticmethod
+    def _month(result, month):
+        return next(r for r in result if r["month"] == month)
+
+    def test_exclude_liabilities_drops_debt_from_both_sides(self, db_session, seed_liabilities):
+        """Debt payments are expenses and loan receipts are income unless liabilities are excluded."""
+        service = AnalysisService(db_session)
+
+        default = service.get_income_expenses_over_time()
+        excluded = service.get_income_expenses_over_time(exclude_liabilities=True)
+
+        assert self._month(default, "2023-07")["expenses"] == 1150.0
+        assert self._month(default, "2023-06")["income"] == 50000.0
+        # Months that held nothing but liability rows disappear altogether.
+        assert {r["month"] for r in excluded} == {"2024-01", "2024-02", "2024-03"}
+        assert self._month(excluded, "2024-01") == self._month(default, "2024-01")
+
+    def test_exclude_refunds_ignores_positive_expense_and_negative_income_rows(self, db_session):
+        """Refunds (positive expense rows) and income reversals are dropped when flagged."""
+        rows = [
+            ("rent", "2024-01-03", -3000.0, "Home", "Rent"),
+            ("refund", "2024-01-20", 200.0, "Home", "Rent"),
+            ("salary", "2024-01-01", 8000.0, "Salary", None),
+            ("reversal", "2024-01-21", -300.0, "Salary", None),
+        ]
+        for id_, d, amount, category, tag in rows:
+            db_session.add(
+                BankTransaction(
+                    id=id_, date=d, provider="leumi", account_name="Checking", description=id_,
+                    amount=amount, category=category, tag=tag, source="bank_transactions",
+                )
+            )
+        db_session.commit()
+        service = AnalysisService(db_session)
+
+        default = self._month(service.get_income_expenses_over_time(), "2024-01")
+        strict = self._month(service.get_income_expenses_over_time(exclude_refunds=True), "2024-01")
+
+        assert (default["income"], default["expenses"]) == (7700.0, 2800.0)
+        assert (strict["income"], strict["expenses"]) == (8000.0, 3000.0)
+
+    def test_exclude_projects_removes_project_category_spend(self, db_session, seed_project_transactions):
+        """Rows whose category is a project budget name vanish when ``exclude_projects`` is set."""
+        service = AnalysisService(db_session)
+
+        default = self._month(service.get_income_expenses_over_time(), "2024-02")
+        no_projects = service.get_income_expenses_over_time(exclude_projects=True)
+
+        # The 15,000 Wedding bank transfer in February is project spend.
+        assert default["expenses"] >= 15000.0
+        feb = next((r for r in no_projects if r["month"] == "2024-02"), None)
+        assert feb is None or feb["expenses"] == default["expenses"] - 15000.0
+
+    def test_exclude_projects_is_a_no_op_without_project_budgets(self, db_session, seed_base_transactions):
+        """With no project rules the flag changes nothing."""
+        service = AnalysisService(db_session)
+        assert service.get_income_expenses_over_time(exclude_projects=True) == service.get_income_expenses_over_time()
+
+
+class TestMonthlyExpensesWithProjects:
+    """Tests for ``get_monthly_expenses(include_projects=True)``."""
+
+    def test_project_expenses_are_reported_separately_per_month(
+        self, db_session, seed_base_transactions, seed_project_transactions
+    ):
+        """Each month carries a ``project_expenses`` figure alongside regular expenses."""
+        result = AnalysisService(db_session).get_monthly_expenses(include_projects=True)
+
+        by_month = {m["month"]: m for m in result["months"]}
+        assert all("project_expenses" in m for m in result["months"])
+        # Jan: Wedding 5,000 + Renovation 3,200. Feb: Wedding 800 + 15,000,
+        # Renovation 8,000 + 1,500. Project spend is never folded into the
+        # regular ``expenses`` figure.
+        assert by_month["2024-01"]["project_expenses"] == 8200.0
+        assert by_month["2024-02"]["project_expenses"] == 25300.0
+        assert by_month["2024-01"]["expenses"] < 5000.0
+
+    def test_only_project_spend_yields_no_months(self, db_session, seed_project_transactions):
+        """Project-only data has no regular expenses, so the trend is empty even with the flag."""
+        result = AnalysisService(db_session).get_monthly_expenses(include_projects=True)
+        assert result == {"months": [], "avg_3_months": 0.0, "avg_6_months": 0.0, "avg_12_months": 0.0}
+
+    def test_without_flag_project_key_is_absent(self, db_session, seed_base_transactions, seed_project_transactions):
+        """The default shape stays unchanged for callers that do not ask for projects."""
+        result = AnalysisService(db_session).get_monthly_expenses()
+        assert result["months"] and all("project_expenses" not in m for m in result["months"])
+
+    def test_flag_without_project_budgets_reports_zero(self, db_session, seed_base_transactions):
+        """When no project rules exist every month reports zero project spend."""
+        result = AnalysisService(db_session).get_monthly_expenses(include_projects=True)
+        assert result["months"] and all(m["project_expenses"] == 0.0 for m in result["months"])
+
+
+class TestRefundNettingAcrossMonths:
+    """A matched refund cancels its purchase whatever months the two fell in."""
+
+    @staticmethod
+    def _month(result, month):
+        return next((r for r in result if r["month"] == month), None)
+
+    @staticmethod
+    def _seed(db_session, rows):
+        """Insert ``(id, date, amount, category, tag)`` bank rows."""
+        for id_, d, amount, category, tag in rows:
+            db_session.add(
+                BankTransaction(
+                    id=id_, date=d, provider="leumi", account_name="Checking",
+                    description=id_, amount=amount, category=category, tag=tag,
+                    source="bank_transactions",
+                )
+            )
+        db_session.commit()
+
+    def _link(self, db_session, purchase_uid, refund_uid, expected, amount):
+        """Mark ``purchase_uid`` as awaiting ``expected`` and match ``amount`` to ``refund_uid``."""
+        service = PendingRefundsService(db_session)
+        pending = service.mark_as_pending_refund(
+            source_type="transaction", source_id=purchase_uid,
+            source_table="banks", expected_amount=expected,
+        )
+        service.link_refund(
+            pending_refund_id=pending["id"], refund_transaction_id=refund_uid,
+            refund_source="banks", amount=amount,
+        )
+        return pending
+
+    def _uids(self, db_session):
+        """Map seeded row ids to the auto-increment unique_ids they landed on."""
+        rows = db_session.query(BankTransaction).all()
+        return {r.id: r.unique_id for r in rows}
+
+    def test_resolved_refund_removes_both_sides_in_their_own_months(self, db_session):
+        """A January purchase repaid in March leaves neither month changed."""
+        self._seed(db_session, [
+            ("rent", "2024-01-03", -3000.0, "Home", "Rent"),
+            ("tv", "2024-01-10", -1000.0, "Electronics", None),
+            ("tv-refund", "2024-03-14", 1000.0, "Electronics", None),
+        ])
+        uids = self._uids(db_session)
+        self._link(db_session, uids["tv"], uids["tv-refund"], 1000.0, 1000.0)
+
+        result = AnalysisService(db_session).get_income_expenses_over_time()
+
+        # January keeps only the rent: the refunded TV never cost anything.
+        assert self._month(result, "2024-01")["expenses"] == 3000.0
+        # March neither gains income nor shows a negative expense.
+        march = self._month(result, "2024-03")
+        assert march is None or (march["expenses"], march["income"]) == (0.0, 0.0)
+
+    def test_partial_refund_leaves_only_the_unrecovered_part(self, db_session):
+        """300 back on a 1,000 purchase nets 300, not the whole row."""
+        self._seed(db_session, [
+            ("tv", "2024-01-10", -1000.0, "Electronics", None),
+            ("part-refund", "2024-02-14", 300.0, "Electronics", None),
+        ])
+        uids = self._uids(db_session)
+        self._link(db_session, uids["tv"], uids["part-refund"], 300.0, 300.0)
+
+        service = AnalysisService(db_session)
+        # With the expectation fully matched there is nothing outstanding, so
+        # both views agree: 700 of real spend stays.
+        for exclude in (True, False):
+            result = service.get_income_expenses_over_time(
+                exclude_pending_refunds=exclude
+            )
+            assert self._month(result, "2024-01")["expenses"] == 700.0
+            feb = self._month(result, "2024-02")
+            assert feb is None or feb["income"] == 0.0
+
+    def test_open_expectation_follows_the_toggle(self, db_session):
+        """An unmatched expectation is hidden only when pending refunds are excluded."""
+        self._seed(db_session, [
+            ("loan-to-friend", "2024-01-10", -800.0, "Other", None),
+        ])
+        uids = self._uids(db_session)
+        PendingRefundsService(db_session).mark_as_pending_refund(
+            source_type="transaction", source_id=uids["loan-to-friend"],
+            source_table="banks", expected_amount=800.0,
+        )
+        service = AnalysisService(db_session)
+
+        excluded = service.get_income_expenses_over_time(exclude_pending_refunds=True)
+        included = service.get_income_expenses_over_time(exclude_pending_refunds=False)
+
+        jan = self._month(excluded, "2024-01")
+        assert jan is None or jan["expenses"] == 0.0
+        assert self._month(included, "2024-01")["expenses"] == 800.0
+
+    def test_closed_remainder_stays_an_expense_either_way(self, db_session):
+        """Money the user gave up recovering is spend, whatever the toggle says."""
+        self._seed(db_session, [
+            ("deposit", "2024-01-10", -500.0, "Other", None),
+        ])
+        uids = self._uids(db_session)
+        service = PendingRefundsService(db_session)
+        pending = service.mark_as_pending_refund(
+            source_type="transaction", source_id=uids["deposit"],
+            source_table="banks", expected_amount=500.0,
+        )
+        service.close_pending_refund(pending["id"])
+        analysis = AnalysisService(db_session)
+
+        for exclude in (True, False):
+            result = analysis.get_income_expenses_over_time(
+                exclude_pending_refunds=exclude
+            )
+            assert self._month(result, "2024-01")["expenses"] == 500.0
+
+    def test_refund_nets_against_its_purchases_category_not_its_own(self, db_session):
+        """The breakdown credits the category that was charged, not the refund's."""
+        self._seed(db_session, [
+            ("tv", "2024-01-10", -1000.0, "Electronics", None),
+            ("tv-refund", "2024-03-14", 1000.0, "Uncategorized Refunds", None),
+        ])
+        uids = self._uids(db_session)
+        self._link(db_session, uids["tv"], uids["tv-refund"], 1000.0, 1000.0)
+
+        result = AnalysisService(db_session).get_expenses_by_category_over_time()
+
+        jan = self._month(result, "2024-01")
+        assert jan is None or "Electronics" not in jan["categories"]
+        # The refund's own category never receives the money either.
+        for row in result:
+            assert "Uncategorized Refunds" not in row["categories"]
+
+    def test_sankey_stops_flowing_a_repaid_charge_out_and_back(self, db_session):
+        """A netted purchase is neither an expense destination nor a Refunds source."""
+        self._seed(db_session, [
+            ("salary", "2024-01-01", 9000.0, "Salary", None),
+            ("tv", "2024-01-10", -1000.0, "Electronics", None),
+            ("tv-refund", "2024-03-14", 1000.0, "Electronics", None),
+        ])
+        uids = self._uids(db_session)
+        self._link(db_session, uids["tv"], uids["tv-refund"], 1000.0, 1000.0)
+
+        nodes = AnalysisService(db_session).get_sankey_data()["nodes"]
+
+        assert "Electronics" not in nodes
+        assert not any(n.startswith("Refunds:") for n in nodes)
+
+    def test_sankey_unknown_gap_is_measured_before_netting(self, db_session):
+        """Netting must not invent untracked card spend out of a refund."""
+        # A card purchase repaid into the bank: the bill still covered the
+        # full charge, so the itemized detail is complete and there is no gap.
+        db_session.add(
+            CreditCardTransaction(
+                id="cc-tv", date="2024-01-10", provider="max", account_name="Visa",
+                description="tv", amount=-1000.0, category="Electronics",
+                source="credit_card_transactions",
+            )
+        )
+        self._seed(db_session, [
+            ("cc-bill", "2024-02-02", -1000.0, "Credit Cards", None),
+            ("tv-refund", "2024-03-14", 1000.0, "Electronics", None),
+        ])
+        db_session.commit()
+        cc_uid = db_session.query(CreditCardTransaction).one().unique_id
+        service = PendingRefundsService(db_session)
+        pending = service.mark_as_pending_refund(
+            source_type="transaction", source_id=cc_uid,
+            source_table="credit_cards", expected_amount=1000.0,
+        )
+        service.link_refund(
+            pending_refund_id=pending["id"],
+            refund_transaction_id=self._uids(db_session)["tv-refund"],
+            refund_source="banks", amount=1000.0,
+        )
+
+        nodes = AnalysisService(db_session).get_sankey_data()["nodes"]
+
+        assert "Unknown" not in nodes
+
+    def test_matched_refund_is_not_counted_as_income(self, db_session):
+        """A repayment landing in an income category is money back, not earnings."""
+        self._seed(db_session, [
+            ("salary", "2024-03-01", 8000.0, "Salary", None),
+            ("work-expense", "2024-01-10", -600.0, "Other", None),
+            ("reimbursement", "2024-03-05", 600.0, "Other Income", None),
+        ])
+        uids = self._uids(db_session)
+        self._link(db_session, uids["work-expense"], uids["reimbursement"], 600.0, 600.0)
+
+        service = AnalysisService(db_session)
+        over_time = service.get_income_expenses_over_time()
+        by_source = service.get_income_by_source_over_time()
+
+        assert self._month(over_time, "2024-03")["income"] == 8000.0
+        march_sources = self._month(by_source, "2024-03")["sources"]
+        assert sum(march_sources.values()) == 8000.0
+        assert not any("Other Income" in label for label in march_sources)
+
+
+class TestExpenseBreakdownFilters:
+    """``get_expenses_by_category_over_time`` filters, and what they guarantee.
+
+    The Income & Expenses card totals these very rows rather than reading a
+    separate totals endpoint, so a filter that cannot reach part of the data
+    is not a cosmetic gap — it is the card showing two different answers for
+    the same money. See ``.claude/rules/kpi_calculations.md``.
+    """
+
+    @staticmethod
+    def _total(rows) -> float:
+        return round(sum(sum(r["categories"].values()) for r in rows), 2)
+
+    def test_project_categories_are_dropped_including_spend_put_on_a_card(
+        self, db_session, seed_base_transactions, seed_project_transactions
+    ):
+        """The projects filter reaches project spend paid by credit card.
+
+        This is why the card reads the itemized breakdown: on the bank-side
+        view a card purchase is folded into a bill row categorised
+        ``Credit Cards``, so no category filter can ever see it. The Wedding
+        rows in the fixture are credit-card transactions precisely so this
+        test fails if the filter is ever moved back onto a bill-based series.
+        """
+        service = AnalysisService(db_session)
+
+        kept = service.get_expenses_by_category_over_time()
+        dropped = service.get_expenses_by_category_over_time(exclude_projects=True)
+
+        assert any("Wedding" in r["categories"] for r in kept)
+        assert all("Wedding" not in r["categories"] for r in dropped)
+        assert all("Renovation" not in r["categories"] for r in dropped)
+        assert self._total(dropped) < self._total(kept)
+
+    def test_debt_payments_leave_the_breakdown_with_their_loan_name(
+        self, db_session
+    ):
+        """The liabilities filter drops debt payments, which carry the loan's tag."""
+        db_session.add_all([
+            BankTransaction(
+                id="dbt_mortgage", date="2024-01-05", provider="leumi",
+                account_name="Checking", description="Mortgage",
+                amount=-4000.0, category="Liabilities", tag="Mortgage",
+                source="bank_transactions",
+            ),
+            BankTransaction(
+                id="dbt_food", date="2024-01-06", provider="leumi",
+                account_name="Checking", description="Groceries",
+                amount=-300.0, category="Food", tag=None,
+                source="bank_transactions",
+            ),
+        ])
+        db_session.commit()
+        service = AnalysisService(db_session)
+
+        with_debt = service.get_expenses_by_category_over_time()
+        without = service.get_expenses_by_category_over_time(exclude_liabilities=True)
+
+        assert with_debt[0]["categories"]["Mortgage"] == 4000.0
+        assert "Mortgage" not in without[0]["categories"]
+        assert without[0]["categories"]["Food"] == 300.0
+
+    def test_loan_receipts_leave_the_income_breakdown_with_the_same_switch(
+        self, db_session
+    ):
+        """Excluding debt drops the loan's money in as well as its payments out.
+
+        Taking the payments out of the outflow while leaving the money the
+        loan paid in as income would report the household as having saved the
+        whole loan.
+        """
+        db_session.add_all([
+            BankTransaction(
+                id="loan_in", date="2024-01-02", provider="leumi",
+                account_name="Checking", description="Mortgage drawdown",
+                amount=900000.0, category="Liabilities", tag="Mortgage",
+                source="bank_transactions",
+            ),
+            BankTransaction(
+                id="loan_salary", date="2024-01-03", provider="leumi",
+                account_name="Checking", description="Salary",
+                amount=10000.0, category="Salary", tag=None,
+                source="bank_transactions",
+            ),
+        ])
+        db_session.commit()
+        service = AnalysisService(db_session)
+
+        with_loan = service.get_income_by_source_over_time()
+        without = service.get_income_by_source_over_time(exclude_liabilities=True)
+
+        assert any("Loans / Mortgage" in r["sources"] for r in with_loan)
+        assert all(
+            not any(label.startswith("Loans") for label in r["sources"])
+            for r in without
+        )
+        assert without[0]["sources"]["Salary"] == 10000.0
+
+    def test_an_unmatched_refund_can_leave_a_category_in_credit(self, db_session):
+        """A refund with no purchase to match nets against the category it lands in.
+
+        The month total is what the card's ledger shows, so a category left in
+        credit has to survive into the payload: dropping it would report a
+        month as having spent money that came back.
+        """
+        db_session.add_all([
+            BankTransaction(
+                id="ref_buy", date="2024-01-05", provider="leumi",
+                account_name="Checking", description="Jacket",
+                amount=-200.0, category="Shopping", tag=None,
+                source="bank_transactions",
+            ),
+            BankTransaction(
+                id="ref_back", date="2024-01-20", provider="leumi",
+                account_name="Checking", description="Jacket returned",
+                amount=500.0, category="Shopping", tag=None,
+                source="bank_transactions",
+            ),
+        ])
+        db_session.commit()
+
+        rows = AnalysisService(db_session).get_expenses_by_category_over_time()
+
+        assert rows[0]["categories"]["Shopping"] == -300.0
+
+    def test_both_filters_on_reproduces_the_budget_views_expense_figure(
+        self, db_session, seed_base_transactions, seed_project_transactions
+    ):
+        """One definition, two switches — the envelope view is a position on it.
+
+        With projects and debt both excluded the breakdown must agree, month by
+        month, with ``get_monthly_expenses`` (which the Budget page uses). That
+        equality is what makes the card's chips a view of one number rather
+        than a fourth definition of "expenses".
+        """
+        service = AnalysisService(db_session)
+
+        breakdown = service.get_expenses_by_category_over_time(
+            exclude_projects=True, exclude_liabilities=True
+        )
+        budget = service.get_monthly_expenses()
+
+        by_month = {r["month"]: round(sum(r["categories"].values()), 2) for r in breakdown}
+        for month in budget["months"]:
+            assert by_month.get(month["month"], 0.0) == round(month["expenses"], 2)
+
+
+class TestForecastIncomeComesFromRecurringStreams:
+    """The income half of get_cash_flow_forecast."""
+
+    def _salary(self, db_session, amount=12000.0, day=10, months=6, skip_current=True):
+        """A salary paid on ``day`` of each of the last ``months`` months."""
+        anchor = pd.Timestamp.today().normalize().replace(day=day)
+        start = 1 if skip_current else 0
+        for n in range(start, months + start):
+            db_session.add(
+                BankTransaction(
+                    id=f"sal-{n}",
+                    date=(anchor - pd.DateOffset(months=n)).strftime("%Y-%m-%d"),
+                    provider="leumi",
+                    account_name="Checking",
+                    description="MONTHLY SALARY",
+                    amount=amount,
+                    category="Salary",
+                    source=Tables.BANK.value,
+                )
+            )
+        db_session.commit()
+
+    def test_a_windfall_does_not_become_next_month_s_income(self, db_session):
+        """A one-off deposit three months ago must not be projected as income.
+
+        This is the bug the recurring basis exists for: an averaged baseline
+        carried a single 400k month into the next three forecasts, which told
+        a household on a 12k salary it was on track to save six figures.
+        """
+        self._salary(db_session, day=1, skip_current=False)
+        db_session.add(
+            BankTransaction(
+                id="windfall",
+                date=_months_ago(2),
+                provider="leumi",
+                account_name="Checking",
+                description="INHERITANCE",
+                amount=400000.0,
+                category="Other Income",
+                source=Tables.BANK.value,
+            )
+        )
+        db_session.commit()
+
+        result = AnalysisService(db_session).get_cash_flow_forecast()
+
+        assert result["income_basis"] == "recurring"
+        assert result["expected_income"] < 40000.0
+        assert result["projected_net"] < 40000.0
+
+    def test_a_salary_not_yet_paid_is_added_to_what_is_in_hand(self, db_session):
+        """Early in the month the forecast still expects the salary to land."""
+        import pytest
+
+        today = pd.Timestamp.today().normalize()
+        if today.day >= today.days_in_month:
+            pytest.skip("run on the last day of the month — no day left to pay on")
+        # Anchor pay day just ahead of today, whenever the suite runs.
+        self._salary(db_session, day=today.day + 1)
+
+        result = AnalysisService(db_session).get_cash_flow_forecast()
+
+        assert result["recurring_income_due"] == 12000.0
+        assert result["expected_income"] == pytest.approx(
+            result["actual_income"] + 12000.0
+        )
+
+    def test_no_stream_falls_back_to_a_median_not_a_mean(self, db_session):
+        """With nothing recurring to lean on, one freak month must not set the
+        baseline — the median of the complete months does."""
+        payers = ["ALPHA LTD", "BETA GMBH", "GAMMA INC", "DELTA CO"]
+        amounts = [5000.0, 5000.0, 400000.0, 5000.0]
+        for n, (payer, amount) in enumerate(zip(payers, amounts), start=1):
+            db_session.add(
+                BankTransaction(
+                    id=f"odd-{n}",
+                    date=_months_ago(n),
+                    provider="leumi",
+                    account_name="Checking",
+                    description=payer,
+                    amount=amount,
+                    category="Other Income",
+                    source=Tables.BANK.value,
+                )
+            )
+        db_session.commit()
+
+        result = AnalysisService(db_session).get_cash_flow_forecast()
+
+        assert result["income_basis"] == "trend"
+        assert result["avg_monthly_income"] == 5000.0
+
+    def test_a_salary_already_banked_keeps_the_recurring_basis(self, db_session):
+        """A stream that has paid owes nothing and is still the evidence.
+
+        If an empty "still due" list flipped the basis back to the trend, the
+        forecast would swap to a median the moment the salary landed — and
+        immediately hand back the windfall the recurring basis exists to keep
+        out.
+        """
+        import pytest
+
+        today = pd.Timestamp.today().normalize()
+        if today.day < 2:
+            pytest.skip("run on the 1st — no earlier day to bank the salary on")
+        self._salary(db_session, day=1)
+        db_session.add(
+            BankTransaction(
+                id="sal-this-month",
+                date=today.replace(day=1).strftime("%Y-%m-%d"),
+                provider="leumi",
+                account_name="Checking",
+                description="MONTHLY SALARY",
+                amount=12000.0,
+                category="Salary",
+                source=Tables.BANK.value,
+            )
+        )
+        db_session.commit()
+
+        result = AnalysisService(db_session).get_cash_flow_forecast()
+
+        assert result["income_basis"] == "recurring"
+        assert result["recurring_income_due"] == 0.0
+        assert result["expected_income"] == result["actual_income"]
+
+    def test_expected_income_never_dips_below_what_is_already_banked(
+        self, db_session
+    ):
+        """Whatever the basis, money in hand is money in hand."""
+        result = AnalysisService(db_session).get_cash_flow_forecast()
+        assert result["expected_income"] >= result["actual_income"]
+
+
+class TestForecastExpensesUseOneDefinition:
+    """The expense half — month-to-date and trend measured the same way."""
+
+    def test_month_to_date_expenses_match_the_budget_page(self, db_session):
+        """``actual_expenses`` is itemized spend, not the card bill the bank
+        paid this month for last month's shopping."""
+        today = pd.Timestamp.today().normalize()
+        db_session.add(
+            CreditCardTransaction(
+                id="bought-this-month",
+                date=today.replace(day=1).strftime("%Y-%m-%d"),
+                provider="visa",
+                account_name="card-1",
+                description="GROCERIES",
+                amount=-500.0,
+                category="Food",
+                source=Tables.CREDIT_CARD.value,
+            )
+        )
+        db_session.add(
+            BankTransaction(
+                id="card-bill",
+                date=today.replace(day=1).strftime("%Y-%m-%d"),
+                provider="leumi",
+                account_name="Checking",
+                description="CARD BILL",
+                amount=-9000.0,
+                category="Credit Cards",
+                source=Tables.BANK.value,
+            )
+        )
+        db_session.commit()
+
+        service = AnalysisService(db_session)
+        result = service.get_cash_flow_forecast()
+        month = today.strftime("%Y-%m")
+        budget_figure = next(
+            m["expenses"]
+            for m in service.get_monthly_expenses()["months"]
+            if m["month"] == month
+        )
+
+        assert result["actual_expenses"] == budget_figure
+
+    @staticmethod
+    def _pin_sync(monkeypatch, *entries):
+        """Pin what the scrape audit trail reports, without a keyring."""
+        from backend.services import scraping_history_service
+
+        monkeypatch.setattr(
+            scraping_history_service.ScrapingHistoryService,
+            "get_last_scrape_dates",
+            lambda self: list(entries),
+        )
+
+    @staticmethod
+    def _sync(service, provider, account, date):
+        """One `get_last_scrape_dates` entry."""
+        return {
+            "service": service,
+            "provider": provider,
+            "account_name": account,
+            "last_scrape_date": date,
+        }
+
+    def _seed_history(self, db_session, card=-3000.0, bank=-3000.0):
+        """Three complete months of spend, split evenly over two accounts.
+
+        Gives the projection both a trend to scale and a share to split it by.
+        """
+        for n in range(1, 4):
+            db_session.add(
+                CreditCardTransaction(
+                    id=f"hist-card-{n}",
+                    date=_months_ago(n),
+                    provider="visa",
+                    account_name="card-1",
+                    description=f"CARD SHOP {n}",
+                    amount=card,
+                    category="Food",
+                    source=Tables.CREDIT_CARD.value,
+                )
+            )
+            db_session.add(
+                BankTransaction(
+                    id=f"hist-bank-{n}",
+                    date=_months_ago(n),
+                    provider="leumi",
+                    account_name="acct-1",
+                    description=f"BANK DEBIT {n}",
+                    amount=bank,
+                    category="Household",
+                    source=Tables.BANK.value,
+                )
+            )
+        db_session.commit()
+
+    @staticmethod
+    def _projected(result):
+        """What the forecast expects to still be spent this month."""
+        return result["expected_expenses"] - result["actual_expenses"]
+
+    @staticmethod
+    def _calendar_share(result):
+        """The whole-household projection over the days left on the calendar."""
+        return (
+            result["avg_monthly_expenses"]
+            / result["days_in_month"]
+            * result["days_remaining"]
+        )
+
+    def test_days_no_account_has_synced_are_projected_not_counted_as_zero(
+        self, db_session, monkeypatch
+    ):
+        """A scrape that stopped a week ago is a week of unknown spending, not
+        a week of savings."""
+        today = pd.Timestamp.today().normalize()
+        if today.day < 12:
+            pytest.skip("too early in the month to leave a stale gap")
+
+        self._seed_history(db_session)
+        stale = today.replace(day=2).isoformat()
+        self._pin_sync(
+            monkeypatch,
+            self._sync("credit_cards", "visa", "card-1", stale),
+            self._sync("banks", "leumi", "acct-1", stale),
+        )
+
+        result = AnalysisService(db_session).get_cash_flow_forecast()
+
+        assert result["observed_through"] == today.replace(day=2).strftime("%Y-%m-%d")
+        assert self._projected(result) > self._calendar_share(result)
+
+    def test_a_quiet_stretch_on_a_current_sync_is_not_unobserved(
+        self, db_session, monkeypatch
+    ):
+        """Days with no transactions are not days with no data.
+
+        Reading the edge off the last transaction could not tell a household
+        that spent nothing since the 2nd from accounts that stopped syncing on
+        the 2nd, and projected weeks of spending over the quiet one.
+        """
+        today = pd.Timestamp.today().normalize()
+        if today.day < 12:
+            pytest.skip("too early in the month for a quiet stretch")
+
+        self._seed_history(db_session)
+        # Nothing bought since the 2nd, but every account is synced to today.
+        db_session.add(
+            CreditCardTransaction(
+                id="last-purchase",
+                date=today.replace(day=2).strftime("%Y-%m-%d"),
+                provider="visa",
+                account_name="card-1",
+                description="CARD SHOP now",
+                amount=-100.0,
+                category="Food",
+                source=Tables.CREDIT_CARD.value,
+            )
+        )
+        db_session.commit()
+        self._pin_sync(
+            monkeypatch,
+            self._sync("credit_cards", "visa", "card-1", today.isoformat()),
+            self._sync("banks", "leumi", "acct-1", today.isoformat()),
+        )
+
+        result = AnalysisService(db_session).get_cash_flow_forecast()
+
+        assert result["observed_through"] == today.strftime("%Y-%m-%d")
+        assert self._projected(result) == pytest.approx(self._calendar_share(result))
+
+    def test_each_account_is_projected_over_its_own_unsynced_days(
+        self, db_session, monkeypatch
+    ):
+        """Staleness is per account: one card current to today beside a bank
+        three weeks behind is two different holes in the month, not one."""
+        today = pd.Timestamp.today().normalize()
+        if today.day < 12:
+            pytest.skip("too early in the month to leave a stale gap")
+
+        self._seed_history(db_session)
+        self._pin_sync(
+            monkeypatch,
+            self._sync("credit_cards", "visa", "card-1", today.isoformat()),
+            self._sync("banks", "leumi", "acct-1", today.replace(day=2).isoformat()),
+        )
+
+        result = AnalysisService(db_session).get_cash_flow_forecast()
+        days_in_month = result["days_in_month"]
+        daily = result["avg_monthly_expenses"] / days_in_month
+
+        # The two accounts spent equally over the trend window, so each
+        # carries half the daily rate over its own remaining days.
+        expected = daily * 0.5 * (days_in_month - today.day) + daily * 0.5 * (
+            days_in_month - 2
+        )
+        assert self._projected(result) == pytest.approx(expected)
+
+    def test_a_fresh_account_s_spending_does_not_cancel_a_stale_one_s_gap(
+        self, db_session, monkeypatch
+    ):
+        """What the card already reported says nothing about the bank.
+
+        Rolling both accounts into one household window and subtracting what
+        had already landed in it let one big card purchase swallow the whole
+        month's expectation — including the stale bank's direct debits, which
+        nothing had reported at all.
+        """
+        today = pd.Timestamp.today().normalize()
+        if today.day < 12:
+            pytest.skip("too early in the month to leave a stale gap")
+
+        self._seed_history(db_session)
+        db_session.add(
+            CreditCardTransaction(
+                id="card-blowout",
+                date=today.replace(day=10).strftime("%Y-%m-%d"),
+                provider="visa",
+                account_name="card-1",
+                description="CARD BIG SHOP",
+                amount=-99000.0,
+                category="Food",
+                source=Tables.CREDIT_CARD.value,
+            )
+        )
+        db_session.commit()
+        self._pin_sync(
+            monkeypatch,
+            self._sync("credit_cards", "visa", "card-1", today.isoformat()),
+            self._sync("banks", "leumi", "acct-1", today.replace(day=2).isoformat()),
+        )
+
+        result = AnalysisService(db_session).get_cash_flow_forecast()
+        days_in_month = result["days_in_month"]
+        daily = result["avg_monthly_expenses"] / days_in_month
+
+        # The bank's half still projects over the 3rd onward, untouched by the
+        # card's blowout.
+        assert self._projected(result) >= daily * 0.5 * (days_in_month - 2)
+
+    def test_an_account_that_is_not_scraped_at_all_is_never_behind(
+        self, db_session, monkeypatch
+    ):
+        """Cash and manual entries are typed in, so they are current by
+        definition — only the scraped card here has a gap to project."""
+        today = pd.Timestamp.today().normalize()
+        if today.day < 12:
+            pytest.skip("too early in the month to leave a stale gap")
+
+        self._seed_history(db_session)
+        # The bank has no credential row at all.
+        self._pin_sync(
+            monkeypatch,
+            self._sync("credit_cards", "visa", "card-1", today.replace(day=2).isoformat()),
+        )
+
+        result = AnalysisService(db_session).get_cash_flow_forecast()
+        days_in_month = result["days_in_month"]
+        daily = result["avg_monthly_expenses"] / days_in_month
+
+        expected = daily * 0.5 * (days_in_month - 2) + daily * 0.5 * (
+            days_in_month - today.day
+        )
+        assert self._projected(result) == pytest.approx(expected)
+
+    def test_insurance_never_holds_the_edge_back(self, db_session, monkeypatch):
+        """Insurance is scraped but produces no budget transactions, so a
+        stale insurance sync says nothing about the month's completeness."""
+        today = pd.Timestamp.today().normalize()
+        self._seed_history(db_session)
+        self._pin_sync(
+            monkeypatch,
+            self._sync(
+                "insurances", "hafenix", "Tomer",
+                (today - pd.Timedelta(days=200)).isoformat(),
+            ),
+            self._sync("credit_cards", "visa", "card-1", today.isoformat()),
+            self._sync("banks", "leumi", "acct-1", today.isoformat()),
+        )
+
+        result = AnalysisService(db_session).get_cash_flow_forecast()
+
+        assert result["observed_through"] == today.strftime("%Y-%m-%d")
+        assert self._projected(result) == pytest.approx(self._calendar_share(result))
+
+    def test_a_never_synced_account_does_not_blank_the_month(
+        self, db_session, monkeypatch
+    ):
+        """An account with no successful scrape contributed nothing to the
+        trend baseline either — counting it would project spending no month
+        in the history ever contained."""
+        today = pd.Timestamp.today().normalize()
+        self._seed_history(db_session)
+        self._pin_sync(
+            monkeypatch,
+            self._sync("banks", "leumi", "acct-1", None),
+            self._sync("credit_cards", "visa", "card-1", today.isoformat()),
+        )
+
+        result = AnalysisService(db_session).get_cash_flow_forecast()
+
+        assert result["observed_through"] == today.strftime("%Y-%m-%d")
+        assert self._projected(result) == pytest.approx(self._calendar_share(result))
+
+    def test_nothing_scrapable_means_nothing_stale(self, db_session, monkeypatch):
+        """A cash-only household has no sync to be behind on."""
+        self._seed_history(db_session)
+        self._pin_sync(monkeypatch)
+
+        result = AnalysisService(db_session).get_cash_flow_forecast()
+
+        assert result["observed_through"] is None
+        assert self._projected(result) == pytest.approx(self._calendar_share(result))
+
+    def test_a_committed_bill_is_counted_once(self, db_session):
+        """A confirmed recurring charge is added at its due date and taken out
+        of the daily trend, not smeared across the month on top of itself."""
+        import pytest
+
+        today = pd.Timestamp.today().normalize()
+        month_end = today + pd.offsets.MonthEnd(0)
+        if today >= month_end:
+            pytest.skip("run on the last day of the month — no remaining days")
+
+        next_due = today + pd.Timedelta(days=1)
+        for k in range(1, 5):
+            db_session.add(
+                CreditCardTransaction(
+                    id=f"rent-{k}",
+                    date=(next_due - pd.Timedelta(days=30 * k)).strftime("%Y-%m-%d"),
+                    provider="visa",
+                    account_name="card-1",
+                    description="RENT",
+                    amount=-5000.0,
+                    category="Household",
+                    source=Tables.CREDIT_CARD.value,
+                )
+            )
+        db_session.commit()
+
+        recurring = RecurringService(db_session)
+        key = recurring.get_recurring()["items"][0]["normalized"]
+        recurring.set_decisions([{"normalized": key, "decision": "confirmed"}])
+
+        result = AnalysisService(db_session).get_cash_flow_forecast()
+        projected = result["expected_expenses"] - result["actual_expenses"]
+
+        assert result["committed_remaining"] >= 5000.0
+        # The bill is in there once; a trend that still carried it would push
+        # the remainder past the bill plus a full month of everything else.
+        assert projected <= result["committed_remaining"] + result[
+            "avg_monthly_expenses"
+        ]

@@ -122,6 +122,27 @@ export const mockInvestments = [
     profit_loss: 0,
     roi: 0,
   },
+  {
+    id: 3,
+    name: "Migdal 007-916-407357",
+    type: "hishtalmut",
+    category: "Investments",
+    tag: null,
+    is_closed: 0,
+    closed_date: null,
+    interest_rate: null,
+    interest_rate_type: null,
+    notes: null,
+    insurance_policy_id: "007-916-407357",
+    liquidity_date: "2030-01-01",
+    commission_deposit: 1.5,
+    commission_management: 0.4,
+    current_balance: 15000,
+    total_deposits: 14000,
+    total_withdrawals: 0,
+    profit_loss: 1000,
+    roi: 7.14,
+  },
 ];
 
 export const mockLiabilities = [
@@ -287,6 +308,16 @@ export const mockRetirementSuggestions = {
 
 export const handlers = [
   // ── Tagging API ──
+  http.get("/api/tagging/categories/usage", () =>
+    HttpResponse.json(
+      Object.fromEntries(
+        Object.keys(mockCategories).map((name) => [
+          name,
+          { last_used: "2026-08-01", unused: false },
+        ]),
+      ),
+    ),
+  ),
   http.get("/api/tagging/categories", () =>
     HttpResponse.json(mockCategories),
   ),
@@ -375,6 +406,20 @@ export const handlers = [
   // fails the whole vitest run with an EnvironmentTeardownError.
   http.get("/api/savings-goals/", () => HttpResponse.json([])),
   http.get("/api/savings-goals/links", () => HttpResponse.json([])),
+  http.get("/api/savings-goals/free-cash", () =>
+    HttpResponse.json({
+      free_cash: 0,
+      earmarked: 0,
+      liquid: 0,
+      investment_backed: 0,
+      clawed_back_this_month: 0,
+      has_goals: false,
+    }),
+  ),
+  http.get("/api/savings-goals/investments", () => HttpResponse.json([])),
+  http.get("/api/savings-goals/investments/available", () =>
+    HttpResponse.json([]),
+  ),
   http.get("/api/budget/category-conflicts", () =>
     HttpResponse.json({ conflicts: [] }),
   ),
@@ -383,6 +428,9 @@ export const handlers = [
   http.get("/api/budget/projects/available", () =>
     HttpResponse.json([]),
   ),
+  // Ahead of the "/:name" handler below, which would otherwise swallow the
+  // literal path and answer a project-details object where a list is expected.
+  http.get("/api/budget/projects/status", () => HttpResponse.json([])),
   http.post("/api/budget/projects", () =>
     HttpResponse.json({ status: "ok" }),
   ),
@@ -391,6 +439,9 @@ export const handlers = [
   ),
   http.delete("/api/budget/projects/:name", () =>
     HttpResponse.json({ status: "ok" }),
+  ),
+  http.put("/api/budget/projects/:name/closed", () =>
+    HttpResponse.json({ status: "success", name: "Test", closed: true }),
   ),
   http.get("/api/budget/projects/:name", () =>
     HttpResponse.json({ name: "Test", rules: [], transactions: [] }),
@@ -418,15 +469,6 @@ export const handlers = [
       { month: "2026-03", categories: { Food: 1200, Transport: 300 } },
     ]),
   ),
-  http.get("/api/analytics/by-category", () =>
-    HttpResponse.json({
-      expenses: [
-        { category: "Food", amount: -1200 },
-        { category: "Transport", amount: -300 },
-      ],
-      refunds: [],
-    }),
-  ),
   http.get("/api/analytics/sankey", () =>
     HttpResponse.json({
       nodes: [],
@@ -439,14 +481,6 @@ export const handlers = [
       { month: "2026-02", bank_balance: 48000, investment_value: 32000, cash: 500, net_worth: 80500 },
       { month: "2026-03", bank_balance: 50000, investment_value: 35000, cash: 500, net_worth: 85500 },
     ]),
-  ),
-  http.get("/api/analytics/income-by-source", () =>
-    HttpResponse.json({
-      sources: [{ label: "Salary", amount: 15000, share: 1 }],
-      total: 15000,
-      start: null,
-      end: null,
-    }),
   ),
   http.get("/api/analytics/income-by-source-over-time", () =>
     HttpResponse.json([
@@ -618,7 +652,7 @@ export const handlers = [
     HttpResponse.json({
       banks: ["hapoalim", "leumi", "discount"],
       credit_cards: ["max", "visa_cal", "isracard"],
-      insurances: ["hafenix"],
+      insurances: ["mislaka"],
     }),
   ),
   http.get("/api/credentials/fields/:provider", () =>
@@ -709,13 +743,31 @@ export const handlers = [
 
   // ── Insurance Accounts API ──
   http.get("/api/insurance-accounts/", () => HttpResponse.json([])),
+  http.get("/api/insurance-accounts/clearing-house-reports", () =>
+    HttpResponse.json([]),
+  ),
+  http.get("/api/retirement/pension-forecast", () =>
+    HttpResponse.json({
+      estimate: null,
+      with_deposits: 0,
+      no_deposits: 0,
+      as_of: null,
+      funds: 0,
+    }),
+  ),
 
   // ── Backups API ──
   http.get("/api/backups/", () => HttpResponse.json([])),
 
   // ── Testing/Demo Mode API ──
   http.get("/api/testing/demo_mode_status", () =>
-    HttpResponse.json({ demo_mode: false, forced: false }),
+    HttpResponse.json({
+      demo_mode: false,
+      forced: false,
+      sandboxed: false,
+      durable: false,
+      blob_configured: false,
+    }),
   ),
   http.post("/api/testing/demo/prepare", () =>
     HttpResponse.json({ status: "success", created: false }),

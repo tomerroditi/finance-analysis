@@ -12,19 +12,69 @@ import {
   History,
   Lock,
   RotateCcw,
+  Wallet,
+  Landmark,
+  X,
 } from "lucide-react";
+import {
+  ResponsiveContainer,
+  BarChart,
+  Bar,
+  ReferenceLine,
+  XAxis,
+  YAxis,
+  Tooltip,
+  Legend,
+} from "recharts";
 import {
   savingsGoalsApi,
   type SavingsGoal,
   type SavingsGoalInput,
   type SavingsGoalRebuildChange,
+  type SavingsGoalFreeCash,
+  type SavingsGoalInvestment,
 } from "../../services/api";
 import { useQueryKeys } from "../../hooks/useQueryKeys";
+import { useScrollCap } from "../../hooks/useScrollCap";
+import { stackEnds, roundedStackShape } from "../charts/stackedBarShape";
 import { qkPrefix } from "../../services/queryKeys";
-import { useConfirm } from "../../context/DialogContext";
+import { useConfirm, useNotify } from "../../context/DialogContext";
 import { Modal } from "../common/Modal";
 import { Skeleton } from "../common/Skeleton";
+import { ChartTooltip } from "../charts/ChartTooltip";
+import { ChartLegend } from "../charts/ChartLegend";
 import { formatCurrency } from "../../utils/numberFormatting";
+import {
+  formatMonthCompact,
+  formatMonthYear,
+} from "../../utils/dateFormatting";
+import {
+  AXIS_DEFAULTS,
+  CHART_COLORS,
+  CHART_TEXT_COLOR,
+  formatAxisNumber,
+  hexToRgba,
+} from "../../utils/chartStyle";
+
+/**
+ * The free-cash pool is drawn in neutral ink rather than a palette hue: it is
+ * the money *no* goal claimed, so borrowing a goal's colour would imply it
+ * belongs to one.
+ */
+const FREE_CASH_COLOR = CHART_TEXT_COLOR;
+
+/** Faint rule for the zero line — present enough to read against, no more. */
+const GRID_COLOR = "rgba(148, 163, 184, 0.25)";
+
+/** Series key for the unearmarked pool. */
+const FREE_CASH_KEY = "free_cash";
+
+/** How tall the waterfall may stand before it scrolls in place (26rem, px). */
+const LIST_CAP_PX = 416;
+
+/** A goal row, roughly — the least overflow worth capping for (see the hook). */
+const LIST_CAP_SLACK_PX = 120;
+
 
 /**
  * Dashboard savings-goals panel.
@@ -34,19 +84,37 @@ import { formatCurrency } from "../../utils/numberFormatting";
  * take (its target, or its monthly cap) down to the next one. Reordering
  * applies to future months only — restating history is the explicit
  * "redistribute" action, which previews the diff before committing.
+ *
+ * Below the waterfall sits the free-cash pool: the tracked money no goal has
+ * earmarked. It is the buffer a month of overspending drains first, and only
+ * once it is empty does a deficit reach back into the goals.
+ *
+ * A goal can also be backed by an investment the user means to sell. That
+ * backing shows on the row but is deliberately not cash: it never enters the
+ * pool and a deficit can never take it back.
  */
 export function GoalsSection() {
   const { t } = useTranslation();
   const qk = useQueryKeys();
   const queryClient = useQueryClient();
   const confirm = useConfirm();
+  const notify = useNotify();
   const [editing, setEditing] = useState<SavingsGoal | "new" | null>(null);
+  const [backing, setBacking] = useState<SavingsGoal | null>(null);
   const [redistributing, setRedistributing] = useState(false);
 
   const { data, isLoading } = useQuery({
     queryKey: qk.savingsGoals.all(),
     queryFn: async () => {
       const res = await savingsGoalsApi.getAll();
+      return res.data;
+    },
+  });
+
+  const { data: pool } = useQuery({
+    queryKey: qk.savingsGoals.freeCash(),
+    queryFn: async () => {
+      const res = await savingsGoalsApi.getFreeCash();
       return res.data;
     },
   });
@@ -64,7 +132,66 @@ export function GoalsSection() {
     onSuccess: invalidate,
   });
 
+  const claimMutation = useMutation({
+    mutationFn: async ({ goal, amount, start }: { goal: SavingsGoal; amount: number; start: string }) => {
+      await savingsGoalsApi.update(goal.id, { opening_balance: amount });
+      // Same restate the editor runs: stored months were computed against the
+      // old opening balance, and replaying them would claw from the wrong goal.
+      await savingsGoalsApi.rebuild(start, false);
+    },
+    onSuccess: invalidate,
+  });
+
+  /** Offer the free cash that predates a goal as its opening balance. */
+  const claimFreeCash = async (goal: SavingsGoal) => {
+    const start = goal.start_month?.slice(0, 7) || currentMonthKey();
+    // The row can still hold the list from before a claim that just landed,
+    // so compare against the server's figures rather than the cache.
+    // `staleTime: 0` is what forces that: the app's default keeps a query
+    // fresh for five minutes, and `fetchQuery` serves a fresh entry from
+    // cache without asking. In the window between a claim reaching the
+    // server and its mutation settling into an invalidation, that cached
+    // entry still holds the pre-claim opening balance — so the guard below
+    // compared the new figure against the old one and re-offered a claim
+    // that had already been applied.
+    const [{ free_cash: amount }, goalsNow] = await Promise.all([
+      queryClient.fetchQuery({
+        queryKey: qk.savingsGoals.freeCashBefore(start, goal.id),
+        queryFn: async () => (await savingsGoalsApi.getFreeCashBefore(start, goal.id)).data,
+        staleTime: 0,
+      }),
+      queryClient.fetchQuery({
+        queryKey: qk.savingsGoals.all(),
+        queryFn: async () => (await savingsGoalsApi.getAll()).data,
+        staleTime: 0,
+      }),
+    ]);
+    const held = goalsNow.find((g) => g.id === goal.id)?.opening_balance ?? goal.opening_balance;
+    const month = monthKeyLabel(start);
+    if (Math.abs(amount - held) < 0.005) {
+      notify.info(t("dashboard.goals.claimNothing", { name: goal.name, month }));
+      return;
+    }
+    const ok = await confirm({
+      title: t("dashboard.goals.claimTitle"),
+      message: t("dashboard.goals.claimConfirm", {
+        name: goal.name,
+        amount: formatCurrency(amount),
+        month,
+      }),
+      confirmLabel: t("dashboard.goals.claimAction"),
+    });
+    if (ok) claimMutation.mutate({ goal, amount, start });
+  };
+
   const goals = data ?? [];
+
+  // Measured rather than counted: rows differ in height (a goal with a monthly
+  // figure, an investment backing or a clawback note runs taller than a plain
+  // one), and what matters is how much a cap would actually hide. `data`, not
+  // `goals`: the query's array is stable between renders, while the `?? []`
+  // fallback is a fresh one every time.
+  const [listRef, capped] = useScrollCap(LIST_CAP_PX, data, LIST_CAP_SLACK_PX);
 
   /** Swap a goal with its neighbour and persist the new waterfall order. */
   const move = (index: number, direction: -1 | 1) => {
@@ -110,7 +237,22 @@ export function GoalsSection() {
       ) : goals.length === 0 ? (
         <p className="text-[var(--text-muted)] text-sm py-6 text-center">{t("dashboard.goals.empty")}</p>
       ) : (
-        <div className="space-y-3">
+        /* The waterfall scrolls in place past a few goals. A dozen of them
+           would otherwise carry the free-cash row and the history panel down
+           the page — off the screen entirely on mobile, where the dashboard
+           grid leaves card heights uncapped, and behind the card's own
+           scrollbar at >=lg, where the 39rem cap scrolls the header away with
+           them. The list is what grows without bound, so it is what is capped,
+           and only once a cap would hide something worth scrolling to: until
+           then it is a plain block, so a finger dragged across it scrolls the
+           page like the rest of the card. The cap is sized to sit under the
+           card cap with the history collapsed, so the two scrollers don't both
+           appear at rest. */
+        <div
+          ref={listRef}
+          className={`space-y-3 ${capped ? "max-h-[26rem] overflow-y-auto pe-1" : ""}`}
+          data-testid="goals-list"
+        >
           {goals.map((goal, index) => (
             <GoalRow
               key={goal.id}
@@ -121,6 +263,8 @@ export function GoalsSection() {
               onMoveUp={() => move(index, -1)}
               onMoveDown={() => move(index, 1)}
               onEdit={() => setEditing(goal)}
+              onBack={() => setBacking(goal)}
+              onClaim={() => void claimFreeCash(goal)}
               onDelete={async () => {
                 const ok = await confirm({
                   title: t("common.deleteTitle"),
@@ -135,6 +279,10 @@ export function GoalsSection() {
         </div>
       )}
 
+      {!!pool?.has_goals && <FreeCashRow pool={pool} />}
+
+      {goals.length > 0 && <AllocationHistory />}
+
       {editing !== null && (
         <GoalEditorModal
           goal={editing === "new" ? null : editing}
@@ -142,11 +290,399 @@ export function GoalsSection() {
         />
       )}
 
+      {backing !== null && (
+        <InvestmentBackingModal goal={backing} onClose={() => setBacking(null)} />
+      )}
+
       {redistributing && (
         <RedistributeModal onClose={() => setRedistributing(false)} />
       )}
     </div>
   );
+}
+
+/**
+ * The unearmarked remainder of the tracked money, shown under the waterfall.
+ *
+ * It is deliberately not a goal: nothing fills it and nothing spends it on
+ * purpose. It exists so a deficit month has somewhere to land before the
+ * engine starts taking money back out of the goals themselves.
+ */
+function FreeCashRow({ pool }: { pool: SavingsGoalFreeCash }) {
+  const { t } = useTranslation();
+
+  return (
+    <div
+      className="mt-3 border border-dashed border-[var(--surface-light)] rounded-xl p-3"
+      data-testid="goals-free-cash"
+    >
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2 min-w-0">
+          <div className="p-1.5 rounded-lg bg-[var(--surface-light)] text-[var(--text-muted)]">
+            <Wallet size={14} />
+          </div>
+          <div className="min-w-0">
+            <p className="text-xs md:text-sm font-medium truncate">
+              {t("dashboard.goals.freeCash")}
+            </p>
+            <p className="text-[10px] md:text-xs text-[var(--text-muted)]">
+              {t("dashboard.goals.freeCashHint")}
+            </p>
+          </div>
+        </div>
+        <span className="text-sm md:text-base font-bold shrink-0" dir="ltr">
+          {formatCurrency(pool.free_cash)}
+        </span>
+      </div>
+      {pool.clawed_back_this_month > 0 && (
+        <p className="mt-1.5 text-[10px] md:text-xs text-amber-400">
+          {t("dashboard.goals.poolDrained", {
+            amount: formatCurrency(pool.clawed_back_this_month),
+          })}
+        </p>
+      )}
+    </div>
+  );
+}
+
+/** Trailing windows the history panel offers; 0 means the whole timeline. */
+const HISTORY_RANGES = [6, 12, 0] as const;
+
+/** Ties the collapse toggle to the panel it reveals. */
+const PANEL_ID = "goals-history-panel";
+
+type HistoryRange = (typeof HISTORY_RANGES)[number];
+
+/**
+ * The waterfall read month by month, under the current standings.
+ *
+ * The rows above answer "where is each goal now"; this answers "how did it get
+ * there" — which months fed a goal, which month a deficit took money back out
+ * of one (a negative segment, below the axis), and how much was left
+ * unearmarked each time.
+ *
+ * Each bar stacks what the goals took that month, in priority order, with
+ * the free-cash pool on top — the money that is tracked and liquid but which
+ * no goal has claimed. A segment below the line is money a deficit month took
+ * back out of a goal.
+ *
+ * The pool is a standing balance and the allocations are monthly flows, so a
+ * household with real savings will show a tall pool over thin goal segments.
+ * That is the point of the legend being clickable: hide the pool and the
+ * remaining series rescale to their own size, and a double-click narrows to
+ * one goal.
+ */
+function AllocationHistory() {
+  const { t } = useTranslation();
+  const qk = useQueryKeys();
+  const [range, setRange] = useState<HistoryRange>(12);
+  // Collapsed by default: the standings above answer "where is each goal now",
+  // which is what the card is opened for — the ledger behind them is a second
+  // question, and two charts' worth of it pushed the rows off a dashboard
+  // screen before anyone asked.
+  const [open, setOpen] = useState(false);
+  // Series the reader has clicked away in the legend. Keyed by series key, so
+  // a goal renamed between fetches keeps its state and a goal that leaves the
+  // window simply stops mattering.
+  const [hidden, setHidden] = useState<ReadonlySet<string>>(new Set());
+  // Which series a double-click narrowed to, so that double-clicking it again
+  // is what brings the others back. Inferring "already alone" from `hidden`
+  // instead would make a double-click undo a state the reader had built up
+  // click by click, rather than the isolation they just asked for.
+  const [isolated, setIsolated] = useState<string | null>(null);
+
+  const { data, isLoading } = useQuery({
+    queryKey: qk.savingsGoals.timeline(range),
+    queryFn: async () => (await savingsGoalsApi.getTimeline(range)).data,
+    // Nothing outside this panel reads the timeline, so a card that is never
+    // expanded never pays for the window.
+    enabled: open,
+  });
+
+  // One row per month with a column per goal, which is the shape a stacked
+  // chart wants. Months where nothing moved still get a row — the backend
+  // sends them, and a gap in a time series reads as "skipped", not "zero".
+  const rows = (data?.months ?? []).map((month) => {
+    const row: Record<string, number | string> = {
+      month: month.month,
+      [FREE_CASH_KEY]: month.free_cash,
+    };
+    for (const goal of month.goals) {
+      row[`g${goal.goal_id}`] = goal.total;
+    }
+    return row;
+  });
+
+  // Colour follows the goal, not its rank: keyed by id (stable) rather than
+  // by priority, so reordering the waterfall never repaints the chart.
+  const palette = new Map(
+    [...(data?.goals ?? [])]
+      .sort((a, b) => a.id - b.id)
+      .map((goal, index) => [goal.id, CHART_COLORS[index % CHART_COLORS.length]]),
+  );
+  // A goal that took nothing in this window would be a legend entry with no
+  // mark, so only the ones that actually moved get a series.
+  const series = (data?.goals ?? []).filter((goal) =>
+    rows.some((row) => row[`g${goal.id}`] !== undefined && row[`g${goal.id}`] !== 0),
+  );
+  // Free cash stacks last, so it caps the column: the goals take their share
+  // from the bottom in priority order and what is left sits on top. A window
+  // where every month's surplus was fully claimed drops it, on the same terms
+  // as a goal that took nothing.
+  const hasFreeCash = rows.some((row) => row[FREE_CASH_KEY] !== 0);
+  const keys = [
+    ...series.map((goal) => `g${goal.id}`),
+    ...(hasFreeCash ? [FREE_CASH_KEY] : []),
+  ];
+  // Which segment sits at each end of a month's stack, so only the outer
+  // corners are rounded and the column reads as one shape rather than a
+  // string of beads.
+  // Only what is on screen shapes the chart: the rounded corners follow the
+  // visible stack, and so does the zero line.
+  const visible = keys.filter((key) => !hidden.has(key));
+  const ends = stackEnds(rows, visible, "month");
+  // A segment under the line is money a deficit month took back out of a goal.
+  const hasDeficit = rows.some((row) =>
+    visible.some((key) => typeof row[key] === "number" && (row[key] as number) < 0),
+  );
+
+  /**
+   * Hide or show one series.
+   *
+   * Hiding the last one is allowed: an empty plot under a legend of dimmed
+   * entries says what happened and where to undo it, which a click that
+   * silently does nothing does not.
+   */
+  const toggleSeries = (key: string) => {
+    setHidden((current) => {
+      const next = new Set(current);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+    // Whatever the chart shows now, the reader built it by hand.
+    setIsolated(null);
+  };
+
+  /** Narrow to one series; double-clicking the same one again undoes it. */
+  const isolateSeries = (key: string) => {
+    if (isolated === key) {
+      setHidden(new Set());
+      setIsolated(null);
+      return;
+    }
+    setHidden(new Set(keys.filter((other) => other !== key)));
+    setIsolated(key);
+  };
+
+  const tooltip = (
+    <ChartTooltip labelFormatter={(m) => formatMonthYear(monthDate(String(m)))} />
+  );
+  const hasMoreHistory = (data?.total_months ?? 0) > Math.max(...HISTORY_RANGES);
+
+  return (
+    <div
+      className="mt-4 pt-4 border-t border-[var(--surface-light)]"
+      data-testid="goals-history"
+    >
+      <div
+        className={`flex items-center justify-between gap-2 ${open ? "mb-3" : ""}`}
+      >
+        <button
+          type="button"
+          onClick={() => setOpen((isOpen) => !isOpen)}
+          aria-expanded={open}
+          aria-controls={PANEL_ID}
+          className="flex items-center gap-1 text-xs md:text-sm font-bold hover:text-[var(--primary)] transition-colors"
+        >
+          {open ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+          {t("dashboard.goals.historyTitle")}
+        </button>
+        {open && (
+          <div className="flex bg-[var(--surface-light)] rounded-lg p-0.5">
+            {HISTORY_RANGES.map((option) => (
+              <button
+                key={option}
+                onClick={() => setRange(option)}
+                // "All time" is only honest while there is more history than
+                // the widest fixed window; below that it shows the same months
+                // twice.
+                disabled={option === 0 && !hasMoreHistory}
+                className={`px-2 py-1 rounded-md text-[10px] md:text-xs font-bold transition-colors disabled:opacity-40 ${
+                  range === option
+                    ? "bg-[var(--surface)] text-[var(--primary)] shadow-sm"
+                    : "text-[var(--text-muted)] hover:text-[var(--text-primary)]"
+                }`}
+              >
+                {option === 0
+                  ? t("dashboard.goals.historyAll")
+                  : t("dashboard.goals.historyMonths", { count: option })}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {open && (
+        <div id={PANEL_ID}>
+          {isLoading ? (
+            <Skeleton variant="chart" className="h-40" />
+          ) : rows.length === 0 ? (
+            <p className="text-[10px] md:text-xs text-[var(--text-muted)] py-4 text-center">
+              {t("dashboard.goals.historyEmpty")}
+            </p>
+          ) : (
+            <div
+              className="rounded-xl border border-[var(--surface-light)] bg-[var(--surface-light)]/20 p-3"
+              data-testid="goals-history-chart"
+            >
+              {keys.length === 0 ? (
+                // Goals exist, but no month in this window moved a shekel into
+                // one or left any surplus behind. There is nothing to stack, so
+                // an empty axis is left out.
+                <p className="text-[10px] md:text-xs text-[var(--text-muted)] py-2 text-center">
+                  {t("dashboard.goals.historyEmpty")}
+                </p>
+              ) : (
+                <div className="h-48 md:h-56">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart
+                      data={rows}
+                      margin={{ top: 4, bottom: 0, left: 0, right: 4 }}
+                      barCategoryGap="22%"
+                    >
+                      <defs>
+                        {series.map((goal) => (
+                          <linearGradient
+                            key={goal.id}
+                            id={`goal-fill-${goal.id}`}
+                            x1="0"
+                            y1="0"
+                            x2="0"
+                            y2="1"
+                          >
+                            <stop
+                              offset="0%"
+                              stopColor={hexToRgba(palette.get(goal.id)!, 0.95)}
+                            />
+                            <stop
+                              offset="100%"
+                              stopColor={hexToRgba(palette.get(goal.id)!, 0.55)}
+                            />
+                          </linearGradient>
+                        ))}
+                        <linearGradient
+                          id="goal-fill-free"
+                          x1="0"
+                          y1="0"
+                          x2="0"
+                          y2="1"
+                        >
+                          <stop
+                            offset="0%"
+                            stopColor={hexToRgba(FREE_CASH_COLOR, 0.55)}
+                          />
+                          <stop
+                            offset="100%"
+                            stopColor={hexToRgba(FREE_CASH_COLOR, 0.28)}
+                          />
+                        </linearGradient>
+                      </defs>
+                      {/* The months were labelled by the pool panel that used
+                          to sit below; with one chart left, this axis carries
+                          them. */}
+                      <XAxis
+                        dataKey="month"
+                        {...AXIS_DEFAULTS}
+                        tickFormatter={formatMonthCompact}
+                      />
+                      <YAxis
+                        {...AXIS_DEFAULTS}
+                        tickFormatter={formatAxisNumber}
+                        tickCount={4}
+                        width={44}
+                      />
+                      {/* Only drawn when a deficit actually pulled a bar under the
+                          line — with nothing below it, the axis is the baseline. */}
+                      {hasDeficit && (
+                        <ReferenceLine y={0} stroke={GRID_COLOR} strokeWidth={1} />
+                    )}
+                      <Tooltip
+                        cursor={{ fill: "rgba(148, 163, 184, 0.08)", radius: 6 }}
+                        content={tooltip}
+                      />
+                      <Legend
+                        content={
+                          <ChartLegend
+                            fontSize={10}
+                            hidden={hidden}
+                            onToggle={toggleSeries}
+                            onIsolate={isolateSeries}
+                          />
+                        }
+                      />
+                      {series.map((goal) => (
+                        <Bar
+                          key={goal.id}
+                          dataKey={`g${goal.id}`}
+                          name={goal.name}
+                          stackId="allocations"
+                          // The gradient goes on the drawn segment, not on the
+                          // series, so the legend swatch keeps a flat colour it
+                          // can actually paint — a `url(#…)` fill renders as
+                          // nothing in a CSS background.
+                          fill={palette.get(goal.id)}
+                          // A hidden series leaves the stack entirely, so the
+                          // y-axis refits to what is left.
+                          hide={hidden.has(`g${goal.id}`)}
+                          maxBarSize={30}
+                          shape={roundedStackShape(
+                            ends,
+                            `g${goal.id}`,
+                            "month",
+                            `url(#goal-fill-${goal.id})`,
+                          )}
+                          isAnimationActive={false}
+                        />
+                      ))}
+                      {hasFreeCash && (
+                        <Bar
+                          dataKey={FREE_CASH_KEY}
+                          name={t("dashboard.goals.freeCash")}
+                          stackId="allocations"
+                          fill={FREE_CASH_COLOR}
+                          hide={hidden.has(FREE_CASH_KEY)}
+                          maxBarSize={30}
+                          shape={roundedStackShape(
+                            ends,
+                            FREE_CASH_KEY,
+                            "month",
+                            "url(#goal-fill-free)",
+                          )}
+                          isAnimationActive={false}
+                        />
+                      )}
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              )}
+
+            </div>
+          )}
+
+          <p className="mt-2 text-[10px] text-[var(--text-muted)]">
+            {t("dashboard.goals.historyHint")}
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Parse a `YYYY-MM` key into a local-time Date (never UTC midnight). */
+function monthDate(month: string): Date {
+  const [year, index] = month.split("-").map(Number);
+  return new Date(year, index - 1, 1);
 }
 
 function GoalRow({
@@ -157,6 +693,8 @@ function GoalRow({
   onMoveUp,
   onMoveDown,
   onEdit,
+  onBack,
+  onClaim,
   onDelete,
 }: {
   goal: SavingsGoal;
@@ -166,6 +704,8 @@ function GoalRow({
   onMoveUp: () => void;
   onMoveDown: () => void;
   onEdit: () => void;
+  onBack: () => void;
+  onClaim: () => void;
   onDelete: () => void;
 }) {
   const { t } = useTranslation();
@@ -177,8 +717,12 @@ function GoalRow({
 
   return (
     <div className="group border border-[var(--surface-light)] rounded-xl p-3 hover:bg-[var(--surface-light)]/30 transition-colors">
+      {/* The name owns its own line. It used to share one with the funded /
+          target pair and five buttons, which on a phone left it about eight
+          characters wide — "New car fund" rendered as "New …", and the row
+          named nothing at all. */}
       <div className="flex items-center justify-between gap-2 mb-2">
-        <div className="flex items-center gap-1.5 min-w-0">
+        <div className="flex items-center gap-1.5 min-w-0 flex-1">
           <span
             className="text-[10px] font-bold text-[var(--text-muted)] tabular-nums shrink-0"
             title={t("dashboard.goals.priorityHint")}
@@ -192,11 +736,7 @@ function GoalRow({
           )}
           <p className="font-semibold text-sm truncate" dir="auto" title={goal.name}>{goal.name}</p>
         </div>
-        <div className="flex items-center gap-1 shrink-0">
-          <span dir="ltr" className="text-xs md:text-sm font-bold tabular-nums">
-            {formatCurrency(goal.funded)}
-            <span className="text-[var(--text-muted)] font-normal"> / {formatCurrency(goal.target_amount)}</span>
-          </span>
+        <div className="flex items-center gap-0.5 shrink-0">
           <button
             onClick={onMoveUp}
             disabled={!canMoveUp}
@@ -213,6 +753,28 @@ function GoalRow({
           >
             <ChevronDown size={14} />
           </button>
+          <button
+            onClick={onBack}
+            aria-label={t("dashboard.goals.backWithInvestment")}
+            className={`p-1.5 rounded-lg hover:bg-[var(--surface-light)] transition-colors ${
+              goal.investment_backed > 0
+                ? "text-[var(--primary)]"
+                : "text-[var(--text-muted)] hover:text-[var(--text-primary)]"
+            }`}
+          >
+            <Landmark size={14} />
+          </button>
+          {/* A closed goal's history is frozen, so there is nothing to restate. */}
+          {!goal.is_closed && (
+            <button
+              onClick={onClaim}
+              aria-label={t("dashboard.goals.claimAriaLabel")}
+              title={t("dashboard.goals.claimAriaLabel")}
+              className="p-1.5 rounded-lg text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-light)] transition-colors"
+            >
+              <Wallet size={14} />
+            </button>
+          )}
           <button onClick={onEdit} aria-label={t("common.edit")} className="p-1.5 rounded-lg text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-light)] transition-colors">
             <Pencil size={14} />
           </button>
@@ -221,14 +783,28 @@ function GoalRow({
           </button>
         </div>
       </div>
+      <div className="flex items-baseline justify-between gap-2 mb-1.5">
+        <span dir="ltr" className="text-sm md:text-base font-bold tabular-nums">
+          {formatCurrency(goal.funded)}
+          <span className="text-[var(--text-muted)] text-xs md:text-sm font-normal">
+            {" / "}
+            {formatCurrency(goal.target_amount)}
+          </span>
+        </span>
+        <span dir="ltr" className="text-[10px] md:text-xs text-[var(--text-muted)] tabular-nums shrink-0">
+          {goal.progress_pct}%
+        </span>
+      </div>
       <div className="w-full bg-[var(--surface-light)] rounded-full h-2 overflow-hidden">
         <div className={`h-2 rounded-full bg-gradient-to-r ${barColor} transition-all duration-500`} style={{ width: `${goal.progress_pct}%` }} />
       </div>
-      <div className="flex justify-between items-center gap-2 mt-1.5 text-[10px] md:text-xs text-[var(--text-muted)]">
-        <span dir="ltr">{goal.progress_pct}%</span>
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1.5 text-[10px] md:text-xs text-[var(--text-muted)]">
         <GoalStatusLine goal={goal} />
       </div>
-      {(goal.this_month_allocation > 0 || goal.utilized > 0) && (
+      {(goal.this_month_allocation > 0 ||
+        goal.utilized > 0 ||
+        goal.clawed_back > 0 ||
+        goal.investment_backed > 0) && (
         <div className="flex flex-wrap gap-x-3 gap-y-1 mt-1.5 text-[10px] md:text-xs text-[var(--text-muted)]">
           {goal.this_month_allocation > 0 && (
             <span>
@@ -242,6 +818,20 @@ function GoalRow({
               {t("dashboard.goals.utilized", {
                 spent: formatCurrency(goal.utilized),
                 available: formatCurrency(goal.available),
+              })}
+            </span>
+          )}
+          {goal.clawed_back > 0 && (
+            <span className="text-amber-400">
+              {t("dashboard.goals.clawedBack", {
+                amount: formatCurrency(goal.clawed_back),
+              })}
+            </span>
+          )}
+          {goal.investment_backed > 0 && (
+            <span className="text-[var(--primary)]">
+              {t("dashboard.goals.investmentBacked", {
+                amount: formatCurrency(goal.investment_backed),
               })}
             </span>
           )}
@@ -370,6 +960,207 @@ function RedistributeModal({ onClose }: { onClose: () => void }) {
   );
 }
 
+/**
+ * Earmark investment holdings against one goal.
+ *
+ * Backing a goal with a holding the user already means to sell (bonds for a
+ * car) lets the goal show honest progress without pretending the money is in
+ * the bank. Amounts are optional: leaving one blank earmarks whatever is left
+ * of the holding, so the goal tracks its value instead of a typed-in number.
+ *
+ * Earmarks are their own resources rather than fields on the goal, so this
+ * mutates immediately instead of staging behind a Save — there is no
+ * half-finished state for the user to be in, unlike a multi-field editor.
+ */
+function InvestmentBackingModal({
+  goal,
+  onClose,
+}: {
+  goal: SavingsGoal;
+  onClose: () => void;
+}) {
+  const { t } = useTranslation();
+  const qk = useQueryKeys();
+  const queryClient = useQueryClient();
+  const [investmentId, setInvestmentId] = useState("");
+  const [amount, setAmount] = useState("");
+
+  const { data: backings } = useQuery({
+    queryKey: qk.savingsGoals.investments(goal.id),
+    queryFn: async () => (await savingsGoalsApi.getInvestments(goal.id)).data,
+  });
+
+  const { data: available } = useQuery({
+    queryKey: qk.savingsGoals.availableInvestments(),
+    queryFn: async () => (await savingsGoalsApi.getAvailableInvestments()).data,
+  });
+
+  const invalidate = () =>
+    queryClient.invalidateQueries({ queryKey: qkPrefix.savingsGoals });
+
+  const link = useMutation({
+    mutationFn: (payload: { investment_id: number; amount?: number | null }) =>
+      savingsGoalsApi.linkInvestment(goal.id, payload),
+    onSuccess: () => {
+      setInvestmentId("");
+      setAmount("");
+      invalidate();
+    },
+  });
+
+  const unlink = useMutation({
+    mutationFn: (backingId: number) => savingsGoalsApi.unlinkInvestment(backingId),
+    onSuccess: invalidate,
+  });
+
+  const rows = backings ?? [];
+  const backed = new Set(rows.map((row) => row.investment_id));
+  // A holding already earmarked by this goal, or fully claimed elsewhere, has
+  // nothing left to offer here.
+  const options = (available ?? []).filter(
+    (option) => !backed.has(option.id) && option.available > 0,
+  );
+
+  const field =
+    "w-full bg-[var(--surface-light)] border border-[var(--surface-light)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[var(--primary)]";
+  const label = "block text-xs font-medium text-[var(--text-muted)] mb-1";
+
+  return (
+    <Modal
+      isOpen
+      onClose={onClose}
+      title={t("dashboard.goals.backingTitle", { name: goal.name })}
+      titleIcon={<Landmark size={18} />}
+      maxWidth="md"
+    >
+      <div className="space-y-4 p-4 md:p-6">
+        <p className="text-xs text-[var(--text-muted)]">
+          {t("dashboard.goals.backingExplainer")}
+        </p>
+
+        {rows.length > 0 && (
+          <div className="space-y-2">
+            {rows.map((row) => (
+              <BackingRow
+                key={row.id}
+                row={row}
+                onRemove={() => unlink.mutate(row.id)}
+              />
+            ))}
+          </div>
+        )}
+
+        <div className="border-t border-[var(--surface-light)] pt-4 space-y-3">
+          <div>
+            <label className={label} htmlFor="backing-investment">
+              {t("dashboard.goals.backingPickLabel")}
+            </label>
+            <select
+              id="backing-investment"
+              value={investmentId}
+              onChange={(e) => setInvestmentId(e.target.value)}
+              className={field}
+            >
+              <option value="">{t("dashboard.goals.backingPickPlaceholder")}</option>
+              {options.map((option) => (
+                <option key={option.id} value={option.id}>
+                  {option.name} · {formatCurrency(option.available)}
+                </option>
+              ))}
+            </select>
+            {options.length === 0 && (
+              <p className="text-[10px] text-[var(--text-muted)] mt-1">
+                {t("dashboard.goals.backingNoneAvailable")}
+              </p>
+            )}
+          </div>
+          <div>
+            <label className={label} htmlFor="backing-amount">
+              {t("dashboard.goals.backingAmountLabel")}
+            </label>
+            <input
+              id="backing-amount"
+              type="number"
+              inputMode="decimal"
+              value={amount}
+              onChange={(e) => setAmount(e.target.value)}
+              placeholder={t("dashboard.goals.backingAmountPlaceholder")}
+              className={field}
+              dir="ltr"
+            />
+            <p className="text-[10px] text-[var(--text-muted)] mt-1">
+              {t("dashboard.goals.backingAmountHint")}
+            </p>
+          </div>
+          {!!link.isError && (
+            <p className="text-xs text-rose-400">
+              {t("dashboard.goals.backingFailed")}
+            </p>
+          )}
+          <button
+            onClick={() =>
+              link.mutate({
+                investment_id: Number(investmentId),
+                amount: amount.trim() === "" ? null : Number(amount),
+              })
+            }
+            disabled={!investmentId || link.isPending}
+            className="w-full bg-[var(--primary)] text-white rounded-lg px-4 py-2 text-sm font-medium disabled:opacity-40 transition-opacity"
+          >
+            {t("dashboard.goals.backingAdd")}
+          </button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+/** One earmark: which holding, how much of it, and a release button. */
+function BackingRow({
+  row,
+  onRemove,
+}: {
+  row: SavingsGoalInvestment;
+  onRemove: () => void;
+}) {
+  const { t } = useTranslation();
+
+  return (
+    <div className="flex items-center justify-between gap-2 border border-[var(--surface-light)] rounded-lg px-3 py-2">
+      <div className="min-w-0">
+        <p className="text-sm truncate" dir="auto" title={row.investment_name ?? ""}>
+          {row.investment_name}
+        </p>
+        <p className="text-[10px] text-[var(--text-muted)]">
+          {row.amount == null
+            ? t("dashboard.goals.backingWhole")
+            : t("dashboard.goals.backingPartial", {
+                amount: formatCurrency(row.amount),
+              })}
+        </p>
+      </div>
+      <button
+        onClick={onRemove}
+        aria-label={t("dashboard.goals.backingRemove")}
+        className="p-1.5 rounded-lg text-[var(--text-muted)] hover:text-rose-400 hover:bg-[var(--surface-light)] transition-colors shrink-0"
+      >
+        <X size={14} />
+      </button>
+    </div>
+  );
+}
+
+/** `YYYY-MM` for the current month — the start a goal gets when none is set. */
+function currentMonthKey(): string {
+  const today = new Date();
+  return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}`;
+}
+
+/** "January 2026" for a `YYYY-MM` key, parsed in local time. */
+function monthKeyLabel(month: string): string {
+  return formatMonthYear(new Date(`${month.slice(0, 7)}-01T00:00:00`));
+}
+
 function GoalEditorModal({ goal, onClose }: { goal: SavingsGoal | null; onClose: () => void }) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
@@ -379,10 +1170,30 @@ function GoalEditorModal({ goal, onClose }: { goal: SavingsGoal | null; onClose:
   const [monthlyCap, setMonthlyCap] = useState(goal?.monthly_cap != null ? String(goal.monthly_cap) : "");
   const [startMonth, setStartMonth] = useState(goal?.start_month ?? "");
   const [targetDate, setTargetDate] = useState(goal?.target_date ?? "");
+  const qk = useQueryKeys();
+
+  const effectiveStart = startMonth || currentMonthKey();
+  const startLabel = monthKeyLabel(effectiveStart);
+
+  const { data: freeBefore } = useQuery({
+    queryKey: qk.savingsGoals.freeCashBefore(effectiveStart, goal?.id),
+    queryFn: async () =>
+      (await savingsGoalsApi.getFreeCashBefore(effectiveStart, goal?.id)).data,
+  });
+
+  // Stored months keep their rows, so an opening balance that moves without a
+  // restate leaves history computed against the old pool — a later deficit
+  // month would then take the difference back out of the wrong goal.
+  const openingChanged = (Number(openingBalance) || 0) !== (goal?.opening_balance ?? 0);
 
   const save = useMutation({
-    mutationFn: (payload: SavingsGoalInput) =>
-      goal ? savingsGoalsApi.update(goal.id, payload) : savingsGoalsApi.create(payload),
+    mutationFn: async (payload: SavingsGoalInput) => {
+      const res = goal
+        ? await savingsGoalsApi.update(goal.id, payload)
+        : await savingsGoalsApi.create(payload);
+      if (openingChanged) await savingsGoalsApi.rebuild(effectiveStart, false);
+      return res;
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: qkPrefix.savingsGoals });
       onClose();
@@ -451,6 +1262,25 @@ function GoalEditorModal({ goal, onClose }: { goal: SavingsGoal | null; onClose:
             <p className="text-[10px] text-[var(--text-muted)] mt-1">
               {t("dashboard.goals.openingHint")}
             </p>
+            {!!freeBefore && freeBefore.free_cash > 0 && (
+              <button
+                type="button"
+                data-testid="goal-opening-use-free-cash"
+                onClick={() => setOpeningBalance(String(freeBefore.free_cash))}
+                className="mt-1.5 inline-flex items-center gap-1.5 text-start text-xs font-medium text-[var(--primary)] hover:underline"
+              >
+                <Wallet size={12} className="shrink-0" />
+                {t("dashboard.goals.openingUseFreeCash", {
+                  amount: formatCurrency(freeBefore.free_cash),
+                  month: startLabel,
+                })}
+              </button>
+            )}
+            {!!goal && openingChanged && (
+              <p className="text-[10px] text-amber-400 mt-1">
+                {t("dashboard.goals.openingRestateHint", { month: startLabel })}
+              </p>
+            )}
           </div>
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">

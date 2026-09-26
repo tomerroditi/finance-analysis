@@ -17,11 +17,13 @@ def mock_credentials_deps(monkeypatch):
             "service": "credit_cards",
             "provider": "isracard",
             "account_name": "Main Card",
+            "needs_reentry": False,
         },
         {
             "service": "banks",
             "provider": "hapoalim",
             "account_name": "Checking",
+            "needs_reentry": True,
         },
     ]
     mock_service.get_available_providers.return_value = {
@@ -70,6 +72,7 @@ class TestCredentialsRoutes:
         assert isinstance(data, list)
         assert len(data) >= 1
         assert data[0]["service"] == "credit_cards"
+        assert [a["needs_reentry"] for a in data] == [False, True]
 
     def test_get_providers(self, test_client):
         """GET /api/credentials/providers returns available providers dict."""
@@ -121,14 +124,6 @@ class TestCredentialsRoutes:
         assert response.status_code == 200
         assert response.json()["status"] == "success"
 
-    def test_delete_credential(self, test_client):
-        """DELETE /api/credentials/{service}/{provider}/{account_name} deletes credential."""
-        response = test_client.delete(
-            "/api/credentials/credit_cards/isracard/Main Card"
-        )
-        assert response.status_code == 200
-        assert response.json()["status"] == "success"
-
 
 class TestDeleteAccountDataChoice:
     """The delete endpoint distinguishes disconnecting from erasing."""
@@ -139,6 +134,7 @@ class TestDeleteAccountDataChoice:
             "/api/credentials/banks/hapoalim/Main"
         )
         assert response.status_code == 200
+        assert response.json()["status"] == "success"
         assert response.json()["transactions_deleted"] == 0
         _, kwargs = mock_credentials_deps.delete_credential.call_args
         assert kwargs["delete_data"] is False

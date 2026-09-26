@@ -15,7 +15,6 @@ def mock_scraping(monkeypatch):
     }
     mock_service.submit_2fa_code.return_value = None
     mock_service.abort_scraping_process.return_value = None
-    mock_service.get_last_scrape_dates.return_value = []
 
     monkeypatch.setattr(
         "backend.routes.scraping.ScrapingService",
@@ -63,12 +62,6 @@ class TestScrapingRoutes:
         response = test_client.post("/api/scraping/abort", json=payload)
         assert response.status_code == 200
         assert response.json()["status"] == "aborted"
-
-    def test_get_last_scrapes(self, test_client):
-        """GET /api/scraping/last-scrapes returns last scrape dates."""
-        response = test_client.get("/api/scraping/last-scrapes")
-        assert response.status_code == 200
-        assert isinstance(response.json(), list)
 
     def test_start_forwards_force_2fa(self, test_client):
         """POST /api/scraping/start passes force_2fa through to the service."""

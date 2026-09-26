@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 
 @dataclass
@@ -11,6 +11,8 @@ class ProviderConfig:
         Human-readable provider name.
     required_fields : list[str]
         Required credential field names (keys expected in the credentials dict).
+    optional_fields : list[str]
+        Credential fields the scraper uses only when present.
     service : str
         Service type: "banks", "credit_cards", or "insurances".
     requires_2fa : bool
@@ -20,6 +22,7 @@ class ProviderConfig:
     name: str
     required_fields: list[str]
     service: str = "banks"
+    optional_fields: list[str] = field(default_factory=list)
     requires_2fa: bool = False
 
 
@@ -80,6 +83,7 @@ PROVIDER_CONFIGS: dict[str, ProviderConfig] = {
         name="Max",
         required_fields=["username", "password"],
         service="credit_cards",
+        optional_fields=["id"],
     ),
     "visa cal": ProviderConfig(
         name="Visa Cal",
@@ -109,6 +113,12 @@ PROVIDER_CONFIGS: dict[str, ProviderConfig] = {
     # Insurances
     "hafenix": ProviderConfig(
         name="HaPhoenix",
+        required_fields=["id", "phoneNumber"],
+        service="insurances",
+        requires_2fa=True,
+    ),
+    "mislaka": ProviderConfig(
+        name="Pension Clearing House (Mislaka)",
         required_fields=["id", "phoneNumber"],
         service="insurances",
         requires_2fa=True,

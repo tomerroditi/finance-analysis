@@ -31,6 +31,10 @@ export const qkPrefix = {
   // refetch in MonthlyBudgetView).
   budgetAnalysis: ["budget", "analysis"] as const,
   analytics: ["analytics"] as const,
+  // Narrower than `analytics` — matches only the recurring summaries
+  // (["analytics","recurring",includeDismissed,demo]), whose two
+  // include-dismissed variants a setQueriesData patch rewrites together.
+  recurring: ["analytics", "recurring"] as const,
   investments: ["investments"] as const,
   liabilities: ["liabilities"] as const,
   categories: ["categories"] as const,
@@ -67,7 +71,15 @@ export function makeQueryKeys(demo: boolean) {
     budget: {
       analysis: (year: number, month: number, includeSplitParents: boolean) =>
         ["budget", "analysis", year, month, includeSplitParents, demo] as const,
+      trend: (
+        year: number,
+        month: number,
+        months: number,
+        includeSplitParents: boolean,
+      ) =>
+        ["budget", "trend", year, month, months, includeSplitParents, demo] as const,
       projects: () => ["budget", "projects", demo] as const,
+      projectsStatus: () => ["budget", "projects-status", demo] as const,
       projectDetails: (name: string, includeSplitParents: boolean) =>
         ["budget", "project-details", name, includeSplitParents, demo] as const,
       availableProjects: () => ["budget", "available-projects", demo] as const,
@@ -78,9 +90,12 @@ export function makeQueryKeys(demo: boolean) {
       monthOverrides: () => ["budget", "month-overrides", demo] as const,
       yearly: (year: number) => ["budget", "yearly", year, demo] as const,
       categoryConflicts: () => ["budget", "category-conflicts", demo] as const,
+      overview: (year: number, month: number, includeSplitParents: boolean) =>
+        ["budget", "overview", year, month, includeSplitParents, demo] as const,
     },
     tagging: {
       categories: () => ["categories", demo] as const,
+      categoryUsage: () => ["category-usage", demo] as const,
       icons: () => ["category-icons", demo] as const,
       rules: () => ["tagging-rules", demo] as const,
       // Head "rule-preview" is load-bearing: queryClient.ts excludes it from
@@ -94,6 +109,8 @@ export function makeQueryKeys(demo: boolean) {
       projections: () => ["retirement", "projections", demo] as const,
       suggestions: () => ["retirement", "suggestions", demo] as const,
       scrapedDefaults: () => ["retirement", "scraped-defaults", demo] as const,
+      pensionForecast: (currentAge: number, targetRetirementAge: number) =>
+        ["retirement", "pension-forecast", currentAge, targetRetirementAge, demo] as const,
     },
     balances: {
       bank: () => ["bank-balances", demo] as const,
@@ -127,9 +144,20 @@ export function makeQueryKeys(demo: boolean) {
     },
     insurance: {
       accounts: () => ["insurance-accounts", demo] as const,
+      clearingHouseReports: () =>
+        ["insurance-accounts", "clearing-house-reports", demo] as const,
     },
     savingsGoals: {
       all: () => ["savings-goals", demo] as const,
+      freeCash: () => ["savings-goals", "free-cash", demo] as const,
+      freeCashBefore: (month: string, goalId?: number) =>
+        ["savings-goals", "free-cash", "before", month, goalId ?? "new", demo] as const,
+      timeline: (months: number) =>
+        ["savings-goals", "timeline", months, demo] as const,
+      investments: (goalId?: number) =>
+        ["savings-goals", "investments", goalId ?? "all", demo] as const,
+      availableInvestments: () =>
+        ["savings-goals", "investments", "available", demo] as const,
       links: (goalId?: number) =>
         ["savings-goals", "links", goalId ?? "all", demo] as const,
     },
@@ -137,19 +165,30 @@ export function makeQueryKeys(demo: boolean) {
       overview: () => ["analytics", "overview", demo] as const,
       netWorthOverTime: () => ["analytics", "net-worth-over-time", demo] as const,
       debtPayments: () => ["analytics", "debt-payments-over-time", demo] as const,
-      byCategory: () => ["analytics", "by-category", demo] as const,
       sankey: () => ["analytics", "sankey", demo] as const,
-      incomeExpensesOverTime: (includeProjects: boolean, excludeRefunds: boolean) =>
-        ["analytics", "income-expenses-over-time", includeProjects, excludeRefunds, demo] as const,
-      expensesByCategoryOverTime: () =>
-        ["analytics", "expenses-by-category-over-time", demo] as const,
-      incomeBySourceOverTime: () =>
-        ["analytics", "income-by-source-over-time", demo] as const,
-      incomeBySource: (start: string | undefined, end: string | undefined) =>
-        ["analytics", "income-by-source", start ?? "all", end ?? "all", demo] as const,
-      monthlyExpenses: (excludePendingRefunds: boolean, includeProjects: boolean) =>
-        ["analytics", "monthly-expenses", excludePendingRefunds, includeProjects, demo] as const,
-      recurring: () => ["analytics", "recurring", demo] as const,
+      expensesByCategoryOverTime: (
+        excludePendingRefunds: boolean,
+        excludeProjects: boolean,
+        excludeLiabilities: boolean,
+      ) =>
+        [
+          "analytics",
+          "expenses-by-category-over-time",
+          excludePendingRefunds,
+          excludeProjects,
+          excludeLiabilities,
+          demo,
+        ] as const,
+      incomeBySourceOverTime: (excludePendingRefunds: boolean, excludeLiabilities: boolean) =>
+        [
+          "analytics",
+          "income-by-source-over-time",
+          excludePendingRefunds,
+          excludeLiabilities,
+          demo,
+        ] as const,
+      recurring: (includeDismissed = false) =>
+        ["analytics", "recurring", includeDismissed, demo] as const,
       insights: () => ["analytics", "insights", demo] as const,
       cashFlowForecast: () => ["analytics", "cash-flow-forecast", demo] as const,
     },

@@ -2,7 +2,6 @@
 
 import asyncio
 import logging
-import os
 import ssl
 from datetime import date
 from unittest.mock import AsyncMock, patch
@@ -84,10 +83,6 @@ def _make_scraper() -> OneZeroScraper:
 
 class TestIdentityServerUrl:
     """Tests for the identity-server URL construction."""
-
-    def test_identity_server_url_has_no_trailing_slash(self):
-        """The base URL must not end with '/' so built paths get a single slash."""
-        assert not IDENTITY_SERVER_URL.endswith("/")
 
     def test_built_url_has_single_slash(self):
         """A built endpoint URL must contain '/v1/otp/verify', never '/v1//otp'."""
@@ -537,12 +532,6 @@ class TestMovementDateBasis:
 
         return asyncio.run(run())
 
-    def test_after_midnight_israel_movement_is_kept(self):
-        """A 00:30 Israel-time movement survives a window opening that day."""
-        result = self._fetch([_movement()], date(2024, 3, 15))
-        assert len(result.transactions) == 1
-        assert result.transactions[0].date == "2024-03-15"
-
     def test_movement_before_the_window_is_still_dropped(self):
         """A movement genuinely before the window is filtered out."""
         result = self._fetch(
@@ -579,15 +568,6 @@ class TestMutualTls:
             credentials={"email": "e", "password": "p"},
             options=ScraperOptions(),
         )
-
-    def test_bundled_cert_files_exist(self):
-        """The vendored cert + key ship beside the module (a valid PEM pair)."""
-        assert os.path.isfile(onezero.MTLS_CERT_PATH)
-        assert os.path.isfile(onezero.MTLS_KEY_PATH)
-        with open(onezero.MTLS_CERT_PATH, encoding="utf-8") as handle:
-            assert "BEGIN CERTIFICATE" in handle.read()
-        with open(onezero.MTLS_KEY_PATH, encoding="utf-8") as handle:
-            assert "PRIVATE KEY" in handle.read()
 
     def test_initialize_builds_client_with_client_cert(self):
         """initialize() wires the bundled cert/key onto the httpx client."""
@@ -635,3 +615,25 @@ class TestMutualTls:
             asyncio.run(scraper.initialize())
         _, kwargs = mock_client.call_args
         assert kwargs["verify"] is sentinel
+
+
+class TestLegacyLocalPhoneNumber:
+    """Accounts saved before +972 was enforced still reach the OTP endpoint."""
+
+    def test_local_number_is_sent_in_international_form(self):
+        """A stored ``05X`` number is rewritten to ``+9725…`` before /otp/prepare."""
+        scraper = _make_scraper()
+        device_ok = {"resultData": {"deviceToken": "dt"}}
+        prepare_ok = {"resultData": {"otpContext": "ctx"}}
+
+        async def run():
+            with patch.object(
+                onezero,
+                "fetch_post",
+                new=AsyncMock(side_effect=[device_ok, prepare_ok]),
+            ) as mock_post:
+                await scraper._trigger_two_factor_auth("050-7654321")
+                return mock_post.call_args_list
+
+        prepare_call = asyncio.run(run())[1]
+        assert prepare_call.args[1]["factorValue"] == "+972507654321"

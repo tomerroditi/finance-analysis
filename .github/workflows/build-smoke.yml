@@ -50,24 +50,37 @@ jobs:
           cache: "npm"
           cache-dependency-path: frontend/package-lock.json
 
-      - name: Install Poetry + project deps + build group
+      - name: Install deps + NSIS, build frontend (in parallel)
+        # The three are independent, so the frontend build and the NSIS
+        # install run in the background while Poetry installs. The
+        # frontend skips `tsc -b`: ci.yml type-checks every PR, and this
+        # job only needs the emitted bundle. Chocolatey deploys NSIS to
+        # ``C:\Program Files (x86)\NSIS`` without putting it on PATH, so
+        # it is appended to GITHUB_PATH for the build step.
         shell: bash
         run: |
+          (cd frontend && npm ci --no-audit --no-fund && npx vite build) > "$RUNNER_TEMP/frontend.log" 2>&1 &
+          frontend_pid=$!
+          choco install nsis -y --no-progress > "$RUNNER_TEMP/nsis.log" 2>&1 &
+          nsis_pid=$!
+
           pip install poetry
-          poetry install --no-root --with build
+          poetry install --no-root --only main,build  # as release.yml
 
-      - name: Install NSIS
-        # Chocolatey deploys NSIS to ``C:\Program Files (x86)\NSIS``
-        # but doesn't make the running shell pick it up. Explicitly
-        # appending to GITHUB_PATH so subsequent steps find ``makensis``.
-        shell: bash
-        run: |
-          choco install nsis -y --no-progress
+          status=0
+          wait "$frontend_pid" || status=1
+          echo "::group::frontend build"; cat "$RUNNER_TEMP/frontend.log"; echo "::endgroup::"
+          wait "$nsis_pid" || status=1
+          echo "::group::NSIS install"; cat "$RUNNER_TEMP/nsis.log"; echo "::endgroup::"
           echo "C:\Program Files (x86)\NSIS" >> "$GITHUB_PATH"
+          exit "$status"
 
-      - name: Run end-to-end build
+      - name: Build bundle + installer
+        # Frontend is already built above. The installer is compiled
+        # uncompressed: this job never ships it, and LZMA over the
+        # bundle took longer than the whole PyInstaller build.
         shell: bash
-        run: poetry run python build/build_app.py
+        run: poetry run python build/build_app.py --no-frontend --uncompressed-installer
 
       - name: Smoke-test the bundle
         # Boot the bundle, hit /api/version + / + /assets/*.js +

@@ -103,6 +103,9 @@ class BaseScraper(ABC):
         # the recorded error message so the scraping-history row carries the
         # real reason rather than just the LoginResult label.
         self._login_error_detail: Optional[str] = None
+        # Data beyond the accounts that ``fetch_data`` wants to hand back;
+        # copied onto the successful ``ScrapingResult.extras``.
+        self.extras: dict = {}
 
     async def scrape(self) -> ScrapingResult:
         """Orchestrate the full scraping lifecycle.
@@ -119,6 +122,10 @@ class BaseScraper(ABC):
         self._emit_progress("initializing")
         try:
             await self.initialize()
+        except ScraperError as e:
+            return self._phase_failure(
+                "initialize", e.error_type.value, e, terminate=False
+            )
         except Exception as e:
             return self._phase_failure("initialize", "INIT_ERROR", e, terminate=False)
 
@@ -151,7 +158,7 @@ class BaseScraper(ABC):
 
         await self._safe_terminate(True)
         self._emit_progress("done")
-        return ScrapingResult(success=True, accounts=accounts)
+        return ScrapingResult(success=True, accounts=accounts, extras=self.extras)
 
     @abstractmethod
     async def initialize(self) -> None:

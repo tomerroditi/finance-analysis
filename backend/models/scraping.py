@@ -1,18 +1,17 @@
-"""
-Scraping history model.
-"""
+"""Scraping history model."""
 
 from sqlalchemy import Column, Index, Integer, String
 
-from backend.models.base import Base, TimestampMixin
 from backend.constants.tables import Tables
+from backend.models.base import Base, TimestampMixin
 
 
 class ScrapingHistory(Base, TimestampMixin):
-    """ORM model recording each scraping attempt for audit and rate-limiting purposes.
+    """ORM model recording each scraping attempt.
 
-    The repository enforces a daily limit of one successful scrape per account by
-    querying this table before starting a new scrape.
+    Beyond the audit trail, the most recent ``success`` row per account is
+    the watermark the next scrape window is computed from (see
+    ``ScrapingService._get_scraper_start_date``).
 
     Attributes
     ----------
@@ -25,7 +24,9 @@ class ScrapingHistory(Base, TimestampMixin):
     date : str
         ISO timestamp of when the scrape ran.
     status : str
-        Outcome: ``SUCCESS``, ``FAILED``, or ``CANCELED``.
+        Lifecycle state: ``in_progress`` / ``waiting_for_2fa`` while running,
+        then ``success``, ``failed`` or ``canceled`` (see the constants on
+        ``ScrapingHistoryRepository``).
     start_date : str, optional
         The ``start_date`` parameter passed to the scraper (oldest data to fetch).
     error_message : str, optional
@@ -53,16 +54,11 @@ class ScrapingHistory(Base, TimestampMixin):
     )
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-
     service_name = Column(String, nullable=False)
     provider_name = Column(String, nullable=False)
     account_name = Column(String, nullable=False)
-    date = Column(String, nullable=False)  # Timestamp of scrape
+    date = Column(String, nullable=False)
     status = Column(String, nullable=False)
-    start_date = Column(
-        String, nullable=True
-    )  # The 'start_date' parameter used for scraping
-    # Technical detail for failed scrapes (provider message / exception text).
+    start_date = Column(String, nullable=True)
     error_message = Column(String, nullable=True)
-    # Failure category driving the user-facing message; see class docstring.
     error_type = Column(String, nullable=True)

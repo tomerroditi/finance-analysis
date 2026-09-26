@@ -27,7 +27,7 @@ export function BudgetAlertsBell({
   const baseClasses =
     variant === "compact"
       ? "p-1.5 -ms-1.5 rounded-lg hover:bg-[var(--surface-light)] transition-colors"
-      : `relative flex items-center gap-3 px-4 py-3 rounded-lg transition-all w-full text-[var(--text-muted)] hover:bg-[var(--surface-light)] hover:text-white`;
+      : `relative flex items-center gap-3 px-4 py-3 [@media(max-height:800px)]:py-2 rounded-lg transition-all w-full text-[var(--text-muted)] hover:bg-[var(--surface-light)] hover:text-white`;
 
   return (
     <>

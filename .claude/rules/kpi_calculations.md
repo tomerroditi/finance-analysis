@@ -1,9 +1,7 @@
 ---
 paths:
   - "backend/services/analysis/**/*.py"
-  - "backend/services/analysis_service.py"
   - "backend/services/investments/**/*.py"
-  - "backend/services/investments_service.py"
   - "backend/services/bank_balance_service.py"
   - "backend/services/cash_balance_service.py"
   - "backend/routes/analytics.py"
@@ -80,6 +78,141 @@ Causes: timing differences, pending transactions, fees, foreign currency roundin
 - For **aggregate totals** (income, expenses, balances): use bank transactions only, exclude CC source.
 - For **category breakdowns** (pie charts, per-category): use itemized CC transactions, exclude the "Credit Cards" bank category.
 - For **flow diagrams** (Sankey): use both to detect the CC gap, then filter.
+- For **anything the user can filter by category**: itemized, always — see below.
+
+### A filterable total cannot use the bank view
+
+The bank view's unit is a *bill*, and a bill's category is `Credit Cards`. So
+no category-level filter can see inside it: a "hide project spend" switch over
+a bill-based series silently hides only the project spend that was paid
+straight from the bank, and keeps every shekel of it that went on a card. On
+the demo database that is 65,000 of 135,894 — the switch looks like it works,
+and is wrong by more than half.
+
+This is why **the Income & Expenses card reads the itemized series for every
+one of its views**, against the aggregate rule above. It is the one surface
+that offers per-category switches over a total, so it is the one place the
+bank view cannot be used. The balance-type series (`get_net_balance_over_time`,
+`get_net_worth_over_time`) keep the bank view: they carry no category filter,
+and they must agree with what the account actually did.
+
+## The Income & Expenses card: one number, summed three ways
+
+The card shows a total (the Totals ledger), an average (the KPI cards) and a
+composition (the two breakdown tabs) of the same money. They therefore read
+**one series**, filtered one way:
+
+- `get_income_by_source_over_time()` and `get_expenses_by_category_over_time()`
+  are the only two endpoints it calls. The ledger rows are those two summed
+  per month (`toLedger` in `incomeExpensesScope.ts`), and every KPI folds
+  those ledger rows. Nothing in the card can disagree with anything else,
+  because there is only one number.
+- Two switches move all of it at once: **projects** (`exclude_projects`) and
+  **loans** (`exclude_liabilities`, which drops loan payments from the expense
+  side *and* loan receipts from the income side — dropping only the payments
+  would report the household as having saved the whole loan). The switch moves
+  a loan's *flows*, which is all this card holds; what a loan costs and what is
+  left on it belong to the Liabilities page, which derives them from the loan's
+  own terms (`liabilities_service`'s amortisation schedule) rather than from a
+  debit.
+- **Every chip is an exclusion, and every one starts off** — pending refunds
+  included too. The card opens on everything the household actually did, and
+  each chip takes something out of that; they share one accent colour, so
+  nothing coloured means nothing is being left out. A chip phrased the other
+  way round ("include projects") sat in the same grey as its neighbours while
+  meaning the opposite of them, which is unreadable in a row of three.
+- Switching *both* the projects and loans chips on gives the envelope view,
+  where loan principal is a transfer into net worth rather than spending, and
+  the card's expense figure then equals `get_monthly_expenses()` to the
+  shekel — what the Budget page shows. That equality is pinned by
+  `TestExpenseBreakdownFilters::test_both_filters_on_reproduces_the_budget_views_expense_figure`.
+
+It used to read three endpoints with three definitions of "expenses" — a
+budget-filtered KPI, a bank-bill ledger and a raw itemized breakdown — which
+put three different all-time totals (541,862 / 778,932 / 838,185 on demo data)
+on one screen the moment the card grew an all-time scope. Monthly rows had
+hidden the same disagreement all along: the ledger billed a purchase to the
+month its *card statement* was paid, while the breakdown billed it to the
+month it was bought.
+
+**A category can come out negative.** An unmatched refund nets against the
+category it lands in, so a month can end in credit. Anything that draws a
+category (a bar segment, a pie slice) skips those; anything that totals a
+month must keep them, or the refund vanishes from the month it belongs to.
+
+## The "This Month" forecast: due money, not average money
+
+`get_cash_flow_forecast` projects the running month. Two rules keep it honest.
+
+**Income is what recurring streams still owe.** `RecurringService.get_income_due_remaining`
+runs the cadence detector over income rows and reports what has not yet landed
+this month; the forecast adds exactly that to what is already banked:
+
+```
+expected_income = actual_income + recurring_income_due
+```
+
+There is no averaging in that line, and that is the point. An averaged
+baseline carries a windfall for as many months as the window is long — one
+wedding, one inheritance, one sold car, and the card promises six figures of
+savings on a five-figure salary. The median-of-6-complete-months fallback runs
+**only** when no income stream is detected at all; `income_basis` reports which
+was used.
+
+**Expenses are measured on one basis, and only over unobserved days.**
+
+| figure | basis |
+|---|---|
+| `actual_expenses`, `avg_monthly_expenses`, `expected_expenses`, `safe_to_spend` | itemized, CC-deduped, project-excluded — the Budget page's figure |
+| `current_bank_balance`, `projected_end_balance`, `daily` | the bank account's own view, where a card statement is one debit |
+
+Mixing them reported last month's card bill as this month's spending. Keep
+each column in its own basis.
+
+Confirmed recurring charges come **out** of the daily trend
+(`avg_monthly_expenses - committed_monthly`) and are added back at their due
+dates as `committed_remaining` — a bill lands once, on its day, not smeared
+across the month on top of itself.
+
+### Staleness is per account, not per household
+
+The trend projection spans the days each account has not reported, not the days
+left on the calendar. Accounts are scraped on their own schedule, so a card
+current to the 23rd beside a bank current to the 5th is **two different holes**
+in the month.
+
+`_account_sync_edges` reads `ScrapingHistoryService.get_last_scrape_dates()` and
+keys it by `(provider, account_name)` — the pair the scraper writes into both
+the credential row and every transaction it produces, so the join is exact.
+`_project_per_account` then splits the household baseline by each account's
+share of the last 6 complete months and projects each slice over its own
+unsynced days. Shares sum to 1, so equal freshness collapses back exactly to
+`baseline / days_in_month * unobserved_days`.
+
+**Read the edge from the scrape trail, never from the last transaction.** A
+household that simply did not spend for three days leaves exactly the same gap
+at the end of the ledger as an account that stopped syncing three days ago, and
+only one of those is missing data.
+
+Exclusions, matching the budget's freshness badge (`useBudgetFreshness`):
+
+| case | treatment | why |
+|---|---|---|
+| insurance | excluded | scraped, but produces no budget transactions |
+| never synced | skipped | contributed nothing to the trend baseline either, so counting it would project spending no month ever contained |
+| no credential (cash, manual) | current | the user types it in; it cannot be behind |
+| nothing scrapable at all | no staleness | edge is today |
+
+`observed_through` in the response is the weakest link across all of them — it
+drives the card's "data through" caption and the cutoff for which committed
+charges are still due, not the projection itself.
+
+**Do not collapse this back to one household-wide window.** The intermediate
+version did, and corrected for the skew by subtracting what the fresher
+accounts had already reported inside the shared window — which let one big card
+purchase swallow the whole month's expectation, including the stale bank's
+direct debits that nothing had reported at all. Pinned by
+`test_a_fresh_account_s_spending_does_not_cancel_a_stale_one_s_gap`.
 
 ## Prior Wealth
 
@@ -173,7 +306,7 @@ Known structural residual: **net cash position** from cash transactions. Cash in
 - **CC handling:** `exclude_services=["credit_card_transactions"]`
 - **Cash isolation:** Cash transactions are split out of the bank-side cumulative — `bank_balance` is reconstructed from bank + manual-investment transactions only. Cash sits exclusively in the `cash` line. (Before this split, cash spending leaked into `bank_balance` and net worth missed the cash entirely.)
 - **Prior wealth:** Bank/investment prior wealth seeds `bank_balance`; investment movements shift value between the bank and investment lines via the inv_prior offset. Cash prior wealth seeds `cash`.
-- **Investments:** snapshot-resolved per investment per month-end via `InvestmentsService.get_total_value_at_date` (snapshot-first, transaction-based fallback when no snapshot exists). Closed investments naturally contribute 0 after their auto-created close snapshot, and their historical pre-close value before. Market gains/losses recorded as snapshots flow through into both `investment_value` and `net_worth`. **This includes scraped Keren Hishtalmut policies** — `InsuranceSyncMixin` auto-creates a `type='hishtalmut'` investment with scraped snapshots per policy, so scraped KH is part of `investment_value`/`net_worth` even though the analysis layer never reads `insurance_accounts` directly (the retirement calculator relies on this — see `.claude/rules/retirement_calculations.md`).
+- **Investments:** snapshot-resolved per investment per month-end via `InvestmentsService.get_total_values_at_dates` (snapshot-first, transaction-based fallback when no snapshot exists). Closed investments naturally contribute 0 after their auto-created close snapshot, and their historical pre-close value before. Market gains/losses recorded as snapshots flow through into both `investment_value` and `net_worth`. **This includes scraped Keren Hishtalmut policies** — `InsuranceSyncMixin` auto-creates a `type='hishtalmut'` investment with scraped snapshots per policy, so scraped KH is part of `investment_value`/`net_worth` even though the analysis layer never reads `insurance_accounts` directly (the retirement calculator relies on this — see `.claude/rules/retirement_calculations.md`).
 - **Formula:** `net_worth = bank_balance + investment_value + cash` for each month. See "Why Investment Prior Wealth Lives in Bank Balance" above for the bank↔investment offset.
 
 ### `get_sankey_data()`
@@ -196,16 +329,16 @@ Known structural residual: **net cash position** from cash transactions. Cash in
 
 ### Balance Snapshots
 
-Balance snapshots (`investment_balance_snapshots` table) store timestamped market-value observations per investment. They override the transaction-based balance calculation when present.
+Balance snapshots (`investment_balance_snapshots` table) store timestamped market-value observations per investment. They replace the transaction-based balance calculation up to the snapshot date, and transactions after the snapshot are then applied on top of it.
 
 **Resolution order for `current_balance`:**
-1. Latest snapshot on or before today → use snapshot balance
+1. Latest snapshot on or before today → snapshot balance **plus the transactions recorded after that snapshot** (a deposit made after a valuation still moves the balance)
 2. No snapshots → fall back to `-(sum of all transactions)`
 
 **Balance history chart (`calculate_balance_over_time`):**
 - When snapshots exist: linear interpolation between snapshot points
 - For dates before the first snapshot: transaction-based calculation
-- For dates after the last snapshot: holds last snapshot value
+- For dates after the last snapshot: last snapshot value carried forward over the transactions between it and the date
 - When no snapshots: daily transaction-based cumulative balance
 
 **Snapshot sources:**
@@ -215,14 +348,16 @@ Balance snapshots (`investment_balance_snapshots` table) store timestamped marke
 
 **Fixed-rate auto-calculation:** For investments with `interest_rate_type = "fixed"`, the system generates monthly snapshots using daily compounding: `daily_rate = (1 + annual_rate)^(1/365) - 1`. Manual/scraped snapshots are never overwritten (protected dates).
 
-**Closing an investment:** Automatically creates a balance snapshot of 0 on the **last transaction date** for that investment (closed = no remaining value). The close date itself is user-selectable and editable after closing via the `closed_date` field on the `InvestmentUpdate` schema.
+**Closing an investment:** Automatically creates a balance snapshot of 0 (`source="closed"`) on the **last transaction date** for that investment (closed = no remaining value), never before a later snapshot. The close date itself is user-selectable and editable after closing via the `closed_date` field on the `InvestmentUpdate` schema.
+
+**The closing zero follows later transactions.** Snapshots are carried forward over the transactions after them, so a withdrawal dated past the zero — the transfer settling a sale days later, a scraped row re-dated, a row tagged onto the investment after it closed — would value the closed fund below zero. `InvestmentsService.realign_closing_snapshots()` moves every `closed` zero back onto its current last transaction, and each write path that can change an investment's transactions calls it: `TransactionsService` create/update/delete, legacy tag update, bulk tag, split/revert, account-data deletion, and `TaggingRulesService.apply_rules`/`apply_rule_by_id` (which every scrape runs). A new write path that can add, re-date or retag transactions must call `TransactionsService.realign_closed_investments()` too. Closes written before the `closed` source existed were stored as `manual`; migration `d4e6f8a0b2c4` relabels a closed investment's final zero so it follows along.
 
 ### Key Metrics (`calculate_profit_loss`)
 ```
 total_deposits    = abs(sum of negative amounts)
 total_withdrawals = sum of positive amounts
 net_invested      = total_deposits - total_withdrawals
-current_balance   = snapshot_balance OR -(sum of all amounts)  [0 if closed]
+current_balance   = (snapshot_balance - sum(amounts after snapshot)) OR -(sum of all amounts)  [0 if closed]
 profit_loss       = current_balance - net_invested  [withdrawals - deposits if closed]
 roi               = (final_value / total_deposits - 1) * 100
 ```

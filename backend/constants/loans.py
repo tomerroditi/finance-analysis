@@ -1,5 +1,4 @@
-"""
-Loan type constants for liability tracking.
+"""Loan type constants for liability tracking.
 
 Israeli loans vary along two orthogonal dimensions:
 

@@ -1,11 +1,17 @@
-"""
-Liability tracking model.
-"""
+"""Liability tracking model."""
 
-from sqlalchemy import Column, Integer, String, Float, Text, UniqueConstraint, ForeignKey
+from sqlalchemy import (
+    Column,
+    Float,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+)
 
-from backend.models.base import Base, TimestampMixin
 from backend.constants.tables import Tables
+from backend.models.base import Base, TimestampMixin
 
 
 class Liability(Base, TimestampMixin):
@@ -14,6 +20,11 @@ class Liability(Base, TimestampMixin):
     Each liability is identified by its ``category`` + ``tag`` pair, which
     corresponds to the category/tag used on existing transactions tagged
     under the Liabilities category.
+
+    A loan taken against a pension or Keren Hishtalmut policy is created by
+    the pension clearing house's scrape rather than by the user; its
+    ``insurance_loan_key`` ties the row to that loan so later scrapes update
+    it instead of adding another.
 
     Attributes
     ----------
@@ -79,6 +90,7 @@ class Liability(Base, TimestampMixin):
     paid_off_date = Column(String, nullable=True)
     notes = Column(Text, nullable=True)
     created_date = Column(String, nullable=False)
+    insurance_loan_key = Column(String, nullable=True, unique=True)
 
 
 class LiabilityTransaction(Base, TimestampMixin):
@@ -104,7 +116,9 @@ class LiabilityTransaction(Base, TimestampMixin):
     __tablename__ = Tables.LIABILITY_TRANSACTIONS.value
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    liability_id = Column(Integer, ForeignKey("liabilities.id", ondelete="CASCADE"), nullable=False)
+    liability_id = Column(
+        Integer, ForeignKey("liabilities.id", ondelete="CASCADE"), nullable=False
+    )
     date = Column(String, nullable=False)
     amount = Column(Float, nullable=False)
     payment_number = Column(Integer, nullable=False)

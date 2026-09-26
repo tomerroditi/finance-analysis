@@ -16,7 +16,7 @@ class InsuranceAccount(Base, TimestampMixin):
     Attributes
     ----------
     provider : str
-        Insurance provider identifier (e.g. ``hafenix``).
+        Insurance provider identifier (e.g. ``mislaka``, ``hafenix``).
     policy_id : str
         Unique policy ID from the provider.
     policy_type : str
@@ -42,9 +42,21 @@ class InsuranceAccount(Base, TimestampMixin):
     insurance_covers : str, optional
         JSON string: ``[{title, desc, sum}]`` (pension only).
     insurance_costs : str, optional
-        JSON string: ``[{title, amount}]`` — annual internal deductions (pension only).
+        JSON string: ``[{title, amount}]`` — the provider's **year-to-date
+        movement statement**, not a cost list. Rows include an opening
+        balance, deposits, gains and deductions, plus a closing-balance row.
+        The closing balance is not a separate figure to reconcile against —
+        it **is** the sum of every other (movement) row, so the rows as a
+        whole double-count the balance rather than summing to it. Read it
+        only through the frontend classifier
+        (``frontend/src/utils/insuranceStatement.ts``); summing it blindly
+        produces a number several times larger than any real cost.
     liquidity_date : str, optional
         Earliest withdrawal date (hishtalmut only, YYYY-MM-DD).
+    details : str, optional
+        JSON object of provider facts without a column of their own — status,
+        manufacturer, employer, balance and pension forecasts, last-deposit
+        split (written by the Mislaka scraper).
     """
 
     __tablename__ = Tables.INSURANCE_ACCOUNTS.value
@@ -64,3 +76,4 @@ class InsuranceAccount(Base, TimestampMixin):
     insurance_covers = Column(Text, nullable=True)
     insurance_costs = Column(Text, nullable=True)
     liquidity_date = Column(String, nullable=True)
+    details = Column(Text, nullable=True)

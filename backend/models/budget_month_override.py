@@ -2,8 +2,8 @@
 
 from sqlalchemy import Column, Integer, String, UniqueConstraint
 
-from backend.models.base import Base, TimestampMixin
 from backend.constants.tables import Tables
+from backend.models.base import Base, TimestampMixin
 
 
 class BudgetMonthOverride(Base, TimestampMixin):
@@ -33,7 +33,7 @@ class BudgetMonthOverride(Base, TimestampMixin):
     __tablename__ = Tables.BUDGET_MONTH_OVERRIDES.value
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    source_type = Column(String, nullable=False)  # 'transaction' or 'split'
+    source_type = Column(String, nullable=False)
     source_id = Column(Integer, nullable=False)
     source_table = Column(String, nullable=False)
     override_year = Column(Integer, nullable=False)
@@ -44,7 +44,9 @@ class BudgetMonthOverride(Base, TimestampMixin):
     # MultipleResultsFound — a permanent 500 with no way to repair it.
     __table_args__ = (
         UniqueConstraint(
-            "source_type", "source_id", "source_table",
+            "source_type",
+            "source_id",
+            "source_table",
             name="uq_budget_month_override_source",
         ),
     )

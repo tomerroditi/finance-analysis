@@ -6,15 +6,14 @@ gemel) scraped from insurance providers and for syncing hishtalmut policies
 to investments.
 """
 
-from typing import Optional
-
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy.orm import Session
 
 from backend.dependencies import get_database
+from backend.models.insurance_account import InsuranceAccount
 from backend.services.insurance_account_service import InsuranceAccountService
-from backend.services.investments_service import InvestmentsService
+from backend.services.investments import InvestmentsService
 
 router = APIRouter()
 
@@ -26,17 +25,41 @@ class InsuranceAccountResponse(BaseModel):
     provider: str
     policy_id: str
     policy_type: str
-    pension_type: Optional[str] = None
+    pension_type: str | None = None
     account_name: str
-    custom_name: Optional[str] = None
-    balance: Optional[float] = None
-    balance_date: Optional[str] = None
-    investment_tracks: Optional[str] = None
-    commission_deposits_pct: Optional[float] = None
-    commission_savings_pct: Optional[float] = None
-    insurance_covers: Optional[str] = None
-    insurance_costs: Optional[str] = None
-    liquidity_date: Optional[str] = None
+    custom_name: str | None = None
+    balance: float | None = None
+    balance_date: str | None = None
+    investment_tracks: str | None = None
+    commission_deposits_pct: float | None = None
+    commission_savings_pct: float | None = None
+    insurance_covers: str | None = None
+    insurance_costs: str | None = None
+    liquidity_date: str | None = None
+    details: str | None = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class ClearingHouseReportResponse(BaseModel):
+    """Response body for one monthly clearing-house household summary."""
+
+    provider: str
+    account_name: str
+    calc_date: str
+    total_savings: float | None = None
+    forecast_total_balance: float | None = None
+    forecast_monthly_pension: float | None = None
+    forecast_lump_sum: float | None = None
+    disability_monthly: float | None = None
+    survivor_spouse_monthly: float | None = None
+    survivor_child_monthly: float | None = None
+    death_lump_sum: float | None = None
+    report_number: int | None = None
+    report_count: int | None = None
+    subscription_expires: str | None = None
+    subscription_months_left: int | None = None
+    license_holder: str | None = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -44,13 +67,13 @@ class InsuranceAccountResponse(BaseModel):
 class InsuranceAccountRename(BaseModel):
     """Request body for renaming an insurance account."""
 
-    custom_name: Optional[str] = None
+    custom_name: str | None = None
 
 
 @router.get("/", response_model=list[InsuranceAccountResponse])
 def get_insurance_accounts(
     db: Session = Depends(get_database),
-):
+) -> list[InsuranceAccount]:
     """Get all insurance account metadata records.
 
     Returns
@@ -67,7 +90,7 @@ def rename_insurance_account(
     policy_id: str,
     body: InsuranceAccountRename,
     db: Session = Depends(get_database),
-):
+) -> InsuranceAccount:
     """Set or clear the user-defined display name for an insurance account.
 
     The override persists across scrapes. For ``hishtalmut`` policies, the
@@ -85,10 +108,25 @@ def rename_insurance_account(
     return InsuranceAccountService(db).rename(policy_id, body.custom_name)
 
 
+@router.get("/clearing-house-reports", response_model=list[ClearingHouseReportResponse])
+def get_clearing_house_reports(
+    db: Session = Depends(get_database),
+) -> list[ClearingHouseReportResponse]:
+    """Return the pension clearing house's monthly household summaries.
+
+    Returns
+    -------
+    list[ClearingHouseReportResponse]
+        One row per credential and report month, oldest first.
+    """
+    reports = InsuranceAccountService(db).get_clearing_house_reports()
+    return [ClearingHouseReportResponse.model_validate(r) for r in reports]
+
+
 @router.post("/sync-investments")
 def sync_hishtalmut_investments(
     db: Session = Depends(get_database),
-) -> dict:
+) -> dict[str, int]:
     """Backfill investments from existing hishtalmut insurance accounts.
 
     Creates or updates Investment records (with balance snapshots) for all

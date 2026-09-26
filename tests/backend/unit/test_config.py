@@ -5,26 +5,12 @@ Covers singleton behavior, demo mode switching, directory resolution,
 database/credentials/categories path generation, and environment variable overrides.
 """
 
+import contextvars
 import os
 
 import pytest
 
-from backend.config import AppConfig, _demo_mode_ctx
-
-
-@pytest.fixture(autouse=True)
-def reset_config():
-    """Reset AppConfig singleton state between tests."""
-    config = AppConfig()
-    # For the new contextvar-based system, capture the current value
-    # and reset it after the test
-    token = _demo_mode_ctx.set(_demo_mode_ctx.get())
-    original_base_dir = config._base_user_dir
-    original_forced_mode = AppConfig._forced_mode
-    yield
-    _demo_mode_ctx.reset(token)
-    config._base_user_dir = original_base_dir
-    AppConfig._forced_mode = original_forced_mode
+from backend.config import AppConfig
 
 
 class TestAppConfig:
@@ -37,21 +23,15 @@ class TestAppConfig:
         assert config_a is config_b
 
     def test_is_demo_mode_default_false(self):
-        """Verify default demo mode is False."""
-        config = AppConfig()
-        config.set_demo_mode(False)
-        assert config.is_demo_mode is False
+        """Verify a fresh context (nothing ever set) reads real mode."""
+        assert contextvars.Context().run(lambda: AppConfig().is_demo_mode) is False
 
-    def test_set_demo_mode_true(self, tmp_path):
-        """Verify enabling demo mode sets is_demo_mode to True."""
+    def test_set_demo_mode_toggles(self, tmp_path):
+        """Enabling demo mode reads demo, and disabling it reads real mode again."""
         config = AppConfig()
         config._base_user_dir = str(tmp_path)
         config.set_demo_mode(True)
         assert config.is_demo_mode is True
-
-    def test_set_demo_mode_false(self):
-        """Verify disabling demo mode sets is_demo_mode to False."""
-        config = AppConfig()
         config.set_demo_mode(False)
         assert config.is_demo_mode is False
 
@@ -70,117 +50,39 @@ class TestAppConfig:
         expected = os.path.join(str(tmp_path), "demo_env")
         assert config.get_user_dir() == expected
 
-    def test_get_db_path_normal(self, tmp_path):
-        """Verify get_db_path returns base_dir/data.db in normal mode."""
+    @pytest.mark.parametrize(
+        ("getter", "env_var", "filename", "demo_filename"),
+        [
+            pytest.param("get_db_path", "FAD_DB_PATH", "data.db", "demo_data.db", id="db"),
+            pytest.param(
+                "get_credentials_path", "FAD_CREDENTIALS_PATH",
+                "credentials.yaml", "credentials.yaml", id="credentials",
+            ),
+            pytest.param(
+                "get_categories_path", "FAD_CATEGORIES_PATH",
+                "categories.yaml", "categories.yaml", id="categories",
+            ),
+        ],
+    )
+    def test_path_resolution(
+        self, monkeypatch, tmp_path, getter, env_var, filename, demo_filename
+    ):
+        """Each path defaults under the base dir, honours its env override in real
+        mode, and ignores that override in demo mode (resolving under demo_env)."""
         config = AppConfig()
         config.set_demo_mode(False)
         config._base_user_dir = str(tmp_path)
-        expected = os.path.join(str(tmp_path), "data.db")
-        assert config.get_db_path() == expected
+        resolve = getattr(config, getter)
 
-    def test_get_db_path_demo_mode(self, tmp_path):
-        """Verify get_db_path returns demo_env/demo_data.db in demo mode."""
-        config = AppConfig()
-        config._base_user_dir = str(tmp_path)
+        monkeypatch.delenv(env_var, raising=False)
+        assert resolve() == os.path.join(str(tmp_path), filename)
+
+        custom_path = str(tmp_path / "custom" / filename)
+        monkeypatch.setenv(env_var, custom_path)
+        assert resolve() == custom_path
+
         config.set_demo_mode(True)
-        expected = os.path.join(str(tmp_path), "demo_env", "demo_data.db")
-        assert config.get_db_path() == expected
-
-    def test_get_db_path_env_override(self, monkeypatch, tmp_path):
-        """Verify FAD_DB_PATH env var overrides get_db_path in non-demo mode."""
-        config = AppConfig()
-        config.set_demo_mode(False)
-        config._base_user_dir = str(tmp_path)
-        custom_path = str(tmp_path / "custom" / "my.db")
-        monkeypatch.setenv("FAD_DB_PATH", custom_path)
-        assert config.get_db_path() == custom_path
-
-    def test_get_db_path_env_ignored_in_demo_mode(self, monkeypatch, tmp_path):
-        """Verify FAD_DB_PATH env var is ignored when demo mode is enabled."""
-        config = AppConfig()
-        config._base_user_dir = str(tmp_path)
-        config.set_demo_mode(True)
-        monkeypatch.setenv("FAD_DB_PATH", "/should/not/be/used")
-        expected = os.path.join(str(tmp_path), "demo_env", "demo_data.db")
-        assert config.get_db_path() == expected
-
-    def test_get_credentials_path_normal(self, tmp_path):
-        """Verify get_credentials_path returns base_dir/credentials.yaml in normal mode."""
-        config = AppConfig()
-        config.set_demo_mode(False)
-        config._base_user_dir = str(tmp_path)
-        expected = os.path.join(str(tmp_path), "credentials.yaml")
-        assert config.get_credentials_path() == expected
-
-    def test_get_credentials_path_env_override(self, monkeypatch, tmp_path):
-        """Verify FAD_CREDENTIALS_PATH env var overrides get_credentials_path."""
-        config = AppConfig()
-        config.set_demo_mode(False)
-        config._base_user_dir = str(tmp_path)
-        custom_path = str(tmp_path / "custom_creds.yaml")
-        monkeypatch.setenv("FAD_CREDENTIALS_PATH", custom_path)
-        assert config.get_credentials_path() == custom_path
-
-    def test_get_credentials_path_env_ignored_in_demo_mode(self, monkeypatch, tmp_path):
-        """Verify FAD_CREDENTIALS_PATH env var is ignored in demo mode."""
-        config = AppConfig()
-        config._base_user_dir = str(tmp_path)
-        config.set_demo_mode(True)
-        monkeypatch.setenv("FAD_CREDENTIALS_PATH", "/should/not/be/used")
-        expected = os.path.join(str(tmp_path), "demo_env", "credentials.yaml")
-        assert config.get_credentials_path() == expected
-
-    def test_get_categories_path_normal(self, tmp_path):
-        """Verify get_categories_path returns base_dir/categories.yaml in normal mode."""
-        config = AppConfig()
-        config.set_demo_mode(False)
-        config._base_user_dir = str(tmp_path)
-        expected = os.path.join(str(tmp_path), "categories.yaml")
-        assert config.get_categories_path() == expected
-
-    def test_get_categories_path_env_override(self, monkeypatch, tmp_path):
-        """Verify FAD_CATEGORIES_PATH env var overrides get_categories_path."""
-        config = AppConfig()
-        config.set_demo_mode(False)
-        config._base_user_dir = str(tmp_path)
-        custom_path = str(tmp_path / "custom_cats.yaml")
-        monkeypatch.setenv("FAD_CATEGORIES_PATH", custom_path)
-        assert config.get_categories_path() == custom_path
-
-    def test_get_categories_path_env_ignored_in_demo_mode(self, monkeypatch, tmp_path):
-        """Verify FAD_CATEGORIES_PATH env var is ignored in demo mode."""
-        config = AppConfig()
-        config._base_user_dir = str(tmp_path)
-        config.set_demo_mode(True)
-        monkeypatch.setenv("FAD_CATEGORIES_PATH", "/should/not/be/used")
-        expected = os.path.join(str(tmp_path), "demo_env", "categories.yaml")
-        assert config.get_categories_path() == expected
-
-    def test_get_categories_icons_path_normal(self, tmp_path):
-        """Verify get_categories_icons_path returns base_dir/categories_icons.yaml."""
-        config = AppConfig()
-        config.set_demo_mode(False)
-        config._base_user_dir = str(tmp_path)
-        expected = os.path.join(str(tmp_path), "categories_icons.yaml")
-        assert config.get_categories_icons_path() == expected
-
-    def test_get_categories_icons_path_env_override(self, monkeypatch, tmp_path):
-        """Verify FAD_CATEGORIES_ICONS_PATH env var overrides get_categories_icons_path."""
-        config = AppConfig()
-        config.set_demo_mode(False)
-        config._base_user_dir = str(tmp_path)
-        custom_path = str(tmp_path / "custom_icons.yaml")
-        monkeypatch.setenv("FAD_CATEGORIES_ICONS_PATH", custom_path)
-        assert config.get_categories_icons_path() == custom_path
-
-    def test_get_categories_icons_path_env_ignored_in_demo_mode(self, monkeypatch, tmp_path):
-        """Verify FAD_CATEGORIES_ICONS_PATH env var is ignored in demo mode."""
-        config = AppConfig()
-        config._base_user_dir = str(tmp_path)
-        config.set_demo_mode(True)
-        monkeypatch.setenv("FAD_CATEGORIES_ICONS_PATH", "/should/not/be/used")
-        expected = os.path.join(str(tmp_path), "demo_env", "categories_icons.yaml")
-        assert config.get_categories_icons_path() == expected
+        assert resolve() == os.path.join(str(tmp_path), "demo_env", demo_filename)
 
     def test_set_demo_mode_creates_directory(self, tmp_path):
         """Verify set_demo_mode(True) creates the demo_env directory."""
@@ -195,12 +97,6 @@ class TestAppConfig:
 
 class TestDemoModeContextIsolation:
     """Tests that the demo flag is context-local, not process-global."""
-
-    def test_flag_defaults_to_false(self):
-        """Verify a fresh context reads real mode."""
-        from backend.config import AppConfig
-
-        assert AppConfig().is_demo_mode is False
 
     def test_set_returns_token_and_reset_restores(self, tmp_path):
         """Verify set_demo_mode returns a token that reset_demo_mode honours."""
@@ -218,8 +114,6 @@ class TestDemoModeContextIsolation:
 
     def test_separate_contexts_do_not_leak(self, tmp_path):
         """Verify demo mode set in one context is invisible in another."""
-        import contextvars
-
         from backend.config import AppConfig
 
         def read_flag() -> bool:
@@ -254,18 +148,34 @@ class TestDemoModeContextIsolation:
             AppConfig._forced_mode = None
             config.reset_demo_mode(token)
 
-    def test_forced_mode_none_defers_to_contextvar(self, tmp_path):
-        """Verify clearing _forced_mode restores context-driven behaviour."""
-        from backend.config import AppConfig
 
+class TestBaseUserDirOverride:
+    """Tests for the singleton's base-directory override slot."""
+
+    def test_env_var_is_honoured_when_no_override_is_set(self, monkeypatch, tmp_path):
+        """Verify FAD_USER_DIR is resolved at call time while un-pinned."""
         config = AppConfig()
-        # Pinned so set_demo_mode(True)'s os.makedirs(get_user_dir()) never
-        # touches the real ~/.finance-analysis/demo_env on the dev machine
-        # running this test.
+        assert config._base_user_dir_override is None
+        monkeypatch.setenv("FAD_USER_DIR", str(tmp_path / "env-dir"))
+        assert config.get_user_dir() == str(tmp_path / "env-dir")
+
+    def test_override_wins_over_env_and_none_unpins(self, monkeypatch, tmp_path):
+        """Verify assigning a path pins the singleton and ``None`` releases it."""
+        config = AppConfig()
+        monkeypatch.setenv("FAD_USER_DIR", str(tmp_path / "env-dir"))
+        config._base_user_dir = str(tmp_path / "pinned")
+        assert config.get_user_dir() == str(tmp_path / "pinned")
+        config._base_user_dir = None
+        assert config.get_user_dir() == str(tmp_path / "env-dir")
+
+    def test_override_lives_on_the_instance_not_the_class(self, tmp_path):
+        """Verify the setter and the reader use the same (instance) slot.
+
+        The old class-level default let a caller save the class attribute,
+        assign through the setter (which wrote the instance), and "restore"
+        the class attribute — leaving the pin in place for every later test.
+        """
+        config = AppConfig()
         config._base_user_dir = str(tmp_path)
-        AppConfig._forced_mode = None
-        token = config.set_demo_mode(True)
-        try:
-            assert config.is_demo_mode is True
-        finally:
-            config.reset_demo_mode(token)
+        assert "_base_user_dir_override" in vars(config)
+        assert "_base_user_dir_override" not in vars(AppConfig)

@@ -14,18 +14,20 @@ derived from today's expenses — directly comparable across the whole
 projection horizon.
 """
 
+from typing import Any
+
 import pandas as pd
 from sqlalchemy.orm import Session
 
+from backend.errors import EntityNotFoundException, ValidationException
 from backend.repositories.retirement_goal_repository import RetirementGoalRepository
-from backend.services.insurance_account_service import InsuranceAccountService
-from backend.services.analysis_service import AnalysisService
-from backend.services.investments_service import InvestmentsService
+from backend.services.analysis import AnalysisService
 from backend.services.bank_balance_service import BankBalanceService
 from backend.services.cash_balance_service import CashBalanceService
-from backend.errors import EntityNotFoundException, ValidationException
+from backend.services.insurance_account_service import InsuranceAccountService
+from backend.services.investments import InvestmentsService
 
-# Israeli pension milestones
+# Israeli statutory pension ages
 FULL_PENSION_AGE_MALE = 67
 FULL_PENSION_AGE_FEMALE = 65
 
@@ -40,14 +42,153 @@ def _real_rate(nominal: float, inflation: float) -> float:
     return (1 + nominal) / (1 + inflation) - 1
 
 
+def _fire_number(goal: dict[str, Any]) -> float:
+    """Return the FIRE number: annual retirement expenses / withdrawal rate."""
+    return goal["monthly_expenses_in_retirement"] * 12 / goal["withdrawal_rate"]
+
+
+def _fire_reached_by(
+    projection: list[dict[str, Any]], age: int, fire_number: float
+) -> bool:
+    """Return whether the baseline projection reaches ``fire_number`` by ``age``."""
+    return any(
+        point["age"] <= age and point["net_worth_baseline"] >= fire_number
+        for point in projection
+    )
+
+
+def _opening_buckets(
+    goal: dict[str, Any], status: dict[str, float]
+) -> tuple[float, float]:
+    """Return the ``(portfolio, keren_hishtalmut)`` buckets a projection starts from.
+
+    KH is its own bucket, seeded from the goal's KH balance. Whatever KH value
+    is already inside the tracked net worth (scraped policies auto-synced into
+    the investments table — ``status["tracked_kh_value"]``) is taken out of the
+    portfolio so it is counted exactly once.
+
+    Parameters
+    ----------
+    goal : dict[str, Any]
+        Retirement goal parameters.
+    status : dict[str, float]
+        Current financial status from real data.
+
+    Returns
+    -------
+    tuple[float, float]
+        Opening portfolio (net worth less tracked KH) and opening KH balance.
+    """
+    return (
+        status["net_worth"] - status.get("tracked_kh_value", 0.0),
+        goal["keren_hishtalmut_balance"],
+    )
+
+
+def _accumulation_step(
+    nw: float, kh: float, rate: float, annual_savings: float, kh_monthly: float
+) -> tuple[float, float]:
+    """Advance both buckets through one pre-retirement year.
+
+    Each bucket compounds at the real ``rate``, then receives that year's
+    contributions.
+
+    Parameters
+    ----------
+    nw : float
+        Portfolio balance at the start of the year.
+    kh : float
+        Keren Hishtalmut balance at the start of the year.
+    rate : float
+        Real annual return.
+    annual_savings : float
+        Savings added to the portfolio over the year.
+    kh_monthly : float
+        Monthly KH contribution.
+
+    Returns
+    -------
+    tuple[float, float]
+        Portfolio and KH balances at the end of the year.
+    """
+    return nw * (1 + rate) + annual_savings, kh * (1 + rate) + kh_monthly * 12
+
+
+def project_pension_payout(
+    forecast: dict[str, Any], current_age: float, stop_age: float
+) -> float:
+    """Re-derive one fund's monthly pension for deposits stopping at ``stop_age``.
+
+    Everything comes from the provider's own two forecasts, so its return,
+    fee and annuity assumptions carry over unchanged:
+
+    - the annual growth factor ``g`` is the one that turns today's balance
+      into the no-deposit capital over the years to retirement age;
+    - the deposits' contribution is the gap between the two forecasts, and a
+      stream stopped after ``k`` of ``N`` years is worth the share
+      ``(g^k − 1) / (g^N − 1) × g^(N − k)`` of it at retirement age;
+    - a pension is its capital over one annuity factor, so the same share of
+      the gap between the two *pensions* is added to the no-deposit pension
+      (interpolating the pensions rather than the capitals keeps both ends
+      exact when the provider's two factors differ in their last digit).
+
+    ``stop_age`` at or past retirement age gives the provider's "deposits
+    continue" pension; ``stop_age`` equal to ``current_age`` gives its
+    "no further deposits" pension.
+
+    Parameters
+    ----------
+    forecast : dict
+        One entry of ``InsuranceAccountService.get_pension_forecasts``.
+    current_age : float
+        The user's age today.
+    stop_age : float
+        The age deposits stop.
+
+    Returns
+    -------
+    float
+        The monthly pension at the fund's retirement age.
+    """
+    with_deposits = forecast["pension_with_deposits"]
+    capital_with = forecast["capital_with_deposits"]
+    capital_without = forecast["capital_no_deposits"]
+    if not with_deposits or not capital_with:
+        return forecast["pension_no_deposits"]
+    years = (forecast.get("retirement_age") or FULL_PENSION_AGE_MALE) - current_age
+    if years <= 0:
+        return with_deposits
+    deposit_years = min(max(stop_age - current_age, 0), years)
+    without_deposits = forecast["pension_no_deposits"]
+    balance = forecast["balance"]
+    if balance > 0 and capital_without > 0:
+        growth = (capital_without / balance) ** (1 / years)
+    else:
+        growth = 1.04
+    if abs(growth - 1) < 1e-9:
+        stopped_share = deposit_years / years
+    else:
+        stopped_share = (
+            (growth**deposit_years - 1)
+            / (growth**years - 1)
+            * growth ** (years - deposit_years)
+        )
+    return without_deposits + max(with_deposits - without_deposits, 0.0) * stopped_share
+
+
 class RetirementService:
     """Retirement planning projections and status calculations.
 
     Combines user-defined goals with real tracked data to produce
     FIRE number, projected net worth, and phase-based income analysis.
+
+    Parameters
+    ----------
+    db : Session
+        SQLAlchemy session for database operations.
     """
 
-    def __init__(self, db: Session):
+    def __init__(self, db: Session) -> None:
         self.db = db
         self.repo = RetirementGoalRepository(db)
         self.insurance_account_service = InsuranceAccountService(db)
@@ -56,7 +197,7 @@ class RetirementService:
         self.bank_balance_service = BankBalanceService(db)
         self.cash_balance_service = CashBalanceService(db)
 
-    def get_goal(self) -> dict | None:
+    def get_goal(self) -> dict[str, Any] | None:
         """Get the retirement goal profile as a dict, or None."""
         goal = self.repo.get()
         if not goal:
@@ -83,22 +224,26 @@ class RetirementService:
             "total_investments_override": goal.total_investments_override,
         }
 
-    def upsert_goal(self, **fields) -> dict:
+    def upsert_goal(self, **fields: Any) -> dict[str, Any] | None:
         """Create or update the retirement goal and return it as dict."""
         self.repo.upsert(**fields)
         return self.get_goal()
 
     def get_keren_hishtalmut_scraped_balance(self) -> float | None:
-        """Get total Keren Hishtalmut balance from scraped insurance data.
+        """Get total Keren Hishtalmut balance from tracked investments.
+
+        Covers both scraped policies and manually-created KH investments —
+        the name is a legacy misnomer kept for route-contract stability.
 
         Returns
         -------
         float or None
-            Sum of all hishtalmut account balances, or None if no data.
+            Sum of all open ``type='hishtalmut'`` investment balances, or
+            None if no data.
         """
-        return self.insurance_account_service.get_keren_hishtalmut_balance()
+        return self.investments_service.get_hishtalmut_total_balance()
 
-    def get_scraped_defaults(self) -> dict:
+    def get_scraped_defaults(self) -> dict[str, float | None]:
         """Get all auto-fillable values from scraped insurance data.
 
         For each field, returns the scraped value or None if unavailable.
@@ -108,13 +253,14 @@ class RetirementService:
 
         Returns
         -------
-        dict
+        dict[str, float | None]
             Keys: keren_hishtalmut_balance, keren_hishtalmut_monthly_contribution,
-            pension_monthly_deposit. Values are float or None.
+            pension_monthly_deposit, avg_monthly_salary. Values are float or
+            None.
         """
         return {
             "keren_hishtalmut_balance": (
-                self.insurance_account_service.get_keren_hishtalmut_balance()
+                self.investments_service.get_hishtalmut_total_balance()
             ),
             "keren_hishtalmut_monthly_contribution": (
                 self.insurance_account_service.get_monthly_contribution_by_type(
@@ -129,23 +275,84 @@ class RetirementService:
             "avg_monthly_salary": self.analysis_service.get_avg_monthly_salary(),
         }
 
-    def get_current_status(self) -> dict:
-        """Aggregate current financial status from real dashboard data.
+    def get_pension_forecast(
+        self,
+        current_age: int | None = None,
+        target_retirement_age: int | None = None,
+    ) -> dict[str, Any]:
+        """Estimate the monthly pension from the providers' own forecasts.
+
+        The pension clearing house publishes, per pension fund, the capital
+        and monthly pension at retirement age both if deposits continue and if
+        they stop today. Deposits really stop at the user's *target*
+        retirement age, which sits anywhere between the two, so each fund's
+        pension is re-derived for that age from its own figures (see
+        ``project_pension_payout``) and summed. Ages default to the saved goal;
+        without one, the "deposits continue" figure is returned.
+
+        Parameters
+        ----------
+        current_age : int, optional
+            The user's age today.
+        target_retirement_age : int, optional
+            The age deposits stop.
 
         Returns
         -------
         dict
-            Keys: net_worth, avg_monthly_expenses, avg_monthly_income,
-            savings_rate, total_investments, monthly_savings.
+            ``estimate`` (None when no fund publishes a forecast),
+            ``with_deposits`` and ``no_deposits`` totals, the forecast's
+            ``as_of`` date, and the number of ``funds``.
         """
-        # Net worth from analysis
+        forecasts = self.insurance_account_service.get_pension_forecasts()
+        goal = (
+            self.repo.get()
+            if current_age is None or target_retirement_age is None
+            else None
+        )
+        if goal is not None:
+            current_age = current_age if current_age is not None else goal.current_age
+            target_retirement_age = (
+                target_retirement_age
+                if target_retirement_age is not None
+                else goal.target_retirement_age
+            )
+        with_deposits = sum(f["pension_with_deposits"] for f in forecasts)
+        no_deposits = sum(f["pension_no_deposits"] for f in forecasts)
+        if not forecasts:
+            estimate = None
+        elif current_age is None or target_retirement_age is None:
+            estimate = with_deposits
+        else:
+            estimate = sum(
+                project_pension_payout(f, current_age, target_retirement_age)
+                for f in forecasts
+            )
+        as_of = max((f["as_of"] for f in forecasts if f["as_of"]), default=None)
+        return {
+            "estimate": round(estimate) if estimate is not None else None,
+            "with_deposits": round(with_deposits),
+            "no_deposits": round(no_deposits),
+            "as_of": as_of,
+            "funds": len(forecasts),
+        }
+
+    def get_current_status(self) -> dict[str, float]:
+        """Aggregate current financial status from real dashboard data.
+
+        Returns
+        -------
+        dict[str, float]
+            Keys: net_worth, avg_monthly_expenses, avg_monthly_income,
+            savings_rate, total_investments, monthly_savings,
+            tracked_kh_value.
+        """
         net_worth_data = self.analysis_service.get_net_worth_over_time()
         current_net_worth = 0.0
         if net_worth_data:
             latest = net_worth_data[-1]
             current_net_worth = latest.get("net_worth", 0.0)
 
-        # Income/expenses over time for averages
         monthly_data = self.analysis_service.get_income_expenses_over_time()
         avg_monthly_income = 0.0
         avg_monthly_expenses = 0.0
@@ -162,21 +369,24 @@ class RetirementService:
             ] or monthly_data
 
             monthly_data = complete_months
-            # Income: last 6 months average (or all if fewer).
-            recent_income = (
-                monthly_data[-6:] if len(monthly_data) >= 6 else monthly_data
+            # Median, not mean, on both sides. A FIRE projection compounds
+            # `monthly_savings` for forty years, so a single freak month is
+            # not a rounding error in it — an inheritance, a wedding, the
+            # proceeds of a sold car lifted a 6-month mean income to 108k
+            # against a 25k salary, and with it the savings rate, the FIRE
+            # date and every solver suggestion. A windfall is not a salary;
+            # the number that survives one is the middle month, not the
+            # average. The window either side is unchanged.
+            recent_income = monthly_data[-6:]
+            avg_monthly_income = float(
+                pd.Series([m["income"] for m in recent_income]).median()
             )
-            avg_monthly_income = sum(
-                m["income"] for m in recent_income
-            ) / len(recent_income)
-            # Expenses: last 12 months average (or all if fewer) — a full
-            # year smooths out seasonal spikes (holidays, annual fees).
-            recent_expenses = (
-                monthly_data[-12:] if len(monthly_data) >= 12 else monthly_data
+            # Expenses: last 12 months (or all if fewer) — a full year covers
+            # every seasonal spike (holidays, annual fees) at least once.
+            recent_expenses = monthly_data[-12:]
+            avg_monthly_expenses = float(
+                pd.Series([m["expenses"] for m in recent_expenses]).median()
             )
-            avg_monthly_expenses = sum(
-                m["expenses"] for m in recent_expenses
-            ) / len(recent_expenses)
             monthly_savings = avg_monthly_income - avg_monthly_expenses
 
         savings_rate = (
@@ -185,7 +395,6 @@ class RetirementService:
             else 0.0
         )
 
-        # Total investments
         overview = self.analysis_service.get_overview()
         total_investments = overview.get("total_investments", 0.0)
 
@@ -195,14 +404,11 @@ class RetirementService:
         # net worth series values investments snapshot-first. The FIRE
         # projection models KH as its own bucket (goal field), so this
         # amount must be moved out of the base portfolio to avoid double
-        # counting. For users who only typed a KH balance (nothing synced),
-        # this is 0 and their KH counts on top of net worth.
-        tracked_kh_value = 0.0
-        for inv in self.investments_service.get_all_investments():
-            if inv.get("type") == "hishtalmut":
-                tracked_kh_value += self.investments_service.calculate_current_balance(
-                    int(inv["id"])
-                )
+        # counting. For users with no KH investment at all this is 0 and
+        # their typed KH balance counts on top of net worth.
+        tracked_kh_value = (
+            self.investments_service.get_hishtalmut_total_balance() or 0.0
+        )
 
         return {
             "net_worth": current_net_worth,
@@ -214,7 +420,9 @@ class RetirementService:
             "tracked_kh_value": tracked_kh_value,
         }
 
-    def get_projections(self, goal_override: dict | None = None) -> dict:
+    def get_projections(
+        self, goal_override: dict[str, Any] | None = None
+    ) -> dict[str, Any]:
         """Compute FIRE projections based on goal + real data.
 
         Parameters
@@ -225,10 +433,17 @@ class RetirementService:
 
         Returns
         -------
-        dict
+        dict[str, Any]
             Keys: fire_number, years_to_fire, fire_age,
             earliest_possible_retirement_age, monthly_savings_needed,
-            progress_pct, readiness, net_worth_projection, income_projection.
+            progress_pct, readiness, portfolio_depleted_age,
+            target_retirement_age, full_pension_age, net_worth_projection,
+            income_projection.
+
+        Raises
+        ------
+        EntityNotFoundException
+            If no goal is configured and no override is given.
         """
         goal_data = goal_override or self.get_goal()
         if not goal_data:
@@ -236,9 +451,7 @@ class RetirementService:
 
         status = self._effective_status(goal_data)
 
-        # FIRE number: annual expenses / withdrawal rate (today's shekels)
-        annual_expenses = goal_data["monthly_expenses_in_retirement"] * 12
-        fire_number = annual_expenses / goal_data["withdrawal_rate"]
+        fire_number = _fire_number(goal_data)
 
         # Progress toward the FIRE number counts total wealth: tracked net
         # worth (with any synced KH investments swapped out) plus the goal's
@@ -257,10 +470,8 @@ class RetirementService:
             100,
         )
 
-        # Project net worth year by year
         net_worth_projection = self._project_net_worth(goal_data, status)
 
-        # Find FIRE age (when net worth >= fire_number)
         years_to_fire = None
         fire_age = None
         for point in net_worth_projection:
@@ -269,7 +480,6 @@ class RetirementService:
                 fire_age = point["age"]
                 break
 
-        # If never reached within life expectancy
         if years_to_fire is None:
             years_to_fire = -1
             fire_age = -1
@@ -277,12 +487,10 @@ class RetirementService:
         # Earliest possible retirement age = FIRE age (baseline scenario)
         earliest_possible_retirement_age = fire_age
 
-        # Monthly savings needed to hit target retirement age
         monthly_savings_needed = self._calc_required_monthly_savings(
             goal_data, status, fire_number
         )
 
-        # Longevity check: does portfolio survive until life expectancy?
         portfolio_depleted_age = self._find_depletion_age(
             net_worth_projection,
             goal_data["life_expectancy"],
@@ -310,7 +518,6 @@ class RetirementService:
         else:
             readiness = "funded"
 
-        # Retirement income projection (phase-based, from current age)
         income_projection = self._project_retirement_income(goal_data)
 
         return {
@@ -325,15 +532,13 @@ class RetirementService:
             "target_retirement_age": goal_data["target_retirement_age"],
             # Gender-resolved (67 male / 65 female) — the chart's pension-age
             # marker must match where pension income actually starts.
-            "full_pension_age": _get_full_pension_age(
-                goal_data.get("gender", "male")
-            ),
+            "full_pension_age": _get_full_pension_age(goal_data.get("gender", "male")),
             "net_worth_projection": net_worth_projection,
             "income_projection": income_projection,
         }
 
-    def _effective_status(self, goal_data: dict) -> dict:
-        """Current status with the goal's manual overrides applied.
+    def _effective_status(self, goal_data: dict[str, Any]) -> dict[str, float]:
+        """Return the current status with the goal's manual overrides applied.
 
         The goal can override net worth, monthly income and monthly expenses
         (0 / None = use calculated). Projections AND solvers must both use
@@ -356,7 +561,9 @@ class RetirementService:
             else status["avg_monthly_income"]
         )
 
-        if goal_data.get("monthly_income") or goal_data.get("monthly_expenses_override"):
+        if goal_data.get("monthly_income") or goal_data.get(
+            "monthly_expenses_override"
+        ):
             monthly_savings = effective_income - effective_expenses
             savings_rate = (
                 round(monthly_savings / effective_income * 100, 1)
@@ -373,7 +580,9 @@ class RetirementService:
 
         return status
 
-    def _project_net_worth(self, goal: dict, status: dict) -> list[dict]:
+    def _project_net_worth(
+        self, goal: dict[str, Any], status: dict[str, float]
+    ) -> list[dict[str, Any]]:
         """Project net worth year-by-year with three scenarios, in real terms.
 
         All amounts are in today's shekels: each scenario's nominal return is
@@ -389,14 +598,14 @@ class RetirementService:
 
         Parameters
         ----------
-        goal : dict
+        goal : dict[str, Any]
             Retirement goal parameters.
-        status : dict
+        status : dict[str, float]
             Current financial status from real data.
 
         Returns
         -------
-        list[dict]
+        list[dict[str, Any]]
             Per-year projection with age, and net_worth for
             optimistic/baseline/conservative scenarios.
         """
@@ -409,13 +618,12 @@ class RetirementService:
         annual_savings = monthly_savings * 12
         full_pension_age = _get_full_pension_age(goal.get("gender", "male"))
 
-        kh_balance = goal["keren_hishtalmut_balance"]
         kh_monthly = goal["keren_hishtalmut_monthly_contribution"]
-        base_nw = status["net_worth"] - status.get("tracked_kh_value", 0.0)
+        base_nw, kh_balance = _opening_buckets(goal, status)
 
         annual_expenses = goal["monthly_expenses_in_retirement"] * 12
 
-        projections = []
+        projections: list[dict[str, Any]] = []
         # Three return scenarios: ±1% on the nominal rate, then converted to
         # real so the projection stays in today's shekels.
         scenarios = {
@@ -451,18 +659,16 @@ class RetirementService:
                     )
 
                 if age < target_age:
-                    # Accumulation phase: grow + save
-                    nw = nw * (1 + rate) + annual_savings
-                    kh = kh * (1 + rate) + kh_monthly * 12
+                    nw, kh = _accumulation_step(
+                        nw, kh, rate, annual_savings, kh_monthly
+                    )
                 else:
                     # Drawdown phase: grow, then withdraw net-of-income needs
                     annual_income = goal["other_passive_income"] * 12
                     if age >= full_pension_age:
                         annual_income += goal["pension_monthly_payout_estimate"] * 12
                         if goal["bituach_leumi_eligible"]:
-                            annual_income += (
-                                goal["bituach_leumi_monthly_estimate"] * 12
-                            )
+                            annual_income += goal["bituach_leumi_monthly_estimate"] * 12
 
                     withdrawal_needed = max(0, annual_expenses - annual_income)
 
@@ -477,7 +683,7 @@ class RetirementService:
 
         return projections
 
-    def _project_retirement_income(self, goal: dict) -> list[dict]:
+    def _project_retirement_income(self, goal: dict[str, Any]) -> list[dict[str, Any]]:
         """Project income sources by age (from current age to life expectancy).
 
         During accumulation (before target retirement age), shows salary/savings.
@@ -488,12 +694,12 @@ class RetirementService:
 
         Parameters
         ----------
-        goal : dict
+        goal : dict[str, Any]
             Retirement goal parameters.
 
         Returns
         -------
-        list[dict]
+        list[dict[str, Any]]
             Per-year income sources: salary_savings, portfolio_withdrawal,
             pension, bituach_leumi, passive_income, total_income, expenses.
         """
@@ -503,7 +709,7 @@ class RetirementService:
         annual_expenses = goal["monthly_expenses_in_retirement"] * 12
         full_pension_age = _get_full_pension_age(goal.get("gender", "male"))
 
-        result = []
+        result: list[dict[str, Any]] = []
         for age in range(current_age, life_exp + 1):
             pension = 0.0
             if age >= full_pension_age:
@@ -515,12 +721,9 @@ class RetirementService:
 
             passive = goal["other_passive_income"] * 12
 
-            # Before retirement: income comes from salary/savings
-            # After retirement: income comes from portfolio + pension + BL + passive
             salary_savings = 0.0
             portfolio_withdrawal = 0.0
             if age < target_age:
-                # Accumulation phase — no portfolio withdrawal needed
                 salary_savings = annual_expenses
             else:
                 non_portfolio = pension + bl + passive
@@ -544,7 +747,9 @@ class RetirementService:
 
         return result
 
-    def solve_all_fields(self, goal_override: dict | None = None) -> dict:
+    def solve_all_fields(
+        self, goal_override: dict[str, Any] | None = None
+    ) -> dict[str, float]:
         """Solve for all adjustable fields to find values that reach FIRE.
 
         Parameters
@@ -554,10 +759,15 @@ class RetirementService:
 
         Returns
         -------
-        dict
+        dict[str, float]
             Keys: target_retirement_age, monthly_expenses_in_retirement,
-            expected_return_rate. Each value is the solved result or -1 if
-            not achievable.
+            expected_return_rate, life_expectancy. Each value is the solved
+            result or -1 if not achievable.
+
+        Raises
+        ------
+        EntityNotFoundException
+            If no goal is configured and no override is given.
         """
         goal_data = goal_override or self.get_goal()
         if not goal_data:
@@ -572,12 +782,14 @@ class RetirementService:
 
         return {
             "target_retirement_age": age,
-            "monthly_expenses_in_retirement": round(expenses, 0) if expenses != -1 else -1,
+            "monthly_expenses_in_retirement": round(expenses, 0)
+            if expenses != -1
+            else -1,
             "expected_return_rate": round(rate, 4) if rate != -1 else -1,
             "life_expectancy": life_exp,
         }
 
-    def solve_for_field(self, field: str) -> dict:
+    def solve_for_field(self, field: str) -> dict[str, Any]:
         """Solve for a single field value that would reach FIRE at target age.
 
         Given all other fields fixed, compute the value of `field` such that
@@ -587,12 +799,19 @@ class RetirementService:
         ----------
         field : str
             One of: target_retirement_age, monthly_expenses_in_retirement,
-            expected_return_rate.
+            expected_return_rate, life_expectancy.
 
         Returns
         -------
-        dict
+        dict[str, Any]
             Keys: field, value, unit.
+
+        Raises
+        ------
+        EntityNotFoundException
+            If no goal is configured.
+        ValidationException
+            If ``field`` cannot be solved for.
         """
         goal_data = self.get_goal()
         if not goal_data:
@@ -618,21 +837,8 @@ class RetirementService:
 
         raise ValidationException(f"Cannot auto-adjust field: {field}")
 
-    def _survives_drawdown(self, goal: dict, status: dict) -> bool:
-        """Check if portfolio survives through life expectancy.
-
-        Runs the full projection and checks that baseline never hits zero.
-        """
-        projection = self._project_net_worth(goal, status)
-        return (
-            self._find_depletion_age(
-                projection, goal["life_expectancy"], goal["target_retirement_age"]
-            )
-            is None
-        )
-
-    def _plan_on_track(self, goal: dict, status: dict) -> bool:
-        """Whether a plan reaches FIRE by its target age AND survives drawdown.
+    def _plan_on_track(self, goal: dict[str, Any], status: dict[str, float]) -> bool:
+        """Return whether a plan reaches FIRE by its target age AND survives drawdown.
 
         This mirrors the readiness == "on_track" criteria in
         :meth:`get_projections`. Solvers must search against this predicate,
@@ -640,16 +846,10 @@ class RetirementService:
         at ANY return rate without ever reaching the FIRE number, and a
         survival-only search then converges to a meaningless answer.
         """
-        fire_number = (
-            goal["monthly_expenses_in_retirement"] * 12 / goal["withdrawal_rate"]
-        )
         projection = self._project_net_worth(goal, status)
-        fire_reached_by_target = any(
-            point["age"] <= goal["target_retirement_age"]
-            and point["net_worth_baseline"] >= fire_number
-            for point in projection
-        )
-        if not fire_reached_by_target:
+        if not _fire_reached_by(
+            projection, goal["target_retirement_age"], _fire_number(goal)
+        ):
             return False
         return (
             self._find_depletion_age(
@@ -658,49 +858,45 @@ class RetirementService:
             is None
         )
 
-    def _solve_target_retirement_age(self, goal: dict, status: dict) -> int:
+    def _solve_target_retirement_age(
+        self, goal: dict[str, Any], status: dict[str, float]
+    ) -> int:
         """Find earliest retirement age where the plan is fully on track.
 
         For each candidate age (starting from earliest FIRE-eligible), runs
         the full simulation to verify both FIRE-by-candidate-age and
         drawdown longevity.
         """
-        annual_expenses = goal["monthly_expenses_in_retirement"] * 12
-        fire_number = annual_expenses / goal["withdrawal_rate"]
-
+        fire_number = _fire_number(goal)
         current_age = goal["current_age"]
         rate = _real_rate(goal["expected_return_rate"], goal["inflation_rate"])
         monthly_savings = status["monthly_savings"]
         annual_savings = monthly_savings * 12
-        kh_balance = goal["keren_hishtalmut_balance"]
         kh_monthly = goal["keren_hishtalmut_monthly_contribution"]
 
-        # First find earliest age where FIRE number is reached (KH bucket
-        # swaps out any synced KH value — see _project_net_worth)
-        nw = status["net_worth"] - status.get("tracked_kh_value", 0.0)
-        kh = kh_balance
+        # First find earliest age where FIRE number is reached
+        nw, kh = _opening_buckets(goal, status)
         fire_eligible_age = None
         for year_offset in range(goal["life_expectancy"] - current_age + 1):
             total = nw + kh
             if total >= fire_number:
                 fire_eligible_age = current_age + year_offset
                 break
-            nw = nw * (1 + rate) + annual_savings
-            kh = kh * (1 + rate) + kh_monthly * 12
+            nw, kh = _accumulation_step(nw, kh, rate, annual_savings, kh_monthly)
 
         if fire_eligible_age is None:
             return -1
 
-        # Now check each candidate age from fire_eligible_age onward
-        # to find the earliest whose plan is fully on track
         for candidate_age in range(fire_eligible_age, goal["life_expectancy"] + 1):
             test_goal = {**goal, "target_retirement_age": candidate_age}
             if self._plan_on_track(test_goal, status):
                 return candidate_age
 
-        return -1  # Not reachable
+        return -1
 
-    def _solve_monthly_expenses(self, goal: dict, status: dict) -> float:
+    def _solve_monthly_expenses(
+        self, goal: dict[str, Any], status: dict[str, float]
+    ) -> float:
         """Find max monthly retirement expenses where the plan stays on track.
 
         Uses binary search: upper bound from the FIRE formula applied to the
@@ -720,14 +916,11 @@ class RetirementService:
         rate = _real_rate(goal["expected_return_rate"], goal["inflation_rate"])
         monthly_savings = status["monthly_savings"]
         annual_savings = monthly_savings * 12
-        kh_balance = goal["keren_hishtalmut_balance"]
         kh_monthly = goal["keren_hishtalmut_monthly_contribution"]
 
-        nw = status["net_worth"] - status.get("tracked_kh_value", 0.0)
-        kh = kh_balance
+        nw, kh = _opening_buckets(goal, status)
         for _ in range(years):
-            nw = nw * (1 + rate) + annual_savings
-            kh = kh * (1 + rate) + kh_monthly * 12
+            nw, kh = _accumulation_step(nw, kh, rate, annual_savings, kh_monthly)
 
         projected_nw = nw + kh
         # Upper bound: FIRE formula max (may not survive drawdown)
@@ -735,7 +928,6 @@ class RetirementService:
         if max_monthly <= 0:
             return -1
 
-        # Binary search for max expenses that keep the plan on track
         lo, hi = 0.0, max_monthly
         for _ in range(50):
             mid = (lo + hi) / 2
@@ -751,7 +943,9 @@ class RetirementService:
         # a token spending level works (e.g. wealth stays negative to target)
         return lo if lo > 0 else -1
 
-    def _solve_return_rate(self, goal: dict, status: dict) -> float:
+    def _solve_return_rate(
+        self, goal: dict[str, Any], status: dict[str, float]
+    ) -> float:
         """Find minimum nominal return rate where the plan is on track.
 
         Uses binary search over return rates, requiring both FIRE by the
@@ -768,13 +962,10 @@ class RetirementService:
         if years <= 0:
             return -1
 
-        # Binary search between -10% and 30%
         lo, hi = -0.10, 0.30
-
-        # Check if achievable at max rate
         test_goal = {**goal, "expected_return_rate": hi}
         if not self._plan_on_track(test_goal, status):
-            return -1  # Not achievable even at 30%
+            return -1
 
         for _ in range(100):
             mid = (lo + hi) / 2
@@ -790,7 +981,7 @@ class RetirementService:
 
     @staticmethod
     def _find_depletion_age(
-        net_worth_projection: list[dict],
+        net_worth_projection: list[dict[str, Any]],
         life_expectancy: int,
         target_retirement_age: int | None = None,
     ) -> int | None:
@@ -803,13 +994,13 @@ class RetirementService:
 
         Parameters
         ----------
-        net_worth_projection : list[dict]
+        net_worth_projection : list[dict[str, Any]]
             Points from :meth:`_project_net_worth`.
         life_expectancy : int
             Upper age bound to consider.
         target_retirement_age : int or None
             Age drawdown begins. Points before it are ignored. ``None``
-            keeps the legacy behaviour of scanning every point.
+            scans every point.
 
         Returns
         -------
@@ -817,13 +1008,18 @@ class RetirementService:
             Age when portfolio is depleted, or None if it survives.
         """
         for point in net_worth_projection:
-            if target_retirement_age is not None and point["age"] < target_retirement_age:
+            if (
+                target_retirement_age is not None
+                and point["age"] < target_retirement_age
+            ):
                 continue
             if point["net_worth_baseline"] <= 0 and point["age"] <= life_expectancy:
                 return point["age"]
         return None
 
-    def _solve_life_expectancy(self, goal: dict, status: dict) -> int:
+    def _solve_life_expectancy(
+        self, goal: dict[str, Any], status: dict[str, float]
+    ) -> int:
         """Find maximum life expectancy the portfolio can sustain.
 
         Runs the drawdown simulation and returns the last age before
@@ -841,18 +1037,9 @@ class RetirementService:
         projection = self._project_net_worth(goal, status)
         target_age = goal["target_retirement_age"]
 
-        fire_number = (
-            goal["monthly_expenses_in_retirement"] * 12 / goal["withdrawal_rate"]
-        )
-        fire_reached_by_target = any(
-            point["age"] <= target_age
-            and point["net_worth_baseline"] >= fire_number
-            for point in projection
-        )
-        if not fire_reached_by_target:
+        if not _fire_reached_by(projection, target_age, _fire_number(goal)):
             return -1
 
-        # Find last age with positive baseline balance after retirement
         last_sustainable_age = -1
         for point in projection:
             age = point["age"]
@@ -869,8 +1056,7 @@ class RetirementService:
         # If portfolio never depletes within the projection, return -1
         # (meaning "no limit needed")
         depletes = any(
-            p["net_worth_baseline"] <= 0 and p["age"] > target_age
-            for p in projection
+            p["net_worth_baseline"] <= 0 and p["age"] > target_age for p in projection
         )
         if not depletes:
             return -1
@@ -878,7 +1064,7 @@ class RetirementService:
         return last_sustainable_age
 
     def _calc_required_monthly_savings(
-        self, goal: dict, status: dict, fire_number: float
+        self, goal: dict[str, Any], status: dict[str, float], fire_number: float
     ) -> float:
         """Calculate ADDITIONAL monthly savings needed to reach FIRE by target age.
 
@@ -890,9 +1076,9 @@ class RetirementService:
 
         Parameters
         ----------
-        goal : dict
+        goal : dict[str, Any]
             Retirement goal parameters.
-        status : dict
+        status : dict[str, float]
             Current financial status.
         fire_number : float
             Target portfolio size (today's shekels).
@@ -914,20 +1100,15 @@ class RetirementService:
             + goal["keren_hishtalmut_balance"]
         )
 
-        # Future value of what the user has today
         fv_current = current_wealth * ((1 + rate) ** years)
 
         # Future value factor of an end-of-year annuity — the same discrete
         # annual-deposit model _project_net_worth uses, so "0 extra needed"
         # agrees with the projection reaching FIRE at the target age.
-        if rate == 0:
-            fv_factor = float(years)
-        else:
-            fv_factor = ((1 + rate) ** years - 1) / rate
+        fv_factor = float(years) if rate == 0 else ((1 + rate) ** years - 1) / rate
 
         current_annual_contribution = (
-            status["monthly_savings"]
-            + goal["keren_hishtalmut_monthly_contribution"]
+            status["monthly_savings"] + goal["keren_hishtalmut_monthly_contribution"]
         ) * 12
         fv_contributions = current_annual_contribution * fv_factor
 

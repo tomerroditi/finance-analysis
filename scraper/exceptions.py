@@ -7,8 +7,10 @@ class ErrorType(str, Enum):
     CHANGE_PASSWORD = "CHANGE_PASSWORD"
     ACCOUNT_BLOCKED = "ACCOUNT_BLOCKED"
     TWO_FACTOR_RETRIEVER_MISSING = "TWO_FACTOR_RETRIEVER_MISSING"
+    INVALID_OTP = "INVALID_OTP"
     TIMEOUT = "TIMEOUT"
     AUTOMATION_BLOCKED = "AUTOMATION_BLOCKED"
+    BROWSER_NOT_FOUND = "BROWSER_NOT_FOUND"
     GENERIC = "GENERIC"
     GENERAL = "GENERAL_ERROR"
 
@@ -39,6 +41,18 @@ class TwoFactorError(ScraperError):
     error_type = ErrorType.TWO_FACTOR_RETRIEVER_MISSING
 
 
+class InvalidOtpError(ScraperError):
+    """The provider rejected the one-time code the user typed.
+
+    Nothing is wrong with the stored credentials and the SMS was delivered —
+    the user simply mistyped (or used a stale) code. Kept apart from
+    ``GENERAL_ERROR`` so the UI can say "wrong code, try again" instead of
+    "something went wrong".
+    """
+
+    error_type = ErrorType.INVALID_OTP
+
+
 class TimeoutError(ScraperError):
     error_type = ErrorType.TIMEOUT
 
@@ -53,6 +67,18 @@ class AutomationBlockedError(ScraperError):
     """
 
     error_type = ErrorType.AUTOMATION_BLOCKED
+
+
+class BrowserNotFoundError(ScraperError):
+    """Neither Chrome nor Edge is installed, so a browser scraper cannot start.
+
+    Kept apart from the generic initialize failure so "install a browser" is
+    only ever advice given when a browser is actually missing — any other
+    launch failure (a sandbox, an event loop that cannot spawn processes)
+    would send the user chasing an install that changes nothing.
+    """
+
+    error_type = ErrorType.BROWSER_NOT_FOUND
 
 
 class ConnectionError(ScraperError):

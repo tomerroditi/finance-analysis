@@ -2,6 +2,8 @@ from datetime import date
 
 import pytest
 
+from backend.errors import ValidationException
+
 
 class TestYearlyBudgetView:
     """The yearly view accumulates spend across the whole calendar year."""
@@ -29,7 +31,7 @@ class TestYearlyBudgetView:
 
     def test_view_sums_full_year(self, db_session):
         """Two transactions in different months of the year both count."""
-        from backend.services.budget_service import YearlyBudgetService
+        from backend.services.budget import YearlyBudgetService
 
         svc = YearlyBudgetService(db_session)
         svc.create_rule("Vacations", 20000.0, "Travel", ["Hotels"], 2026)
@@ -45,7 +47,7 @@ class TestYearlyBudgetView:
 
     def test_view_none_when_no_rules(self, db_session):
         """No yearly rules for the year returns None."""
-        from backend.services.budget_service import YearlyBudgetService
+        from backend.services.budget import YearlyBudgetService
 
         assert YearlyBudgetService(db_session).get_yearly_budget_view(2026) is None
 
@@ -55,7 +57,7 @@ class TestYearSummary:
 
     def test_summary_totals(self, db_session):
         """Allocated/spent/remaining and health counts are computed from the view."""
-        from backend.services.budget_service import YearlyBudgetService
+        from backend.services.budget import YearlyBudgetService
 
         svc = YearlyBudgetService(db_session)
         svc.create_rule("Vacations", 20000.0, "Travel", ["Hotels"], 2026)
@@ -65,14 +67,81 @@ class TestYearSummary:
         assert s["total_spent"] == 0.0
         assert s["remaining"] == 35000.0
         assert s["on_track"] == 2 and s["over"] == 0
+        assert s["biggest_overspend"] is None
+
+    def test_summary_overspend(self, db_session):
+        """An over-budget rule is counted in ``over``, names the biggest overspend,
+        and drives ``remaining`` negative once total spend exceeds allocation."""
+        from backend.models.transaction import BankTransaction
+        from backend.services.budget import YearlyBudgetService
+
+        svc = YearlyBudgetService(db_session)
+        svc.create_rule("Vacations", 1000.0, "Travel", ["Hotels"], 2026)
+        svc.create_rule("Car", 500.0, "Transport", ["Insurance"], 2026)
+        for uid, category, tag, amount in (
+            ("o1", "Travel", "Hotels", -1500.0),  # 150 % -> over
+            ("o2", "Transport", "Insurance", -600.0),  # 120 % -> over
+        ):
+            db_session.add(
+                BankTransaction(
+                    id=uid, date="2026-04-01", provider="hapoalim",
+                    account_name="Checking", description="x", amount=amount,
+                    category=category, tag=tag, source="bank_transactions",
+                    type="normal", status="completed",
+                )
+            )
+        db_session.commit()
+
+        s = svc.get_year_summary(2026)
+        assert s["total_allocated"] == 1500.0
+        assert s["total_spent"] == 2100.0
+        assert s["remaining"] == -600.0
+        assert s["on_track"] == 0 and s["over"] == 2
+        assert s["biggest_overspend"] == {"name": "Vacations", "percentage": 1.5}
 
 
 class TestYearlyValidation:
     """Manual create/edit hard-blocks conflicts with monthly budgets."""
 
+    @pytest.mark.parametrize(
+        "name, category, tags, amount, expected",
+        [
+            ("", "Travel", ["Hotels"], 100.0, "name"),
+            ("   ", "Travel", ["Hotels"], 100.0, "name"),
+            ("Vacations", "", ["Hotels"], 100.0, "category"),
+            ("Vacations", "Travel", [], 100.0, "at least one tag"),
+            ("Vacations", "Travel", [""], 100.0, "empty"),
+            ("Vacations", "Travel", ["Hotels;Flights"], 100.0, ";"),
+            ("Vacations", "Travel", ["Hotels"], 0, "positive"),
+            ("Vacations", "Travel", ["Hotels"], -5.0, "positive"),
+        ],
+        ids=[
+            "empty-name", "blank-name", "empty-category", "no-tags",
+            "blank-tag", "semicolon-tag", "zero-amount", "negative-amount",
+        ],
+    )
+    def test_validate_scalar_branches(
+        self, db_session, name, category, tags, amount, expected
+    ):
+        """Each scalar precondition of ``_validate`` raises its own message."""
+        from backend.services.budget import YearlyBudgetService
+
+        svc = YearlyBudgetService(db_session)
+        with pytest.raises(ValidationException, match=f"(?i){expected}"):
+            svc._validate(name, category, tags, amount, 2026, None)
+        assert svc.get_year_rules(2026).empty
+
+    def test_create_strips_name(self, db_session):
+        """Surrounding whitespace is stripped from the stored rule name."""
+        from backend.services.budget import YearlyBudgetService
+
+        svc = YearlyBudgetService(db_session)
+        svc.create_rule("  Vacations ", 100.0, "Travel", ["Hotels"], 2026)
+        assert list(svc.get_year_rules(2026)["name"]) == ["Vacations"]
+
     def test_create_conflict_with_monthly_raises(self, db_session):
         """A yearly rule reusing a monthly tag for the same year is rejected."""
-        from backend.services.budget_service import MonthlyBudgetService, YearlyBudgetService
+        from backend.services.budget import MonthlyBudgetService, YearlyBudgetService
 
         MonthlyBudgetService(db_session).create_rule(
             "Total Budget", 9999.0, "Total Budget", ["all_tags"], 5, 2026
@@ -80,18 +149,18 @@ class TestYearlyValidation:
         MonthlyBudgetService(db_session).create_rule(
             "Food M", 500.0, "Food", ["Groceries"], 5, 2026
         )
-        with pytest.raises(ValueError, match="Groceries"):
+        with pytest.raises(ValidationException, match="Groceries"):
             YearlyBudgetService(db_session).create_rule(
                 "Food Y", 6000.0, "Food", ["Groceries"], 2026
             )
 
     def test_duplicate_name_in_year_raises(self, db_session):
         """Two yearly rules with the same name in one year are rejected."""
-        from backend.services.budget_service import YearlyBudgetService
+        from backend.services.budget import YearlyBudgetService
 
         svc = YearlyBudgetService(db_session)
         svc.create_rule("Vacations", 20000.0, "Travel", ["Hotels"], 2026)
-        with pytest.raises(ValueError, match="already exists"):
+        with pytest.raises(ValidationException, match="already exists"):
             svc.create_rule("Vacations", 100.0, "Travel", ["Activities"], 2026)
 
 
@@ -101,7 +170,7 @@ class TestYearlyAlerts:
     def test_over_budget_is_critical(self, db_session):
         """A rule at/over 100% is tagged critical."""
         from backend.models.transaction import BankTransaction
-        from backend.services.budget_service import YearlyBudgetService
+        from backend.services.budget import YearlyBudgetService
 
         svc = YearlyBudgetService(db_session)
         svc.create_rule("Car", 1000.0, "Transport", ["Insurance"], 2026)
@@ -130,7 +199,7 @@ class TestYearlyCarryForward:
 
     def test_carries_prior_year_rules(self, db_session, monkeypatch):
         """An empty 2026 inherits 2025's yearly rules."""
-        from backend.services.budget_service import YearlyBudgetService
+        from backend.services.budget import YearlyBudgetService
         import backend.services.budget.yearly as mod
         svc = YearlyBudgetService(db_session)
         svc.create_rule("Vacations", 20000.0, "Travel", ["Hotels"], 2025)
@@ -143,7 +212,7 @@ class TestYearlyCarryForward:
 
     def test_skips_tags_conflicting_with_monthly(self, db_session, monkeypatch):
         """A carried tag that a 2026 monthly rule owns is skipped and reported."""
-        from backend.services.budget_service import YearlyBudgetService, MonthlyBudgetService
+        from backend.services.budget import YearlyBudgetService, MonthlyBudgetService
         import backend.services.budget.yearly as mod
         svc = YearlyBudgetService(db_session)
         svc.create_rule("Trips", 20000.0, "Travel", ["Flights", "Hotels"], 2025)
@@ -163,7 +232,7 @@ class TestYearlyAnalysisSkippedConflictsDedup:
 
     def test_skipped_conflicts_deduped_across_rules(self, db_session, monkeypatch):
         """Two prior-year rules skipping the same tag report it only once."""
-        from backend.services.budget_service import YearlyBudgetService, MonthlyBudgetService
+        from backend.services.budget import YearlyBudgetService, MonthlyBudgetService
         import backend.services.budget.yearly as mod
 
         svc = YearlyBudgetService(db_session)
@@ -195,7 +264,7 @@ class TestForceCopyFromPriorYear:
 
     def test_copies_prior_year_rules_stripping_conflicts(self, db_session):
         """Target year's rules become the source year's, minus conflicting tags."""
-        from backend.services.budget_service import MonthlyBudgetService, YearlyBudgetService
+        from backend.services.budget import MonthlyBudgetService, YearlyBudgetService
 
         svc = YearlyBudgetService(db_session)
         svc.create_rule("Trips", 20000.0, "Travel", ["Flights", "Hotels"], 2025)
@@ -221,7 +290,7 @@ class TestForceCopyFromPriorYear:
         no source. ``force_copy_from_prior_year`` must resolve the source
         first and leave the target untouched when none is found.
         """
-        from backend.services.budget_service import YearlyBudgetService
+        from backend.services.budget import YearlyBudgetService
 
         svc = YearlyBudgetService(db_session)
         # Target year already has rules of its own — there is no earlier
@@ -236,7 +305,7 @@ class TestForceCopyFromPriorYear:
 
     def test_overwrites_non_empty_target_when_source_exists(self, db_session):
         """Unlike auto_carry_forward, this explicit action may overwrite a non-empty year."""
-        from backend.services.budget_service import YearlyBudgetService
+        from backend.services.budget import YearlyBudgetService
 
         svc = YearlyBudgetService(db_session)
         svc.create_rule("OldRule", 1000.0, "Food", ["Groceries"], 2026)
@@ -255,16 +324,16 @@ class TestYearlyVsYearlyExclusion:
 
     def test_create_conflicting_tag_with_another_yearly_raises(self, db_session):
         """A second yearly rule sharing a tag in the same category+year is rejected."""
-        from backend.services.budget_service import YearlyBudgetService
+        from backend.services.budget import YearlyBudgetService
 
         svc = YearlyBudgetService(db_session)
         svc.create_rule("VacA", 5000.0, "Travel", ["Hotels", "Flights"], 2026)
-        with pytest.raises(ValueError, match="Hotels"):
+        with pytest.raises(ValidationException, match="Hotels"):
             svc.create_rule("VacB", 3000.0, "Travel", ["Hotels"], 2026)
 
     def test_non_overlapping_tags_same_category_ok(self, db_session):
         """Two yearly rules in one category+year with disjoint tags coexist."""
-        from backend.services.budget_service import YearlyBudgetService
+        from backend.services.budget import YearlyBudgetService
 
         svc = YearlyBudgetService(db_session)
         svc.create_rule("VacA", 5000.0, "Travel", ["Hotels"], 2026)
@@ -273,25 +342,25 @@ class TestYearlyVsYearlyExclusion:
 
     def test_new_all_tags_conflicts_with_existing_yearly(self, db_session):
         """An all_tags yearly rule collides with any existing yearly rule in the category+year."""
-        from backend.services.budget_service import YearlyBudgetService
+        from backend.services.budget import YearlyBudgetService
 
         svc = YearlyBudgetService(db_session)
         svc.create_rule("VacA", 5000.0, "Travel", ["Hotels"], 2026)
-        with pytest.raises(ValueError, match="Travel"):
+        with pytest.raises(ValidationException, match="Travel"):
             svc.create_rule("VacAll", 3000.0, "Travel", ["all_tags"], 2026)
 
     def test_existing_all_tags_blocks_new_specific(self, db_session):
         """A specific-tag yearly rule is rejected when an all_tags rule already covers the category+year."""
-        from backend.services.budget_service import YearlyBudgetService
+        from backend.services.budget import YearlyBudgetService
 
         svc = YearlyBudgetService(db_session)
         svc.create_rule("VacAll", 5000.0, "Travel", ["all_tags"], 2026)
-        with pytest.raises(ValueError, match="Hotels"):
+        with pytest.raises(ValidationException, match="Hotels"):
             svc.create_rule("VacB", 3000.0, "Travel", ["Hotels"], 2026)
 
     def test_same_tag_different_category_ok(self, db_session):
         """The same tag name in a different category does not conflict."""
-        from backend.services.budget_service import YearlyBudgetService
+        from backend.services.budget import YearlyBudgetService
 
         svc = YearlyBudgetService(db_session)
         svc.create_rule("VacA", 5000.0, "Travel", ["Hotels"], 2026)
@@ -300,7 +369,7 @@ class TestYearlyVsYearlyExclusion:
 
     def test_same_category_tag_different_year_ok(self, db_session):
         """The same (category, tag) in a different year does not conflict."""
-        from backend.services.budget_service import YearlyBudgetService
+        from backend.services.budget import YearlyBudgetService
 
         svc = YearlyBudgetService(db_session)
         svc.create_rule("Vac25", 5000.0, "Travel", ["Hotels"], 2025)
@@ -309,7 +378,7 @@ class TestYearlyVsYearlyExclusion:
 
     def test_edit_amount_does_not_conflict_with_itself(self, db_session):
         """Editing a yearly rule's amount does not trip the self-overlap guard."""
-        from backend.services.budget_service import YearlyBudgetService
+        from backend.services.budget import YearlyBudgetService
 
         svc = YearlyBudgetService(db_session)
         svc.create_rule("VacA", 5000.0, "Travel", ["Hotels"], 2026)
@@ -319,15 +388,57 @@ class TestYearlyVsYearlyExclusion:
 
     def test_edit_to_add_conflicting_tag_raises(self, db_session):
         """Editing a yearly rule to add a tag owned by another yearly rule is rejected."""
-        from backend.services.budget_service import YearlyBudgetService
+        from backend.services.budget import YearlyBudgetService
 
         svc = YearlyBudgetService(db_session)
         svc.create_rule("VacA", 5000.0, "Travel", ["Hotels"], 2026)
         svc.create_rule("VacB", 3000.0, "Travel", ["Flights"], 2026)
         rules = svc.get_year_rules(2026)
         rid_b = int(rules.loc[rules["name"] == "VacB"].iloc[0]["id"])
-        with pytest.raises(ValueError, match="Hotels"):
+        with pytest.raises(ValidationException, match="Hotels"):
             svc.update_rule(rid_b, tags=["Flights", "Hotels"])
+
+
+class TestYearlyIdScoping:
+    """The yearly update/delete paths only ever touch yearly rules."""
+
+    def _monthly_rule_id(self, db_session) -> int:
+        from backend.services.budget import MonthlyBudgetService
+
+        svc = MonthlyBudgetService(db_session)
+        svc.create_rule("Total Budget", 9999.0, "Total Budget", ["all_tags"], 5, 2026)
+        svc.create_rule("Food M", 500.0, "Food", ["Groceries"], 5, 2026)
+        rules = svc.get_month_rules(2026, 5)
+        return int(rules.loc[rules["name"] == "Food M"].iloc[0]["id"])
+
+    def test_update_unknown_id_raises_not_found(self, db_session):
+        """An id that matches no rule at all is not-found (404), not a 500."""
+        from backend.errors import EntityNotFoundException
+        from backend.services.budget import YearlyBudgetService
+
+        with pytest.raises(EntityNotFoundException, match="99999"):
+            YearlyBudgetService(db_session).update_rule(99999, amount=10.0)
+
+    def test_update_monthly_id_raises_not_found(self, db_session):
+        """A monthly rule's id is invisible to the yearly update path."""
+        from backend.errors import EntityNotFoundException
+        from backend.services.budget import MonthlyBudgetService, YearlyBudgetService
+
+        rid = self._monthly_rule_id(db_session)
+        with pytest.raises(EntityNotFoundException, match="yearly"):
+            YearlyBudgetService(db_session).update_rule(rid, amount=10.0)
+        rules = MonthlyBudgetService(db_session).get_month_rules(2026, 5)
+        assert float(rules.loc[rules["id"] == rid].iloc[0]["amount"]) == 500.0
+
+    def test_delete_monthly_id_raises_not_found_and_keeps_rule(self, db_session):
+        """Deleting through the yearly service can't remove a monthly rule."""
+        from backend.errors import EntityNotFoundException
+        from backend.services.budget import MonthlyBudgetService, YearlyBudgetService
+
+        rid = self._monthly_rule_id(db_session)
+        with pytest.raises(EntityNotFoundException, match="yearly"):
+            YearlyBudgetService(db_session).delete_rule(rid)
+        assert len(MonthlyBudgetService(db_session).get_month_rules(2026, 5)) == 2
 
 
 class TestYearlyProjectCategoryExclusion:
@@ -335,21 +446,163 @@ class TestYearlyProjectCategoryExclusion:
 
     def test_yearly_create_on_project_category_raises(self, db_session):
         """A yearly rule on a project-owned category is rejected."""
-        from backend.services.budget_service import ProjectBudgetService, YearlyBudgetService
+        from backend.services.budget import ProjectBudgetService, YearlyBudgetService
 
         ProjectBudgetService(db_session).budget_repository.add(
             "Total Budget", 5000.0, "Renovation", "all_tags", None, None, period_type="project")
-        with pytest.raises(ValueError, match="project"):
+        with pytest.raises(ValidationException, match="project"):
             YearlyBudgetService(db_session).create_rule("Reno Y", 3000.0, "Renovation", ["Materials"], 2026)
 
     def test_yearly_edit_into_project_category_raises(self, db_session):
         """Editing a yearly rule to a project-owned category is rejected."""
-        from backend.services.budget_service import ProjectBudgetService, YearlyBudgetService
+        from backend.services.budget import ProjectBudgetService, YearlyBudgetService
 
         svc = YearlyBudgetService(db_session)
         svc.create_rule("VacA", 5000.0, "Travel", ["Hotels"], 2026)
         ProjectBudgetService(db_session).budget_repository.add(
             "Total Budget", 5000.0, "Renovation", "all_tags", None, None, period_type="project")
         rid = int(svc.get_year_rules(2026).iloc[0]["id"])
-        with pytest.raises(ValueError, match="project"):
+        with pytest.raises(ValidationException, match="project"):
             svc.update_rule(rid, category="Renovation", tags=["Materials"])
+
+
+class TestClosingAYearlyRule:
+    """A settled yearly envelope is retired, not deleted."""
+
+    @staticmethod
+    def _seed(db_session, unique_id, date_, category, tag, amount):
+        """Insert one bank transaction."""
+        from backend.models.transaction import BankTransaction
+
+        db_session.add(
+            BankTransaction(
+                id=unique_id,
+                date=date_,
+                provider="hapoalim",
+                account_name="Checking",
+                description="x",
+                amount=amount,
+                category=category,
+                tag=tag,
+                source="bank_transactions",
+                type="normal",
+                status="completed",
+            )
+        )
+        db_session.commit()
+
+    @staticmethod
+    def _service_with_rule(db_session, name="Car insurance"):
+        """Return ``(service, rule_id)`` for one open yearly rule in 2026."""
+        from backend.services.budget import YearlyBudgetService
+
+        svc = YearlyBudgetService(db_session)
+        svc.create_rule(name, 6000.0, "Transport", ["Insurance"], 2026)
+        rules = svc.get_year_rules(2026)
+        return svc, int(rules.loc[rules["name"] == name].iloc[0]["id"])
+
+    @staticmethod
+    def _is_closed(svc, rule_id):
+        """Read a 2026 rule's closed flag back through the yearly view."""
+        return next(
+            e for e in svc.get_yearly_budget_view(2026) if e["rule"]["id"] == rule_id
+        )["closed"]
+
+    def test_new_rule_is_open(self, db_session):
+        """A rule is open until it is explicitly closed."""
+        svc, rule_id = self._service_with_rule(db_session)
+        assert self._is_closed(svc, rule_id) is False
+
+    def test_close_sets_the_flag(self, db_session):
+        """Closing is visible through the service and the view."""
+        svc, rule_id = self._service_with_rule(db_session)
+        svc.set_rule_closed(rule_id, True)
+
+        assert self._is_closed(svc, rule_id) is True
+
+    def test_reopen_clears_the_flag(self, db_session):
+        """Closing is reversible."""
+        svc, rule_id = self._service_with_rule(db_session)
+        svc.set_rule_closed(rule_id, True)
+        svc.set_rule_closed(rule_id, False)
+        assert self._is_closed(svc, rule_id) is False
+
+    def test_closed_rule_keeps_its_row_and_spend(self, db_session):
+        """The year's own tab still reports the envelope in full."""
+        svc, rule_id = self._service_with_rule(db_session)
+        self._seed(db_session, "c1", "2026-02-01", "Transport", "Insurance", -4500.0)
+        svc.set_rule_closed(rule_id, True)
+
+        entry = next(
+            e for e in svc.get_yearly_budget_view(2026) if e["rule"]["id"] == rule_id
+        )
+        assert entry["rule"]["amount"] == 6000.0
+        assert entry["current_amount"] == 4500.0
+
+    def test_closed_rule_raises_no_alert(self, db_session):
+        """An alert asks for action on an envelope the user has finished with."""
+        svc, rule_id = self._service_with_rule(db_session)
+        self._seed(db_session, "c2", "2026-02-01", "Transport", "Insurance", -7000.0)
+        assert svc.get_alerts(2026)
+
+        svc.set_rule_closed(rule_id, True)
+        assert svc.get_alerts(2026) == []
+
+    def test_summary_counts_closed_apart_but_keeps_the_money(self, db_session):
+        """Health counts drop the closed rule; the year's totals do not."""
+        svc, rule_id = self._service_with_rule(db_session)
+        svc.create_rule("Vacations", 20000.0, "Travel", ["Hotels"], 2026)
+        self._seed(db_session, "c3", "2026-02-01", "Transport", "Insurance", -7000.0)
+        svc.set_rule_closed(rule_id, True)
+
+        summary = svc.get_year_summary(2026)
+        assert summary["closed"] == 1
+        assert summary["over"] == 0
+        assert summary["on_track"] == 1
+        assert summary["biggest_overspend"] is None
+        assert summary["total_allocated"] == 26000.0
+        assert summary["total_spent"] == 7000.0
+
+    def test_closed_rule_still_claims_its_tags(self, db_session):
+        """Mutual exclusion with monthly rules survives the close.
+
+        A closed envelope's spend must not silently reappear inside the
+        monthly budget, so the rule goes on owning its ``(category, tag)``.
+        """
+        from backend.services.budget import MonthlyBudgetService
+
+        svc, rule_id = self._service_with_rule(db_session)
+        svc.set_rule_closed(rule_id, True)
+
+        monthly = MonthlyBudgetService(db_session)
+        monthly.create_rule("Total Budget", 9999.0, "Total Budget", ["all_tags"], 3, 2026)
+        with pytest.raises(ValidationException, match="Insurance"):
+            monthly.create_rule("Car M", 500.0, "Transport", ["Insurance"], 3, 2026)
+
+    def test_carry_forward_reopens_the_copy(self, db_session, monkeypatch):
+        """Next year's copy of a closed envelope starts open — it is a new year."""
+        import backend.services.budget.yearly as mod
+
+        svc, rule_id = self._service_with_rule(db_session)
+        svc.set_rule_closed(rule_id, True)
+
+        monkeypatch.setattr(mod, "_today", lambda: date(2027, 1, 1))
+        assert svc.auto_carry_forward(2027)["copied_from"] == 2026
+        copied = svc.get_year_rules(2027)
+        assert not copied.empty
+        assert [
+            svc.rule_is_closed(row) for _, row in copied.iterrows()
+        ] == [False] * len(copied)
+
+    def test_closing_a_monthly_id_is_not_found(self, db_session):
+        """The yearly close endpoint must never reach a monthly rule."""
+        from backend.errors import EntityNotFoundException
+        from backend.services.budget import MonthlyBudgetService
+
+        monthly = MonthlyBudgetService(db_session)
+        monthly.create_rule("Total Budget", 9999.0, "Total Budget", ["all_tags"], 5, 2026)
+        rid = int(monthly.get_month_rules(2026, 5).iloc[0]["id"])
+
+        svc, _ = self._service_with_rule(db_session)
+        with pytest.raises(EntityNotFoundException, match="yearly"):
+            svc.set_rule_closed(rid, True)

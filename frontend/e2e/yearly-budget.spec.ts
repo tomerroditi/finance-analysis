@@ -83,7 +83,7 @@ test.describe("Yearly budget", () => {
 
     // Spend-positive totals per category for the viewed year. The happy-path
     // rule below is deliberately created over a category that HAS spend: a
-    // zero-spend envelope renders "0 ₪" and 0% whichever sign the view
+    // zero-spend rule renders "0 ₪" and 0% whichever sign the view
     // applies, so it cannot catch a flipped `current_amount` (which is how a
     // double negation shipped — every yearly row read as a net refund).
     const spendByMonth: {
@@ -122,7 +122,7 @@ test.describe("Yearly budget", () => {
 
     // A category claimed by no rule at all (monthly, yearly or project) —
     // guaranteed not to collide — and among those, the one with the most
-    // spend this year, so the created envelope shows a real figure.
+    // spend this year, so the created rule shows a real figure.
     const claimedCategories = new Set(allRules.map((r) => r.category));
     const freeCategoryEntry = Object.entries(categoriesMap)
       .filter(([name, tags]) => !claimedCategories.has(name) && tags.length > 0)
@@ -137,6 +137,15 @@ test.describe("Yearly budget", () => {
 
     // ---- 1. Create a yearly rule and confirm it renders with a progress bar. ----
     const ruleName = `E2E Yearly ${Date.now()}`;
+    // Ceiling picked so the rule lands at ~85% used: inside the green
+    // tier the row's dot, bar and percentage paint, yet (before December)
+    // ahead of the year's pace. That is the combination that used to give a
+    // row a green bar and an amber trend line at the same time.
+    const TARGET_SHARE = 0.85;
+    const ceiling = Math.max(
+      Math.round((spendThisYear.get(freeCategory) ?? 0) / TARGET_SHARE),
+      1,
+    );
 
     await page.getByRole("button", { name: /add yearly rule/i }).click();
     const addDialog = page.getByRole("dialog", { name: /add yearly rule/i });
@@ -151,20 +160,24 @@ test.describe("Yearly budget", () => {
       })
       .click();
 
-    // Take every tag in the category so the envelope covers the whole of that
-    // category's spend, which was checked to be non-zero above.
+    // Take every tag in the category so the rule covers the whole of that
+    // category's spend, which was checked to be non-zero above. A rule
+    // over a whole category is the common case, so that is one click on the
+    // select-all row rather than one click per tag.
     await addDialog.getByRole("button", { name: /select tags/i }).click();
-    for (const tag of freeCategoryTags) {
-      await page
-        .getByRole("option", {
-          name: new RegExp(`^${escapeRegExp(tag)}$`, "i"),
-        })
-        .click();
-    }
+    const selectAllTags = page.getByTestId("multiselect-select-all");
+    await expect(selectAllTags).toContainText(/select all/i);
+    await selectAllTags.click();
+    // It flips to its own undo, and the trigger counts every tag — not just
+    // the ones that happened to be on screen.
+    await expect(selectAllTags).toContainText(/deselect all/i);
     // Close the tags popover (it stays open to allow multiple picks).
     await addDialog.getByPlaceholder(/vacations/i).click();
+    await expect(
+      addDialog.getByText(new RegExp(`^${freeCategoryTags.length} selected$`)),
+    ).toBeVisible();
 
-    await addDialog.getByPlaceholder(/20,?000/i).fill("15000");
+    await addDialog.getByPlaceholder(/20,?000/i).fill(String(ceiling));
     await addDialog.getByRole("button", { name: /^save$/i }).click();
     await expect(addDialog).toBeHidden({ timeout: 10_000 });
 
@@ -182,7 +195,7 @@ test.describe("Yearly budget", () => {
     // `current_amount` is spend-positive (get_yearly_budget_view already
     // negates the transaction sum), and BudgetLedgerRow reads a negative
     // `current` as a net refund: it clamps the bar to 0% and paints the whole
-    // envelope as remaining. Negating on the way in therefore blanked every
+    // rule as remaining. Negating on the way in therefore blanked every
     // yearly row's progress while the header above it showed the real total.
     const analysisRes = await page.request.get(
       `/api/budget/yearly/${currentYear}/analysis`,
@@ -190,7 +203,11 @@ test.describe("Yearly budget", () => {
     );
     expect(analysisRes.ok()).toBeTruthy();
     const analysis: {
-      rules: { rule: { name: string }; current_amount: number }[];
+      rules: {
+        rule: { name: string };
+        current_amount: number;
+        data: unknown[];
+      }[];
     } = await analysisRes.json();
     const createdEntry = analysis.rules.find((r) => r.rule.name === ruleName);
     expect(
@@ -213,6 +230,79 @@ test.describe("Yearly budget", () => {
     await expect(
       createdRow.locator("[style*='width']").first(),
     ).not.toHaveAttribute("style", /width:\s*0%/);
+
+    // ---- 1c. The row's status colour and its trend agree. ----
+    // Every status surface on the page — this dot and bar, the overview's
+    // rules, the year's health count — colours by share of the ceiling.
+    // The burn sparkline used to colour by pace instead, so a rule at
+    // 85% with three months of the year left drew a green bar beside an
+    // amber line and left the reader to guess which one meant trouble.
+    const STATUS_STROKE: Record<string, string> = {
+      "bg-emerald-500": "#10b981",
+      "bg-amber-500": "#f59e0b",
+      "bg-rose-500": "#f43f5e",
+    };
+    const barClass =
+      (await createdRow.locator("[style*='width']").first().getAttribute("class")) ?? "";
+    const tier = Object.keys(STATUS_STROKE).find((cls) => barClass.includes(cls));
+    expect(tier, `no status colour on the row's bar: ${barClass}`).toBeTruthy();
+
+    const sparkline = createdRow.getByTestId("rule-sparkline").first();
+    await expect(sparkline).toBeVisible();
+    await expect(sparkline.locator("polyline")).toHaveAttribute(
+      "stroke",
+      STATUS_STROKE[tier!],
+    );
+
+    const share = createdEntry!.current_amount / ceiling;
+    expect(
+      share,
+      "the ceiling above should put this rule under the row's 90% amber threshold",
+    ).toBeLessThan(0.9);
+    await expect(sparkline.locator("polyline")).toHaveAttribute("stroke", "#10b981");
+
+    // Pace still has a voice, it just has its own mark: the diagonal goes
+    // amber (and the summary says so, for anyone who cannot see it) when the
+    // burn line is above it. In December the year has caught up with an 85%
+    // rule, so the diagonal is correctly quiet.
+    const paceLine = sparkline.locator('[data-testid="pace-line"]');
+    const paceFraction = (new Date().getMonth() + 1) / 12;
+    const svg = sparkline.locator("svg");
+    if (share > paceFraction) {
+      await expect(paceLine).toHaveAttribute("stroke", "#f59e0b");
+      await expect(svg).toHaveAttribute("aria-label", /Ahead of pace/i);
+    } else {
+      await expect(paceLine).toHaveAttribute("stroke", "#94a3b8");
+      await expect(svg).not.toHaveAttribute("aria-label", /Ahead of pace/i);
+    }
+
+    // ---- 1d. The row expands to the transactions behind the rule. ----
+    // The analysis already carries them (the burn sparkline is bucketed from
+    // the same array), so expanding costs no request — but the list only
+    // mounts while the row is open, which is what these assertions pin.
+    const disclosure = createdRow.locator("button[aria-expanded]").first();
+    await expect(disclosure).toHaveAttribute("aria-expanded", "false");
+
+    const txRows = createdRow.locator('[data-testid^="transaction-row-"]');
+    // A negative assertion against a collapsed row: nothing here auto-waits,
+    // so anchor on the disclosure state above before trusting the zero.
+    await expect(txRows).toHaveCount(0);
+
+    await disclosure.click();
+    await expect(disclosure).toHaveAttribute("aria-expanded", "true");
+    await expect(txRows.first()).toBeVisible({ timeout: 10_000 });
+
+    // The table paginates at 10 rows, so a busy rule shows its first page.
+    const TX_PAGE_SIZE = 10;
+    await expect(txRows).toHaveCount(
+      Math.min(createdEntry!.data.length, TX_PAGE_SIZE),
+    );
+
+    // Collapsing takes them away again — the row is a disclosure, not a
+    // one-way reveal.
+    await disclosure.click();
+    await expect(disclosure).toHaveAttribute("aria-expanded", "false");
+    await expect(txRows).toHaveCount(0);
 
     // ---- 2. Attempt a colliding yearly rule and assert the inline error. ----
     await page.getByRole("button", { name: /add yearly rule/i }).click();

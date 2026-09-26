@@ -1,29 +1,33 @@
-"""
-Demo database preparation helpers.
+"""Demo database preparation and lifecycle helpers.
 
-Both the ``/api/testing/toggle_demo_mode`` route and the Vercel serverless
-entrypoint (``index.py``) need to copy the frozen demo SQLite, apply any
-schema deltas the ORM has accrued since the file was built, and shift every
-stored date relative to today so the demo data tracks the current month.
+Both the ``/api/testing/demo/prepare`` / ``/api/testing/demo/reset`` routes
+and the Vercel serverless entrypoint (``index.py``) need to copy the frozen
+demo SQLite, apply any schema deltas the ORM has accrued since the file was
+built, and shift every stored date relative to today so the demo data tracks
+the current month.
 
-Keeping this in one module ensures the toggle path and the cold-start path
+Keeping this in one module ensures the route path and the cold-start path
 stay in lockstep — diverging implementations were how the Vercel preview
 ended up with budget rules pinned to ``DEMO_REFERENCE_DATE``.
 """
 
 from __future__ import annotations
 
+import calendar
+import contextlib
+import json
 import os
+import re
 import shutil
 from datetime import date, timedelta
+from typing import Any
 
 from sqlalchemy import inspect, text
-from sqlalchemy.engine import Engine
+from sqlalchemy.engine import Connection, Engine
 
 from backend import database
 from backend.config import AppConfig
 from backend.models import Base
-
 
 # Reference date used when generating ``backend/resources/demo_data.db``.
 # Every date column in that file is anchored to this point; on copy we apply
@@ -33,9 +37,7 @@ DEMO_REFERENCE_DATE = date(2026, 2, 25)
 
 def _source_db_path() -> str:
     """Resolve the path to the frozen demo DB shipped in the repo."""
-    return os.path.join(
-        os.path.dirname(__file__), "resources", "demo_data.db"
-    )
+    return os.path.join(os.path.dirname(__file__), "resources", "demo_data.db")
 
 
 #: Columns removed from a model that the frozen demo snapshot may still carry.
@@ -178,7 +180,9 @@ _TXN_TABLES = {
 }
 
 
-def _resolve_override_txn_date(conn, source_type: str, source_id: int, source_table: str):
+def _resolve_override_txn_date(
+    conn: Connection, source_type: str, source_id: int, source_table: str
+) -> str | None:
     """Return the original ISO date of the transaction an override points at.
 
     Returns ``None`` if it cannot be resolved (unknown table, missing row).
@@ -208,7 +212,7 @@ def _resolve_override_txn_date(conn, source_type: str, source_id: int, source_ta
     return None
 
 
-def _shift_budget_month_overrides(conn, offset_days: int) -> None:
+def _shift_budget_month_overrides(conn: Connection, offset_days: int) -> None:
     """Re-anchor each budget month override to its (shifted) transaction's month.
 
     Call this *before* the transaction date columns are shifted — it relies on
@@ -233,9 +237,7 @@ def _shift_budget_month_overrides(conn, offset_days: int) -> None:
         if not txn_date:
             continue
         orig_txn = date.fromisoformat(txn_date[:10])
-        direction = (oy * 12 + (om - 1)) - (
-            orig_txn.year * 12 + (orig_txn.month - 1)
-        )
+        direction = (oy * 12 + (om - 1)) - (orig_txn.year * 12 + (orig_txn.month - 1))
         new_txn = orig_txn + timedelta(days=offset_days)
         new_index = (new_txn.year * 12 + (new_txn.month - 1)) + direction
         new_year, new_month0 = divmod(new_index, 12)
@@ -248,25 +250,146 @@ def _shift_budget_month_overrides(conn, offset_days: int) -> None:
         )
 
 
+def _shift_month(year: int, month: int, month_offset: int) -> tuple[int, int]:
+    """Return ``(year, month)`` moved by ``month_offset`` calendar months."""
+    new_year, new_month0 = divmod(year * 12 + (month - 1) + month_offset, 12)
+    return new_year, new_month0 + 1
+
+
+def _shift_month_end(value: str, month_offset: int) -> date:
+    """Move a ``YYYY-MM-DD`` date by whole months and land on that month's end."""
+    year, month = _shift_month(int(value[:4]), int(value[5:7]), month_offset)
+    return date(year, month, calendar.monthrange(year, month)[1])
+
+
+_ISO_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
+
+def _shift_json_dates(value: Any, offset_days: int) -> Any:
+    """Shift every ``YYYY-MM-DD`` string inside a decoded JSON value.
+
+    Parameters
+    ----------
+    value : Any
+        Decoded JSON (dict, list or scalar).
+    offset_days : int
+        Days to move each date by.
+
+    Returns
+    -------
+    Any
+        The same structure with its dates moved.
+    """
+    if isinstance(value, dict):
+        return {k: _shift_json_dates(v, offset_days) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_shift_json_dates(v, offset_days) for v in value]
+    if isinstance(value, str) and _ISO_DATE_RE.match(value):
+        try:
+            return (date.fromisoformat(value) + timedelta(days=offset_days)).isoformat()
+        except ValueError:
+            return value
+    return value
+
+
+def _shift_clearing_house_data(
+    conn: Connection, offset_days: int, month_offset: int
+) -> None:
+    """Move the clearing-house reports and the dates inside policy details.
+
+    A report's ``calc_date`` is a month end ("as of 31/01"), so it moves by
+    whole months and stays a month end — a day offset would land it
+    mid-month. A policy's ``details.source_date`` is that same report date
+    and moves the same way. The subscription expiry and every other date
+    inside ``details`` are moments in time and move by days.
+    Reports are rewritten newest-first (or oldest-first when moving back) so
+    no row lands on a month another row still holds, which the
+    ``(provider, account_name, calc_date)`` constraint would reject.
+
+    Parameters
+    ----------
+    conn : Connection
+        Open connection on the demo database.
+    offset_days : int
+        The day offset every real date moves by.
+    month_offset : int
+        The whole-month distance calendar periods move by.
+    """
+    tables = set(inspect(conn).get_table_names())
+    if "clearing_house_reports" in tables:
+        order = "DESC" if month_offset > 0 else "ASC"
+        reports = conn.execute(
+            text(
+                "SELECT id, calc_date, subscription_expires FROM clearing_house_reports "
+                f"ORDER BY calc_date {order}"
+            )
+        ).fetchall()
+        for report_id, calc_date, expires in reports:
+            month_end = _shift_month_end(calc_date, month_offset)
+            conn.execute(
+                text(
+                    "UPDATE clearing_house_reports SET calc_date = :calc_date, "
+                    "subscription_expires = :expires WHERE id = :id"
+                ),
+                {
+                    "calc_date": month_end.isoformat(),
+                    "expires": _shift_json_dates(expires, offset_days),
+                    "id": report_id,
+                },
+            )
+    if "details" in {
+        c["name"] for c in inspect(conn).get_columns("insurance_accounts")
+    }:
+        rows = conn.execute(
+            text("SELECT id, details FROM insurance_accounts WHERE details IS NOT NULL")
+        ).fetchall()
+        for account_id, details in rows:
+            try:
+                decoded = json.loads(details)
+            except ValueError:
+                continue
+            shifted = _shift_json_dates(decoded, offset_days)
+            if isinstance(decoded, dict) and decoded.get("source_date"):
+                shifted["source_date"] = _shift_month_end(
+                    decoded["source_date"], month_offset
+                ).isoformat()
+            conn.execute(
+                text("UPDATE insurance_accounts SET details = :details WHERE id = :id"),
+                {"details": json.dumps(shifted, ensure_ascii=False), "id": account_id},
+            )
+
+
 def _shift_dates(engine: Engine, offset_days: int) -> None:
-    """Shift every shiftable date column by ``offset_days`` days."""
+    """Shift every shiftable date column by ``offset_days`` days.
+
+    Date columns move by the raw day offset. Period columns stored as a
+    calendar month (``budget_rules.year``/``month``, savings-goal
+    ``start_month``/``closed_month``) move by the whole-month distance
+    between ``DEMO_REFERENCE_DATE``'s month and the shifted reference's
+    month, so the snapshot's reference month always lands on today's month.
+    Anchoring those to day 1 and adding the day offset instead put them a
+    month behind whenever today's day-of-month was earlier than the
+    reference day — leaving the current month without a Total Budget rule.
+    """
     if offset_days == 0:
         return
 
-    offset_str = (
-        f"+{offset_days} days" if offset_days > 0 else f"{offset_days} days"
+    offset_str = f"+{offset_days} days" if offset_days > 0 else f"{offset_days} days"
+    shifted_reference = DEMO_REFERENCE_DATE + timedelta(days=offset_days)
+    year_offset = shifted_reference.year - DEMO_REFERENCE_DATE.year
+    month_offset = year_offset * 12 + (
+        shifted_reference.month - DEMO_REFERENCE_DATE.month
     )
 
     with engine.connect() as conn:
         # Budget month overrides must move in lockstep with the transactions
         # they point at. Each override sits exactly one calendar month before
-        # or after its transaction's month; shifting the stored (year, month)
-        # by raw days — the way budget_rules are shifted — can drift it a month
-        # relative to the transaction (the rule anchors to day 1, the
-        # transaction to its real day). Instead, anchor each override to its
-        # transaction's *new* month plus the original +/-1 direction. This runs
-        # before the transaction dates below are shifted, so the lookups still
-        # see the original (pre-shift) transaction dates.
+        # or after its transaction's month, and transactions move by raw days,
+        # so a whole-month shift like budget_rules get can drift an override a
+        # month relative to its transaction. Instead, anchor each override to
+        # its transaction's *new* month plus the original +/-1 direction. This
+        # runs before the transaction dates below are shifted, so the lookups
+        # still see the original (pre-shift) transaction dates.
         _shift_budget_month_overrides(conn, offset_days)
 
         for table in [
@@ -284,9 +407,7 @@ def _shift_dates(engine: Engine, offset_days: int) -> None:
         # Order avoids UNIQUE collisions on (investment_id, date) snapshots.
         order = "DESC" if offset_days > 0 else "ASC"
         snapshot_ids = conn.execute(
-            text(
-                f"SELECT id FROM investment_balance_snapshots ORDER BY date {order}"
-            )
+            text(f"SELECT id FROM investment_balance_snapshots ORDER BY date {order}")
         ).fetchall()
         for (sid,) in snapshot_ids:
             conn.execute(
@@ -337,22 +458,101 @@ def _shift_dates(engine: Engine, offset_days: int) -> None:
                 {"offset": offset_str},
             )
 
-        rows = conn.execute(
+        _shift_clearing_house_data(conn, offset_days, month_offset)
+
+        # categories.created_at is a full DateTime (not a YYYY-MM-DD date
+        # string), so it needs SQLite's datetime() rather than date() —
+        # date() would truncate the time-of-day component. Categories carry
+        # no other shiftable dates, but get_category_usage() compares
+        # created_at against a today-relative cutoff to grant new categories
+        # a creation grace; leaving it frozen at the snapshot's build date
+        # would let demo categories silently drift into the unused section
+        # once wall-clock time passes six months past that date.
+        conn.execute(
+            text("UPDATE categories SET created_at = datetime(created_at, :offset)"),
+            {"offset": offset_str},
+        )
+
+        conn.execute(
             text(
-                "SELECT DISTINCT id, year, month FROM budget_rules WHERE year IS NOT NULL"
-            )
+                "UPDATE savings_goals SET target_date = date(target_date, :offset) "
+                "WHERE target_date IS NOT NULL"
+            ),
+            {"offset": offset_str},
+        )
+
+        # Savings-goal months are "YYYY-MM" strings and move by whole calendar
+        # months, like budget_rules below. Allocation rows are deliberately NOT
+        # shifted — the snapshot ships none, and the engine recomputes the
+        # whole ledger on first read from the already-shifted transactions.
+        for column in ("start_month", "closed_month"):
+            months = conn.execute(
+                text(
+                    f"SELECT id, {column} FROM savings_goals WHERE {column} IS NOT NULL"
+                )
+            ).fetchall()
+            for goal_id, value in months:
+                try:
+                    year, month = _shift_month(
+                        int(value[:4]), int(value[5:7]), month_offset
+                    )
+                except (TypeError, ValueError):
+                    continue
+                conn.execute(
+                    text(f"UPDATE savings_goals SET {column} = :value WHERE id = :id"),
+                    {"value": f"{year:04d}-{month:02d}", "id": goal_id},
+                )
+
+        # Monthly rules move by whole calendar months, yearly rules (month
+        # NULL) by whole years; project rules carry no period.
+        rules = conn.execute(
+            text("SELECT id, year, month FROM budget_rules WHERE year IS NOT NULL")
         ).fetchall()
-        for row in rows:
-            old_date = date(row[1], row[2], 1)
-            new_date = old_date + timedelta(days=offset_days)
+        for rule_id, year, month in rules:
+            if month is None:
+                new_year, new_month = year + year_offset, None
+            else:
+                new_year, new_month = _shift_month(year, month, month_offset)
             conn.execute(
                 text(
                     "UPDATE budget_rules SET year = :year, month = :month WHERE id = :id"
                 ),
-                {"year": new_date.year, "month": new_date.month, "id": row[0]},
+                {"year": new_year, "month": new_month, "id": rule_id},
             )
 
         conn.commit()
+
+
+def sqlite_sidecar_paths(db_path: str) -> list[str]:
+    """Return the SQLite journal files that must be removed with ``db_path``."""
+    return [f"{db_path}-journal", f"{db_path}-wal", f"{db_path}-shm"]
+
+
+def _install_snapshot(source: str, destination: str) -> None:
+    """Put the frozen snapshot in place without tearing it under live readers.
+
+    ``shutil.copy2`` straight onto ``destination`` truncates and rewrites the
+    file *in place*, so every request still holding it open keeps reading the
+    same inode while its contents change underneath — SQLite then reports
+    "database disk image is malformed", and one landing inside the rebuild's
+    own ``create_all`` fails the rebuild outright and leaves a half-built
+    database that 500s everything until the next one.
+
+    Copying to a sibling and ``os.replace``-ing is atomic: readers that
+    already have the old file open keep a consistent (if stale) inode until
+    they close, and every open after the swap sees the finished copy. They
+    were about to be torn down anyway — the demo database is being reset.
+
+    Any stale rollback journal is removed *before* the swap. Left behind, it
+    describes the previous file and SQLite would try to replay it over the
+    new one on the next open.
+    """
+    staging = f"{destination}.incoming"
+    shutil.copy2(source, staging)
+    for sidecar in sqlite_sidecar_paths(destination):
+        with contextlib.suppress(FileNotFoundError):
+            os.remove(sidecar)
+    os.replace(staging, destination)
 
 
 def prepare_demo_database() -> None:
@@ -371,13 +571,9 @@ def prepare_demo_database() -> None:
     # demo DB file with the frozen snapshot — if it ever resolved
     # get_db_path()/get_engine() while the ambient context was real mode, it
     # would copy demo data straight over the user's real data.db, a total
-    # loss with no undo. Demo mode is now per-request/context-local rather
-    # than a single global toggle, which makes that mistake easier for a
-    # future caller to make than it used to be, so this must not rely on
-    # the caller having pinned it first. Existing callers
-    # (backend/routes/testing.py, index.py) already pin demo mode before
-    # calling this — that is intentional defense in depth, not redundant
-    # dead code, and stays as-is.
+    # loss with no undo. Demo mode is context-local, so this must not rely
+    # on the caller having pinned it first; the callers that already do
+    # (build_demo_database below, index.py) are defense in depth.
     token = config.set_demo_mode(True)
     try:
         demo_db_path = config.get_db_path()
@@ -385,7 +581,7 @@ def prepare_demo_database() -> None:
 
         if os.path.exists(source):
             os.makedirs(os.path.dirname(demo_db_path), exist_ok=True)
-            shutil.copy2(source, demo_db_path)
+            _install_snapshot(source, demo_db_path)
 
         database.reset_engines()
         engine = database.get_engine()
@@ -397,5 +593,69 @@ def prepare_demo_database() -> None:
 
         offset_days = (date.today() - DEMO_REFERENCE_DATE).days
         _shift_dates(engine, offset_days)
+    finally:
+        config.reset_demo_mode(token)
+
+
+def demo_database_exists() -> bool:
+    """Return ``True`` when the demo database file is already on disk.
+
+    Returns
+    -------
+    bool
+        Whether the demo-mode database path exists.
+    """
+    config = AppConfig()
+    token = config.set_demo_mode(True)
+    try:
+        return os.path.exists(config.get_db_path())
+    finally:
+        config.reset_demo_mode(token)
+
+
+def sync_demo_schema() -> None:
+    """Bring an existing demo database up to the current schema.
+
+    Startup migrations only ever run against the database the process opened
+    — the real one — and ``/demo/prepare`` deliberately does not rebuild a
+    demo DB that is already on disk. Without this, a demo database built by an
+    older version keeps that version's schema forever, and every read of a
+    table or column added since answers 500. Creating what is missing is
+    additive and leaves the demo data alone, so it is safe on every prepare.
+    """
+    config = AppConfig()
+    token = config.set_demo_mode(True)
+    try:
+        engine = database.get_engine()
+        Base.metadata.create_all(bind=engine)
+        sync_missing_columns(engine)
+    finally:
+        config.reset_demo_mode(token)
+
+
+def build_demo_database() -> None:
+    """Copy the frozen snapshot into place and seed demo credentials.
+
+    Forces demo context for its own duration rather than trusting the
+    caller's header, so the snapshot can never be copied over the real
+    database.
+    """
+    # Imported here, not at module level: credentials_service pulls in
+    # keyring, which the Vercel runtime does not ship, and this module is
+    # imported by index.py and backend.demo_sessions on every cold start.
+    from backend.services.credentials_service import CredentialsService
+    from backend.services.tagging_service import CategoriesTagsService
+
+    config = AppConfig()
+    token = config.set_demo_mode(True)
+    try:
+        database.reset_engines()
+        CredentialsService.clear_cache()
+        CategoriesTagsService.clear_cache()
+
+        prepare_demo_database()
+
+        with database.get_db_context() as demo_db:
+            CredentialsService(demo_db).seed_demo_credentials()
     finally:
         config.reset_demo_mode(token)

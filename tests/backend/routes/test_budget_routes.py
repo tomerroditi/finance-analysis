@@ -1,7 +1,14 @@
-"""Tests for the /api/budget API endpoints."""
+"""Tests for the /api/budget API endpoints (happy paths).
 
-import pytest
-from unittest.mock import patch, MagicMock
+Error and not-found paths live in ``test_budget_routes_errors.py``.
+"""
+
+from datetime import date
+
+from backend.constants.budget import ALL_TAGS, TOTAL_BUDGET
+from backend.models.budget import BudgetRule
+
+from backend.services.tagging_service import cache_key as categories_cache_key
 
 
 SAMPLE_CATEGORIES = {
@@ -81,19 +88,6 @@ class TestBudgetRoutes:
         data = rules_response.json()
         assert any(r["name"] == "Hobbies" for r in data)
 
-    def test_create_budget_rule_invalid(self, test_client, seed_budget_rules):
-        """POST /api/budget/rules with empty name returns 400."""
-        payload = {
-            "name": "",
-            "amount": 100.0,
-            "category": "Food",
-            "tags": "Groceries",
-            "month": 1,
-            "year": 2024,
-        }
-        response = test_client.post("/api/budget/rules", json=payload)
-        assert response.status_code == 400
-
     def test_update_budget_rule(self, test_client, seed_budget_rules):
         """PUT /api/budget/rules/{id} updates a rule."""
         # Get the rules to find an ID
@@ -134,30 +128,44 @@ class TestBudgetRoutes:
         assert response.json()["status"] == "success"
 
         # Verify the copied rules exist for February
+        assert response.json()["message"] == "Copied 4 rules from 2024-1"
         feb_rules = test_client.get("/api/budget/rules/2024/2").json()
         assert len(feb_rules) == 4
-
-    def test_copy_previous_month_rules_no_source(self, test_client):
-        """POST /api/budget/rules/2024/2/copy returns 404 when no previous month rules."""
-        response = test_client.post("/api/budget/rules/2024/2/copy")
-        assert response.status_code == 404
 
     def test_get_monthly_analysis(
         self, test_client, seed_budget_rules, seed_base_transactions, monkeypatch
     ):
-        """GET /api/budget/analysis/2024/1 returns analysis."""
+        """GET /api/budget/analysis/2024/1 returns spend per seeded rule.
+
+        January 2024 spend from ``seed_base_transactions``: Food 245,
+        Transport 70, Entertainment 40, everything 3605; the Home rent
+        (3000) and Other (250) land in Other Expenses with the
+        10000 - 2800 = 7200 of unallocated headroom.
+        """
         monkeypatch.setattr(
             "backend.services.tagging_service._categories_cache",
-            {False: SAMPLE_CATEGORIES},
+            {categories_cache_key(): SAMPLE_CATEGORIES},
         )
         response = test_client.get("/api/budget/analysis/2024/1")
         assert response.status_code == 200
         data = response.json()
-        assert "rules" in data
-        assert "project_spending" in data
-        assert "pending_refunds" in data
-        assert isinstance(data["rules"], list)
-        assert len(data["rules"]) > 0
+        assert data["project_spending"] == {"projects": []}
+        assert data["pending_refunds"] == {"items": [], "total_expected": 0.0}
+        assert data["copied_from"] is None
+        assert data["skipped_yearly_conflicts"] == []
+
+        by_name = {e["rule"]["name"]: e for e in data["rules"]}
+        assert set(by_name) == {
+            TOTAL_BUDGET, "Food", "Transport", "Entertainment", "Other Expenses"
+        }
+        assert by_name[TOTAL_BUDGET]["current_amount"] == 3605.0
+        assert by_name[TOTAL_BUDGET]["allow_delete"] is False
+        assert by_name["Food"]["current_amount"] == 245.0
+        assert by_name["Food"]["rule"]["tags"] == [ALL_TAGS]
+        assert by_name["Transport"]["current_amount"] == 70.0
+        assert by_name["Entertainment"]["current_amount"] == 40.0
+        assert by_name["Other Expenses"]["current_amount"] == 3250.0
+        assert by_name["Other Expenses"]["rule"]["amount"] == 7200.0
 
     def test_get_month_alerts(
         self, test_client, seed_base_transactions, monkeypatch
@@ -165,7 +173,7 @@ class TestBudgetRoutes:
         """GET /api/budget/alerts/{year}/{month} returns alerts payload."""
         monkeypatch.setattr(
             "backend.services.tagging_service._categories_cache",
-            {False: SAMPLE_CATEGORIES},
+            {categories_cache_key(): SAMPLE_CATEGORIES},
         )
         # Seed a tight Food budget that will be tripped by Jan 2024 transactions.
         test_client.post(
@@ -208,7 +216,7 @@ class TestBudgetRoutes:
         """GET /api/budget/alerts returns current-month payload, even when empty."""
         monkeypatch.setattr(
             "backend.services.tagging_service._categories_cache",
-            {False: SAMPLE_CATEGORIES},
+            {categories_cache_key(): SAMPLE_CATEGORIES},
         )
         response = test_client.get("/api/budget/alerts")
         assert response.status_code == 200
@@ -230,7 +238,7 @@ class TestBudgetRoutes:
         """POST /api/budget/projects creates a project."""
         monkeypatch.setattr(
             "backend.services.tagging_service._categories_cache",
-            {False: SAMPLE_CATEGORIES},
+            {categories_cache_key(): SAMPLE_CATEGORIES},
         )
         payload = {"category": "Housing", "total_budget": 5000.0}
         response = test_client.post("/api/budget/projects", json=payload)
@@ -252,76 +260,81 @@ class TestBudgetRoutes:
         assert "Wedding" not in projects
 
 
-class TestBudgetRoutesErrors:
-    """Tests for error handling in budget route endpoints."""
+class TestProjectClosedRoutes:
+    """Closing and reopening a project over HTTP."""
 
-    def test_copy_rules_returns_null_no_previous(self, test_client, seed_budget_rules):
-        """Verify 404 when copying rules and the previous month has no rules.
+    def test_projects_status_defaults_to_open(
+        self, test_client, seed_project_transactions
+    ):
+        """GET /api/budget/projects/status lists every project as open."""
+        response = test_client.get("/api/budget/projects/status")
+        assert response.status_code == 200
+        status = {entry["name"]: entry["closed"] for entry in response.json()}
+        assert status["Wedding"] is False
+        assert status["Renovation"] is False
 
-        Seed data has rules for January 2024 only. Copying from July 2024
-        (prev month = June) should return 404 because June has no rules.
-        """
-        response = test_client.post("/api/budget/rules/2024/7/copy")
+    def test_close_project_marks_it_closed(
+        self, test_client, seed_project_transactions
+    ):
+        """PUT /api/budget/projects/{name}/closed flags the project."""
+        response = test_client.put(
+            "/api/budget/projects/Wedding/closed", json={"closed": True}
+        )
+        assert response.status_code == 200
+        assert response.json()["closed"] is True
+
+        status = {
+            entry["name"]: entry["closed"]
+            for entry in test_client.get("/api/budget/projects/status").json()
+        }
+        assert status["Wedding"] is True
+        assert status["Renovation"] is False
+
+    def test_closed_project_leaves_the_overview_envelopes(
+        self, test_client, seed_project_transactions
+    ):
+        """The Overview stops listing a project once it is closed."""
+        today = date.today()
+        before = test_client.get(
+            f"/api/budget/overview/{today.year}/{today.month}"
+        ).json()["long_envelopes"]
+        assert "Wedding" in [e["name"] for e in before]
+
+        test_client.put("/api/budget/projects/Wedding/closed", json={"closed": True})
+
+        after = test_client.get(
+            f"/api/budget/overview/{today.year}/{today.month}"
+        ).json()["long_envelopes"]
+        assert "Wedding" not in [e["name"] for e in after]
+
+    def test_closed_project_still_has_a_detail_page(
+        self, test_client, seed_project_transactions
+    ):
+        """Its own tab keeps working, and says the project is closed."""
+        test_client.put("/api/budget/projects/Wedding/closed", json={"closed": True})
+
+        response = test_client.get("/api/budget/projects/Wedding")
+        assert response.status_code == 200
+        assert response.json()["closed"] is True
+
+    def test_reopen_project_clears_the_flag(
+        self, test_client, seed_project_transactions
+    ):
+        """Closing is reversible over the same endpoint."""
+        test_client.put("/api/budget/projects/Wedding/closed", json={"closed": True})
+        response = test_client.put(
+            "/api/budget/projects/Wedding/closed", json={"closed": False}
+        )
+        assert response.status_code == 200
+        assert response.json()["closed"] is False
+        assert test_client.get("/api/budget/projects/Wedding").json()["closed"] is False
+
+    def test_close_unknown_project_returns_404(self, test_client):
+        """An unknown project name is a 404, matching the other project routes."""
+        response = test_client.put(
+            "/api/budget/projects/Nonexistent/closed", json={"closed": True}
+        )
         assert response.status_code == 404
-        assert "No rules found" in response.json()["detail"]
-
-    def test_get_project_details_error(self, test_client):
-        """Verify 500 when project budget view raises an exception.
-
-        The project detail route has no try/except, so the RuntimeError
-        propagates to FastAPI's default exception handler.
-        """
-        with patch(
-            "backend.routes.budget.ProjectBudgetService"
-        ) as mock_cls:
-            mock_svc = MagicMock()
-            mock_cls.return_value = mock_svc
-            mock_svc.get_project_budget_view.side_effect = RuntimeError(
-                "Project view failed"
-            )
-            with pytest.raises(RuntimeError, match="Project view failed"):
-                test_client.get("/api/budget/projects/NonExistent")
-
-    def test_delete_project_error(self, test_client):
-        """Verify exception propagation when project deletion raises an error.
-
-        The delete project route has no try/except, so the RuntimeError
-        propagates through the TestClient.
-        """
-        with patch(
-            "backend.routes.budget.ProjectBudgetService"
-        ) as mock_cls:
-            mock_svc = MagicMock()
-            mock_cls.return_value = mock_svc
-            # The route 404s on an unknown project before calling the service.
-            mock_svc.get_all_projects_names.return_value = ["Wedding"]
-            mock_svc.delete_project.side_effect = RuntimeError(
-                "Delete project failed"
-            )
-            with pytest.raises(RuntimeError, match="Delete project failed"):
-                test_client.delete("/api/budget/projects/Wedding")
-
-    def test_update_project_error(self, test_client):
-        """Verify exception propagation when project update raises an error.
-
-        The update project route has no try/except, so the RuntimeError
-        propagates through the TestClient.
-        """
-        with patch(
-            "backend.routes.budget.ProjectBudgetService"
-        ) as mock_cls:
-            mock_svc = MagicMock()
-            mock_cls.return_value = mock_svc
-            # The route 404s on an unknown project before calling the service.
-            mock_svc.get_all_projects_names.return_value = ["Wedding"]
-            mock_svc.update_project.side_effect = RuntimeError(
-                "Update project failed"
-            )
-            with pytest.raises(RuntimeError, match="Update project failed"):
-                test_client.put(
-                    "/api/budget/projects/Wedding",
-                    json={"total_budget": 60000.0},
-                )
 
 
 class TestCategoryConflictsRoutes:
@@ -337,11 +350,36 @@ class TestCategoryConflictsRoutes:
         assert r.status_code == 400
         assert "Food" in r.json()["detail"]
 
-    def test_category_conflicts_endpoint(self, test_client):
-        """GET /budget/category-conflicts returns the overlap list shape."""
+    def test_category_conflicts_endpoint(self, test_client, db_session):
+        """GET /budget/category-conflicts reports a category that is both
+        project-owned and monthly-budgeted, and nothing else.
+
+        The API blocks creating such an overlap, so it is seeded directly
+        (data predating the exclusion rule looks exactly like this).
+        """
+        db_session.add_all(
+            [
+                BudgetRule(
+                    name=TOTAL_BUDGET, amount=5000.0, category="Renovation",
+                    tags=ALL_TAGS, year=None, month=None, period_type="project",
+                ),
+                BudgetRule(
+                    name="Reno M", amount=500.0, category="Renovation",
+                    tags="Materials", year=2026, month=5, period_type="monthly",
+                ),
+                BudgetRule(
+                    name="Food M", amount=500.0, category="Food",
+                    tags="Groceries", year=2026, month=5, period_type="monthly",
+                ),
+            ]
+        )
+        db_session.commit()
+
         r = test_client.get("/api/budget/category-conflicts")
         assert r.status_code == 200
-        assert "conflicts" in r.json()
+        assert r.json() == {
+            "conflicts": [{"category": "Renovation", "kinds": ["monthly"]}]
+        }
 
     def test_shared_put_route_rejects_project_category_change_to_budget_used(
         self, test_client, monkeypatch
@@ -356,7 +394,7 @@ class TestCategoryConflictsRoutes:
         """
         monkeypatch.setattr(
             "backend.services.tagging_service._categories_cache",
-            {False: SAMPLE_CATEGORIES},
+            {categories_cache_key(): SAMPLE_CATEGORIES},
         )
         test_client.post("/api/budget/rules", json={
             "name": "Total Budget", "amount": 9999, "category": "Total Budget",
@@ -387,3 +425,107 @@ class TestCategoryConflictsRoutes:
         unchanged = test_client.get("/api/budget/rules").json()
         unchanged_rule = next(r for r in unchanged if r["id"] == project_rule["id"])
         assert unchanged_rule["category"] == "Renovation"
+
+
+class TestBudgetOverviewRoute:
+    """Tests for GET /api/budget/overview/{year}/{month}."""
+
+    def test_overview_returns_the_cross_kind_shape(self, test_client):
+        """The endpoint answers with every key the Overview tab reads."""
+        response = test_client.get("/api/budget/overview/2026/3")
+        assert response.status_code == 200
+        body = response.json()
+        for key in (
+            "monthly_budget",
+            "monthly_spent",
+            "fixed_spent",
+            "variable_spent",
+            "committed_remaining",
+            "free_to_spend",
+            "projected",
+            "charges_due",
+            "projects_month_spent",
+            "yearly_month_spent",
+            "total_out",
+            "long_envelopes",
+        ):
+            assert key in body
+
+    def test_overview_on_an_empty_month_is_not_an_error(self, test_client):
+        """A month with no rules and no spend answers with zeroes."""
+        response = test_client.get("/api/budget/overview/2026/3")
+        assert response.status_code == 200
+        body = response.json()
+        assert body["monthly_spent"] == 0.0
+        assert body["long_envelopes"] == []
+
+    def test_overview_reports_the_total_budget_rule(self, test_client, db_session):
+        """A Total Budget rule created through the service sets the month's budget.
+
+        Matched on category, exactly as ``get_monthly_budget_view`` does, so the
+        Overview can never claim a budget the Monthly tab does not show.
+        """
+        from backend.services.budget import MonthlyBudgetService
+
+        MonthlyBudgetService(db_session).create_rule(
+            "Total Budget", 12345.0, "Total Budget", ["all_tags"], 4, 2026
+        )
+        response = test_client.get("/api/budget/overview/2026/4")
+        assert response.status_code == 200
+        assert response.json()["monthly_budget"] == 12345.0
+
+    def test_overview_rejects_an_impossible_month(self, test_client):
+        """An out-of-range month is a bad request, not a server error.
+
+        The month sizes a calendar via ``monthrange``, which raises outside
+        1-12, so the bound has to be enforced before the service sees it.
+        """
+        assert test_client.get("/api/budget/overview/2026/13").status_code == 422
+        assert test_client.get("/api/budget/overview/2026/0").status_code == 422
+
+
+class TestBudgetTrendRoute:
+    """Tests for GET /api/budget/trend/{year}/{month}.
+
+    One request in place of the per-month analysis call the sparkline used to
+    make for each of its twelve points.
+    """
+
+    def test_returns_the_requested_number_of_months_oldest_first(self, test_client):
+        """The series ends at the month asked for and runs back from there."""
+        response = test_client.get("/api/budget/trend/2026/3?months=3")
+
+        assert response.status_code == 200
+        body = response.json()
+        assert [(p["year"], p["month"]) for p in body] == [
+            (2026, 1),
+            (2026, 2),
+            (2026, 3),
+        ]
+
+    def test_defaults_to_twelve_months(self, test_client):
+        """The budget page renders a twelve-month sparkline."""
+        response = test_client.get("/api/budget/trend/2026/3")
+
+        assert response.status_code == 200
+        assert len(response.json()) == 12
+
+    def test_rejects_a_nonsensical_span(self, test_client):
+        """`months` is bounded: an unbounded span would scan arbitrary history."""
+        assert test_client.get("/api/budget/trend/2026/3?months=0").status_code == 422
+        assert test_client.get("/api/budget/trend/2026/3?months=99").status_code == 422
+
+    def test_rejects_an_out_of_range_month(self, test_client):
+        """Path validation matches the other month-scoped budget routes."""
+        assert test_client.get("/api/budget/trend/2026/13").status_code == 422
+
+    def test_an_empty_month_is_not_an_error(self, test_client):
+        """A month with no rules plots zeros rather than failing."""
+        response = test_client.get("/api/budget/trend/2026/3?months=1")
+
+        assert response.status_code == 200
+        [point] = response.json()
+        assert point["budget"] == 0
+        assert point["actual"] == 0
+        assert point["rules"] == {}
+        assert point["limits"] == {}

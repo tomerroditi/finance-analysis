@@ -1,5 +1,5 @@
 """
-Core budget service with pure SQLAlchemy (no Streamlit dependencies).
+Core budget service.
 
 This module provides the base ``BudgetService`` — rule CRUD, tag parsing,
 validation, conflict helpers, and budget-style expense filtering shared by
@@ -8,7 +8,7 @@ the monthly, yearly, and project budget services.
 
 import threading
 from datetime import date
-from typing import Optional
+from typing import Any
 
 import pandas as pd
 from sqlalchemy.orm import Session
@@ -29,14 +29,17 @@ from backend.constants.budget import (
     YEAR,
 )
 from backend.constants.tables import TransactionsTableFields
-from backend.errors import ValidationException
-from backend.services.transaction_classification import EXPENSE_EXCLUDED_CATEGORIES
+from backend.errors import EntityNotFoundException, ValidationException
 from backend.repositories.budget_repository import BudgetRepository
 from backend.services.budget_month_override_service import BudgetMonthOverrideService
-from backend.services.pending_refunds_service import PendingRefundsService
+from backend.services.pending_refunds_service import (
+    GROSS_AMOUNT_COLUMN,
+    PendingRefundsService,
+    apply_refund_amount_adjustments,
+)
 from backend.services.tagging_service import CategoriesTagsService
+from backend.services.transaction_classification import EXPENSE_EXCLUDED_CATEGORIES
 from backend.services.transactions_service import TransactionsService
-
 
 # Serializes the auto-fill of a month's budget rules across concurrent
 # requests. FastAPI runs the (synchronous) budget-analysis handlers in its
@@ -62,7 +65,7 @@ class BudgetService:
     analyzing budget rules.
     """
 
-    def __init__(self, db: Session):
+    def __init__(self, db: Session) -> None:
         """
         Initialize the budget service.
 
@@ -101,9 +104,9 @@ class BudgetService:
         amount: float,
         category: str,
         tags: str | list[str],
-        month: Optional[int] = None,
-        year: Optional[int] = None,
-        period_type: Optional[str] = None,
+        month: int | None = None,
+        year: int | None = None,
+        period_type: str | None = None,
     ) -> None:
         """
         Add a new budget rule, converting tags to semicolon-separated storage format.
@@ -130,11 +133,28 @@ class BudgetService:
             ``None``, the repository derives it from ``(year, month)``.
         """
         tags_str = ";".join(tags) if isinstance(tags, list) else tags
-        self.budget_repository.add(name, amount, category, tags_str, month, year, period_type)
+        self.budget_repository.add(
+            name, amount, category, tags_str, month, year, period_type
+        )
 
-    def update_rule(self, id_: int, **fields):
+    @staticmethod
+    def _parse_tags(tags: str | list[str] | None) -> list[str]:
+        """Normalise a tags value (``"a;b"`` or ``["a", "b"]``) into a list."""
+        if tags is None:
+            return []
+        if isinstance(tags, str):
+            return tags.split(";")
+        return list(tags)
+
+    def update_rule(self, id_: int, **fields: Any) -> None:
         """
         Update a budget rule with validation and tag list-to-string conversion.
+
+        The merged rule (stored row overlaid with ``fields``) must pass the
+        same :meth:`validate_rule_inputs` checks a new rule does — positive
+        amount, non-blank name, unique name, well-formed tags, and the Total
+        Budget cap. Yearly rows are validated by ``YearlyBudgetService`` and
+        are not re-checked here.
 
         Parameters
         ----------
@@ -149,12 +169,40 @@ class BudgetService:
         ------
         ValidationException
             If any key in ``fields`` is not one of the allowed field names.
+        EntityNotFoundException
+            If no rule with ``id_`` exists.
+        ValidationException
+            If the merged rule fails validation.
         """
         valid_fields = {NAME, AMOUNT, CATEGORY, TAGS}
         if not all(k in valid_fields for k in fields):
             raise ValidationException(
                 f"Invalid fields for update. Valid fields: {valid_fields}"
             )
+
+        all_rules = BudgetService.get_all_rules(self)
+        row = all_rules.loc[all_rules[ID] == id_] if not all_rules.empty else all_rules
+        if row.empty:
+            raise EntityNotFoundException(
+                f"No rule found with ID {id_}. Update failed."
+            )
+        row = row.iloc[0]
+
+        if NAME in fields:
+            fields[NAME] = str(fields[NAME]).strip()
+        name = fields.get(NAME, row[NAME])
+        amount = fields.get(AMOUNT, row[AMOUNT])
+        category = fields.get(CATEGORY, row[CATEGORY])
+        parsed_tags = self._parse_tags(fields.get(TAGS, row[TAGS]))
+
+        if row[PERIOD_TYPE] != PERIOD_YEARLY:
+            year = None if pd.isnull(row[YEAR]) else int(row[YEAR])
+            month = None if pd.isnull(row[MONTH]) else int(row[MONTH])
+            is_valid, msg = self.validate_rule_inputs(
+                all_rules, name, category, parsed_tags, amount, year, month, id_
+            )
+            if not is_valid:
+                raise ValidationException(msg)
 
         if TAGS in fields and isinstance(fields[TAGS], list):
             fields[TAGS] = ";".join(fields[TAGS])
@@ -165,17 +213,44 @@ class BudgetService:
         """
         Delete a budget rule by ID.
 
+        A month's ``Total Budget`` rule and a project's total (``all_tags``)
+        rule are the anchors their sibling rules are validated against, so
+        they can't be removed on their own (the views already report them
+        with ``allow_delete=False``) — delete the whole month or project.
+
         Parameters
         ----------
         id_ : int
             ID of the budget rule to delete.
+
+        Raises
+        ------
+        ValidationException
+            If the rule is a month's or project's total rule.
+        EntityNotFoundException
+            If no rule with ``id_`` exists.
         """
+        rules = BudgetService.get_all_rules(self)
+        row = rules.loc[rules[ID] == id_] if not rules.empty else rules
+        if not row.empty:
+            row = row.iloc[0]
+            is_monthly_total = (
+                row[PERIOD_TYPE] != PERIOD_YEARLY and row[CATEGORY] == TOTAL_BUDGET
+            )
+            is_project_total = row[PERIOD_TYPE] == PERIOD_PROJECT and self._is_all_tags(
+                row[TAGS]
+            )
+            if is_monthly_total or is_project_total:
+                raise ValidationException(
+                    "The Total Budget rule can't be deleted on its own. "
+                    "Delete the whole month or project instead."
+                )
         self.budget_repository.delete(id_)
 
     def _rules_of_type_for(
         self, category: str, year: int, period_type: str
     ) -> pd.DataFrame:
-        """All rules of ``period_type`` for a given category and year (tags as lists).
+        """Return all rules of ``period_type`` for a category and year (tags as lists).
 
         Reads through the base ``BudgetService.get_all_rules`` explicitly
         (bypassing any subclass override) since ``period_type`` here is a
@@ -195,9 +270,35 @@ class BudgetService:
         ]
 
     @staticmethod
-    def _is_all_tags(tags: list[str]) -> bool:
-        """True when a tag list is the all-tags sentinel (case-insensitive)."""
-        return [t.lower() for t in tags] == [ALL_TAGS.lower()]
+    def _is_all_tags(tags: list[str] | str | None) -> bool:
+        """Return whether a tag list is the all-tags sentinel (case-insensitive).
+
+        This is the single comparison point for the sentinel — legacy rows
+        stored ``"All Tags"`` in mixed case, so exact matches against
+        ``ALL_TAGS`` silently miss them. Accepts the raw semicolon string too.
+        """
+        if isinstance(tags, str):
+            tags = tags.split(";")
+        if not tags:
+            return False
+        return [str(t).lower() for t in tags] == [ALL_TAGS.lower()]
+
+    @staticmethod
+    def _tags_error(tags: list[str] | None) -> str | None:
+        """Return a validation message for a malformed tag list, else ``None``.
+
+        Tags are stored as a ``;``-joined string, so a tag containing ``;``
+        would silently split into two on the next read; blank tags match
+        nothing and only clutter the rule.
+        """
+        if not tags:
+            return "Please select at least one tag"
+        for tag in tags:
+            if not isinstance(tag, str) or not tag.strip():
+                return "Tags can't be empty"
+            if ";" in tag:
+                return "Tags can't contain ';'"
+        return None
 
     def find_conflicting_tags(
         self,
@@ -256,7 +357,7 @@ class BudgetService:
         return sorted(conflicts)
 
     def is_category_project_owned(self, category: str) -> bool:
-        """True if any project rule uses ``category``.
+        """Return whether any project rule uses ``category``.
 
         Reads through the unfiltered base ``get_all_rules`` so it works from any
         subclass.
@@ -269,8 +370,11 @@ class BudgetService:
         ].empty
 
     def category_used_by_monthly_or_yearly(self, category: str) -> bool:
-        """True if any monthly or yearly rule uses ``category`` (excluding the
-        ``Total Budget`` cap category, which is not a real category)."""
+        """Return whether any monthly or yearly rule uses ``category``.
+
+        The ``Total Budget`` cap category is never counted — it is not a real
+        category.
+        """
         if category == TOTAL_BUDGET:
             return False
         rules = BudgetService.get_all_rules(self)
@@ -282,12 +386,12 @@ class BudgetService:
             & (rules[CATEGORY] != TOTAL_BUDGET)
         ].empty
 
-    def find_category_overlaps(self) -> list[dict]:
-        """Categories that are BOTH project-owned and budget-used.
+    def find_category_overlaps(self) -> list[dict[str, Any]]:
+        """Find categories that are BOTH project-owned and budget-used.
 
         Returns
         -------
-        list[dict]
+        list[dict[str, Any]]
             One entry per overlapping category:
             ``{"category": str, "kinds": [<"monthly"|"yearly">, ...]}`` — the
             non-project kinds that collide, sorted. Empty when there is no
@@ -302,14 +406,13 @@ class BudgetService:
         overlaps = []
         for cat in sorted(project_cats):
             kinds = sorted(
-                {
-                    pt
-                    for pt in rules.loc[
+                set(
+                    rules.loc[
                         (rules[CATEGORY] == cat)
                         & (rules[PERIOD_TYPE].isin([PERIOD_MONTHLY, PERIOD_YEARLY])),
                         PERIOD_TYPE,
                     ]
-                }
+                )
             )
             if kinds:
                 overlaps.append({"category": cat, "kinds": kinds})
@@ -345,8 +448,8 @@ class BudgetService:
         *,
         conflict_period_type: str,
         target_year: int,
-        target_month: Optional[int] = None,
-        period_type: Optional[str] = None,
+        target_month: int | None = None,
+        period_type: str | None = None,
         total_budget_passthrough: bool = False,
     ) -> list[str]:
         """Copy ``source_rules`` into a target period, stripping conflicting tags.
@@ -389,7 +492,9 @@ class BudgetService:
         skipped: list[str] = []
         for _, rule in source_rules.iterrows():
             tags = rule[TAGS]
-            if total_budget_passthrough and (rule[CATEGORY] == TOTAL_BUDGET or not tags):
+            if total_budget_passthrough and (
+                rule[CATEGORY] == TOTAL_BUDGET or not tags
+            ):
                 kept, dropped = tags, []
             else:
                 kept, dropped = self.strip_conflicting_tags(
@@ -426,10 +531,12 @@ class BudgetService:
         """
         Validate budget rule inputs before creating or updating.
 
-        Checks include: name uniqueness, non-empty fields, positive amount,
-        and that adding/changing the rule does not exceed the total budget cap.
-        For project rules (month/year are ``None``), validates against the
-        project total instead of the monthly total.
+        Checks include: non-empty (stripped) name, category and well-formed
+        tags, positive amount, name uniqueness, and that adding/changing the
+        rule does not exceed the total budget cap. For project rules
+        (month/year are ``None``), validates against the project total
+        instead of the monthly total, and name uniqueness is scoped to the
+        project — every project's cap rule is named ``Total Budget``.
 
         Parameters
         ----------
@@ -455,6 +562,7 @@ class BudgetService:
         tuple[bool, str]
             ``(True, "")`` if valid, or ``(False, error_message)`` if not.
         """
+        name = "" if name is None else str(name).strip()
         if id_ is not None:
             rule = budget_rules.loc[budget_rules[ID] == id_].T.squeeze()
             if (
@@ -465,11 +573,21 @@ class BudgetService:
             ):
                 return True, ""
 
-        # Unique name check
+        if not name:
+            return False, "Please enter a name"
+        if category is None:
+            return False, "Please select a category"
+        tags_error = BudgetService._tags_error(tags)
+        if tags_error is not None:
+            return False, tags_error
+        if amount <= 0:
+            return False, "Amount must be a positive number"
+
         if pd.isnull(year) and pd.isnull(month):
             duplicate = budget_rules.loc[
                 (budget_rules[YEAR].isnull())
                 & (budget_rules[MONTH].isnull())
+                & (budget_rules[CATEGORY] == category)
                 & (budget_rules[NAME] == name)
             ]
             if id_ is not None:
@@ -490,15 +608,6 @@ class BudgetService:
                     f"A rule with the name '{name}' already exists for this month.",
                 )
 
-        if name == "":
-            return False, "Please enter a name"
-        if category is None:
-            return False, "Please select a category"
-        if not tags:
-            return False, "Please select at least one tag"
-        if amount <= 0:
-            return False, "Amount must be a positive number"
-
         if pd.isnull(year) and pd.isnull(month):
             # When editing an existing rule we look it up to know its current
             # tags/amount; when creating (id_ is None) there is no existing row,
@@ -515,19 +624,16 @@ class BudgetService:
                 & (budget_rules[MONTH].isnull())
                 & (budget_rules[CATEGORY] == category)
             ]
-            total_rules_amount = budget_rules.loc[
-                ~budget_rules[TAGS].isin([[ALL_TAGS]]), AMOUNT
-            ].sum()
-            if rule_tags == [ALL_TAGS]:
+            is_total = budget_rules[TAGS].apply(BudgetService._is_all_tags)
+            total_rules_amount = budget_rules.loc[~is_total, AMOUNT].sum()
+            if BudgetService._is_all_tags(rule_tags):
                 if amount < total_rules_amount:
                     return (
                         False,
                         "The total budget must be greater than the sum of all other rules",
                     )
             else:
-                total_budget_rows = budget_rules.loc[
-                    budget_rules[TAGS].isin([[ALL_TAGS]]), AMOUNT
-                ]
+                total_budget_rows = budget_rules.loc[is_total, AMOUNT]
                 if total_budget_rows.empty:
                     return (
                         False,
@@ -571,22 +677,53 @@ class BudgetService:
         if new_total_rules_amount > total_budget:
             return False, "The total budget is exceeded"
 
-        if tags == [ALL_TAGS]:
-            condition = budget_rules[CATEGORY] == category
-            if id_ is not None:
-                condition &= budget_rules[ID] != id_
-            if not budget_rules.loc[condition].empty:
-                return (
-                    False,
-                    f"Cannot have {ALL_TAGS} for a category with existing specific tag rules",
-                )
+        # An all_tags rule cannot join existing specific-tag rules in the same
+        # category: it would budget the whole category on top of rules that
+        # already budget parts of it.
+        #
+        # The reverse is deliberately allowed. A specific-tag rule under an
+        # existing all_tags rule is how a sub-budget inside a broader category
+        # is expressed, and the shipped demo data is shaped that way (Food
+        # carries an all_tags rule alongside Groceries and Restaurants). The
+        # monthly view does not yet split spend between the two, which is a
+        # bug in the view rather than a reason to refuse the rule.
+        same_category = budget_rules[CATEGORY] == category
+        if id_ is not None:
+            same_category &= budget_rules[ID] != id_
+        siblings = budget_rules.loc[same_category]
+        if BudgetService._is_all_tags(tags) and not siblings.empty:
+            return (
+                False,
+                f"Cannot have {ALL_TAGS} for a category with existing specific tag rules",
+            )
 
         return True, ""
+
+    @staticmethod
+    def _expense_rows(all_data: pd.DataFrame) -> pd.DataFrame:
+        """Return a copy of ``all_data`` without non-expense categories, dates parsed."""
+        expenses = all_data.loc[
+            ~all_data[TransactionsTableFields.CATEGORY.value].isin(
+                EXPENSE_EXCLUDED_CATEGORIES
+            )
+        ].copy()
+        expenses[TransactionsTableFields.DATE.value] = pd.to_datetime(
+            expenses[TransactionsTableFields.DATE.value]
+        )
+        return expenses
+
+    @staticmethod
+    def _drop_split_parents(rows: pd.DataFrame) -> pd.DataFrame:
+        """Return ``rows`` without split-parent transactions, whose splits carry the amount."""
+        if "type" not in rows.columns:
+            return rows
+        return rows[rows["type"] != "split_parent"]
 
     def get_filtered_expenses(
         self,
         exclude_pending_refunds: bool = True,
         include_split_parents: bool = False,
+        net_refunds: bool = False,
     ) -> pd.DataFrame:
         """
         Get expense transactions with budget-style filtering applied.
@@ -603,6 +740,15 @@ class BudgetService:
         include_split_parents : bool, optional
             When ``True``, include parent transactions alongside split children.
             Default is ``False``.
+        net_refunds : bool, optional
+            When ``True``, net matched refunds against the purchases they pay
+            back by amount instead of dropping whole rows, so a refund cancels
+            its purchase across any month gap and a partly-refunded purchase
+            keeps the part still unrecovered. The pre-netting amount is kept
+            in :data:`GROSS_AMOUNT_COLUMN` so a caller that lists the
+            underlying transactions can restore it (see
+            :func:`restore_gross_amounts`) — totals net, rows do not.
+            Default is ``False``.
 
         Returns
         -------
@@ -611,9 +757,6 @@ class BudgetService:
             negative (raw convention). The caller should negate to get
             positive expense values.
         """
-        # Local import: project.py subclasses this module's BudgetService.
-        from backend.services.budget.project import ProjectBudgetService
-
         all_data = self.transactions_service.get_data_for_analysis(
             include_split_parents
         )
@@ -621,25 +764,24 @@ class BudgetService:
         if all_data.empty:
             return all_data
 
-        # Filter to expense categories
-        expenses = all_data.loc[
-            ~all_data[TransactionsTableFields.CATEGORY.value].isin(
-                EXPENSE_EXCLUDED_CATEGORIES
-            )
-        ].copy()
-        expenses[TransactionsTableFields.DATE.value] = pd.to_datetime(
-            expenses[TransactionsTableFields.DATE.value]
-        )
-
-        # Exclude project categories
-        projects = ProjectBudgetService(self.db).get_all_projects_names()
+        expenses = self._expense_rows(all_data)
+        projects = self.budget_repository.read_project_category_names()
         if projects:
             expenses = expenses.loc[
                 ~expenses[TransactionsTableFields.CATEGORY.value].isin(projects)
             ]
 
-        # Optionally exclude pending refunds
-        if exclude_pending_refunds:
+        # Netting supersedes the row-drop: it removes the same money and more
+        # (the refund transactions, and cross-month matches), so running both
+        # would double-count the exclusion.
+        if net_refunds:
+            adjustments = self.pending_refunds_service.get_refund_amount_adjustments(
+                exclude_open=exclude_pending_refunds
+            )
+            expenses = apply_refund_amount_adjustments(
+                expenses, adjustments, keep_gross_in=GROSS_AMOUNT_COLUMN
+            )
+        elif exclude_pending_refunds:
             pending_refs = self.pending_refunds_service.get_active_pending_identifiers()
             tx_keys = pending_refs["transaction_keys"]
             split_ids = pending_refs["split_ids"]
@@ -653,6 +795,7 @@ class BudgetService:
                         zip(
                             expenses[TransactionsTableFields.SOURCE.value],
                             expenses[TransactionsTableFields.UNIQUE_ID.value],
+                            strict=True,
                         )
                     ),
                     index=expenses.index,
@@ -663,8 +806,4 @@ class BudgetService:
                     ~expenses[TransactionsTableFields.SPLIT_ID.value].isin(split_ids)
                 ]
 
-        # Exclude split_parent transactions from amounts
-        if "type" in expenses.columns:
-            expenses = expenses[expenses["type"] != "split_parent"]
-
-        return expenses
+        return self._drop_split_parents(expenses)

@@ -1,17 +1,20 @@
+"""Tagging rules repository (auto-tagging rules applied in creation order)."""
+
+from typing import Any
+
 import pandas as pd
-from sqlalchemy import select, update, delete
+from sqlalchemy import delete, select, update
 from sqlalchemy.orm import Session
 
 from backend.models.tagging_rules import TaggingRule
 
 
 class TaggingRulesRepository:
-    """
-    Repository for managing tagging rules in the database.
-    """
+    """Repository for managing tagging rules in the database."""
 
-    def __init__(self, db: Session):
-        """
+    def __init__(self, db: Session) -> None:
+        """Initialize the repository.
+
         Parameters
         ----------
         db : Session
@@ -27,14 +30,14 @@ class TaggingRulesRepository:
         -------
         pd.DataFrame
             DataFrame with columns id, name, conditions, category, tag,
-            created_at, updated_at. Returns an empty DataFrame with those
-            columns if no rules exist.
+            created_at, updated_at, in creation order (``id`` ascending) —
+            the order rules are applied in, so the first match wins
+            deterministically. Returns an empty DataFrame with those columns
+            if no rules exist.
         """
-        query = select(TaggingRule)
+        query = select(TaggingRule).order_by(TaggingRule.id)
 
         rules = self.db.execute(query).scalars().all()
-
-        # Convert to DataFrame for consistency with other services
         data = [
             {
                 "id": r.id,
@@ -82,7 +85,7 @@ class TaggingRulesRepository:
     def add_rule(
         self,
         name: str,
-        conditions: dict,
+        conditions: dict[str, Any],
         category: str,
         tag: str,
     ) -> int:
@@ -93,7 +96,7 @@ class TaggingRulesRepository:
         ----------
         name : str
             Human-readable label for the rule.
-        conditions : dict
+        conditions : dict[str, Any]
             Nested condition tree describing when the rule matches.
         category : str
             Category to assign to matching transactions.
@@ -116,7 +119,7 @@ class TaggingRulesRepository:
         self.db.refresh(new_rule)
         return new_rule.id
 
-    def update_rule(self, rule_id: int, **kwargs) -> bool:
+    def update_rule(self, rule_id: int, **kwargs: Any) -> bool:
         """
         Update an existing rule.
 

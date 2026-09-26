@@ -33,6 +33,28 @@ async function openDisconnectModal(user: ReturnType<typeof userEvent.setup>) {
   return screen.getByRole("dialog");
 }
 
+/** Records the account name of every POST /api/scraping/start the page fires. */
+function captureScrapeStarts() {
+  const started: string[] = [];
+  server.use(
+    http.post("/api/scraping/start", async ({ request }) => {
+      const body = (await request.json()) as { account: string };
+      started.push(body.account);
+      return HttpResponse.json(started.length);
+    }),
+  );
+  return started;
+}
+
+/** Waits for the account list to render, then returns its scrape button. */
+async function renderWithAccounts() {
+  renderWithProviders(<DataSources />);
+  await waitFor(() => {
+    expect(screen.getByText(/Main Account/i)).toBeInTheDocument();
+  });
+  return screen.getByTestId("scrape-launch");
+}
+
 describe("DataSources", () => {
   describe("connected accounts", () => {
     it("displays saved credentials from the API", async () => {
@@ -131,6 +153,75 @@ describe("DataSources", () => {
         expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
       );
       expect(requested).toHaveLength(0);
+    });
+  });
+  // The toolbar's scrape button covers two jobs: with nothing ticked it is
+  // still "Scrape All", and a tick narrows it to exactly what was picked.
+  describe("selecting sources to scrape", () => {
+    it("scrapes every unsynced account when nothing is selected", async () => {
+      const user = userEvent.setup();
+      const started = captureScrapeStarts();
+      const scrapeButton = await renderWithAccounts();
+
+      expect(scrapeButton).toHaveTextContent(/scrape all/i);
+      await user.click(scrapeButton);
+
+      await waitFor(() => expect(started).toHaveLength(2));
+      expect(started.sort()).toEqual(["Main Account", "Max Card"]);
+    });
+
+    it("scrapes only the ticked sources and says how many are picked", async () => {
+      const user = userEvent.setup();
+      const started = captureScrapeStarts();
+      const scrapeButton = await renderWithAccounts();
+
+      await user.click(
+        screen.getByRole("checkbox", { name: /select Main Account for scraping/i }),
+      );
+      expect(screen.getByTestId("selection-bar")).toHaveTextContent(
+        /1 source selected/i,
+      );
+      expect(scrapeButton).toHaveTextContent("Scrape (1)");
+
+      await user.click(scrapeButton);
+
+      // "Max Card" is unticked, so it must not be launched — the whole point
+      // of the selection.
+      await waitFor(() => expect(started).toEqual(["Main Account"]));
+    });
+
+    it("restores the scrape-everything default when the selection is cleared", async () => {
+      const user = userEvent.setup();
+      const started = captureScrapeStarts();
+      const scrapeButton = await renderWithAccounts();
+
+      await user.click(
+        screen.getByRole("checkbox", { name: /select Max Card for scraping/i }),
+      );
+      await user.click(screen.getByRole("button", { name: /^clear$/i }));
+
+      expect(screen.queryByTestId("selection-bar")).not.toBeInTheDocument();
+      expect(scrapeButton).toHaveTextContent(/scrape all/i);
+
+      await user.click(scrapeButton);
+      await waitFor(() => expect(started).toHaveLength(2));
+    });
+
+    it("ticks every source from the selection bar's select-all", async () => {
+      const user = userEvent.setup();
+      await renderWithAccounts();
+
+      await user.click(
+        screen.getByRole("checkbox", { name: /select Max Card for scraping/i }),
+      );
+      await user.click(screen.getByRole("button", { name: /select all/i }));
+
+      expect(screen.getByTestId("selection-bar")).toHaveTextContent(
+        /2 sources selected/i,
+      );
+      for (const box of screen.getAllByTestId("select-source")) {
+        expect(box).toBeChecked();
+      }
     });
   });
 });

@@ -4,6 +4,7 @@ Covers 404 responses for non-existent investments, Pydantic validation
 errors, and exception propagation from the service layer.
 """
 
+import pytest
 
 
 class TestInvestmentNotFoundErrors:
@@ -48,15 +49,15 @@ class TestInvestmentNotFoundErrors:
         )
         assert response.status_code == 404
 
-    def test_reopen_nonexistent_investment_succeeds_silently(self, test_client):
-        """POST /api/investments/99999/reopen returns 200 even for non-existent ID.
+    def test_reopen_nonexistent_investment_returns_404(self, test_client):
+        """POST /api/investments/99999/reopen returns 404 for a non-existent ID.
 
-        The repository's ``reopen_investment`` does not validate existence
-        before issuing the UPDATE statement. A non-matching WHERE clause
-        simply updates zero rows without raising an error.
+        ``reopen_investment`` checks the affected row count and raises
+        ``EntityNotFoundException``, matching every other single-investment
+        endpoint instead of silently reporting success.
         """
         response = test_client.post("/api/investments/99999/reopen")
-        assert response.status_code == 200
+        assert response.status_code == 404
 
     def test_get_analysis_nonexistent_investment(self, test_client):
         """GET /api/investments/99999/analysis returns 404 for non-existent ID."""
@@ -67,52 +68,31 @@ class TestInvestmentNotFoundErrors:
 class TestInvestmentValidationErrors:
     """Tests for Pydantic validation errors on investment endpoints."""
 
-    def test_create_investment_missing_required_fields(self, test_client):
-        """POST /api/investments/ with empty body returns 422.
+    @pytest.mark.parametrize(
+        "missing",
+        [
+            ("category", "tag", "type", "name"),
+            ("name",),
+            ("category",),
+            ("tag",),
+            ("type",),
+        ],
+        ids=["empty-body", "no-name", "no-category", "no-tag", "no-type"],
+    )
+    def test_create_investment_missing_required_field(self, test_client, missing):
+        """POST /api/investments/ without any required field returns 422.
 
         The ``InvestmentCreate`` schema requires ``category``, ``tag``,
         ``type``, and ``name``.
         """
-        response = test_client.post("/api/investments/", json={})
-        assert response.status_code == 422
-
-    def test_create_investment_missing_name(self, test_client):
-        """POST /api/investments/ without name returns 422."""
         payload = {
             "category": "Investments",
             "tag": "Stocks",
             "type": "stock",
-        }
-        response = test_client.post("/api/investments/", json=payload)
-        assert response.status_code == 422
-
-    def test_create_investment_missing_category(self, test_client):
-        """POST /api/investments/ without category returns 422."""
-        payload = {
-            "tag": "Stocks",
-            "type": "stock",
             "name": "Test Fund",
         }
-        response = test_client.post("/api/investments/", json=payload)
-        assert response.status_code == 422
-
-    def test_create_investment_missing_tag(self, test_client):
-        """POST /api/investments/ without tag returns 422."""
-        payload = {
-            "category": "Investments",
-            "type": "stock",
-            "name": "Test Fund",
-        }
-        response = test_client.post("/api/investments/", json=payload)
-        assert response.status_code == 422
-
-    def test_create_investment_missing_type(self, test_client):
-        """POST /api/investments/ without type returns 422."""
-        payload = {
-            "category": "Investments",
-            "tag": "Stocks",
-            "name": "Test Fund",
-        }
+        for field in missing:
+            del payload[field]
         response = test_client.post("/api/investments/", json=payload)
         assert response.status_code == 422
 
@@ -137,30 +117,17 @@ class TestInvestmentBalanceSnapshotErrors:
         response = test_client.get("/api/investments/99999/balances")
         assert response.status_code in (200, 404)
 
-    def test_create_snapshot_missing_fields(self, test_client):
-        """POST /api/investments/1/balances with empty body returns 422.
+    @pytest.mark.parametrize(
+        "payload",
+        [{}, {"balance": 10000.0}, {"date": "2024-06-01"}],
+        ids=["empty-body", "no-date", "no-balance"],
+    )
+    def test_create_snapshot_missing_field(self, test_client, payload):
+        """POST /api/investments/1/balances without date or balance returns 422.
 
         The ``BalanceSnapshotCreate`` schema requires ``date`` and ``balance``.
         """
-        response = test_client.post(
-            "/api/investments/1/balances", json={}
-        )
-        assert response.status_code == 422
-
-    def test_create_snapshot_missing_date(self, test_client):
-        """POST /api/investments/1/balances without date returns 422."""
-        response = test_client.post(
-            "/api/investments/1/balances",
-            json={"balance": 10000.0},
-        )
-        assert response.status_code == 422
-
-    def test_create_snapshot_missing_balance(self, test_client):
-        """POST /api/investments/1/balances without balance returns 422."""
-        response = test_client.post(
-            "/api/investments/1/balances",
-            json={"date": "2024-06-01"},
-        )
+        response = test_client.post("/api/investments/1/balances", json=payload)
         assert response.status_code == 422
 
     def test_delete_snapshot_nonexistent(self, test_client):
@@ -188,8 +155,9 @@ class TestInvestmentBalanceSnapshotErrors:
 class TestInvestmentDateValidation:
     """Tests rejecting malformed date strings on investment endpoints."""
 
-    def test_create_snapshot_rejects_garbage_date(self, test_client):
-        """POST /api/investments/1/balances with a non-ISO date returns 422.
+    @pytest.mark.parametrize("bad_date", ["garbage", "2024-13-45"])
+    def test_create_snapshot_rejects_invalid_date(self, test_client, bad_date):
+        """POST /api/investments/1/balances with a non-ISO or impossible date returns 422.
 
         An unvalidated ``date`` string used to be persisted verbatim, after
         which every analysis endpoint crashed while parsing it and the bad
@@ -197,7 +165,7 @@ class TestInvestmentDateValidation:
         """
         response = test_client.post(
             "/api/investments/1/balances",
-            json={"date": "garbage", "balance": 100.0},
+            json={"date": bad_date, "balance": 100.0},
         )
         assert response.status_code == 422
 
@@ -226,14 +194,6 @@ class TestInvestmentDateValidation:
             == 200
         )
 
-    def test_create_snapshot_rejects_impossible_calendar_date(self, test_client):
-        """POST /api/investments/1/balances with 2024-13-45 returns 422."""
-        response = test_client.post(
-            "/api/investments/1/balances",
-            json={"date": "2024-13-45", "balance": 100.0},
-        )
-        assert response.status_code == 422
-
     def test_create_snapshot_accepts_iso_date(self, test_client, seed_investments):
         """POST /api/investments/{id}/balances with a valid ISO date succeeds."""
         investment_id = test_client.get("/api/investments/").json()[0]["id"]
@@ -258,8 +218,9 @@ class TestInvestmentDateValidation:
         )
         assert response.status_code == 400
 
-    def test_create_investment_rejects_garbage_liquidity_date(self, test_client):
-        """POST /api/investments/ with a non-ISO liquidity_date returns 422."""
+    @pytest.mark.parametrize("field", ["liquidity_date", "maturity_date"])
+    def test_create_investment_rejects_garbage_date_field(self, test_client, field):
+        """POST /api/investments/ with a non-ISO liquidity/maturity date returns 422."""
         response = test_client.post(
             "/api/investments/",
             json={
@@ -267,21 +228,7 @@ class TestInvestmentDateValidation:
                 "tag": "Stocks",
                 "type": "stocks",
                 "name": "Bad dates",
-                "liquidity_date": "garbage",
-            },
-        )
-        assert response.status_code == 422
-
-    def test_create_investment_rejects_garbage_maturity_date(self, test_client):
-        """POST /api/investments/ with a non-ISO maturity_date returns 422."""
-        response = test_client.post(
-            "/api/investments/",
-            json={
-                "category": "Investments",
-                "tag": "Stocks",
-                "type": "stocks",
-                "name": "Bad dates",
-                "maturity_date": "garbage",
+                field: "garbage",
             },
         )
         assert response.status_code == 422
@@ -297,18 +244,14 @@ class TestInvestmentDateValidation:
 class TestAnalysisDateQueryValidation:
     """Date query params are validated before reaching the service."""
 
-    def test_analysis_rejects_malformed_start_date(self, test_client):
-        """A malformed start_date returns 400 rather than reaching analytics."""
-        response = test_client.get(
-            "/api/investments/1/analysis", params={"start_date": "not-a-date"}
-        )
-        assert response.status_code == 400
-
-    def test_analysis_rejects_malformed_end_date(self, test_client):
-        """A malformed end_date returns 400."""
-        response = test_client.get(
-            "/api/investments/1/analysis", params={"end_date": "13/45/2026"}
-        )
+    @pytest.mark.parametrize(
+        "params",
+        [{"start_date": "not-a-date"}, {"end_date": "13/45/2026"}],
+        ids=["start_date", "end_date"],
+    )
+    def test_analysis_rejects_malformed_date(self, test_client, params):
+        """A malformed start_date/end_date returns 400 rather than reaching analytics."""
+        response = test_client.get("/api/investments/1/analysis", params=params)
         assert response.status_code == 400
 
     def test_calculate_snapshots_rejects_malformed_end_date(self, test_client):
@@ -317,4 +260,26 @@ class TestAnalysisDateQueryValidation:
             "/api/investments/1/balances/calculate",
             params={"end_date": "garbage"},
         )
+        assert response.status_code == 400
+
+
+class TestInvestmentBusinessRuleErrors:
+    """Business-rule violations surfaced by the service layer as 400s."""
+
+    def test_type_change_on_scraped_investment_returns_400(
+        self, test_client, db_session
+    ):
+        """Verify the API rejects reclassifying an insurance-linked investment."""
+        from backend.services.investments import InvestmentsService
+
+        inv_id = InvestmentsService(db_session).investments_repo.create_investment(
+            category="Investments",
+            tag="Keren Hishtalmut - hafenix (007-916-407357)",
+            type_="hishtalmut",
+            name="Scraped KH",
+            insurance_policy_id="007-916-407357",
+        )
+
+        response = test_client.put(f"/api/investments/{inv_id}", json={"type": "stocks"})
+
         assert response.status_code == 400

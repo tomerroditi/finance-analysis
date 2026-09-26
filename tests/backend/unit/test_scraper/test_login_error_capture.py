@@ -11,6 +11,7 @@ import asyncio
 
 from scraper.base.base_scraper import describe_exception
 from scraper.base.browser_scraper import _redact_url
+from scraper.exceptions import BrowserNotFoundError
 from scraper.models.result import LoginResult
 
 
@@ -124,6 +125,17 @@ class TestPhaseFailures:
 
         assert result.error_type == "INIT_ERROR"
         assert result.error_message == "initialize failed: OSError: no browser"
+
+    def test_missing_browser_keeps_its_own_category(self):
+        """Only a missing browser earns the "install Chrome or Edge" category."""
+        result = asyncio.run(
+            self._scraper(init=BrowserNotFoundError("No supported browser found.")).scrape()
+        )
+
+        assert result.error_type == "BROWSER_NOT_FOUND"
+        assert result.error_message == (
+            "initialize failed: BrowserNotFoundError: No supported browser found."
+        )
 
     def test_login_crash_is_attributed_to_login(self):
         """A login crash (raised, not returned) names the login phase."""

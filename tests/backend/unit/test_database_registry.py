@@ -56,21 +56,14 @@ class TestEngineRegistry:
         from backend.config import AppConfig
 
         config = AppConfig()
-        # AppConfig is a singleton, so this override outlives the test
-        # unless it is restored — it would silently repoint every later
-        # test at this tmp_path.
-        previous = AppConfig._base_user_dir_override
         config._base_user_dir = str(tmp_path)
+        real_engine = database.get_engine()
+        token = config.set_demo_mode(True)
         try:
-            real_engine = database.get_engine()
-            token = config.set_demo_mode(True)
-            try:
-                demo_engine = database.get_engine()
-            finally:
-                config.reset_demo_mode(token)
-            assert real_engine is not demo_engine
+            demo_engine = database.get_engine()
         finally:
-            AppConfig._base_user_dir_override = previous
+            config.reset_demo_mode(token)
+        assert real_engine is not demo_engine
 
     def test_session_factory_bound_to_registered_engine_after_normal_call(
         self, tmp_path

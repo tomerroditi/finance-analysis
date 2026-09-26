@@ -8,35 +8,35 @@ Defines ``InvestmentsService``, assembling the snapshot
 """
 
 from datetime import date
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import numpy as np
 import pandas as pd
-from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from backend.constants.providers import Services
-from backend.models.transaction import InsuranceTransaction
+from backend.errors import EntityAlreadyExistsException, ValidationException
 from backend.repositories.insurance_account_repository import InsuranceAccountRepository
+from backend.repositories.investment_snapshots_repository import (
+    InvestmentSnapshotsRepository,
+)
 from backend.repositories.investments_repository import InvestmentsRepository
-from backend.repositories.investment_snapshots_repository import InvestmentSnapshotsRepository
-from backend.repositories.transactions_repository import TransactionsRepository
+from backend.repositories.savings_goal_repository import SavingsGoalRepository
+from backend.repositories.transactions import TransactionsRepository
 from backend.services.investments.insurance_sync import InsuranceSyncMixin
 from backend.services.investments.snapshots import SnapshotsMixin
-from backend.services.investments.valuation import ValuationMixin
-
-# TransactionsService is imported lazily inside __init__ to avoid a
-# module-level circular dependency (TransactionsService also lazy-imports
-# InvestmentsService inside its create/delete methods).
+from backend.services.investments.valuation import CLOSED_SOURCE, ValuationMixin
 
 
 class InvestmentsService(SnapshotsMixin, ValuationMixin, InsuranceSyncMixin):
     """
-    Service for managing investments with business logic for balance calculations,
-    profit/loss tracking, and investment lifecycle management.
+    Service for managing investments and their lifecycle.
+
+    Covers balance calculations, profit/loss tracking, and the
+    create/update/close/reopen/delete lifecycle.
     """
 
-    def __init__(self, db: Session):
+    def __init__(self, db: Session) -> None:
         """
         Initialize the investments service.
 
@@ -57,7 +57,7 @@ class InvestmentsService(SnapshotsMixin, ValuationMixin, InsuranceSyncMixin):
 
         self.transactions_service = TransactionsService(db)
 
-    def get_all_investments(self, include_closed: bool = False) -> List[Dict[str, Any]]:
+    def get_all_investments(self, include_closed: bool = False) -> list[dict[str, Any]]:
         """
         Get all investments as a list of JSON-safe dicts.
 
@@ -93,7 +93,9 @@ class InvestmentsService(SnapshotsMixin, ValuationMixin, InsuranceSyncMixin):
             dated = analysis_df.assign(_date=pd.to_datetime(analysis_df["date"]))
             manual_first_dates = {
                 key: first.strftime("%Y-%m-%d")
-                for key, first in dated.groupby(["category", "tag"])["_date"].min().items()
+                for key, first in dated.groupby(["category", "tag"])["_date"]
+                .min()
+                .items()
             }
 
         policy_ids = [
@@ -101,24 +103,18 @@ class InvestmentsService(SnapshotsMixin, ValuationMixin, InsuranceSyncMixin):
             for record in records
             if record.get("insurance_policy_id")
         ]
-        insurance_first_dates: dict[str, str] = {}
-        if policy_ids:
-            stmt = select(
-                InsuranceTransaction.account_number,
-                func.min(InsuranceTransaction.date),
-            ).where(
-                InsuranceTransaction.account_number.in_(policy_ids)
-            ).group_by(InsuranceTransaction.account_number)
-            insurance_first_dates = {
-                account: first[:10]
-                for account, first in self.db.execute(stmt).all()
-                if first
-            }
+        insurance_first_dates = {
+            account: first[:10]
+            for account, first in self.transactions_repo.insurance_repo.get_first_dates(
+                policy_ids
+            ).items()
+            if first
+        }
 
         for record in records:
             record["latest_snapshot_date"] = snapshot_dates.get(record["id"])
 
-            candidates = []
+            candidates: list[str] = []
             manual_first = manual_first_dates.get((record["category"], record["tag"]))
             if manual_first:
                 candidates.append(manual_first)
@@ -129,7 +125,7 @@ class InvestmentsService(SnapshotsMixin, ValuationMixin, InsuranceSyncMixin):
 
         return records
 
-    def get_investment(self, investment_id: int) -> Dict[str, Any]:
+    def get_investment(self, investment_id: int) -> dict[str, Any]:
         """
         Get a single investment by ID as a JSON-safe dict.
 
@@ -150,9 +146,9 @@ class InvestmentsService(SnapshotsMixin, ValuationMixin, InsuranceSyncMixin):
     def get_investment_analysis(
         self,
         investment_id: int,
-        start_date: Optional[str] = None,
-        end_date: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        start_date: str | None = None,
+        end_date: str | None = None,
+    ) -> dict[str, Any]:
         """
         Get detailed profit/loss metrics and balance history for an investment.
 
@@ -175,59 +171,62 @@ class InvestmentsService(SnapshotsMixin, ValuationMixin, InsuranceSyncMixin):
 
             - ``metrics`` – profit/loss metrics dict (from ``calculate_profit_loss``).
             - ``history`` – list of daily balance dicts (from ``calculate_balance_over_time``).
+            - ``flows`` – per-date deposits and withdrawals (from ``_calculate_daily_flows``).
         """
         metrics = self.calculate_profit_loss(investment_id)
         if not start_date:
-            start_date = metrics.get("first_transaction_date") or (
-                date.today().replace(year=date.today().year - 1).strftime(r"%Y-%m-%d")
-            )
+            start_date = self._default_history_start(metrics)
         if not end_date:
             end_date = date.today().strftime(r"%Y-%m-%d")
 
         history = self.calculate_balance_over_time(investment_id, start_date, end_date)
-        monthly_transactions = self._calculate_monthly_transactions(investment_id)
         return {
             "metrics": metrics,
             "history": history,
-            "monthly_transactions": monthly_transactions,
+            "flows": self._calculate_daily_flows(investment_id),
         }
 
-    def _calculate_monthly_transactions(
-        self, investment_id: int
-    ) -> List[Dict[str, Any]]:
-        """Aggregate investment transactions by month.
+    def _calculate_daily_flows(self, investment_id: int) -> list[dict[str, Any]]:
+        """Aggregate an investment's deposits and withdrawals by date.
 
-        Returns a list of ``{month, deposits, withdrawals}`` entries sorted
-        chronologically. Deposits are reported as positive numbers (the
-        absolute value of negative transactions), withdrawals are positive
-        amounts.
+        Includes an insurance-linked investment's scraped deposits and leaves
+        out its synthetic opening balance, which is no flow on any date. Kept
+        per date rather than per month because a scraped policy has several
+        balance snapshots a month, and a deposit belongs between the two
+        snapshots that bracket its date.
+
+        Returns
+        -------
+        list[dict]
+            ``{date, deposits, withdrawals}`` entries sorted chronologically;
+            deposits are the absolute value of negative transactions,
+            withdrawals are positive amounts.
         """
         inv = self.investments_repo.get_by_id(investment_id).iloc[0]
-        txns = self._get_all_transactions_for_investment(inv["category"], inv["tag"])
+        txns = self._get_all_transactions_for_investment(
+            inv["category"], inv["tag"], investment_id=investment_id
+        )
         if txns.empty:
             return []
 
-        df = txns.copy()
+        df = txns[~self._opening_balance_mask(txns)].copy()
         df["amount"] = pd.to_numeric(df["amount"], errors="coerce").fillna(0.0)
-        df["month"] = pd.to_datetime(df["date"]).dt.strftime("%Y-%m")
+        df["day"] = pd.to_datetime(df["date"]).dt.strftime("%Y-%m-%d")
         df["deposit"] = df["amount"].where(df["amount"] < 0, 0.0).abs()
         df["withdrawal"] = df["amount"].where(df["amount"] > 0, 0.0)
 
-        grouped = (
-            df.groupby("month")[["deposit", "withdrawal"]].sum().reset_index()
-        )
-        grouped = grouped.sort_values("month")
+        grouped = df.groupby("day")[["deposit", "withdrawal"]].sum().sort_index()
         return [
             {
-                "month": row["month"],
+                "date": day,
                 "deposits": float(row["deposit"]),
                 "withdrawals": float(row["withdrawal"]),
             }
-            for _, row in grouped.iterrows()
+            for day, row in grouped.iterrows()
             if row["deposit"] > 0 or row["withdrawal"] > 0
         ]
 
-    def create_investment(self, **kwargs) -> None:
+    def create_investment(self, **kwargs: Any) -> None:
         """
         Create a new investment record.
 
@@ -235,10 +234,23 @@ class InvestmentsService(SnapshotsMixin, ValuationMixin, InsuranceSyncMixin):
         ----------
         **kwargs
             Field values forwarded to ``InvestmentsRepository.create_investment``.
+
+        Raises
+        ------
+        EntityAlreadyExistsException
+            If an investment with the same ``(category, tag)`` already
+            exists. The pair is the investment's identity — it is how its
+            transactions are matched — so a second record would read the
+            same transactions and double-count them.
         """
+        category, tag = kwargs.get("category"), kwargs.get("tag")
+        if not self.investments_repo.get_by_category_tag(category, tag).empty:
+            raise EntityAlreadyExistsException(
+                f"An investment tagged '{tag}' in category '{category}' already exists"
+            )
         self.investments_repo.create_investment(**kwargs)
 
-    def update_investment(self, investment_id: int, **updates) -> None:
+    def update_investment(self, investment_id: int, **updates: Any) -> None:
         """
         Update an investment record.
 
@@ -253,7 +265,25 @@ class InvestmentsService(SnapshotsMixin, ValuationMixin, InsuranceSyncMixin):
             ID of the investment to update.
         **updates
             Field names and new values forwarded to the repository.
+
+        Raises
+        ------
+        ValidationException
+            If ``type`` is among ``updates`` and the investment is
+            insurance-linked (has a non-null ``insurance_policy_id``). The
+            sync mixin owns the type of scraped Keren Hishtalmut policies;
+            reclassifying one here would silently desync it from the
+            retirement projection's KH swap.
         """
+        if "type" in updates:
+            row = self.investments_repo.get_by_id(investment_id)
+            policy_id = row.iloc[0].get("insurance_policy_id")
+            if policy_id and pd.notna(policy_id):
+                raise ValidationException(
+                    "Cannot change the type of an insurance-linked investment; "
+                    "its type is owned by the scraped policy."
+                )
+
         self.investments_repo.update_investment(investment_id, **updates)
 
         if "name" in updates:
@@ -268,9 +298,13 @@ class InvestmentsService(SnapshotsMixin, ValuationMixin, InsuranceSyncMixin):
         """
         Mark an investment as closed.
 
-        Automatically creates a balance snapshot of 0 on the last transaction
-        date for this investment, since a closed investment has no remaining
-        value. If no transactions exist, uses the closure date.
+        Automatically creates a balance snapshot of 0 (``source="closed"``)
+        since a closed investment has no remaining value. The snapshot is
+        placed on the last transaction date (or the closure date when there
+        are no transactions), pushed forward to the newest existing snapshot
+        date if one is later — otherwise a later snapshot would keep
+        valuing the closed holding in net worth. A snapshot already on that
+        date is overwritten by the zero.
 
         Parameters
         ----------
@@ -278,38 +312,143 @@ class InvestmentsService(SnapshotsMixin, ValuationMixin, InsuranceSyncMixin):
             ID of the investment to close.
         closed_date : str
             Closure date in ``YYYY-MM-DD`` format.
-        """
-        self.investments_repo.close_investment(investment_id, closed_date)
 
+        Raises
+        ------
+        EntityNotFoundException
+            If no investment with ``investment_id`` exists.
+        ValidationException
+            If the investment is already closed.
+        """
         inv = self.investments_repo.get_by_id(investment_id).iloc[0]
-        txns = self._get_all_transactions_for_investment(inv["category"], inv["tag"], investment_id=investment_id)
+        if inv["is_closed"]:
+            raise ValidationException(f"Investment {investment_id} is already closed")
+        self.investments_repo.close_investment(investment_id, closed_date)
+        zero_date = self._closing_snapshot_date(
+            investment_id, inv["category"], inv["tag"], closed_date
+        )
+        self.create_balance_snapshot(
+            investment_id, zero_date, 0.0, source=CLOSED_SOURCE
+        )
+
+    def realign_closing_snapshots(self) -> None:
+        """Move every closed investment's zero snapshot onto where it belongs now.
+
+        Closing pins the zero to the last transaction that exists at that
+        moment. A transaction that lands later — the transfer settling a sale
+        days after it, a scraped row re-dated, a row tagged onto the investment
+        after it closed — would otherwise sit past the zero and be carried
+        forward, valuing the closed holding below zero in net worth. Every
+        write path that can change an investment's transactions calls this, so
+        the zero follows them in both directions. Only snapshots written by
+        closing (``source="closed"``) move; nothing else is touched.
+        """
+        investments = self.investments_repo.get_all_investments(include_closed=True)
+        if investments.empty:
+            return
+        for _, inv in investments[investments["is_closed"].astype(bool)].iterrows():
+            investment_id = int(inv["id"])
+            snapshots = self.snapshots_repo.get_snapshots_for_investment(investment_id)
+            if snapshots.empty:
+                continue
+            closing_dates = snapshots.loc[
+                snapshots["source"] == CLOSED_SOURCE, "date"
+            ].tolist()
+            if not closing_dates:
+                continue
+            zero_date = self._closing_snapshot_date(
+                investment_id, inv["category"], inv["tag"], inv["closed_date"]
+            )
+            if closing_dates == [zero_date]:
+                continue
+            self.snapshots_repo.delete_snapshots_for_investment(
+                investment_id, source=CLOSED_SOURCE
+            )
+            self.create_balance_snapshot(
+                investment_id, zero_date, 0.0, source=CLOSED_SOURCE
+            )
+
+    def _closing_snapshot_date(
+        self, investment_id: int, category: str, tag: str, closed_date: str
+    ) -> str:
+        """Return the date the zero written by closing belongs on.
+
+        The last transaction date (the closure date when there are none),
+        pushed forward to the newest other snapshot if one is later —
+        otherwise that snapshot would keep valuing the closed holding.
+
+        Parameters
+        ----------
+        investment_id : int
+            ID of the closed investment.
+        category : str
+            Investment category.
+        tag : str
+            Investment tag.
+        closed_date : str
+            Closure date in ``YYYY-MM-DD`` format.
+
+        Returns
+        -------
+        str
+            The zero snapshot's date in ``YYYY-MM-DD`` format.
+        """
+        txns = self._get_all_transactions_for_investment(
+            category, tag, investment_id=investment_id
+        )
         if not txns.empty:
-            txns["date_parsed"] = pd.to_datetime(txns["date"])
-            last_txn_date = txns["date_parsed"].max().strftime("%Y-%m-%d")
+            zero_date = pd.to_datetime(txns["date"]).max().strftime("%Y-%m-%d")
         else:
-            last_txn_date = closed_date
-        self.create_balance_snapshot(investment_id, last_txn_date, 0.0)
+            zero_date = closed_date
+        snapshots = self.snapshots_repo.get_snapshots_for_investment(investment_id)
+        if not snapshots.empty:
+            others = snapshots[snapshots["source"] != CLOSED_SOURCE]
+            if not others.empty:
+                zero_date = max(zero_date, str(others["date"].max()))
+        return zero_date
 
     def reopen_investment(self, investment_id: int) -> None:
         """
         Reopen a previously closed investment.
 
+        Drops the zero-balance snapshot that closing wrote, so the balance
+        resolves from the remaining snapshots and transactions again.
+
         Parameters
         ----------
         investment_id : int
             ID of the investment to reopen.
+
+        Raises
+        ------
+        EntityNotFoundException
+            If no investment with ``investment_id`` exists.
         """
         self.investments_repo.reopen_investment(investment_id)
+        self.snapshots_repo.delete_snapshots_for_investment(
+            investment_id, source=CLOSED_SOURCE
+        )
 
     def delete_investment(self, investment_id: int) -> None:
         """
         Delete an investment record.
 
+        Savings-goal earmarks backed by the investment are removed too:
+        a dangling ``savings_goal_investments`` row would make every goal
+        listing fail while valuing a holding that no longer exists.
+
         Parameters
         ----------
         investment_id : int
             ID of the investment to delete.
+
+        Raises
+        ------
+        EntityNotFoundException
+            If no investment with ``investment_id`` exists.
         """
+        self.investments_repo.get_by_id(investment_id)
+        SavingsGoalRepository(self.db).delete_backings_for_investment(investment_id)
         self.investments_repo.delete_investment(investment_id)
 
     def recalculate_prior_wealth(self, investment_id: int) -> None:
@@ -328,7 +467,9 @@ class InvestmentsService(SnapshotsMixin, ValuationMixin, InsuranceSyncMixin):
         """
         investment = self.investments_repo.get_by_id(investment_id)
         inv = investment.iloc[0]
-        all_inv_txns = self.transactions_repo.get_table(Services.MANUAL_INVESTMENTS.value)
+        all_inv_txns = self.transactions_repo.get_table(
+            Services.MANUAL_INVESTMENTS.value
+        )
         if all_inv_txns.empty:
             prior_wealth = 0.0
         else:
@@ -339,9 +480,7 @@ class InvestmentsService(SnapshotsMixin, ValuationMixin, InsuranceSyncMixin):
             if inv_txns.empty:
                 prior_wealth = 0.0
             else:
-                amounts = pd.to_numeric(
-                    inv_txns["amount"], errors="coerce"
-                ).fillna(0.0)
+                amounts = pd.to_numeric(inv_txns["amount"], errors="coerce").fillna(0.0)
                 prior_wealth = -float(amounts.sum())
         self.investments_repo.update_prior_wealth(investment_id, prior_wealth)
 

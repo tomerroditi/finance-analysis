@@ -1,38 +1,23 @@
-"""
-Budget repository with SQLAlchemy ORM.
-"""
+"""Budget rule repository (monthly, yearly and project rules)."""
 
-from typing import Optional
+from typing import Any
 
 import pandas as pd
-from sqlalchemy import select, update, delete
+from sqlalchemy import delete, select, update
 from sqlalchemy.orm import Session
 
+from backend.constants.budget import PERIOD_MONTHLY, PERIOD_PROJECT, PERIOD_YEARLY
 from backend.errors import EntityNotFoundException
 from backend.models.budget import BudgetRule
-from backend.constants.budget import (
-    AMOUNT, CATEGORY, ID, MONTH, NAME, TAGS, YEAR,
-    PERIOD_MONTHLY, PERIOD_YEARLY, PERIOD_PROJECT,
-)
-from backend.constants.tables import Tables
+from backend.utils.session_cache import session_cache_get, session_cache_set
 
 
 class BudgetRepository:
-    """
-    Repository for budget rule CRUD operations using ORM.
-    """
+    """Repository for budget rule CRUD operations using ORM."""
 
-    table = Tables.BUDGET_RULES.value
-    id_col = ID
-    name_col = NAME
-    amount_col = AMOUNT
-    category_col = CATEGORY
-    tags_col = TAGS
-    year_col = YEAR
-    month_col = MONTH
+    def __init__(self, db: Session) -> None:
+        """Initialize the repository.
 
-    def __init__(self, db: Session):
-        """
         Parameters
         ----------
         db : Session
@@ -46,20 +31,27 @@ class BudgetRepository:
         amount: float,
         category: str,
         tags: str,
-        month: Optional[int],
-        year: Optional[int],
-        period_type: Optional[str] = None,
+        month: int | None,
+        year: int | None,
+        period_type: str | None = None,
     ) -> None:
         """Create a new budget rule.
 
         Parameters
         ----------
-        name, amount, category, tags : see class docstring.
-        month : Optional[int]
+        name : str
+            Human-readable rule name.
+        amount : float
+            Budget limit.
+        category : str
+            Category the rule applies to.
+        tags : str
+            Semicolon-separated tag names within the category.
+        month : int or None
             Calendar month (1-12). None for yearly/project rules.
-        year : Optional[int]
+        year : int or None
             Calendar year. None for project rules.
-        period_type : Optional[str]
+        period_type : str or None
             One of ``"monthly"``/``"yearly"``/``"project"``. When ``None`` it is
             derived: ``month`` set ⇒ monthly, ``year`` set only ⇒ yearly,
             neither ⇒ project.
@@ -90,76 +82,44 @@ class BudgetRepository:
         -------
         pd.DataFrame
             All budget rules with columns: id, name, amount, category, tags,
-            month, year, created_at, updated_at.
+            month, year, period_type, is_closed, created_at, updated_at.
         """
+        # Cached for the request: the budget overview asks its rule set a
+        # dozen times over while assembling one month (monthly totals, the
+        # long envelopes, the yearly envelopes), and every ask re-read the
+        # whole table.
+        cache_key = ("budget_rules.read_all",)
+        cached = session_cache_get(self.db, cache_key)
+        if cached is not None:
+            return cached
+
         stmt = select(BudgetRule)
-        return pd.read_sql(stmt, self.db.bind)
+        df = pd.read_sql(stmt, self.db.bind)
+        session_cache_set(self.db, cache_key, df)
+        return df
 
-    def read_by_id(self, id_: int) -> pd.DataFrame:
-        """Read a specific budget rule by ID.
+    def read_project_category_names(self) -> list[str]:
+        """List the categories that own project budget rules.
 
-        Parameters
-        ----------
-        id_ : int
-            Primary key of the budget rule to retrieve.
-
-        Returns
-        -------
-        pd.DataFrame
-            Single-row DataFrame for the matching rule, or empty DataFrame if
-            not found.
-        """
-        stmt = select(BudgetRule).where(BudgetRule.id == id_)
-        return pd.read_sql(stmt, self.db.bind)
-
-    def read_by_month(self, year: int, month: int) -> pd.DataFrame:
-        """Read budget rules for a specific month.
-
-        Parameters
-        ----------
-        year : int
-            Calendar year to filter by.
-        month : int
-            Calendar month (1-12) to filter by.
+        Reads through the request-cached ``read_all``, so asking repeatedly
+        within one request costs one table read.
 
         Returns
         -------
-        pd.DataFrame
-            Budget rules matching the given year and month.
+        list[str]
+            Distinct categories of every ``period_type == "project"`` rule,
+            closed projects included, in first-seen (table) order.
         """
-        stmt = select(BudgetRule).where(
-            BudgetRule.year == year, BudgetRule.month == month
+        rules = self.read_all()
+        if rules.empty:
+            return []
+        return (
+            rules.loc[rules["period_type"] == PERIOD_PROJECT, "category"]
+            .unique()
+            .tolist()
         )
-        return pd.read_sql(stmt, self.db.bind)
 
-    def read_project_rules(self) -> pd.DataFrame:
-        """Read project budget rules (period_type == "project").
-
-        Returns
-        -------
-        pd.DataFrame
-            Budget rules with period_type == "project".
-        """
-        stmt = select(BudgetRule).where(BudgetRule.period_type == PERIOD_PROJECT)
-        return pd.read_sql(stmt, self.db.bind)
-
-    def read_by_period_type(self, period_type: str) -> pd.DataFrame:
-        """Read all budget rules of a given period_type.
-
-        Parameters
-        ----------
-        period_type : str
-            One of ``"monthly"``/``"yearly"``/``"project"``.
-
-        Returns
-        -------
-        pd.DataFrame
-            Matching budget rules (raw semicolon ``tags`` string).
-        """
-        stmt = select(BudgetRule).where(BudgetRule.period_type == period_type)
-        return pd.read_sql(stmt, self.db.bind)
-
-    def update(self, id_: int, **fields) -> None:
+    def update(self, id_: int, **fields: Any) -> None:
         """Update a budget rule by ID.
 
         Parameters
@@ -172,9 +132,14 @@ class BudgetRepository:
         Raises
         ------
         EntityNotFoundException
-            If no rule with the given ID exists.
+            If no rule with the given ID exists — even when ``fields`` is
+            empty, so an empty update never reports success for a missing row.
         """
         if not fields:
+            if self.db.get(BudgetRule, id_) is None:
+                raise EntityNotFoundException(
+                    f"No rule found with ID {id_}. Update failed."
+                )
             return
 
         stmt = update(BudgetRule).where(BudgetRule.id == id_).values(**fields)
@@ -232,37 +197,74 @@ class BudgetRepository:
 
         Notes
         -----
-        Only deletes project rules, i.e. rows where both year and month are NULL.
+        Only deletes project rules (``period_type == "project"``).
         """
         stmt = delete(BudgetRule).where(
             BudgetRule.category == category,
-            BudgetRule.year.is_(None),
-            BudgetRule.month.is_(None),
+            BudgetRule.period_type == PERIOD_PROJECT,
         )
         self.db.execute(stmt)
         self.db.commit()
 
-    def delete_by_category_and_tags(self, category: str, tags: str) -> None:
-        """Delete budget rules by category and tags (project rules only).
+    def set_closed_by_category(self, category: str, closed: bool) -> None:
+        """Flag every project rule of ``category`` as closed or open.
+
+        The flag is set on all of the project's rules rather than only its
+        ``all_tags`` anchor: projects that predate the anchor (the demo
+        database among them) have no such row, so anchor-only state would
+        leave them permanently open.
 
         Parameters
         ----------
         category : str
-            Category name to match for deletion.
-        tags : str
-            Semicolon-separated tag string to match exactly.
+            Project category name to flag.
+        closed : bool
+            ``True`` closes the project, ``False`` reopens it.
 
         Notes
         -----
-        Only deletes project rules where both year and month are NULL.
+        Only touches project rules (``period_type == "project"``).
         """
-        stmt = delete(BudgetRule).where(
-            BudgetRule.category == category,
-            BudgetRule.tags == tags,
-            BudgetRule.year.is_(None),
-            BudgetRule.month.is_(None),
+        stmt = (
+            update(BudgetRule)
+            .where(
+                BudgetRule.category == category,
+                BudgetRule.period_type == PERIOD_PROJECT,
+            )
+            .values(is_closed=1 if closed else 0)
         )
         self.db.execute(stmt)
+        self.db.commit()
+
+    def set_closed_by_id(self, id_: int, closed: bool, period_type: str) -> None:
+        """Flag a single rule of ``period_type`` as closed or open.
+
+        Scoped by ``period_type`` as well as id so a yearly endpoint can never
+        flag a monthly or project row that happens to share the id space.
+
+        Parameters
+        ----------
+        id_ : int
+            Primary key of the budget rule to flag.
+        closed : bool
+            ``True`` closes the rule, ``False`` reopens it.
+        period_type : str
+            The kind the rule must be, e.g. ``"yearly"``.
+
+        Raises
+        ------
+        EntityNotFoundException
+            If no rule of that id and period type exists.
+        """
+        stmt = (
+            update(BudgetRule)
+            .where(BudgetRule.id == id_, BudgetRule.period_type == period_type)
+            .values(is_closed=1 if closed else 0)
+        )
+        result = self.db.execute(stmt)
+        if result.rowcount == 0:
+            self.db.rollback()
+            raise EntityNotFoundException(f"No rule found with ID {id_}.")
         self.db.commit()
 
     def rename_category(self, old_name: str, new_name: str) -> None:
@@ -275,21 +277,23 @@ class BudgetRepository:
         self.db.execute(stmt)
         self.db.commit()
 
-    def rename_tag(self, old_tag: str, new_tag: str) -> None:
-        """Rename tag across all budget rules.
+    def rename_tag(self, category: str, old_tag: str, new_tag: str) -> None:
+        """Rename a tag in the budget rules of one category.
 
-        Budget tags are semicolon-separated strings (``"tag1;tag2"``). A bulk
-        SQL ``REPLACE`` is unsafe here: it would corrupt substring matches
-        (renaming ``"food"`` would also hit ``"fastfood"``). So we keep the
-        per-row split/parse for correctness, but narrow the candidate set with
-        a ``LIKE`` filter so only rows whose tag string actually contains
+        Tags are scoped to their category (``Home/Rent`` and ``Other/Rent``
+        are different tags), so only rules whose ``category`` matches are
+        touched. Budget tags are semicolon-separated strings (``"tag1;tag2"``).
+        A bulk SQL ``REPLACE`` is unsafe here: it would corrupt substring
+        matches (renaming ``"food"`` would also hit ``"fastfood"``). So we keep
+        the per-row split/parse for correctness, but narrow the candidate set
+        with a ``LIKE`` filter so only rows whose tag string actually contains
         ``old_tag`` as a substring are loaded — the per-row parse then rejects
-        any false-positive substring matches. This reduces N from "every rule
-        with tags" to "every rule mentioning this tag".
+        any false-positive substring matches.
         """
         rules = (
             self.db.query(BudgetRule)
             .filter(
+                BudgetRule.category == category,
                 BudgetRule.tags.isnot(None),
                 BudgetRule.tags.like(f"%{old_tag}%"),
             )
@@ -302,7 +306,31 @@ class BudgetRepository:
                 rule.tags = ";".join(tags)
         self.db.commit()
 
-    def _assure_table_exists(self) -> None:
-        # Kept for interface compatibility but does nothing as models handle schema
-        # Though ideally we rely on Base.metadata.create_all(bind=engine) called at app startup
-        pass
+    def reallocate_tag(self, old_category: str, new_category: str, tag: str) -> None:
+        """Follow a tag that moved from ``old_category`` to ``new_category``.
+
+        A rule that budgets only this tag moves with it (its ``category``
+        becomes ``new_category``). A rule that budgets several tags keeps its
+        envelope under ``old_category`` and simply drops the moved tag — the
+        amount cannot be split between two categories without the user
+        deciding how, and leaving a tag the category no longer owns would
+        make the rule reference a tag that matches nothing.
+        """
+        rules = (
+            self.db.query(BudgetRule)
+            .filter(
+                BudgetRule.category == old_category,
+                BudgetRule.tags.isnot(None),
+                BudgetRule.tags.like(f"%{tag}%"),
+            )
+            .all()
+        )
+        for rule in rules:
+            tags = rule.tags.split(";") if rule.tags else []
+            if tag not in tags:
+                continue
+            if tags == [tag]:
+                rule.category = new_category
+            else:
+                rule.tags = ";".join(t for t in tags if t != tag)
+        self.db.commit()

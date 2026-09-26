@@ -21,6 +21,15 @@ export default defineConfig(({ mode }) => {
     plugins: [
       react(),
       tailwindcss(),
+      {
+        // index.html's CSP allows any ws:/wss: host for Vite's HMR socket;
+        // a production bundle opens no websocket, and leaving it would let
+        // injected script exfiltrate to any host.
+        name: "csp-drop-dev-websockets",
+        apply: "build",
+        transformIndexHtml: (html: string) =>
+          html.replace("connect-src 'self' ws: wss:", "connect-src 'self'"),
+      },
       VitePWA({
         // generateSW: Workbox builds the SW from JSON config. We previously
         // ran injectManifest with a hand-written src/sw.ts to use a custom
@@ -32,10 +41,7 @@ export default defineConfig(({ mode }) => {
         // strategy.
         registerType: "prompt",
         injectRegister: false,
-        includeAssets: [
-          "favicon.svg",
-          "icons/apple-touch-icon.png",
-        ],
+        includeAssets: ["favicon.svg", "icons/apple-touch-icon.png"],
         manifest: {
           name: "Finance Analysis",
           short_name: "Finance",
@@ -69,10 +75,6 @@ export default defineConfig(({ mode }) => {
         },
         workbox: {
           globPatterns: ["**/*.{js,css,html,svg,png,ico,webmanifest}"],
-          // The main chunk is ~1.6 MiB minified (Workbox's default cap is
-          // 2 MiB). 3 MiB gives headroom for normal growth while still
-          // failing the build if a Plotly-sized dependency sneaks back in.
-          maximumFileSizeToCacheInBytes: 3 * 1024 * 1024,
           navigateFallback: "/index.html",
           navigateFallbackDenylist: [/^\/api\//, /^\/docs/, /^\/openapi/],
           cleanupOutdatedCaches: true,
@@ -112,7 +114,28 @@ export default defineConfig(({ mode }) => {
               handler: "NetworkFirst",
               options: {
                 cacheName: "finance-api-get-v2",
-                networkTimeoutSeconds: 4,
+                // Only ever trips on a connection that is up but not
+                // answering. NetworkFirst already falls back to the cache
+                // the instant a request *errors* (offline, refused), so this
+                // timeout is not what makes offline work — it only decides
+                // how long a live-but-silent connection is given.
+                //
+                // It used to be 4 s, which quietly reinterpreted "the server
+                // is still computing" as "the network is down" and served
+                // the previous body instead. On a real database the derived
+                // analytics reads (recurring detection, budget overview,
+                // forecast, insights) routinely pass 4 s — and *always* do
+                // right after a write, because the commit discards the
+                // backend's `data_cache` generation and the next read pays
+                // the full recompute. The result: confirm a recurring
+                // charge, and ~4 s later the pre-confirmation body landed
+                // and put it back in "needs review" for good. Any optimistic
+                // update on a slow endpoint was exposed the same way.
+                //
+                // 30 s sits above any plausible recompute and matches the
+                // window `prod_server.py` already uses to declare a wedged
+                // backend (3 missed 10 s health probes).
+                networkTimeoutSeconds: 30,
                 expiration: {
                   maxEntries: 200,
                   maxAgeSeconds: 60 * 60 * 24 * 7,
@@ -127,6 +150,38 @@ export default defineConfig(({ mode }) => {
         },
       }),
     ],
+    build: {
+      // Pages are lazy route chunks (App.tsx). Libraries are grouped so a
+      // deploy that only touches app code keeps them cached, and so the
+      // charting stack loads only with the first page that draws a chart.
+      rolldownOptions: {
+        output: {
+          codeSplitting: {
+            // Higher priority claims a module first. `charts` is lowest so
+            // a dependency it shares with an eager library (e.g.
+            // use-sync-external-store) is not pulled into the lazy chunk,
+            // which would make the entry preload all of recharts.
+            groups: [
+              {
+                name: "react",
+                priority: 3,
+                test: /[\\/]node_modules[\\/](react|react-dom|scheduler|react-router)[\\/]/,
+              },
+              {
+                name: "vendor",
+                priority: 2,
+                test: /[\\/]node_modules[\\/](@tanstack|i18next|react-i18next|axios|zustand|use-sync-external-store|idb-keyval|date-fns|lucide-react)[\\/]/,
+              },
+              {
+                name: "charts",
+                priority: 1,
+                test: /[\\/]node_modules[\\/](recharts|victory-vendor|d3-[^\\/]+)[\\/]/,
+              },
+            ],
+          },
+        },
+      },
+    },
     server: {
       port,
       proxy: {

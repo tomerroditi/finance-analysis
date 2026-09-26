@@ -14,7 +14,7 @@
 ; of truth for "what counts as Finance Analysis state on this machine".
 
 !define APP_NAME "Finance Analysis"
-!define APP_VERSION "1.56.3"
+!define APP_VERSION "1.90.0"
 !define APP_PUBLISHER "Tomer Roditi"
 !define APP_URL "https://github.com/tomerroditi/finance-analysis"
 !define OUTPUT_EXE "FinanceAppInstaller.exe"
@@ -29,8 +29,15 @@ InstallDirRegKey HKCU "${APP_REG_KEY}" "InstallDir"
 ; the in-INSTDIR .venv lives somewhere we can write to without ACL pain.
 RequestExecutionLevel user
 
+; CI's build smoke test defines FAD_UNCOMPRESSED: it only needs the script
+; to compile, never ships the installer, and LZMA over the ~200 MB bundle
+; is the slowest step of that job.
+!ifdef FAD_UNCOMPRESSED
+SetCompress off
+!else
 SetCompress auto
 SetCompressor lzma
+!endif
 CRCCheck on
 XPStyle on
 Unicode true

@@ -1,10 +1,7 @@
-"""
-Scraping history repository with SQLAlchemy ORM.
-"""
+"""Scraping history repository with SQLAlchemy ORM."""
 
-from datetime import datetime, timedelta
+from datetime import date, datetime
 
-import pandas as pd
 from sqlalchemy import delete, select, update
 from sqlalchemy.orm import Session
 
@@ -12,9 +9,7 @@ from backend.models.scraping import ScrapingHistory
 
 
 class ScrapingHistoryRepository:
-    """
-    Repository for managing scraping history data and daily limits using ORM.
-    """
+    """Repository for the scraping audit trail (one row per scrape attempt)."""
 
     FAILED = "failed"
     SUCCESS = "success"
@@ -22,8 +17,9 @@ class ScrapingHistoryRepository:
     IN_PROGRESS = "in_progress"
     WAITING_FOR_2FA = "waiting_for_2fa"
 
-    def __init__(self, db: Session):
-        """
+    def __init__(self, db: Session) -> None:
+        """Initialize the repository.
+
         Parameters
         ----------
         db : Session
@@ -31,15 +27,12 @@ class ScrapingHistoryRepository:
         """
         self.db = db
 
-    def _ensure_table_exists(self) -> None:
-        pass
-
     def record_scrape_start(
         self,
         service_name: str,
         provider_name: str,
         account_name: str,
-        start_date: datetime.date,
+        start_date: date,
         status: str = IN_PROGRESS,
     ) -> int:
         """Record the start of a scraping operation and return its ID.
@@ -52,7 +45,7 @@ class ScrapingHistoryRepository:
             Name of the specific provider being scraped (e.g. "isracard", "hapoalim").
         account_name : str
             Identifier of the account being scraped.
-        start_date : datetime.date
+        start_date : date
             Start date for the data range to be scraped.
         status : str, optional
             Initial status to record for the operation, by default IN_PROGRESS.
@@ -79,8 +72,8 @@ class ScrapingHistoryRepository:
         self,
         scrape_id: int,
         status: str,
-        error_message: str = None,
-        error_type: str = None,
+        error_message: str | None = None,
+        error_type: str | None = None,
     ) -> None:
         """Update a scraping record with its final status and optional error.
 
@@ -99,10 +92,6 @@ class ScrapingHistoryRepository:
             ``GENERAL_ERROR``, …) used to pick the user-facing message, keeping
             ``error_message`` free to carry the raw provider text. By default
             None.
-
-        Returns
-        -------
-        None
         """
         stmt = (
             update(ScrapingHistory)
@@ -152,25 +141,6 @@ class ScrapingHistoryRepository:
         stmt = select(ScrapingHistory.status).where(ScrapingHistory.id == scrape_id)
         return self.db.execute(stmt).scalar()
 
-    def get_error_message(self, scrape_id: int) -> str | None:
-        """Get the error message for a failed scraping operation.
-
-        Parameters
-        ----------
-        scrape_id : int
-            ID of the scraping record to look up.
-
-        Returns
-        -------
-        str or None
-            Error message string recorded for the operation, or None if no error
-            was recorded or no record with the given ID exists.
-        """
-        stmt = select(ScrapingHistory.error_message).where(
-            ScrapingHistory.id == scrape_id
-        )
-        return self.db.execute(stmt).scalar()
-
     def get_error(self, scrape_id: int) -> tuple[str | None, str | None]:
         """Get both the error detail and its category in one query.
 
@@ -187,24 +157,11 @@ class ScrapingHistoryRepository:
             written before the column existed — callers should fall back to
             displaying ``error_message``.
         """
-        stmt = select(
-            ScrapingHistory.error_message, ScrapingHistory.error_type
-        ).where(ScrapingHistory.id == scrape_id)
+        stmt = select(ScrapingHistory.error_message, ScrapingHistory.error_type).where(
+            ScrapingHistory.id == scrape_id
+        )
         row = self.db.execute(stmt).first()
         return (row[0], row[1]) if row else (None, None)
-
-    def get_scraping_history(self) -> pd.DataFrame:
-        """Get the complete scraping history as a DataFrame.
-
-        Returns
-        -------
-        pd.DataFrame
-            All scraping history rows ordered by date descending. Columns include:
-            id, service_name, provider_name, account_name, date, status,
-            start_date, error_message.
-        """
-        stmt = select(ScrapingHistory).order_by(ScrapingHistory.date.desc())
-        return pd.read_sql(stmt, self.db.bind)
 
     def get_last_successful_scrape_date(
         self, service_name: str, provider_name: str, account_name: str
@@ -264,23 +221,5 @@ class ScrapingHistoryRepository:
             ScrapingHistory.provider_name == provider,
             ScrapingHistory.account_name == account,
         )
-        self.db.execute(stmt)
-        self.db.commit()
-
-    def clear_old_records(self, days_to_keep: int = 30) -> None:
-        """Clear scraping history records older than specified days.
-
-        Parameters
-        ----------
-        days_to_keep : int, optional
-            Records whose date is older than this many days from now will be
-            deleted, by default 30.
-
-        Returns
-        -------
-        None
-        """
-        cutoff_date = (datetime.now() - timedelta(days=days_to_keep)).isoformat()
-        stmt = delete(ScrapingHistory).where(ScrapingHistory.date < cutoff_date)
         self.db.execute(stmt)
         self.db.commit()

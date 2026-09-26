@@ -6,18 +6,20 @@ net-worth/Sankey (``net_worth.py``), and forecasting (``forecast.py``)
 mixins around the dashboard overview aggregation.
 """
 
+from typing import Any
+
 import pandas as pd
 from sqlalchemy.orm import Session
 
 from backend.repositories.bank_balance_repository import BankBalanceRepository
 from backend.repositories.investments_repository import InvestmentsRepository
-from backend.repositories.transactions_repository import TransactionsRepository
+from backend.repositories.transactions import TransactionsRepository
 from backend.services.analysis.cashflow import CashflowMixin
 from backend.services.analysis.forecast import ForecastMixin
 from backend.services.analysis.net_worth import NetWorthMixin
-from backend.services.investments_service import InvestmentsService
 from backend.services.bank_balance_service import BankBalanceService
 from backend.services.cash_balance_service import CashBalanceService
+from backend.services.investments import InvestmentsService
 
 
 class AnalysisService(CashflowMixin, NetWorthMixin, ForecastMixin):
@@ -29,7 +31,7 @@ class AnalysisService(CashflowMixin, NetWorthMixin, ForecastMixin):
     transaction, bank balance, and investment repositories.
     """
 
-    def __init__(self, db: Session):
+    def __init__(self, db: Session) -> None:
         """
         Initialize the analysis service.
 
@@ -46,19 +48,20 @@ class AnalysisService(CashflowMixin, NetWorthMixin, ForecastMixin):
         self.bank_balance_service = BankBalanceService(db)
         self.cash_balance_service = CashBalanceService(db)
 
-    def get_overview(self):
+    def get_overview(self) -> dict[str, Any]:
         """
         Get a financial overview including totals and latest data date.
 
         Returns
         -------
-        dict
+        dict[str, Any]
             Dictionary with keys:
 
             - ``latest_data_date`` – latest transaction date across all data.
             - ``total_income`` – total income (positive amounts) plus prior wealth.
             - ``total_expenses`` – total expenses (absolute value of negative amounts).
-            - ``total_investments`` – current portfolio value across all open investments.
+            - ``total_investments`` – money directed to investments
+              (``-sum`` of investment transactions), not market value.
             - ``net_balance_change`` – income minus expenses.
         """
         df = self.repo.get_table()
@@ -72,7 +75,11 @@ class AnalysisService(CashflowMixin, NetWorthMixin, ForecastMixin):
         )
 
         income, investments, expenses = self.get_income_investments_and_expenses(df)
-        prior_wealth = self.bank_balance_service.get_total_prior_wealth() + self.investments_service.get_total_prior_wealth() + self.cash_balance_service.get_total_prior_wealth()
+        prior_wealth = (
+            self.bank_balance_service.get_total_prior_wealth()
+            + self.investments_service.get_total_prior_wealth()
+            + self.cash_balance_service.get_total_prior_wealth()
+        )
         income += prior_wealth
 
         return {

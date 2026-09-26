@@ -53,10 +53,10 @@ class ExampleRepository:
         self.db.add(ExampleModel(name=name))
         self.db.commit()
 
-    def update(self, id: int, **fields) -> None:
+    def update(self, id: int, **fields: Any) -> None:
         record = self.db.get(ExampleModel, id)
         if not record:
-            raise ValueError(f"No record with ID {id}")
+            raise EntityNotFoundException(f"No record with ID {id}")
         for k, v in fields.items():
             setattr(record, k, v)
         self.db.commit()
@@ -64,7 +64,7 @@ class ExampleRepository:
     def delete(self, id: int) -> None:
         record = self.db.get(ExampleModel, id)
         if not record:
-            raise ValueError(f"No record with ID {id}")
+            raise EntityNotFoundException(f"No record with ID {id}")
         self.db.delete(record)
         self.db.commit()
 ```
@@ -82,7 +82,7 @@ class MyModel(Base, TimestampMixin):
     name = Column(String, nullable=False)
 ```
 
-Tables auto-create on startup via `Base.metadata.create_all(engine)` in `backend/main.py`.
+Tables auto-create on startup via `Base.metadata.create_all(engine)` in `backend/startup.py` (called from the `backend/main.py` lifespan).
 
 ## Existing Repositories
 
@@ -90,7 +90,7 @@ Tables auto-create on startup via `Base.metadata.create_all(engine)` in `backend
 |------------|---------|---------|
 | `TransactionsRepository` | DB (4 tables) | CRUD for bank/cc/cash/manual transactions. Composes sub-repos. |
 | `TaggingRepository` | YAML files | Category/tag definitions, icon mappings |
-| `TaggingRulesRepository` | DB | Auto-tagging rules (priority-based) |
+| `TaggingRulesRepository` | DB | Auto-tagging rules (applied in creation order, `ORDER BY id`) |
 | `BudgetRepository` | DB | Monthly & project budgets |
 | `SplitTransactionsRepository` | DB | Transaction splits across categories |
 | `ScrapingHistoryRepository` | DB | Scrape audit trail, rate limiting |
@@ -159,7 +159,7 @@ try:
     self.db.commit()
 except sa.exc.IntegrityError:
     self.db.rollback()
-    raise ValueError("Constraint violation")
+    raise EntityAlreadyExistsException("Constraint violation") from None
 ```
 
 ## Best Practices

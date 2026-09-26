@@ -1,6 +1,6 @@
 """Yearly budget service — per-year category/tag envelopes."""
 
-from typing import Optional
+from typing import Any
 
 import pandas as pd
 
@@ -9,6 +9,7 @@ from backend.constants.budget import (
     AMOUNT,
     CATEGORY,
     ID,
+    IS_CLOSED,
     MONTH,
     NAME,
     PERIOD_MONTHLY,
@@ -18,8 +19,9 @@ from backend.constants.budget import (
     YEAR,
 )
 from backend.constants.tables import TransactionsTableFields
-from backend.errors import ValidationException
+from backend.errors import EntityNotFoundException, ValidationException
 from backend.services.budget.core import BudgetService, _auto_fill_lock, _today
+from backend.services.pending_refunds_service import restore_gross_amounts
 
 
 class YearlyBudgetService(BudgetService):
@@ -29,6 +31,14 @@ class YearlyBudgetService(BudgetService):
     a calendar year. Spend accumulates over the whole year. There is no overall
     cap and no synthetic "Other Expenses" entry. Yearly rules are mutually
     exclusive with monthly rules on ``(category, tag)`` within the same year.
+
+    A rule can be *closed* once the year's commitment behind it is settled —
+    the annual insurance is paid, the trip is over. Closing is not a delete
+    and not an edit: the rule keeps its amount, its spend and its place in this
+    year's tab, and it still claims its ``(category, tag)`` against monthly
+    rules. What it loses is the budget Overview, where it is no longer an
+    envelope the running month is measured against, and the attention it drew
+    there — see :meth:`set_rule_closed`.
     """
 
     def get_all_rules(self) -> pd.DataFrame:
@@ -39,11 +49,59 @@ class YearlyBudgetService(BudgetService):
         return rules.loc[rules[PERIOD_TYPE] == PERIOD_YEARLY].drop(columns=[MONTH])
 
     def get_year_rules(self, year: int) -> pd.DataFrame:
-        """Yearly rules scoped to a single calendar year."""
+        """Return the yearly rules scoped to a single calendar year."""
         rules = self.get_all_rules()
         if rules.empty:
             return rules
         return rules.loc[rules[YEAR] == year]
+
+    @staticmethod
+    def rule_is_closed(rule: pd.Series) -> bool:
+        """Whether one yearly rule row carries the closed flag.
+
+        Parameters
+        ----------
+        rule : pd.Series
+            One row of a ``get_all_rules``-style frame.
+
+        Returns
+        -------
+        bool
+            ``True`` only for a row explicitly flagged closed. Rows written
+            before the flag existed hold ``NULL``, which pandas reads back as
+            ``NaN`` — neither of those is closed.
+        """
+        if IS_CLOSED not in rule:
+            return False
+        value = rule[IS_CLOSED]
+        if value is None or pd.isna(value):
+            return False
+        return int(value) == 1
+
+    def set_rule_closed(self, id_: int, closed: bool) -> None:
+        """Close a settled yearly envelope, or reopen a closed one.
+
+        Closing is deliberately neither a delete nor a zeroing: the rule keeps
+        its allocation, its spend and its row in the year's tab, and it goes on
+        claiming its ``(category, tag)`` against monthly rules for the year — a
+        closed envelope's spend must not suddenly reappear inside the monthly
+        budget. All it loses is the budget Overview, where a settled commitment
+        is no longer something the running month can be measured against.
+
+        Parameters
+        ----------
+        id_ : int
+            Yearly rule id.
+        closed : bool
+            ``True`` closes the rule, ``False`` reopens it.
+
+        Raises
+        ------
+        EntityNotFoundException
+            If ``id_`` is not a yearly rule.
+        """
+        self._yearly_row(id_)
+        self.budget_repository.set_closed_by_id(id_, closed, PERIOD_YEARLY)
 
     def _validate(
         self,
@@ -54,19 +112,21 @@ class YearlyBudgetService(BudgetService):
         year: int,
         id_: int | None,
     ) -> None:
-        """Validate a yearly rule; raise ``ValueError`` on failure.
+        """Validate a yearly rule; raise ``ValidationException`` on failure.
 
-        Checks: non-empty name/category/tags, positive amount, name uniqueness
-        within the year, and mutual exclusion against monthly rules for the year.
+        Checks: non-blank name/category, well-formed tags, positive amount,
+        name uniqueness within the year, and mutual exclusion against monthly
+        rules for the year.
         """
-        if not name:
-            raise ValueError("Please enter a name")
+        if not name or not str(name).strip():
+            raise ValidationException("Please enter a name")
         if not category:
-            raise ValueError("Please select a category")
-        if not tags:
-            raise ValueError("Please select at least one tag")
+            raise ValidationException("Please select a category")
+        tags_error = self._tags_error(tags)
+        if tags_error is not None:
+            raise ValidationException(tags_error)
         if amount <= 0:
-            raise ValueError("Amount must be a positive number")
+            raise ValidationException("Amount must be a positive number")
 
         existing = self.get_year_rules(year)
         if not existing.empty:
@@ -74,7 +134,7 @@ class YearlyBudgetService(BudgetService):
             if id_ is not None:
                 dupes = dupes.loc[dupes[ID] != id_]
             if not dupes.empty:
-                raise ValueError(
+                raise ValidationException(
                     f"A yearly rule with the name '{name}' already exists for {year}."
                 )
 
@@ -83,7 +143,7 @@ class YearlyBudgetService(BudgetService):
         )
         if conflicts:
             joined = ", ".join(conflicts)
-            raise ValueError(
+            raise ValidationException(
                 f"{joined} is already used by your monthly budget for {year}. "
                 f"A tag can't be in both for the same year."
             )
@@ -97,18 +157,18 @@ class YearlyBudgetService(BudgetService):
         )
         if yearly_conflicts:
             if yearly_conflicts == [ALL_TAGS]:
-                raise ValueError(
+                raise ValidationException(
                     f"Another yearly rule already covers the '{category}' "
                     f"category for {year}."
                 )
             joined = ", ".join(yearly_conflicts)
-            raise ValueError(
+            raise ValidationException(
                 f"{joined} is already used by another yearly rule for {year}. "
                 f"A tag can't be in two yearly rules for the same year."
             )
 
         if self.is_category_project_owned(category):
-            raise ValueError(
+            raise ValidationException(
                 f"The '{category}' category belongs to a project budget. "
                 f"A yearly rule can't target a project category."
             )
@@ -121,59 +181,96 @@ class YearlyBudgetService(BudgetService):
         tags: str | list[str],
         year: int,
     ) -> None:
-        """Create a yearly rule after validation. Raises ``ValueError`` if invalid."""
-        parsed_tags = tags.split(";") if isinstance(tags, str) else list(tags)
+        """Create a yearly rule after validation. Raises ``ValidationException`` if invalid."""
+        name = str(name).strip()
+        parsed_tags = self._parse_tags(tags)
         self._validate(name, category, parsed_tags, amount, year, None)
-        self.add_rule(name, amount, category, parsed_tags, month=None, year=year,
-                      period_type=PERIOD_YEARLY)
+        self.add_rule(
+            name,
+            amount,
+            category,
+            parsed_tags,
+            month=None,
+            year=year,
+            period_type=PERIOD_YEARLY,
+        )
 
-    def update_rule(self, id_: int, **fields):
+    def _yearly_row(self, id_: int) -> pd.Series:
+        """Return the yearly rule with ``id_``.
+
+        Raises
+        ------
+        EntityNotFoundException
+            If no rule has that id, or the rule is monthly/project — the
+            yearly endpoints must never reach across into another kind.
+        """
+        current = self.get_all_rules()
+        row = current.loc[current[ID] == id_] if not current.empty else current
+        if row.empty:
+            raise EntityNotFoundException(f"No yearly rule found with ID {id_}.")
+        return row.iloc[0]
+
+    def update_rule(self, id_: int, **fields: Any) -> None:
         """Update a yearly rule with validation of any category/tags/name/amount change.
 
         Allowed fields: ``name``, ``amount``, ``category``, ``tags``. The rule's
         ``year`` is immutable via this method.
+
+        Raises
+        ------
+        EntityNotFoundException
+            If ``id_`` is not a yearly rule.
         """
         valid_fields = {NAME, AMOUNT, CATEGORY, TAGS}
         if not all(k in valid_fields for k in fields):
             raise ValidationException(
                 f"Invalid fields for update. Valid fields: {valid_fields}"
             )
-        current = self.get_all_rules()
-        row = current.loc[current[ID] == id_]
-        if row.empty:
-            raise ValueError(f"No yearly rule found with ID {id_}.")
-        row = row.iloc[0]
+        row = self._yearly_row(id_)
         year = int(row[YEAR])
+        if NAME in fields:
+            fields[NAME] = str(fields[NAME]).strip()
         name = fields.get(NAME, row[NAME])
         amount = fields.get(AMOUNT, row[AMOUNT])
         category = fields.get(CATEGORY, row[CATEGORY])
-        tags = fields.get(TAGS, row[TAGS])
-        parsed_tags = tags.split(";") if isinstance(tags, str) else list(tags)
+        parsed_tags = self._parse_tags(fields.get(TAGS, row[TAGS]))
         self._validate(name, category, parsed_tags, amount, year, id_)
 
         if TAGS in fields and isinstance(fields[TAGS], list):
             fields[TAGS] = ";".join(fields[TAGS])
         self.budget_repository.update(id_, **fields)
 
+    def delete_rule(self, id_: int) -> None:
+        """Delete a yearly rule; a monthly/project id is not found here."""
+        self._yearly_row(id_)
+        super().delete_rule(id_)
+
     def get_yearly_budget_view(
         self, year: int, include_split_parents: bool = False
-    ) -> Optional[list[dict]]:
+    ) -> list[dict[str, Any]] | None:
         """Compute spend-vs-limit per yearly rule for a calendar year.
 
         Returns ``None`` when the year has no yearly rules. Otherwise a flat list
-        of ``{rule, current_amount, data, allow_edit, allow_delete}`` — no total
-        rule, no "Other Expenses" remainder.
+        of ``{rule, current_amount, data, allow_edit, allow_delete, closed}`` —
+        no total rule, no "Other Expenses" remainder. Closed rules are listed
+        like any other: this is the envelope's own tab, where its history
+        belongs; it is the Overview that drops them.
         """
         rules = self.get_year_rules(year)
         if rules.empty:
             return None
 
         expenses = self.get_filtered_expenses(
-            exclude_pending_refunds=True, include_split_parents=include_split_parents
+            exclude_pending_refunds=True,
+            include_split_parents=include_split_parents,
+            # Envelopes report what a month cost, net of refunds matched to
+            # their purchase — the same definition the dashboard now uses.
+            net_refunds=True,
         )
         if not expenses.empty:
             year_data = expenses.loc[
-                pd.to_datetime(expenses[TransactionsTableFields.DATE.value]).dt.year == year
+                pd.to_datetime(expenses[TransactionsTableFields.DATE.value]).dt.year
+                == year
             ]
         else:
             year_data = expenses
@@ -200,21 +297,31 @@ class YearlyBudgetService(BudgetService):
                 {
                     "rule": rule.to_dict(),
                     "current_amount": amt,
-                    "data": cat_data.to_dict(orient="records"),
+                    "data": restore_gross_amounts(cat_data).to_dict(orient="records"),
                     "allow_edit": True,
                     "allow_delete": True,
+                    "closed": self.rule_is_closed(rule),
                 }
             )
         return view
 
-    def get_year_summary(self, year: int) -> dict:
-        """Computed, display-only roll-up for the year header.
+    def get_year_summary(self, year: int) -> dict[str, Any]:
+        """Compute the display-only roll-up for the year header.
+
+        The money figures cover every rule, closed ones included — an envelope
+        that has been settled still allocated and still spent this year, and
+        dropping it would make the year's own totals disagree with the rows
+        listed under them. The health counts are the opposite: they are a call
+        to act, and a closed envelope is one the user has said is finished, so
+        it is counted apart in ``closed`` and can never be the year's
+        ``biggest_overspend``.
 
         Returns
         -------
         dict
             ``total_allocated``, ``total_spent``, ``remaining``, ``on_track``
-            (count of rules at/under budget), ``over`` (count over budget), and
+            (count of open rules at/under budget), ``over`` (count of open
+            rules over budget), ``closed`` (count of closed rules), and
             ``biggest_overspend`` (``{"name", "percentage"}`` or ``None``).
         """
         view = self.get_yearly_budget_view(year) or []
@@ -222,15 +329,22 @@ class YearlyBudgetService(BudgetService):
         total_spent = sum(float(e["current_amount"] or 0) for e in view)
         on_track = 0
         over = 0
+        closed = 0
         biggest = None
         for e in view:
+            if e.get("closed"):
+                closed += 1
+                continue
             amount = float(e["rule"].get(AMOUNT) or 0)
             spent = float(e["current_amount"] or 0)
             pct = spent / amount if amount > 0 else 0.0
             if amount > 0 and spent > amount:
                 over += 1
                 if biggest is None or pct > biggest["percentage"]:
-                    biggest = {"name": str(e["rule"].get(NAME) or ""), "percentage": pct}
+                    biggest = {
+                        "name": str(e["rule"].get(NAME) or ""),
+                        "percentage": pct,
+                    }
             else:
                 on_track += 1
         return {
@@ -239,21 +353,28 @@ class YearlyBudgetService(BudgetService):
             "remaining": total_allocated - total_spent,
             "on_track": on_track,
             "over": over,
+            "closed": closed,
             "biggest_overspend": biggest,
         }
 
-    def get_alerts(self, year: int, warning_threshold: float = 0.8) -> list[dict]:
-        """Yearly rules whose spend reached the warning threshold.
+    def get_alerts(
+        self, year: int, warning_threshold: float = 0.8
+    ) -> list[dict[str, Any]]:
+        """Return the yearly rules whose spend reached the warning threshold.
 
         Mirrors ``MonthlyBudgetService.get_alerts`` — ``percentage = spent/amount``;
         ``critical`` at ≥ 1.0, ``warning`` in ``[threshold, 1.0)``. There is no
-        Total Budget / Other Expenses row to skip.
+        Total Budget / Other Expenses row to skip. Closed rules are skipped: an
+        alert asks the user to do something about an envelope they are still
+        spending from, and a settled one is exactly what closing says it isn't.
         """
         view = self.get_yearly_budget_view(year)
         if view is None:
             return []
         alerts = []
         for entry in view:
+            if entry.get("closed"):
+                continue
             rule = entry["rule"]
             amount = float(rule.get(AMOUNT) or 0)
             if amount <= 0:
@@ -277,7 +398,18 @@ class YearlyBudgetService(BudgetService):
         alerts.sort(key=lambda a: a["percentage"], reverse=True)
         return alerts
 
-    def auto_carry_forward(self, year: int) -> Optional[dict]:
+    def _latest_prior_year_rules(self, year: int) -> tuple[int, pd.DataFrame] | None:
+        """Return ``(source_year, rules)`` for the latest year before ``year`` with rules."""
+        all_rules = self.get_all_rules()
+        if all_rules.empty:
+            return None
+        prior = all_rules.loc[all_rules[YEAR] < year]
+        if prior.empty:
+            return None
+        source_year = int(prior[YEAR].max())
+        return source_year, all_rules.loc[all_rules[YEAR] == source_year]
+
+    def auto_carry_forward(self, year: int) -> dict[str, Any] | None:
         """Copy the latest prior year's yearly rules into an empty ``year``.
 
         Only runs for the current or a future year (never rewrites history) and
@@ -297,14 +429,10 @@ class YearlyBudgetService(BudgetService):
             self.db.rollback()
             if not self.get_year_rules(year).empty:
                 return None
-            all_rules = self.get_all_rules()
-            if all_rules.empty:
+            source = self._latest_prior_year_rules(year)
+            if source is None:
                 return None
-            prior = all_rules.loc[all_rules[YEAR] < year]
-            if prior.empty:
-                return None
-            source_year = int(prior[YEAR].max())
-            source_rules = all_rules.loc[all_rules[YEAR] == source_year]
+            source_year, source_rules = source
 
             skipped = self._copy_rules(
                 source_rules,
@@ -314,7 +442,7 @@ class YearlyBudgetService(BudgetService):
             )
             return {"copied_from": source_year, "skipped": skipped}
 
-    def force_copy_from_prior_year(self, year: int) -> Optional[dict]:
+    def force_copy_from_prior_year(self, year: int) -> dict[str, Any] | None:
         """Force-copy the latest prior year's yearly rules into ``year``.
 
         This is the explicit user-triggered "Copy from previous year" action
@@ -336,14 +464,10 @@ class YearlyBudgetService(BudgetService):
             yearly rules to copy from — in that case ``year``'s existing
             rules (if any) are left untouched.
         """
-        all_rules = self.get_all_rules()
-        if all_rules.empty:
+        source = self._latest_prior_year_rules(year)
+        if source is None:
             return None
-        prior = all_rules.loc[all_rules[YEAR] < year]
-        if prior.empty:
-            return None
-        source_year = int(prior[YEAR].max())
-        source_rules = all_rules.loc[all_rules[YEAR] == source_year]
+        source_year, source_rules = source
 
         with _auto_fill_lock:
             self.db.rollback()
@@ -361,7 +485,7 @@ class YearlyBudgetService(BudgetService):
 
     def get_yearly_analysis(
         self, year: int, include_split_parents: bool = False
-    ) -> dict:
+    ) -> dict[str, Any]:
         """Bundle the yearly view, computed roll-up, alerts, and carry-forward report."""
         carried_from = None
         skipped_conflicts: list[str] = []
@@ -373,7 +497,7 @@ class YearlyBudgetService(BudgetService):
 
         view = self.get_yearly_budget_view(year, include_split_parents)
         return {
-            "rules": view if view else [],
+            "rules": view or [],
             "summary": self.get_year_summary(year),
             "alerts": self.get_alerts(year),
             "carried_from": carried_from,

@@ -29,7 +29,7 @@ async function setBankCredential(accountName: string, create: boolean) {
           credentials: {
             email: `${accountName.replace(/\s+/g, "-").toLowerCase()}@example.com`,
             password: "e2e-password",
-            phoneNumber: "+15551234567",
+            phoneNumber: "+972501234567",
           },
         },
       });
@@ -120,6 +120,25 @@ test.describe("Per-account scraping concurrency", () => {
       });
     });
 
+    // Hapoalim "Main Account" already synced successfully today: Scrape All
+    // must leave it alone rather than re-download the same data.
+    const SCRAPED_TODAY = "Main Account";
+    await page.route("**/api/scraping/last-scrapes", async (route) => {
+      const response = await route.fetch();
+      const rows = (await response.json()) as {
+        account_name: string;
+        last_scrape_date: string | null;
+      }[];
+      await route.fulfill({
+        response,
+        json: rows.map((row) =>
+          row.account_name === SCRAPED_TODAY
+            ? { ...row, last_scrape_date: new Date().toISOString() }
+            : row,
+        ),
+      });
+    });
+
     await navigateTo(page, "/data-sources");
 
     const cardFor = (name: string) =>
@@ -150,12 +169,10 @@ test.describe("Per-account scraping concurrency", () => {
       .poll(() => startedAccounts)
       .toEqual([RUNNING_ACCOUNT, IDLE_ACCOUNT]);
 
-    // Located structurally rather than by accessible name so the locator
-    // survives any future label change — the same gotcha documented in
-    // onezero-resend.spec.ts for the Resend button.
-    const scrapeAllButton = page
-      .getByRole("button", { name: "Connect Account", exact: true })
-      .locator("xpath=preceding-sibling::button[1]");
+    // Located by test id rather than accessible name: the label tracks the
+    // multi-select (it reads "Scrape (N)" once sources are picked), so a
+    // name-based locator would break the moment a selection exists.
+    const scrapeAllButton = page.getByTestId("scrape-launch");
 
     // Scrape All also stays usable mid-run: it is how the user launches the
     // accounts that are still idle. Its dedupe (useScraping.scrapeAll, unit
@@ -174,16 +191,18 @@ test.describe("Per-account scraping concurrency", () => {
       startedAccounts.filter((a) => a === RUNNING_ACCOUNT),
     ).toHaveLength(1);
     expect(startedAccounts.filter((a) => a === IDLE_ACCOUNT)).toHaveLength(1);
+    // …and an account already synced today is skipped entirely.
+    expect(startedAccounts).not.toContain(SCRAPED_TODAY);
   });
 
   test("a running scrape is still shown after navigating away and back", async ({
     page,
   }) => {
-    // The hook's `runningScrapers` map is component-local, so leaving Data
-    // Sources unmounts it. Without the GET /api/scraping/active hydration on
-    // mount, the card came back reading "idle" while the scraper was still
-    // running — and the 2s poller never restarted, so the scrape's completion
-    // invalidations never fired either.
+    // Cold-load hydration: this browser never clicked Scrape, so the store
+    // starts empty and GET /api/scraping/active is the only thing that can
+    // tell the card a scrape is in flight. (State surviving an in-app
+    // navigation is a different guarantee, covered by
+    // scraping-state-persistence.spec.ts, which stubs /active empty.)
     const ACTIVE = {
       process_id: RUNNING_PROCESS_ID,
       service: "banks",
@@ -227,9 +246,22 @@ test.describe("Per-account scraping concurrency", () => {
       timeout: 10_000,
     });
     // Still mid-scrape, so the card offers Abort rather than Scrape.
-    await expect(
-      runningCard.getByTitle(/Abort Scraping|הפסק שליפה/),
-    ).toBeVisible();
+    const abortButton = runningCard.getByTitle(/Abort Scraping|הפסק שליפה/);
+    await expect(abortButton).toBeVisible();
+
+    // Aborting is the user's own choice, not a failure: the card must read
+    // "Aborted" with its own badge, never "Failed".
+    await page.route("**/api/scraping/abort", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ status: "aborted" }),
+      });
+    });
+    await abortButton.click();
+    await expect(runningCard.getByTestId("scrape-aborted-badge")).toBeVisible();
+    await expect(runningCard.getByText(/^Aborted$|^בוטל$/)).toBeVisible();
+    await expect(runningCard.getByText(/^Failed$|^נכשל$/)).toHaveCount(0);
   });
 
   test("a failed scrape explains itself and still exposes the provider's text", async ({
@@ -287,14 +319,107 @@ test.describe("Per-account scraping concurrency", () => {
       await expect(errorInfoButton).toBeVisible();
       await errorInfoButton.click();
 
+      // The panel is portalled to <body>, so it is found by role, not inside
+      // the card.
+      const tooltip = page.getByRole("tooltip");
       // Friendly, translated explanation chosen by error_type…
       await expect(
-        card.getByText(/rejected the saved login|דחה את פרטי ההתחברות/),
+        tooltip.getByText(/rejected the saved login|דחה את פרטי ההתחברות/),
       ).toBeVisible();
       // …with the provider's raw text still available underneath.
-      await expect(card.getByText(ERROR_MESSAGE)).toBeVisible();
+      await expect(tooltip.getByText(ERROR_MESSAGE)).toBeVisible();
+
+      // Anchored inside the 12px icon, the panel used to shrink-wrap to one
+      // word per line and poke out past the card and the viewport. It must be
+      // a readable width and sit wholly on screen.
+      const box = await tooltip.boundingBox();
+      const viewport = page.viewportSize();
+      expect(box).not.toBeNull();
+      expect(box!.width).toBeGreaterThan(200);
+      expect(box!.x).toBeGreaterThanOrEqual(0);
+      expect(box!.y).toBeGreaterThanOrEqual(0);
+      expect(box!.x + box!.width).toBeLessThanOrEqual(viewport!.width);
+      expect(box!.y + box!.height).toBeLessThanOrEqual(viewport!.height);
     } finally {
       await setBankCredential(FAILED_ACCOUNT, false);
     }
+  });
+
+  test("picking sources narrows the scrape, and the toolbar stays one row on a phone", async ({
+    page,
+  }) => {
+    // Nothing picked must keep meaning "scrape everything" — the selection is
+    // additive, not a new mandatory step. Stubbed like the test above so no
+    // real provider is contacted.
+    const startedAccounts: string[] = [];
+    let nextProcessId = 7000;
+
+    await page.route("**/api/scraping/start", async (route) => {
+      const body = route.request().postDataJSON() as { account: string };
+      startedAccounts.push(body.account);
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(nextProcessId++),
+      });
+    });
+    await page.route("**/api/scraping/status*", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ status: "in_progress" }),
+      });
+    });
+
+    await page.setViewportSize({ width: 375, height: 800 });
+    await navigateTo(page, "/data-sources");
+
+    const scrapeButton = page.getByTestId("scrape-launch");
+    const connectButton = page.getByRole("button", {
+      name: "Connect Account",
+      exact: true,
+    });
+    const periodSelect = page.locator("main select").first();
+    await expect(scrapeButton).toBeVisible();
+
+    // The three toolbar controls share one row at phone width: same vertical
+    // band, and nothing pushed off the side of the viewport.
+    const boxes = await Promise.all(
+      [periodSelect, scrapeButton, connectButton].map((l) => l.boundingBox()),
+    );
+    for (const box of boxes) expect(box).not.toBeNull();
+    const tops = boxes.map((b) => b!.y);
+    expect(Math.max(...tops) - Math.min(...tops)).toBeLessThan(8);
+    for (const box of boxes) {
+      expect(box!.x).toBeGreaterThanOrEqual(0);
+      expect(box!.x + box!.width).toBeLessThanOrEqual(375);
+    }
+
+    const cardFor = (name: string) =>
+      page
+        .getByRole("heading", { name, exact: true })
+        .locator("xpath=ancestor::div[contains(@class, 'group')][1]");
+
+    // Tick one source: the button stops offering "everything" and names the
+    // count instead.
+    await expect(scrapeButton).toHaveText(/Scrape All|שלוף הכל/);
+    await cardFor(IDLE_ACCOUNT).getByTestId("select-source").check();
+    await expect(page.getByTestId("selection-bar")).toContainText(
+      /1 source selected|נבחר מקור אחד/,
+    );
+    await expect(scrapeButton).toHaveText(/\(1\)/);
+
+    await scrapeButton.click();
+    await expect.poll(() => startedAccounts).toEqual([IDLE_ACCOUNT]);
+    // Give any stray dispatch a chance to land before asserting the negative.
+    await page.waitForTimeout(500);
+    expect(startedAccounts).toEqual([IDLE_ACCOUNT]);
+
+    // Clearing hands the button back its scrape-everything default.
+    await page.getByTestId("selection-bar").getByRole("button").last().click();
+    await expect(page.getByTestId("selection-bar")).toHaveCount(0);
+    await expect(scrapeButton).toHaveText(/Scrape All|שלוף הכל/);
+    await scrapeButton.click();
+    await expect.poll(() => startedAccounts.length).toBeGreaterThan(2);
   });
 });

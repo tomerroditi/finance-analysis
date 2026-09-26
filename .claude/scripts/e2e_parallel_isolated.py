@@ -19,8 +19,9 @@ This orchestrator removes the shared state entirely: it starts **N independent
 helpers.ts). With no shared DB, every shard runs concurrently with zero
 cross-shard races, and the only ceiling is real CPU cores.
 
-This is an **opt-in local tool** (``npm run test:e2e:isolated``). It does not
-change CI, which keeps its proven single-backend ``--shard=X/4`` matrix.
+This is an **opt-in local tool** (``npm run test:e2e:isolated``). CI keeps its
+4-job matrix (one backend per job) but packs those jobs with the same
+``pack_shards`` via ``e2e_shard_files.py``.
 
 Server ownership
 ----------------

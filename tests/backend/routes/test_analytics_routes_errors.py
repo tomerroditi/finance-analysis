@@ -1,6 +1,6 @@
 """Tests for error/negative paths in the /api/analytics API endpoints."""
 
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -8,21 +8,25 @@ import pytest
 class TestAnalyticsRoutesErrors:
     """Tests for analytics endpoints with invalid inputs and error conditions."""
 
-    def test_get_overview_internal_error(self, test_client):
-        """Verify that RuntimeError propagates when AnalysisService.get_overview fails.
-
-        Patches the AnalysisService to simulate an unexpected internal error
-        during the overview aggregation.
-        """
-        with patch("backend.routes.analytics.AnalysisService") as mock_cls:
-            mock_svc = MagicMock()
-            mock_cls.return_value = mock_svc
-            mock_svc.get_overview.side_effect = RuntimeError("DB connection lost")
-            with pytest.raises(RuntimeError, match="DB connection lost"):
-                test_client.get("/api/analytics/overview")
-
-    def test_get_net_balance_over_time_internal_error(self, test_client):
-        """Verify that RuntimeError propagates when net balance computation fails.
+    @pytest.mark.parametrize(
+        "service_method, path",
+        [
+            ("get_overview", "/api/analytics/overview"),
+            ("get_net_balance_over_time", "/api/analytics/net-balance-over-time"),
+            ("get_income_expenses_over_time", "/api/analytics/income-expenses-over-time"),
+            ("get_net_worth_over_time", "/api/analytics/net-worth-over-time"),
+            ("get_monthly_expenses", "/api/analytics/monthly-expenses"),
+        ],
+        ids=[
+            "overview",
+            "net-balance",
+            "income-expenses",
+            "net-worth",
+            "monthly-expenses",
+        ],
+    )
+    def test_internal_error_propagates(self, test_client, service_method, path):
+        """Verify a RuntimeError from AnalysisService propagates out of the route.
 
         The analytics routes do not wrap service calls in try/except, so
         internal errors propagate through the test client.
@@ -30,83 +34,21 @@ class TestAnalyticsRoutesErrors:
         with patch("backend.routes.analytics.AnalysisService") as mock_cls:
             mock_svc = MagicMock()
             mock_cls.return_value = mock_svc
-            mock_svc.get_net_balance_over_time.side_effect = RuntimeError(
-                "Aggregation failed"
-            )
-            with pytest.raises(RuntimeError, match="Aggregation failed"):
-                test_client.get("/api/analytics/net-balance-over-time")
+            getattr(mock_svc, service_method).side_effect = RuntimeError("Boom")
+            with pytest.raises(RuntimeError, match="Boom"):
+                test_client.get(path)
 
-    def test_get_income_expenses_over_time_internal_error(self, test_client):
-        """Verify that RuntimeError propagates when income/expenses computation fails."""
-        with patch("backend.routes.analytics.AnalysisService") as mock_cls:
-            mock_svc = MagicMock()
-            mock_cls.return_value = mock_svc
-            mock_svc.get_income_expenses_over_time.side_effect = RuntimeError(
-                "Computation error"
-            )
-            with pytest.raises(RuntimeError, match="Computation error"):
-                test_client.get("/api/analytics/income-expenses-over-time")
-
-    def test_get_expenses_by_category_internal_error(self, test_client):
-        """Verify that RuntimeError propagates when category breakdown fails."""
-        with patch("backend.routes.analytics.AnalysisService") as mock_cls:
-            mock_svc = MagicMock()
-            mock_cls.return_value = mock_svc
-            mock_svc.get_expenses_by_category.side_effect = RuntimeError(
-                "Category aggregation failed"
-            )
-            with pytest.raises(RuntimeError, match="Category aggregation failed"):
-                test_client.get("/api/analytics/by-category")
-
-    def test_get_net_worth_over_time_internal_error(self, test_client):
-        """Verify that RuntimeError propagates when net worth computation fails."""
-        with patch("backend.routes.analytics.AnalysisService") as mock_cls:
-            mock_svc = MagicMock()
-            mock_cls.return_value = mock_svc
-            mock_svc.get_net_worth_over_time.side_effect = RuntimeError(
-                "Net worth failed"
-            )
-            with pytest.raises(RuntimeError, match="Net worth failed"):
-                test_client.get("/api/analytics/net-worth-over-time")
-
-    def test_get_monthly_expenses_internal_error(self, test_client):
-        """Verify that RuntimeError propagates when monthly expenses computation fails."""
-        with patch("backend.routes.analytics.AnalysisService") as mock_cls:
-            mock_svc = MagicMock()
-            mock_cls.return_value = mock_svc
-            mock_svc.get_monthly_expenses.side_effect = RuntimeError(
-                "Monthly expenses failed"
-            )
-            with pytest.raises(RuntimeError, match="Monthly expenses failed"):
-                test_client.get("/api/analytics/monthly-expenses")
-
-    def test_get_expenses_by_category_empty_returns_empty(self, test_client):
-        """Verify by-category endpoint returns the canonical dict shape with no data.
-
-        On an empty DB the endpoint must still return
-        ``{"expenses": [], "refunds": []}`` so the frontend can safely read
-        ``.expenses``/``.refunds`` (previously it returned a bare ``[]``).
-        """
-        response = test_client.get("/api/analytics/by-category")
-        assert response.status_code == 200
-        data = response.json()
-        assert data == {"expenses": [], "refunds": []}
-
-    def test_get_net_balance_over_time_empty(self, test_client):
-        """Verify net-balance-over-time returns empty list with no data."""
-        response = test_client.get("/api/analytics/net-balance-over-time")
-        assert response.status_code == 200
-        assert response.json() == []
-
-    def test_get_income_expenses_over_time_empty(self, test_client):
-        """Verify income-expenses-over-time returns empty list with no data."""
-        response = test_client.get("/api/analytics/income-expenses-over-time")
-        assert response.status_code == 200
-        assert response.json() == []
-
-    def test_get_net_worth_over_time_empty(self, test_client):
-        """Verify net-worth-over-time returns empty list with no data."""
-        response = test_client.get("/api/analytics/net-worth-over-time")
+    @pytest.mark.parametrize(
+        "path",
+        [
+            "/api/analytics/net-balance-over-time",
+            "/api/analytics/income-expenses-over-time",
+            "/api/analytics/net-worth-over-time",
+        ],
+    )
+    def test_time_series_empty_db_returns_empty_list(self, test_client, path):
+        """Verify the over-time series endpoints return an empty list with no data."""
+        response = test_client.get(path)
         assert response.status_code == 200
         assert response.json() == []
 

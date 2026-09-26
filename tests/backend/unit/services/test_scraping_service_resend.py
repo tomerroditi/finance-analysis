@@ -30,18 +30,6 @@ def reset_registries():
     ss._active_scrapers.clear()
 
 
-@pytest.fixture(autouse=True)
-def reset_credentials_singleton():
-    """Reset the CredentialsRepository singleton between tests."""
-    from backend.repositories.credentials_repository import CredentialsRepository
-
-    CredentialsRepository._instance = None
-    CredentialsRepository._initialized = False
-    yield
-    CredentialsRepository._instance = None
-    CredentialsRepository._initialized = False
-
-
 @pytest.fixture
 def service():
     """Create a ScrapingService with mocked repositories."""

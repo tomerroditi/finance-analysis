@@ -60,14 +60,14 @@ function StatCard({
   color: string;
 }) {
   return (
-    <div className="bg-[var(--surface)] rounded-xl p-3 md:p-5 border border-[var(--surface-light)] flex items-center justify-between shadow-sm">
-      <div>
+    <div className="bg-[var(--surface)] rounded-xl p-3 md:p-5 border border-[var(--surface-light)] flex items-center justify-between gap-3 shadow-sm">
+      <div className="min-w-0 flex-1">
         <p className="text-[var(--text-muted)] text-[10px] uppercase tracking-widest font-bold">
           {title}
         </p>
-        <p className="text-xl font-black mt-1 text-white" dir="ltr">{value}</p>
+        <p className="text-xl font-black mt-1 text-white break-words" dir="ltr">{value}</p>
       </div>
-      <div className={`p-3 rounded-xl ${color}`}>
+      <div className={`p-3 rounded-xl shrink-0 ${color}`}>
         <Icon size={20} />
       </div>
     </div>
@@ -136,8 +136,8 @@ export function PortfolioOverview({ portfolioAnalysis }: PortfolioOverviewProps)
   }, [series, balanceHistory]);
 
   return (
-    <div className="space-y-4 md:space-y-6">
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-3 md:gap-4">
+    <div className="space-y-1.5">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-1.5">
         <StatCard
           title={t("investments.totalValue")}
           value={formatCurrency(portfolioAnalysis.total_value)}
@@ -166,7 +166,7 @@ export function PortfolioOverview({ portfolioAnalysis }: PortfolioOverviewProps)
         />
       </div>
       {/* Charts: Balance Over Time + Allocation side-by-side */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 md:gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-1.5">
         {/* Balance Over Time Chart */}
         <div className="lg:col-span-2 bg-[var(--surface)] rounded-2xl p-4 md:p-6 border border-[var(--surface-light)]">
           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 mb-4">

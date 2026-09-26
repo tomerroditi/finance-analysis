@@ -1,11 +1,19 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, X, Plus } from "lucide-react";
-import { budgetApi, type YearlyAnalysis } from "../../services/api";
+import { AlertTriangle, Archive, X, Plus } from "lucide-react";
+import {
+  budgetApi,
+  pendingRefundsApi,
+  type PendingRefund,
+  type RefundLink,
+  type YearlyAnalysis,
+} from "../../services/api";
 import { YearlyRuleModal } from "../modals/YearlyRuleModal";
-import { useConfirm } from "../../context/DialogContext";
+import { TransactionCollapsibleList } from "./TransactionCollapsibleList";
+import { useConfirm, useNotify } from "../../context/DialogContext";
 import { useQueryKeys } from "../../hooks/useQueryKeys";
+import { qkPrefix } from "../../services/queryKeys";
 import { BAR_CONTROL, BudgetCommandBar, PeriodNav } from "./BudgetCommandBar";
 import { BudgetStatusBand, type BandStat } from "./BudgetStatusBand";
 import { BudgetNoticeLine } from "./BudgetNoticeLine";
@@ -14,25 +22,27 @@ import { RuleSparkline } from "./RuleSparkline";
 import { isAllTagsRule } from "../../utils/budgetRules";
 import { formatCurrency } from "../../utils/numberFormatting";
 import { formatMonthCompact } from "../../utils/dateFormatting";
-import {
-  bucketByMonth,
-  monthKeysOfYear,
-  type TrendTransaction,
-} from "../../utils/budgetTrends";
+import { bucketByMonth, monthKeysOfYear } from "../../utils/budgetTrends";
 
 const MONTHS_IN_YEAR = 12;
 
 interface YearlyBudgetViewProps {
   tabs: React.ReactNode;
+  /** Year to open on, when the link that got here named one. */
+  initialYear?: number;
 }
 
-export const YearlyBudgetView: React.FC<YearlyBudgetViewProps> = ({ tabs }) => {
+export const YearlyBudgetView: React.FC<YearlyBudgetViewProps> = ({
+  tabs,
+  initialYear,
+}) => {
   const { t } = useTranslation();
   const confirm = useConfirm();
+  const notify = useNotify();
   const queryClient = useQueryClient();
   const qk = useQueryKeys();
   const currentYear = new Date().getFullYear();
-  const [year, setYear] = useState(currentYear);
+  const [year, setYear] = useState(initialYear ?? currentYear);
   const [modalOpen, setModalOpen] = useState(false);
   const [editRule, setEditRule] = useState<YearlyAnalysis["rules"][number]["rule"] | null>(null);
   const [alertDismissed, setAlertDismissed] = useState(false);
@@ -53,14 +63,86 @@ export const YearlyBudgetView: React.FC<YearlyBudgetViewProps> = ({ tabs }) => {
     queryFn: () => budgetApi.getYearlyAnalysis(year).then((r) => r.data as YearlyAnalysis),
   });
 
+  // Refund badges for the transactions a rule expands to show. Shares
+  // its cache entry with the monthly and project views, so opening the tab
+  // after either of them costs no request.
+  const { data: pendingRefunds } = useQuery({
+    queryKey: qk.pendingRefunds.all(),
+    queryFn: () => pendingRefundsApi.getAll().then((res) => res.data),
+  });
+
+  const pendingRefundsMap = useMemo(() => {
+    const map = new Map<string, PendingRefund>();
+    pendingRefunds?.forEach((pr: PendingRefund) => {
+      map.set(`${pr.source_table}_${pr.source_id}`, pr);
+    });
+    return map;
+  }, [pendingRefunds]);
+
+  const refundLinksMap = useMemo(() => {
+    const map = new Map<string, RefundLink[]>();
+    pendingRefunds?.forEach((pr: PendingRefund) => {
+      pr.links?.forEach((link: RefundLink) => {
+        const key = `${link.refund_source}_${link.refund_transaction_id}`;
+        const existing = map.get(key);
+        if (existing) {
+          existing.push(link);
+        } else {
+          map.set(key, [link]);
+        }
+      });
+    });
+    return map;
+  }, [pendingRefunds]);
+
+  // Retagging a transaction from the expanded list can move it out of this
+  // rule and into another one — and out of the Overview's long rules
+  // — so the whole budget prefix refetches, not just this year's key.
+  const invalidateBudget = () =>
+    queryClient.invalidateQueries({ queryKey: qkPrefix.budget });
+
   const deleteMutation = useMutation({
     mutationFn: (id: number) => budgetApi.deleteYearlyRule(id),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: qk.budget.yearly(year) }),
   });
 
+  const closedMutation = useMutation({
+    mutationFn: ({ id, closed }: { id: number; closed: boolean }) =>
+      budgetApi.setYearlyRuleClosed(id, closed),
+    onSuccess: () => {
+      // The whole budget prefix, not just this year's key: the Overview's
+      // rule list is built from this flag, so it has to refetch too.
+      queryClient.invalidateQueries({ queryKey: qkPrefix.budget });
+    },
+    onError: () => notify.error(t("budget.yearly.closeFailed")),
+  });
+
+  // Reopening is a plain undo, so only closing asks first.
+  const toggleClosed = async (rule: { id: number; name: string }, closed: boolean) => {
+    if (!closed) {
+      closedMutation.mutate({ id: rule.id, closed: false });
+      return;
+    }
+    const ok = await confirm({
+      title: t("budget.yearly.closeRule"),
+      message: t("budget.yearly.confirmClose", { name: rule.name }),
+      confirmLabel: t("budget.yearly.closeRule"),
+    });
+    if (ok) closedMutation.mutate({ id: rule.id, closed: true });
+  };
+
   // Memoised because `?? []` mints a new array on every render, which would
-  // re-bucket every rule's burn series for nothing.
-  const rules = useMemo(() => data?.rules ?? [], [data?.rules]);
+  // re-bucket every rule's burn series for nothing. Closed rules sink to
+  // the bottom: they are kept for their history, and leaving them between the
+  // rules still being spent from is exactly the noise closing removes.
+  // The sort is stable, so open rules keep the order the API sent them in.
+  const rules = useMemo(
+    () =>
+      [...(data?.rules ?? [])].sort(
+        (a, b) => Number(a.closed) - Number(b.closed),
+      ),
+    [data?.rules],
+  );
   const summary = data?.summary;
 
   // Months elapsed in the viewed year — the whole year once it is in the past.
@@ -79,7 +161,7 @@ export const YearlyBudgetView: React.FC<YearlyBudgetViewProps> = ({ tabs }) => {
     [monthKeys],
   );
 
-  // A yearly envelope has no per-period endpoint, so its burn series is
+  // A yearly rule has no per-period endpoint, so its burn series is
   // bucketed from the transactions the analysis already returns per rule.
   // `current_amount` arrives spend-positive (the service already negates the
   // transaction sum), so it is passed through as the series' reference total.
@@ -88,11 +170,7 @@ export const YearlyBudgetView: React.FC<YearlyBudgetViewProps> = ({ tabs }) => {
     for (const entry of rules) {
       map.set(
         entry.rule.id,
-        bucketByMonth(
-          entry.data as TrendTransaction[],
-          monthKeys,
-          entry.current_amount,
-        ),
+        bucketByMonth(entry.data, monthKeys, entry.current_amount),
       );
     }
     return map;
@@ -131,6 +209,20 @@ export const YearlyBudgetView: React.FC<YearlyBudgetViewProps> = ({ tabs }) => {
                   </span>
                 </>
               )}
+              {summary.closed > 0 && (
+                <>
+                  <span className="text-[10px] sm:text-xs text-[var(--text-muted)]">·</span>
+                  <span
+                    className="text-lg md:text-xl font-bold text-[var(--text-muted)]"
+                    data-testid="yearly-closed-count"
+                  >
+                    {summary.closed}
+                  </span>
+                  <span className="text-[10px] sm:text-xs text-[var(--text-muted)]">
+                    {t("budget.yearly.closedLabel")}
+                  </span>
+                </>
+              )}
             </span>
           ),
         },
@@ -155,7 +247,7 @@ export const YearlyBudgetView: React.FC<YearlyBudgetViewProps> = ({ tabs }) => {
     : [];
 
   return (
-    <div className="space-y-3 md:space-y-4">
+    <div className="space-y-1.5">
       <BudgetCommandBar
         tabs={tabs}
         actions={
@@ -222,7 +314,7 @@ export const YearlyBudgetView: React.FC<YearlyBudgetViewProps> = ({ tabs }) => {
       ) : rules.length === 0 ? (
         <p className="text-[var(--text-muted)] text-sm py-8 text-center">{t("budget.yearly.empty")}</p>
       ) : (
-        <div className="w-full space-y-2">
+        <div className="w-full space-y-1.5">
             {rules.map((entry) => {
               const rule = entry.rule;
               const tagList = Array.isArray(rule.tags) ? rule.tags : [];
@@ -234,6 +326,18 @@ export const YearlyBudgetView: React.FC<YearlyBudgetViewProps> = ({ tabs }) => {
                   subLabel={subLabel}
                   current={entry.current_amount}
                   total={rule.amount}
+                  dimmed={entry.closed}
+                  badge={
+                    entry.closed ? (
+                      <span
+                        data-testid="yearly-closed-badge"
+                        className="inline-flex items-center gap-1 shrink-0 rounded-full bg-[var(--surface-light)] px-1.5 py-0.5 text-[10px] text-[var(--text-muted)]"
+                      >
+                        <Archive size={10} className="shrink-0" />
+                        {t("budget.yearly.closedBadge")}
+                      </span>
+                    ) : undefined
+                  }
                   isExpanded={expandedRuleId === rule.id}
                   onToggleExpand={() =>
                     setExpandedRuleId((prev) => (prev === rule.id ? null : rule.id))
@@ -245,6 +349,7 @@ export const YearlyBudgetView: React.FC<YearlyBudgetViewProps> = ({ tabs }) => {
                       labels={monthLabels}
                       budget={rule.amount}
                       totalPeriods={MONTHS_IN_YEAR}
+                      elapsedPeriods={elapsedMonths}
                       showPace
                     />
                   }
@@ -260,6 +365,20 @@ export const YearlyBudgetView: React.FC<YearlyBudgetViewProps> = ({ tabs }) => {
                                 setModalOpen(true);
                               }
                             : undefined
+                        }
+                      />
+                      <LedgerRowAction
+                        kind={entry.closed ? "reopen" : "close"}
+                        testId={`yearly-close-toggle-${rule.id}`}
+                        label={
+                          entry.closed
+                            ? t("budget.yearly.reopenRule")
+                            : t("budget.yearly.closeRule")
+                        }
+                        onClick={
+                          closedMutation.isPending
+                            ? undefined
+                            : () => toggleClosed(rule, !entry.closed)
                         }
                       />
                       <LedgerRowAction
@@ -282,11 +401,32 @@ export const YearlyBudgetView: React.FC<YearlyBudgetViewProps> = ({ tabs }) => {
                     </>
                   }
                 >
-                  <div className="px-3 pb-3 text-xs text-[var(--text-muted)]" dir="auto">
-                    {t("budget.yearly.spentOfAllocation", {
-                      spent: formatCurrency(entry.current_amount),
-                      total: formatCurrency(rule.amount),
-                    })}
+                  <div className="px-3 pb-3">
+                    <div className="text-xs text-[var(--text-muted)]" dir="auto">
+                      {t("budget.yearly.spentOfAllocation", {
+                        spent: formatCurrency(entry.current_amount),
+                        total: formatCurrency(rule.amount),
+                      })}
+                      {entry.closed && (
+                        <span
+                          data-testid="yearly-closed-notice"
+                          className="block mt-1"
+                        >
+                          {t("budget.yearly.closedNotice")}
+                        </span>
+                      )}
+                    </div>
+                    {/* The year's transactions behind this rule. A closed
+                        one lists them too — its history is exactly what
+                        closing keeps. */}
+                    <TransactionCollapsibleList
+                      transactions={entry.data}
+                      isOpen
+                      showActions
+                      onTransactionUpdated={invalidateBudget}
+                      pendingRefundsMap={pendingRefundsMap}
+                      refundLinksMap={refundLinksMap}
+                    />
                   </div>
                 </BudgetLedgerRow>
               );

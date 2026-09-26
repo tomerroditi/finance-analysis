@@ -1,36 +1,49 @@
-"""Adapter bridging the new async Python scraper framework to the backend pipeline.
+"""Adapter bridging the async Python scraper framework to the backend pipeline.
 
 Translates ``ScrapingResult`` objects from the ``scraper`` package into
-pandas DataFrames compatible with the existing transaction storage,
-auto-tagging, and bank-balance-recalculation pipeline.
+pandas DataFrames compatible with the transaction storage, auto-tagging, and
+bank-balance-recalculation pipeline.
 
 Note: imports from the root ``scraper`` package use ``_import_scraper_module``
 to avoid the naming collision with ``backend.scraper``.
 """
 
 import asyncio
+import concurrent.futures
 import contextlib
 import datetime
 import importlib
+import json
 import logging
 import os
 import sys
+from collections.abc import Callable, Iterator
 from datetime import date
+from types import ModuleType
+from typing import TYPE_CHECKING, Any
 
 import pandas as pd
 
 from backend.config import AppConfig
-from backend.constants.providers import Services
-from backend.constants.tables import Tables, TransactionsTableFields
+from backend.constants.providers import CLEARING_HOUSE_REPORTS_EXTRA, Services
+from backend.constants.tables import SERVICE_TO_TABLE, TransactionsTableFields
 from backend.database import get_db_context
 from backend.errors import EntityNotFoundException
 from backend.repositories.credentials_repository import CredentialsRepository
 from backend.repositories.scraping_history_repository import ScrapingHistoryRepository
-from backend.repositories.transactions_repository import TransactionsRepository
+from backend.repositories.transactions import TransactionsRepository
 from backend.services.bank_balance_service import BankBalanceService
 from backend.services.tagging_rules_service import TaggingRulesService
 from backend.services.tagging_service import CategoriesTagsService
 from backend.utils.log_sanitize import scrub
+
+if TYPE_CHECKING:
+    from sqlalchemy.orm import Session
+
+    from scraper.base.base_scraper import BaseScraper, ScraperOptions
+    from scraper.models.account import AccountResult
+    from scraper.models.result import ScrapingResult
+    from scraper.models.transaction import Transaction
 
 logger = logging.getLogger(__name__)
 
@@ -51,8 +64,8 @@ NO_ACCOUNTS_ERROR = (
     "provider's API may have changed. Try reconnecting the account."
 )
 
-# NOTE: these two dicts are plain in-process, single-event-loop state —
-# there is exactly one asyncio event loop per uvicorn worker, and the app
+# NOTE: these two dicts are plain in-process state — every scrape runs on the
+# one scraper event loop (``scraping_service.get_scraper_loop``), and the app
 # runs a single in-process worker (see ``build/app_entry.py``). Under a
 # hypothetical multi-worker deployment, each worker would get its own copy
 # and these guards (single-flight lock, 2FA-waiting registry) would need
@@ -115,13 +128,15 @@ _tfa_scrapers_waiting: dict[ScraperRegistryKey, "ScraperAdapter"] = {}
 _active_scrapers: dict[ScraperRegistryKey, "ScraperAdapter"] = {}
 
 
-def _import_scraper_module(name: str):
+def _import_scraper_module(name: str) -> ModuleType:
     """Import a module from the root ``scraper`` package.
 
     Ensures the project root is on ``sys.path`` so that the root-level
     ``scraper`` package is found instead of ``backend.scraper``.
     """
-    project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    project_root = os.path.dirname(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    )
     if project_root not in sys.path:
         sys.path.insert(0, project_root)
     return importlib.import_module(name)
@@ -143,15 +158,8 @@ _describe_exception = _import_scraper_module(
     "scraper.base.base_scraper"
 ).describe_exception
 
-# Maps frontend service names to DB table / source column values.
-_SERVICE_TO_TABLE = {
-    Services.CREDIT_CARD.value: Tables.CREDIT_CARD.value,
-    Services.BANK.value: Tables.BANK.value,
-    Services.INSURANCE.value: Tables.INSURANCE.value,
-}
 
-
-def _format_key_amount(amount) -> str:
+def _format_key_amount(amount: float | str | None) -> str:
     """Render an amount for a dedup key at fixed 2-decimal precision.
 
     A raw float repr is not a stable key: ``0.1 + 0.2`` renders as
@@ -180,7 +188,7 @@ def create_adapter(
     service_name: str,
     provider_name: str,
     account_name: str,
-    credentials: dict,
+    credentials: dict[str, Any],
     start_date: date,
     process_id: int,
     force_2fa: bool = False,
@@ -202,10 +210,19 @@ def create_adapter(
     ScraperAdapter
         An ``InsuranceScraperAdapter`` for insurances, otherwise a base ``ScraperAdapter``.
     """
-    cls = InsuranceScraperAdapter if service_name == Services.INSURANCE.value else ScraperAdapter
+    cls = (
+        InsuranceScraperAdapter
+        if service_name == Services.INSURANCE.value
+        else ScraperAdapter
+    )
     return cls(
-        service_name, provider_name, account_name, credentials,
-        start_date, process_id, force_2fa=force_2fa,
+        service_name,
+        provider_name,
+        account_name,
+        credentials,
+        start_date,
+        process_id,
+        force_2fa=force_2fa,
     )
 
 
@@ -214,7 +231,7 @@ class ScraperAdapter:
 
     Runs an async scraper from the ``scraper`` package, converts the
     resulting ``ScrapingResult`` into a DataFrame, and feeds it through the
-    same save / tag / rebalance pipeline used by the legacy Node.js scrapers.
+    backend's save / tag / rebalance pipeline.
 
     Parameters
     ----------
@@ -243,11 +260,11 @@ class ScraperAdapter:
         service_name: str,
         provider_name: str,
         account_name: str,
-        credentials: dict,
+        credentials: dict[str, Any],
         start_date: date,
         process_id: int,
         force_2fa: bool = False,
-    ):
+    ) -> None:
         self.service_name = service_name
         self.provider_name = provider_name
         self.account_name = account_name
@@ -271,11 +288,20 @@ class ScraperAdapter:
         # worker thread — wake the parked scraper by marshaling the
         # ``asyncio.Event.set()`` back onto that loop (Event is not
         # thread-safe). ``None`` until ``run()`` starts.
-        self._loop: "asyncio.AbstractEventLoop | None" = None
+        self._loop: asyncio.AbstractEventLoop | None = None
         # The underlying scraper instance, set once ``run()`` builds it. Stays
         # ``None`` until then, so a resend that races ahead of scraper
         # construction can be rejected cleanly (see ``resend_otp``).
-        self._scraper = None
+        self._scraper: BaseScraper | None = None
+        # ``concurrent.futures.Future`` for the scheduled ``run()`` coroutine,
+        # set by ``scraping_service._launch_adapter``. Cancelling it is how an
+        # abort reaches a scraper that is NOT parked on an OTP — the only
+        # other abort channel is the OTP sentinel, which a non-2FA scraper
+        # never reads.
+        self._run_future: concurrent.futures.Future | None = None
+        # Set when ``run()`` is cancelled mid-flight (user abort), so the
+        # history row records CANCELED rather than a synthetic failure.
+        self._canceled = False
 
         # Pipeline state
         self._data: pd.DataFrame | None = None
@@ -284,10 +310,9 @@ class ScraperAdapter:
         self._error: str = ""
         # Failure category (``ScrapingResult.error_type``), recorded alongside
         # so the UI can render friendly translated copy without the technical
-        # text having to double as a user-facing message. Previously this was
-        # collapsed into ``_error`` and lost.
+        # text having to double as a user-facing message.
         self._error_type: str = ""
-        self._table_name: str = _SERVICE_TO_TABLE.get(service_name, "")
+        self._table_name: str = SERVICE_TO_TABLE.get(service_name, "")
         # Number of accounts the scraper reported, or None when the scrape
         # never produced a result. Distinguishes "an account with no
         # activity this window" (a real success) from "we fetched nothing
@@ -296,16 +321,12 @@ class ScraperAdapter:
 
         # Demo mode is context-local and does NOT survive the hand-off in
         # scraping_service._launch_adapter (run_coroutine_threadsafe starts
-        # the coroutine in a context copied on the event loop, not ours), so
+        # the coroutine in a context copied on the scraper loop, not ours), so
         # capture it here — inside the request — and re-apply it in run().
         self.demo_mode = AppConfig().is_demo_mode
 
-    # ------------------------------------------------------------------
-    # Public interface
-    # ------------------------------------------------------------------
-
     @contextlib.contextmanager
-    def _apply_demo_context(self):
+    def _apply_demo_context(self) -> Iterator[None]:
         """Bind the captured demo mode for the duration of the block.
 
         Yields
@@ -350,10 +371,12 @@ class ScraperAdapter:
             ts = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             logger.info(
                 "[%s] %s: Scraping started (from %s)",
-                ts, scrub(self._log_id), self.start_date,
+                ts,
+                scrub(self._log_id),
+                self.start_date,
             )
 
-            scraper = None
+            scraper: BaseScraper | None = None
             try:
                 scraper = self._create_scraper(create_scraper, ScraperOptions)
                 # Expose the scraper so resend_otp can reach it while the
@@ -368,16 +391,25 @@ class ScraperAdapter:
 
                 if result.success:
                     self._accounts_fetched = len(result.accounts)
+                    self._pre_save_hook(result)
                     self._data = self._result_to_dataframe(result, self.service_name)
-                    if self._data is not None and not self._data.empty:
-                        self._data = self._data.sort_values(by=["date"])
-                        # TODO(perf): these are blocking sync DB writes (save,
-                        # auto-tag, rebalance) that run on the event loop thread.
-                        # Offloading them via run_in_executor was considered but
-                        # deferred: thread-pool work is NOT cancellable by the
-                        # asyncio.wait_for timeout above, so an executor hop would
-                        # let DB writes outlive the 5-minute ceiling. Revisit with
-                        # an explicit cancellation/cleanup story before offloading.
+                    if self._accounts_fetched > 0:
+                        # An empty window is still an authoritative scrape of
+                        # that window: pending rows must be reconciled, the
+                        # bank balance recomputed and the insurance metadata
+                        # (balances, snapshots) refreshed even when no new
+                        # transaction arrived. Only the row insert itself is
+                        # conditional on there being rows.
+                        #
+                        # These are blocking sync DB writes (save, auto-tag,
+                        # rebalance). They stall the scraper loop — and so any
+                        # concurrent scrape — but never the server, which runs
+                        # on its own loop. They are deliberately not moved to an
+                        # executor: thread-pool work is NOT cancellable by the
+                        # asyncio.wait_for timeout above, so the hop would let DB
+                        # writes outlive the 5-minute ceiling.
+                        if not self._data.empty:
+                            self._data = self._data.sort_values(by=["date"])
                         self._save_scraped_transactions()
                         self._apply_auto_tagging()
                         self._recalculate_bank_balances()
@@ -392,9 +424,10 @@ class ScraperAdapter:
                     logger.error(
                         "%s: Scraping failed — [%s] %s",
                         scrub(self._log_id),
-                        scrub(self._error_type), scrub(self._error),
+                        scrub(self._error_type),
+                        scrub(self._error),
                     )
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 self._error_type = "TIMEOUT"
                 self._error = (
                     f"Scraping exceeded the {SCRAPE_TIMEOUT_SECONDS}-second limit "
@@ -402,19 +435,32 @@ class ScraperAdapter:
                 )
                 logger.error(
                     "%s: Scraping timed out — %s",
-                    scrub(self._log_id), scrub(self._error),
+                    scrub(self._log_id),
+                    scrub(self._error),
                 )
                 # wait_for cancelled scrape() mid-flight, so the scraper's own
                 # terminate() in its finally may not have run — force browser
                 # cleanup here to avoid leaking a Playwright process on timeout.
                 if scraper is not None:
                     await scraper._safe_terminate(False)
+            except asyncio.CancelledError:
+                # The user aborted (``ScrapingService.abort_scraping_process``
+                # cancels ``_run_future``). The scraper's own terminate() was
+                # skipped by the cancellation, so release the browser here;
+                # the ``finally`` below still records the outcome and frees
+                # the registries, then the cancellation propagates.
+                self._canceled = True
+                logger.info("%s: Scraping canceled by the user", scrub(self._log_id))
+                if scraper is not None:
+                    await scraper._safe_terminate(False)
+                raise
             except Exception as exc:
                 self._error_type = "GENERAL_ERROR"
                 self._error = _describe_exception(exc)
                 logger.error(
                     "%s: Unexpected error — %s",
-                    scrub(self._log_id), scrub(self._error),
+                    scrub(self._log_id),
+                    scrub(self._error),
                 )
             finally:
                 # Persist before anything that can raise, and regardless of how the
@@ -439,11 +485,12 @@ class ScraperAdapter:
                         scrub(self._log_id),
                     )
 
-            ts = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            logger.info(
-                "[%s] %s: Scraping finished",
-                ts, scrub(self._log_id),
-            )
+                ts = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                logger.info(
+                    "[%s] %s: Scraping finished",
+                    ts,
+                    scrub(self._log_id),
+                )
 
     def _unregister_from_2fa_waiting(self) -> None:
         """Pop this adapter from the 2FA-waiting and active-scraper registries.
@@ -474,7 +521,7 @@ class ScraperAdapter:
         if _active_scrapers.get(key) is self:
             _active_scrapers.pop(key, None)
 
-    def _persist_refreshed_otp_token(self, scraper) -> None:
+    def _persist_refreshed_otp_token(self, scraper: "BaseScraper") -> None:
         """Persist a freshly obtained long-term token, however it was obtained.
 
         A long-term token lets later scrapes skip the SMS round trip entirely,
@@ -492,7 +539,7 @@ class ScraperAdapter:
 
         Parameters
         ----------
-        scraper : object
+        scraper : BaseScraper
             The scraper instance that just ran; may expose
             ``refreshed_otp_long_term_token``.
         """
@@ -504,7 +551,12 @@ class ScraperAdapter:
             # same secret on every scrape.
             return
         try:
-            merged = {**self.credentials, "otpLongTermToken": token}
+            # The password is deliberately left out: ``get_credentials`` always
+            # materialises a ``password`` key (empty when none is stored), and
+            # re-sending it would rewrite — or blank — the Keyring entry on
+            # every token refresh. Omitted fields leave the Keyring untouched.
+            merged = {k: v for k, v in self.credentials.items() if k != "password"}
+            merged["otpLongTermToken"] = token
             with get_db_context() as db:
                 CredentialsRepository(db).save_credentials(
                     self.service_name, self.provider_name, self.account_name, merged
@@ -516,7 +568,8 @@ class ScraperAdapter:
         except Exception as exc:
             logger.warning(
                 "%s: Failed to persist refreshed long-term token — %s",
-                scrub(self._log_id), scrub(exc),
+                scrub(self._log_id),
+                scrub(exc),
             )
 
     def set_otp_code(self, code: str) -> None:
@@ -530,8 +583,8 @@ class ScraperAdapter:
         self._otp_code = code
         loop = self._loop
         if loop is not None and not loop.is_closed():
-            # run() executes on the server's main event loop; this method is
-            # called from a synchronous route in a threadpool worker thread.
+            # run() executes on the scraper event loop; this method is called
+            # from a synchronous route in a threadpool worker thread.
             # Marshal Event.set() onto that loop so the parked scraper
             # coroutine is woken reliably — asyncio.Event is not thread-safe.
             loop.call_soon_threadsafe(self._otp_event.set)
@@ -543,7 +596,10 @@ class ScraperAdapter:
     async def resend_otp(self) -> None:
         """Re-issue the OTP for the underlying scraper without restarting it.
 
-        Delegates to the scraper's ``resend_otp``. This only mutates the
+        Delegates to the scraper's ``resend_otp``, run on the loop ``run()``
+        executes on: the caller is on the server loop, but the scraper's
+        HTTP client and browser belong to the scraper loop and cannot be
+        driven from another one. This only mutates the
         provider's OTP context (e.g. OneZero's ``_otp_context``); it does not
         touch ``_otp_event`` or ``_otp_code``, so it is safe to call while the
         scraper coroutine is parked in ``_otp_callback`` awaiting the user's
@@ -563,13 +619,21 @@ class ScraperAdapter:
         """
         if self._scraper is None:
             raise EntityNotFoundException("Scraper is not ready for a resend yet")
-        await self._scraper.resend_otp()
+        loop = self._loop
+        if loop is None or loop is asyncio.get_running_loop():
+            await self._scraper.resend_otp()
+            return
+        await asyncio.wrap_future(
+            asyncio.run_coroutine_threadsafe(self._scraper.resend_otp(), loop)
+        )
 
-    # ------------------------------------------------------------------
-    # Scraper creation
-    # ------------------------------------------------------------------
-
-    def _create_scraper(self, create_scraper_fn, options_cls):
+    def _create_scraper(
+        self,
+        create_scraper_fn: Callable[
+            [str, dict[str, Any], "ScraperOptions"], "BaseScraper"
+        ],
+        options_cls: type["ScraperOptions"],
+    ) -> "BaseScraper":
         """Instantiate the appropriate scraper, redirecting to dummies in demo mode.
 
         Parameters
@@ -595,14 +659,12 @@ class ScraperAdapter:
             DummyRegularScraper = _dummy_mod.DummyRegularScraper
 
             if self.service_name == Services.CREDIT_CARD.value:
-                return DummyCreditCardScraper(self.provider_name, self.credentials, options)
+                return DummyCreditCardScraper(
+                    self.provider_name, self.credentials, options
+                )
             return DummyRegularScraper(self.provider_name, self.credentials, options)
 
         return create_scraper_fn(self.provider_name, self.credentials, options)
-
-    # ------------------------------------------------------------------
-    # 2FA callback
-    # ------------------------------------------------------------------
 
     async def _otp_callback(self) -> str:
         """Async callback passed to the scraper for OTP requests.
@@ -653,14 +715,13 @@ class ScraperAdapter:
         except Exception as exc:
             logger.warning(
                 "%s: Failed to mark waiting_for_2fa — %s",
-                scrub(self._log_id), scrub(exc),
+                scrub(self._log_id),
+                scrub(exc),
             )
 
-    # ------------------------------------------------------------------
-    # Data conversion
-    # ------------------------------------------------------------------
-
-    def _iter_scraped_rows(self, result):
+    def _iter_scraped_rows(
+        self, result: "ScrapingResult"
+    ) -> Iterator[tuple["AccountResult", "Transaction", str, str, str]]:
         """Yield ``(account, txn, txn_date, row_id, unique_id)`` per scraped row.
 
         Centralises dedup-key construction so the base frame and the
@@ -723,7 +784,10 @@ class ScraperAdapter:
                 key_amount = _format_key_amount(txn.charged_amount)
 
                 unique_key = (
-                    str(account.account_number), txn_date, key_amount, identifier,
+                    str(account.account_number),
+                    txn_date,
+                    key_amount,
+                    identifier,
                 )
                 unique_n = unique_counts.get(unique_key, 0) + 1
                 unique_counts[unique_key] = unique_n
@@ -739,12 +803,10 @@ class ScraperAdapter:
                 else:
                     # Legacy format preserved verbatim for the first
                     # occurrence — see the note above on backward compat.
-                    row_id = (
-                        f"{account.account_number}_{txn_date}"
-                        f"_{txn.charged_amount}"
-                    )
+                    row_id = f"{account.account_number}_{txn_date}_{txn.charged_amount}"
                     fallback_key = (
-                        str(account.account_number), txn_date,
+                        str(account.account_number),
+                        txn_date,
                         str(txn.charged_amount),
                     )
                     fallback_n = fallback_counts.get(fallback_key, 0) + 1
@@ -754,7 +816,9 @@ class ScraperAdapter:
 
                 yield account, txn, txn_date, row_id, unique_id
 
-    def _result_to_dataframe(self, result, service_name: str) -> pd.DataFrame:
+    def _result_to_dataframe(
+        self, result: "ScrapingResult", service_name: str
+    ) -> pd.DataFrame:
         """Convert a ``ScrapingResult`` to a DataFrame matching the existing pipeline.
 
         Parameters
@@ -769,8 +833,8 @@ class ScraperAdapter:
         pd.DataFrame
             DataFrame with columns matching ``TransactionsTableFields``.
         """
-        source = _SERVICE_TO_TABLE.get(service_name, "")
-        rows: list[dict] = []
+        source = SERVICE_TO_TABLE.get(service_name, "")
+        rows: list[dict[str, Any]] = []
 
         for account, txn, txn_date, row_id, unique_id in self._iter_scraped_rows(
             result
@@ -794,13 +858,12 @@ class ScraperAdapter:
             rows.append(row)
 
         if not rows:
-            return pd.DataFrame()
+            # Keep the canonical columns so an empty window can still be handed
+            # to the ingestion pipeline (see ``run``) without a KeyError on
+            # the dedup columns.
+            return pd.DataFrame(columns=[f.value for f in TransactionsTableFields])
 
         return pd.DataFrame(rows)
-
-    # ------------------------------------------------------------------
-    # Pipeline helpers (mirrored from the legacy Scraper base class)
-    # ------------------------------------------------------------------
 
     def _save_scraped_transactions(self) -> None:
         """Persist the scraped DataFrame to the database."""
@@ -828,12 +891,14 @@ class ScraperAdapter:
                 if count > 0:
                     logger.info(
                         "%s: Auto-tagged %d transactions",
-                        scrub(self._log_id), count,
+                        scrub(self._log_id),
+                        count,
                     )
         except Exception as exc:
             logger.error(
                 "%s: Error auto-tagging — %s",
-                scrub(self._log_id), scrub(exc),
+                scrub(self._log_id),
+                scrub(exc),
             )
 
     def _recalculate_bank_balances(self) -> None:
@@ -844,16 +909,21 @@ class ScraperAdapter:
             with get_db_context() as db:
                 balance_service = BankBalanceService(db)
                 balance_service.recalculate_for_account(
-                    self.provider_name, self.account_name,
+                    self.provider_name,
+                    self.account_name,
                 )
         except Exception as exc:
             logger.error(
                 "%s: Error recalculating bank balance — %s",
-                scrub(self._log_id), scrub(exc),
+                scrub(self._log_id),
+                scrub(exc),
             )
 
-    def _post_save_hook(self, result) -> None:
-        """Hook for subclasses to run additional logic after transactions are saved."""
+    def _pre_save_hook(self, result: "ScrapingResult") -> None:
+        """Run subclass-specific logic before the result becomes rows."""
+
+    def _post_save_hook(self, result: "ScrapingResult") -> None:
+        """Run subclass-specific logic after the transactions are saved."""
 
     def _record_scraping_attempt(self, id_: int) -> None:
         """Update the scraping history record with the final status.
@@ -864,7 +934,7 @@ class ScraperAdapter:
             Scraping history record ID (same as ``process_id``).
         """
         error_type = None
-        if self._otp_code == self.CANCEL:
+        if self._canceled or self._otp_code == self.CANCEL:
             status = ScrapingHistoryRepository.CANCELED
             error_message = None
         elif self._data is not None and not self._error:
@@ -877,7 +947,8 @@ class ScraperAdapter:
                 error_type = "NO_ACCOUNTS"
                 logger.error(
                     "%s: %s",
-                    scrub(self._log_id), NO_ACCOUNTS_ERROR,
+                    scrub(self._log_id),
+                    NO_ACCOUNTS_ERROR,
                 )
             else:
                 status = ScrapingHistoryRepository.SUCCESS
@@ -889,15 +960,29 @@ class ScraperAdapter:
 
         with get_db_context() as db:
             history_repo = ScrapingHistoryRepository(db)
-            history_repo.record_scrape_end(
-                id_, status, error_message, error_type
-            )
+            # An abort records CANCELED synchronously from the route, but the
+            # cancellation only lands at the coroutine's next ``await`` — a
+            # scrape already past its last await finishes and would otherwise
+            # flip the user's explicit cancel back to SUCCESS or FAILED.
+            if (
+                status != ScrapingHistoryRepository.CANCELED
+                and history_repo.get_scraping_status(id_)
+                == ScrapingHistoryRepository.CANCELED
+            ):
+                logger.info(
+                    "%s: Already recorded as canceled; keeping that status",
+                    scrub(self._log_id),
+                )
+                return
+            history_repo.record_scrape_end(id_, status, error_message, error_type)
 
 
 class InsuranceScraperAdapter(ScraperAdapter):
     """Adapter for insurance scrapers with memo and metadata support."""
 
-    def _result_to_dataframe(self, result, service_name: str) -> pd.DataFrame:
+    def _result_to_dataframe(
+        self, result: "ScrapingResult", service_name: str
+    ) -> pd.DataFrame:
         """Extend base conversion to include the ``memo`` column."""
         df = super()._result_to_dataframe(result, service_name)
         if df.empty:
@@ -918,17 +1003,108 @@ class InsuranceScraperAdapter(ScraperAdapter):
 
         return df
 
-    def _post_save_hook(self, result) -> None:
+    def _pre_save_hook(self, result: "ScrapingResult") -> None:
+        """Re-key the scrape onto stored policy IDs and adopt predecessors' rows.
+
+        See ``InsuranceAccountService.claim_policies``. Runs before the rows
+        are built so every deposit carries the policy ID the other tables
+        join on, and before the save so re-reported deposits dedup against
+        the adopted ones.
+        """
+        from backend.services.insurance_account_service import (
+            InsuranceAccountService,
+        )
+
+        if not result.accounts:
+            return
+        try:
+            with get_db_context() as db:
+                stored = InsuranceAccountService(db).claim_policies(
+                    self.provider_name,
+                    self.account_name,
+                    [account.account_number for account in result.accounts],
+                )
+        except Exception as exc:
+            logger.error(
+                "%s: Error resolving stored insurance policies — %s",
+                scrub(self._log_id),
+                scrub(exc),
+            )
+            return
+        for account in result.accounts:
+            policy_id = stored.get(account.account_number)
+            if policy_id is None:
+                continue
+            account.account_number = policy_id
+            if account.metadata:
+                account.metadata["policy_id"] = policy_id
+
+    def _save_clearing_house_reports(self, result: "ScrapingResult") -> None:
+        """Store the household summaries a clearing-house scrape handed back."""
+        from backend.services.insurance_account_service import (
+            InsuranceAccountService,
+        )
+
+        reports = (getattr(result, "extras", None) or {}).get(
+            CLEARING_HOUSE_REPORTS_EXTRA
+        )
+        if not reports:
+            return
+        try:
+            with get_db_context() as db:
+                InsuranceAccountService(db).save_clearing_house_reports(
+                    self.provider_name, self.account_name, reports
+                )
+        except Exception as exc:
+            logger.error(
+                "%s: Error saving clearing-house reports — %s",
+                scrub(self._log_id),
+                scrub(exc),
+            )
+
+    def _sync_policy_loans(self, db: "Session", accounts: list) -> None:
+        """Mirror loans taken against the scraped policies as liabilities.
+
+        Parameters
+        ----------
+        db : Session
+            Open database session.
+        accounts : list[InsuranceAccount]
+            The accounts just upserted; their ``details`` carry any loans.
+        """
+        from backend.services.liabilities_service import LiabilitiesService
+
+        for account in accounts:
+            try:
+                details = json.loads(account.details or "{}")
+            except (TypeError, ValueError):
+                continue
+            if not details.get("loans"):
+                continue
+            try:
+                LiabilitiesService(db).sync_insurance_loans(
+                    account.policy_id,
+                    account.custom_name or account.account_name,
+                    details.get("manufacturer"),
+                    details["loans"],
+                )
+            except Exception:
+                logger.exception(
+                    "%s: Failed to sync loans for policy %s",
+                    scrub(self._log_id),
+                    scrub(account.policy_id),
+                )
+
+    def _post_save_hook(self, result: "ScrapingResult") -> None:
         """Persist insurance account metadata from AccountResult.metadata."""
         from backend.services.insurance_account_service import (
             InsuranceAccountService,
         )
-        from backend.services.investments_service import InvestmentsService
+        from backend.services.investments import InvestmentsService
 
+        self._save_clearing_house_reports(result)
         accounts_to_upsert = [
-            account.metadata
-            for account in result.accounts
-            if account.metadata
+            dict(account.metadata) for account in result.accounts if account.metadata
         ]
         if not accounts_to_upsert:
             return
@@ -936,30 +1112,37 @@ class InsuranceScraperAdapter(ScraperAdapter):
         try:
             with get_db_context() as db:
                 service = InsuranceAccountService(db)
+                saved = []
                 for meta in accounts_to_upsert:
-                    service.upsert(**meta)
+                    history = meta.pop("balance_history", None)
+                    saved.append((service.upsert(**meta), history))
                 logger.info(
                     "%s: Saved metadata for %d insurance accounts",
-                    scrub(self._log_id), len(accounts_to_upsert),
+                    scrub(self._log_id),
+                    len(accounts_to_upsert),
                 )
 
+                self._sync_policy_loans(db, [account for account, _ in saved])
                 inv_service = InvestmentsService(db)
-                for meta in accounts_to_upsert:
-                    if meta.get("policy_type") != "hishtalmut":
+                for account, history in saved:
+                    if account.policy_type != "hishtalmut":
                         continue
                     try:
-                        inv_service.sync_from_insurance(meta)
+                        inv_service.sync_from_insurance_account(account, history)
                         logger.info(
                             "%s: Synced hishtalmut investment for policy %s",
-                            scrub(self._log_id), scrub(meta["policy_id"]),
+                            scrub(self._log_id),
+                            scrub(account.policy_id),
                         )
                     except Exception:
                         logger.exception(
                             "%s: Failed to sync hishtalmut investment for policy %s",
-                            scrub(self._log_id), scrub(meta["policy_id"]),
+                            scrub(self._log_id),
+                            scrub(account.policy_id),
                         )
         except Exception as exc:
             logger.error(
                 "%s: Error saving insurance metadata — %s",
-                scrub(self._log_id), scrub(exc),
+                scrub(self._log_id),
+                scrub(exc),
             )

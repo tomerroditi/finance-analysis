@@ -10,6 +10,7 @@ import { useQueryKeys } from "../../hooks/useQueryKeys";
 import { qkPrefix } from "../../services/queryKeys";
 import { Modal } from "../common/Modal";
 import type { Transaction } from "../../types/transaction";
+import { usePendingRows } from "../../hooks/usePendingRows";
 
 /**
  * Row action for attaching one transaction to a savings goal.
@@ -23,7 +24,17 @@ import type { Transaction } from "../../types/transaction";
  * The button hides itself when the user keeps no goals, so the actions column
  * stays uncluttered for everyone who does not use the feature.
  */
-export function GoalLinkAction({ transaction }: { transaction: Transaction }) {
+export function GoalLinkAction({
+  transaction,
+  variant = "icon",
+}: {
+  transaction: Transaction;
+  /**
+   * `icon` — bare icon button for the transactions table's actions column.
+   * `compact` — icon + label, matching the dashboard feed's row action bar.
+   */
+  variant?: "icon" | "compact";
+}) {
   const { t } = useTranslation();
   const qk = useQueryKeys();
   const queryClient = useQueryClient();
@@ -58,6 +69,13 @@ export function GoalLinkAction({ transaction }: { transaction: Transaction }) {
     queryClient.invalidateQueries({ queryKey: qkPrefix.savingsGoals });
   };
 
+  // Per goal: linking to one goal must not disable the buttons on the other
+  // goals in the list while the write is out. Both buttons on a goal's row
+  // share its key — they are the same write with a different type. See
+  // `usePendingRows`. `unlinkMutation` below is a single control, so it
+  // stays on the mutation's own pending state.
+  const linking = usePendingRows<number>();
+
   const linkMutation = useMutation({
     mutationFn: ({
       goalId,
@@ -72,6 +90,10 @@ export function GoalLinkAction({ transaction }: { transaction: Transaction }) {
         source_table: sourceTable,
         link_type: linkType,
       }),
+    onMutate: ({ goalId }) => {
+      linking.begin(goalId);
+    },
+    onSettled: (_data, _error, { goalId }) => linking.end(goalId),
     onSuccess: () => {
       invalidate();
       setIsOpen(false);
@@ -98,7 +120,11 @@ export function GoalLinkAction({ transaction }: { transaction: Transaction }) {
   return (
     <>
       <button
-        className={`p-1.5 rounded-md hover:bg-[var(--surface-light)] transition-colors ${
+        className={`${
+          variant === "compact"
+            ? "flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium whitespace-nowrap"
+            : "p-1.5 rounded-md"
+        } hover:bg-[var(--surface-light)] transition-colors ${
           existing
             ? "text-[var(--primary)]"
             : "text-[var(--text-muted)] hover:text-white"
@@ -109,9 +135,13 @@ export function GoalLinkAction({ transaction }: { transaction: Transaction }) {
             : t("transactions.goalLink.action")
         }
         aria-label={t("transactions.goalLink.action")}
-        onClick={() => setIsOpen(true)}
+        onClick={(e) => {
+          e.stopPropagation();
+          setIsOpen(true);
+        }}
       >
-        <Target size={14} />
+        <Target size={variant === "compact" ? 13 : 14} className="shrink-0" />
+        {variant === "compact" && t("transactions.goalLink.short")}
       </button>
 
       {isOpen && (
@@ -143,7 +173,7 @@ export function GoalLinkAction({ transaction }: { transaction: Transaction }) {
                         linkType: "contribution",
                       })
                     }
-                    disabled={linkMutation.isPending}
+                    disabled={linking.isPending(goal.id)}
                     className="px-2 py-1 rounded-md text-xs font-medium bg-[var(--surface-light)] hover:bg-[var(--primary)]/20 disabled:opacity-50 transition-colors"
                   >
                     {t("transactions.goalLink.asContribution")}
@@ -155,7 +185,7 @@ export function GoalLinkAction({ transaction }: { transaction: Transaction }) {
                         linkType: "utilization",
                       })
                     }
-                    disabled={linkMutation.isPending}
+                    disabled={linking.isPending(goal.id)}
                     className="px-2 py-1 rounded-md text-xs font-medium bg-[var(--surface-light)] hover:bg-[var(--primary)]/20 disabled:opacity-50 transition-colors"
                   >
                     {t("transactions.goalLink.asUtilization")}

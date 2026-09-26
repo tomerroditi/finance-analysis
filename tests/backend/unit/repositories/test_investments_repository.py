@@ -10,6 +10,28 @@ from backend.models.investment import Investment
 from backend.repositories.investments_repository import InvestmentsRepository
 
 
+from contextlib import contextmanager
+
+from sqlalchemy import event
+from sqlalchemy.engine import Engine
+
+
+@contextmanager
+def _query_counter(db_session):
+    """Yield a list that gains an entry for every SQL statement executed."""
+    queries: list[str] = []
+
+    def record(conn, cursor, statement, params, context, executemany):
+        queries.append(statement)
+
+    engine = db_session.get_bind()
+    event.listen(engine, "before_cursor_execute", record)
+    try:
+        yield queries
+    finally:
+        event.remove(engine, "before_cursor_execute", record)
+
+
 class TestInvestmentsRepository:
     """Tests for InvestmentsRepository operations."""
 
@@ -279,3 +301,54 @@ class TestGetByInsurancePolicyId:
         repo = InvestmentsRepository(db_session)
         result = repo.get_by_insurance_policy_id("NONEXISTENT")
         assert result.empty
+
+
+class TestGetAllInvestmentsIsRequestCached:
+    """The investments table is re-read constantly; the request should read once.
+
+    The portfolio overview and the net-worth chart each walk every investment
+    and re-read this small table per iteration — about twenty identical
+    queries in one dashboard load. The cache is the request-scoped one, so it
+    dies with the session and is dropped on any commit.
+    """
+
+    def test_repeat_reads_hit_the_database_once(self, db_session, seed_investments):
+        """A second identical read is served from the session cache."""
+        repo = InvestmentsRepository(db_session)
+        with _query_counter(db_session) as queries:
+            repo.get_all_investments(include_closed=True)
+            repo.get_all_investments(include_closed=True)
+
+        assert len(queries) == 1
+
+    def test_include_closed_is_part_of_the_key(self, db_session, seed_investments):
+        """The two variants return different rows and must not share an entry."""
+        repo = InvestmentsRepository(db_session)
+
+        every = repo.get_all_investments(include_closed=True)
+        open_only = repo.get_all_investments(include_closed=False)
+
+        assert len(every) == 2
+        assert len(open_only) == 1
+
+    def test_a_write_invalidates_the_cache(self, db_session, seed_investments):
+        """A committed change must not be hidden by a cached read."""
+        repo = InvestmentsRepository(db_session)
+        before = len(repo.get_all_investments(include_closed=True))
+
+        repo.create_investment(
+            category="Investments",
+            tag="Fresh Fund",
+            type_="etf",
+            name="Fresh Fund",
+        )
+
+        assert len(repo.get_all_investments(include_closed=True)) == before + 1
+
+    def test_callers_cannot_corrupt_the_cached_frame(self, db_session, seed_investments):
+        """Mutating a returned frame must not poison the next read."""
+        repo = InvestmentsRepository(db_session)
+        first = repo.get_all_investments(include_closed=True)
+        first.loc[:, "name"] = "clobbered"
+
+        assert "clobbered" not in set(repo.get_all_investments(include_closed=True)["name"])

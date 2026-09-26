@@ -1,17 +1,13 @@
 """
 Analysis service package.
 
-Decomposed from the former single-module ``backend/services/
-analysis_service.py``:
+Modules:
 
-- ``cashflow`` — income/expenses/debt over time, by-source, by-category,
-  and the shared classification-mask helpers.
+- ``cashflow`` — income/expenses/debt over time, by-source, by-category
+  over time, and the income/investments/expenses totals.
 - ``net_worth`` — net balance / net worth over time and the Sankey data.
 - ``forecast`` — current-month cash-flow forecast + monthly-expense trend.
 - ``core`` — the public ``AnalysisService`` class assembling the mixins.
-
-The old module path remains as a compatibility shim re-exporting
-``AnalysisService``.
 """
 
 from backend.services.analysis.cashflow import CashflowMixin

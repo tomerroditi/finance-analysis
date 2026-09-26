@@ -23,7 +23,7 @@
 
 <p><strong>macOS:</strong> <a href="#build-from-source-macos">build from source ↓</a> (Apple's Gatekeeper blocks unsigned downloads on macOS 15+, so a notarized installer would need an Apple Developer ID; until then the source build is the only path)</p>
 
-<p>🌐 <strong><a href="https://finance-analysis-fawn.vercel.app">Live demo → finance-analysis-fawn.vercel.app</a></strong></p>
+<p>🌐 <strong><a href="https://finance-analysis-fawn.vercel.app">Live demo → finance-analysis-fawn.vercel.app</a></strong><br><sub>Every visitor gets a private, persistent copy of the sample data — edit, budget, and reset freely.</sub></p>
 
 </div>
 
@@ -43,16 +43,15 @@
 
 ## Build from source
 
-```bash
-# 1. Backend
-python3.12 -m venv .venv && source .venv/bin/activate
-pip install poetry && poetry install --no-root
+Needs Python 3.12, Node.js LTS, and on Windows Git Bash. **Full Windows + macOS setup:
+[docs/development-setup.md](docs/development-setup.md).**
 
-# 2. Frontend
+```bash
 cd frontend && npm install && cd ..
 
-# 3. Run — backend on http://localhost:8000, frontend on http://localhost:5173
-#    (override ports with BACKEND_PORT / FRONTEND_PORT env vars)
+# Backend on http://localhost:8000, frontend on http://localhost:5173.
+# The first run creates .venv/ and installs the Python deps (~90 s, once).
+# Override ports with the BACKEND_PORT / FRONTEND_PORT env vars.
 ./start.sh
 ```
 

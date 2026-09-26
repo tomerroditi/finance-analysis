@@ -5,10 +5,10 @@ Stores the user's early retirement planning parameters, including
 Israeli-specific savings vehicles (pension, Keren Hishtalmut, Bituach Leumi).
 """
 
-from sqlalchemy import Column, Integer, Float, Boolean, String
+from sqlalchemy import Boolean, Column, Float, Integer, String
 
-from backend.models.base import Base, TimestampMixin
 from backend.constants.tables import Tables
+from backend.models.base import Base, TimestampMixin
 
 
 class RetirementGoal(Base, TimestampMixin):
@@ -44,13 +44,21 @@ class RetirementGoal(Base, TimestampMixin):
         Expected monthly Bituach Leumi pension (NIS).
     other_passive_income : float
         Other monthly passive income like rental (NIS).
+    monthly_income : float, optional
+        User-entered monthly income (NIS).
+    net_worth_override : float, optional
+        Manual override for the current-status net worth.
+    monthly_expenses_override : float, optional
+        Manual override for the current-status monthly expenses.
+    total_investments_override : float, optional
+        Manual override for the current-status investments total. For all
+        three overrides ``NULL`` means use the value calculated from tracked
+        data.
     """
 
     __tablename__ = Tables.RETIREMENT_GOAL.value
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-
-    # Core parameters
     current_age = Column(Integer, nullable=False)
     gender = Column(String, nullable=False, default="male")
     target_retirement_age = Column(Integer, nullable=False, default=50)
@@ -60,7 +68,6 @@ class RetirementGoal(Base, TimestampMixin):
     expected_return_rate = Column(Float, nullable=False, default=0.04)
     withdrawal_rate = Column(Float, nullable=False, default=0.035)
 
-    # Israeli savings vehicles
     pension_monthly_payout_estimate = Column(Float, nullable=False, default=0.0)
     keren_hishtalmut_balance = Column(Float, nullable=False, default=0.0)
     keren_hishtalmut_monthly_contribution = Column(Float, nullable=False, default=0.0)
@@ -69,10 +76,9 @@ class RetirementGoal(Base, TimestampMixin):
     other_passive_income = Column(Float, nullable=False, default=0.0)
     monthly_income = Column(Float, nullable=True)
 
-    # Manual overrides for current-status snapshot (null = use calculated value)
     net_worth_override = Column(Float, nullable=True)
     monthly_expenses_override = Column(Float, nullable=True)
     total_investments_override = Column(Float, nullable=True)
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f"<RetirementGoal(id={self.id}, age={self.current_age}, target={self.target_retirement_age})>"

@@ -242,7 +242,7 @@ class TestAbortIsModeScoped:
         _active_scrapers[demo_key] = demo_adapter
 
         mock_history_repo = MagicMock()
-        mock_history_repo.FAILED = "failed"
+        mock_history_repo.CANCELED = "canceled"
 
         @contextmanager
         def fake_db_context():
@@ -276,7 +276,7 @@ class TestAbortIsModeScoped:
         _active_scrapers[demo_key] = demo_adapter
 
         mock_history_repo = MagicMock()
-        mock_history_repo.FAILED = "failed"
+        mock_history_repo.CANCELED = "canceled"
 
         @contextmanager
         def fake_db_context():
@@ -291,7 +291,7 @@ class TestAbortIsModeScoped:
             service.abort_scraping_process(7)
 
         demo_adapter.set_otp_code.assert_called_once_with(ScraperAdapter.CANCEL)
-        mock_history_repo.record_scrape_end.assert_called_once_with(7, "failed")
+        mock_history_repo.record_scrape_end.assert_called_once_with(7, "canceled")
         assert demo_key not in _tfa_scrapers_waiting
         assert demo_key not in _active_scrapers
 

@@ -6,10 +6,30 @@ and adding/deleting/reallocating tags.
 """
 
 import pytest
+from sqlalchemy import func, select
 
 import backend.services.tagging_service as ts
 from backend.constants.categories import PROTECTED_CATEGORIES
+from backend.errors import EntityNotFoundException, ValidationException
+from backend.models.transaction import BankTransaction, CreditCardTransaction
 from backend.services.tagging_service import CategoriesTagsService
+
+
+def _tagged_count(db_session, category, tag=None) -> int:
+    """Count transactions carrying a category (and optionally a tag).
+
+    Counts across both the credit-card and bank tables, which is where
+    ``seed_base_transactions`` puts its Food rows.
+    """
+    total = 0
+    for model in (CreditCardTransaction, BankTransaction):
+        stmt = select(func.count()).select_from(model).where(
+            model.category == category
+        )
+        if tag is not None:
+            stmt = stmt.where(model.tag == tag)
+        total += db_session.execute(stmt).scalar()
+    return total
 
 
 # ---------------------------------------------------------------------------
@@ -106,12 +126,6 @@ class TestCategoriesTagsServiceCategories:
 
         assert result is False
 
-    def test_add_category_empty_name_rejected(self, categories_service):
-        """Verify adding a category with an empty or whitespace-only name returns False."""
-        assert categories_service.add_category("", []) is False
-        assert categories_service.add_category("   ", []) is False
-        assert categories_service.add_category(None, []) is False
-
     def test_add_category_title_case(self, categories_service):
         """Verify category name is normalized to title case."""
         result = categories_service.add_category("health care", ["Doctor"])
@@ -124,20 +138,72 @@ class TestCategoriesTagsServiceCategories:
     def test_delete_category(
         self, categories_service, db_session, seed_base_transactions
     ):
-        """Verify deleting a category removes it and nullifies related transactions."""
+        """Deleting a category removes it and untags every transaction in it."""
         # "Food" category has transactions in seed_base_transactions
         assert "Food" in categories_service.categories_and_tags
+        assert _tagged_count(db_session, "Food") > 0
 
-        result = categories_service.delete_category("Food")
+        categories_service.delete_category("Food")
 
-        assert result is True
         assert "Food" not in categories_service.categories_and_tags
+        assert _tagged_count(db_session, "Food") == 0
+        # Other categories' rows are untouched.
+        assert _tagged_count(db_session, "Transport") > 0
+
+    def test_delete_unknown_category_touches_nothing(
+        self, categories_service, db_session, seed_base_transactions
+    ):
+        """A category that does not exist is refused before any row is cleared.
+
+        The nullify calls used to run before the existence check, so a typo
+        untagged nothing visible but still reported a failure.
+        """
+        before = _tagged_count(db_session, "Food")
+
+        with pytest.raises(EntityNotFoundException, match="Fooood"):
+            categories_service.delete_category("Fooood")
+
+        assert _tagged_count(db_session, "Food") == before
+
+    @pytest.mark.parametrize("name", ["", "   ", None, "Food;Drink"])
+    def test_add_category_invalid_name_rejected(self, categories_service, name):
+        """Blank, ``None`` and ``;``-containing category names are refused.
+
+        ``;`` is the separator budget rules use inside their ``tags`` string,
+        so a name containing one would split into two tags downstream.
+        """
+        assert categories_service.add_category(name, []) is False
+
+    def test_add_category_with_a_semicolon_tag_rejected(self, categories_service):
+        """One invalid tag rejects the whole category rather than half-creating it."""
+        assert (
+            categories_service.add_category("Health", ["Doctor", "Dentist;Ortho"])
+            is False
+        )
+        assert "Health" not in categories_service.categories_and_tags
+
+    def test_add_category_deduplicates_its_tags(self, categories_service):
+        """Tags differing only in case collapse to one title-cased entry."""
+        assert categories_service.add_category("Health", ["doctor", "Doctor"]) is True
+        assert categories_service.categories_and_tags["Health"] == ["Doctor"]
 
     def test_delete_category_protected(self, categories_service):
-        """Verify protected categories cannot be deleted."""
+        """Verify protected categories cannot be deleted.
+
+        A protected name that is not configured is reported as missing, the
+        same order the API's 404-before-400 answer has always used.
+        """
         for protected in PROTECTED_CATEGORIES:
-            result = categories_service.delete_category(protected)
-            assert result is False, f"Protected category '{protected}' should not be deletable"
+            expected = (
+                ValidationException
+                if protected in categories_service.categories_and_tags
+                else EntityNotFoundException
+            )
+            with pytest.raises(expected):
+                categories_service.delete_category(protected)
+            assert (
+                protected in categories_service.categories_and_tags
+            ) == (expected is ValidationException)
 
 
 # ---------------------------------------------------------------------------
@@ -150,51 +216,100 @@ class TestCategoriesTagsServiceTags:
 
     def test_add_tag(self, categories_service):
         """Verify adding a new tag to an existing category."""
-        result = categories_service.add_tag("Food", "Bakery")
+        categories_service.add_tag("Food", "Bakery")
 
-        assert result is True
         assert "Bakery" in categories_service.categories_and_tags["Food"]
 
     def test_add_tag_duplicate_rejected(self, categories_service):
-        """Verify adding a duplicate tag to a category returns False."""
+        """Verify adding a duplicate tag to a category raises ValidationException."""
         # "Groceries" already exists under "Food"
-        result = categories_service.add_tag("Food", "Groceries")
+        with pytest.raises(ValidationException, match="Groceries"):
+            categories_service.add_tag("Food", "Groceries")
 
-        assert result is False
+    @pytest.mark.parametrize("name", ["", "   ", "Fast;Food"])
+    def test_add_tag_invalid_name_rejected(self, categories_service, name):
+        """Blank and ``;``-containing tag names are refused."""
+        before = list(categories_service.categories_and_tags["Food"])
+
+        with pytest.raises(ValidationException):
+            categories_service.add_tag("Food", name)
+        assert categories_service.categories_and_tags["Food"] == before
+
+    def test_add_tag_unknown_category_rejected(self, categories_service):
+        """A tag cannot be added to a category that does not exist."""
+        with pytest.raises(EntityNotFoundException, match="Nope"):
+            categories_service.add_tag("Nope", "Bakery")
 
     def test_delete_tag(
         self, categories_service, db_session, seed_base_transactions
     ):
-        """Verify deleting a tag removes it from the category and nullifies transactions."""
+        """Deleting a tag removes it from the category and untags its transactions."""
         assert "Groceries" in categories_service.categories_and_tags["Food"]
+        assert _tagged_count(db_session, "Food", "Groceries") > 0
 
         result = categories_service.delete_tag("Food", "Groceries")
 
         assert result is True
         assert "Groceries" not in categories_service.categories_and_tags["Food"]
+        assert _tagged_count(db_session, "Food", "Groceries") == 0
+        # Sibling tags under the same category keep their rows.
+        assert _tagged_count(db_session, "Food", "Restaurants") > 0
+
+    def test_delete_unknown_tag_touches_nothing(
+        self, categories_service, db_session, seed_base_transactions
+    ):
+        """A tag the category does not have is refused before any row is cleared."""
+        before = _tagged_count(db_session, "Food")
+
+        assert categories_service.delete_tag("Food", "Grocerys") is False
+
+        assert _tagged_count(db_session, "Food") == before
 
     def test_reallocate_tag(
         self, categories_service, db_session, seed_base_transactions
     ):
-        """Verify moving a tag between categories updates the in-memory dict."""
+        """Moving a tag between categories re-categorises its transactions too."""
         assert "Groceries" in categories_service.categories_and_tags["Food"]
         assert "Groceries" not in categories_service.categories_and_tags["Home"]
+        moved = _tagged_count(db_session, "Food", "Groceries")
+        assert moved > 0
 
-        result = categories_service.reallocate_tag("Food", "Home", "Groceries")
+        categories_service.reallocate_tag("Food", "Home", "Groceries")
 
-        assert result is True
         assert "Groceries" not in categories_service.categories_and_tags["Food"]
         assert "Groceries" in categories_service.categories_and_tags["Home"]
+        assert _tagged_count(db_session, "Food", "Groceries") == 0
+        assert _tagged_count(db_session, "Home", "Groceries") == moved
 
-    def test_reallocate_tag_invalid_category(self, categories_service):
-        """Verify reallocating a tag to a non-existent category returns False."""
-        result = categories_service.reallocate_tag(
-            "Food", "NonExistent", "Groceries"
-        )
+    @pytest.mark.parametrize(
+        "old_category, new_category, tag, error",
+        [
+            ("Food", "NonExistent", "Groceries", EntityNotFoundException),
+            ("NonExistent", "Home", "Groceries", EntityNotFoundException),
+            ("Food", "Home", "NotATag", EntityNotFoundException),
+            ("Food", "Food", "Groceries", ValidationException),
+            ("Food", "Food", "NotATag", EntityNotFoundException),
+        ],
+        ids=[
+            "unknown-new",
+            "unknown-old",
+            "unknown-tag",
+            "same-category",
+            "same-category-unknown-tag",
+        ],
+    )
+    def test_reallocate_tag_rejected(
+        self, categories_service, db_session, seed_base_transactions,
+        old_category, new_category, tag, error,
+    ):
+        """A refused reallocate raises and leaves both the config and the rows unchanged."""
+        before = _tagged_count(db_session, "Food", "Groceries")
 
-        assert result is False
-        # Tag should remain in the original category
+        with pytest.raises(error):
+            categories_service.reallocate_tag(old_category, new_category, tag)
+
         assert "Groceries" in categories_service.categories_and_tags["Food"]
+        assert _tagged_count(db_session, "Food", "Groceries") == before
 
     def test_add_new_credit_card_tags(self, categories_service, db_session):
         """Verify CC account tags are added to the Credit Cards category."""
@@ -229,3 +344,149 @@ class TestCategoriesTagsServiceTags:
         # The tag format is "provider - account_name - last4digits"
         # add_tag normalizes to title case, so "isracard" becomes "Isracard"
         assert any("Isracard" in tag for tag in cc_tags)
+
+
+# ---------------------------------------------------------------------------
+# Class N: Unused category detection
+# ---------------------------------------------------------------------------
+
+
+class TestGetCategoryUsage:
+    """Tests for CategoriesTagsService.get_category_usage."""
+
+    @staticmethod
+    def _age_all_categories(db_session):
+        """Backdate every category so the creation grace never applies."""
+        from datetime import datetime
+
+        from backend.models.category import Category
+
+        old = datetime(2020, 1, 1)
+        for cat in db_session.query(Category).all():
+            cat.created_at = old
+        db_session.commit()
+
+    @staticmethod
+    def _add_bank_txn(db_session, category, date_str):
+        """Insert one categorized bank transaction."""
+        from backend.models.transaction import BankTransaction
+
+        db_session.add(
+            BankTransaction(
+                id=f"txn-{category}-{date_str}",
+                date=date_str,
+                provider="hapoalim",
+                account_name="Main",
+                description="x",
+                amount=-10.0,
+                category=category,
+                tag=None,
+                source="bank_transactions",
+                type=None,
+                status="completed",
+            )
+        )
+        db_session.commit()
+
+    @staticmethod
+    def _iso_months_ago(months):
+        """Return an ISO date string that many months in the past."""
+        import pandas as pd
+
+        return (
+            pd.Timestamp.today().normalize() - pd.DateOffset(months=months)
+        ).strftime("%Y-%m-%d")
+
+    def test_every_category_is_present(self, categories_service, db_session):
+        """The result covers every category, used or not."""
+        self._age_all_categories(db_session)
+        result = categories_service.get_category_usage()
+        assert set(result) == set(categories_service.get_categories_and_tags())
+
+    def test_stale_category_is_unused(self, categories_service, db_session):
+        """A category whose only transaction is older than the window is unused."""
+        self._age_all_categories(db_session)
+        self._add_bank_txn(db_session, "Food", self._iso_months_ago(9))
+        result = categories_service.get_category_usage()
+        assert result["Food"]["unused"] is True
+        assert result["Food"]["last_used"] == self._iso_months_ago(9)
+
+    def test_recent_transaction_keeps_category_active(
+        self, categories_service, db_session
+    ):
+        """A transaction inside the window keeps the category active."""
+        self._age_all_categories(db_session)
+        self._add_bank_txn(db_session, "Food", self._iso_months_ago(1))
+        result = categories_service.get_category_usage()
+        assert result["Food"]["unused"] is False
+
+    def test_never_used_old_category_is_unused(
+        self, categories_service, db_session
+    ):
+        """An old category with no transactions at all is unused."""
+        self._age_all_categories(db_session)
+        result = categories_service.get_category_usage()
+        assert result["Food"]["unused"] is True
+        assert result["Food"]["last_used"] is None
+
+    def test_protected_category_is_never_unused(
+        self, categories_service, db_session
+    ):
+        """Protected categories are exempt even with no transactions."""
+        self._age_all_categories(db_session)
+        result = categories_service.get_category_usage()
+        for name in PROTECTED_CATEGORIES:
+            if name in result:
+                assert result[name]["unused"] is False
+
+    def test_recently_created_category_is_exempt(
+        self, categories_service, db_session
+    ):
+        """A category created inside the window is exempt despite no usage."""
+        self._age_all_categories(db_session)
+        from datetime import datetime
+
+        from backend.models.category import Category
+
+        fresh = db_session.query(Category).filter_by(name="Food").one()
+        fresh.created_at = datetime.now()
+        db_session.commit()
+        result = categories_service.get_category_usage()
+        assert result["Food"]["unused"] is False
+
+    def test_transaction_exactly_at_cutoff_keeps_category_active(
+        self, categories_service, db_session
+    ):
+        """A transaction dated exactly on the cutoff boundary is "recent"
+        (``used_recently`` uses ``>=``), so the category stays active."""
+        from backend.constants.categories import UNUSED_CATEGORY_MONTHS
+
+        self._age_all_categories(db_session)
+        self._add_bank_txn(
+            db_session, "Food", self._iso_months_ago(UNUSED_CATEGORY_MONTHS)
+        )
+        result = categories_service.get_category_usage()
+        assert result["Food"]["unused"] is False
+
+    def test_category_created_exactly_at_cutoff_stays_in_creation_grace(
+        self, categories_service, db_session
+    ):
+        """A category created exactly on the cutoff boundary is NOT considered
+        "created before the cutoff" (``created_before_cutoff`` uses ``<``), so
+        it keeps its creation grace despite having no transactions."""
+        import pandas as pd
+        from datetime import datetime
+
+        from backend.constants.categories import UNUSED_CATEGORY_MONTHS
+        from backend.models.category import Category
+
+        self._age_all_categories(db_session)
+        cutoff = (
+            pd.Timestamp.today().normalize()
+            - pd.DateOffset(months=UNUSED_CATEGORY_MONTHS)
+        ).date()
+        fresh = db_session.query(Category).filter_by(name="Food").one()
+        fresh.created_at = datetime(cutoff.year, cutoff.month, cutoff.day)
+        db_session.commit()
+        result = categories_service.get_category_usage()
+        assert result["Food"]["unused"] is False

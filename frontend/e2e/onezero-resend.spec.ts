@@ -37,7 +37,7 @@ async function setOneZeroCredential(create: boolean) {
           credentials: {
             email: "e2e-resend@example.com",
             password: "e2e-password",
-            phoneNumber: "+15551234567",
+            phoneNumber: "+972501234567",
           },
         },
       });

@@ -2,23 +2,22 @@
   "version": "2.0.0",
   "tasks": [
     {
-      "label": "Dev Remote (Backend + Frontend)",
-      "type": "shell",
-      "command": "./start.sh remote",
-      "isBackground": true,
-      "problemMatcher": [],
-      "presentation": {
-        "group": "dev-remote",
-        "reveal": "always",
-        "panel": "dedicated"
-      }
-    },
-    {
       "label": "Backend",
       "type": "shell",
       "command": "npm run backend",
+      "windows": {
+        "command": "./.claude/scripts/bootstrap_venv.sh && .venv/Scripts/uvicorn backend.main:app --reload --reload-dir backend --reload-dir scraper --port ${BACKEND_PORT:-8000} --loop backend.utils.event_loop:reload_loop_factory"
+      },
       "isBackground": true,
-      "problemMatcher": [],
+      "problemMatcher": {
+        "owner": "uvicorn",
+        "pattern": { "regexp": "^__never_matches__$" },
+        "background": {
+          "activeBegins": true,
+          "beginsPattern": "Will watch for changes|Started reloader process",
+          "endsPattern": "Waiting for application startup|Application startup complete"
+        }
+      },
       "presentation": {
         "group": "dev",
         "reveal": "always",
@@ -33,7 +32,15 @@
         "cwd": "${workspaceFolder}/frontend"
       },
       "isBackground": true,
-      "problemMatcher": [],
+      "problemMatcher": {
+        "owner": "vite",
+        "pattern": { "regexp": "^__never_matches__$" },
+        "background": {
+          "activeBegins": true,
+          "beginsPattern": "VITE v",
+          "endsPattern": "Local.*http://"
+        }
+      },
       "presentation": {
         "group": "dev",
         "reveal": "always",

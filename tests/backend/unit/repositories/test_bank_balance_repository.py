@@ -31,10 +31,11 @@ class TestBankBalanceRepository:
         assert record.prior_wealth_amount == 20000.0
 
     def test_upsert_updates_existing_record(self, db_session: Session):
-        """Upsert updates an existing record for the same account."""
+        """Upsert updates the one existing row for the same account, not a duplicate."""
         repo = BankBalanceRepository(db_session)
         repo.upsert("hapoalim", "Main", 50000.0, 20000.0, last_manual_update="2026-02-13")
         repo.upsert("hapoalim", "Main", 55000.0, 20000.0, last_scrape_update="2026-02-14")
+        assert len(repo.get_all()) == 1
         record = repo.get_by_account("hapoalim", "Main")
         assert record.balance == 55000.0
         assert record.last_manual_update == "2026-02-13"
@@ -73,16 +74,6 @@ class TestBankBalanceRepository:
 
 class TestUpsertIsAtomicAndDuplicateTolerant:
     """One row per account, and a legacy duplicate must stay readable."""
-
-    def test_repeated_upsert_keeps_a_single_row(self, db_session):
-        """Upserting the same account twice updates rather than duplicates."""
-        repo = BankBalanceRepository(db_session)
-        repo.upsert("hapoalim", "Main", 100.0, 10.0)
-        repo.upsert("hapoalim", "Main", 250.0, 20.0)
-
-        rows = repo.get_all()
-        assert len(rows) == 1
-        assert repo.get_by_account("hapoalim", "Main").balance == 250.0
 
     def test_duplicate_rows_do_not_raise(self, db_session):
         """A pre-existing duplicate resolves to the lowest id instead of 500ing.

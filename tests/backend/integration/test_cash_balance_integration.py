@@ -88,7 +88,7 @@ class TestCashBalanceIntegration:
         assert record["prior_wealth_amount"] == prior_wealth_fixed
 
         # Get the transaction ID to delete
-        df = txn_service.get_all_transactions(service="cash")
+        df = txn_service.get_merged_transactions(service="cash")
         # Filter out Prior Wealth transactions (tag == "Prior Wealth")
         df_manual = df[df["tag"] != "Prior Wealth"]
         assert len(df_manual) == 1, f"Expected 1 manual transaction, got {len(df_manual)}"

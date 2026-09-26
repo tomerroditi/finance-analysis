@@ -32,9 +32,16 @@ test.describe("Dashboard", () => {
     await expect(page.getByText(/Net Worth/i).first()).toBeVisible();
     await expect(page.getByText(/Bank Balance/i).first()).toBeVisible();
 
-    // Chart containers render (Recharts renders into div.recharts-wrapper)
-    await expect(page.locator(".recharts-wrapper").first()).toBeVisible({
-      timeout: 10_000,
+    // Chart containers render (Recharts renders into div.recharts-wrapper).
+    // Every Recharts chart on the dashboard now sits below the fold and
+    // mounts lazily — the card that used to draw one eagerly was "Income by
+    // source", whose all-time donut moved inside the Income & Expenses card —
+    // so the chart has to be scrolled to before it exists at all.
+    const netWorthCard = page.locator('[data-card-id="net_worth"]');
+    await expect(netWorthCard).toBeVisible({ timeout: 45_000 });
+    await netWorthCard.scrollIntoViewIfNeeded();
+    await expect(netWorthCard.locator(".recharts-wrapper").first()).toBeVisible({
+      timeout: 45_000,
     });
 
     // Recent transactions feed. Cold-cache navigation queues ~30 React Query
@@ -44,11 +51,53 @@ test.describe("Dashboard", () => {
       timeout: 45_000,
     });
 
-    // Budget progress section. The section's "Budget" header is too generic
-    // to locate uniquely (the sidebar nav link has the same text). Assert on
-    // the segmented control inside the section instead — those labels live
-    // only in BudgetSection.
-    await expect(page.getByText(/Monthly Budget/i).first()).toBeVisible();
+    // --- Budget card: four tabs, each rendering its own view ---
+    // The section's "Budget" header is too generic to locate uniquely (the
+    // sidebar nav link has the same text), so anchor on the tab labels, which
+    // live only in BudgetSection.
+    const budgetCard = page.locator('[data-card-id="budget"]');
+    await budgetCard.scrollIntoViewIfNeeded();
+    const overviewTab = budgetCard.getByRole("button", { name: /^Overview$/i });
+    const monthlyTab = budgetCard.getByRole("button", { name: /Monthly Budget/i });
+    const yearlyTab = budgetCard.getByRole("button", { name: /^Yearly$/i });
+    const projectsTab = budgetCard.getByRole("button", { name: /Project Budgets/i });
+    await expect(overviewTab).toBeVisible();
+    await expect(monthlyTab).toBeVisible();
+    await expect(yearlyTab).toBeVisible();
+    await expect(projectsTab).toBeVisible();
+
+    // Overview is the landing tab: the card opens on the commitment bar, which
+    // spans all three budget kinds, rather than on one kind's ledger.
+    await expect(overviewTab).toHaveAttribute("aria-pressed", "true");
+    await expect(budgetCard.getByTestId("budget-commitment-bar")).toBeVisible({
+      timeout: 20_000,
+    });
+
+    // Monthly shows the compact total bar, not a gauge.
+    await monthlyTab.click();
+    await expect(monthlyTab).toHaveAttribute("aria-pressed", "true");
+    await expect(budgetCard.getByTestId("budget-total-bar")).toBeVisible({
+      timeout: 20_000,
+    });
+
+    // The demo DB ships no yearly rules, so this tab renders its empty state:
+    // assert on the year nav, which is present either way, rather than on the
+    // rule grid, which only exists once rules do.
+    await yearlyTab.click();
+    await expect(yearlyTab).toHaveAttribute("aria-pressed", "true");
+    await expect(
+      budgetCard.getByText(String(new Date().getFullYear()), { exact: true }),
+    ).toBeVisible({ timeout: 20_000 });
+
+    await projectsTab.click();
+    await expect(projectsTab).toHaveAttribute("aria-pressed", "true");
+    await expect(budgetCard.getByTestId("budget-total-bar")).toBeVisible({
+      timeout: 20_000,
+    });
+
+    // Back to monthly so the rest of the journey sees a single-kind ledger.
+    await monthlyTab.click();
+    await expect(budgetCard.getByTestId("budget-total-bar")).toBeVisible();
 
     // --- Refunds card: KPIs + open requests render from demo data ---
     const refundsCard = page.locator('[data-card-id="refunds"]');
@@ -112,5 +161,46 @@ test.describe("Dashboard", () => {
         new RegExp(`${newCategoryName} / ${tagName}`),
       );
     }
+
+    // --- Mobile width: the editor stacks its two selects instead of squeezing
+    // them beside Done, and each select's label stays inside its own trigger.
+    // A long category name (e.g. "Entertainment") used to spill past the
+    // trigger's border and shove the chevron out of the control entirely. ---
+    await page.setViewportSize({ width: 390, height: 844 });
+    // Below `sm` the row's inline action buttons are replaced by a tap-to-open
+    // card, so the row can no longer be anchored on its edit button.
+    const recentCard = page.locator('[data-card-id="recent"]');
+    await recentCard.locator("div.cursor-pointer").first().click();
+    await recentCard.getByRole("button", { name: /^Tag$/ }).click();
+
+    const mobilePanel = page.locator("text=CATEGORY").locator("..").locator("..");
+    await expect(mobilePanel).toBeVisible();
+    const mobileCategory = mobilePanel.getByRole("button").nth(0);
+    const mobileTag = mobilePanel.getByRole("button").nth(1);
+
+    const categoryBox = (await mobileCategory.boundingBox())!;
+    const tagBox = (await mobileTag.boundingBox())!;
+    // Stacked, not side by side.
+    expect(tagBox.y).toBeGreaterThanOrEqual(categoryBox.y + categoryBox.height);
+
+    for (const trigger of [mobileCategory, mobileTag]) {
+      // Geometry alone can't prove the fix when the current value happens to
+      // be short, so also assert the label is allowed to clip.
+      await expect(trigger.locator("span").first()).toHaveCSS(
+        "text-overflow",
+        "ellipsis",
+      );
+      const triggerBox = (await trigger.boundingBox())!;
+      const labelBox = (await trigger.locator("span").first().boundingBox())!;
+      const chevronBox = (await trigger.locator("svg").first().boundingBox())!;
+      for (const child of [labelBox, chevronBox]) {
+        expect(child.x).toBeGreaterThanOrEqual(triggerBox.x - 1);
+        expect(child.x + child.width).toBeLessThanOrEqual(
+          triggerBox.x + triggerBox.width + 1,
+        );
+      }
+    }
+
+    await page.setViewportSize({ width: 1280, height: 720 });
   });
 });

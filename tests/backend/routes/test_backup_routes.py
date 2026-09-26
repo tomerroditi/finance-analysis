@@ -9,6 +9,8 @@ module level — these tests exercise the HTTP contract only.
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+from backend.errors import BadRequestException, EntityNotFoundException
+
 
 class TestListBackups:
     """Tests for GET /api/backups/."""
@@ -35,14 +37,6 @@ class TestListBackups:
         assert response.status_code == 200
         assert response.json() == backups
         mock_list.assert_called_once_with()
-
-    def test_list_backups_empty(self, test_client):
-        """No backups yields an empty list."""
-        with patch("backend.routes.backup.list_backups", return_value=[]):
-            response = test_client.get("/api/backups/")
-
-        assert response.status_code == 200
-        assert response.json() == []
 
 
 class TestCreateBackup:
@@ -93,10 +87,10 @@ class TestRestoreBackup:
         mock_restore.assert_called_once_with("data_20260401_120000.db")
 
     def test_restore_missing_file_returns_404(self, test_client):
-        """A FileNotFoundError from the utility maps to 404."""
+        """An EntityNotFoundException from the utility maps to 404."""
         with patch(
             "backend.routes.backup.restore_backup",
-            side_effect=FileNotFoundError("Backup file not found: data_x.db"),
+            side_effect=EntityNotFoundException("Backup file not found: data_x.db"),
         ):
             response = test_client.post(
                 "/api/backups/restore",
@@ -107,15 +101,15 @@ class TestRestoreBackup:
         assert "not found" in response.json()["detail"].lower()
 
     def test_restore_invalid_filename_returns_400(self, test_client):
-        """A ValueError (invalid/traversal filename) maps to a 400 response.
+        """An invalid/traversal filename maps to a 400 response.
 
-        ``restore_backup`` raises ValueError for filenames that don't match
-        the ``data_YYYYMMDD_HHMMSS.db`` shape and for non-SQLite files —
-        client input problems, surfaced via BadRequestException.
+        ``restore_backup`` raises BadRequestException for filenames that don't
+        match the ``data_YYYYMMDD_HHMMSS.db`` shape and for non-SQLite files —
+        client input problems, not sanitized 500s.
         """
         with patch(
             "backend.routes.backup.restore_backup",
-            side_effect=ValueError("Invalid backup filename: ../../etc/passwd"),
+            side_effect=BadRequestException("Invalid backup filename: ../../etc/passwd"),
         ):
             response = test_client.post(
                 "/api/backups/restore",

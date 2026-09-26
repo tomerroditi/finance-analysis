@@ -8,6 +8,7 @@ import {
   RESEND_COOLDOWN_SECONDS,
   INITIAL_2FA_COOLDOWN_SECONDS,
 } from "./useScraping";
+import { useScrapingPoller } from "./useScrapingPoller";
 import { scrapingApi } from "../services/api";
 import type { ScraperState } from "./useScraping";
 
@@ -31,6 +32,22 @@ function wrapper({ children }: { children: ReactNode }) {
 
 const acc = { service: "banks", provider: "onezero", account_name: "Acc" };
 
+/**
+ * Mount the hook the way the app does: alongside the app-wide poller that
+ * `ScrapingTracker` owns. Polling and cold-load hydration no longer live in
+ * `useScraping`, so a bare `renderHook(useScraping)` would never advance a
+ * scrape's status.
+ */
+function renderScraping(customWrapper = wrapper) {
+  return renderHook(
+    () => {
+      useScrapingPoller(false);
+      return useScraping();
+    },
+    { wrapper: customWrapper },
+  );
+}
+
 const waitingScraper: ScraperState = {
   process_id: 1,
   account: acc,
@@ -39,11 +56,11 @@ const waitingScraper: ScraperState = {
 };
 
 describe("useScraping hydration from the backend", () => {
-  // `runningScrapers` is component-local, so leaving Data Sources and coming
-  // back used to reset every card to idle while the scrape was still running
-  // — and the polling effect never restarted, so the scrape's completion
-  // invalidations never fired either. On mount the hook now asks the backend
-  // which scrapes are actually live.
+  // Scraper state now lives in a store that outlives every component, so
+  // in-app navigation no longer loses it. Hydration still matters for a COLD
+  // load — a reload, or a first paint that happens while the backend is
+  // already mid-scrape — where the store starts empty and the backend's
+  // `_active_scrapers` registry is the only record of what is running.
   beforeEach(() => vi.clearAllMocks());
 
   it("restores an in-flight scraper on mount so a remount shows it as running", async () => {
@@ -59,7 +76,7 @@ describe("useScraping hydration from the backend", () => {
       ],
     });
 
-    const { result } = renderHook(() => useScraping(), { wrapper });
+    const { result } = renderScraping();
 
     await waitFor(() => expect(result.current.isAnyScraping).toBe(true));
     expect(result.current.getScraperForAccount(acc)).toMatchObject({
@@ -82,7 +99,7 @@ describe("useScraping hydration from the backend", () => {
       data: 7,
     });
 
-    const { result } = renderHook(() => useScraping(), { wrapper });
+    const { result } = renderScraping();
     await act(async () => {
       await result.current.startScraper(acc, 30);
     });
@@ -107,7 +124,7 @@ describe("useScraping hydration from the backend", () => {
       .spyOn(console, "error")
       .mockImplementation(() => {});
 
-    const { result } = renderHook(() => useScraping(), { wrapper });
+    const { result } = renderScraping();
 
     await waitFor(() => expect(consoleError).toHaveBeenCalled());
     expect(result.current.isAnyScraping).toBe(false);
@@ -119,7 +136,7 @@ describe("useScraping.startScraper force2fa", () => {
   beforeEach(() => vi.clearAllMocks());
 
   it("sends force_2fa: true when opts.force2fa is set", async () => {
-    const { result } = renderHook(() => useScraping(), { wrapper });
+    const { result } = renderScraping();
     await act(async () => {
       await result.current.startScraper(acc, 30, { force2fa: true });
     });
@@ -137,7 +154,7 @@ describe("useScraping.startScraper force2fa", () => {
   });
 
   it("omits force_2fa when no opts are passed", async () => {
-    const { result } = renderHook(() => useScraping(), { wrapper });
+    const { result } = renderScraping();
     await act(async () => {
       await result.current.startScraper(acc, null);
     });
@@ -173,7 +190,7 @@ describe("useScraping.scrapeAll", () => {
       .mockResolvedValueOnce({ data: 201 })
       .mockResolvedValueOnce({ data: 202 });
 
-    const { result } = renderHook(() => useScraping(), { wrapper });
+    const { result } = renderScraping();
 
     // Seed runningAcc into runningScrapers as "in_progress" — startScraper's
     // normal, only outcome.
@@ -220,7 +237,7 @@ describe("useScraping.scrapeAll", () => {
   });
 
   it("starts every account when none are currently active", async () => {
-    const { result } = renderHook(() => useScraping(), { wrapper });
+    const { result } = renderScraping();
 
     await act(async () => {
       result.current.scrapeAll([idleAcc, runningAcc], null);
@@ -237,7 +254,7 @@ describe("useScraping.resendTfa", () => {
     (scrapingApi.resend2fa as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
       data: { status: "resent", process_id: 1 },
     });
-    const { result } = renderHook(() => useScraping(), { wrapper });
+    const { result } = renderScraping();
 
     await act(async () => {
       await result.current.resendTfa(waitingScraper);
@@ -256,7 +273,7 @@ describe("useScraping.resendTfa", () => {
     (scrapingApi.resend2fa as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
       data: { status: "resent", process_id: 1 },
     });
-    const { result } = renderHook(() => useScraping(), { wrapper });
+    const { result } = renderScraping();
 
     // Seed runningScrapers with the waiting scraper the way startScraper
     // would, so resendTfa has an existing entry to preserve.
@@ -277,7 +294,7 @@ describe("useScraping.resendTfa", () => {
     (scrapingApi.resend2fa as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
       data: { status: "restarted", process_id: 2 },
     });
-    const { result } = renderHook(() => useScraping(), { wrapper });
+    const { result } = renderScraping();
 
     await act(async () => {
       await result.current.startScraper(acc, 30);
@@ -296,7 +313,7 @@ describe("useScraping.resendTfa", () => {
     (scrapingApi.resend2fa as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
       data: { status: "resent", process_id: 1 },
     });
-    const { result } = renderHook(() => useScraping(), { wrapper });
+    const { result } = renderScraping();
 
     expect(result.current.resendCooldownRemaining(1)).toBe(0);
 
@@ -318,7 +335,7 @@ describe("useScraping.resendTfa", () => {
         data: { detail: "Wait about a minute before requesting another code." },
       },
     });
-    const { result } = renderHook(() => useScraping(), { wrapper });
+    const { result } = renderScraping();
 
     await act(async () => {
       await result.current.resendTfa(waitingScraper);
@@ -335,7 +352,7 @@ describe("useScraping.resendTfa", () => {
     (scrapingApi.resend2fa as ReturnType<typeof vi.fn>).mockRejectedValueOnce({
       response: { status: 404, data: { detail: "Scraping process not found" } },
     });
-    const { result } = renderHook(() => useScraping(), { wrapper });
+    const { result } = renderScraping();
 
     await act(async () => {
       await result.current.resendTfa(waitingScraper);
@@ -386,7 +403,7 @@ describe("useScraping.resendTfa restarted — stale process cleanup (regression)
       data: { status: "restarted", process_id: newProcessId },
     });
 
-    const { result } = renderHook(() => useScraping(), { wrapper });
+    const { result } = renderScraping();
 
     // Seed a real waiting_for_2fa entry under oldProcessId the way the app
     // actually gets there (start -> poll), instead of hand-constructing
@@ -459,9 +476,7 @@ describe("useScraping — cache invalidation on scrape completion", () => {
       data: { status: "success" },
     });
 
-    const { result } = renderHook(() => useScraping(), {
-      wrapper: localWrapper,
-    });
+    const { result } = renderScraping(localWrapper);
     await act(async () => {
       await result.current.startScraper(acc, 30);
     });
@@ -504,9 +519,7 @@ describe("useScraping — cache invalidation on scrape completion", () => {
       data: { status: "in_progress" },
     });
 
-    const { result } = renderHook(() => useScraping(), {
-      wrapper: localWrapper,
-    });
+    const { result } = renderScraping(localWrapper);
     await act(async () => {
       await result.current.startScraper(acc, 30);
     });
@@ -595,7 +608,7 @@ describe("useScraping — initial 2FA cooldown", () => {
       data: { status: "waiting_for_2fa" },
     });
 
-    const { result } = renderHook(() => useScraping(), { wrapper });
+    const { result } = renderScraping();
     await act(async () => {
       await result.current.startScraper(acc, 30);
     });
@@ -654,7 +667,7 @@ describe("useScraping — initial 2FA cooldown", () => {
       data: { status: "resent", process_id: 45 },
     });
 
-    const { result } = renderHook(() => useScraping(), { wrapper });
+    const { result } = renderScraping();
     await act(async () => {
       await result.current.startScraper(acc, 30);
     });
@@ -678,5 +691,28 @@ describe("useScraping — initial 2FA cooldown", () => {
     expect(result.current.resendCooldownRemaining(45)).toBeGreaterThan(
       INITIAL_2FA_COOLDOWN_SECONDS,
     );
+  });
+});
+
+describe("useScraping.abortScraper", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("marks the scrape canceled, not failed, and carries no error", async () => {
+    // A user abort is a choice, not a failure — it gets its own badge.
+    const { result } = renderScraping();
+    await act(async () => {
+      await result.current.startScraper(acc, null);
+    });
+    const running = result.current.getScraperForAccount(acc)!;
+
+    await act(async () => {
+      await result.current.abortScraper(running);
+    });
+
+    const aborted = result.current.getScraperForAccount(acc);
+    expect(scrapingApi.abort).toHaveBeenCalledWith(running.process_id);
+    expect(aborted?.status).toBe("canceled");
+    expect(aborted?.error_message).toBeUndefined();
+    expect(result.current.isAnyScraping).toBe(false);
   });
 });

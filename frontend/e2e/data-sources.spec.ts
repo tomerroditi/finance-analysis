@@ -34,14 +34,14 @@ test.describe("DataSources", () => {
     await expectPageTitle(page, /Data Sources/);
     await expect(page.locator("main")).toBeVisible();
 
-    // The four demo accounts (Hapoalim, Max, Visa Cal, HaPhoenix) each render
+    // The four demo accounts (Hapoalim, Max, Visa Cal, Pension Clearing House) each render
     // a <ProviderLogo> with alt text set to the humanized provider name. We
     // verify the image actually loaded — naturalWidth > 0 only holds once the
     // browser has decoded a real image, so a broken/missing logo would fail
     // here even with width/height set in HTML. (Vite inlines small SVGs as
     // data: URIs and emits larger ones as hashed assets, so checking the src
     // attribute itself isn't portable.)
-    for (const alt of ["Hapoalim", "Max", "Visa Cal", "HaPhoenix"]) {
+    for (const alt of ["Hapoalim", "Max", "Visa Cal", "Pension Clearing House"]) {
       const img = page.getByRole("img", { name: alt }).first();
       await expect(img).toBeVisible();
       await expect
@@ -64,7 +64,7 @@ test.describe("DataSources", () => {
       page.getByRole("button", { name: /credit card/i }),
     ).toBeVisible();
     await expect(
-      page.getByRole("button", { name: /^insurance/i }),
+      page.getByRole("button", { name: /^pension savings/i }),
     ).toBeVisible();
 
     // Step 2: a representative subset of banks should appear with their logos.
@@ -76,6 +76,27 @@ test.describe("DataSources", () => {
       await expect(img).toBeVisible();
     }
 
+    // OneZero's OTP API only accepts +9725XXXXXXXX: the phone field carries a
+    // fixed +972 prefix, folds a typed local 05X number into it, and blocks
+    // saving anything that is not a full Israeli mobile number. Nothing is
+    // submitted — Back leaves the form untouched.
+    await page.getByRole("img", { name: "One Zero" }).last().click();
+    const phoneInput = page.locator("#credential-phone");
+    await expect(phoneInput).toBeVisible();
+    await expect(page.getByText("+972", { exact: true })).toBeVisible();
+    await page.getByPlaceholder(/My Investment Account/).fill("E2E OneZero");
+    const finishButton = page.getByRole("button", { name: "Finish Setup" });
+    await phoneInput.fill("050123");
+    await phoneInput.blur();
+    await expect(phoneInput).toHaveValue("50123");
+    await expect(page.getByText(/Enter an Israeli mobile number/)).toBeVisible();
+    await expect(finishButton).toBeDisabled();
+    await phoneInput.fill("050-1234567");
+    await expect(phoneInput).toHaveValue("501234567");
+    await expect(page.getByText(/Enter an Israeli mobile number/)).toHaveCount(0);
+    await expect(finishButton).toBeEnabled();
+    await page.getByRole("button", { name: "Back" }).click();
+
     // Bounce back to step 1 and try credit cards to make sure that grid wires
     // up too (different service key, different filename mappings — e.g. visa
     // cal has a space and Beyahad Bishvilha is a PNG instead of SVG).
@@ -85,6 +106,68 @@ test.describe("DataSources", () => {
       const img = page.getByRole("img", { name: provider }).last();
       await expect(img).toBeVisible();
     }
+
+    // Pension Savings offers the Pension Clearing House, and no longer HaPhoenix —
+    // it is deprecated for new accounts. The check is on the chooser's
+    // provider buttons, which no account card button names.
+    await page.getByRole("button", { name: "Back" }).click();
+    await page.getByRole("button", { name: /^pension savings/i }).click();
+    const clearingHouse = page.getByRole("button", { name: /Pension Clearing House/ });
+    await expect(clearingHouse).toBeVisible();
+    await expect(
+      clearingHouse.getByRole("img", { name: "Pension Clearing House" }),
+    ).toBeVisible();
+    await expect(page.getByRole("button", { name: /HaPhoenix/ })).toHaveCount(0);
+  });
+
+  // An account whose stored details are unreadable on this machine (a data
+  // dir moved from another device) must still be listed, carry a badge, and
+  // open straight into the edit form with an explanation. Stubbed so no
+  // backend write is needed to fake a broken keyring. Runs at phone size,
+  // where the edit form is taller than the screen.
+  test("flags an account needing re-entry and opens its edit form from the badge", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 375, height: 480 });
+    await page.route("**/api/credentials/accounts", async (route) => {
+      const response = await route.fetch();
+      const accounts: { provider: string; needs_reentry: boolean }[] =
+        await response.json();
+      await route.fulfill({
+        response,
+        json: accounts.map((a) => ({
+          ...a,
+          needs_reentry: a.provider === "hapoalim",
+        })),
+      });
+    });
+
+    await navigateTo(page, "/data-sources");
+
+    const badge = page.getByTestId("needs-reentry-badge");
+    await expect(badge).toHaveCount(1);
+    await expect(badge).toHaveText("Re-enter details");
+
+    await badge.click();
+    await expect(
+      page.getByRole("heading", { name: /edit connection/i }),
+    ).toBeVisible();
+    await expect(page.getByRole("status")).toContainText(
+      "can't be read on this machine",
+    );
+
+    // On a short phone screen the edit form is taller than the viewport and
+    // the page behind is scroll-locked, so the card itself must scroll —
+    // it used to overflow off-screen, leaving the save button unreachable.
+    const card = page
+      .getByRole("heading", { name: /edit connection/i })
+      .locator("xpath=ancestor::div[contains(@class, 'rounded-3xl')][1]");
+    const box = await card.boundingBox();
+    expect(box!.y).toBeGreaterThanOrEqual(0);
+    expect(box!.y + box!.height).toBeLessThanOrEqual(480);
+    const save = page.getByRole("button", { name: "Save Changes" });
+    await save.scrollIntoViewIfNeeded();
+    await expect(save).toBeInViewport();
   });
 
   test("opens the shared balance modal from the $ button and saves", async ({
@@ -106,7 +189,7 @@ test.describe("DataSources", () => {
         credentials: {
           email: "e2e-balance@example.com",
           password: "e2e-password",
-          phoneNumber: "+15551234567",
+          phoneNumber: "+972501234567",
         },
       },
     });
@@ -221,7 +304,7 @@ test.describe("DataSources", () => {
           credentials: {
             email: `${accountName.replace(/\s+/g, "-")}@example.com`,
             password: "e2e-password",
-            phoneNumber: "+15551234567",
+            phoneNumber: "+972501234567",
           },
         },
       });
@@ -352,5 +435,59 @@ test.describe("DataSources", () => {
     await expect(passwordInput).toBeVisible();
     const value = await passwordInput.inputValue();
     expect(["__unchanged__", ""]).toContain(value);
+  });
+
+  // Card anatomy at phone width. Every service must read the same way: an
+  // identity row, then a metadata line, then the action buttons. Credit-card
+  // and insurance cards used to let the last-scrape chip ride along beside
+  // the buttons, because only bank cards had a balance filling that line.
+  test("every card stacks metadata above its buttons, and the balance says what it is", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 375, height: 900 });
+    await navigateTo(page, "/data-sources");
+
+    const cardFor = (name: string) =>
+      page
+        .getByRole("heading", { name, exact: true })
+        .locator("xpath=ancestor::div[contains(@class, 'group')][1]");
+
+    // The bank balance is a bare number without a word for what it counts.
+    const bankCard = cardFor("Main Account");
+    await expect(bankCard).toBeVisible();
+    await expect(bankCard.getByText(/^Balance$|^יתרה$/)).toBeVisible();
+
+    // One card per service: a bank (has a balance), a credit card and an
+    // insurance account (both have none, which is what used to change the
+    // layout).
+    for (const name of ["Main Account", "Family Card", "The Cohens"]) {
+      const card = cardFor(name);
+      await expect(card).toBeVisible();
+
+      const status = card
+        .getByText(/Yesterday|Never synced|אתמול|לא סונכרן/)
+        .first();
+      const actions = card.getByTitle(/Scrape This Source|שלוף מקור זה/);
+      await expect(status).toBeVisible();
+      await expect(actions).toBeVisible();
+
+      const statusBox = await status.boundingBox();
+      const actionsBox = await actions.boundingBox();
+      expect(statusBox, `${name}: status box`).not.toBeNull();
+      expect(actionsBox, `${name}: actions box`).not.toBeNull();
+      // Separate rows: the status chip ends before the buttons begin.
+      expect(
+        statusBox!.y + statusBox!.height,
+        `${name}: status must sit above the action buttons`,
+      ).toBeLessThanOrEqual(actionsBox!.y);
+    }
+
+    // The select-source checkbox sits after the provider logo, not in a
+    // column of its own ahead of it.
+    const checkbox = bankCard.getByTestId("select-source");
+    const logo = bankCard.getByRole("img").first();
+    const checkboxBox = await checkbox.boundingBox();
+    const logoBox = await logo.boundingBox();
+    expect(checkboxBox!.x).toBeGreaterThan(logoBox!.x + logoBox!.width);
   });
 });

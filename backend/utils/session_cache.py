@@ -13,7 +13,7 @@ event listeners. A long-lived session (tests, the scrape pipeline) therefore
 never observes stale frames after a write.
 """
 
-from typing import Hashable
+from collections.abc import Hashable
 
 import pandas as pd
 from sqlalchemy import event

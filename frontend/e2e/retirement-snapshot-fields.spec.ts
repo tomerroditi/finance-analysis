@@ -82,6 +82,23 @@ test.describe("Retirement snapshot fields", () => {
 
     // Back to just the shipped expenses-override reset button
     await expect(resetBtns).toHaveCount(1);
+
+    // --- the funds' own pension forecast, for the plan's retirement age ---
+    // Demo plan: 38 today, retiring at 55 — deposits stop 12 years before
+    // pension age, so the forecast sits between the funds' two published
+    // figures. It is offered, never applied until clicked.
+    const forecastHint = page.getByRole("button", {
+      name: /Use the funds' forecast for retiring at 55/,
+    });
+    await expect(forecastHint).toContainText("25,020");
+    const pensionInput = page
+      .locator("div", { has: forecastHint })
+      .filter({ has: page.locator("input[type='number']") })
+      .last()
+      .locator("input[type='number']");
+    await expect(pensionInput).not.toHaveValue("25020");
+    await forecastHint.click();
+    await expect(pensionInput).toHaveValue("25020");
   });
 
   // Regression: the form + Calculate preview lived in component state, so

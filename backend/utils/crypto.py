@@ -21,9 +21,24 @@ passes them through unchanged and the startup migration
 import json
 import logging
 import threading
-from typing import Dict
+from typing import Any
 
-from cryptography.fernet import Fernet, InvalidToken
+try:
+    from cryptography.fernet import Fernet, InvalidToken
+
+    CRYPTOGRAPHY_AVAILABLE = True
+except ImportError:  # pragma: no cover - exercised only without cryptography
+    # Same reasoning as `keyring_store`: serverless omits the encryption
+    # stack, and this module sits on the import path of every credentials
+    # route, so a hard import took the whole route group down with it.
+    # Legacy/plaintext rows still decrypt (that path never touches Fernet),
+    # which is exactly what the demo database holds; encrypting raises.
+    Fernet = None  # type: ignore[assignment]
+
+    class InvalidToken(Exception):  # type: ignore[no-redef]
+        """Stand-in so ``except InvalidToken`` stays valid without cryptography."""
+
+    CRYPTOGRAPHY_AVAILABLE = False
 
 from backend.errors import ValidationException
 from backend.utils import keyring_store
@@ -32,7 +47,10 @@ logger = logging.getLogger(__name__)
 
 ENCRYPTED_MARKER = "__encrypted__"
 
-_fernet: Fernet | None = None
+# Quoted: `Fernet` is None when cryptography is absent, and an unquoted
+# `Fernet | None` is evaluated at import time (no `from __future__ import
+# annotations` here), which would raise before the fallback could help.
+_fernet: "Fernet | None" = None
 _fernet_lock = threading.Lock()
 
 
@@ -41,10 +59,22 @@ def get_fernet() -> Fernet:
 
     The key lives in the OS Keyring under the app's service name so it is
     never written to the repository, the DB, or any config file.
+
+    Raises
+    ------
+    ValidationException
+        If the ``cryptography`` package is not installed.
     """
     global _fernet
     if _fernet is not None:
         return _fernet
+    if not CRYPTOGRAPHY_AVAILABLE:
+        raise ValidationException(
+            "Credential encryption is unavailable in this environment (the "
+            "cryptography package is not installed). This is expected on the "
+            "hosted demo, whose credential rows are plaintext and whose "
+            "scrapes are simulated."
+        )
     with _fernet_lock:
         if _fernet is None:
             key = keyring_store.get_secret(
@@ -63,36 +93,36 @@ def get_fernet() -> Fernet:
     return _fernet
 
 
-def encrypt_fields(fields: Dict) -> Dict:
+def encrypt_fields(fields: dict[str, Any]) -> dict[str, str]:
     """Encrypt a credential fields dict into the on-disk envelope format.
 
     Parameters
     ----------
-    fields : Dict
+    fields : dict
         Plaintext credential fields (no passwords — those live in the
         keyring directly).
 
     Returns
     -------
-    Dict
+    dict
         ``{"__encrypted__": "<fernet token>"}`` envelope.
     """
     token = get_fernet().encrypt(json.dumps(fields).encode()).decode()
     return {ENCRYPTED_MARKER: token}
 
 
-def decrypt_fields(stored: Dict) -> Dict:
+def decrypt_fields(stored: dict[str, Any]) -> dict[str, Any]:
     """Decrypt a stored fields dict, passing legacy plaintext rows through.
 
     Parameters
     ----------
-    stored : Dict
+    stored : dict
         The value of the ``fields`` JSON column — either an encryption
         envelope or a legacy plaintext dict.
 
     Returns
     -------
-    Dict
+    dict
         The plaintext credential fields.
 
     Raises
@@ -105,15 +135,15 @@ def decrypt_fields(stored: Dict) -> Dict:
         return dict(stored)
     try:
         return json.loads(get_fernet().decrypt(stored[ENCRYPTED_MARKER].encode()))
-    except InvalidToken:
+    except InvalidToken as exc:
         raise ValidationException(
             "Stored credentials could not be decrypted — the encryption key "
-            "in the OS keyring is missing or was replaced. Delete and "
-            "re-enter the affected credentials."
-        )
+            "in the OS keyring is missing or was replaced. Edit the account "
+            "on the Data Sources page and re-enter its details."
+        ) from exc
 
 
-def is_encrypted(stored: Dict) -> bool:
+def is_encrypted(stored: dict[str, Any]) -> bool:
     """Return True when a stored fields dict is an encryption envelope."""
     return ENCRYPTED_MARKER in stored
 

@@ -11,7 +11,7 @@ paths:
 - **Desktop (`md:` and up):** Fixed sidebar (`hidden md:block`), collapsible between `w-64` (open) and `w-20` (icons). Main content uses `md:ms-64` / `md:ms-20` margin.
 - **Mobile (below `md:`):** Sidebar hidden. Top bar (`h-14`, `z-40`) with hamburger menu + page title. Sidebar opens as a full-screen overlay drawer (`z-50`) with backdrop.
 - **State:** `mobileSidebarOpen` in `appStore` controls the mobile drawer. Nav links call `setMobileSidebarOpen(false)` on click to auto-close.
-- **Parity with desktop:** every link/button in the desktop sidebar must also appear in the mobile drawer — including secondary entries like Budget Alerts, Settings, Data Flow. A user should never need to know that "the bell icon in the top bar opens X" to reach a feature; the mobile drawer is the canonical menu. When you add a new sidebar entry, edit BOTH the desktop sidebar and the mobile drawer in `frontend/src/components/layout/`.
+- **Parity with desktop:** every page link in the desktop sidebar's nav must also appear in the mobile drawer's grid. The desktop sidebar *footer* entries (Budget Alerts, Settings, Data Flow) are the exception: on mobile they live **only** in the top bar as icon buttons, never as drawer tiles. When you add a new sidebar entry, edit BOTH the desktop sidebar and its mobile home (drawer grid for a page, top bar for a footer utility) in `frontend/src/components/layout/Sidebar.tsx`.
 
 ### Main Content
 - Padding: `p-2 sm:p-4 md:p-8` (tighter on mobile to maximize screen real estate)
@@ -164,7 +164,8 @@ All dropdowns that use `createPortal` or `absolute` positioning MUST:
 
 ### Charts (Recharts)
 - Wrap every chart in `<ResponsiveContainer width="100%" height="100%">` inside a sized div — charts auto-resize with their container
-- Shared style lives in `utils/chartStyle.ts` (spread `{...AXIS_DEFAULTS}` into every axis) and `components/charts/` (`ChartTooltip`, `DonutChart`, `AreaGradientDef`)
+- Shared style lives in `utils/chartStyle.ts` (spread `{...AXIS_DEFAULTS}` into every axis) and `components/charts/` (`ChartTooltip`, `DonutChart`, `AreaGradientDef`, `stackedBarShape`)
+- **Stacked bars round only at each column's outer end** — use `stackEnds` + `roundedStackShape` from `components/charts/stackedBarShape.tsx` rather than a per-`Bar` `radius`, which rounds every segment and renders a column as a string of beads. A single-series bar can keep `radius={BAR_RADIUS}`: Recharts applies `radius[0]`/`[1]` at the bar's *value* end for either sign, so a negative bar still rounds at its tip
 - **Legends:** horizontal by default; use `iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 11, color: CHART_TEXT_COLOR }}`
 - **Hover/touch:** Recharts tooltips follow taps natively; SVG charts never hijack page scroll, so no dragmode/touch workarounds are needed
 - Keep chart margins tight: `margin: { top: 8, bottom: 4, left: 0, right: 8 }`-style, YAxis `width` 48–56
@@ -233,6 +234,12 @@ w-full max-w-[calc(100vw-2rem)] md:max-w-2xl   (large modals)
 - Inner padding: `p-4 md:p-6`
 - Form grids: `grid-cols-1 sm:grid-cols-2`
 - Add `max-h-[90vh] flex flex-col` with `overflow-y-auto` on form body
+- The rounded panel also needs `overflow-hidden`, and the scrolling body
+  carries the padding: a scrollbar is painted in its element's border box and
+  `border-radius` does not clip it, so without that the body's scrollbar runs
+  over the panel's rounded corners (and a panel that scrolls *itself* is worse
+  — see `frontend_pitfalls.md` → Rounded Scroll Containers). `components/common/Modal.tsx`
+  already does this; prefer it over a hand-rolled panel.
 
 ### Floating Bars / Fixed Position Elements
 Floating action bars (bulk actions, FABs) must:

@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 from backend.repositories.split_transactions_repository import (
     SplitTransactionsRepository,
 )
-from backend.repositories.transactions_repository import TransactionsRepository
+from backend.repositories.transactions import TransactionsRepository
 from backend.services.transactions_service import TransactionsService
 
 
@@ -75,16 +75,15 @@ class TestSplitTransactionsPipeline:
 
         analysis_df = service.get_data_for_analysis(include_split_parents=False)
 
-        # Split children should be present in the analysis data
-        split_children = analysis_df[
-            (analysis_df["type"] == "split_child")
+        # Exactly the two slices, each addressable by its own split id.
+        split_children = analysis_df[analysis_df["type"] == "split_child"]
+        assert len(split_children) == 2
+        assert sorted(split_children["amount"].tolist()) == [-90.0, -60.0]
+        assert split_children["split_id"].notna().all()
+        assert sorted(split_children["category"].tolist()) == [
+            "Entertainment",
+            "Food",
         ]
-        assert len(split_children) >= 2
-
-        # Verify the split amounts are present
-        child_amounts = sorted(split_children["amount"].tolist())
-        assert -90.0 in child_amounts
-        assert -60.0 in child_amounts
 
     def test_split_parent_excluded_from_analysis(
         self, db_session: Session, seed_base_transactions: list
@@ -119,16 +118,23 @@ class TestSplitTransactionsPipeline:
             "Split parent should be excluded from analysis by default"
         )
 
-        # With include_split_parents=True, the parent SHOULD appear
+        # With include_split_parents=True, the parent SHOULD appear.
+        # Matching on `id` alone proves nothing: split children copy every
+        # parent column except amount/category/tag/type, so "cc_jan_1" is
+        # in the default view too. The parent is identified by its type and
+        # its untouched full amount.
         analysis_with_parents = service.get_data_for_analysis(
             include_split_parents=True
         )
-        # The parent's original amount should still be present somewhere
-        # Either as split_parent in the service layer or via the repo layer
-        all_ids = analysis_with_parents["id"].tolist()
-        assert "cc_jan_1" in all_ids, (
+        parents = analysis_with_parents[
+            (analysis_with_parents["id"] == "cc_jan_1")
+            & (analysis_with_parents["type"] == "split_parent")
+        ]
+        assert len(parents) == 1, (
             "Split parent should be included when include_split_parents=True"
         )
+        assert parents.iloc[0]["amount"] == -150.0
+        assert pd.isna(parents.iloc[0]["split_id"])
 
     def test_revert_split(
         self, db_session: Session, seed_base_transactions: list
@@ -173,35 +179,6 @@ class TestSplitTransactionsPipeline:
         parent_after = cc_df_after[cc_df_after["id"] == "cc_jan_1"].iloc[0]
         assert parent_after["type"] == "normal"
 
-    def test_split_amounts_sum_to_parent(
-        self, db_session: Session, seed_split_transactions: dict
-    ):
-        """Verify sum of split child amounts equals parent amount."""
-        split_repo = SplitTransactionsRepository(db_session)
-
-        cc_parent = seed_split_transactions["cc_parent"]
-        bank_parent = seed_split_transactions["bank_parent"]
-
-        # CC parent: -300 split into -150, -100, -50
-        cc_children = split_repo.get_splits_for_transaction(
-            cc_parent.unique_id, "credit_card_transactions"
-        )
-        cc_child_sum = cc_children["amount"].sum()
-        assert cc_child_sum == cc_parent.amount, (
-            f"CC split children sum ({cc_child_sum}) should equal "
-            f"parent amount ({cc_parent.amount})"
-        )
-
-        # Bank parent: -200 split into -120, -80
-        bank_children = split_repo.get_splits_for_transaction(
-            bank_parent.unique_id, "bank_transactions"
-        )
-        bank_child_sum = bank_children["amount"].sum()
-        assert bank_child_sum == bank_parent.amount, (
-            f"Bank split children sum ({bank_child_sum}) should equal "
-            f"parent amount ({bank_parent.amount})"
-        )
-
     def test_split_children_independent_categories(
         self, db_session: Session, seed_base_transactions: list
     ):
@@ -245,7 +222,7 @@ class TestSplitTransactionsPipeline:
     def test_split_raises_when_parent_unique_id_does_not_exist(
         self, db_session: Session, seed_base_transactions: list
     ):
-        """Splitting a non-existent parent must raise ValueError and not create orphan splits.
+        """Splitting a non-existent parent must raise ValidationException, creating no orphans.
 
         Regression test for the silent-orphan-creation bug: previously,
         update_transaction_by_unique_id returned False (no rowcount), the
@@ -253,6 +230,8 @@ class TestSplitTransactionsPipeline:
         no parent could ever resolve to.
         """
         import pytest
+
+        from backend.errors import ValidationException
 
         repo = TransactionsRepository(db_session)
         split_repo = SplitTransactionsRepository(db_session)
@@ -263,7 +242,7 @@ class TestSplitTransactionsPipeline:
             {"amount": -50.0, "category": "Home", "tag": "Cleaning"},
         ]
 
-        with pytest.raises(ValueError, match="Cannot split"):
+        with pytest.raises(ValidationException, match="Cannot split"):
             repo.split_transaction(
                 bogus_unique_id, "credit_card_transactions", splits
             )

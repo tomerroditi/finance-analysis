@@ -2,7 +2,7 @@
 
 import pytest
 
-import backend.main as backend_main
+import backend.middleware.security as security_middleware
 from backend.utils import auth
 
 
@@ -37,7 +37,7 @@ class TestHostAllowlistMiddleware:
     def test_allowed_hosts_extension(self, test_client, monkeypatch):
         """Verify an ALLOWED_HOSTS entry admits an extra hostname."""
         monkeypatch.setattr(
-            backend_main,
+            security_middleware,
             "_allowed_hosts",
             auth.build_allowed_hosts(env_value="100.64.0.7"),
         )
@@ -116,6 +116,114 @@ class TestRemoteClientTokenMiddleware:
         assert response.status_code != 401
 
 
+class TestProxiedLocalRequests:
+    """Tests for requests a local reverse proxy (tailscale serve) relayed.
+
+    The TestClient connects as a local client, which is exactly what
+    tailscaled looks like when uvicorn runs with ``--no-proxy-headers``. It
+    reports its listener as ``("testserver", 80)``, so port 80 stands in for
+    the ``tailscale serve`` ingress.
+    """
+
+    RELAYED = {"X-Forwarded-For": "100.101.102.103"}
+
+    @pytest.fixture(autouse=True)
+    def owner_allowlisted(self, monkeypatch, tmp_path):
+        """Allowlist one tailnet user and leave no token configured."""
+        monkeypatch.setattr(
+            security_middleware,
+            "_tailnet_users",
+            auth.build_tailnet_users(env_value="me@example.com"),
+        )
+        monkeypatch.setattr(security_middleware, "_tailnet_ingress_port", 80)
+        monkeypatch.setenv("FAD_USER_DIR", str(tmp_path))
+        monkeypatch.delenv("FAD_API_TOKEN", raising=False)
+
+    def test_relayed_request_loses_local_trust(self, test_client):
+        """Verify a forwarded request from loopback is not trusted as local."""
+        response = test_client.get("/api/transactions/", headers=self.RELAYED)
+        assert response.status_code == 401
+
+    def test_allowlisted_tailnet_user_is_admitted(self, test_client):
+        """Verify the identity tailscale serve vouches for grants access."""
+        response = test_client.get(
+            "/api/transactions/",
+            headers={**self.RELAYED, "Tailscale-User-Login": "me@example.com"},
+        )
+        assert response.status_code == 200
+
+    def test_login_header_off_the_tailnet_ingress_is_ignored(
+        self, test_client, monkeypatch
+    ):
+        """Verify another local proxy cannot forward a forged tailnet identity.
+
+        Caddy, ngrok or cloudflared in front of the main port pass a client's
+        ``Tailscale-User-Login`` through untouched; only the listener that
+        ``tailscale serve`` alone connects to may believe it.
+        """
+        monkeypatch.setattr(security_middleware, "_tailnet_ingress_port", 8081)
+        response = test_client.get(
+            "/api/transactions/",
+            headers={**self.RELAYED, "Tailscale-User-Login": "me@example.com"},
+        )
+        assert response.status_code == 401
+
+    def test_login_header_without_an_ingress_is_ignored(
+        self, test_client, monkeypatch
+    ):
+        """Verify no tailnet identity is trusted until an ingress port is set."""
+        monkeypatch.setattr(security_middleware, "_tailnet_ingress_port", None)
+        response = test_client.get(
+            "/api/transactions/",
+            headers={**self.RELAYED, "Tailscale-User-Login": "me@example.com"},
+        )
+        assert response.status_code == 401
+
+    @pytest.mark.parametrize(
+        "header",
+        ["Via", "X-Forwarded-Host", "X-Forwarded-Proto", "CF-Connecting-IP", "True-Client-IP"],
+    )
+    def test_other_proxy_headers_lose_local_trust(self, test_client, header):
+        """Verify proxies that send no X-Forwarded-For are still detected."""
+        response = test_client.get("/api/transactions/", headers={header: "x"})
+        assert response.status_code == 401
+
+    def test_other_tailnet_user_is_rejected(self, test_client):
+        """Verify a different tailnet user (e.g. a shared-in node) needs a token."""
+        response = test_client.get(
+            "/api/transactions/",
+            headers={**self.RELAYED, "Tailscale-User-Login": "guest@example.com"},
+        )
+        assert response.status_code == 401
+
+    def test_relayed_request_with_token_passes(self, test_client, monkeypatch):
+        """Verify a relayed client can still authenticate with the token."""
+        monkeypatch.setenv("FAD_API_TOKEN", "correct-token")
+        response = test_client.get(
+            "/api/transactions/",
+            headers={**self.RELAYED, "Authorization": "Bearer correct-token"},
+        )
+        assert response.status_code == 200
+
+    def test_login_header_from_a_remote_peer_is_ignored(
+        self, test_client, monkeypatch
+    ):
+        """Verify a non-local peer can't claim a tailnet identity itself.
+
+        Only this machine's tailscaled connects from loopback, so the header
+        is only believed there; anyone reaching a 0.0.0.0-bound server
+        directly still needs the token.
+        """
+        monkeypatch.setattr(
+            "backend.utils.auth.is_trusted_client", lambda host: False
+        )
+        response = test_client.get(
+            "/api/transactions/",
+            headers={"Tailscale-User-Login": "me@example.com"},
+        )
+        assert response.status_code == 401
+
+
 class TestRequestSizeLimitMiddleware:
     """Tests for the request body size cap, including chunked bodies."""
 
@@ -130,7 +238,7 @@ class TestRequestSizeLimitMiddleware:
 
     def test_declared_oversize_body_is_rejected(self, test_client, monkeypatch):
         """A Content-Length above the cap returns 413."""
-        monkeypatch.setattr(backend_main, "_MAX_REQUEST_BYTES", 1024)
+        monkeypatch.setattr(security_middleware, "_MAX_REQUEST_BYTES", 1024)
         response = test_client.post(
             "/api/transactions/",
             content=b"x" * 4096,
@@ -153,7 +261,7 @@ class TestRequestSizeLimitMiddleware:
         Without a Content-Length header the middleware previously waved the
         request through and the full body was buffered and parsed.
         """
-        monkeypatch.setattr(backend_main, "_MAX_REQUEST_BYTES", 1024)
+        monkeypatch.setattr(security_middleware, "_MAX_REQUEST_BYTES", 1024)
         response = test_client.post(
             "/api/transactions/",
             content=self._chunked(64 * 1024),

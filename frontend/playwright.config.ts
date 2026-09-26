@@ -70,18 +70,22 @@ import { defineConfig, devices } from "@playwright/test";
  * listed here, MOVE IT OUT of this list in the same change.
  */
 const READ_ONLY_SPECS = [
+  "**/demo-sandbox-notice.spec.ts",
   "**/budget-net-refund.spec.ts",
   "**/categories.spec.ts",
   "**/dashboard-block-sizes.spec.ts",
   "**/dashboard-insights-strip.spec.ts",
   "**/dashboard-lazy-cards.spec.ts",
+  "**/dashboard-mobile-kpis.spec.ts",
   "**/data-flow.spec.ts",
   "**/flows/demo-mode-isolation.spec.ts",
-  "**/income-by-source-card.spec.ts",
+  "**/income-expenses-touch.spec.ts",
   "**/info-tooltip-aria-label.spec.ts",
   "**/insurances.spec.ts",
+  "**/investment-analysis-kpi-overflow.spec.ts",
   "**/investments.spec.ts",
   "**/liabilities.spec.ts",
+  "**/mobile-top-bar.spec.ts",
   "**/retirement-readiness.spec.ts",
   "**/route-prefetch.spec.ts",
   "**/rtl-chevrons.spec.ts",
@@ -129,6 +133,12 @@ export default defineConfig({
     baseURL: process.env.BASE_URL ?? "http://localhost:5173",
     trace: "on-first-retry",
     screenshot: "only-on-failure",
+    // CI serves the production build (`vite preview`), where the PWA service
+    // worker is real and runtime-caches `/api` GETs — a spec would then read
+    // a response cached by an earlier page instead of the backend's current
+    // answer. The dev server never registers one, so this changes nothing
+    // there.
+    serviceWorkers: "block",
   },
   projects: [
     {

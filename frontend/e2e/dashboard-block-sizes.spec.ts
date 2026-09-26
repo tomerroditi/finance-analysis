@@ -7,10 +7,11 @@ import { enableDemoMode } from "./helpers";
  *
  * - Half-width cards: on wide (>=lg) viewports the customizable region is a
  *   2-column grid. `budget` and `recent` are both half-width and adjacent in
- *   the default order, so they pair on one row; `income_expenses` is
- *   full-width and spans the row. Fill order is start->end and flips under
- *   RTL (Hebrew).
+ *   the default order, so they pair on one row, as do `recurring` and
+ *   `heatmap` on the next; `income_expenses` is full-width and spans the row.
+ *   Fill order is start->end and flips under RTL (Hebrew).
  * - Blocks are capped at `--dash-card-h` (39rem) and scroll overflow inside.
+ * - Card gutters are compact (gap-1.5 = 6px).
  * - The Spending Calendar (`heatmap`) card shows two months at half-row width
  *   (>=lg) and a single month in the single-column mobile layout.
  * - Expanding the KPI grid reveals the Net Worth card's last-3-months change
@@ -41,12 +42,82 @@ test.describe("Dashboard half-width blocks", () => {
     );
   });
 
+  /** The default layout's cards, in fill order. */
+  const CARD_IDS = [
+    "budget",
+    "recent",
+    "recurring",
+    "goals",
+    "heatmap",
+    "income_expenses",
+  ];
+
   async function boxOf(page: Page, id: string) {
     const el = page.locator(`[data-card-id="${id}"]`);
     await expect(el).toBeVisible({ timeout: 45_000 });
     const box = await el.boundingBox();
     if (!box) throw new Error(`no box for ${id}`);
     return box;
+  }
+
+  /**
+   * Block until no card's geometry is still moving.
+   *
+   * Every assertion here is a comparison *between* cards, but `boxOf` only
+   * waits for the card it is asked about to be visible. The cards lazy-load
+   * and grow as their content arrives, so a card measured early can still be
+   * short while one measured later has already been pushed down — and the
+   * difference lands in whichever gap is computed from the two. CI saw
+   * exactly that: a 6px row gutter read as 144px, then 290px on the retry, on
+   * a runner loaded enough for the page to still be settling through both
+   * attempts.
+   *
+   * Two consecutive agreeing samples of every card at once was the first
+   * attempt at pinning this down, and it is not enough on its own: the cards
+   * arrive in waves, and the lull between two waves is longer than the sample
+   * gap. Measured on a warm dev server, the whole grid held still from 1.0 s
+   * to 1.5 s and then jumped again at 2.0 s — so a run that started sampling
+   * in that lull declared the layout settled while two more reflows were
+   * still to come. The same 144px row gutter came back on CI.
+   *
+   * What actually ends the movement is the last query landing, so wait for
+   * the network to go quiet first and let the sampling guard the reflow that
+   * follows it. Measured on the same page: the last card stops moving ~3 s
+   * in, `networkidle` lands ~5.8 s in — after every reflow, never before.
+   * This is the case the "avoid redundant networkidle" rule carves out, since
+   * what follows is a non-waiting geometry read. Nothing here polls on a
+   * timer (no `refetchInterval` in the app), so the network genuinely idles.
+   *
+   * It weakens no assertion — the geometry checked is the same, just no
+   * longer read mid-reflow.
+   */
+  async function waitForSettledCards(page: Page, ids: string[] = CARD_IDS) {
+    await page.waitForLoadState("networkidle");
+    const sample = () =>
+      page.evaluate(
+        (cardIds) =>
+          cardIds
+            .map((id) => {
+              const el = document.querySelector(`[data-card-id="${id}"]`);
+              if (!el) return `${id}:absent`;
+              const r = el.getBoundingClientRect();
+              return `${id}:${Math.round(r.x)},${Math.round(r.y)},${Math.round(r.width)},${Math.round(r.height)}`;
+            })
+            .join("|"),
+        ids,
+      );
+
+    await expect
+      .poll(
+        async () => {
+          const before = await sample();
+          if (before.includes(":absent")) return "moving";
+          await page.waitForTimeout(250);
+          return before === (await sample()) ? "settled" : "moving";
+        },
+        { timeout: 45_000, intervals: [100] },
+      )
+      .toBe("settled");
   }
 
   /** Count the 7-column weekday-header rows inside the heatmap card — one per month. */
@@ -68,17 +139,12 @@ test.describe("Dashboard half-width blocks", () => {
     await page.goto("/");
 
     // --- Two half cards pair on one row; a full card spans the row ---
-    const ids = [
-      "budget",
-      "recent",
-      "heatmap",
-      "income_by_source",
-      "income_expenses",
-    ];
+    const ids = CARD_IDS;
     const boxes: Record<
       string,
       { x: number; y: number; width: number; height: number }
     > = {};
+    await waitForSettledCards(page, ids);
     for (const id of ids) boxes[id] = await boxOf(page, id);
 
     expect(Math.abs(boxes.budget.y - boxes.recent.y)).toBeLessThan(4);
@@ -87,6 +153,26 @@ test.describe("Dashboard half-width blocks", () => {
     expect(boxes.income_expenses.width).toBeGreaterThan(
       boxes.budget.width * 1.8,
     );
+
+    // --- Gutters between cards are compact (gap-1.5 = 6px) ---
+    // The customizable region used to sit at gap-8 (32px), which read as an
+    // over-airy dashboard. Assert both bounds so neither a regression back to
+    // the wide gutter nor a collapse to zero slips through.
+    const GUTTER = 6;
+    const columnGutter = boxes.recent.x - (boxes.budget.x + boxes.budget.width);
+    const rowGutter = boxes.recurring.y - (boxes.budget.y + boxes.budget.height);
+    expect(
+      columnGutter,
+      "column gutter between paired half cards",
+    ).toBeGreaterThan(GUTTER - 2);
+    expect(
+      columnGutter,
+      "column gutter between paired half cards",
+    ).toBeLessThan(GUTTER + 2);
+    expect(rowGutter, "row gutter between card rows").toBeGreaterThan(
+      GUTTER - 2,
+    );
+    expect(rowGutter, "row gutter between card rows").toBeLessThan(GUTTER + 2);
 
     // --- No block grows past the cap — taller content scrolls inside instead ---
     for (const id of ids) {
@@ -98,9 +184,20 @@ test.describe("Dashboard half-width blocks", () => {
 
     // Two half cards sharing a row are the same height (the taller of the two).
     expect(Math.abs(boxes.budget.height - boxes.recent.height)).toBeLessThan(2);
-    expect(
-      Math.abs(boxes.heatmap.height - boxes.income_by_source.height),
-    ).toBeLessThan(2);
+    // Second row: `recurring` + `goals`. Both graduated out of beta into the
+    // default layout between `recent` and `heatmap`, each shifting this pair
+    // along — it was `heatmap` + `income_by_source`, then `recurring` +
+    // `heatmap`, and `heatmap` now pairs on the row below.
+    expect(Math.abs(boxes.recurring.y - boxes.goals.y)).toBeLessThan(4);
+    expect(boxes.recurring.x).toBeLessThan(boxes.goals.x);
+    expect(Math.abs(boxes.recurring.height - boxes.goals.height)).toBeLessThan(
+      2,
+    );
+    // `heatmap` is the last half card before a full one now that the
+    // income-by-source card is gone (its all-time donut lives inside
+    // `income_expenses`), so it sits alone on its row and the full card
+    // starts below it.
+    expect(boxes.income_expenses.y).toBeGreaterThan(boxes.heatmap.y);
 
     // Every block enables internal scrolling.
     const allOverflows = await page
@@ -172,6 +269,8 @@ test.describe("Dashboard half-width blocks", () => {
 
     // --- Below lg the cards stack full-width (single column) ---
     await page.setViewportSize({ width: 800, height: 1000 });
+    // A resize reflows every card, so the layout has to settle again.
+    await waitForSettledCards(page);
 
     const budgetNarrow = await boxOf(page, "budget");
     const recentNarrow = await boxOf(page, "recent");
@@ -193,6 +292,7 @@ test.describe("Dashboard half-width blocks", () => {
     await page.goto("/");
 
     await expect(page.locator("html")).toHaveAttribute("dir", "rtl");
+    await waitForSettledCards(page);
 
     const budget = await boxOf(page, "budget");
     const recent = await boxOf(page, "recent");

@@ -15,7 +15,7 @@ import { useCallback, useSyncExternalStore } from "react";
 const STORAGE_KEY = "fa.dashboard.layout";
 // Bump when the default visibility policy changes so a one-time migration can
 // run against older stored layouts (see `normalize`).
-const LAYOUT_VERSION = 3;
+const LAYOUT_VERSION = 5;
 
 /** A card's width on the dashboard grid. */
 export type DashboardCardSize = "half" | "full";
@@ -26,14 +26,12 @@ export const DASHBOARD_CARDS = [
   { id: "insights", labelKey: "dashboard.cards.insights", size: "full", beta: true },
   { id: "budget", labelKey: "dashboard.cards.budget", size: "half" },
   { id: "recent", labelKey: "dashboard.cards.recent", size: "half" },
-  { id: "recurring", labelKey: "dashboard.cards.recurring", size: "half", beta: true },
-  { id: "goals", labelKey: "dashboard.cards.goals", size: "half", beta: true },
+  { id: "recurring", labelKey: "dashboard.cards.recurring", size: "half" },
+  { id: "goals", labelKey: "dashboard.cards.goals", size: "half" },
   { id: "heatmap", labelKey: "dashboard.cards.heatmap", size: "half" },
-  { id: "income_by_source", labelKey: "dashboard.cards.incomeBySource", size: "half" },
   { id: "income_expenses", labelKey: "dashboard.cards.incomeExpenses", size: "full" },
   { id: "net_worth", labelKey: "dashboard.cards.netWorth", size: "full" },
   { id: "cash_flow", labelKey: "dashboard.cards.cashFlow", size: "full", defaultHidden: true },
-  { id: "category", labelKey: "dashboard.cards.category", size: "full", defaultHidden: true },
   // Appended last so the default half-card row pairings above it stay intact.
   { id: "refunds", labelKey: "dashboard.cards.refunds", size: "half" },
   { id: "retirement", labelKey: "dashboard.cards.retirement", size: "full", defaultHidden: true },
@@ -116,7 +114,9 @@ export function normalize(raw: StoredLayout): DashboardLayout {
   // cards (rest hidden); a hidden charts card hides all four.
   if (version < 3) {
     const NEW_VISIBLE = ["income_expenses", "net_worth"] as DashboardCardId[];
-    const NEW_HIDDEN = ["cash_flow", "category"] as DashboardCardId[];
+    // "category" was a card once and is named here so a pre-v3 layout still
+    // migrates the same way; it is filtered out below as an unknown id.
+    const NEW_HIDDEN = ["cash_flow", "category"];
     const chartsIdx = rawOrder.indexOf("charts");
     if (chartsIdx !== -1) {
       rawOrder.splice(chartsIdx, 1, ...NEW_VISIBLE);
@@ -126,6 +126,25 @@ export function normalize(raw: StoredLayout): DashboardLayout {
     }
     rawOrder = rawOrder.filter((id) => id !== "charts");
     rawHidden = rawHidden.filter((id) => id !== "charts");
+  }
+
+  // v4: the subscriptions/recurring card left beta and is default-visible
+  // now. Existing layouts carry it in `hidden` because the beta policy put it
+  // there, not because the user chose to hide it, so the graduation has to
+  // reach them too — otherwise "default-visible" would only ever apply to
+  // people installing for the first time. Dropping it from `hidden` lets the
+  // tail loop below append it to the end of the visible order, which is
+  // exactly where enabling it by hand would have put it.
+  if (version < 4) {
+    rawHidden = rawHidden.filter((id) => id !== "recurring");
+  }
+
+  // v5: the savings-goals card left beta, for the same reason and with the
+  // same consequence as `recurring` above — a layout that hides it was told
+  // to by the beta policy, not by the user, so the graduation has to reach
+  // existing installs or "default-visible" means new ones only.
+  if (version < 5) {
+    rawHidden = rawHidden.filter((id) => id !== "goals");
   }
 
   const hidden = Array.from(

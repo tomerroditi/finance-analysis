@@ -1,98 +1,98 @@
 """Tests for TransactionsRepository delegation to sub-repositories."""
 
 from datetime import datetime
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pandas as pd
 import pytest
-from sqlalchemy.orm import Session
 
+from backend.constants.tables import Tables
+from backend.errors import EntityNotFoundException, ValidationException
 from backend.models.transaction import (
     BankTransaction,
     CashTransaction,
     CreditCardTransaction,
+    InsuranceTransaction,
+    ManualInvestmentTransaction,
     SplitTransaction,
 )
-from backend.repositories.transactions_repository import (
-    TransactionsRepository,
-    CreditCardRepository,
-    BankRepository,
+from backend.repositories.transactions import (
     CashRepository,
-    ManualInvestmentTransactionsRepository,
     ManualTransactionDTO,
+    TransactionsRepository,
 )
 
 
-@pytest.fixture
-def mock_db():
-    """Create a mock database session."""
-    return MagicMock(spec=Session)
+class TestTransactionsRepositoryFanOut:
+    """The category-wide rewrites must reach all five transaction tables.
 
+    ``insurance_transactions`` was added after the fan-out methods were
+    written and is easy to forget: a mock-based delegation test passes while
+    the real insurance rows keep a category the user just renamed or
+    deleted. This test therefore uses the real database and seeds one row
+    per table.
+    """
 
-@pytest.fixture
-def transactions_repo(mock_db):
-    """Create a TransactionsRepository with mocked sub-repositories."""
-    repo = TransactionsRepository(mock_db)
-    repo.cc_repo = MagicMock(spec=CreditCardRepository)
-    repo.bank_repo = MagicMock(spec=BankRepository)
-    repo.cash_repo = MagicMock(spec=CashRepository)
-    repo.manual_investments_repo = MagicMock(
-        spec=ManualInvestmentTransactionsRepository
-    )
-    return repo
+    def test_category_rewrites_reach_every_table(self, db_session):
+        """Rename, tag-clear and category-clear each land on all five tables."""
+        rows = {
+            Tables.CREDIT_CARD.value: CreditCardTransaction(
+                id="fan-cc", date="2024-01-01", provider="isracard",
+                account_name="Main Card", description="cc", amount=-10.0,
+                category="Food", tag="Groceries",
+                source=Tables.CREDIT_CARD.value,
+            ),
+            Tables.BANK.value: BankTransaction(
+                id="fan-bank", date="2024-01-02", provider="hapoalim",
+                account_name="Checking", description="bank", amount=-20.0,
+                category="Food", tag="Groceries", source=Tables.BANK.value,
+            ),
+            Tables.CASH.value: CashTransaction(
+                id="fan-cash", date="2024-01-03", provider="CASH",
+                account_name="Wallet", description="cash", amount=-30.0,
+                category="Food", tag="Groceries", source=Tables.CASH.value,
+            ),
+            Tables.MANUAL_INVESTMENT_TRANSACTIONS.value: ManualInvestmentTransaction(
+                id="fan-inv", date="2024-01-04", provider="manual",
+                account_name="Brokerage", description="inv", amount=-40.0,
+                category="Food", tag="Groceries",
+                source=Tables.MANUAL_INVESTMENT_TRANSACTIONS.value,
+            ),
+            Tables.INSURANCE.value: InsuranceTransaction(
+                id="fan-ins", date="2024-01-05", provider="haphoenix",
+                account_name="KH Policy", description="ins", amount=-50.0,
+                category="Food", tag="Groceries", source=Tables.INSURANCE.value,
+            ),
+        }
+        db_session.add_all(rows.values())
+        db_session.commit()
+        repo = TransactionsRepository(db_session)
 
+        def tagging() -> dict[str, tuple]:
+            """Read (category, tag) back out of each of the five tables."""
+            db_session.expire_all()
+            return {
+                table: (seeded.category, seeded.tag)
+                for table, seeded in rows.items()
+            }
 
-class TestTransactionsRepositoryDelegation:
-    """Tests for TransactionsRepository delegating operations to all sub-repositories."""
+        # All five tables the repository knows about are represented.
+        assert set(tagging()) == set(repo.get_all_table_names())
 
-    def test_nullify_category(self, transactions_repo):
-        """Verify nullify_category delegates to all four sub-repositories."""
-        transactions_repo.nullify_category("Groceries")
+        repo.update_category_for_tag("Food", "Essentials", "Groceries")
+        assert set(tagging().values()) == {("Essentials", "Groceries")}
 
-        transactions_repo.cc_repo.nullify_category.assert_called_once_with("Groceries")
-        transactions_repo.bank_repo.nullify_category.assert_called_once_with(
-            "Groceries"
-        )
-        transactions_repo.cash_repo.nullify_category.assert_called_once_with(
-            "Groceries"
-        )
-        transactions_repo.manual_investments_repo.nullify_category.assert_called_once_with(
-            "Groceries"
-        )
+        repo.nullify_category_and_tag("Essentials", "Groceries")
+        assert set(tagging().values()) == {(None, None)}
 
-    def test_nullify_category_and_tag(self, transactions_repo):
-        """Verify nullify_category_and_tag delegates to all four sub-repositories."""
-        transactions_repo.nullify_category_and_tag("Entertainment", "Cinema")
+        # Re-tag from the top to exercise the category-only clear, which
+        # drops the tag as well.
+        for row in rows.values():
+            row.category, row.tag = "Essentials", "Restaurants"
+        db_session.commit()
 
-        transactions_repo.cc_repo.nullify_category_and_tag.assert_called_once_with(
-            "Entertainment", "Cinema"
-        )
-        transactions_repo.bank_repo.nullify_category_and_tag.assert_called_once_with(
-            "Entertainment", "Cinema"
-        )
-        transactions_repo.cash_repo.nullify_category_and_tag.assert_called_once_with(
-            "Entertainment", "Cinema"
-        )
-        transactions_repo.manual_investments_repo.nullify_category_and_tag.assert_called_once_with(
-            "Entertainment", "Cinema"
-        )
-
-    def test_update_category_for_tag(self, transactions_repo):
-        """Verify update_category_for_tag delegates to all four sub-repositories."""
-        transactions_repo.update_category_for_tag("OldCat", "NewCat", "SomeTag")
-
-        transactions_repo.cc_repo.update_category_for_tag.assert_called_once_with(
-            "OldCat", "NewCat", "SomeTag"
-        )
-        transactions_repo.bank_repo.update_category_for_tag.assert_called_once_with(
-            "OldCat", "NewCat", "SomeTag"
-        )
-        transactions_repo.cash_repo.update_category_for_tag.assert_called_once_with(
-            "OldCat", "NewCat", "SomeTag"
-        )
-        transactions_repo.manual_investments_repo.update_category_for_tag.assert_called_once_with(
-            "OldCat", "NewCat", "SomeTag"
-        )
+        repo.nullify_category("Essentials")
+        assert set(tagging().values()) == {(None, None)}
 
 
 class TestAddTransactionIdGeneration:
@@ -271,54 +271,11 @@ class TestAddTransactionExceptionHandler:
                 repo.add_transaction(dto)
 
 
-class TestBulkUpdateTagging:
-    """Tests for TransactionsRepository.bulk_update_tagging."""
-
-    def test_bulk_update_tagging_delegates_to_sub_repos(self, db_session):
-        """Verify bulk_update_tagging iterates and delegates to each sub-repo."""
-        # Add a cash transaction
-        tx = CashTransaction(
-            id="1", date="2024-01-01", amount=-10.0,
-            description="Test", account_name="Cash",
-            provider="manual", source="cash_transactions",
-        )
-        db_session.add(tx)
-        db_session.commit()
-        db_session.refresh(tx)
-
-        repo = TransactionsRepository(db_session)
-        repo.bulk_update_tagging(
-            [{"source": "cash_transactions", "unique_id": tx.unique_id}],
-            category="Food",
-            tag="Groceries",
-        )
-
-        db_session.expire_all()
-        updated = db_session.query(CashTransaction).filter_by(unique_id=tx.unique_id).first()
-        assert updated.category == "Food"
-        assert updated.tag == "Groceries"
-
-    def test_bulk_update_tagging_invalid_source_raises(self, db_session):
-        """Verify an unrecognized source raises a clean ValueError.
-
-        Regression: ``get_repo_by_source`` returns ``None`` for unknown
-        sources, so bulk_update_tagging must guard against it instead of
-        dereferencing ``None`` (which produced an opaque AttributeError/500).
-        """
-        repo = TransactionsRepository(db_session)
-        with pytest.raises(ValueError):
-            repo.bulk_update_tagging(
-                [{"source": "not_a_real_source", "unique_id": 1}],
-                category="Food",
-                tag="Groceries",
-            )
-
-
 class TestGetDateFromTable:
-    """Tests for get_latest_date_from_table and get_earliest_date_from_table."""
+    """Tests for get_latest_date_from_table."""
 
-    def test_latest_date_returns_datetime(self, db_session):
-        """Verify get_latest_date_from_table returns the latest date as datetime."""
+    def test_returns_latest_as_datetime(self, db_session):
+        """The lookup returns the latest stored date parsed to a datetime."""
         db_session.add_all([
             CashTransaction(
                 id="1", date="2024-01-01", amount=-10.0,
@@ -334,68 +291,24 @@ class TestGetDateFromTable:
         db_session.commit()
 
         repo = TransactionsRepository(db_session)
-        result = repo.get_latest_date_from_table("cash_transactions")
-        assert result == datetime(2024, 6, 15)
+        assert repo.get_latest_date_from_table("cash_transactions") == datetime(2024, 6, 15)
 
-    def test_earliest_date_returns_datetime(self, db_session):
-        """Verify get_earliest_date_from_table returns the earliest date as datetime."""
-        db_session.add_all([
-            CashTransaction(
-                id="1", date="2024-01-01", amount=-10.0,
-                description="Old", account_name="Cash",
-                provider="manual", source="cash_transactions",
-            ),
-            CashTransaction(
-                id="2", date="2024-06-15", amount=-20.0,
-                description="New", account_name="Cash",
-                provider="manual", source="cash_transactions",
-            ),
-        ])
-        db_session.commit()
-
+    def test_empty_table_returns_none(self, db_session):
+        """The lookup returns None for an empty table."""
         repo = TransactionsRepository(db_session)
-        result = repo.get_earliest_date_from_table("cash_transactions")
-        assert result == datetime(2024, 1, 1)
+        assert repo.get_latest_date_from_table("cash_transactions") is None
 
-    def test_latest_date_empty_table_returns_none(self, db_session):
-        """Verify get_latest_date_from_table returns None for empty table."""
-        repo = TransactionsRepository(db_session)
-        result = repo.get_latest_date_from_table("cash_transactions")
-        assert result is None
-
-    def test_earliest_date_empty_table_returns_none(self, db_session):
-        """Verify get_earliest_date_from_table returns None for empty table."""
-        repo = TransactionsRepository(db_session)
-        result = repo.get_earliest_date_from_table("cash_transactions")
-        assert result is None
-
-    def test_latest_date_invalid_format_returns_none(self, db_session):
-        """Verify get_latest_date_from_table returns None for unparseable date."""
-        tx = CashTransaction(
+    def test_invalid_format_returns_none(self, db_session):
+        """The lookup returns None when the stored date is unparseable."""
+        db_session.add(CashTransaction(
             id="1", date="not-a-date", amount=-10.0,
             description="Bad date", account_name="Cash",
             provider="manual", source="cash_transactions",
-        )
-        db_session.add(tx)
+        ))
         db_session.commit()
 
         repo = TransactionsRepository(db_session)
-        result = repo.get_latest_date_from_table("cash_transactions")
-        assert result is None
-
-    def test_earliest_date_invalid_format_returns_none(self, db_session):
-        """Verify get_earliest_date_from_table returns None for unparseable date."""
-        tx = CashTransaction(
-            id="1", date="not-a-date", amount=-10.0,
-            description="Bad date", account_name="Cash",
-            provider="manual", source="cash_transactions",
-        )
-        db_session.add(tx)
-        db_session.commit()
-
-        repo = TransactionsRepository(db_session)
-        result = repo.get_earliest_date_from_table("cash_transactions")
-        assert result is None
+        assert repo.get_latest_date_from_table("cash_transactions") is None
 
 
 class TestAddScrapedTransactionsDistinctDuplicates:
@@ -456,6 +369,38 @@ class TestAddScrapedTransactionsDistinctDuplicates:
         assert db_session.query(BankTransaction).count() == 2
 
 
+class TestReadsToleratePreExistingBadDates:
+    """A single unparseable stored date must not take the whole read down."""
+
+    def test_unparseable_date_becomes_nan_not_an_exception(self, db_session):
+        """The bad row reads back with a missing date; its siblings are intact.
+
+        Dates are stored as strings, so a row written by an older build (or
+        by hand) can hold something ``to_datetime`` cannot parse. Reading it
+        used to raise, which took out every transactions/analytics endpoint
+        at once rather than degrading one row.
+        """
+        db_session.add_all([
+            CashTransaction(
+                id="good-date", date="2024-02-10", provider="CASH",
+                account_name="Wallet", description="good", amount=-10.0,
+                category="Food", tag="Snacks", source=Tables.CASH.value,
+            ),
+            CashTransaction(
+                id="bad-date", date="15/06/2024", provider="CASH",
+                account_name="Wallet", description="bad", amount=-20.0,
+                category="Food", tag="Snacks", source=Tables.CASH.value,
+            ),
+        ])
+        db_session.commit()
+
+        df = TransactionsRepository(db_session).get_table("cash")
+
+        by_desc = df.set_index("description")["date"]
+        assert by_desc["good"] == "2024-02-10"
+        assert pd.isna(by_desc["bad"])
+
+
 class TestGetTransactionById:
     """Tests for TransactionsRepository.get_transaction_by_id."""
 
@@ -478,7 +423,7 @@ class TestGetTransactionById:
     def test_get_transaction_by_id_not_found_raises(self, db_session):
         """Verify get_transaction_by_id raises ValueError when not found."""
         repo = TransactionsRepository(db_session)
-        with pytest.raises(ValueError, match="not found"):
+        with pytest.raises(EntityNotFoundException, match="not found"):
             repo.get_transaction_by_id(99999, "cash_transactions")
 
     def test_get_transaction_by_id_scoped_to_source_table(self, db_session):
@@ -513,7 +458,7 @@ class TestGetTransactionById:
     def test_get_transaction_by_id_invalid_source_raises(self, db_session):
         """Verify an unknown source name raises ValueError."""
         repo = TransactionsRepository(db_session)
-        with pytest.raises(ValueError, match="Invalid source"):
+        with pytest.raises(EntityNotFoundException, match="Invalid source"):
             repo.get_transaction_by_id(1, "bogus_table")
 
 
@@ -717,7 +662,7 @@ class TestGetTableSessionCache:
         self, db_session, seed_base_transactions, monkeypatch
     ):
         """Two identical get_table calls perform the 5-table read only once."""
-        from backend.repositories import transactions_repository as tr_module
+        from backend.repositories import transactions as tr_module
 
         repo = tr_module.TransactionsRepository(db_session)
         calls = {"n": 0}
@@ -983,3 +928,288 @@ class TestCountUncategorized:
         )
         assert expected > 0
         assert repo.count_uncategorized() == expected
+
+
+class TestGetCategoryLastUsed:
+    """Tests for TransactionsRepository.get_category_last_used."""
+
+    def test_empty_db_returns_empty_dict(self, db_session):
+        """A database with no transactions yields no last-used entries."""
+        repo = TransactionsRepository(db_session)
+        assert repo.get_category_last_used() == {}
+
+    def test_max_date_taken_across_tables(self, db_session):
+        """The latest date wins even when it lives in a different table."""
+        db_session.add(
+            BankTransaction(
+                id="bank-1",
+                date="2025-01-10",
+                provider="hapoalim",
+                account_name="Main",
+                description="old food",
+                amount=-50.0,
+                category="Food",
+                tag="Groceries",
+                source="bank_transactions",
+                type=None,
+                status="completed",
+            )
+        )
+        db_session.add(
+            CreditCardTransaction(
+                id="cc-1",
+                date="2025-06-20",
+                provider="isracard",
+                account_name="Main Card",
+                description="new food",
+                amount=-30.0,
+                category="Food",
+                tag="Restaurants",
+                source="credit_card_transactions",
+                type=None,
+                status="completed",
+            )
+        )
+        db_session.commit()
+        repo = TransactionsRepository(db_session)
+        assert repo.get_category_last_used()["Food"] == "2025-06-20"
+
+    def test_null_category_is_excluded(self, db_session):
+        """Rows with no category contribute no entry."""
+        db_session.add(
+            BankTransaction(
+                id="bank-2",
+                date="2025-01-10",
+                provider="hapoalim",
+                account_name="Main",
+                description="untagged",
+                amount=-50.0,
+                category=None,
+                tag=None,
+                source="bank_transactions",
+                type=None,
+                status="completed",
+            )
+        )
+        db_session.commit()
+        repo = TransactionsRepository(db_session)
+        assert repo.get_category_last_used() == {}
+
+    def test_split_parent_row_is_ignored(self, db_session):
+        """A split-parent row's own date does not count as usage."""
+        db_session.add(
+            CreditCardTransaction(
+                id="cc-parent-1",
+                date="2025-03-04",
+                provider="isracard",
+                account_name="Main Card",
+                description="split parent",
+                amount=-100.0,
+                category="Food",
+                tag=None,
+                source="credit_card_transactions",
+                type="split_parent",
+                status="completed",
+            )
+        )
+        db_session.commit()
+        repo = TransactionsRepository(db_session)
+        assert "Food" not in repo.get_category_last_used()
+
+    def test_split_child_counts_with_parent_date(self, db_session):
+        """A split child has no date of its own; its parent's date is used."""
+        parent = CreditCardTransaction(
+            id="cc-parent-2",
+            date="2025-03-04",
+            provider="isracard",
+            account_name="Main Card",
+            description="split parent",
+            amount=-100.0,
+            category="Food",
+            tag=None,
+            source="credit_card_transactions",
+            type="split_parent",
+            status="completed",
+        )
+        db_session.add(parent)
+        db_session.commit()
+        db_session.add(
+            SplitTransaction(
+                transaction_id=parent.unique_id,
+                source="credit_card_transactions",
+                amount=-10.0,
+                category="Transport",
+                tag="Gas",
+            )
+        )
+        db_session.commit()
+        repo = TransactionsRepository(db_session)
+        assert repo.get_category_last_used()["Transport"] == "2025-03-04"
+
+    def test_orphaned_split_is_ignored(self, db_session):
+        """A split whose parent row is gone contributes nothing."""
+        db_session.add(
+            SplitTransaction(
+                transaction_id=999999,
+                source="credit_card_transactions",
+                amount=-10.0,
+                category="Transport",
+                tag="Gas",
+            )
+        )
+        db_session.commit()
+        repo = TransactionsRepository(db_session)
+        assert repo.get_category_last_used() == {}
+
+    def test_split_id_is_not_matched_across_tables(self, db_session):
+        """unique_id is per-table: a bank row must not satisfy a cc-sourced split."""
+        bank = BankTransaction(
+            id="bank-3",
+            date="2025-05-05",
+            provider="hapoalim",
+            account_name="Main",
+            description="unrelated",
+            amount=-50.0,
+            category="Food",
+            tag=None,
+            source="bank_transactions",
+            type=None,
+            status="completed",
+        )
+        db_session.add(bank)
+        db_session.commit()
+        db_session.add(
+            SplitTransaction(
+                transaction_id=bank.unique_id,
+                source="credit_card_transactions",
+                amount=-10.0,
+                category="Transport",
+                tag="Gas",
+            )
+        )
+        db_session.commit()
+        repo = TransactionsRepository(db_session)
+        assert "Transport" not in repo.get_category_last_used()
+
+
+def _bank(db_session, id_: str, amount: float, **overrides) -> BankTransaction:
+    """Insert one bank transaction and return it."""
+    fields = {
+        "id": id_, "date": "2025-01-01", "provider": "hapoalim",
+        "account_name": "Main", "description": id_, "amount": amount,
+        "source": "bank_transactions", "type": "normal", "status": "completed",
+    }
+    fields.update(overrides)
+    row = BankTransaction(**fields)
+    db_session.add(row)
+    db_session.commit()
+    return row
+
+
+class TestRecordLookups:
+    """Source-aware row lookups and batched writes on TransactionsRepository."""
+
+    def test_get_record_resolves_table_and_service_names(self, db_session):
+        """Both spellings of a source find the row; unknown ones return None."""
+        row = _bank(db_session, "r1", -10.0)
+        repo = TransactionsRepository(db_session)
+
+        assert repo.get_record("bank_transactions", row.unique_id) is row
+        assert repo.get_record("banks", row.unique_id) is row
+        assert repo.get_record("credit_card_transactions", row.unique_id) is None
+        assert repo.get_record("nonsense", row.unique_id) is None
+
+    def test_get_records_chunks_long_id_lists(self, db_session):
+        """More ids than one IN chunk still returns every existing row."""
+        rows = [_bank(db_session, f"c{i}", -1.0) for i in range(3)]
+        repo = TransactionsRepository(db_session)
+        ids = [r.unique_id for r in rows] + list(range(100_000, 101_200))
+
+        found = repo.get_records("bank_transactions", ids)
+
+        assert {r.unique_id for r in found} == {r.unique_id for r in rows}
+        assert repo.get_records("nonsense", ids) == []
+
+    def test_get_split_with_parent(self, db_session):
+        """A slice comes back with its parent; a missing slice is None."""
+        parent = _bank(db_session, "sp", -30.0, type="split_parent")
+        split = SplitTransaction(
+            transaction_id=parent.unique_id, source="bank_transactions",
+            amount=-30.0, category="Food", tag="Groceries",
+        )
+        db_session.add(split)
+        db_session.commit()
+        repo = TransactionsRepository(db_session)
+
+        assert repo.get_split_with_parent(split.id) == (split, parent)
+        assert repo.get_split_with_parent(999_999) is None
+
+    def test_bulk_update_fields_and_account_names(self, db_session):
+        """One batched write updates every listed row and nothing else."""
+        a = _bank(db_session, "b1", -1.0, account_name="A")
+        b = _bank(db_session, "b2", -2.0, account_name="B")
+        untouched = _bank(db_session, "b3", -3.0, account_name="C")
+        repo = TransactionsRepository(db_session)
+
+        assert sorted(repo.get_account_names("banks", [a.unique_id, b.unique_id])) == [
+            "A", "B",
+        ]
+        repo.bulk_update_fields(
+            "bank_transactions", [a.unique_id, b.unique_id], {"category": "Food"}
+        )
+        db_session.expire_all()
+
+        assert (a.category, b.category, untouched.category) == ("Food", "Food", None)
+        with pytest.raises(ValidationException, match="Invalid source"):
+            repo.bulk_update_fields("nonsense", [a.unique_id], {"category": "X"})
+
+
+class TestSumAmount:
+    """ServiceRepository.sum_amount matches the pandas sums it replaced."""
+
+    def test_plain_sum_counts_every_stored_row(self, db_session):
+        """Without split expansion, a split parent counts at its own amount."""
+        _bank(db_session, "p1", -100.0, type="split_parent")
+        _bank(db_session, "p2", 40.0)
+        _bank(db_session, "other", -7.0, account_name="Other")
+        repo = TransactionsRepository(db_session).bank_repo
+
+        assert repo.sum_amount("Main") == -60.0
+        assert repo.sum_amount("Main", "leumi") == 0.0
+        assert repo.sum_amount(None) == 0.0
+
+    def test_expanded_sum_equals_the_merged_view(self, db_session):
+        """Split expansion sums exactly what get_table(service) shows."""
+        parent = _bank(db_session, "sp", -100.0, type="split_parent")
+        _bank(db_session, "plain", 25.0, type=None)
+        _bank(db_session, "elsewhere", -9.0, provider="leumi")
+        db_session.add_all(
+            [
+                SplitTransaction(
+                    transaction_id=parent.unique_id, source=source,
+                    amount=amount, category="Food", tag=None,
+                )
+                for source, amount in (
+                    ("bank_transactions", -60.0),
+                    ("banks", -39.5),
+                    ("credit_card_transactions", -1000.0),
+                )
+            ]
+            + [
+                SplitTransaction(
+                    transaction_id=987_654, source="bank_transactions",
+                    amount=-500.0, category="Food", tag=None,
+                )
+            ]
+        )
+        db_session.commit()
+        transactions = TransactionsRepository(db_session)
+
+        merged = transactions.get_table(service="banks")
+        mask = (merged["provider"] == "hapoalim") & (merged["account_name"] == "Main")
+        expected = float(merged.loc[mask, "amount"].sum())
+
+        assert expected == pytest.approx(-74.5)
+        assert transactions.bank_repo.sum_amount(
+            "Main", "hapoalim", expand_splits=True
+        ) == pytest.approx(expected)

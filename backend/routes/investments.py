@@ -4,119 +4,63 @@ Investments API routes.
 Provides endpoints for investment tracking.
 """
 
-from datetime import date as date_type
-from typing import Any, Optional
+from typing import Any
 
 from fastapi import APIRouter, Depends
-from pydantic import field_validator
 from sqlalchemy.orm import Session
 
 from backend.dependencies import get_database
-from backend.errors import ValidationException
-from backend.routes.schemas import ApiRequestModel
-from backend.services.investments_service import InvestmentsService
+from backend.routes.schemas import ApiRequestModel, IsoDateStr, require_iso_date
+from backend.services.investments import InvestmentsService
 
 router = APIRouter()
 
 
-def _parse_iso_date(value: str, field_name: str) -> str:
-    """Validate that ``value`` is a ``YYYY-MM-DD`` date string.
-
-    Unvalidated date strings are persisted verbatim and only blow up later,
-    when analytics parse them — at which point every investment analysis
-    endpoint 500s and the offending record can no longer be listed or
-    deleted.
-
-    Parameters
-    ----------
-    value : str
-        Candidate ISO date string.
-    field_name : str
-        Name of the field being validated, used in the error message.
-
-    Returns
-    -------
-    str
-        The unchanged ``value`` when it parses as an ISO date.
-
-    Raises
-    ------
-    ValidationException
-        If ``value`` is not a valid ``YYYY-MM-DD`` date.
-    """
-    try:
-        date_type.fromisoformat(value)
-    except (TypeError, ValueError):
-        raise ValidationException(
-            f"{field_name} must be a valid date in YYYY-MM-DD format"
-        )
-    return value
-
-
 class InvestmentCreate(ApiRequestModel):
+    """Request body for creating an investment."""
+
     category: str
     tag: str
     type: str
     name: str
-    interest_rate: Optional[float] = None
+    interest_rate: float | None = None
     interest_rate_type: str = "fixed"
-    rate_spread: Optional[float] = None
-    commission_deposit: Optional[float] = None
-    commission_management: Optional[float] = None
-    commission_withdrawal: Optional[float] = None
-    liquidity_date: Optional[str] = None
-    maturity_date: Optional[str] = None
-    notes: Optional[str] = None
-
-    @field_validator("liquidity_date", "maturity_date")
-    @classmethod
-    def validate_dates(cls, v: Optional[str]) -> Optional[str]:
-        """Ensure optional dates are valid ISO date strings."""
-        if v is not None:
-            date_type.fromisoformat(v)
-        return v
+    rate_spread: float | None = None
+    commission_deposit: float | None = None
+    commission_management: float | None = None
+    commission_withdrawal: float | None = None
+    liquidity_date: IsoDateStr | None = None
+    maturity_date: IsoDateStr | None = None
+    notes: str | None = None
 
 
 class InvestmentUpdate(ApiRequestModel):
-    name: Optional[str] = None
-    interest_rate: Optional[float] = None
-    interest_rate_type: Optional[str] = None
-    rate_spread: Optional[float] = None
-    closed_date: Optional[str] = None
-    notes: Optional[str] = None
+    """Partial update of an investment; ``None`` fields are kept."""
 
-    @field_validator("closed_date")
-    @classmethod
-    def validate_closed_date(cls, v: Optional[str]) -> Optional[str]:
-        """Ensure closed_date is a valid ISO date string."""
-        if v is not None:
-            date_type.fromisoformat(v)
-        return v
+    name: str | None = None
+    type: str | None = None
+    interest_rate: float | None = None
+    interest_rate_type: str | None = None
+    rate_spread: float | None = None
+    closed_date: IsoDateStr | None = None
+    commission_deposit: float | None = None
+    commission_management: float | None = None
+    liquidity_date: IsoDateStr | None = None
+    notes: str | None = None
 
 
 class BalanceSnapshotCreate(ApiRequestModel):
-    date: str
-    balance: float
+    """Request body for recording a balance snapshot."""
 
-    @field_validator("date")
-    @classmethod
-    def validate_date(cls, v: str) -> str:
-        """Ensure the snapshot date is a valid ISO date string."""
-        date_type.fromisoformat(v)
-        return v
+    date: IsoDateStr
+    balance: float
 
 
 class BalanceSnapshotUpdate(ApiRequestModel):
-    date: Optional[str] = None
-    balance: Optional[float] = None
+    """Partial update of a balance snapshot; ``None`` fields are kept."""
 
-    @field_validator("date")
-    @classmethod
-    def validate_date(cls, v: Optional[str]) -> Optional[str]:
-        """Ensure the snapshot date is a valid ISO date string."""
-        if v is not None:
-            date_type.fromisoformat(v)
-        return v
+    date: IsoDateStr | None = None
+    balance: float | None = None
 
 
 @router.get("/")
@@ -166,8 +110,8 @@ def get_portfolio_balance_history(
 @router.get("/{investment_id}/analysis")
 def get_investment_analysis(
     investment_id: int,
-    start_date: Optional[str] = None,
-    end_date: Optional[str] = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
     db: Session = Depends(get_database),
 ) -> dict[str, Any]:
     """Return detailed analysis for a specific investment.
@@ -182,9 +126,9 @@ def get_investment_analysis(
         ISO date string (YYYY-MM-DD) to restrict the transaction history.
     """
     if start_date is not None:
-        _parse_iso_date(start_date, "start_date")
+        require_iso_date(start_date, "start_date")
     if end_date is not None:
-        _parse_iso_date(end_date, "end_date")
+        require_iso_date(end_date, "end_date")
     service = InvestmentsService(db)
     return service.get_investment_analysis(investment_id, start_date, end_date)
 
@@ -244,7 +188,7 @@ def close_investment(
     ValidationException
         If ``closed_date`` is not a valid ``YYYY-MM-DD`` date.
     """
-    _parse_iso_date(closed_date, "closed_date")
+    require_iso_date(closed_date, "closed_date")
     service = InvestmentsService(db)
     service.close_investment(investment_id, closed_date)
     return {"status": "success"}
@@ -268,9 +212,6 @@ def delete_investment(
     service = InvestmentsService(db)
     service.delete_investment(investment_id)
     return {"status": "success"}
-
-
-# ── Balance Snapshot Routes ───────────────────────────────────────
 
 
 @router.get("/{investment_id}/balances")
@@ -297,12 +238,12 @@ def create_balance_snapshot(
 @router.post("/{investment_id}/balances/calculate")
 def calculate_fixed_rate_snapshots(
     investment_id: int,
-    end_date: Optional[str] = None,
+    end_date: str | None = None,
     db: Session = Depends(get_database),
 ) -> dict[str, str]:
     """Trigger fixed-rate auto-calculation of balance snapshots."""
     if end_date is not None:
-        _parse_iso_date(end_date, "end_date")
+        require_iso_date(end_date, "end_date")
     service = InvestmentsService(db)
     service.calculate_fixed_rate_snapshots(investment_id, end_date=end_date)
     return {"status": "success"}

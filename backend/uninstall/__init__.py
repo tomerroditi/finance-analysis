@@ -1,5 +1,7 @@
-"""Cleanup utilities used by the Windows NSIS uninstaller, the macOS
-``Uninstall.command`` script, and the in-app ``POST /api/uninstall`` route.
+"""Remove Finance Analysis state from this machine.
+
+Used by the Windows NSIS uninstaller, the macOS ``Uninstall.command`` script,
+and the in-app ``POST /api/uninstall`` route.
 
 A single source of truth for what counts as "Finance Analysis state" on a
 machine: the user-data directory and Keychain entries. Imported as a

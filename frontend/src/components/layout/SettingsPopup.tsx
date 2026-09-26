@@ -128,9 +128,10 @@ export function SettingsPopup({
     >
       <div
         ref={popupRef}
-        className="w-full max-w-[calc(100vw-2rem)] sm:max-w-96 bg-[var(--surface)] border border-[var(--surface-light)] rounded-2xl shadow-2xl p-4 sm:p-6 animate-in zoom-in-95 duration-200 max-h-[90vh] overflow-y-auto"
+        className="w-full max-w-[calc(100vw-2rem)] sm:max-w-96 bg-[var(--surface)] border border-[var(--surface-light)] rounded-2xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 max-h-[90vh] flex flex-col"
       >
-        {/* Header — title + close */}
+        {/* Header — title + tabs stay pinned while the body scrolls */}
+        <div className="px-4 sm:px-6 pt-4 sm:pt-6 shrink-0">
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-base font-bold text-[var(--text-default)]">
             {t("settings.title")}
@@ -163,7 +164,9 @@ export function SettingsPopup({
             </button>
           ))}
         </div>
+        </div>
 
+        <div className="flex-1 min-h-0 overflow-y-auto px-4 sm:px-6 pb-4 sm:pb-6">
         {tab === "dashboard" && <DashboardLayoutManager />}
 
         {tab === "general" && (
@@ -355,6 +358,7 @@ export function SettingsPopup({
         <UninstallSection />
         </div>
         )}
+        </div>
       </div>
     </div>
   );

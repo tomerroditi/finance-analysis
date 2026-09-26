@@ -52,6 +52,10 @@ def mock_repo(monkeypatch):
         {"service": "credit_cards", "provider": "isracard", "account_name": "Account 1"},
         {"service": "banks", "provider": "hapoalim", "account_name": "Main Account"},
     ]
+    mock.list_account_statuses.return_value = [
+        {**a, "fields_readable": True, "has_password": True}
+        for a in mock.list_accounts.return_value
+    ]
     mock.save_credentials.return_value = None
     mock.delete_credentials.return_value = None
 
@@ -74,47 +78,6 @@ class TestCredentialsService:
         assert cc_password == "secret123"
         assert bank_password == "secret123"
 
-    def test_get_available_data_sources(self, mock_repo):
-        """Verify data sources list format: 'service - provider - account'."""
-        service = CredentialsService(MagicMock())
-        sources = service.get_available_data_sources()
-
-        assert len(sources) == 2
-        assert "credit_cards - isracard - Account 1" in sources
-        assert "banks - hapoalim - Main Account" in sources
-
-    def test_get_data_sources_credentials_filters(self, mock_repo):
-        """Verify filtering credentials by selected data sources."""
-        service = CredentialsService(MagicMock())
-        filtered = service.get_data_sources_credentials(
-            ["credit_cards - isracard - Account 1"]
-        )
-
-        assert "credit_cards" in filtered
-        assert "isracard" in filtered["credit_cards"]
-        assert "Account 1" in filtered["credit_cards"]["isracard"]
-        assert "banks" not in filtered
-
-    def test_save_credentials_calls_repo(self, mock_repo):
-        """Verify save_credentials delegates to repo per account."""
-        service = CredentialsService(MagicMock())
-
-        new_creds = deepcopy(SAMPLE_CREDENTIALS)
-        new_creds["credit_cards"]["isracard"]["Account 1"]["password"] = "new_pass"
-
-        service.save_credentials(new_creds)
-
-        assert mock_repo.save_credentials.called
-
-    def test_delete_account(self, mock_repo):
-        """Verify account removed via repo."""
-        service = CredentialsService(MagicMock())
-        service.delete_account("credit_cards", "isracard", "Account 1")
-
-        mock_repo.delete_credentials.assert_called_once_with(
-            "credit_cards", "isracard", "Account 1"
-        )
-
     def test_get_safe_credentials_no_passwords(self, mock_repo):
         """Verify safe credentials contain no password fields."""
         service = CredentialsService(MagicMock())
@@ -127,16 +90,76 @@ class TestCredentialsService:
         assert safe["banks"]["hapoalim"] == ["Main Account"]
 
     def test_get_accounts_list(self, mock_repo):
-        """Verify flat list of accounts with service, provider, account_name."""
+        """Verify flat list of healthy accounts, none flagged for re-entry."""
         service = CredentialsService(MagicMock())
         accounts = service.get_accounts_list()
 
         assert len(accounts) == 2
         account_tuples = {
-            (a["service"], a["provider"], a["account_name"]) for a in accounts
+            (a["service"], a["provider"], a["account_name"], a["needs_reentry"])
+            for a in accounts
         }
-        assert ("credit_cards", "isracard", "Account 1") in account_tuples
-        assert ("banks", "hapoalim", "Main Account") in account_tuples
+        assert ("credit_cards", "isracard", "Account 1", False) in account_tuples
+        assert ("banks", "hapoalim", "Main Account", False) in account_tuples
+
+    @pytest.mark.parametrize(
+        ("provider", "fields_readable", "has_password", "expected"),
+        [
+            ("hapoalim", False, True, True),
+            ("hapoalim", True, False, True),
+            ("hafenix", True, False, False),
+            ("hafenix", False, False, True),
+        ],
+    )
+    def test_get_accounts_list_needs_reentry(
+        self, mock_repo, provider, fields_readable, has_password, expected
+    ):
+        """Verify re-entry is flagged for unreadable fields, or a missing password the provider needs."""
+        mock_repo.list_account_statuses.return_value = [{
+            "service": "banks",
+            "provider": provider,
+            "account_name": "Acc",
+            "fields_readable": fields_readable,
+            "has_password": has_password,
+        }]
+
+        [account] = CredentialsService(MagicMock()).get_accounts_list()
+
+        assert account["needs_reentry"] is expected
+
+    @pytest.mark.parametrize(
+        ("provider", "fields_readable", "has_password"),
+        [
+            ("hapoalim", False, True),
+            ("hapoalim", True, False),
+            ("hafenix", False, False),
+        ],
+    )
+    def test_demo_accounts_never_need_reentry(
+        self, mock_repo, monkeypatch, provider, fields_readable, has_password
+    ):
+        """Demo accounts are never flagged, whatever their stored state.
+
+        A demo scrape does not authenticate — the adapter redirects every
+        provider to a dummy scraper that ignores credentials — so there is
+        nothing to re-enter. The demo dataset's rows are deliberately
+        plaintext with no keyring password (the hosted demo has neither an OS
+        keyring nor ``cryptography``), which is exactly the shape this
+        parametrisation covers; without the demo check every demo card would
+        wear a "Re-enter details" badge for a login that never happens.
+        """
+        monkeypatch.setattr("backend.config.AppConfig.is_demo_mode", True)
+        mock_repo.list_account_statuses.return_value = [{
+            "service": "banks",
+            "provider": provider,
+            "account_name": "Acc",
+            "fields_readable": fields_readable,
+            "has_password": has_password,
+        }]
+
+        [account] = CredentialsService(MagicMock()).get_accounts_list()
+
+        assert account["needs_reentry"] is False
 
     def test_get_available_providers(self, monkeypatch):
         """Verify providers filtered by test mode (production excludes test_ prefixed)."""
@@ -191,34 +214,23 @@ class TestCredentialsCacheHit:
 class TestSaveCredentialsTypeGuards:
     """Tests for type guard branches in save_credentials."""
 
-    def test_skips_non_dict_providers(self, mock_repo):
-        """Verify save_credentials skips non-dict provider values (line 82)."""
-        service = CredentialsService(MagicMock())
-        service.save_credentials({"credit_cards": "not_a_dict"})
-        mock_repo.save_credentials.assert_not_called()
-
-    def test_skips_non_dict_accounts(self, mock_repo):
-        """Verify save_credentials skips non-dict account values (line 85)."""
-        service = CredentialsService(MagicMock())
-        service.save_credentials({"credit_cards": {"isracard": "not_a_dict"}})
-        mock_repo.save_credentials.assert_not_called()
-
-    def test_skips_non_dict_fields(self, mock_repo):
-        """Verify save_credentials skips non-dict field values (line 88)."""
-        service = CredentialsService(MagicMock())
-        service.save_credentials({"credit_cards": {"isracard": {"Acct": "not_a_dict"}}})
-        mock_repo.save_credentials.assert_not_called()
-
-    def test_skips_empty_field_values(self, mock_repo):
-        """Verify save_credentials skips accounts where all fields are empty (line 90)."""
-        service = CredentialsService(MagicMock())
-        service.save_credentials({"credit_cards": {"isracard": {"Acct": {"user": "", "pass": ""}}}})
-        mock_repo.save_credentials.assert_not_called()
-
-    def test_skips_empty_dict_fields(self, mock_repo):
-        """Verify save_credentials skips accounts with empty fields dict."""
-        service = CredentialsService(MagicMock())
-        service.save_credentials({"credit_cards": {"isracard": {"Acct": {}}}})
+    @pytest.mark.parametrize(
+        "payload",
+        [
+            {"credit_cards": "not_a_dict"},
+            {"credit_cards": {"isracard": "not_a_dict"}},
+            {"credit_cards": {"isracard": {"Acct": "not_a_dict"}}},
+            {"credit_cards": {"isracard": {"Acct": {"user": "", "pass": ""}}}},
+            {"credit_cards": {"isracard": {"Acct": {}}}},
+        ],
+        ids=[
+            "non-dict-providers", "non-dict-accounts", "non-dict-fields",
+            "all-fields-empty", "empty-fields-dict",
+        ],
+    )
+    def test_skips_malformed_or_empty_accounts(self, mock_repo, payload):
+        """Verify non-dict levels and accounts with no field values are never saved."""
+        CredentialsService(MagicMock()).save_credentials(payload)
         mock_repo.save_credentials.assert_not_called()
 
     def test_saves_valid_mixed_with_invalid(self, mock_repo):
@@ -263,23 +275,21 @@ class TestGetScraperCredentials:
         assert "banks" in result
         assert "credit_cards" in result
 
-    def test_nonexistent_service_returns_empty(self, mock_repo):
-        """Verify nonexistent service returns empty dict."""
+    @pytest.mark.parametrize(
+        "service_name, provider, account, expected",
+        [
+            ("insurance", "provider", "acct", {}),
+            ("banks", "leumi", "Main Account", {"banks": {}}),
+            ("banks", "hapoalim", "Missing", {"banks": {"hapoalim": {}}}),
+        ],
+        ids=["unknown-service", "unknown-provider", "unknown-account"],
+    )
+    def test_unknown_target_returns_empty_nesting(
+        self, mock_repo, service_name, provider, account, expected
+    ):
+        """Verify an unknown level yields the known outer keys with an empty dict below."""
         service = CredentialsService(MagicMock())
-        result = service.get_scraper_credentials("insurance", "provider", "acct")
-        assert result == {}
-
-    def test_nonexistent_provider_returns_empty_nested(self, mock_repo):
-        """Verify nonexistent provider returns service key with empty provider dict."""
-        service = CredentialsService(MagicMock())
-        result = service.get_scraper_credentials("banks", "leumi", "Main Account")
-        assert result == {"banks": {}}
-
-    def test_nonexistent_account_returns_empty_nested(self, mock_repo):
-        """Verify nonexistent account returns empty account dict."""
-        service = CredentialsService(MagicMock())
-        result = service.get_scraper_credentials("banks", "hapoalim", "Missing")
-        assert result == {"banks": {"hapoalim": {}}}
+        assert service.get_scraper_credentials(service_name, provider, account) == expected
 
 
 class TestSeedDemoCredentials:
@@ -289,7 +299,7 @@ class TestSeedDemoCredentials:
         """Verify every demo credential is created when none exist.
 
         Seeds cover bank (hapoalim), credit cards (max, visa cal) and insurance
-        (hafenix) — four accounts in total. Each should trigger a save.
+        (mislaka) — four accounts in total. Each should trigger a save.
         """
         from backend.errors import EntityNotFoundException
 
@@ -305,7 +315,7 @@ class TestSeedDemoCredentials:
         assert ("banks", "hapoalim", "Main Account") in saved_targets
         assert ("credit_cards", "max", "Family Card") in saved_targets
         assert ("credit_cards", "visa cal", "Online Shopping") in saved_targets
-        assert ("insurances", "hafenix", "The Cohens") in saved_targets
+        assert ("insurances", "mislaka", "The Cohens") in saved_targets
 
     def test_skips_existing_credentials(self, mock_repo):
         """Verify existing demo credentials are not re-inserted."""
@@ -341,14 +351,6 @@ class TestSeedDemoCredentials:
 
 class TestClearCache:
     """Tests for static cache clearing."""
-
-    def test_clear_cache_sets_none(self, mock_repo, monkeypatch):
-        """Verify clear_cache empties every mode's cache partition."""
-        CredentialsService(MagicMock())
-        assert cs._credentials_cache != {}
-
-        CredentialsService.clear_cache()
-        assert cs._credentials_cache == {}
 
     def test_clear_cache_forces_db_reload(self, mock_repo):
         """Verify next load_credentials hits DB after cache clear."""
@@ -532,12 +534,11 @@ class TestRemoveData:
         remaining = db_session.query(BankTransaction).all()
         assert [t.account_name for t in remaining] == ["Other"]
 
-    def test_history_cleared_so_next_scrape_backfills(self, db_session, monkeypatch):
-        """The watermark goes, so reconnecting starts a fresh year."""
-        svc, hist = _seed_account(db_session, monkeypatch)
+    def test_bank_balance_goes_with_the_data(self, db_session, monkeypatch):
+        """The balance row (and its prior wealth) is dropped with the history."""
+        svc, _ = _seed_account(db_session, monkeypatch)
         svc.delete_credential("banks", "hapoalim", "Main", delete_data=True)
-        assert hist.get_last_successful_scrape_date(
-            "banks", "hapoalim", "Main") is None
+        assert BankBalanceRepository(db_session).get_by_account("hapoalim", "Main") is None
 
     def test_dependent_records_are_purged(self, db_session, monkeypatch):
         """A pending refund on a deleted transaction does not survive."""
@@ -550,38 +551,36 @@ class TestRemoveData:
 
         assert PendingRefundsService(db_session).get_all_pending() == []
 
-    def test_prior_wealth_survives_a_keep_delete(self, db_session, monkeypatch):
-        """Disconnecting must not destroy the account's prior wealth.
 
-        The balance row carries ``prior_wealth_amount``. Dropping it while the
-        transactions stayed removed money from net worth that the surviving
-        history still accounted for.
-        """
-        svc, _ = _seed_account(db_session, monkeypatch)
-        before = BankBalanceService(db_session).get_total_prior_wealth()
-        svc.delete_credential("banks", "hapoalim", "Main")
-        assert BankBalanceService(db_session).get_total_prior_wealth() == before
+class TestOneZeroPhoneValidation:
+    """OneZero phone numbers are stored only in ``+9725XXXXXXXX`` form."""
 
-    def test_keeping_data_keeps_the_watermark(self, db_session, monkeypatch):
-        """Disconnecting without erasing leaves the scrape watermark intact.
-
-        Reconnecting then resumes from where it left off rather than
-        re-scraping a year of transactions that are still stored.
-        """
-        from datetime import date
-
-        history = ScrapingHistoryRepository(db_session)
-        scrape_id = history.record_scrape_start(
-            "banks", "hapoalim", "Main", date.today()
+    @staticmethod
+    def _save(service, phone):
+        service.save_credentials(
+            {"banks": {"onezero": {"Acc": {"email": "e", "phoneNumber": phone}}}}
         )
-        history.record_scrape_end(scrape_id, "success")
 
-        service = CredentialsService(db_session)
-        monkeypatch.setattr(
-            service.repository, "delete_credentials", lambda *a, **k: None
-        )
-        service.delete_credential("banks", "hapoalim", "Main")
+    @pytest.mark.parametrize("phone", ["050-1234567", "0501234567", "+972 50 123 4567"])
+    def test_local_forms_are_normalized(self, mock_repo, phone):
+        """A local or spaced number is rewritten to the international form."""
+        self._save(CredentialsService(MagicMock()), phone)
 
-        assert history.get_last_successful_scrape_date(
-            "banks", "hapoalim", "Main"
+        saved_fields = mock_repo.save_credentials.call_args.args[3]
+        assert saved_fields["phoneNumber"] == "+972501234567"
+
+    @pytest.mark.parametrize("phone", ["+15551234567", "0212345678", "05012345", "abc"])
+    def test_non_mobile_numbers_are_rejected(self, mock_repo, phone):
+        """Anything that is not an Israeli mobile number fails with a 400."""
+        with pytest.raises(cs.ValidationException):
+            self._save(CredentialsService(MagicMock()), phone)
+        mock_repo.save_credentials.assert_not_called()
+
+    def test_other_providers_are_untouched(self, mock_repo):
+        """Providers that take a free-form phone keep the typed value."""
+        CredentialsService(MagicMock()).save_credentials(
+            {"insurances": {"hafenix": {"Acc": {"id": "1", "phoneNumber": "050-1234567"}}}}
         )
+
+        saved_fields = mock_repo.save_credentials.call_args.args[3]
+        assert saved_fields["phoneNumber"] == "050-1234567"

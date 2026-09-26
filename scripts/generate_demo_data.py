@@ -26,6 +26,9 @@ from sqlalchemy.orm import sessionmaker  # noqa: E402
 from sqlalchemy.pool import NullPool  # noqa: E402
 
 from backend.models.base import Base  # noqa: E402
+from backend.repositories.scraping_history_repository import (  # noqa: E402
+    ScrapingHistoryRepository,
+)
 from backend.models import (  # noqa: E402
     BankBalance,
     BankTransaction,
@@ -34,6 +37,8 @@ from backend.models import (  # noqa: E402
     CashBalance,
     CashTransaction,
     Category,
+    ClearingHouseReport,
+    Credential,
     CreditCardTransaction,
     InsuranceAccount,
     InsuranceTransaction,
@@ -44,6 +49,9 @@ from backend.models import (  # noqa: E402
     PendingRefund,
     RefundLink,
     RetirementGoal,
+    SavingsGoal,
+    SavingsGoalInvestment,
+    SavingsGoalLink,
     ScrapingHistory,
     SplitTransaction,
     TaggingRule,
@@ -53,6 +61,13 @@ from backend.models import (  # noqa: E402
 # Constants
 # ---------------------------------------------------------------------------
 REFERENCE_DATE = date(2026, 2, 25)
+
+# The Cohens' pension and Keren Hishtalmut data comes from the pension
+# clearing house (HaPhoenix is deprecated in its favour).
+INSURANCE_PROVIDER = "mislaka"
+# Ages drive both the retirement goal and the funds' retirement forecasts.
+TECH_AGE = 38
+TEACHER_AGE = 36
 START_DATE = REFERENCE_DATE - timedelta(days=365 * 3 + 1)  # ~3 years back
 DB_PATH = PROJECT_ROOT / "backend" / "resources" / "demo_data.db"
 
@@ -2437,6 +2452,148 @@ def create_pending_refunds(session, cc_txns, bank_txns):
     session.flush()
 
 
+def create_savings_goals(session, savings_plan, bank_txns):
+    """Create the Cohens' five savings goals and what backs them.
+
+    The goals demo every way a goal can be funded, in one waterfall:
+
+    1. **Emergency Fund** — the classic first goal. Capped so it fills
+       steadily rather than swallowing a single big month, and started early
+       enough that it is already achieved.
+    2. **Kids' Education Fund** — part cash, part **backed by the Savings
+       Plan**, which matures a year out and is money the couple already
+       intends to roll into it. That backing counts toward the goal without
+       ever entering the free-cash pool.
+    3. **Wedding Fund** — the saving side of the wedding arc the rest of the
+       dataset already tells. The two largest wedding bank transfers are
+       linked as **utilizations**, so the goal shows money set aside *and*
+       money since spent out of it, without its target shrinking. It carries
+       no target date: the wedding is already being paid for, and a deadline
+       weeks away would only render an implausible "catch up by" figure.
+
+    4. **Home Renovation Fund** — the saving side of the renovation the
+       budget project tracks, carrying a large opening balance: money the
+       couple had already set aside when they started tracking. Opening
+       balances come straight out of the free-cash pool in the goal's first
+       month, which is what keeps the pool in proportion to the rest of the
+       card.
+    5. **New Car Fund** — the same, further off and lower priority, so the
+       waterfall has a goal that is still filling behind the others.
+
+    Only the education fund carries a ``target_date`` — far enough out (the
+    older child reaching university) that the monthly-needed figure it drives
+    is a realistic number rather than a panic.
+
+    Whatever the five leave unclaimed each month stays in the free-cash pool,
+    which is what a negative month drains before any goal is touched. The
+    Cohens' pool is large because the app counts loan receipts as income (see
+    ``.claude/rules/kpi_calculations.md``) and the demo's mortgage and car
+    loan were never spent back out; the two goals above earmark the part of it
+    that has a job.
+
+    No allocation rows are seeded: the engine derives the whole ledger on
+    first read, and doing it here would anchor it to this script's reference
+    date instead of the date-shifted one Demo Mode actually serves.
+    """
+    def month_str(months_back: int) -> str:
+        """``YYYY-MM`` for the month ``months_back`` before the reference."""
+        month = REFERENCE_DATE.month - months_back
+        year = REFERENCE_DATE.year
+        while month <= 0:
+            month += 12
+            year -= 1
+        return f"{year:04d}-{month:02d}"
+
+    emergency = SavingsGoal(
+        name="Emergency Fund",
+        target_amount=60000.0,
+        opening_balance=0.0,
+        priority=0,
+        monthly_cap=2500.0,
+        start_month=month_str(34),
+        status="active",
+        notes="Six months of expenses, kept liquid.",
+    )
+    education = SavingsGoal(
+        name="Kids' Education Fund",
+        target_amount=150000.0,
+        opening_balance=0.0,
+        priority=1,
+        monthly_cap=2000.0,
+        start_month=month_str(30),
+        target_date=(REFERENCE_DATE + timedelta(days=365 * 6)).isoformat(),
+        status="active",
+        notes="Backed by the savings plan that matures next year.",
+    )
+    wedding = SavingsGoal(
+        name="Wedding Fund",
+        target_amount=120000.0,
+        opening_balance=0.0,
+        priority=2,
+        monthly_cap=3000.0,
+        start_month=month_str(24),
+        status="active",
+        notes="Saving for the wedding the budget project tracks spending against.",
+    )
+    renovation = SavingsGoal(
+        name="Home Renovation Fund",
+        target_amount=350000.0,
+        opening_balance=260000.0,
+        priority=3,
+        monthly_cap=4000.0,
+        start_month=month_str(28),
+        status="active",
+        notes="Kitchen and bathrooms — what the renovation budget spends against.",
+    )
+    car = SavingsGoal(
+        name="New Car Fund",
+        target_amount=180000.0,
+        opening_balance=110000.0,
+        priority=4,
+        monthly_cap=3000.0,
+        start_month=month_str(16),
+        status="active",
+        notes="Replacing the family car once the car loan is paid off.",
+    )
+    session.add_all([emergency, education, wedding, renovation, car])
+    session.flush()
+
+    # The savings plan backs the education fund in full. No amount is given,
+    # so the earmark is "whatever is left of it" and tracks the holding's
+    # value instead of a number that goes stale.
+    session.add(
+        SavingsGoalInvestment(
+            goal_id=education.id,
+            investment_id=savings_plan.id,
+            amount=None,
+        )
+    )
+
+    # The two largest wedding bank transfers are money spent back out of the
+    # wedding fund. Credit-card rows can never be linked — they are excluded
+    # from the surplus before links are resolved — so these have to be the
+    # bank-side deposits.
+    utilized = [
+        txn
+        for txn in bank_txns
+        if txn.category == "Wedding"
+        and txn.description in ("CATERING - FINAL PAYMENT", "VENUE - BALANCE PAYMENT")
+    ]
+    for txn in utilized:
+        session.add(
+            SavingsGoalLink(
+                goal_id=wedding.id,
+                source_type="transaction",
+                source_id=txn.unique_id,
+                source_table="bank_transactions",
+                link_type="utilization",
+            )
+        )
+
+    session.flush()
+    return emergency, education, wedding, renovation, car
+
+
 def create_retirement_goal(session):
     """Create a retirement goal record for FIRE page testing.
 
@@ -2467,7 +2624,7 @@ def create_retirement_goal(session):
     kh_total_monthly = 1_571.0 + 1_400.0                # 2,971
 
     session.add(RetirementGoal(
-        current_age=38,
+        current_age=TECH_AGE,
         gender="male",
         target_retirement_age=55,
         life_expectancy=90,
@@ -2491,6 +2648,49 @@ def create_retirement_goal(session):
     session.flush()
 
 
+def create_demo_credentials(session):
+    """Create the four demo data-source accounts.
+
+    These ship **inside the snapshot** rather than being seeded when Demo Mode
+    is switched on: the hosted demo forces demo mode at cold start and never
+    runs the toggle, so a seed-on-toggle left its Data Sources page empty.
+    `tests/backend/unit/test_demo_setup.py` guards their presence, their
+    account names (the scrape watermark is keyed on them, so a character out
+    of place reads as "Never synced"), and their contents.
+
+    Fields stay **plaintext and password-free**: `decrypt_fields` passes a
+    non-envelope dict through unchanged, so the snapshot stays readable
+    without `cryptography`, and a demo scrape never authenticates — the
+    scraper layer redirects these providers to dummy scrapers. Nothing here
+    ever reaches the OS keyring, which is what lets the generator run on a
+    headless box.
+    """
+    stamp = datetime(2026, 1, 1, 0, 0, 0)
+    accounts = [
+        ("banks", "hapoalim", "Main Account", {"userCode": "demo"}),
+        ("credit_cards", "max", "Family Card", {"username": "demo", "id": "demo"}),
+        ("credit_cards", "visa cal", "Online Shopping", {"username": "demo"}),
+        (
+            "insurance",
+            INSURANCE_PROVIDER,
+            "The Cohens",
+            {"id": "demo", "phoneNumber": "050-1234567"},
+        ),
+    ]
+    for service, provider, account_name, fields in accounts:
+        session.add(
+            Credential(
+                service=service,
+                provider=provider,
+                account_name=account_name,
+                fields=fields,
+                created_at=stamp,
+                updated_at=stamp,
+            )
+        )
+    session.flush()
+
+
 def create_scraping_history(session):
     """Create 5 scraping history records."""
     recent = REFERENCE_DATE - timedelta(days=1)
@@ -2502,7 +2702,7 @@ def create_scraping_history(session):
         provider_name="hapoalim",
         account_name="Main Account",
         date=datetime(recent.year, recent.month, recent.day, 8, 30, 0).isoformat(),
-        status="SUCCESS",
+        status=ScrapingHistoryRepository.SUCCESS,
         start_date=(recent - timedelta(days=30)).isoformat(),
     ))
     session.add(ScrapingHistory(
@@ -2510,7 +2710,7 @@ def create_scraping_history(session):
         provider_name="leumi",
         account_name="Savings Account",
         date=datetime(recent.year, recent.month, recent.day, 8, 32, 0).isoformat(),
-        status="SUCCESS",
+        status=ScrapingHistoryRepository.SUCCESS,
         start_date=(recent - timedelta(days=30)).isoformat(),
     ))
     session.add(ScrapingHistory(
@@ -2518,7 +2718,7 @@ def create_scraping_history(session):
         provider_name="max",
         account_name="Family Card",
         date=datetime(recent.year, recent.month, recent.day, 8, 35, 0).isoformat(),
-        status="SUCCESS",
+        status=ScrapingHistoryRepository.SUCCESS,
         start_date=(recent - timedelta(days=30)).isoformat(),
     ))
     session.add(ScrapingHistory(
@@ -2526,7 +2726,7 @@ def create_scraping_history(session):
         provider_name="visa cal",
         account_name="Online Shopping",
         date=datetime(recent.year, recent.month, recent.day, 8, 40, 0).isoformat(),
-        status="SUCCESS",
+        status=ScrapingHistoryRepository.SUCCESS,
         start_date=(recent - timedelta(days=30)).isoformat(),
     ))
 
@@ -2536,7 +2736,7 @@ def create_scraping_history(session):
         provider_name="hapoalim",
         account_name="Main Account",
         date=datetime(older.year, older.month, older.day, 9, 0, 0).isoformat(),
-        status="FAILED",
+        status=ScrapingHistoryRepository.FAILED,
         start_date=(older - timedelta(days=30)).isoformat(),
         error_message="Timeout waiting for page load",
     ))
@@ -2547,7 +2747,7 @@ def create_scraping_history(session):
         provider_name="max",
         account_name="Family Card",
         date=datetime(older.year, older.month, older.day, 9, 5, 0).isoformat(),
-        status="SUCCESS",
+        status=ScrapingHistoryRepository.SUCCESS,
         start_date=(older - timedelta(days=30)).isoformat(),
     ))
 
@@ -2557,6 +2757,49 @@ def create_scraping_history(session):
 # ---------------------------------------------------------------------------
 # Insurance accounts & transactions
 # ---------------------------------------------------------------------------
+
+def _clearing_house_forecast(
+    balance, monthly_deposit, deposit_fee_pct, savings_fee_pct, age, retirement_age
+):
+    """Forecast a fund the way the clearing house publishes it.
+
+    Real terms: today's balance and (if any) today's monthly deposit grow at
+    an assumed 4% a year net of the savings fee until retirement age; the
+    deposit loses its deposit fee first. Pensions are the capital over an
+    annuity factor of 200 — about what Israeli funds publish for a 67-year-old.
+
+    Returns a dict with the ``balance_forecast`` /
+    ``balance_forecast_no_deposits`` capitals and the matching
+    ``monthly_pension_forecast`` / ``monthly_pension_forecast_no_deposits``.
+    """
+    assumed_yield = 4.0
+    growth = 1 + (assumed_yield - savings_fee_pct) / 100
+    years = retirement_age - age
+    no_deposits = balance * growth**years
+    annual_deposit = monthly_deposit * 12 * (1 - deposit_fee_pct / 100)
+    with_deposits = no_deposits + annual_deposit * (growth**years - 1) / (growth - 1)
+    return {
+        "retirement_age": float(retirement_age),
+        "forecast_yield_pct": assumed_yield,
+        "balance_forecast": round(with_deposits, 2),
+        "balance_forecast_no_deposits": round(no_deposits, 2),
+        "monthly_pension_forecast": round(with_deposits / 200),
+        "monthly_pension_forecast_no_deposits": round(no_deposits / 200, 2),
+    }
+
+
+def _shpitzer_payment(principal, annual_rate_pct, months):
+    """Monthly payment of a fixed-payment (Shpitzer) loan."""
+    rate = annual_rate_pct / 100 / 12
+    return principal * rate / (1 - (1 + rate) ** -months)
+
+
+def _shpitzer_balance(principal, annual_rate_pct, months, paid):
+    """Outstanding principal after ``paid`` payments of a Shpitzer loan."""
+    rate = annual_rate_pct / 100 / 12
+    payment = _shpitzer_payment(principal, annual_rate_pct, months)
+    return principal * (1 + rate) ** paid - payment * ((1 + rate) ** paid - 1) / rate
+
 
 def generate_insurance_data(session):
     """Generate insurance accounts (pension + keren hishtalmut) and monthly deposit transactions.
@@ -2670,7 +2913,7 @@ def generate_insurance_data(session):
     # Balances reflect ~5 years of contributions (2 prior + 3 tracked)
     # plus ~5-6%/year real growth. Rough target: monthly × 60 × 1.13..1.19.
     pension_tech_makifa = InsuranceAccount(
-        provider="hafenix",
+        provider=INSURANCE_PROVIDER,
         policy_id="PN-DEMO-001",
         policy_type="pension",
         pension_type="makifa",
@@ -2684,11 +2927,22 @@ def generate_insurance_data(session):
         commission_savings_pct=0.22,
         insurance_covers=json.dumps([
             {"title": "Disability Insurance", "desc": "75% of salary (up to cap)", "sum": 18750},
-            {"title": "Life Insurance", "desc": "Lump sum to beneficiaries", "sum": 500000},
+            {"title": "Survivors Annuity", "desc": "60% of salary to spouse and children", "sum": 15000},
         ]),
+        # HaPhoenix reports a year-to-date movement statement, not a cost list:
+        # opening balance, deposits and gains sit alongside the deductions. The
+        # closing balance is not a separate figure to reconcile against — it IS
+        # the sum of every other (movement) row. Mirroring that shape here keeps
+        # the frontend classifier honest — a naive Σ|amount| would read 666,140.
         insurance_costs=json.dumps([
-            {"title": "Life insurance premium", "amount": 85},
-            {"title": "Disability premium", "amount": 120},
+            {"title": "Opening balance", "amount": 268470},
+            {"title": "Deposits", "amount": 55500},
+            {"title": "Gains", "amount": 9100},
+            {"title": "Management fee", "amount": -820},
+            {"title": "Disability risk cost", "amount": -1440},
+            {"title": "Death risk cost", "amount": -690},
+            {"title": "Actuarial balance", "amount": -120},
+            {"title": "Closing balance", "amount": 330000},
         ]),
     )
     session.add(pension_tech_makifa)
@@ -2697,7 +2951,7 @@ def generate_insurance_data(session):
     # (i.e. only the slice above 25,000 has been routed here). Much smaller
     # balance than the Makifa account because the contribution base is small.
     pension_tech_mashlima = InsuranceAccount(
-        provider="hafenix",
+        provider=INSURANCE_PROVIDER,
         policy_id="PN-DEMO-003",
         policy_type="pension",
         pension_type="mashlima",
@@ -2718,7 +2972,7 @@ def generate_insurance_data(session):
     # The policy_id slot PN-DEMO-002 was previously a (wrong) Mashlima account;
     # reusing the id to stay stable across regenerations.
     pension_teacher_makifa = InsuranceAccount(
-        provider="hafenix",
+        provider=INSURANCE_PROVIDER,
         policy_id="PN-DEMO-002",
         policy_type="pension",
         pension_type="makifa",
@@ -2733,16 +2987,25 @@ def generate_insurance_data(session):
         commission_savings_pct=0.18,
         insurance_covers=json.dumps([
             {"title": "Disability Insurance", "desc": "75% of salary (up to cap)", "sum": 10500},
-            {"title": "Life Insurance", "desc": "Lump sum to beneficiaries", "sum": 250000},
+            {"title": "Survivors Annuity", "desc": "60% of salary to spouse and children", "sum": 8400},
         ]),
+        # Positive actuarial balance here (negative on PN-DEMO-001) — the sign
+        # genuinely varies between policies, so it is the one signed bucket.
         insurance_costs=json.dumps([
-            {"title": "Disability premium", "amount": 55},
+            {"title": "Opening balance", "amount": 143860},
+            {"title": "Deposits", "amount": 30000},
+            {"title": "Gains", "amount": 2000},
+            {"title": "Management fee", "amount": -420},
+            {"title": "Disability risk cost", "amount": -390},
+            {"title": "Death risk cost", "amount": -180},
+            {"title": "Actuarial balance", "amount": 130},
+            {"title": "Closing balance", "amount": 175000},
         ]),
     )
     session.add(pension_teacher_makifa)
 
     kh_active = InsuranceAccount(
-        provider="hafenix",
+        provider=INSURANCE_PROVIDER,
         policy_id="KH-DEMO-001",
         policy_type="hishtalmut",
         account_name="Keren Hishtalmut - Tech Company",
@@ -2759,7 +3022,7 @@ def generate_insurance_data(session):
     session.add(kh_active)
 
     kh_spouse = InsuranceAccount(
-        provider="hafenix",
+        provider=INSURANCE_PROVIDER,
         policy_id="KH-DEMO-002",
         policy_type="hishtalmut",
         account_name="Keren Hishtalmut - School District",
@@ -2777,7 +3040,7 @@ def generate_insurance_data(session):
     # Inactive KH — Tech employee's previous employer (gross ~12k at that job)
     # for ~3 years, then frozen. Modest growth ≈ 4%/yr since then.
     kh_old = InsuranceAccount(
-        provider="hafenix",
+        provider=INSURANCE_PROVIDER,
         policy_id="KH-DEMO-OLD",
         policy_type="hishtalmut",
         account_name="Keren Hishtalmut - Previous Employer",
@@ -2832,7 +3095,7 @@ def generate_insurance_data(session):
             txn = InsuranceTransaction(
                 id=f"demo-ins-{txn_counter:04d}",
                 date=rand_date_in_month(year, month_num, 1, 10),
-                provider="hafenix",
+                provider=INSURANCE_PROVIDER,
                 account_name=account_name,
                 account_number=policy_id,
                 description=description,
@@ -2856,7 +3119,7 @@ def generate_insurance_data(session):
         txn = InsuranceTransaction(
             id=f"demo-ins-{txn_counter:04d}",
             date=rand_date_in_month(year, month_num, 1, 10),
-            provider="hafenix",
+            provider=INSURANCE_PROVIDER,
             account_name="Keren Hishtalmut - Previous Employer",
             account_number="KH-DEMO-OLD",
             description="הפקדה",
@@ -2869,7 +3132,197 @@ def generate_insurance_data(session):
         )
         session.add(txn)
 
+    # --- Clearing-house extras: per-policy details and household reports ---
+    # The newest monthly report is as of the last month end before the
+    # reference date; the one before it, a month earlier.
+    report_date = REFERENCE_DATE.replace(day=1) - timedelta(days=1)
+    previous_report_date = report_date.replace(day=1) - timedelta(days=1)
+    tech_employer, teacher_employer = "Cohen Technologies", "Tel Aviv School District"
+    tech_agent = {
+        "name": "Cohen Family Insurance Agency",
+        "id": "512345678",
+        "role": "סוכן",
+        "can_act": True,
+        "appointed": (REFERENCE_DATE - timedelta(days=700)).isoformat(),
+        "expires": (REFERENCE_DATE + timedelta(days=3000)).isoformat(),
+    }
+    loan_months, loan_rate, loan_amount = 60, 3.2, 40_000.0
+    loan_received = REFERENCE_DATE - timedelta(days=395)
+    loan_paid = 13
+    kh_loan = {
+        "amount": loan_amount,
+        "balance": round(
+            _shpitzer_balance(loan_amount, loan_rate, loan_months, loan_paid), 2
+        ),
+        "interest_pct": loan_rate,
+        "monthly_payment": round(
+            _shpitzer_payment(loan_amount, loan_rate, loan_months), 2
+        ),
+        "payments_months": loan_months,
+        "received": loan_received.isoformat(),
+        "ends": (loan_received + timedelta(days=round(loan_months * 30.44))).isoformat(),
+        "scope": "Policy",
+    }
+
+    def details_for(
+        account, monthly_deposit, split, employer, age, retirement_age,
+        manufacturer, active=True, agent=None, loans=(), covers=None,
+    ):
+        """One policy's clearing-house details, derived from its own figures."""
+        forecast = _clearing_house_forecast(
+            account.balance,
+            monthly_deposit if active else 0.0,
+            account.commission_deposits_pct,
+            account.commission_savings_pct,
+            age,
+            retirement_age,
+        )
+        track_yield = json.loads(account.investment_tracks)[0]["yield_pct"]
+        month_fee = (
+            account.balance * account.commission_savings_pct / 100 / 12
+            + (monthly_deposit if active else 0.0) * account.commission_deposits_pct / 100
+        )
+        details = {
+            "source_date": report_date.isoformat(),
+            "status": "פעיל" if active else "לא פעיל",
+            "manufacturer": manufacturer,
+            "product_type": (
+                "קרן השתלמות" if account.policy_type == "hishtalmut"
+                else "פנסיה חדשה מקיפה" if account.pension_type == "makifa"
+                else "פנסיה חדשה כללית"
+            ),
+            "employer": employer,
+            "employer_status": "מעסיק נוכחי" if active else "מעסיק קודם",
+            "last_deposit_date": (
+                report_date.replace(day=5).isoformat() if active else None
+            ),
+            "last_deposit": split if active else {
+                "employee": 0.0, "employer": 0.0, "compensation": 0.0,
+            },
+            "net_yield_pct": track_yield,
+            "ytd_profit": round(account.balance * track_yield / 100 / 12, 2),
+            "last_month_management_fee": round(month_fee, 2),
+            "representative": agent,
+            "loans": list(loans),
+            "pledge": "לא",
+            "confiscation": "לא",
+            **forecast,
+        }
+        if account.policy_type == "pension":
+            details["disability_cover_pct"] = 75.0 if covers else None
+        else:
+            del details["monthly_pension_forecast"]
+            del details["monthly_pension_forecast_no_deposits"]
+        return details
+
+    pension_split = {
+        "PN-DEMO-001": {"employee": pn_tech_makifa_employee,
+                        "employer": pn_tech_makifa_employer,
+                        "compensation": pn_tech_makifa_severance},
+        "PN-DEMO-003": {"employee": pn_tech_mashlima_employee,
+                        "employer": pn_tech_mashlima_employer,
+                        "compensation": pn_tech_mashlima_severance},
+        "PN-DEMO-002": {"employee": pn_teacher_makifa_employee,
+                        "employer": pn_teacher_makifa_employer,
+                        "compensation": pn_teacher_makifa_severance},
+    }
+    kh_split = lambda total: {  # noqa: E731
+        "employee": round(total / kh_total_pct * kh_employee_pct, 2),
+        "employer": round(total / kh_total_pct * kh_employer_pct, 2),
+        "compensation": 0.0,
+    }
+    fund_a, fund_b = "Horizon Pension & Provident Ltd", "Meridian Provident Funds Ltd"
+    policies = [
+        (pension_tech_makifa, pn_tech_makifa_total, pension_split["PN-DEMO-001"],
+         tech_employer, TECH_AGE, 67, fund_a, True, tech_agent, (), True),
+        (pension_tech_mashlima, pn_tech_mashlima_total, pension_split["PN-DEMO-003"],
+         tech_employer, TECH_AGE, 67, fund_a, True, tech_agent, (), False),
+        (pension_teacher_makifa, pn_teacher_makifa_total, pension_split["PN-DEMO-002"],
+         teacher_employer, TEACHER_AGE, 65, fund_b, True, None, (), True),
+        (kh_active, kh_tech_total, kh_split(kh_tech_total),
+         tech_employer, TECH_AGE, 67, fund_a, True, tech_agent, (kh_loan,), False),
+        (kh_spouse, kh_teacher_total, kh_split(kh_teacher_total),
+         teacher_employer, TEACHER_AGE, 65, fund_b, True, None, (), False),
+        (kh_old, old_kh_monthly, kh_split(old_kh_monthly),
+         "Previous Employer Ltd", TECH_AGE, 67, fund_b, False, None, (), False),
+    ]
+    all_details = {}
+    for (account, deposit, split, employer, age, retirement_age, manufacturer,
+         active, agent, loans, covered) in policies:
+        details = details_for(
+            account, deposit, split, employer, age, retirement_age, manufacturer,
+            active=active, agent=agent, loans=loans, covers=covered,
+        )
+        account.details = json.dumps(details, ensure_ascii=False)
+        all_details[account.policy_id] = details
+
+    # Household totals, as the clearing house reports them per monthly report.
+    # Survivor annuities split 60/40 between spouse and children.
+    pensions = [d for p, d in all_details.items() if p.startswith("PN-")]
+    funds = [d for p, d in all_details.items() if p.startswith("KH-")]
+    survivors = 15_000.0 + 8_400.0  # the Makifa accounts' survivor covers
+    newest = {
+        "calc_date": report_date.isoformat(),
+        "total_savings": sum(
+            a.balance for a, *_ in policies
+        ),
+        "forecast_total_balance": round(
+            sum(d["balance_forecast"] for d in all_details.values()), 2
+        ),
+        "forecast_monthly_pension": float(
+            sum(d["monthly_pension_forecast"] for d in pensions)
+        ),
+        "forecast_lump_sum": round(sum(d["balance_forecast"] for d in funds), 2),
+        "disability_monthly": 18_750.0 + 10_500.0,
+        "survivor_spouse_monthly": round(survivors * 0.6, 2),
+        "survivor_child_monthly": round(survivors * 0.4, 2),
+        "death_lump_sum": 0.0,
+        "report_number": 11,
+        "report_count": 12,
+        "subscription_expires": (REFERENCE_DATE + timedelta(days=40)).isoformat(),
+        "subscription_months_left": 1,
+        "license_holder": "Cohen Family Insurance Agency",
+    }
+    previous = {
+        **newest,
+        "calc_date": previous_report_date.isoformat(),
+        "total_savings": round(newest["total_savings"] * 0.985, 2),
+        "forecast_total_balance": round(newest["forecast_total_balance"] * 0.995, 2),
+        "forecast_monthly_pension": round(newest["forecast_monthly_pension"] * 0.995),
+        "forecast_lump_sum": round(newest["forecast_lump_sum"] * 0.995, 2),
+        "report_number": 10,
+        "subscription_expires": None,
+        "subscription_months_left": None,
+        "license_holder": None,
+    }
+    for report in (previous, newest):
+        session.add(
+            ClearingHouseReport(
+                provider=INSURANCE_PROVIDER, account_name="The Cohens", **report
+            )
+        )
+
     session.flush()
+
+
+def sync_demo_pension_loans(session):
+    """Mirror the demo's Keren Hishtalmut loan onto the Liabilities page.
+
+    Runs the same service a real clearing-house scrape calls, so the demo's
+    liability, its tag and its link key are exactly what a user would get.
+    """
+    from backend.services.liabilities_service import LiabilitiesService
+
+    service = LiabilitiesService(session)
+    for account in session.query(InsuranceAccount).all():
+        loans = json.loads(account.details or "{}").get("loans") or []
+        if loans:
+            service.sync_insurance_loans(
+                account.policy_id,
+                account.account_name,
+                json.loads(account.details)["manufacturer"],
+                loans,
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -2965,6 +3418,10 @@ def main():
         print("  Creating scraping history...")
         create_scraping_history(session)
 
+        # 21. Demo data-source accounts (shipped, never seeded on toggle)
+        print("  Creating demo credentials...")
+        create_demo_credentials(session)
+
         # 17. Insurance accounts & transactions
         print("  Generating insurance data...")
         generate_insurance_data(session)
@@ -2973,16 +3430,24 @@ def main():
         print("  Creating retirement goal...")
         create_retirement_goal(session)
 
+        # 19. Savings goals (waterfall, investment backing, utilizations)
+        print("  Creating savings goals...")
+        create_savings_goals(session, savings_plan, bank_txns)
+
         session.commit()
 
         # 18. Link hishtalmut policies to Investment records. Done after
         # commit because the generator inserts InsuranceAccount rows directly
         # (bypassing the scraper's _post_save_hook that normally triggers this).
         print("  Syncing hishtalmut investments...")
-        from backend.services.investments_service import InvestmentsService
+        from backend.services.investments import InvestmentsService
         synced = InvestmentsService(session).backfill_from_insurance_accounts()
         session.commit()
         print(f"    Synced {synced} hishtalmut policies to investments")
+
+        print("  Syncing pension-policy loans to liabilities...")
+        sync_demo_pension_loans(session)
+        session.commit()
 
         print("\nDemo database created successfully!")
 
@@ -2995,6 +3460,7 @@ def main():
             "manual_investment_transactions",
             "insurance_transactions",
             "insurance_accounts",
+            "clearing_house_reports",
             "categories",
             "budget_rules",
             "tagging_rules",
@@ -3009,6 +3475,9 @@ def main():
             "split_transactions",
             "liabilities",
             "retirement_goals",
+            "savings_goals",
+            "savings_goal_links",
+            "savings_goal_investments",
         ]
         from sqlalchemy import text
         for table in tables:

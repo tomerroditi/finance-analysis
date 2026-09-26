@@ -1,5 +1,6 @@
 import axios from "axios";
-import { readStoredDemoMode } from "./demoMode";
+import { readOrCreateDemoSessionId, readStoredDemoMode } from "./demoMode";
+import type { Transaction } from "../types/transaction";
 
 const api = axios.create({
   baseURL: "/api",
@@ -9,7 +10,7 @@ const api = axios.create({
 });
 
 // Remote-access API token. When the backend is exposed beyond localhost
-// (./start.sh prod with BIND_HOST set), non-local clients must send
+// (./start.sh prod's tailnet share, or BIND_HOST set), non-local clients must send
 // `Authorization: Bearer <token>` on /api requests. The token is handed
 // over once via a `?apiToken=` URL parameter, persisted to localStorage,
 // and stripped from the URL so it doesn't linger in the address bar or
@@ -42,6 +43,14 @@ api.interceptors.request.use((config) => {
   // curl, the desktop app, and Playwright's request context.
   if (readStoredDemoMode()) {
     config.headers["X-FAD-Demo"] = "1";
+  }
+  // Sent unconditionally rather than only in Demo Mode: on the shared
+  // Vercel deployment the mode is forced server-side, so the stored flag is
+  // off there even though every request is a demo request. The backend
+  // ignores the id unless it serves per-visitor sandboxes.
+  const demoSessionId = readOrCreateDemoSessionId();
+  if (demoSessionId) {
+    config.headers["X-FAD-Demo-Session"] = demoSessionId;
   }
   return config;
 });
@@ -123,7 +132,18 @@ export const budgetApi = {
     api.get(`/budget/analysis/${year}/${month}`, {
       params: { include_split_parents: includeSplitParents },
     }),
+  getTrend: (
+    year: number,
+    month: number,
+    months = 12,
+    includeSplitParents = false,
+  ) =>
+    api.get<BudgetTrendPointResponse[]>(`/budget/trend/${year}/${month}`, {
+      params: { months, include_split_parents: includeSplitParents },
+    }),
   getProjects: () => api.get("/budget/projects"),
+  getProjectsStatus: () =>
+    api.get<ProjectStatus[]>("/budget/projects/status"),
   getAvailableProjects: () => api.get("/budget/projects/available"),
   createProject: (project: { category: string; total_budget: number }) =>
     api.post("/budget/projects", project),
@@ -135,6 +155,8 @@ export const budgetApi = {
     }),
   deleteProject: (name: string) =>
     api.delete(`/budget/projects/${encodeURIComponent(name)}`),
+  setProjectClosed: (name: string, closed: boolean) =>
+    api.put(`/budget/projects/${encodeURIComponent(name)}/closed`, { closed }),
   getCurrentAlerts: (threshold?: number) =>
     api.get("/budget/alerts", {
       params: threshold !== undefined ? { threshold } : undefined,
@@ -157,9 +179,89 @@ export const budgetApi = {
   updateYearlyRule: (id: number, rule: object) =>
     api.put(`/budget/yearly/rules/${id}`, rule),
   deleteYearlyRule: (id: number) => api.delete(`/budget/yearly/rules/${id}`),
+  setYearlyRuleClosed: (id: number, closed: boolean) =>
+    api.put(`/budget/yearly/rules/${id}/closed`, { closed }),
   copyYearlyRules: (year: number) => api.post(`/budget/yearly/${year}/copy`),
   getCategoryConflicts: () => api.get("/budget/category-conflicts"),
+  getOverview: (year: number, month: number, includeSplitParents = false) =>
+    api.get<BudgetOverview>(`/budget/overview/${year}/${month}`, {
+      params: { include_split_parents: includeSplitParents },
+    }),
 };
+
+/** One recurring charge the month still owes. */
+/** One month of `GET /budget/trend/{year}/{month}`. */
+export interface BudgetTrendPointResponse {
+  year: number;
+  month: number;
+  /** The month's "Total Budget" cap. */
+  budget: number;
+  /** That row's spend, already sign-normalised by the backend. */
+  actual: number;
+  /** Spend per rule name — names, not ids, because an auto-filled month
+   *  creates fresh rows for the same rule. */
+  rules: Record<string, number>;
+  /** The cap each rule carried *that* month, keyed the same way. A rule
+   *  missing from the map had no rule that month. */
+  limits: Record<string, number>;
+}
+
+export interface BudgetChargeDue {
+  label: string;
+  amount: number;
+  expected_date: string;
+}
+
+/**
+ * A project budget and whether it has been closed.
+ *
+ * A closed project is finished, not deleted: it keeps its rules, its history
+ * and its own tab, and only drops out of the budget Overview.
+ */
+export interface ProjectStatus {
+  name: string;
+  closed: boolean;
+}
+
+/**
+ * A yearly or project rule: what the viewed month put in, and where the
+ * rule stands overall. The two are never interchangeable — ``spent`` always
+ * describes today, whichever month is being viewed.
+ */
+export interface BudgetLongRule {
+  name: string;
+  kind: "yearly" | "project";
+  category: string;
+  month_contribution: number;
+  spent: number;
+  budget: number;
+}
+
+/** Cross-kind roll-up of one month — see ``GET /budget/overview``. */
+export interface BudgetOverview {
+  year: number;
+  month: number;
+  is_current_month: boolean;
+  days_in_month: number;
+  days_elapsed: number;
+  days_left: number;
+  monthly_budget: number;
+  monthly_spent: number;
+  fixed_spent: number;
+  /** Transactions on the fixed side. Not ``charges_due.length``, which is what is still owed. */
+  fixed_charge_count: number;
+  variable_spent: number;
+  committed_remaining: number;
+  free_to_spend: number;
+  variable_per_day: number;
+  /** ``null`` once the month is settled — then there is a final figure, not a projection. */
+  projected: number | null;
+  charges_due: BudgetChargeDue[];
+  projects_month_spent: number;
+  yearly_month_spent: number;
+  total_out: number;
+  long_envelopes: BudgetLongRule[];
+}
 
 export interface CategoryConflict {
   category: string;
@@ -189,6 +291,8 @@ export interface YearlyRollup {
   remaining: number;
   on_track: number;
   over: number;
+  /** Rules the user has marked settled — counted apart from the health above. */
+  closed: number;
   biggest_overspend: { name: string; percentage: number } | null;
 }
 
@@ -203,9 +307,18 @@ export interface YearlyAnalysis {
       year: number;
     };
     current_amount: number;
-    data: unknown[];
+    /** The year's transactions behind this rule — what the row expands to show. */
+    data: Transaction[];
     allow_edit: boolean;
     allow_delete: boolean;
+    /**
+     * Whether the rule has been closed.
+     *
+     * A closed yearly rule is settled, not deleted: it keeps its allocation,
+     * its spend and its row here, and it still claims its tags against the
+     * monthly budget. It only stops appearing in the budget Overview.
+     */
+    closed: boolean;
   }[];
   summary: YearlyRollup;
   alerts: BudgetAlert[];
@@ -246,6 +359,7 @@ export interface TaggingRule {
 export const taggingApi = {
   // Category & Tag Management (Legislated in routes/tagging.py)
   getCategories: () => api.get("/tagging/categories"),
+  getCategoryUsage: () => api.get("/tagging/categories/usage"),
   createCategory: (name: string, tags?: string[]) =>
     api.post("/tagging/categories", { name, tags }),
   deleteCategory: (name: string) =>
@@ -298,6 +412,9 @@ export interface CredentialAccount {
   service: string;
   provider: string;
   account_name: string;
+  /** Stored details are unreadable on this machine or the keyring has no
+   * password — the account cannot scrape until they are re-entered. */
+  needs_reentry?: boolean;
 }
 
 export interface CredentialDeleteResult {
@@ -413,12 +530,37 @@ export interface InsuranceAccount {
   commission_deposits_pct: number | null;
   commission_savings_pct: number | null;
   insurance_covers: string | null;
+  /** Provider's year-to-date movement statement, not a cost list — read only via `utils/insuranceStatement.ts`. */
   insurance_costs: string | null;
   liquidity_date: string | null;
+  /** JSON object of provider facts (forecasts, profit, agent, loans) — read via `utils/policyDetails.ts`. */
+  details: string | null;
+}
+
+/** One monthly household summary from the pension clearing house. */
+export interface ClearingHouseReport {
+  provider: string;
+  account_name: string;
+  calc_date: string;
+  total_savings: number | null;
+  forecast_total_balance: number | null;
+  forecast_monthly_pension: number | null;
+  forecast_lump_sum: number | null;
+  disability_monthly: number | null;
+  survivor_spouse_monthly: number | null;
+  survivor_child_monthly: number | null;
+  death_lump_sum: number | null;
+  report_number: number | null;
+  report_count: number | null;
+  subscription_expires: string | null;
+  subscription_months_left: number | null;
+  license_holder: string | null;
 }
 
 export const insuranceAccountsApi = {
   getAll: () => api.get<InsuranceAccount[]>("/insurance-accounts/"),
+  getClearingHouseReports: () =>
+    api.get<ClearingHouseReport[]>("/insurance-accounts/clearing-house-reports"),
   rename: (policyId: string, customName: string | null) =>
     api.patch<InsuranceAccount>(
       `/insurance-accounts/${encodeURIComponent(policyId)}/rename`,
@@ -439,6 +581,10 @@ export interface Investment {
   interest_rate_type?: string;
   rate_spread?: number | null;
   notes?: string;
+  insurance_policy_id?: string | null;
+  liquidity_date?: string | null;
+  commission_deposit?: number | null;
+  commission_management?: number | null;
   latest_snapshot_date?: string;
   latest_snapshot_balance?: number;
   current_balance?: number;
@@ -513,6 +659,8 @@ export interface Liability {
   percent_paid: number;
   payments_made: number;
   current_rate: number;
+  /** Set when the liability mirrors a loan against a pension/KH policy. */
+  insurance_loan_key?: string | null;
 }
 
 export const liabilitiesApi = {
@@ -567,49 +715,56 @@ export const analyticsApi = {
     api.get<{ month: string; net_change: number; cumulative_balance: number }[]>(
       "/analytics/net-balance-over-time"
     ),
-  getIncomeExpensesOverTime: (excludeProjects = false, excludeLiabilities = false, excludeRefunds = false) =>
-    api.get<{ month: string; income: number; expenses: number }[]>(
-      "/analytics/income-expenses-over-time",
-      { params: { exclude_projects: excludeProjects, exclude_liabilities: excludeLiabilities, exclude_refunds: excludeRefunds } }
-    ),
   getDebtPaymentsOverTime: () =>
     api.get<{ month: string; amount: number; tags: Record<string, number> }[]>(
       "/analytics/debt-payments-over-time"
     ),
-  getByCategory: () => api.get("/analytics/by-category"),
-  getExpensesByCategoryOverTime: () =>
+  getExpensesByCategoryOverTime: (
+    excludePendingRefunds = true,
+    excludeProjects = false,
+    excludeLiabilities = false,
+  ) =>
     api.get<{ month: string; categories: Record<string, number> }[]>(
-      "/analytics/expenses-by-category-over-time"
+      "/analytics/expenses-by-category-over-time",
+      {
+        params: {
+          exclude_pending_refunds: excludePendingRefunds,
+          exclude_projects: excludeProjects,
+          exclude_liabilities: excludeLiabilities,
+        },
+      }
     ),
   getSankeyData: () => api.get("/analytics/sankey"),
   getNetWorthOverTime: () =>
     api.get<{ month: string; bank_balance: number; investment_value: number; cash: number; net_worth: number }[]>(
       "/analytics/net-worth-over-time"
     ),
-  getIncomeBySourceOverTime: () =>
+  getIncomeBySourceOverTime: (excludePendingRefunds = true, excludeLiabilities = false) =>
     api.get<{ month: string; sources: Record<string, number>; total: number }[]>(
-      "/analytics/income-by-source-over-time"
+      "/analytics/income-by-source-over-time",
+      {
+        params: {
+          exclude_pending_refunds: excludePendingRefunds,
+          exclude_liabilities: excludeLiabilities,
+        },
+      }
     ),
-  getIncomeBySource: (start?: string, end?: string) =>
-    api.get<{
-      sources: { label: string; amount: number; share: number }[];
-      total: number;
-      start: string | null;
-      end: string | null;
-    }>("/analytics/income-by-source", { params: { start, end } }),
-  getMonthlyExpenses: (excludePendingRefunds = true, includeProjects = false) =>
-    api.get<{
-      months: { month: string; expenses: number; project_expenses?: number }[];
-      avg_3_months: number;
-      avg_6_months: number;
-      avg_12_months: number;
-    }>("/analytics/monthly-expenses", {
-      params: { exclude_pending_refunds: excludePendingRefunds, include_projects: includeProjects },
-    }),
   getCashFlowForecast: () =>
     api.get<CashFlowForecast>("/analytics/cash-flow-forecast"),
-  getRecurring: () => api.get<RecurringSummary>("/analytics/recurring"),
+  getRecurring: (includeDismissed = false) =>
+    api.get<RecurringSummary>("/analytics/recurring", {
+      params: { include_dismissed: includeDismissed },
+    }),
+  setRecurringDecisions: (decisions: RecurringDecisionInput[]) =>
+    api.post<{ updated: RecurringDecisionInput[] }>(
+      "/analytics/recurring/decisions",
+      { decisions },
+    ),
   getInsights: () => api.get<Insight[]>("/analytics/insights"),
+  dismissInsight: (key: string) =>
+    api.post<InsightDismissal>("/analytics/insights/dismiss", { key }),
+  restoreInsight: (key: string) =>
+    api.post<InsightDismissal>("/analytics/insights/restore", { key }),
 };
 
 export interface RecurringItem {
@@ -617,7 +772,7 @@ export interface RecurringItem {
   normalized: string;
   amount: number;
   last_amount: number;
-  cadence: "weekly" | "monthly" | "quarterly" | "annual";
+  cadence: RecurringCadence;
   period_days: number;
   monthly_equivalent: number;
   occurrences: number;
@@ -627,17 +782,68 @@ export interface RecurringItem {
   next_expected_date: string;
   status: "active" | "new" | "price_changed" | "ended";
   price_change: number;
+  confirmation: RecurringConfirmation;
+  /** How much evidence backs the detection, 0..1. */
+  confidence: number;
+  /** ``fixed`` for a flat subscription, ``metered`` for a consumption bill. */
+  amount_kind: "fixed" | "metered";
+}
+
+export type RecurringCadence =
+  | "monthly"
+  | "bimonthly"
+  | "quarterly"
+  | "semiannual"
+  | "annual";
+
+/** Where a detected candidate stands with the user. */
+export type RecurringConfirmation = "confirmed" | "pending" | "dismissed";
+
+/** One verdict to store; ``pending`` undoes a previous one. */
+export interface RecurringDecisionInput {
+  normalized: string;
+  decision: RecurringConfirmation;
+  /**
+   * What the candidate read as on screen when the user ruled. Stored beside
+   * the verdict for audit and read by nothing — sent because the card
+   * already has it, where deriving it server-side would cost a full
+   * detection pass per verdict.
+   */
+  label?: string;
+  amount?: number;
+  cadence?: RecurringCadence;
 }
 
 export interface RecurringSummary {
   items: RecurringItem[];
+  /** Monthly equivalent of confirmed, still-running charges only. */
   total_monthly: number;
+  /** The same sum over candidates still awaiting a verdict. */
+  pending_monthly: number;
+  pending_count: number;
+  confirmed_count: number;
+  dismissed_count: number;
 }
 
 export interface Insight {
   code: string;
+  /** Stable identity of this card — what a dismissal is keyed by. */
+  key: string;
   severity: "positive" | "info" | "warning";
   data: Record<string, string | number>;
+}
+
+export interface InsightDismissal {
+  key: string;
+  dismissed: boolean;
+}
+
+export interface RecurringIncomeDue {
+  label: string;
+  normalized: string;
+  amount: number;
+  cadence: string;
+  expected_date: string;
 }
 
 export interface CashFlowForecast {
@@ -645,11 +851,15 @@ export interface CashFlowForecast {
   days_in_month: number;
   day_of_month: number;
   days_remaining: number;
+  observed_through: string | null;
   actual_income: number;
   actual_expenses: number;
   expected_income: number;
   expected_expenses: number;
   projected_net: number;
+  income_basis: "recurring" | "trend";
+  recurring_income_due: number;
+  recurring_income_items: RecurringIncomeDue[];
   current_bank_balance: number;
   projected_end_balance: number;
   safe_to_spend: number;
@@ -865,6 +1075,15 @@ export interface ScrapedDefaults {
   avg_monthly_salary: number | null;
 }
 
+/** Monthly pension estimated from the funds' own published forecasts. */
+export interface PensionForecast {
+  estimate: number | null;
+  with_deposits: number;
+  no_deposits: number;
+  as_of: string | null;
+  funds: number;
+}
+
 export interface RetirementProjections {
   fire_number: number;
   years_to_fire: number;
@@ -907,6 +1126,10 @@ export const retirementApi = {
     api.post<RetirementProjections>("/retirement/projections", data),
   getScrapedDefaults: () =>
     api.get<ScrapedDefaults>("/retirement/scraped-defaults"),
+  getPensionForecast: (currentAge: number, targetRetirementAge: number) =>
+    api.get<PensionForecast>("/retirement/pension-forecast", {
+      params: { current_age: currentAge, target_retirement_age: targetRetirementAge },
+    }),
   getSuggestions: () =>
     api.get<RetirementSuggestions>("/retirement/suggestions"),
   previewSuggestions: (data: Omit<RetirementGoal, "id">) =>
@@ -938,7 +1161,11 @@ export interface SavingsGoal {
   contributed: number;
   /** Money spent back out of the goal. Never reduces `target_amount`. */
   utilized: number;
-  /** opening_balance + allocated + contributed. */
+  /** Money deficit months pulled back out, once the free-cash pool ran dry. */
+  clawed_back: number;
+  /** Goal progress held in earmarked investments rather than cash. */
+  investment_backed: number;
+  /** opening_balance + allocated + contributed + investment_backed, net of any clawback. */
   funded: number;
   /** funded - utilized: what is still earmarked and unspent. */
   available: number;
@@ -982,7 +1209,48 @@ export interface SavingsGoalMonthAllocations {
   total_allocated: number;
   surplus: number;
   unallocated: number;
+  /** Unearmarked money left in the pool at the end of this month. */
+  free_cash: number;
+  /** Money this month's deficit pulled back out of goals (positive). */
+  clawed_back: number;
   is_provisional: boolean;
+}
+
+/** One goal's share of a single month in the allocation timeline. */
+export interface SavingsGoalTimelineGoal {
+  goal_id: number;
+  name: string;
+  /** Waterfall allocation; negative when a deficit clawed money back. */
+  allocated: number;
+  contributed: number;
+  total: number;
+}
+
+/** One month of the waterfall: who took what, and what was left unearmarked. */
+export interface SavingsGoalTimelineMonth {
+  month: string;
+  goals: SavingsGoalTimelineGoal[];
+  /** Money that went into goals this month (clawbacks reported apart). */
+  allocated: number;
+  clawed_back: number;
+  surplus: number;
+  /** Unearmarked pool at the end of this month. */
+  free_cash: number;
+  is_provisional: boolean;
+}
+
+export interface SavingsGoalTimeline {
+  has_goals: boolean;
+  /** Full history length, so the UI offers "all time" only when it adds months. */
+  total_months: number;
+  months: SavingsGoalTimelineMonth[];
+  goals: {
+    id: number;
+    name: string;
+    priority: number;
+    status: string;
+    is_closed: boolean;
+  }[];
 }
 
 export interface SavingsGoalRebuildChange {
@@ -998,6 +1266,48 @@ export interface SavingsGoalRebuildResult {
   dry_run: boolean;
   changes: SavingsGoalRebuildChange[];
   goals: SavingsGoal[];
+}
+
+/** The pool of tracked money that no goal has earmarked. */
+export interface SavingsGoalFreeCash {
+  free_cash: number;
+  /** The *cash* goals still hold — investment backing is reported apart. */
+  earmarked: number;
+  liquid: number;
+  /** Goal progress sitting in holdings, which was never part of this pool. */
+  investment_backed: number;
+  clawed_back_this_month: number;
+  has_goals: boolean;
+}
+
+/** Free cash that existed when a goal starting in `month` began. */
+export interface SavingsGoalFreeCashBefore {
+  month: string;
+  free_cash: number;
+}
+
+/** An investment holding earmarked against a goal. */
+export interface SavingsGoalInvestment {
+  id: number;
+  goal_id: number;
+  investment_id: number;
+  investment_name: string | null;
+  investment_type: string | null;
+  is_closed: boolean;
+  /** `null` earmarks whatever is left of the holding. */
+  amount: number | null;
+  goal_backed_total: number;
+}
+
+/** An open investment and how much of it is still free to earmark. */
+export interface SavingsGoalAvailableInvestment {
+  id: number;
+  name: string | null;
+  type: string | null;
+  value: number;
+  earmarked: number;
+  available: number;
+  fully_claimed: boolean;
 }
 
 export type SavingsGoalLinkType = "contribution" | "utilization";
@@ -1026,6 +1336,31 @@ export const savingsGoalsApi = {
       from_month: fromMonth,
       dry_run: dryRun,
     }),
+  getFreeCash: () => api.get<SavingsGoalFreeCash>("/savings-goals/free-cash"),
+  /** Leaves `goalId` out of the figure, so it can become that goal's opening balance. */
+  getFreeCashBefore: (month: string, goalId?: number) =>
+    api.get<SavingsGoalFreeCashBefore>("/savings-goals/free-cash/before", {
+      params: goalId ? { month, goal_id: goalId } : { month },
+    }),
+  /** Per-month allocation history. `months: 0` asks for the whole timeline. */
+  getTimeline: (months: number) =>
+    api.get<SavingsGoalTimeline>("/savings-goals/timeline", {
+      params: { months },
+    }),
+  getInvestments: (goalId?: number) =>
+    api.get<SavingsGoalInvestment[]>("/savings-goals/investments", {
+      params: goalId ? { goal_id: goalId } : undefined,
+    }),
+  getAvailableInvestments: () =>
+    api.get<SavingsGoalAvailableInvestment[]>(
+      "/savings-goals/investments/available",
+    ),
+  linkInvestment: (
+    goalId: number,
+    payload: { investment_id: number; amount?: number | null },
+  ) => api.post<SavingsGoal[]>(`/savings-goals/${goalId}/investments`, payload),
+  unlinkInvestment: (backingId: number) =>
+    api.delete(`/savings-goals/investments/${backingId}`),
   getLinks: (goalId?: number) =>
     api.get<SavingsGoalLink[]>("/savings-goals/links", {
       params: goalId ? { goal_id: goalId } : undefined,
@@ -1062,7 +1397,13 @@ export const testingApi = {
     api.post<{ status: string; created: boolean }>("/testing/demo/prepare"),
   resetDemo: () => api.post<{ status: string }>("/testing/demo/reset"),
   getDemoModeStatus: () =>
-    api.get<{ demo_mode: boolean; forced: boolean }>(
+    api.get<{
+      demo_mode: boolean;
+      forced: boolean;
+      sandboxed: boolean;
+      durable: boolean;
+      blob_configured: boolean;
+    }>(
       "/testing/demo_mode_status",
     ),
 };

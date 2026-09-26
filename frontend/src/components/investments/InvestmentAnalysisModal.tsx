@@ -52,8 +52,8 @@ interface Snapshot {
   source: string;
 }
 
-interface MonthlyTransaction {
-  month: string;
+interface Flow {
+  date: string;
   deposits: number;
   withdrawals: number;
 }
@@ -83,15 +83,36 @@ function StatCard({
   tooltip?: string;
 }) {
   return (
-    <div className="bg-[var(--surface)] rounded-xl p-5 border border-[var(--surface-light)] flex items-center justify-between shadow-sm">
-      <div className="min-w-0">
+    <div
+      data-testid="analysis-kpi"
+      className="bg-[var(--surface)] rounded-xl p-4 border border-[var(--surface-light)] flex items-center justify-between gap-3 lg:gap-2 shadow-sm"
+    >
+      <div className="min-w-0 flex-1">
         <p className="text-[var(--text-muted)] text-[10px] uppercase tracking-widest font-bold flex items-center gap-1.5">
-          <span>{title}</span>
-          {tooltip && <InfoTooltip text={tooltip} iconSize={12} width={220} />}
+          <span className="min-w-0">{title}</span>
+          {tooltip && (
+            <InfoTooltip
+              text={tooltip}
+              iconSize={12}
+              width={220}
+              className="shrink-0"
+            />
+          )}
         </p>
-        <p className="text-xl font-black mt-1 text-white" dir="ltr">{value}</p>
+        {/* The modal caps at `max-w-4xl`, so the four-up tier gets ~196px per
+            card however wide the screen is — the amount steps down a size
+            there to stay on one line beside the icon. `break-words` over
+            `truncate` is the backstop: a card too narrow for the amount wraps
+            it, never hides digits or spills it under the icon. */}
+        <p
+          data-testid="analysis-kpi-value"
+          className="text-xl lg:text-lg font-black mt-1 text-white break-words"
+          dir="ltr"
+        >
+          {value}
+        </p>
       </div>
-      <div className={`p-3 rounded-xl shrink-0 ${color}`}>
+      <div data-testid="analysis-kpi-icon" className={`p-2.5 rounded-xl shrink-0 ${color}`}>
         <Icon size={20} />
       </div>
     </div>
@@ -186,7 +207,10 @@ export function InvestmentAnalysisModal({
 
   return (
     <div className="modal-overlay fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
-      <div className="bg-[var(--surface)] border border-[var(--surface-light)] rounded-2xl w-full max-w-4xl max-h-[90vh] overflow-y-auto overflow-x-hidden shadow-2xl animate-in zoom-in-95 duration-200">
+      <div className="bg-[var(--surface)] border border-[var(--surface-light)] rounded-2xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col shadow-2xl animate-in zoom-in-95 duration-200">
+        {/* The panel clips; the body scrolls. A scroll container paints its
+            scrollbar outside its own border radius. */}
+        <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden">
         <div className="sticky top-0 z-10 bg-[var(--surface)]/95 backdrop-blur border-b border-[var(--surface-light)] p-6 flex justify-between items-center">
           <h2 className="text-2xl font-bold flex items-center gap-3">
             <BarChart2 className="text-[var(--primary)]" /> {t("investments.investmentAnalysis")}
@@ -202,7 +226,7 @@ export function InvestmentAnalysisModal({
         <div className="p-4 md:p-8 space-y-6 md:space-y-8">
           {isLoadingAnalysis || !selectedAnalysis ? (
             <div className="space-y-6">
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                 <Skeleton variant="card" className="h-24" />
                 <Skeleton variant="card" className="h-24" />
                 <Skeleton variant="card" className="h-24" />
@@ -211,7 +235,8 @@ export function InvestmentAnalysisModal({
               <Skeleton variant="card" className="h-[400px]" />
             </div>
           ) : selectedAnalysis.metrics.total_deposits === 0 &&
-            selectedAnalysis.metrics.total_withdrawals === 0 ? (
+            selectedAnalysis.metrics.total_withdrawals === 0 &&
+            !selectedAnalysis.metrics.opening_balance ? (
             <div className="text-center py-16 space-y-3">
               <div className="p-4 bg-[var(--surface-light)] rounded-2xl w-fit mx-auto text-[var(--text-muted)]">
                 <BarChart2 size={32} />
@@ -223,7 +248,7 @@ export function InvestmentAnalysisModal({
             </div>
           ) : (
             <>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                 <StatCard
                   title={t("investments.currentBalance")}
                   value={formatCurrency(
@@ -302,7 +327,22 @@ export function InvestmentAnalysisModal({
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 text-sm text-[var(--text-muted)] font-medium bg-[var(--surface-base)] p-6 rounded-2xl border border-[var(--surface-light)]">
+              <div
+                className={`grid grid-cols-1 ${
+                  selectedAnalysis.metrics.opening_balance > 0 ? "sm:grid-cols-4" : "sm:grid-cols-3"
+                } gap-6 text-sm text-[var(--text-muted)] font-medium bg-[var(--surface-base)] p-6 rounded-2xl border border-[var(--surface-light)]`}
+              >
+                {selectedAnalysis.metrics.opening_balance > 0 && (
+                  <div data-testid="investment-opening-balance">
+                    <p className="uppercase text-[10px] tracking-widest font-bold mb-1 flex items-center gap-1">
+                      {t("investments.openingBalance")}
+                      <InfoTooltip text={t("investments.tooltips.openingBalance")} iconSize={12} width={220} />
+                    </p>
+                    <p className="text-white text-lg font-bold">
+                      {formatCurrency(selectedAnalysis.metrics.opening_balance)}
+                    </p>
+                  </div>
+                )}
                 <div>
                   <p className="uppercase text-[10px] tracking-widest font-bold mb-1">
                     {t("investments.totalDeposits")}
@@ -353,61 +393,54 @@ export function InvestmentAnalysisModal({
                 </div>
               )}
 
-              {/* Monthly Breakdown: Snapshots + Deposits */}
+              {/* Snapshots + Deposits */}
               {(() => {
-                const snapshots: Snapshot[] = selectedSnapshots ?? [];
-                const monthly: MonthlyTransaction[] =
-                  selectedAnalysis.monthly_transactions ?? [];
-
-                if (snapshots.length === 0 && monthly.length === 0) return null;
-
-                const monthMap = new Map<string, MonthRow>();
-                for (const m of monthly) {
-                  monthMap.set(m.month, {
-                    key: `m-${m.month}`,
-                    month: m.month,
-                    date: null,
-                    snapshot: null,
-                    deposits: m.deposits,
-                    withdrawals: m.withdrawals,
-                    profit: null,
-                    profitPct: null,
-                  });
-                }
-                const rows: MonthRow[] = [];
-                for (const snap of snapshots) {
-                  const month = snap.date.slice(0, 7);
-                  const monthDeposit = monthMap.get(month);
-                  rows.push({
+                const flows: Flow[] = selectedAnalysis.flows ?? [];
+                const snapshotRows: MonthRow[] = [...(selectedSnapshots ?? [])]
+                  .sort((a: Snapshot, b: Snapshot) => a.date.localeCompare(b.date))
+                  .map((snap: Snapshot) => ({
                     key: `s-${snap.id}`,
-                    month,
+                    month: snap.date.slice(0, 7),
                     date: snap.date,
                     snapshot: snap,
-                    deposits: monthDeposit?.deposits ?? 0,
-                    withdrawals: monthDeposit?.withdrawals ?? 0,
+                    deposits: 0,
+                    withdrawals: 0,
                     profit: null,
                     profitPct: null,
-                  });
-                  monthMap.delete(month);
-                }
-                for (const orphan of monthMap.values()) rows.push(orphan);
+                  }));
 
-                // Compute profit per snapshot row vs the previous (older) snapshot,
-                // netting out deposits/withdrawals between the two snapshot months.
-                const ascSnapshotRows = rows
-                  .filter((r) => r.snapshot && r.date)
-                  .sort((a, b) => (a.date ?? "").localeCompare(b.date ?? ""));
-                const monthlyByMonth = new Map<string, MonthlyTransaction>();
-                for (const m of monthly) monthlyByMonth.set(m.month, m);
-                for (let i = 1; i < ascSnapshotRows.length; i++) {
-                  const prev = ascSnapshotRows[i - 1];
-                  const curr = ascSnapshotRows[i];
-                  let netInflow = 0;
-                  for (const [m, txn] of monthlyByMonth) {
-                    if (m > prev.month && m <= curr.month) {
-                      netInflow += txn.deposits - txn.withdrawals;
-                    }
+                if (snapshotRows.length === 0 && flows.length === 0) return null;
+
+                // A flow belongs to the first snapshot on or after its date (a
+                // snapshot already includes that day's flows) when an earlier
+                // snapshot brackets it; otherwise it has no snapshot pair to be
+                // netted against and is listed on its own month row.
+                const monthRows = new Map<string, MonthRow>();
+                for (const flow of flows) {
+                  const idx = snapshotRows.findIndex((r) => r.date! >= flow.date);
+                  let row = idx > 0 ? snapshotRows[idx] : undefined;
+                  if (!row) {
+                    const month = flow.date.slice(0, 7);
+                    row = monthRows.get(month) ?? {
+                      key: `m-${month}`,
+                      month,
+                      date: null,
+                      snapshot: null,
+                      deposits: 0,
+                      withdrawals: 0,
+                      profit: null,
+                      profitPct: null,
+                    };
+                    monthRows.set(month, row);
                   }
+                  row.deposits += flow.deposits;
+                  row.withdrawals += flow.withdrawals;
+                }
+
+                for (let i = 1; i < snapshotRows.length; i++) {
+                  const prev = snapshotRows[i - 1];
+                  const curr = snapshotRows[i];
+                  const netInflow = curr.deposits - curr.withdrawals;
                   const profit =
                     curr.snapshot!.balance - prev.snapshot!.balance - netInflow;
                   const base = prev.snapshot!.balance + netInflow;
@@ -415,6 +448,7 @@ export function InvestmentAnalysisModal({
                   curr.profitPct = base > 0 ? (profit / base) * 100 : null;
                 }
 
+                const rows = [...snapshotRows, ...monthRows.values()];
                 rows.sort((a, b) => {
                   const ka = a.date ?? `${a.month}-00`;
                   const kb = b.date ?? `${b.month}-00`;
@@ -478,7 +512,13 @@ export function InvestmentAnalysisModal({
                                   ) : row.snapshot ? (
                                     <span className="text-white" dir="ltr">{formatCurrency(row.snapshot.balance)}</span>
                                   ) : (
-                                    <span className="text-[var(--text-muted)]">—</span>
+                                    <span
+                                      data-testid="snapshot-not-available"
+                                      className="text-[var(--text-muted)] text-xs font-medium"
+                                      title={t("investments.noBalanceReading")}
+                                    >
+                                      {t("investments.notAvailable")}
+                                    </span>
                                   )}
                                 </td>
                                 <td className="px-3 py-2 text-center font-bold whitespace-nowrap">
@@ -514,6 +554,14 @@ export function InvestmentAnalysisModal({
                                         </span>
                                       )}
                                     </div>
+                                  ) : !row.snapshot ? (
+                                    <span
+                                      data-testid="snapshot-not-available"
+                                      className="text-[var(--text-muted)] text-xs font-medium"
+                                      title={t("investments.noBalanceReading")}
+                                    >
+                                      {t("investments.notAvailable")}
+                                    </span>
                                   ) : (
                                     <span className="text-[var(--text-muted)]">—</span>
                                   )}
@@ -571,6 +619,7 @@ export function InvestmentAnalysisModal({
               })()}
             </>
           )}
+        </div>
         </div>
       </div>
     </div>

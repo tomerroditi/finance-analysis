@@ -1,6 +1,11 @@
+"""Launch, track and abort provider scrapes on a dedicated event loop."""
+
 import asyncio
+import logging
+import sys
+import threading
 from datetime import date, datetime, timedelta
-from typing import Dict, List, Optional
+from typing import Any
 
 from sqlalchemy.orm import Session
 
@@ -18,43 +23,155 @@ from backend.scraper.adapter import (
     _tfa_scrapers_waiting,
     scraper_registry_key,
 )
+from backend.services.scraping_history_service import ScrapingHistoryService
+
+logger = logging.getLogger(__name__)
+
+# Scrapers run on their own event loop, on a dedicated daemon thread, never on
+# the server's. Browser scrapers launch Playwright's driver with
+# ``asyncio.create_subprocess_exec``, which on Windows only a
+# ``ProactorEventLoop`` supports — and uvicorn hands the server a
+# ``SelectorEventLoop`` on Windows whenever it runs with ``--reload`` (its
+# ``use_subprocess`` mode), so every browser scrape died with
+# ``initialize failed: NotImplementedError``. Owning the loop makes the
+# launch mode irrelevant, and keeps a scrape's blocking DB writes (save,
+# auto-tag, rebalance) off the thread that serves requests.
+#
+# Routes reach this loop only through thread-safe hand-offs:
+# ``run_coroutine_threadsafe`` to launch, ``Future.cancel`` to abort,
+# ``call_soon_threadsafe`` to deliver an OTP, and ``ScraperAdapter.resend_otp``
+# for a resend.
+_scraper_loop: asyncio.AbstractEventLoop | None = None
+_scraper_loop_lock = threading.Lock()
+# Scrape tasks still in flight, so shutdown can cancel exactly the scrapes —
+# not Playwright's own tasks on the same loop, which the scrapes still need to
+# close their browsers. Touched only from the scraper loop's thread.
+_running_scrapes: set[asyncio.Task[None]] = set()
+
+# How long shutdown waits for cancelled scrapes to close their browsers and
+# record their outcome before the loop is stopped regardless.
+_SHUTDOWN_GRACE_SECONDS = 10
+
+# Serialises the single-flight critical section of ``start_scraping_single``:
+# the ``_active_scrapers`` re-check, the history-row insert, and the
+# registration + launch that follow it.
+#
+# ``start_scraping_single`` is a *synchronous* route handler, so FastAPI runs
+# it in a threadpool worker — two requests for the same account genuinely run
+# in parallel on two OS threads. Without this lock both could pass the
+# registry check and each launch a scrape: two history rows, two adapters and,
+# on a 2FA provider, two OTP SMS for one account. (Being free of ``await``
+# between the check and the insert only rules out *coroutine* interleaving,
+# which was never the exposure here.)
+#
+# Held across the launch, not just the registration, so an adapter that fails
+# to schedule can be rolled back before any other thread observes it. The slow
+# preparation — keyring reads, the start-date lookup — deliberately happens
+# outside, so a launch for one account never blocks another behind a keyring
+# round trip.
+_launch_lock = threading.Lock()
 
 
-# The server's main asyncio event loop, captured at startup (see
-# ``backend.main.lifespan``). ``start_scraping_single`` runs inside a
-# synchronous FastAPI route — executed in a threadpool worker thread with no
-# running event loop — so it cannot use ``asyncio.create_task`` (which needs a
-# loop in the *calling* thread and would raise "no running event loop",
-# leaking the ``adapter.run()`` coroutine). Instead it submits the coroutine
-# to this captured loop via ``asyncio.run_coroutine_threadsafe``, which is
-# safe from any thread, including the loop's own thread (the async
-# resend-relaunch path).
-_main_loop: "asyncio.AbstractEventLoop | None" = None
+def _new_scraper_loop() -> asyncio.AbstractEventLoop:
+    """Create an event loop that can spawn subprocesses on every platform.
+
+    Returns
+    -------
+    asyncio.AbstractEventLoop
+        A ``ProactorEventLoop`` on Windows, the platform default elsewhere.
+    """
+    if sys.platform == "win32":
+        return asyncio.ProactorEventLoop()
+    return asyncio.new_event_loop()
 
 
-def set_main_loop(loop: "asyncio.AbstractEventLoop | None") -> None:
-    """Register the server's main event loop for launching scrapers.
+def get_scraper_loop() -> asyncio.AbstractEventLoop:
+    """Return the scraper event loop, starting its thread on first use.
 
-    Called once from the application lifespan startup. Scraper launches are
-    submitted to this loop from synchronous route handlers.
+    Returns
+    -------
+    asyncio.AbstractEventLoop
+        The running loop every ``ScraperAdapter.run()`` is scheduled on.
+    """
+    global _scraper_loop
+    with _scraper_loop_lock:
+        if _scraper_loop is None:
+            loop = _new_scraper_loop()
+            threading.Thread(
+                target=loop.run_forever, name="scraper-loop", daemon=True
+            ).start()
+            _scraper_loop = loop
+        return _scraper_loop
+
+
+async def shutdown_scraper_loop() -> None:
+    """Cancel in-flight scrapes and stop the scraper loop.
+
+    Cancelling (rather than just stopping the loop) lets each adapter close
+    its browser and record the run as canceled, instead of leaving a
+    Playwright process behind and a history row stuck in progress.
+    """
+    global _scraper_loop
+    with _scraper_loop_lock:
+        loop, _scraper_loop = _scraper_loop, None
+    if loop is None:
+        return
+
+    async def cancel_running_scrapes() -> None:
+        """Cancel every tracked scrape and wait out the grace period."""
+        tasks = list(_running_scrapes)
+        for task in tasks:
+            task.cancel()
+        if tasks:
+            _, pending = await asyncio.wait(tasks, timeout=_SHUTDOWN_GRACE_SECONDS)
+            if pending:
+                logger.warning(
+                    "%d scrape(s) did not finish cancelling before shutdown",
+                    len(pending),
+                )
+
+    try:
+        await asyncio.wrap_future(
+            asyncio.run_coroutine_threadsafe(cancel_running_scrapes(), loop)
+        )
+    finally:
+        loop.call_soon_threadsafe(loop.stop)
+
+
+async def _run_tracked(adapter: ScraperAdapter) -> None:
+    """Run ``adapter.run()`` as a task shutdown can find and cancel.
 
     Parameters
     ----------
-    loop : asyncio.AbstractEventLoop or None
-        The running event loop to schedule scraper coroutines on.
+    adapter : ScraperAdapter
+        The adapter to run.
     """
-    global _main_loop
-    _main_loop = loop
+    task = asyncio.current_task()
+    _running_scrapes.add(task)
+    try:
+        await adapter.run()
+    finally:
+        _running_scrapes.discard(task)
+
+
+def _find_registry_key(
+    registry: dict[ScraperRegistryKey, ScraperAdapter], process_id: int, demo: bool
+) -> ScraperRegistryKey | None:
+    """Return the key of the adapter running ``process_id`` in ``demo`` mode."""
+    for key, adapter in registry.items():
+        if adapter.process_id == process_id and adapter.demo_mode == demo:
+            return key
+    return None
 
 
 def _launch_adapter(adapter: ScraperAdapter) -> None:
-    """Schedule ``adapter.run()`` on the server's main event loop.
+    """Schedule ``adapter.run()`` on the scraper event loop.
 
-    Submitting via ``run_coroutine_threadsafe`` (rather than
-    ``asyncio.create_task``) lets this work from a synchronous route running
-    in a threadpool worker thread, which has no running loop of its own. The
+    Safe from any thread — the synchronous launch route runs in a threadpool
+    worker, and the async resend-relaunch path runs on the server loop. The
     returned ``concurrent.futures.Future`` is stored on the adapter so the
-    running task stays referenced for its full lifetime.
+    running task stays referenced for its full lifetime and can be cancelled
+    by an abort.
 
     ``run_coroutine_threadsafe`` does not carry the caller's context, so the
     adapter re-applies the demo mode it captured at construction (see
@@ -66,24 +183,13 @@ def _launch_adapter(adapter: ScraperAdapter) -> None:
     adapter : ScraperAdapter
         The adapter whose ``run()`` coroutine should be launched.
     """
-    loop = _main_loop
-    if loop is None:
-        # No captured loop — only expected outside the running app (e.g. an
-        # async caller already on a loop). Fall back to the running loop, or
-        # fail loudly rather than silently dropping the scrape.
-        try:
-            loop = asyncio.get_running_loop()
-        except RuntimeError as exc:
-            raise RuntimeError(
-                "No event loop available to launch scraper; set_main_loop() "
-                "was not called at startup."
-            ) from exc
-    adapter._run_future = asyncio.run_coroutine_threadsafe(adapter.run(), loop)
+    adapter._run_future = asyncio.run_coroutine_threadsafe(
+        _run_tracked(adapter), get_scraper_loop()
+    )
 
 
 class ScrapingService:
-    """
-    Service for managing data scraping operations.
+    """Service for managing data scraping operations.
 
     Handles launching scrapers as async tasks, tracking 2FA wait states,
     recording scraping history, and computing start dates from the last
@@ -92,24 +198,20 @@ class ScrapingService:
     or the process is aborted. Every running scraper (any provider) is
     also tracked in the module-level ``_active_scrapers`` dict, which
     makes ``start_scraping_single`` single-flight per account.
+
+    Parameters
+    ----------
+    db : Session
+        SQLAlchemy session for database operations.
     """
 
-    def __init__(self, db: Session):
-        """
-        Initialize the scraping service.
-
-        Parameters
-        ----------
-        db : Session
-            SQLAlchemy session for database operations.
-        """
+    def __init__(self, db: Session) -> None:
         self.db = db
         self.scraping_history_repo = ScrapingHistoryRepository(db)
         self.credentials_repo = CredentialsRepository(db)
 
-    def get_scraping_status(self, scraping_process_id: int) -> Dict[str, str | int]:
-        """
-        Get the current status of a scraping process.
+    def get_scraping_status(self, scraping_process_id: int) -> dict[str, str | int]:
+        """Get the current status of a scraping process.
 
         Parameters
         ----------
@@ -118,7 +220,7 @@ class ScrapingService:
 
         Returns
         -------
-        dict
+        dict[str, str | int]
             Dictionary with keys:
 
             - ``status`` – status string (e.g. ``"IN_PROGRESS"``, ``"SUCCESS"``,
@@ -146,28 +248,23 @@ class ScrapingService:
             "error_type": error_type,
         }
 
-    def get_last_scrape_dates(self) -> List[Dict]:
-        """
-        Get last successful scrape dates for all configured accounts.
-        Returns a list of dicts with service, provider, account_name, and last_scrape_date.
-        """
-        accounts = self.credentials_repo.list_accounts()
-        result = []
-        for acc in accounts:
-            last_scrape = self.scraping_history_repo.get_last_successful_scrape_date(
-                acc["service"], acc["provider"], acc["account_name"]
-            )
-            result.append(
-                {
-                    "service": acc["service"],
-                    "provider": acc["provider"],
-                    "account_name": acc["account_name"],
-                    "last_scrape_date": last_scrape,
-                }
-            )
-        return result
+    def get_last_scrape_dates(self) -> list[dict[str, Any]]:
+        """Get last successful scrape dates for all configured accounts.
 
-    def get_active_scrapes(self) -> List[Dict[str, str | int]]:
+        Delegates to :class:`ScrapingHistoryService`, which carries the
+        implementation so the same answer is available without the scraper
+        stack. Kept here as a thin pass-through because callers already hold
+        a ``ScrapingService``.
+
+        Returns
+        -------
+        list[dict[str, Any]]
+            Records with ``service``, ``provider``, ``account_name`` and
+            ``last_scrape_date``.
+        """
+        return ScrapingHistoryService(self.db).get_last_scrape_dates()
+
+    def get_active_scrapes(self) -> list[dict[str, str | int]]:
         """List the scrapes currently running for the caller's demo mode.
 
         The UI's in-progress state lives in a React hook that is torn down
@@ -189,19 +286,17 @@ class ScrapingService:
 
         Returns
         -------
-        list[dict]
+        list[dict[str, str | int]]
             One entry per live scrape, with ``process_id``, ``service``,
             ``provider``, ``account_name``, and ``status`` (``"in_progress"``
             or ``"waiting_for_2fa"``). Empty when nothing is running.
         """
         demo = AppConfig().is_demo_mode
-        active: List[Dict[str, str | int]] = []
+        active: list[dict[str, str | int]] = []
         for adapter in list(_active_scrapers.values()):
             if adapter.demo_mode != demo:
                 continue
-            status = self.scraping_history_repo.get_scraping_status(
-                adapter.process_id
-            )
+            status = self.scraping_history_repo.get_scraping_status(adapter.process_id)
             active.append(
                 {
                     "process_id": adapter.process_id,
@@ -218,20 +313,26 @@ class ScrapingService:
         service: str,
         provider: str,
         account: str,
-        scraping_period_days: Optional[int] = None,
+        scraping_period_days: int | None = None,
         force_2fa: bool = False,
     ) -> int:
-        """
-        Start the scraping process for a single account as an async task.
+        """Start the scraping process for a single account as an async task.
 
         Records a new scraping history entry, creates a ``ScraperAdapter``,
-        and launches it on the main event loop via ``_launch_adapter`` (using
+        and launches it on the scraper event loop via ``_launch_adapter`` (using
         ``run_coroutine_threadsafe`` so it works from this synchronous route,
         which runs in a threadpool worker thread). If the provider requires
         2FA, the adapter is stored in ``_tfa_scrapers_waiting`` until an OTP
         is submitted. If an account is already scraping (present in
         ``_active_scrapers``), this is a no-op that returns the existing
         run's ``process_id`` — no new history row, adapter, task, or SMS.
+
+        Single-flight holds under true parallelism, not just against
+        interleaved coroutines: this runs in a threadpool worker, so
+        ``_launch_lock`` serialises the check-insert-register-launch section
+        across threads. Concurrent calls for the same account return the same
+        ``process_id``; concurrent calls for *different* accounts each launch,
+        queueing only for the brief moment the section is held.
 
         Parameters
         ----------
@@ -244,6 +345,9 @@ class ScrapingService:
         scraping_period_days : int, optional
             Number of days to scrape back from today. If ``None``, falls back
             to the automatic start date based on last scrape history.
+        force_2fa : bool, optional
+            Ignore any stored long-term OTP token so the provider runs its
+            interactive 2FA flow.
 
         Returns
         -------
@@ -251,9 +355,10 @@ class ScrapingService:
             The ``process_id`` of the (possibly already-running) scraping
             history record.
         """
-        key = scraper_registry_key(
-            AppConfig().is_demo_mode, service, provider, account
-        )
+        key = scraper_registry_key(AppConfig().is_demo_mode, service, provider, account)
+        # Unlocked fast path: an obviously-running account costs no lock and no
+        # keyring read. The authoritative check is the one inside the lock
+        # below — this one may be stale the moment it returns.
         existing = _active_scrapers.get(key)
         if existing is not None:
             return existing.process_id
@@ -270,46 +375,84 @@ class ScrapingService:
             creds = {k: v for k, v in creds.items() if k != "otpLongTermToken"}
         requires_2fa = is_2fa_required(service, provider)
 
-        # Always start IN_PROGRESS — even for 2FA-capable providers. The
-        # adapter's _otp_callback flips status to WAITING_FOR_2FA only when
-        # the scraper actually awaits the OTP, so the UI never shows a 2FA
-        # prompt for providers that didn't end up needing one (e.g. Hapoalim
-        # from a trusted device, OneZero with a stored long-term token).
-        with get_db_context() as db:
-            history_repo = ScrapingHistoryRepository(db)
-            process_id = history_repo.record_scrape_start(
-                service, provider, account, start_date, history_repo.IN_PROGRESS
+        with _launch_lock:
+            # Re-check under the lock. The fast path above raced: another
+            # thread may have registered this account while this one was busy
+            # reading credentials. Whoever gets here second adopts the winner's
+            # run rather than starting a second one, discarding the credentials
+            # it prepared — wasted work, but never a duplicate SMS.
+            existing = _active_scrapers.get(key)
+            if existing is not None:
+                return existing.process_id
+
+            # Always start IN_PROGRESS — even for 2FA-capable providers. The
+            # adapter's _otp_callback flips status to WAITING_FOR_2FA only when
+            # the scraper actually awaits the OTP, so the UI never shows a 2FA
+            # prompt for providers that didn't end up needing one (e.g. Hapoalim
+            # from a trusted device, OneZero with a stored long-term token).
+            with get_db_context() as db:
+                history_repo = ScrapingHistoryRepository(db)
+                process_id = history_repo.record_scrape_start(
+                    service, provider, account, start_date, history_repo.IN_PROGRESS
+                )
+
+            adapter = create_adapter(
+                service,
+                provider,
+                account,
+                creds,
+                start_date,
+                process_id,
+                force_2fa=force_2fa,
             )
 
-        adapter = create_adapter(
-            service, provider, account, creds, start_date, process_id,
-            force_2fa=force_2fa,
-        )
-        _launch_adapter(adapter)
+            # Register BEFORE launching. ``run()`` executes on the scraper
+            # loop's own thread and pops both registries in its ``finally``,
+            # by identity. Launching first means a scrape that fails
+            # immediately — a dead browser, bad credentials — can reach that
+            # cleanup while this key is still absent: the pop finds nothing,
+            # no-ops, and the registration below then installs an adapter that
+            # has already finished, wedging the account until restart.
+            #
+            # Registered for ALL providers, not just 2FA ones, so any account
+            # is single-flight.
+            _active_scrapers[key] = adapter
 
-        # Register synchronously (no `await` between the earlier `.get()`
-        # check and this insert) so a second concurrent call can't slip in
-        # between the check and the registration. Registered for ALL
-        # providers, not just 2FA ones, so any account is single-flight.
-        # The adapter's run() pops this entry on completion (success,
-        # failure, or cancellation).
-        _active_scrapers[key] = adapter
+            # Park the adapter so submit_2fa_code can resolve it later. We
+            # register eagerly (rather than when the scraper actually awaits
+            # OTP) because the user can submit the code immediately after
+            # receiving the SMS, before the scraper has reached
+            # `await on_otp_request()`. The adapter's run() cleans this entry
+            # up on completion.
+            if requires_2fa:
+                _tfa_scrapers_waiting[key] = adapter
 
-        # Park the adapter so submit_2fa_code can resolve it later. We register
-        # eagerly (rather than when the scraper actually awaits OTP) because
-        # the user can submit the code immediately after receiving the SMS,
-        # before the scraper has reached `await on_otp_request()`. The
-        # adapter's run() cleans this entry up on completion.
-        if requires_2fa:
-            _tfa_scrapers_waiting[key] = adapter
+            try:
+                _launch_adapter(adapter)
+            except Exception:
+                # Nothing is going to run, so nothing will ever pop these.
+                # Undo by identity for the same reason run() does: only this
+                # adapter's own entries are ours to remove.
+                if _active_scrapers.get(key) is adapter:
+                    _active_scrapers.pop(key, None)
+                if _tfa_scrapers_waiting.get(key) is adapter:
+                    _tfa_scrapers_waiting.pop(key, None)
+                with get_db_context() as db:
+                    failed_repo = ScrapingHistoryRepository(db)
+                    failed_repo.record_scrape_end(
+                        process_id,
+                        failed_repo.FAILED,
+                        error_message="Failed to launch the scraper",
+                        error_type="GENERAL_ERROR",
+                    )
+                raise
 
         return process_id
 
     def submit_2fa_code(
         self, service: str, provider: str, account: str, code: str
     ) -> None:
-        """
-        Submit a 2FA OTP code to an awaiting scraper.
+        """Submit a 2FA OTP code to an awaiting scraper.
 
         Pass the string ``"cancel"`` (via the scraper's ``CANCEL`` constant)
         to abort the scraping process instead.
@@ -330,9 +473,7 @@ class ScrapingService:
         EntityNotFoundException
             If no 2FA-waiting scraper is found for the given service/provider/account.
         """
-        key = scraper_registry_key(
-            AppConfig().is_demo_mode, service, provider, account
-        )
+        key = scraper_registry_key(AppConfig().is_demo_mode, service, provider, account)
         if key not in _tfa_scrapers_waiting:
             raise EntityNotFoundException("Scraping process not found")
 
@@ -353,7 +494,7 @@ class ScrapingService:
 
     async def resend_2fa_code(
         self, service: str, provider: str, account: str
-    ) -> dict:
+    ) -> dict[str, str | int]:
         """Re-issue the OTP for an awaiting scraper without losing its process.
 
         Resolves the live adapter (``_active_scrapers`` first, then
@@ -380,7 +521,7 @@ class ScrapingService:
 
         Returns
         -------
-        dict
+        dict[str, str | int]
             ``{"status": "resent", "process_id": int}`` when the SMS was
             re-issued in place, or ``{"status": "restarted", "process_id":
             int}`` when the scrape was aborted and relaunched.
@@ -394,9 +535,7 @@ class ScrapingService:
             If the resend is rate-limited (too many code requests too
             quickly). The message is the actionable wait-and-retry hint.
         """
-        key = scraper_registry_key(
-            AppConfig().is_demo_mode, service, provider, account
-        )
+        key = scraper_registry_key(AppConfig().is_demo_mode, service, provider, account)
         adapter = _active_scrapers.get(key) or _tfa_scrapers_waiting.get(key)
         if adapter is None:
             raise EntityNotFoundException("Scraping process not found")
@@ -418,16 +557,18 @@ class ScrapingService:
         return {"status": "resent", "process_id": adapter.process_id}
 
     def abort_scraping_process(self, process_id: int) -> None:
-        """
-        Abort an in-progress or 2FA-waiting scraping process.
+        """Abort an in-progress or 2FA-waiting scraping process.
 
         If the process is waiting for a 2FA code, the scraper is cancelled
         via its OTP channel and removed from ``_tfa_scrapers_waiting``. Any
         matching entry in ``_active_scrapers`` is removed regardless of
         whether the process was 2FA-waiting, so an aborted account can be
         re-launched immediately instead of waiting for ``run()``'s
-        (now-moot) cleanup. The history record is always marked ``FAILED``
-        regardless.
+        (now-moot) cleanup, and its ``run()`` future is cancelled so a
+        scraper that is *not* parked on an OTP (a plain browser scrape mid
+        fetch) actually stops instead of running to completion behind the
+        user's back. The history record is marked ``CANCELED`` regardless —
+        the adapter's own bookkeeping never overwrites that status.
 
         Scoped to the caller's demo mode. ``process_id`` is a per-database
         autoincrement, so demo ``5`` and real ``5`` are different scrapes;
@@ -440,44 +581,35 @@ class ScrapingService:
         process_id : int
             ID of the scraping history record to abort.
         """
-        # ``process_id`` is a per-database autoincrement, so demo 5 and real 5
-        # are different scrapes. Match on the caller's mode as well, or an
-        # abort from one client would cancel another client's in-flight
-        # scraper that merely shares the number.
         demo = AppConfig().is_demo_mode
 
-        # Check if it's a 2FA-waiting scraper
-        target_key = None
-        for candidate_key, adapter in _tfa_scrapers_waiting.items():
-            if adapter.process_id == process_id and adapter.demo_mode == demo:
-                target_key = candidate_key
-                break
-
+        target_key = _find_registry_key(_tfa_scrapers_waiting, process_id, demo)
         if target_key:
-            # Cancel the 2FA scraper
             adapter = _tfa_scrapers_waiting.pop(target_key)
             adapter.set_otp_code(ScraperAdapter.CANCEL)
 
         # Remove from the active-scraper registry regardless of 2FA state,
         # so the account isn't left single-flight-locked after an abort.
-        active_key = None
-        for candidate_key, adapter in _active_scrapers.items():
-            if adapter.process_id == process_id and adapter.demo_mode == demo:
-                active_key = candidate_key
-                break
+        active_key = _find_registry_key(_active_scrapers, process_id, demo)
         if active_key:
-            _active_scrapers.pop(active_key, None)
+            adapter = _active_scrapers.pop(active_key)
+            # The OTP sentinel only reaches a scraper parked on an OTP; a
+            # non-2FA scrape (or a 2FA one already past its OTP) needs the
+            # coroutine itself cancelled. The cancellation is marshalled onto
+            # the loop by the future's own callback, so this is thread-safe
+            # from the sync route.
+            run_future = getattr(adapter, "_run_future", None)
+            if run_future is not None:
+                run_future.cancel()
 
-        # Mark as failed in the database regardless
         with get_db_context() as db:
             history_repo = ScrapingHistoryRepository(db)
-            history_repo.record_scrape_end(process_id, history_repo.FAILED)
+            history_repo.record_scrape_end(process_id, history_repo.CANCELED)
 
     def _get_scraper_start_date(
         self, service: str, provider: str, account: str
-    ) -> datetime.date:
-        """
-        Calculate the start date for a scraping run.
+    ) -> date:
+        """Calculate the start date for a scraping run.
 
         Uses the last successful scrape date minus 7 days as a buffer to
         catch any late-posted transactions. Falls back to 365 days ago if
@@ -494,7 +626,7 @@ class ScrapingService:
 
         Returns
         -------
-        datetime.date
+        date
             Earliest date from which to fetch transactions.
         """
         last_scrape = self.scraping_history_repo.get_last_successful_scrape_date(
@@ -502,55 +634,7 @@ class ScrapingService:
         )
         if last_scrape:
             try:
-                start_date = datetime.fromisoformat(last_scrape).date() - timedelta(
-                    days=7
-                )
+                return datetime.fromisoformat(last_scrape).date() - timedelta(days=7)
             except (ValueError, TypeError):
-                start_date = date.today() - timedelta(days=365)
-        else:
-            start_date = date.today() - timedelta(days=365)
-        return start_date
-
-    def _collect_adapters(
-        self, credentials: Dict
-    ) -> tuple[
-        Dict[ScraperRegistryKey, ScraperAdapter],
-        Dict[ScraperRegistryKey, ScraperAdapter],
-    ]:
-        """
-        Build adapter instances for all accounts in a credentials dict.
-
-        Parameters
-        ----------
-        credentials : dict
-            Nested credentials dict in the form
-            ``{service: {provider: {account: creds}}}``.
-
-        Returns
-        -------
-        tuple[dict, dict]
-            A ``(normal, tfa)`` pair keyed by :func:`scraper_registry_key`,
-            where ``normal`` holds adapters that do not require 2FA and
-            ``tfa`` holds those that do.
-
-        Notes
-        -----
-        This method is not called by the current scraping flow (which creates
-        adapters one at a time via ``start_scraping_single``) and may be unused.
-        """
-        normal: Dict[ScraperRegistryKey, ScraperAdapter] = {}
-        tfa: Dict[ScraperRegistryKey, ScraperAdapter] = {}
-        demo = AppConfig().is_demo_mode
-        for service, providers in credentials.items():
-            for provider, accounts in providers.items():
-                for account, acc_creds in accounts.items():
-                    key = scraper_registry_key(demo, service, provider, account)
-                    start = self._get_scraper_start_date(service, provider, account)
-                    adapter = create_adapter(
-                        service, provider, account, acc_creds, start, 0
-                    )
-                    if is_2fa_required(service, provider):
-                        tfa[key] = adapter
-                    else:
-                        normal[key] = adapter
-        return normal, tfa
+                pass
+        return date.today() - timedelta(days=365)

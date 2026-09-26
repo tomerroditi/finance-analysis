@@ -1,6 +1,7 @@
-import { MutationCache, QueryClient, type Query } from "@tanstack/react-query";
+import { QueryClient, type Query } from "@tanstack/react-query";
 import { createAsyncStoragePersister } from "@tanstack/query-async-storage-persister";
 import { createStore, get, set, del } from "idb-keyval";
+import { createMutationCache } from "./queryInvalidation";
 
 /**
  * Query keys whose data must never be persisted to disk.
@@ -13,7 +14,7 @@ const NON_PERSISTABLE_KEY_PREFIXES = new Set<string>([
   // Mirrors the SW's /api/scraping/* exclusion (rules/frontend_pwa.md says
   // both cache layers must agree). This is the ONLY scraping-backed query
   // key in the app — live scraper status is polled imperatively through
-  // `scrapingApi.getStatus` in `hooks/useScraping.ts`, never via React
+  // `scrapingApi.getStatus` in `hooks/useScrapingPoller.ts`, never via React
   // Query, so there is no "scrapingStatus"/"scraping-status" entry to
   // exclude (two such dead strings used to sit here matching nothing).
   "last-scrapes",
@@ -62,37 +63,11 @@ const CACHE_KEY = "tq-cache-v1";
 
 const idbStore = createStore(DB_NAME, STORE_NAME);
 
-/**
- * Any successful mutation alters server state, so every cached query
- * could now be stale. We invalidate the entire cache rather than relying
- * on per-mutation `onSuccess` invalidation: a mutation in one feature
- * frequently has knock-on effects (a new transaction shifts budgets,
- * KPIs, sankey, net-worth, etc.) and listing every dependent key on
- * every mutation site is fragile. Mounted queries refetch immediately;
- * unmounted ones refetch on next mount and the persister updates the
- * IndexedDB snapshot through its throttle.
- *
- * Trailing-edge debounce: when several mutations land in a burst (bulk
- * tagging, split-then-edit, etc.) we coalesce them into a single sweep
- * 200 ms after the last one settles instead of refetching every query
- * once per mutation.
- */
-const INVALIDATE_DEBOUNCE_MS = 200;
-let invalidateTimer: ReturnType<typeof setTimeout> | undefined;
-
-const scheduleInvalidateAll = () => {
-  if (invalidateTimer !== undefined) clearTimeout(invalidateTimer);
-  invalidateTimer = setTimeout(() => {
-    invalidateTimer = undefined;
-    queryClient.invalidateQueries();
-  }, INVALIDATE_DEBOUNCE_MS);
-};
-
-const mutationCache = new MutationCache({
-  onSuccess: () => {
-    scheduleInvalidateAll();
-  },
-});
+// What happens to the query cache around every write, app-wide. Built in
+// `queryInvalidation.ts` so a test can drive the same wiring against its own
+// client; it takes a getter because the client below is constructed *with*
+// this cache and so does not exist yet.
+const mutationCache = createMutationCache(() => queryClient);
 
 export const queryClient = new QueryClient({
   mutationCache,
@@ -154,4 +129,19 @@ export function shouldDehydrateQuery(query: Query): boolean {
 // header didn't vary the key), so upgrading clients may be holding demo
 // payloads persisted as if they were real data. Discard everything written
 // before the bump.
-export const PERSIST_BUSTER = "v5";
+// v6: every insight card gained a `key` — the identity its dismiss button
+// posts. A hydrated v5 snapshot would render cards whose X has nothing to
+// send, so discard caches written before the field existed.
+// v7: `/budget/trend` points gained `limits`, the cap each rule carried that
+// month. A hydrated v6 snapshot has no such field, so every monthly
+// sparkline would fall back to drawing its whole history against today's
+// limit — the very thing the stepped reference exists to stop.
+// v8: investment analysis swapped `monthly_transactions` for per-date `flows`
+// and its metrics gained `opening_balance`. A hydrated v7 snapshot would show
+// a Keren Hishtalmut's snapshot table with no deposits at all.
+// v9: the Income & Expenses card dropped two endpoints and re-keyed the two it
+// kept (they carry the project and loans filters now). The old entries can
+// never be read again, so they would sit in IndexedDB until something else
+// bumped this; the category breakdown also started reporting a category left
+// in credit as a negative, which a v8 snapshot has no way to show.
+export const PERSIST_BUSTER = "v9";

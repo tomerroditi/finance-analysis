@@ -1,29 +1,32 @@
-"""
-Database connection and session management for the FastAPI backend.
+"""Database connection and session management for the FastAPI backend.
 
-This module provides pure SQLAlchemy database connection handling,
-replacing the Streamlit-specific database connection used in the original app.
+Engines and session factories are cached per resolved database path, so the
+real and demo databases (and per-visitor demo sandboxes) each get their own.
 """
 
 import os
 import threading
-from contextlib import contextmanager
-from typing import Generator
+from collections.abc import Generator
+from contextlib import contextmanager, suppress
 
 from sqlalchemy import create_engine
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import NullPool
 
-from backend.config import AppConfig
-
 # Importing for side effect: registers the Session event listeners that
 # clear the per-session DataFrame cache on commit/rollback. Everything that
 # opens a session imports this module, so registration is guaranteed.
 import backend.utils.session_cache  # noqa: F401  (side-effect import)
+from backend.config import AppConfig
+
+# Same guarantee for the cross-request cache, whose listeners version its
+# entries by write activity. Imported by name too — the engine resets below
+# drop its entries when a database file is replaced underneath the process.
+from backend.utils import data_cache
 
 
-def get_database_url(db_path: str = None) -> str:
+def get_database_url(db_path: str | None = None) -> str:
     """
     Get the SQLAlchemy database URL for SQLite.
 
@@ -42,14 +45,14 @@ def get_database_url(db_path: str = None) -> str:
     return f"sqlite:///{db_path}"
 
 
-def create_db_engine(db_path: str = None, echo: bool = False):
+def create_db_engine(db_path: str | None = None, echo: bool = False) -> Engine:
     """
     Create a SQLAlchemy engine for the database.
 
     Parameters
     ----------
-    db_path : str
-        Path to the SQLite database file.
+    db_path : str, optional
+        Path to the SQLite database file. If None, uses path from AppConfig.
     echo : bool
         If True, log all SQL statements.
 
@@ -63,22 +66,19 @@ def create_db_engine(db_path: str = None, echo: bool = False):
 
     # Ensure the directory exists with owner-only permissions. The DB
     # holds financial data; other users on a shared host should not be
-    # able to list backups or read the DB file.
+    # able to list backups or read the DB file. Windows ignores these mode
+    # bits; there the default dir under the user profile inherits an
+    # owner-only ACL (SYSTEM, Administrators, the user).
     db_dir = os.path.dirname(db_path)
     os.makedirs(db_dir, exist_ok=True)
-    try:
+    with suppress(OSError):
         os.chmod(db_dir, 0o700)
-    except OSError:
-        pass
 
-    # Create the database file if it doesn't exist
     if not os.path.exists(db_path):
         with open(db_path, "w"):
             pass
-        try:
+        with suppress(OSError):
             os.chmod(db_path, 0o600)
-        except OSError:
-            pass
 
     return create_engine(
         get_database_url(db_path),
@@ -93,7 +93,7 @@ def create_db_engine(db_path: str = None, echo: bool = False):
 # FAD_DB_PATH override without a special case, and two contexts that happen
 # to resolve to the same file correctly share one engine.
 _engines: dict[str, Engine] = {}
-_session_factories: dict[str, sessionmaker] = {}
+_session_factories: dict[str, sessionmaker[Session]] = {}
 
 # Guards lazy creation. Requests are served from a threadpool, so two threads
 # can miss the cache for the same path at once; without the lock they would
@@ -127,7 +127,7 @@ def _get_engine_locked(db_path: str) -> Engine:
     return _engines[db_path]
 
 
-def get_engine(db_path: str = None):
+def get_engine(db_path: str | None = None) -> Engine:
     """
     Get or create the engine for a database path.
 
@@ -148,7 +148,7 @@ def get_engine(db_path: str = None):
         return _get_engine_locked(db_path)
 
 
-def get_session_factory(db_path: str = None):
+def get_session_factory(db_path: str | None = None) -> sessionmaker[Session]:
     """
     Get or create the session factory for a database path.
 
@@ -179,20 +179,12 @@ def get_db() -> Generator[Session, None, None]:
     FastAPI dependency that provides a database session.
 
     Yields a database session and ensures it's closed after the request.
-    Use this as a dependency in FastAPI route handlers.
+    Routes depend on it through ``backend.dependencies.get_database``.
 
     Yields
     ------
     Session
         SQLAlchemy session instance.
-
-    Example
-    -------
-    ```python
-    @app.get("/items")
-    def get_items(db: Session = Depends(get_db)):
-        return db.execute(select(Item)).scalars().all()
-    ```
     """
     SessionLocal = get_session_factory()
     db = SessionLocal()
@@ -222,12 +214,7 @@ def get_db_context() -> Generator[Session, None, None]:
         result = db.execute(select(Item)).scalars().all()
     ```
     """
-    SessionLocal = get_session_factory()
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
+    yield from get_db()
 
 
 def reset_engine_for(db_path: str) -> None:
@@ -244,6 +231,7 @@ def reset_engine_for(db_path: str) -> None:
         _session_factories.pop(db_path, None)
     if engine is not None:
         engine.dispose()
+    data_cache.clear()
 
 
 def reset_engines() -> None:
@@ -259,3 +247,4 @@ def reset_engines() -> None:
         _session_factories.clear()
     for engine in engines:
         engine.dispose()
+    data_cache.clear()

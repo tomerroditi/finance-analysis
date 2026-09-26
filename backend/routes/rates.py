@@ -47,12 +47,4 @@ def refresh_rates(db: Session = Depends(get_database)) -> dict[str, Any]:
     prime-linked investment balances are recalculated so they pick up
     the change immediately.
     """
-    service = RatesService(db)
-    result = service.refresh_from_boi()
-    if result.get("status") == "updated":
-        from backend.services.investments_service import InvestmentsService
-
-        result["investments_recalculated"] = InvestmentsService(
-            db
-        ).recalculate_prime_linked_snapshots()
-    return result
+    return RatesService(db).refresh_from_boi()

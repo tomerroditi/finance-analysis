@@ -1,6 +1,4 @@
-"""
-Base model configuration and common mixins.
-"""
+"""Base model configuration and common mixins."""
 
 from sqlalchemy import Column, DateTime, func
 from sqlalchemy.orm import declarative_base

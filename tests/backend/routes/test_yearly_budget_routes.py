@@ -1,5 +1,7 @@
 """Tests for the /api/budget/yearly API endpoints."""
 
+from backend.services.tagging_service import cache_key as categories_cache_key
+
 
 class TestYearlyBudgetRoutes:
     """Yearly budget HTTP endpoints."""
@@ -92,27 +94,111 @@ class TestYearlyBudgetRoutes:
         names = [e["rule"]["name"] for e in rules]
         assert "Vacations" in names
 
-    def test_copy_previous_year_no_source_does_not_delete_existing_target_rules(
-        self, test_client
+    def test_update_and_delete_monthly_rule_id_via_yearly_routes_return_404(
+        self, test_client, seed_budget_rules
     ):
-        """Data-loss regression: 404 with no prior source must not wipe target rules.
+        """PUT/DELETE /yearly/rules/{id} never touch a monthly rule's id.
 
-        The target year (2034) has its own rules and there is no earlier year
-        with yearly rules at all. The old implementation deleted the target
-        year's rules unconditionally before checking for a source, losing
-        data on a 404. This asserts the rules are still present after the
-        failed copy attempt.
+        The yearly endpoints filter by ``period_type``; a monthly id is
+        not-found there, and the monthly rule survives both attempts.
         """
-        test_client.post("/api/budget/yearly/rules", json={
-            "name": "Existing", "amount": 5000, "category": "Food",
-            "tags": ["Groceries"], "year": 2034})
+        food = next(
+            r for r in test_client.get("/api/budget/rules/2024/1").json()
+            if r["name"] == "Food"
+        )
 
-        r = test_client.post("/api/budget/yearly/2034/copy")
+        r = test_client.put(f"/api/budget/yearly/rules/{food['id']}", json={"amount": 1})
+        assert r.status_code == 404
+        assert "yearly" in r.json()["detail"]
+        r = test_client.delete(f"/api/budget/yearly/rules/{food['id']}")
         assert r.status_code == 404
 
-        rules = test_client.get("/api/budget/yearly/2034/analysis").json()["rules"]
-        names = [e["rule"]["name"] for e in rules]
-        assert names == ["Existing"]
+        after = next(
+            r for r in test_client.get("/api/budget/rules/2024/1").json()
+            if r["id"] == food["id"]
+        )
+        assert after["amount"] == 2000.0
+
+    def test_update_unknown_yearly_rule_returns_404(self, test_client):
+        """PUT /yearly/rules/99999 is 404, not a 500 from a bare ValueError."""
+        r = test_client.put("/api/budget/yearly/rules/99999", json={"amount": 1})
+        assert r.status_code == 404
+
+
+class TestCloseYearlyRuleRoute:
+    """PUT /yearly/rules/{id}/closed retires an envelope without deleting it."""
+
+    @staticmethod
+    def _create(test_client, year=2035, name="Car insurance"):
+        """Create one yearly rule and return its id."""
+        test_client.post("/api/budget/yearly/rules", json={
+            "name": name, "amount": 6000, "category": "Travel",
+            "tags": ["Hotels"], "year": year})
+        rules = test_client.get(f"/api/budget/yearly/{year}/analysis").json()["rules"]
+        return next(e["rule"]["id"] for e in rules if e["rule"]["name"] == name)
+
+    def test_close_flags_the_rule(self, test_client):
+        """The analysis reports the rule as closed after the call."""
+        rule_id = self._create(test_client)
+        r = test_client.put(
+            f"/api/budget/yearly/rules/{rule_id}/closed", json={"closed": True}
+        )
+        assert r.status_code == 200
+        assert r.json() == {"status": "success", "id": rule_id, "closed": True}
+
+        entry = next(
+            e
+            for e in test_client.get("/api/budget/yearly/2035/analysis").json()["rules"]
+            if e["rule"]["id"] == rule_id
+        )
+        assert entry["closed"] is True
+
+    def test_close_is_not_a_delete(self, test_client):
+        """The rule keeps its row, its amount and its year."""
+        rule_id = self._create(test_client, year=2036)
+        test_client.put(
+            f"/api/budget/yearly/rules/{rule_id}/closed", json={"closed": True}
+        )
+        entry = next(
+            e
+            for e in test_client.get("/api/budget/yearly/2036/analysis").json()["rules"]
+            if e["rule"]["id"] == rule_id
+        )
+        assert entry["rule"]["amount"] == 6000
+
+    def test_reopen_clears_the_flag(self, test_client):
+        """Closing is reversible through the same endpoint."""
+        rule_id = self._create(test_client, year=2037)
+        test_client.put(
+            f"/api/budget/yearly/rules/{rule_id}/closed", json={"closed": True}
+        )
+        test_client.put(
+            f"/api/budget/yearly/rules/{rule_id}/closed", json={"closed": False}
+        )
+        entry = next(
+            e
+            for e in test_client.get("/api/budget/yearly/2037/analysis").json()["rules"]
+            if e["rule"]["id"] == rule_id
+        )
+        assert entry["closed"] is False
+
+    def test_monthly_rule_id_is_not_found(self, test_client, seed_budget_rules):
+        """A monthly id must not be closable through the yearly endpoint."""
+        food = next(
+            r for r in test_client.get("/api/budget/rules/2024/1").json()
+            if r["name"] == "Food"
+        )
+        r = test_client.put(
+            f"/api/budget/yearly/rules/{food['id']}/closed", json={"closed": True}
+        )
+        assert r.status_code == 404
+
+    def test_unknown_rule_returns_404(self, test_client):
+        """An id that exists nowhere is 404, not a silent success."""
+        r = test_client.put(
+            "/api/budget/yearly/rules/99999/closed", json={"closed": True}
+        )
+        assert r.status_code == 404
 
 
 class TestMonthlyEditYearlyConflictRoute:
@@ -151,7 +237,7 @@ class TestMonthlyEditYearlyConflictRoute:
         """
         monkeypatch.setattr(
             "backend.services.tagging_service._categories_cache",
-            {False: {"Wedding": ["Venue", "Catering"]}},
+            {categories_cache_key(): {"Wedding": ["Venue", "Catering"]}},
         )
         test_client.post(
             "/api/budget/projects", json={"category": "Wedding", "total_budget": 10000.0}

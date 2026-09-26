@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import i18n from "../../i18n";
@@ -117,36 +117,77 @@ export const BudgetCommandBar: React.FC<BudgetCommandBarProps> = ({
   children,
   freshnessBadge,
   actions,
-}) => (
-  /* `flex-wrap` on the row layout as well as the column one: the bar packs
-     tabs + period nav + actions onto a single line from `md:` up, and at the
-     narrow end of that range (or while the sidebar margin animates after a
-     resize) they don't fit. Without wrapping, the bar grows past `main` and
-     scrolls the page sideways. */
-  <div className="bg-[var(--surface)] p-2 md:p-3 rounded-2xl shadow-sm border border-[var(--surface-light)] flex flex-col md:flex-row md:flex-wrap md:items-center gap-2 md:gap-3">
-    {/* `max-w-full` matters as much as the scroll container: with `md:w-auto`
-        alone the strip is content-sized, so at a width where the labels don't
-        fit (including mid-transition, while the sidebar margin animates) it
-        grows past its parent and scrolls the page instead of itself. */}
-    {/* The strip carries the shared control height, not the tabs: its own
-        padding used to sit outside them, so the segmented control stood 44px
-        tall against every other control's 36. `p-0.5` keeps the active pill
-        visibly inset; the tabs stretch to fill what's left. */}
-    <div
-      className={`${BAR_CONTROL} flex w-full md:w-auto max-w-full min-w-0 gap-1 bg-[var(--surface-light)]/40 p-0.5 rounded-xl overflow-x-auto scrollbar-auto-hide`}
-    >
-      {tabs}
-    </div>
+}) => {
+  const tabStripRef = useRef<HTMLDivElement>(null);
 
-    {/* `flex-wrap` is load-bearing: period nav + freshness chip + the primary
-        action are all `whitespace-nowrap`, so without it they push the bar —
-        and the whole page — past a 375px viewport. */}
-    <div className="flex flex-wrap items-center justify-between md:justify-start gap-2 md:gap-3 flex-1 min-w-0">
-      {children}
-      <div className="flex items-center gap-2 md:ms-auto shrink-0">
-        {freshnessBadge}
-        {actions}
+  // On a phone the strip scrolls, and the tab you are on is not necessarily
+  // inside the scrolled window: opening the page on the last tab — a `?tab=`
+  // deep link from the dashboard's budget card, or a click on a tab that was
+  // itself only half in view — left the active pill clipped at the edge, so
+  // the bar showed every tab except the one being looked at. Each switch
+  // mounts a different view, and with it a fresh bar, so bringing the pressed
+  // tab into view on mount covers the deep link and the click alike.
+  useEffect(() => {
+    const strip = tabStripRef.current;
+    const active = strip?.querySelector<HTMLElement>('[aria-pressed="true"]');
+    // `scrollBy` is absent under jsdom, where there is no layout to scroll.
+    if (!strip || !active || typeof strip.scrollBy !== "function") return;
+
+    const stripBox = strip.getBoundingClientRect();
+    const tabBox = active.getBoundingClientRect();
+    const margin = 8;
+    // Physical deltas rather than `scrollLeft` arithmetic: `scrollLeft`'s
+    // origin flips under RTL while `scrollBy`'s axis does not.
+    // `scrollIntoView` is not an option either — it would also scroll the
+    // page vertically, away from whatever the user was reading.
+    const delta =
+      tabBox.left < stripBox.left + margin
+        ? tabBox.left - stripBox.left - margin
+        : tabBox.right > stripBox.right - margin
+          ? tabBox.right - stripBox.right + margin
+          : 0;
+    if (delta !== 0) strip.scrollBy({ left: delta });
+  }, []);
+
+  return (
+    /* `flex-wrap` on the row layout as well as the column one: the bar packs
+       tabs + period nav + actions onto a single line from `md:` up, and at the
+       narrow end of that range (or while the sidebar margin animates after a
+       resize) they don't fit. Without wrapping, the bar grows past `main` and
+       scrolls the page sideways. */
+    <div className="bg-[var(--surface)] p-2 md:p-3 rounded-2xl shadow-sm border border-[var(--surface-light)] flex flex-col md:flex-row md:flex-wrap md:items-center gap-2 md:gap-3">
+      {/* `max-w-full` matters as much as the scroll container: with `md:w-auto`
+          alone the strip is content-sized, so at a width where the labels don't
+          fit (including mid-transition, while the sidebar margin animates) it
+          grows past its parent and scrolls the page instead of itself. */}
+      {/* The strip carries the shared control height, not the tabs: its own
+          padding used to sit outside them, so the segmented control stood 44px
+          tall against every other control's 36. `p-0.5` keeps the active pill
+          visibly inset; the tabs stretch to fill what's left. */}
+      {/* The rounded background sits on the wrapper, not on the scroller: a
+          scroll container paints its scrollbar in its border box, where the
+          corner radius does not clip it, so the strip's own scrollbar rode
+          over its rounded corners. */}
+      <div className="w-full md:w-auto max-w-full min-w-0 bg-[var(--surface-light)]/40 rounded-xl overflow-hidden">
+        <div
+          ref={tabStripRef}
+          data-testid="budget-tab-strip"
+          className={`${BAR_CONTROL} flex w-full gap-1 p-0.5 overflow-x-auto scrollbar-auto-hide`}
+        >
+          {tabs}
+        </div>
+      </div>
+
+      {/* `flex-wrap` is load-bearing: period nav + freshness chip + the primary
+          action are all `whitespace-nowrap`, so without it they push the bar —
+          and the whole page — past a 375px viewport. */}
+      <div className="flex flex-wrap items-center justify-between md:justify-start gap-2 md:gap-3 flex-1 min-w-0">
+        {children}
+        <div className="flex items-center gap-2 md:ms-auto shrink-0">
+          {freshnessBadge}
+          {actions}
+        </div>
       </div>
     </div>
-  </div>
-);
+  );
+};

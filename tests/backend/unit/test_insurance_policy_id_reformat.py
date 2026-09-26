@@ -14,7 +14,7 @@ from backend.repositories.insurance_account_repository import (
     InsuranceAccountRepository,
 )
 from backend.repositories.investments_repository import InvestmentsRepository
-from backend.services.investments_service import InvestmentsService
+from backend.services.investments import InvestmentsService
 
 OLD_ID = "007-916-407357 (8296857)"
 RESTYLED_ID = "007-916-407357 (08296857)"

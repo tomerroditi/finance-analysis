@@ -253,6 +253,18 @@ export function RetirementGoalForm({
       retirementApi.getScrapedDefaults().then((r) => r.data),
   });
 
+  // The funds' own forecast, re-derived for the ages on the form (deposits
+  // stop at the target retirement age). Never auto-applied — the user's own
+  // statement figure wins until they choose the forecast.
+  const { data: pensionForecast } = useQuery({
+    queryKey: qk.retirement.pensionForecast(form.current_age, form.target_retirement_age),
+    queryFn: () =>
+      retirementApi
+        .getPensionForecast(form.current_age, form.target_retirement_age)
+        .then((r) => r.data),
+    enabled: form.current_age > 0 && form.target_retirement_age > 0,
+  });
+
   // Auto-fill scraped insurance values when no saved goal exists.
   // Always Math.round: scraped amounts are fractional (averages, agorot)
   // but the currency inputs are whole-shekel (implicit step=1) — an
@@ -445,7 +457,7 @@ export function RetirementGoalForm({
     effectiveIncome > 0 ? (computedSavings / effectiveIncome) * 100 : 0;
 
   return (
-    <form onSubmit={handleCalculate} className="space-y-4 md:space-y-6">
+    <form onSubmit={handleCalculate} className="space-y-1.5">
       {/* Financial Snapshot — editable current-status inputs */}
       <div className="space-y-3 p-4 rounded-xl bg-[var(--surface)] border border-[var(--surface-light)]">
         <p className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wider">
@@ -673,6 +685,22 @@ export function RetirementGoalForm({
             min={0}
             suffix="₪"
             tooltip={t("earlyRetirement.tooltips.pension")}
+            footer={
+              pensionForecast?.estimate != null ? (
+                <ScrapedHint
+                  onClick={() =>
+                    handleChange(
+                      "pension_monthly_payout_estimate",
+                      pensionForecast.estimate ?? 0,
+                    )
+                  }
+                  label={t("earlyRetirement.form.useClearingHouseForecast", {
+                    amount: formatCurrency(pensionForecast.estimate),
+                    age: form.target_retirement_age,
+                  })}
+                />
+              ) : null
+            }
           />
           <NumberField
             label={t("earlyRetirement.form.kerenHishtalmutBalance")}

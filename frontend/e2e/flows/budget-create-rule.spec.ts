@@ -28,6 +28,11 @@ test.describe("Budget rule creation flow", () => {
   test("creates a new monthly budget rule", async ({ page }) => {
     const ruleName = `E2E Test Budget ${Date.now()}`;
     await gotoAndWait(page, "/budget");
+    // Overview is the landing tab; "Add Rule" lives on the monthly ledger.
+    await page.getByRole("button", { name: /^Monthly Budget$/i }).click();
+    await expect(page.getByTestId("budget-status-band")).toBeVisible({
+      timeout: 30_000,
+    });
 
     // Open the Add Rule modal.
     await page
@@ -60,5 +65,18 @@ test.describe("Budget rule creation flow", () => {
       page.once("dialog", (d) => d.accept());
       await deleteBtn.click();
     }
+
+    // --- A tag rule under its category's all_tags rule keeps its own spend ---
+    // Demo Food carries an all_tags rule beside a Groceries sub-budget. The
+    // all_tags rule used to claim the whole category first, pinning the
+    // Groceries row at 0 ₪. Checked on the previous month, which is complete,
+    // so the row has spend whatever today's date is.
+    await page.getByRole("button", { name: /^previous$/i }).first().click();
+    const groceriesFigures = page
+      .locator("button[aria-expanded]")
+      .filter({ has: page.getByText("Groceries", { exact: true }) })
+      .getByTestId("ledger-figures")
+      .filter({ visible: true });
+    await expect(groceriesFigures).toHaveText(/^\D*[1-9]/);
   });
 });

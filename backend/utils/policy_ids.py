@@ -12,6 +12,12 @@ providers append, keeping a display-friendly policy number. ``policy_id_key``
 goes further and returns a leading-zero-insensitive key for *matching* only —
 stored values keep their original digits.
 
+Two providers can also print the *same* policy differently: the pension
+clearing house (Mislaka) reports HaPhoenix's ``007-925-053655`` as
+``7-925-053655-0``, with a ``-0`` sub-account suffix HaPhoenix never shows.
+``policy_id_key`` drops that suffix too, so the Mislaka takes over the policy
+HaPhoenix created instead of forking it.
+
 This module is the single definition; ``scraper/utils/policy_ids.py``
 re-exports it. It lives on the backend side because it encodes *our*
 persistence identity model rather than any provider's wire format, and
@@ -26,6 +32,7 @@ path instead breaks the frozen Windows build, where PyInstaller bundles no
 import re
 
 _DIGIT_RUN_RE = re.compile(r"\d+")
+_ZERO_SUB_ACCOUNT_SUFFIX = "-0"
 
 __all__ = ["normalize_policy_id", "policy_id_key"]
 
@@ -69,10 +76,11 @@ def normalize_policy_id(raw: str | None) -> str:
 def policy_id_key(value: str | None) -> str:
     """Return a match key that ignores cosmetic policy-ID reformatting.
 
-    Normalizes the value and then strips insignificant leading zeros from
-    every digit run, so ``"007-916-407357 (8296857)"``,
-    ``"007-916-407357 (08296857)"`` and ``"7-916-407357"`` all share a key.
-    Use for comparisons only — never persist the key as the policy ID.
+    Normalizes the value, drops a trailing ``-0`` sub-account suffix, and
+    strips insignificant leading zeros from every digit run, so
+    ``"007-916-407357 (8296857)"``, ``"007-916-407357 (08296857)"``,
+    ``"7-916-407357"`` and ``"7-916-407357-0"`` all share a key. Use for
+    comparisons only — never persist the key as the policy ID.
 
     Parameters
     ----------
@@ -85,6 +93,10 @@ def policy_id_key(value: str | None) -> str:
         Comparison key. Empty string for ``None`` or an empty value.
     """
     normalized = normalize_policy_id(value)
+    if normalized.endswith(_ZERO_SUB_ACCOUNT_SUFFIX) and len(normalized) > 2:
+        normalized = normalized[: -len(_ZERO_SUB_ACCOUNT_SUFFIX)]
     if not normalized:
         return ""
-    return _DIGIT_RUN_RE.sub(lambda m: m.group(0).lstrip("0") or "0", normalized).casefold()
+    return _DIGIT_RUN_RE.sub(
+        lambda m: m.group(0).lstrip("0") or "0", normalized
+    ).casefold()

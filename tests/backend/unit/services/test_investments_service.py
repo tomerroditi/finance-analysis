@@ -1,12 +1,20 @@
 """Tests for InvestmentsService using real in-memory SQLite database."""
 
+from datetime import date
+
 import pandas as pd
 import pytest
 
+from backend.errors import ValidationException
 from backend.models.insurance_account import InsuranceAccount
 from backend.models.investment import Investment as InvestmentModel
-from backend.models.transaction import InsuranceTransaction, ManualInvestmentTransaction
-from backend.services.investments_service import InvestmentsService
+from backend.models.transaction import (
+    BankTransaction,
+    InsuranceTransaction,
+    ManualInvestmentTransaction,
+)
+from backend.services.investments import InvestmentsService
+from backend.services.transactions_service import TransactionsService
 
 
 class TestInvestmentsServiceCRUD:
@@ -189,16 +197,17 @@ class TestInvestmentsServiceCalculations:
 
         # A single-date call must agree with the batch call, entry for entry.
         for d in dates:
-            assert service.get_total_value_at_date(d) == pytest.approx(totals[d])
+            assert service.get_total_values_at_dates([d])[d] == pytest.approx(totals[d])
 
     def test_get_total_values_at_dates_snapshot_first(
         self, db_session, seed_investments
     ):
-        """Verify batch valuation is snapshot-first with transaction fallback.
+        """Verify batch valuation carries a snapshot forward over later deposits.
 
-        A snapshot on 2023-12-31 overrides the stock fund's transaction-based
-        balance for dates on or after it; dates before it still fall back to
-        the transaction calculation.
+        A snapshot on 2023-12-31 replaces the stock fund's transaction-based
+        balance and is then carried forward by the transactions recorded
+        after it; dates before the snapshot still fall back to the
+        transaction calculation.
         """
         service = InvestmentsService(db_session)
         stock_fund = seed_investments["investments"][0]
@@ -214,8 +223,9 @@ class TestInvestmentsServiceCalculations:
         assert totals["2023-06-15"] == 15000.0
         # On the snapshot date: stock snapshot 11000 + bond txns 5000.
         assert totals["2023-12-31"] == pytest.approx(16000.0)
-        # After the snapshot: stock snapshot 11000 + bond -160.
-        assert totals["2024-01-15"] == pytest.approx(10840.0)
+        # After the snapshot: stock snapshot 11000 carried forward over the
+        # 2024-01-15 deposit of 2000, plus bond -160.
+        assert totals["2024-01-15"] == pytest.approx(12840.0)
 
     def test_get_total_values_at_dates_empty_inputs(self, db_session):
         """Verify empty date list and empty portfolio both return safe defaults."""
@@ -224,7 +234,7 @@ class TestInvestmentsServiceCalculations:
         assert service.get_total_values_at_dates(["2024-01-01"]) == {"2024-01-01": 0.0}
 
     def test_get_portfolio_overview(self, db_session, seed_investments):
-        """Verify portfolio totals reflect open only; allocation includes all."""
+        """Verify portfolio totals reflect open only; allocation includes all, with sparkline data."""
         service = InvestmentsService(db_session)
 
         overview = service.get_portfolio_overview()
@@ -245,23 +255,10 @@ class TestInvestmentsServiceCalculations:
         assert stock["balance"] == 12000.0
         assert stock["type"] == "mutual_fund"
         assert stock["id"] == seed_investments["investments"][0].id
-
-    def test_get_portfolio_overview_includes_sparkline_data(
-        self, db_session, seed_investments
-    ):
-        """Verify allocation entries include deposits, withdrawals, and history."""
-        service = InvestmentsService(db_session)
-
-        overview = service.get_portfolio_overview()
-        alloc = next(a for a in overview["allocation"] if a["name"] == "Migdal S&P 500 Fund")
-
-        assert "total_deposits" in alloc
-        assert "total_withdrawals" in alloc
-        assert "history" in alloc
-        assert alloc["total_deposits"] == 12000.0
-        assert alloc["total_withdrawals"] == 0.0
-        assert isinstance(alloc["history"], list)
-        assert len(alloc["history"]) > 0
+        assert stock["total_deposits"] == 12000.0
+        assert stock["total_withdrawals"] == 0.0
+        assert isinstance(stock["history"], list)
+        assert len(stock["history"]) > 0
 
     def test_get_portfolio_overview_empty(self, db_session):
         """Verify empty portfolio returns zeros and empty allocation."""
@@ -273,6 +270,43 @@ class TestInvestmentsServiceCalculations:
         assert overview["total_profit"] == 0.0
         assert overview["portfolio_roi"] == 0.0
         assert overview["allocation"] == []
+
+    def test_get_portfolio_overview_roi_counts_withdrawals_as_returned(self, db_session):
+        """Verify partial withdrawals from an open investment don't read as a loss.
+
+        Deposit 1000, withdraw 400, 600 left: nothing gained or lost, so the
+        portfolio ROI is 0% — matching the investment's own ROI — not
+        600 / 1000 - 1 = -40%.
+        """
+        service = InvestmentsService(db_session)
+        service.create_investment(
+            category="Investments",
+            tag="Broker",
+            type_="brokerage_account",
+            name="Broker",
+            interest_rate_type="variable",
+        )
+        for i, (day, amount) in enumerate([("2024-01-01", -1000.0), ("2024-06-01", 400.0)]):
+            db_session.add(ManualInvestmentTransaction(
+                id=f"roi_txn_{i}",
+                date=day,
+                provider="manual_investments",
+                account_name="Broker",
+                description="flow",
+                amount=amount,
+                category="Investments",
+                tag="Broker",
+                source="manual_investment_transactions",
+                type="normal",
+            ))
+        db_session.commit()
+
+        overview = service.get_portfolio_overview()
+
+        assert overview["total_value"] == 600.0
+        assert overview["total_profit"] == 0.0
+        assert overview["portfolio_roi"] == pytest.approx(0.0)
+        assert overview["allocation"][0]["roi"] == pytest.approx(0.0)
 
     def test_get_portfolio_balance_history_active_only(
         self, db_session, seed_investments
@@ -295,7 +329,7 @@ class TestInvestmentsServiceCalculations:
     def test_get_portfolio_balance_history_include_closed(
         self, db_session, seed_investments
     ):
-        """Verify include_closed adds closed investment series."""
+        """Verify include_closed adds closed series, each with a unique int id, and a non-negative total."""
         service = InvestmentsService(db_session)
 
         result = service.get_portfolio_balance_history(include_closed=True)
@@ -305,6 +339,11 @@ class TestInvestmentsServiceCalculations:
         names = {s["name"] for s in result["series"]}
         assert "Migdal S&P 500 Fund" in names
         assert "Psagot Government Bond" in names
+
+        ids = [s["id"] for s in result["series"]]
+        assert len(ids) == len(set(ids))
+        assert all(isinstance(i, int) for i in ids)
+        assert result["total"] and all(p["balance"] >= 0 for p in result["total"])
 
     def test_get_portfolio_balance_history_duplicate_names_stay_distinct(
         self, db_session, seed_investments
@@ -358,18 +397,6 @@ class TestInvestmentsServiceCalculations:
         assert max(by_tag["KH Account A"]) == 1000.0
         assert max(by_tag["KH Account B"]) == 7000.0
 
-    def test_get_portfolio_balance_history_series_ids_are_unique(
-        self, db_session, seed_investments
-    ):
-        """Verify every balance-history series carries a unique investment id."""
-        service = InvestmentsService(db_session)
-
-        result = service.get_portfolio_balance_history(include_closed=True)
-
-        ids = [s["id"] for s in result["series"]]
-        assert len(ids) == len(set(ids))
-        assert all(isinstance(i, int) for i in ids)
-
     def test_get_portfolio_balance_history_empty(self, db_session):
         """Verify empty portfolio returns empty series and total."""
         service = InvestmentsService(db_session)
@@ -378,21 +405,6 @@ class TestInvestmentsServiceCalculations:
 
         assert result["series"] == []
         assert result["total"] == []
-
-    def test_get_portfolio_balance_history_total_sums_correctly(
-        self, db_session, seed_investments
-    ):
-        """Verify total line sums balances across all investments per date."""
-        service = InvestmentsService(db_session)
-
-        result = service.get_portfolio_balance_history(include_closed=True)
-
-        # The total should be the sum of all investment balances at each date
-        total_by_date = {p["date"]: p["balance"] for p in result["total"]}
-
-        # At any date, total should be >= 0
-        for balance in total_by_date.values():
-            assert balance >= 0
 
     def test_get_all_investments_includes_first_transaction_date(
         self, db_session, seed_investments
@@ -429,7 +441,7 @@ class TestInvestmentsServicePriorWealth:
         assert stock_fund.prior_wealth_amount == pytest.approx(12000.0)
 
     def test_recalculate_prior_wealth_handles_no_transactions(self, db_session):
-        """Verify prior_wealth_amount is 0 when investment has no transactions."""
+        """Verify prior_wealth_amount is 0 when the investments table is empty."""
         inv = InvestmentModel(
             category="Investments",
             tag="Empty Fund",
@@ -632,26 +644,6 @@ class TestInvestmentsServiceEdgeCases:
         assert metrics["current_balance"] == 0.0
         assert metrics["roi_percentage"] == 0.0
 
-    def test_get_all_investment_transactions_combined_empty(self, db_session):
-        """Verify get_all_investment_transactions_combined returns empty DF with no investments."""
-        service = InvestmentsService(db_session)
-        result = service.get_all_investment_transactions_combined()
-        assert isinstance(result, pd.DataFrame)
-        assert result.empty
-
-    def test_get_all_investment_transactions_combined_no_matching_txns(self, db_session):
-        """Verify returns empty DF when investments exist but have no transactions."""
-        inv = InvestmentModel(
-            category="Investments", tag="Lonely Fund", type="etf",
-            name="Lonely", created_date="2024-01-01",
-        )
-        db_session.add(inv)
-        db_session.commit()
-
-        service = InvestmentsService(db_session)
-        result = service.get_all_investment_transactions_combined()
-        assert result.empty
-
     def test_calculate_balance_from_transactions_empty_df(self, db_session):
         """Verify _calculate_balance_from_transactions returns 0 for empty DataFrame."""
         service = InvestmentsService(db_session)
@@ -664,32 +656,6 @@ class TestInvestmentsServiceEdgeCases:
         df = pd.DataFrame({"date": ["2024-01-01"], "description": ["test"]})
         result = service._calculate_balance_from_transactions(df)
         assert result == 0.0
-
-    def test_calculate_balance_over_time_with_snapshots(self, db_session, seed_investments):
-        """Verify balance history uses snapshot interpolation when snapshots exist."""
-        service = InvestmentsService(db_session)
-        stock_fund = seed_investments["investments"][0]
-
-        # Create two snapshots
-        service.create_balance_snapshot(stock_fund.id, "2023-07-01", 10500.0)
-        service.create_balance_snapshot(stock_fund.id, "2023-08-01", 11000.0)
-
-        history = service.calculate_balance_over_time(
-            stock_fund.id, "2023-07-01", "2023-08-01"
-        )
-
-        assert len(history) > 0
-        balance_by_date = {e["date"]: e["balance"] for e in history}
-
-        # At snapshot dates, balance should match exactly
-        assert balance_by_date["2023-07-01"] == 10500.0
-        assert balance_by_date["2023-08-01"] == 11000.0
-
-        # Midpoint should be interpolated between 10500 and 11000
-        mid_balance = balance_by_date.get("2023-07-16")
-        if mid_balance is not None:
-            assert 10500.0 < mid_balance < 11000.0
-
 
 class TestSyncFromInsurance:
     """Tests for syncing investments from scraped insurance data."""
@@ -963,3 +929,687 @@ class TestInsuranceLinkedTransactions:
 
         metrics = service.calculate_profit_loss(inv_id)
         assert metrics["total_deposits"] == 0.0
+
+
+class TestInsuranceOpeningBalance:
+    """Tests for the capital a provider's truncated deposit history leaves unexplained."""
+
+    def _seed(self, db_session, deposits, snapshots, policy_id="POL-OPEN"):
+        service = InvestmentsService(db_session)
+        service.sync_from_insurance({
+            "policy_id": policy_id,
+            "policy_type": "hishtalmut",
+            "provider": "hafenix",
+            "account_name": "KH",
+            "balance": None,
+            "balance_date": None,
+        })
+        inv_id = service.get_all_investments()[0]["id"]
+        for i, (day, amount) in enumerate(deposits):
+            db_session.add(InsuranceTransaction(
+                id=f"{policy_id}-{i}",
+                date=day,
+                provider="hafenix",
+                account_name="KH",
+                account_number=policy_id,
+                description="הפקדה",
+                amount=amount,
+                source="insurance_transactions",
+            ))
+        db_session.commit()
+        for day, balance in snapshots:
+            service.create_balance_snapshot(inv_id, day, balance, source="scraped")
+        return service, inv_id
+
+    def test_profit_loss_counts_pre_window_capital_as_invested(self, db_session):
+        """Verify money the deposits cannot explain is cost basis, not profit."""
+        service, inv_id = self._seed(
+            db_session,
+            deposits=[("2025-01-15", 1000.0), ("2025-02-15", 1000.0)],
+            snapshots=[("2025-03-01", 5000.0), ("2025-06-01", 5500.0)],
+        )
+
+        metrics = service.calculate_profit_loss(inv_id)
+
+        assert metrics["total_deposits"] == 2000.0
+        assert metrics["opening_balance"] == 3000.0
+        assert metrics["net_invested"] == 5000.0
+        assert metrics["current_balance"] == 5500.0
+        assert metrics["absolute_profit_loss"] == 500.0
+        assert metrics["roi_percentage"] == pytest.approx(10.0)
+        assert metrics["first_transaction_date"] == "2025-01-14"
+
+    def test_balance_history_has_no_jump_at_first_snapshot(self, db_session):
+        """Verify pre-snapshot history starts from the opening balance and meets the snapshot."""
+        service, inv_id = self._seed(
+            db_session,
+            deposits=[("2025-01-15", 1000.0), ("2025-02-15", 1000.0)],
+            snapshots=[("2025-03-01", 5000.0)],
+        )
+
+        history = {
+            point["date"]: point["balance"]
+            for point in service.calculate_balance_over_time(inv_id, "2025-01-14", "2025-03-01")
+        }
+
+        assert history["2025-01-14"] == 3000.0
+        assert history["2025-01-15"] == 4000.0
+        assert history["2025-02-15"] == 5000.0
+        assert history["2025-03-01"] == 5000.0
+
+    def test_policy_without_scraped_deposits_opens_at_first_snapshot(self, db_session):
+        """Verify a policy whose deposits all predate the window reports growth, not its whole balance."""
+        service, inv_id = self._seed(
+            db_session,
+            deposits=[],
+            snapshots=[("2026-03-02", 1813.0), ("2026-09-15", 1985.0)],
+        )
+
+        metrics = service.calculate_profit_loss(inv_id)
+
+        assert metrics["total_deposits"] == 0.0
+        assert metrics["opening_balance"] == 1813.0
+        assert metrics["absolute_profit_loss"] == 172.0
+        assert metrics["first_transaction_date"] == "2026-03-01"
+
+    def test_deposits_covering_first_snapshot_add_no_opening(self, db_session):
+        """Verify a policy fully inside the deposit window gets no opening balance."""
+        service, inv_id = self._seed(
+            db_session,
+            deposits=[("2026-01-08", 628.48), ("2026-02-09", 1571.2)],
+            snapshots=[("2026-03-02", 2140.0)],
+        )
+
+        metrics = service.calculate_profit_loss(inv_id)
+
+        assert metrics["opening_balance"] == 0.0
+        assert metrics["total_deposits"] == pytest.approx(2199.68)
+
+    def test_manual_investment_with_snapshot_gets_no_opening(self, db_session, seed_investments):
+        """Verify only insurance-linked investments synthesize an opening balance."""
+        service = InvestmentsService(db_session)
+        stock_fund = seed_investments["investments"][0]
+        service.create_balance_snapshot(stock_fund.id, "2024-03-01", 1_000_000.0)
+
+        metrics = service.calculate_profit_loss(stock_fund.id)
+
+        assert metrics["opening_balance"] == 0.0
+
+    def test_analysis_flows_list_insurance_deposits_by_date(self, db_session):
+        """Verify analysis flows carry the scraped deposits per date and omit the opening balance."""
+        service, inv_id = self._seed(
+            db_session,
+            deposits=[("2025-08-05", 1571.2), ("2025-09-08", 1571.2)],
+            snapshots=[("2025-08-04", 10848.0), ("2025-08-18", 12300.0)],
+        )
+
+        flows = service.get_investment_analysis(inv_id)["flows"]
+
+        assert flows == [
+            {"date": "2025-08-05", "deposits": 1571.2, "withdrawals": 0.0},
+            {"date": "2025-09-08", "deposits": 1571.2, "withdrawals": 0.0},
+        ]
+
+    def test_portfolio_roi_includes_opening_in_cost_basis(self, db_session):
+        """Verify the portfolio totals treat the opening balance as invested money."""
+        service, _ = self._seed(
+            db_session,
+            deposits=[("2025-01-15", 1000.0)],
+            snapshots=[("2025-03-01", 4000.0), ("2025-06-01", 4400.0)],
+        )
+
+        overview = service.get_portfolio_overview()
+
+        assert overview["allocation"][0]["opening_balance"] == 3000.0
+        assert overview["total_profit"] == 400.0
+        assert overview["portfolio_roi"] == pytest.approx(10.0)
+
+
+class TestHishtalmutTotalBalance:
+    """Tests for InvestmentsService.get_hishtalmut_total_balance."""
+
+    def test_returns_none_when_no_hishtalmut_investments(self, db_session):
+        """Verify None is returned when no hishtalmut investments exist."""
+        service = InvestmentsService(db_session)
+        service.create_investment(
+            category="Investments",
+            tag="Stock Fund",
+            type_="stocks",
+            name="S&P 500",
+        )
+
+        assert service.get_hishtalmut_total_balance() is None
+
+    def test_sums_scraped_and_manual_hishtalmut(self, db_session):
+        """Verify both insurance-linked and manually-typed KH are summed."""
+        service = InvestmentsService(db_session)
+        scraped_id = service.investments_repo.create_investment(
+            category="Investments",
+            tag="Keren Hishtalmut - hafenix (007-916-407357)",
+            type_="hishtalmut",
+            name="Scraped KH",
+            insurance_policy_id="007-916-407357",
+        )
+        manual_id = service.investments_repo.create_investment(
+            category="Investments",
+            tag="Keren Hishtalmut - manual",
+            type_="hishtalmut",
+            name="Manual KH",
+        )
+        service.create_balance_snapshot(scraped_id, "2026-08-30", 56957.0)
+        service.create_balance_snapshot(manual_id, "2026-08-30", 12000.0)
+
+        assert service.get_hishtalmut_total_balance() == pytest.approx(68957.0)
+
+    def test_ignores_non_hishtalmut_types(self, db_session):
+        """Verify investments of other types do not contribute to the total."""
+        service = InvestmentsService(db_session)
+        kh_id = service.investments_repo.create_investment(
+            category="Investments",
+            tag="Keren Hishtalmut - manual",
+            type_="hishtalmut",
+            name="Manual KH",
+        )
+        stocks_id = service.investments_repo.create_investment(
+            category="Investments",
+            tag="Stock Fund",
+            type_="stocks",
+            name="S&P 500",
+        )
+        service.create_balance_snapshot(kh_id, "2026-08-30", 12000.0)
+        service.create_balance_snapshot(stocks_id, "2026-08-30", 99000.0)
+
+        assert service.get_hishtalmut_total_balance() == pytest.approx(12000.0)
+
+    def test_excludes_closed_hishtalmut(self, db_session):
+        """Verify closed KH investments are excluded from the total."""
+        service = InvestmentsService(db_session)
+        open_id = service.investments_repo.create_investment(
+            category="Investments",
+            tag="Keren Hishtalmut - open",
+            type_="hishtalmut",
+            name="Open KH",
+        )
+        closed_id = service.investments_repo.create_investment(
+            category="Investments",
+            tag="Keren Hishtalmut - closed",
+            type_="hishtalmut",
+            name="Closed KH",
+        )
+        service.create_balance_snapshot(open_id, "2026-08-30", 12000.0)
+        service.create_balance_snapshot(closed_id, "2026-08-30", 5000.0)
+        service.close_investment(closed_id, "2026-08-31")
+
+        assert service.get_hishtalmut_total_balance() == pytest.approx(12000.0)
+
+
+class TestScrapedInvestmentTypeGuard:
+    """Insurance-linked investments must keep the type sync gave them."""
+
+    def test_rejects_type_change_on_insurance_linked_investment(self, db_session):
+        """Verify reclassifying a scraped KH investment raises ValidationException."""
+        service = InvestmentsService(db_session)
+        inv_id = service.investments_repo.create_investment(
+            category="Investments",
+            tag="Keren Hishtalmut - hafenix (007-916-407357)",
+            type_="hishtalmut",
+            name="Scraped KH",
+            insurance_policy_id="007-916-407357",
+        )
+
+        with pytest.raises(ValidationException):
+            service.update_investment(inv_id, type="stocks")
+
+    def test_allows_other_updates_on_insurance_linked_investment(self, db_session):
+        """Verify non-type updates still succeed on a scraped investment."""
+        service = InvestmentsService(db_session)
+        inv_id = service.investments_repo.create_investment(
+            category="Investments",
+            tag="Keren Hishtalmut - hafenix (007-916-407357)",
+            type_="hishtalmut",
+            name="Scraped KH",
+            insurance_policy_id="007-916-407357",
+        )
+
+        service.update_investment(inv_id, notes="reviewed")
+
+        assert service.investments_repo.get_by_id(inv_id).iloc[0]["notes"] == "reviewed"
+
+    def test_allows_type_change_on_manual_investment(self, db_session):
+        """Verify a manually-created investment can be reclassified as KH."""
+        service = InvestmentsService(db_session)
+        inv_id = service.investments_repo.create_investment(
+            category="Investments",
+            tag="Old Fund",
+            type_="other",
+            name="Manual Fund",
+        )
+
+        service.update_investment(inv_id, type="hishtalmut")
+
+        assert service.investments_repo.get_by_id(inv_id).iloc[0]["type"] == "hishtalmut"
+
+
+class TestBalanceOverTimeSnapshotEdges:
+    """Edge cases of snapshot-aware balance history."""
+
+    def test_dates_before_first_snapshot_fall_back_to_transactions(self, db_session, seed_investments):
+        """Before any snapshot exists the balance is rebuilt from transactions."""
+        service = InvestmentsService(db_session)
+        stock_fund = seed_investments["investments"][0]
+        service.create_balance_snapshot(stock_fund.id, "2023-09-01", 12000.0)
+
+        history = service.calculate_balance_over_time(stock_fund.id, "2023-06-15", "2023-09-01")
+        balance_by_date = {e["date"]: e["balance"] for e in history}
+
+        # Only the 10,000 deposit has happened by mid-June/July.
+        assert balance_by_date["2023-06-15"] == 10000.0
+        assert balance_by_date["2023-07-01"] == 10000.0
+        assert balance_by_date["2023-09-01"] == 12000.0
+
+    def test_dates_after_last_snapshot_hold_the_last_snapshot(self, db_session, seed_investments):
+        """Past the newest snapshot the balance is carried forward flat, not re-derived."""
+        service = InvestmentsService(db_session)
+        stock_fund = seed_investments["investments"][0]
+        service.create_balance_snapshot(stock_fund.id, "2023-07-01", 10500.0)
+
+        history = service.calculate_balance_over_time(stock_fund.id, "2023-07-01", "2023-10-01")
+        balances = [e["balance"] for e in history]
+
+        assert balances and all(b == 10500.0 for b in balances)
+
+    def test_sample_on_a_snapshot_date_returns_it_exactly(self, db_session, seed_investments):
+        """A sample that coincides with a snapshot reads that snapshot, no interpolation."""
+        service = InvestmentsService(db_session)
+        stock_fund = seed_investments["investments"][0]
+        service.create_balance_snapshot(stock_fund.id, "2023-07-01", 10500.0)
+        service.create_balance_snapshot(stock_fund.id, "2023-08-01", 11000.0)
+        service.create_balance_snapshot(stock_fund.id, "2023-09-01", 11500.0)
+
+        history = service.calculate_balance_over_time(stock_fund.id, "2023-06-01", "2023-10-01")
+        balance_by_date = {e["date"]: e["balance"] for e in history}
+
+        assert balance_by_date["2023-08-01"] == 11000.0
+        assert balance_by_date["2023-09-01"] == 11500.0
+
+def _closing_dates(db_session, investment_id: int) -> list[str]:
+    """Dates of the zero snapshots written by closing an investment."""
+    snapshots = InvestmentsService(db_session).snapshots_repo.get_snapshots_for_investment(
+        investment_id
+    )
+    return snapshots.loc[snapshots["source"] == "closed", "date"].tolist()
+
+
+def _bank_row(db_session, day: str, amount: float, description: str) -> BankTransaction:
+    """Insert one untagged bank transaction and return it."""
+    row = BankTransaction(
+        id=f"bank-{day}-{amount}", date=day, provider="hapoalim",
+        account_name="Main", description=description, amount=amount,
+        source="bank_transactions", type="normal", status="completed",
+    )
+    db_session.add(row)
+    db_session.commit()
+    db_session.refresh(row)
+    return row
+
+
+class TestClosingSnapshotRealignment:
+    """The zero written at close follows the investment's last transaction.
+
+    Closing pins the zero to the last transaction that exists at that moment.
+    A transaction that lands later — the transfer settling a sale days after
+    it, a scraped row re-dated, a row tagged onto the investment after it
+    closed — would otherwise sit past the zero, be carried forward, and value
+    the closed fund below zero in net worth.
+    """
+
+    def test_withdrawal_recorded_after_close_moves_the_zero(self, db_session, seed_investments):
+        """A manual withdrawal dated after the close drags the zero onto its date."""
+        service = InvestmentsService(db_session)
+        stock_fund = seed_investments["investments"][0]
+        service.close_investment(stock_fund.id, closed_date="2024-01-20")
+        assert _closing_dates(db_session, stock_fund.id) == ["2024-01-15"]
+
+        TransactionsService(db_session).create_transaction(
+            {
+                "date": date(2024, 2, 1),
+                "account_name": "Investment Account",
+                "provider": "manual_investments",
+                "description": "Sale proceeds",
+                "amount": 12500.0,
+                "category": "Investments",
+                "tag": "Stock Fund",
+            },
+            "manual_investments",
+        )
+
+        assert _closing_dates(db_session, stock_fund.id) == ["2024-02-01"]
+        # The stock fund is worth nothing; -160 is the seeded bond fund, which
+        # was closed without a snapshot and still resolves from transactions.
+        totals = service.get_total_values_at_dates(["2024-02-29"])
+        assert totals["2024-02-29"] == pytest.approx(-160.0)
+
+    def test_tagging_a_later_bank_row_onto_a_closed_investment_moves_the_zero(
+        self, db_session, seed_investments
+    ):
+        """Retagging a scraped withdrawal onto a closed investment moves its zero."""
+        service = InvestmentsService(db_session)
+        stock_fund = seed_investments["investments"][0]
+        service.close_investment(stock_fund.id, closed_date="2024-01-20")
+        proceeds = _bank_row(db_session, "2024-03-01", 12500.0, "Stock sale")
+
+        TransactionsService(db_session).update_transaction(
+            proceeds.unique_id,
+            "bank_transactions",
+            {"category": "Investments", "tag": "Stock Fund"},
+        )
+
+        assert _closing_dates(db_session, stock_fund.id) == ["2024-03-01"]
+
+    def test_removing_the_last_transaction_moves_the_zero_back(self, db_session, seed_investments):
+        """Deleting the transaction the zero sat on returns it to the one before."""
+        service = InvestmentsService(db_session)
+        stock_fund = seed_investments["investments"][0]
+        transactions = TransactionsService(db_session)
+        transactions.create_transaction(
+            {
+                "date": date(2024, 2, 1),
+                "account_name": "Investment Account",
+                "provider": "manual_investments",
+                "description": "Sale proceeds",
+                "amount": 12500.0,
+                "category": "Investments",
+                "tag": "Stock Fund",
+            },
+            "manual_investments",
+        )
+        service.close_investment(stock_fund.id, closed_date="2024-02-01")
+        assert _closing_dates(db_session, stock_fund.id) == ["2024-02-01"]
+        proceeds = db_session.query(ManualInvestmentTransaction).filter_by(
+            description="Sale proceeds"
+        ).one()
+
+        transactions.delete_transaction(proceeds.unique_id, "manual_investment_transactions")
+
+        assert _closing_dates(db_session, stock_fund.id) == ["2024-01-15"]
+
+    def test_open_investments_are_untouched(self, db_session, seed_investments):
+        """Only a closing zero moves — an open fund's snapshots stay where they are."""
+        service = InvestmentsService(db_session)
+        stock_fund = seed_investments["investments"][0]
+        service.create_balance_snapshot(stock_fund.id, "2023-12-31", 0.0)
+        _bank_row(db_session, "2024-03-01", -500.0, "Top up")
+
+        service.realign_closing_snapshots()
+
+        snapshots = service.snapshots_repo.get_snapshots_for_investment(stock_fund.id)
+        assert snapshots[["date", "source"]].values.tolist() == [["2023-12-31", "manual"]]
+
+
+class TestProfitLossWithoutTransactions:
+    """An investment that only has a snapshot (e.g. freshly synced from insurance)."""
+
+    def test_open_investment_reports_snapshot_as_current_balance(self, db_session):
+        """With no transactions the latest snapshot is the balance and P/L equals it."""
+        service = InvestmentsService(db_session)
+        service.create_investment(category="Investments", tag="Snapshot Only", type_="hishtalmut", name="KH")
+        inv_id = service.get_all_investments()[0]["id"]
+        service.create_balance_snapshot(inv_id, "2025-01-01", 4321.0)
+
+        metrics = service.calculate_profit_loss(inv_id)
+
+        assert metrics["total_deposits"] == 0.0
+        assert metrics["total_withdrawals"] == 0.0
+        assert metrics["net_invested"] == 0.0
+        assert metrics["current_balance"] == 4321.0
+        assert metrics["first_transaction_date"] is None
+
+class TestInsuranceAndManualTransactionMerge:
+    """Insurance deposits are merged with manual rows for a linked investment."""
+
+    def _seed_linked_investment(self, service, policy_id):
+        service.sync_from_insurance({
+            "policy_id": policy_id,
+            "policy_type": "hishtalmut",
+            "provider": "hafenix",
+            "account_name": "Linked Fund",
+            "balance": None,
+            "balance_date": None,
+            "commission_deposits_pct": 1.0,
+            "commission_savings_pct": 0.5,
+            "liquidity_date": "2030-01-01",
+        })
+        return service.get_all_investments()[0]
+
+    def test_manual_and_insurance_rows_are_both_counted(self, db_session):
+        """Manual deposits and negated insurance deposits stack into one history."""
+        service = InvestmentsService(db_session)
+        inv = self._seed_linked_investment(service, "POL-MERGE")
+        db_session.add_all([
+            ManualInvestmentTransaction(
+                id="manual-1", date="2025-01-10", provider="manual", account_name="Investment Account",
+                description="Manual top-up", amount=-500.0, category=inv["category"], tag=inv["tag"],
+                source="manual_investment_transactions", type="normal", status="completed",
+            ),
+            InsuranceTransaction(
+                id="ins-merge", date="2025-02-15", provider="hafenix", account_name="Linked Fund",
+                account_number="POL-MERGE", description="Employer deposit", amount=1000.0,
+                source="insurance_transactions",
+            ),
+        ])
+        db_session.commit()
+
+        txns = service._get_all_transactions_for_investment(inv["category"], inv["tag"], investment_id=inv["id"])
+        metrics = service.calculate_profit_loss(inv["id"])
+
+        assert len(txns) == 2
+        assert sorted(txns["amount"].tolist()) == [-1000.0, -500.0]
+        assert metrics["total_deposits"] == 1500.0
+        assert metrics["first_transaction_date"] == "2025-01-10"
+
+    def test_linked_investment_with_no_insurance_rows_uses_manual_only(self, db_session):
+        """A policy link with no insurance transactions yet falls back to manual rows."""
+        service = InvestmentsService(db_session)
+        inv = self._seed_linked_investment(service, "POL-EMPTY")
+        db_session.add(
+            ManualInvestmentTransaction(
+                id="manual-only", date="2025-01-10", provider="manual", account_name="Investment Account",
+                description="Manual", amount=-250.0, category=inv["category"], tag=inv["tag"],
+                source="manual_investment_transactions", type="normal", status="completed",
+            )
+        )
+        db_session.commit()
+
+        txns = service._get_all_transactions_for_investment(inv["category"], inv["tag"], investment_id=inv["id"])
+
+        assert txns["amount"].tolist() == [-250.0]
+
+
+class TestBalanceIndexMatchesScanning:
+    """The batch valuation's date index must agree with the scanning fallback.
+
+    `get_total_values_at_dates` used to call
+    `_calculate_balance_from_transactions` once per (investment, date) — each
+    call copying the frame and re-parsing its date column with format
+    inference, so the net-worth chart paid hundreds of full date parses. It
+    now indexes each investment once and binary-searches a running total.
+    These pin the two to the same answers, including the cases where a
+    cumulative sum is easiest to get wrong: unordered rows, same-day
+    transactions, dates outside the data, and unparseable dates.
+    """
+
+    @staticmethod
+    def _frame(rows: list[tuple[str, float]]) -> pd.DataFrame:
+        """Build a transactions frame from ``(date, amount)`` pairs."""
+        return pd.DataFrame(
+            {"date": [r[0] for r in rows], "amount": [r[1] for r in rows]}
+        )
+
+    def _assert_agrees(self, db_session, rows, dates, after_date=None):
+        """Assert indexed lookups equal the scanning implementation."""
+        service = InvestmentsService(db_session)
+        frame = self._frame(rows)
+        index = service._balance_index(frame)
+
+        for as_of in dates:
+            assert service._balance_at(
+                index, as_of, after_date=after_date
+            ) == pytest.approx(
+                service._calculate_balance_from_transactions(
+                    frame, as_of_date=as_of, after_date=after_date
+                )
+            )
+
+    def test_agrees_on_unordered_rows(self, db_session):
+        """Storage order must not change the balance at any date."""
+        rows = [
+            ("2024-03-01", -300.0),
+            ("2024-01-01", -1000.0),
+            ("2024-02-01", 250.0),
+        ]
+        self._assert_agrees(
+            db_session,
+            rows,
+            ["2023-12-31", "2024-01-01", "2024-01-15", "2024-02-01", "2024-12-31"],
+        )
+
+    def test_agrees_on_same_day_transactions(self, db_session):
+        """Several rows on one day all land on the same side of the cut-off."""
+        rows = [
+            ("2024-01-10", -500.0),
+            ("2024-01-10", -250.0),
+            ("2024-01-10", 100.0),
+            ("2024-02-10", -50.0),
+        ]
+        self._assert_agrees(
+            db_session, rows, ["2024-01-09", "2024-01-10", "2024-01-11"]
+        )
+
+    def test_agrees_when_carrying_forward_from_a_snapshot(self, db_session):
+        """The `after_date` window (snapshot carry-forward) matches too."""
+        rows = [
+            ("2024-01-01", -1000.0),
+            ("2024-02-01", -500.0),
+            ("2024-03-01", 200.0),
+        ]
+        self._assert_agrees(
+            db_session,
+            rows,
+            ["2024-01-31", "2024-02-01", "2024-03-15"],
+            after_date="2024-01-31",
+        )
+
+    def test_agrees_when_a_date_is_missing(self, db_session):
+        """A row the repository could not date is excluded by both paths.
+
+        This is the shape a corrupt date actually reaches valuation in:
+        `_normalize_dates` coerces what it cannot parse to ``NaN`` so one bad
+        row can't 500 every analytics endpoint.
+        """
+        rows = [("2024-01-01", -1000.0), (float("nan"), -9999.0)]
+        self._assert_agrees(db_session, rows, ["2024-06-01"])
+
+    def test_unparseable_date_string_is_dropped_not_raised(self, db_session):
+        """The index tolerates a raw bad date; the old scan raised on it.
+
+        Nothing upstream produces this today, but tolerating it is the same
+        promise `_normalize_dates` already makes one layer down.
+        """
+        service = InvestmentsService(db_session)
+        frame = self._frame([("2024-01-01", -1000.0), ("not-a-date", -9999.0)])
+
+        index = service._balance_index(frame)
+
+        assert service._balance_at(index, "2024-06-01") == pytest.approx(1000.0)
+
+    def test_empty_frame_values_at_zero(self, db_session):
+        """An investment with no transactions is worth nothing, at any date."""
+        service = InvestmentsService(db_session)
+        index = service._balance_index(pd.DataFrame({"date": [], "amount": []}))
+
+        assert service._balance_at(index, "2024-01-01") == 0.0
+
+
+class TestBalanceOverTimeSnapshotBracketing:
+    """`calculate_balance_over_time` brackets each date by binary search.
+
+    It used to filter the whole snapshot frame twice per sample date, and to
+    re-parse the transactions for every date on top. Interpolation between
+    snapshots, the carry-forward past the last one, and the transaction-only
+    fallback before the first one are all easy to get off by one when that
+    becomes a `searchsorted`, so each branch is pinned here or, for the
+    pre-first-snapshot fallback, in `TestBalanceOverTimeSnapshotEdges`.
+    """
+
+    @staticmethod
+    def _series(service, investment_id, start, end):
+        """Return ``{date: balance}`` for a balance-over-time call."""
+        return {
+            row["date"]: row["balance"]
+            for row in service.calculate_balance_over_time(investment_id, start, end)
+        }
+
+    def test_interpolates_between_two_snapshots(self, db_session, seed_investments):
+        """A date between snapshots lands proportionally between them."""
+        service = InvestmentsService(db_session)
+        stock_fund = seed_investments["investments"][0]
+        service.snapshots_repo.upsert_snapshot(
+            stock_fund.id, date="2024-01-01", balance=1000.0, source="manual"
+        )
+        service.snapshots_repo.upsert_snapshot(
+            stock_fund.id, date="2024-03-01", balance=3000.0, source="manual"
+        )
+
+        series = self._series(service, stock_fund.id, "2024-01-01", "2024-03-01")
+
+        assert series["2024-02-01"] == pytest.approx(1000.0 + 2000.0 * 31 / 60)
+
+    def test_lands_exactly_on_a_snapshot_date(self, db_session, seed_investments):
+        """A sample date equal to a snapshot takes that snapshot's value.
+
+        The bracket collapses to one row here — the case where a `side=`
+        mistake on either search silently interpolates against itself.
+        """
+        service = InvestmentsService(db_session)
+        stock_fund = seed_investments["investments"][0]
+        service.snapshots_repo.upsert_snapshot(
+            stock_fund.id, date="2024-01-01", balance=1000.0, source="manual"
+        )
+        service.snapshots_repo.upsert_snapshot(
+            stock_fund.id, date="2024-03-01", balance=3000.0, source="manual"
+        )
+
+        series = self._series(service, stock_fund.id, "2024-01-01", "2024-03-01")
+
+        assert series["2024-01-01"] == pytest.approx(1000.0)
+        assert series["2024-03-01"] == pytest.approx(3000.0)
+
+    def test_carries_the_last_snapshot_forward_over_later_transactions(
+        self, db_session, seed_investments
+    ):
+        """Past the newest snapshot, later deposits still move the line."""
+        service = InvestmentsService(db_session)
+        stock_fund = seed_investments["investments"][0]
+        # Stock fund deposits -2000 on 2024-01-15; a snapshot the day before
+        # must be carried over it rather than flattening the line.
+        service.snapshots_repo.upsert_snapshot(
+            stock_fund.id, date="2024-01-14", balance=11000.0, source="manual"
+        )
+
+        series = self._series(service, stock_fund.id, "2024-01-14", "2024-01-20")
+
+        assert series["2024-01-14"] == pytest.approx(11000.0)
+        assert series["2024-01-20"] == pytest.approx(13000.0)
+
+    def test_matches_the_single_date_resolver(self, db_session, seed_investments):
+        """The series agrees with a single-date portfolio valuation."""
+        service = InvestmentsService(db_session)
+        bond_fund = seed_investments["investments"][1]
+        service.delete_investment(seed_investments["investments"][0].id)
+
+        series = self._series(service, bond_fund.id, "2023-01-01", "2024-01-10")
+
+        for day in ("2023-01-01", "2023-01-10", "2024-01-10"):
+            assert series[day] == pytest.approx(
+                service.get_total_values_at_dates([day])[day]
+            )

@@ -220,11 +220,12 @@ export const SelectDropdown: React.FC<SelectDropdownProps> = ({
         }`}
       >
         <span
-          className={
+          className={`truncate ${
             selectedLabel
               ? "text-[var(--text-default)]"
               : "text-[var(--text-muted)]"
-          }
+          }`}
+          title={selectedLabel || placeholder}
         >
           {selectedLabel || placeholder}
         </span>
@@ -253,7 +254,7 @@ export const SelectDropdown: React.FC<SelectDropdownProps> = ({
             ref={dropdownRef}
             tabIndex={-1}
             onKeyDown={handleKeyDown}
-            className="fixed max-h-64 bg-[var(--surface)] border border-[var(--surface-light)] rounded-xl shadow-xl flex flex-col outline-none"
+            className="fixed max-h-64 bg-[var(--surface)] border border-[var(--surface-light)] rounded-xl shadow-xl flex flex-col outline-none overflow-hidden"
             style={{
               top: pos.openUp ? undefined : pos.top + 4,
               bottom: pos.openUp
@@ -300,7 +301,7 @@ export const SelectDropdown: React.FC<SelectDropdownProps> = ({
                       : "hover:bg-[var(--surface-light)]"
                   }`}
                 >
-                  <span className="text-[var(--text-default)]">
+                  <span className="truncate text-[var(--text-default)]" title={opt.label}>
                     {opt.label}
                   </span>
                   {value === opt.value && (

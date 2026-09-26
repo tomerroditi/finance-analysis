@@ -1,6 +1,4 @@
-"""
-Bank balance repository for account balance snapshots.
-"""
+"""Bank balance repository for account balance snapshots."""
 
 import pandas as pd
 from sqlalchemy import select, update
@@ -13,8 +11,9 @@ from backend.models.bank_balance import BankBalance
 class BankBalanceRepository:
     """Repository for bank account balance snapshots."""
 
-    def __init__(self, db: Session):
-        """
+    def __init__(self, db: Session) -> None:
+        """Initialize the repository.
+
         Parameters
         ----------
         db : Session
@@ -93,7 +92,7 @@ class BankBalanceRepository:
         BankBalance
             The created or updated ORM record.
         """
-        values: dict = {
+        values: dict[str, float | str] = {
             "balance": balance,
             "prior_wealth_amount": prior_wealth_amount,
         }

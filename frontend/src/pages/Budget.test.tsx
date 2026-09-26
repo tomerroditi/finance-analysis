@@ -14,12 +14,17 @@ describe("Budget", () => {
       });
     });
 
-    it("shows monthly budget view by default", async () => {
+    it("lands on the overview, not a single budget kind", async () => {
       renderWithProviders(<Budget />);
       await waitFor(() => {
-        const monthlyTab = screen.getByText(/Monthly Budget/i);
-        expect(monthlyTab.closest("button")).toHaveClass(/bg-/);
+        const overviewTab = screen.getByText(/^Overview$/i);
+        expect(overviewTab.closest("button")).toHaveClass(/bg-/);
       });
+      // The per-kind tabs are reachable but not selected — opening the page
+      // should answer "how am I doing overall", not drop the user into one kind.
+      expect(
+        screen.getByText(/Monthly Budget/i).closest("button"),
+      ).not.toHaveClass(/bg-\[var\(--surface\)\]/);
     });
   });
 

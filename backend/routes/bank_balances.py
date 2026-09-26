@@ -4,8 +4,9 @@ Bank Balance API routes.
 Provides endpoints for managing bank account balances and prior wealth.
 """
 
-from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from typing import Any
+
+from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from backend.dependencies import get_database
@@ -16,6 +17,8 @@ router = APIRouter()
 
 
 class SetBalanceRequest(ApiRequestModel):
+    """Request body for setting a bank account's current balance."""
+
     provider: str
     account_name: str
     balance: float
@@ -24,7 +27,7 @@ class SetBalanceRequest(ApiRequestModel):
 @router.get("/")
 def get_bank_balances(
     db: Session = Depends(get_database),
-) -> list[dict]:
+) -> list[dict[str, Any]]:
     """Get all bank balance records."""
     service = BankBalanceService(db)
     return service.get_all_balances()
@@ -34,14 +37,17 @@ def get_bank_balances(
 def set_bank_balance(
     request: SetBalanceRequest,
     db: Session = Depends(get_database),
-) -> dict:
-    """Set current balance for a bank account."""
+) -> dict[str, Any]:
+    """Set current balance for a bank account.
+
+    Raises
+    ------
+    ValidationException
+        400 when the account has no successful scrape from today.
+    """
     service = BankBalanceService(db)
-    try:
-        return service.set_balance(
-            provider=request.provider,
-            account_name=request.account_name,
-            balance=request.balance,
-        )
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    return service.set_balance(
+        provider=request.provider,
+        account_name=request.account_name,
+        balance=request.balance,
+    )

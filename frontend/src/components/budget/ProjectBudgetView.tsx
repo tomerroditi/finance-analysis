@@ -1,8 +1,13 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Plus, Trash2, PenSquare } from "lucide-react";
-import { budgetApi, pendingRefundsApi, type PendingRefund } from "../../services/api";
+import { Archive, ArchiveRestore, Plus, Trash2, PenSquare } from "lucide-react";
+import {
+  budgetApi,
+  pendingRefundsApi,
+  type PendingRefund,
+  type ProjectStatus,
+} from "../../services/api";
 import { ProjectModal } from "../modals/ProjectModal";
 import { BudgetRuleModal } from "../modals/BudgetRuleModal";
 import { useConfirm, useNotify } from "../../context/DialogContext";
@@ -38,6 +43,8 @@ interface ProjectRuleItem {
 
 interface ProjectBudgetViewProps {
   tabs: React.ReactNode;
+  /** Project to open on, when the link that got here named one. */
+  initialProject?: string;
 }
 
 /** Month keys from the project's first transaction to today, oldest first. */
@@ -63,11 +70,14 @@ function projectMonthKeys(transactions: Transaction[]): string[] {
   return keys.length ? keys : [end];
 }
 
-export const ProjectBudgetView: React.FC<ProjectBudgetViewProps> = ({ tabs }) => {
+export const ProjectBudgetView: React.FC<ProjectBudgetViewProps> = ({
+  tabs,
+  initialProject,
+}) => {
   const { t } = useTranslation();
   const confirm = useConfirm();
   const notify = useNotify();
-  const [selectedProject, setSelectedProject] = useState<string>("");
+  const [selectedProject, setSelectedProject] = useState<string>(initialProject ?? "");
   const [isProjectModalOpen, setIsProjectModalOpen] = useState(false);
   const [isRuleModalOpen, setIsRuleModalOpen] = useState(false);
   const [isEditMode, setIsEditMode] = useState(false);
@@ -78,10 +88,19 @@ export const ProjectBudgetView: React.FC<ProjectBudgetViewProps> = ({ tabs }) =>
   const queryClient = useQueryClient();
   const qk = useQueryKeys();
 
-  const { data: projects = [] } = useQuery({
-    queryKey: qk.budget.projects(),
-    queryFn: () => budgetApi.getProjects().then((res) => res.data),
+  // One read answers both "which projects" and "which are finished" — the
+  // picker has to label the closed ones, so a plain name list is not enough.
+  const { data: projectsStatus = [] } = useQuery({
+    queryKey: qk.budget.projectsStatus(),
+    queryFn: () => budgetApi.getProjectsStatus().then((res) => res.data),
   });
+  const projects = useMemo(
+    () => projectsStatus.map((project: ProjectStatus) => project.name),
+    [projectsStatus],
+  );
+  const isSelectedClosed = Boolean(
+    projectsStatus.find((p: ProjectStatus) => p.name === selectedProject)?.closed,
+  );
 
   const { data: pendingRefunds } = useQuery({
     queryKey: qk.pendingRefunds.all(),
@@ -96,13 +115,17 @@ export const ProjectBudgetView: React.FC<ProjectBudgetViewProps> = ({ tabs }) =>
     return map;
   }, [pendingRefunds]);
 
-  // Auto-select first project if available and none selected
+  // Auto-select a project when none is selected yet: the first *open* one,
+  // since a closed project is a finished one and landing on it means the tab
+  // opens on history the user is no longer spending against. Only when every
+  // project is closed does the first of those stand in — an empty tab would
+  // say less than a settled project does.
   useEffect(() => {
-    if (!selectedProject && projects.length > 0) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setSelectedProject(projects[0]);
-    }
-  }, [projects, selectedProject]);
+    if (selectedProject || projectsStatus.length === 0) return;
+    const firstOpen = projectsStatus.find((p: ProjectStatus) => !p.closed);
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setSelectedProject((firstOpen ?? projectsStatus[0]).name);
+  }, [projectsStatus, selectedProject]);
 
   const { data: projectDetails } = useQuery({
     queryKey: qk.budget.projectDetails(selectedProject, includeSplitParents),
@@ -145,6 +168,17 @@ export const ProjectBudgetView: React.FC<ProjectBudgetViewProps> = ({ tabs }) =>
     },
   });
 
+  const closedMutation = useMutation({
+    mutationFn: ({ name, closed }: { name: string; closed: boolean }) =>
+      budgetApi.setProjectClosed(name, closed),
+    onSuccess: () => {
+      // The whole budget prefix, not just the project keys: the Overview's
+      // rule list is built from this flag, so it has to refetch too.
+      queryClient.invalidateQueries({ queryKey: qkPrefix.budget });
+    },
+    onError: () => notify.error(t("budget.failedCloseProject")),
+  });
+
   const updateRuleMutation = useMutation({
     mutationFn: ({ id, rule }: { id: number; rule: object }) =>
       budgetApi.updateRule(id, rule),
@@ -170,6 +204,20 @@ export const ProjectBudgetView: React.FC<ProjectBudgetViewProps> = ({ tabs }) =>
       isDestructive: true,
     });
     if (ok) deleteMutation.mutate(selectedProject);
+  };
+
+  // Reopening is a plain undo, so only closing asks first.
+  const handleToggleClosed = async () => {
+    if (isSelectedClosed) {
+      closedMutation.mutate({ name: selectedProject, closed: false });
+      return;
+    }
+    const ok = await confirm({
+      title: t("budget.closeProject"),
+      message: t("budget.confirmCloseProject", { name: selectedProject }),
+      confirmLabel: t("budget.closeProject"),
+    });
+    if (ok) closedMutation.mutate({ name: selectedProject, closed: true });
   };
 
   const handleSaveRule = async (rule: object) => {
@@ -218,7 +266,7 @@ export const ProjectBudgetView: React.FC<ProjectBudgetViewProps> = ({ tabs }) =>
         <span className="flex items-baseline gap-1">
           <span className="text-lg md:text-xl font-bold">{tagCount}</span>
           <span className="text-[10px] sm:text-xs text-[var(--text-muted)]">
-            {t("budget.projectTagEnvelopes")}
+            {t("budget.projectTagRules")}
           </span>
         </span>
       ),
@@ -254,7 +302,7 @@ export const ProjectBudgetView: React.FC<ProjectBudgetViewProps> = ({ tabs }) =>
   ];
 
   return (
-    <div className="space-y-3 md:space-y-4">
+    <div className="space-y-1.5">
       <BudgetCommandBar
         tabs={tabs}
         actions={
@@ -270,24 +318,56 @@ export const ProjectBudgetView: React.FC<ProjectBudgetViewProps> = ({ tabs }) =>
               {t("budget.newProject")}
             </button>
             {selectedProject && (
-              <button
-                onClick={handleDeleteProject}
-                className={`inline-flex items-center gap-2 px-3 md:px-4 text-xs md:text-sm bg-red-500/10 border border-red-500/20 text-red-500 rounded-lg hover:bg-red-500/20 transition-colors shadow-sm font-medium whitespace-nowrap ${BAR_CONTROL}`}
-              >
-                <Trash2 size={18} className="shrink-0" />
-                {t("common.delete")}
-              </button>
+              <>
+                <button
+                  onClick={handleToggleClosed}
+                  disabled={closedMutation.isPending}
+                  data-testid="project-closed-toggle"
+                  className={`inline-flex items-center gap-2 px-3 md:px-4 text-xs md:text-sm bg-[var(--surface-light)] border border-[var(--surface-light)] rounded-lg hover:bg-[var(--surface)] transition-colors shadow-sm font-medium whitespace-nowrap disabled:opacity-60 ${BAR_CONTROL}`}
+                >
+                  {isSelectedClosed ? (
+                    <ArchiveRestore size={18} className="shrink-0" />
+                  ) : (
+                    <Archive size={18} className="shrink-0" />
+                  )}
+                  {isSelectedClosed
+                    ? t("budget.reopenProject")
+                    : t("budget.closeProject")}
+                </button>
+                <button
+                  onClick={handleDeleteProject}
+                  className={`inline-flex items-center gap-2 px-3 md:px-4 text-xs md:text-sm bg-red-500/10 border border-red-500/20 text-red-500 rounded-lg hover:bg-red-500/20 transition-colors shadow-sm font-medium whitespace-nowrap ${BAR_CONTROL}`}
+                >
+                  <Trash2 size={18} className="shrink-0" />
+                  {t("common.delete")}
+                </button>
+              </>
             )}
           </>
         }
       >
-        <div className="flex items-center gap-2 min-w-0">
+        {/* The picker takes the space beside its label instead of sitting in
+            it at a fixed 160px: a project name is free text, and it was being
+            truncated mid-name while the rest of the row stood empty. `w-full`
+            (not `flex-1`) keeps the group a full line on a phone, so the
+            actions still wrap below it rather than squeezing the select back
+            down; the desktop cap stops it stretching across a wide screen,
+            where that space belongs to the actions. */}
+        <div className="flex w-full md:w-auto md:flex-auto items-center gap-2 min-w-0">
           <label className="text-xs md:text-sm font-medium text-[var(--text-muted)] whitespace-nowrap">
             {t("budget.selectProject")}
           </label>
-          <div className="w-40 md:w-56">
+          <div
+            className="flex-1 min-w-0 md:max-w-80"
+            data-testid="project-picker"
+          >
             <SelectDropdown
-              options={projects.map((p: string) => ({ label: p, value: p }))}
+              options={projectsStatus.map((p: ProjectStatus) => ({
+                label: p.closed
+                  ? t("budget.projectClosedOption", { name: p.name })
+                  : p.name,
+                value: p.name,
+              }))}
               value={selectedProject}
               onChange={setSelectedProject}
               placeholder={
@@ -304,11 +384,21 @@ export const ProjectBudgetView: React.FC<ProjectBudgetViewProps> = ({ tabs }) =>
       <BudgetNoticeLine />
 
       {/* Only the status band needs the project's `all_tags` anchor rule (it
-          is where the project's total lives) — the envelope ledger does not.
+          is where the project's total lives) — the rule ledger does not.
           Gating the whole block on the anchor rendered a project without one
           as a blank page: no band, no ledger, not even an empty state. */}
       {selectedProject && projectDetails && (
         <>
+          {isSelectedClosed && (
+            <p
+              data-testid="project-closed-notice"
+              className="flex items-center gap-2 text-xs md:text-sm text-[var(--text-muted)] bg-[var(--surface)] border border-[var(--surface-light)] rounded-xl px-3 py-2"
+            >
+              <Archive size={14} className="shrink-0" />
+              {t("budget.projectClosedNotice")}
+            </p>
+          )}
+
           {projectTotalRule && (
             <BudgetStatusBand
               label={selectedProject}

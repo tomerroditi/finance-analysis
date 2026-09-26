@@ -1,3 +1,477 @@
+## v1.90.0 (2026-09-26)
+
+### Feat
+
+- **insurances**: redesign the KPI cards and rename the page to Pension Savings (#356)
+- **insurances,retirement,liabilities**: use the clearing house's forecasts, cover, policy details and loans (#355)
+
+## v1.89.0 (2026-09-23)
+
+### Feat
+
+- **scraper**: keep the clearing house's retirement forecasts, cover totals and policy extras (#354)
+
+## v1.88.0 (2026-09-23)
+
+### Feat
+
+- **scraper**: add the Pension Clearing House (Mislaka) and retire HaPhoenix into it (#353)
+
+## v1.87.0 (2026-09-23)
+
+### Feat
+
+- **dashboard**: scrollable net-worth change chips with 10Y and 9M periods (#352)
+
+## v1.86.3 (2026-09-23)
+
+### Refactor
+
+- **backend**: tidy and restructure the backend — ruff gate, layering, modules, dead code (#351)
+
+## v1.86.2 (2026-09-23)
+
+### Fix
+
+- **security**: harden tailnet trust, prod deploys and the Vercel demo (#348)
+
+## v1.86.1 (2026-09-23)
+
+### Perf
+
+- **e2e**: balance CI shards by duration and run them on the production build (#349)
+
+## v1.86.0 (2026-09-22)
+
+### Feat
+
+- **dashboard**: project income from recurring streams, not averages (#345)
+
+## v1.85.1 (2026-09-22)
+
+### Fix
+
+- **settings**: drag dashboard cards only by the grip handle (#346)
+
+## v1.85.0 (2026-09-22)
+
+### Feat
+
+- **dashboard**: all-time scope, per-series filter, and one definition of "expenses" (#344)
+
+## v1.84.0 (2026-09-22)
+
+### Feat
+
+- **dashboard**: collapsible goals history, a stacked free-cash pool, and a scroll-cap rule (#340)
+
+## v1.83.3 (2026-09-21)
+
+### Fix
+
+- **investments**: say "Not available" where a month has no balance reading (#341)
+
+## v1.83.2 (2026-09-21)
+
+### Fix
+
+- **investments**: count withdrawals as returned in portfolio ROI (#338)
+
+## v1.83.1 (2026-09-21)
+
+### Fix
+
+- **investments**: stop Keren Hishtalmut pre-window capital reading as profit (#337)
+
+## v1.83.0 (2026-09-21)
+
+### Feat
+
+- **data-sources**: scrape a picked subset, and fit the toolbar on one row (#335)
+
+## v1.82.2 (2026-09-21)
+
+### Fix
+
+- **investments**: stop KPI amounts and info tooltips overflowing (#334)
+
+## v1.82.1 (2026-09-21)
+
+### Fix
+
+- **dashboard**: stop the outgoing date showing above the pinned one (#336)
+
+## v1.82.0 (2026-09-21)
+
+### Feat
+
+- **dashboard**: remove the Categories card (#331)
+
+## v1.81.1 (2026-09-21)
+
+### Perf
+
+- **prod**: cut minutes off the path from a merge to the reload toast (#333)
+
+## v1.81.0 (2026-09-21)
+
+### Feat
+
+- **dashboard**: monthly/yearly scope toggle on the Income & Expenses card (#332)
+
+### Fix
+
+- **dashboard**: pin recent-transactions date headers without a gap (#330)
+
+## v1.80.0 (2026-09-21)
+
+### Feat
+
+- **savings-goals**: take over the free cash that predates a goal as its opening balance (#329)
+
+## v1.79.0 (2026-09-21)
+
+### Feat
+
+- **dashboard**: savings-goals card — the goal name, a month-by-month history, and default-visible (#327)
+
+## v1.78.0 (2026-09-21)
+
+### Feat
+
+- **dashboard**: act on a yearly envelope from its row in the budget card (#326)
+
+## v1.77.0 (2026-09-21)
+
+### Feat
+
+- **budget**: step the sparkline's budget line with each month's limit (#328)
+
+## v1.76.4 (2026-09-21)
+
+### Fix
+
+- **budget**: keep the active tab in view and let the project picker fill its row (#325)
+
+## v1.76.3 (2026-09-20)
+
+### Fix
+
+- **dashboard**: stop a ledger bar stranding a pale border at its tip; net refunds in project budgets and insights (#323)
+
+## v1.76.2 (2026-09-20)
+
+### Fix
+
+- **tagging**: grow the rule that owns a tag instead of offering a duplicate (#324)
+
+## v1.76.1 (2026-09-20)
+
+### Fix
+
+- **dashboard**: make the over-scale month meter legible (#322)
+
+## v1.76.0 (2026-09-20)
+
+### Feat
+
+- net refunds against their purchase across months, everywhere it belongs (#319)
+
+## v1.75.0 (2026-09-20)
+
+### Feat
+
+- **dashboard**: full row actions, untagged filter and details in recent transactions (#321)
+
+## v1.74.0 (2026-09-20)
+
+### Feat
+
+- **budget**: envelope transactions, select-all tags, and a smarter project default (#320)
+
+## v1.73.2 (2026-09-20)
+
+### Fix
+
+- **budget**: read the remainder right in Hebrew, and one ₪ per row (#317)
+
+## v1.73.1 (2026-09-20)
+
+### Fix
+
+- **budget**: stop the yearly trend contradicting its own row's status colour (#316)
+
+## v1.73.0 (2026-09-20)
+
+### Feat
+
+- **dashboard**: one line per envelope in the budget card (#315)
+
+## v1.72.1 (2026-09-20)
+
+### Fix
+
+- **ui**: gate a list row's action on its own write, not the whole list (#314)
+- **ui**: keep scrollbars inside rounded panels, everywhere (#311)
+
+## v1.72.0 (2026-09-20)
+
+### Feat
+
+- **budget**: let a settled yearly envelope be closed (#313)
+
+## v1.71.3 (2026-09-20)
+
+### Perf
+
+- **recurring**: stop running detection to validate a verdict (#312)
+
+## v1.71.2 (2026-09-20)
+
+### Fix
+
+- **query**: stop a read that predates a write from reverting it, app-wide (#310)
+
+## v1.71.1 (2026-09-20)
+
+### Fix
+
+- **pwa**: stop the service worker serving pre-write bodies for slow reads (#309)
+
+## v1.71.0 (2026-09-20)
+
+### Feat
+
+- **dashboard**: recurring card — instant verdicts, out of beta, recoverable dismissals (#306)
+
+## v1.70.1 (2026-09-20)
+
+### Perf
+
+- **budget**: fetch the budget sparkline in one request instead of twelve (#308)
+
+## v1.70.0 (2026-09-20)
+
+### Feat
+
+- **dashboard**: scroll only the budget tabs, deep-link them, close projects from the card (#305)
+
+## v1.69.3 (2026-09-20)
+
+### Perf
+
+- **dashboard**: cut another 27% off a cold load (#307)
+
+## v1.69.2 (2026-09-20)
+
+### Fix
+
+- **dashboard**: scroll the income breakdown and collapse it by default (#304)
+
+## v1.69.1 (2026-09-20)
+
+### Fix
+
+- **demo**: make the Data Sources page work in Demo Mode and on serverless (#302)
+
+## v1.69.0 (2026-09-20)
+
+### Feat
+
+- **scraping**: keep scraper state app-wide so scrapes survive navigation (#301)
+
+### Fix
+
+- **scraping**: close the single-flight race and register scrapers before launch (#300)
+
+## v1.68.1 (2026-09-20)
+
+### Fix
+
+- **scraper**: report Max's lockout and wrong-details screens instead of timing out (#298)
+- **migrations**: repair retirement_goals columns lost to a mistyped table name (#299)
+
+## v1.68.0 (2026-09-20)
+
+### Feat
+
+- **dashboard**: stack mobile KPI cards one per row (#296)
+
+### Perf
+
+- **dashboard**: cut a cold dashboard load from 21s to 7s (#297)
+
+## v1.67.3 (2026-09-19)
+
+### Fix
+
+- **frontend**: stop long category/tag values overflowing the select trigger (#295)
+- **logging**: keep app logs alive after startup migrations (#293)
+
+## v1.67.2 (2026-09-19)
+
+### Perf
+
+- **frontend**: lazy-load routes, group vendor chunks, optimise logos (#294)
+
+## v1.67.1 (2026-09-19)
+
+### Fix
+
+- keep the backend reachable under socket pressure on Windows (dev reload loop + prod health restarts) (#292)
+
+## v1.67.0 (2026-09-19)
+
+### Feat
+
+- **prod**: share on the tailnet and auto-update the running server (#291)
+
+## v1.66.3 (2026-09-19)
+
+### Fix
+
+- **scraper**: answer Max's ID-number login challenge (#290)
+
+## v1.66.2 (2026-09-19)
+
+### Fix
+
+- **data-sources**: readable scrape-error tooltip, aborted state, smarter Scrape All, +972 OneZero phone (#289)
+
+## v1.66.1 (2026-09-19)
+
+### Fix
+
+- **scraper**: run scrapers on their own Proactor event loop so browser scrapes work under uvicorn --reload on Windows (#287)
+
+## v1.66.0 (2026-09-19)
+
+### Feat
+
+- **sidebar**: move mobile settings, alerts and data flow to the top bar only (#286)
+
+## v1.65.5 (2026-09-19)
+
+### Fix
+
+- **data-sources**: make the connection modal scroll on short mobile screens (#284)
+
+## v1.65.4 (2026-09-18)
+
+### Fix
+
+- **credentials**: list accounts whose stored details can't be decrypted and flag them for re-entry (#282)
+
+## v1.65.3 (2026-09-18)
+
+### Fix
+
+- **sidebar**: stop footer overlapping the nav on short screens; tighten card spacing to 6px (#281)
+
+## v1.65.2 (2026-09-18)
+
+### Fix
+
+- **dev**: unblock the VS Code Dev Remote launch on Windows (#280)
+
+## v1.65.1 (2026-09-18)
+
+### Fix
+
+- **dev**: run start.sh and the VS Code launch configs on Windows (#279)
+
+## v1.65.0 (2026-09-14)
+
+### Feat
+
+- **insights**: surface only what the budget — and the rest of the dashboard — does not already explain (#277)
+
+## v1.64.0 (2026-09-13)
+
+### Feat
+
+- **recurring**: confirm detected subscriptions, and harden how they are detected (#276)
+
+## v1.63.0 (2026-09-13)
+
+### Feat
+
+- **budget**: close a finished project and drop it from the Overview (#275)
+
+## v1.62.0 (2026-09-11)
+
+### Feat
+
+- **budget**: land on the Overview tab on the page and the card (#274)
+
+## v1.61.4 (2026-09-11)
+
+### Fix
+
+- **savings-goals,investments**: free a deleted goal's earmark and keep a closed investment's zero on its last transaction (#273)
+
+## v1.61.3 (2026-09-11)
+
+### Fix
+
+- **budget**: apportion spend between overlapping monthly rules (#272)
+
+## v1.61.2 (2026-09-11)
+
+### Fix
+
+- **demo**: shift budget and savings-goal months by whole calendar months (#270)
+
+## v1.61.1 (2026-09-11)
+
+### Fix
+
+- **demo**: enable Fluid compute and surface a missing Blob store loudly (#268)
+
+## v1.61.0 (2026-09-10)
+
+### Feat
+
+- **demo**: per-visitor Vercel demo sandboxes persisted to Vercel Blob (#267)
+
+## v1.60.0 (2026-09-09)
+
+### Feat
+
+- **savings-goals**: free-cash pool for deficit months, and investment-backed goals (#262)
+
+## v1.59.0 (2026-09-06)
+
+### Feat
+
+- **investments**: add a Keren Hishtalmut investment kind (#259)
+
+### Fix
+
+- **insurance**: surface statement deductions we could not classify (#261)
+
+## v1.58.0 (2026-09-06)
+
+### Feat
+
+- **dashboard**: redesign the budget card and add the yearly tab (#258)
+
+## v1.57.1 (2026-09-06)
+
+### Fix
+
+- **insurance**: report real pension risk cost and stop the covers list bloating the card (#256)
+
+## v1.57.0 (2026-09-06)
+
+### Feat
+
+- **categories**: collapse unused categories into their own section (#257)
+
+### Fix
+
+- **release**: sync frontend/package-lock.json version on every bump (#253)
+
 ## v1.56.3 (2026-09-05)
 
 ### Fix

@@ -3,7 +3,8 @@
 Feature Scaffolder
 
 Generates boilerplate files for a new backend feature following the
-Routes -> Services -> Repositories architecture.
+Routes -> Services -> Repositories architecture. The generated code is typed
+and documented, so it passes the backend's ruff gate as-is.
 
 Usage:
     python .claude/scripts/scaffold_feature.py <feature_name> [--output-dir <dir>]
@@ -27,6 +28,11 @@ class FeatureNames(NamedTuple):
     kebab_case: str  # invoice-items
     table_name: str  # invoice_items
     singular: str  # invoice_item
+
+    @property
+    def label(self) -> str:
+        """Singular, human-readable name (``invoice item``)."""
+        return self.singular.replace("_", " ")
 
 
 def to_pascal_case(snake: str) -> str:
@@ -60,93 +66,87 @@ def generate_names(feature_name: str) -> FeatureNames:
 
 def generate_model(names: FeatureNames) -> str:
     """Generate ORM model file content."""
-    return f'''"""
-{names.pascal_case} database model.
-"""
-from sqlalchemy import Column, Integer, String, Float, Boolean
+    n = names
+    return f'''"""{n.pascal_case} database model."""
 
-from backend.models.base import Base, TimestampMixin
+from sqlalchemy import Column, Integer, String
+
 from backend.constants.tables import Tables
+from backend.models.base import Base, TimestampMixin
 
 
-class {names.pascal_case}(Base, TimestampMixin):
-    """{names.pascal_case} database model."""
+class {n.pascal_case}(Base, TimestampMixin):
+    """One {n.label} record."""
 
-    __tablename__ = Tables.{names.snake_case.upper()}.value
+    __tablename__ = Tables.{n.snake_case.upper()}.value
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     name = Column(String, nullable=False)
-    # TODO: Add your columns here
 
-    def __repr__(self):
-        return f"<{names.pascal_case}(id={{self.id}}, name='{{self.name}}')>"
+    def __repr__(self) -> str:
+        return f"<{n.pascal_case}(id={{self.id}}, name='{{self.name}}')>"
 '''
 
 
 def generate_repository(names: FeatureNames) -> str:
     """Generate repository file content."""
-    return f'''"""
-{names.pascal_case} data access.
-"""
+    n = names
+    return f'''"""{n.pascal_case} data access."""
+
+from typing import Any
+
 import pandas as pd
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.models import {names.pascal_case}
+from backend.models.{n.snake_case} import {n.pascal_case}
+
+COLUMNS = ["id", "name", "created_at", "updated_at"]
 
 
-class {names.pascal_case}Repository:
-    """{names.pascal_case} database operations."""
+class {n.pascal_case}Repository:
+    """Database operations for the ``{n.table_name}`` table."""
 
-    def __init__(self, db: Session):
+    def __init__(self, db: Session) -> None:
         self.db = db
 
     def get_all(self) -> pd.DataFrame:
-        """Get all records as DataFrame."""
-        stmt = select({names.pascal_case})
-        records = self.db.execute(stmt).scalars().all()
+        """Return every record, with the canonical columns even when empty."""
+        records = self.db.execute(select({n.pascal_case})).scalars().all()
+        return pd.DataFrame(
+            [{{col: getattr(r, col) for col in COLUMNS}} for r in records],
+            columns=COLUMNS,
+        )
 
-        if not records:
-            return pd.DataFrame()
+    def get_by_id(self, item_id: int) -> {n.pascal_case} | None:
+        """Return the record with ``item_id``, or ``None`` if absent."""
+        return self.db.get({n.pascal_case}, item_id)
 
-        data = [r.__dict__ for r in records]
-        df = pd.DataFrame(data)
-        if '_sa_instance_state' in df.columns:
-            df = df.drop(columns=['_sa_instance_state'])
-        return df
-
-    def get_by_id(self, item_id: int) -> {names.pascal_case} | None:
-        """Get a single record by ID."""
-        return self.db.get({names.pascal_case}, item_id)
-
-    def create(self, name: str, **kwargs) -> {names.pascal_case}:
-        """Create a new record."""
-        item = {names.pascal_case}(name=name, **kwargs)
+    def create(self, name: str, **fields: Any) -> {n.pascal_case}:
+        """Insert a record and return it."""
+        item = {n.pascal_case}(name=name, **fields)
         self.db.add(item)
         self.db.commit()
         self.db.refresh(item)
         return item
 
-    def update(self, item_id: int, **fields) -> {names.pascal_case} | None:
-        """Update a record."""
-        item = self.db.get({names.pascal_case}, item_id)
-        if not item:
+    def update(self, item_id: int, **fields: Any) -> {n.pascal_case} | None:
+        """Apply the non-``None`` ``fields`` to a record; ``None`` if absent."""
+        item = self.db.get({n.pascal_case}, item_id)
+        if item is None:
             return None
-
         for key, value in fields.items():
             if value is not None:
                 setattr(item, key, value)
-
         self.db.commit()
         self.db.refresh(item)
         return item
 
     def delete(self, item_id: int) -> bool:
-        """Delete a record."""
-        item = self.db.get({names.pascal_case}, item_id)
-        if not item:
+        """Delete a record; ``False`` if it did not exist."""
+        item = self.db.get({n.pascal_case}, item_id)
+        if item is None:
             return False
-
         self.db.delete(item)
         self.db.commit()
         return True
@@ -155,139 +155,165 @@ class {names.pascal_case}Repository:
 
 def generate_service(names: FeatureNames) -> str:
     """Generate service file content."""
-    return f'''"""
-{names.pascal_case} business logic.
-"""
+    n = names
+    not_found = f'EntityNotFoundException(f"{n.pascal_case} {{item_id}} not found")'
+    return f'''"""{n.pascal_case} business logic."""
+
+from typing import Any
+
 import pandas as pd
 from sqlalchemy.orm import Session
 
-from backend.repositories.{names.snake_case}_repository import {names.pascal_case}Repository
 from backend.errors import EntityNotFoundException, ValidationException
+from backend.models.{n.snake_case} import {n.pascal_case}
+from backend.repositories.{n.snake_case}_repository import (
+    {n.pascal_case}Repository,
+)
 
 
-class {names.pascal_case}Service:
-    """{names.pascal_case} business operations."""
+class {n.pascal_case}Service:
+    """Business operations on {n.label} records."""
 
-    def __init__(self, db: Session):
-        self.db = db
-        self.repo = {names.pascal_case}Repository(db)
+    def __init__(self, db: Session) -> None:
+        self.repo = {n.pascal_case}Repository(db)
 
     def get_all(self) -> pd.DataFrame:
-        """Get all records."""
+        """Return every record."""
         return self.repo.get_all()
 
-    def get_by_id(self, item_id: int):
-        """Get a single record by ID."""
+    def get_by_id(self, item_id: int) -> {n.pascal_case}:
+        """Return one record.
+
+        Raises
+        ------
+        EntityNotFoundException
+            If no record has ``item_id``.
+        """
         item = self.repo.get_by_id(item_id)
-        if not item:
-            raise EntityNotFoundException(f"{names.pascal_case} {{item_id}} not found")
+        if item is None:
+            raise {not_found}
         return item
 
-    def create(self, name: str, **kwargs):
-        """Create a new record with validation."""
-        # TODO: Add your business validation here
+    def create(self, name: str, **fields: Any) -> {n.pascal_case}:
+        """Validate and create a record.
+
+        Raises
+        ------
+        ValidationException
+            If ``name`` is blank.
+        """
         if not name or not name.strip():
             raise ValidationException("Name is required")
+        return self.repo.create(name=name.strip(), **fields)
 
-        return self.repo.create(name=name.strip(), **kwargs)
+    def update(self, item_id: int, **fields: Any) -> {n.pascal_case}:
+        """Update a record.
 
-    def update(self, item_id: int, **fields):
-        """Update a record."""
+        Raises
+        ------
+        EntityNotFoundException
+            If no record has ``item_id``.
+        """
         item = self.repo.update(item_id, **fields)
-        if not item:
-            raise EntityNotFoundException(f"{names.pascal_case} {{item_id}} not found")
+        if item is None:
+            raise {not_found}
         return item
 
     def delete(self, item_id: int) -> None:
-        """Delete a record."""
+        """Delete a record.
+
+        Raises
+        ------
+        EntityNotFoundException
+            If no record has ``item_id``.
+        """
         if not self.repo.delete(item_id):
-            raise EntityNotFoundException(f"{names.pascal_case} {{item_id}} not found")
+            raise {not_found}
 '''
 
 
 def generate_route(names: FeatureNames) -> str:
     """Generate route file content."""
-    return f'''"""
-{names.pascal_case} API routes.
-"""
-from typing import Optional
+    n = names
+    return f'''"""{n.pascal_case} API routes."""
+
+from typing import Any
 
 from fastapi import APIRouter, Depends
+from pydantic import BaseModel, ConfigDict
 from sqlalchemy.orm import Session
-from pydantic import BaseModel
 
 from backend.dependencies import get_database
-from backend.services.{names.snake_case}_service import {names.pascal_case}Service
-
+from backend.models.{n.snake_case} import {n.pascal_case}
+from backend.services.{n.snake_case}_service import {n.pascal_case}Service
 
 router = APIRouter()
 
 
-# Pydantic models
-class {names.pascal_case}Create(BaseModel):
+class {n.pascal_case}Create(BaseModel):
+    """Body of a create request."""
+
     name: str
-    # TODO: Add your fields here
 
 
-class {names.pascal_case}Update(BaseModel):
-    name: Optional[str] = None
-    # TODO: Add your fields here
+class {n.pascal_case}Update(BaseModel):
+    """Body of an update request; omitted fields stay unchanged."""
+
+    name: str | None = None
 
 
-class {names.pascal_case}Response(BaseModel):
+class {n.pascal_case}Response(BaseModel):
+    """One {n.label} as returned by the API."""
+
+    model_config = ConfigDict(from_attributes=True)
+
     id: int
     name: str
-    # TODO: Add your fields here
-
-    class Config:
-        from_attributes = True
 
 
 @router.get("/")
-async def get_all(db: Session = Depends(get_database)):
-    """Get all {names.snake_case}."""
-    service = {names.pascal_case}Service(db)
-    df = service.get_all()
-    return df.to_dict(orient="records")
+def get_all(db: Session = Depends(get_database)) -> list[dict[str, Any]]:
+    """List every {n.label}."""
+    return {n.pascal_case}Service(db).get_all().to_dict(orient="records")
 
 
-@router.get("/{{item_id}}", response_model={names.pascal_case}Response)
-async def get_by_id(item_id: int, db: Session = Depends(get_database)):
-    """Get a single {names.singular} by ID."""
-    service = {names.pascal_case}Service(db)
-    return service.get_by_id(item_id)
+@router.get("/{{item_id}}", response_model={n.pascal_case}Response)
+def get_by_id(item_id: int, db: Session = Depends(get_database)) -> {n.pascal_case}:
+    """Get a single {n.label} by ID."""
+    return {n.pascal_case}Service(db).get_by_id(item_id)
 
 
-@router.post("/", response_model={names.pascal_case}Response)
-async def create(data: {names.pascal_case}Create, db: Session = Depends(get_database)):
-    """Create a new {names.singular}."""
-    service = {names.pascal_case}Service(db)
-    return service.create(name=data.name)
+@router.post("/", response_model={n.pascal_case}Response)
+def create(
+    data: {n.pascal_case}Create, db: Session = Depends(get_database)
+) -> {n.pascal_case}:
+    """Create a new {n.label}."""
+    return {n.pascal_case}Service(db).create(name=data.name)
 
 
-@router.put("/{{item_id}}", response_model={names.pascal_case}Response)
-async def update(
+@router.put("/{{item_id}}", response_model={n.pascal_case}Response)
+def update(
     item_id: int,
-    data: {names.pascal_case}Update,
-    db: Session = Depends(get_database)
-):
-    """Update a {names.singular}."""
-    service = {names.pascal_case}Service(db)
-    return service.update(item_id, **data.model_dump(exclude_unset=True))
+    data: {n.pascal_case}Update,
+    db: Session = Depends(get_database),
+) -> {n.pascal_case}:
+    """Update a {n.label}."""
+    return {n.pascal_case}Service(db).update(
+        item_id, **data.model_dump(exclude_unset=True)
+    )
 
 
 @router.delete("/{{item_id}}")
-async def delete(item_id: int, db: Session = Depends(get_database)):
-    """Delete a {names.singular}."""
-    service = {names.pascal_case}Service(db)
-    service.delete(item_id)
+def delete(item_id: int, db: Session = Depends(get_database)) -> dict[str, str]:
+    """Delete a {n.label}."""
+    {n.pascal_case}Service(db).delete(item_id)
     return {{"status": "success"}}
 '''
 
 
 def generate_instructions(names: FeatureNames) -> str:
     """Generate setup instructions."""
-    return f'''
+    return f"""
 === SCAFFOLDING COMPLETE ===
 
 Generated files for feature: {names.snake_case}
@@ -304,10 +330,9 @@ NEXT STEPS:
 
    from backend.models.{names.snake_case} import {names.pascal_case}
 
-3. Register router in backend/main.py:
+3. Register the router in ROUTERS in backend/router_registry.py (order = matching order):
 
-   from backend.routes import {names.snake_case}
-   app.include_router({names.snake_case}.router, prefix="/api/{names.kebab_case}", tags=["{names.pascal_case}"])
+   RouterMount("{names.snake_case}", "/api/{names.kebab_case}", "{names.pascal_case}"),
 
 4. Update model columns in backend/models/{names.snake_case}.py
 
@@ -315,9 +340,12 @@ NEXT STEPS:
 
 6. Add business logic to backend/services/{names.snake_case}_service.py
 
-7. Restart the dev server to create the table:
+7. Keep it typed, documented and formatted:
+   poetry run ruff check backend && poetry run ruff format backend
+
+8. Restart the dev server to create the table:
    poetry run uvicorn backend.main:app --reload
-'''
+"""
 
 
 def scaffold_feature(feature_name: str, output_dir: Path) -> None:
@@ -351,7 +379,8 @@ def scaffold_feature(feature_name: str, output_dir: Path) -> None:
     print(generate_instructions(names))
 
 
-def main():
+def main() -> None:
+    """Parse CLI arguments and scaffold (or dry-run) the feature."""
     parser = argparse.ArgumentParser(
         description="Scaffold a new backend feature (route, service, repository, model)"
     )

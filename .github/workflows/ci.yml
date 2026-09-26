@@ -41,6 +41,11 @@ jobs:
       - name: Install dependencies
         run: poetry install --no-root
 
+      - name: Lint backend (ruff)
+        run: |
+          poetry run ruff check backend --output-format github
+          poetry run ruff format --check backend
+
       - name: Run backend tests
         run: poetry run pytest
 
@@ -132,10 +137,21 @@ jobs:
           path: ~/.cache/ms-playwright
           key: pw-${{ runner.os }}-${{ hashFiles('frontend/package-lock.json') }}
 
+      # Headless runs only ever launch chromium-headless-shell, so skip the
+      # full Chrome build (~185 MB) the plain `chromium` target also fetches.
       - name: Install Playwright chromium
         if: steps.pw-cache.outputs.cache-hit != 'true'
         working-directory: frontend
-        run: npx playwright install --with-deps chromium
+        run: npx playwright install --with-deps --only-shell chromium
+
+      # The production bundle, not the dev server: every test opens a fresh
+      # browser context with an empty HTTP cache, and against `vite` (dev)
+      # each of those boots re-fetched hundreds of unbundled modules. The
+      # bundle is a handful of chunks, and measured ~16% faster per test.
+      # No `tsc -b` here — the frontend job already type-checks.
+      - name: Build frontend
+        working-directory: frontend
+        run: npx vite build
 
       - name: Start backend + run Playwright
         working-directory: frontend
@@ -148,10 +164,13 @@ jobs:
           # routes keyring access to a plaintext file backend.
           poetry --directory=.. run uvicorn backend.main:app --port 8000 \
             > /tmp/backend.log 2>&1 &
-          npm run dev > /tmp/frontend.log 2>&1 &
+          npx vite preview --port 5173 --strictPort > /tmp/frontend.log 2>&1 &
           npx -y wait-on http://localhost:8000/openapi.json http://localhost:5173 \
             -t 60000
-          npx playwright test --shard="$SHARD_INDEX"/4
+          # Spec files packed by recorded duration, not Playwright's
+          # count-based --shard, which left one job at 2.5 min of tests beside
+          # another at 1 min.
+          npx playwright test $(python3 ../.claude/scripts/e2e_shard_files.py "$SHARD_INDEX" 4)
 
       - name: Upload Playwright report on failure
         if: failure()

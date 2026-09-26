@@ -11,7 +11,7 @@ Two packages, one name. Keep them straight:
 
 | Package | Role |
 |---------|------|
-| `scraper/` (repo root) | The framework: base classes, 19 providers, models, exceptions. No backend imports. |
+| `scraper/` (repo root) | The framework: base classes, 20 providers, models, exceptions. No backend imports. |
 | `backend/scraper/` | Just `adapter.py` — bridges the async framework into the sync FastAPI pipeline. |
 
 ```
@@ -54,16 +54,17 @@ Don't "simplify" that back.
 
 `Transaction`, `InstallmentInfo`, `AccountResult`, `ScrapingResult`,
 `LoginResult`, `ProviderConfig`. `PROVIDER_CONFIGS` in `credentials.py` is the
-registry — 19 entries, and a provider that isn't there doesn't exist as far as
+registry — 20 entries, and a provider that isn't there doesn't exist as far as
 the app is concerned.
 
 ## Errors (`scraper/exceptions.py`)
 
 All inherit `ScraperError` and carry an `ErrorType` matching the upstream
 `israeli-bank-scrapers` vocabulary (`INVALID_PASSWORD`, `CHANGE_PASSWORD`,
-`ACCOUNT_BLOCKED`, `TWO_FACTOR_RETRIEVER_MISSING`, `TIMEOUT`,
+`ACCOUNT_BLOCKED`, `TWO_FACTOR_RETRIEVER_MISSING`, `INVALID_OTP`, `TIMEOUT`,
 `AUTOMATION_BLOCKED`, `GENERIC`, `GENERAL_ERROR`): `CredentialsError`,
-`PasswordChangeError`, `AccountBlockedError`, `TwoFactorError`, `TimeoutError`,
+`PasswordChangeError`, `AccountBlockedError`, `TwoFactorError`,
+`InvalidOtpError` (the bank rejected the typed code), `TimeoutError`,
 `AutomationBlockedError`, `ConnectionError`.
 
 ## 2FA / OTP
@@ -86,10 +87,39 @@ Two things that look redundant and aren't:
 `adapter.py` redirects to dummy scrapers when `AppConfig().is_demo_mode` and the
 provider name lacks `test_`. Demo mode never touches a real site.
 
+## Single-flight per account
+
+`_active_scrapers` (in `adapter.py`, keyed by
+`scraper_registry_key(demo, service, provider, account)`) makes
+`start_scraping_single` a no-op for an account that is already scraping — it
+returns the running `process_id` instead of opening a second history row,
+building a second adapter, or firing a second OTP SMS.
+
+Two ordering rules keep that guarantee, both enforced in
+`scraping_service._launch_lock`:
+
+- **Take the lock.** `start_scraping_single` is a *synchronous* route handler,
+  so FastAPI runs it in a threadpool worker and two requests for one account
+  run on two real OS threads. Reasoning about `await` points does not apply.
+  The registry re-check, the history insert, the registration and the launch
+  all sit inside the lock; the slow preparation (keyring reads, start-date
+  lookup) stays outside it so one account's launch never queues behind
+  another's keyring round trip.
+- **Register before launching.** `run()` executes on the scraper loop's own
+  thread and pops both registries *by identity* in its `finally`. Launch
+  first and a scrape that fails immediately reaches that cleanup before the
+  key exists: the pop no-ops, the finished adapter gets registered afterwards,
+  and the account stays locked until the process restarts. If the launch
+  itself raises there is no `run()` to clean up, so the start path undoes its
+  own registration and closes out the history row.
+
 ## Limits
 
-5-minute timeout, one scrape per account per day, no automatic retry.
-History in `scraping_history` (`SUCCESS` / `FAILED` / `CANCELED`).
+5-minute timeout per run, no automatic retry, no daily cap — a user can
+re-scrape an account as often as they like (the OTP prepare limiter is the
+only throttle). History in `scraping_history` (`success` / `failed` /
+`canceled`); the latest `success` row is the watermark the next window
+starts 7 days before.
 
 ## CLI
 

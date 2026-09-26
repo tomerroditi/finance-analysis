@@ -57,24 +57,3 @@ class TestBankBalanceRoutes:
             if b["provider"] == "hapoalim" and b["account_name"] == "Checking"
         ]
         assert len(matching) == 1
-
-    def test_get_bank_balances_after_set(self, test_client, monkeypatch):
-        """GET /api/bank-balances/ returns records after setting balance."""
-        monkeypatch.setattr(
-            "backend.services.bank_balance_service.BankBalanceService._validate_scrape_is_today",
-            lambda self, provider, account_name: None,
-        )
-        test_client.post(
-            "/api/bank-balances/",
-            json={
-                "provider": "leumi",
-                "account_name": "Savings",
-                "balance": 30000.0,
-            },
-        )
-        response = test_client.get("/api/bank-balances/")
-        assert response.status_code == 200
-        data = response.json()
-        assert len(data) >= 1
-        providers = [b["provider"] for b in data]
-        assert "leumi" in providers

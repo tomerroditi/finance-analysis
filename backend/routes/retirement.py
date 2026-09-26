@@ -5,9 +5,9 @@ Provides endpoints for managing retirement goals and computing
 FIRE projections with Israeli-specific savings vehicles.
 """
 
-from typing import Optional
+from typing import Any
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.orm import Session
 
@@ -35,10 +35,10 @@ class RetirementGoalUpsert(ApiRequestModel):
     bituach_leumi_eligible: bool = True
     bituach_leumi_monthly_estimate: float = Field(2800.0, ge=0)
     other_passive_income: float = Field(0.0, ge=0)
-    monthly_income: Optional[float] = Field(None, ge=0)
-    net_worth_override: Optional[float] = Field(None, ge=0)
-    monthly_expenses_override: Optional[float] = Field(None, ge=0)
-    total_investments_override: Optional[float] = Field(None, ge=0)
+    monthly_income: float | None = Field(None, ge=0)
+    net_worth_override: float | None = Field(None, ge=0)
+    monthly_expenses_override: float | None = Field(None, ge=0)
+    total_investments_override: float | None = Field(None, ge=0)
 
 
 class RetirementGoalResponse(BaseModel):
@@ -59,10 +59,10 @@ class RetirementGoalResponse(BaseModel):
     bituach_leumi_eligible: bool
     bituach_leumi_monthly_estimate: float
     other_passive_income: float
-    monthly_income: Optional[float] = None
-    net_worth_override: Optional[float] = None
-    monthly_expenses_override: Optional[float] = None
-    total_investments_override: Optional[float] = None
+    monthly_income: float | None = None
+    net_worth_override: float | None = None
+    monthly_expenses_override: float | None = None
+    total_investments_override: float | None = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -110,7 +110,7 @@ class RetirementProjectionsResponse(BaseModel):
     monthly_savings_needed: float
     progress_pct: float
     readiness: str
-    portfolio_depleted_age: Optional[int] = None
+    portfolio_depleted_age: int | None = None
     target_retirement_age: int
     full_pension_age: int
     net_worth_projection: list[NetWorthProjectionPoint]
@@ -137,20 +137,30 @@ class SolveFieldResponse(BaseModel):
 class KerenHishtalmutBalanceResponse(BaseModel):
     """Response body for Keren Hishtalmut balance."""
 
-    balance: Optional[float] = None
+    balance: float | None = None
+
+
+class PensionForecastResponse(BaseModel):
+    """Monthly pension estimated from the providers' own forecasts."""
+
+    estimate: float | None = None
+    with_deposits: float
+    no_deposits: float
+    as_of: str | None = None
+    funds: int
 
 
 class ScrapedDefaultsResponse(BaseModel):
     """Response body for auto-fillable values from scraped insurance data."""
 
-    keren_hishtalmut_balance: Optional[float] = None
-    keren_hishtalmut_monthly_contribution: Optional[float] = None
-    pension_monthly_deposit: Optional[float] = None
-    avg_monthly_salary: Optional[float] = None
+    keren_hishtalmut_balance: float | None = None
+    keren_hishtalmut_monthly_contribution: float | None = None
+    pension_monthly_deposit: float | None = None
+    avg_monthly_salary: float | None = None
 
 
-@router.get("/goal", response_model=Optional[RetirementGoalResponse])
-def get_goal(db: Session = Depends(get_database)):
+@router.get("/goal", response_model=RetirementGoalResponse | None)
+def get_goal(db: Session = Depends(get_database)) -> dict[str, Any] | None:
     """Get the retirement goal profile, or null if not configured."""
     service = RetirementService(db)
     return service.get_goal()
@@ -159,21 +169,21 @@ def get_goal(db: Session = Depends(get_database)):
 @router.put("/goal", response_model=RetirementGoalResponse)
 def upsert_goal(
     data: RetirementGoalUpsert, db: Session = Depends(get_database)
-):
+) -> dict[str, Any]:
     """Create or update the retirement goal profile."""
     service = RetirementService(db)
     return service.upsert_goal(**data.model_dump())
 
 
 @router.get("/status", response_model=RetirementStatusResponse)
-def get_status(db: Session = Depends(get_database)):
+def get_status(db: Session = Depends(get_database)) -> dict[str, Any]:
     """Get current financial status from real tracked data."""
     service = RetirementService(db)
     return service.get_current_status()
 
 
 @router.get("/projections", response_model=RetirementProjectionsResponse)
-def get_projections(db: Session = Depends(get_database)):
+def get_projections(db: Session = Depends(get_database)) -> dict[str, Any]:
     """Get FIRE projections from the saved goal."""
     service = RetirementService(db)
     return service.get_projections()
@@ -182,14 +192,14 @@ def get_projections(db: Session = Depends(get_database)):
 @router.post("/projections", response_model=RetirementProjectionsResponse)
 def preview_projections(
     data: RetirementGoalUpsert, db: Session = Depends(get_database)
-):
+) -> dict[str, Any]:
     """Compute FIRE projections from provided goal params without saving."""
     service = RetirementService(db)
     return service.get_projections(goal_override=data.model_dump())
 
 
 @router.get("/suggestions", response_model=RetirementSuggestionsResponse)
-def get_suggestions(db: Session = Depends(get_database)):
+def get_suggestions(db: Session = Depends(get_database)) -> dict[str, Any]:
     """Solve all adjustable fields from the saved goal."""
     service = RetirementService(db)
     return service.solve_all_fields()
@@ -198,34 +208,58 @@ def get_suggestions(db: Session = Depends(get_database)):
 @router.post("/suggestions", response_model=RetirementSuggestionsResponse)
 def preview_suggestions(
     data: RetirementGoalUpsert, db: Session = Depends(get_database)
-):
+) -> dict[str, Any]:
     """Solve all adjustable fields from provided goal params without saving."""
     service = RetirementService(db)
     return service.solve_all_fields(goal_override=data.model_dump())
 
 
 @router.get("/solve/{field}", response_model=SolveFieldResponse)
-def solve_for_field(field: str, db: Session = Depends(get_database)):
+def solve_for_field(field: str, db: Session = Depends(get_database)) -> dict[str, Any]:
     """Solve for a field value that reaches FIRE at target retirement age."""
     service = RetirementService(db)
     return service.solve_for_field(field)
 
 
 @router.get("/keren-hishtalmut-balance", response_model=KerenHishtalmutBalanceResponse)
-def get_keren_hishtalmut_balance(db: Session = Depends(get_database)):
-    """Get auto-detected Keren Hishtalmut balance from scraped insurance data."""
+def get_keren_hishtalmut_balance(
+    db: Session = Depends(get_database),
+) -> dict[str, float | None]:
+    """Get the auto-detected Keren Hishtalmut balance.
+
+    Covers both scraped insurance policies and manually-created KH
+    investments — see ``InvestmentsService.get_hishtalmut_total_balance``.
+    """
     service = RetirementService(db)
     balance = service.get_keren_hishtalmut_scraped_balance()
     return {"balance": balance}
 
 
-@router.get("/scraped-defaults", response_model=ScrapedDefaultsResponse)
-def get_scraped_defaults(db: Session = Depends(get_database)):
-    """Get all auto-fillable values from scraped insurance data.
+@router.get("/pension-forecast", response_model=PensionForecastResponse)
+def get_pension_forecast(
+    current_age: int | None = Query(None, ge=0, le=120),
+    target_retirement_age: int | None = Query(None, ge=0, le=120),
+    db: Session = Depends(get_database),
+) -> dict[str, Any]:
+    """Estimate the monthly pension for a retirement plan's ages.
 
-    Returns Keren Hishtalmut balance and monthly contribution, plus
-    pension monthly deposit estimate. Values are null when no scraped
-    data is available.
+    Derived from each pension fund's published forecast (via the pension
+    clearing house), with deposits stopping at ``target_retirement_age``.
+    Ages default to the saved plan's.
+    """
+    return RetirementService(db).get_pension_forecast(
+        current_age, target_retirement_age
+    )
+
+
+@router.get("/scraped-defaults", response_model=ScrapedDefaultsResponse)
+def get_scraped_defaults(db: Session = Depends(get_database)) -> dict[str, Any]:
+    """Get all auto-fillable retirement goal values.
+
+    Returns the Keren Hishtalmut balance (from scraped policies and
+    manually-created KH investments alike), plus scraped monthly
+    contribution and pension monthly deposit estimates. Values are null
+    when no underlying data is available.
     """
     service = RetirementService(db)
     return service.get_scraped_defaults()

@@ -10,7 +10,12 @@ import pytest
 from cryptography.fernet import Fernet
 from sqlalchemy.orm import Session
 
-from backend.constants.budget import PERIOD_MONTHLY, PERIOD_PROJECT
+from backend.constants.budget import (
+    ALL_TAGS,
+    PERIOD_MONTHLY,
+    PERIOD_PROJECT,
+    TOTAL_BUDGET,
+)
 from backend.models.bank_balance import BankBalance
 from backend.models.budget import BudgetRule
 from backend.models.cash_balance import CashBalance
@@ -760,7 +765,9 @@ def seed_project_transactions(db_session: Session) -> dict:
     """Insert project-related transactions and their project budget rules.
 
     Two projects: Wedding and Renovation, each with several tagged
-    transactions and a project budget rule (month=None, year=None).
+    transactions and the rule set ``ProjectBudgetService.create_project``
+    writes — a ``Total Budget`` rule tagged ``all_tags`` (50,000 / 25,000)
+    plus a zero-amount rule per tag (Venue, Catering / Materials, Labor).
 
     Returns a dict with keys ``transactions`` and ``budget_rules``.
     """
@@ -899,26 +906,35 @@ def seed_project_transactions(db_session: Session) -> dict:
         ),
     ]
 
-    budget_rules = [
-        BudgetRule(
-            name="Wedding Budget",
-            amount=50000.0,
-            category="Wedding",
-            tags="Venue;Catering",
-            year=None,
-            month=None,
-            period_type=PERIOD_PROJECT,
-        ),
-        BudgetRule(
-            name="Renovation Budget",
-            amount=25000.0,
-            category="Renovation",
-            tags="Materials;Labor",
-            year=None,
-            month=None,
-            period_type=PERIOD_PROJECT,
-        ),
-    ]
+    def _project_rules(category: str, total: float, tags: list[str]) -> list:
+        rules = [
+            BudgetRule(
+                name=TOTAL_BUDGET,
+                amount=total,
+                category=category,
+                tags=ALL_TAGS,
+                year=None,
+                month=None,
+                period_type=PERIOD_PROJECT,
+            )
+        ]
+        rules.extend(
+            BudgetRule(
+                name=tag,
+                amount=0.0,
+                category=category,
+                tags=tag,
+                year=None,
+                month=None,
+                period_type=PERIOD_PROJECT,
+            )
+            for tag in tags
+        )
+        return rules
+
+    budget_rules = _project_rules("Wedding", 50000.0, ["Venue", "Catering"]) + (
+        _project_rules("Renovation", 25000.0, ["Materials", "Labor"])
+    )
 
     db_session.add_all(txns + budget_rules)
     db_session.commit()
@@ -937,45 +953,29 @@ def seed_project_transactions(db_session: Session) -> dict:
 def seed_budget_rules(db_session: Session) -> list:
     """Insert monthly budget rules for January 2024.
 
-    Includes Total Budget, Food, Transport, and Entertainment budgets.
+    The shape ``MonthlyBudgetService.create_rule`` writes: a ``Total Budget``
+    cap (category ``Total Budget``, 10,000) and whole-category ``all_tags``
+    rules for Food (2,000), Transport (500) and Entertainment (300). Against
+    ``seed_base_transactions`` the January spend is Food 245 / Transport 70 /
+    Entertainment 40 / total 3,605.
     """
+
+    def _rule(name: str, amount: float, category: str) -> BudgetRule:
+        return BudgetRule(
+            name=name,
+            amount=amount,
+            category=category,
+            tags=ALL_TAGS,
+            year=2024,
+            month=1,
+            period_type=PERIOD_MONTHLY,
+        )
+
     rules = [
-        BudgetRule(
-            name="Total Budget",
-            amount=10000.0,
-            category=None,
-            tags=None,
-            year=2024,
-            month=1,
-            period_type=PERIOD_MONTHLY,
-        ),
-        BudgetRule(
-            name="Food",
-            amount=2000.0,
-            category="Food",
-            tags="All Tags",
-            year=2024,
-            month=1,
-            period_type=PERIOD_MONTHLY,
-        ),
-        BudgetRule(
-            name="Transport",
-            amount=500.0,
-            category="Transport",
-            tags=None,
-            year=2024,
-            month=1,
-            period_type=PERIOD_MONTHLY,
-        ),
-        BudgetRule(
-            name="Entertainment",
-            amount=300.0,
-            category="Entertainment",
-            tags=None,
-            year=2024,
-            month=1,
-            period_type=PERIOD_MONTHLY,
-        ),
+        _rule(TOTAL_BUDGET, 10000.0, TOTAL_BUDGET),
+        _rule("Food", 2000.0, "Food"),
+        _rule("Transport", 500.0, "Transport"),
+        _rule("Entertainment", 300.0, "Entertainment"),
     ]
 
     db_session.add_all(rules)

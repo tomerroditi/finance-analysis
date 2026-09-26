@@ -58,8 +58,8 @@ class TestScrapingHistoryRepository:
 
         status = repo.get_scraping_status(scrape_id)
         assert status == "failed"
-        error = repo.get_error_message(scrape_id)
-        assert error == "Connection timeout"
+        message, _error_type = repo.get_error(scrape_id)
+        assert message == "Connection timeout"
 
     def test_get_scraping_status(self, db_session: Session):
         """Verify getting status by scrape ID."""
@@ -79,22 +79,6 @@ class TestScrapingHistoryRepository:
         repo = ScrapingHistoryRepository(db_session)
         status = repo.get_scraping_status(999)
         assert status is None
-
-    def test_get_error_message(self, db_session: Session):
-        """Verify getting error message for failed scrape."""
-        repo = ScrapingHistoryRepository(db_session)
-        scrape_id = repo.record_scrape_start(
-            service_name="credit_cards",
-            provider_name="isracard",
-            account_name="Main Card",
-            start_date=date(2024, 1, 15),
-        )
-
-        # Initially no error
-        assert repo.get_error_message(scrape_id) is None
-
-        repo.record_scrape_end(scrape_id, repo.FAILED, "Invalid password")
-        assert repo.get_error_message(scrape_id) == "Invalid password"
 
     def test_get_error_returns_detail_and_category(self, db_session: Session):
         """Verify get_error returns both halves of a failure in one query."""
@@ -141,21 +125,6 @@ class TestScrapingHistoryRepository:
         repo.record_scrape_end(scrape_id, repo.FAILED, "something went wrong")
         assert repo.get_error(scrape_id) == ("something went wrong", None)
 
-    def test_get_scraping_history(self, db_session: Session):
-        """Verify getting full history as DataFrame."""
-        repo = ScrapingHistoryRepository(db_session)
-        repo.record_scrape_start(
-            "credit_cards", "isracard", "Card 1", date(2024, 1, 15)
-        )
-        repo.record_scrape_start(
-            "banks", "hapoalim", "Checking", date(2024, 1, 15)
-        )
-
-        history = repo.get_scraping_history()
-        assert len(history) == 2
-        assert "service_name" in history.columns
-        assert "status" in history.columns
-
     def test_get_last_successful_scrape_date(self, db_session: Session):
         """Verify getting last successful scrape date for an account."""
         repo = ScrapingHistoryRepository(db_session)
@@ -194,16 +163,6 @@ class TestScrapingHistoryRepository:
         assert result is None
 
 
-class TestScrapingHistoryRepositoryEnsureTable:
-    """Tests for _ensure_table_exists stub."""
-
-    def test_ensure_table_exists_is_noop(self, db_session: Session):
-        """Verify _ensure_table_exists runs without error as an empty stub."""
-        repo = ScrapingHistoryRepository(db_session)
-        result = repo._ensure_table_exists()
-        assert result is None
-
-
 class TestScrapingHistoryRepositoryUpdateStatus:
     """Tests for update_status method."""
 
@@ -220,63 +179,3 @@ class TestScrapingHistoryRepositoryUpdateStatus:
         repo.update_status(scrape_id, repo.IN_PROGRESS)
 
         assert repo.get_scraping_status(scrape_id) == "in_progress"
-
-    def test_update_status_to_success(self, db_session: Session):
-        """Verify update_status can set status to success."""
-        repo = ScrapingHistoryRepository(db_session)
-        scrape_id = repo.record_scrape_start(
-            "credit_cards", "isracard", "Main Card", date(2024, 3, 1),
-        )
-
-        repo.update_status(scrape_id, repo.SUCCESS)
-
-        assert repo.get_scraping_status(scrape_id) == "success"
-
-
-class TestScrapingHistoryRepositoryClearOldRecords:
-    """Tests for clear_old_records method."""
-
-    def test_clear_old_records_removes_old_entries(self, db_session: Session):
-        """Verify records older than the cutoff are deleted."""
-        from datetime import datetime, timedelta
-
-        from backend.models.scraping import ScrapingHistory
-
-        repo = ScrapingHistoryRepository(db_session)
-
-        old_record = ScrapingHistory(
-            service_name="banks",
-            provider_name="hapoalim",
-            account_name="Checking",
-            date=(datetime.now() - timedelta(days=60)).isoformat(),
-            status=repo.SUCCESS,
-            start_date="2024-01-01",
-        )
-        recent_record = ScrapingHistory(
-            service_name="credit_cards",
-            provider_name="isracard",
-            account_name="Main Card",
-            date=datetime.now().isoformat(),
-            status=repo.SUCCESS,
-            start_date="2024-03-01",
-        )
-        db_session.add_all([old_record, recent_record])
-        db_session.commit()
-
-        repo.clear_old_records(days_to_keep=30)
-
-        history = repo.get_scraping_history()
-        assert len(history) == 1
-        assert history.iloc[0]["account_name"] == "Main Card"
-
-    def test_clear_old_records_keeps_recent(self, db_session: Session):
-        """Verify recent records are not deleted."""
-        repo = ScrapingHistoryRepository(db_session)
-
-        repo.record_scrape_start("banks", "hapoalim", "Checking", date(2024, 3, 1))
-        repo.record_scrape_start("credit_cards", "isracard", "Card1", date(2024, 3, 1))
-
-        repo.clear_old_records(days_to_keep=30)
-
-        history = repo.get_scraping_history()
-        assert len(history) == 2

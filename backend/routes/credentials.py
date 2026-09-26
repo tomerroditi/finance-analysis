@@ -3,33 +3,34 @@
 Provides endpoints for account credential management.
 """
 
-from typing import Any, Dict, List
+from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from backend.constants.providers import LoginFields, Services
+from backend.constants.providers import LoginFields
 from backend.dependencies import get_database
-from backend.services.bank_balance_service import BankBalanceService
+from backend.errors import EntityNotFoundException
+from backend.routes.schemas import StatusResponse
 from backend.services.credentials_service import CredentialsService
 
 router = APIRouter()
 
 
 class CredentialCreate(BaseModel):
+    """Request body for creating or updating one account's credentials."""
+
     service: str
     provider: str
     account_name: str
-    credentials: Dict[str, Any]
-
-
-class StatusResponse(BaseModel):
-    status: str
+    credentials: dict[str, Any]
 
 
 class ProviderFieldsResponse(BaseModel):
-    fields: List[str]
+    """Login fields a provider requires."""
+
+    fields: list[str]
 
 
 class DeleteAccountResponse(BaseModel):
@@ -58,8 +59,8 @@ def get_credentials(
 @router.get("/accounts")
 def get_accounts(
     db: Session = Depends(get_database),
-) -> list[dict[str, str]]:
-    """Get a list of all configured accounts."""
+) -> list[dict[str, Any]]:
+    """Get all configured accounts, flagging those whose details must be re-entered."""
     service = CredentialsService(db)
     return service.get_accounts_list()
 
@@ -80,7 +81,7 @@ def get_credential_details(
     creds_service = CredentialsService(db)
     fields = creds_service.get_masked_credentials(service, provider, account_name)
     if not fields:
-        raise HTTPException(status_code=404, detail="Credential not found")
+        raise EntityNotFoundException("Credential not found")
     return fields
 
 
@@ -97,18 +98,18 @@ def create_credential(
 ) -> dict[str, str]:
     """Create or update a credential."""
     creds_service = CredentialsService(db)
-    creds_service.save_credentials({
-        credential.service: {
-            credential.provider: {
-                credential.account_name: credential.credentials
+    creds_service.save_credentials(
+        {
+            credential.service: {
+                credential.provider: {credential.account_name: credential.credentials}
             }
         }
-    })
+    )
     return {"status": "success"}
 
 
 @router.get("/fields/{provider}", response_model=ProviderFieldsResponse)
-def get_provider_fields(provider: str) -> dict[str, List[str]]:
+def get_provider_fields(provider: str) -> dict[str, list[str]]:
     """Get the required fields for a provider login."""
     fields = LoginFields.get_fields(provider)
     return {"fields": fields}
@@ -162,21 +163,13 @@ def delete_credential(
 
     Raises
     ------
-    HTTPException
+    EntityNotFoundException
         404 if the credential does not exist.
     """
-    creds_service = CredentialsService(db)
-    try:
-        result = creds_service.delete_credential(
-            service, provider, account_name, delete_data=delete_data
-        )
-        # The balance row carries `prior_wealth_amount`, so it may only be
-        # dropped when the transactions it was derived from go too.
-        if delete_data and service == Services.BANK.value:
-            BankBalanceService(db).delete_for_account(provider, account_name)
-        return {
-            "status": "success",
-            "transactions_deleted": result.get("transactions_deleted", 0),
-        }
-    except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
+    result = CredentialsService(db).delete_credential(
+        service, provider, account_name, delete_data=delete_data
+    )
+    return {
+        "status": "success",
+        "transactions_deleted": result.get("transactions_deleted", 0),
+    }

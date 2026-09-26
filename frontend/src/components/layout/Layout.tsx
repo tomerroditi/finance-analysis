@@ -1,6 +1,8 @@
-import { useEffect } from "react";
+import { Suspense, useEffect } from "react";
 import { Outlet, useLocation } from "react-router";
 import { Sidebar } from "./Sidebar";
+import { DemoSandboxNotice } from "./DemoSandboxNotice";
+import { ScrapingTracker } from "../ScrapingTracker";
 import { useAppStore } from "../../stores/appStore";
 
 export function Layout() {
@@ -13,14 +15,20 @@ export function Layout() {
 
   return (
     <div className="min-h-dvh bg-[var(--background)]">
+      {/* Above the router, so scrapes keep advancing and a waiting 2FA
+          prompt stays answerable no matter which page is on screen. */}
+      <ScrapingTracker />
       <Sidebar />
       <main
         className={`transition-all duration-300 ${
           sidebarOpen ? "md:ms-64" : "md:ms-20"
         } ms-0 pt-10 md:pt-0`}
       >
-        <div className="p-2 pt-2 sm:p-4 sm:pt-4 md:p-8 md:pt-6">
-          <Outlet />
+        <div className="p-1.5">
+          <DemoSandboxNotice />
+          <Suspense fallback={null}>
+            <Outlet />
+          </Suspense>
         </div>
       </main>
     </div>

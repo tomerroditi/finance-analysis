@@ -34,6 +34,13 @@ import { useNotify } from "../context/DialogContext";
 import { humanizeProvider } from "../utils/textFormatting";
 import { useQueryKeys } from "../hooks/useQueryKeys";
 import { qkPrefix } from "../services/queryKeys";
+import {
+  INTERNATIONAL_PHONE_PROVIDERS,
+  ISRAEL_DIAL_PREFIX,
+  isValidIsraeliMobile,
+  toInternationalMobile,
+  toSubscriberDigits,
+} from "../utils/phoneNumbers";
 
 // Sentinel the backend returns in place of stored secrets; sending it back
 // on save keeps the stored value (see backend CredentialsService.MASK_SENTINEL).
@@ -70,6 +77,7 @@ export function DataSources() {
   const [editingAccount, setEditingAccount] = useState<CredentialAccount | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<CredentialAccount | null>(null);
   const [isViewOnly, setIsViewOnly] = useState(false);
+  const [phoneBlurred, setPhoneBlurred] = useState(false);
   useScrollLock(isAddOpen || !!editingAccount);
 
   const {
@@ -80,6 +88,11 @@ export function DataSources() {
 
   const [scrapingPeriodDays, setScrapingPeriodDays] = useState<number | null>(null);
   const [tfaCodes, setTfaCodes] = useState<Record<string, string>>({});
+  // Sources explicitly picked for the next scrape. Kept as keys rather than
+  // account objects so a refetched accounts list (new object identities)
+  // doesn't drop the selection, and so a disconnected account's stale key
+  // simply stops matching instead of having to be swept.
+  const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
 
   const { data: accounts, isLoading } = useQuery({
     queryKey: qk.credentials.accounts(),
@@ -110,7 +123,16 @@ export function DataSources() {
     setEditingAccount(null);
     setIsViewOnly(false);
     setShowPasswords({});
+    setPhoneBlurred(false);
   };
+
+  const requiresIntlPhone =
+    INTERNATIONAL_PHONE_PROVIDERS.has(selectedProvider) && formFields.includes("phoneNumber");
+  // Legacy accounts may hold the local 05X form; normalize before judging it.
+  const normalizedPhone = toInternationalMobile(fields.phoneNumber || "");
+  const phoneIsValid = !requiresIntlPhone || isValidIsraeliMobile(normalizedPhone);
+  const showPhoneError =
+    requiresIntlPhone && phoneBlurred && !isViewOnly && !!fields.phoneNumber && !phoneIsValid;
 
   const createMutation = useMutation({
     mutationFn: () =>
@@ -118,7 +140,7 @@ export function DataSources() {
         service: selectedService,
         provider: selectedProvider,
         account_name: accountName,
-        credentials: fields,
+        credentials: requiresIntlPhone ? { ...fields, phoneNumber: normalizedPhone } : fields,
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: qkPrefix.credentialsAccounts });
@@ -187,6 +209,19 @@ export function DataSources() {
     return bankBalances?.find(
       (b) => b.provider === provider && b.account_name === accountName,
     );
+  };
+
+  const accountKey = (acc: CredentialAccount) =>
+    `${acc.service}|${acc.provider}|${acc.account_name}`;
+
+  const toggleSelected = (acc: CredentialAccount, selected: boolean) => {
+    const key = accountKey(acc);
+    setSelectedKeys((prev) => {
+      const next = new Set(prev);
+      if (selected) next.add(key);
+      else next.delete(key);
+      return next;
+    });
   };
 
   const isScrapedToday = (
@@ -266,11 +301,38 @@ export function DataSources() {
     setShowPasswords((prev) => ({ ...prev, [field]: !prev[field] }));
   };
 
+  // Derived from the live accounts list, so a key left behind by a
+  // disconnected account simply matches nothing.
+  const selectedAccounts = (accounts ?? []).filter((acc) =>
+    selectedKeys.has(accountKey(acc)),
+  );
+
+  const handleScrape = () => {
+    if (!accounts?.length) return;
+    if (selectedAccounts.length > 0) {
+      // An explicit pick overrides the synced-today skip below: the user
+      // named these sources, so re-fetching one is what they asked for.
+      // scrapeAll() still refuses to relaunch an account already running.
+      scrapeAll(selectedAccounts, scrapingPeriodDays);
+      return;
+    }
+    scrapeAll(
+      // Already fetched successfully today — another run would only
+      // re-download the same data (and re-send an SMS for 2FA banks).
+      accounts.filter(
+        (acc) =>
+          !isScrapedToday(acc.provider, acc.account_name) &&
+          getScraperForAccount(acc)?.status !== "success",
+      ),
+      scrapingPeriodDays,
+    );
+  };
+
   if (isLoading)
     return (
-      <div className="space-y-4 md:space-y-8 p-4 md:p-8">
+      <div className="space-y-1.5">
         <Skeleton variant="text" lines={2} className="w-64" />
-        <div className="grid grid-cols-1 gap-4">
+        <div className="grid grid-cols-1 gap-1.5">
           <Skeleton variant="card" className="h-28" />
           <Skeleton variant="card" className="h-28" />
         </div>
@@ -278,15 +340,22 @@ export function DataSources() {
     );
 
   return (
-    <div className="space-y-4 md:space-y-8 animate-in fade-in duration-500">
-      <div className="flex flex-wrap items-center justify-end gap-2 md:gap-3">
-          <div className="relative">
+    <div className="space-y-1.5 animate-in fade-in duration-500">
+      {/* One row at every width: the controls shrink instead of wrapping, so
+          the period, the scrape trigger and Connect Account stay side by side
+          on a phone. */}
+      <div className="flex items-center justify-end gap-1.5 md:gap-3">
+          <div className="relative shrink-0">
             <select
               value={scrapingPeriodDays ?? "auto"}
               onChange={(e) =>
                 setScrapingPeriodDays(e.target.value === "auto" ? null : Number(e.target.value))
               }
-              className="appearance-none bg-[var(--surface)] border border-[var(--surface-light)] rounded-xl px-3 pe-7 py-2.5 text-xs font-bold text-white outline-none focus:border-[var(--primary)]/50 transition-colors disabled:opacity-50 cursor-pointer"
+              aria-label={t("dataSources.scrapePeriodLabel")}
+              // A <select> is as wide as its widest option ("12 Months"),
+              // which is what pushed this row past a phone's width. Capped
+              // here; the longest label still clears the padding.
+              className="appearance-none w-[104px] md:w-auto bg-[var(--surface)] border border-[var(--surface-light)] rounded-xl px-2.5 pe-6 md:px-3 md:pe-7 py-2.5 text-xs font-bold text-white outline-none focus:border-[var(--primary)]/50 transition-colors disabled:opacity-50 cursor-pointer"
             >
               {SCRAPING_PERIODS.map((p) => (
                 <option key={p.key} value={p.days ?? "auto"}>{t(`dataSources.scrapePeriod.${p.key}`)}</option>
@@ -295,27 +364,65 @@ export function DataSources() {
             <ChevronDown size={12} className="absolute end-2 top-1/2 -translate-y-1/2 text-[var(--text-muted)] pointer-events-none" />
           </div>
           <button
-            onClick={() => accounts && scrapeAll(accounts, scrapingPeriodDays)}
+            onClick={handleScrape}
+            title={
+              selectedAccounts.length > 0
+                ? t("dataSources.scrapeSelectedHint")
+                : t("dataSources.scrapeAllHint")
+            }
             disabled={!accounts?.length}
-            className="flex items-center gap-2 px-5 py-2.5 bg-[var(--surface)] border border-[var(--surface-light)] text-white rounded-xl font-bold hover:border-[var(--primary)]/50 hover:bg-[var(--primary)]/5 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+            data-testid="scrape-launch"
+            className="flex items-center gap-2 shrink-0 px-3 md:px-5 py-2.5 bg-[var(--surface)] border border-[var(--surface-light)] text-white rounded-xl text-xs md:text-sm font-bold hover:border-[var(--primary)]/50 hover:bg-[var(--primary)]/5 transition-all disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
           >
             {/* Stays clickable while scrapes are in flight so the remaining
                 idle accounts can still be launched; scrapeAll() skips the
                 ones already running. The spinner is the only in-progress
-                signal — the label must NOT swap, or a name-based locator
-                (and the user's muscle memory) loses the button mid-run. */}
+                signal — the label must NOT swap mid-run, so it tracks the
+                selection (a user action) and nothing else. */}
             <RefreshCw size={16} className={isAnyScraping ? "animate-spin" : ""} />
-            {t("dataSources.scrapeAll")}
+            {selectedAccounts.length > 0
+              ? t("dataSources.scrapeSelected", { count: selectedAccounts.length })
+              : t("dataSources.scrapeAll")}
           </button>
           <button
             onClick={() => setIsAddOpen(true)}
-            className="flex items-center gap-2 px-6 py-2.5 bg-[var(--primary)] text-white rounded-xl font-bold hover:bg-[var(--primary-dark)] transition-all shadow-lg shadow-[var(--primary)]/20"
+            // The short label keeps the row intact on a phone; the aria-label
+            // holds the full name, which every locator and screen reader uses.
+            aria-label={t("dataSources.connectAccount")}
+            className="flex items-center gap-2 shrink-0 px-3 md:px-6 py-2.5 bg-[var(--primary)] text-white rounded-xl text-xs md:text-sm font-bold hover:bg-[var(--primary-dark)] transition-all shadow-lg shadow-[var(--primary)]/20 whitespace-nowrap"
           >
-            <Plus size={18} /> {t("dataSources.connectAccount")}
+            <Plus size={18} />
+            <span className="sm:hidden">{t("dataSources.connectAccountShort")}</span>
+            <span className="hidden sm:inline">{t("dataSources.connectAccount")}</span>
           </button>
       </div>
 
-      <div className="grid grid-cols-1 gap-4">
+      {selectedAccounts.length > 0 && (
+        <div
+          data-testid="selection-bar"
+          className="flex items-center justify-between gap-2 rounded-xl border border-[var(--primary)]/30 bg-[var(--primary)]/5 px-3 py-2"
+        >
+          <span className="text-xs font-bold text-white">
+            {t("dataSources.sourcesSelected", { count: selectedAccounts.length })}
+          </span>
+          <div className="flex items-center gap-1.5">
+            <button
+              onClick={() => setSelectedKeys(new Set((accounts ?? []).map(accountKey)))}
+              className="px-2.5 py-1 rounded-lg text-xs font-bold text-[var(--text-muted)] hover:text-white hover:bg-[var(--surface-light)] transition-colors"
+            >
+              {t("dataSources.selectAllSources")}
+            </button>
+            <button
+              onClick={() => setSelectedKeys(new Set())}
+              className="px-2.5 py-1 rounded-lg text-xs font-bold text-[var(--text-muted)] hover:text-white hover:bg-[var(--surface-light)] transition-colors"
+            >
+              {t("dataSources.clearSelection")}
+            </button>
+          </div>
+        </div>
+      )}
+
+      <div className="grid grid-cols-1 gap-1.5">
         {accounts?.length === 0 ? (
           <div className="bg-[var(--surface)] rounded-2xl border border-dashed border-[var(--surface-light)] p-6 md:p-12 text-center">
             <div className="mx-auto w-16 h-16 bg-[var(--surface-light)] rounded-2xl flex items-center justify-center text-[var(--text-muted)] mb-4">
@@ -354,6 +461,8 @@ export function DataSources() {
                   lastScrapeDate={lastScrape?.last_scrape_date}
                   balance={bal}
                   scrapedToday={isScrapedToday(acc.provider, acc.account_name)}
+                  selected={selectedKeys.has(accountKey(acc))}
+                  onToggleSelected={(isSelected) => toggleSelected(acc, isSelected)}
                   tfaIsPending={tfaIsPending}
                   tfaCode={tfaCodes[tfaKey] || ""}
                   onTfaCodeChange={(code) =>
@@ -389,7 +498,7 @@ export function DataSources() {
             };
 
             return (
-              <div className="space-y-4">
+              <div className="space-y-1.5">
                 {bankAccounts.length > 0 && (
                   <>
                     <h3 className="text-xs font-medium text-[var(--text-muted)] uppercase tracking-wide px-2 mb-2">
@@ -423,7 +532,10 @@ export function DataSources() {
       {/* Connection Modal */}
       {isAddOpen && (
         <div className="modal-overlay fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-md animate-in fade-in duration-300">
-          <div className="bg-[var(--surface)] border border-[var(--surface-light)] rounded-3xl p-4 md:p-8 shadow-2xl w-full max-w-xl animate-in zoom-in-95 duration-200 relative overflow-hidden">
+          <div className="bg-[var(--surface)] border border-[var(--surface-light)] rounded-3xl shadow-2xl w-full max-w-xl max-h-[calc(100dvh-2rem)] animate-in zoom-in-95 duration-200 flex flex-col overflow-hidden">
+          {/* The panel clips; the body scrolls. A scroll container paints
+              its scrollbar over its own rounded border. */}
+          <div className="relative flex-1 min-h-0 p-4 md:p-8 overflow-x-hidden overflow-y-auto overscroll-contain">
             <button
               onClick={resetForm}
               className="absolute top-6 end-6 p-2 rounded-xl hover:bg-[var(--surface-light)] text-[var(--text-muted)] transition-colors"
@@ -575,6 +687,15 @@ export function DataSources() {
                   :
                 </p>
 
+                {!isViewOnly && !!editingAccount?.needs_reentry && (
+                  <div
+                    role="status"
+                    className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-100/80"
+                  >
+                    {t("dataSources.needsReentryNotice")}
+                  </div>
+                )}
+
                 <div className="space-y-4">
                   <div>
                     <label className="block text-[10px] font-black uppercase tracking-widest text-[var(--text-muted)] mb-2">
@@ -591,6 +712,51 @@ export function DataSources() {
                   </div>
 
                   {formFields.map((field) => {
+                    if (field === "phoneNumber" && requiresIntlPhone) {
+                      return (
+                        <div key={field}>
+                          <label
+                            htmlFor="credential-phone"
+                            className="block text-[10px] font-black uppercase tracking-widest text-[var(--text-muted)] mb-2"
+                          >
+                            {t("dataSources.fields.phoneNumber")}
+                          </label>
+                          {/* The dial prefix is fixed chrome, so the pair is
+                              always LTR — "+972" must lead even in Hebrew. */}
+                          <div
+                            dir="ltr"
+                            className={`flex items-stretch bg-[var(--surface-base)] border rounded-xl transition-all focus-within:border-[var(--primary)] ${
+                              showPhoneError ? "border-red-500/60" : "border-[var(--surface-light)]"
+                            }`}
+                          >
+                            <span className="flex items-center ps-4 pe-2 font-medium text-[var(--text-muted)] select-none">
+                              {ISRAEL_DIAL_PREFIX}
+                            </span>
+                            <input
+                              id="credential-phone"
+                              type="tel"
+                              inputMode="numeric"
+                              autoComplete="tel-national"
+                              disabled={isViewOnly}
+                              placeholder={t("dataSources.phoneLocalPlaceholder")}
+                              aria-invalid={showPhoneError}
+                              aria-describedby={showPhoneError ? "credential-phone-error" : undefined}
+                              className="min-w-0 flex-1 bg-transparent pe-4 py-3.5 outline-none font-medium disabled:opacity-50"
+                              value={toSubscriberDigits(fields[field] || "")}
+                              onBlur={() => setPhoneBlurred(true)}
+                              onChange={(e) =>
+                                setFields({ ...fields, [field]: toInternationalMobile(e.target.value) })
+                              }
+                            />
+                          </div>
+                          {showPhoneError && (
+                            <p id="credential-phone-error" className="mt-1.5 text-xs text-red-400">
+                              {t("dataSources.invalidIsraeliMobile")}
+                            </p>
+                          )}
+                        </div>
+                      );
+                    }
                     const isSensitive =
                       field.toLowerCase().includes("password") ||
                       field.toLowerCase().includes("secret");
@@ -664,7 +830,8 @@ export function DataSources() {
                       isViewOnly ? resetForm : () => createMutation.mutate()
                     }
                     disabled={
-                      (!isViewOnly && !accountName) || createMutation.isPending
+                      (!isViewOnly && (!accountName || !phoneIsValid)) ||
+                      createMutation.isPending
                     }
                     className="flex-[2] py-4 bg-[var(--primary)] rounded-2xl text-white font-black hover:bg-[var(--primary-dark)] transition-all shadow-xl shadow-[var(--primary)]/20 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
@@ -679,6 +846,7 @@ export function DataSources() {
                 </div>
               </div>
             )}
+          </div>
           </div>
         </div>
       )}

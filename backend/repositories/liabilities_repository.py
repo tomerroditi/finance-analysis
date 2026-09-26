@@ -1,26 +1,25 @@
-"""
-Liabilities repository with SQLAlchemy ORM.
-"""
+"""Liabilities repository with SQLAlchemy ORM."""
 
 from datetime import datetime
-from typing import Optional
+from typing import Any
 
 import pandas as pd
-from sqlalchemy import select, update, delete
+from sqlalchemy import delete, select, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from backend.constants.categories import LIABILITIES_CATEGORY
-from backend.errors import EntityNotFoundException
+from backend.errors import EntityAlreadyExistsException, EntityNotFoundException
 from backend.models.liability import Liability, LiabilityTransaction
+from backend.repositories._sql import orm_rows_to_frame
 
 
 class LiabilitiesRepository:
-    """
-    Repository for managing liability tracking records using ORM.
-    """
+    """Repository for managing liability tracking records using ORM."""
 
-    def __init__(self, db: Session):
-        """
+    def __init__(self, db: Session) -> None:
+        """Initialize the repository.
+
         Parameters
         ----------
         db : Session
@@ -38,10 +37,11 @@ class LiabilitiesRepository:
         start_date: str,
         loan_type: str = "fixed_unlinked",
         amortization_method: str = "shpitzer",
-        rate_spread: Optional[float] = None,
-        rate_reset_months: Optional[int] = None,
-        lender: Optional[str] = None,
-        notes: Optional[str] = None,
+        rate_spread: float | None = None,
+        rate_reset_months: int | None = None,
+        lender: str | None = None,
+        notes: str | None = None,
+        insurance_loan_key: str | None = None,
     ) -> None:
         """Create a new liability record.
 
@@ -72,10 +72,14 @@ class LiabilitiesRepository:
             Name of the lending institution.
         notes : str, optional
             Free-text notes about the liability.
+        insurance_loan_key : str, optional
+            Key of the pension/Keren Hishtalmut loan the row mirrors.
 
-        Returns
-        -------
-        None
+        Raises
+        ------
+        EntityAlreadyExistsException
+            If a liability already uses ``tag`` — the ``(category, tag)``
+            pair is unique because it is how payments are matched.
         """
         new_liability = Liability(
             name=name,
@@ -91,10 +95,33 @@ class LiabilitiesRepository:
             rate_reset_months=rate_reset_months,
             lender=lender,
             notes=notes,
+            insurance_loan_key=insurance_loan_key,
             created_date=datetime.today().strftime("%Y-%m-%d"),
         )
         self.db.add(new_liability)
-        self.db.commit()
+        try:
+            self.db.commit()
+        except IntegrityError as exc:
+            self.db.rollback()
+            raise EntityAlreadyExistsException(
+                f"A liability tagged '{tag}' already exists"
+            ) from exc
+
+    def get_by_insurance_loan_key(self, key: str) -> Liability | None:
+        """Return the liability mirroring a pension/KH loan, if any.
+
+        Parameters
+        ----------
+        key : str
+            The loan's ``insurance_loan_key``.
+
+        Returns
+        -------
+        Liability or None
+            The linked row, or ``None`` when the loan was never synced.
+        """
+        stmt = select(Liability).where(Liability.insurance_loan_key == key)
+        return self.db.execute(stmt).scalars().first()
 
     def get_all_liabilities(self, include_paid_off: bool = False) -> pd.DataFrame:
         """Get all liabilities, optionally including paid-off ones.
@@ -115,10 +142,7 @@ class LiabilitiesRepository:
             stmt = stmt.where(Liability.is_paid_off == 0)
 
         records = self.db.execute(stmt).scalars().all()
-        if not records:
-            return pd.DataFrame()
-        df = pd.DataFrame([r.__dict__ for r in records])
-        return df.drop(columns=["_sa_instance_state"], errors="ignore")
+        return orm_rows_to_frame(records)
 
     def get_by_id(self, liability_id: int) -> pd.DataFrame:
         """Get a liability by its ID.
@@ -141,13 +165,10 @@ class LiabilitiesRepository:
         stmt = select(Liability).where(Liability.id == liability_id)
         records = self.db.execute(stmt).scalars().all()
         if not records:
-            raise EntityNotFoundException(
-                f"No liability found with ID {liability_id}"
-            )
-        df = pd.DataFrame([r.__dict__ for r in records])
-        return df.drop(columns=["_sa_instance_state"], errors="ignore")
+            raise EntityNotFoundException(f"No liability found with ID {liability_id}")
+        return orm_rows_to_frame(records)
 
-    def update_liability(self, liability_id: int, **fields) -> None:
+    def update_liability(self, liability_id: int, **fields: Any) -> None:
         """Update a liability by ID.
 
         Parameters
@@ -170,9 +191,7 @@ class LiabilitiesRepository:
 
         if result.rowcount == 0:
             self.db.rollback()
-            raise EntityNotFoundException(
-                f"No liability found with ID {liability_id}"
-            )
+            raise EntityNotFoundException(f"No liability found with ID {liability_id}")
 
         self.db.commit()
 
@@ -200,9 +219,7 @@ class LiabilitiesRepository:
 
         if result.rowcount == 0:
             self.db.rollback()
-            raise EntityNotFoundException(
-                f"No liability found with ID {liability_id}"
-            )
+            raise EntityNotFoundException(f"No liability found with ID {liability_id}")
 
         self.db.commit()
 
@@ -228,13 +245,13 @@ class LiabilitiesRepository:
 
         if result.rowcount == 0:
             self.db.rollback()
-            raise EntityNotFoundException(
-                f"No liability found with ID {liability_id}"
-            )
+            raise EntityNotFoundException(f"No liability found with ID {liability_id}")
 
         self.db.commit()
 
-    def get_liability_transactions(self, liability_id: int) -> list[LiabilityTransaction]:
+    def get_liability_transactions(
+        self, liability_id: int
+    ) -> list[LiabilityTransaction]:
         """Get all auto-generated transactions for a liability.
 
         Parameters
@@ -254,8 +271,10 @@ class LiabilitiesRepository:
         )
         return list(self.db.execute(stmt).scalars().all())
 
-    def add_liability_transaction(self, **fields) -> None:
-        """Create an auto-generated liability transaction.
+    def add_liability_transaction(self, **fields: Any) -> None:
+        """Stage an auto-generated liability transaction without committing.
+
+        Callers add a whole schedule and then call :meth:`commit` once.
 
         Parameters
         ----------
@@ -292,8 +311,6 @@ class LiabilitiesRepository:
 
         if result.rowcount == 0:
             self.db.rollback()
-            raise EntityNotFoundException(
-                f"No liability found with ID {liability_id}"
-            )
+            raise EntityNotFoundException(f"No liability found with ID {liability_id}")
 
         self.db.commit()

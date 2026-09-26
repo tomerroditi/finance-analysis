@@ -249,9 +249,10 @@ The flip side: `queryClient.invalidateQueries()` with no args
 refetches every active query and saturates the mobile HTTP/1.1
 connection pool. Prefer narrow keys
 (`{ queryKey: ["specific"] }`) and synchronous `setQueriesData`
-patches for local effects. The shared `MutationCache.onSuccess`
-already runs a debounced global sweep — you don't need to add
-another one. See `frontend_components.md` →
+patches for local effects. The shared mutation cache already
+runs a debounced global sweep after every mutation settles — you
+don't need to add another one. It also cancels reads that were in
+flight when the write began, so they cannot revert your patch. See `frontend_components.md` →
 "Don't fan out invalidation in mutation hot paths".
 
 ### Multi-field inline editors stage and commit on Done
@@ -284,6 +285,84 @@ When a modal opens another modal (e.g., transaction edit → split transaction),
 <Modal zIndex="z-[60]" ...>  {/* Inner modal on top */}
 ```
 Default is `z-50`. Use `z-[60]` for second-level modals.
+
+## Rounded Scroll Containers
+
+A scroll container cannot round its own scrollbar away. Blink paints the
+scrollbar inside the element's **border box**, and `border-radius` clips
+content, not scrollbar gutters — so an element that is both rounded and its
+own scroller gets the scrollbar drawn across its rounded corners and over its
+border. With this app's `::-webkit-scrollbar` styling (8px, solid track) that
+is plainly visible; it shipped in the Settings popup.
+
+The same defect has a second shape: a rounded **panel** that clamps its
+height and lets a child scroll. The panel clips nothing, so the child's
+scrollbar runs over the panel's corners instead.
+
+```tsx
+// WRONG — the rounded element is the scroller
+<div className="rounded-2xl border p-6 max-h-[90vh] overflow-y-auto">…</div>
+
+// WRONG — rounded panel, scrolling child, nothing clipping
+<div className="rounded-2xl border max-h-[80vh] flex flex-col">
+  <div className="flex-1 overflow-y-auto">…</div>
+</div>
+
+// CORRECT — radius + border on a clipping parent, scrolling on the child
+<div className="rounded-2xl border overflow-hidden flex flex-col max-h-[90vh]">
+  <div className="flex-1 min-h-0 overflow-y-auto p-6">…</div>
+</div>
+```
+
+The radius, border and background belong to the wrapper; padding moves to the
+scroller (so the scrollbar sits outside it, flush to the clipped edge). This
+is what `components/common/Modal.tsx` already does — reach for it before
+hand-rolling a panel.
+
+Both shapes are enforced by `frontend/src/roundedScrollContainers.test.ts`
+(a source scan, runs in `npm test`), with the behavioural half in
+`e2e/dashboard-layout.spec.ts`.
+
+## Capped Scroll Regions Swallow the Page's Scroll
+
+A height cap turns an element into a scroll container, and a scroll container
+owns every gesture that starts on it. Browsers chain a drag to the page only
+when the inner scroller **could not move at all**, and they do not start
+chaining part-way through one — so a list capped at a height its content
+barely passes scrolls those few pixels and then holds the finger. On a phone
+that reads as "the page won't scroll here", over a list hiding nothing worth
+reaching. The savings-goals card shipped exactly that.
+
+Cap conditionally instead. `hooks/useScrollCap.ts` measures the content and
+turns the cap on only once it hides about a row:
+
+```tsx
+// WRONG — a scroll region whether or not there is anything to scroll
+<div className="space-y-2 max-h-[20rem] overflow-y-auto">…</div>
+
+// CORRECT — a plain block until the cap earns its keep
+const [listRef, capped] = useScrollCap(320, rows.length);
+<div ref={listRef} className={capped ? "max-h-[20rem] overflow-y-auto" : ""}>…</div>
+```
+
+Pass anything that changes with the content as the second argument: a capped
+element's own box stops changing size, so a resize observer alone never
+notices rows arriving.
+
+Two things stay exempt, and the scan knows both:
+
+- **Modals, popups and drawers.** The page behind them is locked, so there is
+  nothing to chain to and the cap is always right.
+- **Panes the layout fixes** (`min-h-*` and `max-h-*` together, e.g. a grid
+  cell that must match its neighbour's height). Their height is structural;
+  dropping the cap would move the layout.
+
+`overscroll-contain` is a different knob and does not help here — it governs
+what happens once the inner scroller is exhausted, not whether the gesture was
+taken in the first place.
+
+Enforced by `frontend/src/cappedScrollRegions.test.ts` (a source scan, runs in
+`npm test`), with the behavioural half in `e2e/savings-goals.spec.ts`.
 
 ## TransactionsTable Consumer Updates
 

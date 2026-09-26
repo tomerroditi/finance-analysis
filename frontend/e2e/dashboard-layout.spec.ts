@@ -4,8 +4,7 @@ import { enableDemoMode, resetDemoData } from "./helpers";
 /**
  * Customizable dashboard layout: the Settings → Dashboard tab lets users
  * reorder and hide cards; the KPI header stays pinned. Beta cards (forecast,
- * insights, recurring, goals) ship hidden by default. Persistence is
- * localStorage-backed.
+ * insights) ship hidden by default. Persistence is localStorage-backed.
  */
 test.describe("Dashboard layout customization", () => {
   // Restore pristine demo data before this file runs. The `mutating`
@@ -66,6 +65,30 @@ test.describe("Dashboard layout customization", () => {
     ).toBeVisible();
     await page.getByRole("button", { name: /^Dashboard$/ }).click();
 
+    // The popup scrolls its body, not the rounded panel: a scrollbar on the
+    // panel itself is painted over its border and pokes out of the rounded
+    // corners. The panel clips (overflow hidden) and never scrolls, the body
+    // owns the scrollbar, and the body's box stays inside the panel's.
+    const scrollBox = await page
+      .getByRole("heading", { name: /^Settings$/ })
+      .evaluate((heading) => {
+        const panel = heading.closest<HTMLElement>(".rounded-2xl");
+        const body = panel?.lastElementChild as HTMLElement | null;
+        if (!panel || !body) throw new Error("settings panel not found");
+        return {
+          panelOverflow: getComputedStyle(panel).overflowY,
+          panelScrollOverflow: panel.scrollHeight - panel.clientHeight,
+          bodyOverflow: getComputedStyle(body).overflowY,
+          bodyOverhang:
+            body.getBoundingClientRect().right -
+            panel.getBoundingClientRect().right,
+        };
+      });
+    expect(scrollBox.panelOverflow).toBe("hidden");
+    expect(scrollBox.panelScrollOverflow).toBe(0);
+    expect(scrollBox.bodyOverflow).toBe("auto");
+    expect(scrollBox.bodyOverhang).toBeLessThanOrEqual(0);
+
     // The beta forecast card sits under Hidden cards with a Beta badge.
     const betaRow = page
       .getByText("This Month (forecast)", { exact: true })
@@ -114,28 +137,48 @@ test.describe("Dashboard layout customization", () => {
     await page.getByRole("button", { name: /^Dashboard$/ }).click();
 
     // Visible order still starts with "Budget spending"; drag it down.
-    const firstRow = page
+    await expect(
+      page.getByText("Budget spending", { exact: true }),
+    ).toBeVisible();
+
+    // Only the grip handle drags: a press-and-drag on the row's label must
+    // leave the order untouched.
+    const labelBox = await page
       .getByText("Budget spending", { exact: true })
-      .locator("xpath=..");
-    await expect(firstRow).toBeVisible();
+      .boundingBox();
+    if (!labelBox) throw new Error("no label box");
+    await page.mouse.move(labelBox.x + 10, labelBox.y + labelBox.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(labelBox.x + 10, labelBox.y + 80, { steps: 8 });
+    await page.mouse.move(labelBox.x + 10, labelBox.y + 140, { steps: 8 });
+    await page.mouse.up();
+    const orderAfterLabelDrag = await page.evaluate(() => {
+      const raw = window.localStorage.getItem("fa.dashboard.layout");
+      return raw ? (JSON.parse(raw).order as string[]) : [];
+    });
+    expect(orderAfterLabelDrag[0]).toBe("budget");
+
+    const handle = page.getByTestId("drag-handle-budget");
+    await expect(handle).toBeVisible();
 
     // Regression guard before dragging: @dnd-kit spreads role="button" onto
-    // each row; the global `[role="button"] { touch-action: manipulation }`
+    // the handle; the global `[role="button"] { touch-action: manipulation }`
     // rule would otherwise win the cascade and break dragging on
     // touch/trackpad. The inline `touch-action: none` must override it —
     // a synthetic-mouse drag alone cannot catch that bug.
-    const touchAction = await firstRow.evaluate(
+    const touchAction = await handle.evaluate(
       (el) => getComputedStyle(el).touchAction,
     );
     expect(touchAction).toBe("none");
 
-    const box = await firstRow.boundingBox();
+    const box = await handle.boundingBox();
     if (!box) throw new Error("no drag handle box");
 
-    await page.mouse.move(box.x + 20, box.y + box.height / 2);
+    const x = box.x + box.width / 2;
+    await page.mouse.move(x, box.y + box.height / 2);
     await page.mouse.down();
-    await page.mouse.move(box.x + 20, box.y + 80, { steps: 8 });
-    await page.mouse.move(box.x + 20, box.y + 140, { steps: 8 });
+    await page.mouse.move(x, box.y + 80, { steps: 8 });
+    await page.mouse.move(x, box.y + 140, { steps: 8 });
     await page.mouse.up();
 
     const order = await page.evaluate(() => {
@@ -149,12 +192,12 @@ test.describe("Dashboard layout customization", () => {
   test("hidden card persists across reload and can be restored", async ({
     page,
   }) => {
-    // Current (v:3) layout so it isn't migrated; heatmap hidden explicitly.
+    // Current (v:4) layout so it isn't migrated; heatmap hidden explicitly.
     await page.addInitScript(() => {
       window.localStorage.setItem(
         "fa.dashboard.layout",
         JSON.stringify({
-          v: 3,
+          v: 4,
           order: ["budget", "recent", "income_expenses", "net_worth"],
           hidden: ["heatmap"],
         }),

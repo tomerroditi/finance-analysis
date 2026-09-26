@@ -60,8 +60,11 @@ every user-visible string in both locale files.
 ```
 backend/       constants/ routes/ services/ repositories/ models/ scraper/
                resources/ (default-category YAML) uninstall/ utils/ alembic/
-               database.py demo_setup.py errors.py main.py
-scraper/       Pure-Python provider framework (Playwright + httpx) — 19 providers
+               middleware/ (security + demo-mode middlewares)
+               main.py (app + lifespan) startup.py router_registry.py
+               exception_handlers.py spa.py runtime.py migrations_runner.py
+               database.py demo_setup.py errors.py
+scraper/       Pure-Python provider framework (Playwright + httpx) — 20 providers
 frontend/src/  components/ pages/ services/ hooks/ stores/ context/ utils/
                locales/ queryClient.ts
 tests/backend/ unit/ routes/ integration/ migrations/
@@ -76,4 +79,5 @@ without touching the code: `backend_services.md`, `backend_repositories.md`,
 `frontend_i18n_checklist.md`, `frontend_utils.md`, `frontend_pwa.md`,
 `api_paths.md`, `testing.md`, `ci_and_release.md`, `kpi_calculations.md`,
 `retirement_calculations.md`, `savings_goals.md`, `split_transactions.md`,
-`installation_and_updates.md`, `onezero_mtls.md`, `backend_resources.md`.
+`installation_and_updates.md`, `onezero_mtls.md`, `backend_resources.md`,
+`vercel_demo.md`.

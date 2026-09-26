@@ -1,75 +1,62 @@
+import pytest
+
+from backend.constants.budget import PERIOD_YEARLY
+from backend.services.budget import BudgetService, MonthlyBudgetService
+
+
 class TestFindConflictingTags:
     """Conflict detection between monthly and yearly budgets per year."""
 
-    def test_tag_overlap_same_category_and_year_conflicts(self, db_session):
-        """A shared tag in the same category+year is reported as a conflict."""
-        from backend.services.budget_service import MonthlyBudgetService, BudgetService
-        from backend.constants.budget import PERIOD_YEARLY
-        # existing yearly rule owns Travel/Flights in 2026
-        MonthlyBudgetService(db_session).budget_repository.add(
-            "Y", 20.0, "Travel", "Flights;Hotels", None, 2026, period_type="yearly")
+    @pytest.mark.parametrize(
+        "existing, incoming, expected",
+        [
+            (("Flights;Hotels", 2026), ["Flights", "Car rental"], ["Flights"]),
+            (("Flights", 2025), ["Flights"], []),
+            (("all_tags", 2026), ["Flights", "Hotels"], ["Flights", "Hotels"]),
+            (("Flights", 2026), ["all_tags"], ["all_tags"]),
+            (None, ["all_tags"], []),
+        ],
+        ids=[
+            "shared-tag-same-year",
+            "same-tag-other-year",
+            "existing-all-tags-claims-category",
+            "incoming-all-tags-claims-category",
+            "incoming-all-tags-alone",
+        ],
+    )
+    def test_find_conflicting_tags(self, db_session, existing, incoming, expected):
+        """A tag conflicts with a yearly rule on the same category and year.
+
+        ``all_tags`` on either side claims the whole category, and a rule in
+        a different year never conflicts.
+        """
+        if existing is not None:
+            tags, year = existing
+            MonthlyBudgetService(db_session).budget_repository.add(
+                "Y", 20.0, "Travel", tags, None, year, period_type="yearly")
 
         conflicts = BudgetService(db_session).find_conflicting_tags(
-            "Travel", ["Flights", "Car rental"], 2026, PERIOD_YEARLY)
-        assert conflicts == ["Flights"]
+            "Travel", incoming, 2026, PERIOD_YEARLY)
+        assert conflicts == expected
 
-    def test_no_conflict_in_different_year(self, db_session):
-        """Same tag in a different year does not conflict."""
-        from backend.services.budget_service import MonthlyBudgetService, BudgetService
-        from backend.constants.budget import PERIOD_YEARLY
-        MonthlyBudgetService(db_session).budget_repository.add(
-            "Y", 20.0, "Travel", "Flights", None, 2025, period_type="yearly")
-        conflicts = BudgetService(db_session).find_conflicting_tags(
-            "Travel", ["Flights"], 2026, PERIOD_YEARLY)
-        assert conflicts == []
+    @pytest.mark.parametrize(
+        "incoming, kept, skipped",
+        [
+            (["Flights", "Hotels"], ["Hotels"], ["Flights"]),
+            (["all_tags"], [], ["all_tags"]),
+        ],
+        ids=["split-tag-list", "conflicting-all-tags-fully-skipped"],
+    )
+    def test_strip_conflicting_tags(self, db_session, incoming, kept, skipped):
+        """strip_conflicting_tags splits a tag list into kept vs skipped.
 
-    def test_all_tags_on_existing_claims_whole_category(self, db_session):
-        """An existing all_tags rule conflicts with any tag in that category+year."""
-        from backend.services.budget_service import MonthlyBudgetService, BudgetService
-        from backend.constants.budget import PERIOD_YEARLY
-        MonthlyBudgetService(db_session).budget_repository.add(
-            "Y", 20.0, "Travel", "all_tags", None, 2026, period_type="yearly")
-        conflicts = BudgetService(db_session).find_conflicting_tags(
-            "Travel", ["Flights", "Hotels"], 2026, PERIOD_YEARLY)
-        assert conflicts == ["Flights", "Hotels"]
-
-    def test_strip_returns_kept_and_skipped(self, db_session):
-        """strip_conflicting_tags splits a tag list into kept vs skipped."""
-        from backend.services.budget_service import MonthlyBudgetService, BudgetService
-        from backend.constants.budget import PERIOD_YEARLY
+        A conflicting incoming ``all_tags`` is skipped whole.
+        """
         MonthlyBudgetService(db_session).budget_repository.add(
             "Y", 20.0, "Travel", "Flights", None, 2026, period_type="yearly")
-        kept, skipped = BudgetService(db_session).strip_conflicting_tags(
-            "Travel", ["Flights", "Hotels"], 2026, PERIOD_YEARLY)
-        assert kept == ["Hotels"] and skipped == ["Flights"]
-
-    def test_all_tags_on_incoming_claims_whole_category(self, db_session):
-        """An incoming all_tags rule conflicts with any existing rule in that category+year."""
-        from backend.services.budget_service import MonthlyBudgetService, BudgetService
-        from backend.constants.budget import PERIOD_YEARLY
-        MonthlyBudgetService(db_session).budget_repository.add(
-            "Y", 20.0, "Travel", "Flights", None, 2026, period_type="yearly")
-        conflicts = BudgetService(db_session).find_conflicting_tags(
-            "Travel", ["all_tags"], 2026, PERIOD_YEARLY)
-        assert conflicts == ["all_tags"]
-
-    def test_all_tags_on_incoming_with_no_other_rules_no_conflict(self, db_session):
-        """Incoming all_tags does not conflict when no other rule exists in that category+year."""
-        from backend.services.budget_service import BudgetService
-        from backend.constants.budget import PERIOD_YEARLY
-        conflicts = BudgetService(db_session).find_conflicting_tags(
-            "Travel", ["all_tags"], 2026, PERIOD_YEARLY)
-        assert conflicts == []
-
-    def test_strip_all_tags_on_incoming_fully_skipped(self, db_session):
-        """strip_conflicting_tags treats a conflicting incoming all_tags as fully skipped."""
-        from backend.services.budget_service import MonthlyBudgetService, BudgetService
-        from backend.constants.budget import PERIOD_YEARLY
-        MonthlyBudgetService(db_session).budget_repository.add(
-            "Y", 20.0, "Travel", "Flights", None, 2026, period_type="yearly")
-        kept, skipped = BudgetService(db_session).strip_conflicting_tags(
-            "Travel", ["all_tags"], 2026, PERIOD_YEARLY)
-        assert kept == [] and skipped == ["all_tags"]
+        result = BudgetService(db_session).strip_conflicting_tags(
+            "Travel", incoming, 2026, PERIOD_YEARLY)
+        assert result == (kept, skipped)
 
 
 class TestFindConflictingTagsExcludeRuleId:
@@ -77,8 +64,6 @@ class TestFindConflictingTagsExcludeRuleId:
 
     def test_exclude_rule_id_prevents_self_conflict(self, db_session):
         """A rule does not conflict with itself when its own id is excluded."""
-        from backend.services.budget_service import MonthlyBudgetService, BudgetService
-        from backend.constants.budget import PERIOD_YEARLY
         from backend.constants.budget import ID
 
         service = BudgetService(db_session)
@@ -96,7 +81,8 @@ class TestProjectCategoryHelpers:
 
     def test_is_category_project_owned(self, db_session):
         """A category with a project rule is project-owned; others are not."""
-        from backend.services.budget_service import ProjectBudgetService, BudgetService
+        from backend.services.budget import ProjectBudgetService
+
         ProjectBudgetService(db_session).budget_repository.add(
             "Total Budget", 100.0, "Reno", "all_tags", None, None, period_type="project")
         svc = BudgetService(db_session)
@@ -105,7 +91,6 @@ class TestProjectCategoryHelpers:
 
     def test_category_used_by_monthly_or_yearly(self, db_session):
         """Monthly and yearly rules mark a category budget-used; Total Budget is excluded."""
-        from backend.services.budget_service import BudgetService
         svc = BudgetService(db_session)
         svc.budget_repository.add("m", 10.0, "Food", "Groceries", 5, 2026, period_type="monthly")
         svc.budget_repository.add("y", 20.0, "Travel", "Hotels", None, 2026, period_type="yearly")
@@ -117,7 +102,6 @@ class TestProjectCategoryHelpers:
 
     def test_find_category_overlaps(self, db_session):
         """Overlaps list categories that are both project-owned and budget-used."""
-        from backend.services.budget_service import BudgetService
         svc = BudgetService(db_session)
         svc.budget_repository.add("Total Budget", 100.0, "Reno", "all_tags", None, None, period_type="project")
         svc.budget_repository.add("m", 10.0, "Reno", "Materials", 5, 2026, period_type="monthly")

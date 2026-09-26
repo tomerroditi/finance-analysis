@@ -1,12 +1,40 @@
-"""Unit tests for demo database date-shifting (``backend.demo_setup``)."""
+"""Unit tests for demo database preparation (``backend.demo_setup``)."""
 
+import json
+import shutil
 from datetime import date, timedelta
 
+import pytest
 from sqlalchemy import create_engine, text
 from sqlalchemy.pool import StaticPool
 
-from backend.demo_setup import _backfill_budget_rule_period_type, _shift_dates
+from backend.demo_setup import (
+    DEMO_REFERENCE_DATE,
+    _backfill_budget_rule_period_type,
+    _drop_retired_columns,
+    _install_snapshot,
+    _shift_dates,
+    _source_db_path,
+    sync_missing_columns,
+)
 from backend.models.base import Base
+from backend.repositories.scraping_history_repository import (
+    ScrapingHistoryRepository,
+)
+from backend.utils.crypto import ENCRYPTED_MARKER
+
+#: "Today" values spanning early/late days of the month, a month shorter than
+#: the reference day, and a year boundary. The reference date is day 25, so
+#: any day before it is where a day-1 anchor used to fall a month behind.
+SHIFT_TODAYS = [
+    date(2026, 9, 1),
+    date(2026, 9, 11),
+    date(2026, 9, 24),
+    date(2026, 9, 30),
+    date(2027, 2, 28),
+    date(2027, 1, 3),
+    DEMO_REFERENCE_DATE,
+]
 
 
 def _make_engine():
@@ -116,6 +144,67 @@ class TestShiftBudgetMonthOverrides:
         assert om == expected_index % 12 + 1
 
 
+class TestShiftCategoriesCreatedAt:
+    """``_shift_dates`` keeps ``categories.created_at`` anchored to today.
+
+    ``created_at`` is a full DateTime, not a plain date string, so the shift
+    must use SQLite's ``datetime()`` (which preserves the time-of-day) rather
+    than ``date()`` (which would truncate it to midnight). Left unshifted, a
+    demo category's age relative to "today" would grow every day the demo
+    snapshot ages, eventually pushing it past the unused-category cutoff.
+    """
+
+    def _seed_category(self, engine, created_at: str):
+        """Insert one category row with the given ``created_at`` timestamp."""
+        with engine.connect() as conn:
+            conn.execute(
+                text(
+                    "INSERT INTO categories (id, name, tags, created_at, updated_at) "
+                    "VALUES (1, 'Food', '[]', :ts, :ts)"
+                ),
+                {"ts": created_at},
+            )
+            conn.commit()
+
+    def _read_created_at(self, engine) -> str:
+        """Return the raw stored ``created_at`` string for the seeded category."""
+        with engine.connect() as conn:
+            return conn.execute(
+                text("SELECT created_at FROM categories WHERE id = 1")
+            ).scalar()
+
+    def test_created_at_shifts_by_offset_days(self):
+        """A positive offset moves ``created_at`` forward by exactly that many days."""
+        engine = _make_engine()
+        self._seed_category(engine, "2026-02-25 10:23:45")
+
+        _shift_dates(engine, 30)
+
+        shifted = self._read_created_at(engine)
+        assert date.fromisoformat(shifted[:10]) == date(2026, 2, 25) + timedelta(
+            days=30
+        )
+
+    def test_created_at_preserves_time_of_day(self):
+        """The time-of-day component survives the shift (datetime(), not date())."""
+        engine = _make_engine()
+        self._seed_category(engine, "2026-02-25 10:23:45")
+
+        _shift_dates(engine, 30)
+
+        shifted = self._read_created_at(engine)
+        assert shifted[11:19] == "10:23:45"
+
+    def test_zero_offset_leaves_created_at_untouched(self):
+        """A zero-day offset is a no-op for categories, same as other tables."""
+        engine = _make_engine()
+        self._seed_category(engine, "2026-02-25 10:23:45")
+
+        _shift_dates(engine, 0)
+
+        assert self._read_created_at(engine) == "2026-02-25 10:23:45"
+
+
 class TestBackfillBudgetRulePeriodType:
     """``_backfill_budget_rule_period_type`` classifies legacy rows and never
     overwrites an already-set ``period_type`` (mirrors alembic ``a7c9e1b3d5f7``)."""
@@ -181,3 +270,437 @@ class TestBackfillBudgetRulePeriodType:
         assert self._read_period_type(engine, 1) == "monthly"
         assert self._read_period_type(engine, 2) == "project"
         assert self._read_period_type(engine, 3) == "yearly"
+
+
+class TestShiftBudgetRuleMonths:
+    """``_shift_dates`` moves ``budget_rules`` by whole calendar months.
+
+    The snapshot's newest monthly rules sit in ``DEMO_REFERENCE_DATE``'s
+    month, so after the shift they must sit in today's month on every day of
+    the month. Anchoring each rule to day 1 and adding the raw day offset put
+    them a month behind whenever today's day-of-month was earlier than the
+    reference day, leaving the current month with no Total Budget rule.
+    """
+
+    def _seed_rule(self, engine, rule_id, year, month, period_type):
+        """Insert one ``budget_rules`` row with the given period columns."""
+        ts = "2026-01-01 00:00:00"
+        with engine.connect() as conn:
+            conn.execute(
+                text(
+                    "INSERT INTO budget_rules "
+                    "(id, name, amount, category, tags, year, month, period_type, "
+                    "created_at, updated_at) "
+                    "VALUES (:id, 'Total Budget', 100.0, 'Total Budget', 'all_tags', "
+                    ":y, :m, :pt, :ts, :ts)"
+                ),
+                {"id": rule_id, "y": year, "m": month, "pt": period_type, "ts": ts},
+            )
+            conn.commit()
+
+    def _read_period(self, engine, rule_id):
+        """Return the stored ``(year, month)`` for a given rule id."""
+        with engine.connect() as conn:
+            row = conn.execute(
+                text("SELECT year, month FROM budget_rules WHERE id = :id"),
+                {"id": rule_id},
+            ).fetchone()
+        return row[0], row[1]
+
+    @pytest.mark.parametrize("today", SHIFT_TODAYS)
+    def test_shift_reference_month_rule_lands_in_today_month(self, today):
+        """A rule in the reference month moves to the month containing today."""
+        engine = _make_engine()
+        self._seed_rule(
+            engine, 1, DEMO_REFERENCE_DATE.year, DEMO_REFERENCE_DATE.month, "monthly"
+        )
+
+        _shift_dates(engine, (today - DEMO_REFERENCE_DATE).days)
+
+        assert self._read_period(engine, 1) == (today.year, today.month)
+
+    def test_shift_preserves_month_spacing(self):
+        """Rules five months apart before the shift stay five months apart."""
+        engine = _make_engine()
+        self._seed_rule(engine, 1, 2026, 2, "monthly")
+        self._seed_rule(engine, 2, 2025, 9, "monthly")
+
+        _shift_dates(engine, (date(2026, 9, 11) - DEMO_REFERENCE_DATE).days)
+
+        assert self._read_period(engine, 1) == (2026, 9)
+        assert self._read_period(engine, 2) == (2026, 4)
+
+    def test_shift_yearly_rule_moves_by_whole_years(self):
+        """A yearly rule (``month`` NULL) shifts its year rather than crashing."""
+        engine = _make_engine()
+        self._seed_rule(engine, 1, 2026, None, "yearly")
+
+        _shift_dates(engine, (date(2027, 1, 3) - DEMO_REFERENCE_DATE).days)
+
+        assert self._read_period(engine, 1) == (2027, None)
+
+    def test_shift_leaves_project_rule_untouched(self):
+        """A project rule has no period columns, so the shift leaves it alone."""
+        engine = _make_engine()
+        self._seed_rule(engine, 1, None, None, "project")
+
+        _shift_dates(engine, (date(2026, 9, 11) - DEMO_REFERENCE_DATE).days)
+
+        assert self._read_period(engine, 1) == (None, None)
+
+
+class TestDemoSnapshotCurrentMonthBudget:
+    """The shipped demo snapshot has a Total Budget rule for today's month.
+
+    Category rules are rejected until the month has a Total Budget rule, so
+    this is what lets a Demo Mode user add a budget rule on any date without
+    relying on the monthly view's auto-fill to copy one forward first.
+    """
+
+    @pytest.mark.parametrize("today", SHIFT_TODAYS)
+    def test_snapshot_current_month_has_total_budget(self, tmp_path, today):
+        """After the demo prep steps, today's month carries the Total Budget rule."""
+        db_path = tmp_path / "demo.db"
+        shutil.copy2(_source_db_path(), db_path)
+        engine = create_engine(f"sqlite:///{db_path}")
+        Base.metadata.create_all(bind=engine)
+        sync_missing_columns(engine)
+        _drop_retired_columns(engine)
+        _backfill_budget_rule_period_type(engine)
+
+        _shift_dates(engine, (today - DEMO_REFERENCE_DATE).days)
+
+        with engine.connect() as conn:
+            names = (
+                conn.execute(
+                    text(
+                        "SELECT name FROM budget_rules WHERE period_type = 'monthly' "
+                        "AND year = :y AND month = :m"
+                    ),
+                    {"y": today.year, "m": today.month},
+                )
+                .scalars()
+                .all()
+            )
+        engine.dispose()
+        assert "Total Budget" in names
+
+
+class TestShiftSavingsGoalMonths:
+    """Savings-goal ``start_month``/``closed_month`` move by whole months.
+
+    They share the calendar-month shift with ``budget_rules``, so a goal
+    started in the reference month starts in today's month on any day.
+    """
+
+    def _seed_goal(self, engine, start_month, closed_month):
+        """Insert one ``savings_goals`` row with the given month strings."""
+        ts = "2026-01-01 00:00:00"
+        with engine.connect() as conn:
+            conn.execute(
+                text(
+                    "INSERT INTO savings_goals "
+                    "(id, name, target_amount, opening_balance, priority, status, "
+                    "start_month, closed_month, created_at, updated_at) "
+                    "VALUES (1, 'Wedding Fund', 1000.0, 0.0, 1, 'active', "
+                    ":start, :closed, :ts, :ts)"
+                ),
+                {"start": start_month, "closed": closed_month, "ts": ts},
+            )
+            conn.commit()
+
+    def _read_months(self, engine):
+        """Return the stored ``(start_month, closed_month)`` of the seeded goal."""
+        with engine.connect() as conn:
+            row = conn.execute(
+                text("SELECT start_month, closed_month FROM savings_goals WHERE id = 1")
+            ).fetchone()
+        return row[0], row[1]
+
+    @pytest.mark.parametrize("today", SHIFT_TODAYS)
+    def test_shift_reference_month_goal_lands_in_today_month(self, today):
+        """A goal started and closed in the reference month moves to today's month."""
+        engine = _make_engine()
+        reference = f"{DEMO_REFERENCE_DATE.year:04d}-{DEMO_REFERENCE_DATE.month:02d}"
+        self._seed_goal(engine, reference, reference)
+
+        _shift_dates(engine, (today - DEMO_REFERENCE_DATE).days)
+
+        expected = f"{today.year:04d}-{today.month:02d}"
+        assert self._read_months(engine) == (expected, expected)
+
+
+class TestFrozenDemoSnapshotContents:
+    """Guards on the shipped ``backend/resources/demo_data.db`` itself.
+
+    These used to be runtime backfills inside ``prepare_demo_database``. That
+    was wrong: the snapshot is re-copied on *every* rebuild, so the data they
+    corrected came back every time and they wrote to the demo database on all
+    ~130 rebuilds of an e2e run. Those writes raced the copy that the next
+    rebuild performs while a previous page's requests still hold the file
+    open, and turned an occasional logged "database disk image is malformed"
+    into 500s on the demo-reset endpoint — which then cascaded into every
+    request served from the half-built database.
+
+    Fixing the snapshot removes the writes entirely, so what has to be
+    asserted is the snapshot's contents.
+    """
+
+    @staticmethod
+    def _snapshot():
+        """Open the frozen demo DB read-only."""
+        engine = create_engine(
+            f"sqlite:///file:{_source_db_path()}?mode=ro&uri=true",
+            poolclass=StaticPool,
+        )
+        return engine
+
+    def test_scrape_statuses_match_the_repository_constants(self):
+        """Case matters: the watermark query is ``WHERE status = 'success'``.
+
+        SQLite compares TEXT case-sensitively, so the fixture's original
+        ``"SUCCESS"`` matched nothing and every demo source reported "Never
+        synced" while a full history sat in the table.
+        """
+        with self._snapshot().connect() as conn:
+            statuses = {
+                row[0]
+                for row in conn.execute(text("SELECT DISTINCT status FROM scraping_history"))
+            }
+
+        assert statuses <= {
+            ScrapingHistoryRepository.SUCCESS,
+            ScrapingHistoryRepository.FAILED,
+            ScrapingHistoryRepository.CANCELED,
+            ScrapingHistoryRepository.IN_PROGRESS,
+            ScrapingHistoryRepository.WAITING_FOR_2FA,
+        }, f"unrecognised scrape status casing in the demo snapshot: {statuses}"
+
+    def test_a_successful_scrape_is_findable_by_the_watermark_query(self):
+        """The end the casing serves — a card can show a last-synced date."""
+        with self._snapshot().connect() as conn:
+            found = conn.execute(
+                text("SELECT COUNT(*) FROM scraping_history WHERE status = :status"),
+                {"status": ScrapingHistoryRepository.SUCCESS},
+            ).scalar()
+
+        assert found > 0
+
+    def test_the_demo_data_sources_are_present(self):
+        """Credentials ship in the snapshot, not seeded by the demo toggle.
+
+        The toggle never runs on the hosted demo — demo mode is forced on at
+        cold start and must not be toggled on a shared instance — so seeding
+        there left the Data Sources page empty.
+        """
+        with self._snapshot().connect() as conn:
+            accounts = {
+                (row[0], row[1], row[2])
+                for row in conn.execute(
+                    text("SELECT service, provider, account_name FROM credentials")
+                )
+            }
+
+        assert ("banks", "hapoalim", "Main Account") in accounts
+        assert ("credit_cards", "max", "Family Card") in accounts
+        assert ("credit_cards", "visa cal", "Online Shopping") in accounts
+        assert ("insurance", "mislaka", "The Cohens") in accounts
+
+    def test_every_seeded_account_can_resolve_a_scrape_watermark(self):
+        """Account names must line up with the scrape history.
+
+        History rows are keyed on service/provider/account; a name that
+        differs by a character yields no watermark and the card reads "Never
+        synced" even with the casing fixed.
+        """
+        with self._snapshot().connect() as conn:
+            accounts = [
+                (row[0], row[1], row[2])
+                for row in conn.execute(
+                    text("SELECT service, provider, account_name FROM credentials")
+                )
+            ]
+            history = {
+                (row[0], row[1], row[2])
+                for row in conn.execute(
+                    text(
+                        "SELECT service_name, provider_name, account_name "
+                        "FROM scraping_history WHERE status = :status"
+                    ),
+                    {"status": ScrapingHistoryRepository.SUCCESS},
+                )
+            }
+
+        matched = [a for a in accounts if a in history]
+        assert len(matched) >= 3, (
+            f"only {len(matched)} of {len(accounts)} demo accounts have a "
+            "successful scrape to show"
+        )
+
+    def test_credential_fields_are_plaintext_and_hold_no_password(self):
+        """Plaintext is the only format readable without ``cryptography``.
+
+        ``decrypt_fields`` passes a non-envelope dict through unchanged, and a
+        demo scrape never authenticates, so no password is stored or needed.
+        """
+        with self._snapshot().connect() as conn:
+            rows = [
+                json.loads(row[0])
+                for row in conn.execute(text("SELECT fields FROM credentials"))
+            ]
+
+        assert rows, "expected credential rows in the demo snapshot"
+        for fields in rows:
+            assert ENCRYPTED_MARKER not in fields
+            assert "password" not in fields
+
+
+class TestInstallSnapshotIsAtomic:
+    """The snapshot must never be rewritten under a live reader.
+
+    ``prepare_demo_database`` runs while requests from the page being reset
+    are still in flight. Copying straight onto the destination changes the
+    bytes of an inode those requests hold open, which SQLite reports as
+    "database disk image is malformed"; one landing inside the rebuild's own
+    ``create_all`` fails the rebuild and leaves a half-built database that
+    500s every request until the next one.
+    """
+
+    def test_destination_inode_is_replaced_not_rewritten(self, tmp_path):
+        """A reader holding the old file keeps a coherent view of it.
+
+        Inode identity is the observable proxy: a changed inode means the
+        open descriptor still points at the intact previous file.
+        """
+        source = tmp_path / "snapshot.db"
+        source.write_bytes(b"new-contents")
+        destination = tmp_path / "demo.db"
+        destination.write_bytes(b"old-contents")
+        before = destination.stat().st_ino
+
+        with open(destination, "rb") as reader:
+            _install_snapshot(str(source), str(destination))
+            # The pre-existing descriptor still sees the whole old file.
+            assert reader.read() == b"old-contents"
+
+        assert destination.read_bytes() == b"new-contents"
+        assert destination.stat().st_ino != before
+
+    def test_leaves_no_staging_file_behind(self, tmp_path):
+        """The sibling used for the swap must not survive it."""
+        source = tmp_path / "snapshot.db"
+        source.write_bytes(b"x")
+        destination = tmp_path / "demo.db"
+
+        _install_snapshot(str(source), str(destination))
+
+        assert list(tmp_path.iterdir()) == [source, destination] or sorted(
+            f.name for f in tmp_path.iterdir()
+        ) == ["demo.db", "snapshot.db"]
+
+    def test_stale_journal_is_removed_before_the_swap(self, tmp_path):
+        """A journal describes the OLD file and would be replayed over the new.
+
+        SQLite treats a rollback journal sitting next to a database as a
+        crash to recover from, so one left behind corrupts the fresh copy on
+        its very first open.
+        """
+        source = tmp_path / "snapshot.db"
+        source.write_bytes(b"new")
+        destination = tmp_path / "demo.db"
+        destination.write_bytes(b"old")
+        journal = tmp_path / "demo.db-journal"
+        journal.write_bytes(b"stale journal")
+
+        _install_snapshot(str(source), str(destination))
+
+        assert not journal.exists()
+        assert destination.read_bytes() == b"new"
+
+    def test_works_when_the_destination_does_not_exist_yet(self, tmp_path):
+        """First build has nothing to replace."""
+        source = tmp_path / "snapshot.db"
+        source.write_bytes(b"fresh")
+        destination = tmp_path / "nested" / "demo.db"
+        destination.parent.mkdir()
+
+        _install_snapshot(str(source), str(destination))
+
+        assert destination.read_bytes() == b"fresh"
+
+
+class TestShiftClearingHouseData:
+    """``_shift_dates`` moves the clearing-house reports and policy details."""
+
+    def _seed(self, engine) -> None:
+        """Two monthly reports and a policy whose details carry dates."""
+        details = {
+            "source_date": "2026-01-31",
+            "join_date": "2020-03-15",
+            "loans": [{"received": "2025-01-26", "ends": "2030-01-26"}],
+            "representative": {"appointed": "2024-03-27", "name": "Agency"},
+        }
+        with engine.begin() as conn:
+            for calc_date, expires in (("2025-12-31", None), ("2026-01-31", "2026-04-06")):
+                conn.execute(
+                    text(
+                        "INSERT INTO clearing_house_reports (provider, account_name, "
+                        "calc_date, subscription_expires, created_at, updated_at) "
+                        "VALUES ('mislaka', 'The Cohens', :d, :e, "
+                        "CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
+                    ),
+                    {"d": calc_date, "e": expires},
+                )
+            conn.execute(
+                text(
+                    "INSERT INTO insurance_accounts (provider, policy_id, policy_type, "
+                    "account_name, details, created_at, updated_at) VALUES ('mislaka', "
+                    "'KH-1', 'hishtalmut', 'KH', :d, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
+                ),
+                {"d": json.dumps(details)},
+            )
+
+    @pytest.mark.parametrize("offset", [31, 59, 211])
+    def test_report_months_stay_month_ends_without_colliding(self, offset):
+        """Verify reports land on month ends, one month apart, for any offset."""
+        engine = _make_engine()
+        self._seed(engine)
+
+        _shift_dates(engine, offset)
+
+        with engine.connect() as conn:
+            rows = conn.execute(
+                text("SELECT calc_date FROM clearing_house_reports ORDER BY calc_date")
+            ).fetchall()
+        first, second = (date.fromisoformat(r[0]) for r in rows)
+        assert (first + timedelta(days=1)).day == 1
+        assert (second + timedelta(days=1)).day == 1
+        assert (second.year * 12 + second.month) - (first.year * 12 + first.month) == 1
+
+    def test_expiry_and_detail_dates_move_by_days(self):
+        """Verify moments in time move by the raw offset, source_date by months."""
+        engine = _make_engine()
+        self._seed(engine)
+
+        _shift_dates(engine, 211)
+
+        with engine.connect() as conn:
+            expires = conn.execute(
+                text(
+                    "SELECT subscription_expires FROM clearing_house_reports "
+                    "WHERE subscription_expires IS NOT NULL"
+                )
+            ).scalar()
+            details = json.loads(
+                conn.execute(text("SELECT details FROM insurance_accounts")).scalar()
+            )
+            newest = conn.execute(
+                text("SELECT MAX(calc_date) FROM clearing_house_reports")
+            ).scalar()
+        assert expires == (date(2026, 4, 6) + timedelta(days=211)).isoformat()
+        assert details["join_date"] == (date(2020, 3, 15) + timedelta(days=211)).isoformat()
+        assert details["loans"][0]["received"] == (
+            date(2025, 1, 26) + timedelta(days=211)
+        ).isoformat()
+        assert details["representative"]["name"] == "Agency"
+        assert details["source_date"] == newest

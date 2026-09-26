@@ -4,7 +4,7 @@ FastAPI dependencies for dependency injection.
 This module provides common dependencies used across API routes.
 """
 
-from typing import Generator
+from collections.abc import Generator
 
 from sqlalchemy.orm import Session
 

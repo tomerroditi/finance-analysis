@@ -5,27 +5,32 @@ Provides endpoints to start, monitor, abort, and handle 2FA for
 automated scraping of Israeli financial institutions.
 """
 
-from typing import Optional
+from typing import Any
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from backend.dependencies import get_database
+from backend.routes.schemas import StatusResponse
 from backend.services.scraping_service import ScrapingService
 
 router = APIRouter()
 
 
 class StartScrapingRequest(BaseModel):
+    """Request body for starting a scrape of one account."""
+
     service: str
     provider: str
     account: str
-    scraping_period_days: Optional[int] = Field(default=None, gt=0, le=365)
+    scraping_period_days: int | None = Field(default=None, gt=0, le=365)
     force_2fa: bool = False
 
 
 class TFAFinishRequest(BaseModel):
+    """Request body for submitting a 2FA code to a waiting scraper."""
+
     service: str
     provider: str
     account: str
@@ -33,17 +38,17 @@ class TFAFinishRequest(BaseModel):
 
 
 class ResendTFARequest(BaseModel):
+    """Request body for re-issuing the OTP of a waiting scraper."""
+
     service: str
     provider: str
     account: str
 
 
 class AbortRequest(BaseModel):
+    """Request body for aborting a scraping process."""
+
     process_id: int
-
-
-class StatusResponse(BaseModel):
-    status: str
 
 
 @router.post("/start")
@@ -68,21 +73,23 @@ def start_scraping_single(
         Scraping process ID used to query status or handle 2FA.
     """
     service = ScrapingService(db)
-    scraping_process_id = service.start_scraping_single(
+    return service.start_scraping_single(
         service=data.service,
         provider=data.provider,
         account=data.account,
         scraping_period_days=data.scraping_period_days,
         force_2fa=data.force_2fa,
     )
-    return scraping_process_id
 
 
 @router.post("/abort", response_model=StatusResponse)
 def abort_scraping(
     data: AbortRequest, db: Session = Depends(get_database)
-) -> dict:
+) -> dict[str, str]:
     """Abort a running scraping process.
+
+    Works for a scraper parked on an OTP prompt and for one mid-fetch: the
+    history row is recorded as ``canceled`` either way.
 
     Parameters
     ----------
@@ -102,7 +109,7 @@ def abort_scraping(
 @router.get("/status")
 def get_scraping_status(
     scraping_process_id: int, db: Session = Depends(get_database)
-) -> dict:
+) -> dict[str, Any]:
     """Return the current status of a scraping job.
 
     Parameters
@@ -113,8 +120,11 @@ def get_scraping_status(
     Returns
     -------
     dict
-        Status dict including ``status`` (e.g. ``running``, ``done``,
-        ``failed``), and optionally ``requires_2fa`` and error details.
+        ``status`` (``in_progress``, ``waiting_for_2fa``, ``success``,
+        ``failed``, ``canceled``, or ``unknown`` for an unknown id),
+        ``process_id``, and — for failures — ``error_message`` (the
+        provider's raw text) plus ``error_type`` (the category the client
+        maps to translated copy).
     """
     service = ScrapingService(db)
     return service.get_scraping_status(scraping_process_id)
@@ -123,7 +133,7 @@ def get_scraping_status(
 @router.post("/2fa", response_model=StatusResponse)
 def handle_2fa(
     data: TFAFinishRequest, db: Session = Depends(get_database)
-) -> dict:
+) -> dict[str, str]:
     """Submit a 2FA OTP code to unblock a waiting scraping job.
 
     Parameters
@@ -146,7 +156,7 @@ def handle_2fa(
 @router.post("/resend-2fa")
 async def resend_2fa(
     data: ResendTFARequest, db: Session = Depends(get_database)
-) -> dict:
+) -> dict[str, Any]:
     """Re-issue the OTP for an awaiting scraper without losing its process.
 
     For providers that support in-place resend (OneZero), the same scraping
@@ -174,13 +184,11 @@ async def resend_2fa(
         400 if the resend is rate-limited (with a wait-and-retry message).
     """
     service = ScrapingService(db)
-    return await service.resend_2fa_code(
-        data.service, data.provider, data.account
-    )
+    return await service.resend_2fa_code(data.service, data.provider, data.account)
 
 
 @router.get("/active")
-def get_active_scrapes(db: Session = Depends(get_database)) -> list:
+def get_active_scrapes(db: Session = Depends(get_database)) -> list[dict[str, Any]]:
     """Return the scrapes currently in flight for this client.
 
     Lets the UI re-hydrate its in-progress state after the Data Sources page
@@ -195,17 +203,3 @@ def get_active_scrapes(db: Session = Depends(get_database)) -> list:
     """
     service = ScrapingService(db)
     return service.get_active_scrapes()
-
-
-@router.get("/last-scrapes")
-def get_last_scrapes(db: Session = Depends(get_database)) -> list:
-    """Return the last successful scrape date for each configured account.
-
-    Returns
-    -------
-    list[dict]
-        List of records with ``service``, ``provider``, ``account``, and
-        ``last_scrape_date`` fields.
-    """
-    service = ScrapingService(db)
-    return service.get_last_scrape_dates()

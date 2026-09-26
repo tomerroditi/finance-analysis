@@ -19,7 +19,7 @@ Design choices (mirrors ``UpdateService``):
 import logging
 from datetime import date
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import httpx
 import yaml
@@ -37,17 +37,16 @@ HTTP_TIMEOUT_SECONDS = 5.0
 
 
 class RatesService:
-    """
-    Service for interest rate series — seeding, lookups, and refresh.
+    """Service for interest rate series — seeding, lookups, and refresh.
+
+    Parameters
+    ----------
+    db : Session
+        SQLAlchemy session for database operations.
     """
 
-    def __init__(self, db: Session):
-        """
-        Parameters
-        ----------
-        db : Session
-            SQLAlchemy session for database operations.
-        """
+    def __init__(self, db: Session) -> None:
+        self.db = db
         self.rates_repo = InterestRatesRepository(db)
 
     def ensure_seeded(self) -> None:
@@ -64,7 +63,7 @@ class RatesService:
         if points:
             self.rates_repo.upsert_points(BOI_RATE_SERIES, points, source="seed")
 
-    def get_history(self, series: str = BOI_RATE_SERIES) -> List[Dict[str, Any]]:
+    def get_history(self, series: str = BOI_RATE_SERIES) -> list[dict[str, Any]]:
         """Get the full step-point history of a series.
 
         Parameters
@@ -74,7 +73,7 @@ class RatesService:
 
         Returns
         -------
-        list[dict]
+        list[dict[str, Any]]
             Points with ``date`` and ``value``, ascending by date.
 
         Raises
@@ -96,12 +95,12 @@ class RatesService:
             for _, row in df.iterrows()
         ]
 
-    def get_current(self) -> Dict[str, Any]:
+    def get_current(self) -> dict[str, Any]:
         """Get the latest known BoI rate and derived prime.
 
         Returns
         -------
-        dict
+        dict[str, Any]
             ``boi_rate``, ``prime``, and ``as_of`` (date of the latest
             point) — all ``None`` when the series is empty.
         """
@@ -115,30 +114,7 @@ class RatesService:
             "as_of": latest["date"],
         }
 
-    def get_prime_at(self, at_date: str) -> Optional[float]:
-        """Get the prime rate in effect on a given date.
-
-        Parameters
-        ----------
-        at_date : str
-            Date in YYYY-MM-DD format.
-
-        Returns
-        -------
-        float or None
-            Prime rate (BoI + 1.5) at that date, or ``None`` when the
-            series has no point on or before the date.
-        """
-        history = self.get_history(BOI_RATE_SERIES)
-        value = None
-        for point in history:
-            if point["date"] <= at_date:
-                value = point["value"]
-            else:
-                break
-        return None if value is None else round(value + PRIME_SPREAD_PCT, 4)
-
-    def get_prime_steps(self, from_date: str) -> List[Dict[str, Any]]:
+    def get_prime_steps(self, from_date: str) -> list[dict[str, Any]]:
         """Get prime as a step function starting at ``from_date``.
 
         The first step is anchored exactly at ``from_date`` (using the
@@ -153,7 +129,7 @@ class RatesService:
 
         Returns
         -------
-        list[dict]
+        list[dict[str, Any]]
             Points with ``date`` and ``value`` (prime, percent),
             ascending — empty when the series has no data at all.
         """
@@ -161,8 +137,8 @@ class RatesService:
         if not history:
             return []
 
-        anchor_value = None
-        steps = []
+        anchor_value: float | None = None
+        steps: list[dict[str, Any]] = []
         for point in history:
             if point["date"] <= from_date:
                 anchor_value = point["value"]
@@ -171,21 +147,24 @@ class RatesService:
         if anchor_value is None:
             # Loan predates the whole series — anchor at the earliest point.
             anchor_value = steps[0]["value"] if steps else history[0]["value"]
-        return [{"date": from_date, "value": anchor_value}] + steps
+        return [{"date": from_date, "value": anchor_value}, *steps]
 
-    def refresh_from_boi(self) -> Dict[str, Any]:
+    def refresh_from_boi(self) -> dict[str, Any]:
         """Fetch the current key rate from the BoI public API.
 
         Appends a new step point (dated today, source ``fetched``) when
-        the fetched rate differs from the latest known point. Any
-        failure — offline, HTTP error, unexpected payload — returns
-        ``{"status": "unavailable"}`` without raising.
+        the fetched rate differs from the latest known point, then
+        recalculates prime-linked investment balances so they pick up the
+        change immediately. Any failure — offline, HTTP error, unexpected
+        payload — returns ``{"status": "unavailable"}`` without raising.
 
         Returns
         -------
-        dict
+        dict[str, Any]
             ``status`` (``updated`` / ``unchanged`` / ``unavailable``)
-            plus the current rate info on success.
+            plus the current rate info on success; an ``updated`` result
+            also carries ``investments_recalculated``, the number of
+            prime-linked investments whose snapshots were rebuilt.
         """
         try:
             response = httpx.get(BOI_PUBLIC_API_URL, timeout=HTTP_TIMEOUT_SECONDS)
@@ -195,7 +174,7 @@ class RatesService:
             if rate is None:
                 rate = payload.get("interestRate")
             rate = float(rate)
-        except Exception as exc:  # noqa: BLE001 — never raise, degrade gracefully
+        except Exception as exc:
             logger.warning("BoI rate refresh failed: %s", exc)
             return {"status": "unavailable", **self.get_current()}
 
@@ -207,4 +186,14 @@ class RatesService:
         self.rates_repo.upsert_points(
             BOI_RATE_SERIES, [{"date": today, "value": rate}], source="fetched"
         )
-        return {"status": "updated", **self.get_current()}
+        # Lazy: the investments package imports this module (prime-linked
+        # snapshot pricing), so a top-level import would be circular.
+        from backend.services.investments import InvestmentsService
+
+        return {
+            "status": "updated",
+            **self.get_current(),
+            "investments_recalculated": InvestmentsService(
+                self.db
+            ).recalculate_prime_linked_snapshots(),
+        }

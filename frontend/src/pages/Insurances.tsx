@@ -3,12 +3,8 @@ import { useNavigate } from "react-router";
 import { useTranslation } from "react-i18next";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  ArrowUpRight,
-  Heart,
-  Percent,
   ChevronDown,
   ChevronUp,
-  Landmark,
   Lock,
   Loader2,
   Pencil,
@@ -33,10 +29,17 @@ import { DonutChart } from "../components/charts/DonutChart";
 import { insuranceAccountsApi, transactionsApi, type InsuranceAccount } from "../services/api";
 import { formatDate, formatMonthCompact, formatMonthYear } from "../utils/dateFormatting";
 import { formatCurrency } from "../utils/numberFormatting";
+import { classifyStatement } from "../utils/insuranceStatement";
 import { EmptyState } from "../components/common/EmptyState";
 import { DemoModeConfirmPopover } from "../components/common/DemoModeConfirmPopover";
 import { useQueryKeys } from "../hooks/useQueryKeys";
 import { qkPrefix } from "../services/queryKeys";
+import { useScrollCap } from "../hooks/useScrollCap";
+import { ClearingHouseSummary, SubscriptionNotice } from "../components/insurance/ClearingHouseSummary";
+import { PolicyDetailsSection } from "../components/insurance/PolicyDetailsSection";
+import { PensionKpiStrip } from "../components/insurance/PensionKpiStrip";
+import { computePensionKpis } from "../utils/pensionKpis";
+import { isInactive, parsePolicyDetails } from "../utils/policyDetails";
 
 // ─── Types ───────────────────────────────────────────────────────────────
 interface InsuranceTransaction {
@@ -61,11 +64,6 @@ interface Cover {
   title: string;
   desc: string;
   sum: number | { value: number; currency: string };
-}
-
-interface InsuranceCost {
-  title: string;
-  amount: number;
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────
@@ -96,15 +94,6 @@ function parseTracks(json: string | null): Track[] {
 }
 
 function parseCovers(json: string | null): Cover[] {
-  if (!json) return [];
-  try {
-    return JSON.parse(json);
-  } catch {
-    return [];
-  }
-}
-
-function parseCosts(json: string | null): InsuranceCost[] {
   if (!json) return [];
   try {
     return JSON.parse(json);
@@ -148,25 +137,38 @@ function policyTypeBadge(type: string, pensionType: string | null, t: (key: stri
 }
 
 // ─── Shared Components ───────────────────────────────────────────────────
-function StatCard({
-  title,
-  value,
-  icon: Icon,
-  color,
-}: {
-  title: string;
-  value: string | number;
-  icon: React.ComponentType<{ size: number }>;
-  color: string;
-}) {
+function CoversSection({ id, covers }: { id: string; covers: Cover[] }) {
+  const { t } = useTranslation();
   return (
-    <div className="bg-[var(--surface)] rounded-xl p-5 border border-[var(--surface-light)] flex items-center justify-between">
-      <div>
-        <p className="text-[var(--text-muted)] text-[10px] uppercase tracking-widest font-bold">{title}</p>
-        <p className="text-xl font-black mt-1 text-white">{value}</p>
-      </div>
-      <div className={`p-3 rounded-xl ${color}`}>
-        <Icon size={20} />
+    <div id={id} className="px-4 sm:px-6 pb-4">
+      <p className="text-[var(--text-muted)] text-[10px] uppercase tracking-widest font-bold mb-2">
+        {t("insurance.monthlyAmounts")}
+      </p>
+      <div className="flex flex-col gap-2">
+        {covers.map((cover, i) => (
+          <div
+            key={i}
+            data-testid="insurance-cover-row"
+            className="flex items-start justify-between gap-4 border-b border-[var(--surface-light)]/30 pb-2 last:border-0"
+          >
+            <div className="min-w-0">
+              <p className="text-white text-sm font-semibold" dir="auto">
+                {cover.title}
+              </p>
+              {cover.desc && (
+                <p className="text-[var(--text-muted)] text-xs mt-0.5" dir="auto">
+                  {cover.desc}
+                </p>
+              )}
+            </div>
+            <span
+              className="text-white font-mono font-bold text-sm whitespace-nowrap shrink-0"
+              dir="ltr"
+            >
+              {formatCurrency(unwrapAmount(cover.sum))}
+            </span>
+          </div>
+        ))}
       </div>
     </div>
   );
@@ -182,17 +184,31 @@ function AccountCardFull({
 }) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
-  const [expanded, setExpanded] = useState(false);
+  // One slot, so opening one section closes the others — the card can never
+  // grow by more than one section at once.
+  const [expandedSection, setExpandedSection] = useState<"covers" | "deposits" | "details" | null>(null);
+  const toggleSection = (section: "covers" | "deposits" | "details") =>
+    setExpandedSection((current) => (current === section ? null : section));
+  const coversSectionId = `covers-${account.policy_id}`;
+  const depositsSectionId = `deposits-${account.policy_id}`;
+  const detailsSectionId = `details-${account.policy_id}`;
+  const details = parsePolicyDetails(account.details);
+  const loanCount = details?.loans?.length ?? 0;
   const [isEditingName, setIsEditingName] = useState(false);
   const [draftName, setDraftName] = useState("");
   const tracks = parseTracks(account.investment_tracks);
   const covers = parseCovers(account.insurance_covers);
-  const insuranceCosts = parseCosts(account.insurance_costs);
+  const statement = classifyStatement(account.insurance_costs);
   const txs = transactions
     .filter((tx) => tx.account_number === account.policy_id)
     .sort((a, b) => b.date.localeCompare(a.date));
   const deposits = txs.filter((tx) => tx.amount > 0);
-  const totalCosts = insuranceCosts.reduce((s, c) => s + Math.abs(c.amount), 0);
+  // Only capped once the cap hides a row — see `useScrollCap`. The section
+  // renders nothing until it is expanded, so the expansion is part of the key.
+  const [depositsRef, depositsCapped] = useScrollCap(
+    320,
+    expandedSection === "deposits" ? txs.length : 0,
+  );
 
   const renameMutation = useMutation({
     mutationFn: (customName: string | null) =>
@@ -224,7 +240,10 @@ function AccountCardFull({
   };
 
   return (
-    <div className="bg-[var(--surface)] rounded-2xl border border-[var(--surface-light)] overflow-hidden relative">
+    <div
+      data-testid="insurance-account-card"
+      className="bg-[var(--surface)] rounded-2xl border border-[var(--surface-light)] overflow-hidden relative"
+    >
       {/* Policy-type accent stripe */}
       <div className={`absolute inset-y-0 start-0 w-1 ${stripeColor}`} />
 
@@ -292,6 +311,19 @@ function AccountCardFull({
                   {displayName}
                 </h3>
                 {policyTypeBadge(account.policy_type, account.pension_type, t)}
+                {isInactive(details) && (
+                  <span className="px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider bg-[var(--surface-light)] text-[var(--text-muted)]">
+                    {t("insurance.inactive")}
+                  </span>
+                )}
+                {loanCount > 0 && (
+                  <span
+                    data-testid="insurance-loan-badge"
+                    className="px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider bg-rose-500/15 text-rose-400"
+                  >
+                    {t("insurance.hasLoan", { count: loanCount })}
+                  </span>
+                )}
                 <button
                   type="button"
                   onClick={startEditing}
@@ -376,42 +408,80 @@ function AccountCardFull({
           <p className="text-[var(--text-muted)] text-[9px] uppercase tracking-widest font-bold mb-2">{t("insurance.deposits")}</p>
           <p className="text-emerald-400 font-black text-lg" dir="ltr">{formatCurrency(deposits.reduce((s, dep) => s + dep.amount, 0))}</p>
           <p className="text-[var(--text-muted)] text-[10px]">{t("insurance.totalDepositsCount", { count: deposits.length })}</p>
-          {totalCosts > 0 && (
-            <p className="text-rose-400 text-[10px] mt-1 font-bold">
-              <span dir="ltr">{formatCurrency(-totalCosts)}</span> {t("insurance.insuranceCostsLabel")}
+          {statement.riskCost > 0 && (
+            <p
+              data-testid="insurance-risk-cost"
+              className="text-rose-400 text-[10px] mt-1 font-bold"
+            >
+              {t("insurance.riskCost")}{" "}
+              <span dir="ltr">{formatCurrency(-statement.riskCost)}</span> ·{" "}
+              {t("insurance.thisYear")}
+            </p>
+          )}
+          {statement.managementFee > 0 && (
+            <p
+              data-testid="insurance-mgmt-fee"
+              className="text-[var(--text-muted)] text-[10px] font-bold"
+            >
+              {t("insurance.managementFeeAmount")}{" "}
+              <span dir="ltr">{formatCurrency(-statement.managementFee)}</span> ·{" "}
+              {t("insurance.thisYear")}
+            </p>
+          )}
+          {/* Deductions we saw but could not name. Rendered beside the two
+              classified lines because that is exactly where a renamed
+              provider row goes missing: the red risk-cost line vanishes and
+              a ₪0 takes its place, which reads as "no risk cost" rather
+              than "we stopped recognising the row". */}
+          {statement.unclassified > 0 && (
+            <p
+              data-testid="insurance-unclassified"
+              title={t("insurance.unclassifiedDeductionsHint")}
+              className="text-amber-400 text-[10px] font-bold"
+            >
+              {t("insurance.unclassifiedDeductions")}{" "}
+              <span dir="ltr">{formatCurrency(-statement.unclassified)}</span> ·{" "}
+              {t("insurance.thisYear")}
             </p>
           )}
         </div>
 
         {/* Insurance Covers / Liquidity / Activity (last column — variable content) */}
         {covers.length > 0 ? (
-          <div className="bg-[var(--background)]/50 rounded-xl p-3">
+          <div
+            data-testid="insurance-covers-summary"
+            className="bg-[var(--background)]/50 rounded-xl p-3"
+          >
             <p className="text-[var(--text-muted)] text-[9px] uppercase tracking-widest font-bold mb-2">
               {t("insurance.insuranceCovers")}
             </p>
-            <div className="flex flex-col gap-1.5 xl:gap-1">
-              {covers.map((c, i) => (
-                <div
-                  key={i}
-                  data-testid="insurance-cover-row"
-                  className="flex flex-col xl:flex-row xl:items-center xl:justify-between xl:gap-2"
-                >
-                  <span
-                    className="text-[var(--text-muted)] text-[10px] xl:text-xs leading-tight xl:truncate"
-                    dir="auto"
-                    title={c.title}
-                  >
-                    {c.title}
-                  </span>
-                  <span
-                    className="text-white font-mono font-bold text-xs leading-tight whitespace-nowrap"
-                    dir="ltr"
-                  >
-                    {formatCurrency(unwrapAmount(c.sum))}
-                  </span>
-                </div>
-              ))}
-            </div>
+            {/* Headline is covers[0] by scrape order — the provider lists the
+                retirement annuity first. Ordinal beats title matching (no
+                hardcoded Hebrew) and beats largest-value (that surfaces a
+                death benefit, not the headline figure). */}
+            <p className="text-white font-black text-lg" dir="ltr">
+              {formatCurrency(unwrapAmount(covers[0].sum))}
+              <span className="text-[10px] font-bold text-[var(--text-muted)] ms-1">
+                {t("insurance.perMonth")}
+              </span>
+            </p>
+            <p
+              className="text-[var(--text-muted)] text-[10px] truncate"
+              dir="auto"
+              title={covers[0].title}
+            >
+              {covers[0].title}
+            </p>
+            <button
+              type="button"
+              data-testid="insurance-covers-count"
+              aria-expanded={expandedSection === "covers"}
+              aria-controls={coversSectionId}
+              onClick={() => toggleSection("covers")}
+              className="mt-1 text-[10px] font-bold text-blue-400 hover:text-blue-300"
+            >
+              {t("insurance.coversCount", { count: covers.length })}
+            </button>
           </div>
         ) : account.liquidity_date ? (
           <div className="bg-[var(--background)]/50 rounded-xl p-3">
@@ -435,19 +505,78 @@ function AccountCardFull({
         )}
       </div>
 
-      {/* Expandable Transaction Table */}
+      {/* Expandable footer: covers list and deposit history share one slot */}
       <div className="border-t border-[var(--surface-light)]">
-        <button
-          onClick={() => setExpanded(!expanded)}
-          className="w-full px-6 py-3 flex items-center justify-between text-sm text-[var(--text-muted)] hover:text-white transition-colors"
-        >
-          <span>
-            {expanded ? t("insurance.hideDepositHistory") : t("insurance.showDepositHistory")} ({txs.length} {t("insurance.transactions")})
-          </span>
-          {expanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
-        </button>
-        {expanded && (
-          <div className="overflow-x-auto max-h-80 overflow-y-auto">
+        <div className="flex flex-col sm:flex-row">
+          {covers.length > 0 && (
+            <button
+              type="button"
+              data-testid="insurance-covers-toggle"
+              aria-expanded={expandedSection === "covers"}
+              aria-controls={coversSectionId}
+              onClick={() => toggleSection("covers")}
+              className="flex-1 px-6 py-3 flex items-center justify-between text-sm text-[var(--text-muted)] hover:text-white transition-colors"
+            >
+              <span>
+                {expandedSection === "covers"
+                  ? t("insurance.hideInsuranceCovers")
+                  : t("insurance.showInsuranceCovers")}{" "}
+                ({covers.length})
+              </span>
+              {expandedSection === "covers" ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+            </button>
+          )}
+          {details && (
+            <button
+              type="button"
+              data-testid="insurance-details-toggle"
+              aria-expanded={expandedSection === "details"}
+              aria-controls={detailsSectionId}
+              onClick={() => toggleSection("details")}
+              className="flex-1 px-6 py-3 flex items-center justify-between text-sm text-[var(--text-muted)] hover:text-white transition-colors"
+            >
+              <span>
+                {expandedSection === "details"
+                  ? t("insurance.hidePolicyDetails")
+                  : t("insurance.showPolicyDetails")}
+              </span>
+              {expandedSection === "details" ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+            </button>
+          )}
+          <button
+            type="button"
+            data-testid="insurance-deposits-toggle"
+            aria-expanded={expandedSection === "deposits"}
+            aria-controls={depositsSectionId}
+            onClick={() => toggleSection("deposits")}
+            className="flex-1 px-6 py-3 flex items-center justify-between text-sm text-[var(--text-muted)] hover:text-white transition-colors"
+          >
+            <span>
+              {expandedSection === "deposits"
+                ? t("insurance.hideDepositHistory")
+                : t("insurance.showDepositHistory")}{" "}
+              ({txs.length} {t("insurance.transactions")})
+            </span>
+            {expandedSection === "deposits" ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+          </button>
+        </div>
+        {expandedSection === "covers" && <CoversSection id={coversSectionId} covers={covers} />}
+        {expandedSection === "details" && details && (
+          <PolicyDetailsSection
+            id={detailsSectionId}
+            details={details}
+            isPension={account.policy_type === "pension"}
+          />
+        )}
+        {expandedSection === "deposits" && (
+          <div
+            id={depositsSectionId}
+            ref={depositsRef}
+            // The horizontal scroller is unconditional (the table is wider
+            // than a phone); the height cap waits until it hides a row, so a
+            // short history does not swallow the drag meant for the page.
+            className={`overflow-x-auto ${depositsCapped ? "max-h-80 overflow-y-auto" : ""}`}
+          >
             <table className="w-full text-sm">
               <thead className="sticky top-0 bg-[var(--surface)]">
                 <tr className="text-[var(--text-muted)] text-[10px] uppercase tracking-widest border-b border-[var(--surface-light)]">
@@ -518,6 +647,11 @@ export function Insurances() {
     queryFn: () => insuranceAccountsApi.getAll().then((r) => r.data),
   });
 
+  const { data: clearingHouseReports } = useQuery({
+    queryKey: qk.insurance.clearingHouseReports(),
+    queryFn: () => insuranceAccountsApi.getClearingHouseReports().then((r) => r.data),
+  });
+
   const { data: transactionsData, isLoading: txLoading } = useQuery({
     queryKey: qk.transactions.list("insurances", false),
     queryFn: () =>
@@ -559,16 +693,9 @@ export function Insurances() {
     );
   }
 
-  const totalBalance = accounts.reduce((s, a) => s + (a.balance ?? 0), 0);
   const allDeposits = transactions.filter((tx) => tx.amount > 0);
-  const totalDeposits = allDeposits.reduce((s, tx) => s + tx.amount, 0);
-  // Insurance costs come from metadata, not transactions
-  const totalCosts = accounts.reduce((s, a) => {
-    const costs = parseCosts(a.insurance_costs);
-    return s + costs.reduce((cs, c) => cs + Math.abs(c.amount), 0);
-  }, 0);
-  const avgCommission =
-    accounts.reduce((s, a) => s + (a.commission_savings_pct ?? 0), 0) / accounts.length;
+  const kpis = computePensionKpis(accounts, allDeposits);
+  const totalBalance = kpis.totalBalance;
 
   // Monthly deposit aggregation for chart
   const monthlyDeposits: Record<string, number> = {};
@@ -594,27 +721,19 @@ export function Insurances() {
   const trackSums = tracksWithSum.map((track) => track.sum ?? 0);
 
   return (
-    <div className="flex flex-col gap-6 p-6">
-      {/* KPI Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
-        <StatCard title={t("insurance.totalBalance")} value={formatCurrency(totalBalance)} icon={Landmark} color="bg-blue-500/10 text-blue-400" />
-        <StatCard
-          title={t("insurance.totalDeposits")}
-          value={formatCurrency(totalDeposits)}
-          icon={ArrowUpRight}
-          color="bg-emerald-500/10 text-emerald-400"
-        />
-        <StatCard title={t("insurance.insuranceCosts")} value={formatCurrency(totalCosts)} icon={Heart} color="bg-rose-500/10 text-rose-400" />
-        <StatCard
-          title={t("insurance.avgCommission")}
-          value={fmtPct(avgCommission)}
-          icon={Percent}
-          color="bg-amber-500/10 text-amber-400"
-        />
-      </div>
+    <div className="flex flex-col gap-1.5">
+      {/* Retirement outlook + today's KPIs */}
+      {clearingHouseReports && clearingHouseReports.length > 0 && (
+        <>
+          <SubscriptionNotice reports={clearingHouseReports} />
+          <ClearingHouseSummary reports={clearingHouseReports} />
+        </>
+      )}
+
+      <PensionKpiStrip kpis={kpis} />
 
       {/* Charts Row */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-1.5">
         {/* Monthly deposits chart */}
         <div className="bg-[var(--surface)] rounded-2xl border border-[var(--surface-light)] p-5">
           <h3 className="text-white font-bold mb-1">{t("insurance.depositTrends")}</h3>

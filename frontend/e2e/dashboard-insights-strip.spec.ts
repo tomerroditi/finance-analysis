@@ -25,12 +25,11 @@ test.describe("Dashboard strip cards", () => {
       "budget",
       "recent",
       "heatmap",
-      "income_by_source",
       "income_expenses",
       "net_worth",
     ],
     hidden: ["recurring", "goals", "cash_flow", "category"],
-    v: 3,
+    v: 4,
   };
   // Demo Mode lives in the browser context's localStorage, so it must be
   // seeded per-test (a fresh context per test) rather than once in
@@ -93,7 +92,7 @@ test.describe("Dashboard strip cards", () => {
       const strip = await boxOf(page, stripId);
       const next = await boxOf(page, nextId);
       const gap = next.y - (strip.y + strip.height);
-      // Only the grid gap (md:gap-8 = 32px) — never the ~350px the fixed
+      // Only the grid gap (gap-1.5 = 6px) — never the ~350px the fixed
       // height used to leave below a short strip. Allow generous slack.
       expect(gap, `gap below ${stripId}`).toBeGreaterThanOrEqual(0);
       expect(gap, `gap below ${stripId}`).toBeLessThan(64);

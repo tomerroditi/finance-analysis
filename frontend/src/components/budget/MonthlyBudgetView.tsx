@@ -21,7 +21,7 @@ import { BudgetLedgerRow, LedgerRowAction } from "./BudgetLedgerRow";
 import { RuleSparkline } from "./RuleSparkline";
 import { DataFreshnessBadge } from "./DataFreshnessBadge";
 import { useBudgetFreshness } from "../../hooks/useBudgetFreshness";
-import { useScraping } from "../../hooks/useScraping";
+import { useIsAnyScraping } from "../../stores/scrapingStore";
 import { useBudgetTrend } from "../../hooks/useBudgetTrend";
 import {
   ProjectsThisMonthSummary,
@@ -60,17 +60,22 @@ interface MonthlyBudgetViewProps {
   onViewProjects: () => void;
   /** Tab group rendered into the shared command bar. */
   tabs: React.ReactNode;
+  /** Month to open on, when the link that got here named one. */
+  initialYear?: number;
+  initialMonth?: number;
 }
 
 export const MonthlyBudgetView: React.FC<MonthlyBudgetViewProps> = ({
   onViewProjects,
   tabs,
+  initialYear,
+  initialMonth,
 }) => {
   const { t } = useTranslation();
   const confirm = useConfirm();
   const today = new Date();
-  const [year, setYear] = useState(today.getFullYear());
-  const [month, setMonth] = useState(today.getMonth() + 1);
+  const [year, setYear] = useState(initialYear ?? today.getFullYear());
+  const [month, setMonth] = useState(initialMonth ?? today.getMonth() + 1);
   const [isRuleModalOpen, setIsRuleModalOpen] = useState(false);
   const [editingRule, setEditingRule] = useState<BudgetRule | null>(null);
   const [expandedRuleId, setExpandedRuleId] = useState<string | null>(null);
@@ -84,7 +89,7 @@ export const MonthlyBudgetView: React.FC<MonthlyBudgetViewProps> = ({
   const queryClient = useQueryClient();
   const qk = useQueryKeys();
   const freshness = useBudgetFreshness();
-  const { isAnyScraping } = useScraping();
+  const isAnyScraping = useIsAnyScraping();
 
   const { data: analysis, isLoading } = useQuery({
     queryKey: qk.budget.analysis(year, month, includeSplitParents),
@@ -307,7 +312,7 @@ export const MonthlyBudgetView: React.FC<MonthlyBudgetViewProps> = ({
 
   if (isLoading)
     return (
-      <div className="space-y-3 md:space-y-4">
+      <div className="space-y-1.5">
         {commandBar}
         <Skeleton variant="card" className="h-28" />
         <Skeleton variant="card" className="h-12" />
@@ -422,6 +427,7 @@ export const MonthlyBudgetView: React.FC<MonthlyBudgetViewProps> = ({
           series={trend.data.map((point) => point.actual)}
           labels={trendLabels}
           budget={trend.data[trend.data.length - 1]?.budget ?? 0}
+          budgets={trend.data.map((point) => point.budget)}
           width={220}
           height={44}
           fluid
@@ -483,6 +489,9 @@ export const MonthlyBudgetView: React.FC<MonthlyBudgetViewProps> = ({
           series={(trend.byRule[item.rule.name] ?? []).slice(-ROW_TREND_MONTHS)}
           labels={rowTrendLabels}
           budget={item.rule.amount}
+          budgets={(trend.byRuleLimit[item.rule.name] ?? []).slice(
+            -ROW_TREND_MONTHS,
+          )}
         />
       }
     >
@@ -504,7 +513,7 @@ export const MonthlyBudgetView: React.FC<MonthlyBudgetViewProps> = ({
   );
 
   return (
-    <div className="space-y-3 md:space-y-4">
+    <div className="space-y-1.5">
       {commandBar}
 
       <BudgetNoticeLine
@@ -569,7 +578,7 @@ export const MonthlyBudgetView: React.FC<MonthlyBudgetViewProps> = ({
       )}
 
       {rules.length > 0 && (
-        <div className="w-full space-y-2">{childItems.map(renderRow)}</div>
+        <div className="w-full space-y-1.5">{childItems.map(renderRow)}</div>
       )}
 
       {/* Goals and projects share one row, half each. Both are month summaries
@@ -579,7 +588,7 @@ export const MonthlyBudgetView: React.FC<MonthlyBudgetViewProps> = ({
           for the transaction lists it now expands to. Either half takes the
           whole row when the other has nothing to show. */}
       {(hasGoalAllocations || monthProjects.length > 0) && (
-        <div className="flex flex-col xl:flex-row items-start gap-3 md:gap-4">
+        <div className="flex flex-col xl:flex-row items-start gap-1.5">
           {hasGoalAllocations && (
             <div className="w-full min-w-0 xl:flex-1">
               <SavingsGoalsBudgetSection allocations={analysis?.savings_goals} />

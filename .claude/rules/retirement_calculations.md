@@ -28,47 +28,79 @@ the `retirement/` frontend components, or the demo retirement goal.
   worth vs today-shekels FIRE number, inflating expenses vs frozen
   incomes), which declared FIRE years too early.
 
+## The status baselines are MEDIANS, not means
+
+`get_current_status` derives `avg_monthly_income` (6 complete months) and
+`avg_monthly_expenses` (12 complete months) from
+`get_income_expenses_over_time`, and takes the **median** of each window.
+
+`monthly_savings = avg_monthly_income - avg_monthly_expenses` is then
+compounded for the whole horizon, so one freak month is not a rounding error
+in this model — it moves the FIRE date, the savings rate, `monthly_savings_needed`
+and every solver suggestion. A mean did exactly that: an inheritance banked in
+one month read as ₪108k/month income and a 65% savings rate against a ₪25k
+salary. A windfall is not a salary, and a wedding is not a cost of living;
+the number that survives one is the middle month.
+
+Don't "simplify" either side back to `sum(...) / len(...)`. Pinned by
+`TestCurrentStatusBaselines`.
+
 ## Keren Hishtalmut — counted exactly once (the double-count trap)
 
-**Scraped KH policies ARE part of the tracked net worth.** The data flow
-that makes this true is easy to miss because it never touches the
-analysis layer directly:
+**Both scraped AND manually-created KH investments are part of the
+tracked net worth.** The data flow that makes this true is easy to miss
+because it never touches the analysis layer directly — there are two
+paths into the same `type='hishtalmut'` investment pool:
 
 ```
-scrape → insurance_accounts (policy_type='hishtalmut')
-       → InsuranceSyncMixin.sync_from_insurance
-         (backend/services/investments/insurance_sync.py, called from
-          backend/scraper/adapter.py + the insurance backfill route)
-       → auto-creates an Investment (type='hishtalmut',
-         insurance_policy_id set) with a 'scraped' balance snapshot
-       → get_net_worth_over_time values investments snapshot-first
-       → KH balance is inside status["net_worth"]
+Path A (scraped):
+  scrape → insurance_accounts (policy_type='hishtalmut')
+         → InsuranceSyncMixin.sync_from_insurance
+           (backend/services/investments/insurance_sync.py, called from
+            backend/scraper/adapter.py + the insurance backfill route)
+         → auto-creates an Investment (type='hishtalmut',
+           insurance_policy_id set) with a 'scraped' balance snapshot
+
+Path B (manual):
+  Investments page → create Investment (type='hishtalmut',
+                      insurance_policy_id = None)
+
+Both paths converge:
+  Investment (type='hishtalmut') → get_net_worth_over_time values
+    investments snapshot-first → KH balance is inside status["net_worth"]
 ```
 
 The retirement goal ALSO stores a user-facing `keren_hishtalmut_balance`
-(auto-fillable from the same scraped data), which the projection models
-as its own tax-free bucket (drawn first in retirement).
+(auto-fillable from the same scraped/manual data), which the projection
+models as its own tax-free bucket (drawn first in retirement).
 
-To count KH exactly once for **both** user flows,
-`get_current_status` exposes `tracked_kh_value` — the current
-snapshot-resolved value of open `type='hishtalmut'` investments — and
-every wealth computation (projection base, progress %, solvers,
-required savings) uses:
+`InvestmentsService.get_hishtalmut_total_balance()` is the single source
+of truth for both halves of the swap below: it sums the current
+snapshot-resolved balance of every open `type='hishtalmut'` investment,
+scraped or manually-created alike, and backs both `get_current_status`'s
+`tracked_kh_value` and `get_scraped_defaults`'s auto-filled
+`keren_hishtalmut_balance`. To count KH exactly once for **every** user
+flow, `get_current_status` exposes `tracked_kh_value` from that method —
+the current snapshot-resolved value of open `type='hishtalmut'`
+investments — and every wealth computation (projection base, progress %,
+solvers, required savings) uses:
 
 ```
-base_portfolio = net_worth - tracked_kh_value      # remove synced KH
+base_portfolio = net_worth - tracked_kh_value      # remove tracked KH
 total_wealth   = base_portfolio + goal.keren_hishtalmut_balance
 ```
 
 - **Scraped user (designed flow, demo):** synced value ≈ goal balance →
   swap-out + bucket-in nets to `net_worth`; no double count.
-- **Manual-entry user (never scraped):** `tracked_kh_value` is 0 → the
-  typed KH balance counts on top of net worth.
+- **Manual-entry user (typed `type='hishtalmut'` investment, never
+  scraped):** `tracked_kh_value` also reflects that investment's balance
+  (via `get_hishtalmut_total_balance()`) → the same swap-out + bucket-in
+  applies, and it counts exactly once.
 
 Never subtract `goal.keren_hishtalmut_balance` from net worth directly
 (drops KH for manual users), and never add it on top without the
-`tracked_kh_value` swap (double-counts it for scraped users). Both bugs
-have shipped; regression tests pin both flows in
+`tracked_kh_value` swap (double-counts it for scraped and manual users
+alike). Both bugs have shipped; regression tests pin both flows in
 `tests/backend/unit/test_retirement_service.py` (`TestRealTermsModel`).
 
 ## Readiness and the solver predicate
@@ -154,39 +186,40 @@ null so legacy stored overrides get cleared.
   `readiness == "on_track"` — 0 extra savings can coexist with off_track
   (FIRE reached but the portfolio depletes in drawdown).
 
-## Future work — auto-calculate the monthly pension payout
+## The pension payout offered from the funds' own forecasts
 
-**Not implemented. Noted so we remember to build it; do not treat any of
-this as current behaviour.**
+`pension_monthly_payout_estimate` is still user-entered, but the form now
+*offers* a figure: a "Use the funds' forecast for retiring at N" button under
+the field, fed by `GET /retirement/pension-forecast`
+(`RetirementService.get_pension_forecast`). It is never auto-applied — the
+user's own statement figure wins until they click.
 
-`pension_monthly_payout_estimate` is user-entered today, and it is one of
-the highest-leverage inputs in the whole model: it feeds retirement
-income directly, and with the four-state readiness ladder it is often
-what decides `funded` vs `off_track`. Asking a user to guess it is bad —
-most people have no idea what their fund will pay out.
+The figure comes from the pension clearing house, which publishes per pension
+fund the capital and monthly pension at retirement age **both** with deposits
+continuing and with deposits stopping today (`insurance_accounts.details`,
+see `InsuranceAccountService.get_pension_forecasts`). Deposits really stop at
+`target_retirement_age`, somewhere in between, so `project_pension_payout`
+re-derives each fund's pension for that age from its own two figures:
 
-We should derive it instead, from data we already scrape:
+- the fund's growth factor is the one that turns today's balance into the
+  no-deposit capital over the years to its retirement age;
+- a deposit stream stopped after `k` of `N` years is worth the share
+  `(g^k − 1) / (g^N − 1) × g^(N − k)` of the gap between the two forecasts;
+- that share of the gap between the two *pensions* is added to the
+  no-deposit pension (interpolating pensions, not capitals, keeps both ends
+  exact when the provider's two annuity factors differ in their last digit).
 
-- Current accumulated pension balance (scraped).
-- Ongoing monthly deposits (scraped — `pension_monthly_deposit`).
-- Deposits **stop** when the user stops working, i.e. at
-  `target_retirement_age`, not at `full_pension_age`. The balance keeps
-  compounding through the gap years but nothing is added.
-- Assume ~4% annual real growth of the accumulated balance.
-- Convert the projected balance at pension age into a monthly payout via
-  the מקדם קצבה (annuity conversion factor).
-- **Preferred when available:** many providers publish their own
-  projected monthly payout on the scraped statement. Use that directly
-  in preference to our estimate, and fall back to the computation above.
+Stopping at retirement age reproduces the provider's "deposits continue"
+figure, stopping today its "no further deposits" figure — pinned by
+`TestProjectPensionPayout`. The provider's assumptions (real terms, its own
+return and fees, its annuity factor) carry over unchanged. Every fund is
+projected with the plan holder's ages, so a household plan that also holds a
+spouse's fund treats it as the holder's — the demo does exactly that.
 
-Keep the existing guard intact when building this: the scraped
-`pension_monthly_deposit` must never be written straight into
-`pension_monthly_payout_estimate` — that autofill shipped once and seeded
-materially wrong retirement income (see the bullet above). The derived
-payout is a *computed projection*, not the deposit.
-
-Whatever lands should stay overridable: the user's own statement figure
-must still win over anything we compute.
+Keep the existing guard intact: the scraped `pension_monthly_deposit` must
+never be written into `pension_monthly_payout_estimate` — that autofill
+shipped once and seeded materially wrong retirement income. The forecast is a
+projected *payout*, not the deposit.
 
 ## Demo Mode invariant
 

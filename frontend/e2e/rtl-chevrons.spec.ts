@@ -143,7 +143,7 @@ test.describe("RTL chevrons", () => {
     // icon — Landmark / CreditCard / Shield — so we must pick the chevron
     // specifically, not the first SVG.)
     const proceedIcons = await page.evaluate(() => {
-      const labels = ["חשבון בנק", "כרטיס אשראי", "ביטוח"];
+      const labels = ["חשבון בנק", "כרטיס אשראי", "חיסכון פנסיוני"];
       return labels.map((label) => {
         const heading = Array.from(document.querySelectorAll("p")).find(
           (p) => p.textContent?.trim() === label,

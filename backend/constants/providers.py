@@ -1,5 +1,7 @@
-from enum import Enum
+"""Financial service providers, their services, and credential login fields."""
 
+from enum import Enum
+from typing import ClassVar
 
 cc_providers = [
     "amex",
@@ -29,14 +31,28 @@ bank_providers = [
 ]
 
 
+# Providers offered when adding an insurance account. HaPhoenix is deprecated in
+# favour of the pension clearing house, which reports the same policies plus
+# every other fund the saver holds; it is left out of this list but stays in
+# the scraper registry, so an existing HaPhoenix credential keeps scraping.
 insurance_providers = [
-    "hafenix",
+    "mislaka",
 ]
+
+# Insurance provider -> the provider that replaced it. The replacement adopts
+# the policies, deposits and investments its predecessor created; a later
+# scrape by the predecessor may only refresh a policy's balance, and only with
+# a newer one.
+SUPERSEDED_INSURANCE_PROVIDERS = {"hafenix": "mislaka"}
+
+# ``ScrapingResult.extras`` key under which the clearing-house scraper hands
+# back its monthly household summaries (mirrors
+# ``scraper.providers.insurances.mislaka.CLEARING_HOUSE_REPORTS``).
+CLEARING_HOUSE_REPORTS_EXTRA = "clearing_house_reports"
 
 
 class Services(Enum):
-    """
-    Enum defining the types of financial services supported by the application.
+    """Enum defining the types of financial services supported by the application.
 
     Attributes
     ----------
@@ -60,8 +76,7 @@ class Services(Enum):
 
 
 class CreditCards(Enum):
-    """
-    Enum defining supported credit card providers.
+    """Enum defining supported credit card providers.
 
     Attributes
     ----------
@@ -90,8 +105,7 @@ class CreditCards(Enum):
 
 
 class Banks(Enum):
-    """
-    Enum defining supported bank providers.
+    """Enum defining supported bank providers.
 
     Attributes
     ----------
@@ -135,8 +149,7 @@ class Banks(Enum):
 
 
 class Fields(Enum):
-    """
-    Enum defining field names used for credential information.
+    """Enum defining field names used for credential information.
 
     These fields represent different types of credential information required
     by various financial service providers.
@@ -175,8 +188,7 @@ class Fields(Enum):
 
 
 class LoginFields:
-    """
-    Class defining the required login fields for different financial service providers.
+    """Class defining the required login fields for different financial service providers.
 
     This class maintains a mapping of providers to their required login fields,
     and provides a method to retrieve the fields for a specific provider.
@@ -187,9 +199,9 @@ class LoginFields:
         Dictionary mapping provider names to lists of required field names.
     """
 
-    providers_fields = {
+    providers_fields: ClassVar[dict[str, list[str]]] = {
         # cards
-        "max": ["username", "password"],
+        "max": ["username", "password", "id"],
         "visa cal": ["username", "password"],
         "isracard": ["id", "card6Digits", "password"],
         "amex": ["id", "card6Digits", "password"],
@@ -215,6 +227,7 @@ class LoginFields:
         "clal": ["username", "password"],
         "harel": ["username", "password"],
         "hafenix": ["id", "phoneNumber"],
+        "mislaka": ["id", "phoneNumber"],
         # Test Providers
         "test_bank": ["username", "password"],
         "test_bank_2fa": ["email", "password", "phoneNumber"],
@@ -224,8 +237,7 @@ class LoginFields:
 
     @staticmethod
     def get_fields(provider: str) -> list[str]:
-        """
-        Get the required login fields for a specific provider.
+        """Get the login fields for a specific provider, optional ones last.
 
         Looks up the provider in the scraper framework's ``PROVIDER_CONFIGS``
         first, falling back to the hardcoded ``providers_fields`` dict for
@@ -239,17 +251,23 @@ class LoginFields:
         Returns
         -------
         list[str]
-            List of field names required for login to the specified provider.
+            Required field names followed by optional ones (e.g. Max's ID
+            number, used only when Max asks for it).
         """
         import importlib
         import os
         import sys
-        project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+        project_root = os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
         if project_root not in sys.path:
             sys.path.insert(0, project_root)
-        PROVIDER_CONFIGS = importlib.import_module("scraper.models.credentials").PROVIDER_CONFIGS
+        PROVIDER_CONFIGS = importlib.import_module(
+            "scraper.models.credentials"
+        ).PROVIDER_CONFIGS
 
         config = PROVIDER_CONFIGS.get(provider)
         if config:
-            return config.required_fields
+            return config.required_fields + config.optional_fields
         return LoginFields.providers_fields.get(provider, [])

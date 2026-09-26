@@ -1,7 +1,14 @@
 import React from "react";
 import { useTranslation } from "react-i18next";
-import { PenSquare, Trash2 } from "lucide-react";
+import { Archive, ArchiveRestore, PenSquare, Trash2 } from "lucide-react";
 import { formatCurrency } from "../../utils/numberFormatting";
+
+const ACTION_ICON = {
+  edit: PenSquare,
+  delete: Trash2,
+  close: Archive,
+  reopen: ArchiveRestore,
+} as const;
 
 /**
  * One row action, rendered whether or not the rule allows it.
@@ -14,16 +21,25 @@ import { formatCurrency } from "../../utils/numberFormatting";
  * control is unavailable, instead of leaving a mystery gap.
  */
 export const LedgerRowAction: React.FC<{
-  kind: "edit" | "delete";
+  kind: "edit" | "delete" | "close" | "reopen";
   label: string;
   /** Omit to render the slot disabled. */
   onClick?: () => void;
-}> = ({ kind, label, onClick }) => {
-  const Icon = kind === "edit" ? PenSquare : Trash2;
-  const enabled = kind === "edit" ? "hover:text-blue-500 hover:bg-blue-500/10" : "hover:text-red-500 hover:bg-red-500/10";
+  /** Forwarded to the button so a spec can address one action directly. */
+  testId?: string;
+}> = ({ kind, label, onClick, testId }) => {
+  const Icon = ACTION_ICON[kind];
+  // Destructive red is reserved for delete; retiring a rule is a
+  // reversible bookkeeping act, so it gets the neutral hover the edit
+  // control uses rather than a warning colour.
+  const enabled =
+    kind === "delete"
+      ? "hover:text-red-500 hover:bg-red-500/10"
+      : "hover:text-blue-500 hover:bg-blue-500/10";
   return (
     <button
       type="button"
+      data-testid={testId}
       disabled={!onClick}
       onClick={
         onClick
@@ -57,15 +73,22 @@ export interface BudgetLedgerRowProps {
   actions?: React.ReactNode;
   /** Per-rule trend cell (see RuleSparkline). */
   trend?: React.ReactNode;
+  /** Short chip shown beside the label, e.g. to mark a retired rule. */
+  badge?: React.ReactNode;
+  /**
+   * Render the row as settled: faded, so a row that is only kept for its
+   * history reads as background against the rules still being spent from.
+   */
+  dimmed?: boolean;
   children?: React.ReactNode;
 }
 
 /**
- * One envelope per line.
+ * One rule per line.
  *
  * Replaces the two-line card (title line + full-width 20px bar + padding,
  * ~76px) with a single grid line on desktop, so a month with a dozen
- * envelopes fits on one screen. Below `md:` it keeps two lines — name and
+ * rules fits on one screen. Below `md:` it keeps two lines — name and
  * percentage, then bar, figures and trend — because eight columns don't fit
  * on a phone.
  *
@@ -83,13 +106,15 @@ export const BudgetLedgerRow: React.FC<BudgetLedgerRowProps> = ({
   onToggleExpand,
   actions,
   trend,
+  badge,
+  dimmed = false,
   children,
 }) => {
   const { t } = useTranslation();
 
   const isNetRefund = current < 0;
   const spent = Math.max(current, 0);
-  // No budget means no proportion to draw: a 0-ceiling envelope used to
+  // No budget means no proportion to draw: a 0-ceiling rule used to
   // render a full amber bar, which read as "spent out" rather than "no
   // budget set" — and every other cell on the row already shows an em dash.
   const percent = total > 0 ? Math.min((spent / total) * 100, 100) : 0;
@@ -131,7 +156,11 @@ export const BudgetLedgerRow: React.FC<BudgetLedgerRowProps> = ({
       : "";
 
   return (
-    <div className="w-full rounded-xl border border-[var(--surface-light)] bg-[var(--surface)] shadow-sm hover:shadow-md transition-shadow">
+    <div
+      className={`w-full rounded-xl border border-[var(--surface-light)] bg-[var(--surface)] shadow-sm hover:shadow-md transition-shadow ${
+        dimmed ? "opacity-60" : ""
+      }`}
+    >
       <div className="flex items-center gap-1 px-2 md:px-3">
         <button
           type="button"
@@ -152,11 +181,14 @@ export const BudgetLedgerRow: React.FC<BudgetLedgerRowProps> = ({
               className={`w-2.5 h-2.5 rounded-full shrink-0 ${total > 0 ? barColor : "bg-[var(--surface-light)]"}`}
             />
             <span className="min-w-0">
-              <span
-                className="block font-semibold text-sm text-[var(--text-default)] truncate"
-                dir="auto"
-              >
-                {label}
+              <span className="flex items-center gap-1.5 min-w-0">
+                <span
+                  className="font-semibold text-sm text-[var(--text-default)] truncate"
+                  dir="auto"
+                >
+                  {label}
+                </span>
+                {badge}
               </span>
               {subLabel && (
                 <span
@@ -206,6 +238,7 @@ export const BudgetLedgerRow: React.FC<BudgetLedgerRowProps> = ({
                 >
                   {label}
                 </span>
+                {badge}
               </span>
               <span className={`font-mono text-xs font-bold shrink-0 ${pctColor}`} dir="ltr">
                 {total > 0 ? `${Math.round((spent / total) * 100)}%` : "—"}
@@ -223,7 +256,7 @@ export const BudgetLedgerRow: React.FC<BudgetLedgerRowProps> = ({
               {trend}
             </span>
             {leftLabel && (
-              <span className="text-[10px] text-[var(--text-muted)]" dir="ltr">
+              <span className="text-[10px] text-[var(--text-muted)]">
                 {leftLabel}
               </span>
             )}

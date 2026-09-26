@@ -30,9 +30,9 @@ import logging
 import sys
 import time
 from dataclasses import asdict, dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Optional
+from typing import Any
 from urllib.parse import urlsplit
 
 import httpx
@@ -61,14 +61,15 @@ class UpdateInfo:
     """
 
     current: str
-    latest: Optional[str] = None
+    latest: str | None = None
     is_outdated: bool = False
-    asset_url: Optional[str] = None
-    html_url: Optional[str] = None
-    checked_at: Optional[str] = None
-    error: Optional[str] = None
+    asset_url: str | None = None
+    html_url: str | None = None
+    checked_at: str | None = None
+    error: str | None = None
 
-    def as_dict(self) -> dict:
+    def as_dict(self) -> dict[str, Any]:
+        """Return the result as a JSON-serializable dict."""
         return asdict(self)
 
 
@@ -79,7 +80,7 @@ def _cache_path() -> Path:
     cache is shared between production and demo modes — the available
     update is a property of the binary, not of the active database.
     """
-    base = Path(AppConfig()._base_user_dir)  # noqa: SLF001
+    base = Path(AppConfig()._base_user_dir)
     base.mkdir(parents=True, exist_ok=True)
     return base / ".update_cache.json"
 
@@ -106,7 +107,7 @@ def _parse_semver(version: str) -> tuple[int, ...]:
     return tuple(out)
 
 
-def _safe_github_url(url: Optional[str]) -> Optional[str]:
+def _safe_github_url(url: str | None) -> str | None:
     """Return ``url`` only when it is an HTTPS GitHub URL, else ``None``.
 
     Both URLs this module returns are rendered as clickable links in the
@@ -129,7 +130,7 @@ def _safe_github_url(url: Optional[str]) -> Optional[str]:
     return url
 
 
-def _pick_asset_url(assets: list[dict]) -> Optional[str]:
+def _pick_asset_url(assets: list[dict[str, Any]]) -> str | None:
     """Pick the OS-matching release asset download URL.
 
     Only Windows ships a downloadable artifact (``FinanceAppInstaller.exe``).
@@ -155,14 +156,25 @@ def _pick_asset_url(assets: list[dict]) -> Optional[str]:
 
 
 class UpdateService:
-    """Coordinates GitHub probing + on-disk caching of the result."""
+    """Coordinates GitHub probing + on-disk caching of the result.
+
+    Parameters
+    ----------
+    cache_path : Path, optional
+        Cache file location; defaults to the base user dir.
+    cache_ttl_seconds : int
+        Age after which a cached result is refetched.
+    http_client : httpx.Client, optional
+        Injected client (tests); a short-lived one is created per probe
+        otherwise.
+    """
 
     def __init__(
         self,
         *,
-        cache_path: Optional[Path] = None,
+        cache_path: Path | None = None,
         cache_ttl_seconds: int = CACHE_TTL_SECONDS,
-        http_client: Optional[httpx.Client] = None,
+        http_client: httpx.Client | None = None,
     ) -> None:
         self._cache_path = cache_path or _cache_path()
         self._cache_ttl = cache_ttl_seconds
@@ -193,12 +205,14 @@ class UpdateService:
             self._write_cache(info)
         return info
 
-    def _is_outdated(self, current: str, latest: Optional[str]) -> bool:
+    def _is_outdated(self, current: str, latest: str | None) -> bool:
+        """Return whether ``latest`` is a newer semver than ``current``."""
         if not latest:
             return False
         return _parse_semver(current) < _parse_semver(latest)
 
     def _probe_github(self, *, current: str) -> UpdateInfo:
+        """Fetch the latest release from GitHub; any failure is ``unavailable``."""
         client = self._http or httpx.Client(timeout=HTTP_TIMEOUT_SECONDS)
         owns_client = self._http is None
         try:
@@ -218,9 +232,8 @@ class UpdateService:
                 latest=latest,
                 is_outdated=self._is_outdated(current, latest),
                 asset_url=asset_url,
-                html_url=_safe_github_url(payload.get("html_url"))
-                or RELEASES_HTML_URL,
-                checked_at=datetime.now(tz=timezone.utc).isoformat(),
+                html_url=_safe_github_url(payload.get("html_url")) or RELEASES_HTML_URL,
+                checked_at=datetime.now(tz=UTC).isoformat(),
             )
         except Exception as exc:
             logger.info("GitHub releases probe failed: %s", exc)
@@ -229,7 +242,8 @@ class UpdateService:
             if owns_client:
                 client.close()
 
-    def _read_cache(self) -> Optional[UpdateInfo]:
+    def _read_cache(self) -> UpdateInfo | None:
+        """Return the cached result, or ``None`` when missing, stale or corrupt."""
         try:
             stat = self._cache_path.stat()
         except FileNotFoundError:
@@ -244,6 +258,7 @@ class UpdateService:
             return None
 
     def _write_cache(self, info: UpdateInfo) -> None:
+        """Persist ``info`` to the cache file, ignoring write failures."""
         try:
             self._cache_path.write_text(json.dumps(info.as_dict()))
         except Exception as exc:

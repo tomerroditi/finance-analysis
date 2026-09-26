@@ -3,10 +3,16 @@ Unit tests for transaction ORM models and TimestampMixin.
 
 Covers BankTransaction, CreditCardTransaction, CashTransaction,
 ManualInvestmentTransaction, and SplitTransaction.
+
+The ``source`` column holds the **table** name (``bank_transactions``), not
+the service alias (``banks``) — that is what the ingestion path writes and
+what the split read-side joins on, so the fixtures here use the ``Tables``
+enum rather than a hand-written string.
 """
 
 from datetime import datetime
 
+import pytest
 from sqlalchemy.orm import Session
 
 from backend.constants.tables import Tables
@@ -22,8 +28,8 @@ from backend.models.transaction import (
 class TestTimestampMixin:
     """Tests for TimestampMixin timestamp functionality."""
 
-    def test_created_at_auto_populated(self, db_session: Session):
-        """Test that created_at is auto-populated on insert."""
+    def test_timestamps_auto_populated(self, db_session: Session):
+        """created_at and updated_at are both set to datetimes on insert."""
         txn = BankTransaction(
             id="test-1",
             date="2026-01-01",
@@ -31,40 +37,18 @@ class TestTimestampMixin:
             account_name="main",
             description="Test transaction",
             amount=-100.0,
-            source="banks",
+            source=Tables.BANK.value,
         )
         db_session.add(txn)
         db_session.commit()
         db_session.refresh(txn)
 
-        assert txn.created_at is not None
         assert isinstance(txn.created_at, datetime)
-
-    def test_updated_at_auto_populated(self, db_session: Session):
-        """Test that updated_at is auto-populated on insert."""
-        txn = BankTransaction(
-            id="test-2",
-            date="2026-01-01",
-            provider="hapoalim",
-            account_name="main",
-            description="Test transaction",
-            amount=-50.0,
-            source="banks",
-        )
-        db_session.add(txn)
-        db_session.commit()
-        db_session.refresh(txn)
-
-        assert txn.updated_at is not None
         assert isinstance(txn.updated_at, datetime)
 
 
 class TestBankTransaction:
     """Tests for BankTransaction model."""
-
-    def test_table_name(self):
-        """Test that table name matches Tables enum."""
-        assert BankTransaction.__tablename__ == Tables.BANK.value
 
     def test_model_instantiation(self, db_session: Session):
         """Test model can be instantiated with all fields."""
@@ -78,7 +62,7 @@ class TestBankTransaction:
             amount=-150.50,
             category="Food",
             tag="Groceries",
-            source="banks",
+            source=Tables.BANK.value,
             type="normal",
             status="completed",
         )
@@ -101,7 +85,7 @@ class TestBankTransaction:
             account_name="investments",
             description="Transfer",
             amount=500.0,
-            source="banks",
+            source=Tables.BANK.value,
         )
         db_session.add(txn)
         db_session.commit()
@@ -120,7 +104,7 @@ class TestBankTransaction:
             account_name="main",
             description="Payment",
             amount=-25.0,
-            source="banks",
+            source=Tables.BANK.value,
         )
         db_session.add(txn)
         db_session.commit()
@@ -130,122 +114,51 @@ class TestBankTransaction:
         assert txn.status == "completed"
 
 
-class TestCreditCardTransaction:
-    """Tests for CreditCardTransaction model."""
+class TestOtherTransactionTables:
+    """The non-bank transaction tables persist rows and assign a unique_id."""
 
-    def test_table_name(self):
-        """Test that table name matches Tables enum."""
-        assert CreditCardTransaction.__tablename__ == Tables.CREDIT_CARD.value
-
-    def test_model_instantiation(self, db_session: Session):
-        """Test model can be instantiated with all fields."""
-        txn = CreditCardTransaction(
-            id="cc-001",
+    @pytest.mark.parametrize(
+        ("model", "table"),
+        [
+            pytest.param(CreditCardTransaction, Tables.CREDIT_CARD, id="credit_card"),
+            pytest.param(CashTransaction, Tables.CASH, id="cash"),
+            pytest.param(
+                ManualInvestmentTransaction,
+                Tables.MANUAL_INVESTMENT_TRANSACTIONS,
+                id="manual_investment",
+            ),
+        ],
+    )
+    def test_model_instantiation(self, db_session: Session, model, table):
+        """A fully-populated row round-trips and gets an auto-increment unique_id."""
+        txn = model(
+            id="txn-001",
             date="2026-01-10",
             provider="isracard",
             account_name="personal",
             description="Online shopping",
             amount=-299.99,
             category="Shopping",
-            source="credit_cards",
+            source=table.value,
         )
         db_session.add(txn)
         db_session.commit()
         db_session.refresh(txn)
 
         assert txn.unique_id is not None
-        assert txn.id == "cc-001"
-        assert txn.provider == "isracard"
-
-    def test_inherits_timestamp_mixin(self, db_session: Session):
-        """Test model has TimestampMixin fields."""
-        txn = CreditCardTransaction(
-            id="cc-002",
-            date="2026-01-10",
-            provider="max",
-            account_name="business",
-            description="Office supplies",
-            amount=-89.00,
-            source="credit_cards",
-        )
-        db_session.add(txn)
-        db_session.commit()
-        db_session.refresh(txn)
-
-        assert hasattr(txn, "created_at")
-        assert hasattr(txn, "updated_at")
-        assert txn.created_at is not None
-
-
-class TestCashTransaction:
-    """Tests for CashTransaction model."""
-
-    def test_table_name(self):
-        """Test that table name matches Tables enum."""
-        assert CashTransaction.__tablename__ == Tables.CASH.value
-
-    def test_model_instantiation(self, db_session: Session):
-        """Test model can be instantiated with all fields."""
-        txn = CashTransaction(
-            id="cash-001",
-            date="2026-01-12",
-            provider="manual",
-            account_name="wallet",
-            description="Coffee shop",
-            amount=-15.0,
-            source="cash",
-        )
-        db_session.add(txn)
-        db_session.commit()
-        db_session.refresh(txn)
-
-        assert txn.unique_id is not None
-        assert txn.amount == -15.0
-
-
-class TestManualInvestmentTransaction:
-    """Tests for ManualInvestmentTransaction model."""
-
-    def test_table_name(self):
-        """Test that table name matches Tables enum."""
-        assert (
-            ManualInvestmentTransaction.__tablename__
-            == Tables.MANUAL_INVESTMENT_TRANSACTIONS.value
-        )
-
-    def test_model_instantiation(self, db_session: Session):
-        """Test model can be instantiated with all fields."""
-        txn = ManualInvestmentTransaction(
-            id="inv-txn-001",
-            date="2026-01-05",
-            provider="manual",
-            account_name="brokerage",
-            description="Stock purchase",
-            amount=-1000.0,
-            category="Investments",
-            tag="Stocks",
-            source="manual_investments",
-        )
-        db_session.add(txn)
-        db_session.commit()
-        db_session.refresh(txn)
-
-        assert txn.unique_id is not None
-        assert txn.category == "Investments"
+        assert txn.id == "txn-001"
+        assert txn.amount == -299.99
+        assert txn.category == "Shopping"
 
 
 class TestSplitTransaction:
     """Tests for SplitTransaction model."""
 
-    def test_table_name(self):
-        """Test that table name matches Tables enum."""
-        assert SplitTransaction.__tablename__ == Tables.SPLIT_TRANSACTIONS.value
-
     def test_model_instantiation(self, db_session: Session):
         """Test model can be instantiated with all fields."""
         split = SplitTransaction(
             transaction_id=1,
-            source="banks",
+            source=Tables.BANK.value,
             amount=-50.0,
             category="Food",
             tag="Groceries",
@@ -256,14 +169,14 @@ class TestSplitTransaction:
 
         assert split.id is not None
         assert split.transaction_id == 1
-        assert split.source == "banks"
+        assert split.source == Tables.BANK.value
         assert split.amount == -50.0
 
     def test_nullable_fields(self, db_session: Session):
         """Test nullable category and tag fields."""
         split = SplitTransaction(
             transaction_id=2,
-            source="credit_cards",
+            source=Tables.CREDIT_CARD.value,
             amount=-25.0,
         )
         db_session.add(split)
@@ -272,17 +185,3 @@ class TestSplitTransaction:
 
         assert split.category is None
         assert split.tag is None
-
-    def test_inherits_timestamp_mixin(self, db_session: Session):
-        """Test model has TimestampMixin fields."""
-        split = SplitTransaction(
-            transaction_id=3,
-            source="banks",
-            amount=-100.0,
-        )
-        db_session.add(split)
-        db_session.commit()
-        db_session.refresh(split)
-
-        assert hasattr(split, "created_at")
-        assert split.created_at is not None

@@ -11,18 +11,22 @@ import re
 import sqlite3
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 from backend.config import AppConfig
+from backend.errors import BadRequestException, EntityNotFoundException
+from backend.migrations_runner import upgrade_to_head
 from backend.utils.log_sanitize import scrub
 
 logger = logging.getLogger(__name__)
 
 MAX_BACKUPS = 5
 
-# Backup filenames always follow ``data_YYYYMMDD_HHMMSS.db``. Restrict restore
-# input to this shape so a malicious filename cannot traverse out of the
-# backup directory (e.g. ``../../etc/passwd``) or point at arbitrary files.
-_BACKUP_FILENAME_RE = re.compile(r"^data_\d{8}_\d{6}\.db$")
+# Backup filenames always follow ``data_YYYYMMDD_HHMMSS.db``, with a ``_N``
+# suffix when several land in the same second. Restrict restore input to this
+# shape so a malicious filename cannot traverse out of the backup directory
+# (e.g. ``../../etc/passwd``) or point at arbitrary files.
+_BACKUP_FILENAME_RE = re.compile(r"^data_\d{8}_\d{6}(?:_\d{1,3})?\.db$")
 
 
 def get_backup_dir() -> Path:
@@ -56,7 +60,10 @@ def backup_db(max_backups: int = MAX_BACKUPS) -> Path | None:
     backup_dir.mkdir(parents=True, exist_ok=True)
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    dest = backup_dir / f"data_{timestamp}.db"
+    dest = _claim_backup_path(backup_dir, timestamp)
+    if dest is None:
+        logger.error("No free backup filename for %s", timestamp)
+        return None
 
     try:
         src_conn = sqlite3.connect(str(src))
@@ -77,7 +84,6 @@ def backup_db(max_backups: int = MAX_BACKUPS) -> Path | None:
         logger.exception("Database backup failed")
         return None
 
-    # Prune oldest backups beyond the limit
     if max_backups > 0:
         backups = sorted(backup_dir.glob("data_*.db"), key=lambda f: f.stat().st_mtime)
         while len(backups) > max_backups:
@@ -88,7 +94,61 @@ def backup_db(max_backups: int = MAX_BACKUPS) -> Path | None:
     return dest
 
 
-def list_backups() -> list[dict]:
+def _claim_backup_path(backup_dir: Path, timestamp: str) -> Path | None:
+    """Create and return a backup file no other backup is using.
+
+    Two backups in the same second used to share a name, so the second
+    overwrote the first — and a restore right after a backup replaced the
+    very file it was about to restore with its own safety backup. The file
+    is created exclusively, so concurrent callers cannot claim the same one.
+
+    Parameters
+    ----------
+    backup_dir : Path
+        The backup directory.
+    timestamp : str
+        ``YYYYMMDD_HHMMSS`` for the backup.
+
+    Returns
+    -------
+    Path or None
+        The claimed (empty) file, or None if every suffix is taken.
+    """
+    for n in range(1000):
+        dest = backup_dir / (
+            f"data_{timestamp}.db" if n == 0 else f"data_{timestamp}_{n}.db"
+        )
+        try:
+            with open(dest, "x"):
+                return dest
+        except FileExistsError:
+            continue
+    return None
+
+
+def describe_backup(path: Path) -> dict[str, Any]:
+    """Describe one backup file for the API.
+
+    Parameters
+    ----------
+    path : Path
+        The backup file.
+
+    Returns
+    -------
+    dict
+        ``filename``, ``created_at`` (ISO string of the file's mtime) and
+        ``size_bytes``.
+    """
+    stat = path.stat()
+    return {
+        "filename": path.name,
+        "created_at": datetime.fromtimestamp(stat.st_mtime).isoformat(),
+        "size_bytes": stat.st_size,
+    }
+
+
+def list_backups() -> list[dict[str, Any]]:
     """List available backup files.
 
     Returns
@@ -101,15 +161,7 @@ def list_backups() -> list[dict]:
     if not backup_dir.exists():
         return []
 
-    backups = []
-    for f in backup_dir.glob("data_*.db"):
-        stat = f.stat()
-        backups.append({
-            "filename": f.name,
-            "created_at": datetime.fromtimestamp(stat.st_mtime).isoformat(),
-            "size_bytes": stat.st_size,
-        })
-
+    backups = [describe_backup(f) for f in backup_dir.glob("data_*.db")]
     backups.sort(key=lambda b: b["created_at"], reverse=True)
     return backups
 
@@ -128,16 +180,16 @@ def restore_backup(filename: str) -> None:
 
     Raises
     ------
-    FileNotFoundError
-        If the backup file does not exist.
-    ValueError
+    EntityNotFoundException
+        If the backup file does not exist (404).
+    BadRequestException
         If the filename is not a valid backup name, escapes the backup
-        directory, or the file is not a readable SQLite database.
+        directory, or the file is not a readable SQLite database (400).
     """
     # Reject anything that isn't a plain backup filename — no slashes, no
     # traversal, no symlinks pointing elsewhere.
-    if not _BACKUP_FILENAME_RE.match(filename):
-        raise ValueError(f"Invalid backup filename: {filename}")
+    if not _BACKUP_FILENAME_RE.fullmatch(filename):
+        raise BadRequestException(f"Invalid backup filename: {filename}")
 
     backup_dir = get_backup_dir().resolve()
 
@@ -149,22 +201,24 @@ def restore_backup(filename: str) -> None:
     # (still tainted, in its view) raw filename keeps reading as attacker
     # controlled. Picking the path out of a trusted enumeration instead gives
     # the value a provenance the analyzer does recognise as sanitised.
-    backup_path = None
+    backup_path: Path | None = None
     if backup_dir.is_dir():
         for entry in backup_dir.iterdir():
             if entry.name == filename:
                 backup_path = entry.resolve()
                 break
     if backup_path is None:
-        raise FileNotFoundError(f"Backup file not found: {filename}")
+        raise EntityNotFoundException(f"Backup file not found: {filename}")
 
     try:
         backup_path.relative_to(backup_dir)
     except ValueError as exc:
-        raise ValueError(f"Backup path escapes backup directory: {filename}") from exc
+        raise BadRequestException(
+            f"Backup path escapes backup directory: {filename}"
+        ) from exc
 
     if not backup_path.is_file():
-        raise FileNotFoundError(f"Backup file not found: {filename}")
+        raise EntityNotFoundException(f"Backup file not found: {filename}")
 
     # Validate the file is actually a readable SQLite database before we
     # overwrite the live DB — prevents restoring a corrupt or hostile file.
@@ -175,7 +229,9 @@ def restore_backup(filename: str) -> None:
         finally:
             test_conn.close()
     except sqlite3.DatabaseError as exc:
-        raise ValueError(f"Backup file is not a valid SQLite database: {filename}") from exc
+        raise BadRequestException(
+            f"Backup file is not a valid SQLite database: {filename}"
+        ) from exc
 
     config = AppConfig()
     db_path = Path(config.get_db_path())
@@ -189,7 +245,6 @@ def restore_backup(filename: str) -> None:
 
     reset_engines()
 
-    # Restore: copy backup over the active database
     src_conn = sqlite3.connect(str(backup_path))
     try:
         dst_conn = sqlite3.connect(str(db_path))
@@ -216,26 +271,11 @@ def restore_backup(filename: str) -> None:
 def _upgrade_restored_db() -> None:
     """Run Alembic upgrade head against the freshly restored database.
 
-    Mirrors the startup migration path in ``backend/main.py``. Failures are
-    logged, not raised — the restore itself succeeded, and the migrations
-    will run again on next startup.
+    Uses the same runner as startup. Failures are logged, not raised — the
+    restore itself succeeded, and the migrations will run again on next
+    startup.
     """
-    import sys
-
-    from alembic import command
-    from alembic.config import Config
-
-    if getattr(sys, "frozen", False):
-        alembic_ini = Path(getattr(sys, "_MEIPASS", "")) / "alembic.ini"
-    else:
-        alembic_ini = Path(__file__).resolve().parents[2] / "alembic.ini"
-
-    if not alembic_ini.is_file():
-        logger.warning(
-            "alembic.ini not found at %s — restored DB not migrated", alembic_ini
-        )
-        return
     try:
-        command.upgrade(Config(str(alembic_ini)), "head")
+        upgrade_to_head()
     except Exception:
         logger.exception("Failed to migrate restored database")

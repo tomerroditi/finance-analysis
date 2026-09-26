@@ -1,18 +1,15 @@
-"""
-Investment balance snapshots repository with SQLAlchemy ORM.
-"""
+"""Investment balance snapshots repository with SQLAlchemy ORM."""
 
-from typing import Optional
+from typing import Any
 
 import pandas as pd
 from sqlalchemy import delete, func, select, update
-
-from backend.utils.session_cache import session_cache_get, session_cache_set
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from backend.errors import EntityNotFoundException
 from backend.models.investment_balance_snapshot import InvestmentBalanceSnapshot
+from backend.utils.session_cache import session_cache_get, session_cache_set
 
 
 class InvestmentSnapshotsRepository:
@@ -23,8 +20,9 @@ class InvestmentSnapshotsRepository:
     date via upsert semantics.
     """
 
-    def __init__(self, db: Session):
-        """
+    def __init__(self, db: Session) -> None:
+        """Initialize the repository.
+
         Parameters
         ----------
         db : Session
@@ -55,8 +53,9 @@ class InvestmentSnapshotsRepository:
             Market value of the investment on this date.
         source : str
             How the snapshot was created (``"manual"``, ``"scraped"``,
-            or ``"calculated"``). Defaults to ``"manual"``.
+            ``"calculated"`` or ``"closed"``). Defaults to ``"manual"``.
         """
+
         def _try_update() -> int:
             stmt = (
                 update(InvestmentBalanceSnapshot)
@@ -143,11 +142,11 @@ class InvestmentSnapshotsRepository:
             .group_by(InvestmentBalanceSnapshot.investment_id)
             .all()
         )
-        return {investment_id: latest_date for investment_id, latest_date in rows}
+        return dict(rows)
 
     def get_latest_snapshot_on_or_before(
         self, investment_id: int, target_date: str
-    ) -> Optional[dict]:
+    ) -> dict[str, Any] | None:
         """Find the most recent snapshot on or before a target date.
 
         Parameters
@@ -183,7 +182,7 @@ class InvestmentSnapshotsRepository:
             "source": snapshot.source,
         }
 
-    def update_snapshot(self, snapshot_id: int, **fields) -> None:
+    def update_snapshot(self, snapshot_id: int, **fields: Any) -> None:
         """Update a snapshot by its ID.
 
         Parameters
@@ -210,9 +209,7 @@ class InvestmentSnapshotsRepository:
         self.db.commit()
 
         if result.rowcount == 0:
-            raise EntityNotFoundException(
-                f"No snapshot found with ID {snapshot_id}"
-            )
+            raise EntityNotFoundException(f"No snapshot found with ID {snapshot_id}")
 
     def delete_snapshot(self, snapshot_id: int) -> None:
         """Delete a snapshot by its ID.
@@ -234,12 +231,10 @@ class InvestmentSnapshotsRepository:
         self.db.commit()
 
         if result.rowcount == 0:
-            raise EntityNotFoundException(
-                f"No snapshot found with ID {snapshot_id}"
-            )
+            raise EntityNotFoundException(f"No snapshot found with ID {snapshot_id}")
 
     def delete_snapshots_for_investment(
-        self, investment_id: int, source: Optional[str] = None
+        self, investment_id: int, source: str | None = None
     ) -> None:
         """Delete all snapshots for an investment, optionally filtered by source.
 

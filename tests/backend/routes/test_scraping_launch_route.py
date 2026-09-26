@@ -10,7 +10,7 @@ Unlike ``test_scraping_routes.py`` — which mocks ``ScrapingService`` wholesale
 and so never exercises the launch — this test drives the real route and the
 real ``ScrapingService.start_scraping_single`` through the ASGI stack, mocking
 only the deep dependencies, and asserts the adapter's ``run()`` coroutine
-actually executes on the captured main loop.
+actually executes on the scraper event loop.
 """
 
 import asyncio
@@ -24,32 +24,26 @@ import backend.services.scraping_service as ss
 
 
 @pytest.fixture
-def main_loop():
-    """Register a real background event loop as the app's main loop.
+def scraper_loop():
+    """Start the real scraper loop and stop it after the test.
 
-    Route tests don't run the FastAPI lifespan (which normally captures the
-    loop via ``set_main_loop``), so we register one explicitly for the test
-    and tear it down afterwards.
+    Route tests don't run the FastAPI lifespan, whose shutdown normally stops
+    the loop, so the fixture does it.
     """
-    loop = asyncio.new_event_loop()
-    thread = threading.Thread(target=loop.run_forever, daemon=True)
-    thread.start()
-    ss.set_main_loop(loop)
-    yield loop
-    ss.set_main_loop(None)
-    loop.call_soon_threadsafe(loop.stop)
-    thread.join(timeout=5)
-    loop.close()
+    yield ss.get_scraper_loop()
+    asyncio.run(ss.shutdown_scraper_loop())
 
 
 class TestScrapeLaunchRouteThroughThreadpool:
-    """The synchronous launch route must schedule the scraper on the main loop."""
+    """The synchronous launch route must schedule the scraper on the scraper loop."""
 
-    def test_post_start_launches_scraper_from_sync_route(self, test_client, main_loop):
-        """POST /api/scraping/start runs adapter.run() with no event-loop error."""
+    def test_post_start_launches_scraper_from_sync_route(self, test_client, scraper_loop):
+        """POST /api/scraping/start runs adapter.run() on the scraper loop."""
         ran = threading.Event()
+        observed = {}
 
         async def fake_run():
+            observed["loop"] = asyncio.get_running_loop()
             ran.set()
 
         mock_adapter = MagicMock()
@@ -98,3 +92,4 @@ class TestScrapeLaunchRouteThroughThreadpool:
         assert response.status_code == 200
         assert response.json() == 42
         assert ran.wait(timeout=5), "adapter.run() never executed via the route"
+        assert observed["loop"] is scraper_loop

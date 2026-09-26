@@ -13,7 +13,7 @@ How GitHub Actions are wired up. Read this before touching anything in
 | Workflow                 | Trigger                | Purpose                                          |
 |--------------------------|------------------------|--------------------------------------------------|
 | `.github/workflows/ci.yml`     | `pull_request` (any base), manual | Validate every PR — backend pytest + frontend lint, type-check, build, vitest on all PRs; **the full Playwright e2e suite across 4 parallel shards** additionally runs on PRs targeting `main` or `dev`; the Schemathesis API-fuzz job runs only on PRs targeting `main`. Since feature PRs now target `main`, both extra jobs run on every one of them. Fails the PR if anything breaks. |
-| `.github/workflows/build-smoke.yml` | `pull_request` to main touching `build/`, `backend/`, `scraper/`, deps, or the workflow itself; manual | Build the Windows bundle on `windows-latest` and run its in-bundle smoke test + `--uninstall-cleanup` CLI + bundle-size cap. Green/red signal only — no artifacts uploaded. |
+| `.github/workflows/build-smoke.yml` | `pull_request` to main touching `build/`, `backend/`, `scraper/`, deps, or the workflow itself; manual | Build the Windows bundle on `windows-latest` and run its in-bundle smoke test + `--uninstall-cleanup` CLI + bundle-size cap. Green/red signal only — no artifacts uploaded, so it trades fidelity it doesn't need for speed: the frontend (`vite build`, no `tsc -b` — `ci.yml` type-checks) and the NSIS install run in the background during `poetry install`, and the installer is compiled uncompressed (`build_app.py --uncompressed-installer`; LZMA over the bundle was ~80 s of a ~4.5 min job). Like `release.yml` it installs `poetry install --only main,build` — never the dev group, which PyInstaller would follow optional imports into; `excludes` in `build/finance_analysis.spec` keeps a local dev-venv build identical. |
 | `.github/workflows/release.yml`| `push` to main         | `commitizen` bump, build the Windows installer (**no macOS artifact** — see `installation_and_updates.md`), smoke-test it, attach to the GitHub release. |
 
 The split exists because:
@@ -29,10 +29,15 @@ Don't merge them into one workflow.
 
 ## What runs on a PR (`ci.yml`)
 
-- Backend: `poetry run pytest`
+- Backend: `poetry run ruff check backend`, `poetry run ruff format --check backend`,
+  `poetry run pytest` (the ruff pair is also asserted by
+  `tests/backend/unit/test_code_quality.py`, so a local pytest run catches it)
 - Frontend: `npm run lint`, `npm run build` (`tsc -b && vite build`),
   `npm test` (vitest)
-- **E2E: `npx playwright test` sharded 4 ways** (`E2E (Playwright, shard N/4)`).
+- **E2E: `npx playwright test` sharded 4 ways** (`E2E (Playwright, shard N/4)`),
+  against the production build (`vite build` + `vite preview`), each job given
+  the spec files `.claude/scripts/e2e_shard_files.py` packs for it by the
+  durations in `e2e_shard_timings.json`.
   This runs the **entire** `frontend/e2e/` suite, not just the specs you added.
   It is a required check — a red shard blocks the merge.
 

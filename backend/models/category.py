@@ -1,6 +1,6 @@
 """Category model for storing categories, tags, and icons."""
 
-from sqlalchemy import Column, Integer, JSON, String
+from sqlalchemy import JSON, Column, Integer, String
 
 from backend.constants.tables import Tables
 from backend.models.base import Base, TimestampMixin
