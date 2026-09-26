@@ -120,3 +120,45 @@ month. `surface_fine` uses it to measure the surface at monthly resolution.
   month (89,119.7 drawn, 5,588.0 paid).
 * **`retire_at_age` retired a month early**: the last working month is the one at
   exactly the requested age; we had it one month before.
+
+## 6. Couples — measured, not yet solved (`couple*.py`)
+
+Every couple run replays to under 0.6 shekels once its own decumulation rate
+is supplied, so a couple differs from a single person **only in the bridge**.
+What is established:
+
+* **The horizon runs to the younger spouse's 81**, and capital gains are taxed
+  on the **older** spouse's age (both fixed in the engine).
+* **Only statutory months matter when nobody has a pension.** A male partner
+  born 1983 and a female one born 1985 reach their statutory age in the same
+  month and read the same rate to five decimals; so do 1978/1980; and the
+  roles are symmetric (`cp3_mainfemale_1990` = `cp2_empty_1990`).
+* **Pension-free, the bridge end is piecewise linear in the gap `g`** between
+  the two statutory months (two men, `couple4`/`couple5`, main at 364):
+
+  | gap (months) | end | reading |
+  |---|---|---|
+  | 1 … 81 | `364 − 0.4797·g` | weight 0.5203 on the later statutory month |
+  | 84 | 326.17 | on neither line — the partner's 67 is the main's 60 |
+  | 87 … 132 | `401.6 − 0.7631·g` | a second line, jumping up at 87 |
+
+  Rate-space and withdrawal-rate-space weights drift in both regimes; only the
+  horizon is linear. The break sits where the older spouse's statutory month
+  crosses the younger's 60th birthday.
+* **A partner's own pension reads exactly like a single person's**, on the
+  partner's window, whether the partner is the same age, older or male
+  (`cp_partner_only`, `_older`, `_male`, `_t60`); the other spouse's empty
+  pension contributes nothing. Two pensions add, on the woman's shorter window
+  (`cp_both`).
+* **The man's pension beside a pension-free woman fits neither window**
+  (`cp_main_only`, `cp2_main_s*`): ends 347.9 / 334.7 / 319.4 / 288.7 at
+  x = 0.10 / 0.31 / 0.51 / 0.92, against her window's 336.8 / 329.1 / 319.4 /
+  288.7 — equal from x ≈ 0.5, above it below that.
+
+Rules tried and rejected: plain averages of the two waits in horizon, rate,
+withdrawal-rate, 1/N, log-N or capital (annuity-factor) space; per-person ends
+averaged with household coverage; the earlier / later / partner's end alone;
+the partner retiring at the main person's age; Bituach Leumi as coverage. The
+reference's code is not public and its guide covers single persons only. Next:
+sweep the gap for a woman beside a man, pension-free, as `couple5` did for two
+men — the two slopes and the jump are the cleanest handle there is.
