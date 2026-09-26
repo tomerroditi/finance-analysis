@@ -12,6 +12,7 @@ from typing import Any
 import numpy as np
 
 from backend.constants.budget import ALL_TAGS
+from backend.constants.categories import INVESTMENTS_CATEGORY
 from backend.errors import EntityNotFoundException, ValidationException
 from backend.models.savings_goal import (
     GOAL_KIND_INVESTMENT,
@@ -61,6 +62,9 @@ class GoalCrudMixin:
             investment goal names no transfers or carries a cash-only field.
         """
         if fields.get("kind") == GOAL_KIND_INVESTMENT:
+            # Every investment transfer lives in one category, so the goal
+            # always counts it; its tags are the only choice (none = all).
+            fields["contribution_category"] = INVESTMENTS_CATEGORY
             self._validate_investment_fields(fields)
         fields.setdefault("priority", self.repo.next_priority())
         if not fields.get("start_month"):
@@ -100,6 +104,7 @@ class GoalCrudMixin:
             self._validate_month(fields["start_month"], "start_month")
         goal = self.repo.get(goal_id)
         if goal and is_investment_goal(goal):
+            fields.pop("contribution_category", None)
             current = {
                 "contribution_category": goal.contribution_category,
                 "opening_balance": goal.opening_balance,
@@ -379,18 +384,13 @@ class GoalCrudMixin:
 
     @staticmethod
     def _validate_investment_fields(fields: dict[str, Any]) -> None:
-        """Reject an investment goal that names no transfers or holds cash fields.
+        """Reject an investment goal that carries a cash-goal setting.
 
         Raises
         ------
         ValidationException
-            When ``contribution_category`` is empty, ``opening_balance`` is
-            non-zero, or any cash-only field is set.
+            When ``opening_balance`` is non-zero or any cash-only field is set.
         """
-        if not fields.get("contribution_category"):
-            raise ValidationException(
-                "An investment goal needs the category its transfers are tagged with"
-            )
         if fields.get("opening_balance"):
             raise ValidationException(
                 "An investment goal counts transfers only; it takes no opening balance"

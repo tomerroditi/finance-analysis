@@ -746,12 +746,14 @@ describe("GoalsSection", () => {
       fireEvent.change(screen.getByLabelText(/name/i), { target: { value: "Pakam" } });
       fireEvent.change(screen.getByLabelText(/target amount/i), { target: { value: "120000" } });
       const save = screen.getByRole("button", { name: /^save$/i });
-      // Without the transfers it counts, the goal could never move.
-      expect(save).toBeDisabled();
+      // No category to pick: it always counts Investments, so it can save
+      // straight away, with only an optional narrowing to some holdings.
+      expect(save).toBeEnabled();
 
       const rule = screen.getByTestId("goal-invest-rule");
+      expect(within(rule).getByText(/all investments/i)).toBeInTheDocument();
       fireEvent.click(within(rule).getAllByRole("button")[0]);
-      fireEvent.click(await screen.findByRole("option", { name: "Investments" }));
+      fireEvent.click(await screen.findByRole("option", { name: "Pakam" }));
       fireEvent.click(save);
 
       await waitFor(() => expect(create).toHaveBeenCalled());
@@ -760,8 +762,9 @@ describe("GoalsSection", () => {
         kind: "investment",
         name: "Pakam",
         target_amount: 120000,
-        contribution_category: "Investments",
+        contribution_tags: "Pakam",
       });
+      expect(payload).not.toHaveProperty("contribution_category");
       expect(payload).not.toHaveProperty("monthly_cap");
       expect(payload).not.toHaveProperty("opening_balance");
       expect(payload).not.toHaveProperty("utilization_category");

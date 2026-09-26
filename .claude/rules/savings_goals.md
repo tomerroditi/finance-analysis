@@ -160,8 +160,10 @@ as `cash`, via `common.is_investment_goal`). A **cash** goal is everything
 else in this file. An **investment** goal answers "have I invested X?":
 
 - **Progress is the net amount moved into investments.** Its
-  `contribution_category` / `_tags` name the transfers (e.g. Investments /
-  Pakam). `_goal_by_transaction` maps them as `LINK_INVESTED` (never stored),
+  `contribution_category` is always `INVESTMENTS_CATEGORY` — the service sets
+  it on create and ignores any change, since every investment transfer lives
+  in that one category — and its optional `contribution_tags` narrow it to
+  some holdings (e.g. Pakam); none means every investment. `_goal_by_transaction` maps them as `LINK_INVESTED` (never stored),
   **signed** and gated on `start_month` — deposits add, withdrawals take back,
   earlier transfers stay ordinary. `_compute_context` reports them in
   `invested`, out of the surplus.
@@ -180,10 +182,11 @@ else in this file. An **investment** goal answers "have I invested X?":
 - **It is not cash.** `get_free_cash` leaves it out of `earmarked` and
   `liquid`.
 - **Cash-goal settings are refused** (`_validate_investment_fields`,
-  `_reject_investment_goal`): it must name its transfers, and takes no
+  `_reject_investment_goal`): it takes no
   `opening_balance`, `monthly_cap`, spending rule or single linked
   transaction. The card hides the free-cash claim action, and the editor
-  offers only name, target, start, date and "Invested into".
+  offers only name, target, start, date and "Only these investments" (a
+  tags-only picker, `InvestmentTagsField`).
 - **Creating, rescoping or deleting one restates history from its start
   month** (`_restate_for_transfers` → `rebuild`). Which transfers it owns
   decides, in every month they touch, whether they are progress or a deficit

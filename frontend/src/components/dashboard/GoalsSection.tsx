@@ -38,7 +38,7 @@ import {
 } from "../../services/api";
 import { useQueryKeys } from "../../hooks/useQueryKeys";
 import { useScrollCap } from "../../hooks/useScrollCap";
-import { GoalAutoLinkField } from "./GoalAutoLinkField";
+import { GoalAutoLinkField, InvestmentTagsField } from "./GoalAutoLinkField";
 import { joinRuleTags, splitRuleTags } from "../../utils/goalRuleTags";
 import { stackAxis, stackEnds, roundedStackShape } from "../charts/stackedBarShape";
 import { qkPrefix } from "../../services/queryKeys";
@@ -983,10 +983,7 @@ function GoalEditorModal({ goal, onClose }: { goal: SavingsGoal | null; onClose:
     },
   });
 
-  const canSave =
-    name.trim().length > 0 &&
-    Number(targetAmount) > 0 &&
-    (!isInvestment || saveRule.category.length > 0);
+  const canSave = name.trim().length > 0 && Number(targetAmount) > 0;
 
   const handleSubmit = () => {
     if (!canSave) return;
@@ -999,7 +996,8 @@ function GoalEditorModal({ goal, onClose }: { goal: SavingsGoal | null; onClose:
         target_amount: Number(targetAmount),
         start_month: startMonth || null,
         target_date: targetDate || null,
-        contribution_category: saveRule.category,
+        // The category is always Investments (the backend sets it); only the
+        // holdings narrow it, and none picked means every investment.
         contribution_tags: joinRuleTags(saveRule.tags),
       });
       return;
@@ -1170,13 +1168,12 @@ function GoalEditorModal({ goal, onClose }: { goal: SavingsGoal | null; onClose:
           />
         </div>
         {isInvestment ? (
-          <GoalAutoLinkField
+          <InvestmentTagsField
             testId="goal-invest-rule"
             label={t("dashboard.goals.investRuleLabel")}
             hint={t("dashboard.goals.investRuleHint")}
-            category={saveRule.category}
             tags={saveRule.tags}
-            onChange={(category, tags) => setSaveRule({ category, tags })}
+            onChange={(tags) => setSaveRule((rule) => ({ ...rule, tags }))}
           />
         ) : (
         <fieldset className="space-y-3 border-t border-[var(--surface-light)] pt-3">

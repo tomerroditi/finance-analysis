@@ -1395,17 +1395,13 @@ class TestInvestmentGoals:
         assert goal["this_month_allocation"] == 3000
 
     def test_cash_only_settings_are_refused(self, db_session, service):
-        """An investment goal needs its transfers and takes no cash-goal settings."""
-        with pytest.raises(ValidationException):
-            service.create(name="No rule", target_amount=1000, kind="investment")
+        """An investment goal takes no cash-goal settings."""
         with pytest.raises(ValidationException):
             _create_investment_goal(service, name="Capped", monthly_cap=500)
         with pytest.raises(ValidationException):
             _create_investment_goal(service, name="Opening", opening_balance=500)
 
         goal = _create_investment_goal(service)
-        with pytest.raises(ValidationException):
-            service.update(goal["id"], contribution_category=None)
         with pytest.raises(ValidationException):
             service.set_spending_link(goal["id"], "Leisure")
         with pytest.raises(ValidationException):
@@ -1416,6 +1412,41 @@ class TestInvestmentGoals:
                 source_table="bank_transactions",
                 link_type=LINK_CONTRIBUTION,
             )
+
+    def test_it_always_counts_the_investments_category(self, db_session, service):
+        """No category to pick: every investment transfer counts unless tags narrow it."""
+        month = _month_str(1)
+        _add_txn(db_session, month, -4000, "Investments", tag="Pakam", day=3)
+        _add_txn(db_session, month, -1500, "Investments", tag="Stocks", day=4)
+        _add_txn(db_session, month, -900, "Savings", tag="Pakam", day=5)
+
+        created = service.create(
+            name="All", target_amount=10000, kind="investment", start_month=month
+        )
+        every = next(g for g in created if g["name"] == "All")
+        assert every["contribution_category"] == "Investments"
+        assert every["funded"] == 5500
+
+        created = service.create(
+            name="Pakam only",
+            target_amount=10000,
+            kind="investment",
+            start_month=month,
+            contribution_category="Savings",
+            contribution_tags="Pakam",
+        )
+        narrowed = next(g for g in created if g["name"] == "Pakam only")
+        # A category sent anyway is ignored; the tag still narrows it.
+        assert narrowed["contribution_category"] == "Investments"
+        assert narrowed["funded"] == 4000
+
+    def test_its_category_cannot_be_changed(self, db_session, service):
+        """An update naming another category leaves the goal on Investments."""
+        goal = _create_investment_goal(service)
+
+        updated = service.update(goal["id"], contribution_category="Savings")
+
+        assert next(g for g in updated if g["id"] == goal["id"])["contribution_category"] == "Investments"
 
     def test_goals_without_a_kind_are_cash_goals(self, db_session, service):
         """Rows older than the column read as cash goals."""
