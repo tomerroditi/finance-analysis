@@ -356,10 +356,24 @@ class TestInvestmentGoalRoutes:
         assert res.status_code == 200
         assert res.json()[0]["kind"] == "investment"
 
-    def test_an_investment_goal_without_transfers_is_a_400(self, test_client):
-        """An investment goal must name the category its transfers use."""
+    def test_an_investment_goal_needs_no_category(self, test_client):
+        """The category is always Investments; the API fills it in."""
         res = test_client.post(
             "/api/savings-goals/",
             json={"name": "Invest", "target_amount": 1000, "kind": "investment"},
+        )
+        assert res.status_code == 200
+        assert res.json()[0]["contribution_category"] == "Investments"
+
+    def test_an_investment_goal_with_a_cash_setting_is_a_400(self, test_client):
+        """Cash-goal settings are still refused."""
+        res = test_client.post(
+            "/api/savings-goals/",
+            json={
+                "name": "Invest",
+                "target_amount": 1000,
+                "kind": "investment",
+                "monthly_cap": 500,
+            },
         )
         assert res.status_code == 400

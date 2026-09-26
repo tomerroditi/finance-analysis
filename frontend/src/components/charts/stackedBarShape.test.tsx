@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import { render } from "@testing-library/react";
 import { BarChart, Bar, Rectangle, XAxis, YAxis } from "recharts";
 import {
+  stackAxis,
   stackEnds,
   stackSegmentRadius,
   roundedStackShape,
@@ -173,6 +174,62 @@ describe("stacked bar shape", () => {
       const d = pathOf(60, -40, [0, 0, 4, 4]);
       expect(d).toContain("M10,60L");
       expect(d).toContain("24A");
+    });
+  });
+});
+
+describe("stackAxis", () => {
+  it("leaves a little headroom above the tallest column and labels round steps", () => {
+    const axis = stackAxis(
+      [
+        { month: "a", g1: 300_000, free: 110_000 },
+        { month: "b", g1: 20_000, free: 90_000 },
+      ],
+      ["g1", "free"],
+    );
+
+    expect(axis.domain[0]).toBe(0);
+    expect(axis.domain[1]).toBeCloseTo(430_500);
+    expect(axis.ticks).toEqual([0, 200_000, 400_000]);
+  });
+
+  it("gives a shallow dip headroom, not a whole empty step under zero", () => {
+    // A 40K withdrawal under a 415K column used to reserve -250K of plot.
+    const axis = stackAxis(
+      [
+        { month: "a", g1: 300_000, free: 115_000 },
+        { month: "b", g1: -40_000, free: 40_000 },
+      ],
+      ["g1", "free"],
+    );
+
+    expect(axis.domain[0]).toBeCloseTo(-46_000);
+    expect(axis.ticks[0]).toBe(0);
+  });
+
+  it("gives a deep dip its own round ticks", () => {
+    const axis = stackAxis(
+      [
+        { month: "a", g1: 300_000 },
+        { month: "b", g1: -250_000 },
+      ],
+      ["g1"],
+    );
+
+    expect(axis.domain[0]).toBeCloseTo(-287_500);
+    expect(axis.ticks).toEqual([-200_000, -100_000, 0, 100_000, 200_000, 300_000]);
+  });
+
+  it("only measures the series that are drawn", () => {
+    const rows = [{ month: "a", g1: 10_000, free: 400_000 }];
+
+    expect(stackAxis(rows, ["g1"]).domain[1]).toBeLessThan(20_000);
+  });
+
+  it("copes with nothing to draw", () => {
+    expect(stackAxis([{ month: "a", g1: 0 }], ["g1"])).toEqual({
+      domain: [0, 1],
+      ticks: [0],
     });
   });
 });
