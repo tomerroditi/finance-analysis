@@ -349,7 +349,7 @@
       "autoLinkSpendLabel": "Spent from this goal",
       "autoLinkSpendHint": "Purchases in this category (and tags) count as spent from the goal, from its start month on — the same link a project or yearly budget's goal button sets.",
       "autoLinkSaveLabel": "Saved into this goal",
-      "autoLinkSaveHint": "Transfers in this category (and tags) count as money set aside for the goal.",
+      "autoLinkSaveHint": "The goal holds exactly this income — it takes nothing from your monthly surplus, and it is never taken back to cover overspending.",
       "kindLabel": "Goal type",
       "kindCash": "Save cash",
       "kindCashHint": "Filled from each month's leftover money",

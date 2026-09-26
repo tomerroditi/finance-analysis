@@ -263,8 +263,10 @@ class TestExplicitContributions:
 
         goal = service.get_all()[0]
         assert goal["contributed"] == 600
-        # 600 of contribution plus the remaining 2400 of a 3000 pool.
-        assert goal["funded"] == 3000
+        # A goal with a saved-into rule holds exactly what the rule brings in:
+        # the month's other 2400 of surplus stays free cash.
+        assert goal["funded"] == 600
+        assert service.get_free_cash()["free_cash"] == 2400
 
     def test_incoming_contribution_is_new_money_not_a_draw_on_the_pool(
         self, db_session, service
@@ -1489,10 +1491,8 @@ class TestRuleFundedGoals:
         )
         return next(g for g in created if g["name"] == "Wedding")
 
-    def test_it_takes_surplus_before_its_income_and_hands_it_back_after(
-        self, db_session, service
-    ):
-        """Gifts that cover the target release the surplus the goal borrowed."""
+    def test_it_holds_exactly_its_income_and_never_surplus(self, db_session, service):
+        """Salary surplus stays free cash; the goal is filled by its gifts alone."""
         before, gifts = _month_str(2), _month_str(1)
         _seed_surplus(db_session, before, income=10000, expenses=6000)
         _seed_surplus(db_session, gifts, income=10000, expenses=10000)
@@ -1501,28 +1501,71 @@ class TestRuleFundedGoals:
         self._wedding(service, before)
 
         goal = service.get_all()[0]
-        # 4000 of surplus while waiting, then 12000 of gifts: 16000 is 6000
-        # past the 10000 target, so all 4000 borrowed goes back.
-        assert goal["allocated"] == 4000
+        assert goal["allocated"] == 0
+        # 12000 of gifts against a 10000 target: it keeps 10000 and the rest
+        # spills into the month's surplus.
         assert goal["contributed"] == 10000
-        assert goal["released"] == 4000
         assert goal["funded"] == 10000
         pool = service.get_free_cash()
-        assert pool["free_cash"] == 6000  # the 4000 released + 2000 gifts spilled
+        assert pool["free_cash"] == 6000  # 4000 of salary surplus + 2000 spilled
         assert pool["liquid"] == 16000
 
-    def test_it_keeps_the_surplus_that_still_fills_the_gap(self, db_session, service):
-        """Income short of the target releases nothing it still needs."""
+    def test_income_short_of_the_target_leaves_it_short(self, db_session, service):
+        """No surplus tops it up: it holds what came in, nothing more."""
         before, gifts = _month_str(2), _month_str(1)
         _seed_surplus(db_session, before, income=10000, expenses=6000)
-        _seed_surplus(db_session, gifts, income=10000, expenses=10000)
         _add_txn(db_session, gifts, 3000, "Other Income", tag="Wedding", day=6)
 
         self._wedding(service, before)
 
         goal = service.get_all()[0]
-        assert goal["released"] == 0
-        assert goal["funded"] == 7000
+        assert goal["allocated"] == 0
+        assert goal["funded"] == 3000
+        assert service.get_free_cash()["free_cash"] == 4000
+
+    def test_a_deficit_never_takes_its_income_back(self, db_session, service):
+        """Overspending that ate into the gifts shows as negative free cash."""
+        gifts, spent = _month_str(2), _month_str(1)
+        _add_txn(db_session, gifts, 10000, "Other Income", tag="Wedding", day=6)
+        _seed_surplus(db_session, spent, income=0, expenses=6000)
+
+        self._wedding(service, gifts)
+
+        goal = service.get_all()[0]
+        assert goal["funded"] == 10000
+        assert goal["clawed_back"] == 0
+        pool = service.get_free_cash()
+        # The 6000 was paid with the gifts; they are spoken for, so the pool
+        # owes it rather than pretending the money is still there.
+        assert pool["free_cash"] == -6000
+        assert pool["liquid"] == 4000
+
+    def test_the_pool_goes_no_deeper_than_the_income_goals_hold(
+        self, db_session, service
+    ):
+        """An overspend past the income held came from money this model does not track."""
+        gifts, spent = _month_str(2), _month_str(1)
+        _add_txn(db_session, gifts, 10000, "Other Income", tag="Wedding", day=6)
+        _seed_surplus(db_session, spent, income=0, expenses=15000)
+
+        self._wedding(service, gifts)
+
+        assert service.get_free_cash()["free_cash"] == -10000
+
+    def test_a_plain_goal_is_still_clawed_back_first(self, db_session, service):
+        """Ordinary earmarks give money back before the pool goes negative."""
+        good, gifts, spent = _month_str(3), _month_str(2), _month_str(1)
+        _seed_surplus(db_session, good, income=10000, expenses=8000)
+        _add_txn(db_session, gifts, 10000, "Other Income", tag="Wedding", day=6)
+        _seed_surplus(db_session, spent, income=0, expenses=5000)
+
+        service.create(name="Trip", target_amount=2000, priority=0, start_month=good)
+        self._wedding(service, good)
+
+        goals = {g["name"]: g for g in service.get_all()}
+        assert goals["Trip"]["clawed_back"] == 2000
+        assert goals["Wedding"]["clawed_back"] == 0
+        assert service.get_free_cash()["free_cash"] == -3000
 
     def test_a_bill_before_the_income_is_fronted_from_free_cash_and_repaid(
         self, db_session, service

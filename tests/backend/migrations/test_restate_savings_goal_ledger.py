@@ -82,6 +82,14 @@ class TestRestateSavingsGoalLedger:
 
         assert _goal_ids_with_rows(ledger_db) == [2]
 
+    def test_the_income_only_restatement_clears_them_again(self, ledger_db):
+        """The follow-up revision clears the open goals' rows the same way."""
+        cfg = _alembic_config(ledger_db)
+        command.stamp(cfg, REVISION)
+        command.upgrade(cfg, "6950d212e44e")
+
+        assert _goal_ids_with_rows(ledger_db) == [2]
+
     def test_a_database_without_the_tables_is_left_alone(self, tmp_path, monkeypatch):
         """A database that never had savings goals upgrades without error."""
         url = f"sqlite:///{tmp_path / 'empty.db'}"

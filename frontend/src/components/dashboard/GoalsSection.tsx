@@ -1008,7 +1008,8 @@ function GoalEditorModal({ goal, onClose }: { goal: SavingsGoal | null; onClose:
       target_amount: Number(targetAmount),
       opening_balance: Number(openingBalance) || 0,
       // An empty cap field means uncapped, so the goal can fill in one month.
-      monthly_cap: monthlyCap.trim() === "" ? null : Number(monthlyCap),
+      monthly_cap:
+        saveRule.category || monthlyCap.trim() === "" ? null : Number(monthlyCap),
       start_month: startMonth || null,
       target_date: targetDate || null,
       utilization_category: spendRule.category || null,
@@ -1123,7 +1124,9 @@ function GoalEditorModal({ goal, onClose }: { goal: SavingsGoal | null; onClose:
           )}
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          {!isInvestment && (
+          {/* A cap limits what a goal takes from surplus; a goal filled by
+              its own income (investment or saved-into) takes none. */}
+          {!isInvestment && !saveRule.category && (
           <div>
             <label className={label} htmlFor="goal-cap">{t("dashboard.goals.capLabel")}</label>
             <input

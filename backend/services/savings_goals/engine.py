@@ -234,17 +234,21 @@ class AllocationEngineMixin:
         # waterfall, and a deficit never reaches into them — the money is in
         # a holding, not in the bank the overspend drained.
         invests = {g.id for g in goals if is_investment_goal(g)}
-        # A cash goal with a "saved into" rule has income of its own on the
-        # way — a wedding fund waiting for the wedding gifts. Until it lands
-        # the goal borrows: it takes surplus through the waterfall like any
-        # goal, and free cash for any bill it cannot yet cover. ``bridge`` is
-        # what it borrowed. Every shekel of its own income that arrives first
-        # hands one borrowed shekel back to free cash, so once the income is
-        # in, the goal holds the income and ordinary surplus is free again.
+        # A cash goal with a "saved into" rule holds exactly its own income —
+        # a wedding fund holds the wedding gifts, not whatever salary was left
+        # over. It never takes surplus from the waterfall, and a deficit never
+        # takes its income back. A bill that lands before the income is paid
+        # with free cash the goal borrows (``bridge``); every shekel of income
+        # that arrives first repays one borrowed shekel.
         rule_funded = {
             g.id for g in goals if g.id not in invests and g.contribution_category
         }
         bridge = dict.fromkeys(rule_funded, 0.0)
+
+        def income_held() -> float:
+            """Cash the income-funded goals still hold — how low the pool may go."""
+            return sum(max(0.0, funded[g] - utilized[g]) for g in bridge)
+
         # An opening balance is money the goal held when it started, so it
         # leaves the pool in that month. Taking every opening balance out when
         # the *earliest* goal started drained a pool that later history still
@@ -293,14 +297,9 @@ class AllocationEngineMixin:
                     continue
                 outgoing = drawn.get(goal_id, 0.0)
                 goal = goal_by_id[goal_id]
-                # Its own income makes the borrowed surplus unnecessary only
-                # as far as it lifts the goal past its target: the goal keeps
-                # the income, hands back what it no longer needs, and goes on
-                # holding whatever still fills the gap — so it never releases
-                # surplus one month only to take it again the next.
-                excess = funded[goal_id] + amount - float(goal.target_amount or 0.0)
-                if goal_id in bridge and amount > 0 and bridge[goal_id] > 0 < excess:
-                    release = round(min(bridge[goal_id], excess), 2)
+                # Income first repays what the goal borrowed for earlier bills.
+                if goal_id in bridge and amount > 0 and bridge[goal_id] > 0:
+                    release = round(min(bridge[goal_id], amount), 2)
                     bridge[goal_id] -= release
                     funded[goal_id] -= release
                     free_cash += release
@@ -352,14 +351,17 @@ class AllocationEngineMixin:
                         funded[goal.id] += amount
                         pool -= max(0.0, amount)
                         free_cash -= amount
-                        if goal.id in bridge:
-                            bridge[goal.id] = max(0.0, bridge[goal.id] + amount)
                 pool = max(0.0, pool)
 
             for goal in goals:
                 if pool <= 0:
                     break
-                if frozen[goal.id] or goal.id in invests or key < start_of[goal.id]:
+                if (
+                    frozen[goal.id]
+                    or goal.id in invests
+                    or goal.id in bridge
+                    or key < start_of[goal.id]
+                ):
                     continue
                 # In a history month, a goal that already has a row has had its
                 # say — only newcomers may take what is still unallocated.
@@ -378,8 +380,6 @@ class AllocationEngineMixin:
                 funded[goal.id] += take
                 pool -= take
                 free_cash -= take
-                if goal.id in bridge:
-                    bridge[goal.id] += take
 
             # Spending out of a goal lands after the month's funding and never
             # reduces its target. A goal can only pay with what it holds, so a
@@ -416,7 +416,12 @@ class AllocationEngineMixin:
                 for goal in reversed(goals):
                     if shortfall <= ROUNDING_EPSILON:
                         break
-                    if frozen[goal.id] or goal.id in invests or key < start_of[goal.id]:
+                    if (
+                        frozen[goal.id]
+                        or goal.id in invests
+                        or goal.id in bridge
+                        or key < start_of[goal.id]
+                    ):
                         continue
                     # A history month's existing rows stand, exactly as they
                     # do for funding — only an explicit rebuild restates them.
@@ -432,11 +437,14 @@ class AllocationEngineMixin:
                     plan.computed[(goal.id, year, month)] = -give_back
                     funded[goal.id] -= give_back
                     shortfall -= give_back
-                    if goal.id in bridge:
-                        bridge[goal.id] = max(0.0, bridge[goal.id] - give_back)
-                # An overspend the goals cannot cover came out of money this
-                # model does not track (an overdraft, an untagged account).
-                # The pool is empty either way; it never goes negative.
+                # What is left was paid with money a goal holds as its own
+                # income — the gifts a wedding fund was given, spent on
+                # something else. That income is never taken back, so the
+                # pool goes negative by as much: the money is spoken for and
+                # no longer there. Anything deeper came out of money this
+                # model does not track (an overdraft, an untagged account),
+                # and the pool floors there.
+                free_cash = -min(shortfall, income_held())
 
             # Money moved into an investment goal left the spendable balance,
             # so it leaves the pool — but it is the goal being met, not
@@ -449,7 +457,7 @@ class AllocationEngineMixin:
                     if goal_id in funded:
                         funded[goal_id] += amount
                         plan.contributed[(goal_id, year, month)] = amount
-                free_cash = max(0.0, free_cash - sum(invested_now.values()))
+                free_cash = max(-income_held(), free_cash - sum(invested_now.values()))
 
             # Adding zero turns the -0.0 a fully drained pool rounds to into 0.0.
             plan.free_cash[key] = round(free_cash, 2) + 0.0
