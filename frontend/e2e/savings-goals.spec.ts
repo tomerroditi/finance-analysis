@@ -359,8 +359,10 @@ test.describe("Savings goals", () => {
       goalRow(page, "E2E Achieved Goal").getByTestId("goal-figures"),
     ).toHaveAttribute("aria-busy", "true");
 
+    // The route stays: unrouting while the held handler is still in flight
+    // abandons the request ("Route is already handled"), and the rebuild then
+    // never lands. Once released, it passes every later reorder straight on.
     release();
-    await page.unroute("**/savings-goals/reorder");
     await expect(status).toHaveCount(0, { timeout: 30_000 });
     // The server's answer agrees with the order already on screen.
     await expect(
