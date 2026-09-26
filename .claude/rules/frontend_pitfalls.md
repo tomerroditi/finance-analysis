@@ -333,13 +333,21 @@ panel capped its height and clipped the form (Save included) with no scroller
 inside it, so a scroll gesture over it fell through to the dashboard.
 
 - **Use `<Modal>`.** It owns the whole contract: `useScrollLock(isOpen)`, the
-  `modal-overlay` class, a `max-h-[90vh]` panel with `overflow-hidden`, and a
-  `flex-1 min-h-0 flex flex-col overflow-y-auto overscroll-contain` body around
-  its children. A child that wants a fixed footer keeps working — make the
-  list `flex-1 min-h-0 overflow-y-auto` and the footer `shrink-0`.
+  `modal-overlay` class, a `max-h-[90dvh]` panel with `overflow-hidden`, and a
+  `flex-1 min-h-0 overflow-y-auto overscroll-contain` body around its
+  children. Everything a child renders scrolls together inside that body.
+- **The scroller is a plain block, never itself a flex column.** The first
+  version of the `Modal` body was `… flex flex-col overflow-y-auto` so children
+  could keep a fixed footer; it scrolled in desktop Chromium and did not
+  scroll at all for the user. Every dialog that scrolls on every device
+  has the same shape — a block `overflow-y-auto` element sitting in the
+  panel's flex column — so keep to it.
+- **`dvh`, not `vh`, for the cap.** On iOS Safari `90vh` is measured with the
+  toolbar hidden, so a `90vh` panel's bottom (usually the Save button) sits
+  under the visible toolbar.
 - **Hand-rolled overlay?** Every `fixed inset-0` backdrop needs all four:
   `useScrollLock(open)`, `modal-overlay` on the overlay, a height cap on the
-  panel (`max-h-[90vh]`, or `h-dvh` for full-screen sheets), and a
+  panel (`max-h-[90dvh]`, or `h-dvh` for full-screen sheets), and a
   `min-h-0 overflow-y-auto overscroll-contain` body between a `shrink-0`
   header/footer. Small confirmations are not exempt — their message is user
   data and can be any length.
@@ -352,7 +360,11 @@ inside it, so a scroll gesture over it fell through to the dashboard.
 Enforced by `frontend/src/modalScrolling.test.ts` (a source scan over the
 shared `Modal` and every hand-rolled overlay, runs in `npm test`), with the
 behavioural half in `e2e/budget-savings-goal.spec.ts` (scrolls the goal
-editor on a short viewport and asserts the page stays put).
+editor with the wheel on a short desktop viewport and with a real touch swipe
+on a phone viewport, and asserts the dialog moves while the page stays put).
+Drive touch with raw CDP `Input.dispatchTouchEvent` start/move/end events —
+`Input.synthesizeScrollGesture` scrolls nothing in headless Chromium, not even
+the bare page, so a test built on it passes vacuously.
 
 ## Capped Scroll Regions Swallow the Page's Scroll
 

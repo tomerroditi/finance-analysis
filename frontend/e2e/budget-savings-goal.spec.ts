@@ -185,4 +185,50 @@ test.describe("Paying for a budget out of a savings goal", () => {
       .poll(async () => (await readGoals(page)).find((g) => g.id === goal.id))
       .toMatchObject({ utilization_category: category, utilization_tags: null });
   });
+
+  test("the goal editor scrolls under a finger on a phone", async ({ browser }) => {
+    const context = await browser.newContext({
+      viewport: { width: 390, height: 700 },
+      hasTouch: true,
+      isMobile: true,
+    });
+    const page = await context.newPage();
+    await enableDemoMode(page);
+    await page.goto("/");
+    await page.evaluate(() =>
+      sessionStorage.setItem("onboardingDismissedAt", String(Date.now())),
+    );
+    await page.goto("/");
+
+    const edit = page
+      .getByTestId("goals-list")
+      .getByRole("button", { name: /^Edit$/i })
+      .first();
+    await edit.scrollIntoViewIfNeeded();
+    await edit.click();
+    const dialog = page.getByRole("dialog");
+    const body = dialog.locator(":scope > div").last();
+    await expect(body).toBeVisible();
+
+    // A real touch drag: `Input.synthesizeScrollGesture` scrolls nothing in
+    // headless Chromium, not even the bare page, so it would pass vacuously.
+    const box = (await body.boundingBox())!;
+    const x = box.x + box.width / 2;
+    const y = box.y + box.height * 0.75;
+    const cdp = await context.newCDPSession(page);
+    await cdp.send("Input.dispatchTouchEvent", {
+      type: "touchStart",
+      touchPoints: [{ x, y }],
+    });
+    for (let step = 1; step <= 15; step++) {
+      await cdp.send("Input.dispatchTouchEvent", {
+        type: "touchMove",
+        touchPoints: [{ x, y: y - step * 20 }],
+      });
+    }
+    await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+
+    await expect.poll(() => body.evaluate((el) => el.scrollTop)).toBeGreaterThan(0);
+    await context.close();
+  });
 });

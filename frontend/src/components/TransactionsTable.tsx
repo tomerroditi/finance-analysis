@@ -1392,7 +1392,7 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
             className="absolute inset-0 bg-black/60 backdrop-blur-sm"
             onClick={() => setDeletingTransaction(null)}
           />
-          <div className="relative bg-[var(--surface)] border border-[var(--surface-light)] rounded-xl shadow-2xl max-w-md w-full mx-4 max-h-[90vh] flex flex-col overflow-hidden">
+          <div className="relative bg-[var(--surface)] border border-[var(--surface-light)] rounded-xl shadow-2xl max-w-md w-full mx-4 max-h-[90dvh] flex flex-col overflow-hidden">
             <div className="min-h-0 overflow-y-auto overscroll-contain p-6 pb-0">
               <h3 className="text-lg font-semibold text-white mb-2">
                 {t("transactions.deleteTransaction")}

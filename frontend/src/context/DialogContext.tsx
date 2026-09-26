@@ -208,7 +208,7 @@ function ConfirmDialog({
         role="alertdialog"
         aria-modal="true"
         onClick={(e) => e.stopPropagation()}
-        className="bg-[var(--surface)] border border-[var(--surface-light)] rounded-2xl shadow-2xl w-full max-w-[calc(100vw-2rem)] sm:max-w-md overflow-hidden max-h-[90vh] flex flex-col animate-in zoom-in-95 duration-150"
+        className="bg-[var(--surface)] border border-[var(--surface-light)] rounded-2xl shadow-2xl w-full max-w-[calc(100vw-2rem)] sm:max-w-md overflow-hidden max-h-[90dvh] flex flex-col animate-in zoom-in-95 duration-150"
       >
         <div className="shrink-0 px-4 md:px-6 py-4 flex items-center justify-between border-b border-[var(--surface-light)] bg-[var(--surface-light)]/20">
           <h2 className="text-base md:text-lg font-bold text-white flex items-center gap-2">

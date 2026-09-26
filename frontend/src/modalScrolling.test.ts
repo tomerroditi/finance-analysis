@@ -12,8 +12,9 @@ import { describe, it, expect } from "vitest";
  * Two rules hold it down:
  *
  * 1. The shared `Modal` owns a scroll body (`flex-1 min-h-0 overflow-y-auto
- *    overscroll-contain`) around its children, so every `<Modal>` scrolls its
- *    own content however tall it grows.
+ *    overscroll-contain`, a plain block — never itself a flex column) around
+ *    its children, and caps its panel at `90dvh`, so every `<Modal>` scrolls
+ *    its own content however tall it grows, on a phone as well as a desktop.
  * 2. A hand-rolled overlay (anything `fixed inset-0` that dims or centres a
  *    dialog, rather than a transparent click-catcher) must do the same by
  *    hand: lock the page with `useScrollLock`, carry the `modal-overlay`
@@ -56,11 +57,17 @@ describe("dialogs scroll themselves, never the page", () => {
     expect(modal).toBeDefined();
     const body = modal.match(/<div className="([^"]*)">\s*\{children\}/);
     expect(body, "Modal must wrap {children} in a scroll body").not.toBeNull();
+    const classes = body![1].split(/\s+/);
     for (const cls of ["min-h-0", "overflow-y-auto", "overscroll-contain"]) {
-      expect(body![1].split(/\s+/)).toContain(cls);
+      expect(classes).toContain(cls);
     }
+    // A scroller that is also a flex column did not scroll for the user; the
+    // body must stay a plain block like every other working dialog body.
+    expect(classes).not.toContain("flex");
     expect(modal).toMatch(/useScrollLock\(isOpen\)/);
-    expect(modal).toMatch(/max-h-\[/);
+    // `dvh`, not `vh`: on iOS Safari 90vh is measured with the toolbar
+    // hidden, so the panel's bottom ran under the visible toolbar.
+    expect(modal).toMatch(/max-h-\[90dvh\]/);
   });
 
   it("finds the hand-rolled overlays it is meant to police", () => {

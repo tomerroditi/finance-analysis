@@ -49,7 +49,7 @@ export function ConfirmationModal({
                 }`}
         >
             <div
-                className={`bg-[var(--surface)] border border-[var(--surface-light)] rounded-2xl shadow-2xl w-full max-w-[calc(100vw-2rem)] sm:max-w-sm overflow-hidden max-h-[90vh] flex flex-col transform transition-all duration-200 ${isOpen ? "scale-100 opacity-100" : "scale-95 opacity-0"
+                className={`bg-[var(--surface)] border border-[var(--surface-light)] rounded-2xl shadow-2xl w-full max-w-[calc(100vw-2rem)] sm:max-w-sm overflow-hidden max-h-[90dvh] flex flex-col transform transition-all duration-200 ${isOpen ? "scale-100 opacity-100" : "scale-95 opacity-0"
                     }`}
             >
                 <div className="shrink-0 px-4 md:px-6 py-4 flex items-center justify-between border-b border-[var(--surface-light)] bg-[var(--surface-light)]/20">
