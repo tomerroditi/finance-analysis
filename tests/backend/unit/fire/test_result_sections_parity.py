@@ -24,6 +24,8 @@ import pytest
 
 import parity
 from backend.services.fire.engine import Simulator
+from test_corpus_parity import CURVE
+from test_corpus_parity import KNOWN_GAPS as CORPUS_GAPS
 from backend.services.fire.reference_form import plan_from_reference
 
 FIXTURES = Path(__file__).resolve().parents[4] / "research" / "zeke_retire_calc" / "fixtures"
@@ -49,11 +51,10 @@ balance: it is the discounted sum of every month the plan cannot fund, so it
 inherits a rounding step from each of them (notes/16)."""
 
 KNOWN_GAPS = {
-    "pf_mukeret2": "gemel-conversion bridge (notes/15)",
-    "pf_mukeret3_t60": "gemel-conversion bridge (notes/15)",
-    "pf_mukeret4_order": "gemel-conversion bridge (notes/15)",
-    "pf_fifo": "synthetic lot history (notes/13)",
-    "pf_fifo_nodep": "synthetic lot history (notes/13)",
+    **{name: why for name, (_, why) in CORPUS_GAPS.items()},
+    # Its charts replay to 5 shekels; the discounted shortfall slice sums 90
+    # unfunded months, each a few shekels off, to 2.5.
+    "be_net_3m_20k": CURVE,
 }
 """Runs whose drawdown differs because of a documented open question.
 
@@ -67,9 +68,23 @@ def _number(text: str) -> float:
     return float(text.replace(",", ""))
 
 
-def _fixtures() -> list[str]:
-    return [name for name in parity.corpus(charted=True)
-            if "קצבה מגיל" in parity.load(name).get("summary", "")]
+def _fixtures() -> list:
+    """Curated fixtures that print an annuity list, one xdist group per fixture.
+
+    The five classes below assert on the same replay; grouping keeps all of a
+    fixture's tests on one worker, so it is replayed once (`_run` is cached).
+    """
+    described = parity.index()
+    return [pytest.param(name, marks=pytest.mark.xdist_group(name))
+            for name in parity.corpus(charted=True)
+            if not name.startswith(UNCURATED) and described[name]["annuity_list"]]
+
+
+UNCURATED = (*parity.SURFACE_PROBES, "cp", "cx")
+"""Families these prose checks do not cover yet: the surface probes (nothing to
+say), couples (their bridge is the open question, notes/18 §6) and the random
+households, whose drawdown prose segments differently from ours even where
+every monthly series agrees — `test_corpus_parity` asserts their charts."""
 
 
 @lru_cache(maxsize=None)

@@ -7,8 +7,9 @@ what it pays — every rule below was recovered by experiment
 (`research/zeke_retire_calc/experiments/bridge_weights.py`, `bridge_end.py`,
 `post60*.py`; notes/18).
 
-**Coverage.** `x` is the monthly pension the plan starts at 60 divided by the
-spending it has to carry from then on: the typed amounts of the expense rows
+**Coverage.** `x` is the monthly pension the plan starts at 60 — net of the
+national insurance and income tax it pays before the statutory age — divided
+by the spending it has to carry from then on: the typed amounts of the expense rows
 still running after the 60th birthday, less any non-salary income rows running
 then. Annual rises are ignored, a gemel converted at 60 does not count, and
 nothing claimed later (the rest of the pension, Bituach Leumi) enters at all.
@@ -35,24 +36,27 @@ from backend.services.fire.decumulation import _Curve
 
 COVERAGE_CURVE: list[tuple[float, float]] = [
     (0.0, 0.0),
-    (0.021389, 0.010359),
-    (0.053472, 0.026298),
-    (0.080208, 0.039945),
-    (0.106944, 0.053971),
-    (0.160415, 0.083180),
-    (0.213887, 0.114055),
-    (0.320831, 0.181494),
-    (0.534718, 0.344082),
-    (0.748605, 0.558554),
-    (0.802077, 0.623754),
-    (0.855549, 0.694130),
-    (0.909021, 0.772101),
-    (0.962492, 0.854555),
-    (0.994575, 0.906998),
+    (0.02048, 0.010346),
+    (0.051199, 0.026277),
+    (0.076799, 0.039926),
+    (0.102399, 0.05396),
+    (0.153597, 0.083192),
+    (0.204797, 0.114079),
+    (0.307196, 0.181475),
+    (0.511992, 0.34408),
+    (0.716789, 0.558591),
+    (0.767989, 0.623363),
+    (0.819188, 0.693749),
+    (0.870388, 0.770517),
+    (0.921587, 0.854577),
+    (0.952307, 0.908956),
 ]
 """`(x, y)` measured at retirement age 45, each `y` read off a run whose only
-unknown was its own decumulation rate, inverted through the directly measured
-surface. Checked at ages 40 and 50 and for a woman's shorter window."""
+unknown was its own decumulation rate, inverted through the surface where it
+is measured month by month. Checked at ages 40 and 50 and for a woman's
+shorter window. `x` is on the **net** annuity: every probe here paid a small,
+untaxed recognised annuity, whose net is its gross less the flat 4.25%
+national-insurance contribution."""
 
 _CURVE = _Curve(COVERAGE_CURVE)
 

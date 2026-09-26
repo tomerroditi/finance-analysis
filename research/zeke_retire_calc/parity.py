@@ -96,7 +96,13 @@ def retire_index(fixture: dict) -> int:
     reaches its goals prints no date, so fall back to the month pay stops.
     """
     today = recorded_in(fixture)
-    match = re.search(r"ב-(\d{2})/(\d{4})", fixture.get("summary", ""))
+    summary = fixture.get("summary", "")
+    # The printed date, then the retirement asset card: a plan that misses its
+    # goals prints no date, but still labels the card with its last working
+    # month — `cx1_037` keeps a side income running past retirement, so
+    # "the month pay stops" lands 55 months late.
+    match = (re.search(r"ב-(\d{2})/(\d{4})", summary)
+             or re.search(r"בפרישה מוקדמת \d* ?\((\d{2})/(\d{4})\)", summary))
     if match:
         month, year = int(match.group(1)), int(match.group(2))
         return (year - today.year) * 12 + (month - today.month) + 1
@@ -135,6 +141,14 @@ def _gemel_keys(plan, suffix: str) -> list[str]:
             if p.kind is PortfolioType.GEMEL and p.designation is wanted]
 
 
+def _keren_keys(plan, label: str) -> list[str]:
+    """The study fund a label names — `קרן השתלמות 2` is the second row."""
+    match = re.search(r"השתלמות (\d+)\s*$", label)
+    if match and len(plan.kranot_hishtalmut) > 1:
+        return [f"keren{int(match.group(1)) - 1}"]
+    return [f"keren{i}" for i in range(len(plan.kranot_hishtalmut))]
+
+
 def income_keys(label: str, plan) -> list[str] | None:
     """Engine `incomes` keys a row of `income_plot` is the sum of."""
     if label.startswith("עבודה"):
@@ -147,7 +161,7 @@ def income_keys(label: str, plan) -> list[str] | None:
         index = _portfolio_index(plan, label[len("משיכה מתיק"):])
         return None if index is None else [f"portfolio{index}"]
     if label.startswith("משיכה מקרן השתלמות"):
-        return [f"keren{i}" for i in range(len(plan.kranot_hishtalmut))]
+        return _keren_keys(plan, label)
     if label.startswith("קיצבת זיקנה"):
         return ["state_pension" + _whose(plan, label)]
     if label.startswith("מוכרת גמל להשקעה"):
@@ -193,7 +207,7 @@ def asset_keys(label: str, plan) -> list[str] | None:
     if "פנסיה" in label:
         return [f"pension{1 if plan.partner and _whose(plan, label) else 0}"]
     if "השתלמות" in label:
-        return [f"keren{i}" for i in range(len(plan.kranot_hishtalmut))]
+        return _keren_keys(plan, label)
     if "נדל" in label or "דירה" in label:
         return [f"realestate{i}" for i in range(len(plan.real_estate))]
     index = _portfolio_index(plan, label)
@@ -341,18 +355,62 @@ def _safe_diff(name: str) -> Report:
         return Report(name, 0, 0.0, error=f"{type(exc).__name__}: {exc}")
 
 
+INDEX_PATH = HERE / ".index_cache.json"
+"""What every fixture is, without opening it: tests select by these fields, and
+decompressing ~2,000 fixtures at every collection cost half a minute."""
+
+
+def _describe(fixture: dict) -> dict:
+    return {
+        "charted": bool((fixture.get("charts") or {}).get("asset_plot")),
+        "annuity_list": "קצבה מגיל" in fixture.get("summary", ""),
+        "base_problem": fixture.get("overrides", {}).get("base_problem", "retire_asap"),
+        "printed": printed_retire_index(fixture) is not None,
+    }
+
+
+def index() -> dict[str, dict]:
+    """`{name: description}` for every fixture, cached by file size and mtime."""
+    try:
+        cached = json.loads(INDEX_PATH.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        cached = {}
+    out, changed = {}, False
+    for path in sorted(FIXTURES.iterdir()):
+        if not path.name.endswith((".json", ".json.gz")):
+            continue
+        name = path.name.split(".json")[0]
+        stat = path.stat()
+        stamp = [stat.st_size, stat.st_mtime_ns]
+        entry = cached.get(name)
+        if entry is None or entry.get("stamp") != stamp:
+            entry = {**_describe(load(name)), "stamp": stamp}
+            changed = True
+        out[name] = entry
+    if changed or len(out) != len(cached):
+        try:
+            INDEX_PATH.write_text(json.dumps(out), encoding="utf-8")
+        except OSError:
+            pass
+    return out
+
+
+SURFACE_PROBES = ("sf_", "sff_", "sp_", "spt_", "spd_")
+"""Idle-portfolio probes that measure the decumulation surface cell by cell."""
+
+
 def corpus(prefixes: list[str] | None = None, charted: bool = False) -> list[str]:
     """Fixture names, optionally only those starting with one of `prefixes`.
 
     `charted` keeps only runs the reference actually answered — a refused run
     (an input it rejects, a mode that crashes on its side) has nothing to diff.
     """
-    names = sorted({p.name.split(".json")[0] for p in FIXTURES.iterdir()
-                    if p.name.endswith((".json", ".json.gz"))})
+    described = index()
+    names = sorted(described)
     if prefixes:
         names = [n for n in names if any(n.startswith(p) for p in prefixes)]
     if charted:
-        names = [n for n in names if (load(n).get("charts") or {}).get("asset_plot")]
+        names = [n for n in names if described[n]["charted"]]
     return names
 
 

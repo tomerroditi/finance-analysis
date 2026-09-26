@@ -212,7 +212,14 @@ class PensionAccount:
         tactic = self.plan_pension.tactic
 
         def due(claim_age: int) -> bool:
-            return claim_age not in self.annuitised and age > claim_age
+            # Only in the month the age crosses the claim age. A person already
+            # past it when the plan starts never claims: `cx1_020`'s partner is
+            # 61.5 with everything due at 60, and the reference pays her no
+            # annuity at all and carries the 380,000 as an asset to the end.
+            return (
+                claim_age not in self.annuitised
+                and claim_age < age <= claim_age + 1 / 12 + 1e-9
+            )
 
         if tactic == PensionTactic.ALL_FROM_60 and due(60):
             self._claim(mukeret, 60, True, age)

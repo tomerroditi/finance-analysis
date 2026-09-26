@@ -120,7 +120,13 @@ def everything_plan(**overrides) -> Plan:
 def assert_sound(result, plan) -> None:
     """Every identity the engine must hold, whatever the scenario."""
     assert result.months, "a run must produce months"
-    assert result.months[-1].age == pytest.approx(HORIZON_AGE)
+    # The run ends when the youngest person turns 81 (a couple runs to the
+    # younger spouse's 81, `cp2_empty_1995`).
+    youngest = max(p.date_of_birth for p in (plan.person, plan.partner)
+                   if p is not None and p.date_of_birth is not None)
+    last = result.months[-1]
+    months_old = (last.year - youngest.year) * 12 + (last.month - youngest.month)
+    assert months_old / 12 == pytest.approx(HORIZON_AGE)
 
     for record in result.months:
         assert sum(record.incomes.values()) == pytest.approx(

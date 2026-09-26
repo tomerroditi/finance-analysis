@@ -19,7 +19,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import date
 
-from backend.services.fire import bridge, decumulation, national_insurance
+from backend.services.fire import bridge, decumulation, israeli_tax, national_insurance
 from backend.services.fire import loans as loan_math
 from backend.services.fire.keren_hishtalmut import KerenAccount
 from backend.services.fire.models import (
@@ -33,8 +33,16 @@ from backend.services.fire.models import (
     PortfolioType,
     StartType,
 )
-from backend.services.fire.pension import PensionAccount, annuity_factor
+from backend.services.fire.pension import (
+    PensionAccount,
+    annuity_factor,
+    contributions_on,
+)
 from backend.services.fire.taxation import TaxableAccount
+
+DUST = 1e-9
+"""Below this a monthly row is float noise, not a flow: a need that nets to
+-1e-13 would otherwise record a draw and stretch a drawdown segment."""
 
 SHORTFALL_TOLERANCE = 1e-6
 """Unfunded shekels a plan may accumulate and still count as covering its
@@ -252,9 +260,12 @@ class SimulationResult:
             out.append(
                 (
                     owner,
+                    # The tactic's last claim counts even when it pays nothing:
+                    # `bw_share_100` claims all of it at 60 under 60/67 and is
+                    # still quoted at 67.
                     max(
-                        (a.claim_age for a in rows),
-                        default=self.default_claim_age.get(owner, 60.0),
+                        [a.claim_age for a in rows]
+                        + [self.default_claim_age.get(owner, 60.0)]
                     ),
                     sum(a.monthly for a in rows),
                 )
@@ -335,9 +346,19 @@ class Simulator:
         return (months + index) / 12
 
     def month_count(self, today: date) -> int:
-        """Months from the current month through the month age hits 81.0."""
-        birth_index = (today.year - self.dob.year) * 12 + (today.month - self.dob.month)
-        return int(round(HORIZON_AGE * 12)) - birth_index + 1  # noqa: RUF046
+        """Months from the current month through the month the youngest turns 81.
+
+        A couple runs until the *younger* spouse is 81: with a partner five years
+        younger the reference charts 593 months where the main person alone
+        would have 533 (`cp2_empty_1995`).
+        """
+        born = [self.dob]
+        if self.plan.partner is not None and self.plan.partner.date_of_birth:
+            born.append(self.plan.partner.date_of_birth)
+        age_in_months = min(
+            (today.year - dob.year) * 12 + (today.month - dob.month) for dob in born
+        )
+        return int(round(HORIZON_AGE * 12)) - age_in_months + 1  # noqa: RUF046
 
     def _index_of(self, when: date, today: date) -> int:
         """Month index of a calendar date. The day is ignored."""
@@ -480,14 +501,12 @@ class Simulator:
         spending = sum(
             flow.amount
             for flow in self.plan.expenses
-            if flow.start_type is not StartType.ONE_TIME
-            and self._live(flow, at, retire_index, today)
+            if self._counts_after_60(flow, at, retire_index, today)
         )
         spending -= sum(
             flow.amount
             for flow in self.plan.incomes
-            if flow.start_type is not StartType.ONE_TIME
-            and self._live(flow, at, retire_index, today)
+            if self._counts_after_60(flow, at, retire_index, today)
         )
         if spending <= 0:
             # Nothing left to cover reads as no coverage at all, not full
@@ -495,6 +514,27 @@ class Simulator:
             # statutory age.
             return 0.0
         return self._pension_at_60(retire_index, today, after_60) / spending
+
+    def _counts_after_60(
+        self, flow: CashFlow, index: int, retire_index: int, today: date
+    ) -> bool:
+        """Whether a row counts toward the spending the coverage divides by.
+
+        A one-off row is read as if it ran from its date to its end type — the
+        form gives it an end type (`forever` by default) it never uses anywhere
+        else. `cx1_012`'s one-off 330,000 income, dated before 60, cancels its
+        7,000 of spending and leaves a pension paying 105% of it waiting for the
+        statutory age.
+        """
+        if flow.start_type is StartType.ONE_TIME:
+            flow = CashFlow(
+                amount=flow.amount,
+                start_type=StartType.FROM_DATE,
+                start_date=flow.start_date,
+                end_type=flow.end_type,
+                end_date=flow.end_date,
+            )
+        return self._live(flow, index, retire_index, today)
 
     def _live(self, flow: CashFlow, index: int, retire_index: int, today: date) -> bool:
         first, last = self._window(flow, retire_index, today)
@@ -509,6 +549,11 @@ class Simulator:
         of 840k annuitised at the 60 factor, not the 3.6M it holds at 60. Only
         the share the tactic claims at 60 counts. Once 60 is behind the
         retirement the claim has happened, and the annuity it started is used.
+
+        And it is what the annuity **nets**: less the national-insurance
+        contribution and the income tax on its entitling half, both due before
+        the statutory age. `cx1_029` (9,718 gross, 8,887 net) and
+        `be_net_3m_20k` read their coverage on the net figure.
         """
         fund = self.plan.pension
         if fund is None or fund.tactic is PensionTactic.ALL_FROM_STATUTORY:
@@ -531,13 +576,21 @@ class Simulator:
             account.annuitise_due(self.age_at(t, today))
             account.grow()
         if account.streams:
-            return sum(
-                stream.monthly for stream in account.streams if stream.claim_age == 60
+            at_60 = [stream for stream in account.streams if stream.claim_age == 60]
+            recognised = sum(s.monthly for s in at_60 if s.recognised)
+            entitling = sum(s.monthly for s in at_60 if not s.recognised)
+        else:
+            monthly = account.balance / annuity_factor(self.plan.person.gender, 60)
+            recognised = monthly * fund.mukeret_pct / 100
+            entitling = (
+                monthly - recognised
+                if fund.tactic is PensionTactic.ALL_FROM_60
+                else 0.0
             )
-        share = (
-            1.0 if fund.tactic is PensionTactic.ALL_FROM_60 else fund.mukeret_pct / 100
+        gross = recognised + entitling
+        return (
+            gross - contributions_on(gross) - israeli_tax.monthly_income_tax(entitling)
         )
-        return account.balance * share / annuity_factor(self.plan.person.gender, 60)
 
     def _monthly_factor(
         self, portfolio: Portfolio, index: int, retire_index: int
@@ -723,12 +776,11 @@ class Simulator:
                     account.deposit(fund.monthly_deposit)
 
             shortfall = 0.0
-            tax_paid = 0.0
             cash_out["loans"] = debt_service
             if surplus >= 0:
-                cash = self._deposit(surplus, cash, accounts, cash_out)
+                cash = self._deposit(surplus, cash, accounts, cash_in, cash_out)
             else:
-                cash, shortfall, tax_paid = self._withdraw(  # noqa: RUF059
+                cash, shortfall = self._withdraw(
                     -surplus,
                     cash,
                     accounts,
@@ -779,8 +831,8 @@ class Simulator:
                     year=today.year + (month_number - 1) // 12,
                     month=(month_number - 1) % 12 + 1,
                     age=age,
-                    incomes={k: v for k, v in cash_in.items() if v},
-                    expenses={k: v for k, v in cash_out.items() if v},
+                    incomes={k: v for k, v in cash_in.items() if abs(v) > DUST},
+                    expenses={k: v for k, v in cash_out.items() if abs(v) > DUST},
                     assets=assets,
                     liabilities=liabilities,
                     cash=cash,
@@ -947,6 +999,7 @@ class Simulator:
         surplus: float,
         cash: float,
         accounts: list[TaxableAccount],
+        cash_in: dict[str, float] | None = None,
         cash_out: dict[str, float] | None = None,
     ) -> float:
         """Route a monthly surplus, recording where each shekel went.
@@ -957,6 +1010,7 @@ class Simulator:
         """
         plan = self.plan
         record = cash_out if cash_out is not None else {}
+        drawn = cash_in if cash_in is not None else {}
         if cash < plan.cash_buffer:
             take = min(surplus, plan.cash_buffer - cash)
             cash += take
@@ -966,18 +1020,27 @@ class Simulator:
         for index, (portfolio, account) in enumerate(
             zip(plan.portfolios, accounts, strict=False)
         ):
-            if surplus <= 0:
-                break
             room = portfolio.goal - account.balance
             if room <= 0:
                 continue
-            take = min(surplus, room)
+            # A portfolio short of its goal is filled from the surplus first
+            # and then from cash above the buffer: `cx1_009` moves 140,000 into
+            # a 60,000 portfolio with a 200,000 goal in its first month, 19,500
+            # of surplus and 120,500 out of checking.
+            free = max(cash - plan.cash_buffer, 0.0)
+            take = min(surplus + free, room)
             cap = portfolio.effective_deposit_cap
             if cap is not None:
                 take = min(take, cap)
+            if take <= 0:
+                continue
+            from_cash = max(take - surplus, 0.0)
             account.deposit(take)
-            surplus -= take
+            surplus -= take - from_cash
+            cash -= from_cash
             record[f"deposit_portfolio{index}"] = take
+            if from_cash:
+                drawn["cash"] = drawn.get("cash", 0.0) + from_cash
 
         record["unplanned"] = surplus
         return cash + surplus
@@ -1053,7 +1116,7 @@ class Simulator:
         statutory_age: int,
         cash_in: dict[str, float] | None = None,
         cash_out: dict[str, float] | None = None,
-    ) -> tuple[float, float, float]:
+    ) -> tuple[float, float]:
         """Fund a monthly deficit, returning any unmet shortfall.
 
         Verified order (notes/08): free cash above the buffer, then withdrawal
@@ -1073,10 +1136,7 @@ class Simulator:
         need -= take
         from_cash = take
 
-        tax_paid = 0.0
-
         def draw_portfolios(remaining: float) -> float:
-            nonlocal tax_paid
             for index, (portfolio, account) in enumerate(
                 zip(plan.portfolios, accounts, strict=False)
             ):
@@ -1088,7 +1148,6 @@ class Simulator:
                     remaining, age=age, statutory_age=statutory_age
                 )
                 remaining -= net
-                tax_paid += tax
                 drawn[f"portfolio{index}"] = (
                     drawn.get(f"portfolio{index}", 0.0) + net + tax
                 )
@@ -1124,4 +1183,4 @@ class Simulator:
         if from_cash:
             drawn["cash"] = drawn.get("cash", 0.0) + from_cash
 
-        return cash, max(need, 0.0), tax_paid
+        return cash, max(need, 0.0)
