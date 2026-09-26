@@ -5,7 +5,8 @@ paths:
   - "backend/models/savings_goal.py"
   - "frontend/src/components/dashboard/GoalsSection.tsx"
   - "frontend/src/components/budget/SavingsGoalsBudgetSection.tsx"
-  - "frontend/src/components/budget/ProjectGoalLink.tsx"
+  - "frontend/src/components/budget/BudgetGoalLink.tsx"
+  - "frontend/src/components/dashboard/GoalAutoLinkField.tsx"
 ---
 # Savings Goals — the surplus waterfall
 
@@ -218,38 +219,50 @@ A goal may also name a `contribution_category` (+ optional semicolon-separated
 transactions automatically. An explicit per-transaction link always wins over
 the category rule, so one correction beats the broad match.
 
-### Funding a whole project
+### Paying for a budget out of a goal
 
-A goal can pay for a **project budget** in one step: `funding_project` names
-the project's category (`PUT /savings-goals/{id}/funding-project`, `null`
-detaches; the project tab's `ProjectGoalLink` button). Every row in that
-category is then a utilization of the goal — the purchases already on record
-and every one scraped later — so nobody links a project one transaction at a
-time.
+The mirror image of `contribution_category`: a goal may name a
+`utilization_category` (+ optional semicolon-separated `utilization_tags`;
+`NULL` = every tag) whose spending is **utilized from the goal**
+automatically — the purchases already on record and every one scraped later —
+so nobody links a budget one transaction at a time. Three ways to set it:
 
-- **Signed, not `abs`.** Project rows keep their direction (`_GoalLink`'s
-  `signed` flag), so a refund in the project nets against the purchases it
-  repays. Explicit links still count by magnitude, as they always have.
+- **Project tab** — `BudgetGoalLink` in the command bar links the project's
+  category (all tags).
+- **Yearly tab** — the target icon on an envelope row links its category and
+  tags.
+- **Goal editor** (`GoalAutoLinkField`) — "Spent from this goal" /
+  "Saved into this goal" set the utilization and contribution rules directly.
+
+The budget buttons go through `PUT /savings-goals/{id}/spending-link`
+(`{category, tags}`, `category: null` clears), which also **releases any other
+goal holding the identical rule** in the same commit; the editor writes the
+columns through the ordinary goal update. Rules:
+
+- **Signed, not `abs`.** Rule rows keep their direction (`_GoalLink`'s
+  `signed` flag), so a refund nets against the purchases it repays. Explicit
+  links still count by magnitude, as they always have.
 - **Only from the goal's `start_month`.** Spending that predates the goal was
   never paid out of it and stays an ordinary expense of its month. Counting it
   would also pull it out of pre-goal surplus that no goal ever walks, inflating
   the opening free-cash pool.
-- **Card purchases count.** Projects are mostly paid by card, and card rows
+- **Card purchases count.** Budgets are mostly paid by card, and card rows
   never enter the surplus (the bank-side bill does). A card row mapped to a
-  utilization — by the project rule or an explicit link — is utilized from the
-  goal **and** its amount is handed back to its month's surplus, because the
-  bill that paid for it is already in there. Without the hand-back the same
-  shekel leaves both the pool and the goal. (Before this, an explicit link on
-  a card row was silently ignored.)
-- **One goal per project.** `set_funding_project` releases the project from
-  any other goal in the same commit — two goals drawing on the same purchases
-  would count them twice. Deleting the project clears the link
-  (`ProjectBudgetService.delete_project`).
-- **Precedence:** contribution category < funded project < explicit link.
+  utilization — by a rule or an explicit link — is utilized from the goal
+  **and** its amount is handed back to its month's surplus, because the bill
+  that paid for it is already in there. Without the hand-back the same shekel
+  leaves both the pool and the goal. (Before this, an explicit link on a card
+  row was silently ignored.)
+- **Overlaps resolve by waterfall order** — when two goals' utilization rules
+  match one row, the higher-priority goal takes it.
+- **Precedence:** contribution rule < utilization rule < explicit link.
+- **A rule is a category/tag match, not a budget reference.** Deleting the
+  project or envelope leaves the goal's rule in place (it still names real
+  transactions); a rule naming an unknown category simply matches nothing.
 - **History stands.** Linking changes past months' surplus, but their stored
-  allocations do not move; the project's spend simply comes out of the goal
-  instead of out of free cash, so `liquid` is unchanged. A `rebuild` restates
-  them if the user wants the freed surplus redistributed.
+  allocations do not move; the spend simply comes out of the goal instead of
+  out of free cash, so `liquid` is unchanged. A `rebuild` restates them if the
+  user wants the freed surplus redistributed.
 
 ## History is never silently restated
 

@@ -261,41 +261,43 @@ class TestAllocationAndLinkRoutes:
         assert res.status_code == 404
 
 
-class TestFundingProjectRoutes:
-    """PUT /api/savings-goals/{id}/funding-project links a whole project."""
+class TestSpendingLinkRoutes:
+    """PUT /api/savings-goals/{id}/spending-link links a category/tags rule."""
 
-    def test_link_and_detach_a_project(self, test_client, seed_project_transactions):
-        """The goal reports its project, and ``null`` detaches it."""
+    def test_link_and_detach_a_category(self, test_client, seed_project_transactions):
+        """The goal reports its rule, and ``null`` clears it."""
         goal = _create(test_client, name="Wedding fund", target_amount=100000)
 
         res = test_client.put(
-            f"/api/savings-goals/{goal['id']}/funding-project",
-            json={"project": "Wedding"},
+            f"/api/savings-goals/{goal['id']}/spending-link",
+            json={"category": "Wedding"},
         )
         assert res.status_code == 200, res.text
         linked = next(g for g in res.json() if g["id"] == goal["id"])
-        assert linked["funding_project"] == "Wedding"
+        assert linked["utilization_category"] == "Wedding"
 
         res = test_client.put(
-            f"/api/savings-goals/{goal['id']}/funding-project", json={"project": None}
+            f"/api/savings-goals/{goal['id']}/spending-link", json={"category": None}
         )
         assert res.status_code == 200, res.text
         detached = next(g for g in res.json() if g["id"] == goal["id"])
-        assert detached["funding_project"] is None
+        assert detached["utilization_category"] is None
 
-    def test_unknown_project_returns_404(self, test_client):
-        """Only an existing project budget can be funded."""
-        goal = _create(test_client, name="Goal", target_amount=1000)
+    def test_tags_are_stored_semicolon_joined(self, test_client):
+        """A yearly envelope's tag list is stored the way budget rules store it."""
+        goal = _create(test_client, name="Trip", target_amount=5000)
         res = test_client.put(
-            f"/api/savings-goals/{goal['id']}/funding-project",
-            json={"project": "Nope"},
+            f"/api/savings-goals/{goal['id']}/spending-link",
+            json={"category": "Leisure", "tags": ["Vacation", "Flights"]},
         )
-        assert res.status_code == 404
+        assert res.status_code == 200, res.text
+        linked = next(g for g in res.json() if g["id"] == goal["id"])
+        assert linked["utilization_tags"] == "Flights;Vacation"
 
     def test_missing_goal_returns_404(self, test_client, seed_project_transactions):
-        """Linking a project to an unknown goal is a 404."""
+        """Linking a category to an unknown goal is a 404."""
         res = test_client.put(
-            "/api/savings-goals/9999/funding-project", json={"project": "Wedding"}
+            "/api/savings-goals/9999/spending-link", json={"category": "Wedding"}
         )
         assert res.status_code == 404
 

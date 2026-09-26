@@ -11,6 +11,7 @@ from typing import Any
 
 import numpy as np
 
+from backend.constants.budget import ALL_TAGS
 from backend.errors import EntityNotFoundException, ValidationException
 from backend.models.savings_goal import (
     GOAL_STATUS_ACTIVE,
@@ -250,23 +251,27 @@ class GoalCrudMixin:
         self._context_cache = None
         return self._after_write()
 
-    def set_funding_project(
-        self, goal_id: int, project: str | None
+    def set_spending_link(
+        self, goal_id: int, category: str | None, tags: list[str] | None = None
     ) -> list[dict[str, Any]]:
-        """Pay for a whole project budget out of a goal, or stop doing so.
+        """Pay for a category (optionally narrowed to tags) out of a goal.
 
-        Every transaction in the project's category, from the goal's start
-        month on, is spent out of the goal as a utilization — the ones already
-        on record and every one that lands later — so the user links the
-        project once instead of one purchase at a time. An explicit link on a
-        single transaction still wins over it.
+        Every transaction matching the rule, from the goal's start month on,
+        is spent out of the goal as a utilization — the ones already on record
+        and every one that lands later — so a project budget (its category) or
+        a yearly envelope (its category and tags) is linked once instead of
+        one purchase at a time. An explicit link on a single transaction still
+        wins over it.
 
         Parameters
         ----------
         goal_id : int
-            Goal that pays for the project.
-        project : str or None
-            Project (category) name, or ``None`` to detach the goal.
+            Goal that pays for the spending.
+        category : str or None
+            Category to match, or ``None`` to clear the goal's rule.
+        tags : list[str] or None, optional
+            Tags narrowing ``category``. Empty, ``None`` or ``["all_tags"]``
+            covers every tag.
 
         Returns
         -------
@@ -276,19 +281,19 @@ class GoalCrudMixin:
         Raises
         ------
         EntityNotFoundException
-            If the goal or the project does not exist.
+            If the goal does not exist.
         """
-        # Imported here: the budget package already imports this one.
-        from backend.services.budget.project import ProjectBudgetService
-
-        if (
-            project is not None
-            and project not in ProjectBudgetService(self.db).get_all_projects_names()
-        ):
-            raise EntityNotFoundException(f"Project '{project}' not found")
-        self.repo.set_funding_project(goal_id, project)
+        self.repo.set_utilization_rule(goal_id, category, self._join_tags(tags))
         self._context_cache = None
         return self._after_write()
+
+    @staticmethod
+    def _join_tags(tags: list[str] | None) -> str | None:
+        """Store a tag list the way budget rules do; ``None`` means every tag."""
+        cleaned = sorted({t.strip() for t in tags or [] if t and t.strip()})
+        if not cleaned or ALL_TAGS in cleaned:
+            return None
+        return ";".join(cleaned)
 
     def get_links(self, goal_id: int | None = None) -> list[dict[str, Any]]:
         """Return transaction links, optionally scoped to one goal."""

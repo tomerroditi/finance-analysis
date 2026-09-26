@@ -30,6 +30,8 @@ class SavingsGoalCreate(ApiRequestModel):
     target_date: str | None = None
     contribution_category: str | None = None
     contribution_tags: str | None = None
+    utilization_category: str | None = None
+    utilization_tags: str | None = None
     notes: str | None = None
 
 
@@ -44,6 +46,8 @@ class SavingsGoalUpdate(ApiRequestModel):
     target_date: str | None = None
     contribution_category: str | None = None
     contribution_tags: str | None = None
+    utilization_category: str | None = None
+    utilization_tags: str | None = None
     notes: str | None = None
 
 
@@ -62,11 +66,13 @@ class SavingsGoalLinkCreate(ApiRequestModel):
     link_type: Literal["contribution", "utilization"]
 
 
-class SavingsGoalFundingProject(ApiRequestModel):
-    """Request body for pointing a goal at the project budget it pays for."""
+class SavingsGoalSpendingLink(ApiRequestModel):
+    """Request body for naming the spending a goal pays for."""
 
-    #: ``None`` detaches the goal from its project.
-    project: str | None = Field(None, min_length=1)
+    #: ``None`` clears the goal's rule.
+    category: str | None = Field(None, min_length=1)
+    #: Narrows ``category``; empty or ``["all_tags"]`` covers every tag.
+    tags: list[str] | None = None
 
 
 class SavingsGoalInvestmentCreate(ApiRequestModel):
@@ -216,12 +222,12 @@ def unlink_transaction(
     return SavingsGoalService(db).unlink_transaction(link_id)
 
 
-@router.put("/{goal_id}/funding-project")
-def set_funding_project(
-    goal_id: int, data: SavingsGoalFundingProject, db: Session = Depends(get_database)
+@router.put("/{goal_id}/spending-link")
+def set_spending_link(
+    goal_id: int, data: SavingsGoalSpendingLink, db: Session = Depends(get_database)
 ) -> list[dict[str, Any]]:
-    """Spend a whole project budget out of a goal, or detach it with ``null``."""
-    return SavingsGoalService(db).set_funding_project(goal_id, data.project)
+    """Spend a category (optionally narrowed to tags) out of a goal; ``null`` clears it."""
+    return SavingsGoalService(db).set_spending_link(goal_id, data.category, data.tags)
 
 
 @router.get("/investments/available")

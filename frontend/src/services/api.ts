@@ -1152,8 +1152,10 @@ export interface SavingsGoal {
   target_date: string | null;
   contribution_category: string | null;
   contribution_tags: string | null;
-  /** Project budget this goal pays for: every purchase in it is utilized from the goal. */
-  funding_project: string | null;
+  /** Category whose spending is utilized from the goal automatically. */
+  utilization_category: string | null;
+  /** Semicolon-separated tags narrowing `utilization_category`; `null` = every tag. */
+  utilization_tags: string | null;
   status: string;
   closed_month: string | null;
   notes: string | null;
@@ -1191,6 +1193,8 @@ export interface SavingsGoalInput {
   target_date?: string | null;
   contribution_category?: string | null;
   contribution_tags?: string | null;
+  utilization_category?: string | null;
+  utilization_tags?: string | null;
   notes?: string | null;
 }
 
@@ -1377,10 +1381,18 @@ export const savingsGoalsApi = {
     },
   ) => api.post<SavingsGoal[]>(`/savings-goals/${goalId}/links`, payload),
   unlink: (linkId: number) => api.delete(`/savings-goals/links/${linkId}`),
-  /** Spend a whole project budget out of a goal; `null` detaches it. */
-  setFundingProject: (goalId: number, project: string | null) =>
-    api.put<SavingsGoal[]>(`/savings-goals/${goalId}/funding-project`, {
-      project,
+  /**
+   * Spend a category (optionally narrowed to tags) out of a goal — a project
+   * budget or a yearly envelope in one link. `category: null` clears it.
+   */
+  setSpendingLink: (
+    goalId: number,
+    category: string | null,
+    tags: string[] | null = null,
+  ) =>
+    api.put<SavingsGoal[]>(`/savings-goals/${goalId}/spending-link`, {
+      category,
+      tags,
     }),
 };
 

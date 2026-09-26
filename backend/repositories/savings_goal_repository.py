@@ -339,20 +339,24 @@ class SavingsGoalRepository:
         self.db.commit()
         return result.rowcount
 
-    def set_funding_project(self, goal_id: int, project: str | None) -> None:
-        """Make ``goal_id`` the one goal that pays for ``project``.
+    def set_utilization_rule(
+        self, goal_id: int, category: str | None, tags: str | None
+    ) -> None:
+        """Make ``goal_id`` the goal that pays for ``(category, tags)``.
 
-        A project is funded by at most one goal — two goals both drawing on the
-        same purchases would count every shekel twice — so any other goal
-        funding it lets go in the same commit.
+        Any other goal holding the very same rule lets go of it in the same
+        commit: the user just moved that spending to this goal, and two goals
+        claiming it would leave the choice to waterfall order instead.
 
         Parameters
         ----------
         goal_id : int
-            Goal that funds the project.
-        project : str or None
-            Project (category) name; ``None`` detaches the goal from its
-            project.
+            Goal that pays for the spending.
+        category : str or None
+            Category the rule matches; ``None`` clears the goal's rule.
+        tags : str or None
+            Semicolon-separated tags narrowing ``category``; ``None`` covers
+            every tag.
 
         Raises
         ------
@@ -362,25 +366,21 @@ class SavingsGoalRepository:
         goal = self.db.get(SavingsGoal, goal_id)
         if not goal:
             raise EntityNotFoundException(f"Savings goal {goal_id} not found")
-        if project is not None:
+        if category is not None:
             self.db.execute(
                 update(SavingsGoal)
-                .where(SavingsGoal.funding_project == project)
+                .where(SavingsGoal.utilization_category == category)
+                .where(
+                    SavingsGoal.utilization_tags.is_(None)
+                    if tags is None
+                    else SavingsGoal.utilization_tags == tags
+                )
                 .where(SavingsGoal.id != goal_id)
-                .values(funding_project=None)
+                .values(utilization_category=None, utilization_tags=None)
             )
-        goal.funding_project = project
+        goal.utilization_category = category
+        goal.utilization_tags = tags if category is not None else None
         self.db.commit()
-
-    def clear_funding_project(self, project: str) -> int:
-        """Detach every goal funding ``project``; return how many were detached."""
-        result = self.db.execute(
-            update(SavingsGoal)
-            .where(SavingsGoal.funding_project == project)
-            .values(funding_project=None)
-        )
-        self.db.commit()
-        return result.rowcount
 
     def active_goals(self) -> list[SavingsGoal]:
         """Return active goals in waterfall order (priority ascending)."""

@@ -17,7 +17,7 @@ import { BAR_CONTROL, BudgetCommandBar } from "./BudgetCommandBar";
 import { BudgetStatusBand, type BandStat } from "./BudgetStatusBand";
 import { BudgetNoticeLine } from "./BudgetNoticeLine";
 import { RuleSparkline } from "./RuleSparkline";
-import { ProjectGoalLink } from "./ProjectGoalLink";
+import { BudgetGoalLink } from "./BudgetGoalLink";
 import { SelectDropdown } from "../common/SelectDropdown";
 import { useQueryKeys } from "../../hooks/useQueryKeys";
 import { qkPrefix } from "../../services/queryKeys";
@@ -320,7 +320,7 @@ export const ProjectBudgetView: React.FC<ProjectBudgetViewProps> = ({
             </button>
             {selectedProject && (
               <>
-                <ProjectGoalLink project={selectedProject} />
+                <BudgetGoalLink category={selectedProject} name={selectedProject} />
                 <button
                   onClick={handleToggleClosed}
                   disabled={closedMutation.isPending}

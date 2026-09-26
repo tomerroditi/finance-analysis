@@ -36,6 +36,8 @@ import {
 } from "../../services/api";
 import { useQueryKeys } from "../../hooks/useQueryKeys";
 import { useScrollCap } from "../../hooks/useScrollCap";
+import { GoalAutoLinkField } from "./GoalAutoLinkField";
+import { joinRuleTags, splitRuleTags } from "../../utils/goalRuleTags";
 import { stackEnds, roundedStackShape } from "../charts/stackedBarShape";
 import { qkPrefix } from "../../services/queryKeys";
 import { useConfirm, useNotify } from "../../context/DialogContext";
@@ -1170,6 +1172,14 @@ function GoalEditorModal({ goal, onClose }: { goal: SavingsGoal | null; onClose:
   const [monthlyCap, setMonthlyCap] = useState(goal?.monthly_cap != null ? String(goal.monthly_cap) : "");
   const [startMonth, setStartMonth] = useState(goal?.start_month ?? "");
   const [targetDate, setTargetDate] = useState(goal?.target_date ?? "");
+  const [spendRule, setSpendRule] = useState({
+    category: goal?.utilization_category ?? "",
+    tags: splitRuleTags(goal?.utilization_tags),
+  });
+  const [saveRule, setSaveRule] = useState({
+    category: goal?.contribution_category ?? "",
+    tags: splitRuleTags(goal?.contribution_tags),
+  });
   const qk = useQueryKeys();
 
   const effectiveStart = startMonth || currentMonthKey();
@@ -1212,6 +1222,10 @@ function GoalEditorModal({ goal, onClose }: { goal: SavingsGoal | null; onClose:
       monthly_cap: monthlyCap.trim() === "" ? null : Number(monthlyCap),
       start_month: startMonth || null,
       target_date: targetDate || null,
+      utilization_category: spendRule.category || null,
+      utilization_tags: joinRuleTags(spendRule.category ? spendRule.tags : null),
+      contribution_category: saveRule.category || null,
+      contribution_tags: joinRuleTags(saveRule.category ? saveRule.tags : null),
     });
   };
 
@@ -1322,6 +1336,27 @@ function GoalEditorModal({ goal, onClose }: { goal: SavingsGoal | null; onClose:
             dir="ltr"
           />
         </div>
+        <fieldset className="space-y-3 border-t border-[var(--surface-light)] pt-3">
+          <legend className="text-xs font-semibold text-[var(--text-muted)] pe-2">
+            {t("dashboard.goals.autoLinkTitle")}
+          </legend>
+          <GoalAutoLinkField
+            testId="goal-auto-link-spend"
+            label={t("dashboard.goals.autoLinkSpendLabel")}
+            hint={t("dashboard.goals.autoLinkSpendHint")}
+            category={spendRule.category}
+            tags={spendRule.tags}
+            onChange={(category, tags) => setSpendRule({ category, tags })}
+          />
+          <GoalAutoLinkField
+            testId="goal-auto-link-save"
+            label={t("dashboard.goals.autoLinkSaveLabel")}
+            hint={t("dashboard.goals.autoLinkSaveHint")}
+            category={saveRule.category}
+            tags={saveRule.tags}
+            onChange={(category, tags) => setSaveRule({ category, tags })}
+          />
+        </fieldset>
         <div className="flex justify-end gap-2 pt-2">
           <button onClick={onClose} className="px-4 py-2 rounded-lg text-sm font-medium text-[var(--text-muted)] hover:bg-[var(--surface-light)] transition-colors">
             {t("common.cancel")}

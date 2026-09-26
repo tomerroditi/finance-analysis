@@ -344,8 +344,8 @@ def _create_project(db, name: str, budget: float = 50000) -> None:
     ProjectBudgetService(db).create_project(name, budget)
 
 
-class TestFundingProject:
-    """A goal can pay for a whole project budget with one link."""
+class TestSpendingLink:
+    """A goal pays for a project, an envelope or any category/tags with one link."""
 
     def test_project_spend_is_utilized_without_touching_the_pool(
         self, db_session, service
@@ -362,9 +362,9 @@ class TestFundingProject:
             name="Wedding fund", target_amount=5000, priority=0, start_month=earlier
         )
         liquid = service.get_free_cash()["liquid"]
-        goal = service.set_funding_project(created[0]["id"], "Wedding")[0]
+        goal = service.set_spending_link(created[0]["id"], "Wedding")[0]
 
-        assert goal["funding_project"] == "Wedding"
+        assert goal["utilization_category"] == "Wedding"
         assert goal["utilized"] == 1000
         # History keeps its rows, so the goal's funding stands; the project's
         # 1000 now comes out of the goal instead of out of free cash.
@@ -385,7 +385,7 @@ class TestFundingProject:
         created = service.create(
             name="Wedding fund", target_amount=5000, priority=0, start_month=last
         )
-        goal = service.set_funding_project(created[0]["id"], "Wedding")[0]
+        goal = service.set_spending_link(created[0]["id"], "Wedding")[0]
 
         assert goal["utilized"] == 750
 
@@ -403,7 +403,7 @@ class TestFundingProject:
         created = service.create(
             name="Wedding fund", target_amount=5000, priority=0, start_month=last
         )
-        goal = service.set_funding_project(created[0]["id"], "Wedding")[0]
+        goal = service.set_spending_link(created[0]["id"], "Wedding")[0]
 
         assert goal["utilized"] == 400
 
@@ -424,7 +424,7 @@ class TestFundingProject:
         assert created[0]["funded"] == 1100
         assert service.get_free_cash()["liquid"] == 1100
 
-        goal = service.set_funding_project(created[0]["id"], "Wedding")[0]
+        goal = service.set_spending_link(created[0]["id"], "Wedding")[0]
 
         assert goal["utilized"] == 900
         # The bill no longer shrinks the month's free cash — the goal paid it —
@@ -467,7 +467,7 @@ class TestFundingProject:
             name="Honeymoon", target_amount=5000, priority=1, start_month=last
         )
         ids = {g["name"]: g["id"] for g in created}
-        service.set_funding_project(ids["Wedding fund"], "Wedding")
+        service.set_spending_link(ids["Wedding fund"], "Wedding")
         service.link_transaction(
             goal_id=ids["Honeymoon"],
             source_type="transaction",
@@ -490,11 +490,11 @@ class TestFundingProject:
         )
         ids = {g["name"]: g["id"] for g in created}
 
-        service.set_funding_project(ids["A"], "Wedding")
-        goals = {g["name"]: g for g in service.set_funding_project(ids["B"], "Wedding")}
+        service.set_spending_link(ids["A"], "Wedding")
+        goals = {g["name"]: g for g in service.set_spending_link(ids["B"], "Wedding")}
 
-        assert goals["A"]["funding_project"] is None
-        assert goals["B"]["funding_project"] == "Wedding"
+        assert goals["A"]["utilization_category"] is None
+        assert goals["B"]["utilization_category"] == "Wedding"
 
     def test_unlinking_restores_the_spend_as_an_expense(self, db_session, service):
         """Passing ``None`` detaches the project."""
@@ -506,28 +506,81 @@ class TestFundingProject:
             name="Wedding fund", target_amount=5000, priority=0, start_month=last
         )
         goal_id = created[0]["id"]
-        service.set_funding_project(goal_id, "Wedding")
+        service.set_spending_link(goal_id, "Wedding")
 
-        goal = service.set_funding_project(goal_id, None)[0]
+        goal = service.set_spending_link(goal_id, None)[0]
 
-        assert goal["funding_project"] is None
+        assert goal["utilization_category"] is None
         assert goal["utilized"] == 0
 
-    def test_unknown_project_is_rejected(self, db_session, service):
-        """Only an existing project budget can be funded."""
-        created = service.create(name="Goal", target_amount=1000, priority=0)
-        with pytest.raises(EntityNotFoundException):
-            service.set_funding_project(created[0]["id"], "Nope")
+    def test_tags_narrow_the_rule_like_a_yearly_envelope(self, db_session, service):
+        """A category + tags link claims only the envelope's tags."""
+        last = _month_str(1)
+        _seed_surplus(db_session, last, income=10000, expenses=8000)
+        CategoriesTagsService(db_session).add_category("Leisure", ["Vacation", "Movies"])
+        _add_txn(db_session, last, -900, "Leisure", tag="Vacation", day=6)
+        _add_txn(db_session, last, -80, "Leisure", tag="Movies", day=7)
 
-    def test_deleting_the_project_detaches_the_goal(self, db_session, service):
-        """A deleted project leaves no goal pointing at its category."""
+        created = service.create(
+            name="Trip", target_amount=5000, priority=0, start_month=last
+        )
+        goal = service.set_spending_link(created[0]["id"], "Leisure", ["Vacation"])[0]
+
+        assert goal["utilization_category"] == "Leisure"
+        assert goal["utilization_tags"] == "Vacation"
+        assert goal["utilized"] == 900
+
+    def test_all_tags_is_stored_as_the_whole_category(self, db_session, service):
+        """``all_tags`` (a project's anchor rule) covers every tag."""
         _create_project(db_session, "Wedding")
         created = service.create(name="Goal", target_amount=1000, priority=0)
-        service.set_funding_project(created[0]["id"], "Wedding")
+        goal = service.set_spending_link(created[0]["id"], "Wedding", ["all_tags"])[0]
+        assert goal["utilization_tags"] is None
 
-        ProjectBudgetService(db_session).delete_project("Wedding")
+    def test_rule_set_from_the_goal_editor_applies(self, db_session, service):
+        """The reverse direction: a goal naming its own category/tags."""
+        last = _month_str(1)
+        _seed_surplus(db_session, last, income=10000, expenses=8000)
+        CategoriesTagsService(db_session).add_category("Leisure", ["Vacation"])
+        _add_txn(db_session, last, -400, "Leisure", tag="Vacation", day=6)
 
-        assert service.get_all()[0]["funding_project"] is None
+        created = service.create(
+            name="Trip",
+            target_amount=5000,
+            priority=0,
+            start_month=last,
+            utilization_category="Leisure",
+            utilization_tags="Vacation",
+        )
+
+        assert created[0]["utilized"] == 400
+
+    def test_higher_priority_goal_wins_an_overlapping_rule(self, db_session, service):
+        """Two rules matching one row resolve by waterfall order."""
+        last = _month_str(1)
+        _seed_surplus(db_session, last, income=10000, expenses=8000)
+        CategoriesTagsService(db_session).add_category("Leisure", ["Vacation"])
+        _add_txn(db_session, last, -400, "Leisure", tag="Vacation", day=6)
+
+        service.create(
+            name="First",
+            target_amount=5000,
+            priority=0,
+            start_month=last,
+            utilization_category="Leisure",
+        )
+        created = service.create(
+            name="Second",
+            target_amount=5000,
+            priority=1,
+            start_month=last,
+            utilization_category="Leisure",
+            utilization_tags="Vacation",
+        )
+
+        goals = {g["name"]: g for g in created}
+        assert goals["First"]["utilized"] == 400
+        assert goals["Second"]["utilized"] == 0
 
 
 class TestRebuild:

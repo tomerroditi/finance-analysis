@@ -278,13 +278,14 @@ class InputsMixin:
     ) -> dict[_RowKey, _GoalLink]:
         """Map each linked transaction key to its ``(goal_id, link_type, signed)``.
 
-        Explicit per-transaction links win over a goal's category/tag rule and
-        its funded project, so a single correction on one transaction always
-        beats the broad rule.
+        Explicit per-transaction links win over both category/tag rules, so a
+        single correction on one transaction always beats the broad rule, and
+        a utilization rule wins over a contribution rule on the same row.
 
-        A funded project claims its category's rows from the goal's start
-        month on. Spending that predates the goal was never paid for out of
-        it, so it stays an ordinary expense of the month it happened in.
+        A utilization rule claims its rows from the goal's start month on.
+        Spending that predates the goal was never paid for out of it, so it
+        stays an ordinary expense of the month it happened in. When two goals'
+        rules match one row, the goal higher in the waterfall takes it.
 
         Parameters
         ----------
@@ -315,11 +316,15 @@ class InputsMixin:
                     mapping[key] = (goal.id, LINK_CONTRIBUTION, False)
 
         row_months = list(zip(df["_year"], df["_month"], strict=True))
-        for goal in self._goals_in_order():
-            if not goal.funding_project:
+        # Walked bottom-up so the goal higher in the waterfall writes last.
+        for goal in reversed(self._goals_in_order()):
+            if not goal.utilization_category:
                 continue
             start = month_key(goal.start_month)
-            matches = df[category_col] == goal.funding_project
+            matches = df[category_col] == goal.utilization_category
+            tags = self._split_tags(goal.utilization_tags)
+            if tags and tags != [_ALL_TAGS] and tag_col in df.columns:
+                matches &= df[tag_col].isin(tags)
             for key, matched, row_month in zip(keys, matches, row_months, strict=True):
                 if matched and (start is None or row_month >= start):
                     mapping[key] = (goal.id, LINK_UTILIZATION, True)

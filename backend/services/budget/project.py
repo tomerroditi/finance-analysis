@@ -26,7 +26,6 @@ from backend.errors import (
     EntityNotFoundException,
     ValidationException,
 )
-from backend.repositories.savings_goal_repository import SavingsGoalRepository
 from backend.services.budget.core import BudgetService
 from backend.services.pending_refunds_service import (
     GROSS_AMOUNT_COLUMN,
@@ -193,7 +192,6 @@ class ProjectBudgetService(BudgetService):
         """
         self._require_project(category)
         self.budget_repository.delete_by_category(category)
-        SavingsGoalRepository(self.db).clear_funding_project(category)
 
     def set_project_closed(self, category: str, closed: bool) -> None:
         """Mark a project as closed (finished) or reopen it.
