@@ -1,3 +1,9 @@
+## v1.91.2 (2026-09-26)
+
+### Fix
+
+- **savings-goals**: drop the lifetime "taken back" line from the goal card (#359)
+
 ## v1.91.1 (2026-09-26)
 
 ### Fix
