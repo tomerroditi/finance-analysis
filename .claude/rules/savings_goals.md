@@ -36,10 +36,12 @@ For each month, from the earliest goal's `start_month` through the current one:
 
 ```
 surplus    = income - expenses - investments     (realized, CC-deduped)
+           + incoming contributions past their goal's target (spill-over)
 free_cash += surplus                             (the pool moves with the month)
 pool       = max(0, surplus)
 pool      -= frozen allocations of closed goals  (already spoken for)
-pool      -= explicit contributions              (consume before the waterfall)
+pool      -= outgoing contributions              (consume before the waterfall;
+                                                  incoming ones credit the goal, spill the rest)
 for each active goal, by priority ascending:
     take = min(target - funded, pool, monthly_cap or ∞)
     free_cash -= take
@@ -202,7 +204,8 @@ Transactions linked to a goal are **pulled out of the surplus calculation**
 
 | link | effect |
 |---|---|
-| `contribution` | credits the goal **and** consumes the pool before the waterfall |
+| `contribution`, outgoing (a transfer out to savings) | credits the goal **and** consumes the pool before the waterfall |
+| `contribution`, incoming (a gift, sale proceeds) | credits the goal up to what it still needs; the rest spills into the month's surplus |
 | `utilization` | reduces the goal's `available`, leaves the pool alone |
 
 A utilization does **not** reduce `target_amount` — buying the thing you saved
@@ -213,6 +216,28 @@ would double-count it.
 Leaving a linked transaction inside the surplus *and* deducting the
 contribution from the pool is the bug this design exists to prevent; it nets to
 the same total by deducting the same shekel twice.
+
+The same trap runs the other way for **incoming** money. A gift linked to a
+goal is already out of the surplus; charging it to the pool as well took it
+out a second time, sent the pool negative by the size of the gift, and the
+clawback then pulled the gift straight back out of the goal it had just
+funded (a 100K wedding gift showed up as ~97K "taken back to cover
+overspending"). `_compute_context` therefore reports `drawn` — the outgoing
+part of `direct` — and only that is debited from the pool.
+`test_incoming_contribution_is_new_money_not_a_draw_on_the_pool` pins it.
+
+**Incoming money past the target spills over.** A goal keeps only what it
+still needs of an incoming contribution (`target - funded - backed` at that
+point in the walk); the excess joins the month's surplus and flows down the
+waterfall like any other income — the same "a goal never takes more than it
+needs" rule the waterfall applies. Wedding gifts linked to a 200K goal that
+come to 490K fill the goal and hand the rest on. Outgoing contributions are
+never capped: that money deliberately left the account. Because what a goal
+kept depends on how full it was, only the simulation knows it: the plan
+carries it as `contributed` (and the spill-inclusive `surplus`), and the read
+models report those rather than the raw linked transactions. A closed goal's
+contributions stay as they were — frozen. Pinned by
+`test_incoming_contribution_past_the_target_spills_down_the_waterfall`.
 
 A goal may also name a `contribution_category` (+ optional semicolon-separated
 `contribution_tags`, the budget-rule convention) to accrue matching

@@ -266,6 +266,71 @@ class TestExplicitContributions:
         # 600 of contribution plus the remaining 2400 of a 3000 pool.
         assert goal["funded"] == 3000
 
+    def test_incoming_contribution_is_new_money_not_a_draw_on_the_pool(
+        self, db_session, service
+    ):
+        """A gift earmarked for a goal funds it without being clawed back.
+
+        Income linked to a goal arrives already earmarked: it never passed
+        through the free-cash pool, so it must not be charged against it.
+        Charging it drove the pool negative by the size of the gift, and the
+        clawback then took the gift straight back out of the goal it funded.
+        """
+        last = _month_str(1)
+        _seed_surplus(db_session, last, income=10000, expenses=7000)
+        _add_txn(db_session, last, 100000, "Other Income", tag="Wedding", day=6)
+
+        service.create(
+            name="Wedding",
+            target_amount=100000,
+            priority=0,
+            start_month=last,
+            contribution_category="Other Income",
+            contribution_tags="Wedding",
+        )
+        service.create(name="Trip", target_amount=5000, priority=1, start_month=last)
+
+        goals = {g["name"]: g for g in service.get_all()}
+        assert goals["Wedding"]["contributed"] == 100000
+        assert goals["Wedding"]["clawed_back"] == 0
+        assert goals["Wedding"]["funded"] == 100000
+        # The gift covers its goal, so the month's own surplus is still there
+        # for the next goal in line.
+        assert goals["Trip"]["funded"] == 3000
+        pool = service.get_free_cash()
+        assert pool["free_cash"] == 0
+        assert pool["liquid"] == 103000
+
+    def test_incoming_contribution_past_the_target_spills_down_the_waterfall(
+        self, db_session, service
+    ):
+        """A goal keeps only what it needs of a gift; the rest is surplus."""
+        last = _month_str(1)
+        _seed_surplus(db_session, last, income=10000, expenses=7000)
+        _add_txn(db_session, last, 100000, "Other Income", tag="Wedding", day=6)
+
+        service.create(
+            name="Wedding",
+            target_amount=60000,
+            priority=0,
+            start_month=last,
+            contribution_category="Other Income",
+            contribution_tags="Wedding",
+        )
+        service.create(name="Trip", target_amount=30000, priority=1, start_month=last)
+
+        goals = {g["name"]: g for g in service.get_all()}
+        assert goals["Wedding"]["contributed"] == 60000
+        assert goals["Wedding"]["funded"] == 60000
+        # 40000 of spilled gift plus the month's own 3000 surplus.
+        assert goals["Trip"]["funded"] == 30000
+        pool = service.get_free_cash()
+        assert pool["free_cash"] == 13000
+        assert pool["liquid"] == 103000
+        month = service.get_month_allocations(*map(int, last.split("-")))
+        wedding = next(row for row in month["goals"] if row["name"] == "Wedding")
+        assert wedding["contributed"] == 60000
+
 
 class TestUtilization:
     """Spending out of a goal draws it down without moving its target."""

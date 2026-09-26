@@ -155,7 +155,8 @@ class InputsMixin:
         Returns
         -------
         dict
-            ``surplus`` — ``{(year, month): float}``; ``direct`` and
+            ``surplus`` — ``{(year, month): float}``; ``direct`` (every
+            contribution), ``drawn`` (the part of it paid out of the pool) and
             ``utilized`` — ``{(year, month): {goal_id: amount}}``.
         """
         if self._context_cache is not None:
@@ -166,7 +167,12 @@ class InputsMixin:
     def _compute_context(self) -> dict[str, Any]:
         """Do the actual transaction scan behind :meth:`_build_context`."""
         df = self.transactions_service.get_data_for_analysis()
-        empty: dict[str, Any] = {"surplus": {}, "direct": {}, "utilized": {}}
+        empty: dict[str, Any] = {
+            "surplus": {},
+            "direct": {},
+            "drawn": {},
+            "utilized": {},
+        }
         if df.empty:
             return empty
 
@@ -242,6 +248,7 @@ class InputsMixin:
             surplus[key] = surplus.get(key, 0.0) - float(spent)
 
         direct: dict[tuple[int, int], dict[int, float]] = {}
+        drawn: dict[tuple[int, int], dict[int, float]] = {}
         utilized: dict[tuple[int, int], dict[int, float]] = {}
         for _, row in linked.iterrows():
             key = (int(row["_year"]), int(row["_month"]))
@@ -251,8 +258,20 @@ class InputsMixin:
             bucket = direct if row["_link_type"] == LINK_CONTRIBUTION else utilized
             bucket.setdefault(key, {})
             bucket[key][goal_id] = bucket[key].get(goal_id, 0.0) + amount
+            # Only a contribution that left the account (a transfer out to
+            # savings) was paid out of the pool. Income linked to a goal — a
+            # gift, sale proceeds — arrives already earmarked and never was
+            # free cash, so charging it to the pool would count it twice.
+            if row["_link_type"] == LINK_CONTRIBUTION and raw < 0:
+                drawn.setdefault(key, {})
+                drawn[key][goal_id] = drawn[key].get(goal_id, 0.0) + amount
 
-        return {"surplus": surplus, "direct": direct, "utilized": utilized}
+        return {
+            "surplus": surplus,
+            "direct": direct,
+            "drawn": drawn,
+            "utilized": utilized,
+        }
 
     @staticmethod
     def _row_keys(df: pd.DataFrame) -> list[_RowKey]:
