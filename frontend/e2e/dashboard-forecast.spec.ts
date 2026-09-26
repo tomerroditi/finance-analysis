@@ -86,13 +86,17 @@ test.describe("Dashboard — forecast, recurring, goals", () => {
       data.actual_income + data.recurring_income_due,
       2,
     );
-    expect(data.recurring_income_items.length).toBeGreaterThan(0);
+    // Late in the month every salary may already be paid, leaving nothing
+    // due — so the streams and the caption are only asserted while one is.
+    expect(data.recurring_income_items.length > 0).toBe(data.recurring_income_due > 0);
     // Every stream it leans on is due inside this month.
     for (const item of data.recurring_income_items) {
       expect(item.expected_date.slice(0, 7)).toBe(data.month);
     }
     // The card says where the number came from.
-    await expect(page.getByTestId("forecast-income-due")).toBeVisible();
+    if (data.recurring_income_due > 0) {
+      await expect(page.getByTestId("forecast-income-due")).toBeVisible();
+    }
 
     // The subscriptions / recurring panel.
     await expect(

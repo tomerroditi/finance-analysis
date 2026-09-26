@@ -1743,7 +1743,7 @@ class TestForecastIncomeComesFromRecurringStreams:
         carried a single 400k month into the next three forecasts, which told
         a household on a 12k salary it was on track to save six figures.
         """
-        self._salary(db_session)
+        self._salary(db_session, day=1, skip_current=False)
         db_session.add(
             BankTransaction(
                 id="windfall",
