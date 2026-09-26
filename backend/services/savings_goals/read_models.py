@@ -88,9 +88,8 @@ class ReadModelsMixin:
             else {}
         )
 
-        context = self._build_context()
-        direct = context["direct"].get((year, month), {})
-        surplus = context["surplus"].get((year, month), 0.0)
+        direct = self._kept_contributions().get((year, month), {})
+        surplus = self._last_plan.surplus.get((year, month), 0.0)
 
         rows = []
         for goal in self._goals_in_order():
@@ -284,7 +283,7 @@ class ReadModelsMixin:
 
         self.ensure_allocations()
         plan = self._last_plan
-        context = self._build_context()
+        kept = self._kept_contributions()
 
         ledger: dict[tuple[int, int], dict[int, float]] = {}
         for (goal_id, year, month), amount in self._stored_allocations().items():
@@ -296,7 +295,7 @@ class ReadModelsMixin:
         rows = []
         for key in iter_months(first, current):
             per_goal = ledger.get(key, {})
-            direct = context["direct"].get(key, {})
+            direct = kept.get(key, {})
             goal_rows = []
             for goal in goals:
                 allocated = float(per_goal.get(goal.id, 0.0))
@@ -323,7 +322,9 @@ class ReadModelsMixin:
                     "goals": goal_rows,
                     "allocated": round(funded, 2),
                     "clawed_back": round(clawed, 2),
-                    "surplus": round(float(context["surplus"].get(key, 0.0)), 2),
+                    "surplus": round(float(plan.surplus.get(key, 0.0)), 2)
+                    if plan
+                    else 0.0,
                     # Months the walk never reached (a stray ledger row that
                     # predates every goal's start) have no pool figure; zero
                     # is the honest reading — nothing was earmarked yet.
@@ -387,7 +388,7 @@ class ReadModelsMixin:
         contributed: dict[int, float] = {}
         utilized: dict[int, float] = {}
         for bucket, sink in (
-            (context["direct"], contributed),
+            (self._kept_contributions(), contributed),
             (context["utilized"], utilized),
         ):
             for per_goal in bucket.values():
@@ -423,6 +424,21 @@ class ReadModelsMixin:
             )
             for goal in goals
         ]
+
+    def _kept_contributions(self) -> dict[tuple[int, int], dict[int, float]]:
+        """Return the contributions each goal kept, as ``{(year, month): {goal_id: amount}}``.
+
+        Incoming money past a goal's target spills back into the month's
+        surplus, so what a goal kept depends on how full it was at the time —
+        only the simulation knows that, which is why this reads the last plan
+        rather than the raw linked transactions.
+        """
+        if self._last_plan is None:
+            self.ensure_allocations()
+        kept: dict[tuple[int, int], dict[int, float]] = {}
+        for (goal_id, year, month), amount in self._last_plan.contributed.items():
+            kept.setdefault((year, month), {})[goal_id] = amount
+        return kept
 
     @staticmethod
     def _enrich(
