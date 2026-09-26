@@ -68,7 +68,7 @@ class GoalCrudMixin:
             fields["start_month"] = month_str((today.year, today.month))
         self._validate_month(fields.get("start_month"), "start_month")
         goal = self.repo.add(**{k: v for k, v in fields.items() if v is not None})
-        if is_investment_goal(goal):
+        if self._owns_transfers(goal):
             return self._restate_for_transfers(goal.start_month)
         return self._after_write()
 
@@ -105,18 +105,22 @@ class GoalCrudMixin:
                 "opening_balance": goal.opening_balance,
             }
             self._validate_investment_fields({**current, **fields})
-            rescoped = any(
-                name in fields and fields[name] != getattr(goal, name)
-                for name in _TRANSFER_SCOPE_FIELDS
-            )
-            if rescoped:
-                earliest = min(
-                    (m for m in (goal.start_month, fields.get("start_month")) if m),
-                    default=None,
-                )
-                self.repo.update(goal_id, **fields)
-                return self._restate_for_transfers(earliest)
+        # Adding, dropping or narrowing a goal's own income rule decides, in
+        # every month since it started, what it borrowed and handed back — so
+        # it restates that history rather than only the months to come.
+        was_owner = bool(goal and self._owns_transfers(goal))
+        rescoped = any(
+            name in fields and fields[name] != getattr(goal, name, None)
+            for name in _TRANSFER_SCOPE_FIELDS
+        )
         self.repo.update(goal_id, **fields)
+        goal = self.repo.get(goal_id)
+        if rescoped and (was_owner or self._owns_transfers(goal)):
+            earliest = min(
+                (m for m in (goal.start_month, fields.get("start_month")) if m),
+                default=None,
+            )
+            return self._restate_for_transfers(earliest)
         return self._after_write()
 
     def delete(self, goal_id: int) -> None:
@@ -133,7 +137,7 @@ class GoalCrudMixin:
             If the goal does not exist.
         """
         goal = self.repo.get(goal_id)
-        start = goal.start_month if goal and is_investment_goal(goal) else None
+        start = goal.start_month if goal and self._owns_transfers(goal) else None
         self.repo.delete(goal_id)
         if start:
             self._restate_for_transfers(start)
@@ -355,17 +359,23 @@ class GoalCrudMixin:
         return links.to_dict("records")
 
     def _restate_for_transfers(self, from_month: str | None) -> list[dict[str, Any]]:
-        """Rebuild history after the transfers an investment goal owns changed.
+        """Rebuild history after the income a goal owns changed.
 
         Which transfers an investment goal owns decides whether each one is
-        progress or a deficit that claws back the cash goals, in every month
-        it touches — so creating, rescoping or deleting one restates history
-        from its start month rather than only the months still to come.
-        Without this, a goal created today over last year's transfers would
-        keep every clawback those transfers once caused.
+        progress or a deficit that claws back the cash goals, and a saved-into
+        rule decides what a goal borrowed before its income landed and handed
+        back after — in every month they touch. So creating, rescoping or
+        deleting either restates history from the goal's start month rather
+        than only the months still to come. Without this, a goal created today
+        over last year's transfers would keep every clawback they once caused.
         """
         self._context_cache = None
         return self.rebuild(from_month=from_month)["goals"]
+
+    @staticmethod
+    def _owns_transfers(goal: SavingsGoal) -> bool:
+        """Whether the goal has income of its own: an investment or a saved-into rule."""
+        return is_investment_goal(goal) or bool(goal.contribution_category)
 
     @staticmethod
     def _validate_investment_fields(fields: dict[str, Any]) -> None:

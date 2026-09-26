@@ -36,6 +36,15 @@ class AllocationPlan:
     #: ``{(goal_id, year, month): amount}`` of linked contributions each goal
     #: actually kept — incoming money past a goal's target spills to the pool.
     contributed: dict[tuple[int, int, int], float] = field(default_factory=dict)
+    #: ``{(goal_id, year, month): amount}`` each goal actually paid for out of
+    #: what it held — spending past that came out of free cash instead.
+    spent: dict[tuple[int, int, int], float] = field(default_factory=dict)
+    #: ``{(goal_id, year, month): amount}`` of free cash a rule-funded goal
+    #: took to pay a bill its own income had not yet covered.
+    fronted: dict[tuple[int, int, int], float] = field(default_factory=dict)
+    #: ``{(goal_id, year, month): amount}`` of surplus and fronted cash a
+    #: rule-funded goal handed back to free cash once its income arrived.
+    released: dict[tuple[int, int, int], float] = field(default_factory=dict)
     #: ``{goal_id: total funded}`` after the whole timeline.
     funded: dict[int, float] = field(default_factory=dict)
     #: ``{goal_id: total utilized}`` after the whole timeline.
@@ -225,6 +234,17 @@ class AllocationEngineMixin:
         # waterfall, and a deficit never reaches into them — the money is in
         # a holding, not in the bank the overspend drained.
         invests = {g.id for g in goals if is_investment_goal(g)}
+        # A cash goal with a "saved into" rule has income of its own on the
+        # way — a wedding fund waiting for the wedding gifts. Until it lands
+        # the goal borrows: it takes surplus through the waterfall like any
+        # goal, and free cash for any bill it cannot yet cover. ``bridge`` is
+        # what it borrowed. Every shekel of its own income that arrives first
+        # hands one borrowed shekel back to free cash, so once the income is
+        # in, the goal holds the income and ordinary surplus is free again.
+        rule_funded = {
+            g.id for g in goals if g.id not in invests and g.contribution_category
+        }
+        bridge = dict.fromkeys(rule_funded, 0.0)
         # An opening balance is money the goal held when it started, so it
         # leaves the pool in that month. Taking every opening balance out when
         # the *earliest* goal started drained a pool that later history still
@@ -273,6 +293,18 @@ class AllocationEngineMixin:
                     continue
                 outgoing = drawn.get(goal_id, 0.0)
                 goal = goal_by_id[goal_id]
+                # Its own income makes the borrowed surplus unnecessary only
+                # as far as it lifts the goal past its target: the goal keeps
+                # the income, hands back what it no longer needs, and goes on
+                # holding whatever still fills the gap — so it never releases
+                # surplus one month only to take it again the next.
+                excess = funded[goal_id] + amount - float(goal.target_amount or 0.0)
+                if goal_id in bridge and amount > 0 and bridge[goal_id] > 0 < excess:
+                    release = round(min(bridge[goal_id], excess), 2)
+                    bridge[goal_id] -= release
+                    funded[goal_id] -= release
+                    free_cash += release
+                    plan.released[(goal_id, year, month)] = release
                 need = max(
                     0.0,
                     float(goal.target_amount or 0.0) - funded[goal_id] - outgoing,
@@ -320,6 +352,8 @@ class AllocationEngineMixin:
                         funded[goal.id] += amount
                         pool -= max(0.0, amount)
                         free_cash -= amount
+                        if goal.id in bridge:
+                            bridge[goal.id] = max(0.0, bridge[goal.id] + amount)
                 pool = max(0.0, pool)
 
             for goal in goals:
@@ -344,6 +378,33 @@ class AllocationEngineMixin:
                 funded[goal.id] += take
                 pool -= take
                 free_cash -= take
+                if goal.id in bridge:
+                    bridge[goal.id] += take
+
+            # Spending out of a goal lands after the month's funding and never
+            # reduces its target. A goal can only pay with what it holds, so a
+            # bill past that came out of free cash. A goal with income of its
+            # own on the way fronts the gap from free cash and owes it back
+            # (it joins the bridge its income repays); any other goal simply
+            # leaves that part of the bill with free cash. Either way the pool
+            # pays, and like any overspend it reaches the goals only once the
+            # pool is empty. A refund always lands back in its goal.
+            for goal_id, amount in context["utilized"].get(key, {}).items():
+                if goal_id not in utilized:
+                    continue
+                available = funded[goal_id] - utilized[goal_id]
+                gap = round(max(0.0, amount - max(0.0, available)), 2)
+                if goal_id in bridge and gap > 0 and not frozen[goal_id]:
+                    funded[goal_id] += gap
+                    bridge[goal_id] += gap
+                    plan.fronted[(goal_id, year, month)] = gap
+                    covered = amount
+                else:
+                    covered = amount - gap
+                utilized[goal_id] += covered
+                if covered:
+                    plan.spent[(goal_id, year, month)] = covered
+                free_cash -= gap
 
             # A month that spent more than it earned has already pulled the
             # pool down. Only once the pool is empty does the overspend reach
@@ -371,6 +432,8 @@ class AllocationEngineMixin:
                     plan.computed[(goal.id, year, month)] = -give_back
                     funded[goal.id] -= give_back
                     shortfall -= give_back
+                    if goal.id in bridge:
+                        bridge[goal.id] = max(0.0, bridge[goal.id] - give_back)
                 # An overspend the goals cannot cover came out of money this
                 # model does not track (an overdraft, an untagged account).
                 # The pool is empty either way; it never goes negative.
@@ -391,19 +454,14 @@ class AllocationEngineMixin:
             # Adding zero turns the -0.0 a fully drained pool rounds to into 0.0.
             plan.free_cash[key] = round(free_cash, 2) + 0.0
 
-            # Money spent back out of a goal lands after that month's funding,
-            # and never reduces the target — it is utilization, not a refund.
-            for goal_id, amount in context["utilized"].get(key, {}).items():
-                if goal_id in utilized:
-                    utilized[goal_id] += amount
-
             for goal in goals:
                 if frozen[goal.id] or goal.id in invests:
                     continue
                 target = float(goal.target_amount or 0.0)
                 total = funded[goal.id]
                 achieved = target > 0 and total >= target - ROUNDING_EPSILON
-                if achieved and (total - utilized[goal.id]) <= 0:
+                owes = bridge.get(goal.id, 0.0) > ROUNDING_EPSILON
+                if achieved and not owes and (total - utilized[goal.id]) <= 0:
                     frozen[goal.id] = True
                     plan.closed_month[goal.id] = month_str(key)
 

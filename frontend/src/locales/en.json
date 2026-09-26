@@ -324,7 +324,7 @@
       "capPlaceholder": "No limit",
       "capHint": "Most this goal can take in one month",
       "startMonthLabel": "Start from",
-      "startMonthHint": "First month this goal receives surplus",
+      "startMonthHint": "The goal counts from the start of this month",
       "dateLabel": "Target date (optional)",
       "achieved": "Achieved 🎉",
       "closed": "Closed",

@@ -1439,3 +1439,102 @@ class TestInvestmentGoals:
 
         service.delete(goal["id"])
         assert service.get_all()[0]["clawed_back"] == 2000
+
+
+class TestRuleFundedGoals:
+    """A goal with its own income on the way borrows until the income lands."""
+
+    def _wedding(self, service, start, target=10000, **overrides):
+        """Create a goal saved into by Other Income / Wedding, spent from Wedding."""
+        created = service.create(
+            name="Wedding",
+            target_amount=target,
+            priority=0,
+            start_month=start,
+            contribution_category="Other Income",
+            contribution_tags="Wedding",
+            utilization_category="Wedding",
+            **overrides,
+        )
+        return next(g for g in created if g["name"] == "Wedding")
+
+    def test_it_takes_surplus_before_its_income_and_hands_it_back_after(
+        self, db_session, service
+    ):
+        """Gifts that cover the target release the surplus the goal borrowed."""
+        before, gifts = _month_str(2), _month_str(1)
+        _seed_surplus(db_session, before, income=10000, expenses=6000)
+        _seed_surplus(db_session, gifts, income=10000, expenses=10000)
+        _add_txn(db_session, gifts, 12000, "Other Income", tag="Wedding", day=6)
+
+        self._wedding(service, before)
+
+        goal = service.get_all()[0]
+        # 4000 of surplus while waiting, then 12000 of gifts: 16000 is 6000
+        # past the 10000 target, so all 4000 borrowed goes back.
+        assert goal["allocated"] == 4000
+        assert goal["contributed"] == 10000
+        assert goal["released"] == 4000
+        assert goal["funded"] == 10000
+        pool = service.get_free_cash()
+        assert pool["free_cash"] == 6000  # the 4000 released + 2000 gifts spilled
+        assert pool["liquid"] == 16000
+
+    def test_it_keeps_the_surplus_that_still_fills_the_gap(self, db_session, service):
+        """Income short of the target releases nothing it still needs."""
+        before, gifts = _month_str(2), _month_str(1)
+        _seed_surplus(db_session, before, income=10000, expenses=6000)
+        _seed_surplus(db_session, gifts, income=10000, expenses=10000)
+        _add_txn(db_session, gifts, 3000, "Other Income", tag="Wedding", day=6)
+
+        self._wedding(service, before)
+
+        goal = service.get_all()[0]
+        assert goal["released"] == 0
+        assert goal["funded"] == 7000
+
+    def test_a_bill_before_the_income_is_fronted_from_free_cash_and_repaid(
+        self, db_session, service
+    ):
+        """Spending the goal cannot yet cover is borrowed and repaid by the gifts."""
+        bill, gifts = _month_str(2), _month_str(1)
+        _seed_free_cash(db_session, 20000)
+        _seed_surplus(db_session, bill, income=5000, expenses=5000)
+        _add_txn(db_session, bill, -8000, "Wedding", tag="Venue", day=9)
+        _seed_surplus(db_session, gifts, income=5000, expenses=5000)
+        _add_txn(db_session, gifts, 15000, "Other Income", tag="Wedding", day=6)
+
+        self._wedding(service, bill)
+
+        goal = service.get_all()[0]
+        assert goal["fronted"] == 8000
+        assert goal["utilized"] == 8000
+        assert goal["contributed"] == 10000
+        assert goal["released"] == 8000
+        # It holds the gifts it kept less the bill: 10000 - 8000.
+        assert goal["available"] == 2000
+        pool = service.get_free_cash()
+        # 20000 opening - 8000 fronted + 8000 repaid + 5000 of gifts spilled.
+        assert pool["free_cash"] == 25000
+        assert pool["liquid"] == 27000
+
+    def test_a_goal_without_income_of_its_own_never_fronts(self, db_session, service):
+        """A plain goal pays only with what it holds; the rest stays with free cash."""
+        bill = _month_str(1)
+        _seed_free_cash(db_session, 20000)
+        _seed_surplus(db_session, bill, income=5000, expenses=5000)
+        _add_txn(db_session, bill, -8000, "Wedding", tag="Venue", day=9)
+
+        created = service.create(
+            name="Plain",
+            target_amount=10000,
+            priority=0,
+            start_month=bill,
+            utilization_category="Wedding",
+        )
+        goal = next(g for g in created if g["name"] == "Plain")
+
+        assert goal["fronted"] == 0
+        assert goal["utilized"] == 0
+        assert goal["available"] == 0
+        assert service.get_free_cash()["free_cash"] == 12000

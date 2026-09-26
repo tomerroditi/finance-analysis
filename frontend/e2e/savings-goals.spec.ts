@@ -503,6 +503,8 @@ test.describe("Savings goals", () => {
     await page.getByRole("button", { name: /add goal/i }).click();
     const dialog = page.getByRole("dialog");
     await expect(dialog.getByLabel("Monthly cap")).toBeVisible();
+    // The start is picked on the same calendar as the target date.
+    await expect(dialog.getByLabel("Start from")).toHaveAttribute("type", "date");
     await dialog.getByRole("radio", { name: /invest/i }).click();
     await expect(dialog.getByLabel("Monthly cap")).toHaveCount(0);
     await expect(dialog.getByLabel("Already saved")).toHaveCount(0);

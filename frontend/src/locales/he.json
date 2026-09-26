@@ -324,7 +324,7 @@
       "capPlaceholder": "ללא הגבלה",
       "capHint": "הסכום המרבי שהיעד יקבל בחודש אחד",
       "startMonthLabel": "התחלה מחודש",
-      "startMonthHint": "החודש הראשון שבו היעד מקבל עודף",
+      "startMonthHint": "היעד נספר מתחילת החודש הזה",
       "dateLabel": "תאריך יעד (אופציונלי)",
       "achieved": "הושג 🎉",
       "closed": "נסגר",

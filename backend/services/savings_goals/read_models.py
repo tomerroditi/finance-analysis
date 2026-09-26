@@ -94,13 +94,15 @@ class ReadModelsMixin:
         )
 
         direct = self._kept_contributions().get((year, month), {})
+        moves = self._bridge_moves().get((year, month), {})
         surplus = self._last_plan.surplus.get((year, month), 0.0)
 
         rows = []
         for goal in self._goals_in_order():
             allocated = float(by_goal.get(goal.id, 0.0))
             contributed = float(direct.get(goal.id, 0.0))
-            if allocated == 0 and contributed == 0:
+            bridged = float(moves.get(goal.id, 0.0))
+            if allocated == 0 and contributed == 0 and bridged == 0:
                 continue
             rows.append(
                 {
@@ -110,7 +112,8 @@ class ReadModelsMixin:
                     "status": goal.status,
                     "allocated": round(allocated, 2),
                     "contributed": round(contributed, 2),
-                    "total": round(allocated + contributed, 2),
+                    "bridged": round(bridged, 2),
+                    "total": round(allocated + contributed + bridged, 2),
                 }
             )
 
@@ -284,6 +287,7 @@ class ReadModelsMixin:
         self.ensure_allocations()
         plan = self._last_plan
         kept = self._kept_contributions()
+        bridge_moves = self._bridge_moves()
 
         ledger: dict[tuple[int, int], dict[int, float]] = {}
         for (goal_id, year, month), amount in self._stored_allocations().items():
@@ -296,11 +300,13 @@ class ReadModelsMixin:
         for key in iter_months(first, current):
             per_goal = ledger.get(key, {})
             direct = kept.get(key, {})
+            moves = bridge_moves.get(key, {})
             goal_rows = []
             for goal in goals:
                 allocated = float(per_goal.get(goal.id, 0.0))
                 contributed = float(direct.get(goal.id, 0.0))
-                if allocated == 0 and contributed == 0:
+                bridged = float(moves.get(goal.id, 0.0))
+                if allocated == 0 and contributed == 0 and bridged == 0:
                     continue
                 goal_rows.append(
                     {
@@ -308,7 +314,8 @@ class ReadModelsMixin:
                         "name": goal.name,
                         "allocated": round(allocated, 2),
                         "contributed": round(contributed, 2),
-                        "total": round(allocated + contributed, 2),
+                        "bridged": round(bridged, 2),
+                        "total": round(allocated + contributed + bridged, 2),
                     }
                 )
             # Funding and clawback are reported apart rather than netted: a
@@ -384,12 +391,15 @@ class ReadModelsMixin:
                     }
                 )
 
-        context = self._build_context()
         contributed: dict[int, float] = {}
         utilized: dict[int, float] = {}
+        fronted: dict[int, float] = {}
+        released: dict[int, float] = {}
         for bucket, sink in (
             (self._kept_contributions(), contributed),
-            (context["utilized"], utilized),
+            (self._goal_spending(), utilized),
+            (self._per_month(self._last_plan.fronted), fronted),
+            (self._per_month(self._last_plan.released), released),
         ):
             for per_goal in bucket.values():
                 for goal_id, amount in per_goal.items():
@@ -424,9 +434,51 @@ class ReadModelsMixin:
                 history,
                 provisional,
                 reclaimed,
+                fronted,
+                released,
             )
             for goal in goals
         ]
+
+    def _goal_spending(self) -> dict[tuple[int, int], dict[int, float]]:
+        """Return what each goal paid for, as ``{(year, month): {goal_id: amount}}``.
+
+        A goal pays only with what it holds, so this is the simulation's
+        figure, not the raw linked spending: the part a goal could not cover
+        came out of free cash.
+        """
+        if self._last_plan is None:
+            self.ensure_allocations()
+        return self._per_month(self._last_plan.spent)
+
+    def _bridge_moves(self) -> dict[tuple[int, int], dict[int, float]]:
+        """Return each month's fronted-minus-released cash per rule-funded goal.
+
+        Free cash a goal fronted for a bill raises what it holds; surplus it
+        hands back once its own income lands lowers it. Neither is a ledger
+        row, so every view that nets a goal's month adds this in.
+        """
+        if self._last_plan is None:
+            self.ensure_allocations()
+        moves: dict[tuple[int, int], dict[int, float]] = {}
+        for source, sign in (
+            (self._last_plan.fronted, 1),
+            (self._last_plan.released, -1),
+        ):
+            for (goal_id, year, month), amount in source.items():
+                per_goal = moves.setdefault((year, month), {})
+                per_goal[goal_id] = per_goal.get(goal_id, 0.0) + sign * amount
+        return moves
+
+    @staticmethod
+    def _per_month(
+        amounts: dict[tuple[int, int, int], float],
+    ) -> dict[tuple[int, int], dict[int, float]]:
+        """Regroup ``{(goal_id, year, month): amount}`` by month."""
+        grouped: dict[tuple[int, int], dict[int, float]] = {}
+        for (goal_id, year, month), amount in amounts.items():
+            grouped.setdefault((year, month), {})[goal_id] = amount
+        return grouped
 
     def _kept_contributions(self) -> dict[tuple[int, int], dict[int, float]]:
         """Return the contributions each goal kept, as ``{(year, month): {goal_id: amount}}``.
@@ -452,6 +504,8 @@ class ReadModelsMixin:
         history: dict[int, list[dict[str, Any]]],
         provisional: dict[int, float],
         reclaimed: dict[int, float],
+        fronted: dict[int, float],
+        released: dict[int, float],
     ) -> dict[str, Any]:
         """Assemble one goal's derived progress metrics."""
         target = float(goal.target_amount or 0.0)
@@ -460,7 +514,11 @@ class ReadModelsMixin:
         contributions = float(contributed.get(goal.id, 0.0))
         spent = float(utilized.get(goal.id, 0.0))
 
-        funded = opening + allocated + contributions
+        lent = float(fronted.get(goal.id, 0.0))
+        repaid = float(released.get(goal.id, 0.0))
+        # Free cash a rule-funded goal fronted is money it held for a while;
+        # what its own income later released went back to free cash.
+        funded = opening + allocated + contributions + lent - repaid
         available = funded - spent
         remaining = max(0.0, target - funded)
         progress_pct = round(
@@ -510,6 +568,8 @@ class ReadModelsMixin:
             "allocated": round(allocated, 2),
             "contributed": round(contributions, 2),
             "utilized": round(spent, 2),
+            "fronted": round(lent, 2),
+            "released": round(repaid, 2),
             "clawed_back": round(float(reclaimed.get(goal.id, 0.0)), 2),
             "funded": round(funded, 2),
             "available": round(available, 2),

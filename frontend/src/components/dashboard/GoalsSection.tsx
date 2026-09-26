@@ -40,7 +40,7 @@ import { useQueryKeys } from "../../hooks/useQueryKeys";
 import { useScrollCap } from "../../hooks/useScrollCap";
 import { GoalAutoLinkField } from "./GoalAutoLinkField";
 import { joinRuleTags, splitRuleTags } from "../../utils/goalRuleTags";
-import { stackEnds, roundedStackShape } from "../charts/stackedBarShape";
+import { stackAxis, stackEnds, roundedStackShape } from "../charts/stackedBarShape";
 import { qkPrefix } from "../../services/queryKeys";
 import { useConfirm, useNotify } from "../../context/DialogContext";
 import { Modal } from "../common/Modal";
@@ -496,6 +496,7 @@ function AllocationHistory() {
   // visible stack, and so does the zero line.
   const visible = keys.filter((key) => !hidden.has(key));
   const ends = stackEnds(rows, visible, "month");
+  const yAxis = stackAxis(rows, visible);
   // A segment under the line is money a deficit month took back out of a goal.
   const hasDeficit = rows.some((row) =>
     visible.some((key) => typeof row[key] === "number" && (row[key] as number) < 0),
@@ -654,7 +655,9 @@ function AllocationHistory() {
                       <YAxis
                         {...AXIS_DEFAULTS}
                         tickFormatter={formatAxisNumber}
-                        tickCount={4}
+                        domain={yAxis.domain}
+                        ticks={yAxis.ticks}
+                        allowDataOverflow
                         width={44}
                       />
                       {/* Only drawn when a deficit actually pulled a bar under the
@@ -1142,8 +1145,12 @@ function GoalEditorModal({ goal, onClose }: { goal: SavingsGoal | null; onClose:
             <label className={label} htmlFor="goal-start">{t("dashboard.goals.startMonthLabel")}</label>
             <input
               id="goal-start"
-              type="month" value={startMonth ?? ""}
-              onChange={(e) => setStartMonth(e.target.value)}
+              // The same calendar as the target date. Goals count whole
+              // months, so whichever day is picked, the goal starts with the
+              // month it falls in — shown back as that month's first day.
+              type="date"
+              value={startMonth ? `${startMonth.slice(0, 7)}-01` : ""}
+              onChange={(e) => setStartMonth(e.target.value.slice(0, 7))}
               className={field}
               dir="ltr"
             />
