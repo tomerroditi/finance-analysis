@@ -175,9 +175,8 @@ sits in net worth — so the rules follow from that:
   cannot reach into the holding. The clawback cap stays `funded_cash -
   utilized`, which is why the two are tracked apart in `_simulate`.
 - **It is present tense, not a dated event.** Today's backing steers only the
-  months a pass computes; history on record keeps its rows, exactly as it does
-  when a priority changes. A `rebuild` restates the past under today's
-  backing — the same caveat rebuild already carries.
+  months a pass computes; history on record keeps its rows. A `rebuild` —
+  which every reorder runs — restates the past under today's backing.
 
 ### Sharing one holding
 
@@ -304,8 +303,23 @@ Allocations persist per `(goal, month)` in `savings_goal_allocations`.
 - A month already on record keeps its amounts. A goal added later may still
   draw on what that month left *unallocated* — that is additive backfill, and
   it never takes from a goal already funded there.
-- Changing priorities applies **forward only**. Restating the past is an
-  explicit `rebuild`, and the UI previews it with `dry_run=True` first.
+- **Reordering is the exception: it restates everything.** `reorder` sets the
+  priorities and runs a full `rebuild` in the same call. It used to apply
+  forward only, with a separate previewed "Redistribute" to restate history
+  — which left the list saying one order while every past month was still
+  allocated under the old one, until the user found the button. Closed goals
+  keep their frozen rows, as in any rebuild. The editor's opening-balance
+  change and the free-cash claim still call `rebuild` directly;
+  `dry_run=True` stays on the endpoint, but no screen previews any more.
+- **The card answers the click before the server does.** The reorder
+  mutation patches the list's order in `onMutate`, and its figures pulse
+  with a "Recalculating…" status until the rebuilt ledger arrives. Reorders
+  share one mutation `scope`, so rapid clicks reach the server one at a
+  time, and only the last one in the queue writes its answer. The list query
+  is **disabled while any reorder is pending**: a refetch in between (an
+  earlier reorder's invalidation, or the app-wide sweep) returns an order
+  the user has already moved past and snaps the rows back. A disabled query
+  keeps its data and ignores invalidation, then refetches once re-enabled.
 
 ### Closed goals are frozen
 
@@ -324,7 +338,7 @@ not closed.
 
 - **Dashboard** (`GoalsSection.tsx`) — the waterfall in priority order, with
   reorder arrows, `this_month_allocation`, `utilized`/`available`,
-  `investment_backed`, the redistribute preview, and the
+  `investment_backed`, and the
   free-cash pool on a dashed row below the goals (`GET
   /savings-goals/free-cash`, its own query key). The waterfall **scrolls in
   place** past about 26rem of rows, so a household with a dozen goals does not
@@ -403,7 +417,3 @@ so the many users who keep no goals pay nothing for the section.
   *adds* columns. A retired `NOT NULL` column left behind breaks every ORM
   insert into that table, so `RETIRED_COLUMNS` drops it — that is why
   `savings_goals.current_amount` is listed there.
-- The redistribute preview is a POST that changes nothing. Keep it a
-  **mutation**, not a query: as a query its key sits under the `savings-goals`
-  prefix, so every goal mutation re-triggers it, and the IndexedDB persister
-  would cache a read-only POST (see `frontend_pwa.md`).

@@ -229,6 +229,31 @@ test.describe("Paying for a budget out of a savings goal", () => {
     await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
 
     await expect.poll(() => body.evaluate((el) => el.scrollTop)).toBeGreaterThan(0);
+
+    // --- tag picker near the bottom of the dialog ------------------------
+    // The tag panel is fixed to the viewport. Opened from the last field of a
+    // scrolled dialog it used to drop straight down and run off the screen;
+    // it must open toward the room it has and stay inside the viewport.
+    const categories: Record<string, string[]> = await (
+      await page.request.get(`${API_BASE}/tagging/categories`, {
+        headers: DEMO_HEADERS,
+      })
+    ).json();
+    const tagged = Object.entries(categories).find(([, tags]) => tags.length > 3);
+    expect(tagged, "expected a category with several tags").toBeTruthy();
+    const save = page.getByTestId("goal-auto-link-save");
+    await body.evaluate((el) => el.scrollTo(0, el.scrollHeight));
+    await save.getByRole("button").first().click();
+    await page.getByRole("option", { name: tagged![0], exact: true }).click();
+    await body.evaluate((el) => el.scrollTo(0, el.scrollHeight));
+    await save.getByRole("button").nth(1).click();
+
+    const panel = page.getByTestId("multiselect-panel");
+    await expect(panel).toBeVisible();
+    const panelBox = (await panel.boundingBox())!;
+    expect(panelBox.y).toBeGreaterThanOrEqual(0);
+    expect(panelBox.y + panelBox.height).toBeLessThanOrEqual(700);
+    await expect(panel.getByRole("option").first()).toBeInViewport();
     await context.close();
   });
 });

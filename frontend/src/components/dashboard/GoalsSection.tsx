@@ -1,5 +1,10 @@
-import { useEffect, useState } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useState } from "react";
+import {
+  useQuery,
+  useMutation,
+  useQueryClient,
+  useIsMutating,
+} from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import {
   Target,
@@ -9,9 +14,8 @@ import {
   Check,
   ChevronUp,
   ChevronDown,
-  History,
+  Loader2,
   Lock,
-  RotateCcw,
   Wallet,
   Landmark,
   X,
@@ -30,7 +34,6 @@ import {
   savingsGoalsApi,
   type SavingsGoal,
   type SavingsGoalInput,
-  type SavingsGoalRebuildChange,
   type SavingsGoalFreeCash,
   type SavingsGoalInvestment,
 } from "../../services/api";
@@ -77,6 +80,16 @@ const LIST_CAP_PX = 416;
 /** A goal row, roughly — the least overflow worth capping for (see the hook). */
 const LIST_CAP_SLACK_PX = 120;
 
+/**
+ * Every reorder shares this key and scope. The scope makes the server calls
+ * run one after another, so rapid clicks cannot land out of order; the key
+ * lets the card ask whether any reorder is still in flight.
+ */
+const REORDER_KEY = ["savings-goals", "reorder"] as const;
+
+/** Figures awaiting the rebuilt ledger pulse faintly rather than vanish. */
+const RECALCULATING_CLASS = "animate-pulse opacity-50 transition-opacity";
+
 
 /**
  * Dashboard savings-goals panel.
@@ -84,8 +97,9 @@ const LIST_CAP_SLACK_PX = 120;
  * Goals fill themselves from each month's surplus in priority order, so the
  * list is a waterfall: the top goal is funded first and spills what it cannot
  * take (its target, or its monthly cap) down to the next one. Reordering
- * applies to future months only — restating history is the explicit
- * "redistribute" action, which previews the diff before committing.
+ * restates the whole history under the new order: the rows move the moment
+ * an arrow is clicked, and their figures show as recalculating until the
+ * server's rebuilt ledger arrives.
  *
  * Below the waterfall sits the free-cash pool: the tracked money no goal has
  * earmarked. It is the buffer a month of overspending drains first, and only
@@ -103,7 +117,8 @@ export function GoalsSection() {
   const notify = useNotify();
   const [editing, setEditing] = useState<SavingsGoal | "new" | null>(null);
   const [backing, setBacking] = useState<SavingsGoal | null>(null);
-  const [redistributing, setRedistributing] = useState(false);
+
+  const recalculating = useIsMutating({ mutationKey: REORDER_KEY }) > 0;
 
   const { data, isLoading } = useQuery({
     queryKey: qk.savingsGoals.all(),
@@ -111,6 +126,12 @@ export function GoalsSection() {
       const res = await savingsGoalsApi.getAll();
       return res.data;
     },
+    // Held while reorders are queued. A refetch in between — an earlier
+    // reorder's invalidation, or the app-wide sweep after it — answers with
+    // an order the user has already moved past and snaps the rows back. A
+    // disabled query keeps its data and ignores invalidation, then refetches
+    // once when the last reorder has landed.
+    enabled: !recalculating,
   });
 
   const { data: pool } = useQuery({
@@ -130,8 +151,42 @@ export function GoalsSection() {
   });
 
   const reorderMutation = useMutation({
+    mutationKey: REORDER_KEY,
+    scope: { id: REORDER_KEY.join(":") },
     mutationFn: (goalIds: number[]) => savingsGoalsApi.reorder(goalIds),
-    onSuccess: invalidate,
+    // Runs at click time even while an earlier reorder is still queued, so
+    // the rows move immediately and each click builds on the last one.
+    onMutate: async (goalIds: number[]) => {
+      const key = qk.savingsGoals.all();
+      await queryClient.cancelQueries({ queryKey: key });
+      const previous = queryClient.getQueryData<SavingsGoal[]>(key);
+      if (previous) {
+        const byId = new Map(previous.map((g) => [g.id, g]));
+        queryClient.setQueryData<SavingsGoal[]>(
+          key,
+          goalIds.flatMap((id, priority) => {
+            const goal = byId.get(id);
+            return goal ? [{ ...goal, priority }] : [];
+          }),
+        );
+      }
+      return { previous };
+    },
+    // Only the last reorder in the queue may write: an earlier one's answer
+    // is for an order the user has already moved past.
+    onSuccess: (res) => {
+      if (queryClient.isMutating({ mutationKey: REORDER_KEY }) <= 1) {
+        queryClient.setQueryData(qk.savingsGoals.all(), res.data);
+      }
+    },
+    onError: (_err, _ids, context) => {
+      if (context?.previous && queryClient.isMutating({ mutationKey: REORDER_KEY }) <= 1) {
+        queryClient.setQueryData(qk.savingsGoals.all(), context.previous);
+      }
+    },
+    // Awaited, so "recalculating" lasts until the free-cash pool and the
+    // history have caught up with the rebuilt ledger too.
+    onSettled: () => invalidate(),
   });
 
   const claimMutation = useMutation({
@@ -214,15 +269,14 @@ export function GoalsSection() {
           <p className="text-sm md:text-base font-bold">{t("dashboard.goals.title")}</p>
         </div>
         <div className="flex items-center gap-3">
-          {goals.length > 1 && (
-            <button
-              onClick={() => setRedistributing(true)}
-              className="flex items-center gap-1 text-xs md:text-sm font-medium text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
-              title={t("dashboard.goals.redistributeHint")}
+          {recalculating && (
+            <span
+              role="status"
+              className="flex items-center gap-1 text-xs md:text-sm text-[var(--text-muted)]"
             >
-              <History size={14} />
-              {t("dashboard.goals.redistribute")}
-            </button>
+              <Loader2 size={14} className="animate-spin" />
+              {t("dashboard.goals.recalculating")}
+            </span>
           )}
           <button
             onClick={() => setEditing("new")}
@@ -260,6 +314,7 @@ export function GoalsSection() {
               key={goal.id}
               goal={goal}
               rank={index + 1}
+              recalculating={recalculating}
               canMoveUp={index > 0}
               canMoveDown={index < goals.length - 1}
               onMoveUp={() => move(index, -1)}
@@ -281,7 +336,7 @@ export function GoalsSection() {
         </div>
       )}
 
-      {!!pool?.has_goals && <FreeCashRow pool={pool} />}
+      {!!pool?.has_goals && <FreeCashRow pool={pool} recalculating={recalculating} />}
 
       {goals.length > 0 && <AllocationHistory />}
 
@@ -295,10 +350,6 @@ export function GoalsSection() {
       {backing !== null && (
         <InvestmentBackingModal goal={backing} onClose={() => setBacking(null)} />
       )}
-
-      {redistributing && (
-        <RedistributeModal onClose={() => setRedistributing(false)} />
-      )}
     </div>
   );
 }
@@ -310,7 +361,13 @@ export function GoalsSection() {
  * purpose. It exists so a deficit month has somewhere to land before the
  * engine starts taking money back out of the goals themselves.
  */
-function FreeCashRow({ pool }: { pool: SavingsGoalFreeCash }) {
+function FreeCashRow({
+  pool,
+  recalculating,
+}: {
+  pool: SavingsGoalFreeCash;
+  recalculating: boolean;
+}) {
   const { t } = useTranslation();
 
   return (
@@ -332,7 +389,10 @@ function FreeCashRow({ pool }: { pool: SavingsGoalFreeCash }) {
             </p>
           </div>
         </div>
-        <span className="text-sm md:text-base font-bold shrink-0" dir="ltr">
+        <span
+          className={`text-sm md:text-base font-bold shrink-0 ${recalculating ? RECALCULATING_CLASS : ""}`}
+          dir="ltr"
+        >
           {formatCurrency(pool.free_cash)}
         </span>
       </div>
@@ -690,6 +750,7 @@ function monthDate(month: string): Date {
 function GoalRow({
   goal,
   rank,
+  recalculating,
   canMoveUp,
   canMoveDown,
   onMoveUp,
@@ -701,6 +762,7 @@ function GoalRow({
 }: {
   goal: SavingsGoal;
   rank: number;
+  recalculating: boolean;
   canMoveUp: boolean;
   canMoveDown: boolean;
   onMoveUp: () => void;
@@ -785,52 +847,58 @@ function GoalRow({
           </button>
         </div>
       </div>
-      <div className="flex items-baseline justify-between gap-2 mb-1.5">
-        <span dir="ltr" className="text-sm md:text-base font-bold tabular-nums">
-          {formatCurrency(goal.funded)}
-          <span className="text-[var(--text-muted)] text-xs md:text-sm font-normal">
-            {" / "}
-            {formatCurrency(goal.target_amount)}
+      <div
+        className={recalculating ? RECALCULATING_CLASS : undefined}
+        aria-busy={recalculating || undefined}
+        data-testid="goal-figures"
+      >
+        <div className="flex items-baseline justify-between gap-2 mb-1.5">
+          <span dir="ltr" className="text-sm md:text-base font-bold tabular-nums">
+            {formatCurrency(goal.funded)}
+            <span className="text-[var(--text-muted)] text-xs md:text-sm font-normal">
+              {" / "}
+              {formatCurrency(goal.target_amount)}
+            </span>
           </span>
-        </span>
-        <span dir="ltr" className="text-[10px] md:text-xs text-[var(--text-muted)] tabular-nums shrink-0">
-          {goal.progress_pct}%
-        </span>
-      </div>
-      <div className="w-full bg-[var(--surface-light)] rounded-full h-2 overflow-hidden">
-        <div className={`h-2 rounded-full bg-gradient-to-r ${barColor} transition-all duration-500`} style={{ width: `${goal.progress_pct}%` }} />
-      </div>
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1.5 text-[10px] md:text-xs text-[var(--text-muted)]">
-        <GoalStatusLine goal={goal} />
-      </div>
-      {(goal.this_month_allocation > 0 ||
-        goal.utilized > 0 ||
-        goal.investment_backed > 0) && (
-        <div className="flex flex-wrap gap-x-3 gap-y-1 mt-1.5 text-[10px] md:text-xs text-[var(--text-muted)]">
-          {goal.this_month_allocation > 0 && (
-            <span>
-              {t("dashboard.goals.thisMonth", {
-                amount: formatCurrency(goal.this_month_allocation),
-              })}
-            </span>
-          )}
-          {goal.utilized > 0 && (
-            <span>
-              {t("dashboard.goals.utilized", {
-                spent: formatCurrency(goal.utilized),
-                available: formatCurrency(goal.available),
-              })}
-            </span>
-          )}
-          {goal.investment_backed > 0 && (
-            <span className="text-[var(--primary)]">
-              {t("dashboard.goals.investmentBacked", {
-                amount: formatCurrency(goal.investment_backed),
-              })}
-            </span>
-          )}
+          <span dir="ltr" className="text-[10px] md:text-xs text-[var(--text-muted)] tabular-nums shrink-0">
+            {goal.progress_pct}%
+          </span>
         </div>
-      )}
+        <div className="w-full bg-[var(--surface-light)] rounded-full h-2 overflow-hidden">
+          <div className={`h-2 rounded-full bg-gradient-to-r ${barColor} transition-all duration-500`} style={{ width: `${goal.progress_pct}%` }} />
+        </div>
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1.5 text-[10px] md:text-xs text-[var(--text-muted)]">
+          <GoalStatusLine goal={goal} />
+        </div>
+        {(goal.this_month_allocation > 0 ||
+          goal.utilized > 0 ||
+          goal.investment_backed > 0) && (
+          <div className="flex flex-wrap gap-x-3 gap-y-1 mt-1.5 text-[10px] md:text-xs text-[var(--text-muted)]">
+            {goal.this_month_allocation > 0 && (
+              <span>
+                {t("dashboard.goals.thisMonth", {
+                  amount: formatCurrency(goal.this_month_allocation),
+                })}
+              </span>
+            )}
+            {goal.utilized > 0 && (
+              <span>
+                {t("dashboard.goals.utilized", {
+                  spent: formatCurrency(goal.utilized),
+                  available: formatCurrency(goal.available),
+                })}
+              </span>
+            )}
+            {goal.investment_backed > 0 && (
+              <span className="text-[var(--primary)]">
+                {t("dashboard.goals.investmentBacked", {
+                  amount: formatCurrency(goal.investment_backed),
+                })}
+              </span>
+            )}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -856,102 +924,6 @@ function GoalStatusLine({ goal }: { goal: SavingsGoal }) {
     );
   }
   return <span>{t("dashboard.goals.remaining", { amount: formatCurrency(goal.remaining) })}</span>;
-}
-
-/**
- * Preview-then-commit for restating allocation history.
- *
- * A dry run is fetched first so the user sees exactly which goal gains and
- * which loses before anything is written. Closed goals never appear — their
- * allocations are frozen and cannot be reclaimed.
- */
-function RedistributeModal({ onClose }: { onClose: () => void }) {
-  const { t } = useTranslation();
-  const queryClient = useQueryClient();
-  const [changes, setChanges] = useState<SavingsGoalRebuildChange[] | null>(null);
-
-  // The preview is a POST that changes nothing, but it must NOT be a query:
-  // its key would sit under the `savings-goals` prefix, so every goal mutation
-  // would re-trigger it (three round-trips per modal open, measured), and the
-  // IndexedDB persister would cache a read-only POST — the exact anti-pattern
-  // `.claude/rules/frontend_pwa.md` warns about. As a mutation it runs once,
-  // on open, and leaves no cache entry to invalidate or exclude.
-  const preview = useMutation({
-    mutationFn: () => savingsGoalsApi.rebuild(null, true),
-    onSuccess: (res) => setChanges(res.data.changes),
-  });
-  const { mutate: loadPreview } = preview;
-
-  useEffect(() => {
-    loadPreview();
-  }, [loadPreview]);
-
-  const commit = useMutation({
-    mutationFn: () => savingsGoalsApi.rebuild(null, false),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: qkPrefix.savingsGoals });
-      onClose();
-    },
-  });
-
-  const moved = (changes ?? []).filter((c) => c.delta !== 0);
-
-  return (
-    <Modal
-      isOpen
-      onClose={onClose}
-      title={t("dashboard.goals.redistributeTitle")}
-      titleIcon={<RotateCcw size={18} />}
-      maxWidth="md"
-    >
-      <div className="space-y-4 p-4 md:p-6">
-        <p className="text-xs text-[var(--text-muted)]">
-          {t("dashboard.goals.redistributeExplainer")}
-        </p>
-
-        {preview.isPending ? (
-          <Skeleton variant="card" className="h-24" />
-        ) : moved.length === 0 ? (
-          <p className="text-sm text-[var(--text-muted)] py-4 text-center">
-            {t("dashboard.goals.redistributeNoChange")}
-          </p>
-        ) : (
-          <div className="space-y-2">
-            {moved.map((change) => (
-              <div
-                key={change.goal_id}
-                className="flex items-center justify-between gap-2 text-sm border border-[var(--surface-light)] rounded-lg px-3 py-2"
-              >
-                <span className="truncate" dir="auto">{change.name}</span>
-                <span dir="ltr" className="tabular-nums shrink-0">
-                  <span className="text-[var(--text-muted)]">{formatCurrency(change.before)}</span>
-                  {" → "}
-                  <span className="font-semibold">{formatCurrency(change.after)}</span>
-                  <span className={change.delta > 0 ? "text-emerald-400 ms-2" : "text-rose-400 ms-2"}>
-                    {change.delta > 0 ? "+" : ""}
-                    {formatCurrency(change.delta)}
-                  </span>
-                </span>
-              </div>
-            ))}
-          </div>
-        )}
-
-        <div className="flex justify-end gap-2 pt-2">
-          <button onClick={onClose} className="px-4 py-2 rounded-lg text-sm font-medium text-[var(--text-muted)] hover:bg-[var(--surface-light)] transition-colors">
-            {t("common.cancel")}
-          </button>
-          <button
-            onClick={() => commit.mutate()}
-            disabled={moved.length === 0 || commit.isPending}
-            className="px-4 py-2 rounded-lg text-sm font-bold bg-[var(--primary)] text-white disabled:opacity-50 hover:opacity-90 transition-opacity"
-          >
-            {t("dashboard.goals.redistributeConfirm")}
-          </button>
-        </div>
-      </div>
-    </Modal>
-  );
 }
 
 /**

@@ -96,11 +96,13 @@ class GoalCrudMixin:
         self.repo.delete(goal_id)
 
     def reorder(self, ordered_ids: list[int]) -> list[dict[str, Any]]:
-        """Set the waterfall order; the first id is funded first.
+        """Set the waterfall order and restate history under it.
 
-        New priorities take effect from the next allocation run forward.
-        Already-written months keep their amounts until an explicit
-        :meth:`rebuild` restates them.
+        The first id is funded first. The whole ledger is rebuilt in the same
+        call: an order that only applied forward left every past month
+        allocated under the old one, so the list and its numbers disagreed
+        until the user found a separate "redistribute" action. Closed goals
+        keep their frozen allocations, as they do in any rebuild.
 
         Parameters
         ----------
@@ -123,7 +125,7 @@ class GoalCrudMixin:
         if unknown:
             raise EntityNotFoundException(f"Unknown savings goal ids: {unknown}")
         self.repo.set_priorities(ordered_ids)
-        return self._after_write()
+        return self.rebuild()["goals"]
 
     def close(self, goal_id: int) -> list[dict[str, Any]]:
         """Close a goal by hand, freezing its allocation history.

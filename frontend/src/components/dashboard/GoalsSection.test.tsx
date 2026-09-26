@@ -269,71 +269,104 @@ describe("GoalsSection", () => {
     });
   });
 
-  describe("redistribute history", () => {
-    /** Open the redistribute modal over a two-goal list. */
-    async function openRedistribute(changes: unknown[]) {
-      const rebuild = vi.spyOn(savingsGoalsApi, "rebuild").mockResolvedValue({
-        data: { from_month: null, dry_run: true, changes, goals: [] },
-      } as never);
-
-      await renderGoals([
-        makeGoal({ id: 1, name: "First" }),
-        makeGoal({ id: 2, name: "Second" }),
-      ]);
-      fireEvent.click(screen.getByRole("button", { name: /redistribute/i }));
-      return rebuild;
+  describe("reordering", () => {
+    /** A promise the test settles by hand, standing in for a slow rebuild. */
+    function deferred<T>() {
+      let resolve!: (value: T) => void;
+      const promise = new Promise<T>((r) => {
+        resolve = r;
+      });
+      return { promise, resolve };
     }
 
-    it("previews with a dry run and does not commit on open", async () => {
-      // Opening the modal must never write. The dry-run flag is the only thing
-      // standing between "show me the diff" and silently restating history.
-      const rebuild = await openRedistribute([
-        { goal_id: 1, name: "First", before: 500, after: 0, delta: -500 },
-      ]);
+    /** The goal names in the order the waterfall currently shows them. */
+    function shownOrder(): string[] {
+      return within(screen.getByTestId("goals-list"))
+        .getAllByText(/^(First|Second|Third)$/)
+        .map((el) => el.textContent ?? "");
+    }
 
-      await waitFor(() => expect(rebuild).toHaveBeenCalledWith(null, true));
-      expect(rebuild).toHaveBeenCalledTimes(1);
+    /** What the server holds once a rebuild has committed. */
+    function serverNowHolds(goals: SavingsGoal[]) {
+      vi.mocked(savingsGoalsApi.getAll).mockResolvedValue({
+        data: goals,
+      } as Awaited<ReturnType<typeof savingsGoalsApi.getAll>>);
+    }
+
+    const first = makeGoal({ id: 1, name: "First", priority: 0 });
+    const second = makeGoal({ id: 2, name: "Second", priority: 1 });
+    const third = makeGoal({ id: 3, name: "Third", priority: 2 });
+
+    it("offers no manual redistribute — reordering restates history itself", async () => {
+      await renderGoals([first, second]);
+
+      expect(screen.queryByRole("button", { name: /redistribute/i })).not.toBeInTheDocument();
     });
 
-    it("renders the before/after diff for every goal that moves", async () => {
-      await openRedistribute([
-        { goal_id: 1, name: "First", before: 500, after: 0, delta: -500 },
-        { goal_id: 2, name: "Second", before: 0, after: 500, delta: 500 },
-      ]);
+    it("moves the row at once and shows recalculating until the server answers", async () => {
+      const pending = deferred<Awaited<ReturnType<typeof savingsGoalsApi.reorder>>>();
+      const reorder = vi.spyOn(savingsGoalsApi, "reorder").mockReturnValue(pending.promise);
+      await renderGoals([first, second]);
 
-      await screen.findByText(/restates past months/i);
-      // Both names also appear in the goal list behind the modal, so scope the
-      // assertion to the dialog body.
-      const dialog = screen.getByText(/restates past months/i).closest("div")!;
-      expect(dialog.textContent).toContain("First");
-      expect(dialog.textContent).toContain("Second");
+      fireEvent.click(
+        within(rowFor("First")).getByRole("button", { name: /move down/i }),
+      );
+
+      // The order is the user's answer, not the server's: it lands before
+      // the rebuild does.
+      await waitFor(() => expect(shownOrder()).toEqual(["Second", "First"]));
+      expect(await screen.findByRole("status")).toHaveTextContent(/recalculating/i);
+      expect(
+        within(rowFor("First")).getByTestId("goal-figures"),
+      ).toHaveAttribute("aria-busy", "true");
+      expect(reorder).toHaveBeenCalledWith([2, 1]);
+
+      const rebuilt = [
+        { ...second, priority: 0, funded: 4000 },
+        { ...first, priority: 1, funded: 0 },
+      ];
+      serverNowHolds(rebuilt);
+      pending.resolve({ data: rebuilt } as Awaited<ReturnType<typeof savingsGoalsApi.reorder>>);
+
+      await waitFor(() => expect(screen.queryByRole("status")).not.toBeInTheDocument());
+      expect(shownOrder()).toEqual(["Second", "First"]);
     });
 
-    it("hides goals whose allocation is unchanged", async () => {
-      await openRedistribute([
-        { goal_id: 1, name: "First", before: 500, after: 0, delta: -500 },
-        { goal_id: 2, name: "Second", before: 250, after: 250, delta: 0 },
-      ]);
+    it("queues rapid moves and keeps the latest order when an older answer lands", async () => {
+      const calls: Array<ReturnType<typeof deferred<Awaited<ReturnType<typeof savingsGoalsApi.reorder>>>>> = [];
+      const reorder = vi.spyOn(savingsGoalsApi, "reorder").mockImplementation(() => {
+        const next = deferred<Awaited<ReturnType<typeof savingsGoalsApi.reorder>>>();
+        calls.push(next);
+        return next.promise;
+      });
+      await renderGoals([first, second, third]);
 
-      await screen.findByText("First");
-      // "Second" still appears in the goal list behind the modal, so assert on
-      // the diff rows themselves rather than on the whole document.
-      const dialog = screen.getByText(/restates past months/i).closest("div")!;
-      expect(dialog.textContent).not.toContain("Second");
-    });
+      fireEvent.click(within(rowFor("First")).getByRole("button", { name: /move down/i }));
+      await waitFor(() => expect(shownOrder()).toEqual(["Second", "First", "Third"]));
+      fireEvent.click(within(rowFor("First")).getByRole("button", { name: /move down/i }));
 
-    it("commits with dry_run false once confirmed", async () => {
-      const rebuild = await openRedistribute([
-        { goal_id: 1, name: "First", before: 500, after: 0, delta: -500 },
-      ]);
-      await screen.findByText("First");
+      // Both clicks already show; the second built on the first.
+      await waitFor(() => expect(shownOrder()).toEqual(["Second", "Third", "First"]));
+      // The server calls run one at a time, oldest first.
+      await waitFor(() => expect(reorder).toHaveBeenCalledTimes(1));
+      expect(reorder).toHaveBeenLastCalledWith([2, 1, 3]);
 
-      const confirm = screen
-        .getAllByRole("button", { name: /^redistribute$/i })
-        .at(-1)!;
-      fireEvent.click(confirm);
+      calls[0].resolve({
+        data: [second, first, third],
+      } as Awaited<ReturnType<typeof savingsGoalsApi.reorder>>);
 
-      await waitFor(() => expect(rebuild).toHaveBeenCalledWith(null, false));
+      await waitFor(() => expect(reorder).toHaveBeenCalledTimes(2));
+      expect(reorder).toHaveBeenLastCalledWith([2, 3, 1]);
+      // The first answer is for an order already left behind; it must not
+      // snap the list back.
+      expect(shownOrder()).toEqual(["Second", "Third", "First"]);
+
+      serverNowHolds([second, third, first]);
+      calls[1].resolve({
+        data: [second, third, first],
+      } as Awaited<ReturnType<typeof savingsGoalsApi.reorder>>);
+      await waitFor(() => expect(screen.queryByRole("status")).not.toBeInTheDocument());
+      expect(shownOrder()).toEqual(["Second", "Third", "First"]);
     });
   });
 
