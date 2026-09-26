@@ -3,7 +3,7 @@
 from typing import Any
 
 import pandas as pd
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.orm import Session
 
@@ -335,6 +335,49 @@ class SavingsGoalRepository:
             delete(SavingsGoalInvestment).where(
                 SavingsGoalInvestment.investment_id == investment_id
             )
+        )
+        self.db.commit()
+        return result.rowcount
+
+    def set_funding_project(self, goal_id: int, project: str | None) -> None:
+        """Make ``goal_id`` the one goal that pays for ``project``.
+
+        A project is funded by at most one goal — two goals both drawing on the
+        same purchases would count every shekel twice — so any other goal
+        funding it lets go in the same commit.
+
+        Parameters
+        ----------
+        goal_id : int
+            Goal that funds the project.
+        project : str or None
+            Project (category) name; ``None`` detaches the goal from its
+            project.
+
+        Raises
+        ------
+        EntityNotFoundException
+            If no goal with ``goal_id`` exists.
+        """
+        goal = self.db.get(SavingsGoal, goal_id)
+        if not goal:
+            raise EntityNotFoundException(f"Savings goal {goal_id} not found")
+        if project is not None:
+            self.db.execute(
+                update(SavingsGoal)
+                .where(SavingsGoal.funding_project == project)
+                .where(SavingsGoal.id != goal_id)
+                .values(funding_project=None)
+            )
+        goal.funding_project = project
+        self.db.commit()
+
+    def clear_funding_project(self, project: str) -> int:
+        """Detach every goal funding ``project``; return how many were detached."""
+        result = self.db.execute(
+            update(SavingsGoal)
+            .where(SavingsGoal.funding_project == project)
+            .values(funding_project=None)
         )
         self.db.commit()
         return result.rowcount

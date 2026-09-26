@@ -486,6 +486,7 @@ class ReadModelsMixin:
             "target_date": goal.target_date,
             "contribution_category": goal.contribution_category,
             "contribution_tags": goal.contribution_tags,
+            "funding_project": goal.funding_project,
             "status": goal.status,
             "closed_month": goal.closed_month,
             "notes": goal.notes,

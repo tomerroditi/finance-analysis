@@ -1152,6 +1152,8 @@ export interface SavingsGoal {
   target_date: string | null;
   contribution_category: string | null;
   contribution_tags: string | null;
+  /** Project budget this goal pays for: every purchase in it is utilized from the goal. */
+  funding_project: string | null;
   status: string;
   closed_month: string | null;
   notes: string | null;
@@ -1375,6 +1377,11 @@ export const savingsGoalsApi = {
     },
   ) => api.post<SavingsGoal[]>(`/savings-goals/${goalId}/links`, payload),
   unlink: (linkId: number) => api.delete(`/savings-goals/links/${linkId}`),
+  /** Spend a whole project budget out of a goal; `null` detaches it. */
+  setFundingProject: (goalId: number, project: string | null) =>
+    api.put<SavingsGoal[]>(`/savings-goals/${goalId}/funding-project`, {
+      project,
+    }),
 };
 
 export const backupApi = {

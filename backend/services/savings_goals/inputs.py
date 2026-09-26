@@ -12,10 +12,15 @@ import pandas as pd
 
 from backend.constants.categories import PRIOR_WEALTH_TAG
 from backend.constants.tables import TransactionsTableFields
-from backend.models.savings_goal import LINK_CONTRIBUTION, SavingsGoal
+from backend.models.savings_goal import (
+    LINK_CONTRIBUTION,
+    LINK_UTILIZATION,
+    SavingsGoal,
+)
 from backend.services.bank_balance_service import BankBalanceService
 from backend.services.cash_balance_service import CashBalanceService
 from backend.services.investments import InvestmentsService
+from backend.services.savings_goals.common import month_key
 from backend.services.transaction_classification import transactions_masks
 
 # Rows synthesised from prior-wealth balances are opening capital, not income.
@@ -24,12 +29,18 @@ _PRIOR_WEALTH_SOURCES = {"bank_balances", "investments"}
 
 # Itemized credit-card rows duplicate the bank-side bill payment, and insurance
 # rows are not cash flow. Same exclusion the cashflow analysis applies.
-_SURPLUS_EXCLUDED_SOURCES = {"credit_card_transactions", "insurance_transactions"}
+_CREDIT_CARD_SOURCE = "credit_card_transactions"
+_SURPLUS_EXCLUDED_SOURCES = {_CREDIT_CARD_SOURCE, "insurance_transactions"}
 
 _ALL_TAGS = "all_tags"
 
 #: ``(source_table, unique_id, split_id)`` — identifies one analysis row.
 _RowKey = tuple[Any, Any, int | None]
+
+#: ``(goal_id, link_type, signed)`` — how one row counts toward a goal.
+#: ``signed`` rows keep their direction (a refund nets against the purchases
+#: it repays); the rest count by magnitude, as an explicit link always has.
+_GoalLink = tuple[int, str, bool]
 
 
 class InputsMixin:
@@ -127,10 +138,10 @@ class InputsMixin:
             The pool, never negative.
         """
         free_cash = self._opening_free_cash()
-        for month_key in sorted(context["surplus"]):
-            if month_key >= month:
+        for month_seen in sorted(context["surplus"]):
+            if month_seen >= month:
                 break
-            free_cash = max(0.0, free_cash + context["surplus"][month_key])
+            free_cash = max(0.0, free_cash + context["surplus"][month_seen])
         return free_cash
 
     def _build_context(self) -> dict[str, Any]:
@@ -164,7 +175,14 @@ class InputsMixin:
         amount_col = TransactionsTableFields.AMOUNT.value
         tag_col = TransactionsTableFields.TAG.value
 
-        df = df[~df[source_col].isin(_SURPLUS_EXCLUDED_SOURCES | _PRIOR_WEALTH_SOURCES)]
+        # Card rows stay in the frame for now: they never enter the surplus,
+        # but a card purchase can still be paid for out of a goal (below).
+        df = df[
+            ~df[source_col].isin(
+                (_SURPLUS_EXCLUDED_SOURCES - {_CREDIT_CARD_SOURCE})
+                | _PRIOR_WEALTH_SOURCES
+            )
+        ]
         if tag_col in df.columns:
             df = df[df[tag_col] != PRIOR_WEALTH_TAG]
         if df.empty:
@@ -181,10 +199,20 @@ class InputsMixin:
 
         keys = self._row_keys(df)
         goal_of = self._goal_by_transaction(df, keys)
-        df["_goal_id"] = [goal_of.get(k, (None, None))[0] for k in keys]
-        df["_link_type"] = [goal_of.get(k, (None, None))[1] for k in keys]
+        df["_goal_id"] = [goal_of.get(k, (None, None, False))[0] for k in keys]
+        df["_link_type"] = [goal_of.get(k, (None, None, False))[1] for k in keys]
+        df["_signed"] = [goal_of.get(k, (None, None, False))[2] for k in keys]
 
-        linked = df[df["_goal_id"].notna()]
+        # A card purchase only ever reaches the goals as money spent out of
+        # one. The bank-side bill that paid for it is already inside the
+        # surplus, so the purchase hands that amount back to the month it was
+        # made in — otherwise the same shekel would leave both the pool and
+        # the goal.
+        is_card = df[source_col] == _CREDIT_CARD_SOURCE
+        card_spent = df[is_card & (df["_link_type"] == LINK_UTILIZATION)]
+        df = df[~is_card]
+
+        linked = pd.concat([df[df["_goal_id"].notna()], card_spent])
         unlinked = df[df["_goal_id"].isna()]
 
         surplus: dict[tuple[int, int], float] = {}
@@ -208,12 +236,18 @@ class InputsMixin:
             combined = income.add(expenses, fill_value=0).add(investments, fill_value=0)
             surplus = {(int(y), int(m)): float(v) for (y, m), v in combined.items()}
 
+        handed_back = card_spent.groupby(["_year", "_month"])[amount_col].sum()
+        for (y, m), spent in handed_back.items():
+            key = (int(y), int(m))
+            surplus[key] = surplus.get(key, 0.0) - float(spent)
+
         direct: dict[tuple[int, int], dict[int, float]] = {}
         utilized: dict[tuple[int, int], dict[int, float]] = {}
         for _, row in linked.iterrows():
             key = (int(row["_year"]), int(row["_month"]))
             goal_id = int(row["_goal_id"])
-            amount = abs(float(row[amount_col]))
+            raw = float(row[amount_col])
+            amount = -raw if row["_signed"] else abs(raw)
             bucket = direct if row["_link_type"] == LINK_CONTRIBUTION else utilized
             bucket.setdefault(key, {})
             bucket[key][goal_id] = bucket[key].get(goal_id, 0.0) + amount
@@ -241,11 +275,16 @@ class InputsMixin:
 
     def _goal_by_transaction(
         self, df: pd.DataFrame, keys: list[_RowKey]
-    ) -> dict[_RowKey, tuple[int, str]]:
-        """Map each linked transaction key to its ``(goal_id, link_type)``.
+    ) -> dict[_RowKey, _GoalLink]:
+        """Map each linked transaction key to its ``(goal_id, link_type, signed)``.
 
-        Explicit per-transaction links win over a goal's category/tag rule, so
-        a single correction on one transaction always beats the broad rule.
+        Explicit per-transaction links win over a goal's category/tag rule and
+        its funded project, so a single correction on one transaction always
+        beats the broad rule.
+
+        A funded project claims its category's rows from the goal's start
+        month on. Spending that predates the goal was never paid for out of
+        it, so it stays an ordinary expense of the month it happened in.
 
         Parameters
         ----------
@@ -257,9 +296,9 @@ class InputsMixin:
         Returns
         -------
         dict
-            Row key -> ``(goal_id, link_type)`` for every linked row.
+            Row key -> ``(goal_id, link_type, signed)`` for every linked row.
         """
-        mapping: dict[_RowKey, tuple[int, str]] = {}
+        mapping: dict[_RowKey, _GoalLink] = {}
 
         category_col = TransactionsTableFields.CATEGORY.value
         tag_col = TransactionsTableFields.TAG.value
@@ -273,7 +312,17 @@ class InputsMixin:
                 matches &= df[tag_col].isin(tags)
             for key, matched in zip(keys, matches, strict=True):
                 if matched:
-                    mapping[key] = (goal.id, LINK_CONTRIBUTION)
+                    mapping[key] = (goal.id, LINK_CONTRIBUTION, False)
+
+        row_months = list(zip(df["_year"], df["_month"], strict=True))
+        for goal in self._goals_in_order():
+            if not goal.funding_project:
+                continue
+            start = month_key(goal.start_month)
+            matches = df[category_col] == goal.funding_project
+            for key, matched, row_month in zip(keys, matches, row_months, strict=True):
+                if matched and (start is None or row_month >= start):
+                    mapping[key] = (goal.id, LINK_UTILIZATION, True)
 
         links = self.repo.get_links()
         if not links.empty:
@@ -285,6 +334,7 @@ class InputsMixin:
                             mapping[candidate] = (
                                 int(link["goal_id"]),
                                 link["link_type"],
+                                False,
                             )
                 else:
                     for candidate in keys:
@@ -294,6 +344,7 @@ class InputsMixin:
                             mapping[candidate] = (
                                 int(link["goal_id"]),
                                 link["link_type"],
+                                False,
                             )
         return mapping
 

@@ -835,6 +835,17 @@
       "verdictClosed": "by {{amount}}, on {{over}} of {{total}} rules.",
       "verdictLive": "projected {{amount}}, {{delta}}.",
       "whereItStands": "Where the month stands"
+    },
+    "projectGoal": {
+      "action": "Pay for this project from a savings goal",
+      "short": "Savings goal",
+      "title": "Fund \"{{name}}\" from a savings goal",
+      "explainer": "Every purchase in this project — the ones already here and every one that comes later — is counted as spent out of the goal you pick, from the goal's start month on. No need to link transactions one by one; a transaction you link by hand still takes precedence.",
+      "fundedBy": "Funded by {{name}}",
+      "linked": "Linked",
+      "fundsOther": "Funds {{name}}",
+      "unlink": "Remove link",
+      "failed": "Failed to link the project to the goal"
     }
   },
   "budgetAlerts": {

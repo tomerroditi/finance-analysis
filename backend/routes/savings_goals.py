@@ -62,6 +62,13 @@ class SavingsGoalLinkCreate(ApiRequestModel):
     link_type: Literal["contribution", "utilization"]
 
 
+class SavingsGoalFundingProject(ApiRequestModel):
+    """Request body for pointing a goal at the project budget it pays for."""
+
+    #: ``None`` detaches the goal from its project.
+    project: str | None = Field(None, min_length=1)
+
+
 class SavingsGoalInvestmentCreate(ApiRequestModel):
     """Request body for earmarking an investment against a goal."""
 
@@ -207,6 +214,14 @@ def unlink_transaction(
 ) -> list[dict[str, Any]]:
     """Detach a transaction from its goal."""
     return SavingsGoalService(db).unlink_transaction(link_id)
+
+
+@router.put("/{goal_id}/funding-project")
+def set_funding_project(
+    goal_id: int, data: SavingsGoalFundingProject, db: Session = Depends(get_database)
+) -> list[dict[str, Any]]:
+    """Spend a whole project budget out of a goal, or detach it with ``null``."""
+    return SavingsGoalService(db).set_funding_project(goal_id, data.project)
 
 
 @router.get("/investments/available")

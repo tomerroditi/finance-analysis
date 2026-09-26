@@ -41,6 +41,7 @@ function makeGoal(overrides: Partial<SavingsGoal> = {}): SavingsGoal {
     target_date: null,
     contribution_category: null,
     contribution_tags: null,
+    funding_project: null,
     status: "active",
     closed_month: null,
     notes: null,

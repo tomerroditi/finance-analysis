@@ -250,6 +250,46 @@ class GoalCrudMixin:
         self._context_cache = None
         return self._after_write()
 
+    def set_funding_project(
+        self, goal_id: int, project: str | None
+    ) -> list[dict[str, Any]]:
+        """Pay for a whole project budget out of a goal, or stop doing so.
+
+        Every transaction in the project's category, from the goal's start
+        month on, is spent out of the goal as a utilization — the ones already
+        on record and every one that lands later — so the user links the
+        project once instead of one purchase at a time. An explicit link on a
+        single transaction still wins over it.
+
+        Parameters
+        ----------
+        goal_id : int
+            Goal that pays for the project.
+        project : str or None
+            Project (category) name, or ``None`` to detach the goal.
+
+        Returns
+        -------
+        list[dict]
+            Every goal, refreshed.
+
+        Raises
+        ------
+        EntityNotFoundException
+            If the goal or the project does not exist.
+        """
+        # Imported here: the budget package already imports this one.
+        from backend.services.budget.project import ProjectBudgetService
+
+        if (
+            project is not None
+            and project not in ProjectBudgetService(self.db).get_all_projects_names()
+        ):
+            raise EntityNotFoundException(f"Project '{project}' not found")
+        self.repo.set_funding_project(goal_id, project)
+        self._context_cache = None
+        return self._after_write()
+
     def get_links(self, goal_id: int | None = None) -> list[dict[str, Any]]:
         """Return transaction links, optionally scoped to one goal."""
         links = self.repo.get_links(goal_id)

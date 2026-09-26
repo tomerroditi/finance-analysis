@@ -261,6 +261,45 @@ class TestAllocationAndLinkRoutes:
         assert res.status_code == 404
 
 
+class TestFundingProjectRoutes:
+    """PUT /api/savings-goals/{id}/funding-project links a whole project."""
+
+    def test_link_and_detach_a_project(self, test_client, seed_project_transactions):
+        """The goal reports its project, and ``null`` detaches it."""
+        goal = _create(test_client, name="Wedding fund", target_amount=100000)
+
+        res = test_client.put(
+            f"/api/savings-goals/{goal['id']}/funding-project",
+            json={"project": "Wedding"},
+        )
+        assert res.status_code == 200, res.text
+        linked = next(g for g in res.json() if g["id"] == goal["id"])
+        assert linked["funding_project"] == "Wedding"
+
+        res = test_client.put(
+            f"/api/savings-goals/{goal['id']}/funding-project", json={"project": None}
+        )
+        assert res.status_code == 200, res.text
+        detached = next(g for g in res.json() if g["id"] == goal["id"])
+        assert detached["funding_project"] is None
+
+    def test_unknown_project_returns_404(self, test_client):
+        """Only an existing project budget can be funded."""
+        goal = _create(test_client, name="Goal", target_amount=1000)
+        res = test_client.put(
+            f"/api/savings-goals/{goal['id']}/funding-project",
+            json={"project": "Nope"},
+        )
+        assert res.status_code == 404
+
+    def test_missing_goal_returns_404(self, test_client, seed_project_transactions):
+        """Linking a project to an unknown goal is a 404."""
+        res = test_client.put(
+            "/api/savings-goals/9999/funding-project", json={"project": "Wedding"}
+        )
+        assert res.status_code == 404
+
+
 class TestBudgetAnalysisCarriesAllocations:
     """The monthly budget analysis carries the goal allocations for its month."""
 

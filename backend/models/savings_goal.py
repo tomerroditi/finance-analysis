@@ -63,6 +63,11 @@ class SavingsGoal(Base, TimestampMixin):
     contribution_tags : str or None
         Semicolon-separated tag names narrowing ``contribution_category``,
         matching the convention used by budget rules.
+    funding_project : str or None
+        Project budget (its category name) this goal pays for. Every
+        transaction in that category is spent out of the goal as a
+        utilization, so one link covers the whole project — past and future
+        purchases alike — instead of one transaction at a time.
     status : str
         ``"active"`` or ``"closed"``. A closed goal stops absorbing surplus and
         its existing allocations become immutable.
@@ -84,6 +89,7 @@ class SavingsGoal(Base, TimestampMixin):
     target_date = Column(String, nullable=True)
     contribution_category = Column(String, nullable=True)
     contribution_tags = Column(String, nullable=True)
+    funding_project = Column(String, nullable=True)
     status = Column(String, nullable=False, default=GOAL_STATUS_ACTIVE)
     closed_month = Column(String, nullable=True)
     notes = Column(String, nullable=True)
