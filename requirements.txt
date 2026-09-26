@@ -4,6 +4,9 @@ fastapi>=0.140.7
 # (PYSEC-2026-161/248/249/2280/2281). Vercel resolves this file fresh at
 # build time with no lockfile, so the floor has to be stated here too.
 starlette>=1.6.0
+# anyio is Starlette's and httpx's async core, also transitive; Starlette's
+# floor still admits releases with CVE-2026-63374 and CVE-2026-64847.
+anyio>=4.14.2
 # pandas 3 needs SQLAlchemy >= 2.0.36: below that floor pandas' optional-
 # dependency check returns None, silently skips its SQLAlchemy path and
 # falls back to raw sqlite3, where a Select object is not a string. Keep
