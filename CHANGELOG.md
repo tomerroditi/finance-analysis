@@ -1,3 +1,9 @@
+## v1.91.0 (2026-09-26)
+
+### Feat
+
+- **savings-goals**: pay for a project, yearly envelope or any category/tags from a goal with one link (#357)
+
 ## v1.90.0 (2026-09-26)
 
 ### Feat
