@@ -29,7 +29,7 @@ const content: DataFlowContent = {
     "cash-bal": { title: "Cash Balances", desc: "Per-envelope balance + prior_wealth. Multiple envelopes." },
     "inv-snapshots": { title: "Investment Snapshots", desc: "Timestamped market values. manual | calculated | scraped." },
     "meta-tables": { title: "Metadata", desc: "categories, tagging_rules, budget_rules, investments, liabilities, insurance_accounts, interest_rates, refunds." },
-    "goal-tables": { title: "Savings Goal Tables", desc: "savings_goals + per-month allocations, transaction links, investment backings." },
+    "goal-tables": { title: "Savings Goal Tables", desc: "savings_goals + per-month allocations, transaction links." },
     "decision-tables": { title: "Decisions & Overrides", desc: "recurring_decisions, insight_dismissals, budget_month_overrides \u2014 what you ruled on, kept across re-detection." },
     "credentials-vault": { title: "Credential Vault", desc: "Passwords in the OS Keyring; usernames, ID numbers and card digits Fernet-encrypted in the DB." },
     "demo-mode": { title: "Demo Mode", desc: "Isolated demo DB with date-shifted sample data. Dummy scrapers for testing." },
@@ -42,7 +42,7 @@ const content: DataFlowContent = {
     "liab-mgmt": { title: "Liability Management", desc: "Create loans, track payments, mark as paid off. Amortization schedule generation." },
     "budget-mgmt": { title: "Budget Management", desc: "Three rule kinds \u2014 monthly, yearly, project. Copy forward, close a finished one, alerts." },
     "month-override": { title: "Budget Month Override", desc: "Count a transaction in a neighbouring month without changing its date. Capped at \u00B11 month." },
-    "savings-goals-mgmt": { title: "Savings Goals", desc: "Prioritised earmarks over money already tracked. Cap, target, links, investment backing." },
+    "savings-goals-mgmt": { title: "Savings Goals", desc: "Prioritised earmarks over money already tracked. Cap, target, links, investment goals." },
     "recurring-review": { title: "Recurring Review", desc: "Confirm, dismiss or re-open a detected commitment. Only confirmed ones are acted on." },
     "balance-mgmt": { title: "Balance Management", desc: "Bank balance entry (post-scrape), cash envelope CRUD. Triggers prior wealth recalculation." },
     "cat-mgmt": { title: "Category & Rules", desc: "Create/rename/delete categories and tags. Manage tagging rules. Changes cascade to all transactions." },
@@ -200,7 +200,7 @@ const content: DataFlowContent = {
     "invest-mgmt": {
       title: "Investment Management", tag: "Lifecycle",
       sections: [
-        { heading: "Operations", items: ["Create investment (category, tag, type, rates, commissions)", "Add manual balance snapshots at any date", "Generate compounded snapshots for fixed and prime-linked rates", "Close investment \u2192 creates a 0-balance snapshot on the last transaction date", "Reopen closed investments, edit close date", "Earmark a holding to back a savings goal"] },
+        { heading: "Operations", items: ["Create investment (category, tag, type, rates, commissions)", "Add manual balance snapshots at any date", "Generate compounded snapshots for fixed and prime-linked rates", "Close investment \u2192 creates a 0-balance snapshot on the last transaction date", "Reopen closed investments, edit close date"] },
         { heading: "Keren Hishtalmut", text: "A scraped hishtalmut policy arrives as a managed investment with its own scraped snapshots. Its value is already in net worth, so the retirement model deliberately swaps it out before adding the KH bucket." },
         { heading: "Balance Resolution", items: ["1. Latest snapshot on/before today \u2192 use snapshot", "2. No snapshots \u2192 fallback to \u2212sum(all transactions)", "Snapshot sources: manual > calculated > scraped"] },
       ],
@@ -233,7 +233,7 @@ const content: DataFlowContent = {
       title: "Savings Goals", tag: "Virtual Earmarks",
       sections: [
         { heading: "What A Goal Is", text: "A claim over money already sitting in tracked accounts \u2014 never an addition to net worth. You are not moving shekels, you are naming what they are for." },
-        { heading: "Operations", items: ["Name, target amount, opening balance, optional monthly cap and target date", "Priority order \u2014 reorder with the arrows; history is recalculated under the new order", "Link a transaction as a contribution or a utilization", "Pay for a project, a yearly envelope or any category/tags from a goal \u2014 one link, every matching purchase (past and future, card purchases included) counts as spent from the goal", "Back a goal with an investment you mean to liquidate", "Close a goal \u2014 its allocations freeze and can never be reclaimed"] },
+        { heading: "Operations", items: ["Name, target amount, opening balance, optional monthly cap and target date", "Priority order \u2014 reorder with the arrows; history is recalculated under the new order", "Link a transaction as a contribution or a utilization", "Pay for a project, a yearly envelope or any category/tags from a goal \u2014 one link, every matching purchase (past and future, card purchases included) counts as spent from the goal","Investment goal \u2014 filled by the net money moved into chosen investments (deposits add, withdrawals take back), never by surplus; investing there is progress, not overspending", "Close a goal \u2014 its allocations freeze and can never be reclaimed"] },
         { heading: "Rewriting History", text: "A priority change applies from today. Recomputing past months is an explicit rebuild, and it is previewed before it is written." },
       ],
     },
@@ -300,7 +300,7 @@ const content: DataFlowContent = {
     "goal-tables": {
       title: "Savings Goal Tables", tag: "Earmarks",
       sections: [
-        { heading: "Tables", items: ["savings_goals \u2014 target, opening balance, priority, monthly cap, status", "savings_goal_allocations \u2014 one row per (goal, month), auto or manual", "savings_goal_links \u2014 transactions tied to a goal as contribution or utilization", "savings_goal_investments \u2014 holdings earmarked to back a goal"] },
+        { heading: "Tables", items: ["savings_goals \u2014 target, opening balance, priority, monthly cap, status", "savings_goal_allocations \u2014 one row per (goal, month), auto or manual", "savings_goal_links \u2014 transactions tied to a goal as contribution or utilization"] },
         { heading: "Why Allocations Persist", text: "Progress is derived from surplus, but the derivation is stored per month so a later priority change does not silently rewrite last year. Rewriting is an explicit, previewed rebuild." },
       ],
     },
@@ -365,7 +365,7 @@ const content: DataFlowContent = {
       sections: [
         { heading: "The Waterfall", items: ["Each month\u2019s realized surplus is income \u2212 expenses \u2212 investments, CC-deduped", "It flows down the goals by priority, each taking min(remaining need, monthly cap)", "Linked transactions are pulled out of the surplus and reintroduced explicitly, so no shekel counts twice", "What no goal claims stays in the free-cash pool"] },
         { heading: "A Bad Month", text: "A month that spends more than it earns drains free cash first. Only once that is empty does the shortfall come back out of the goals, lowest priority first, each giving back at most what is funded but not yet spent \u2014 money already spent can never be reclaimed." },
-        { heading: "Investment-Backed", text: "A goal can be backed by a holding you mean to liquidate. It counts toward funded and shrinks what the goal needs from surplus, but it is not cash: never in the free-cash pool, never clawed back, reported separately." },
+        { heading: "Investment Goals", text: "An investment goal is filled by the net money moved into the investments it names — deposits add, withdrawals take back. It is never funded from surplus and never clawed back, and it is not cash: never in the free-cash pool." },
         { heading: "Closed Goals", text: "Frozen. Their allocations can never be reclaimed or clawed back." },
       ],
     },
@@ -538,7 +538,6 @@ const content: DataFlowContent = {
         "An optional monthly cap keeps one goal from eating the whole surplus",
         "What no goal claims stays in a free-cash pool you can see",
         "A bad month drains free cash first, and only gives back what a goal hasn't already spent",
-        "Back a goal with an investment you plan to liquidate",
       ],
     },
     {

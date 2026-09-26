@@ -337,3 +337,29 @@ class TestBudgetAnalysisCarriesAllocations:
         # stay well-formed and never invent an allocation.
         assert all(row["goal_id"] == goal["id"] for row in block["goals"])
         assert block["total_allocated"] >= 0
+
+
+class TestInvestmentGoalRoutes:
+    """The API accepts an investment goal and refuses a malformed one."""
+
+    def test_create_an_investment_goal(self, test_client):
+        """POST / with kind=investment round-trips the kind."""
+        res = test_client.post(
+            "/api/savings-goals/",
+            json={
+                "name": "Invest",
+                "target_amount": 1000,
+                "kind": "investment",
+                "contribution_category": "Investments",
+            },
+        )
+        assert res.status_code == 200
+        assert res.json()[0]["kind"] == "investment"
+
+    def test_an_investment_goal_without_transfers_is_a_400(self, test_client):
+        """An investment goal must name the category its transfers use."""
+        res = test_client.post(
+            "/api/savings-goals/",
+            json={"name": "Invest", "target_amount": 1000, "kind": "investment"},
+        )
+        assert res.status_code == 400

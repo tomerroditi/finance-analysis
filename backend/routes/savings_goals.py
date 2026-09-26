@@ -32,6 +32,7 @@ class SavingsGoalCreate(ApiRequestModel):
     contribution_tags: str | None = None
     utilization_category: str | None = None
     utilization_tags: str | None = None
+    kind: Literal["cash", "investment"] = "cash"
     notes: str | None = None
 
 
@@ -73,15 +74,6 @@ class SavingsGoalSpendingLink(ApiRequestModel):
     category: str | None = Field(None, min_length=1)
     #: Narrows ``category``; empty or ``["all_tags"]`` covers every tag.
     tags: list[str] | None = None
-
-
-class SavingsGoalInvestmentCreate(ApiRequestModel):
-    """Request body for earmarking an investment against a goal."""
-
-    investment_id: int
-    #: ``None`` earmarks whatever is left of the holding, so the goal keeps
-    #: tracking its value without the user retyping a number.
-    amount: float | None = Field(None, gt=0)
 
 
 class SavingsGoalRebuild(BaseModel):
@@ -228,37 +220,3 @@ def set_spending_link(
 ) -> list[dict[str, Any]]:
     """Spend a category (optionally narrowed to tags) out of a goal; ``null`` clears it."""
     return SavingsGoalService(db).set_spending_link(goal_id, data.category, data.tags)
-
-
-@router.get("/investments/available")
-def list_available_investments(
-    db: Session = Depends(get_database),
-) -> list[dict[str, Any]]:
-    """Return open investments with how much of each is still unearmarked."""
-    return SavingsGoalService(db).get_available_investments()
-
-
-@router.get("/investments")
-def list_investment_backings(
-    goal_id: int | None = None, db: Session = Depends(get_database)
-) -> list[dict[str, Any]]:
-    """Return investment earmarks, optionally scoped to one goal."""
-    return SavingsGoalService(db).get_investment_backings(goal_id)
-
-
-@router.post("/{goal_id}/investments")
-def link_investment(
-    goal_id: int,
-    data: SavingsGoalInvestmentCreate,
-    db: Session = Depends(get_database),
-) -> list[dict[str, Any]]:
-    """Earmark an investment holding against a goal."""
-    return SavingsGoalService(db).link_investment(goal_id=goal_id, **data.model_dump())
-
-
-@router.delete("/investments/{backing_id}")
-def unlink_investment(
-    backing_id: int, db: Session = Depends(get_database)
-) -> list[dict[str, Any]]:
-    """Release an investment earmark."""
-    return SavingsGoalService(db).unlink_investment(backing_id)

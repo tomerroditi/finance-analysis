@@ -17,8 +17,7 @@ import {
   Loader2,
   Lock,
   Wallet,
-  Landmark,
-  X,
+  TrendingUp,
 } from "lucide-react";
 import {
   ResponsiveContainer,
@@ -34,8 +33,8 @@ import {
   savingsGoalsApi,
   type SavingsGoal,
   type SavingsGoalInput,
+  type SavingsGoalKind,
   type SavingsGoalFreeCash,
-  type SavingsGoalInvestment,
 } from "../../services/api";
 import { useQueryKeys } from "../../hooks/useQueryKeys";
 import { useScrollCap } from "../../hooks/useScrollCap";
@@ -105,9 +104,9 @@ const RECALCULATING_CLASS = "animate-pulse opacity-50 transition-opacity";
  * earmarked. It is the buffer a month of overspending drains first, and only
  * once it is empty does a deficit reach back into the goals.
  *
- * A goal can also be backed by an investment the user means to sell. That
- * backing shows on the row but is deliberately not cash: it never enters the
- * pool and a deficit can never take it back.
+ * An investment goal sits in the same list but is filled only by the money
+ * moved into its investments: it takes no part in the waterfall and never
+ * touches the pool.
  */
 export function GoalsSection() {
   const { t } = useTranslation();
@@ -116,7 +115,6 @@ export function GoalsSection() {
   const confirm = useConfirm();
   const notify = useNotify();
   const [editing, setEditing] = useState<SavingsGoal | "new" | null>(null);
-  const [backing, setBacking] = useState<SavingsGoal | null>(null);
 
   const recalculating = useIsMutating({ mutationKey: REORDER_KEY }) > 0;
 
@@ -244,7 +242,7 @@ export function GoalsSection() {
   const goals = data ?? [];
 
   // Measured rather than counted: rows differ in height (a goal with a monthly
-  // figure, an investment backing or a clawback note runs taller than a plain
+  // figure, a spending line or a clawback note runs taller than a plain
   // one), and what matters is how much a cap would actually hide. `data`, not
   // `goals`: the query's array is stable between renders, while the `?? []`
   // fallback is a fresh one every time.
@@ -320,7 +318,6 @@ export function GoalsSection() {
               onMoveUp={() => move(index, -1)}
               onMoveDown={() => move(index, 1)}
               onEdit={() => setEditing(goal)}
-              onBack={() => setBacking(goal)}
               onClaim={() => void claimFreeCash(goal)}
               onDelete={async () => {
                 const ok = await confirm({
@@ -345,10 +342,6 @@ export function GoalsSection() {
           goal={editing === "new" ? null : editing}
           onClose={() => setEditing(null)}
         />
-      )}
-
-      {backing !== null && (
-        <InvestmentBackingModal goal={backing} onClose={() => setBacking(null)} />
       )}
     </div>
   );
@@ -756,7 +749,6 @@ function GoalRow({
   onMoveUp,
   onMoveDown,
   onEdit,
-  onBack,
   onClaim,
   onDelete,
 }: {
@@ -768,11 +760,16 @@ function GoalRow({
   onMoveUp: () => void;
   onMoveDown: () => void;
   onEdit: () => void;
-  onBack: () => void;
   onClaim: () => void;
   onDelete: () => void;
 }) {
   const { t } = useTranslation();
+  const isInvestment = goal.kind === "investment";
+  // A cash goal's negative month is a clawback, which the row does not
+  // itemize; an investment goal's is a withdrawal, which it does.
+  const showThisMonth = isInvestment
+    ? goal.this_month_allocation !== 0
+    : goal.this_month_allocation > 0;
   const barColor = goal.is_closed
     ? "from-[var(--text-muted)] to-[var(--text-muted)]"
     : goal.is_achieved
@@ -798,6 +795,13 @@ function GoalRow({
           {!goal.is_closed && !!goal.is_achieved && (
             <Check size={14} className="text-emerald-400 shrink-0" />
           )}
+          {isInvestment && (
+            <TrendingUp
+              size={13}
+              className="text-[var(--primary)] shrink-0"
+              aria-label={t("dashboard.goals.kindInvestment")}
+            />
+          )}
           <p className="font-semibold text-sm truncate" dir="auto" title={goal.name}>{goal.name}</p>
         </div>
         <div className="flex items-center gap-0.5 shrink-0">
@@ -817,19 +821,10 @@ function GoalRow({
           >
             <ChevronDown size={14} />
           </button>
-          <button
-            onClick={onBack}
-            aria-label={t("dashboard.goals.backWithInvestment")}
-            className={`p-1.5 rounded-lg hover:bg-[var(--surface-light)] transition-colors ${
-              goal.investment_backed > 0
-                ? "text-[var(--primary)]"
-                : "text-[var(--text-muted)] hover:text-[var(--text-primary)]"
-            }`}
-          >
-            <Landmark size={14} />
-          </button>
-          {/* A closed goal's history is frozen, so there is nothing to restate. */}
-          {!goal.is_closed && (
+          {/* A closed goal's history is frozen, so there is nothing to restate;
+              an investment goal is filled by its transfers alone, never by
+              free cash. */}
+          {!goal.is_closed && !isInvestment && (
             <button
               onClick={onClaim}
               aria-label={t("dashboard.goals.claimAriaLabel")}
@@ -870,15 +865,18 @@ function GoalRow({
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1.5 text-[10px] md:text-xs text-[var(--text-muted)]">
           <GoalStatusLine goal={goal} />
         </div>
-        {(goal.this_month_allocation > 0 ||
-          goal.utilized > 0 ||
-          goal.investment_backed > 0) && (
+        {(showThisMonth || goal.utilized > 0) && (
           <div className="flex flex-wrap gap-x-3 gap-y-1 mt-1.5 text-[10px] md:text-xs text-[var(--text-muted)]">
-            {goal.this_month_allocation > 0 && (
+            {showThisMonth && (
               <span>
-                {t("dashboard.goals.thisMonth", {
-                  amount: formatCurrency(goal.this_month_allocation),
-                })}
+                {t(
+                  !isInvestment
+                    ? "dashboard.goals.thisMonth"
+                    : goal.this_month_allocation > 0
+                      ? "dashboard.goals.investedThisMonth"
+                      : "dashboard.goals.withdrawnThisMonth",
+                  { amount: formatCurrency(Math.abs(goal.this_month_allocation)) },
+                )}
               </span>
             )}
             {goal.utilized > 0 && (
@@ -886,13 +884,6 @@ function GoalRow({
                 {t("dashboard.goals.utilized", {
                   spent: formatCurrency(goal.utilized),
                   available: formatCurrency(goal.available),
-                })}
-              </span>
-            )}
-            {goal.investment_backed > 0 && (
-              <span className="text-[var(--primary)]">
-                {t("dashboard.goals.investmentBacked", {
-                  amount: formatCurrency(goal.investment_backed),
                 })}
               </span>
             )}
@@ -926,196 +917,6 @@ function GoalStatusLine({ goal }: { goal: SavingsGoal }) {
   return <span>{t("dashboard.goals.remaining", { amount: formatCurrency(goal.remaining) })}</span>;
 }
 
-/**
- * Earmark investment holdings against one goal.
- *
- * Backing a goal with a holding the user already means to sell (bonds for a
- * car) lets the goal show honest progress without pretending the money is in
- * the bank. Amounts are optional: leaving one blank earmarks whatever is left
- * of the holding, so the goal tracks its value instead of a typed-in number.
- *
- * Earmarks are their own resources rather than fields on the goal, so this
- * mutates immediately instead of staging behind a Save — there is no
- * half-finished state for the user to be in, unlike a multi-field editor.
- */
-function InvestmentBackingModal({
-  goal,
-  onClose,
-}: {
-  goal: SavingsGoal;
-  onClose: () => void;
-}) {
-  const { t } = useTranslation();
-  const qk = useQueryKeys();
-  const queryClient = useQueryClient();
-  const [investmentId, setInvestmentId] = useState("");
-  const [amount, setAmount] = useState("");
-
-  const { data: backings } = useQuery({
-    queryKey: qk.savingsGoals.investments(goal.id),
-    queryFn: async () => (await savingsGoalsApi.getInvestments(goal.id)).data,
-  });
-
-  const { data: available } = useQuery({
-    queryKey: qk.savingsGoals.availableInvestments(),
-    queryFn: async () => (await savingsGoalsApi.getAvailableInvestments()).data,
-  });
-
-  const invalidate = () =>
-    queryClient.invalidateQueries({ queryKey: qkPrefix.savingsGoals });
-
-  const link = useMutation({
-    mutationFn: (payload: { investment_id: number; amount?: number | null }) =>
-      savingsGoalsApi.linkInvestment(goal.id, payload),
-    onSuccess: () => {
-      setInvestmentId("");
-      setAmount("");
-      invalidate();
-    },
-  });
-
-  const unlink = useMutation({
-    mutationFn: (backingId: number) => savingsGoalsApi.unlinkInvestment(backingId),
-    onSuccess: invalidate,
-  });
-
-  const rows = backings ?? [];
-  const backed = new Set(rows.map((row) => row.investment_id));
-  // A holding already earmarked by this goal, or fully claimed elsewhere, has
-  // nothing left to offer here.
-  const options = (available ?? []).filter(
-    (option) => !backed.has(option.id) && option.available > 0,
-  );
-
-  const field =
-    "w-full bg-[var(--surface-light)] border border-[var(--surface-light)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[var(--primary)]";
-  const label = "block text-xs font-medium text-[var(--text-muted)] mb-1";
-
-  return (
-    <Modal
-      isOpen
-      onClose={onClose}
-      title={t("dashboard.goals.backingTitle", { name: goal.name })}
-      titleIcon={<Landmark size={18} />}
-      maxWidth="md"
-    >
-      <div className="space-y-4 p-4 md:p-6">
-        <p className="text-xs text-[var(--text-muted)]">
-          {t("dashboard.goals.backingExplainer")}
-        </p>
-
-        {rows.length > 0 && (
-          <div className="space-y-2">
-            {rows.map((row) => (
-              <BackingRow
-                key={row.id}
-                row={row}
-                onRemove={() => unlink.mutate(row.id)}
-              />
-            ))}
-          </div>
-        )}
-
-        <div className="border-t border-[var(--surface-light)] pt-4 space-y-3">
-          <div>
-            <label className={label} htmlFor="backing-investment">
-              {t("dashboard.goals.backingPickLabel")}
-            </label>
-            <select
-              id="backing-investment"
-              value={investmentId}
-              onChange={(e) => setInvestmentId(e.target.value)}
-              className={field}
-            >
-              <option value="">{t("dashboard.goals.backingPickPlaceholder")}</option>
-              {options.map((option) => (
-                <option key={option.id} value={option.id}>
-                  {option.name} · {formatCurrency(option.available)}
-                </option>
-              ))}
-            </select>
-            {options.length === 0 && (
-              <p className="text-[10px] text-[var(--text-muted)] mt-1">
-                {t("dashboard.goals.backingNoneAvailable")}
-              </p>
-            )}
-          </div>
-          <div>
-            <label className={label} htmlFor="backing-amount">
-              {t("dashboard.goals.backingAmountLabel")}
-            </label>
-            <input
-              id="backing-amount"
-              type="number"
-              inputMode="decimal"
-              value={amount}
-              onChange={(e) => setAmount(e.target.value)}
-              placeholder={t("dashboard.goals.backingAmountPlaceholder")}
-              className={field}
-              dir="ltr"
-            />
-            <p className="text-[10px] text-[var(--text-muted)] mt-1">
-              {t("dashboard.goals.backingAmountHint")}
-            </p>
-          </div>
-          {!!link.isError && (
-            <p className="text-xs text-rose-400">
-              {t("dashboard.goals.backingFailed")}
-            </p>
-          )}
-          <button
-            onClick={() =>
-              link.mutate({
-                investment_id: Number(investmentId),
-                amount: amount.trim() === "" ? null : Number(amount),
-              })
-            }
-            disabled={!investmentId || link.isPending}
-            className="w-full bg-[var(--primary)] text-white rounded-lg px-4 py-2 text-sm font-medium disabled:opacity-40 transition-opacity"
-          >
-            {t("dashboard.goals.backingAdd")}
-          </button>
-        </div>
-      </div>
-    </Modal>
-  );
-}
-
-/** One earmark: which holding, how much of it, and a release button. */
-function BackingRow({
-  row,
-  onRemove,
-}: {
-  row: SavingsGoalInvestment;
-  onRemove: () => void;
-}) {
-  const { t } = useTranslation();
-
-  return (
-    <div className="flex items-center justify-between gap-2 border border-[var(--surface-light)] rounded-lg px-3 py-2">
-      <div className="min-w-0">
-        <p className="text-sm truncate" dir="auto" title={row.investment_name ?? ""}>
-          {row.investment_name}
-        </p>
-        <p className="text-[10px] text-[var(--text-muted)]">
-          {row.amount == null
-            ? t("dashboard.goals.backingWhole")
-            : t("dashboard.goals.backingPartial", {
-                amount: formatCurrency(row.amount),
-              })}
-        </p>
-      </div>
-      <button
-        onClick={onRemove}
-        aria-label={t("dashboard.goals.backingRemove")}
-        className="p-1.5 rounded-lg text-[var(--text-muted)] hover:text-rose-400 hover:bg-[var(--surface-light)] transition-colors shrink-0"
-      >
-        <X size={14} />
-      </button>
-    </div>
-  );
-}
-
 /** `YYYY-MM` for the current month — the start a goal gets when none is set. */
 function currentMonthKey(): string {
   const today = new Date();
@@ -1130,6 +931,8 @@ function monthKeyLabel(month: string): string {
 function GoalEditorModal({ goal, onClose }: { goal: SavingsGoal | null; onClose: () => void }) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
+  const [kind, setKind] = useState<SavingsGoalKind>(goal?.kind ?? "cash");
+  const isInvestment = kind === "investment";
   const [name, setName] = useState(goal?.name ?? "");
   const [targetAmount, setTargetAmount] = useState(goal ? String(goal.target_amount) : "");
   const [openingBalance, setOpeningBalance] = useState(goal ? String(goal.opening_balance) : "0");
@@ -1153,12 +956,15 @@ function GoalEditorModal({ goal, onClose }: { goal: SavingsGoal | null; onClose:
     queryKey: qk.savingsGoals.freeCashBefore(effectiveStart, goal?.id),
     queryFn: async () =>
       (await savingsGoalsApi.getFreeCashBefore(effectiveStart, goal?.id)).data,
+    // Only a cash goal can take over free cash.
+    enabled: !isInvestment,
   });
 
   // Stored months keep their rows, so an opening balance that moves without a
   // restate leaves history computed against the old pool — a later deficit
   // month would then take the difference back out of the wrong goal.
-  const openingChanged = (Number(openingBalance) || 0) !== (goal?.opening_balance ?? 0);
+  const openingChanged =
+    !isInvestment && (Number(openingBalance) || 0) !== (goal?.opening_balance ?? 0);
 
   const save = useMutation({
     mutationFn: async (payload: SavingsGoalInput) => {
@@ -1174,11 +980,29 @@ function GoalEditorModal({ goal, onClose }: { goal: SavingsGoal | null; onClose:
     },
   });
 
-  const canSave = name.trim().length > 0 && Number(targetAmount) > 0;
+  const canSave =
+    name.trim().length > 0 &&
+    Number(targetAmount) > 0 &&
+    (!isInvestment || saveRule.category.length > 0);
 
   const handleSubmit = () => {
     if (!canSave) return;
+    // An investment goal is filled by its transfers alone, so the cash-goal
+    // settings are not sent (the backend refuses them).
+    if (isInvestment) {
+      save.mutate({
+        ...(goal ? {} : { kind }),
+        name: name.trim(),
+        target_amount: Number(targetAmount),
+        start_month: startMonth || null,
+        target_date: targetDate || null,
+        contribution_category: saveRule.category,
+        contribution_tags: joinRuleTags(saveRule.tags),
+      });
+      return;
+    }
     save.mutate({
+      ...(goal ? {} : { kind }),
       name: name.trim(),
       target_amount: Number(targetAmount),
       opening_balance: Number(openingBalance) || 0,
@@ -1206,6 +1030,40 @@ function GoalEditorModal({ goal, onClose }: { goal: SavingsGoal | null; onClose:
       maxWidth="md"
     >
       <div className="space-y-4 p-4 md:p-6">
+        {/* The kind decides what fills the goal, so it is chosen once. */}
+        {!goal && (
+          <div role="radiogroup" aria-label={t("dashboard.goals.kindLabel")}>
+            <span className={label}>{t("dashboard.goals.kindLabel")}</span>
+            <div className="grid grid-cols-2 gap-2">
+              {(["cash", "investment"] as const).map((option) => (
+                <button
+                  key={option}
+                  type="button"
+                  role="radio"
+                  aria-checked={kind === option}
+                  onClick={() => setKind(option)}
+                  className={`flex flex-col items-start gap-0.5 rounded-lg border px-3 py-2 text-start transition-colors ${
+                    kind === option
+                      ? "border-[var(--primary)] bg-[var(--primary)]/10"
+                      : "border-[var(--surface-light)] hover:bg-[var(--surface-light)]/40"
+                  }`}
+                >
+                  <span className="flex items-center gap-1.5 text-sm font-semibold">
+                    {option === "cash" ? <Wallet size={14} /> : <TrendingUp size={14} />}
+                    {t(option === "cash" ? "dashboard.goals.kindCash" : "dashboard.goals.kindInvestment")}
+                  </span>
+                  <span className="text-[10px] text-[var(--text-muted)]">
+                    {t(
+                      option === "cash"
+                        ? "dashboard.goals.kindCashHint"
+                        : "dashboard.goals.kindInvestmentHint",
+                    )}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
         <div>
           <label className={label} htmlFor="goal-name">{t("dashboard.goals.nameLabel")}</label>
           <input
@@ -1228,6 +1086,7 @@ function GoalEditorModal({ goal, onClose }: { goal: SavingsGoal | null; onClose:
               dir="ltr"
             />
           </div>
+          {!isInvestment && (
           <div>
             <label className={label} htmlFor="goal-opening">{t("dashboard.goals.openingLabel")}</label>
             <input
@@ -1260,8 +1119,10 @@ function GoalEditorModal({ goal, onClose }: { goal: SavingsGoal | null; onClose:
               </p>
             )}
           </div>
+          )}
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          {!isInvestment && (
           <div>
             <label className={label} htmlFor="goal-cap">{t("dashboard.goals.capLabel")}</label>
             <input
@@ -1276,6 +1137,7 @@ function GoalEditorModal({ goal, onClose }: { goal: SavingsGoal | null; onClose:
               {t("dashboard.goals.capHint")}
             </p>
           </div>
+          )}
           <div>
             <label className={label} htmlFor="goal-start">{t("dashboard.goals.startMonthLabel")}</label>
             <input
@@ -1300,6 +1162,16 @@ function GoalEditorModal({ goal, onClose }: { goal: SavingsGoal | null; onClose:
             dir="ltr"
           />
         </div>
+        {isInvestment ? (
+          <GoalAutoLinkField
+            testId="goal-invest-rule"
+            label={t("dashboard.goals.investRuleLabel")}
+            hint={t("dashboard.goals.investRuleHint")}
+            category={saveRule.category}
+            tags={saveRule.tags}
+            onChange={(category, tags) => setSaveRule({ category, tags })}
+          />
+        ) : (
         <fieldset className="space-y-3 border-t border-[var(--surface-light)] pt-3">
           <legend className="text-xs font-semibold text-[var(--text-muted)] pe-2">
             {t("dashboard.goals.autoLinkTitle")}
@@ -1321,6 +1193,7 @@ function GoalEditorModal({ goal, onClose }: { goal: SavingsGoal | null; onClose:
             onChange={(category, tags) => setSaveRule({ category, tags })}
           />
         </fieldset>
+        )}
         <div className="flex justify-end gap-2 pt-2">
           <button onClick={onClose} className="px-4 py-2 rounded-lg text-sm font-medium text-[var(--text-muted)] hover:bg-[var(--surface-light)] transition-colors">
             {t("common.cancel")}

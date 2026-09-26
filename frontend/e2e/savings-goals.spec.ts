@@ -378,62 +378,6 @@ test.describe("Savings goals", () => {
     ).toBeVisible();
   });
 
-  test("an investment can back a goal without becoming cash", async ({
-    page,
-  }) => {
-    // Demo data ships open investments; earmark the first one that still has
-    // headroom, rather than assuming a particular holding exists.
-    const available = await (
-      await ctx.get(`${API_BASE}/savings-goals/investments/available`)
-    ).json();
-    const holding = available.find(
-      (row: { available: number }) => row.available > 0,
-    );
-    expect(
-      holding,
-      "demo data should ship an open investment to earmark",
-    ).toBeTruthy();
-
-    const goal = await createGoal({
-      name: "E2E Backed Goal",
-      target_amount: 500000,
-      monthly_cap: 1,
-      start_month: monthsAgo(1),
-    });
-
-    const poolBefore = await (
-      await ctx.get(`${API_BASE}/savings-goals/free-cash`)
-    ).json();
-
-    const linked = await ctx.post(
-      `${API_BASE}/savings-goals/${goal.id}/investments`,
-      { data: { investment_id: holding.id, amount: 1000 } },
-    );
-    expect(linked.ok()).toBeTruthy();
-
-    // The backing counts toward the goal but is not liquid: the free-cash
-    // pool must be untouched, and the holding shows up on its own line.
-    const poolAfter = await (
-      await ctx.get(`${API_BASE}/savings-goals/free-cash`)
-    ).json();
-    expect(poolAfter.free_cash).toBeCloseTo(poolBefore.free_cash, 2);
-    expect(poolAfter.investment_backed).toBeCloseTo(
-      poolBefore.investment_backed + 1000,
-      2,
-    );
-
-    await openDashboardWithGoals(page);
-    const row = goalRow(page, "E2E Backed Goal");
-    await expect(row).toBeVisible({ timeout: 30_000 });
-    await expect(row.getByText(/backed by investments/i)).toBeVisible();
-
-    // The earmark modal lists it and can release it again.
-    await row.getByRole("button", { name: /back with investments/i }).click();
-    await expect(page.getByText(holding.name, { exact: true })).toBeVisible();
-    await page.getByRole("button", { name: /release this earmark/i }).click();
-    await expect(row.getByText(/backed by investments/i)).toHaveCount(0);
-  });
-
   test("the budget month shows what was directed into goals", async ({
     page,
   }) => {
@@ -548,5 +492,38 @@ test.describe("Savings goals", () => {
     await dialog.getByRole("button", { name: "Save", exact: true }).click();
     await expect(dialog).toHaveCount(0);
     expect(await openingBalance()).toBeCloseTo(claim.free_cash, 2);
+  });
+
+  test("an investment goal is filled by transfers, not by the waterfall", async ({
+    page,
+  }) => {
+    // A cash goal's editor offers the cash-only settings; choosing "Invest"
+    // takes them away and asks for the transfers instead.
+    await openDashboardWithGoals(page);
+    await page.getByRole("button", { name: /add goal/i }).click();
+    const dialog = page.getByRole("dialog");
+    await expect(dialog.getByLabel("Monthly cap")).toBeVisible();
+    await dialog.getByRole("radio", { name: /invest/i }).click();
+    await expect(dialog.getByLabel("Monthly cap")).toHaveCount(0);
+    await expect(dialog.getByLabel("Already saved")).toHaveCount(0);
+    await expect(dialog.getByTestId("goal-invest-rule")).toBeVisible();
+    await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
+
+    const goal = await createGoal({
+      name: "E2E Invest Goal",
+      target_amount: 100000,
+      kind: "investment",
+      contribution_category: "Investments",
+      start_month: monthsAgo(12),
+    });
+    expect(goal.kind).toBe("investment");
+    expect(goal.allocated).toBe(0);
+
+    await page.reload();
+    const row = goalRow(page, "E2E Invest Goal");
+    await expect(row).toBeVisible({ timeout: 30_000 });
+    await expect(row.getByLabel("Invest")).toBeVisible();
+    // No free-cash claim on an investment goal.
+    await expect(row.getByRole("button", { name: /free cash/i })).toHaveCount(0);
   });
 });

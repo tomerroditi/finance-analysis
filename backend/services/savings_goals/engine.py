@@ -19,6 +19,7 @@ from backend.models.savings_goal import (
 )
 from backend.services.savings_goals.common import (
     ROUNDING_EPSILON,
+    is_investment_goal,
     iter_months,
     month_key,
     month_str,
@@ -204,12 +205,6 @@ class AllocationEngineMixin:
 
         funded = {g.id: float(g.opening_balance or 0.0) for g in goals}
         utilized = {g.id: 0.0 for g in goals}
-        # Investment backing is a present-tense fact about a holding, not a
-        # dated event, so it is applied as it stands today. That means it only
-        # steers months this pass computes — history already on record keeps
-        # its rows, exactly as it does when a priority changes.
-        backing = self._investment_backing()
-        backed = {g.id: float(backing.get(g.id, 0.0)) for g in goals}
         # The pool opens at the spendable money the user had when the first
         # goal started: the capital that predates tracking, walked forward
         # through every month of realized cash flow before the walk begins.
@@ -226,6 +221,10 @@ class AllocationEngineMixin:
         frozen = {g.id: g.status == GOAL_STATUS_CLOSED for g in goals}
         start_of = dict(zip((g.id for g in goals), starts, strict=True))
         goal_by_id = {g.id: g for g in goals}
+        # Investment goals are filled by their own transfers, never by the
+        # waterfall, and a deficit never reaches into them — the money is in
+        # a holding, not in the bank the overspend drained.
+        invests = {g.id for g in goals if is_investment_goal(g)}
         # An opening balance is money the goal held when it started, so it
         # leaves the pool in that month. Taking every opening balance out when
         # the *earliest* goal started drained a pool that later history still
@@ -276,10 +275,7 @@ class AllocationEngineMixin:
                 goal = goal_by_id[goal_id]
                 need = max(
                     0.0,
-                    float(goal.target_amount or 0.0)
-                    - funded[goal_id]
-                    - backed[goal_id]
-                    - outgoing,
+                    float(goal.target_amount or 0.0) - funded[goal_id] - outgoing,
                 )
                 kept = round(min(amount - outgoing, need), 2)
                 spill += amount - outgoing - kept
@@ -329,17 +325,13 @@ class AllocationEngineMixin:
             for goal in goals:
                 if pool <= 0:
                     break
-                if frozen[goal.id] or key < start_of[goal.id]:
+                if frozen[goal.id] or goal.id in invests or key < start_of[goal.id]:
                     continue
                 # In a history month, a goal that already has a row has had its
                 # say — only newcomers may take what is still unallocated.
                 if not recompute and stored.get((goal.id, year, month)) is not None:
                     continue
-                # An earmarked holding already covers part of the goal, so
-                # only the uncovered remainder draws on the month's surplus.
-                need = (
-                    float(goal.target_amount or 0.0) - funded[goal.id] - backed[goal.id]
-                )
+                need = float(goal.target_amount or 0.0) - funded[goal.id]
                 if need <= 0:
                     continue
                 take = min(need, pool)
@@ -363,16 +355,14 @@ class AllocationEngineMixin:
                 for goal in reversed(goals):
                     if shortfall <= ROUNDING_EPSILON:
                         break
-                    if frozen[goal.id] or key < start_of[goal.id]:
+                    if frozen[goal.id] or goal.id in invests or key < start_of[goal.id]:
                         continue
                     # A history month's existing rows stand, exactly as they
                     # do for funding — only an explicit rebuild restates them.
                     if not recompute and stored.get((goal.id, year, month)) is not None:
                         continue
-                    # Money already spent out of a goal is gone, and an
-                    # earmarked holding is not cash — an overspend drains the
-                    # bank, it cannot reach into the bond. Only the goal's
-                    # unspent *cash* can be handed back.
+                    # Money already spent out of a goal is gone; only what it
+                    # still holds can be handed back.
                     give_back = round(
                         min(funded[goal.id] - utilized[goal.id], shortfall), 2
                     )
@@ -385,6 +375,19 @@ class AllocationEngineMixin:
                 # model does not track (an overdraft, an untagged account).
                 # The pool is empty either way; it never goes negative.
 
+            # Money moved into an investment goal left the spendable balance,
+            # so it leaves the pool — but it is the goal being met, not
+            # overspending. It runs after the clawback so it can never take
+            # money back out of another goal: a transfer the pool cannot cover
+            # simply empties it. A withdrawal hands the money back.
+            invested_now = context["invested"].get(key, {})
+            if invested_now:
+                for goal_id, amount in invested_now.items():
+                    if goal_id in funded:
+                        funded[goal_id] += amount
+                        plan.contributed[(goal_id, year, month)] = amount
+                free_cash = max(0.0, free_cash - sum(invested_now.values()))
+
             # Adding zero turns the -0.0 a fully drained pool rounds to into 0.0.
             plan.free_cash[key] = round(free_cash, 2) + 0.0
 
@@ -395,10 +398,10 @@ class AllocationEngineMixin:
                     utilized[goal_id] += amount
 
             for goal in goals:
-                if frozen[goal.id]:
+                if frozen[goal.id] or goal.id in invests:
                     continue
                 target = float(goal.target_amount or 0.0)
-                total = funded[goal.id] + backed[goal.id]
+                total = funded[goal.id]
                 achieved = target > 0 and total >= target - ROUNDING_EPSILON
                 if achieved and (total - utilized[goal.id]) <= 0:
                     frozen[goal.id] = True

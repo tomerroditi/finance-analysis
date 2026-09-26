@@ -50,7 +50,6 @@ from backend.models import (  # noqa: E402
     RefundLink,
     RetirementGoal,
     SavingsGoal,
-    SavingsGoalInvestment,
     SavingsGoalLink,
     ScrapingHistory,
     SplitTransaction,
@@ -2453,17 +2452,18 @@ def create_pending_refunds(session, cc_txns, bank_txns):
 
 
 def create_savings_goals(session, savings_plan, bank_txns):
-    """Create the Cohens' five savings goals and what backs them.
+    """Create the Cohens' five savings goals.
 
     The goals demo every way a goal can be funded, in one waterfall:
 
     1. **Emergency Fund** — the classic first goal. Capped so it fills
        steadily rather than swallowing a single big month, and started early
        enough that it is already achieved.
-    2. **Kids' Education Fund** — part cash, part **backed by the Savings
-       Plan**, which matures a year out and is money the couple already
-       intends to roll into it. That backing counts toward the goal without
-       ever entering the free-cash pool.
+    2. **Kids' Education Fund** — an **investment goal**: its progress is the
+       net money moved into the Savings Plan (``Investments / Savings Plan``,
+       the 1,500 monthly deposits) since the goal started. It never draws on
+       the waterfall, and those deposits are progress rather than a deficit
+       that claws back the cash goals.
     3. **Wedding Fund** — the saving side of the wedding arc the rest of the
        dataset already tells. The two largest wedding bank transfers are
        linked as **utilizations**, so the goal shows money set aside *and*
@@ -2516,14 +2516,16 @@ def create_savings_goals(session, savings_plan, bank_txns):
     )
     education = SavingsGoal(
         name="Kids' Education Fund",
+        kind="investment",
         target_amount=150000.0,
         opening_balance=0.0,
         priority=1,
-        monthly_cap=2000.0,
         start_month=month_str(30),
         target_date=(REFERENCE_DATE + timedelta(days=365 * 6)).isoformat(),
+        contribution_category=savings_plan.category,
+        contribution_tags=savings_plan.tag,
         status="active",
-        notes="Backed by the savings plan that matures next year.",
+        notes="Whatever goes into the savings plan is for the kids' studies.",
     )
     wedding = SavingsGoal(
         name="Wedding Fund",
@@ -2557,17 +2559,6 @@ def create_savings_goals(session, savings_plan, bank_txns):
     )
     session.add_all([emergency, education, wedding, renovation, car])
     session.flush()
-
-    # The savings plan backs the education fund in full. No amount is given,
-    # so the earmark is "whatever is left of it" and tracks the holding's
-    # value instead of a number that goes stale.
-    session.add(
-        SavingsGoalInvestment(
-            goal_id=education.id,
-            investment_id=savings_plan.id,
-            amount=None,
-        )
-    )
 
     # The two largest wedding bank transfers are money spent back out of the
     # wedding fund. Credit-card rows can never be linked — they are excluded
@@ -3430,7 +3421,7 @@ def main():
         print("  Creating retirement goal...")
         create_retirement_goal(session)
 
-        # 19. Savings goals (waterfall, investment backing, utilizations)
+        # 19. Savings goals (waterfall, an investment goal, utilizations)
         print("  Creating savings goals...")
         create_savings_goals(session, savings_plan, bank_txns)
 
@@ -3477,7 +3468,6 @@ def main():
             "retirement_goals",
             "savings_goals",
             "savings_goal_links",
-            "savings_goal_investments",
         ]
         from sqlalchemy import text
         for table in tables:

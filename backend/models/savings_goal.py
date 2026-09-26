@@ -23,9 +23,18 @@ from backend.models.base import Base, TimestampMixin
 GOAL_STATUS_ACTIVE = "active"
 GOAL_STATUS_CLOSED = "closed"
 
+#: ``savings_goals.kind`` values. ``NULL`` (a row older than the column) is
+#: a cash goal.
+GOAL_KIND_CASH = "cash"
+GOAL_KIND_INVESTMENT = "investment"
+
 #: ``savings_goal_links.link_type`` values.
 LINK_CONTRIBUTION = "contribution"
 LINK_UTILIZATION = "utilization"
+
+#: How an investment goal's rule classifies a transfer. Derived from the rule
+#: on every pass, never stored as a link.
+LINK_INVESTED = "invested"
 
 #: ``savings_goal_allocations.source`` values.
 ALLOCATION_AUTO = "auto"
@@ -71,6 +80,13 @@ class SavingsGoal(Base, TimestampMixin):
     utilization_tags : str or None
         Semicolon-separated tag names narrowing ``utilization_category``;
         ``None`` covers every tag in the category.
+    kind : str or None
+        ``"cash"`` (``NULL`` on rows older than the column) earmarks money in
+        the tracked accounts and is filled by the surplus waterfall.
+        ``"investment"`` is filled by the money actually moved into
+        investments instead: its ``contribution_category`` / ``_tags`` name
+        the transfers, deposits add and withdrawals subtract, and it never
+        takes part in the waterfall or its clawback. Fixed at creation.
     status : str
         ``"active"`` or ``"closed"``. A closed goal stops absorbing surplus and
         its existing allocations become immutable.
@@ -94,6 +110,7 @@ class SavingsGoal(Base, TimestampMixin):
     contribution_tags = Column(String, nullable=True)
     utilization_category = Column(String, nullable=True)
     utilization_tags = Column(String, nullable=True)
+    kind = Column(String, nullable=True, default=GOAL_KIND_CASH)
     status = Column(String, nullable=False, default=GOAL_STATUS_ACTIVE)
     closed_month = Column(String, nullable=True)
     notes = Column(String, nullable=True)
@@ -197,50 +214,4 @@ class SavingsGoalLink(Base, TimestampMixin):
         return (
             f"<SavingsGoalLink(goal_id={self.goal_id}, {self.link_type}, "
             f"{self.source_table}#{self.source_id})>"
-        )
-
-
-class SavingsGoalInvestment(Base, TimestampMixin):
-    """An investment holding earmarked against a savings goal.
-
-    Some goals are not backed by cash at all: bonds the user already intends to
-    sell, a savings plan maturing into a down payment. Earmarking the holding
-    lets the goal show real progress without pretending the money is liquid.
-
-    The backing is **valued live** from the investment's current balance, so it
-    tracks the market and drops to zero the moment the holding is closed. It is
-    a label over an asset that already sits in net worth, exactly as a cash
-    earmark is a label over money already in the bank — so it is never added to
-    net worth, never drawn from the free-cash pool, and never clawed back by a
-    deficit month (an overspend drains cash; it cannot touch the bond).
-
-    Attributes
-    ----------
-    goal_id : int
-        Owning ``savings_goals.id``.
-    investment_id : int
-        Earmarked ``investments.id``.
-    amount : float or None
-        How much of the holding is earmarked. ``None`` means "whatever is left
-        of it" — the balance not already claimed by another goal's explicit
-        amount — which is what makes a whole-holding earmark track the market
-        without the user retyping a number.
-    """
-
-    __tablename__ = Tables.SAVINGS_GOAL_INVESTMENTS.value
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    goal_id = Column(Integer, nullable=False, index=True)
-    investment_id = Column(Integer, nullable=False, index=True)
-    amount = Column(Float, nullable=True)
-
-    # One earmark per (goal, investment) — re-earmarking updates the amount.
-    __table_args__ = (
-        UniqueConstraint("goal_id", "investment_id", name="uq_savings_goal_investment"),
-    )
-
-    def __repr__(self) -> str:
-        return (
-            f"<SavingsGoalInvestment(goal_id={self.goal_id}, "
-            f"investment_id={self.investment_id}, amount={self.amount})>"
         )

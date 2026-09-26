@@ -1,11 +1,11 @@
-"""Data access for savings goals: allocations, transaction links, investment earmarks."""
+"""Data access for savings goals: goals, allocations and transaction links."""
 
 from collections.abc import Iterator
 from contextlib import contextmanager
 from typing import Any
 
 import pandas as pd
-from sqlalchemy import delete, func, select, update
+from sqlalchemy import func, select, update
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.orm import Session
 
@@ -14,7 +14,6 @@ from backend.models.savings_goal import (
     GOAL_STATUS_ACTIVE,
     SavingsGoal,
     SavingsGoalAllocation,
-    SavingsGoalInvestment,
     SavingsGoalLink,
 )
 from backend.repositories._sql import orm_rows_to_frame
@@ -30,6 +29,7 @@ GOAL_COLUMNS = [
     "target_date",
     "contribution_category",
     "contribution_tags",
+    "kind",
     "status",
     "closed_month",
     "notes",
@@ -45,8 +45,6 @@ LINK_COLUMNS = [
     "source_table",
     "link_type",
 ]
-
-BACKING_COLUMNS = ["id", "goal_id", "investment_id", "amount"]
 
 
 class SavingsGoalRepository:
@@ -153,11 +151,7 @@ class SavingsGoalRepository:
         return goal
 
     def delete(self, goal_id: int) -> None:
-        """Delete a goal with its allocations, transaction links and earmarks.
-
-        The investment earmarks have to go too: an orphaned row would keep
-        consuming its holding's headroom, so a deleted goal would silently
-        block anyone else from ever earmarking that investment again.
+        """Delete a goal with its allocations and transaction links.
 
         Raises
         ------
@@ -172,9 +166,6 @@ class SavingsGoalRepository:
         ).delete()
         self.db.query(SavingsGoalLink).filter(
             SavingsGoalLink.goal_id == goal_id
-        ).delete()
-        self.db.query(SavingsGoalInvestment).filter(
-            SavingsGoalInvestment.goal_id == goal_id
         ).delete()
         self.db.delete(goal)
         self._commit()
@@ -315,78 +306,6 @@ class SavingsGoalRepository:
             raise EntityNotFoundException(f"Savings goal link {link_id} not found")
         self.db.delete(link)
         self._commit()
-
-    def get_backings(self, goal_id: int | None = None) -> pd.DataFrame:
-        """Return investment earmarks, optionally scoped to a single goal.
-
-        Ordered by id so that when a holding loses value, the earlier earmark
-        keeps its claim and the later one absorbs the shortfall.
-        """
-        stmt = select(SavingsGoalInvestment).order_by(SavingsGoalInvestment.id)
-        if goal_id is not None:
-            stmt = stmt.where(SavingsGoalInvestment.goal_id == goal_id)
-        return orm_rows_to_frame(self.db.execute(stmt).scalars().all(), BACKING_COLUMNS)
-
-    def get_backing(
-        self, goal_id: int, investment_id: int
-    ) -> SavingsGoalInvestment | None:
-        """Return one goal's earmark against one investment, or None."""
-        return self.db.execute(
-            select(SavingsGoalInvestment).where(
-                SavingsGoalInvestment.goal_id == goal_id,
-                SavingsGoalInvestment.investment_id == investment_id,
-            )
-        ).scalar_one_or_none()
-
-    def upsert_backing(
-        self, goal_id: int, investment_id: int, amount: float | None
-    ) -> SavingsGoalInvestment:
-        """Earmark an investment for a goal, replacing any existing earmark."""
-        backing = self.get_backing(goal_id, investment_id)
-        if backing is None:
-            backing = SavingsGoalInvestment(
-                goal_id=goal_id, investment_id=investment_id, amount=amount
-            )
-            self.db.add(backing)
-        else:
-            backing.amount = amount
-        self._commit()
-        self.db.refresh(backing)
-        return backing
-
-    def delete_backing(self, backing_id: int) -> None:
-        """Delete an investment earmark; raise ``EntityNotFoundException`` if missing."""
-        backing = self.db.get(SavingsGoalInvestment, backing_id)
-        if not backing:
-            raise EntityNotFoundException(
-                f"Savings goal investment {backing_id} not found"
-            )
-        self.db.delete(backing)
-        self._commit()
-
-    def delete_backings_for_investment(self, investment_id: int) -> int:
-        """Delete every earmark against one investment.
-
-        Called when the investment itself is removed, so no goal keeps a
-        claim on a holding that no longer exists.
-
-        Parameters
-        ----------
-        investment_id : int
-            The ``investments.id`` being removed.
-
-        Returns
-        -------
-        int
-            Number of earmark rows deleted.
-        """
-        result = self.db.execute(
-            delete(SavingsGoalInvestment).where(
-                SavingsGoalInvestment.investment_id == investment_id
-            )
-        )
-        self._commit()
-        return result.rowcount
 
     def set_utilization_rule(
         self, goal_id: int, category: str | None, tags: str | None

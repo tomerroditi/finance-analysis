@@ -21,7 +21,6 @@ from backend.repositories.investment_snapshots_repository import (
     InvestmentSnapshotsRepository,
 )
 from backend.repositories.investments_repository import InvestmentsRepository
-from backend.repositories.savings_goal_repository import SavingsGoalRepository
 from backend.repositories.transactions import TransactionsRepository
 from backend.services.investments.insurance_sync import InsuranceSyncMixin
 from backend.services.investments.snapshots import SnapshotsMixin
@@ -433,10 +432,6 @@ class InvestmentsService(SnapshotsMixin, ValuationMixin, InsuranceSyncMixin):
         """
         Delete an investment record.
 
-        Savings-goal earmarks backed by the investment are removed too:
-        a dangling ``savings_goal_investments`` row would make every goal
-        listing fail while valuing a holding that no longer exists.
-
         Parameters
         ----------
         investment_id : int
@@ -448,7 +443,6 @@ class InvestmentsService(SnapshotsMixin, ValuationMixin, InsuranceSyncMixin):
             If no investment with ``investment_id`` exists.
         """
         self.investments_repo.get_by_id(investment_id)
-        SavingsGoalRepository(self.db).delete_backings_for_investment(investment_id)
         self.investments_repo.delete_investment(investment_id)
 
     def recalculate_prior_wealth(self, investment_id: int) -> None:
