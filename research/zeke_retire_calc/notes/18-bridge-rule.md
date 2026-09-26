@@ -38,6 +38,22 @@ post-60 runs placed on the pre-60 curve through the assumed `+23.45` shift. They
 sat a fortieth of a year from genuine cells with the same rate, and distorted
 PCHIP around them enough to make `be_age40_s10` look age-dependent.
 
+### Update: it is a formula after all
+
+The author's post "אלגוריתם למשיכות משתנות מתיק השקעות תוך שמירה על הסיכון
+הממוצע" gives it: `SWR% = 379 / (confidence^0.6 * years^0.5)` (an empirical fit
+to the updated Trinity tables, 75% equities), converted to a real return with
+the annual annuity-due identity and floored at zero. The constant is backed out
+of the post's three worked examples (85%/40y 2.95, 85%/27y 2.608, 90%/22y 1.77:
+378.99, 379.01, 379.01). It reproduces the measured cells past ~22 years to
+~1e-5 — median 5e-6 on rule 85. What the measurements add is the reference's
+solver drift: always upward, a one-year sawtooth up to 0.05 points in the knee.
+No Newton-Raphson variant tried (start, tolerance, stopping rule, numeric
+derivative) reproduces it, so the engine ships formula + measured drift, and
+interpolates the drift — not the rate — for confidences between the measured
+five. Held out, rules 82 and 87 come back within 0.007 points in the knee and
+0.001 elsewhere.
+
 ## 2. Coverage, not pay weights (`bridge_weights`, `bridge_end`)
 
 Pinned at 45 with a frozen pension (no growth, deposits or fees, so the annuity
@@ -118,6 +134,10 @@ month. `surface_fine` uses it to measure the surface at monthly resolution.
   above 721,560 a year — 135.9 and 15.5 a month, exactly 3% of the excess.
 * **National-insurance ceiling** (`fx_m60_20m`): contributions stop at 51,910 a
   month (89,119.7 drawn, 5,588.0 paid).
+* **After 60, capital gains stack on the taxed person's entitling annuity** in
+  the income-tax brackets (the author's gemel post: a taxable pension makes the
+  same gain cost more). It was the whole of `cx1_022`/`cx1_028`'s residual, not
+  the lot history (0.22% and 0.43% → 0.005% and 0.003%).
 * **`retire_at_age` retired a month early**: the last working month is the one at
   exactly the requested age; we had it one month before.
 

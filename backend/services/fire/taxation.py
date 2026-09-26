@@ -102,7 +102,11 @@ class TaxableAccount:
             self._unsettled = 1.0
 
     def withdraw_net(
-        self, need: float, age: float = 0.0, statutory_age: int = 67
+        self,
+        need: float,
+        age: float = 0.0,
+        statutory_age: int = 67,
+        taxable_income: float = 0.0,
     ) -> tuple[float, float]:
         """Sell enough to net `need`. Returns `(net_received, tax_paid)`.
 
@@ -125,7 +129,9 @@ class TaxableAccount:
             return lot_math.realised_gain(self.lots, self.method, gross, commit=False)
 
         def tax_on(gross: float) -> float:
-            return israeli_tax.capital_gains_tax(gain_on(gross), age, statutory_age)
+            return israeli_tax.capital_gains_tax(
+                gain_on(gross), age, statutory_age, taxable_income
+            )
 
         ceiling = need / max(1 - CAPITAL_GAINS_RATE * gain_share, 1e-9)
         if age <= israeli_tax.MARGINAL_TREATMENT_AGE:
@@ -153,7 +159,9 @@ class TaxableAccount:
             self.basis -= gross * (1 - gain_share)
         else:
             realised = lot_math.realised_gain(self.lots, self.method, gross)
-            tax = israeli_tax.capital_gains_tax(realised, age, statutory_age)
+            tax = israeli_tax.capital_gains_tax(
+                realised, age, statutory_age, taxable_income
+            )
             self.basis = sum(lot.basis for lot in self.lots)
         self.balance -= gross
         return gross - tax, tax

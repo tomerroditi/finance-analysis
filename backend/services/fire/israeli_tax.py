@@ -59,7 +59,9 @@ def monthly_income_tax(monthly_income: float, exemption: float = 0.0) -> float:
     return max(annual_tax(taxable * 12) / 12 - MONTHLY_CREDIT, 0.0)
 
 
-def capital_gains_tax(gain: float, age: float, statutory_age: int) -> float:
+def capital_gains_tax(
+    gain: float, age: float, statutory_age: int, taxable_income: float = 0.0
+) -> float:
     """Tax on a realised monthly capital gain.
 
     Below 60 the flat 25% applies. From 60 the gain is taxed as ordinary
@@ -72,4 +74,7 @@ def capital_gains_tax(gain: float, age: float, statutory_age: int) -> float:
     if age <= MARGINAL_TREATMENT_AGE:
         return flat
     exemption = STATUTORY_AGE_MONTHLY_EXEMPTION if age > statutory_age else 0.0
-    return min(flat, monthly_income_tax(gain, exemption))
+    stacked = monthly_income_tax(taxable_income + gain, exemption) - monthly_income_tax(
+        taxable_income, exemption
+    )
+    return min(flat, stacked)

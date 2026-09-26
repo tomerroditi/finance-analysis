@@ -8,21 +8,24 @@ run's peak net worth), and asserted run by run by `test_corpus_parity.py`.
 
 | | runs | under 0.1% |
 |---|---|---|
-| everything recorded | 1,694 | 1,649 |
+| everything recorded | 1,709 | 1,651 |
 | single-person plans | 1,640 | 1,638 |
-| couples | 54 | 11 |
-| random multi-feature households (`cx1_*`) | 39 | 25 |
+| couples | 69 | 13 |
+| random multi-feature households (`cx1_*`) | 39 | 28 |
 
-Every single-person run is under 0.1% bar two, and both are the FIFO/LIFO
-lot approximation (0.22% and 0.43%). Everything else over the target is a
-couple. The random households are the acceptance test: 40 plans drawn from a
+Every single-person *plan* is under 0.1%. The two single-person runs over it
+are held-out surface probes at confidence 82 and 87 in the 15-year knee (0.20%,
+0.16%), where the engine predicts the reference's solver drift by
+interpolation. Everything else over the target is a couple. The random households are the acceptance test: 40 plans drawn from a
 seeded generator using every feature at once — couples, several portfolios of
 mixed types and designations, study funds, loans started in the past, real
 estate, one-off flows, rising costs, every pension tactic, severance.
 
 ## What changed in the model (notes/18)
 
-- **The surface is measured, not fitted.** Every whole-year bridge 7–45 for
+- **The surface is the author's formula** — `SWR% = 379/(c^0.6·y^0.5)` as an
+  annuity-due real return (from his blog) — plus the reference's own solver
+  drift, measured. Before the formula was found it was measured outright: Every whole-year bridge 7–45 for
   rules 80/85/90/95/100, and every month between 7 and 23 years (all of it for
   rule 85), read straight off an idle 1e9 portfolio. It is not monotone and not
   interpolable between whole years below ~22 years.
@@ -49,7 +52,7 @@ estate, one-off flows, rising costs, every pension tactic, severance.
 | item | size | notes |
 |---|---|---|
 | **A couple's bridge** | up to ~18% on couples | Pension-free couples read a fixed-weight blend of the two statutory waits (0.5203 on the later, gaps ≤ 5 years, both genders, either spouse older); a partner's own pension reads exactly as a single person's; the man's pension beside a woman partner fits neither. `experiments/couple*.py`, notes/18 §6. |
-| FIFO/LIFO lot history | ≤ 0.43% | The reference's synthetic purchase history is compressed at both ends relative to ours (notes/13). |
-| Confidence off the grid | ~0.03% at 85.5 | Rules other than 80/85/90/95/100 interpolate; rule 87 at 15 years is 0.120 against 0.196 linear. |
+| FIFO/LIFO lot history | ≤ 0.05% | The reference's synthetic purchase history is compressed at both ends relative to ours (notes/13); within target. |
+| Confidence off the grid | ≤ 0.2% in the knee | Levels other than 80/85/90/95/100 read the formula exactly past ~22 years; below it the solver drift is interpolated (notes/18 §1). |
 | Drawdown prose on random households | presentation only | Segments break differently from ours where every monthly series agrees; the result-section tests cover the curated fixtures only. |
 | Wiring to the user's tracked data | medium | deferred by the user |

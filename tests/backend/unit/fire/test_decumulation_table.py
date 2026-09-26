@@ -46,15 +46,41 @@ class TestSurfaceShape:
         assert decumulation_return_pct(50, 22.0) == decumulation_return_pct(80, 22.0)
 
 
+class TestAuthorsFormula:
+    """The closed form behind the surface (blog: "אלגוריתם למשיכות משתנות")."""
+
+    @pytest.mark.parametrize(("confidence", "years", "quoted"), [
+        (85, 40, 2.95), (85, 27, 2.608), (90, 22, 1.77)])
+    def test_reproduces_the_worked_examples_in_the_post(self, confidence, years, quoted):
+        """The post's own three numbers, to the digits it prints."""
+        assert decumulation.formula_rate(confidence, years) == pytest.approx(
+            quoted, abs=0.5 * 10 ** -(len(str(quoted).split(".")[1])))
+
+    def test_matches_every_measured_cell_past_the_knee(self):
+        """Past 24 years the measured surface is the formula to within 0.002."""
+        raw = json.loads(TABLE_PATH.read_text(encoding="utf-8"))["bridge_years"]
+        for rule, row in raw.items():
+            for bridge, rate in row.items():
+                if float(bridge) >= 24:
+                    assert decumulation.formula_rate(float(rule), float(bridge)) == (
+                        pytest.approx(rate, abs=2e-3)), (rule, bridge)
+
+    def test_a_short_horizon_earns_nothing(self):
+        """Where withdrawing 1/N already beats the safe rate, the return is 0."""
+        assert decumulation.formula_rate(85, 12) == 0.0
+
+
 class TestTableIsTheMeasurements:
     """The shipped file reproduces the probes it was built from."""
 
     def test_every_cell_is_returned_as_measured(self):
-        """Interpolation passes through each cell exactly."""
+        """Formula plus measured drift passes through each cell exactly."""
         raw = json.loads(TABLE_PATH.read_text(encoding="utf-8"))["bridge_years"]
         for rule, row in raw.items():
+            if len(row) < decumulation.DENSE:
+                continue  # held-out levels, predicted rather than stored
             for bridge, rate in row.items():
-                assert decumulation._for_rule(float(rule), float(bridge)) == pytest.approx(
+                assert decumulation.decumulation_return_pct(float(rule), float(bridge)) == pytest.approx(
                     max(rate, 0.0), abs=1e-9), f"rule {rule} bridge {bridge}"
 
     def test_both_probe_designs_measure_the_same_surface(self):

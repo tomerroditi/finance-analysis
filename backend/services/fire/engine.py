@@ -788,6 +788,15 @@ class Simulator:
                     *self._tax_age(age, partner_age),
                     cash_in,
                     cash_out,
+                    # Gains taxed at income rates after 60 stack on top of the
+                    # taxed person's entitling annuity (the author's blog: a
+                    # taxable pension makes the same gain cost more).
+                    taxable_income=cash_in.get(
+                        "entitling_partner"
+                        if partner_age is not None and partner_age > age
+                        else "entitling",
+                        0.0,
+                    ),
                 )
                 if shortfall > 0:
                     solvent = False
@@ -1116,6 +1125,7 @@ class Simulator:
         statutory_age: int,
         cash_in: dict[str, float] | None = None,
         cash_out: dict[str, float] | None = None,
+        taxable_income: float = 0.0,
     ) -> tuple[float, float]:
         """Fund a monthly deficit, returning any unmet shortfall.
 
@@ -1145,7 +1155,10 @@ class Simulator:
                 if portfolio.designation != PortfolioDesignation.WITHDRAW:
                     continue
                 net, tax = account.withdraw_net(
-                    remaining, age=age, statutory_age=statutory_age
+                    remaining,
+                    age=age,
+                    statutory_age=statutory_age,
+                    taxable_income=taxable_income,
                 )
                 remaining -= net
                 drawn[f"portfolio{index}"] = (
