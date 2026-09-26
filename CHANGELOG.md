@@ -1,3 +1,9 @@
+## v1.93.0 (2026-09-26)
+
+### Feat
+
+- **savings-goals**: investment goals filled by the net money invested, replacing investment backing (#361)
+
 ## v1.92.0 (2026-09-26)
 
 ### Feat
