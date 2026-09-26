@@ -704,6 +704,43 @@ class TestRebuild:
         after = {g["name"]: g["funded"] for g in service.get_all()}
         assert after == {"First": 0, "Second": 500}
 
+    def test_a_reorder_that_fails_midway_changes_nothing(
+        self, db_session, service, monkeypatch
+    ):
+        """The new order, the deleted history and its rewrite commit together.
+
+        Committed one by one, a failure — or a request reading in between —
+        found the order changed and the history deleted but not rewritten. A
+        write that dies halfway must leave the order and the ledger exactly
+        as they were.
+        """
+        for offset in (2, 1):
+            _seed_surplus(db_session, _month_str(offset), income=10000, expenses=9500)
+        start = _month_str(2)
+        service.create(name="First", target_amount=5000, priority=0, start_month=start)
+        service.create(name="Second", target_amount=5000, priority=1, start_month=start)
+        ids = {g["name"]: g["id"] for g in service.get_all()}
+        ledger_before = SavingsGoalService(db_session)._stored_allocations()
+        assert ledger_before
+
+        failing = SavingsGoalService(db_session)
+        real_upsert = failing.repo.upsert_allocation
+        calls = {"n": 0}
+
+        def upsert_then_fail(*args, **kwargs):
+            calls["n"] += 1
+            if calls["n"] > 1:
+                raise RuntimeError("disk full")
+            return real_upsert(*args, **kwargs)
+
+        monkeypatch.setattr(failing.repo, "upsert_allocation", upsert_then_fail)
+        with pytest.raises(RuntimeError):
+            failing.reorder([ids["Second"], ids["First"]])
+
+        fresh = SavingsGoalService(db_session)
+        assert fresh._stored_allocations() == ledger_before
+        assert [g.name for g in fresh._goals_in_order()] == ["First", "Second"]
+
     def test_rebuild_cannot_take_money_out_of_a_closed_goal(
         self, db_session, service
     ):

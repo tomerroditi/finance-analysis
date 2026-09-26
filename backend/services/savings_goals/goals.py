@@ -124,8 +124,7 @@ class GoalCrudMixin:
         unknown = [gid for gid in ordered_ids if gid not in known]
         if unknown:
             raise EntityNotFoundException(f"Unknown savings goal ids: {unknown}")
-        self.repo.set_priorities(ordered_ids)
-        return self.rebuild()["goals"]
+        return self.rebuild(order=ordered_ids)["goals"]
 
     def close(self, goal_id: int) -> list[dict[str, Any]]:
         """Close a goal by hand, freezing its allocation history.

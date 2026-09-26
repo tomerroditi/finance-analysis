@@ -311,6 +311,22 @@ Allocations persist per `(goal, month)` in `savings_goal_allocations`.
   keep their frozen rows, as in any rebuild. The editor's opening-balance
   change and the free-cash claim still call `rebuild` directly;
   `dry_run=True` stays on the endpoint, but no screen previews any more.
+- **A rebuild computes first and writes last, in one transaction.** The new
+  order (reorder passes it as `rebuild(order=...)`, simulated via
+  `_order_override` without touching the stored priorities), the deletion of
+  the restated range and every replacement row commit together inside
+  `SavingsGoalRepository.atomic()`. Committed one by one, a request running
+  alongside — another tab's reorder, or any read whose `ensure_allocations`
+  fills in missing months — could see the history deleted but not yet
+  rewritten and refill it under the old order, double-counting money. Two
+  rules keep the block safe: **nothing but writes runs inside it** (several
+  repositories read through `pd.read_sql(..., self.db.bind)`, their own
+  connection, which in the in-memory test engine is the *same* SQLite
+  connection — its rollback-on-close silently undid an open transaction), and
+  **a block that wrote nothing does not commit**, since every commit discards
+  the `data_cache` generation and `_persist` opens a block on every read.
+  `test_a_reorder_that_fails_midway_changes_nothing` pins the all-or-nothing
+  half.
 - **The card answers the click before the server does.** The reorder
   mutation patches the list's order in `onMutate`, and its figures pulse
   with a "Recalculating…" status until the rebuilt ledger arrives. Reorders
