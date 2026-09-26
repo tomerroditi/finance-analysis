@@ -1,3 +1,9 @@
+## v1.94.0 (2026-09-26)
+
+### Feat
+
+- **savings-goals**: goals with their own income borrow until it lands; fix the chart axis; simpler investment goals (#362)
+
 ## v1.93.0 (2026-09-26)
 
 ### Feat
