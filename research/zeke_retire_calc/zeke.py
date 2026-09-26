@@ -115,7 +115,7 @@ class Session:
         r = self.s.post(url, data=body, headers=self._headers(), timeout=60)
         return r
 
-    def calc(self, overrides=None, poll_max=300, verbose=True):
+    def calc(self, overrides=None, poll_max=300, verbose=True, poll_every=1.0):
         """Submit a scenario and return the finished job result.
 
         The initial (pre-job) response is kept under ``_initial`` because it
@@ -133,7 +133,7 @@ class Session:
         job = js["job_id"]
         t0 = time.time()
         while time.time() - t0 < poll_max:
-            time.sleep(2)
+            time.sleep(poll_every)
             rr = self.s.get(BASE + "/calculators/get_calc_results/" + job,
                             headers={"Referer": CALC}, timeout=60)
             st = rr.json()

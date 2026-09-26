@@ -22,11 +22,9 @@ Run:  python research/zeke_retire_calc/measure_annuity_factors.py
 """
 from __future__ import annotations
 
-import json
 import re
 import sys
 from collections import defaultdict
-from datetime import date
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -37,9 +35,8 @@ from backend.services.fire.engine import Simulator                    # noqa: E4
 from backend.services.fire.models import Gender                       # noqa: E402
 from backend.services.fire.pension import ANNUITY_FACTORS             # noqa: E402
 from backend.services.fire.reference_form import plan_from_reference   # noqa: E402
-from validate import retire_index                                      # noqa: E402
+import parity                                                          # noqa: E402
 
-TODAY = date(2026, 9, 1)
 PRINTED_HALF_STEP = 0.05
 """The closing line carries one decimal, so a printed total is that ±0.05."""
 
@@ -69,16 +66,12 @@ def _our_annuity(result, partner: bool) -> float:
 
 def brackets() -> dict[tuple[str, int], list[tuple[str, float, float, float]]]:
     """Every (fixture, printed total, lower, upper) bracket, by gender and age."""
-    rates = json.loads((HERE / "decumulation_rates.json").read_text(encoding="utf-8"))
     found: dict[tuple[str, int], list] = defaultdict(list)
-    for path in sorted((HERE / "fixtures").glob("*.json")):
-        fixture = json.loads(path.read_text(encoding="utf-8"))
-        if not fixture.get("charts", {}).get("asset_plot"):
-            continue
+    for name in parity.corpus(charted=True):
+        fixture = parity.load(name)
         plan = plan_from_reference(fixture["overrides"])
-        if path.stem in rates:
-            plan.decumulation_return_pct = rates[path.stem]["decumulation_return_pct"]
-        result = Simulator(plan).run(retire_index=retire_index(fixture), today=TODAY)
+        result = Simulator(plan).run(retire_index=parity.retire_index(fixture),
+                                     today=parity.recorded_in(fixture))
 
         for pattern, partner in ((SELF, False), (PARTNER, True)):
             match = pattern.search(fixture["summary"])
@@ -96,7 +89,7 @@ def brackets() -> dict[tuple[str, int], list[tuple[str, float, float, float]]]:
                 continue
             balance = ours * factor      # independent of the factor used
             found[(person.gender.value, claim_age)].append((
-                path.stem, printed,
+                name, printed,
                 balance / (printed + PRINTED_HALF_STEP),
                 balance / (printed - PRINTED_HALF_STEP)))
     return found

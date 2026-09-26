@@ -22,6 +22,7 @@ from pathlib import Path
 
 import pytest
 
+import parity
 from backend.services.fire.engine import Simulator
 from backend.services.fire.reference_form import plan_from_reference
 
@@ -67,37 +68,17 @@ def _number(text: str) -> float:
 
 
 def _fixtures() -> list[str]:
-    out = []
-    for path in sorted(FIXTURES.glob("*.json")):
-        fixture = json.loads(path.read_text(encoding="utf-8"))
-        if fixture.get("charts", {}).get("asset_plot") and "קצבה מגיל" in fixture.get("summary", ""):
-            out.append(path.stem)
-    return out
-
-
-def _retire_index(fixture: dict) -> int:
-    """First fully retired month, from the reference's own output.
-
-    The printed date is the last working month. A plan that misses its goals
-    prints no date, so fall back to the month pay stops.
-    """
-    match = re.search(r"ב-(\d{2})/(\d{4})", fixture.get("summary", ""))
-    if match:
-        return (((int(match.group(2)) - RECORDED_IN.year) * 12
-                 + (int(match.group(1)) - RECORDED_IN.month)) + 1)
-    work = next(d["data"][1:-1] for d in fixture["charts"]["income_plot"]["datasets"]
-                if d["label"] == "עבודה")
-    return next((i for i in range(1, len(work)) if work[i] == 0 and work[i - 1] > 0),
-                10 ** 9)
+    return [name for name in parity.corpus(charted=True)
+            if "קצבה מגיל" in parity.load(name).get("summary", "")]
 
 
 @lru_cache(maxsize=None)
 def _run(name):
     """Fixture and its replay. Cached: five classes assert on the same run."""
-    fixture = json.loads((FIXTURES / f"{name}.json").read_text(encoding="utf-8"))
+    fixture = parity.load(name)
     plan = plan_from_reference(fixture["overrides"])
     return fixture, Simulator(plan).run(
-        retire_index=_retire_index(fixture), today=RECORDED_IN)
+        retire_index=parity.retire_index(fixture), today=parity.recorded_in(fixture))
 
 
 class TestAnnuityList:

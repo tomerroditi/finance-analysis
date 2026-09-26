@@ -17,8 +17,13 @@ ANNUAL_BRACKETS: list[tuple[float, float]] = [
     (193_800, 0.20),
     (269_280, 0.31),
     (560_280, 0.35),
-    (float("inf"), 0.47),
+    (721_560, 0.47),
+    (float("inf"), 0.50),
 ]
+"""The top row is the 3% surtax (מס יסף) above 721,560 a year. Measured on
+`fx_m67_20m` and `fx_f67_20m`: annuities taxable at 775,922 and 727,752 a
+year are taxed 135.9 and 15.5 a month more than 47% alone gives, which is
+exactly 3% of the excess over the threshold, divided by twelve."""
 
 CREDIT_POINTS = 2.25
 CREDIT_POINT_MONTHLY_VALUE = 242.0

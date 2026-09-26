@@ -52,6 +52,11 @@ BL_CONTRIBUTION_HIGH_RATE = 0.1190
 """National-insurance contributions levied on an annuity drawn *before* the
 statutory pension age, on the whole annuity including the recognised part."""
 
+BL_CONTRIBUTION_CEILING = 51_910.0
+"""Maximum insurable income: nothing above it is levied. `fx_m60_20m` draws
+89,119.7 a month at 60 and pays 5,588.0, which is these two rates on the first
+51,910 (to the 0.4 shekel the one-decimal print allows)."""
+
 
 def annuity_factor(gender: Gender, claim_age: int) -> float:
     try:
@@ -67,8 +72,9 @@ def contributions_on(annuity: float) -> float:
     """Bituach Leumi contributions on an annuity drawn before statutory age."""
     if annuity <= 0:
         return 0.0
-    low = min(annuity, BL_CONTRIBUTION_THRESHOLD) * BL_CONTRIBUTION_LOW_RATE
-    high = max(annuity - BL_CONTRIBUTION_THRESHOLD, 0.0) * BL_CONTRIBUTION_HIGH_RATE
+    insured = min(annuity, BL_CONTRIBUTION_CEILING)
+    low = min(insured, BL_CONTRIBUTION_THRESHOLD) * BL_CONTRIBUTION_LOW_RATE
+    high = max(insured - BL_CONTRIBUTION_THRESHOLD, 0.0) * BL_CONTRIBUTION_HIGH_RATE
     return low + high
 
 

@@ -12,10 +12,8 @@ Run:  python research/zeke_retire_calc/tune_annuity_factors.py [passes]
 """
 from __future__ import annotations
 
-import json
 import sys
 from collections import defaultdict
-from datetime import date
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -26,14 +24,13 @@ from backend.services.fire import pension                              # noqa: E
 from backend.services.fire.engine import Simulator                     # noqa: E402
 from backend.services.fire.models import Gender                        # noqa: E402
 from backend.services.fire.reference_form import plan_from_reference    # noqa: E402
-from validate import our_key, retire_index                             # noqa: E402
+import parity                                                          # noqa: E402
 
-TODAY = date(2026, 9, 1)
 GRID = 9
 """Points sampled across a bracket in one pass; each pass narrows to a step."""
 
-UNRELATED_GAP = {"pf_mukeret2", "pf_mukeret3_t60", "pf_mukeret4_order"}
-"""Runs whose residual floor is the unsolved gemel-conversion bridge (notes/15).
+UNRELATED_GAP = {"pf_mukeret4_order"}
+"""Runs whose residual floor is an unsolved bridge (a couple's, notes/18).
 
 Their refit absorbs that gap into the decumulation rate, so what is left is
 insensitive to the annuity factor and would only add noise to the score."""
@@ -49,44 +46,33 @@ BRACKETS = {
 def users() -> dict[tuple[Gender, int], list[str]]:
     """Which recorded runs read which factor."""
     out: dict[tuple[Gender, int], list[str]] = defaultdict(list)
-    for path in sorted((HERE / "fixtures").glob("*.json")):
-        fixture = json.loads(path.read_text(encoding="utf-8"))
-        if not fixture.get("charts", {}).get("asset_plot"):
+    for name in parity.corpus(charted=True):
+        if name in UNRELATED_GAP:
             continue
-        if path.stem in UNRELATED_GAP:
-            continue
+        fixture = parity.load(name)
         plan = plan_from_reference(fixture["overrides"])
-        for annuity in Simulator(plan).run(
-                retire_index=retire_index(fixture), today=TODAY).annuities:
+        for annuity in Simulator(plan).run(retire_index=parity.retire_index(fixture),
+                                           today=parity.recorded_in(fixture)).annuities:
             if annuity.factor is None:
                 continue
             gender = (plan.person.gender if annuity.owner == plan.person.name
                       else plan.partner.gender)
             key = (gender, int(annuity.claim_age))
-            if path.stem not in out[key]:
-                out[key].append(path.stem)
+            if name not in out[key]:
+                out[key].append(name)
     return out
 
 
 def best_residual(name: str) -> float:
     """Replay error of a run once its own decumulation rate is refitted."""
-    fixture = json.loads((HERE / "fixtures" / f"{name}.json").read_text(encoding="utf-8"))
-    index = retire_index(fixture)
+    fixture = parity.load(name)
+    index = parity.retire_index(fixture)
 
     def error(rate: float) -> float:
         plan = plan_from_reference(fixture["overrides"])
         plan.decumulation_return_pct = rate
-        result = Simulator(plan).run(retire_index=index, today=TODAY)
-        worst = 0.0
-        for dataset in fixture["charts"]["asset_plot"]["datasets"]:
-            key = our_key(dataset["label"], plan)
-            if key is None:
-                continue
-            reference = dataset["data"][1:-1]
-            for month in range(min(len(reference), len(result.months))):
-                worst = max(worst, abs(result.months[month].assets.get(key, 0.0)
-                                       - reference[month]))
-        return worst
+        result = Simulator(plan).run(retire_index=index, today=parity.recorded_in(fixture))
+        return parity.worst_asset_gap(fixture, plan, result)
 
     low, high = -1.0, 4.0
     for _ in range(50):

@@ -6,21 +6,19 @@ recorded in `fixtures/sol_smart_advice`; these tests pin our mechanism to it.
 
 from __future__ import annotations
 
-import json
 from datetime import date
-from pathlib import Path
 
+import parity
 from backend.services.fire.advice import AdviceOutcome, advise, apply, propose
 from backend.services.fire.models import PortfolioDesignation
 from backend.services.fire.reference_form import plan_from_reference
 from backend.services.fire.solver import solve
 
-RESEARCH = Path(__file__).resolve().parents[4] / "research" / "zeke_retire_calc"
 RECORDED_IN = date(2026, 9, 1)
 
 
 def _fixture(name: str) -> dict:
-    return json.loads((RESEARCH / "fixtures" / f"{name}.json").read_text(encoding="utf-8"))
+    return parity.load(name)
 
 
 class TestSmartAdvice:

@@ -7,12 +7,11 @@ pick the same retirement month.
 
 from __future__ import annotations
 
-import json
-import re
 from datetime import date
-from pathlib import Path
 
 import pytest
+
+import parity
 
 from backend.services.fire.models import BaseProblem, Plan, Person, Gender, CashFlow, EndType
 from backend.services.fire.reference_form import plan_from_reference
@@ -26,26 +25,15 @@ from backend.services.fire.solver import (
     solve_retire_at_age,
 )
 
-RESEARCH = Path(__file__).resolve().parents[4] / "research" / "zeke_retire_calc"
-FIXTURES = RESEARCH / "fixtures"
-RATES = json.loads((RESEARCH / "decumulation_rates.json").read_text(encoding="utf-8"))
 RECORDED_IN = date(2026, 9, 1)
-
-
-def _reference_retire_index(fixture: dict) -> int | None:
-    match = re.search(r"ב-(\d{2})/(\d{4})", fixture.get("summary", ""))
-    if not match:
-        return None
-    month, year = int(match.group(1)), int(match.group(2))
-    return ((year - RECORDED_IN.year) * 12 + (month - RECORDED_IN.month)) + 1
 
 
 def _asap_cases() -> list[str]:
     names = []
-    for name in sorted(RATES):
-        fixture = json.loads((FIXTURES / f"{name}.json").read_text(encoding="utf-8"))
-        plan = plan_from_reference(fixture["overrides"])
-        if plan.base_problem is BaseProblem.RETIRE_ASAP and _reference_retire_index(fixture):
+    for name in parity.corpus(charted=True):
+        fixture = parity.load(name)
+        if (fixture["overrides"].get("base_problem", "retire_asap") == "retire_asap"
+                and parity.printed_retire_index(fixture) is not None):
             names.append(name)
     return names
 
@@ -56,14 +44,14 @@ class TestRetireAsapParity:
     @pytest.mark.parametrize("name", _asap_cases())
     def test_finds_the_same_retirement_month(self, name):
         """The earliest feasible month agrees with what the reference published."""
-        fixture = json.loads((FIXTURES / f"{name}.json").read_text(encoding="utf-8"))
+        fixture = parity.load(name)
         plan = plan_from_reference(fixture["overrides"])
-        plan.decumulation_return_pct = RATES[name]["decumulation_return_pct"]
-        assert solve_retire_asap(plan, RECORDED_IN).retire_index == _reference_retire_index(fixture)
+        assert (solve_retire_asap(plan, parity.recorded_in(fixture)).retire_index
+                == parity.printed_retire_index(fixture))
 
     def test_search_bound_matches_the_reference(self):
         """The reference quotes its own search space; ours must equal it."""
-        fixture = json.loads((FIXTURES / "desig_goal.json").read_text(encoding="utf-8"))
+        fixture = parity.load("desig_goal")
         plan = plan_from_reference(fixture["overrides"])
         assert search_limit(plan, RECORDED_IN) == 280
         assert "280" in fixture["summary"]
@@ -75,7 +63,7 @@ class TestRetireAsapParity:
         all — not a failed plan, no plan. The same holds for someone already
         past the age-81 horizon, where there is no simulation to run either.
         """
-        fixture = json.loads((FIXTURES / "old_66.json").read_text(encoding="utf-8"))
+        fixture = parity.load("old_66")
         assert "אין תוצאות להצגה" in fixture["summary"]
         assert not fixture.get("charts")
 
@@ -89,9 +77,8 @@ class TestRetireAsapParity:
 
     def test_cannot_retire_before_working_a_month(self):
         """The earliest retirement the reference will report is month 1."""
-        fixture = json.loads((FIXTURES / "pf_types_all.json").read_text(encoding="utf-8"))
+        fixture = parity.load("pf_types_all")
         plan = plan_from_reference(fixture["overrides"])
-        plan.decumulation_return_pct = RATES["pf_types_all"]["decumulation_return_pct"]
         assert solve_retire_asap(plan, RECORDED_IN).retire_index == 1
 
 

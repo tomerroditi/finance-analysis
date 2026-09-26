@@ -1,7 +1,7 @@
 """State pension, and the bridge the decumulation surface is read on.
 
-Both rules here were recovered from single, decisive fixtures — see
-``research/zeke_retire_calc/notes/15-the-bridge.md``.
+Every rule here was recovered from reference probes — see
+``research/zeke_retire_calc/notes/18-bridge-rule.md``.
 """
 
 from __future__ import annotations
@@ -11,6 +11,7 @@ from datetime import date
 import pytest
 
 from backend.services.fire import national_insurance
+from backend.services.fire.bridge import bridge_months, window_share
 from backend.services.fire.engine import Simulator
 from backend.services.fire.models import (
     CashFlow,
@@ -74,61 +75,78 @@ class TestStatePension:
         assert national_insurance.monthly_amount(husband, 67.5, wife, 67.5) == 2757.0
 
 
-class TestDecumulationBridge:
-    """Which wait the decumulation surface is read on."""
+class TestBridgeMonths:
+    """Which horizon the decumulation surface is read at (bridge.py).
 
-    def test_claiming_the_pension_early_cuts_the_return(self):
-        """A pension drawn from 60 shortens the bridge, so less growth is assumed."""
-        early = Simulator(_plan(PensionTactic.ALL_FROM_60))
-        late = Simulator(_plan(PensionTactic.ALL_FROM_STATUTORY))
-        early.run(retire_index=120, today=TODAY)
-        late.run(retire_index=120, today=TODAY)
-        assert early._decumulation_return(120) < late._decumulation_return(120)
+    Month numbers count from today. The cases are the probes that established
+    each rule, for a man born January 1990 recorded in September 2026: he
+    turns 60 in month 280 and 67 in month 364.
+    """
 
-    def test_a_split_claim_lands_between_the_two(self):
-        """Claiming the recognised share at 60 is neither one wait nor the other."""
-        rates = {}
-        for tactic in PensionTactic:
-            simulator = Simulator(_plan(tactic))
-            simulator.run(retire_index=120, today=TODAY)
-            rates[tactic] = simulator._decumulation_return(120)
-        assert (rates[PensionTactic.ALL_FROM_60]
-                < rates[PensionTactic.MUKERET_60_ZAKA_STATUTORY]
-                < rates[PensionTactic.ALL_FROM_STATUTORY])
+    def test_no_claim_at_60_waits_for_the_statutory_age(self):
+        """Tactic 67, retiring at 45 (last pay in month 100): 22 years."""
+        assert bridge_months(100, 280, 364, claims_at_60=False, coverage=0.4) == 264
 
-    def test_a_plan_with_no_pension_waits_for_the_statutory_age(self):
-        """With nothing claimed early the bridge is the plain statutory one."""
-        plan = _plan(PensionTactic.ALL_FROM_STATUTORY)
-        plan.pension = None
-        simulator = Simulator(plan)
-        simulator.run(retire_index=120, today=TODAY)
-        from backend.services.fire.decumulation import decumulation_return_pct
-        assert simulator._decumulation_return(120) == pytest.approx(
-            decumulation_return_pct(85, simulator._retire_age_cache(120), 67))
+    def test_an_empty_pension_claimed_at_60_changes_nothing_before_60(self):
+        """With nothing paid at 60 the bridge is still the statutory wait."""
+        assert bridge_months(100, 280, 364, claims_at_60=True, coverage=0.0) == 264
 
-    def test_the_probe_pass_is_skipped_when_nothing_is_claimed_early(self):
-        """No early claim means no need to run the simulation twice."""
-        assert not Simulator(_plan(PensionTactic.ALL_FROM_STATUTORY))._needs_stream_pass()
-        assert Simulator(_plan(PensionTactic.ALL_FROM_60))._needs_stream_pass()
+    def test_full_coverage_ends_the_bridge_at_60(self):
+        """A pension that pays all the spending from 60 needs no longer bridge."""
+        assert bridge_months(100, 280, 364, claims_at_60=True, coverage=1.07) == 180
 
-    def test_the_blend_reproduces_the_one_recorded_two_bridge_run(self):
-        """`pn_annuity_6067` is the only run that genuinely reads two bridges.
+    def test_partial_coverage_ends_it_inside_the_window(self):
+        """`gb_t6067_0k`: x = 0.3208 ends the bridge at 65.73, not 65.08."""
+        months = bridge_months(100, 280, 364, claims_at_60=True, coverage=0.320831)
+        assert 100 + months == pytest.approx(65.7325 * 12 - 440, abs=0.05)
 
-        Its shorter bridge is 11 years, deep in the stretch where the surface
-        has collapsed to 0.0002, so the blend reduces to the longer stream's
-        weight times the surface at 18 years. Solving the rule for that one
-        value gives 1.3462 — and with it the rule returns the rate the run was
-        measured at, exactly. What is left over is the surface's interpolation
-        across a gap it has no cell in, not the weighting rule (notes/15).
-        """
-        from backend.services.fire.decumulation import _for_rule
+    def test_the_window_share_is_about_half_the_coverage_when_small(self):
+        """`y(x)` starts near x/2 and reaches ~0.91 just short of full coverage."""
+        assert window_share(0.02) == pytest.approx(0.0097, abs=2e-4)
+        assert window_share(0.9946) == pytest.approx(0.907, abs=1e-3)
+        assert window_share(1.0) == 1.0
 
-        short_pay, long_pay = 1604.15, 4246.21
-        measured = 0.97710461
-        implied = ((measured * (short_pay + long_pay)
-                    - short_pay * _for_rule(85.0, 11.0)) / long_pay)
-        assert implied == pytest.approx(1.3462, abs=5e-4)
-        assert _for_rule(85.0, 11.0) < 0.01, "the short bridge must be collapsed"
-        assert _for_rule(85.0, 18.0) == pytest.approx(implied, rel=0.01), (
-            "the interpolated cell is within a percent of what the run measures; "
-            "a probe of the reference at bridge 18.0 would close the rest")
+    def test_a_claim_already_behind_contributes_its_index_from_today(self):
+        """`spt_a63_t60_0k`: retiring at 63 reads 23.4 years plus the 4 left to 67."""
+        assert bridge_months(316, 280, 364, claims_at_60=True, coverage=0.0) == 329
+
+    def test_past_the_statutory_age_the_whole_window_counts_again(self):
+        """`spt_a68_t60_600k`: retiring at 68 with x = 0.535 reads 336 months."""
+        months = bridge_months(376, 280, 364, claims_at_60=True, coverage=0.534718)
+        assert months == pytest.approx(336.1, abs=0.2)
+
+    def test_a_statutory_claim_behind_the_retirement_is_its_index_plus_one(self):
+        """`spt_a68_t67_0k`: tactic 67, retiring at 68 — month 365."""
+        assert bridge_months(376, 280, 364, claims_at_60=False, coverage=0.0) == 365
+
+
+class TestCoverage:
+    """What the engine counts as pension and as spending for the bridge."""
+
+    def _coverage(self, **changes) -> float:
+        plan = _plan(PensionTactic.MUKERET_60_ZAKA_STATUTORY)
+        plan.pension = Pension(balance=1_200_000, tactic=plan.pension.tactic,
+                               mukeret_pct=30, monthly_deposit=0, annual_return_pct=0,
+                               fee_on_balance_pct=0, fee_on_deposit_pct=0)
+        for key, value in changes.items():
+            setattr(plan, key, value)
+        return Simulator(plan)._coverage(101, TODAY)
+
+    def test_only_the_share_claimed_at_60_counts(self):
+        """The recognised 30% at 60 over 5,000 of spending: 0.3208."""
+        assert self._coverage() == pytest.approx(0.320831, abs=1e-5)
+
+    def test_spending_that_ends_at_60_does_not_count(self):
+        """`be_exp_end60`: only the rows still running after 60 are carried."""
+        expenses = [CashFlow(amount=3_000), CashFlow(amount=2_000, end_type=EndType.AGE_60)]
+        assert self._coverage(expenses=expenses) == pytest.approx(0.534718, abs=1e-5)
+
+    def test_other_income_offsets_the_spending(self):
+        """`be_inc_rent`: a 1,000 rent leaves 4,000 for the pension to cover."""
+        incomes = [CashFlow(amount=10_000, end_type=EndType.FIRE), CashFlow(amount=1_000)]
+        assert self._coverage(incomes=incomes) == pytest.approx(0.401039, abs=1e-5)
+
+    def test_an_annual_rise_is_ignored(self):
+        """`be_exp_rise`: a 1% rise reads exactly as the flat 5,000 does."""
+        expenses = [CashFlow(amount=5_000, annual_rise_pct=1.0)]
+        assert self._coverage(expenses=expenses) == pytest.approx(0.320831, abs=1e-5)

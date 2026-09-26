@@ -19,7 +19,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import date
 
-from backend.services.fire import decumulation
+from backend.services.fire import bridge, decumulation
 from backend.services.fire import loans as loan_math
 from backend.services.fire import national_insurance
 from backend.services.fire.keren_hishtalmut import KerenAccount
@@ -35,6 +35,10 @@ from backend.services.fire.models import (
     PortfolioDesignation,
     StartType,
 )
+
+SHORTFALL_TOLERANCE = 1e-6
+"""Unfunded shekels a plan may accumulate and still count as covering its
+living expenses — float noise, not money."""
 
 HORIZON_AGE = 81.0
 """Simulation end age — a hard-coded constant in the reference, not gender- or
@@ -134,11 +138,6 @@ class SimulationResult:
     months: list[MonthRecord]
     retire_index: int
     solvent: bool
-    annuity_streams: list[tuple[float, int]] = field(default_factory=list)
-    """Every annuity this run started: `(monthly amount, month it began)`.
-
-    Feeds the decumulation bridge, which is weighted by these (notes/15)."""
-
     annuities: list[Annuity] = field(default_factory=list)
     """The annuity list the reference prints, one row per component."""
 
@@ -276,9 +275,11 @@ class Simulator:
     def __init__(self, plan: Plan):
         self.plan = plan
         self._today: date | None = None
-        self._streams: list[tuple[float, int]] = []
-        self._streams_for: int | None = None
-        """Annuities the probe pass found, and the retirement month they are for."""
+        self._windows: dict[tuple, tuple[int, int]] = {}
+        self._rates: dict[int, float] = {}
+        """Per-run memos: a flow's window and the decumulation rate are fixed
+        for a given retirement month, and recomputing them every month was most
+        of a run's cost."""
         if plan.person.date_of_birth is None:
             raise ValueError("date of birth is required")
         self.dob = plan.person.date_of_birth
@@ -313,6 +314,16 @@ class Simulator:
         granularity, a flow ending at FIRE is live through the last working
         month, and a flow starting at FIRE begins the month after.
         """
+        key = (flow.start_type, flow.start_date, flow.end_type, flow.end_date,
+               retire_index, today)
+        window = self._windows.get(key)
+        if window is None:
+            window = self._windows[key] = self._compute_window(flow, retire_index, today)
+        return window
+
+    def _compute_window(self, flow: CashFlow, retire_index: int,
+                        today: date) -> tuple[int, int]:
+        """Uncached `_window`."""
         last_month = self.month_count(today) - 1
 
         if flow.start_type == StartType.NOW:
@@ -355,73 +366,103 @@ class Simulator:
             return flow.amount
         return flow.amount * (1 + flow.annual_rise_pct / 100) ** ((index - first) / 12)
 
-    def _flow_total(self, flows, index, retire_index, today, one_time=None) -> float:
-        """Total of the flows live in `index`.
+    def _flow_series(self, flows, retire_index: int, today: date,
+                     total_months: int) -> tuple[list[float], list[float]]:
+        """Per-month `(recurring, one-off)` totals of `flows` for a whole run.
 
-        `one_time=True` keeps only the single-month rows, `False` only the
-        recurring ones. The reference charts the two separately — recurring
-        income as `עבודה` and one-off income as `הכנסות חד פעמיות`, recurring
-        spending as `הוצאות שוטפות` and one-off spending as `יעדים` (notes/16).
+        The reference charts the two separately — recurring income as `עבודה`
+        and one-off income as `הכנסות חד פעמיות`, recurring spending as
+        `הוצאות שוטפות` and one-off spending as `יעדים` (notes/16).
         """
-        total = 0.0
+        recurring = [0.0] * total_months
+        one_off = [0.0] * total_months
         for flow in flows:
-            if one_time is not None and (flow.start_type == StartType.ONE_TIME) != one_time:
-                continue
+            target = one_off if flow.start_type == StartType.ONE_TIME else recurring
             first, last = self._window(flow, retire_index, today)
-            if first <= index <= last:
-                total += self._amount(flow, index, first)
-        return total
+            for index in range(max(first, 0), min(last, total_months - 1) + 1):
+                target[index] += self._amount(flow, index, first)
+        return recurring, one_off
 
     # -- growth ------------------------------------------------------------
 
     def _decumulation_return(self, retire_index: int) -> float:
-        """Post-retirement return: the caller's override, else the measured table.
+        """Post-retirement return: the caller's override, else the measured surface.
 
-        The surface is read at the **bridge** — the wait from retirement to the
-        pension. With no pension that is the wait to the statutory age; with
-        one, it is the wait to each annuity this plan starts, weighted by how
-        much each pays (notes/15). Claiming a pension at 60 therefore shortens
-        the bridge and cuts the return, and claiming only the recognised share
-        early lands in between.
+        Read at the bridge `bridge.bridge_months` works out from the retirement
+        month and how much of the post-60 spending a pension at 60 covers.
         """
         if self.plan.decumulation_return_pct is not None:
             return self.plan.decumulation_return_pct
-        confidence = self.plan.retire_rule_confidence
-        retire_age = self._retire_age_cache(retire_index)
-        streams = self._streams
-        total = sum(monthly for monthly, _ in streams)
-        if total <= 0:
-            return decumulation.decumulation_return_pct(
-                confidence, retire_age,
-                national_insurance.STATUTORY_AGE[self.plan.person.gender])
-        return sum(
-            monthly * decumulation.decumulation_return_pct(
-                confidence, retire_age,
-                retire_age + max(index - retire_index, 0) / 12)
-            for monthly, index in streams) / total
+        rate = self._rates.get(retire_index)
+        if rate is None:
+            months = self.bridge_months(retire_index, self._today)
+            rate = self._rates[retire_index] = decumulation.decumulation_return_pct(
+                self.plan.retire_rule_confidence, months / 12)
+        return rate
 
-    def _needs_stream_pass(self) -> bool:
-        """Whether any annuity here can start before the statutory age.
+    def bridge_months(self, retire_index: int, today: date) -> float:
+        """The horizon the decumulation surface is read at, in months (bridge.py)."""
+        birth = (today.year - self.dob.year) * 12 + (today.month - self.dob.month)
+        statutory = national_insurance.STATUTORY_AGE[self.plan.person.gender]
+        pension = self.plan.pension
+        claims_at_60 = (pension is None
+                        or pension.tactic is not PensionTactic.ALL_FROM_STATUTORY)
+        return bridge.bridge_months(
+            last_working=retire_index - 1, month_60=60 * 12 - birth,
+            month_statutory=statutory * 12 - birth, claims_at_60=claims_at_60,
+            coverage=self._coverage(retire_index, today) if claims_at_60 else 0.0)
 
-        When none can, every stream starts at the statutory age and the blend
-        collapses to the plain bridge — so the extra pass is skipped.
-        """
-        if self.plan.decumulation_return_pct is not None:
-            return False
-        pensions = (self.plan.pension, self.plan.partner_pension)
-        if any(pension is not None
-               and pension.tactic is not PensionTactic.ALL_FROM_STATUTORY
-               for pension in pensions):
-            return True
-        return any(portfolio.designation in (PortfolioDesignation.MUKERET_MAIN,
-                                             PortfolioDesignation.MUKERET_PARTNER)
-                   for portfolio in self.plan.portfolios)
-
-    def _retire_age_cache(self, retire_index: int) -> float:
-        """Age in the last working month — what the reference reports."""
-        if self._today is None:
+    def _coverage(self, retire_index: int, today: date) -> float:
+        """Pension paid from 60 over the spending it has to carry then (bridge.py)."""
+        birth = (today.year - self.dob.year) * 12 + (today.month - self.dob.month)
+        after_60 = 60 * 12 - birth + 1
+        at = max(after_60, retire_index)
+        spending = sum(flow.amount for flow in self.plan.expenses
+                       if flow.start_type is not StartType.ONE_TIME
+                       and self._live(flow, at, retire_index, today))
+        spending -= sum(flow.amount for flow in self.plan.incomes
+                        if flow.start_type is not StartType.ONE_TIME
+                        and self._live(flow, at, retire_index, today))
+        if spending <= 0:
+            # Nothing left to cover reads as no coverage at all, not full
+            # coverage: `crash_zero_spend` and `crash_net_zero` both wait for the
+            # statutory age.
             return 0.0
-        return self.age_at(max(retire_index - 1, 0), self._today)
+        return self._pension_at_60(retire_index, today, after_60) / spending
+
+    def _live(self, flow: CashFlow, index: int, retire_index: int, today: date) -> bool:
+        first, last = self._window(flow, retire_index, today)
+        return first <= index <= last
+
+    def _pension_at_60(self, retire_index: int, today: date, after_60: int) -> float:
+        """Monthly annuity the plan counts as starting at 60, for the coverage.
+
+        The reference values it on the pension balance **at retirement**, not
+        on the balance the fund will have grown to by 60: `pf_mukeret3_t60`
+        retires nine months in with 800k growing at 7%, and reads the coverage
+        of 840k annuitised at the 60 factor, not the 3.6M it holds at 60. Only
+        the share the tactic claims at 60 counts. Once 60 is behind the
+        retirement the claim has happened, and the annuity it started is used.
+        """
+        fund = self.plan.pension
+        if fund is None or fund.tactic is PensionTactic.ALL_FROM_STATUTORY:
+            return 0.0
+        account = PensionAccount(
+            plan_pension=fund, gender=self.plan.person.gender,
+            statutory_age=national_insurance.STATUTORY_AGE[self.plan.person.gender])
+        first, last = self._window(
+            CashFlow(start_type=StartType.NOW, end_type=fund.end_type,
+                     end_date=fund.end_date), retire_index, today)
+        for t in range(min(retire_index, after_60 + 1)):
+            if first <= t <= last:
+                account.contribute()
+            account.annuitise_due(self.age_at(t, today))
+            account.grow()
+        if account.streams:
+            return sum(stream.monthly for stream in account.streams if stream.claim_age == 60)
+        share = (1.0 if fund.tactic is PensionTactic.ALL_FROM_60
+                 else fund.mukeret_pct / 100)
+        return account.balance * share / annuity_factor(self.plan.person.gender, 60)
 
     def _monthly_factor(self, portfolio: Portfolio, index: int, retire_index: int) -> float:
         """Growth factor for one month.
@@ -439,22 +480,20 @@ class Simulator:
 
     # -- main loop ---------------------------------------------------------
 
-    def run(self, retire_index: int, today: date | None = None) -> SimulationResult:
+    def run(self, retire_index: int, today: date | None = None,
+            stop_on_shortfall: bool = False) -> SimulationResult:
+        """Simulate retirement at `retire_index` through the horizon.
+
+        `stop_on_shortfall` ends the run at the first month the plan cannot
+        fund, leaving `months` short. The solver uses it: such a run has
+        already failed its living-expenses goal, and the rest of it would only
+        be computed to be thrown away.
+        """
         today = today or date.today()
-        if self._streams_for != retire_index and self._needs_stream_pass():
-            # The bridge is weighted by the annuities this plan starts, and
-            # those are only known once it has been run. They do not depend on
-            # the decumulation return itself — a pension, and a gemel earmarked
-            # for annuitisation, both grow at their own rate whatever the
-            # withdrawal portfolios do — so one probe pass settles them and the
-            # real run below is exact.
-            probe = Simulator(self.plan)
-            probe._streams, probe._streams_for = [], retire_index
-            self._streams = probe.run(retire_index, today).annuity_streams
-            self._streams_for = retire_index
+        if self._today != today:
+            self._rates.clear()
         self._today = today
         plan = self.plan
-        annuity_streams: list[tuple[float, int]] = []
         total_months = self.month_count(today)
 
         cash = plan.cash_balance
@@ -470,16 +509,18 @@ class Simulator:
         ]
         months: list[MonthRecord] = []
         solvent = True
+        income_recurring, income_one_time = self._flow_series(
+            plan.incomes, retire_index, today, total_months)
+        expense_recurring, expense_one_time = self._flow_series(
+            plan.expenses, retire_index, today, total_months)
 
         for t in range(total_months):
             age = self.age_at(t, today)
             cash_in: dict[str, float] = {}
             cash_out: dict[str, float] = {}
-            income = self._flow_total(plan.incomes, t, retire_index, today)
-            cash_in["work"] = self._flow_total(
-                plan.incomes, t, retire_index, today, one_time=False)
-            cash_in["one_time"] = self._flow_total(
-                plan.incomes, t, retire_index, today, one_time=True)
+            cash_in["work"] = income_recurring[t]
+            cash_in["one_time"] = income_one_time[t]
+            income = income_recurring[t] + income_one_time[t]
             if t < retire_index:
                 income += plan.monthly_cash_improvement
                 cash_in["work"] += plan.monthly_cash_improvement
@@ -495,11 +536,9 @@ class Simulator:
             if plan.partner is not None:
                 cash_in["state_pension_partner"] = national_insurance.monthly_amount(
                     plan.partner, partner_age, plan.person, age)
-            expense = self._flow_total(plan.expenses, t, retire_index, today)
-            cash_out["living"] = self._flow_total(
-                plan.expenses, t, retire_index, today, one_time=False)
-            cash_out["one_time"] = self._flow_total(
-                plan.expenses, t, retire_index, today, one_time=True)
+            cash_out["living"] = expense_recurring[t]
+            cash_out["one_time"] = expense_one_time[t]
+            expense = expense_recurring[t] + expense_one_time[t]
             debt_service = sum(
                 loan_math.payment_at(loan, t - start)
                 for loan, start in zip(plan.loans, loan_starts)
@@ -519,7 +558,6 @@ class Simulator:
                              else plan.person)
                     gemel_annuities[index] = (
                         accounts[index].balance / annuity_factor(owner.gender, 60))
-                    annuity_streams.append((gemel_annuities[index], t))
                     gemel_owner[index] = "" if owner is plan.person else "_partner"
                     accounts[index].balance = 0.0
                     accounts[index].basis = 0.0
@@ -550,10 +588,7 @@ class Simulator:
                     month_number_ = today.month + t
                     severance_cash += account.redeem_severance(
                         today.year + (month_number_ - 1) // 12, t)
-                started = len(account.streams)
                 account.annuitise_due(owner_age)
-                annuity_streams.extend(
-                    (stream.monthly, t) for stream in account.streams[started:])
                 who = "" if owner is plan.person else "_partner"
                 recognised, entitling = account.income_at(owner_age)
                 tax, insurance = account.deductions_at(
@@ -587,10 +622,13 @@ class Simulator:
                 cash = self._deposit(surplus, cash, accounts, cash_out)
             else:
                 cash, shortfall, tax_paid = self._withdraw(
-                    -surplus, cash, accounts, funds, age, cash_in, cash_out)
+                    -surplus, cash, accounts, funds, *self._tax_age(age, partner_age),
+                    cash_in, cash_out)
                 if shortfall > 0:
                     solvent = False
                     cash_in["shortfall"] = shortfall
+                    if stop_on_shortfall and shortfall > SHORTFALL_TOLERANCE:
+                        break
 
             for i, portfolio in enumerate(plan.portfolios):
                 accounts[i].grow(self._monthly_factor(portfolio, t, retire_index))
@@ -633,7 +671,7 @@ class Simulator:
 
         return SimulationResult(
             months=months, retire_index=retire_index, solvent=solvent,
-            annuity_streams=annuity_streams, labels=self._labels(),
+            labels=self._labels(),
             default_claim_age={
                 owner.name: float(60 if pension.tactic is PensionTactic.ALL_FROM_60
                                   else national_insurance.STATUTORY_AGE[owner.gender])
@@ -785,7 +823,20 @@ class Simulator:
         months = (today.year - dob.year) * 12 + (today.month - dob.month)
         return (months + index) / 12
 
-    def _withdraw(self, need, cash, accounts, funds, age, cash_in=None, cash_out=None):
+    def _tax_age(self, age: float, partner_age: float | None) -> tuple[float, int]:
+        """`(age, statutory age)` the capital-gains treatment is decided on.
+
+        A couple is taxed on the older spouse: `cp2_empty_1985` pays the flat
+        25% until the month after the *partner's* 60th birthday and nothing
+        after it, while the main person is still 55.
+        """
+        person = self.plan.person
+        if partner_age is not None and partner_age > age:
+            return partner_age, national_insurance.STATUTORY_AGE[self.plan.partner.gender]
+        return age, national_insurance.STATUTORY_AGE[person.gender]
+
+    def _withdraw(self, need, cash, accounts, funds, age, statutory_age,
+                  cash_in=None, cash_out=None):
         """Fund a monthly deficit, returning any unmet shortfall.
 
         Verified order (notes/08): free cash above the buffer, then withdrawal
@@ -815,8 +866,7 @@ class Simulator:
                 if portfolio.designation != PortfolioDesignation.WITHDRAW:
                     continue
                 net, tax = account.withdraw_net(
-                    remaining, age=age,
-                    statutory_age=national_insurance.STATUTORY_AGE[plan.person.gender])
+                    remaining, age=age, statutory_age=statutory_age)
                 remaining -= net
                 tax_paid += tax
                 drawn[f"portfolio{index}"] = drawn.get(f"portfolio{index}", 0.0) + net + tax

@@ -97,7 +97,16 @@ def evaluate_goals(plan: Plan, result: SimulationResult) -> list[Goal]:
 
 
 def _feasible(plan: Plan, candidate: int, today: date) -> tuple[bool, SimulationResult]:
-    result = Simulator(plan).run(retire_index=candidate, today=today)
+    """Whether retiring at `candidate` meets every goal, and the run that says so.
+
+    The run stops at its first unfunded month: that alone fails the
+    living-expenses goal, so a truncated run is infeasible and its result is
+    never used as a plan.
+    """
+    simulator = Simulator(plan)
+    result = simulator.run(retire_index=candidate, today=today, stop_on_shortfall=True)
+    if len(result.months) < simulator.month_count(today):
+        return False, result
     goals = evaluate_goals(plan, result)
     return all(g.met for g in goals), result
 
@@ -154,13 +163,24 @@ def solve_retire_asap(plan: Plan, today: date | None = None) -> SolveResult:
                        goals=evaluate_goals(plan, result))
 
 
+def pinned_retire_index(plan: Plan, today: date) -> int:
+    """First retired month for a plan that names its retirement age.
+
+    The last working month is the one at exactly the requested age, so the
+    first retired month is one later — every `retire_at_age` run the reference
+    answered prints that month (a 36.67-year-old asking for 45 works through
+    month 100 and retires in month 101).
+    """
+    target = plan.wanted_retire_age or plan.max_retire_age
+    age_now = Simulator(plan).age_at(0, today)
+    return max(int(round((target - age_now) * 12)), 0) + 1
+
+
 def solve_retire_at_age(plan: Plan, today: date | None = None) -> SolveResult:
     """Check-up: pin retirement to the requested age and report each goal."""
     today = today or date.today()
     simulator = Simulator(plan)
-    target = plan.wanted_retire_age or plan.max_retire_age
-    age_now = simulator.age_at(0, today)
-    candidate = max(int(round((target - age_now) * 12)), 0)
+    candidate = pinned_retire_index(plan, today)
     result = Simulator(plan).run(retire_index=candidate, today=today)
     return SolveResult(problem=BaseProblem.RETIRE_AT_AGE, retire_index=candidate,
                        retire_age=simulator.age_at(candidate - 1, today),
@@ -189,9 +209,7 @@ def solve_improve_cash(plan: Plan, today: date | None = None) -> SolveResult:
     INFERRED — the reference crashes on this mode (notes/09).
     """
     today = today or date.today()
-    target = plan.wanted_retire_age or plan.max_retire_age
-    age_now = Simulator(plan).age_at(0, today)
-    candidate = max(int(round((target - age_now) * 12)), 0)
+    candidate = pinned_retire_index(plan, today)
 
     def feasible(improvement: float) -> bool:
         return _feasible(replace(plan, monthly_cash_improvement=improvement),
@@ -214,9 +232,7 @@ def solve_increase_risk(plan: Plan, today: date | None = None) -> SolveResult:
     INFERRED — the reference crashes on this mode (notes/09).
     """
     today = today or date.today()
-    target = plan.wanted_retire_age or plan.max_retire_age
-    age_now = Simulator(plan).age_at(0, today)
-    candidate = max(int(round((target - age_now) * 12)), 0)
+    candidate = pinned_retire_index(plan, today)
 
     def with_extra_return(extra: float) -> Plan:
         trial = replace(plan)

@@ -44,6 +44,13 @@ class TaxableAccount:
     basis: float
     method: LotMethod = LotMethod.FLAT
     lots: list[lot_math.Lot] = field(default_factory=list)
+    _unsettled: float = 1.0
+    """Growth not yet applied to the lots.
+
+    Every lot grows by the same factor, and a pool can hold ~900 of them, so
+    growth accumulates here and is applied only when a sale reads the pool.
+    A lot bought meanwhile is stored net of it, so settling cannot credit it
+    with growth from before it was bought."""
 
     @classmethod
     def from_portfolio(cls, portfolio: Portfolio) -> "TaxableAccount":
@@ -72,13 +79,21 @@ class TaxableAccount:
         self.balance += amount
         self.basis += amount
         if self.method is not LotMethod.FLAT:
-            self.lots.append(lot_math.Lot(basis=amount, value=amount))
+            if self._unsettled == 0.0:
+                self._settle()  # a fee of 100% zeroed the pool; nothing to scale by
+            self.lots.append(lot_math.Lot(basis=amount, value=amount / self._unsettled))
 
     def grow(self, factor: float) -> None:
         """Growth lifts values only — the extra is unrealised gain."""
         self.balance *= factor
-        for lot in self.lots:
-            lot.value *= factor
+        if self.lots:
+            self._unsettled *= factor
+
+    def _settle(self) -> None:
+        if self._unsettled != 1.0:
+            for lot in self.lots:
+                lot.value *= self._unsettled
+            self._unsettled = 1.0
 
     def withdraw_net(self, need: float, age: float = 0.0,
                      statutory_age: int = 67) -> tuple[float, float]:
@@ -93,6 +108,7 @@ class TaxableAccount:
         """
         if self.balance <= 0 or need <= 0:
             return 0.0, 0.0
+        self._settle()
 
         gain_share = self.gain_fraction
 

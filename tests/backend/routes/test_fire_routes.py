@@ -9,15 +9,15 @@ monthly decomposition rather than a summary.
 
 from __future__ import annotations
 
-import json
+import sys
 from pathlib import Path
 
 import pytest
 
-FIXTURES = (Path(__file__).resolve().parents[3]
-            / "research" / "zeke_retire_calc" / "fixtures")
+sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "research" / "zeke_retire_calc"))
+import parity
 
-BASELINE = json.loads((FIXTURES / "baseline.json").read_text(encoding="utf-8"))["overrides"]
+BASELINE = parity.load("baseline")["overrides"]
 
 EVERYTHING = {
     **BASELINE,
