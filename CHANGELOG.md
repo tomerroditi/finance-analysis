@@ -1,3 +1,9 @@
+## v1.94.1 (2026-09-26)
+
+### Fix
+
+- **savings-goals**: a goal with its own income holds exactly that income (#363)
+
 ## v1.94.0 (2026-09-26)
 
 ### Feat
