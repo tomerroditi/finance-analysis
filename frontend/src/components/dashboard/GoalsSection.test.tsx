@@ -657,6 +657,32 @@ describe("GoalsSection", () => {
     });
   });
 
+  describe("goal editor", () => {
+    it("picks the start on the same calendar as the target date, keeping the month", async () => {
+      vi.spyOn(taggingApi, "getCategories").mockResolvedValue({
+        data: {},
+      } as Awaited<ReturnType<typeof taggingApi.getCategories>>);
+      vi.spyOn(savingsGoalsApi, "getFreeCashBefore").mockResolvedValue({
+        data: { month: "2025-01", free_cash: 0 },
+      } as Awaited<ReturnType<typeof savingsGoalsApi.getFreeCashBefore>>);
+      const update = vi.spyOn(savingsGoalsApi, "update").mockResolvedValue({
+        data: [] as SavingsGoal[],
+      } as Awaited<ReturnType<typeof savingsGoalsApi.update>>);
+      await renderGoals([makeGoal({ name: "Trip", start_month: "2025-01" })]);
+
+      fireEvent.click(within(rowFor("Trip")).getByRole("button", { name: /^edit$/i }));
+      const start = await screen.findByLabelText(/start from/i);
+      expect(start).toHaveAttribute("type", "date");
+      expect(start).toHaveValue("2025-01-01");
+
+      fireEvent.change(start, { target: { value: "2026-03-17" } });
+      fireEvent.click(screen.getByRole("button", { name: /^save$/i }));
+
+      await waitFor(() => expect(update).toHaveBeenCalled());
+      expect(update.mock.calls[0][1]).toMatchObject({ start_month: "2026-03" });
+    });
+  });
+
   describe("investment goals", () => {
     const invest = (overrides: Partial<SavingsGoal> = {}) =>
       makeGoal({

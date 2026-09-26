@@ -191,6 +191,48 @@ else in this file. An **investment** goal answers "have I invested X?":
   every old clawback in place. Pinned by
   `test_creating_and_deleting_it_restate_the_past`.
 
+## Goals with income of their own borrow until it lands
+
+A cash goal with a `contribution_category` (a "saved into" rule — the wedding
+fund fed by `Other Income / Wedding`) has its own income on the way. Until it
+arrives, the goal **borrows**; once it does, it hands back what it no longer
+needs. `_simulate` tracks what each such goal borrowed in `bridge`:
+
+- **Before the income it takes surplus toward its target**, through the
+  waterfall like any goal. Every shekel it takes joins its bridge.
+- **A bill it cannot yet cover is fronted from free cash** (`plan.fronted`):
+  the gap is added to what it holds and to its bridge, so it pays the bill
+  in full and owes the gap back. The pool pays either way and, like any
+  overspend, reaches the other goals only once it is empty.
+- **Its income releases the bridge first — but only past its target.**
+  `release = min(bridge, funded + income - target)`, credited back to free
+  cash (`plan.released`). The goal keeps the income and goes on holding
+  whatever borrowed surplus still fills the gap to its target. Releasing
+  everything instead dropped it back under target and the waterfall took
+  surplus again the same month — release, retake, every month.
+- **A clawback repays the bridge**; a goal still owing its bridge never
+  auto-closes.
+- Fronted and released amounts are derived every pass, like contributions,
+  never ledger rows. `funded = opening + allocated + contributed + fronted -
+  released`, the payload reports `fronted` / `released`, and the month view
+  and timeline carry the net as `bridged` inside each goal's `total`.
+- **Creating, rescoping or deleting the rule restates history** from the
+  goal's start month (`_restate_for_transfers`, shared with investment
+  goals): it decides, in every month since, what the goal borrowed and
+  handed back.
+
+Pinned by `TestRuleFundedGoals`. Migration `1f504bcccd13` clears the open
+goals' ledger once so existing data is recomputed under these rules.
+
+### A goal pays only with what it holds
+
+Any goal's spending is capped at `funded - utilized`; `plan.spent` is what it
+actually paid and is what `utilized` reports. The rest of the bill came out
+of free cash — it is debited there (a rule-funded goal fronts it, above; any
+other goal simply leaves it with free cash). Before this, a bill bigger than
+the goal left `available` negative and never touched free cash, so the pool
+read high by the overshoot.
+
 ## Investment backing was removed
 
 Goals could once earmark a holding (`savings_goal_investments`, valued live
