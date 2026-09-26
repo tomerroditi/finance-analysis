@@ -18,9 +18,9 @@ pension, spending, tactic or retirement age.
 
 **The blend.** The bridge ends inside the window between 60 and the statutory
 age, a fraction `1 - y(x)` of the way along it — the same fraction for a man's
-seven-year window and a woman's five-year one. `y` is measured, not derived:
-it starts at about `x/2` and is 0.907 just short of full coverage, where it
-jumps to 1 (a pension that covers everything ends the bridge at 60).
+seven-year window and a woman's five-year one. `y = x / (2 - x)`: the window
+is scaled by the uncovered need over the average of the need levels before
+and after 60 (a pension that covers everything ends the bridge at 60).
 
 **Past 60, the reference mixes an index into a duration.** A claim that is
 still ahead is waited for (`claim - last working month`), but one already
@@ -32,42 +32,22 @@ tactics and both genders. It is the reference's behaviour, so it is cloned.
 
 from __future__ import annotations
 
-from backend.services.fire.decumulation import _Curve
-
-COVERAGE_CURVE: list[tuple[float, float]] = [
-    (0.0, 0.0),
-    (0.02048, 0.010346),
-    (0.051199, 0.026277),
-    (0.076799, 0.039926),
-    (0.102399, 0.05396),
-    (0.153597, 0.083192),
-    (0.204797, 0.114079),
-    (0.307196, 0.181475),
-    (0.511992, 0.34408),
-    (0.716789, 0.558591),
-    (0.767989, 0.623363),
-    (0.819188, 0.693749),
-    (0.870388, 0.770517),
-    (0.921587, 0.854577),
-    (0.952307, 0.908956),
-]
-"""`(x, y)` measured at retirement age 45, each `y` read off a run whose only
-unknown was its own decumulation rate, inverted through the surface where it
-is measured month by month. Checked at ages 40 and 50 and for a woman's
-shorter window. `x` is on the **net** annuity: every probe here paid a small,
-untaxed recognised annuity, whose net is its gross less the flat 4.25%
-national-insurance contribution."""
-
-_CURVE = _Curve(COVERAGE_CURVE)
+from itertools import pairwise
 
 
 def window_share(coverage: float) -> float:
-    """`y(x)`: how much of the 60-to-statutory window a pension at 60 removes."""
+    """`y(x) = x / (2 - x)`: how much of the 60-to-statutory window a pension removes.
+
+    Equivalently the window shrinks to `(E - P) / (E - P/2)` of itself: the
+    uncovered need after 60 over the plain average of the need before and
+    after it. Fitted to 14 measured points at 2e-4, which is their own
+    measurement noise; full coverage ends the bridge at 60.
+    """
     if coverage >= 1.0:
         return 1.0
     if coverage <= 0.0:
         return 0.0
-    return _CURVE(coverage)
+    return coverage / (2.0 - coverage)
 
 
 def bridge_months(
@@ -95,3 +75,55 @@ def bridge_months(
     else:
         window = month_statutory - month_60
     return wait(month_60) + window * (1.0 - window_share(coverage))
+
+
+STATE_PENSION = 2757.0
+STATE_PENSION_AT_80 = 2911.5
+"""Bituach Leumi's 2026 individual allowance at the full 50% seniority increment
+(1,838 x 1.5), and from 80 (1,941 x 1.5). The dependent-spouse increment does
+not enter the bridge."""
+
+
+def couple_bridge_months(
+    last_working: int, horizon: int, spending: float, spouses: list[dict]
+) -> float:
+    """Horizon, in months, for a couple (notes/18 §6).
+
+    The time from the last working month to the horizon (the younger spouse's
+    81) is cut at every spouse's 60th birthday and statutory age. Each phase
+    needs the spending less the income running at its end: pensions claimed
+    at 60 (net), and from the statutory age the rest of the pension and the
+    old-age allowance, floored at zero. A phase needing everything counts in
+    full; a partly covered one counts its length times its need over the plain
+    average of the non-zero needs. The single-person rule is the same
+    averaging over two phases (`window_share`).
+
+    Each spouse is a dict of `month_60`, `month_statutory`, `month_80` (months
+    counted from today) and `at_60`, `at_statutory` (monthly amounts).
+    """
+    events = {last_working, horizon}
+    for spouse in spouses:
+        for key in ("month_60", "month_statutory"):
+            if last_working < spouse[key] < horizon:
+                events.add(spouse[key])
+    cuts = sorted(events)
+    phases = []
+    for start, end in pairwise(cuts):
+        income = 0.0
+        for spouse in spouses:
+            if end > spouse["month_60"]:
+                income += spouse["at_60"]
+            if end > spouse["month_statutory"]:
+                income += spouse["at_statutory"]
+                income += (
+                    STATE_PENSION_AT_80 if end > spouse["month_80"] else STATE_PENSION
+                )
+        phases.append((end - start, max(spending - income, 0.0)))
+    needs = [need for _, need in phases if need > 0]
+    if not needs:
+        return 0.0
+    average = sum(needs) / len(needs)
+    return sum(
+        length if need >= spending else length * need / average
+        for length, need in phases
+    )

@@ -141,47 +141,47 @@ month. `surface_fine` uses it to measure the surface at monthly resolution.
 * **`retire_at_age` retired a month early**: the last working month is the one at
   exactly the requested age; we had it one month before.
 
-## 6. Couples — measured, not yet solved (`couple*.py`)
+## 6. Couples: the phase model (`couple*.py`)
 
-Every couple run replays to under 0.6 shekels once its own decumulation rate
-is supplied, so a couple differs from a single person **only in the bridge**.
-What is established:
+**The single-person curve is a closed form.** `y = x / (2 − x)` on the *net*
+coverage fits all 14 measured points to 2e-4 (their own noise), so the window
+shrinks to `(E − P)/(E − P/2)` of itself. That is the uncovered need after 60
+over the plain average of the two need levels (E before 60, E − P after it).
 
-* **The horizon runs to the younger spouse's 81**, and capital gains are taxed
-  on the **older** spouse's age (both fixed in the engine).
-* **Gender enters only through the statutory month.** A male partner born
-  1983 and a female one born 1985 reach their statutory age in the same month,
-  retire in the same month, and read the same rate to five decimals; so do
-  1978/1980; and the roles are symmetric (`cp3_mainfemale_1990` =
-  `cp2_empty_1990`). Pairs sharing a statutory month but not a retirement month
-  (a woman born 1990 retiring in month 8, a man born 1988 in month 7) do
-  differ — 353.19 against 352.49 — so the retirement month is in the rule.
-* **Pension-free, the bridge end is piecewise linear in the gap `g`** between
-  the two statutory months (two men, `couple4`/`couple5`, main at 364):
+**A couple is the same averaging over more phases.** Cut the time from the last
+working month to the horizon (the younger spouse's 81) at every spouse's 60th
+birthday and statutory age. Each phase needs the spending less the income
+running at its end, floored at zero: net pensions claimed at 60, and from the
+statutory age the rest of the pension (gross) plus the old-age allowance
+(2,757, or 2,911.5 once past 80, i.e. the 2026 tables at 50% seniority; the
+dependent-spouse increment does not enter). A phase needing everything counts
+in full. A partly covered one counts `length × need / average`, where the
+average is the plain mean of the non-zero needs.
 
-  | gap (months) | end | reading |
-  |---|---|---|
-  | 1 … 81 | `364 − 0.4797·g` | weight 0.5203 on the later statutory month |
-  | 84 | 326.17 | on neither line — the partner's 67 is the main's 60 |
-  | 87 … 132 | `401.6 − 0.7631·g` | a second line, jumping up at 87 |
+What pinned it:
 
-  Rate-space and withdrawal-rate-space weights drift in both regimes; only the
-  horizon is linear. The break sits where the older spouse's statutory month
-  crosses the younger's 60th birthday.
-* **A partner's own pension reads exactly like a single person's**, on the
-  partner's window, whether the partner is the same age, older or male
-  (`cp_partner_only`, `_older`, `_male`, `_t60`); the other spouse's empty
-  pension contributes nothing. Two pensions add, on the woman's shorter window
-  (`cp_both`).
-* **The man's pension beside a pension-free woman fits neither window**
-  (`cp_main_only`, `cp2_main_s*`): ends 347.9 / 334.7 / 319.4 / 288.7 at
-  x = 0.10 / 0.31 / 0.51 / 0.92, against her window's 336.8 / 329.1 / 319.4 /
-  288.7 — equal from x ≈ 0.5, above it below that.
+* **A couple's bridge moves with spending; a single's does not.** Two men who
+  turn 67 together end at 67 while 2 × 2,911.5 covers the spending and past it
+  otherwise. The end is `532 − 652,042/(E − 1,942)` to 0.02 months across
+  6k–25k (`couple7`, `couple8`), which is exactly the phase rule with levels
+  E, E, E − 5,823.
+* **It reproduces every pension-free couple with a gap under 84 months**,
+  every spending sweep, and 14 of 17 couples holding pensions, to ≤ 0.02
+  months of bridge.
+* **Gender only enters through the statutory month**, and the reference uses a
+  flat 65 for women, not the by-birth-year table (`cx1_019`: her allowance
+  starts the month after 65).
 
-Rules tried and rejected: plain averages of the two waits in horizon, rate,
-withdrawal-rate, 1/N, log-N or capital (annuity-factor) space; per-person ends
-averaged with household coverage; the earlier / later / partner's end alone;
-the partner retiring at the main person's age; Bituach Leumi as coverage. The
-reference's code is not public and its guide covers single persons only. Next:
-sweep the gap for a woman beside a man, pension-free, as `couple5` did for two
-men — the two slopes and the jump are the cleanest handle there is.
+Still open (bounded as known gaps):
+
+* **An age gap past the younger's 60**: when the older spouse's statutory month
+  falls before the younger's 60th birthday (gaps ≥ 87 months), the model is up
+  to 13 months off.
+* **The man's at-60 pension beside a woman whose allowance only partly covers
+  the gap** (`cp_main_only`, `cp2_main_s10`, `s30_1995`): three distinct
+  partial levels average differently.
+* **A spouse already past 60** (`cx1_019`) and **negative spending** from a
+  one-off income counted to its end type (`cx1_036`, `cx1_038`).
+
+The earlier readings of this section ("a fixed 0.5203 weight", "the partner's
+single bridge") were each one face of this rule.

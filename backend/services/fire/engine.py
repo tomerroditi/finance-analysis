@@ -25,6 +25,7 @@ from backend.services.fire.keren_hishtalmut import KerenAccount
 from backend.services.fire.models import (
     CashFlow,
     EndType,
+    Pension,
     PensionTactic,
     Person,
     Plan,
@@ -479,6 +480,8 @@ class Simulator:
 
     def bridge_months(self, retire_index: int, today: date) -> float:
         """Return the horizon the decumulation surface is read at, in months (bridge.py)."""
+        if self.plan.partner is not None and self.plan.partner.date_of_birth:
+            return self._couple_bridge_months(retire_index, today)
         birth = (today.year - self.dob.year) * 12 + (today.month - self.dob.month)
         statutory = national_insurance.STATUTORY_AGE[self.plan.person.gender]
         pension = self.plan.pension
@@ -492,6 +495,103 @@ class Simulator:
             claims_at_60=claims_at_60,
             coverage=self._coverage(retire_index, today) if claims_at_60 else 0.0,
         )
+
+    def _couple_bridge_months(self, retire_index: int, today: date) -> float:
+        """Return a couple's bridge: phases of household need (bridge.py)."""
+        spouses = []
+        for owner, fund in (
+            (self.plan.person, self.plan.pension),
+            (self.plan.partner, self.plan.partner_pension),
+        ):
+            birth = (today.year - owner.date_of_birth.year) * 12 + (
+                today.month - owner.date_of_birth.month
+            )
+            at_60, at_statutory = self._pension_claims(owner, fund, retire_index, today)
+            statutory = national_insurance.STATUTORY_AGE[owner.gender]
+            spouses.append(
+                {
+                    "month_60": 60 * 12 - birth,
+                    "month_statutory": statutory * 12 - birth,
+                    "month_80": 80 * 12 - birth,
+                    "at_60": at_60,
+                    "at_statutory": at_statutory,
+                }
+            )
+        return bridge.couple_bridge_months(
+            last_working=retire_index - 1,
+            horizon=self.month_count(today) - 1,
+            spending=self._spending_after_60(retire_index, today),
+            spouses=spouses,
+        )
+
+    def _spending_after_60(self, retire_index: int, today: date) -> float:
+        """Spending the bridge has to carry after 60, net of other income."""
+        birth = (today.year - self.dob.year) * 12 + (today.month - self.dob.month)
+        at = max(60 * 12 - birth + 1, retire_index)
+        spending = sum(
+            flow.amount
+            for flow in self.plan.expenses
+            if self._counts_after_60(flow, at, retire_index, today)
+        )
+        return spending - sum(
+            flow.amount
+            for flow in self.plan.incomes
+            if self._counts_after_60(flow, at, retire_index, today)
+        )
+
+    def _pension_claims(
+        self, owner: Person, fund: Pension | None, retire_index: int, today: date
+    ) -> tuple[float, float]:
+        """Return `(net annuity from 60, gross annuity from the statutory age)`.
+
+        Both are valued on the balance at retirement, as the single-person
+        coverage is; the statutory claim is counted gross.
+        """
+        if fund is None:
+            return 0.0, 0.0
+        statutory = national_insurance.STATUTORY_AGE[owner.gender]
+        account = PensionAccount(
+            plan_pension=fund, gender=owner.gender, statutory_age=statutory
+        )
+        birth = (today.year - owner.date_of_birth.year) * 12 + (
+            today.month - owner.date_of_birth.month
+        )
+        first, last = self._window(
+            CashFlow(
+                start_type=StartType.NOW, end_type=fund.end_type, end_date=fund.end_date
+            ),
+            retire_index,
+            today,
+        )
+        for t in range(retire_index):
+            if first <= t <= last:
+                account.contribute()
+            account.annuitise_due((birth + t) / 12)
+            account.grow()
+        share = fund.mukeret_pct / 100
+        if account.streams:
+            at_60 = [s for s in account.streams if s.claim_age == 60]
+            recognised = sum(s.monthly for s in at_60 if s.recognised)
+            entitling = sum(s.monthly for s in at_60 if not s.recognised)
+            later = sum(s.monthly for s in account.streams if s.claim_age != 60)
+            if account.balance > 0:
+                later += account.balance / annuity_factor(owner.gender, statutory)
+        else:
+            per_60 = account.balance / annuity_factor(owner.gender, 60)
+            per_statutory = account.balance / annuity_factor(owner.gender, statutory)
+            if fund.tactic is PensionTactic.ALL_FROM_60:
+                recognised, entitling, later = per_60 * share, per_60 * (1 - share), 0.0
+            elif fund.tactic is PensionTactic.MUKERET_60_ZAKA_STATUTORY:
+                recognised, entitling = per_60 * share, 0.0
+                later = per_statutory * (1 - share)
+            else:
+                recognised = entitling = 0.0
+                later = per_statutory
+        gross = recognised + entitling
+        net = (
+            gross - contributions_on(gross) - israeli_tax.monthly_income_tax(entitling)
+        )
+        return net, later
 
     def _coverage(self, retire_index: int, today: date) -> float:
         """Pension paid from 60 over the spending it has to carry then (bridge.py)."""
