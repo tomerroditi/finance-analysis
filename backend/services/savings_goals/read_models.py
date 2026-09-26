@@ -486,6 +486,8 @@ class ReadModelsMixin:
             "target_date": goal.target_date,
             "contribution_category": goal.contribution_category,
             "contribution_tags": goal.contribution_tags,
+            "utilization_category": goal.utilization_category,
+            "utilization_tags": goal.utilization_tags,
             "status": goal.status,
             "closed_month": goal.closed_month,
             "notes": goal.notes,

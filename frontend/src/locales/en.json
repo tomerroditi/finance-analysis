@@ -365,7 +365,14 @@
       "redistributeExplainer": "Reordering goals applies to future months. This restates past months under the current order. Closed goals keep what they were given.",
       "redistributeNoChange": "Nothing would change — history already matches the current order.",
       "redistributeConfirm": "Redistribute",
-      "confirmDelete": "Delete the goal \"{{name}}\"?"
+      "confirmDelete": "Delete the goal \"{{name}}\"?",
+      "autoLinkTitle": "Link transactions automatically",
+      "autoLinkSpendLabel": "Spent from this goal",
+      "autoLinkSpendHint": "Purchases in this category (and tags) count as spent from the goal, from its start month on — the same link a project or yearly budget's goal button sets.",
+      "autoLinkSaveLabel": "Saved into this goal",
+      "autoLinkSaveHint": "Transfers in this category (and tags) count as money set aside for the goal.",
+      "autoLinkNone": "None",
+      "autoLinkAllTags": "All tags"
     },
     "heatmap": {
       "title": "Spending Calendar",
@@ -835,6 +842,17 @@
       "verdictClosed": "by {{amount}}, on {{over}} of {{total}} rules.",
       "verdictLive": "projected {{amount}}, {{delta}}.",
       "whereItStands": "Where the month stands"
+    },
+    "goalLink": {
+      "action": "Pay for this budget from a savings goal",
+      "short": "Savings goal",
+      "title": "Fund \"{{name}}\" from a savings goal",
+      "explainer": "Every purchase this budget covers — the ones already here and every one that comes later — is counted as spent out of the goal you pick, from the goal's start month on. No need to link transactions one by one; a transaction you link by hand still takes precedence. A goal pays for one budget at a time, so picking one that already funds something moves it here.",
+      "fundedBy": "Funded by {{name}}",
+      "linked": "Linked",
+      "fundsOther": "Now funds {{name}}",
+      "unlink": "Remove link",
+      "failed": "Failed to link the budget to the goal"
     }
   },
   "budgetAlerts": {

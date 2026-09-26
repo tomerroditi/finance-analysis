@@ -16,15 +16,17 @@ import pytest
 from sqlalchemy import event
 from sqlalchemy.orm import Session
 
-from backend.errors import ValidationException
+from backend.errors import EntityNotFoundException, ValidationException
 from backend.models.savings_goal import (
     GOAL_STATUS_CLOSED,
     LINK_CONTRIBUTION,
     LINK_UTILIZATION,
 )
 from backend.models.bank_balance import BankBalance
-from backend.models.transaction import BankTransaction
+from backend.models.transaction import BankTransaction, CreditCardTransaction
+from backend.services.budget.project import ProjectBudgetService
 from backend.services.savings_goals import SavingsGoalService
+from backend.services.tagging_service import CategoriesTagsService
 
 
 def _month_str(offset_back: int) -> str:
@@ -315,6 +317,270 @@ class TestUtilization:
         assert goal["is_closed"] is True
         assert goal["status"] == GOAL_STATUS_CLOSED
         assert goal["closed_month"] == last
+
+
+def _add_card_txn(db, month: str, amount: float, category: str, day: int = 15):
+    """Insert one itemized credit-card purchase into a month and return it."""
+    txn = CreditCardTransaction(
+        id=f"cc-{month}-{amount}-{day}",
+        date=_day_in_month(month, day),
+        provider="TestCard",
+        account_name="Card",
+        description="test",
+        amount=amount,
+        category=category,
+        source="credit_card_transactions",
+        type="normal",
+    )
+    db.add(txn)
+    db.commit()
+    db.refresh(txn)
+    return txn
+
+
+def _create_project(db, name: str, budget: float = 50000) -> None:
+    """Create a project budget over a fresh category."""
+    CategoriesTagsService(db).add_category(name, ["Venue"])
+    ProjectBudgetService(db).create_project(name, budget)
+
+
+class TestSpendingLink:
+    """A goal pays for a project, an envelope or any category/tags with one link."""
+
+    def test_project_spend_is_utilized_without_touching_the_pool(
+        self, db_session, service
+    ):
+        """Every project purchase draws the goal down; the surplus ignores them."""
+        earlier, last = _month_str(2), _month_str(1)
+        _seed_surplus(db_session, earlier, income=10000, expenses=8000)
+        _seed_surplus(db_session, last, income=10000, expenses=8000)
+        _create_project(db_session, "Wedding")
+        _add_txn(db_session, last, -700, "Wedding", tag="Venue", day=6)
+        _add_txn(db_session, last, -300, "Wedding", day=7)
+
+        created = service.create(
+            name="Wedding fund", target_amount=5000, priority=0, start_month=earlier
+        )
+        liquid = service.get_free_cash()["liquid"]
+        goal = service.set_spending_link(created[0]["id"], "Wedding")[0]
+
+        assert goal["utilization_category"] == "Wedding"
+        assert goal["utilized"] == 1000
+        # History keeps its rows, so the goal's funding stands; the project's
+        # 1000 now comes out of the goal instead of out of free cash.
+        assert goal["funded"] == 3000
+        assert goal["available"] == 2000
+        pool = service.get_free_cash()
+        assert pool["free_cash"] == 1000
+        assert pool["liquid"] == liquid
+
+    def test_refund_nets_against_the_project_spend(self, db_session, service):
+        """A refund in the project's category hands money back to the goal."""
+        last = _month_str(1)
+        _seed_surplus(db_session, last, income=10000, expenses=8000)
+        _create_project(db_session, "Wedding")
+        _add_txn(db_session, last, -1000, "Wedding", day=6)
+        _add_txn(db_session, last, 250, "Wedding", day=9)
+
+        created = service.create(
+            name="Wedding fund", target_amount=5000, priority=0, start_month=last
+        )
+        goal = service.set_spending_link(created[0]["id"], "Wedding")[0]
+
+        assert goal["utilized"] == 750
+
+    def test_spend_before_the_goal_started_stays_an_expense(
+        self, db_session, service
+    ):
+        """Purchases that predate the goal were never paid out of it."""
+        earlier, last = _month_str(2), _month_str(1)
+        _seed_surplus(db_session, earlier, income=10000, expenses=8000)
+        _seed_surplus(db_session, last, income=10000, expenses=8000)
+        _create_project(db_session, "Wedding")
+        _add_txn(db_session, earlier, -600, "Wedding", day=6)
+        _add_txn(db_session, last, -400, "Wedding", day=6)
+
+        created = service.create(
+            name="Wedding fund", target_amount=5000, priority=0, start_month=last
+        )
+        goal = service.set_spending_link(created[0]["id"], "Wedding")[0]
+
+        assert goal["utilized"] == 400
+
+    def test_card_purchase_is_utilized_and_its_bill_handed_back(
+        self, db_session, service
+    ):
+        """A card purchase draws the goal down and the bank bill leaves the pool alone."""
+        last = _month_str(1)
+        _seed_surplus(db_session, last, income=10000, expenses=8000)
+        _create_project(db_session, "Wedding")
+        _add_card_txn(db_session, last, -900, "Wedding", day=6)
+        # The bank-side bill paying that card statement.
+        _add_txn(db_session, last, -900, "Credit Cards", day=10)
+
+        created = service.create(
+            name="Wedding fund", target_amount=5000, priority=0, start_month=last
+        )
+        assert created[0]["funded"] == 1100
+        assert service.get_free_cash()["liquid"] == 1100
+
+        goal = service.set_spending_link(created[0]["id"], "Wedding")[0]
+
+        assert goal["utilized"] == 900
+        # The bill no longer shrinks the month's free cash — the goal paid it —
+        # and the card purchase is not charged a second time on top of it.
+        pool = service.get_free_cash()
+        assert pool["free_cash"] == 900
+        assert pool["liquid"] == 1100
+
+    def test_explicit_link_on_a_card_purchase_is_utilized(self, db_session, service):
+        """A card purchase linked by hand is spent from its goal, not ignored."""
+        last = _month_str(1)
+        _seed_surplus(db_session, last, income=10000, expenses=8000)
+        purchase = _add_card_txn(db_session, last, -300, "Travel", day=6)
+
+        created = service.create(
+            name="Trip", target_amount=5000, priority=0, start_month=last
+        )
+        goals = service.link_transaction(
+            goal_id=created[0]["id"],
+            source_type="transaction",
+            source_id=purchase.unique_id,
+            source_table="credit_card_transactions",
+            link_type=LINK_UTILIZATION,
+        )
+
+        assert goals[0]["utilized"] == 300
+
+    def test_explicit_link_beats_the_project(self, db_session, service):
+        """One transaction linked elsewhere by hand stays with that goal."""
+        last = _month_str(1)
+        _seed_surplus(db_session, last, income=10000, expenses=8000)
+        _create_project(db_session, "Wedding")
+        _add_txn(db_session, last, -500, "Wedding", day=6)
+        other = _add_txn(db_session, last, -200, "Wedding", day=8)
+
+        created = service.create(
+            name="Wedding fund", target_amount=5000, priority=0, start_month=last
+        )
+        created = service.create(
+            name="Honeymoon", target_amount=5000, priority=1, start_month=last
+        )
+        ids = {g["name"]: g["id"] for g in created}
+        service.set_spending_link(ids["Wedding fund"], "Wedding")
+        service.link_transaction(
+            goal_id=ids["Honeymoon"],
+            source_type="transaction",
+            source_id=other.unique_id,
+            source_table="bank_transactions",
+            link_type=LINK_UTILIZATION,
+        )
+
+        goals = {g["name"]: g for g in service.get_all()}
+        assert goals["Wedding fund"]["utilized"] == 500
+        assert goals["Honeymoon"]["utilized"] == 200
+
+    def test_a_project_is_funded_by_one_goal_at_a_time(self, db_session, service):
+        """Pointing a second goal at the project releases the first."""
+        last = _month_str(1)
+        _create_project(db_session, "Wedding")
+        service.create(name="A", target_amount=1000, priority=0, start_month=last)
+        created = service.create(
+            name="B", target_amount=1000, priority=1, start_month=last
+        )
+        ids = {g["name"]: g["id"] for g in created}
+
+        service.set_spending_link(ids["A"], "Wedding")
+        goals = {g["name"]: g for g in service.set_spending_link(ids["B"], "Wedding")}
+
+        assert goals["A"]["utilization_category"] is None
+        assert goals["B"]["utilization_category"] == "Wedding"
+
+    def test_unlinking_restores_the_spend_as_an_expense(self, db_session, service):
+        """Passing ``None`` detaches the project."""
+        last = _month_str(1)
+        _seed_surplus(db_session, last, income=10000, expenses=8000)
+        _create_project(db_session, "Wedding")
+        _add_txn(db_session, last, -500, "Wedding", day=6)
+        created = service.create(
+            name="Wedding fund", target_amount=5000, priority=0, start_month=last
+        )
+        goal_id = created[0]["id"]
+        service.set_spending_link(goal_id, "Wedding")
+
+        goal = service.set_spending_link(goal_id, None)[0]
+
+        assert goal["utilization_category"] is None
+        assert goal["utilized"] == 0
+
+    def test_tags_narrow_the_rule_like_a_yearly_envelope(self, db_session, service):
+        """A category + tags link claims only the envelope's tags."""
+        last = _month_str(1)
+        _seed_surplus(db_session, last, income=10000, expenses=8000)
+        CategoriesTagsService(db_session).add_category("Leisure", ["Vacation", "Movies"])
+        _add_txn(db_session, last, -900, "Leisure", tag="Vacation", day=6)
+        _add_txn(db_session, last, -80, "Leisure", tag="Movies", day=7)
+
+        created = service.create(
+            name="Trip", target_amount=5000, priority=0, start_month=last
+        )
+        goal = service.set_spending_link(created[0]["id"], "Leisure", ["Vacation"])[0]
+
+        assert goal["utilization_category"] == "Leisure"
+        assert goal["utilization_tags"] == "Vacation"
+        assert goal["utilized"] == 900
+
+    def test_all_tags_is_stored_as_the_whole_category(self, db_session, service):
+        """``all_tags`` (a project's anchor rule) covers every tag."""
+        _create_project(db_session, "Wedding")
+        created = service.create(name="Goal", target_amount=1000, priority=0)
+        goal = service.set_spending_link(created[0]["id"], "Wedding", ["all_tags"])[0]
+        assert goal["utilization_tags"] is None
+
+    def test_rule_set_from_the_goal_editor_applies(self, db_session, service):
+        """The reverse direction: a goal naming its own category/tags."""
+        last = _month_str(1)
+        _seed_surplus(db_session, last, income=10000, expenses=8000)
+        CategoriesTagsService(db_session).add_category("Leisure", ["Vacation"])
+        _add_txn(db_session, last, -400, "Leisure", tag="Vacation", day=6)
+
+        created = service.create(
+            name="Trip",
+            target_amount=5000,
+            priority=0,
+            start_month=last,
+            utilization_category="Leisure",
+            utilization_tags="Vacation",
+        )
+
+        assert created[0]["utilized"] == 400
+
+    def test_higher_priority_goal_wins_an_overlapping_rule(self, db_session, service):
+        """Two rules matching one row resolve by waterfall order."""
+        last = _month_str(1)
+        _seed_surplus(db_session, last, income=10000, expenses=8000)
+        CategoriesTagsService(db_session).add_category("Leisure", ["Vacation"])
+        _add_txn(db_session, last, -400, "Leisure", tag="Vacation", day=6)
+
+        service.create(
+            name="First",
+            target_amount=5000,
+            priority=0,
+            start_month=last,
+            utilization_category="Leisure",
+        )
+        created = service.create(
+            name="Second",
+            target_amount=5000,
+            priority=1,
+            start_month=last,
+            utilization_category="Leisure",
+            utilization_tags="Vacation",
+        )
+
+        goals = {g["name"]: g for g in created}
+        assert goals["First"]["utilized"] == 400
+        assert goals["Second"]["utilized"] == 0
 
 
 class TestRebuild:

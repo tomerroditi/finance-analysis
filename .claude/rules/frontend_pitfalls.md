@@ -323,6 +323,49 @@ Both shapes are enforced by `frontend/src/roundedScrollContainers.test.ts`
 (a source scan, runs in `npm test`), with the behavioural half in
 `e2e/dashboard-layout.spec.ts`.
 
+## Dialogs Scroll Themselves, Never the Page
+
+A dialog's content can outgrow the screen (a form that gained a section, a
+long transaction description in a confirm, a phone in landscape). When it
+does, the dialog must scroll **its own body**, and nothing the user does inside
+it may move the page behind. The savings-goal editor broke both halves: the
+panel capped its height and clipped the form (Save included) with no scroller
+inside it, so a scroll gesture over it fell through to the dashboard.
+
+- **Use `<Modal>`.** It owns the whole contract: `useScrollLock(isOpen)`, the
+  `modal-overlay` class, a `max-h-[90dvh]` panel with `overflow-hidden`, and a
+  `flex-1 min-h-0 overflow-y-auto overscroll-contain` body around its
+  children. Everything a child renders scrolls together inside that body.
+- **The scroller is a plain block, never itself a flex column.** The first
+  version of the `Modal` body was `… flex flex-col overflow-y-auto` so children
+  could keep a fixed footer; it scrolled in desktop Chromium and did not
+  scroll at all for the user. Every dialog that scrolls on every device
+  has the same shape — a block `overflow-y-auto` element sitting in the
+  panel's flex column — so keep to it.
+- **`dvh`, not `vh`, for the cap.** On iOS Safari `90vh` is measured with the
+  toolbar hidden, so a `90vh` panel's bottom (usually the Save button) sits
+  under the visible toolbar.
+- **Hand-rolled overlay?** Every `fixed inset-0` backdrop needs all four:
+  `useScrollLock(open)`, `modal-overlay` on the overlay, a height cap on the
+  panel (`max-h-[90dvh]`, or `h-dvh` for full-screen sheets), and a
+  `min-h-0 overflow-y-auto overscroll-contain` body between a `shrink-0`
+  header/footer. Small confirmations are not exempt — their message is user
+  data and can be any length.
+- **`min-h-0` is not optional** on a flex child that should scroll: a flex
+  item's minimum height is its content, so without it the child grows past
+  the cap and the panel clips instead.
+- **Dropdowns inside a scrolling body must portal** (`SelectDropdown` and
+  `MultiSelect` already do), or the body clips them.
+
+Enforced by `frontend/src/modalScrolling.test.ts` (a source scan over the
+shared `Modal` and every hand-rolled overlay, runs in `npm test`), with the
+behavioural half in `e2e/budget-savings-goal.spec.ts` (scrolls the goal
+editor with the wheel on a short desktop viewport and with a real touch swipe
+on a phone viewport, and asserts the dialog moves while the page stays put).
+Drive touch with raw CDP `Input.dispatchTouchEvent` start/move/end events —
+`Input.synthesizeScrollGesture` scrolls nothing in headless Chromium, not even
+the bare page, so a test built on it passes vacuously.
+
 ## Capped Scroll Regions Swallow the Page's Scroll
 
 A height cap turns an element into a scroll container, and a scroll container

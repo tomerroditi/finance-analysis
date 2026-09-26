@@ -3,7 +3,7 @@
 from typing import Any
 
 import pandas as pd
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.orm import Session
 
@@ -338,6 +338,49 @@ class SavingsGoalRepository:
         )
         self.db.commit()
         return result.rowcount
+
+    def set_utilization_rule(
+        self, goal_id: int, category: str | None, tags: str | None
+    ) -> None:
+        """Make ``goal_id`` the goal that pays for ``(category, tags)``.
+
+        Any other goal holding the very same rule lets go of it in the same
+        commit: the user just moved that spending to this goal, and two goals
+        claiming it would leave the choice to waterfall order instead.
+
+        Parameters
+        ----------
+        goal_id : int
+            Goal that pays for the spending.
+        category : str or None
+            Category the rule matches; ``None`` clears the goal's rule.
+        tags : str or None
+            Semicolon-separated tags narrowing ``category``; ``None`` covers
+            every tag.
+
+        Raises
+        ------
+        EntityNotFoundException
+            If no goal with ``goal_id`` exists.
+        """
+        goal = self.db.get(SavingsGoal, goal_id)
+        if not goal:
+            raise EntityNotFoundException(f"Savings goal {goal_id} not found")
+        if category is not None:
+            self.db.execute(
+                update(SavingsGoal)
+                .where(SavingsGoal.utilization_category == category)
+                .where(
+                    SavingsGoal.utilization_tags.is_(None)
+                    if tags is None
+                    else SavingsGoal.utilization_tags == tags
+                )
+                .where(SavingsGoal.id != goal_id)
+                .values(utilization_category=None, utilization_tags=None)
+            )
+        goal.utilization_category = category
+        goal.utilization_tags = tags if category is not None else None
+        self.db.commit()
 
     def active_goals(self) -> list[SavingsGoal]:
         """Return active goals in waterfall order (priority ascending)."""
