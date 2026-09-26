@@ -1173,9 +1173,7 @@ export interface SavingsGoal {
   utilized: number;
   /** Money deficit months pulled back out, once the free-cash pool ran dry. */
   clawed_back: number;
-  /** Goal progress held in earmarked investments rather than cash. */
-  investment_backed: number;
-  /** opening_balance + allocated + contributed + investment_backed, net of any clawback. */
+  /** opening_balance + allocated + contributed, net of any clawback. */
   funded: number;
   /** funded - utilized: what is still earmarked and unspent. */
   available: number;
@@ -1287,11 +1285,9 @@ export interface SavingsGoalRebuildResult {
 /** The pool of tracked money that no goal has earmarked. */
 export interface SavingsGoalFreeCash {
   free_cash: number;
-  /** The *cash* goals still hold — investment backing is reported apart. */
+  /** What the goals still hold. */
   earmarked: number;
   liquid: number;
-  /** Goal progress sitting in holdings, which was never part of this pool. */
-  investment_backed: number;
   clawed_back_this_month: number;
   has_goals: boolean;
 }
@@ -1300,30 +1296,6 @@ export interface SavingsGoalFreeCash {
 export interface SavingsGoalFreeCashBefore {
   month: string;
   free_cash: number;
-}
-
-/** An investment holding earmarked against a goal. */
-export interface SavingsGoalInvestment {
-  id: number;
-  goal_id: number;
-  investment_id: number;
-  investment_name: string | null;
-  investment_type: string | null;
-  is_closed: boolean;
-  /** `null` earmarks whatever is left of the holding. */
-  amount: number | null;
-  goal_backed_total: number;
-}
-
-/** An open investment and how much of it is still free to earmark. */
-export interface SavingsGoalAvailableInvestment {
-  id: number;
-  name: string | null;
-  type: string | null;
-  value: number;
-  earmarked: number;
-  available: number;
-  fully_claimed: boolean;
 }
 
 export type SavingsGoalLinkType = "contribution" | "utilization";
@@ -1363,20 +1335,6 @@ export const savingsGoalsApi = {
     api.get<SavingsGoalTimeline>("/savings-goals/timeline", {
       params: { months },
     }),
-  getInvestments: (goalId?: number) =>
-    api.get<SavingsGoalInvestment[]>("/savings-goals/investments", {
-      params: goalId ? { goal_id: goalId } : undefined,
-    }),
-  getAvailableInvestments: () =>
-    api.get<SavingsGoalAvailableInvestment[]>(
-      "/savings-goals/investments/available",
-    ),
-  linkInvestment: (
-    goalId: number,
-    payload: { investment_id: number; amount?: number | null },
-  ) => api.post<SavingsGoal[]>(`/savings-goals/${goalId}/investments`, payload),
-  unlinkInvestment: (backingId: number) =>
-    api.delete(`/savings-goals/investments/${backingId}`),
   getLinks: (goalId?: number) =>
     api.get<SavingsGoalLink[]>("/savings-goals/links", {
       params: goalId ? { goal_id: goalId } : undefined,

@@ -8,7 +8,6 @@ import {
   testingApi,
   type SavingsGoal,
   type SavingsGoalFreeCash,
-  type SavingsGoalInvestment,
   type SavingsGoalTimeline,
 } from "../../services/api";
 import { DemoModeProvider } from "../../context/DemoModeContext";
@@ -52,7 +51,6 @@ function makeGoal(overrides: Partial<SavingsGoal> = {}): SavingsGoal {
     contributed: 0,
     utilized: 0,
     clawed_back: 0,
-    investment_backed: 0,
     funded: 2500,
     available: 2500,
     remaining: 7500,
@@ -101,7 +99,6 @@ async function renderGoals(
       free_cash: 0,
       earmarked: 0,
       liquid: 0,
-      investment_backed: 0,
       clawed_back_this_month: 0,
       has_goals: false,
       ...pool,
@@ -660,102 +657,6 @@ describe("GoalsSection", () => {
     });
   });
 
-  describe("investment backing", () => {
-    it("shows how much of a goal is backed by holdings", async () => {
-      await renderGoals([
-        makeGoal({ name: "Car", investment_backed: 40000, funded: 40000 }),
-      ]);
-
-      // The amount also appears as the goal's funded total, so assert on the
-      // backing line itself rather than on a bare number in the row.
-      expect(
-        within(rowFor("Car")).getByText(/backed by investments/i).textContent,
-      ).toMatch(/40,000/);
-    });
-
-    it("stays quiet on a goal backed only by cash", async () => {
-      await renderGoals([makeGoal({ name: "Vacation" })]);
-
-      expect(
-        within(rowFor("Vacation")).queryByText(/backed by investments/i),
-      ).not.toBeInTheDocument();
-    });
-
-    it("opens the earmark modal from the goal row", async () => {
-      vi.spyOn(savingsGoalsApi, "getInvestments").mockResolvedValue({
-        data: [] as SavingsGoalInvestment[],
-      } as Awaited<ReturnType<typeof savingsGoalsApi.getInvestments>>);
-      vi.spyOn(savingsGoalsApi, "getAvailableInvestments").mockResolvedValue({
-        data: [
-          {
-            id: 7,
-            name: "Govt Bonds",
-            type: "bonds",
-            value: 40000,
-            earmarked: 0,
-            available: 40000,
-            fully_claimed: false,
-          },
-        ],
-      } as Awaited<ReturnType<typeof savingsGoalsApi.getAvailableInvestments>>);
-
-      await renderGoals([makeGoal({ name: "Car" })]);
-      fireEvent.click(
-        within(rowFor("Car")).getByRole("button", {
-          name: /back with investments/i,
-        }),
-      );
-
-      // The picker offers the holding with the headroom it still has.
-      expect(await screen.findByText(/Govt Bonds/)).toBeInTheDocument();
-    });
-
-    it("earmarks the whole holding when no amount is given", async () => {
-      const link = vi
-        .spyOn(savingsGoalsApi, "linkInvestment")
-        .mockResolvedValue({ data: [] as SavingsGoal[] } as Awaited<
-          ReturnType<typeof savingsGoalsApi.linkInvestment>
-        >);
-      vi.spyOn(savingsGoalsApi, "getInvestments").mockResolvedValue({
-        data: [] as SavingsGoalInvestment[],
-      } as Awaited<ReturnType<typeof savingsGoalsApi.getInvestments>>);
-      vi.spyOn(savingsGoalsApi, "getAvailableInvestments").mockResolvedValue({
-        data: [
-          {
-            id: 7,
-            name: "Govt Bonds",
-            type: "bonds",
-            value: 40000,
-            earmarked: 0,
-            available: 40000,
-            fully_claimed: false,
-          },
-        ],
-      } as Awaited<ReturnType<typeof savingsGoalsApi.getAvailableInvestments>>);
-
-      await renderGoals([makeGoal({ id: 3, name: "Car" })]);
-      fireEvent.click(
-        within(rowFor("Car")).getByRole("button", {
-          name: /back with investments/i,
-        }),
-      );
-      await screen.findByText(/Govt Bonds/);
-
-      fireEvent.change(screen.getByLabelText(/^investment$/i), {
-        target: { value: "7" },
-      });
-      fireEvent.click(screen.getByRole("button", { name: /earmark investment/i }));
-
-      // A blank amount means "whatever is left of it", sent as null.
-      await waitFor(() =>
-        expect(link).toHaveBeenCalledWith(3, {
-          investment_id: 7,
-          amount: null,
-        }),
-      );
-    });
-  });
-
   describe("investment goals", () => {
     const invest = (overrides: Partial<SavingsGoal> = {}) =>
       makeGoal({
@@ -771,9 +672,6 @@ describe("GoalsSection", () => {
 
       const row = rowFor("Pakam");
       expect(within(row).getByLabelText("Invest")).toBeInTheDocument();
-      expect(
-        within(row).queryByRole("button", { name: /back with investments/i }),
-      ).not.toBeInTheDocument();
       expect(
         within(row).queryByRole("button", { name: /free cash/i }),
       ).not.toBeInTheDocument();

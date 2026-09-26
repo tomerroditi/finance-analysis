@@ -142,10 +142,8 @@ class ReadModelsMixin:
         -------
         dict
             ``free_cash`` (the unearmarked pool), ``earmarked`` (the *cash*
-            every goal still holds), ``liquid`` (the two together),
-            ``investment_backed`` (goal progress that sits in holdings rather
-            than cash, reported separately because it is not liquid and never
-            belonged to this pool), ``clawed_back_this_month`` and
+            every cash goal still holds), ``liquid`` (the two together),
+            ``clawed_back_this_month`` and
             ``has_goals``. With no goals the figures are zero and no
             transaction scan happens — the pool only means something relative
             to goals.
@@ -154,7 +152,6 @@ class ReadModelsMixin:
             "free_cash": 0.0,
             "earmarked": 0.0,
             "liquid": 0.0,
-            "investment_backed": 0.0,
             "clawed_back_this_month": 0.0,
             "has_goals": False,
         }
@@ -166,16 +163,11 @@ class ReadModelsMixin:
         today = date.today()
         current = (today.year, today.month)
         free_cash = float(plan.free_cash.get(current, 0.0)) if plan else 0.0
-        # Only the cash half of a goal was ever taken out of this pool, so an
-        # investment-backed goal must not inflate the liquid total.
         # An investment goal's progress sits in the holding it was moved
         # into, never in this pool's accounts.
         earmarked = sum(
-            max(0.0, g["available"] - g["investment_backed"])
-            for g in goals
-            if g["kind"] == GOAL_KIND_CASH
+            max(0.0, g["available"]) for g in goals if g["kind"] == GOAL_KIND_CASH
         )
-        backed = sum(g["investment_backed"] for g in goals)
         this_month = self.repo.get_month_allocations(*current)
         clawed = (
             -float(this_month.loc[this_month["amount"] < 0, "amount"].sum())
@@ -186,7 +178,6 @@ class ReadModelsMixin:
             "free_cash": round(free_cash, 2),
             "earmarked": round(earmarked, 2),
             "liquid": round(free_cash + earmarked, 2),
-            "investment_backed": round(backed, 2),
             "clawed_back_this_month": round(clawed, 2),
             "has_goals": True,
         }
@@ -424,8 +415,6 @@ class ReadModelsMixin:
             if is_investment_goal(goal):
                 provisional[goal.id] = this_month.get(goal.id, 0.0)
 
-        backing = self._investment_backing()
-
         return [
             self._enrich(
                 goal,
@@ -435,7 +424,6 @@ class ReadModelsMixin:
                 history,
                 provisional,
                 reclaimed,
-                backing,
             )
             for goal in goals
         ]
@@ -464,7 +452,6 @@ class ReadModelsMixin:
         history: dict[int, list[dict[str, Any]]],
         provisional: dict[int, float],
         reclaimed: dict[int, float],
-        backing: dict[int, float],
     ) -> dict[str, Any]:
         """Assemble one goal's derived progress metrics."""
         target = float(goal.target_amount or 0.0)
@@ -472,11 +459,8 @@ class ReadModelsMixin:
         allocated = float(totals.get(goal.id, 0.0))
         contributions = float(contributed.get(goal.id, 0.0))
         spent = float(utilized.get(goal.id, 0.0))
-        backed = float(backing.get(goal.id, 0.0))
 
-        # Cash and earmarked holdings both count toward the goal, but only the
-        # cash half can be spent out of it or clawed back by a deficit.
-        funded = opening + allocated + contributions + backed
+        funded = opening + allocated + contributions
         available = funded - spent
         remaining = max(0.0, target - funded)
         progress_pct = round(
@@ -527,7 +511,6 @@ class ReadModelsMixin:
             "contributed": round(contributions, 2),
             "utilized": round(spent, 2),
             "clawed_back": round(float(reclaimed.get(goal.id, 0.0)), 2),
-            "investment_backed": round(backed, 2),
             "funded": round(funded, 2),
             "available": round(available, 2),
             "remaining": round(remaining, 2),

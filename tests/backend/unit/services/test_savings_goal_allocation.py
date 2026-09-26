@@ -925,7 +925,6 @@ class TestFreeCashPool:
             "free_cash": 0.0,
             "earmarked": 0.0,
             "liquid": 0.0,
-            "investment_backed": 0.0,
             "clawed_back_this_month": 0.0,
             "has_goals": False,
         }
@@ -1409,8 +1408,6 @@ class TestInvestmentGoals:
             service.update(goal["id"], contribution_category=None)
         with pytest.raises(ValidationException):
             service.set_spending_link(goal["id"], "Leisure")
-        with pytest.raises(ValidationException):
-            service.link_investment(goal["id"], 1)
         with pytest.raises(ValidationException):
             service.link_transaction(
                 goal_id=goal["id"],

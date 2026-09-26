@@ -2,8 +2,7 @@
 
 Provides ``InputsMixin``: the goals in waterfall order, the per-month
 realized surplus and goal-linked amounts derived from transactions (the
-*context*), live investment backing, and the free-cash pool that predates
-every goal. Mixed into ``SavingsGoalService`` (see ``core.py``).
+*context*) and the free-cash pool that predates every goal. Mixed into ``SavingsGoalService`` (see ``core.py``).
 """
 
 from typing import Any
@@ -20,7 +19,6 @@ from backend.models.savings_goal import (
 )
 from backend.services.bank_balance_service import BankBalanceService
 from backend.services.cash_balance_service import CashBalanceService
-from backend.services.investments import InvestmentsService
 from backend.services.savings_goals.common import is_investment_goal, month_key
 from backend.services.transaction_classification import transactions_masks
 
@@ -61,51 +59,6 @@ class InputsMixin:
             rank = {goal_id: i for i, goal_id in enumerate(self._order_override)}
             ids.sort(key=lambda goal_id: rank.get(goal_id, len(rank)))
         return [self.repo.get(int(i)) for i in ids]
-
-    def _investment_backing(self) -> dict[int, float]:
-        """Value every goal's investment earmarks, as ``{goal_id: amount}``.
-
-        A holding is valued live (``calculate_current_balance``), so an earmark
-        tracks the market and falls to zero the moment the investment is
-        closed — which is exactly what should happen when the user finally
-        sells it and the proceeds show up as cash instead.
-
-        Earmarks against one holding are resolved oldest first: explicit
-        amounts take their share in creation order, and an earmark with no
-        amount claims whatever is left. A holding that loses value therefore
-        shortchanges the most recent claim rather than silently over-earmarking
-        itself.
-
-        Returns
-        -------
-        dict[int, float]
-            Backing per goal. Goals with no earmarks are absent.
-        """
-        if self._backing_cache is not None:
-            return self._backing_cache
-
-        backings = self.repo.get_backings()
-        totals: dict[int, float] = {}
-        if backings.empty:
-            self._backing_cache = totals
-            return totals
-
-        investments = InvestmentsService(self.db)
-        for investment_id, group in backings.groupby("investment_id"):
-            remaining = float(investments.calculate_current_balance(int(investment_id)))
-            explicit = group[group["amount"].notna()]
-            whole = group[group["amount"].isna()]
-            for row in explicit.itertuples(index=False):
-                take = min(float(row.amount), max(0.0, remaining))
-                totals[int(row.goal_id)] = totals.get(int(row.goal_id), 0.0) + take
-                remaining -= take
-            for row in whole.itertuples(index=False):
-                take = max(0.0, remaining)
-                totals[int(row.goal_id)] = totals.get(int(row.goal_id), 0.0) + take
-                remaining = 0.0
-
-        self._backing_cache = totals
-        return totals
 
     def _opening_free_cash(self) -> float:
         """Return the liquid money that existed before any transaction was tracked.

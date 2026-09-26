@@ -12,11 +12,10 @@ paths:
 
 How the `backend/services/savings_goals/` package turns each month's leftover
 money into goal progress. `SavingsGoalService` (`core.py`) assembles mixins:
-`inputs` (goal order, the transaction context, investment backing, the
-pre-goal pool), `engine` (`_simulate`, `_persist`, `ensure_allocations`,
-`rebuild`), `goals` (CRUD + transaction links), `backings` (investment
-earmarks) and `read_models` (enriched goals, month view, free cash,
-timeline); `common` holds the pure month helpers and `ROUNDING_EPSILON`.
+`inputs` (goal order, the transaction context, the pre-goal pool),
+`engine` (`_simulate`, `_persist`, `ensure_allocations`, `rebuild`), `goals`
+(CRUD + transaction links) and `read_models` (enriched goals, month view,
+free cash, timeline); `common` holds the pure month helpers and `ROUNDING_EPSILON`.
 Read this before touching the service, the `savings-goals` routes,
 `GoalsSection.tsx`, or the goals block on the monthly budget view.
 
@@ -182,9 +181,9 @@ else in this file. An **investment** goal answers "have I invested X?":
   `liquid`.
 - **Cash-goal settings are refused** (`_validate_investment_fields`,
   `_reject_investment_goal`): it must name its transfers, and takes no
-  `opening_balance`, `monthly_cap`, spending rule, holding earmark or single
-  linked transaction. The card hides the earmark and claim actions, and the
-  editor offers only name, target, start, date and "Invested into".
+  `opening_balance`, `monthly_cap`, spending rule or single linked
+  transaction. The card hides the free-cash claim action, and the editor
+  offers only name, target, start, date and "Invested into".
 - **Creating, rescoping or deleting one restates history from its start
   month** (`_restate_for_transfers` → `rebuild`). Which transfers it owns
   decides, in every month they touch, whether they are progress or a deficit
@@ -192,54 +191,14 @@ else in this file. An **investment** goal answers "have I invested X?":
   every old clawback in place. Pinned by
   `test_creating_and_deleting_it_restate_the_past`.
 
-## Backed by an investment, not by cash
+## Investment backing was removed
 
-Some goals are not funded from cash at all: bonds the user already means to
-sell, a savings plan maturing into a down payment. `savings_goal_investments`
-earmarks a holding against a goal, and the earmark is **valued live** from
-`InvestmentsService.calculate_current_balance`, so it tracks the market and
-falls to zero the moment the holding is closed.
-
-It is the same kind of label a cash earmark is — over an asset that already
-sits in net worth — so the rules follow from that:
-
-- **It counts toward `funded` and `progress_pct`**, and shrinks what the goal
-  still needs from surplus: `need = target - funded - backed`. A 60k goal
-  backed by a 40k bond draws only the last 20k out of the waterfall.
-- **It never enters the free-cash pool.** A bond is not spendable cash, so
-  `get_free_cash` reports it as `investment_backed`, apart from `earmarked`
-  (which stays the goals' *cash*) and out of `liquid`. Putting it in either
-  would claim money the bank does not hold.
-- **A deficit month can never claw it back.** Overspending drains the bank; it
-  cannot reach into the holding. The clawback cap stays `funded_cash -
-  utilized`, which is why the two are tracked apart in `_simulate`.
-- **It is present tense, not a dated event.** Today's backing steers only the
-  months a pass computes; history on record keeps its rows. A `rebuild` —
-  which every reorder runs — restates the past under today's backing.
-
-### Sharing one holding
-
-`amount` is optional. `NULL` earmarks *whatever is left* of the holding, which
-is what lets a whole-holding earmark track its value without the user retyping
-a number. Several goals may share one holding, but never beyond what it is
-worth — otherwise two goals would both count the same bond and progress would
-be fiction. `_validate_backing_capacity` enforces that: explicit amounts must
-fit in the headroom, and at most one goal may take the `NULL` remainder.
-
-When the holding loses value, claims are honoured **oldest first**
-(`get_backings` orders by id), so a shrunken holding shortchanges the most
-recent claim rather than silently over-earmarking itself.
-
-### Selling the holding
-
-Closing the investment drops its backing to zero on its own, and the sale
-proceeds re-enter the surplus as cash — so the goal's funding moves from backed
-to allocated by itself. That handover is not atomic, though: the proceeds land
-in the pool and the waterfall redistributes them by priority, so a
-higher-priority goal can take them first. To keep the money with the goal that
-was waiting for it, **link the sale's bank transaction to the goal as a
-contribution** — contributions bypass the waterfall and consume the pool
-directly.
+Goals could once earmark a holding (`savings_goal_investments`, valued live
+off the investment). It was dropped once investment goals existed: an
+investment is just a category and tag, so money moved into one is tracked
+the same way any other transfer is, and a goal about it is an investment
+goal. Migration `b9a0f25d4d28` drops the table. Don't reintroduce a second
+way to count the same holding toward a goal.
 
 ## Every shekel is counted once
 
@@ -392,18 +351,14 @@ not closed.
 ## Where the numbers surface
 
 - **Dashboard** (`GoalsSection.tsx`) — the waterfall in priority order, with
-  reorder arrows, `this_month_allocation`, `utilized`/`available`,
-  `investment_backed`, and the
+  reorder arrows, `this_month_allocation`, `utilized`/`available`, and the
   free-cash pool on a dashed row below the goals (`GET
   /savings-goals/free-cash`, its own query key). The waterfall **scrolls in
   place** past about 26rem of rows, so a household with a dozen goals does not
   push the pool row and the history panel off the card — but only once the cap
   hides about a row's worth (`useScrollCap`), because a list that scrolls by a
   hair swallows the drag meant for the page (`frontend_pitfalls.md` →
-  "Capped Scroll Regions"). The bank icon on a row opens
-  `InvestmentBackingModal`, which mutates earmarks immediately rather than
-  staging behind a Save — they are their own resources, not fields on the
-  goal, so there is no half-finished state to be in. A goal's **name owns its
+  "Capped Scroll Regions"). A goal's **name owns its
   own line** in the row: sharing one with the funded/target pair and five
   action buttons left it about eight characters wide on a phone, so the row
   named nothing at all.
@@ -460,7 +415,7 @@ so the many users who keep no goals pay nothing for the section.
   auto-closes. Both the enrichment and the auto-close check absorb half an
   agora; there is a unit test pinning it.
 - **Demo Mode ships three goals** (`create_savings_goals` in
-  `scripts/generate_demo_data.py`) covering achieved, investment-backed, and
+  `scripts/generate_demo_data.py`) covering achieved, investment-goal and
   utilized states. Allocations are deliberately *not* seeded — the engine
   derives them on first read, after `_shift_dates` has re-anchored
   `start_month` / `target_date`. A spec that asserts absolute waterfall
