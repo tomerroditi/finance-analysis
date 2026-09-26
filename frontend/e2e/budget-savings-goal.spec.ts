@@ -162,6 +162,20 @@ test.describe("Paying for a budget out of a savings goal", () => {
       .locator("xpath=ancestor::div[contains(@class,'group')][1]");
     await row.getByRole("button", { name: /^Edit$/i }).click();
 
+    // The editor is taller than a laptop screen. Scrolling over it must move
+    // the form, never the dashboard behind it.
+    await page.setViewportSize({ width: 1280, height: 600 });
+    const dialog = page.getByRole("dialog");
+    const body = dialog.locator(":scope > div").last();
+    const box = (await dialog.boundingBox())!;
+    const pageScroll = () =>
+      page.evaluate(() => [window.scrollY, document.body.style.top].join("|"));
+    const before = await pageScroll();
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.wheel(0, 800);
+    await expect.poll(() => body.evaluate((el) => el.scrollTop)).toBeGreaterThan(0);
+    expect(await pageScroll()).toBe(before);
+
     const spend = page.getByTestId("goal-auto-link-spend");
     await spend.getByRole("button").first().click();
     await page.getByRole("option", { name: category, exact: true }).click();

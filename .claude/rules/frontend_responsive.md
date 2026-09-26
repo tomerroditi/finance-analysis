@@ -294,6 +294,7 @@ import { useScrollLock } from "../../hooks/useScrollLock";
 useScrollLock(isOpen);
 ```
 Also add `modal-overlay` CSS class to the outermost `fixed inset-0` div for `overscroll-behavior: contain`.
+The lock is only half of it: the dialog must also cap its height and scroll its own body, or tall content is clipped and the gesture has nowhere to go. `<Modal>` does all of this; a hand-rolled overlay must do it by hand — see `frontend_pitfalls.md` → "Dialogs Scroll Themselves, Never the Page" (guarded by `src/modalScrolling.test.ts`).
 
 ### Touch Detection (`chartStyle.ts`)
 For UI that needs to branch on touch capability (e.g. dropdown behavior), import the shared constant:

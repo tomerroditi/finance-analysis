@@ -64,7 +64,16 @@ export function Modal({
             <X size={20} />
           </button>
         </div>
-        {children}
+        {/* The panel caps its height, so the body must be the one to scroll:
+            a form taller than the screen was clipped with nothing inside it
+            to scroll, and the gesture fell through to the page behind.
+            `flex flex-col` lets a child that manages its own scroller (a
+            `flex-1 min-h-0 overflow-y-auto` list over a fixed footer) keep
+            doing so; `overscroll-contain` stops a scroll that reaches the
+            end from chaining to the page. */}
+        <div className="flex-1 min-h-0 flex flex-col overflow-y-auto overscroll-contain">
+          {children}
+        </div>
       </div>
     </div>
   );

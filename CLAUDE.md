@@ -99,6 +99,7 @@ Routes (FastAPI) -> Services (Business Logic) -> Repositories (Data Access) -> S
 - Python: type hints on every parameter and return, NumPy-style docstrings on every module, public class and function — enforced by ruff (`ANN` + `D` rules in `pyproject.toml`), which `tests/backend/unit/test_code_quality.py` and the CI backend job run over `backend/`
 - TypeScript: strict mode, no unused locals/parameters
 - Tests: always use test classes, every test needs a docstring
+- Dialogs: build on `<Modal>`, which locks the page and scrolls its own body. A hand-rolled `fixed inset-0` overlay must do the same — `useScrollLock`, `modal-overlay`, a capped panel, a `min-h-0 overflow-y-auto overscroll-contain` body — or a tall dialog gets clipped and scrolling it moves the page behind (`frontend/src/modalScrolling.test.ts` enforces it; `.claude/rules/frontend_pitfalls.md` → "Dialogs Scroll Themselves")
 - No business logic in routes or components — services handle all logic
 - No direct DB access outside repositories
 - No raw axios calls in components — go through `frontend/src/services/api.ts`
