@@ -499,6 +499,7 @@ class Simulator:
     def _couple_bridge_months(self, retire_index: int, today: date) -> float:
         """Return a couple's bridge: phases of household need (bridge.py)."""
         spouses = []
+        births = []
         for owner, fund in (
             (self.plan.person, self.plan.pension),
             (self.plan.partner, self.plan.partner_pension),
@@ -506,7 +507,10 @@ class Simulator:
             birth = (today.year - owner.date_of_birth.year) * 12 + (
                 today.month - owner.date_of_birth.month
             )
-            at_60, at_statutory = self._pension_claims(owner, fund, retire_index, today)
+            births.append(birth)
+            at_60, at_60_past, at_statutory = self._pension_claims(
+                owner, fund, retire_index, today
+            )
             statutory = national_insurance.STATUTORY_AGE[owner.gender]
             spouses.append(
                 {
@@ -514,20 +518,35 @@ class Simulator:
                     "month_statutory": statutory * 12 - birth,
                     "month_80": 80 * 12 - birth,
                     "at_60": at_60,
+                    "at_60_past_statutory": at_60_past,
                     "at_statutory": at_statutory,
+                    "claims_at_60": fund is None
+                    or fund.tactic is not PensionTactic.ALL_FROM_STATUTORY,
                 }
             )
+        horizon = min(81 * 12 - birth for birth in births)
         return bridge.couple_bridge_months(
             last_working=retire_index - 1,
-            horizon=self.month_count(today) - 1,
-            spending=self._spending_after_60(retire_index, today),
+            horizon=horizon,
+            spending=self._spending_at(horizon, retire_index, today),
             spouses=spouses,
         )
 
     def _spending_after_60(self, retire_index: int, today: date) -> float:
         """Spending the bridge has to carry after 60, net of other income."""
         birth = (today.year - self.dob.year) * 12 + (today.month - self.dob.month)
-        at = max(60 * 12 - birth + 1, retire_index)
+        return self._spending_at(
+            max(60 * 12 - birth + 1, retire_index), retire_index, today
+        )
+
+    def _spending_at(self, at: int, retire_index: int, today: date) -> float:
+        """Typed spending less non-salary income of the rows live in month `at`.
+
+        Annual rises are ignored, and so are loans: a couple's bridge reads
+        its rows as they stand at the horizon — one that has ended by then
+        does not count at all, one that has started counts throughout
+        (`couple9`, `couple10`).
+        """
         spending = sum(
             flow.amount
             for flow in self.plan.expenses
@@ -541,14 +560,16 @@ class Simulator:
 
     def _pension_claims(
         self, owner: Person, fund: Pension | None, retire_index: int, today: date
-    ) -> tuple[float, float]:
-        """Return `(net annuity from 60, gross annuity from the statutory age)`.
+    ) -> tuple[float, float, float]:
+        """Return the annuity from 60 net, the same past the statutory age, and the rest.
 
-        Both are valued on the balance at retirement, as the single-person
-        coverage is; the statutory claim is counted gross.
+        All are valued on the balance at retirement, as the single-person
+        coverage is. The annuity claimed at 60 pays national insurance only
+        until the statutory age (`cp11_*_e12` read it 45.5 higher from 67);
+        the claim at the statutory age is counted gross.
         """
         if fund is None:
-            return 0.0, 0.0
+            return 0.0, 0.0, 0.0
         statutory = national_insurance.STATUTORY_AGE[owner.gender]
         account = PensionAccount(
             plan_pension=fund, gender=owner.gender, statutory_age=statutory
@@ -569,6 +590,14 @@ class Simulator:
             account.annuitise_due((birth + t) / 12)
             account.grow()
         share = fund.mukeret_pct / 100
+        if fund.withdraw_severance and not account.streams:
+            # Redeemed in the first retired month, it leaves only the entitling
+            # side smaller (`redeem_severance`): `cx1_005`'s statutory claim.
+            month_number = today.month + retire_index
+            account.redeem_severance(
+                today.year + (month_number - 1) // 12, retire_index
+            )
+            share = min(account.recognised_share or share, 1.0)
         if account.streams:
             at_60 = [s for s in account.streams if s.claim_age == 60]
             recognised = sum(s.monthly for s in at_60 if s.recognised)
@@ -588,10 +617,8 @@ class Simulator:
                 recognised = entitling = 0.0
                 later = per_statutory
         gross = recognised + entitling
-        net = (
-            gross - contributions_on(gross) - israeli_tax.monthly_income_tax(entitling)
-        )
-        return net, later
+        past_statutory = gross - israeli_tax.monthly_income_tax(entitling)
+        return past_statutory - contributions_on(gross), past_statutory, later
 
     def _coverage(self, retire_index: int, today: date) -> float:
         """Pension paid from 60 over the spending it has to carry then (bridge.py)."""
@@ -888,15 +915,7 @@ class Simulator:
                     *self._tax_age(age, partner_age),
                     cash_in,
                     cash_out,
-                    # Gains taxed at income rates after 60 stack on top of the
-                    # taxed person's entitling annuity (the author's blog: a
-                    # taxable pension makes the same gain cost more).
-                    taxable_income=cash_in.get(
-                        "entitling_partner"
-                        if partner_age is not None and partner_age > age
-                        else "entitling",
-                        0.0,
-                    ),
+                    taxable_income=self._taxable_income(cash_in, age, partner_age),
                 )
                 if shortfall > 0:
                     solvent = False
@@ -1201,19 +1220,55 @@ class Simulator:
         months = (today.year - dob.year) * 12 + (today.month - dob.month)
         return (months + index) / 12
 
-    def _tax_age(self, age: float, partner_age: float | None) -> tuple[float, int]:
-        """`(age, statutory age)` the capital-gains treatment is decided on.
+    def _taxed_is_partner(self, age: float, partner_age: float | None) -> bool:
+        """Whether a couple's gains are taxed on the partner rather than the main person.
 
-        A couple is taxed on the older spouse: `cp2_empty_1985` pays the flat
-        25% until the month after the *partner's* 60th birthday and nothing
-        after it, while the main person is still 55.
+        On the older spouse while the main person is under 60:
+        `cp2_empty_1985` pays the flat 25% until the month after the
+        *partner's* 60th birthday and nothing after it, while the main person
+        is still 55. From the main person's 60th birthday on, the main person
+        is taxed: `cp6_g108_e20k` pays nothing between the older partner's 67th
+        birthday and the main person's 60th, then pays again until the main
+        person's 67th.
         """
-        person = self.plan.person
-        if partner_age is not None and partner_age > age:
+        return (
+            partner_age is not None
+            and partner_age > age
+            and age <= israeli_tax.MARGINAL_TREATMENT_AGE
+        )
+
+    def _tax_age(self, age: float, partner_age: float | None) -> tuple[float, int]:
+        """`(age, statutory age)` of the spouse the gains are taxed on."""
+        if self._taxed_is_partner(age, partner_age):
             return partner_age, national_insurance.STATUTORY_AGE[
                 self.plan.partner.gender
             ]
-        return age, national_insurance.STATUTORY_AGE[person.gender]
+        return age, national_insurance.STATUTORY_AGE[self.plan.person.gender]
+
+    def _taxable_income(
+        self, cash_in: dict[str, float], age: float, partner_age: float | None
+    ) -> float:
+        """Return the entitling annuities that gains taxed at income rates stack on.
+
+        The author's blog: a taxable pension makes the same gain cost more.
+        The taxed spouse's own annuity counts in full (`capital_gains_tax`
+        applies their statutory exemption itself); the other spouse's counts
+        net of the exemption from *their* statutory age — `cx1_026` taxes the
+        main person's gains on top of the partner's 8,356 less 6,110.
+        """
+        if partner_age is None:
+            return cash_in.get("entitling", 0.0)
+        partner_taxed = self._taxed_is_partner(age, partner_age)
+        other, other_age, key = (
+            (self.plan.person, age, "entitling")
+            if partner_taxed
+            else (self.plan.partner, partner_age, "entitling_partner")
+        )
+        own = cash_in.get("entitling_partner" if partner_taxed else "entitling", 0.0)
+        theirs = cash_in.get(key, 0.0)
+        if other_age > national_insurance.STATUTORY_AGE[other.gender]:
+            theirs = max(theirs - israeli_tax.STATUTORY_AGE_MONTHLY_EXEMPTION, 0.0)
+        return own + theirs
 
     def _withdraw(
         self,

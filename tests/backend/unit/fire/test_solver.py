@@ -12,7 +12,6 @@ from datetime import date
 import pytest
 
 import parity
-from test_corpus_parity import COUPLE, KNOWN_GAPS
 
 from backend.services.fire.models import BaseProblem, Plan, Person, Gender, CashFlow, EndType
 from backend.services.fire.reference_form import plan_from_reference
@@ -30,12 +29,11 @@ RECORDED_IN = date(2026, 9, 1)
 
 
 def _asap_cases() -> list[str]:
-    """Every recorded `retire_asap` run with a date, bar the open couple bridge."""
+    """Every recorded `retire_asap` run with a date."""
     described = parity.index()
     return [name for name in parity.corpus(charted=True)
             if described[name]["base_problem"] == "retire_asap"
-            and described[name]["printed"]
-            and KNOWN_GAPS.get(name, (0, ""))[1] != COUPLE]
+            and described[name]["printed"]]
 
 
 class TestRetireAsapParity:

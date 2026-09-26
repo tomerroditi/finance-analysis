@@ -8,15 +8,15 @@ run's peak net worth), and asserted run by run by `test_corpus_parity.py`.
 
 | | runs | under 0.1% |
 |---|---|---|
-| everything recorded | 1,737 | 1,707 |
+| everything recorded | 1,772 | 1,770 |
 | single-person plans | 1,645 | 1,643 |
-| couples | 92 | 64 |
-| random multi-feature households (`cx1_*`) | 39 | 30 |
+| couples | 127 | 127 |
+| random multi-feature households (`cx1_*`) | 39 | 39 |
 
 Every single-person *plan* is under 0.1%. The two single-person runs over it
 are held-out surface probes at confidence 82 and 87 in the 15-year knee (0.20%,
 0.16%), where the engine predicts the reference's solver drift by
-interpolation. Everything else over the target is a couple. The random households are the acceptance test: 40 plans drawn from a
+interpolation. Nothing else is over the target. The random households are the acceptance test: 40 plans drawn from a
 seeded generator using every feature at once — couples, several portfolios of
 mixed types and designations, study funds, loans started in the past, real
 estate, one-off flows, rising costs, every pension tactic, severance.
@@ -39,8 +39,10 @@ estate, one-off flows, rising costs, every pension tactic, severance.
   already past the claim age never draws it (cloned; `cx1_020`).
 - **A goal portfolio short of its goal is filled from free cash**, not only
   from the month's surplus (`cx1_009`).
-- **A couple runs until the younger spouse is 81**, and **its capital gains are
-  taxed on the older spouse's age**.
+- **A couple runs until the younger spouse is 81**, but its **bridge** ends at
+  the older's 81 and weighs each phase by the running mean of the needs so far
+  (notes/18 §6); its capital gains are taxed on the older spouse only while the
+  main person is under 60.
 - **One-off rows count toward the coverage by their end type** (`forever` by
   default), so a windfall before 60 can cancel the spending entirely.
 - Surtax above 721,560/yr; the national-insurance ceiling at 51,910/month;
@@ -51,7 +53,6 @@ estate, one-off flows, rising costs, every pension tactic, severance.
 
 | item | size | notes |
 |---|---|---|
-| **A couple's bridge, outside the phase model** | up to ~18% on a few couples | The phase model (notes/18 §6) covers pension-free couples with gaps under 84 months, spending of any size, and 14 of 17 pension cases exactly; open: gaps past the younger's 60, a spouse already past 60, negative spending, one pension-plus-partial-allowance shape. |
 | FIFO/LIFO lot history | ≤ 0.05% | The reference's synthetic purchase history is compressed at both ends relative to ours (notes/13); within target. |
 | Confidence off the grid | ≤ 0.2% in the knee | Levels other than 80/85/90/95/100 read the formula exactly past ~22 years; below it the solver drift is interpolated (notes/18 §1). |
 | Drawdown prose on random households | presentation only | Segments break differently from ours where every monthly series agrees; the result-section tests cover the curated fixtures only. |

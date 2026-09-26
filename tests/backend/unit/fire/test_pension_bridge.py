@@ -11,7 +11,7 @@ from datetime import date
 import pytest
 
 from backend.services.fire import national_insurance
-from backend.services.fire.bridge import bridge_months, window_share
+from backend.services.fire.bridge import bridge_months, couple_bridge_months, window_share
 from backend.services.fire.israeli_tax import monthly_income_tax
 from backend.services.fire.pension import contributions_on
 from backend.services.fire.engine import Simulator
@@ -163,3 +163,57 @@ class TestCoverage:
         """`be_exp_rise`: a 1% rise reads exactly as the flat 5,000 does."""
         expenses = [CashFlow(amount=5_000, annual_rise_pct=1.0)]
         assert self._coverage(expenses=expenses) == pytest.approx(0.307196, abs=1e-5)
+
+
+def _spouse(month_60: int, statutory: int = 84, at_60: float = 0.0,
+            at_statutory: float = 0.0, claims_at_60: bool = True) -> dict:
+    """A spouse turning 60 in `month_60`, with the statutory age `statutory` later."""
+    return {"month_60": month_60, "month_statutory": month_60 + statutory,
+            "month_80": month_60 + statutory + (156 if statutory == 84 else 180),
+            "at_60": at_60, "at_60_past_statutory": at_60, "at_statutory": at_statutory,
+            "claims_at_60": claims_at_60}
+
+
+class TestCoupleBridgeMonths:
+    """A couple's bridge: phases weighed by the running mean of their needs.
+
+    Two men born January 1990 turn 60 in month 280 and 67 in month 364, as
+    in the `cp*` probes (notes/18 §6); each measured value is the bridge the
+    reference's own rate implies.
+    """
+
+    def test_allowances_covering_the_spending_end_it_at_67(self):
+        """Two allowances (5,514) cover 5,000, so nothing is needed after 67."""
+        pair = [_spouse(280), _spouse(280)]
+        assert couple_bridge_months(0, 532, 5_000, pair) == 364
+
+    def test_spending_past_the_allowances_extends_it(self):
+        """`cp8_e10000`: 10,000 reads 451.07 months."""
+        pair = [_spouse(280), _spouse(280)]
+        assert couple_bridge_months(0, 532, 10_000, pair) == pytest.approx(451.07, abs=0.01)
+
+    def test_each_phase_is_weighed_by_the_running_mean(self):
+        """`cp_main_only`: 3,464 then 707 of need read 54.66 months after 60."""
+        main = _spouse(280, at_60=1_536, at_statutory=4_246)
+        wife = _spouse(280, statutory=60)
+        assert couple_bridge_months(2, 532, 5_000, [main, wife]) == pytest.approx(332.66, abs=0.01)
+
+    def test_the_spouse_increment_counts_while_the_other_is_under_60(self):
+        """`cp6_g108_e3k`: the older man's 4,143 covers 3,000 until the younger one turns 60."""
+        older = _spouse(172)
+        assert couple_bridge_months(0, 424, 3_000, [_spouse(280), older]) == pytest.approx(269.08, abs=0.01)
+
+    def test_an_event_behind_the_retirement_adds_its_index_plus_one(self):
+        """`cp6_g108_e20k`: the partner's 60th, 61 months behind, adds 173 months."""
+        older = _spouse(172)
+        assert couple_bridge_months(233, 424, 20_000, [_spouse(280), older]) == pytest.approx(344.87, abs=0.01)
+
+    def test_no_cut_at_60_without_a_claim_there(self):
+        """`cx1_014`: both on tactic 67, so neither 60th birthday cuts a phase."""
+        main = _spouse(277, at_statutory=4_138, claims_at_60=False)
+        wife = _spouse(324, statutory=60, at_statutory=4_292, claims_at_60=False)
+        assert couple_bridge_months(112, 529, 16_000, [main, wife]) == pytest.approx(296.38, abs=0.1)
+
+    def test_negative_spending_needs_the_whole_horizon(self):
+        """`cx1_036`: a one-off income counted forever drives spending below zero."""
+        assert couple_bridge_months(28, 436, -297_500, [_spouse(184), _spouse(210, statutory=60)]) == 408

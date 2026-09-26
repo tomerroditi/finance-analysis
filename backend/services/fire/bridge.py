@@ -79,9 +79,10 @@ def bridge_months(
 
 STATE_PENSION = 2757.0
 STATE_PENSION_AT_80 = 2911.5
+SPOUSE_INCREMENT = 1386.0
 """Bituach Leumi's 2026 individual allowance at the full 50% seniority increment
-(1,838 x 1.5), and from 80 (1,941 x 1.5). The dependent-spouse increment does
-not enter the bridge."""
+(1,838 x 1.5), from 80 (1,941 x 1.5), and the dependent-spouse increment
+(924 x 1.5) — which the bridge pays only while the other spouse is under 60."""
 
 
 def couple_bridge_months(
@@ -89,41 +90,55 @@ def couple_bridge_months(
 ) -> float:
     """Horizon, in months, for a couple (notes/18 §6).
 
-    The time from the last working month to the horizon (the younger spouse's
+    The time from the last working month to the horizon (the older spouse's
     81) is cut at every spouse's 60th birthday and statutory age. Each phase
-    needs the spending less the income running at its end: pensions claimed
-    at 60 (net), and from the statutory age the rest of the pension and the
-    old-age allowance, floored at zero. A phase needing everything counts in
-    full; a partly covered one counts its length times its need over the plain
-    average of the non-zero needs. The single-person rule is the same
-    averaging over two phases (`window_share`).
+    needs the spending less the income running in its last month, floored at
+    zero: pensions claimed at 60 (net of income tax, and of national insurance
+    until the statutory age), and from the statutory age the rest of
+    the pension and the old-age allowance — with the spouse increment while
+    the other spouse is not yet 60. A phase needing the whole spending counts
+    in full — every phase does when one-off income drives the spending below
+    zero (`cx1_036`) — and any other counts its length times its need over
+    the running mean of the needs up to and including it. The single-person rule is the same thing over two
+    phases (`window_share`).
 
     Each spouse is a dict of `month_60`, `month_statutory`, `month_80` (months
-    counted from today) and `at_60`, `at_statutory` (monthly amounts).
+    counted from today), `at_60` (net of the national-insurance contributions
+    due until the statutory age), `at_60_past_statutory` (the same annuity
+    once they stop), `at_statutory` (monthly amounts) and `claims_at_60` — a
+    spouse on tactic `67` cuts no phase at 60.
     """
+    behind: set[int] = set()
     events = {last_working, horizon}
     for spouse in spouses:
         for key in ("month_60", "month_statutory"):
-            if last_working < spouse[key] < horizon:
+            if key == "month_60" and not spouse["claims_at_60"]:
+                continue
+            if spouse[key] < last_working:
+                behind.add(spouse[key])
+            elif spouse[key] < horizon:
                 events.add(spouse[key])
-    cuts = sorted(events)
-    phases = []
-    for start, end in pairwise(cuts):
+    phases = [(month + 1, month) for month in sorted(behind)]
+    phases += [(end - start, end) for start, end in pairwise(sorted(events))]
+    months = 0.0
+    needs: list[float] = []
+    for length, end in phases:
         income = 0.0
-        for spouse in spouses:
-            if end > spouse["month_60"]:
-                income += spouse["at_60"]
+        for spouse, other in zip(spouses, reversed(spouses), strict=True):
             if end > spouse["month_statutory"]:
-                income += spouse["at_statutory"]
+                income += spouse["at_60_past_statutory"] + spouse["at_statutory"]
                 income += (
                     STATE_PENSION_AT_80 if end > spouse["month_80"] else STATE_PENSION
                 )
-        phases.append((end - start, max(spending - income, 0.0)))
-    needs = [need for _, need in phases if need > 0]
-    if not needs:
-        return 0.0
-    average = sum(needs) / len(needs)
-    return sum(
-        length if need >= spending else length * need / average
-        for length, need in phases
-    )
+                if end <= other["month_60"]:
+                    income += SPOUSE_INCREMENT
+            elif end > spouse["month_60"]:
+                income += spouse["at_60"]
+        need = max(spending - income, 0.0)
+        needs.append(need)
+        mean = sum(needs) / len(needs)
+        if need >= spending:
+            months += length
+        elif mean > 0:
+            months += length * need / mean
+    return months
