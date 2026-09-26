@@ -1,3 +1,9 @@
+## v1.91.1 (2026-09-26)
+
+### Fix
+
+- **savings-goals**: stop clawing incoming contributions back out of their goal (#358)
+
 ## v1.91.0 (2026-09-26)
 
 ### Feat
