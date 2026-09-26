@@ -59,6 +59,7 @@ BL_CONTRIBUTION_CEILING = 51_910.0
 
 
 def annuity_factor(gender: Gender, claim_age: int) -> float:
+    """Annuity factor for a gender and claim age, as measured on the reference."""
     try:
         return ANNUITY_FACTORS[gender][claim_age]
     except KeyError as exc:
@@ -112,20 +113,25 @@ class PensionAccount:
     recognised_share: float | None = None
     """Recognised share of the balance, once a severance redemption has moved it."""
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         self.balance = self.plan_pension.balance
 
     @property
     def monthly_factor(self) -> float:
-        return ((1 + self.plan_pension.annual_return_pct / 100)
-                * (1 - self.plan_pension.fee_on_balance_pct / 100)) ** (1 / 12)
+        """Monthly growth factor: the annual return net of the fee on balance."""
+        return (
+            (1 + self.plan_pension.annual_return_pct / 100)
+            * (1 - self.plan_pension.fee_on_balance_pct / 100)
+        ) ** (1 / 12)
 
     def contribute(self) -> None:
-        """A monthly deposit, net of the fee charged on the deposit itself."""
+        """Add a monthly deposit, net of the fee charged on the deposit itself."""
         self.balance += self.plan_pension.monthly_deposit * (
-            1 - self.plan_pension.fee_on_deposit_pct / 100)
+            1 - self.plan_pension.fee_on_deposit_pct / 100
+        )
 
     def grow(self) -> None:
+        """Apply one month of growth to the balance."""
         self.balance *= self.monthly_factor
 
     def redeem_severance(self, year: int, month_index: int) -> float:
@@ -144,15 +150,23 @@ class PensionAccount:
         if self.severance is not None:
             return 0.0
         before = self.balance
-        self.severance = redeem(before, self.plan_pension.mukeret_pct,
-                                year, self.plan_pension.work_start_year)
+        self.severance = redeem(
+            before,
+            self.plan_pension.mukeret_pct,
+            year,
+            self.plan_pension.work_start_year,
+        )
         self.severance_start_month = month_index
         self.balance -= self.severance.gross
         if self.balance > 0:
-            self.recognised_share = (self.plan_pension.mukeret_pct / 100) * before / self.balance
+            self.recognised_share = (
+                (self.plan_pension.mukeret_pct / 100) * before / self.balance
+            )
         return self.severance.gross
 
-    def _claim(self, share: float, claim_age: int, recognised: bool, age: float) -> None:
+    def _claim(
+        self, share: float, claim_age: int, recognised: bool, age: float
+    ) -> None:
         """Convert `share` of the balance, as the two components the reference lists.
 
         Each claim splits 60/40 into contributions and severance. The one
@@ -166,13 +180,22 @@ class PensionAccount:
             return
         factor = annuity_factor(self.gender, claim_age)
         redeemed = self.severance is not None and not recognised
-        splits = ({"tagmulim": 1.0} if redeemed
-                  else {"tagmulim": TAGMULIM_SHARE, "pitzuim": 1 - TAGMULIM_SHARE})
+        splits = (
+            {"tagmulim": 1.0}
+            if redeemed
+            else {"tagmulim": TAGMULIM_SHARE, "pitzuim": 1 - TAGMULIM_SHARE}
+        )
         for component, part in splits.items():
-            self.streams.append(AnnuityStream(
-                monthly=amount * part / factor, recognised=recognised,
-                start_age=age, component=component, claim_age=claim_age,
-                factor=factor))
+            self.streams.append(
+                AnnuityStream(
+                    monthly=amount * part / factor,
+                    recognised=recognised,
+                    start_age=age,
+                    component=component,
+                    claim_age=claim_age,
+                    factor=factor,
+                )
+            )
 
     def annuitise_due(self, age: float) -> None:
         """Convert whatever is due at this age into annuity streams.
@@ -181,8 +204,11 @@ class PensionAccount:
         everything at the statutory age, or the recognised share at 60 and the
         entitling share at the statutory age (notes/05).
         """
-        mukeret = (self.recognised_share if self.recognised_share is not None
-                   else self.plan_pension.mukeret_pct / 100)
+        mukeret = (
+            self.recognised_share
+            if self.recognised_share is not None
+            else self.plan_pension.mukeret_pct / 100
+        )
         tactic = self.plan_pension.tactic
 
         def due(claim_age: int) -> bool:
@@ -210,12 +236,17 @@ class PensionAccount:
 
     def income_at(self, age: float) -> tuple[float, float]:
         """`(recognised, entitling)` annuity being drawn at `age`."""
-        recognised = sum(s.monthly for s in self.streams if s.recognised and age >= s.start_age)
-        entitling = sum(s.monthly for s in self.streams if not s.recognised and age >= s.start_age)
+        recognised = sum(
+            s.monthly for s in self.streams if s.recognised and age >= s.start_age
+        )
+        entitling = sum(
+            s.monthly for s in self.streams if not s.recognised and age >= s.start_age
+        )
         return recognised, entitling
 
-    def deductions_at(self, age: float, month_index: int | None = None,
-                      also_drawing: float = 0.0) -> tuple[float, float]:
+    def deductions_at(
+        self, age: float, month_index: int | None = None, also_drawing: float = 0.0
+    ) -> tuple[float, float]:
         """`(income_tax, national_insurance)` on the annuity at `age`.
 
         `also_drawing` is recognised annuity this person draws from outside the
@@ -226,14 +257,20 @@ class PensionAccount:
         """
         recognised, entitling = self.income_at(age)
         recognised += also_drawing
-        exemption = (israeli_tax.STATUTORY_AGE_MONTHLY_EXEMPTION
-                     if age > self.statutory_age else 0.0)
+        exemption = (
+            israeli_tax.STATUTORY_AGE_MONTHLY_EXEMPTION
+            if age > self.statutory_age
+            else 0.0
+        )
         if self.severance is not None:
             # Taking severance exempt permanently shrinks the pension exemption.
             exemption = max(exemption - self.severance.exemption_offset, 0.0)
         tax = israeli_tax.monthly_income_tax(entitling, exemption)
-        insurance = (0.0 if age > self.statutory_age
-                     else contributions_on(recognised + entitling))
+        insurance = (
+            0.0
+            if age > self.statutory_age
+            else contributions_on(recognised + entitling)
+        )
         return tax + self.severance_tax_at(month_index), insurance
 
     def severance_tax_at(self, month_index: int | None) -> float:

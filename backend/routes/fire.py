@@ -9,7 +9,7 @@ tracked data is a separate, later decision.
 from __future__ import annotations
 
 from datetime import date
-from typing import Literal, Optional
+from typing import Literal
 
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
@@ -32,7 +32,7 @@ class FireScenario(ApiRequestModel):
     fields: dict[str, str] = Field(
         ..., description="Flat form payload, e.g. {'dateOfBirth': '1990-01-01', ...}"
     )
-    decumulation_return_pct: Optional[float] = Field(
+    decumulation_return_pct: float | None = Field(
         None,
         description=(
             "Override for the return withdrawal portfolios earn after retirement. "
@@ -43,6 +43,8 @@ class FireScenario(ApiRequestModel):
 
 
 class GoalRow(BaseModel):
+    """One line of the goal-attainment checklist."""
+
     key: str
     label: str
     met: bool
@@ -50,6 +52,8 @@ class GoalRow(BaseModel):
 
 
 class MonthRow(BaseModel):
+    """One simulated month: age, balances and the flows in and out."""
+
     index: int
     year: int
     month: int
@@ -63,6 +67,8 @@ class MonthRow(BaseModel):
 
 
 class RecommendationRow(BaseModel):
+    """The advice engine's proposed change and what it would buy."""
+
     action: str
     reason: str
     outcome: str
@@ -80,7 +86,7 @@ class AnnuityRow(BaseModel):
     recognised: bool
     claim_age: float
     monthly: float
-    factor: Optional[float]
+    factor: float | None
     description: str
 
 
@@ -117,15 +123,15 @@ class FireProjection(BaseModel):
     """Everything the results view needs."""
 
     status: Literal["success", "goals_not_met", "no_result"]
-    retire_index: Optional[int]
-    retire_age: Optional[float]
-    retire_year: Optional[int]
-    retire_month: Optional[int]
+    retire_index: int | None
+    retire_age: float | None
+    retire_year: int | None
+    retire_month: int | None
     search_limit_months: int
     inferred: bool
     goals: list[GoalRow]
     months: list[MonthRow]
-    recommendation: Optional[RecommendationRow]
+    recommendation: RecommendationRow | None
     annuities: list[AnnuityRow]
     withdrawal_plan: list[WithdrawalRow]
     snapshots: list[SnapshotRow]
@@ -144,15 +150,28 @@ def calculate(scenario: FireScenario) -> FireProjection:
 
     if result.simulation is None:
         return FireProjection(
-            status="no_result", retire_index=None, retire_age=None,
-            retire_year=None, retire_month=None,
-            search_limit_months=result.search_limit, inferred=result.inferred,
-            goals=[], months=[], recommendation=None,
-            annuities=[], withdrawal_plan=[], snapshots=[], pension_income=[],
+            status="no_result",
+            retire_index=None,
+            retire_age=None,
+            retire_year=None,
+            retire_month=None,
+            search_limit_months=result.search_limit,
+            inferred=result.inferred,
+            goals=[],
+            months=[],
+            recommendation=None,
+            annuities=[],
+            withdrawal_plan=[],
+            snapshots=[],
+            pension_income=[],
         )
 
     recommendation = advise(plan, result, today)
-    retired = result.simulation.months[result.retire_index - 1] if result.retire_index else None
+    retired = (
+        result.simulation.months[result.retire_index - 1]
+        if result.retire_index
+        else None
+    )
 
     return FireProjection(
         status="success" if result.succeeded else "goals_not_met",
@@ -162,30 +181,57 @@ def calculate(scenario: FireScenario) -> FireProjection:
         retire_month=retired.month if retired else None,
         search_limit_months=result.search_limit,
         inferred=result.inferred,
-        goals=[GoalRow(key=g.key, label=g.label, met=g.met, shortfall=g.shortfall)
-               for g in result.goals],
+        goals=[
+            GoalRow(key=g.key, label=g.label, met=g.met, shortfall=g.shortfall)
+            for g in result.goals
+        ],
         months=[
-            MonthRow(index=m.index, year=m.year, month=m.month, age=m.age,
-                     net_worth=m.net_worth, cash=m.cash, assets=m.assets,
-                     incomes=m.incomes, expenses=m.expenses, liabilities=m.liabilities)
+            MonthRow(
+                index=m.index,
+                year=m.year,
+                month=m.month,
+                age=m.age,
+                net_worth=m.net_worth,
+                cash=m.cash,
+                assets=m.assets,
+                incomes=m.incomes,
+                expenses=m.expenses,
+                liabilities=m.liabilities,
+            )
             for m in result.simulation.months
         ],
         annuities=[
-            AnnuityRow(owner=a.owner, source=a.source, component=a.component,
-                       recognised=a.recognised, claim_age=a.claim_age,
-                       monthly=a.monthly, factor=a.factor, description=a.description)
+            AnnuityRow(
+                owner=a.owner,
+                source=a.source,
+                component=a.component,
+                recognised=a.recognised,
+                claim_age=a.claim_age,
+                monthly=a.monthly,
+                factor=a.factor,
+                description=a.description,
+            )
             for a in result.simulation.annuities
         ],
         withdrawal_plan=[
-            WithdrawalRow(source=w.source, description=w.description,
-                          from_age=w.from_age, to_age=w.to_age,
-                          monthly_average=w.monthly_average)
+            WithdrawalRow(
+                source=w.source,
+                description=w.description,
+                from_age=w.from_age,
+                to_age=w.to_age,
+                monthly_average=w.monthly_average,
+            )
             for w in result.simulation.withdrawal_plan()
         ],
         snapshots=[
-            SnapshotRow(label=s.label, year=s.year, month=s.month,
-                        net_worth=s.net_worth, breakdown=s.breakdown,
-                        shortfall_capital=s.shortfall_capital)
+            SnapshotRow(
+                label=s.label,
+                year=s.year,
+                month=s.month,
+                net_worth=s.net_worth,
+                breakdown=s.breakdown,
+                shortfall_capital=s.shortfall_capital,
+            )
             for s in result.simulation.snapshots()
         ],
         pension_income=[
@@ -194,11 +240,14 @@ def calculate(scenario: FireScenario) -> FireProjection:
         ],
         recommendation=(
             RecommendationRow(
-                action=recommendation.action, reason=recommendation.reason,
+                action=recommendation.action,
+                reason=recommendation.reason,
                 outcome=recommendation.outcome.value,
                 months_saved=recommendation.months_saved,
                 missing_piece=recommendation.missing_piece,
                 token=recommendation.token(),
-            ) if recommendation else None
+            )
+            if recommendation
+            else None
         ),
     )

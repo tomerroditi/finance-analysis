@@ -53,27 +53,33 @@ class TaxableAccount:
     with growth from before it was bought."""
 
     @classmethod
-    def from_portfolio(cls, portfolio: Portfolio) -> "TaxableAccount":
-        """Opening state — `profit_fraction_pct` sets how much is already gain."""
+    def from_portfolio(cls, portfolio: Portfolio) -> TaxableAccount:
+        """Build the opening state — `profit_fraction_pct` sets how much is already gain."""
         gain = portfolio.balance * portfolio.profit_fraction_pct / 100
         return cls(
             balance=portfolio.balance,
             basis=portfolio.balance - gain,
             method=portfolio.lot_method,
-            lots=(lot_math.opening_lots(portfolio.balance,
-                                        portfolio.profit_fraction_pct / 100,
-                                        portfolio.monthly_factor)
-                  if portfolio.lot_method is not LotMethod.FLAT else []),
+            lots=(
+                lot_math.opening_lots(
+                    portfolio.balance,
+                    portfolio.profit_fraction_pct / 100,
+                    portfolio.monthly_factor,
+                )
+                if portfolio.lot_method is not LotMethod.FLAT
+                else []
+            ),
         )
 
     @property
     def gain_fraction(self) -> float:
+        """Share of the balance that is unrealised gain."""
         if self.balance <= 0:
             return 0.0
         return max(self.balance - self.basis, 0.0) / self.balance
 
     def deposit(self, amount: float) -> None:
-        """A deposit adds to both balance and basis, and buys a lot at par."""
+        """Deposit into both balance and basis, buying a lot at par."""
         if amount <= 0:
             return
         self.balance += amount
@@ -95,8 +101,9 @@ class TaxableAccount:
                 lot.value *= self._unsettled
             self._unsettled = 1.0
 
-    def withdraw_net(self, need: float, age: float = 0.0,
-                     statutory_age: int = 67) -> tuple[float, float]:
+    def withdraw_net(
+        self, need: float, age: float = 0.0, statutory_age: int = 67
+    ) -> tuple[float, float]:
         """Sell enough to net `need`. Returns `(net_received, tax_paid)`.
 
         Below 60 the tax is a flat share of the realised gain, so the gross-up
@@ -122,9 +129,13 @@ class TaxableAccount:
 
         ceiling = need / max(1 - CAPITAL_GAINS_RATE * gain_share, 1e-9)
         if age <= israeli_tax.MARGINAL_TREATMENT_AGE:
-            gross = (ceiling if self.method is LotMethod.FLAT
-                     else lot_math.gross_for_net(self.lots, self.method, need,
-                                                 CAPITAL_GAINS_RATE))
+            gross = (
+                ceiling
+                if self.method is LotMethod.FLAT
+                else lot_math.gross_for_net(
+                    self.lots, self.method, need, CAPITAL_GAINS_RATE
+                )
+            )
         else:
             ceiling = max(ceiling, need / max(1 - CAPITAL_GAINS_RATE, 1e-9))
             low, high = need, ceiling

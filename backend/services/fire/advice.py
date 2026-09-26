@@ -30,7 +30,9 @@ from backend.services.fire.models import (
 from backend.services.fire.solver import SolveResult, solve
 
 
-class AdviceOutcome(str, Enum):
+class AdviceOutcome(str, Enum):  # noqa: UP042
+    """How a recommendation fared when tried against the plan."""
+
     NOT_DONE = "not_done"
     NOT_BENEFICIAL = "success_but_extra_not_beneficial"
     IMPROVED = "improved_amazingly"
@@ -49,7 +51,7 @@ class Recommendation:
     improved: SolveResult | None = None
 
     def token(self) -> str:
-        """The reference's own wire format, reproduced for comparability.
+        """Render the reference's own wire format, reproduced for comparability.
 
         It orders the fields action, first parameter, reason, then the rest —
         e.g. `open_living_portfolio@interest=5@reason=...@portfolio_deposit=None`.
@@ -80,8 +82,11 @@ def _has_withdrawal_portfolio(plan: Plan) -> bool:
 
 def _idle_surplus(plan: Plan) -> bool:
     """Surplus that piles up in cash because no portfolio will accept it."""
-    return bool(plan.portfolios) and all(
-        p.goal <= 0 for p in plan.portfolios) and not plan.cash_buffer
+    return (
+        bool(plan.portfolios)
+        and all(p.goal <= 0 for p in plan.portfolios)
+        and not plan.cash_buffer
+    )
 
 
 def propose(plan: Plan, baseline: SolveResult) -> Recommendation | None:
@@ -90,9 +95,11 @@ def propose(plan: Plan, baseline: SolveResult) -> Recommendation | None:
         return Recommendation(
             action="open_living_portfolio",
             reason="no_living_portfolio",
-            parameters={"interest": DEFAULT_ADVISED_RETURN,
-                        "portfolio_deposit": None,
-                        "portfolio_subtype": "auto_broker"},
+            parameters={
+                "interest": DEFAULT_ADVISED_RETURN,
+                "portfolio_deposit": None,
+                "portfolio_subtype": "auto_broker",
+            },
             missing_piece=_shortfall(baseline),
         )
     if _idle_surplus(plan):
@@ -106,7 +113,7 @@ def propose(plan: Plan, baseline: SolveResult) -> Recommendation | None:
 
 
 def apply(plan: Plan, recommendation: Recommendation) -> Plan:
-    """The plan as it would be with the recommendation taken."""
+    """Return the plan as it would be with the recommendation taken."""
     if recommendation.action == "open_living_portfolio":
         opened = Portfolio(
             balance=0.0,
@@ -118,14 +125,21 @@ def apply(plan: Plan, recommendation: Recommendation) -> Plan:
         )
         return replace(plan, portfolios=[*plan.portfolios, opened])
     if recommendation.action == "invest_idle_surplus":
-        return replace(plan, portfolios=[
-            replace(p, goal=float("inf")) if p.designation == PortfolioDesignation.WITHDRAW
-            else p
-            for p in plan.portfolios])
+        return replace(
+            plan,
+            portfolios=[
+                replace(p, goal=float("inf"))
+                if p.designation == PortfolioDesignation.WITHDRAW
+                else p
+                for p in plan.portfolios
+            ],
+        )
     return plan
 
 
-def advise(plan: Plan, baseline: SolveResult, today: date | None = None) -> Recommendation | None:
+def advise(
+    plan: Plan, baseline: SolveResult, today: date | None = None
+) -> Recommendation | None:
     """Run the optimiser: propose, re-solve, and report whether it helped."""
     recommendation = propose(plan, baseline)
     if recommendation is None:
@@ -145,6 +159,7 @@ def advise(plan: Plan, baseline: SolveResult, today: date | None = None) -> Reco
 
     saved = baseline.retire_index - improved.retire_index
     recommendation.months_saved = saved
-    recommendation.outcome = (AdviceOutcome.IMPROVED if saved > 0
-                              else AdviceOutcome.NOT_BENEFICIAL)
+    recommendation.outcome = (
+        AdviceOutcome.IMPROVED if saved > 0 else AdviceOutcome.NOT_BENEFICIAL
+    )
     return recommendation

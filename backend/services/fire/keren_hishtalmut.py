@@ -26,15 +26,17 @@ MASLULIT_HIDDEN_FEE_PCT = 0.6
 
 
 def effective_fee_pct(fund: KerenHishtalmut) -> float:
+    """Annual fee the fund actually charges while accumulating, hidden part included."""
     if fund.kind == KerenType.MASLULIT:
         return fund.annual_fee_pct + MASLULIT_HIDDEN_FEE_PCT
     return fund.annual_fee_pct
 
 
 def monthly_factor(fund: KerenHishtalmut) -> float:
-    """Same multiplicative law as portfolios, on the effective fee."""
-    return ((1 + fund.annual_return_pct / 100)
-            * (1 - effective_fee_pct(fund) / 100)) ** (1 / 12)
+    """Compute the monthly growth factor: the portfolios' law, on the effective fee."""
+    return (
+        (1 + fund.annual_return_pct / 100) * (1 - effective_fee_pct(fund) / 100)
+    ) ** (1 / 12)
 
 
 @dataclass
@@ -46,11 +48,16 @@ class KerenAccount:
     stated_fee_pct: float
 
     @classmethod
-    def from_fund(cls, fund: KerenHishtalmut) -> "KerenAccount":
-        return cls(balance=fund.balance, factor=monthly_factor(fund),
-                   stated_fee_pct=fund.annual_fee_pct)
+    def from_fund(cls, fund: KerenHishtalmut) -> KerenAccount:
+        """Open the runtime account for a study fund as the plan describes it."""
+        return cls(
+            balance=fund.balance,
+            factor=monthly_factor(fund),
+            stated_fee_pct=fund.annual_fee_pct,
+        )
 
     def deposit(self, amount: float) -> None:
+        """Add a monthly deposit to the balance."""
         self.balance += amount
 
     def decumulation_factor(self, decumulation_return_pct: float) -> float:
@@ -67,10 +74,12 @@ class KerenAccount:
         decumulation table to within 0.09 pp under this rule, versus 0.7 pp if
         the hidden fee is kept.
         """
-        return ((1 + decumulation_return_pct / 100)
-                * (1 - self.stated_fee_pct / 100)) ** (1 / 12)
+        return (
+            (1 + decumulation_return_pct / 100) * (1 - self.stated_fee_pct / 100)
+        ) ** (1 / 12)
 
     def grow(self, factor: float | None = None) -> None:
+        """Apply one month of growth — the accumulation factor unless one is given."""
         self.balance *= self.factor if factor is None else factor
 
     def withdraw_net(self, need: float) -> float:

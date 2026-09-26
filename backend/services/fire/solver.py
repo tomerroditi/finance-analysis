@@ -8,6 +8,7 @@ present their output as parity with the reference.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field, replace
 from datetime import date
 
@@ -27,6 +28,8 @@ class Goal:
 
 @dataclass
 class SolveResult:
+    """The solver's answer: the retirement month found, and the goals behind it."""
+
     problem: BaseProblem
     retire_index: int | None
     retire_age: float | None
@@ -43,22 +46,23 @@ class SolveResult:
 
     @property
     def succeeded(self) -> bool:
+        """Whether a retirement month was found and every goal is met."""
         return self.retire_index is not None and all(g.met for g in self.goals)
 
 
 def search_limit(plan: Plan, today: date) -> int:
-    """Number of candidate retirement months.
+    """Count the candidate retirement months.
 
     Verified against the reference's own failure message, which quotes this
     bound: a 36.67-year-old with a max retirement age of 60 is told the search
     covered 280 months, and (60 - 36.67) * 12 = 280.
     """
     age_now = Simulator(plan).age_at(0, today)
-    return int(round((plan.max_retire_age - age_now) * 12))
+    return int(round((plan.max_retire_age - age_now) * 12))  # noqa: RUF046
 
 
 def evaluate_goals(plan: Plan, result: SimulationResult) -> list[Goal]:
-    """The attainment checklist the reference prints alongside the verdict."""
+    """Build the attainment checklist the reference prints alongside the verdict."""
     shortfall = sum(month.shortfall for month in result.months)
     final = result.months[-1].assets
 
@@ -69,30 +73,50 @@ def evaluate_goals(plan: Plan, result: SimulationResult) -> list[Goal]:
         # zero, trivially reached.
         if portfolio.designation == PortfolioDesignation.WITHDRAW:
             continue
-        reached = max(month.assets.get(f"portfolio{index}", 0.0) for month in result.months)
-        earmarked.append(Goal(f"portfolio{index}",
-                              portfolio.description or f"תיק {index + 1}",
-                              met=reached >= portfolio.goal - 1e-6,
-                              shortfall=max(portfolio.goal - reached, 0.0)))
+        reached = max(
+            month.assets.get(f"portfolio{index}", 0.0) for month in result.months
+        )
+        earmarked.append(
+            Goal(
+                f"portfolio{index}",
+                portfolio.description or f"תיק {index + 1}",
+                met=reached >= portfolio.goal - 1e-6,
+                shortfall=max(portfolio.goal - reached, 0.0),
+            )
+        )
 
     goals = [
-        Goal("living_expenses", "כיסוי הוצאות מחיה",
-             met=shortfall <= 1e-6, shortfall=shortfall),
+        Goal(
+            "living_expenses",
+            "כיסוי הוצאות מחיה",
+            met=shortfall <= 1e-6,
+            shortfall=shortfall,
+        ),
         # What is left behind: the plan has to end solvent *and* every earmarked
         # portfolio has to have reached what it was earmarked for. `desig_goal`
         # is the one recorded run that separates the two — it ends holding 7.9M,
         # more than any other failing plan, and the reference still marks the
         # bequest failed, because that 7.9M was meant to be 9M.
-        Goal("bequest", "יעד הורשה",
-             met=result.months[-1].net_worth >= -1e-6 and all(g.met for g in earmarked),
-             shortfall=max(-result.months[-1].net_worth, 0.0)),
+        Goal(
+            "bequest",
+            "יעד הורשה",
+            met=result.months[-1].net_worth >= -1e-6 and all(g.met for g in earmarked),
+            shortfall=max(-result.months[-1].net_worth, 0.0),
+        ),
     ]
     goals.extend(earmarked)
-    for who, owner, fund in (("main", plan.person, plan.pension),
-                             ("partner", plan.partner, plan.partner_pension)):
+    for who, owner, fund in (
+        ("main", plan.person, plan.pension),
+        ("partner", plan.partner, plan.partner_pension),
+    ):
         if fund is not None and owner is not None:
-            goals.append(Goal(f"pension_{who}", f"קרן פנסיה של {owner.name}",
-                              met=final.get("pension0", 0.0) >= -1e-6))
+            goals.append(
+                Goal(
+                    f"pension_{who}",
+                    f"קרן פנסיה של {owner.name}",
+                    met=final.get("pension0", 0.0) >= -1e-6,
+                )
+            )
     return goals
 
 
@@ -126,8 +150,12 @@ def solve(plan: Plan, today: date | None = None) -> SolveResult:
     """Dispatch on the plan's base problem."""
     today = today or date.today()
     if has_no_result(plan, today):
-        return SolveResult(problem=plan.base_problem, retire_index=None,
-                           retire_age=None, search_limit=search_limit(plan, today))
+        return SolveResult(
+            problem=plan.base_problem,
+            retire_index=None,
+            retire_age=None,
+            search_limit=search_limit(plan, today),
+        )
     if plan.base_problem == BaseProblem.RETIRE_ASAP:
         return solve_retire_asap(plan, today)
     if plan.base_problem == BaseProblem.RETIRE_AT_AGE:
@@ -158,9 +186,14 @@ def solve_retire_asap(plan: Plan, today: date | None = None) -> SolveResult:
             )
 
     result = Simulator(plan).run(retire_index=max(limit, 0), today=today)
-    return SolveResult(problem=BaseProblem.RETIRE_ASAP, retire_index=None,
-                       retire_age=None, search_limit=limit, simulation=result,
-                       goals=evaluate_goals(plan, result))
+    return SolveResult(
+        problem=BaseProblem.RETIRE_ASAP,
+        retire_index=None,
+        retire_age=None,
+        search_limit=limit,
+        simulation=result,
+        goals=evaluate_goals(plan, result),
+    )
 
 
 def pinned_retire_index(plan: Plan, today: date) -> int:
@@ -173,7 +206,7 @@ def pinned_retire_index(plan: Plan, today: date) -> int:
     """
     target = plan.wanted_retire_age or plan.max_retire_age
     age_now = Simulator(plan).age_at(0, today)
-    return max(int(round((target - age_now) * 12)), 0) + 1
+    return max(int(round((target - age_now) * 12)), 0) + 1  # noqa: RUF046
 
 
 def solve_retire_at_age(plan: Plan, today: date | None = None) -> SolveResult:
@@ -182,13 +215,19 @@ def solve_retire_at_age(plan: Plan, today: date | None = None) -> SolveResult:
     simulator = Simulator(plan)
     candidate = pinned_retire_index(plan, today)
     result = Simulator(plan).run(retire_index=candidate, today=today)
-    return SolveResult(problem=BaseProblem.RETIRE_AT_AGE, retire_index=candidate,
-                       retire_age=simulator.age_at(candidate - 1, today),
-                       search_limit=search_limit(plan, today), simulation=result,
-                       goals=evaluate_goals(plan, result))
+    return SolveResult(
+        problem=BaseProblem.RETIRE_AT_AGE,
+        retire_index=candidate,
+        retire_age=simulator.age_at(candidate - 1, today),
+        search_limit=search_limit(plan, today),
+        simulation=result,
+        goals=evaluate_goals(plan, result),
+    )
 
 
-def _bisect_smallest(feasible, low: float, high: float, steps: int = 40) -> float | None:
+def _bisect_smallest(
+    feasible: Callable[[float], bool], low: float, high: float, steps: int = 40
+) -> float | None:
     """Smallest value in [low, high] for which `feasible` is true."""
     if not feasible(high):
         return None
@@ -212,18 +251,23 @@ def solve_improve_cash(plan: Plan, today: date | None = None) -> SolveResult:
     candidate = pinned_retire_index(plan, today)
 
     def feasible(improvement: float) -> bool:
-        return _feasible(replace(plan, monthly_cash_improvement=improvement),
-                         candidate, today)[0]
+        return _feasible(
+            replace(plan, monthly_cash_improvement=improvement), candidate, today
+        )[0]
 
     needed = _bisect_smallest(feasible, 0.0, plan.max_cash_improvement)
     trial = replace(plan, monthly_cash_improvement=needed or 0.0)
     result = Simulator(trial).run(retire_index=candidate, today=today)
-    return SolveResult(problem=BaseProblem.IMPROVE_CASH,
-                       retire_index=candidate if needed is not None else None,
-                       retire_age=Simulator(plan).age_at(candidate - 1, today),
-                       search_limit=search_limit(plan, today), simulation=result,
-                       goals=evaluate_goals(trial, result),
-                       cash_improvement=needed, inferred=True)
+    return SolveResult(
+        problem=BaseProblem.IMPROVE_CASH,
+        retire_index=candidate if needed is not None else None,
+        retire_age=Simulator(plan).age_at(candidate - 1, today),
+        search_limit=search_limit(plan, today),
+        simulation=result,
+        goals=evaluate_goals(trial, result),
+        cash_improvement=needed,
+        inferred=True,
+    )
 
 
 def solve_increase_risk(plan: Plan, today: date | None = None) -> SolveResult:
@@ -236,8 +280,10 @@ def solve_increase_risk(plan: Plan, today: date | None = None) -> SolveResult:
 
     def with_extra_return(extra: float) -> Plan:
         trial = replace(plan)
-        trial.portfolios = [replace(p, annual_return_pct=p.annual_return_pct + extra)
-                            for p in plan.portfolios]
+        trial.portfolios = [
+            replace(p, annual_return_pct=p.annual_return_pct + extra)
+            for p in plan.portfolios
+        ]
         return trial
 
     def feasible(extra: float) -> bool:
@@ -246,9 +292,13 @@ def solve_increase_risk(plan: Plan, today: date | None = None) -> SolveResult:
     needed = _bisect_smallest(feasible, 0.0, plan.max_risk_increase_pct)
     trial = with_extra_return(needed or 0.0)
     result = Simulator(trial).run(retire_index=candidate, today=today)
-    return SolveResult(problem=BaseProblem.INCREASE_RISK,
-                       retire_index=candidate if needed is not None else None,
-                       retire_age=Simulator(plan).age_at(candidate - 1, today),
-                       search_limit=search_limit(plan, today), simulation=result,
-                       goals=evaluate_goals(trial, result),
-                       return_increase_pct=needed, inferred=True)
+    return SolveResult(
+        problem=BaseProblem.INCREASE_RISK,
+        retire_index=candidate if needed is not None else None,
+        retire_age=Simulator(plan).age_at(candidate - 1, today),
+        search_limit=search_limit(plan, today),
+        simulation=result,
+        goals=evaluate_goals(trial, result),
+        return_increase_pct=needed,
+        inferred=True,
+    )

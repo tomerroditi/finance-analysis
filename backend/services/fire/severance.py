@@ -40,16 +40,23 @@ class SeveranceRedemption:
 
     @property
     def monthly_tax_window(self) -> range:
+        """Month offsets over which the spread tax is billed."""
         return range(self.spread_months)
 
 
 def spread_years(service_years: int) -> int:
     """Tax years the taxable part is spread over."""
-    return max(1, min(service_years // SPREAD_YEARS_PER_SERVICE_YEARS, MAX_SPREAD_YEARS))
+    return max(
+        1, min(service_years // SPREAD_YEARS_PER_SERVICE_YEARS, MAX_SPREAD_YEARS)
+    )
 
 
-def redeem(pension_balance: float, mukeret_pct: float, redemption_year: int,
-           work_start_year: int | None) -> SeveranceRedemption:
+def redeem(
+    pension_balance: float,
+    mukeret_pct: float,
+    redemption_year: int,
+    work_start_year: int | None,
+) -> SeveranceRedemption:
     """Redeem the entitling employer severance component.
 
     Only `balance × (1 − mukeret) × 0.4` is redeemable — the *recognised*

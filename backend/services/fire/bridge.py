@@ -66,8 +66,13 @@ def window_share(coverage: float) -> float:
     return _CURVE(coverage)
 
 
-def bridge_months(last_working: int, month_60: int, month_statutory: int,
-                  claims_at_60: bool, coverage: float) -> float:
+def bridge_months(
+    last_working: int,
+    month_60: int,
+    month_statutory: int,
+    claims_at_60: bool,
+    coverage: float,
+) -> float:
     """Horizon, in months, at which the decumulation surface is read.
 
     Month numbers count from today: `last_working` is the last month with pay,
@@ -75,6 +80,7 @@ def bridge_months(last_working: int, month_60: int, month_statutory: int,
     statutory age. `claims_at_60` is whether the pension tactic starts anything
     at 60 (tactics `60` and `60-67`) — with an empty pension too.
     """
+
     def wait(claim: int) -> int:
         return claim - last_working if claim >= last_working else claim + 1
 

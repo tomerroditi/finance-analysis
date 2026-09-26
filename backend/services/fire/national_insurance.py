@@ -36,13 +36,20 @@ throughout that window and it is paid in full (notes/15).
 """
 
 
-def monthly_amount(person: Person, age: float, spouse: Person | None = None,
-                   spouse_age: float | None = None) -> float:
+def monthly_amount(
+    person: Person,
+    age: float,
+    spouse: Person | None = None,
+    spouse_age: float | None = None,
+) -> float:
     """Old-age pension at `age`. Paid from the month *after* the birthday."""
     if age <= STATUTORY_AGE[person.gender]:
         return 0.0
     amount = AGE_80_MONTHLY if age > STEP_UP_AGE else BASE_MONTHLY
-    if (spouse is not None and spouse_age is not None
-            and spouse_age <= STATUTORY_AGE[spouse.gender]):
+    if (
+        spouse is not None
+        and spouse_age is not None
+        and spouse_age <= STATUTORY_AGE[spouse.gender]
+    ):
         amount += SPOUSE_INCREMENT
     return amount

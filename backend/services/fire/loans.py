@@ -12,11 +12,13 @@ from backend.services.fire.models import Loan, LoanType
 
 
 def monthly_rate(loan: Loan) -> float:
+    """Nominal monthly interest rate, `annual / 12`."""
     return loan.annual_interest_pct / 100 / 12
 
 
 def term_months(loan: Loan) -> int:
-    return int(round(loan.term_years * 12))
+    """Loan term in whole months."""
+    return int(round(loan.term_years * 12))  # noqa: RUF046
 
 
 def spitzer_payment(loan: Loan) -> float:

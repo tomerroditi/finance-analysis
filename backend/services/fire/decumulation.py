@@ -68,10 +68,12 @@ class _Curve:
         width = xs[i + 1] - xs[i]
         t = (x - xs[i]) / width
         t2, t3 = t * t, t * t * t
-        return (ys[i] * (2 * t3 - 3 * t2 + 1)
-                + slopes[i] * width * (t3 - 2 * t2 + t)
-                + ys[i + 1] * (-2 * t3 + 3 * t2)
-                + slopes[i + 1] * width * (t3 - t2))
+        return (
+            ys[i] * (2 * t3 - 3 * t2 + 1)
+            + slopes[i] * width * (t3 - 2 * t2 + t)
+            + ys[i + 1] * (-2 * t3 + 3 * t2)
+            + slopes[i + 1] * width * (t3 - t2)
+        )
 
 
 DENSE = 10
@@ -82,9 +84,13 @@ one borrows the reference level's shape between its cells."""
 @lru_cache(maxsize=1)
 def _surface() -> tuple[dict[float, list[tuple[float, float]]], dict[float, _Curve]]:
     raw = json.loads(TABLE_PATH.read_text(encoding="utf-8"))
-    cells = {float(rule): sorted((float(bridge), rate) for bridge, rate in row.items())
-             for rule, row in raw["bridge_years"].items()}
-    curves = {rule: _Curve(points) for rule, points in cells.items() if len(points) >= DENSE}
+    cells = {
+        float(rule): sorted((float(bridge), rate) for bridge, rate in row.items())
+        for rule, row in raw["bridge_years"].items()
+    }
+    curves = {
+        rule: _Curve(points) for rule, points in cells.items() if len(points) >= DENSE
+    }
     return cells, curves
 
 
@@ -103,7 +109,7 @@ def _for_rule(rule: float, bridge: float) -> float:
     index = bisect_right([x for x, _ in points], bridge) - 1
     (low_bridge, low_rate), (high_bridge, high_rate) = points[index], points[index + 1]
     span = reference(high_bridge) - reference(low_bridge)
-    if abs(span) < 1e-6:   # both ends sit on the collapsed part of the curve
+    if abs(span) < 1e-6:  # both ends sit on the collapsed part of the curve
         weight = (bridge - low_bridge) / (high_bridge - low_bridge)
     else:
         weight = min(max((reference(bridge) - reference(low_bridge)) / span, 0.0), 1.0)
@@ -124,5 +130,7 @@ def decumulation_return_pct(confidence: float, bridge_years: float) -> float:
     index = bisect_left(rules, confidence)
     low, high = rules[index - 1], rules[index]
     weight = (confidence - low) / (high - low)
-    return (_for_rule(low, bridge_years)
-            + (_for_rule(high, bridge_years) - _for_rule(low, bridge_years)) * weight)
+    return (
+        _for_rule(low, bridge_years)
+        + (_for_rule(high, bridge_years) - _for_rule(low, bridge_years)) * weight
+    )

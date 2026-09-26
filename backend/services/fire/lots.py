@@ -44,13 +44,14 @@ class Lot:
 
     @property
     def gain_fraction(self) -> float:
+        """Share of the lot's current value that is unrealised gain."""
         if self.value <= 0:
             return 0.0
         return max(self.value - self.basis, 0.0) / self.value
 
 
 def solve_lot_count(monthly_factor: float, profit_fraction: float) -> int:
-    """Number of synthetic monthly purchases implied by a profit fraction.
+    """Count the synthetic monthly purchases implied by a profit fraction.
 
     A portfolio that does not grow has no history to manufacture: without
     growth every lot would be identical, so the profit fraction cannot be
@@ -68,15 +69,16 @@ def solve_lot_count(monthly_factor: float, profit_fraction: float) -> int:
     low, high = 1.0, 4000.0
     for _ in range(200):
         mid = (low + high) / 2
-        if f * (f ** mid - 1) / (f - 1) < mid / (1 - profit_fraction):
+        if f * (f**mid - 1) / (f - 1) < mid / (1 - profit_fraction):
             low = mid
         else:
             high = mid
-    return max(int(round((low + high) / 2)), 1)
+    return max(int(round((low + high) / 2)), 1)  # noqa: RUF046
 
 
-def opening_lots(balance: float, profit_fraction: float,
-                 monthly_factor: float) -> list[Lot]:
+def opening_lots(
+    balance: float, profit_fraction: float, monthly_factor: float
+) -> list[Lot]:
     """Expand an opening balance into its synthetic purchase history.
 
     Returned oldest-first, so FIFO consumes from the front and LIFO the back.
@@ -90,8 +92,10 @@ def opening_lots(balance: float, profit_fraction: float,
     if count == 1:
         return [Lot(basis=balance * (1 - profit_fraction), value=balance)]
     per_lot = balance * (1 - profit_fraction) / count
-    lots = [Lot(basis=per_lot, value=per_lot * monthly_factor ** age)
-            for age in reversed(range(1, count + 1))]
+    lots = [
+        Lot(basis=per_lot, value=per_lot * monthly_factor**age)
+        for age in reversed(range(1, count + 1))
+    ]
     # `count` is a rounded solution of a continuous equation, so rescale to hit
     # the stated balance exactly.
     total = sum(lot.value for lot in lots)
@@ -101,8 +105,7 @@ def opening_lots(balance: float, profit_fraction: float,
     return lots
 
 
-def gross_for_net(lots: list[Lot], method: LotMethod, net: float,
-                  rate: float) -> float:
+def gross_for_net(lots: list[Lot], method: LotMethod, net: float, rate: float) -> float:
     """Smallest sale that nets `net` after a flat `rate` on the realised gain.
 
     Below 60 the tax is a fixed share of the gain, so this inverse is closed
@@ -120,8 +123,9 @@ def gross_for_net(lots: list[Lot], method: LotMethod, net: float,
     """
     if net <= 0 or not lots:
         return 0.0
-    order = (range(len(lots)) if method is LotMethod.FIFO
-             else range(len(lots) - 1, -1, -1))
+    order = (
+        range(len(lots)) if method is LotMethod.FIFO else range(len(lots) - 1, -1, -1)
+    )
     remaining = net
     gross = 0.0
     for index in order:
@@ -138,8 +142,9 @@ def gross_for_net(lots: list[Lot], method: LotMethod, net: float,
     return gross + remaining
 
 
-def realised_gain(lots: list[Lot], method: LotMethod, gross: float,
-                  commit: bool = True) -> float:
+def realised_gain(
+    lots: list[Lot], method: LotMethod, gross: float, commit: bool = True
+) -> float:
     """Gain realised by selling `gross`, oldest- or newest-first.
 
     With `commit=False` the pool is left untouched, which is what the tax
@@ -147,8 +152,9 @@ def realised_gain(lots: list[Lot], method: LotMethod, gross: float,
     """
     if gross <= 0 or not lots:
         return 0.0
-    order = (range(len(lots)) if method is LotMethod.FIFO
-             else range(len(lots) - 1, -1, -1))
+    order = (
+        range(len(lots)) if method is LotMethod.FIFO else range(len(lots) - 1, -1, -1)
+    )
     remaining = gross
     realised = 0.0
     emptied: list[int] = []
