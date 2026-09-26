@@ -64,9 +64,21 @@ class AllocationEngineMixin:
         self._persist(plan)
 
     def rebuild(
-        self, from_month: str | None = None, dry_run: bool = False
+        self,
+        from_month: str | None = None,
+        dry_run: bool = False,
+        order: list[int] | None = None,
     ) -> dict[str, Any]:
         """Recompute allocation history under the current priorities.
+
+        Everything is computed first and written last, in one transaction:
+        the new order (if any), the deletion of the restated range and the
+        rows that replace it commit together. Committed one by one, a request
+        running alongside could see the history deleted but not yet rewritten
+        and refill it under the old order. Computing before opening the
+        transaction keeps the write lock to the writes themselves, and keeps
+        the simulation's own reads — some repositories read on a connection
+        of their own — out of it.
 
         Parameters
         ----------
@@ -76,6 +88,10 @@ class AllocationEngineMixin:
         dry_run : bool, optional
             When ``True``, compute the diff but write nothing — this is what
             backs the preview the user confirms before committing.
+        order : list[int] or None, optional
+            A new waterfall order (goal ids, first funded first) to restate
+            under and persist in the same transaction. ``None`` keeps the
+            stored priorities.
 
         Returns
         -------
@@ -96,7 +112,14 @@ class AllocationEngineMixin:
             raise ValidationException(f"Invalid from_month: {from_month!r}")
 
         before = self._range_totals(start)
-        plan = self._simulate(recompute_from=start or (1, 1))
+        self._order_override = order
+        try:
+            plan = self._simulate(recompute_from=start or (1, 1))
+            recomputed_ids = [
+                g.id for g in self._goals_in_order() if g.status != GOAL_STATUS_CLOSED
+            ]
+        finally:
+            self._order_override = None
         after: dict[int, float] = {}
         for (goal_id, year, month), amount in plan.computed.items():
             if start is None or (year, month) >= start:
@@ -120,11 +143,11 @@ class AllocationEngineMixin:
             )
 
         if not dry_run:
-            recomputed_ids = [
-                g.id for g in self._goals_in_order() if g.status != GOAL_STATUS_CLOSED
-            ]
-            self.repo.delete_allocations(recomputed_ids, *(start or (1, 1)))
-            self._persist(plan)
+            with self.repo.atomic():
+                if order is not None:
+                    self.repo.set_priorities(order)
+                self.repo.delete_allocations(recomputed_ids, *(start or (1, 1)))
+                self._persist(plan)
             self._last_plan = plan
 
         return {
@@ -397,17 +420,20 @@ class AllocationEngineMixin:
         worth the most.
         """
         existing = self._stored_allocations()
-        for (goal_id, year, month), amount in plan.computed.items():
-            current = existing.get((goal_id, year, month))
-            if current is not None and same_amount(current, amount):
-                continue
-            self.repo.upsert_allocation(goal_id, year, month, amount, ALLOCATION_AUTO)
-        for goal_id, closed_month in plan.closed_month.items():
-            goal = self.repo.get(goal_id)
-            if goal and goal.status != GOAL_STATUS_CLOSED:
-                self.repo.update(
-                    goal_id, status=GOAL_STATUS_CLOSED, closed_month=closed_month
+        with self.repo.atomic():
+            for (goal_id, year, month), amount in plan.computed.items():
+                current = existing.get((goal_id, year, month))
+                if current is not None and same_amount(current, amount):
+                    continue
+                self.repo.upsert_allocation(
+                    goal_id, year, month, amount, ALLOCATION_AUTO
                 )
+            for goal_id, closed_month in plan.closed_month.items():
+                goal = self.repo.get(goal_id)
+                if goal and goal.status != GOAL_STATUS_CLOSED:
+                    self.repo.update(
+                        goal_id, status=GOAL_STATUS_CLOSED, closed_month=closed_month
+                    )
 
     def _stored_allocations(self) -> dict[tuple[int, int, int], float]:
         """Return the persisted ledger as ``{(goal_id, year, month): amount}``."""

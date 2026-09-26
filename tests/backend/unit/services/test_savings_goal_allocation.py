@@ -651,18 +651,36 @@ class TestSpendingLink:
 class TestRebuild:
     """Restating history is explicit, previewable, and respects closed goals."""
 
+    def test_reorder_restates_history_under_the_new_order(self, db_session, service):
+        """Reordering rebuilds the ledger — the list and its numbers agree at once."""
+        last = _month_str(1)
+        _seed_surplus(db_session, last, income=10000, expenses=9500)
+        service.create(name="First", target_amount=1000, priority=0, start_month=last)
+        service.create(name="Second", target_amount=1000, priority=1, start_month=last)
+        ids = {g["name"]: g["id"] for g in service.get_all()}
+
+        returned = service.reorder([ids["Second"], ids["First"]])
+
+        assert [g["name"] for g in returned] == ["Second", "First"]
+        assert {g["name"]: g["funded"] for g in returned} == {"First": 0, "Second": 500}
+        assert {g["name"]: g["funded"] for g in service.get_all()} == {
+            "First": 0,
+            "Second": 500,
+        }
+
     def test_rebuild_dry_run_previews_without_writing(self, db_session, service):
         """A dry run reports the diff and leaves the ledger untouched.
 
-        The reorder before it applies forward only, so the ledger still holds
-        the old order's amounts after both.
+        The priorities are swapped underneath the ledger (as an older,
+        forward-only reorder left them), so the stored months still hold the
+        old order's amounts.
         """
         last = _month_str(1)
         _seed_surplus(db_session, last, income=10000, expenses=9500)
         service.create(name="First", target_amount=1000, priority=0, start_month=last)
         service.create(name="Second", target_amount=1000, priority=1, start_month=last)
         ids = {g["name"]: g["id"] for g in service.get_all()}
-        service.reorder([ids["Second"], ids["First"]])
+        service.repo.set_priorities([ids["Second"], ids["First"]])
 
         preview = service.rebuild(dry_run=True)
         deltas = {c["name"]: c["delta"] for c in preview["changes"]}
@@ -679,12 +697,49 @@ class TestRebuild:
         service.create(name="First", target_amount=1000, priority=0, start_month=last)
         service.create(name="Second", target_amount=1000, priority=1, start_month=last)
         ids = {g["name"]: g["id"] for g in service.get_all()}
-        service.reorder([ids["Second"], ids["First"]])
+        service.repo.set_priorities([ids["Second"], ids["First"]])
 
         service.rebuild(dry_run=False)
 
         after = {g["name"]: g["funded"] for g in service.get_all()}
         assert after == {"First": 0, "Second": 500}
+
+    def test_a_reorder_that_fails_midway_changes_nothing(
+        self, db_session, service, monkeypatch
+    ):
+        """The new order, the deleted history and its rewrite commit together.
+
+        Committed one by one, a failure — or a request reading in between —
+        found the order changed and the history deleted but not rewritten. A
+        write that dies halfway must leave the order and the ledger exactly
+        as they were.
+        """
+        for offset in (2, 1):
+            _seed_surplus(db_session, _month_str(offset), income=10000, expenses=9500)
+        start = _month_str(2)
+        service.create(name="First", target_amount=5000, priority=0, start_month=start)
+        service.create(name="Second", target_amount=5000, priority=1, start_month=start)
+        ids = {g["name"]: g["id"] for g in service.get_all()}
+        ledger_before = SavingsGoalService(db_session)._stored_allocations()
+        assert ledger_before
+
+        failing = SavingsGoalService(db_session)
+        real_upsert = failing.repo.upsert_allocation
+        calls = {"n": 0}
+
+        def upsert_then_fail(*args, **kwargs):
+            calls["n"] += 1
+            if calls["n"] > 1:
+                raise RuntimeError("disk full")
+            return real_upsert(*args, **kwargs)
+
+        monkeypatch.setattr(failing.repo, "upsert_allocation", upsert_then_fail)
+        with pytest.raises(RuntimeError):
+            failing.reorder([ids["Second"], ids["First"]])
+
+        fresh = SavingsGoalService(db_session)
+        assert fresh._stored_allocations() == ledger_before
+        assert [g.name for g in fresh._goals_in_order()] == ["First", "Second"]
 
     def test_rebuild_cannot_take_money_out_of_a_closed_goal(
         self, db_session, service
@@ -700,13 +755,11 @@ class TestRebuild:
 
         # `Other` is above it, so `Done` only gets funded once it is alone.
         service.reorder([done_id, next(g["id"] for g in service.get_all() if g["name"] == "Other")])
-        service.rebuild(dry_run=False)
         assert {g["name"]: g["funded"] for g in service.get_all()}["Done"] == 500
 
         service.close(done_id)
         ids = {g["name"]: g["id"] for g in service.get_all()}
         service.reorder([ids["Other"], ids["Done"]])
-        service.rebuild(dry_run=False)
 
         goals = {g["name"]: g for g in service.get_all()}
         assert goals["Done"]["funded"] == 500

@@ -233,7 +233,7 @@ const content: DataFlowContent = {
       title: "Savings Goals", tag: "Virtual Earmarks",
       sections: [
         { heading: "What A Goal Is", text: "A claim over money already sitting in tracked accounts \u2014 never an addition to net worth. You are not moving shekels, you are naming what they are for." },
-        { heading: "Operations", items: ["Name, target amount, opening balance, optional monthly cap and target date", "Priority order \u2014 drag to reorder; changes apply forward", "Link a transaction as a contribution or a utilization", "Pay for a project, a yearly envelope or any category/tags from a goal \u2014 one link, every matching purchase (past and future, card purchases included) counts as spent from the goal", "Back a goal with an investment you mean to liquidate", "Close a goal \u2014 its allocations freeze and can never be reclaimed"] },
+        { heading: "Operations", items: ["Name, target amount, opening balance, optional monthly cap and target date", "Priority order \u2014 reorder with the arrows; history is recalculated under the new order", "Link a transaction as a contribution or a utilization", "Pay for a project, a yearly envelope or any category/tags from a goal \u2014 one link, every matching purchase (past and future, card purchases included) counts as spent from the goal", "Back a goal with an investment you mean to liquidate", "Close a goal \u2014 its allocations freeze and can never be reclaimed"] },
         { heading: "Rewriting History", text: "A priority change applies from today. Recomputing past months is an explicit rebuild, and it is previewed before it is written." },
       ],
     },

@@ -1,5 +1,7 @@
 """Data access for savings goals: allocations, transaction links, investment earmarks."""
 
+from collections.abc import Iterator
+from contextlib import contextmanager
 from typing import Any
 
 import pandas as pd
@@ -59,6 +61,53 @@ class SavingsGoalRepository:
             SQLAlchemy session for database operations.
         """
         self.db = db
+        self._atomic_depth = 0
+        self._atomic_wrote = False
+
+    @contextmanager
+    def atomic(self) -> Iterator[None]:
+        """Group every write inside the block into one transaction.
+
+        Each write normally commits on its own. A rebuild is many of them — the
+        new priorities, deleting the history it restates, then one upsert per
+        (goal, month) — and committed one by one, a request running alongside
+        (another tab's reorder, a dashboard read topping up missing months)
+        could see the history deleted but not yet rewritten and fill it in
+        under the old order. Inside this block writes only flush, and the
+        block commits once at the end, so everyone else sees the old ledger or
+        the new one and never half of each. Any error rolls the whole block
+        back. Blocks nest; only the outermost one commits.
+
+        A block that wrote nothing does not commit at all. Every commit
+        discards the cross-request caches (``backend/utils/data_cache.py``),
+        and ``ensure_allocations`` opens a block on every read — most of which
+        find the ledger already current.
+
+        Yields
+        ------
+        None
+        """
+        if self._atomic_depth == 0:
+            self._atomic_wrote = False
+        self._atomic_depth += 1
+        try:
+            yield
+        except BaseException:
+            self._atomic_depth -= 1
+            if self._atomic_depth == 0 and self._atomic_wrote:
+                self.db.rollback()
+            raise
+        self._atomic_depth -= 1
+        if self._atomic_depth == 0 and self._atomic_wrote:
+            self.db.commit()
+
+    def _commit(self) -> None:
+        """Commit now, or only flush while an :meth:`atomic` block is open."""
+        if self._atomic_depth:
+            self._atomic_wrote = True
+            self.db.flush()
+        else:
+            self.db.commit()
 
     def get_all(self) -> pd.DataFrame:
         """Return all savings goals as a DataFrame (empty with no rows)."""
@@ -78,7 +127,7 @@ class SavingsGoalRepository:
         """Insert a new goal and return the persisted row."""
         goal = SavingsGoal(**fields)
         self.db.add(goal)
-        self.db.commit()
+        self._commit()
         self.db.refresh(goal)
         return goal
 
@@ -99,7 +148,7 @@ class SavingsGoalRepository:
             raise EntityNotFoundException(f"Savings goal {goal_id} not found")
         for key, value in fields.items():
             setattr(goal, key, value)
-        self.db.commit()
+        self._commit()
         self.db.refresh(goal)
         return goal
 
@@ -128,7 +177,7 @@ class SavingsGoalRepository:
             SavingsGoalInvestment.goal_id == goal_id
         ).delete()
         self.db.delete(goal)
-        self.db.commit()
+        self._commit()
 
     def set_priorities(self, ordered_ids: list[int]) -> None:
         """Rewrite the waterfall order from a list of goal ids, first funded first."""
@@ -137,7 +186,7 @@ class SavingsGoalRepository:
             goal = goals.get(goal_id)
             if goal:
                 goal.priority = position
-        self.db.commit()
+        self._commit()
 
     def get_allocations(self, goal_id: int | None = None) -> pd.DataFrame:
         """Return allocation rows, optionally scoped to a single goal."""
@@ -180,7 +229,7 @@ class SavingsGoalRepository:
             },
         )
         self.db.execute(stmt)
-        self.db.commit()
+        self._commit()
         self.db.expire_all()
         return self.db.execute(
             select(SavingsGoalAllocation).where(
@@ -208,7 +257,7 @@ class SavingsGoalRepository:
         for row in rows:
             if (row.year, row.month) >= (from_year, from_month):
                 self.db.delete(row)
-        self.db.commit()
+        self._commit()
 
     def get_links(self, goal_id: int | None = None) -> pd.DataFrame:
         """Return transaction links, optionally scoped to a single goal."""
@@ -255,7 +304,7 @@ class SavingsGoalRepository:
         else:
             link.goal_id = goal_id
             link.link_type = link_type
-        self.db.commit()
+        self._commit()
         self.db.refresh(link)
         return link
 
@@ -265,7 +314,7 @@ class SavingsGoalRepository:
         if not link:
             raise EntityNotFoundException(f"Savings goal link {link_id} not found")
         self.db.delete(link)
-        self.db.commit()
+        self._commit()
 
     def get_backings(self, goal_id: int | None = None) -> pd.DataFrame:
         """Return investment earmarks, optionally scoped to a single goal.
@@ -301,7 +350,7 @@ class SavingsGoalRepository:
             self.db.add(backing)
         else:
             backing.amount = amount
-        self.db.commit()
+        self._commit()
         self.db.refresh(backing)
         return backing
 
@@ -313,7 +362,7 @@ class SavingsGoalRepository:
                 f"Savings goal investment {backing_id} not found"
             )
         self.db.delete(backing)
-        self.db.commit()
+        self._commit()
 
     def delete_backings_for_investment(self, investment_id: int) -> int:
         """Delete every earmark against one investment.
@@ -336,7 +385,7 @@ class SavingsGoalRepository:
                 SavingsGoalInvestment.investment_id == investment_id
             )
         )
-        self.db.commit()
+        self._commit()
         return result.rowcount
 
     def set_utilization_rule(
@@ -380,7 +429,7 @@ class SavingsGoalRepository:
             )
         goal.utilization_category = category
         goal.utilization_tags = tags if category is not None else None
-        self.db.commit()
+        self._commit()
 
     def active_goals(self) -> list[SavingsGoal]:
         """Return active goals in waterfall order (priority ascending)."""

@@ -80,3 +80,7 @@ class SavingsGoalService(
         # Investment earmarks are valued live off each holding's balance, and
         # one request needs them repeatedly (allocating, then enriching).
         self._backing_cache: dict[int, float] | None = None
+        # A waterfall order not yet written: a reorder simulates under it
+        # first and only then persists it, together with the ledger, in one
+        # short transaction (see ``rebuild``).
+        self._order_override: list[int] | None = None

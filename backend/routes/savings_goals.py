@@ -124,7 +124,7 @@ def delete_goal(goal_id: int, db: Session = Depends(get_database)) -> dict[str, 
 def reorder_goals(
     data: SavingsGoalReorder, db: Session = Depends(get_database)
 ) -> list[dict[str, Any]]:
-    """Set the waterfall order. Applies to future allocations only."""
+    """Set the waterfall order and restate allocation history under it."""
     return SavingsGoalService(db).reorder(data.goal_ids)
 
 

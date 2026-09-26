@@ -47,11 +47,18 @@ class InputsMixin:
     """Context-building and pool-input methods for ``SavingsGoalService``."""
 
     def _goals_in_order(self) -> list[SavingsGoal]:
-        """Return every goal (active and closed) in waterfall order."""
+        """Return every goal (active and closed) in waterfall order.
+
+        While a reorder is being simulated the order it is about to write
+        stands in for the stored priorities.
+        """
         df = self.repo.get_all()
         if df.empty:
             return []
         ids = df.sort_values(["priority", "id"])["id"].tolist()
+        if self._order_override is not None:
+            rank = {goal_id: i for i, goal_id in enumerate(self._order_override)}
+            ids.sort(key=lambda goal_id: rank.get(goal_id, len(rank)))
         return [self.repo.get(int(i)) for i in ids]
 
     def _investment_backing(self) -> dict[int, float]:
