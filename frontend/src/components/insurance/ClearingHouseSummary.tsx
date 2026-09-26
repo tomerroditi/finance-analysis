@@ -9,26 +9,55 @@ function fmtDate(value: string | null): string {
   return value ? formatDate(new Date(value)) : "—";
 }
 
-function Row({
+function Figure({
   label,
   value,
-  note,
+  sub,
   testId,
 }: {
   label: string;
   value: number | null;
-  note?: string | null;
+  sub?: string | null;
   testId?: string;
 }) {
   return (
-    <div className="flex items-baseline justify-between gap-3 py-1.5 border-b border-[var(--surface-light)]/30 last:border-0">
-      <span className="text-[var(--text-muted)] text-xs">{label}</span>
-      <span className="flex items-baseline gap-2 shrink-0">
-        {note && <span className="text-[10px] font-bold text-emerald-400">{note}</span>}
-        <span data-testid={testId} className="text-white font-mono font-bold text-sm whitespace-nowrap">
-          {value == null ? "—" : formatCurrency(value)}
-        </span>
-      </span>
+    <div className="min-w-0">
+      <p className="text-[var(--text-muted)] text-[11px] leading-snug">{label}</p>
+      <p data-testid={testId} className="text-white font-black text-base md:text-lg whitespace-nowrap mt-0.5">
+        {value == null ? "—" : formatCurrency(value)}
+      </p>
+      {sub && <p className="text-[var(--text-muted)] text-[10px] mt-0.5">{sub}</p>}
+    </div>
+  );
+}
+
+function CoverTile({
+  label,
+  value,
+  monthly,
+  testId,
+}: {
+  label: string;
+  value: number | null;
+  monthly: boolean;
+  testId?: string;
+}) {
+  const { t } = useTranslation();
+  const none = !value;
+  return (
+    <div className="bg-[var(--background)]/50 rounded-xl p-3 min-w-0">
+      <p className="text-[var(--text-muted)] text-[11px] leading-snug">{label}</p>
+      <p
+        data-testid={testId}
+        className={`font-bold text-sm md:text-base mt-1 whitespace-nowrap ${none ? "text-[var(--text-muted)]" : "text-white"}`}
+      >
+        {none ? t("insurance.clearingHouse.noCover") : formatCurrency(value)}
+        {!none && monthly && (
+          <span className="text-[var(--text-muted)] text-[10px] font-medium ms-1">
+            {t("insurance.perMonth")}
+          </span>
+        )}
+      </p>
     </div>
   );
 }
@@ -37,6 +66,10 @@ function Row({
  * The clearing house's latest household summary: what the saver can expect
  * at retirement and what their insurance pays out today. Its reports cover
  * every fund the saver holds, so these figures belong to no single policy.
+ *
+ * The expected pension leads — it is the one number the whole page exists to
+ * answer — with the lump sum and projected balance beneath it and the cover a
+ * glanceable grid beside it.
  */
 export function ClearingHouseSummary({ reports }: { reports: ClearingHouseReport[] }) {
   const { t } = useTranslation();
@@ -53,11 +86,12 @@ export function ClearingHouseSummary({ reports }: { reports: ClearingHouseReport
       data-testid="clearing-house-summary"
       className="bg-[var(--surface)] rounded-2xl border border-[var(--surface-light)] p-4 md:p-6"
     >
-      <div className="flex flex-col sm:flex-row sm:items-baseline sm:justify-between gap-1 mb-3">
+      <div className="flex flex-col sm:flex-row sm:items-baseline sm:justify-between gap-0.5 mb-4">
         <h2 className="text-white font-bold text-base md:text-lg">
           {t("insurance.clearingHouse.title")}
         </h2>
         <p className="text-[var(--text-muted)] text-xs">
+          {t("insurance.clearingHouse.source")} ·{" "}
           {latest.report_number != null && latest.report_count != null
             ? t("insurance.clearingHouse.asOfReport", {
                 date: fmtDate(latest.calc_date),
@@ -68,52 +102,81 @@ export function ClearingHouseSummary({ reports }: { reports: ClearingHouseReport
         </p>
       </div>
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-        <div className="bg-[var(--background)]/50 rounded-xl p-3">
-          <p className="flex items-center gap-1.5 text-[var(--text-muted)] text-[10px] uppercase tracking-widest font-bold mb-1">
+        <div className="rounded-xl p-4 bg-gradient-to-br from-amber-500/10 via-[var(--background)]/50 to-[var(--background)]/50 border border-amber-500/15">
+          <p className="flex items-center gap-1.5 text-amber-300/90 text-[10px] uppercase tracking-widest font-bold">
             <Sunrise size={12} className="text-amber-400" />
-            {t("insurance.clearingHouse.atRetirement")}
+            {t("insurance.clearingHouse.monthlyPension")}
           </p>
-          <Row
-            label={t("insurance.clearingHouse.monthlyPension")}
-            value={latest.forecast_monthly_pension}
-            note={
-              pensionChange
-                ? t("insurance.clearingHouse.sinceLastReport", {
-                    change: formatChange(pensionChange),
-                  })
-                : null
-            }
-            testId="clearing-house-monthly-pension"
-          />
-          <Row label={t("insurance.clearingHouse.lumpSum")} value={latest.forecast_lump_sum} />
-          <Row
-            label={t("insurance.clearingHouse.projectedSavings")}
-            value={latest.forecast_total_balance}
-          />
-          <Row label={t("insurance.clearingHouse.savedToday")} value={latest.total_savings} />
+          <p className="flex items-baseline gap-1.5 flex-wrap mt-1">
+            <span
+              data-testid="clearing-house-monthly-pension"
+              className="text-white font-black text-3xl md:text-4xl whitespace-nowrap"
+            >
+              {latest.forecast_monthly_pension == null
+                ? "—"
+                : formatCurrency(latest.forecast_monthly_pension)}
+            </span>
+            <span className="text-[var(--text-muted)] text-xs">{t("insurance.perMonth")}</span>
+          </p>
+          {pensionChange ? (
+            <span
+              className={`inline-block mt-1.5 px-2 py-0.5 rounded-full text-[11px] font-bold ${
+                pensionChange > 0
+                  ? "bg-emerald-500/15 text-emerald-400"
+                  : "bg-rose-500/15 text-rose-400"
+              }`}
+            >
+              {t("insurance.clearingHouse.sinceLastReport", {
+                change: formatChange(pensionChange),
+              })}
+            </span>
+          ) : null}
+          <div className="grid grid-cols-2 gap-3 mt-4 pt-3 border-t border-[var(--surface-light)]/40">
+            <Figure label={t("insurance.clearingHouse.lumpSum")} value={latest.forecast_lump_sum} />
+            <Figure
+              label={t("insurance.clearingHouse.projectedSavings")}
+              value={latest.forecast_total_balance}
+              sub={
+                latest.total_savings != null
+                  ? t("insurance.clearingHouse.fromToday", {
+                      amount: formatCurrency(latest.total_savings),
+                    })
+                  : null
+              }
+            />
+          </div>
         </div>
-        <div className="bg-[var(--background)]/50 rounded-xl p-3">
-          <p className="flex items-center gap-1.5 text-[var(--text-muted)] text-[10px] uppercase tracking-widest font-bold mb-1">
+        <div>
+          <p className="flex items-center gap-1.5 text-[var(--text-muted)] text-[10px] uppercase tracking-widest font-bold mb-2">
             <ShieldCheck size={12} className="text-blue-400" />
             {t("insurance.clearingHouse.cover")}
           </p>
-          <Row
-            label={t("insurance.clearingHouse.disabilityMonthly")}
-            value={latest.disability_monthly}
-            testId="clearing-house-disability"
-          />
-          <Row
-            label={t("insurance.clearingHouse.survivorSpouseMonthly")}
-            value={latest.survivor_spouse_monthly}
-          />
-          <Row
-            label={t("insurance.clearingHouse.survivorChildMonthly")}
-            value={latest.survivor_child_monthly}
-          />
-          <Row label={t("insurance.clearingHouse.deathLumpSum")} value={latest.death_lump_sum} />
+          <div className="grid grid-cols-2 gap-2">
+            <CoverTile
+              label={t("insurance.clearingHouse.disabilityMonthly")}
+              value={latest.disability_monthly}
+              monthly
+              testId="clearing-house-disability"
+            />
+            <CoverTile
+              label={t("insurance.clearingHouse.survivorSpouseMonthly")}
+              value={latest.survivor_spouse_monthly}
+              monthly
+            />
+            <CoverTile
+              label={t("insurance.clearingHouse.survivorChildMonthly")}
+              value={latest.survivor_child_monthly}
+              monthly
+            />
+            <CoverTile
+              label={t("insurance.clearingHouse.deathLumpSum")}
+              value={latest.death_lump_sum}
+              monthly={false}
+            />
+          </div>
         </div>
       </div>
-      <p className="text-[var(--text-muted)] text-[10px] mt-2">
+      <p className="text-[var(--text-muted)] text-[10px] mt-3">
         {t("insurance.clearingHouse.forecastNote")}
       </p>
     </section>

@@ -84,7 +84,7 @@
     "categories": "Categories",
     "investments": "Investments",
     "liabilities": "Liabilities",
-    "insurance": "Insurance",
+    "insurance": "Pension Savings",
     "dataSources": "Data Sources",
     "earlyRetirement": "Early Retirement",
     "dataFlow": "Data Flow"
@@ -242,9 +242,9 @@
       "projected": "Projected",
       "expectedIncome": "Expected income",
       "expectedExpenses": "Expected expenses",
-"incomeStillDue": "incl. {{amount}} still due",
+      "incomeStillDue": "incl. {{amount}} still due",
       "dataThrough": "data through {{date}}",
-            "projectedNet": "Projected net"
+      "projectedNet": "Projected net"
     },
     "insights": {
       "title": "Insights",
@@ -1053,8 +1053,8 @@
       "description": "Add a loan or debt to monitor what you owe."
     },
     "insurance": {
-      "title": "No insurance data yet",
-      "description": "Connect your insurance accounts to get started."
+      "title": "No pension savings yet",
+      "description": "Connect the Pension Clearing House to see your pension, Keren Hishtalmut and provident funds."
     },
     "connectAccounts": "Connect accounts",
     "tryDemoMode": "Try demo mode",
@@ -1171,8 +1171,8 @@
     "bankAccountDesc": "Connect your bank account",
     "creditCard": "Credit Card",
     "creditCardDesc": "Connect your credit card",
-    "insurance": "Insurance",
-    "insuranceDesc": "Connect your insurance",
+    "insurance": "Pension Savings",
+    "insuranceDesc": "Pension, Keren Hishtalmut & provident funds",
     "selectProvider": "Select Provider",
     "currentDetailsFor": "Current details for",
     "enterDetailsFor": "Enter details for",
@@ -1289,20 +1289,21 @@
     "showPolicyDetails": "Show clearing-house details",
     "hidePolicyDetails": "Hide clearing-house details",
     "clearingHouse": {
-      "title": "Pension Clearing House — household summary",
+      "title": "Retirement outlook",
+      "source": "Pension Clearing House",
       "asOf": "As of {{date}}",
       "asOfReport": "As of {{date}} · report {{number}} of {{count}}",
-      "atRetirement": "At retirement",
       "monthlyPension": "Expected monthly pension",
       "sinceLastReport": "{{change}} since last report",
       "lumpSum": "Lump sum (Keren Hishtalmut & provident funds)",
       "projectedSavings": "Projected savings",
-      "savedToday": "Saved today",
+      "fromToday": "from {{amount}} saved today",
       "cover": "Insurance cover",
       "disabilityMonthly": "Loss of working capacity (monthly)",
       "survivorSpouseMonthly": "Survivor pension — spouse (monthly)",
       "survivorChildMonthly": "Survivor pension — children (monthly)",
       "deathLumpSum": "Life insurance (lump sum)",
+      "noCover": "None",
       "forecastNote": "Forecasts assume deposits continue unchanged until retirement age, in today's shekels, as published by the funds.",
       "subscriptionEnding": "Your Pension Clearing House subscription ends on {{date}} ({{count}} monthly reports left). Renew it in the clearing-house portal to keep your pension data updating.",
       "subscriptionEnding_one": "Your Pension Clearing House subscription ends on {{date}} (1 monthly report left). Renew it in the clearing-house portal to keep your pension data updating.",
@@ -1340,15 +1341,11 @@
       "loanPayment": "Monthly payment",
       "loanEnds": "Ends"
     },
-    "title": "Insurance",
-    "subtitle": "Track your insurance policies",
+    "title": "Pension Savings",
+    "subtitle": "Your pension, Keren Hishtalmut and provident funds",
     "loadingData": "Loading data...",
     "noAccountsFound": "No insurance accounts found",
     "scrapeToGetStarted": "Scrape your insurance to get started",
-    "totalBalance": "Total Balance",
-    "totalDeposits": "Total Deposits",
-    "riskCostsThisYear": "Risk Costs · This Year",
-    "avgCommission": "Avg Commission",
     "depositTrends": "Deposit Trends",
     "depositTrendsDesc": "Monthly deposit history",
     "investmentAllocation": "Investment Allocation",
@@ -1396,7 +1393,25 @@
     "renameFundHint": "Set a friendly name (e.g. \"My Pension\")",
     "resetToScrapedName": "Reset to scraped name",
     "save": "Save",
-    "cancel": "Cancel"
+    "cancel": "Cancel",
+    "kpis": {
+      "totalSavings": "Total savings",
+      "funds": "{{count}} funds",
+      "funds_one": "1 fund",
+      "funds_other": "{{count}} funds",
+      "fundsAsOf": "{{count}} funds · as of {{date}}",
+      "fundsAsOf_one": "1 fund · as of {{date}}",
+      "fundsAsOf_other": "{{count}} funds · as of {{date}}",
+      "recentDeposits": "Deposits",
+      "monthlyAvg": "≈ {{amount}} / month · last 12 months",
+      "noRecentDeposits": "No deposits this year",
+      "ytdProfit": "Profit this year",
+      "sinceJanuary": "Since January",
+      "costsThisYear": "Costs this year",
+      "costsBreakdown": "Risk {{risk}} · fees {{fee}}",
+      "feeOnSavings": "Mgmt fee on savings",
+      "feeOnDeposits": "{{pct}} on deposits"
+    }
   },
   "modals": {
     "confirm": {
