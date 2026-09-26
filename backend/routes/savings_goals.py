@@ -32,6 +32,7 @@ class SavingsGoalCreate(ApiRequestModel):
     contribution_tags: str | None = None
     utilization_category: str | None = None
     utilization_tags: str | None = None
+    kind: Literal["cash", "investment"] = "cash"
     notes: str | None = None
 
 

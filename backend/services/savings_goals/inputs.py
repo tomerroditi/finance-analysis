@@ -14,13 +14,14 @@ from backend.constants.categories import PRIOR_WEALTH_TAG
 from backend.constants.tables import TransactionsTableFields
 from backend.models.savings_goal import (
     LINK_CONTRIBUTION,
+    LINK_INVESTED,
     LINK_UTILIZATION,
     SavingsGoal,
 )
 from backend.services.bank_balance_service import BankBalanceService
 from backend.services.cash_balance_service import CashBalanceService
 from backend.services.investments import InvestmentsService
-from backend.services.savings_goals.common import month_key
+from backend.services.savings_goals.common import is_investment_goal, month_key
 from backend.services.transaction_classification import transactions_masks
 
 # Rows synthesised from prior-wealth balances are opening capital, not income.
@@ -163,8 +164,9 @@ class InputsMixin:
         -------
         dict
             ``surplus`` — ``{(year, month): float}``; ``direct`` (every
-            contribution), ``drawn`` (the part of it paid out of the pool) and
-            ``utilized`` — ``{(year, month): {goal_id: amount}}``.
+            contribution), ``drawn`` (the part of it paid out of the pool),
+            ``utilized`` and ``invested`` (an investment goal's net transfers)
+            — ``{(year, month): {goal_id: amount}}``.
         """
         if self._context_cache is not None:
             return self._context_cache
@@ -179,6 +181,7 @@ class InputsMixin:
             "direct": {},
             "drawn": {},
             "utilized": {},
+            "invested": {},
         }
         if df.empty:
             return empty
@@ -257,11 +260,19 @@ class InputsMixin:
         direct: dict[tuple[int, int], dict[int, float]] = {}
         drawn: dict[tuple[int, int], dict[int, float]] = {}
         utilized: dict[tuple[int, int], dict[int, float]] = {}
+        invested: dict[tuple[int, int], dict[int, float]] = {}
         for _, row in linked.iterrows():
             key = (int(row["_year"]), int(row["_month"]))
             goal_id = int(row["_goal_id"])
             raw = float(row[amount_col])
             amount = -raw if row["_signed"] else abs(raw)
+            # A transfer into an investment is negative in the raw convention
+            # and a withdrawal positive, so the signed amount is exactly the
+            # net invested: deposits add, withdrawals take back.
+            if row["_link_type"] == LINK_INVESTED:
+                invested.setdefault(key, {})
+                invested[key][goal_id] = invested[key].get(goal_id, 0.0) + amount
+                continue
             bucket = direct if row["_link_type"] == LINK_CONTRIBUTION else utilized
             bucket.setdefault(key, {})
             bucket[key][goal_id] = bucket[key].get(goal_id, 0.0) + amount
@@ -278,6 +289,7 @@ class InputsMixin:
             "direct": direct,
             "drawn": drawn,
             "utilized": utilized,
+            "invested": invested,
         }
 
     @staticmethod
@@ -330,6 +342,7 @@ class InputsMixin:
         category_col = TransactionsTableFields.CATEGORY.value
         tag_col = TransactionsTableFields.TAG.value
 
+        row_months = list(zip(df["_year"], df["_month"], strict=True))
         for goal in self._goals_in_order():
             if not goal.contribution_category:
                 continue
@@ -337,11 +350,21 @@ class InputsMixin:
             tags = self._split_tags(goal.contribution_tags)
             if tags and tags != [_ALL_TAGS] and tag_col in df.columns:
                 matches &= df[tag_col].isin(tags)
+            # An investment goal counts transfers both ways, and only from its
+            # start month: what was invested before it existed is not
+            # progress toward it, and stays an ordinary transfer of its month.
+            if is_investment_goal(goal):
+                start = month_key(goal.start_month)
+                for key, matched, row_month in zip(
+                    keys, matches, row_months, strict=True
+                ):
+                    if matched and (start is None or row_month >= start):
+                        mapping[key] = (goal.id, LINK_INVESTED, True)
+                continue
             for key, matched in zip(keys, matches, strict=True):
                 if matched:
                     mapping[key] = (goal.id, LINK_CONTRIBUTION, False)
 
-        row_months = list(zip(df["_year"], df["_month"], strict=True))
         # Walked bottom-up so the goal higher in the waterfall writes last.
         for goal in reversed(self._goals_in_order()):
             if not goal.utilization_category:

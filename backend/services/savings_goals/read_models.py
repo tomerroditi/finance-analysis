@@ -11,9 +11,14 @@ from typing import Any
 import pandas as pd
 
 from backend.errors import ValidationException
-from backend.models.savings_goal import GOAL_STATUS_CLOSED, SavingsGoal
+from backend.models.savings_goal import (
+    GOAL_KIND_CASH,
+    GOAL_STATUS_CLOSED,
+    SavingsGoal,
+)
 from backend.services.savings_goals.common import (
     ROUNDING_EPSILON,
+    is_investment_goal,
     iter_months,
     month_key,
     month_str,
@@ -163,8 +168,12 @@ class ReadModelsMixin:
         free_cash = float(plan.free_cash.get(current, 0.0)) if plan else 0.0
         # Only the cash half of a goal was ever taken out of this pool, so an
         # investment-backed goal must not inflate the liquid total.
+        # An investment goal's progress sits in the holding it was moved
+        # into, never in this pool's accounts.
         earmarked = sum(
-            max(0.0, g["available"] - g["investment_backed"]) for g in goals
+            max(0.0, g["available"] - g["investment_backed"])
+            for g in goals
+            if g["kind"] == GOAL_KIND_CASH
         )
         backed = sum(g["investment_backed"] for g in goals)
         this_month = self.repo.get_month_allocations(*current)
@@ -408,6 +417,12 @@ class ReadModelsMixin:
             )
             for goal_id, rows in history.items()
         }
+        # An investment goal has no ledger rows; what it gained this month is
+        # the month's net transfers.
+        this_month = self._kept_contributions().get(current, {})
+        for goal in goals:
+            if is_investment_goal(goal):
+                provisional[goal.id] = this_month.get(goal.id, 0.0)
 
         backing = self._investment_backing()
 
@@ -504,6 +519,7 @@ class ReadModelsMixin:
             "contribution_tags": goal.contribution_tags,
             "utilization_category": goal.utilization_category,
             "utilization_tags": goal.utilization_tags,
+            "kind": goal.kind or GOAL_KIND_CASH,
             "status": goal.status,
             "closed_month": goal.closed_month,
             "notes": goal.notes,

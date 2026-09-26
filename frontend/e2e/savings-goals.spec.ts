@@ -549,4 +549,40 @@ test.describe("Savings goals", () => {
     await expect(dialog).toHaveCount(0);
     expect(await openingBalance()).toBeCloseTo(claim.free_cash, 2);
   });
+
+  test("an investment goal is filled by transfers, not by the waterfall", async ({
+    page,
+  }) => {
+    // A cash goal's editor offers the cash-only settings; choosing "Invest"
+    // takes them away and asks for the transfers instead.
+    await openDashboardWithGoals(page);
+    await page.getByRole("button", { name: /add goal/i }).click();
+    const dialog = page.getByRole("dialog");
+    await expect(dialog.getByLabel("Monthly cap")).toBeVisible();
+    await dialog.getByRole("radio", { name: /invest/i }).click();
+    await expect(dialog.getByLabel("Monthly cap")).toHaveCount(0);
+    await expect(dialog.getByLabel("Already saved")).toHaveCount(0);
+    await expect(dialog.getByTestId("goal-invest-rule")).toBeVisible();
+    await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
+
+    const goal = await createGoal({
+      name: "E2E Invest Goal",
+      target_amount: 100000,
+      kind: "investment",
+      contribution_category: "Investments",
+      start_month: monthsAgo(12),
+    });
+    expect(goal.kind).toBe("investment");
+    expect(goal.allocated).toBe(0);
+
+    await page.reload();
+    const row = goalRow(page, "E2E Invest Goal");
+    await expect(row).toBeVisible({ timeout: 30_000 });
+    await expect(row.getByLabel("Invest")).toBeVisible();
+    // No holding earmark and no free-cash claim on an investment goal.
+    await expect(
+      row.getByRole("button", { name: /back with investments/i }),
+    ).toHaveCount(0);
+    await expect(row.getByRole("button", { name: /free cash/i })).toHaveCount(0);
+  });
 });

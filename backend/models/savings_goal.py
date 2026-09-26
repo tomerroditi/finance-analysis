@@ -23,9 +23,18 @@ from backend.models.base import Base, TimestampMixin
 GOAL_STATUS_ACTIVE = "active"
 GOAL_STATUS_CLOSED = "closed"
 
+#: ``savings_goals.kind`` values. ``NULL`` (a row older than the column) is
+#: a cash goal.
+GOAL_KIND_CASH = "cash"
+GOAL_KIND_INVESTMENT = "investment"
+
 #: ``savings_goal_links.link_type`` values.
 LINK_CONTRIBUTION = "contribution"
 LINK_UTILIZATION = "utilization"
+
+#: How an investment goal's rule classifies a transfer. Derived from the rule
+#: on every pass, never stored as a link.
+LINK_INVESTED = "invested"
 
 #: ``savings_goal_allocations.source`` values.
 ALLOCATION_AUTO = "auto"
@@ -71,6 +80,13 @@ class SavingsGoal(Base, TimestampMixin):
     utilization_tags : str or None
         Semicolon-separated tag names narrowing ``utilization_category``;
         ``None`` covers every tag in the category.
+    kind : str or None
+        ``"cash"`` (``NULL`` on rows older than the column) earmarks money in
+        the tracked accounts and is filled by the surplus waterfall.
+        ``"investment"`` is filled by the money actually moved into
+        investments instead: its ``contribution_category`` / ``_tags`` name
+        the transfers, deposits add and withdrawals subtract, and it never
+        takes part in the waterfall or its clawback. Fixed at creation.
     status : str
         ``"active"`` or ``"closed"``. A closed goal stops absorbing surplus and
         its existing allocations become immutable.
@@ -94,6 +110,7 @@ class SavingsGoal(Base, TimestampMixin):
     contribution_tags = Column(String, nullable=True)
     utilization_category = Column(String, nullable=True)
     utilization_tags = Column(String, nullable=True)
+    kind = Column(String, nullable=True, default=GOAL_KIND_CASH)
     status = Column(String, nullable=False, default=GOAL_STATUS_ACTIVE)
     closed_month = Column(String, nullable=True)
     notes = Column(String, nullable=True)

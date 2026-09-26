@@ -153,6 +153,45 @@ matters most is drained last.
   It hands money back to `free_cash`, not to the waterfall; getting this wrong
   lets a deficit month fund a goal that had no row there yet.
 
+## Investment goals: filled by transfers, not by surplus
+
+A goal has a `kind` (`savings_goals.kind`, fixed at creation; `NULL` — a row
+older than the column, or a demo DB synced by `sync_missing_columns` — reads
+as `cash`, via `common.is_investment_goal`). A **cash** goal is everything
+else in this file. An **investment** goal answers "have I invested X?":
+
+- **Progress is the net amount moved into investments.** Its
+  `contribution_category` / `_tags` name the transfers (e.g. Investments /
+  Pakam). `_goal_by_transaction` maps them as `LINK_INVESTED` (never stored),
+  **signed** and gated on `start_month` — deposits add, withdrawals take back,
+  earlier transfers stay ordinary. `_compute_context` reports them in
+  `invested`, out of the surplus.
+- **It never takes part in the waterfall or its clawback**, and never
+  auto-closes. `funded` is only its transfers (the plan records them in
+  `contributed`); the row's `this_month_allocation` is the month's net
+  transfers, shown as "invested" / "withdrawn".
+- **Investing is progress, not overspending.** A transfer to a plain
+  Investments category is a deficit that can claw back the cash goals — a
+  75K month into a savings deposit used to take money back out of a trip
+  fund. An investment goal's transfers leave the free-cash pool (the money is
+  no longer liquid) *after* that month's clawback, floored at zero, so they
+  can never reach another goal. A withdrawal hands the money back. The flip
+  side: a transfer the pool could not cover is treated as untracked money,
+  so `liquid` can sit above the bank for that amount.
+- **It is not cash.** `get_free_cash` leaves it out of `earmarked` and
+  `liquid`.
+- **Cash-goal settings are refused** (`_validate_investment_fields`,
+  `_reject_investment_goal`): it must name its transfers, and takes no
+  `opening_balance`, `monthly_cap`, spending rule, holding earmark or single
+  linked transaction. The card hides the earmark and claim actions, and the
+  editor offers only name, target, start, date and "Invested into".
+- **Creating, rescoping or deleting one restates history from its start
+  month** (`_restate_for_transfers` → `rebuild`). Which transfers it owns
+  decides, in every month they touch, whether they are progress or a deficit
+  that clawed back the cash goals; applying that only forward would leave
+  every old clawback in place. Pinned by
+  `test_creating_and_deleting_it_restate_the_past`.
+
 ## Backed by an investment, not by cash
 
 Some goals are not funded from cash at all: bonds the user already means to

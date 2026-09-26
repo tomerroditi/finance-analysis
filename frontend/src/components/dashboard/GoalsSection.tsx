@@ -18,6 +18,7 @@ import {
   Lock,
   Wallet,
   Landmark,
+  TrendingUp,
   X,
 } from "lucide-react";
 import {
@@ -34,6 +35,7 @@ import {
   savingsGoalsApi,
   type SavingsGoal,
   type SavingsGoalInput,
+  type SavingsGoalKind,
   type SavingsGoalFreeCash,
   type SavingsGoalInvestment,
 } from "../../services/api";
@@ -773,6 +775,12 @@ function GoalRow({
   onDelete: () => void;
 }) {
   const { t } = useTranslation();
+  const isInvestment = goal.kind === "investment";
+  // A cash goal's negative month is a clawback, which the row does not
+  // itemize; an investment goal's is a withdrawal, which it does.
+  const showThisMonth = isInvestment
+    ? goal.this_month_allocation !== 0
+    : goal.this_month_allocation > 0;
   const barColor = goal.is_closed
     ? "from-[var(--text-muted)] to-[var(--text-muted)]"
     : goal.is_achieved
@@ -798,6 +806,13 @@ function GoalRow({
           {!goal.is_closed && !!goal.is_achieved && (
             <Check size={14} className="text-emerald-400 shrink-0" />
           )}
+          {isInvestment && (
+            <TrendingUp
+              size={13}
+              className="text-[var(--primary)] shrink-0"
+              aria-label={t("dashboard.goals.kindInvestment")}
+            />
+          )}
           <p className="font-semibold text-sm truncate" dir="auto" title={goal.name}>{goal.name}</p>
         </div>
         <div className="flex items-center gap-0.5 shrink-0">
@@ -817,6 +832,9 @@ function GoalRow({
           >
             <ChevronDown size={14} />
           </button>
+          {/* An investment goal is filled by its transfers alone: it takes no
+              holding earmark and no free cash. */}
+          {!isInvestment && (
           <button
             onClick={onBack}
             aria-label={t("dashboard.goals.backWithInvestment")}
@@ -828,8 +846,9 @@ function GoalRow({
           >
             <Landmark size={14} />
           </button>
+          )}
           {/* A closed goal's history is frozen, so there is nothing to restate. */}
-          {!goal.is_closed && (
+          {!goal.is_closed && !isInvestment && (
             <button
               onClick={onClaim}
               aria-label={t("dashboard.goals.claimAriaLabel")}
@@ -870,15 +889,20 @@ function GoalRow({
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1.5 text-[10px] md:text-xs text-[var(--text-muted)]">
           <GoalStatusLine goal={goal} />
         </div>
-        {(goal.this_month_allocation > 0 ||
+        {(showThisMonth ||
           goal.utilized > 0 ||
           goal.investment_backed > 0) && (
           <div className="flex flex-wrap gap-x-3 gap-y-1 mt-1.5 text-[10px] md:text-xs text-[var(--text-muted)]">
-            {goal.this_month_allocation > 0 && (
+            {showThisMonth && (
               <span>
-                {t("dashboard.goals.thisMonth", {
-                  amount: formatCurrency(goal.this_month_allocation),
-                })}
+                {t(
+                  !isInvestment
+                    ? "dashboard.goals.thisMonth"
+                    : goal.this_month_allocation > 0
+                      ? "dashboard.goals.investedThisMonth"
+                      : "dashboard.goals.withdrawnThisMonth",
+                  { amount: formatCurrency(Math.abs(goal.this_month_allocation)) },
+                )}
               </span>
             )}
             {goal.utilized > 0 && (
@@ -1130,6 +1154,8 @@ function monthKeyLabel(month: string): string {
 function GoalEditorModal({ goal, onClose }: { goal: SavingsGoal | null; onClose: () => void }) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
+  const [kind, setKind] = useState<SavingsGoalKind>(goal?.kind ?? "cash");
+  const isInvestment = kind === "investment";
   const [name, setName] = useState(goal?.name ?? "");
   const [targetAmount, setTargetAmount] = useState(goal ? String(goal.target_amount) : "");
   const [openingBalance, setOpeningBalance] = useState(goal ? String(goal.opening_balance) : "0");
@@ -1153,12 +1179,15 @@ function GoalEditorModal({ goal, onClose }: { goal: SavingsGoal | null; onClose:
     queryKey: qk.savingsGoals.freeCashBefore(effectiveStart, goal?.id),
     queryFn: async () =>
       (await savingsGoalsApi.getFreeCashBefore(effectiveStart, goal?.id)).data,
+    // Only a cash goal can take over free cash.
+    enabled: !isInvestment,
   });
 
   // Stored months keep their rows, so an opening balance that moves without a
   // restate leaves history computed against the old pool — a later deficit
   // month would then take the difference back out of the wrong goal.
-  const openingChanged = (Number(openingBalance) || 0) !== (goal?.opening_balance ?? 0);
+  const openingChanged =
+    !isInvestment && (Number(openingBalance) || 0) !== (goal?.opening_balance ?? 0);
 
   const save = useMutation({
     mutationFn: async (payload: SavingsGoalInput) => {
@@ -1174,11 +1203,29 @@ function GoalEditorModal({ goal, onClose }: { goal: SavingsGoal | null; onClose:
     },
   });
 
-  const canSave = name.trim().length > 0 && Number(targetAmount) > 0;
+  const canSave =
+    name.trim().length > 0 &&
+    Number(targetAmount) > 0 &&
+    (!isInvestment || saveRule.category.length > 0);
 
   const handleSubmit = () => {
     if (!canSave) return;
+    // An investment goal is filled by its transfers alone, so the cash-goal
+    // settings are not sent (the backend refuses them).
+    if (isInvestment) {
+      save.mutate({
+        ...(goal ? {} : { kind }),
+        name: name.trim(),
+        target_amount: Number(targetAmount),
+        start_month: startMonth || null,
+        target_date: targetDate || null,
+        contribution_category: saveRule.category,
+        contribution_tags: joinRuleTags(saveRule.tags),
+      });
+      return;
+    }
     save.mutate({
+      ...(goal ? {} : { kind }),
       name: name.trim(),
       target_amount: Number(targetAmount),
       opening_balance: Number(openingBalance) || 0,
@@ -1206,6 +1253,40 @@ function GoalEditorModal({ goal, onClose }: { goal: SavingsGoal | null; onClose:
       maxWidth="md"
     >
       <div className="space-y-4 p-4 md:p-6">
+        {/* The kind decides what fills the goal, so it is chosen once. */}
+        {!goal && (
+          <div role="radiogroup" aria-label={t("dashboard.goals.kindLabel")}>
+            <span className={label}>{t("dashboard.goals.kindLabel")}</span>
+            <div className="grid grid-cols-2 gap-2">
+              {(["cash", "investment"] as const).map((option) => (
+                <button
+                  key={option}
+                  type="button"
+                  role="radio"
+                  aria-checked={kind === option}
+                  onClick={() => setKind(option)}
+                  className={`flex flex-col items-start gap-0.5 rounded-lg border px-3 py-2 text-start transition-colors ${
+                    kind === option
+                      ? "border-[var(--primary)] bg-[var(--primary)]/10"
+                      : "border-[var(--surface-light)] hover:bg-[var(--surface-light)]/40"
+                  }`}
+                >
+                  <span className="flex items-center gap-1.5 text-sm font-semibold">
+                    {option === "cash" ? <Wallet size={14} /> : <TrendingUp size={14} />}
+                    {t(option === "cash" ? "dashboard.goals.kindCash" : "dashboard.goals.kindInvestment")}
+                  </span>
+                  <span className="text-[10px] text-[var(--text-muted)]">
+                    {t(
+                      option === "cash"
+                        ? "dashboard.goals.kindCashHint"
+                        : "dashboard.goals.kindInvestmentHint",
+                    )}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
         <div>
           <label className={label} htmlFor="goal-name">{t("dashboard.goals.nameLabel")}</label>
           <input
@@ -1228,6 +1309,7 @@ function GoalEditorModal({ goal, onClose }: { goal: SavingsGoal | null; onClose:
               dir="ltr"
             />
           </div>
+          {!isInvestment && (
           <div>
             <label className={label} htmlFor="goal-opening">{t("dashboard.goals.openingLabel")}</label>
             <input
@@ -1260,8 +1342,10 @@ function GoalEditorModal({ goal, onClose }: { goal: SavingsGoal | null; onClose:
               </p>
             )}
           </div>
+          )}
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          {!isInvestment && (
           <div>
             <label className={label} htmlFor="goal-cap">{t("dashboard.goals.capLabel")}</label>
             <input
@@ -1276,6 +1360,7 @@ function GoalEditorModal({ goal, onClose }: { goal: SavingsGoal | null; onClose:
               {t("dashboard.goals.capHint")}
             </p>
           </div>
+          )}
           <div>
             <label className={label} htmlFor="goal-start">{t("dashboard.goals.startMonthLabel")}</label>
             <input
@@ -1300,6 +1385,16 @@ function GoalEditorModal({ goal, onClose }: { goal: SavingsGoal | null; onClose:
             dir="ltr"
           />
         </div>
+        {isInvestment ? (
+          <GoalAutoLinkField
+            testId="goal-invest-rule"
+            label={t("dashboard.goals.investRuleLabel")}
+            hint={t("dashboard.goals.investRuleHint")}
+            category={saveRule.category}
+            tags={saveRule.tags}
+            onChange={(category, tags) => setSaveRule({ category, tags })}
+          />
+        ) : (
         <fieldset className="space-y-3 border-t border-[var(--surface-light)] pt-3">
           <legend className="text-xs font-semibold text-[var(--text-muted)] pe-2">
             {t("dashboard.goals.autoLinkTitle")}
@@ -1321,6 +1416,7 @@ function GoalEditorModal({ goal, onClose }: { goal: SavingsGoal | null; onClose:
             onChange={(category, tags) => setSaveRule({ category, tags })}
           />
         </fieldset>
+        )}
         <div className="flex justify-end gap-2 pt-2">
           <button onClick={onClose} className="px-4 py-2 rounded-lg text-sm font-medium text-[var(--text-muted)] hover:bg-[var(--surface-light)] transition-colors">
             {t("common.cancel")}

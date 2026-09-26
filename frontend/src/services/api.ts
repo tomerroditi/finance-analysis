@@ -1156,6 +1156,12 @@ export interface SavingsGoal {
   utilization_category: string | null;
   /** Semicolon-separated tags narrowing `utilization_category`; `null` = every tag. */
   utilization_tags: string | null;
+  /**
+   * `"cash"` earmarks money in the tracked accounts and is filled by the
+   * surplus waterfall; `"investment"` is filled by the net money moved into
+   * the investments its contribution rule names. Fixed at creation.
+   */
+  kind: SavingsGoalKind;
   status: string;
   closed_month: string | null;
   notes: string | null;
@@ -1184,8 +1190,12 @@ export interface SavingsGoal {
   history: SavingsGoalAllocationEntry[];
 }
 
+export type SavingsGoalKind = "cash" | "investment";
+
 export interface SavingsGoalInput {
   name: string;
+  /** Only read on create — a goal's kind never changes. */
+  kind?: SavingsGoalKind;
   target_amount: number;
   opening_balance?: number;
   monthly_cap?: number | null;

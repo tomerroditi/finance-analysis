@@ -47,8 +47,10 @@ class InvestmentBackingMixin:
             The investment is closed, the amount is not positive, or the
             earmarks against that holding would exceed what it is worth.
         """
-        if not self.repo.get(goal_id):
+        goal = self.repo.get(goal_id)
+        if not goal:
             raise EntityNotFoundException(f"Savings goal {goal_id} not found")
+        self._reject_investment_goal(goal, "be backed by a holding")
         if amount is not None and amount <= 0:
             raise ValidationException("amount must be greater than zero")
 

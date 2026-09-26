@@ -30,6 +30,7 @@ GOAL_COLUMNS = [
     "target_date",
     "contribution_category",
     "contribution_tags",
+    "kind",
     "status",
     "closed_month",
     "notes",

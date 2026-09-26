@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { GoalsSection } from "./GoalsSection";
 import {
   savingsGoalsApi,
+  taggingApi,
   testingApi,
   type SavingsGoal,
   type SavingsGoalFreeCash,
@@ -43,6 +44,7 @@ function makeGoal(overrides: Partial<SavingsGoal> = {}): SavingsGoal {
     contribution_tags: null,
     utilization_category: null,
     utilization_tags: null,
+    kind: "cash",
     status: "active",
     closed_month: null,
     notes: null,
@@ -751,6 +753,94 @@ describe("GoalsSection", () => {
           amount: null,
         }),
       );
+    });
+  });
+
+  describe("investment goals", () => {
+    const invest = (overrides: Partial<SavingsGoal> = {}) =>
+      makeGoal({
+        name: "Pakam",
+        kind: "investment",
+        contribution_category: "Investments",
+        contribution_tags: "Pakam",
+        ...overrides,
+      });
+
+    it("marks the row and drops the cash-goal actions", async () => {
+      await renderGoals([invest()]);
+
+      const row = rowFor("Pakam");
+      expect(within(row).getByLabelText("Invest")).toBeInTheDocument();
+      expect(
+        within(row).queryByRole("button", { name: /back with investments/i }),
+      ).not.toBeInTheDocument();
+      expect(
+        within(row).queryByRole("button", { name: /free cash/i }),
+      ).not.toBeInTheDocument();
+    });
+
+    it("names this month's net transfers as invested or withdrawn", async () => {
+      await renderGoals([
+        invest({ this_month_allocation: 75000 }),
+        invest({ id: 2, name: "Bonds", this_month_allocation: -12000 }),
+      ]);
+
+      expect(within(rowFor("Pakam")).getByText(/invested this month/i).textContent).toMatch(
+        /75,000/,
+      );
+      expect(within(rowFor("Bonds")).getByText(/withdrawn this month/i).textContent).toMatch(
+        /12,000/,
+      );
+    });
+
+    it("still keeps a cash goal's clawback month off the row", async () => {
+      await renderGoals([makeGoal({ name: "Trip", this_month_allocation: -800 })]);
+
+      expect(within(rowFor("Trip")).queryByText(/this month/i)).not.toBeInTheDocument();
+    });
+
+    it("creates one from the editor with only the settings it uses", async () => {
+      vi.spyOn(taggingApi, "getCategories").mockResolvedValue({
+        data: { Investments: ["Pakam", "Stocks"], Food: ["Groceries"] },
+      } as Awaited<ReturnType<typeof taggingApi.getCategories>>);
+      vi.spyOn(savingsGoalsApi, "getFreeCashBefore").mockResolvedValue({
+        data: { month: "2026-09", free_cash: 0 },
+      } as Awaited<ReturnType<typeof savingsGoalsApi.getFreeCashBefore>>);
+      const create = vi.spyOn(savingsGoalsApi, "create").mockResolvedValue({
+        data: [] as SavingsGoal[],
+      } as Awaited<ReturnType<typeof savingsGoalsApi.create>>);
+      await renderGoals([makeGoal({ name: "Trip" })]);
+
+      fireEvent.click(screen.getByRole("button", { name: /add goal/i }));
+      fireEvent.click(await screen.findByRole("radio", { name: /invest/i }));
+
+      // The cash-goal settings have nothing to act on.
+      expect(screen.queryByLabelText(/monthly cap/i)).not.toBeInTheDocument();
+      expect(screen.queryByLabelText(/already saved/i)).not.toBeInTheDocument();
+      expect(screen.queryByTestId("goal-auto-link-spend")).not.toBeInTheDocument();
+
+      fireEvent.change(screen.getByLabelText(/name/i), { target: { value: "Pakam" } });
+      fireEvent.change(screen.getByLabelText(/target amount/i), { target: { value: "120000" } });
+      const save = screen.getByRole("button", { name: /^save$/i });
+      // Without the transfers it counts, the goal could never move.
+      expect(save).toBeDisabled();
+
+      const rule = screen.getByTestId("goal-invest-rule");
+      fireEvent.click(within(rule).getAllByRole("button")[0]);
+      fireEvent.click(await screen.findByRole("option", { name: "Investments" }));
+      fireEvent.click(save);
+
+      await waitFor(() => expect(create).toHaveBeenCalled());
+      const payload = create.mock.calls[0][0];
+      expect(payload).toMatchObject({
+        kind: "investment",
+        name: "Pakam",
+        target_amount: 120000,
+        contribution_category: "Investments",
+      });
+      expect(payload).not.toHaveProperty("monthly_cap");
+      expect(payload).not.toHaveProperty("opening_balance");
+      expect(payload).not.toHaveProperty("utilization_category");
     });
   });
 });

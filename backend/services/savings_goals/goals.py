@@ -14,12 +14,26 @@ import numpy as np
 from backend.constants.budget import ALL_TAGS
 from backend.errors import EntityNotFoundException, ValidationException
 from backend.models.savings_goal import (
+    GOAL_KIND_INVESTMENT,
     GOAL_STATUS_ACTIVE,
     GOAL_STATUS_CLOSED,
     LINK_CONTRIBUTION,
     LINK_UTILIZATION,
+    SavingsGoal,
 )
-from backend.services.savings_goals.common import month_key, month_str
+from backend.services.savings_goals.common import (
+    is_investment_goal,
+    month_key,
+    month_str,
+)
+
+#: What an investment goal cannot carry: it is filled by transfers alone, so
+#: surplus caps, an opening earmark of cash and paying for spending out of it
+#: have nothing to act on.
+_CASH_ONLY_FIELDS = ("monthly_cap", "utilization_category", "utilization_tags")
+
+#: The fields that decide which transfers an investment goal owns.
+_TRANSFER_SCOPE_FIELDS = ("contribution_category", "contribution_tags", "start_month")
 
 
 class GoalCrudMixin:
@@ -43,14 +57,19 @@ class GoalCrudMixin:
         Raises
         ------
         ValidationException
-            If ``start_month`` is not a parseable ``YYYY-MM`` string.
+            If ``start_month`` is not a parseable ``YYYY-MM`` string, or an
+            investment goal names no transfers or carries a cash-only field.
         """
+        if fields.get("kind") == GOAL_KIND_INVESTMENT:
+            self._validate_investment_fields(fields)
         fields.setdefault("priority", self.repo.next_priority())
         if not fields.get("start_month"):
             today = date.today()
             fields["start_month"] = month_str((today.year, today.month))
         self._validate_month(fields.get("start_month"), "start_month")
-        self.repo.add(**{k: v for k, v in fields.items() if v is not None})
+        goal = self.repo.add(**{k: v for k, v in fields.items() if v is not None})
+        if is_investment_goal(goal):
+            return self._restate_for_transfers(goal.start_month)
         return self._after_write()
 
     def update(self, goal_id: int, **fields: Any) -> list[dict[str, Any]]:
@@ -73,10 +92,30 @@ class GoalCrudMixin:
         EntityNotFoundException
             If the goal does not exist.
         ValidationException
-            If ``start_month`` is not a parseable ``YYYY-MM`` string.
+            If ``start_month`` is not a parseable ``YYYY-MM`` string, or the
+            change would leave an investment goal without transfers or with a
+            cash-only field.
         """
         if "start_month" in fields:
             self._validate_month(fields["start_month"], "start_month")
+        goal = self.repo.get(goal_id)
+        if goal and is_investment_goal(goal):
+            current = {
+                "contribution_category": goal.contribution_category,
+                "opening_balance": goal.opening_balance,
+            }
+            self._validate_investment_fields({**current, **fields})
+            rescoped = any(
+                name in fields and fields[name] != getattr(goal, name)
+                for name in _TRANSFER_SCOPE_FIELDS
+            )
+            if rescoped:
+                earliest = min(
+                    (m for m in (goal.start_month, fields.get("start_month")) if m),
+                    default=None,
+                )
+                self.repo.update(goal_id, **fields)
+                return self._restate_for_transfers(earliest)
         self.repo.update(goal_id, **fields)
         return self._after_write()
 
@@ -93,7 +132,11 @@ class GoalCrudMixin:
         EntityNotFoundException
             If the goal does not exist.
         """
+        goal = self.repo.get(goal_id)
+        start = goal.start_month if goal and is_investment_goal(goal) else None
         self.repo.delete(goal_id)
+        if start:
+            self._restate_for_transfers(start)
 
     def reorder(self, ordered_ids: list[int]) -> list[dict[str, Any]]:
         """Set the waterfall order and restate history under it.
@@ -223,8 +266,10 @@ class GoalCrudMixin:
             raise ValidationException(
                 f"link_type must be '{LINK_CONTRIBUTION}' or '{LINK_UTILIZATION}'"
             )
-        if not self.repo.get(goal_id):
+        goal = self.repo.get(goal_id)
+        if not goal:
             raise EntityNotFoundException(f"Savings goal {goal_id} not found")
+        self._reject_investment_goal(goal, "take single transactions")
         self.repo.upsert_link(goal_id, source_type, source_id, source_table, link_type)
         # Links feed the context, so anything cached before this write is stale.
         self._context_cache = None
@@ -283,7 +328,12 @@ class GoalCrudMixin:
         ------
         EntityNotFoundException
             If the goal does not exist.
+        ValidationException
+            If the goal is an investment goal, which nothing is spent out of.
         """
+        goal = self.repo.get(goal_id)
+        if goal and category is not None:
+            self._reject_investment_goal(goal, "pay for spending")
         self.repo.set_utilization_rule(goal_id, category, self._join_tags(tags))
         self._context_cache = None
         return self._after_write()
@@ -303,6 +353,55 @@ class GoalCrudMixin:
             return []
         links = links.replace({np.nan: None})
         return links.to_dict("records")
+
+    def _restate_for_transfers(self, from_month: str | None) -> list[dict[str, Any]]:
+        """Rebuild history after the transfers an investment goal owns changed.
+
+        Which transfers an investment goal owns decides whether each one is
+        progress or a deficit that claws back the cash goals, in every month
+        it touches — so creating, rescoping or deleting one restates history
+        from its start month rather than only the months still to come.
+        Without this, a goal created today over last year's transfers would
+        keep every clawback those transfers once caused.
+        """
+        self._context_cache = None
+        return self.rebuild(from_month=from_month)["goals"]
+
+    @staticmethod
+    def _validate_investment_fields(fields: dict[str, Any]) -> None:
+        """Reject an investment goal that names no transfers or holds cash fields.
+
+        Raises
+        ------
+        ValidationException
+            When ``contribution_category`` is empty, ``opening_balance`` is
+            non-zero, or any cash-only field is set.
+        """
+        if not fields.get("contribution_category"):
+            raise ValidationException(
+                "An investment goal needs the category its transfers are tagged with"
+            )
+        if fields.get("opening_balance"):
+            raise ValidationException(
+                "An investment goal counts transfers only; it takes no opening balance"
+            )
+        set_fields = [name for name in _CASH_ONLY_FIELDS if fields.get(name)]
+        if set_fields:
+            raise ValidationException(
+                f"An investment goal cannot set {', '.join(set_fields)}"
+            )
+
+    @staticmethod
+    def _reject_investment_goal(goal: SavingsGoal, action: str) -> None:
+        """Refuse an action that only applies to a cash goal.
+
+        Raises
+        ------
+        ValidationException
+            When ``goal`` is an investment goal.
+        """
+        if is_investment_goal(goal):
+            raise ValidationException(f"An investment goal cannot {action}")
 
     @staticmethod
     def _validate_month(value: object, field_name: str) -> None:
