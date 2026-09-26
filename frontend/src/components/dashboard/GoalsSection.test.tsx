@@ -356,14 +356,12 @@ describe("GoalsSection", () => {
       expect(screen.queryByText(/free cash/i)).not.toBeInTheDocument();
     });
 
-    it("flags money a deficit pulled back out of a goal", async () => {
+    it("does not tally a goal's lifetime clawbacks on its row", async () => {
       await renderGoals([makeGoal({ name: "Vacation", clawed_back: 800 })], {
         has_goals: true,
       });
 
-      expect(
-        within(rowFor("Vacation")).getByText(/taken back/i),
-      ).toBeInTheDocument();
+      expect(within(rowFor("Vacation")).queryByText(/800/)).not.toBeInTheDocument();
     });
   });
 

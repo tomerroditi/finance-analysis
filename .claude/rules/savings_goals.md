@@ -134,8 +134,14 @@ matters most is drained last.
   than merely informative.
 - **A clawback is a negative `savings_goal_allocations` row** in the deficit
   month, so the ledger stays the single source of truth and `allocated` nets
-  out on its own. `clawed_back` on the API payload sums those rows so the UI
-  can show what was taken without reading the ledger itself.
+  out on its own. `clawed_back` on the API payload sums those rows. The
+  dashboard card deliberately does **not** show that lifetime total: once
+  later surplus refills the goal it is history, not a shortfall, and a
+  standing amber "taken back" line on a full goal read as something being
+  wrong (an investment transfer counts as a deficit too, so the old
+  "overspending" wording was often false as well). Clawbacks surface where a
+  month is in view instead — the free-cash note for the current month, the
+  budget month's banner, and negative bars in the history panel.
 - **Closed goals are never clawed back** — frozen means frozen, in both
   directions.
 - **A history month's existing rows still stand.** The clawback obeys the same
@@ -318,7 +324,7 @@ not closed.
 
 - **Dashboard** (`GoalsSection.tsx`) — the waterfall in priority order, with
   reorder arrows, `this_month_allocation`, `utilized`/`available`,
-  `clawed_back`, `investment_backed`, the redistribute preview, and the
+  `investment_backed`, the redistribute preview, and the
   free-cash pool on a dashed row below the goals (`GET
   /savings-goals/free-cash`, its own query key). The waterfall **scrolls in
   place** past about 26rem of rows, so a household with a dozen goals does not
