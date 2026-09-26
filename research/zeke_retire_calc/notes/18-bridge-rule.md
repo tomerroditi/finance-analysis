@@ -129,10 +129,13 @@ What is established:
 
 * **The horizon runs to the younger spouse's 81**, and capital gains are taxed
   on the **older** spouse's age (both fixed in the engine).
-* **Only statutory months matter when nobody has a pension.** A male partner
-  born 1983 and a female one born 1985 reach their statutory age in the same
-  month and read the same rate to five decimals; so do 1978/1980; and the
-  roles are symmetric (`cp3_mainfemale_1990` = `cp2_empty_1990`).
+* **Gender enters only through the statutory month.** A male partner born
+  1983 and a female one born 1985 reach their statutory age in the same month,
+  retire in the same month, and read the same rate to five decimals; so do
+  1978/1980; and the roles are symmetric (`cp3_mainfemale_1990` =
+  `cp2_empty_1990`). Pairs sharing a statutory month but not a retirement month
+  (a woman born 1990 retiring in month 8, a man born 1988 in month 7) do
+  differ — 353.19 against 352.49 — so the retirement month is in the rule.
 * **Pension-free, the bridge end is piecewise linear in the gap `g`** between
   the two statutory months (two men, `couple4`/`couple5`, main at 364):
 
