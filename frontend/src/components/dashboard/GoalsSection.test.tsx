@@ -683,6 +683,34 @@ describe("GoalsSection", () => {
     });
   });
 
+  describe("goals filled by their own income", () => {
+    it("offer no monthly cap, since they take nothing from surplus", async () => {
+      vi.spyOn(taggingApi, "getCategories").mockResolvedValue({
+        data: { "Other Income": ["Wedding"] },
+      } as Awaited<ReturnType<typeof taggingApi.getCategories>>);
+      vi.spyOn(savingsGoalsApi, "getFreeCashBefore").mockResolvedValue({
+        data: { month: "2025-01", free_cash: 0 },
+      } as Awaited<ReturnType<typeof savingsGoalsApi.getFreeCashBefore>>);
+      await renderGoals([
+        makeGoal({ id: 1, name: "Trip" }),
+        makeGoal({
+          id: 2,
+          name: "Wedding",
+          contribution_category: "Other Income",
+          contribution_tags: "Wedding",
+        }),
+      ]);
+
+      fireEvent.click(within(rowFor("Trip")).getByRole("button", { name: /^edit$/i }));
+      expect(await screen.findByLabelText(/monthly cap/i)).toBeInTheDocument();
+      fireEvent.click(screen.getByRole("button", { name: /^cancel$/i }));
+
+      fireEvent.click(within(rowFor("Wedding")).getByRole("button", { name: /^edit$/i }));
+      await screen.findByLabelText(/start from/i);
+      expect(screen.queryByLabelText(/monthly cap/i)).not.toBeInTheDocument();
+    });
+  });
+
   describe("investment goals", () => {
     const invest = (overrides: Partial<SavingsGoal> = {}) =>
       makeGoal({
