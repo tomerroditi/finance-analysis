@@ -1,3 +1,9 @@
+## v1.92.0 (2026-09-26)
+
+### Feat
+
+- **savings-goals**: reorder restates history itself, with an instant, recalculating card (#360)
+
 ## v1.91.2 (2026-09-26)
 
 ### Fix
