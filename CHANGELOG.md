@@ -1,3 +1,10 @@
+## v1.90.0 (2026-09-26)
+
+### Feat
+
+- **insurances**: redesign the KPI cards and rename the page to Pension Savings (#356)
+- **insurances,retirement,liabilities**: use the clearing house's forecasts, cover, policy details and loans (#355)
+
 ## v1.89.0 (2026-09-23)
 
 ### Feat
