@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import { render } from "@testing-library/react";
 import { BarChart, Bar, Rectangle, XAxis, YAxis } from "recharts";
 import {
+  STACK_OFFSET,
   stackAxis,
   stackEnds,
   stackSegmentRadius,
@@ -231,5 +232,47 @@ describe("stackAxis", () => {
       domain: [0, 1],
       ticks: [0],
     });
+  });
+});
+
+describe("STACK_OFFSET", () => {
+  /** The vertical extent (top, bottom) of every bar a two-series chart draws. */
+  function extents(offset?: typeof STACK_OFFSET) {
+    const { container } = render(
+      <BarChart
+        width={300}
+        height={200}
+        data={[{ month: "2026-01", a: 1000, b: -400 }]}
+        stackOffset={offset}
+      >
+        <XAxis dataKey="month" />
+        <YAxis domain={[-500, 1100]} />
+        <Bar dataKey="a" stackId="s" fill="#f00" isAnimationActive={false} />
+        <Bar dataKey="b" stackId="s" fill="#0f0" isAnimationActive={false} />
+      </BarChart>,
+    );
+    return [...container.querySelectorAll("path")]
+      .map((p) => p.getAttribute("d") ?? "")
+      .filter((d) => d.startsWith("M"))
+      .map((d) => {
+        // A square Recharts bar is "M x,y h w v height h -w Z".
+        const y = Number(d.match(/^M\s*[-\d.]+,\s*([-\d.]+)/)?.[1]);
+        const height = Number(d.match(/v\s*([-\d.]+)/)?.[1]);
+        return { top: Math.min(y, y + height), bottom: Math.max(y, y + height) };
+      });
+  }
+
+  it("hangs a negative segment below zero instead of over the positive bar", () => {
+    const [positive, negative] = extents(STACK_OFFSET);
+
+    // The negative bar starts where the positive one does: at the zero line.
+    expect(negative.top).toBeCloseTo(positive.bottom, 0);
+    expect(negative.bottom).toBeGreaterThan(positive.bottom);
+  });
+
+  it("is needed: the default stacking draws it over the positive bar", () => {
+    const [positive, negative] = extents();
+
+    expect(negative.bottom).toBeLessThan(positive.bottom);
   });
 });

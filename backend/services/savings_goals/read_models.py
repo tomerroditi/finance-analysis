@@ -104,6 +104,11 @@ class ReadModelsMixin:
             bridged = float(moves.get(goal.id, 0.0))
             if allocated == 0 and contributed == 0 and bridged == 0:
                 continue
+            # What a goal *received* is its surplus and its income. Free cash
+            # it borrowed for a bill and repaid from that income is reported
+            # apart as ``bridged`` rather than netted in: netted, a month of
+            # wedding gifts that repaid last year's bills read as a fraction
+            # of the gifts, as if the goal had not used them.
             rows.append(
                 {
                     "goal_id": goal.id,
@@ -113,7 +118,7 @@ class ReadModelsMixin:
                     "allocated": round(allocated, 2),
                     "contributed": round(contributed, 2),
                     "bridged": round(bridged, 2),
-                    "total": round(allocated + contributed + bridged, 2),
+                    "total": round(allocated + contributed, 2),
                 }
             )
 
@@ -315,7 +320,7 @@ class ReadModelsMixin:
                         "allocated": round(allocated, 2),
                         "contributed": round(contributed, 2),
                         "bridged": round(bridged, 2),
-                        "total": round(allocated + contributed + bridged, 2),
+                        "total": round(allocated + contributed, 2),
                     }
                 )
             # Funding and clawback are reported apart rather than netted: a

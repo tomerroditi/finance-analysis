@@ -219,8 +219,16 @@ wedding gifts, never the salary that was left over while it waited for them.
 - Income past the target still spills into the month's surplus.
 - Fronted and released amounts are derived every pass, like contributions,
   never ledger rows. `funded = opening + allocated + contributed + fronted -
-  released`, the payload reports `fronted` / `released`, and the month view
-  and timeline carry the net as `bridged` inside each goal's `total`.
+  released` and the payload reports `fronted` / `released`. The month view
+  and timeline report the net apart as `bridged`, **outside** each goal's
+  `total`: a goal's bar is what it received (surplus and income), so a gift
+  month that repaid earlier bills still reads as the whole gift. Netted in, a
+  164K gift month showed as 85K and read as the goal ignoring its income.
+- **No free-cash claim.** The wallet action and the editor's "use earlier
+  free cash" shortcut are hidden on an income-funded goal: free cash claimed
+  as its opening balance is exactly what stopped a wedding fund from using its
+  gifts (the goal reached target on 64K of plain free cash, and the gifts
+  spilled). "Already saved" stays, for money truly received before tracking.
 - **Creating, rescoping or deleting the rule restates history** from the
   goal's start month (`_restate_for_transfers`, shared with investment
   goals).
@@ -418,7 +426,10 @@ not closed.
   expands never fetches a window.
 
   Stacked bars carry each month's per-goal funding **with the free-cash pool
-  stacked on top**; a negative segment is a clawback. The pool is a standing
+  stacked on top**; a negative segment is a clawback. Positives stack up from zero and negatives
+  down from it (`STACK_OFFSET = "sign"` in `charts/stackedBarShape.tsx`) —
+  Recharts' default piles a negative segment onto the positive column and
+  draws it over the bars. The pool is a standing
   balance and the allocations are monthly flows, so on a household with real
   savings the pool towers over them — which is why **the legend is
   clickable**: a click hides a series (the pool included) and the y-axis

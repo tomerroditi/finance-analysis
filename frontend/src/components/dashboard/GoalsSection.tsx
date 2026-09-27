@@ -40,7 +40,12 @@ import { useQueryKeys } from "../../hooks/useQueryKeys";
 import { useScrollCap } from "../../hooks/useScrollCap";
 import { GoalAutoLinkField, InvestmentTagsField } from "./GoalAutoLinkField";
 import { joinRuleTags, splitRuleTags } from "../../utils/goalRuleTags";
-import { stackAxis, stackEnds, roundedStackShape } from "../charts/stackedBarShape";
+import {
+  STACK_OFFSET,
+  stackAxis,
+  stackEnds,
+  roundedStackShape,
+} from "../charts/stackedBarShape";
 import { qkPrefix } from "../../services/queryKeys";
 import { useConfirm, useNotify } from "../../context/DialogContext";
 import { Modal } from "../common/Modal";
@@ -606,6 +611,7 @@ function AllocationHistory() {
                       data={rows}
                       margin={{ top: 4, bottom: 0, left: 0, right: 4 }}
                       barCategoryGap="22%"
+                      stackOffset={STACK_OFFSET}
                     >
                       <defs>
                         {series.map((goal) => (
@@ -825,9 +831,11 @@ function GoalRow({
             <ChevronDown size={14} />
           </button>
           {/* A closed goal's history is frozen, so there is nothing to restate;
-              an investment goal is filled by its transfers alone, never by
-              free cash. */}
-          {!goal.is_closed && !isInvestment && (
+              a goal filled by its own income (an investment goal, or a
+              "saved into" rule) holds exactly that income, never free cash —
+              claiming free cash into one was how a wedding fund stopped
+              using its gifts. */}
+          {!goal.is_closed && !isInvestment && !goal.contribution_category && (
             <button
               onClick={onClaim}
               aria-label={t("dashboard.goals.claimAriaLabel")}
@@ -1101,7 +1109,7 @@ function GoalEditorModal({ goal, onClose }: { goal: SavingsGoal | null; onClose:
             <p className="text-[10px] text-[var(--text-muted)] mt-1">
               {t("dashboard.goals.openingHint")}
             </p>
-            {!!freeBefore && freeBefore.free_cash > 0 && (
+            {!!freeBefore && freeBefore.free_cash > 0 && !saveRule.category && (
               <button
                 type="button"
                 data-testid="goal-opening-use-free-cash"

@@ -31,6 +31,17 @@ export type StackEnds = Map<string, StackEnd>;
 /** The corner radii of a rectangle, clockwise from the top-left. */
 export type CornerRadii = [number, number, number, number];
 
+/**
+ * How a stacked chart that can go below zero must stack.
+ *
+ * Recharts' default piles every series onto one running total, so a negative
+ * segment (a withdrawal, a clawback, a free-cash pool that went negative)
+ * starts from the top of the month's positive bars and is drawn over them.
+ * `"sign"` stacks positives up from zero and negatives down from it — the
+ * layout `stackEnds` and `stackAxis` already assume.
+ */
+export const STACK_OFFSET = "sign" as const;
+
 /** How much the outer end of a column is rounded, in px. */
 export const STACK_CORNER_RADIUS = 4;
 
