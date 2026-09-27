@@ -1612,3 +1612,22 @@ class TestRuleFundedGoals:
         assert goal["utilized"] == 0
         assert goal["available"] == 0
         assert service.get_free_cash()["free_cash"] == 12000
+
+    def test_the_timeline_bar_is_its_income_not_what_the_income_repaid(
+        self, db_session, service
+    ):
+        """A gift month reads as the whole gift, with the repaid bills apart."""
+        bill, gifts = _month_str(2), _month_str(1)
+        _seed_free_cash(db_session, 20000)
+        _add_txn(db_session, bill, -8000, "Wedding", tag="Venue", day=9)
+        _add_txn(db_session, gifts, 15000, "Other Income", tag="Wedding", day=6)
+
+        self._wedding(service, bill, target=20000)
+
+        months = {m["month"]: m for m in service.get_timeline(months=0)["months"]}
+        paid = next(g for g in months[bill]["goals"] if g["name"] == "Wedding")
+        given = next(g for g in months[gifts]["goals"] if g["name"] == "Wedding")
+        assert paid["total"] == 0
+        assert paid["bridged"] == 8000
+        assert given["total"] == 15000
+        assert given["bridged"] == -8000

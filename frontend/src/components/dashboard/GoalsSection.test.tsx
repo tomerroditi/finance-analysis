@@ -684,6 +684,25 @@ describe("GoalsSection", () => {
   });
 
   describe("goals filled by their own income", () => {
+    it("offer no free-cash claim, since they hold exactly their income", async () => {
+      await renderGoals([
+        makeGoal({ id: 1, name: "Trip" }),
+        makeGoal({
+          id: 2,
+          name: "Wedding",
+          contribution_category: "Other Income",
+          contribution_tags: "Wedding",
+        }),
+      ]);
+
+      expect(
+        within(rowFor("Trip")).getByRole("button", { name: /free cash/i }),
+      ).toBeInTheDocument();
+      expect(
+        within(rowFor("Wedding")).queryByRole("button", { name: /free cash/i }),
+      ).not.toBeInTheDocument();
+    });
+
     it("offer no monthly cap, since they take nothing from surplus", async () => {
       vi.spyOn(taggingApi, "getCategories").mockResolvedValue({
         data: { "Other Income": ["Wedding"] },
