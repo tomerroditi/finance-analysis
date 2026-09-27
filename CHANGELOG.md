@@ -1,3 +1,9 @@
+## v1.94.2 (2026-09-27)
+
+### Fix
+
+- **savings-goals**: income-funded goals chart their income and take no free-cash claim; negative bars stack below zero (#364)
+
 ## v1.94.1 (2026-09-26)
 
 ### Fix
