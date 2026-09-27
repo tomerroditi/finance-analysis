@@ -40,7 +40,12 @@ import { useQueryKeys } from "../../hooks/useQueryKeys";
 import { useScrollCap } from "../../hooks/useScrollCap";
 import { GoalAutoLinkField, InvestmentTagsField } from "./GoalAutoLinkField";
 import { joinRuleTags, splitRuleTags } from "../../utils/goalRuleTags";
-import { stackAxis, stackEnds, roundedStackShape } from "../charts/stackedBarShape";
+import {
+  STACK_OFFSET,
+  stackAxis,
+  stackEnds,
+  roundedStackShape,
+} from "../charts/stackedBarShape";
 import { qkPrefix } from "../../services/queryKeys";
 import { useConfirm, useNotify } from "../../context/DialogContext";
 import { Modal } from "../common/Modal";
@@ -606,6 +611,7 @@ function AllocationHistory() {
                       data={rows}
                       margin={{ top: 4, bottom: 0, left: 0, right: 4 }}
                       barCategoryGap="22%"
+                      stackOffset={STACK_OFFSET}
                     >
                       <defs>
                         {series.map((goal) => (

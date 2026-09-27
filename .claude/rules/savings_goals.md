@@ -426,7 +426,10 @@ not closed.
   expands never fetches a window.
 
   Stacked bars carry each month's per-goal funding **with the free-cash pool
-  stacked on top**; a negative segment is a clawback. The pool is a standing
+  stacked on top**; a negative segment is a clawback. Positives stack up from zero and negatives
+  down from it (`STACK_OFFSET = "sign"` in `charts/stackedBarShape.tsx`) —
+  Recharts' default piles a negative segment onto the positive column and
+  draws it over the bars. The pool is a standing
   balance and the allocations are monthly flows, so on a household with real
   savings the pool towers over them — which is why **the legend is
   clickable**: a click hides a series (the pool included) and the y-axis

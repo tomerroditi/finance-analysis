@@ -14,6 +14,7 @@ import { AXIS_DEFAULTS, CHART_TEXT_COLOR, formatAxisNumber } from "../../utils/c
 import { ChartTooltip } from "../charts/ChartTooltip";
 import { ChartLegend } from "../charts/ChartLegend";
 import {
+  STACK_OFFSET,
   stackEnds,
   roundedStackShape,
   type StackRow,
@@ -73,7 +74,11 @@ export function RetirementIncomeChart({ data }: Props) {
   return (
     <div className="w-full" style={{ minHeight: 300, height: 400 }}>
       <ResponsiveContainer width="100%" height="100%">
-        <ComposedChart data={data} margin={{ top: 16, bottom: 4, left: 8, right: 8 }}>
+        <ComposedChart
+          data={data}
+          margin={{ top: 16, bottom: 4, left: 8, right: 8 }}
+          stackOffset={STACK_OFFSET}
+        >
           <XAxis
             dataKey="age"
             type="number"
