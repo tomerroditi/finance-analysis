@@ -18,7 +18,7 @@ calculator, which `backend/services/fire/` reproduces.
 | `validate.py`, `compare.py` | Replay our engine against a fixture and report the worst per-series deviation. |
 | `check_solver.py` | Checks our solver picks the same retirement month the reference published, across every applicable fixture. |
 | `fit_decumulation.py` | Solves for the one quantity that could not be derived, per fixture. Writes `decumulation_rates.json`, which the parity tests use as a known constant. |
-| `probe_trinity.py` | Measures that quantity directly on a grid. Produced `trinity_table.json`, shipped as `backend/services/fire/decumulation_table.json`. |
+| `probe_trinity.py` | Measures that quantity directly on a grid. Its successors measured ~2,000 cells (`zeke_retire_calc/surface_cells.json`), from which the reference's solver was recovered (`backend/services/fire/decumulation.py`). |
 
 The fixtures are stored minified — they are read by tests, never diffed by
 hand. Regenerating any of them re-queries a third-party server, so treat them

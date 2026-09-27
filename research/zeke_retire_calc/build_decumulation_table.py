@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build the decumulation surface the engine ships, from direct measurements.
+"""Collect every directly measured decumulation-surface cell into one file.
 
 Every cell is read straight off a reference run designed for it: an idle 1e9
 portfolio with no fee and a 20% return, 20M of cash so it is never drawn, and
@@ -10,8 +10,10 @@ growth *is* the surface value, pinned to ~1e-9.
 * `sff_r<rule>_m<months>` — every month in between, reached through the
   reference's post-60 rule (bridge.py, notes/18).
 
-Where both designs measured the same cell they agree to 1e-9
-(`test_decumulation_table`), and the first one recorded is kept.
+Where both designs measured the same cell they agree to 1e-9, and the first
+one recorded is kept. The engine does not read this file: it reproduces the
+reference's own solver (decumulation.py), and `test_decumulation_table`
+checks that solver against every cell here.
 
 Run:  python research/zeke_retire_calc/build_decumulation_table.py
 """
@@ -29,7 +31,7 @@ sys.path.insert(0, str(HERE))
 import parity  # noqa: E402
 from surface_read import measured_rate  # noqa: E402
 
-OUT = HERE.parents[1] / "backend" / "services" / "fire" / "decumulation_table.json"
+OUT = HERE / "surface_cells.json"
 
 DESIGNS = (("sf_r", "_n"), ("sff_r", "_m"))
 """Fixture prefix, and the marker before the bridge in months."""
@@ -50,7 +52,7 @@ def cells() -> dict[float, dict[float, float]]:
 
 def main() -> None:
     table = cells()
-    payload = {"bridge_years": {str(int(rule)): {f"{b:.6f}": r for b, r in row.items()}
+    payload = {"bridge_years": {f"{rule:g}": {f"{b:.6f}": r for b, r in row.items()}
                                 for rule, row in table.items()}}
     OUT.write_text(json.dumps(payload, indent=1) + "\n", encoding="utf-8")
     for rule, row in table.items():

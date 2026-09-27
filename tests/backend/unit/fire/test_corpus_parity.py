@@ -33,8 +33,6 @@ on any series in any month — known gaps included."""
 
 LOTS = "synthetic FIFO/LIFO lot history (notes/13)"
 CURVE = "coverage curve y(x) interpolated between its measured points"
-RULE = ("confidence off the measured grid: the author's formula plus the solver "
-        "drift interpolated from the neighbouring levels (worst in the 14-16y knee)")
 RESIDUE = "multi-feature residue under 0.1%, not yet traced"
 
 KNOWN_GAPS: dict[str, tuple[float, str]] = {
@@ -44,48 +42,35 @@ KNOWN_GAPS: dict[str, tuple[float, str]] = {
     "cx1_008": (147, RESIDUE),  # 0.0010%
     "cx1_011": (2515, RESIDUE),  # 0.0390%
     "cx1_014": (556, RESIDUE),  # 0.0049%
-    "cx1_016": (32, RESIDUE),  # 0.0006%
     "cx1_017": (663, RESIDUE),  # 0.0029%
-    "cx1_020": (84, RESIDUE),  # 0.0030%
+    "cx1_020": (128, RESIDUE),  # 0.0034%
     "cx1_022": (633, RESIDUE),  # 0.0046%
     "cx1_024": (499, RESIDUE),  # 0.0124%
     "cx1_028": (235, RESIDUE),  # 0.0025%
     "cx1_031": (139, RESIDUE),  # 0.0038%
     "cx1_032": (389, RESIDUE),  # 0.0100%
     "cx1_035": (64, RESIDUE),  # 0.0010%
-    "cx1_037": (117, RESIDUE),  # 0.0034%
+    "cx1_037": (126, RESIDUE),  # 0.0027%
     "cx1_038": (359, RESIDUE),  # 0.0028%
     "lot_lifo_nodep": (632, LOTS),  # 0.0277%
     "pf_fifo": (681, LOTS),  # 0.0330%
     "pf_fifo_nodep": (1040, LOTS),  # 0.0482%
     "pf_lifo": (372, LOTS),  # 0.0187%
-    "crash_rule_frac": (178, RULE),  # 0.0045%
-    "sf_r82_n180": (54731129, RULE),  # 0.2040%
-    "sf_r82_n264": (4251201, RULE),  # 0.0293%
-    "sf_r87_n180": (36634182, RULE),  # 0.1575%
 }
 """Runs outside their tolerance, each bounded and named.
 
 A bound is asserted, so a regression that widens a gap still fails, and a gap
-that closes must leave the dict (`test_known_gap_is_still_open`). A named gap
-is excused from `RELATIVE_TARGET` only if it is one of `OVER_TARGET`'s causes."""
-
-OVER_TARGET = {RULE}
-"""Causes allowed past 0.1% — the open questions, not approximations."""
+that closes must leave the dict (`test_known_gap_is_still_open`). None is
+excused from `RELATIVE_TARGET`."""
 
 SURFACE_PROBES = parity.SURFACE_PROBES
-"""The idle-portfolio probes that measure the surface. They park 1e9, so a
-rate interpolated between cells to 1e-5 is a large number of shekels; they are
-held to a relative bound instead."""
+"""The idle-portfolio probes that measure the surface. They park 1e9, so they
+carry tens of shekels of display rounding — `DISPLAY_PRECISION` covers it."""
 
 SURFACE_SAMPLE = 8
 """Replay every eighth surface probe. Each cell is already checked against the
-shipped table directly (`test_decumulation_table`); the replays that remain
+recovered solver directly (`test_decumulation_table`); the replays that remain
 exercise the bridge rule across ~140 birth dates, which is what they add."""
-
-SURFACE_RELATIVE = 2e-4
-"""What reading the surface between its measured cells costs a probe that
-lands off the grid — the post-60 cells past 23 years sit between whole years."""
 
 def _charted() -> list[str]:
     names = parity.corpus(charted=True)
@@ -97,9 +82,7 @@ CHARTED = _charted()
 
 
 def _bound(report: parity.Report) -> float:
-    relative = (SURFACE_RELATIVE if report.name.startswith(SURFACE_PROBES)
-                else DISPLAY_PRECISION)
-    return max(TOLERANCE, relative * report.scale)
+    return max(TOLERANCE, DISPLAY_PRECISION * report.scale)
 
 
 class TestCorpusParity:
@@ -128,9 +111,8 @@ class TestCorpusParity:
         where = (f"{worst.chart} {worst.label!r} month {worst.worst_month}: "
                  f"reference {worst.reference:,.2f} vs ours {worst.ours:,.2f}")
         bound, why = KNOWN_GAPS.get(name, (_bound(report), ""))
-        if why not in OVER_TARGET:
-            assert report.relative < RELATIVE_TARGET, (
-                f"{name}: off by {report.relative:.4%} of peak net worth — {where}")
+        assert report.relative < RELATIVE_TARGET, (
+            f"{name}: off by {report.relative:.4%} of peak net worth — {where}")
         assert report.worst < bound, (
             f"{name}: worst gap {report.worst:,.2f} exceeds {bound:,.2f} — {where}"
             + (f" (known gap: {why})" if why else ""))

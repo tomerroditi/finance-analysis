@@ -1,20 +1,33 @@
-"""The decumulation surface — the reference's Trinity-style haircut, measured.
+"""The decumulation surface — the author's formula, solved the reference's way.
 
 `test_corpus_parity` asserts every recorded run; these tests cover the surface
-itself: its shape, and that the shipped table is the measurements it claims to
-be (`build_decumulation_table.py`, notes/18).
+itself: its shape, the author's worked examples, and that the recovered solver
+(`decumulation.py`, notes/18 §1) reproduces every cell measured straight off
+the reference (`research/zeke_retire_calc/surface_cells.json`).
 """
 
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import pytest
 
 import parity
 import surface_read
-from backend.services.fire import decumulation
-from backend.services.fire.decumulation import TABLE_PATH, decumulation_return_pct
+from backend.services.fire.decumulation import decumulation_return_pct
+
+CELLS = Path(parity.__file__).with_name("surface_cells.json")
+
+MEASUREMENT = 2e-7
+"""Percentage points: the worst any measured cell sits from the solver, at the
+level of the idle-portfolio reading itself."""
+
+
+def _cells() -> list[tuple[float, float, float]]:
+    raw = json.loads(CELLS.read_text(encoding="utf-8"))["bridge_years"]
+    return [(float(rule), float(bridge), rate)
+            for rule, row in raw.items() for bridge, rate in row.items()]
 
 
 class TestSurfaceShape:
@@ -30,20 +43,15 @@ class TestSurfaceShape:
         rates = [decumulation_return_pct(85, bridge) for bridge in (15, 20, 25, 30, 35)]
         assert rates == sorted(rates)
 
-    def test_a_short_bridge_assumes_no_growth(self):
-        """Below about 14 years the rate is floored at zero (withdrawals of 1/N)."""
+    def test_a_short_bridge_assumes_almost_no_growth(self):
+        """Below about 14 years the exact rate is negative; the solver creeps toward zero."""
         for bridge in (7.0, 10.0, 12.0, 13.0):
             assert decumulation_return_pct(85, bridge) < 0.01
 
-    def test_the_surface_is_not_monotone_past_forty_years(self):
-        """Rule 80 peaks at a 40-year bridge and falls after it — an empirical
-        surface, not a formula, which is why it is shipped measured."""
-        peak = decumulation_return_pct(80, 40.0)
-        assert decumulation_return_pct(80, 35.0) < peak > decumulation_return_pct(80, 45.0)
-
-    def test_confidence_below_the_table_is_clamped(self):
+    def test_confidence_outside_the_field_is_clamped(self):
         """The reference rejects confidence under 80; we clamp rather than crash."""
         assert decumulation_return_pct(50, 22.0) == decumulation_return_pct(80, 22.0)
+        assert decumulation_return_pct(120, 22.0) == decumulation_return_pct(100, 22.0)
 
 
 class TestAuthorsFormula:
@@ -53,35 +61,37 @@ class TestAuthorsFormula:
         (85, 40, 2.95), (85, 27, 2.608), (90, 22, 1.77)])
     def test_reproduces_the_worked_examples_in_the_post(self, confidence, years, quoted):
         """The post's own three numbers, to the digits it prints."""
-        assert decumulation.formula_rate(confidence, years) == pytest.approx(
+        assert decumulation_return_pct(confidence, years) == pytest.approx(
             quoted, abs=0.5 * 10 ** -(len(str(quoted).split(".")[1])))
 
-    def test_matches_every_measured_cell_past_the_knee(self):
-        """Past 24 years the measured surface is the formula to within 0.002."""
-        raw = json.loads(TABLE_PATH.read_text(encoding="utf-8"))["bridge_years"]
-        for rule, row in raw.items():
-            for bridge, rate in row.items():
-                if float(bridge) >= 24:
-                    assert decumulation.formula_rate(float(rule), float(bridge)) == (
-                        pytest.approx(rate, abs=2e-3)), (rule, bridge)
-
-    def test_a_short_horizon_earns_nothing(self):
-        """Where withdrawing 1/N already beats the safe rate, the return is 0."""
-        assert decumulation.formula_rate(85, 12) == 0.0
+    def test_the_early_stop_lifts_the_rate_near_the_knee(self):
+        """At 14.5 years (rule 85) the exact root is 0.057%; the reference stops at 0.0906%."""
+        assert decumulation_return_pct(85, 14.5) == pytest.approx(0.090590, abs=MEASUREMENT)
 
 
-class TestTableIsTheMeasurements:
-    """The shipped file reproduces the probes it was built from."""
+class TestSolverIsTheMeasurements:
+    """The recovered solver reproduces every cell read off the reference."""
 
-    def test_every_cell_is_returned_as_measured(self):
-        """Formula plus measured drift passes through each cell exactly."""
-        raw = json.loads(TABLE_PATH.read_text(encoding="utf-8"))["bridge_years"]
-        for rule, row in raw.items():
-            if len(row) < decumulation.DENSE:
-                continue  # held-out levels, predicted rather than stored
-            for bridge, rate in row.items():
-                assert decumulation.decumulation_return_pct(float(rule), float(bridge)) == pytest.approx(
-                    max(rate, 0.0), abs=1e-9), f"rule {rule} bridge {bridge}"
+    def test_every_measured_cell(self):
+        """All levels, every bridge measured, off-grid confidences included."""
+        misses = [(rule, bridge, rate, decumulation_return_pct(rule, bridge))
+                  for rule, bridge, rate in _cells()
+                  if abs(decumulation_return_pct(rule, bridge) - max(rate, 0.0)) > MEASUREMENT]
+        assert not misses, misses[:5]
+
+    def test_levels_off_the_measured_grid(self):
+        """Confidence 82 and 87, measured monthly through the knee and never fitted."""
+        checked = 0
+        for name in parity.corpus(["sff_r82_", "sff_r87_"]):
+            reading = surface_read.measured_rate(name)
+            if reading is None:
+                continue
+            rule = float(name[5:].split("_")[0])
+            months = int(name.split("_m")[1])
+            assert decumulation_return_pct(rule, months / 12) == pytest.approx(
+                reading[0], abs=MEASUREMENT), name
+            checked += 1
+        assert checked > 100
 
     def test_both_probe_designs_measure_the_same_surface(self):
         """Whole-year cells read pre-60 and through the post-60 rule agree.

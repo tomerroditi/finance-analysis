@@ -23,7 +23,7 @@ you are not — then work from the recorded corpus only.
 | `lab.py <family>` | submits each scenario once (skips what is recorded), saves it as `fixtures/<name>.json.gz`, and immediately prints our relative error, worst gap, whether our solver lands on the reference's month, and with `--fit` the decumulation rate the run implies and the gap left once it is supplied. `--dry` judges what is on disk without the network. |
 | `parity.py` | the one differ: every series in all three charts plus net worth, every month; relative error against the run's peak net worth. `python parity.py [prefixes] [-v] [--worst N]` over the whole corpus takes seconds (process pool). `parity.load/save/exists/corpus` are the only way fixtures are read or written. |
 | `surface_read.py` | reads a surface cell straight off an idle-portfolio fixture. |
-| `build_decumulation_table.py` | rebuilds `backend/services/fire/decumulation_table.json` from the `sf_*` / `sff_*` fixtures. |
+| `build_decumulation_table.py` | collects every `sf_*` / `sff_*` measurement into `surface_cells.json`, the evidence `test_decumulation_table` checks the solver against. |
 | `measure_annuity_factors.py`, `tune_annuity_factors.py` | bracket and place the four annuity factors. |
 
 ## The loop

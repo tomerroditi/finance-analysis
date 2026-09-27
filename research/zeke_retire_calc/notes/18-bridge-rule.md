@@ -54,6 +54,35 @@ interpolates the drift — not the rate — for confidences between the measured
 five. Held out, rules 82 and 87 come back within 0.007 points in the knee and
 0.001 elsewhere.
 
+### Update 2: the drift is the author's solver, and it is exact
+
+The drift is not noise to measure but the reference's Newton-Raphson stopping
+early, and it is now reproduced step for step (`decumulation.py`). The
+iteration runs on
+
+    f(r) = (r / w) (1 + r)^(y - 1) - ((1 + r)^y - 1)        w = 379 / (c^0.6 y^0.5) / 100
+
+— the annuity-due identity multiplied through, so it also has a root at r = 0
+— from r = 5%, and returns the first iterate with |f| < 1e-4, floored at zero.
+
+How it was found: below the knee the reference reports small positive rates
+where the exact root is negative, growing as `w y -> 1` and resetting, which is
+an iteration creeping toward a root at zero. Solving for the Newton start that
+makes each cell's k-th iterate hit it exactly gave 0.0478–0.0493 for every cell
+of rule 85 in `F2 = r(1+r)^y - w(1+r)((1+r)^y - 1)`, with the iteration count in
+clean blocks (5, 6, 7, 6, 5) whose edges are exactly the drift's resets and
+jumps; dividing by (1+r) (the form above) makes the start exactly 5% for all
+1,327 cells of the five dense levels. The stopping rule is the one metric that
+separates stopped from continued iterates: |f| <= 9.9687e-5 at every stop,
+>= 1.0015e-4 at every step taken.
+
+Checked on levels it never saw (`surface_offgrid`): 82 and 87 monthly through
+the knee (240 cells, to 1e-10), 81, 93, 99 and the fractional 82.5 (45 cells,
+to 8e-11). The confidence field accepts fractions, so a formula was the only
+way to cover it. The measured cells now live in
+`research/zeke_retire_calc/surface_cells.json` as test evidence; the engine
+ships no table.
+
 ## 2. Coverage, not pay weights (`bridge_weights`, `bridge_end`)
 
 Pinned at 45 with a frozen pension (no growth, deposits or fees, so the annuity
