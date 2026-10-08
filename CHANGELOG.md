@@ -1,3 +1,9 @@
+## v1.94.3 (2026-10-08)
+
+### Fix
+
+- **savings-goals**: an income-funded goal's progress is what it received, with unrepaid bills reported as owed (#366)
+
 ## v1.94.2 (2026-09-27)
 
 ### Fix
