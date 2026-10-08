@@ -109,9 +109,15 @@ class TestFireCalculate:
         assert any(k.startswith("gemel") for k in keys)
 
     def test_a_supplied_decumulation_return_is_honoured(self, test_client):
-        """The override exists so a caller can pin one scenario's rate."""
-        low = _calculate(test_client, BASELINE, decumulation_return_pct=0.0)
-        high = _calculate(test_client, BASELINE, decumulation_return_pct=4.0)
+        """The override exists so a caller can pin one scenario's rate.
+
+        The retirement age is pinned too: under `retire_asap` a higher rate
+        lets the plan retire earlier, which can leave less at 81, so only the
+        rate may differ between the two runs.
+        """
+        pinned = {**BASELINE, "base_problem": "retire_at_age", "wanted_retire_age": "58"}
+        low = _calculate(test_client, pinned, decumulation_return_pct=0.0)
+        high = _calculate(test_client, pinned, decumulation_return_pct=4.0)
         assert high["months"][-1]["net_worth"] > low["months"][-1]["net_worth"]
 
     def test_a_person_past_the_horizon_gets_no_result(self, test_client):
