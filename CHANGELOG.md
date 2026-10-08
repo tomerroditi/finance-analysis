@@ -1,3 +1,9 @@
+## v1.95.4 (2026-10-08)
+
+### Fix
+
+- **savings-goals**: editing a goal's start date, target, cap or rules restates its history (#372)
+
 ## v1.95.3 (2026-10-08)
 
 ### Fix
