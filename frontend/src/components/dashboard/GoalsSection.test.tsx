@@ -411,6 +411,19 @@ describe("GoalsSection", () => {
       expect(screen.getByText(/4,200/)).toBeInTheDocument();
     });
 
+    it("shows a pool below zero in red rather than hiding it", async () => {
+      await renderGoals([makeGoal({ name: "Vacation" })], {
+        free_cash: -22516,
+        earmarked: 2500,
+        liquid: -20016,
+        has_goals: true,
+      });
+
+      const amount = await screen.findByText(/22,516/);
+      expect(amount.textContent).toContain("-");
+      expect(amount.className).toContain("text-red-400");
+    });
+
     it("stays hidden while the user keeps no goals", async () => {
       await renderGoals([makeGoal({ name: "Vacation" })], { has_goals: false });
 

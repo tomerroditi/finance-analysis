@@ -855,10 +855,11 @@ class TestFreeCashPool:
 
         goal = service.get_all()[0]
         # Pool holds 500 opening + 0 unallocated; the 3000 deficit empties it
-        # and takes the remaining 2500 from the goal, which only had 1000.
+        # and takes the remaining 2500 from the goal, which only had 1000 — so
+        # the pool ends 1500 below zero rather than hiding it.
         assert goal["clawed_back"] == 1000
         assert goal["funded"] == 0
-        assert service.get_free_cash()["free_cash"] == 0
+        assert service.get_free_cash()["free_cash"] == -1500
 
     def test_clawback_runs_in_reverse_priority(self, db_session, service):
         """The least important goal is drained first — the waterfall in reverse."""
@@ -943,7 +944,9 @@ class TestFreeCashPool:
         year, month = (int(part) for part in bad.split("-"))
         view = service.get_month_allocations(year, month)
         assert view["clawed_back"] == 1000
-        assert view["free_cash"] == 0
+        # The 3000 overspend took the goal's 1000; the other 2000 was spent
+        # from money no goal held, and the pool shows it.
+        assert view["free_cash"] == -2000
         assert view["goals"][0]["allocated"] == -1000
 
     def test_deleting_the_earliest_goal_releases_its_earmark(self, db_session, service):
@@ -975,11 +978,13 @@ class TestFreeCashPool:
         """A pool drained to nothing reads 0.0, never the -0.0 rounding leaves."""
         good, bad = _month_str(2), _month_str(1)
         _seed_surplus(db_session, good, income=10000, expenses=9000)
-        _seed_surplus(db_session, bad, income=5000, expenses=8000)
+        _seed_surplus(db_session, bad, income=5000, expenses=4000)
+        _seed_surplus(db_session, _month_str(0), income=1000, expenses=2000)
         service.create(name="Goal", target_amount=5000, priority=0, start_month=good)
 
         pools = [row["free_cash"] for row in service.get_timeline(months=None)["months"]]
-        assert all(math.copysign(1.0, pool) == 1.0 for pool in pools)
+        assert 0.0 in pools
+        assert all(math.copysign(1.0, pool) == 1.0 for pool in pools if pool == 0)
 
 
 class TestFreeCashBefore:
@@ -1257,7 +1262,7 @@ class TestTimeline:
         assert by_month[good]["allocated"] == 1000
         assert by_month[bad]["clawed_back"] == 1000
         assert by_month[bad]["allocated"] == 0
-        assert by_month[bad]["free_cash"] == 0
+        assert by_month[bad]["free_cash"] == -2000
 
     def test_window_trims_to_the_trailing_months_it_was_asked_for(
         self, db_session, service
@@ -1358,11 +1363,12 @@ class TestInvestmentGoals:
         assert goals["Trip"]["clawed_back"] == 0
         assert goals["Invest"]["funded"] == 50000
         pool = service.get_free_cash()
-        # The 1000 left free after Trip went into Pakam; the pool floors at 0.
-        assert pool["free_cash"] == 0
+        # Invest held the 1000 Trip left; the other 49000 of the transfer came
+        # from money no goal held, so the pool shows it below zero.
+        assert pool["free_cash"] == -49000
         # The invested money is not cash, so it is neither earmarked nor liquid.
         assert pool["earmarked"] == 2000
-        assert pool["liquid"] == 2000
+        assert pool["liquid"] == -47000
 
     def test_the_same_transfer_as_a_plain_expense_does_claw_back(
         self, db_session, service
@@ -1565,17 +1571,46 @@ class TestRuleFundedGoals:
         assert pool["free_cash"] == -6000
         assert pool["liquid"] == 4000
 
-    def test_the_pool_goes_no_deeper_than_the_income_goals_hold(
+    def test_an_overspend_past_the_income_held_shows_in_full(
         self, db_session, service
     ):
-        """An overspend past the income held came from money this model does not track."""
+        """The pool shows the whole overspend, even past what the income goals hold."""
         gifts, spent = _month_str(2), _month_str(1)
         _add_txn(db_session, gifts, 10000, "Other Income", tag="Wedding", day=6)
         _seed_surplus(db_session, spent, income=0, expenses=15000)
 
         self._wedding(service, gifts)
 
-        assert service.get_free_cash()["free_cash"] == -10000
+        assert service.get_free_cash()["free_cash"] == -15000
+
+    def test_a_later_surplus_refills_the_hole_before_any_goal(
+        self, db_session, service
+    ):
+        """A negative pool is repaid first; only the rest of a surplus funds goals."""
+        bad, good = _month_str(2), _month_str(1)
+        _seed_surplus(db_session, bad, income=0, expenses=3000)
+        _seed_surplus(db_session, good, income=5000, expenses=0)
+
+        service.create(name="Trip", target_amount=10000, start_month=bad)
+
+        goal = service.get_all()[0]
+        assert goal["funded"] == 2000
+        assert goal["clawed_back"] == 0
+        assert service.get_free_cash()["free_cash"] == 0
+
+    def test_a_carried_hole_never_claws_back_again(self, db_session, service):
+        """Last month's overspend is settled; a quiet month takes nothing more."""
+        funded, bad, quiet = _month_str(3), _month_str(2), _month_str(1)
+        _seed_surplus(db_session, funded, income=4000, expenses=0)
+        _seed_surplus(db_session, bad, income=0, expenses=6000)
+        _seed_surplus(db_session, quiet, income=1000, expenses=1000)
+
+        service.create(name="Trip", target_amount=10000, start_month=funded)
+
+        goal = service.get_all()[0]
+        assert goal["clawed_back"] == 4000
+        assert goal["funded"] == 0
+        assert service.get_free_cash()["free_cash"] == -2000
 
     def test_a_plain_goal_is_still_clawed_back_first(self, db_session, service):
         """Ordinary earmarks give money back before the pool goes negative."""
@@ -1993,3 +2028,30 @@ class TestEditingAGoalRestatesItsHistory:
         service.delete(trip["id"])
 
         assert service.get_all()[0]["funded"] == 3000
+
+
+class TestNegativeFreeCash:
+    """A pool below zero is shown, repaid first, and never claws back twice."""
+
+    def test_a_new_overspend_after_the_hole_is_repaid_reaches_the_goals(
+        self, db_session, service
+    ):
+        """Once a surplus repays the hole, this month's own overspend claws back."""
+        bad, mixed = _month_str(2), _month_str(1)
+        _seed_surplus(db_session, bad, income=0, expenses=3000)
+        _seed_surplus(db_session, mixed, income=5000, expenses=0)
+        _add_txn(db_session, mixed, -1500, "Wedding", day=20)
+
+        service.create(
+            name="Wedding",
+            target_amount=10000,
+            start_month=bad,
+            utilization_category="Wedding",
+        )
+
+        goal = service.get_all()[0]
+        # 5000 repays the 3000 hole; the goal takes the other 2000 and pays the
+        # 1500 bill out of it.
+        assert goal["funded"] == 2000
+        assert goal["utilized"] == 1500
+        assert service.get_free_cash()["free_cash"] == 0

@@ -274,11 +274,6 @@ class AllocationEngineMixin:
             if g.id in fill and g.id in own_income
         }
 
-        def income_held() -> float:
-            """Income the income-funded goals still hold — how low the pool may go."""
-            held = sum(max(0.0, funded[g] - fill[g] - utilized[g]) for g in bridge)
-            return held + sum(max(0.0, to_invest[g] - fill[g]) for g in to_invest)
-
         def needs(goal_id: int) -> float:
             """Return what a goal still needs to reach its target."""
             target = float(goal_by_id[goal_id].target_amount or 0.0)
@@ -340,10 +335,12 @@ class AllocationEngineMixin:
                 if opening_month[g.id] == key
             )
             # The goals can claim more than the pool holds, which is a
-            # bookkeeping artefact rather than real debt — floor it at zero so
-            # the first deficit month does not raid goals over a phantom hole.
+            # bookkeeping artefact rather than real debt — an opening balance
+            # never takes the pool below zero (or below a hole it already had),
+            # so the first deficit month does not raid goals over a phantom one.
             if opening:
-                free_cash = max(0.0, free_cash - opening)
+                free_cash = max(min(free_cash, 0.0), free_cash - opening)
+            month_start = free_cash
             # The open month is always restated (it is provisional), as is
             # everything inside an explicit rebuild range. Every other month is
             # history: existing rows stand, and only goals with no row yet may
@@ -414,12 +411,17 @@ class AllocationEngineMixin:
             if spill:
                 plan.surplus[key] = surplus
             # The pool tracks real money, so it moves with the whole month —
-            # a deficit pulls it down just as a surplus lifts it. Only the
-            # positive part is ever handed to the waterfall, and every shekel
-            # a goal takes is debited below, so what the goals leave behind
-            # needs no separate step: it is already in the pool.
+            # a deficit pulls it down just as a surplus lifts it. A pool that
+            # went negative is refilled before any goal takes a shekel: only
+            # what is left of the surplus after that reaches the waterfall.
+            # Every shekel a goal takes is debited below, so what the goals
+            # leave behind needs no separate step: it is already in the pool.
             free_cash += surplus
-            pool = max(0.0, surplus)
+            pool = max(0.0, min(surplus, free_cash))
+            # A hole carried in from an earlier month is that month's
+            # overspend, already settled — less whatever this month's surplus
+            # repaid. Only a fall below that reaches the goals.
+            floor = min(0.0, month_start + max(0.0, surplus))
 
             # A closed goal keeps whatever it was given; that money is spoken
             # for, so it leaves the pool before anyone else draws on it.
@@ -524,9 +526,9 @@ class AllocationEngineMixin:
             # pool down. Only once the pool is empty does the overspend reach
             # the goals, taking from the least important first — the mirror
             # image of the funding waterfall.
-            if free_cash < -ROUNDING_EPSILON:
-                shortfall = -free_cash
-                free_cash = 0.0
+            if free_cash < floor - ROUNDING_EPSILON:
+                shortfall = floor - free_cash
+                free_cash = floor
                 for goal in reversed(goals):
                     if shortfall <= ROUNDING_EPSILON:
                         break
@@ -556,20 +558,19 @@ class AllocationEngineMixin:
                         fill[goal.id] -= give_back
                     if goal.id in to_invest:
                         to_invest[goal.id] -= give_back
-                # What is left was paid with money a goal holds as its own
-                # income — the gifts a wedding fund was given, spent on
-                # something else. That income is never taken back, so the
-                # pool goes negative by as much: the money is spoken for and
-                # no longer there. Anything deeper came out of money this
-                # model does not track (an overdraft, an untagged account),
-                # and the pool floors there.
-                free_cash = -min(shortfall, income_held())
+                # What is left was paid with money no goal can give back — a
+                # goal's own income, or money already invested — or with money
+                # this model does not track (an overdraft, an untagged
+                # account). Either way it was spent, so the pool shows it as
+                # negative rather than hiding it at zero, and the next
+                # surpluses refill it before any goal is funded.
+                free_cash -= shortfall
 
             # Money moved into an investment goal left the spendable balance,
             # so it leaves the pool — but it is the goal being met, not
             # overspending. It runs after the clawback so it can never take
             # money back out of another goal: a transfer the pool cannot cover
-            # simply empties it. A withdrawal hands the money back.
+            # takes it below zero. A withdrawal hands the money back.
             invested_now = context["invested"].get(key, {})
             if invested_now:
                 from_free_cash = 0.0
@@ -597,7 +598,7 @@ class AllocationEngineMixin:
                     # a deposit no goal's cash paid for leaves it, and only a
                     # withdrawal no goal invested comes back.
                     from_free_cash += sum(share for _, share in shares) + unclaimed
-                free_cash = max(-income_held(), free_cash - from_free_cash)
+                free_cash -= from_free_cash
 
             # Adding zero turns the -0.0 a fully drained pool rounds to into 0.0.
             plan.free_cash[key] = round(free_cash, 2) + 0.0
