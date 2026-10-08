@@ -194,8 +194,24 @@ else in this file. An **investment** goal answers "have I invested X?":
   is paid from it first and only the rest leaves free cash; a withdrawal
   still goes back to free cash. What is not yet invested is cash the goal
   holds — the payload's `to_invest` ("… ready to invest"), counted in
-  `earmarked` and in how far the pool may go negative. Progress is still the
-  net invested.
+  `earmarked` and in how far the pool may go negative. **Its progress is
+  exactly what that income paid for** — the same "exactly its income" rule a
+  saved-into cash goal follows. A deposit before the income arrives, or the
+  part of one the income cannot cover, is not its progress; a withdrawal
+  takes back at most what it holds.
+- **Two investment goals can match one transfer** (both counting every
+  Investments transfer, say). `_goal_by_transaction` no longer settles it —
+  it returns each transfer's *group* of matching goals, highest first, and
+  `invested` is keyed by group. `_split_transfer` splits each month's net per
+  group: a deposit first draws on the funded goals' waiting income (highest
+  first), and whatever no income paid for — the rest of a deposit, or a
+  withdrawal — goes to the highest goal without a funding income. Rules used
+  to be applied in waterfall order with the last writer winning, so the
+  *lowest* goal took every shared transfer from its start month on: a
+  "Yearly savings" goal started in January swallowed the deposits made out
+  of a June wedding gift, and the "Marriage kickstart" goal the gift was for
+  sat on 200K "ready to invest" that had already been invested. Saved-into
+  rules that overlap now go to the higher goal too, as documented.
 - **A goal can switch kind** (`update(kind=...)` → `_change_kind`, the
   editor's type choice is shown when editing too). What one kind is filled by
   means nothing to the other, so the switch clears it — to investment: the

@@ -465,21 +465,21 @@ class AllocationEngineMixin:
             invested_now = context["invested"].get(key, {})
             if invested_now:
                 from_free_cash = 0.0
-                for goal_id, amount in invested_now.items():
-                    if goal_id not in funded:
+                for group, amount in invested_now.items():
+                    if not any(goal_id in funded for goal_id in group):
                         continue
-                    funded[goal_id] += amount
-                    plan.contributed[(goal_id, year, month)] = amount
-                    # A deposit is paid from the goal's own funding income
-                    # first; only the rest leaves free cash. A withdrawal
-                    # hands the money back to free cash.
-                    paid = (
-                        min(max(0.0, to_invest[goal_id]), amount)
-                        if goal_id in to_invest and amount > 0
-                        else 0.0
+                    shares, paid = self._split_transfer(
+                        [goal_id for goal_id in group if goal_id in funded],
+                        amount,
+                        to_invest,
+                        funded,
                     )
-                    if paid:
-                        to_invest[goal_id] -= paid
+                    for goal_id, share in shares:
+                        funded[goal_id] += share
+                        cell = (goal_id, year, month)
+                        plan.contributed[cell] = plan.contributed.get(cell, 0.0) + share
+                    # Only what no funding income paid for leaves free cash; a
+                    # withdrawal hands the money back to it.
                     from_free_cash += amount - paid
                 free_cash = max(-income_held(), free_cash - from_free_cash)
 
@@ -501,6 +501,64 @@ class AllocationEngineMixin:
         plan.utilized = utilized
         plan.to_invest = {g: round(cash, 2) for g, cash in to_invest.items()}
         return plan
+
+    @staticmethod
+    def _split_transfer(
+        candidates: list[int],
+        amount: float,
+        to_invest: dict[int, float],
+        funded: dict[int, float],
+    ) -> tuple[list[tuple[int, float]], float]:
+        """Split one month's net transfer among the investment goals it matches.
+
+        A goal that names the income paying for it is filled by exactly what
+        that income paid for: a deposit draws on the income each such goal has
+        waiting, highest in the waterfall first. Whatever no income paid for —
+        the rest of a deposit, or a withdrawal — goes to the highest goal
+        without a funding income, and is no goal's progress when there is
+        none. With only funded goals to match, a withdrawal takes back no more
+        than the highest of them holds: money invested before its income ever
+        arrived was never its progress, so taking it out is not a loss to it.
+
+        Parameters
+        ----------
+        candidates : list[int]
+            The matching goals, highest in the waterfall first.
+        amount : float
+            Net invested this month: positive deposits, negative withdrawals.
+        to_invest : dict[int, float]
+            Funding income each funded goal has waiting; drawn down in place.
+        funded : dict[int, float]
+            What each goal holds so far.
+
+        Returns
+        -------
+        tuple
+            ``[(goal_id, share), ...]`` and the part a funding income paid.
+        """
+        shares: list[tuple[int, float]] = []
+        left = amount
+        for goal_id in candidates:
+            if left <= ROUNDING_EPSILON:
+                break
+            if goal_id not in to_invest:
+                continue
+            paid = min(max(0.0, to_invest[goal_id]), left)
+            if paid > 0:
+                to_invest[goal_id] -= paid
+                shares.append((goal_id, paid))
+                left -= paid
+        paid_from_income = amount - left if amount > 0 else 0.0
+        plain = [goal_id for goal_id in candidates if goal_id not in to_invest]
+        if plain:
+            share = left
+            taker = plain[0]
+        else:
+            taker = candidates[0]
+            share = -min(-left, max(0.0, funded[taker])) if left < 0 else 0.0
+        if abs(share) > ROUNDING_EPSILON:
+            shares.append((taker, share))
+        return shares, paid_from_income
 
     def _persist(self, plan: AllocationPlan) -> None:
         """Write a plan's computed allocations and any auto-closures.

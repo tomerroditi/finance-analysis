@@ -1428,6 +1428,8 @@ class TestInvestmentGoals:
         every = next(g for g in created if g["name"] == "All")
         assert every["contribution_category"] == "Investments"
         assert every["funded"] == 5500
+        # Two goals matching one transfer would share it; keep this one alone.
+        service.delete(every["id"])
 
         created = service.create(
             name="Pakam only",
@@ -1679,7 +1681,11 @@ class TestInvestmentGoalFunding:
     def test_its_income_pays_for_the_transfers_before_free_cash(
         self, db_session, service
     ):
-        """A transfer bigger than the income takes only the rest from free cash."""
+        """A transfer bigger than the income takes only the rest from free cash.
+
+        The goal holds exactly what its income paid for; the rest is an
+        ordinary transfer out of free cash.
+        """
         month = _month_str(1)
         _seed_free_cash(db_session, 50000)
         _add_txn(db_session, month, 100000, "Other Income", tag="Kickstart", day=2)
@@ -1687,7 +1693,7 @@ class TestInvestmentGoalFunding:
 
         goal = self._invest(service, month)
 
-        assert goal["funded"] == 123500
+        assert goal["funded"] == 100000
         assert goal["to_invest"] == 0
         pool = service.get_free_cash()
         assert pool["free_cash"] == 26500  # 50000 - the 23500 the income missed
@@ -1720,6 +1726,50 @@ class TestInvestmentGoalFunding:
 
         assert goal["to_invest"] == 0
         assert service.get_free_cash()["free_cash"] == 30000
+
+    def test_transfers_before_its_income_arrives_are_not_its_progress(
+        self, db_session, service
+    ):
+        """Investing before the income lands, and withdrawing it, never touch the goal."""
+        early, late = _month_str(3), _month_str(1)
+        _add_txn(db_session, early, -8000, "Investments", tag="Pakam", day=5)
+        _add_txn(db_session, _month_str(2), 3000, "Investments", tag="Pakam", day=5)
+        _add_txn(db_session, late, 50000, "Other Income", tag="Kickstart", day=2)
+        _add_txn(db_session, late, -20000, "Investments", tag="Pakam", day=5)
+
+        goal = self._invest(service, early)
+
+        assert goal["funded"] == 20000
+        assert goal["to_invest"] == 30000
+
+    def test_two_goals_on_one_investment_split_by_whose_income_paid(
+        self, db_session, service
+    ):
+        """A funded goal takes what its income paid for; the plain goal takes the rest.
+
+        Two goals counting every Investments transfer used to hand each one to
+        the lower goal, so a gift invested after the second goal started never
+        reached the goal it was given for.
+        """
+        before, start, after = _month_str(3), _month_str(2), _month_str(1)
+        _seed_free_cash(db_session, 100000)
+        _add_txn(db_session, start, -6000, "Investments", tag="Pakam", day=5)
+        _add_txn(db_session, start, 40000, "Investments", tag="Pakam", day=20)
+        _add_txn(db_session, after, 200000, "Other Income", tag="Kickstart", day=2)
+        _add_txn(db_session, after, -70000, "Investments", tag="Pakam", day=5)
+        _add_txn(db_session, after, -135000, "Investments", tag="Pakam", day=25)
+
+        self._invest(service, before)
+        created = service.create(
+            name="Yearly", target_amount=120000, kind="investment", start_month=start
+        )
+
+        goals = {g["name"]: g for g in created}
+        assert [g["name"] for g in created] == ["Invest", "Yearly"]
+        assert goals["Invest"]["funded"] == 200000
+        assert goals["Invest"]["to_invest"] == 0
+        # The withdrawal, and the 5000 of the deposit the income did not cover.
+        assert goals["Yearly"]["funded"] == -34000 + 5000
 
     def test_only_an_investment_goal_can_name_a_funding_income(self, service):
         """A cash goal is funded by surplus or its own saved-into rule, not this."""

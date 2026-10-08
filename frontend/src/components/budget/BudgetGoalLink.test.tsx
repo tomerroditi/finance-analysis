@@ -57,6 +57,7 @@ function makeGoal(overrides: Partial<SavingsGoal> = {}): SavingsGoal {
     this_month_allocation: 0,
     months_remaining: null,
     monthly_needed: null,
+    is_past_due: false,
     history: [],
     ...overrides,
   };

@@ -330,6 +330,8 @@
       "closed": "נסגר",
       "remaining": "נותרו {{amount}}",
       "monthlyNeeded": "{{amount}} לחודש במשך {{count}} ח׳",
+      "dueThisMonth": "חסרים עוד {{amount}} החודש",
+      "pastDue": "חסרים {{amount}} · תאריך היעד עבר",
       "thisMonth": "{{amount}} החודש",
       "utilized": "{{spent}} נוצלו · {{available}} נותרו",
       "owed": "{{amount}} שולמו מהכסף הפנוי",

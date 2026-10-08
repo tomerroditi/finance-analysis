@@ -542,6 +542,7 @@ class ReadModelsMixin:
 
         months_remaining = None
         monthly_needed = None
+        is_past_due = False
         if goal.target_date and pd.notna(goal.target_date):
             today = pd.Timestamp.today().normalize()
             target_ts = pd.Timestamp(goal.target_date)
@@ -555,6 +556,7 @@ class ReadModelsMixin:
                 # months out as two full months even when only ~39 days
                 # remain, understating what the user must save each month.
                 days_remaining = max(0, (target_ts - today).days)
+                is_past_due = target_ts < today
                 months_of_runway = days_remaining / DAYS_PER_MONTH
                 monthly_needed = (
                     round(remaining / months_of_runway, 2)
@@ -598,5 +600,6 @@ class ReadModelsMixin:
             "this_month_allocation": round(float(provisional.get(goal.id, 0.0)), 2),
             "months_remaining": months_remaining,
             "monthly_needed": monthly_needed,
+            "is_past_due": is_past_due,
             "history": history.get(goal.id, []),
         }

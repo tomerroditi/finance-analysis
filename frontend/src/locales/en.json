@@ -330,6 +330,8 @@
       "closed": "Closed",
       "remaining": "{{amount}} to go",
       "monthlyNeeded": "{{amount}}/mo for {{count}} mo",
+      "dueThisMonth": "{{amount}} still needed this month",
+      "pastDue": "{{amount}} short · target date passed",
       "thisMonth": "{{amount}} this month",
       "utilized": "{{spent}} used · {{available}} left",
       "owed": "{{amount}} paid from free cash",
