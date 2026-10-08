@@ -58,7 +58,8 @@ if free_cash < 0:                                (the month overspent)
   has left the spendable balance the earmark sits over.
 - **A negative month allocates nothing, and reaches the goals only last.**
   Overspending drains the free-cash pool first (below); a goal is only
-  un-funded once that pool is empty.
+  un-funded once that pool is empty, and what no goal can give back leaves
+  the pool negative.
 - **`monthly_cap` is what stops a big goal starving the rest.** Uncapped, a
   priority-1 goal absorbs everything until it fills.
 - **`start_month` gates participation**, so a goal created today cannot claim
@@ -90,18 +91,25 @@ engine starts taking money back out of the goals.
   released only ~34K). Deleting a goal must hand back exactly what it held and
   leave `liquid` unchanged; `test_deleting_the_earliest_goal_releases_its_earmark`
   pins that.
-- **It moves with the whole month, not just the positive part.** The waterfall
-  still only distributes `max(0, surplus)`, but the pool is credited with the
-  surplus itself and debited for every shekel a goal takes out of it. What the
-  goals do not claim simply stays in the pool.
-- **It goes negative only against income a goal holds.** Once the pool and
-  the clawable goals are exhausted, what is left of an overspend was paid with
-  money an income-funded goal holds (below) — gifts spent on something else.
-  That income is never taken back, so the pool goes negative by as much, down
-  to `-income_held()`. Anything deeper came from money this model does not
-  track (an overdraft, an untagged account) and the pool floors there rather
-  than carrying a phantom debt forward. Without the negative, protecting the
-  income made the spent money vanish: `liquid` read 100K high on real data.
+- **It moves with the whole month, not just the positive part.** The pool is
+  credited with the surplus itself and debited for every shekel a goal takes
+  out of it. What the goals do not claim simply stays in the pool.
+- **It goes negative, and shows it.** Once the pool and the clawable goals are
+  exhausted, what is left of an overspend was paid with money no goal can give
+  back (an income goal's own income, money already invested) or money this
+  model does not track (an overdraft, an untagged account). Either way it was
+  spent, so the pool carries the whole hole and the card shows it in red. It
+  used to floor at `-income_held()` and, before that, at zero; both hid real
+  overspending — a 22.5K January of wedding bills read as an exact 0.
+- **A hole is repaid before any goal is funded.** The waterfall distributes
+  `max(0, min(surplus, free_cash))`, so a later surplus first refills the pool
+  and only the rest reaches the goals.
+- **A carried hole never claws back again.** Each month's clawback reaches the
+  goals only for a fall below `min(0, month_start + max(0, surplus))` — the
+  hole it inherited, less what its surplus repaid. Measured against zero, a
+  hole carried from an earlier month took goal money back every month after;
+  measured against the bare month start, an overspend after the surplus had
+  repaid the hole and funded a goal never reached that goal.
 - **It is spendable cash, not a bank statement.** Investment transfers reduce it
   for the same reason they reduce the surplus, so it will sit below the raw
   bank + cash balance for anyone who invests.

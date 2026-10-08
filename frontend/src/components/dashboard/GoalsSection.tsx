@@ -386,7 +386,7 @@ function FreeCashRow({
           </div>
         </div>
         <span
-          className={`text-sm md:text-base font-bold shrink-0 ${recalculating ? RECALCULATING_CLASS : ""}`}
+          className={`text-sm md:text-base font-bold shrink-0 ${pool.free_cash < -0.5 ? "text-red-400" : ""} ${recalculating ? RECALCULATING_CLASS : ""}`}
           dir="ltr"
         >
           {formatCurrency(pool.free_cash)}
