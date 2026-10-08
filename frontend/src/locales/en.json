@@ -332,6 +332,7 @@
       "monthlyNeeded": "{{amount}}/mo for {{count}} mo",
       "thisMonth": "{{amount}} this month",
       "utilized": "{{spent}} used · {{available}} left",
+      "owed": "{{amount}} paid from free cash",
       "freeCash": "Free cash",
       "freeCashHint": "Tracked money no goal has earmarked",
       "poolDrained": "Overspending emptied the pool this month and took {{amount}} back out of the goals",

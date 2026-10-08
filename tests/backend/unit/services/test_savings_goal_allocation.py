@@ -1631,3 +1631,29 @@ class TestRuleFundedGoals:
         assert paid["bridged"] == 8000
         assert given["total"] == 15000
         assert given["bridged"] == -8000
+
+    def test_bills_beyond_its_income_are_owed_not_funded(self, db_session, service):
+        """Progress is what it received; the unrepaid gap is reported as owed."""
+        bill, gifts = _month_str(2), _month_str(1)
+        _seed_free_cash(db_session, 20000)
+        _add_txn(db_session, bill, -12000, "Wedding", tag="Venue", day=9)
+        _add_txn(db_session, gifts, 10000, "Other Income", tag="Wedding", day=6)
+
+        self._wedding(service, bill, target=12000)
+
+        goal = service.get_all()[0]
+        # It received the 10000 of gifts; the other 2000 of the bill was paid
+        # with free cash it never got back. The card must agree with its bars.
+        assert goal["funded"] == 10000
+        assert goal["owed"] == 2000
+        assert goal["utilized"] == 12000
+        assert goal["available"] == 0
+        assert goal["progress_pct"] == 83.3
+        assert goal["is_achieved"] is False
+        bars = sum(
+            g["total"]
+            for m in service.get_timeline(months=0)["months"]
+            for g in m["goals"]
+            if g["name"] == "Wedding"
+        )
+        assert bars == goal["funded"]

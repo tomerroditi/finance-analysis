@@ -1171,6 +1171,11 @@ export interface SavingsGoal {
   contributed: number;
   /** Money spent back out of the goal. Never reduces `target_amount`. */
   utilized: number;
+  /**
+   * Free cash an income-funded goal borrowed for bills its income has not
+   * repaid. Not part of `funded` — the goal never received it.
+   */
+  owed: number;
   /** Money deficit months pulled back out, once the free-cash pool ran dry. */
   clawed_back: number;
   /** opening_balance + allocated + contributed, net of any clawback. */
