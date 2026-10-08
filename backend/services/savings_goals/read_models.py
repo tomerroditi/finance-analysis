@@ -424,17 +424,12 @@ class ReadModelsMixin:
             )
             for goal_id, rows in history.items()
         }
-        # A plain investment goal has no ledger rows; what it gained this
-        # month is the month's net transfers.
-        # A funded one counts its income as it lands, so the month's figure the
-        # card labels "invested" is the cash it moved into investments.
-        this_month = self._kept_contributions().get(current, {})
+        # The month's figure the card labels "invested" for an investment goal
+        # is what it moved into investments, not what it was funded with.
         for goal in goals:
             if is_investment_goal(goal):
-                provisional[goal.id] = (
-                    self._last_plan.invested.get((goal.id, *current), 0.0)
-                    if goal.funding_category
-                    else this_month.get(goal.id, 0.0)
+                provisional[goal.id] = self._last_plan.invested.get(
+                    (goal.id, *current), 0.0
                 )
 
         return [

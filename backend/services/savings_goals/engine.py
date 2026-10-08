@@ -236,9 +236,10 @@ class AllocationEngineMixin:
         frozen = {g.id: g.status == GOAL_STATUS_CLOSED for g in goals}
         start_of = dict(zip((g.id for g in goals), starts, strict=True))
         goal_by_id = {g.id: g for g in goals}
-        # A plain investment goal is filled by its own transfers, never by
-        # the waterfall, and a deficit never reaches into it — the money is
-        # in a holding, not in the bank the overspend drained.
+        # An investment goal holds cash it has not invested yet (``to_invest``)
+        # and pays for its transfers out of it. What it has invested is in a
+        # holding, not in the bank an overspend drained, so a deficit never
+        # reaches it.
         invests = {g.id for g in goals if is_investment_goal(g)}
         # A cash goal with a "saved into" rule is filled by its own income
         # first. A bill that lands before the income is paid with free cash
@@ -248,21 +249,40 @@ class AllocationEngineMixin:
             g.id for g in goals if g.id not in invests and g.contribution_category
         }
         bridge = dict.fromkeys(rule_funded, 0.0)
-        # A funded investment goal holds its income as cash and pays for its
-        # transfers out of it; what it has not invested yet waits here.
-        to_invest = {g.id: 0.0 for g in goals if g.id in invests and g.funding_category}
-        moved = dict.fromkeys(to_invest, 0.0)
-        # Goals filled by income of their own still take their place in the
-        # waterfall: surplus fills what the income has not (``fill``), and
-        # once the income arrives it comes first — the surplus it makes
-        # unnecessary goes back to free cash. A deficit can reclaim that
-        # surplus, never the income.
+        to_invest = dict.fromkeys(invests, 0.0)
+        moved = dict.fromkeys(invests, 0.0)
+        # Every goal takes its place in the waterfall. One filled by income of
+        # its own takes surplus for what the income has not filled (``fill``),
+        # and once the income arrives it comes first — the surplus it makes
+        # unnecessary goes back to free cash. A deficit can reclaim the
+        # surplus an income or investment goal holds, never its income or
+        # what it invested.
         fill = dict.fromkeys(set(bridge) | set(to_invest), 0.0)
+        # Surplus only ever covers what a goal's own income never will: the
+        # history is known up to today, so a goal whose income meets its
+        # target takes no free cash at all, even in the months before that
+        # income lands — bills in those months are fronted and repaid.
+        own_income: dict[int, float] = {}
+        for source in ("direct", "funding"):
+            for per_goal in context[source].values():
+                for goal_id, amount in per_goal.items():
+                    if goal_id in fill:
+                        own_income[goal_id] = own_income.get(goal_id, 0.0) + amount
+        surplus_room = {
+            g.id: max(0.0, float(g.target_amount or 0.0) - own_income.get(g.id, 0.0))
+            for g in goals
+            if g.id in fill and g.id in own_income
+        }
 
         def income_held() -> float:
             """Income the income-funded goals still hold — how low the pool may go."""
             held = sum(max(0.0, funded[g] - fill[g] - utilized[g]) for g in bridge)
             return held + sum(max(0.0, to_invest[g] - fill[g]) for g in to_invest)
+
+        def needs(goal_id: int) -> float:
+            """Return what a goal still needs to reach its target."""
+            target = float(goal_by_id[goal_id].target_amount or 0.0)
+            return target - funded[goal_id] + bridge.get(goal_id, 0.0)
 
         def add_row(goal_id: int, amount: float) -> None:
             """Add to a goal's computed ledger row for the month being walked."""
@@ -438,11 +458,7 @@ class AllocationEngineMixin:
             for goal in goals:
                 if pool <= 0:
                     break
-                if (
-                    frozen[goal.id]
-                    or (goal.id in invests and goal.id not in to_invest)
-                    or key < start_of[goal.id]
-                ):
+                if frozen[goal.id] or key < start_of[goal.id]:
                     continue
                 # In a history month, a goal that already has a row has had its
                 # say — only newcomers may take what is still unallocated. A
@@ -459,6 +475,8 @@ class AllocationEngineMixin:
                 # does not shrink what the goal still needs.
                 borrowed = bridge.get(goal.id, 0.0)
                 need = float(goal.target_amount or 0.0) - funded[goal.id] + borrowed
+                if goal.id in surplus_room:
+                    need = min(need, surplus_room[goal.id] - fill[goal.id])
                 if need <= 0:
                     continue
                 take = min(need, pool)
@@ -512,11 +530,7 @@ class AllocationEngineMixin:
                 for goal in reversed(goals):
                     if shortfall <= ROUNDING_EPSILON:
                         break
-                    if (
-                        frozen[goal.id]
-                        or (goal.id in invests and goal.id not in to_invest)
-                        or key < start_of[goal.id]
-                    ):
+                    if frozen[goal.id] or key < start_of[goal.id]:
                         continue
                     # A history month's existing rows stand, exactly as they
                     # do for funding — only an explicit rebuild restates them.
@@ -563,8 +577,14 @@ class AllocationEngineMixin:
                     candidates = [goal_id for goal_id in group if goal_id in funded]
                     if not candidates:
                         continue
-                    shares, moves = self._split_transfer(
-                        candidates, amount, to_invest, moved
+                    shares, moves, unclaimed = self._split_transfer(
+                        candidates,
+                        amount,
+                        to_invest,
+                        moved,
+                        # A goal with income of its own is filled by that
+                        # income; a deposit it holds no cash for is not its.
+                        {g: 0.0 if g in surplus_room else needs(g) for g in candidates},
                     )
                     for goal_id, share in shares:
                         funded[goal_id] += share
@@ -573,9 +593,10 @@ class AllocationEngineMixin:
                     for goal_id, move in moves:
                         cell = (goal_id, year, month)
                         plan.invested[cell] = plan.invested.get(cell, 0.0) + move
-                    # Only what no goal's cash paid for leaves free cash; a
-                    # withdrawal hands the money back to it.
-                    from_free_cash += amount - sum(move for _, move in moves)
+                    # Money a goal held as cash was already off the pool; only
+                    # a deposit no goal's cash paid for leaves it, and only a
+                    # withdrawal no goal invested comes back.
+                    from_free_cash += sum(share for _, share in shares) + unclaimed
                 free_cash = max(-income_held(), free_cash - from_free_cash)
 
             # Adding zero turns the -0.0 a fully drained pool rounds to into 0.0.
@@ -603,16 +624,18 @@ class AllocationEngineMixin:
         amount: float,
         to_invest: dict[int, float],
         moved: dict[int, float],
-    ) -> tuple[list[tuple[int, float]], list[tuple[int, float]]]:
+        need: dict[int, float],
+    ) -> tuple[list[tuple[int, float]], list[tuple[int, float]], float]:
         """Split one month's net transfer among the investment goals it matches.
 
-        A funded goal already counts its money as progress the moment it holds
-        it, so investing that cash only moves it: a deposit draws on the cash
-        each funded goal holds, highest in the waterfall first. Whatever no
-        goal's cash paid for — the rest of a deposit, or a withdrawal — is the
-        progress (or loss) of the highest goal without a funding income. With
-        none, a withdrawal hands back to the highest funded goal's cash at
-        most what it invested, and the rest is an ordinary transfer.
+        An investment goal counts its money as progress the moment it holds
+        it, so investing cash it holds only moves it: a deposit draws on the
+        cash each goal holds, highest in the waterfall first. What no goal's
+        cash covers is new money invested toward the highest goal still short
+        of its target — its progress, paid from free cash — or, with every
+        goal full, an ordinary transfer. A withdrawal goes back into the cash
+        of the goals that invested, highest first, never past what each
+        invested; the rest is no goal's.
 
         Parameters
         ----------
@@ -621,42 +644,49 @@ class AllocationEngineMixin:
         amount : float
             Net invested this month: positive deposits, negative withdrawals.
         to_invest : dict[int, float]
-            Cash each funded goal holds; drawn down (or refilled) in place.
+            Cash each goal holds; drawn down (or refilled) in place.
         moved : dict[int, float]
-            What each funded goal has invested so far; updated in place.
+            What each goal has invested so far; updated in place.
+        need : dict[int, float]
+            What each goal still needs to reach its target.
 
         Returns
         -------
         tuple
-            ``[(goal_id, share), ...]`` of progress for plain goals, and
-            ``[(goal_id, move), ...]`` of cash funded goals moved in (or out).
+            ``[(goal_id, share), ...]`` of new progress paid from free cash,
+            ``[(goal_id, move), ...]`` of everything each goal invested (or
+            withdrew), and the part that is no goal's.
         """
         shares: list[tuple[int, float]] = []
         moves: list[tuple[int, float]] = []
         left = amount
-        for goal_id in candidates:
-            if left <= ROUNDING_EPSILON:
-                break
-            if goal_id not in to_invest:
-                continue
-            paid = round(min(max(0.0, to_invest[goal_id]), left), 2)
-            if paid > 0:
-                to_invest[goal_id] -= paid
-                moved[goal_id] += paid
-                moves.append((goal_id, paid))
-                left -= paid
-        plain = [goal_id for goal_id in candidates if goal_id not in to_invest]
-        if plain:
-            if abs(left) > ROUNDING_EPSILON:
-                shares.append((plain[0], left))
-        elif left < -ROUNDING_EPSILON:
-            goal_id = candidates[0]
-            back = round(min(-left, max(0.0, moved[goal_id])), 2)
-            if back > 0:
-                to_invest[goal_id] += back
-                moved[goal_id] -= back
-                moves.append((goal_id, -back))
-        return shares, moves
+        if left > 0:
+            for goal_id in candidates:
+                if left <= ROUNDING_EPSILON:
+                    break
+                paid = round(min(max(0.0, to_invest[goal_id]), left), 2)
+                if paid > 0:
+                    to_invest[goal_id] -= paid
+                    moved[goal_id] += paid
+                    moves.append((goal_id, paid))
+                    left -= paid
+            taker = next((g for g in candidates if need[g] > ROUNDING_EPSILON), None)
+            if taker is not None and left > ROUNDING_EPSILON:
+                shares.append((taker, left))
+                moves.append((taker, left))
+                moved[taker] += left
+                left = 0.0
+        else:
+            for goal_id in candidates:
+                if left >= -ROUNDING_EPSILON:
+                    break
+                back = round(min(-left, max(0.0, moved[goal_id])), 2)
+                if back > 0:
+                    to_invest[goal_id] += back
+                    moved[goal_id] -= back
+                    moves.append((goal_id, -back))
+                    left += back
+        return shares, moves, left if abs(left) > ROUNDING_EPSILON else 0.0
 
     def _persist(self, plan: AllocationPlan) -> None:
         """Write a plan's computed allocations and any auto-closures.

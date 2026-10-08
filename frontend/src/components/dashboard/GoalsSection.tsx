@@ -871,12 +871,12 @@ function GoalRow({
           </span>
         </div>
         <div className="w-full bg-[var(--surface-light)] rounded-full h-2 overflow-hidden">
-          <div className={`h-2 rounded-full bg-gradient-to-r ${barColor} transition-all duration-500`} style={{ width: `${goal.progress_pct}%` }} />
+          <div className={`h-2 rounded-full bg-gradient-to-r ${barColor} transition-all duration-500`} style={{ width: `${Math.max(0, goal.progress_pct)}%` }} />
         </div>
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1.5 text-[10px] md:text-xs text-[var(--text-muted)]">
           <GoalStatusLine goal={goal} />
         </div>
-        {(showThisMonth || goal.utilized > 0 || goal.owed > 0 || goal.to_invest > 0) && (
+        {(showThisMonth || goal.utilized > 0 || showsShekels(goal.owed) || showsShekels(goal.to_invest)) && (
           <div className="flex flex-wrap gap-x-3 gap-y-1 mt-1.5 text-[10px] md:text-xs text-[var(--text-muted)]">
             {showThisMonth && (
               <span>
@@ -898,12 +898,12 @@ function GoalRow({
                 })}
               </span>
             )}
-            {goal.owed > 0 && (
+            {showsShekels(goal.owed) && (
               <span>
                 {t("dashboard.goals.owed", { amount: formatCurrency(goal.owed) })}
               </span>
             )}
-            {goal.to_invest > 0 && (
+            {showsShekels(goal.to_invest) && (
               <span>
                 {t("dashboard.goals.toInvest", { amount: formatCurrency(goal.to_invest) })}
               </span>
@@ -913,6 +913,11 @@ function GoalRow({
       </div>
     </div>
   );
+}
+
+/** Whether an amount survives rounding to whole shekels — "0 ₪ owed" is noise. */
+function showsShekels(amount: number): boolean {
+  return amount >= 0.5;
 }
 
 /** The status line: closed, achieved, past due, on-schedule, or plain remainder. */
