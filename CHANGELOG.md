@@ -1,3 +1,9 @@
+## v1.95.1 (2026-10-08)
+
+### Fix
+
+- **ui**: keyboard-safe search boxes — dropdowns no longer jump, and it's now a code standard (#368)
+
 ## v1.95.0 (2026-10-08)
 
 ### Feat
