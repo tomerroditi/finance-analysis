@@ -42,6 +42,9 @@ _RowKey = tuple[Any, Any, int | None]
 #: it repays); the rest count by magnitude, as an explicit link always has.
 _GoalLink = tuple[int, str, bool]
 
+#: The investment goals one transfer matches, highest in the waterfall first.
+_InvestGroup = tuple[int, ...]
+
 
 class InputsMixin:
     """Context-building and pool-input methods for ``SavingsGoalService``."""
@@ -119,8 +122,11 @@ class InputsMixin:
         dict
             ``surplus`` — ``{(year, month): float}``; ``direct`` (every
             contribution), ``drawn`` (the part of it paid out of the pool),
-            ``utilized`` and ``invested`` (an investment goal's net transfers)
-            — ``{(year, month): {goal_id: amount}}``.
+            and ``utilized`` — ``{(year, month): {goal_id: amount}}``; and
+            ``invested``, the net transfers into investments, keyed by the
+            investment goals they match — ``{(year, month): {group: amount}}``
+            — because which of them a transfer fills is only known once the
+            walk knows whose income paid for it.
         """
         if self._context_cache is not None:
             return self._context_cache
@@ -169,10 +175,11 @@ class InputsMixin:
         df["_month"] = parsed.dt.month.astype(int)
 
         keys = self._row_keys(df)
-        goal_of = self._goal_by_transaction(df, keys)
+        goal_of, invest_groups = self._goal_by_transaction(df, keys)
         df["_goal_id"] = [goal_of.get(k, (None, None, False))[0] for k in keys]
         df["_link_type"] = [goal_of.get(k, (None, None, False))[1] for k in keys]
         df["_signed"] = [goal_of.get(k, (None, None, False))[2] for k in keys]
+        df["_group"] = [invest_groups.get(k) for k in keys]
 
         # A card purchase only ever reaches the goals as money spent out of
         # one. The bank-side bill that paid for it is already inside the
@@ -215,7 +222,7 @@ class InputsMixin:
         direct: dict[tuple[int, int], dict[int, float]] = {}
         drawn: dict[tuple[int, int], dict[int, float]] = {}
         utilized: dict[tuple[int, int], dict[int, float]] = {}
-        invested: dict[tuple[int, int], dict[int, float]] = {}
+        invested: dict[tuple[int, int], dict[_InvestGroup, float]] = {}
         funding: dict[tuple[int, int], dict[int, float]] = {}
         for _, row in linked.iterrows():
             key = (int(row["_year"]), int(row["_month"]))
@@ -226,8 +233,9 @@ class InputsMixin:
             # and a withdrawal positive, so the signed amount is exactly the
             # net invested: deposits add, withdrawals take back.
             if row["_link_type"] == LINK_INVESTED:
+                group = row["_group"] or (goal_id,)
                 invested.setdefault(key, {})
-                invested[key][goal_id] = invested[key].get(goal_id, 0.0) + amount
+                invested[key][group] = invested[key].get(group, 0.0) + amount
                 continue
             # Income set aside to pay for an investment goal's transfers keeps
             # its sign: a refund of it takes back what it had set aside.
@@ -276,12 +284,17 @@ class InputsMixin:
 
     def _goal_by_transaction(
         self, df: pd.DataFrame, keys: list[_RowKey]
-    ) -> dict[_RowKey, _GoalLink]:
+    ) -> tuple[dict[_RowKey, _GoalLink], dict[_RowKey, _InvestGroup]]:
         """Map each linked transaction key to its ``(goal_id, link_type, signed)``.
 
         Explicit per-transaction links win over both category/tag rules, so a
         single correction on one transaction always beats the broad rule, and
         a utilization rule wins over a contribution rule on the same row.
+
+        A transfer into investments can match several investment goals (two
+        goals counting every Investments transfer). It is not settled here:
+        it is mapped to the highest of them and its whole group is returned
+        alongside, for the walk to split by whose income paid for it.
 
         A utilization rule claims its rows from the goal's start month on.
         Spending that predates the goal was never paid for out of it, so it
@@ -297,10 +310,13 @@ class InputsMixin:
 
         Returns
         -------
-        dict
-            Row key -> ``(goal_id, link_type, signed)`` for every linked row.
+        tuple
+            Row key -> ``(goal_id, link_type, signed)`` for every linked row,
+            and row key -> the investment goals a transfer matches, highest
+            first.
         """
         mapping: dict[_RowKey, _GoalLink] = {}
+        groups: dict[_RowKey, _InvestGroup] = {}
 
         category_col = TransactionsTableFields.CATEGORY.value
         tag_col = TransactionsTableFields.TAG.value
@@ -322,11 +338,12 @@ class InputsMixin:
                     keys, matches, row_months, strict=True
                 ):
                     if matched and (start is None or row_month >= start):
-                        mapping[key] = (goal.id, LINK_INVESTED, True)
+                        groups[key] = (*groups.get(key, ()), goal.id)
+                        mapping.setdefault(key, (goal.id, LINK_INVESTED, True))
                 continue
             for key, matched in zip(keys, matches, strict=True):
                 if matched:
-                    mapping[key] = (goal.id, LINK_CONTRIBUTION, False)
+                    mapping.setdefault(key, (goal.id, LINK_CONTRIBUTION, False))
 
         # The income an investment goal is paid from, from its start month:
         # set aside for its transfers rather than counted as surplus.
@@ -377,7 +394,7 @@ class InputsMixin:
                                 link["link_type"],
                                 False,
                             )
-        return mapping
+        return mapping, groups
 
     @staticmethod
     def _split_tags(tags: str | None) -> list[str]:

@@ -64,6 +64,7 @@ function makeGoal(overrides: Partial<SavingsGoal> = {}): SavingsGoal {
     this_month_allocation: 0,
     months_remaining: null,
     monthly_needed: null,
+    is_past_due: false,
     history: [],
     ...overrides,
   };
@@ -192,6 +193,30 @@ describe("GoalsSection", () => {
       const text = rowFor("Dated").textContent ?? "";
       expect(text).toContain("/mo");
       expect(text).not.toContain("to go");
+    });
+
+    it("says a goal past its target date is short instead of asking for 0 months", async () => {
+      await renderGoals([
+        makeGoal({
+          name: "Late",
+          months_remaining: 0,
+          monthly_needed: 5307,
+          remaining: 5307,
+          is_past_due: true,
+        }),
+      ]);
+      const text = rowFor("Late").textContent ?? "";
+      expect(text).toContain("target date passed");
+      expect(text).not.toContain("/mo");
+    });
+
+    it("asks for what is left this month when the target date is this month", async () => {
+      await renderGoals([
+        makeGoal({ name: "Soon", months_remaining: 0, monthly_needed: 900 }),
+      ]);
+      const text = rowFor("Soon").textContent ?? "";
+      expect(text).toContain("still needed this month");
+      expect(text).not.toContain("/mo");
     });
 
     it("prefers achieved over the schedule", async () => {

@@ -915,7 +915,7 @@ function GoalRow({
   );
 }
 
-/** The right-hand status line: closed, achieved, on-schedule, or plain remainder. */
+/** The status line: closed, achieved, past due, on-schedule, or plain remainder. */
 function GoalStatusLine({ goal }: { goal: SavingsGoal }) {
   const { t } = useTranslation();
 
@@ -924,6 +924,16 @@ function GoalStatusLine({ goal }: { goal: SavingsGoal }) {
   }
   if (goal.is_achieved) {
     return <span className="text-emerald-400 font-medium">{t("dashboard.goals.achieved")}</span>;
+  }
+  if (goal.is_past_due) {
+    return (
+      <span className="text-amber-400">
+        {t("dashboard.goals.pastDue", { amount: formatCurrency(goal.remaining) })}
+      </span>
+    );
+  }
+  if (goal.monthly_needed != null && goal.months_remaining === 0) {
+    return <span>{t("dashboard.goals.dueThisMonth", { amount: formatCurrency(goal.monthly_needed) })}</span>;
   }
   if (goal.monthly_needed != null && goal.months_remaining != null) {
     return (

@@ -1195,6 +1195,8 @@ export interface SavingsGoal {
   this_month_allocation: number;
   months_remaining: number | null;
   monthly_needed: number | null;
+  /** The target date has passed and the goal is still short. */
+  is_past_due: boolean;
   history: SavingsGoalAllocationEntry[];
 }
 

@@ -210,6 +210,7 @@ class TestSavingsGoalEnrichment:
 
         assert goal["months_remaining"] == 0
         assert goal["monthly_needed"] == 800
+        assert goal["is_past_due"] is True
 
     def test_achieved_goal_has_no_monthly_needed(self, service):
         """Nothing more is needed once the target is met."""

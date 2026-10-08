@@ -424,12 +424,18 @@ class ReadModelsMixin:
             )
             for goal_id, rows in history.items()
         }
-        # An investment goal has no ledger rows; what it gained this month is
-        # the month's net transfers.
+        # A plain investment goal has no ledger rows; what it gained this
+        # month is the month's net transfers.
+        # A funded one counts its income as it lands, so the month's figure the
+        # card labels "invested" is the cash it moved into investments.
         this_month = self._kept_contributions().get(current, {})
         for goal in goals:
             if is_investment_goal(goal):
-                provisional[goal.id] = this_month.get(goal.id, 0.0)
+                provisional[goal.id] = (
+                    self._last_plan.invested.get((goal.id, *current), 0.0)
+                    if goal.funding_category
+                    else this_month.get(goal.id, 0.0)
+                )
 
         return [
             self._enrich(
@@ -542,6 +548,7 @@ class ReadModelsMixin:
 
         months_remaining = None
         monthly_needed = None
+        is_past_due = False
         if goal.target_date and pd.notna(goal.target_date):
             today = pd.Timestamp.today().normalize()
             target_ts = pd.Timestamp(goal.target_date)
@@ -555,6 +562,7 @@ class ReadModelsMixin:
                 # months out as two full months even when only ~39 days
                 # remain, understating what the user must save each month.
                 days_remaining = max(0, (target_ts - today).days)
+                is_past_due = target_ts < today
                 months_of_runway = days_remaining / DAYS_PER_MONTH
                 monthly_needed = (
                     round(remaining / months_of_runway, 2)
@@ -598,5 +606,6 @@ class ReadModelsMixin:
             "this_month_allocation": round(float(provisional.get(goal.id, 0.0)), 2),
             "months_remaining": months_remaining,
             "monthly_needed": monthly_needed,
+            "is_past_due": is_past_due,
             "history": history.get(goal.id, []),
         }
