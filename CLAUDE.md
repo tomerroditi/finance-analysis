@@ -100,6 +100,7 @@ Routes (FastAPI) -> Services (Business Logic) -> Repositories (Data Access) -> S
 - TypeScript: strict mode, no unused locals/parameters
 - Tests: always use test classes, every test needs a docstring
 - Dialogs: build on `<Modal>`, which locks the page and scrolls its own body. A hand-rolled `fixed inset-0` overlay must do the same — `useScrollLock`, `modal-overlay`, a capped panel, a `min-h-0 overflow-y-auto overscroll-contain` body — or a tall dialog gets clipped and scrolling it moves the page behind (`frontend/src/modalScrolling.test.ts` enforces it; `.claude/rules/frontend_pitfalls.md` → "Dialogs Scroll Themselves")
+- Search boxes: `inputMode="search"`, `enterKeyHint="search"`, `autoComplete="off"`, never `autoFocus`, focused from code only off touch screens with `preventScroll: true`, and a search box in a floating panel positions it with `useAnchoredPanel` — or the phone keyboard makes the screen jump (`frontend/src/searchBoxes.test.ts` enforces it; `.claude/rules/frontend_pitfalls.md` → "Search Boxes and the On-Screen Keyboard")
 - No business logic in routes or components — services handle all logic
 - No direct DB access outside repositories
 - No raw axios calls in components — go through `frontend/src/services/api.ts`

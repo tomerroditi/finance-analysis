@@ -198,6 +198,9 @@ function RulesManagerModal({ isOpen, onClose }: { isOpen: boolean; onClose: () =
                     <div className="relative">
                         <Search size={16} className="absolute start-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)]" />
                         <input
+                            inputMode="search"
+                            enterKeyHint="search"
+                            autoComplete="off"
                             value={searchQuery}
                             onChange={(e) => setSearchQuery(e.target.value)}
                             placeholder={t("transactions.autoTagging.searchRules")}

@@ -724,6 +724,9 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
                 className="absolute start-2.5 top-1/2 -translate-y-1/2 text-[var(--text-muted)]"
               />
               <input
+                inputMode="search"
+                enterKeyHint="search"
+                autoComplete="off"
                 type="text"
                 value={filters.filterText}
                 onChange={(e) => updateFilters({ filterText: e.target.value })}
