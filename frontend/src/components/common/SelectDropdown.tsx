@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { createPortal } from "react-dom";
 import { ChevronDown, Check, Search, Plus, X } from "lucide-react";
 import { isTouchDevice } from "../../utils/chartStyle";
+import { useAnchoredPanel } from "../../hooks/useAnchoredPanel";
 
 interface SelectDropdownProps {
   options: { label: string; value: string }[];
@@ -40,7 +41,6 @@ export const SelectDropdown: React.FC<SelectDropdownProps> = ({
   // mouse hover already implies the item is visible, and scrolling on hover
   // creates a feedback loop (items shift under the cursor → new mouseenter).
   const scrollOnNextHighlight = useRef(false);
-  const [pos, setPos] = useState({ top: 0, left: 0, width: 0, openUp: false });
   const [isCreating, setIsCreating] = useState(false);
   const [createValue, setCreateValue] = useState("");
   const createInputRef = useRef<HTMLInputElement>(null);
@@ -53,23 +53,11 @@ export const SelectDropdown: React.FC<SelectDropdownProps> = ({
       )
     : options;
 
-  const updatePosition = useCallback(() => {
-    if (!buttonRef.current) return;
-    const rect = buttonRef.current.getBoundingClientRect();
-    const spaceBelow = window.innerHeight - rect.bottom;
-    const openUp = spaceBelow < 200 && rect.top > spaceBelow;
-    // On mobile, ensure minimum dropdown width and clamp to viewport
-    const viewportMax = window.innerWidth - 16;
-    const minWidth = onCreateNew ? Math.min(260, viewportMax) : Math.min(180, viewportMax);
-    const dropdownWidth = Math.min(Math.max(rect.width, minWidth), viewportMax);
-    const maxLeft = window.innerWidth - dropdownWidth - 8;
-    setPos({
-      top: openUp ? rect.top : rect.bottom,
-      left: Math.max(8, Math.min(rect.left, maxLeft)),
-      width: dropdownWidth,
-      openUp,
-    });
-  }, [onCreateNew]);
+  const panelStyle = useAnchoredPanel(buttonRef, isOpen && !disabled, {
+    maxHeight: 256,
+    // On mobile, ensure a usable width; the hook clamps it to the screen.
+    minWidth: onCreateNew ? 260 : 180,
+  });
 
    
   useEffect(() => {
@@ -81,22 +69,17 @@ export const SelectDropdown: React.FC<SelectDropdownProps> = ({
       setCreateValue("");
       return;
     }
-    updatePosition();
-    requestAnimationFrame(() => {
+    // No keyboard on a phone until the user taps the search box: popping it
+    // on every open shoved the screen around before anything was chosen.
+    const frame = requestAnimationFrame(() => {
       if (showSearch && !isTouchDevice) {
-        searchRef.current?.focus();
+        searchRef.current?.focus({ preventScroll: true });
       } else {
-        dropdownRef.current?.focus();
+        dropdownRef.current?.focus({ preventScroll: true });
       }
     });
-    const onScroll = () => updatePosition();
-    window.addEventListener("scroll", onScroll, true);
-    window.addEventListener("resize", onScroll);
-    return () => {
-      window.removeEventListener("scroll", onScroll, true);
-      window.removeEventListener("resize", onScroll);
-    };
-  }, [isOpen, updatePosition, showSearch]);
+    return () => cancelAnimationFrame(frame);
+  }, [isOpen, showSearch]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -254,16 +237,8 @@ export const SelectDropdown: React.FC<SelectDropdownProps> = ({
             ref={dropdownRef}
             tabIndex={-1}
             onKeyDown={handleKeyDown}
-            className="fixed max-h-64 bg-[var(--surface)] border border-[var(--surface-light)] rounded-xl shadow-xl flex flex-col outline-none overflow-hidden"
-            style={{
-              top: pos.openUp ? undefined : pos.top + 4,
-              bottom: pos.openUp
-                ? window.innerHeight - pos.top + 4
-                : undefined,
-              left: pos.left,
-              width: pos.width,
-              zIndex: 9999,
-            }}
+            className="fixed bg-[var(--surface)] border border-[var(--surface-light)] rounded-xl shadow-xl flex flex-col outline-none overflow-hidden"
+            style={{ ...panelStyle, zIndex: 9999 }}
           >
             {showSearch && (
               <div className="p-1.5 border-b border-[var(--surface-light)]">
@@ -275,6 +250,9 @@ export const SelectDropdown: React.FC<SelectDropdownProps> = ({
                   <input
                     ref={searchRef}
                     type="text"
+                    inputMode="search"
+                    enterKeyHint="search"
+                    autoComplete="off"
                     value={search}
                     onChange={(e) => setSearch(e.target.value)}
                     placeholder={t("common.search") + "..."}
@@ -283,7 +261,7 @@ export const SelectDropdown: React.FC<SelectDropdownProps> = ({
                 </div>
               </div>
             )}
-            <div ref={listRef} role="listbox" className="overflow-y-auto flex-1">
+            <div ref={listRef} role="listbox" className="overflow-y-auto overscroll-contain flex-1 min-h-0">
               {filteredOptions.map((opt, idx) => (
                 <button
                   key={opt.value}

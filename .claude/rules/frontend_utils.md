@@ -56,6 +56,7 @@ Custom React hooks for shared data fetching and stateful logic.
 | `useScrollLock(isOpen)` | Body scroll prevention for modals | N/A (side effect) |
 | `useScrollCap(capPx, contentKey?, slackPx?)` | Height cap that only becomes a scroll region once it hides about a row — an always-on cap swallows the page's scroll (`frontend_pitfalls.md`) | N/A (measurement) |
 | `usePendingRows()` | Per-row pending state for a list's shared mutation | N/A (local state) |
+| `useAnchoredPanel(anchorRef, open, opts)` | Positions a fixed dropdown panel off its trigger against the *visible* viewport (on-screen keyboard included); picks its direction once per open and only shrinks after, so a keyboard never flips the panel away from the finger. Used by `SelectDropdown` and `MultiSelect` | N/A (measurement) |
 
 **When to create a new shared hook:**
 - The same `useQuery` pattern (same `queryKey` + `queryFn`) appears in **3+ components**
