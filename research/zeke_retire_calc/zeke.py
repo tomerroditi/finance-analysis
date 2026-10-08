@@ -160,8 +160,8 @@ class Session:
 
 
 def text(h):
-    h = re.sub(r"<script.*?</script>", " ", h, flags=re.S)
-    h = re.sub(r"<style.*?</style>", " ", h, flags=re.S)
+    h = re.sub(r"<script\b.*?</script[^>]*>", " ", h, flags=re.S | re.I)
+    h = re.sub(r"<style\b.*?</style[^>]*>", " ", h, flags=re.S | re.I)
     h = re.sub(r"<[^>]+>", " ", h)
     h = html.unescape(h)
     return re.sub(r"[ \t]+", " ", re.sub(r"\n\s*\n+", "\n", h)).strip()
