@@ -50,6 +50,7 @@ function makeGoal(overrides: Partial<SavingsGoal> = {}): SavingsGoal {
     allocated: 2500,
     contributed: 0,
     utilized: 0,
+    owed: 0,
     clawed_back: 0,
     funded: 2500,
     available: 2500,
@@ -684,6 +685,23 @@ describe("GoalsSection", () => {
   });
 
   describe("goals filled by their own income", () => {
+    it("say how much of their bills free cash paid", async () => {
+      await renderGoals([
+        makeGoal({
+          name: "Wedding",
+          contribution_category: "Other Income",
+          funded: 193571,
+          utilized: 198878,
+          available: 0,
+          owed: 5307,
+        }),
+      ]);
+
+      expect(
+        within(rowFor("Wedding")).getByText(/paid from free cash/i).textContent,
+      ).toMatch(/5,307/);
+    });
+
     it("offer no free-cash claim, since they hold exactly their income", async () => {
       await renderGoals([
         makeGoal({ id: 1, name: "Trip" }),

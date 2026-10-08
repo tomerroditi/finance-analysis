@@ -217,6 +217,12 @@ wedding gifts, never the salary that was left over while it waited for them.
   free cash); what is still owed when no more income comes — bills beyond the
   gifts — stays owed, and a goal that owes never auto-closes.
 - Income past the target still spills into the month's surplus.
+- **Its progress is what it received, never what it owes.** `funded` is
+  opening + surplus + income; free cash borrowed for bills and not yet repaid
+  is reported as `owed` ("… paid from free cash" on the card) and only adds
+  to what it could spend (`available = funded + owed - utilized`). Counting
+  the debt as funding showed a wedding at 100% on money it never got, and
+  its bars (which are its income) never added up to the card.
 - Fronted and released amounts are derived every pass, like contributions,
   never ledger rows. `funded = opening + allocated + contributed + fronted -
   released` and the payload reports `fronted` / `released`. The month view

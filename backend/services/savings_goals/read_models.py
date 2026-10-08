@@ -521,10 +521,15 @@ class ReadModelsMixin:
 
         lent = float(fronted.get(goal.id, 0.0))
         repaid = float(released.get(goal.id, 0.0))
-        # Free cash a rule-funded goal fronted is money it held for a while;
-        # what its own income later released went back to free cash.
-        funded = opening + allocated + contributions + lent - repaid
-        available = funded - spent
+        # A goal's progress is what it *received* — surplus and its own
+        # income — so the card agrees with its bars. Free cash it borrowed for
+        # a bill and has not yet repaid is not progress: it is reported as
+        # ``owed`` and counts only toward what the goal could spend, so a
+        # wedding whose bills outran its gifts reads 97% funded with the gap
+        # owed to free cash, not 100% on money it never got.
+        owed = max(0.0, lent - repaid)
+        funded = opening + allocated + contributions
+        available = funded + owed - spent
         remaining = max(0.0, target - funded)
         progress_pct = round(
             min(100.0, (funded / target * 100) if target > 0 else 0.0), 1
@@ -575,6 +580,7 @@ class ReadModelsMixin:
             "utilized": round(spent, 2),
             "fronted": round(lent, 2),
             "released": round(repaid, 2),
+            "owed": round(owed, 2),
             "clawed_back": round(float(reclaimed.get(goal.id, 0.0)), 2),
             "funded": round(funded, 2),
             "available": round(available, 2),

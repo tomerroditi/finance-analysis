@@ -43,6 +43,7 @@ function makeGoal(overrides: Partial<SavingsGoal> = {}): SavingsGoal {
     allocated: 0,
     contributed: 0,
     utilized: 0,
+    owed: 0,
     clawed_back: 0,
     funded: 0,
     available: 0,

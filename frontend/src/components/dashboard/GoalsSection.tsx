@@ -876,7 +876,7 @@ function GoalRow({
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1.5 text-[10px] md:text-xs text-[var(--text-muted)]">
           <GoalStatusLine goal={goal} />
         </div>
-        {(showThisMonth || goal.utilized > 0) && (
+        {(showThisMonth || goal.utilized > 0 || goal.owed > 0) && (
           <div className="flex flex-wrap gap-x-3 gap-y-1 mt-1.5 text-[10px] md:text-xs text-[var(--text-muted)]">
             {showThisMonth && (
               <span>
@@ -896,6 +896,11 @@ function GoalRow({
                   spent: formatCurrency(goal.utilized),
                   available: formatCurrency(goal.available),
                 })}
+              </span>
+            )}
+            {goal.owed > 0 && (
+              <span>
+                {t("dashboard.goals.owed", { amount: formatCurrency(goal.owed) })}
               </span>
             )}
           </div>
