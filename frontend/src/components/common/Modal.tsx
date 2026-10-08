@@ -49,7 +49,7 @@ export function Modal({
         role="dialog"
         aria-modal="true"
         aria-labelledby={resolvedTitleId}
-        className={`bg-[var(--surface)] border border-[var(--surface-light)] rounded-2xl shadow-2xl w-full max-w-[calc(100vw-2rem)] ${maxWidthClasses[maxWidth]} overflow-hidden animate-in zoom-in-95 duration-200 max-h-[90vh] flex flex-col`}
+        className={`bg-[var(--surface)] border border-[var(--surface-light)] rounded-2xl shadow-2xl w-full max-w-[calc(100vw-2rem)] ${maxWidthClasses[maxWidth]} overflow-hidden animate-in zoom-in-95 duration-200 max-h-[90dvh] flex flex-col`}
       >
         <div className="px-4 md:px-6 py-4 border-b border-[var(--surface-light)] flex items-center justify-between bg-[var(--surface-light)]/20 shrink-0">
           <h2 id={resolvedTitleId} className="text-lg md:text-xl font-bold text-white flex items-center gap-2">
@@ -64,7 +64,17 @@ export function Modal({
             <X size={20} />
           </button>
         </div>
-        {children}
+        {/* The panel caps its height, so the body must be the one to scroll:
+            a form taller than the screen was clipped with nothing inside it
+            to scroll, and the gesture fell through to the page behind.
+            Keep it a plain block. A scroller that is also a flex column is
+            the one shape here that did not scroll for the user — the shape
+            every other working dialog uses is a block scroller sitting in
+            the panel's column. `overscroll-contain` stops a scroll that
+            reaches the end from chaining to the page. */}
+        <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain">
+          {children}
+        </div>
       </div>
     </div>
   );

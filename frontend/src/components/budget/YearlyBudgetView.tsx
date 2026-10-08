@@ -18,6 +18,7 @@ import { BAR_CONTROL, BudgetCommandBar, PeriodNav } from "./BudgetCommandBar";
 import { BudgetStatusBand, type BandStat } from "./BudgetStatusBand";
 import { BudgetNoticeLine } from "./BudgetNoticeLine";
 import { BudgetLedgerRow, LedgerRowAction } from "./BudgetLedgerRow";
+import { BudgetGoalLink } from "./BudgetGoalLink";
 import { RuleSparkline } from "./RuleSparkline";
 import { isAllTagsRule } from "../../utils/budgetRules";
 import { formatCurrency } from "../../utils/numberFormatting";
@@ -355,6 +356,12 @@ export const YearlyBudgetView: React.FC<YearlyBudgetViewProps> = ({
                   }
                   actions={
                     <>
+                      <BudgetGoalLink
+                        variant="icon"
+                        category={rule.category}
+                        tags={tagList}
+                        name={rule.name}
+                      />
                       <LedgerRowAction
                         kind="edit"
                         label={t("budget.editRule")}

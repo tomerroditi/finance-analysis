@@ -20,7 +20,6 @@ from backend.models.retirement_goal import RetirementGoal
 from backend.models.savings_goal import (
     SavingsGoal,
     SavingsGoalAllocation,
-    SavingsGoalInvestment,
     SavingsGoalLink,
 )
 from backend.models.scraping import ScrapingHistory
@@ -61,7 +60,6 @@ __all__ = [
     "RetirementGoal",
     "SavingsGoal",
     "SavingsGoalAllocation",
-    "SavingsGoalInvestment",
     "SavingsGoalLink",
     "ScrapingHistory",
     "SplitTransaction",

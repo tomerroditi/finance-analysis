@@ -103,3 +103,59 @@ describe("MultiSelect select-all", () => {
     expect(onChange).toHaveBeenCalledWith(["Venue"]);
   });
 });
+
+/**
+ * The panel is fixed to the viewport, so it must fit in it. Opened from a
+ * trigger near the bottom of a scrolled dialog it used to drop straight down
+ * and run off the screen.
+ */
+describe("MultiSelect placement", () => {
+  /** Pin the trigger's box to `top`/`bottom` px in a 800px-tall viewport. */
+  function placeTrigger(top: number, bottom: number) {
+    vi.spyOn(window, "innerHeight", "get").mockReturnValue(800);
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({
+      top,
+      bottom,
+      left: 20,
+      right: 320,
+      width: 300,
+      height: bottom - top,
+      x: 20,
+      y: top,
+      toJSON: () => ({}),
+    });
+  }
+
+  it("opens below the trigger when there is room", async () => {
+    placeTrigger(100, 140);
+    render();
+    await openDropdown();
+
+    const panel = screen.getByTestId("multiselect-panel");
+    expect(panel.style.top).toBe("144px");
+    expect(panel.style.bottom).toBe("");
+    expect(panel.style.maxHeight).toBe("208px");
+  });
+
+  it("opens upward, capped to the room above, near the bottom of the screen", async () => {
+    placeTrigger(700, 740);
+    render();
+    await openDropdown();
+
+    const panel = screen.getByTestId("multiselect-panel");
+    expect(panel.style.top).toBe("");
+    // Its bottom edge sits just above the trigger.
+    expect(panel.style.bottom).toBe("104px");
+    expect(panel.style.maxHeight).toBe("208px");
+  });
+
+  it("shrinks to the space left rather than running off the screen", async () => {
+    placeTrigger(150, 190);
+    vi.spyOn(window, "innerHeight", "get").mockReturnValue(360);
+    render();
+    await openDropdown();
+
+    // 360 - 190 - 4 - 8 below beats 150 - 4 - 8 above, and neither fits 208.
+    expect(screen.getByTestId("multiselect-panel").style.maxHeight).toBe("158px");
+  });
+});

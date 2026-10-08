@@ -1,3 +1,63 @@
+## v1.95.0 (2026-10-08)
+
+### Feat
+
+- **savings-goals**: investment goals can name the income that pays for them; switch a goal between cash and investing (#367)
+
+## v1.94.3 (2026-10-08)
+
+### Fix
+
+- **savings-goals**: an income-funded goal's progress is what it received, with unrepaid bills reported as owed (#366)
+
+## v1.94.2 (2026-09-27)
+
+### Fix
+
+- **savings-goals**: income-funded goals chart their income and take no free-cash claim; negative bars stack below zero (#364)
+
+## v1.94.1 (2026-09-26)
+
+### Fix
+
+- **savings-goals**: a goal with its own income holds exactly that income (#363)
+
+## v1.94.0 (2026-09-26)
+
+### Feat
+
+- **savings-goals**: goals with their own income borrow until it lands; fix the chart axis; simpler investment goals (#362)
+
+## v1.93.0 (2026-09-26)
+
+### Feat
+
+- **savings-goals**: investment goals filled by the net money invested, replacing investment backing (#361)
+
+## v1.92.0 (2026-09-26)
+
+### Feat
+
+- **savings-goals**: reorder restates history itself, with an instant, recalculating card (#360)
+
+## v1.91.2 (2026-09-26)
+
+### Fix
+
+- **savings-goals**: drop the lifetime "taken back" line from the goal card (#359)
+
+## v1.91.1 (2026-09-26)
+
+### Fix
+
+- **savings-goals**: stop clawing incoming contributions back out of their goal (#358)
+
+## v1.91.0 (2026-09-26)
+
+### Feat
+
+- **savings-goals**: pay for a project, yearly envelope or any category/tags from a goal with one link (#357)
+
 ## v1.90.0 (2026-09-26)
 
 ### Feat

@@ -5,6 +5,7 @@ import { X } from "lucide-react";
 import { useDemoMode } from "../../context/DemoModeContext";
 import { useBudgetAlertSettings } from "../../hooks/useBudgetAlertSettings";
 import { useConfirm, useNotify } from "../../context/DialogContext";
+import { useScrollLock } from "../../hooks/useScrollLock";
 import { backupApi, testingApi } from "../../services/api";
 import { useQueryKeys } from "../../hooks/useQueryKeys";
 import { qkPrefix } from "../../services/queryKeys";
@@ -42,6 +43,7 @@ export function SettingsPopup({
   const qk = useQueryKeys();
   const [restoringFile, setRestoringFile] = useState<string | null>(null);
   const [tab, setTab] = useState<"general" | "dashboard">("general");
+  useScrollLock(isOpen);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -121,7 +123,7 @@ export function SettingsPopup({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm animate-in fade-in duration-200"
+      className="modal-overlay fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm animate-in fade-in duration-200"
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
@@ -166,7 +168,7 @@ export function SettingsPopup({
         </div>
         </div>
 
-        <div className="flex-1 min-h-0 overflow-y-auto px-4 sm:px-6 pb-4 sm:pb-6">
+        <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-4 sm:px-6 pb-4 sm:pb-6">
         {tab === "dashboard" && <DashboardLayoutManager />}
 
         {tab === "general" && (

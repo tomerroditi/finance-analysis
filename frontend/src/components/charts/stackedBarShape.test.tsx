@@ -2,6 +2,8 @@ import { describe, it, expect } from "vitest";
 import { render } from "@testing-library/react";
 import { BarChart, Bar, Rectangle, XAxis, YAxis } from "recharts";
 import {
+  STACK_OFFSET,
+  stackAxis,
   stackEnds,
   stackSegmentRadius,
   roundedStackShape,
@@ -174,5 +176,103 @@ describe("stacked bar shape", () => {
       expect(d).toContain("M10,60L");
       expect(d).toContain("24A");
     });
+  });
+});
+
+describe("stackAxis", () => {
+  it("leaves a little headroom above the tallest column and labels round steps", () => {
+    const axis = stackAxis(
+      [
+        { month: "a", g1: 300_000, free: 110_000 },
+        { month: "b", g1: 20_000, free: 90_000 },
+      ],
+      ["g1", "free"],
+    );
+
+    expect(axis.domain[0]).toBe(0);
+    expect(axis.domain[1]).toBeCloseTo(430_500);
+    expect(axis.ticks).toEqual([0, 200_000, 400_000]);
+  });
+
+  it("gives a shallow dip headroom, not a whole empty step under zero", () => {
+    // A 40K withdrawal under a 415K column used to reserve -250K of plot.
+    const axis = stackAxis(
+      [
+        { month: "a", g1: 300_000, free: 115_000 },
+        { month: "b", g1: -40_000, free: 40_000 },
+      ],
+      ["g1", "free"],
+    );
+
+    expect(axis.domain[0]).toBeCloseTo(-46_000);
+    expect(axis.ticks[0]).toBe(0);
+  });
+
+  it("gives a deep dip its own round ticks", () => {
+    const axis = stackAxis(
+      [
+        { month: "a", g1: 300_000 },
+        { month: "b", g1: -250_000 },
+      ],
+      ["g1"],
+    );
+
+    expect(axis.domain[0]).toBeCloseTo(-287_500);
+    expect(axis.ticks).toEqual([-200_000, -100_000, 0, 100_000, 200_000, 300_000]);
+  });
+
+  it("only measures the series that are drawn", () => {
+    const rows = [{ month: "a", g1: 10_000, free: 400_000 }];
+
+    expect(stackAxis(rows, ["g1"]).domain[1]).toBeLessThan(20_000);
+  });
+
+  it("copes with nothing to draw", () => {
+    expect(stackAxis([{ month: "a", g1: 0 }], ["g1"])).toEqual({
+      domain: [0, 1],
+      ticks: [0],
+    });
+  });
+});
+
+describe("STACK_OFFSET", () => {
+  /** The vertical extent (top, bottom) of every bar a two-series chart draws. */
+  function extents(offset?: typeof STACK_OFFSET) {
+    const { container } = render(
+      <BarChart
+        width={300}
+        height={200}
+        data={[{ month: "2026-01", a: 1000, b: -400 }]}
+        stackOffset={offset}
+      >
+        <XAxis dataKey="month" />
+        <YAxis domain={[-500, 1100]} />
+        <Bar dataKey="a" stackId="s" fill="#f00" isAnimationActive={false} />
+        <Bar dataKey="b" stackId="s" fill="#0f0" isAnimationActive={false} />
+      </BarChart>,
+    );
+    return [...container.querySelectorAll("path")]
+      .map((p) => p.getAttribute("d") ?? "")
+      .filter((d) => d.startsWith("M"))
+      .map((d) => {
+        // A square Recharts bar is "M x,y h w v height h -w Z".
+        const y = Number(d.match(/^M\s*[-\d.]+,\s*([-\d.]+)/)?.[1]);
+        const height = Number(d.match(/v\s*([-\d.]+)/)?.[1]);
+        return { top: Math.min(y, y + height), bottom: Math.max(y, y + height) };
+      });
+  }
+
+  it("hangs a negative segment below zero instead of over the positive bar", () => {
+    const [positive, negative] = extents(STACK_OFFSET);
+
+    // The negative bar starts where the positive one does: at the zero line.
+    expect(negative.top).toBeCloseTo(positive.bottom, 0);
+    expect(negative.bottom).toBeGreaterThan(positive.bottom);
+  });
+
+  it("is needed: the default stacking draws it over the positive bar", () => {
+    const [positive, negative] = extents();
+
+    expect(negative.bottom).toBeLessThan(positive.bottom);
   });
 });

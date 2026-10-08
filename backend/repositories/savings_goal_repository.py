@@ -1,9 +1,11 @@
-"""Data access for savings goals: allocations, transaction links, investment earmarks."""
+"""Data access for savings goals: goals, allocations and transaction links."""
 
+from collections.abc import Iterator
+from contextlib import contextmanager
 from typing import Any
 
 import pandas as pd
-from sqlalchemy import delete, func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.orm import Session
 
@@ -12,7 +14,6 @@ from backend.models.savings_goal import (
     GOAL_STATUS_ACTIVE,
     SavingsGoal,
     SavingsGoalAllocation,
-    SavingsGoalInvestment,
     SavingsGoalLink,
 )
 from backend.repositories._sql import orm_rows_to_frame
@@ -28,6 +29,9 @@ GOAL_COLUMNS = [
     "target_date",
     "contribution_category",
     "contribution_tags",
+    "funding_category",
+    "funding_tags",
+    "kind",
     "status",
     "closed_month",
     "notes",
@@ -44,8 +48,6 @@ LINK_COLUMNS = [
     "link_type",
 ]
 
-BACKING_COLUMNS = ["id", "goal_id", "investment_id", "amount"]
-
 
 class SavingsGoalRepository:
     """Repository for ``savings_goals`` CRUD operations."""
@@ -59,6 +61,53 @@ class SavingsGoalRepository:
             SQLAlchemy session for database operations.
         """
         self.db = db
+        self._atomic_depth = 0
+        self._atomic_wrote = False
+
+    @contextmanager
+    def atomic(self) -> Iterator[None]:
+        """Group every write inside the block into one transaction.
+
+        Each write normally commits on its own. A rebuild is many of them — the
+        new priorities, deleting the history it restates, then one upsert per
+        (goal, month) — and committed one by one, a request running alongside
+        (another tab's reorder, a dashboard read topping up missing months)
+        could see the history deleted but not yet rewritten and fill it in
+        under the old order. Inside this block writes only flush, and the
+        block commits once at the end, so everyone else sees the old ledger or
+        the new one and never half of each. Any error rolls the whole block
+        back. Blocks nest; only the outermost one commits.
+
+        A block that wrote nothing does not commit at all. Every commit
+        discards the cross-request caches (``backend/utils/data_cache.py``),
+        and ``ensure_allocations`` opens a block on every read — most of which
+        find the ledger already current.
+
+        Yields
+        ------
+        None
+        """
+        if self._atomic_depth == 0:
+            self._atomic_wrote = False
+        self._atomic_depth += 1
+        try:
+            yield
+        except BaseException:
+            self._atomic_depth -= 1
+            if self._atomic_depth == 0 and self._atomic_wrote:
+                self.db.rollback()
+            raise
+        self._atomic_depth -= 1
+        if self._atomic_depth == 0 and self._atomic_wrote:
+            self.db.commit()
+
+    def _commit(self) -> None:
+        """Commit now, or only flush while an :meth:`atomic` block is open."""
+        if self._atomic_depth:
+            self._atomic_wrote = True
+            self.db.flush()
+        else:
+            self.db.commit()
 
     def get_all(self) -> pd.DataFrame:
         """Return all savings goals as a DataFrame (empty with no rows)."""
@@ -78,7 +127,7 @@ class SavingsGoalRepository:
         """Insert a new goal and return the persisted row."""
         goal = SavingsGoal(**fields)
         self.db.add(goal)
-        self.db.commit()
+        self._commit()
         self.db.refresh(goal)
         return goal
 
@@ -99,16 +148,12 @@ class SavingsGoalRepository:
             raise EntityNotFoundException(f"Savings goal {goal_id} not found")
         for key, value in fields.items():
             setattr(goal, key, value)
-        self.db.commit()
+        self._commit()
         self.db.refresh(goal)
         return goal
 
     def delete(self, goal_id: int) -> None:
-        """Delete a goal with its allocations, transaction links and earmarks.
-
-        The investment earmarks have to go too: an orphaned row would keep
-        consuming its holding's headroom, so a deleted goal would silently
-        block anyone else from ever earmarking that investment again.
+        """Delete a goal with its allocations and transaction links.
 
         Raises
         ------
@@ -124,11 +169,8 @@ class SavingsGoalRepository:
         self.db.query(SavingsGoalLink).filter(
             SavingsGoalLink.goal_id == goal_id
         ).delete()
-        self.db.query(SavingsGoalInvestment).filter(
-            SavingsGoalInvestment.goal_id == goal_id
-        ).delete()
         self.db.delete(goal)
-        self.db.commit()
+        self._commit()
 
     def set_priorities(self, ordered_ids: list[int]) -> None:
         """Rewrite the waterfall order from a list of goal ids, first funded first."""
@@ -137,7 +179,7 @@ class SavingsGoalRepository:
             goal = goals.get(goal_id)
             if goal:
                 goal.priority = position
-        self.db.commit()
+        self._commit()
 
     def get_allocations(self, goal_id: int | None = None) -> pd.DataFrame:
         """Return allocation rows, optionally scoped to a single goal."""
@@ -180,7 +222,7 @@ class SavingsGoalRepository:
             },
         )
         self.db.execute(stmt)
-        self.db.commit()
+        self._commit()
         self.db.expire_all()
         return self.db.execute(
             select(SavingsGoalAllocation).where(
@@ -208,7 +250,7 @@ class SavingsGoalRepository:
         for row in rows:
             if (row.year, row.month) >= (from_year, from_month):
                 self.db.delete(row)
-        self.db.commit()
+        self._commit()
 
     def get_links(self, goal_id: int | None = None) -> pd.DataFrame:
         """Return transaction links, optionally scoped to a single goal."""
@@ -255,7 +297,7 @@ class SavingsGoalRepository:
         else:
             link.goal_id = goal_id
             link.link_type = link_type
-        self.db.commit()
+        self._commit()
         self.db.refresh(link)
         return link
 
@@ -265,79 +307,57 @@ class SavingsGoalRepository:
         if not link:
             raise EntityNotFoundException(f"Savings goal link {link_id} not found")
         self.db.delete(link)
-        self.db.commit()
+        self._commit()
 
-    def get_backings(self, goal_id: int | None = None) -> pd.DataFrame:
-        """Return investment earmarks, optionally scoped to a single goal.
+    def delete_links_for_goal(self, goal_id: int) -> None:
+        """Delete every transaction link a goal has."""
+        self.db.query(SavingsGoalLink).filter(
+            SavingsGoalLink.goal_id == goal_id
+        ).delete()
+        self._commit()
 
-        Ordered by id so that when a holding loses value, the earlier earmark
-        keeps its claim and the later one absorbs the shortfall.
-        """
-        stmt = select(SavingsGoalInvestment).order_by(SavingsGoalInvestment.id)
-        if goal_id is not None:
-            stmt = stmt.where(SavingsGoalInvestment.goal_id == goal_id)
-        return orm_rows_to_frame(self.db.execute(stmt).scalars().all(), BACKING_COLUMNS)
+    def set_utilization_rule(
+        self, goal_id: int, category: str | None, tags: str | None
+    ) -> None:
+        """Make ``goal_id`` the goal that pays for ``(category, tags)``.
 
-    def get_backing(
-        self, goal_id: int, investment_id: int
-    ) -> SavingsGoalInvestment | None:
-        """Return one goal's earmark against one investment, or None."""
-        return self.db.execute(
-            select(SavingsGoalInvestment).where(
-                SavingsGoalInvestment.goal_id == goal_id,
-                SavingsGoalInvestment.investment_id == investment_id,
-            )
-        ).scalar_one_or_none()
-
-    def upsert_backing(
-        self, goal_id: int, investment_id: int, amount: float | None
-    ) -> SavingsGoalInvestment:
-        """Earmark an investment for a goal, replacing any existing earmark."""
-        backing = self.get_backing(goal_id, investment_id)
-        if backing is None:
-            backing = SavingsGoalInvestment(
-                goal_id=goal_id, investment_id=investment_id, amount=amount
-            )
-            self.db.add(backing)
-        else:
-            backing.amount = amount
-        self.db.commit()
-        self.db.refresh(backing)
-        return backing
-
-    def delete_backing(self, backing_id: int) -> None:
-        """Delete an investment earmark; raise ``EntityNotFoundException`` if missing."""
-        backing = self.db.get(SavingsGoalInvestment, backing_id)
-        if not backing:
-            raise EntityNotFoundException(
-                f"Savings goal investment {backing_id} not found"
-            )
-        self.db.delete(backing)
-        self.db.commit()
-
-    def delete_backings_for_investment(self, investment_id: int) -> int:
-        """Delete every earmark against one investment.
-
-        Called when the investment itself is removed, so no goal keeps a
-        claim on a holding that no longer exists.
+        Any other goal holding the very same rule lets go of it in the same
+        commit: the user just moved that spending to this goal, and two goals
+        claiming it would leave the choice to waterfall order instead.
 
         Parameters
         ----------
-        investment_id : int
-            The ``investments.id`` being removed.
+        goal_id : int
+            Goal that pays for the spending.
+        category : str or None
+            Category the rule matches; ``None`` clears the goal's rule.
+        tags : str or None
+            Semicolon-separated tags narrowing ``category``; ``None`` covers
+            every tag.
 
-        Returns
-        -------
-        int
-            Number of earmark rows deleted.
+        Raises
+        ------
+        EntityNotFoundException
+            If no goal with ``goal_id`` exists.
         """
-        result = self.db.execute(
-            delete(SavingsGoalInvestment).where(
-                SavingsGoalInvestment.investment_id == investment_id
+        goal = self.db.get(SavingsGoal, goal_id)
+        if not goal:
+            raise EntityNotFoundException(f"Savings goal {goal_id} not found")
+        if category is not None:
+            self.db.execute(
+                update(SavingsGoal)
+                .where(SavingsGoal.utilization_category == category)
+                .where(
+                    SavingsGoal.utilization_tags.is_(None)
+                    if tags is None
+                    else SavingsGoal.utilization_tags == tags
+                )
+                .where(SavingsGoal.id != goal_id)
+                .values(utilization_category=None, utilization_tags=None)
             )
-        )
-        self.db.commit()
-        return result.rowcount
+        goal.utilization_category = category
+        goal.utilization_tags = tags if category is not None else None
+        self._commit()
 
     def active_goals(self) -> list[SavingsGoal]:
         """Return active goals in waterfall order (priority ascending)."""

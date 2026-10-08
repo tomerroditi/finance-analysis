@@ -1,5 +1,10 @@
-import { useEffect, useState } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useState } from "react";
+import {
+  useQuery,
+  useMutation,
+  useQueryClient,
+  useIsMutating,
+} from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import {
   Target,
@@ -9,12 +14,10 @@ import {
   Check,
   ChevronUp,
   ChevronDown,
-  History,
+  Loader2,
   Lock,
-  RotateCcw,
   Wallet,
-  Landmark,
-  X,
+  TrendingUp,
 } from "lucide-react";
 import {
   ResponsiveContainer,
@@ -30,13 +33,19 @@ import {
   savingsGoalsApi,
   type SavingsGoal,
   type SavingsGoalInput,
-  type SavingsGoalRebuildChange,
+  type SavingsGoalKind,
   type SavingsGoalFreeCash,
-  type SavingsGoalInvestment,
 } from "../../services/api";
 import { useQueryKeys } from "../../hooks/useQueryKeys";
 import { useScrollCap } from "../../hooks/useScrollCap";
-import { stackEnds, roundedStackShape } from "../charts/stackedBarShape";
+import { GoalAutoLinkField, InvestmentTagsField } from "./GoalAutoLinkField";
+import { joinRuleTags, splitRuleTags } from "../../utils/goalRuleTags";
+import {
+  STACK_OFFSET,
+  stackAxis,
+  stackEnds,
+  roundedStackShape,
+} from "../charts/stackedBarShape";
 import { qkPrefix } from "../../services/queryKeys";
 import { useConfirm, useNotify } from "../../context/DialogContext";
 import { Modal } from "../common/Modal";
@@ -75,6 +84,16 @@ const LIST_CAP_PX = 416;
 /** A goal row, roughly — the least overflow worth capping for (see the hook). */
 const LIST_CAP_SLACK_PX = 120;
 
+/**
+ * Every reorder shares this key and scope. The scope makes the server calls
+ * run one after another, so rapid clicks cannot land out of order; the key
+ * lets the card ask whether any reorder is still in flight.
+ */
+const REORDER_KEY = ["savings-goals", "reorder"] as const;
+
+/** Figures awaiting the rebuilt ledger pulse faintly rather than vanish. */
+const RECALCULATING_CLASS = "animate-pulse opacity-50 transition-opacity";
+
 
 /**
  * Dashboard savings-goals panel.
@@ -82,16 +101,17 @@ const LIST_CAP_SLACK_PX = 120;
  * Goals fill themselves from each month's surplus in priority order, so the
  * list is a waterfall: the top goal is funded first and spills what it cannot
  * take (its target, or its monthly cap) down to the next one. Reordering
- * applies to future months only — restating history is the explicit
- * "redistribute" action, which previews the diff before committing.
+ * restates the whole history under the new order: the rows move the moment
+ * an arrow is clicked, and their figures show as recalculating until the
+ * server's rebuilt ledger arrives.
  *
  * Below the waterfall sits the free-cash pool: the tracked money no goal has
  * earmarked. It is the buffer a month of overspending drains first, and only
  * once it is empty does a deficit reach back into the goals.
  *
- * A goal can also be backed by an investment the user means to sell. That
- * backing shows on the row but is deliberately not cash: it never enters the
- * pool and a deficit can never take it back.
+ * An investment goal sits in the same list but is filled only by the money
+ * moved into its investments: it takes no part in the waterfall and never
+ * touches the pool.
  */
 export function GoalsSection() {
   const { t } = useTranslation();
@@ -100,8 +120,8 @@ export function GoalsSection() {
   const confirm = useConfirm();
   const notify = useNotify();
   const [editing, setEditing] = useState<SavingsGoal | "new" | null>(null);
-  const [backing, setBacking] = useState<SavingsGoal | null>(null);
-  const [redistributing, setRedistributing] = useState(false);
+
+  const recalculating = useIsMutating({ mutationKey: REORDER_KEY }) > 0;
 
   const { data, isLoading } = useQuery({
     queryKey: qk.savingsGoals.all(),
@@ -109,6 +129,12 @@ export function GoalsSection() {
       const res = await savingsGoalsApi.getAll();
       return res.data;
     },
+    // Held while reorders are queued. A refetch in between — an earlier
+    // reorder's invalidation, or the app-wide sweep after it — answers with
+    // an order the user has already moved past and snaps the rows back. A
+    // disabled query keeps its data and ignores invalidation, then refetches
+    // once when the last reorder has landed.
+    enabled: !recalculating,
   });
 
   const { data: pool } = useQuery({
@@ -128,8 +154,42 @@ export function GoalsSection() {
   });
 
   const reorderMutation = useMutation({
+    mutationKey: REORDER_KEY,
+    scope: { id: REORDER_KEY.join(":") },
     mutationFn: (goalIds: number[]) => savingsGoalsApi.reorder(goalIds),
-    onSuccess: invalidate,
+    // Runs at click time even while an earlier reorder is still queued, so
+    // the rows move immediately and each click builds on the last one.
+    onMutate: async (goalIds: number[]) => {
+      const key = qk.savingsGoals.all();
+      await queryClient.cancelQueries({ queryKey: key });
+      const previous = queryClient.getQueryData<SavingsGoal[]>(key);
+      if (previous) {
+        const byId = new Map(previous.map((g) => [g.id, g]));
+        queryClient.setQueryData<SavingsGoal[]>(
+          key,
+          goalIds.flatMap((id, priority) => {
+            const goal = byId.get(id);
+            return goal ? [{ ...goal, priority }] : [];
+          }),
+        );
+      }
+      return { previous };
+    },
+    // Only the last reorder in the queue may write: an earlier one's answer
+    // is for an order the user has already moved past.
+    onSuccess: (res) => {
+      if (queryClient.isMutating({ mutationKey: REORDER_KEY }) <= 1) {
+        queryClient.setQueryData(qk.savingsGoals.all(), res.data);
+      }
+    },
+    onError: (_err, _ids, context) => {
+      if (context?.previous && queryClient.isMutating({ mutationKey: REORDER_KEY }) <= 1) {
+        queryClient.setQueryData(qk.savingsGoals.all(), context.previous);
+      }
+    },
+    // Awaited, so "recalculating" lasts until the free-cash pool and the
+    // history have caught up with the rebuilt ledger too.
+    onSettled: () => invalidate(),
   });
 
   const claimMutation = useMutation({
@@ -187,7 +247,7 @@ export function GoalsSection() {
   const goals = data ?? [];
 
   // Measured rather than counted: rows differ in height (a goal with a monthly
-  // figure, an investment backing or a clawback note runs taller than a plain
+  // figure, a spending line or a clawback note runs taller than a plain
   // one), and what matters is how much a cap would actually hide. `data`, not
   // `goals`: the query's array is stable between renders, while the `?? []`
   // fallback is a fresh one every time.
@@ -212,15 +272,14 @@ export function GoalsSection() {
           <p className="text-sm md:text-base font-bold">{t("dashboard.goals.title")}</p>
         </div>
         <div className="flex items-center gap-3">
-          {goals.length > 1 && (
-            <button
-              onClick={() => setRedistributing(true)}
-              className="flex items-center gap-1 text-xs md:text-sm font-medium text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
-              title={t("dashboard.goals.redistributeHint")}
+          {recalculating && (
+            <span
+              role="status"
+              className="flex items-center gap-1 text-xs md:text-sm text-[var(--text-muted)]"
             >
-              <History size={14} />
-              {t("dashboard.goals.redistribute")}
-            </button>
+              <Loader2 size={14} className="animate-spin" />
+              {t("dashboard.goals.recalculating")}
+            </span>
           )}
           <button
             onClick={() => setEditing("new")}
@@ -258,12 +317,12 @@ export function GoalsSection() {
               key={goal.id}
               goal={goal}
               rank={index + 1}
+              recalculating={recalculating}
               canMoveUp={index > 0}
               canMoveDown={index < goals.length - 1}
               onMoveUp={() => move(index, -1)}
               onMoveDown={() => move(index, 1)}
               onEdit={() => setEditing(goal)}
-              onBack={() => setBacking(goal)}
               onClaim={() => void claimFreeCash(goal)}
               onDelete={async () => {
                 const ok = await confirm({
@@ -279,7 +338,7 @@ export function GoalsSection() {
         </div>
       )}
 
-      {!!pool?.has_goals && <FreeCashRow pool={pool} />}
+      {!!pool?.has_goals && <FreeCashRow pool={pool} recalculating={recalculating} />}
 
       {goals.length > 0 && <AllocationHistory />}
 
@@ -288,14 +347,6 @@ export function GoalsSection() {
           goal={editing === "new" ? null : editing}
           onClose={() => setEditing(null)}
         />
-      )}
-
-      {backing !== null && (
-        <InvestmentBackingModal goal={backing} onClose={() => setBacking(null)} />
-      )}
-
-      {redistributing && (
-        <RedistributeModal onClose={() => setRedistributing(false)} />
       )}
     </div>
   );
@@ -308,7 +359,13 @@ export function GoalsSection() {
  * purpose. It exists so a deficit month has somewhere to land before the
  * engine starts taking money back out of the goals themselves.
  */
-function FreeCashRow({ pool }: { pool: SavingsGoalFreeCash }) {
+function FreeCashRow({
+  pool,
+  recalculating,
+}: {
+  pool: SavingsGoalFreeCash;
+  recalculating: boolean;
+}) {
   const { t } = useTranslation();
 
   return (
@@ -330,7 +387,10 @@ function FreeCashRow({ pool }: { pool: SavingsGoalFreeCash }) {
             </p>
           </div>
         </div>
-        <span className="text-sm md:text-base font-bold shrink-0" dir="ltr">
+        <span
+          className={`text-sm md:text-base font-bold shrink-0 ${recalculating ? RECALCULATING_CLASS : ""}`}
+          dir="ltr"
+        >
           {formatCurrency(pool.free_cash)}
         </span>
       </div>
@@ -441,6 +501,7 @@ function AllocationHistory() {
   // visible stack, and so does the zero line.
   const visible = keys.filter((key) => !hidden.has(key));
   const ends = stackEnds(rows, visible, "month");
+  const yAxis = stackAxis(rows, visible);
   // A segment under the line is money a deficit month took back out of a goal.
   const hasDeficit = rows.some((row) =>
     visible.some((key) => typeof row[key] === "number" && (row[key] as number) < 0),
@@ -550,6 +611,7 @@ function AllocationHistory() {
                       data={rows}
                       margin={{ top: 4, bottom: 0, left: 0, right: 4 }}
                       barCategoryGap="22%"
+                      stackOffset={STACK_OFFSET}
                     >
                       <defs>
                         {series.map((goal) => (
@@ -599,7 +661,9 @@ function AllocationHistory() {
                       <YAxis
                         {...AXIS_DEFAULTS}
                         tickFormatter={formatAxisNumber}
-                        tickCount={4}
+                        domain={yAxis.domain}
+                        ticks={yAxis.ticks}
+                        allowDataOverflow
                         width={44}
                       />
                       {/* Only drawn when a deficit actually pulled a bar under the
@@ -688,27 +752,33 @@ function monthDate(month: string): Date {
 function GoalRow({
   goal,
   rank,
+  recalculating,
   canMoveUp,
   canMoveDown,
   onMoveUp,
   onMoveDown,
   onEdit,
-  onBack,
   onClaim,
   onDelete,
 }: {
   goal: SavingsGoal;
   rank: number;
+  recalculating: boolean;
   canMoveUp: boolean;
   canMoveDown: boolean;
   onMoveUp: () => void;
   onMoveDown: () => void;
   onEdit: () => void;
-  onBack: () => void;
   onClaim: () => void;
   onDelete: () => void;
 }) {
   const { t } = useTranslation();
+  const isInvestment = goal.kind === "investment";
+  // A cash goal's negative month is a clawback, which the row does not
+  // itemize; an investment goal's is a withdrawal, which it does.
+  const showThisMonth = isInvestment
+    ? goal.this_month_allocation !== 0
+    : goal.this_month_allocation > 0;
   const barColor = goal.is_closed
     ? "from-[var(--text-muted)] to-[var(--text-muted)]"
     : goal.is_achieved
@@ -734,6 +804,13 @@ function GoalRow({
           {!goal.is_closed && !!goal.is_achieved && (
             <Check size={14} className="text-emerald-400 shrink-0" />
           )}
+          {isInvestment && (
+            <TrendingUp
+              size={13}
+              className="text-[var(--primary)] shrink-0"
+              aria-label={t("dashboard.goals.kindInvestment")}
+            />
+          )}
           <p className="font-semibold text-sm truncate" dir="auto" title={goal.name}>{goal.name}</p>
         </div>
         <div className="flex items-center gap-0.5 shrink-0">
@@ -753,19 +830,12 @@ function GoalRow({
           >
             <ChevronDown size={14} />
           </button>
-          <button
-            onClick={onBack}
-            aria-label={t("dashboard.goals.backWithInvestment")}
-            className={`p-1.5 rounded-lg hover:bg-[var(--surface-light)] transition-colors ${
-              goal.investment_backed > 0
-                ? "text-[var(--primary)]"
-                : "text-[var(--text-muted)] hover:text-[var(--text-primary)]"
-            }`}
-          >
-            <Landmark size={14} />
-          </button>
-          {/* A closed goal's history is frozen, so there is nothing to restate. */}
-          {!goal.is_closed && (
+          {/* A closed goal's history is frozen, so there is nothing to restate;
+              a goal filled by its own income (an investment goal, or a
+              "saved into" rule) holds exactly that income, never free cash —
+              claiming free cash into one was how a wedding fund stopped
+              using its gifts. */}
+          {!goal.is_closed && !isInvestment && !goal.contribution_category && (
             <button
               onClick={onClaim}
               aria-label={t("dashboard.goals.claimAriaLabel")}
@@ -783,60 +853,64 @@ function GoalRow({
           </button>
         </div>
       </div>
-      <div className="flex items-baseline justify-between gap-2 mb-1.5">
-        <span dir="ltr" className="text-sm md:text-base font-bold tabular-nums">
-          {formatCurrency(goal.funded)}
-          <span className="text-[var(--text-muted)] text-xs md:text-sm font-normal">
-            {" / "}
-            {formatCurrency(goal.target_amount)}
+      <div
+        className={recalculating ? RECALCULATING_CLASS : undefined}
+        aria-busy={recalculating || undefined}
+        data-testid="goal-figures"
+      >
+        <div className="flex items-baseline justify-between gap-2 mb-1.5">
+          <span dir="ltr" className="text-sm md:text-base font-bold tabular-nums">
+            {formatCurrency(goal.funded)}
+            <span className="text-[var(--text-muted)] text-xs md:text-sm font-normal">
+              {" / "}
+              {formatCurrency(goal.target_amount)}
+            </span>
           </span>
-        </span>
-        <span dir="ltr" className="text-[10px] md:text-xs text-[var(--text-muted)] tabular-nums shrink-0">
-          {goal.progress_pct}%
-        </span>
-      </div>
-      <div className="w-full bg-[var(--surface-light)] rounded-full h-2 overflow-hidden">
-        <div className={`h-2 rounded-full bg-gradient-to-r ${barColor} transition-all duration-500`} style={{ width: `${goal.progress_pct}%` }} />
-      </div>
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1.5 text-[10px] md:text-xs text-[var(--text-muted)]">
-        <GoalStatusLine goal={goal} />
-      </div>
-      {(goal.this_month_allocation > 0 ||
-        goal.utilized > 0 ||
-        goal.clawed_back > 0 ||
-        goal.investment_backed > 0) && (
-        <div className="flex flex-wrap gap-x-3 gap-y-1 mt-1.5 text-[10px] md:text-xs text-[var(--text-muted)]">
-          {goal.this_month_allocation > 0 && (
-            <span>
-              {t("dashboard.goals.thisMonth", {
-                amount: formatCurrency(goal.this_month_allocation),
-              })}
-            </span>
-          )}
-          {goal.utilized > 0 && (
-            <span>
-              {t("dashboard.goals.utilized", {
-                spent: formatCurrency(goal.utilized),
-                available: formatCurrency(goal.available),
-              })}
-            </span>
-          )}
-          {goal.clawed_back > 0 && (
-            <span className="text-amber-400">
-              {t("dashboard.goals.clawedBack", {
-                amount: formatCurrency(goal.clawed_back),
-              })}
-            </span>
-          )}
-          {goal.investment_backed > 0 && (
-            <span className="text-[var(--primary)]">
-              {t("dashboard.goals.investmentBacked", {
-                amount: formatCurrency(goal.investment_backed),
-              })}
-            </span>
-          )}
+          <span dir="ltr" className="text-[10px] md:text-xs text-[var(--text-muted)] tabular-nums shrink-0">
+            {goal.progress_pct}%
+          </span>
         </div>
-      )}
+        <div className="w-full bg-[var(--surface-light)] rounded-full h-2 overflow-hidden">
+          <div className={`h-2 rounded-full bg-gradient-to-r ${barColor} transition-all duration-500`} style={{ width: `${goal.progress_pct}%` }} />
+        </div>
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1.5 text-[10px] md:text-xs text-[var(--text-muted)]">
+          <GoalStatusLine goal={goal} />
+        </div>
+        {(showThisMonth || goal.utilized > 0 || goal.owed > 0 || goal.to_invest > 0) && (
+          <div className="flex flex-wrap gap-x-3 gap-y-1 mt-1.5 text-[10px] md:text-xs text-[var(--text-muted)]">
+            {showThisMonth && (
+              <span>
+                {t(
+                  !isInvestment
+                    ? "dashboard.goals.thisMonth"
+                    : goal.this_month_allocation > 0
+                      ? "dashboard.goals.investedThisMonth"
+                      : "dashboard.goals.withdrawnThisMonth",
+                  { amount: formatCurrency(Math.abs(goal.this_month_allocation)) },
+                )}
+              </span>
+            )}
+            {goal.utilized > 0 && (
+              <span>
+                {t("dashboard.goals.utilized", {
+                  spent: formatCurrency(goal.utilized),
+                  available: formatCurrency(goal.available),
+                })}
+              </span>
+            )}
+            {goal.owed > 0 && (
+              <span>
+                {t("dashboard.goals.owed", { amount: formatCurrency(goal.owed) })}
+              </span>
+            )}
+            {goal.to_invest > 0 && (
+              <span>
+                {t("dashboard.goals.toInvest", { amount: formatCurrency(goal.to_invest) })}
+              </span>
+            )}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -864,292 +938,6 @@ function GoalStatusLine({ goal }: { goal: SavingsGoal }) {
   return <span>{t("dashboard.goals.remaining", { amount: formatCurrency(goal.remaining) })}</span>;
 }
 
-/**
- * Preview-then-commit for restating allocation history.
- *
- * A dry run is fetched first so the user sees exactly which goal gains and
- * which loses before anything is written. Closed goals never appear — their
- * allocations are frozen and cannot be reclaimed.
- */
-function RedistributeModal({ onClose }: { onClose: () => void }) {
-  const { t } = useTranslation();
-  const queryClient = useQueryClient();
-  const [changes, setChanges] = useState<SavingsGoalRebuildChange[] | null>(null);
-
-  // The preview is a POST that changes nothing, but it must NOT be a query:
-  // its key would sit under the `savings-goals` prefix, so every goal mutation
-  // would re-trigger it (three round-trips per modal open, measured), and the
-  // IndexedDB persister would cache a read-only POST — the exact anti-pattern
-  // `.claude/rules/frontend_pwa.md` warns about. As a mutation it runs once,
-  // on open, and leaves no cache entry to invalidate or exclude.
-  const preview = useMutation({
-    mutationFn: () => savingsGoalsApi.rebuild(null, true),
-    onSuccess: (res) => setChanges(res.data.changes),
-  });
-  const { mutate: loadPreview } = preview;
-
-  useEffect(() => {
-    loadPreview();
-  }, [loadPreview]);
-
-  const commit = useMutation({
-    mutationFn: () => savingsGoalsApi.rebuild(null, false),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: qkPrefix.savingsGoals });
-      onClose();
-    },
-  });
-
-  const moved = (changes ?? []).filter((c) => c.delta !== 0);
-
-  return (
-    <Modal
-      isOpen
-      onClose={onClose}
-      title={t("dashboard.goals.redistributeTitle")}
-      titleIcon={<RotateCcw size={18} />}
-      maxWidth="md"
-    >
-      <div className="space-y-4 p-4 md:p-6">
-        <p className="text-xs text-[var(--text-muted)]">
-          {t("dashboard.goals.redistributeExplainer")}
-        </p>
-
-        {preview.isPending ? (
-          <Skeleton variant="card" className="h-24" />
-        ) : moved.length === 0 ? (
-          <p className="text-sm text-[var(--text-muted)] py-4 text-center">
-            {t("dashboard.goals.redistributeNoChange")}
-          </p>
-        ) : (
-          <div className="space-y-2">
-            {moved.map((change) => (
-              <div
-                key={change.goal_id}
-                className="flex items-center justify-between gap-2 text-sm border border-[var(--surface-light)] rounded-lg px-3 py-2"
-              >
-                <span className="truncate" dir="auto">{change.name}</span>
-                <span dir="ltr" className="tabular-nums shrink-0">
-                  <span className="text-[var(--text-muted)]">{formatCurrency(change.before)}</span>
-                  {" → "}
-                  <span className="font-semibold">{formatCurrency(change.after)}</span>
-                  <span className={change.delta > 0 ? "text-emerald-400 ms-2" : "text-rose-400 ms-2"}>
-                    {change.delta > 0 ? "+" : ""}
-                    {formatCurrency(change.delta)}
-                  </span>
-                </span>
-              </div>
-            ))}
-          </div>
-        )}
-
-        <div className="flex justify-end gap-2 pt-2">
-          <button onClick={onClose} className="px-4 py-2 rounded-lg text-sm font-medium text-[var(--text-muted)] hover:bg-[var(--surface-light)] transition-colors">
-            {t("common.cancel")}
-          </button>
-          <button
-            onClick={() => commit.mutate()}
-            disabled={moved.length === 0 || commit.isPending}
-            className="px-4 py-2 rounded-lg text-sm font-bold bg-[var(--primary)] text-white disabled:opacity-50 hover:opacity-90 transition-opacity"
-          >
-            {t("dashboard.goals.redistributeConfirm")}
-          </button>
-        </div>
-      </div>
-    </Modal>
-  );
-}
-
-/**
- * Earmark investment holdings against one goal.
- *
- * Backing a goal with a holding the user already means to sell (bonds for a
- * car) lets the goal show honest progress without pretending the money is in
- * the bank. Amounts are optional: leaving one blank earmarks whatever is left
- * of the holding, so the goal tracks its value instead of a typed-in number.
- *
- * Earmarks are their own resources rather than fields on the goal, so this
- * mutates immediately instead of staging behind a Save — there is no
- * half-finished state for the user to be in, unlike a multi-field editor.
- */
-function InvestmentBackingModal({
-  goal,
-  onClose,
-}: {
-  goal: SavingsGoal;
-  onClose: () => void;
-}) {
-  const { t } = useTranslation();
-  const qk = useQueryKeys();
-  const queryClient = useQueryClient();
-  const [investmentId, setInvestmentId] = useState("");
-  const [amount, setAmount] = useState("");
-
-  const { data: backings } = useQuery({
-    queryKey: qk.savingsGoals.investments(goal.id),
-    queryFn: async () => (await savingsGoalsApi.getInvestments(goal.id)).data,
-  });
-
-  const { data: available } = useQuery({
-    queryKey: qk.savingsGoals.availableInvestments(),
-    queryFn: async () => (await savingsGoalsApi.getAvailableInvestments()).data,
-  });
-
-  const invalidate = () =>
-    queryClient.invalidateQueries({ queryKey: qkPrefix.savingsGoals });
-
-  const link = useMutation({
-    mutationFn: (payload: { investment_id: number; amount?: number | null }) =>
-      savingsGoalsApi.linkInvestment(goal.id, payload),
-    onSuccess: () => {
-      setInvestmentId("");
-      setAmount("");
-      invalidate();
-    },
-  });
-
-  const unlink = useMutation({
-    mutationFn: (backingId: number) => savingsGoalsApi.unlinkInvestment(backingId),
-    onSuccess: invalidate,
-  });
-
-  const rows = backings ?? [];
-  const backed = new Set(rows.map((row) => row.investment_id));
-  // A holding already earmarked by this goal, or fully claimed elsewhere, has
-  // nothing left to offer here.
-  const options = (available ?? []).filter(
-    (option) => !backed.has(option.id) && option.available > 0,
-  );
-
-  const field =
-    "w-full bg-[var(--surface-light)] border border-[var(--surface-light)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[var(--primary)]";
-  const label = "block text-xs font-medium text-[var(--text-muted)] mb-1";
-
-  return (
-    <Modal
-      isOpen
-      onClose={onClose}
-      title={t("dashboard.goals.backingTitle", { name: goal.name })}
-      titleIcon={<Landmark size={18} />}
-      maxWidth="md"
-    >
-      <div className="space-y-4 p-4 md:p-6">
-        <p className="text-xs text-[var(--text-muted)]">
-          {t("dashboard.goals.backingExplainer")}
-        </p>
-
-        {rows.length > 0 && (
-          <div className="space-y-2">
-            {rows.map((row) => (
-              <BackingRow
-                key={row.id}
-                row={row}
-                onRemove={() => unlink.mutate(row.id)}
-              />
-            ))}
-          </div>
-        )}
-
-        <div className="border-t border-[var(--surface-light)] pt-4 space-y-3">
-          <div>
-            <label className={label} htmlFor="backing-investment">
-              {t("dashboard.goals.backingPickLabel")}
-            </label>
-            <select
-              id="backing-investment"
-              value={investmentId}
-              onChange={(e) => setInvestmentId(e.target.value)}
-              className={field}
-            >
-              <option value="">{t("dashboard.goals.backingPickPlaceholder")}</option>
-              {options.map((option) => (
-                <option key={option.id} value={option.id}>
-                  {option.name} · {formatCurrency(option.available)}
-                </option>
-              ))}
-            </select>
-            {options.length === 0 && (
-              <p className="text-[10px] text-[var(--text-muted)] mt-1">
-                {t("dashboard.goals.backingNoneAvailable")}
-              </p>
-            )}
-          </div>
-          <div>
-            <label className={label} htmlFor="backing-amount">
-              {t("dashboard.goals.backingAmountLabel")}
-            </label>
-            <input
-              id="backing-amount"
-              type="number"
-              inputMode="decimal"
-              value={amount}
-              onChange={(e) => setAmount(e.target.value)}
-              placeholder={t("dashboard.goals.backingAmountPlaceholder")}
-              className={field}
-              dir="ltr"
-            />
-            <p className="text-[10px] text-[var(--text-muted)] mt-1">
-              {t("dashboard.goals.backingAmountHint")}
-            </p>
-          </div>
-          {!!link.isError && (
-            <p className="text-xs text-rose-400">
-              {t("dashboard.goals.backingFailed")}
-            </p>
-          )}
-          <button
-            onClick={() =>
-              link.mutate({
-                investment_id: Number(investmentId),
-                amount: amount.trim() === "" ? null : Number(amount),
-              })
-            }
-            disabled={!investmentId || link.isPending}
-            className="w-full bg-[var(--primary)] text-white rounded-lg px-4 py-2 text-sm font-medium disabled:opacity-40 transition-opacity"
-          >
-            {t("dashboard.goals.backingAdd")}
-          </button>
-        </div>
-      </div>
-    </Modal>
-  );
-}
-
-/** One earmark: which holding, how much of it, and a release button. */
-function BackingRow({
-  row,
-  onRemove,
-}: {
-  row: SavingsGoalInvestment;
-  onRemove: () => void;
-}) {
-  const { t } = useTranslation();
-
-  return (
-    <div className="flex items-center justify-between gap-2 border border-[var(--surface-light)] rounded-lg px-3 py-2">
-      <div className="min-w-0">
-        <p className="text-sm truncate" dir="auto" title={row.investment_name ?? ""}>
-          {row.investment_name}
-        </p>
-        <p className="text-[10px] text-[var(--text-muted)]">
-          {row.amount == null
-            ? t("dashboard.goals.backingWhole")
-            : t("dashboard.goals.backingPartial", {
-                amount: formatCurrency(row.amount),
-              })}
-        </p>
-      </div>
-      <button
-        onClick={onRemove}
-        aria-label={t("dashboard.goals.backingRemove")}
-        className="p-1.5 rounded-lg text-[var(--text-muted)] hover:text-rose-400 hover:bg-[var(--surface-light)] transition-colors shrink-0"
-      >
-        <X size={14} />
-      </button>
-    </div>
-  );
-}
-
 /** `YYYY-MM` for the current month — the start a goal gets when none is set. */
 function currentMonthKey(): string {
   const today = new Date();
@@ -1164,12 +952,48 @@ function monthKeyLabel(month: string): string {
 function GoalEditorModal({ goal, onClose }: { goal: SavingsGoal | null; onClose: () => void }) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
+  const [kind, setKind] = useState<SavingsGoalKind>(goal?.kind ?? "cash");
+  const isInvestment = kind === "investment";
   const [name, setName] = useState(goal?.name ?? "");
   const [targetAmount, setTargetAmount] = useState(goal ? String(goal.target_amount) : "");
   const [openingBalance, setOpeningBalance] = useState(goal ? String(goal.opening_balance) : "0");
   const [monthlyCap, setMonthlyCap] = useState(goal?.monthly_cap != null ? String(goal.monthly_cap) : "");
   const [startMonth, setStartMonth] = useState(goal?.start_month ?? "");
   const [targetDate, setTargetDate] = useState(goal?.target_date ?? "");
+  const [spendRule, setSpendRule] = useState({
+    category: goal?.utilization_category ?? "",
+    tags: splitRuleTags(goal?.utilization_tags),
+  });
+  const [saveRule, setSaveRule] = useState({
+    category: goal?.contribution_category ?? "",
+    tags: splitRuleTags(goal?.contribution_tags),
+  });
+  // An investment goal's optional income source: transfers are paid from it
+  // before free cash.
+  const [fundRule, setFundRule] = useState({
+    category: goal?.funding_category ?? "",
+    tags: splitRuleTags(goal?.funding_tags),
+  });
+  const originalKind = goal?.kind ?? "cash";
+  const kindChanged = !!goal && kind !== originalKind;
+  /**
+   * Switch between saving cash and investing. The rules of one kind mean
+   * nothing to the other (an investment goal's "Investments" rule would be a
+   * saved-into rule on a cash goal), so they start empty on the new kind and
+   * come back as they were on the original one.
+   */
+  const changeKind = (next: SavingsGoalKind) => {
+    setKind(next);
+    const back = next === originalKind;
+    setSaveRule({
+      category: back ? goal?.contribution_category ?? "" : "",
+      tags: back ? splitRuleTags(goal?.contribution_tags) : [],
+    });
+    setFundRule({
+      category: back ? goal?.funding_category ?? "" : "",
+      tags: back ? splitRuleTags(goal?.funding_tags) : [],
+    });
+  };
   const qk = useQueryKeys();
 
   const effectiveStart = startMonth || currentMonthKey();
@@ -1179,12 +1003,15 @@ function GoalEditorModal({ goal, onClose }: { goal: SavingsGoal | null; onClose:
     queryKey: qk.savingsGoals.freeCashBefore(effectiveStart, goal?.id),
     queryFn: async () =>
       (await savingsGoalsApi.getFreeCashBefore(effectiveStart, goal?.id)).data,
+    // Only a cash goal can take over free cash.
+    enabled: !isInvestment,
   });
 
   // Stored months keep their rows, so an opening balance that moves without a
   // restate leaves history computed against the old pool — a later deficit
   // month would then take the difference back out of the wrong goal.
-  const openingChanged = (Number(openingBalance) || 0) !== (goal?.opening_balance ?? 0);
+  const openingChanged =
+    !isInvestment && (Number(openingBalance) || 0) !== (goal?.opening_balance ?? 0);
 
   const save = useMutation({
     mutationFn: async (payload: SavingsGoalInput) => {
@@ -1204,14 +1031,37 @@ function GoalEditorModal({ goal, onClose }: { goal: SavingsGoal | null; onClose:
 
   const handleSubmit = () => {
     if (!canSave) return;
+    // An investment goal is filled by its transfers alone, so the cash-goal
+    // settings are not sent (the backend refuses them).
+    if (isInvestment) {
+      save.mutate({
+        kind,
+        name: name.trim(),
+        target_amount: Number(targetAmount),
+        start_month: startMonth || null,
+        target_date: targetDate || null,
+        // The category is always Investments (the backend sets it); only the
+        // holdings narrow it, and none picked means every investment.
+        contribution_tags: joinRuleTags(saveRule.tags),
+        funding_category: fundRule.category || null,
+        funding_tags: joinRuleTags(fundRule.category ? fundRule.tags : null),
+      });
+      return;
+    }
     save.mutate({
+      kind,
       name: name.trim(),
       target_amount: Number(targetAmount),
       opening_balance: Number(openingBalance) || 0,
       // An empty cap field means uncapped, so the goal can fill in one month.
-      monthly_cap: monthlyCap.trim() === "" ? null : Number(monthlyCap),
+      monthly_cap:
+        saveRule.category || monthlyCap.trim() === "" ? null : Number(monthlyCap),
       start_month: startMonth || null,
       target_date: targetDate || null,
+      utilization_category: spendRule.category || null,
+      utilization_tags: joinRuleTags(spendRule.category ? spendRule.tags : null),
+      contribution_category: saveRule.category || null,
+      contribution_tags: joinRuleTags(saveRule.category ? saveRule.tags : null),
     });
   };
 
@@ -1228,6 +1078,45 @@ function GoalEditorModal({ goal, onClose }: { goal: SavingsGoal | null; onClose:
       maxWidth="md"
     >
       <div className="space-y-4 p-4 md:p-6">
+        {/* The kind decides what fills the goal. It can be switched later;
+            the backend clears what the new kind cannot hold and restates the
+            goal's history, which the hint below says before saving. */}
+        <div role="radiogroup" aria-label={t("dashboard.goals.kindLabel")}>
+            <span className={label}>{t("dashboard.goals.kindLabel")}</span>
+            <div className="grid grid-cols-2 gap-2">
+              {(["cash", "investment"] as const).map((option) => (
+                <button
+                  key={option}
+                  type="button"
+                  role="radio"
+                  aria-checked={kind === option}
+                  onClick={() => changeKind(option)}
+                  className={`flex flex-col items-start gap-0.5 rounded-lg border px-3 py-2 text-start transition-colors ${
+                    kind === option
+                      ? "border-[var(--primary)] bg-[var(--primary)]/10"
+                      : "border-[var(--surface-light)] hover:bg-[var(--surface-light)]/40"
+                  }`}
+                >
+                  <span className="flex items-center gap-1.5 text-sm font-semibold">
+                    {option === "cash" ? <Wallet size={14} /> : <TrendingUp size={14} />}
+                    {t(option === "cash" ? "dashboard.goals.kindCash" : "dashboard.goals.kindInvestment")}
+                  </span>
+                  <span className="text-[10px] text-[var(--text-muted)]">
+                    {t(
+                      option === "cash"
+                        ? "dashboard.goals.kindCashHint"
+                        : "dashboard.goals.kindInvestmentHint",
+                    )}
+                  </span>
+                </button>
+              ))}
+            </div>
+            {kindChanged && (
+              <p className="text-[10px] text-amber-400 mt-1" data-testid="goal-kind-change-hint">
+                {t("dashboard.goals.kindChangeHint")}
+              </p>
+            )}
+        </div>
         <div>
           <label className={label} htmlFor="goal-name">{t("dashboard.goals.nameLabel")}</label>
           <input
@@ -1250,6 +1139,7 @@ function GoalEditorModal({ goal, onClose }: { goal: SavingsGoal | null; onClose:
               dir="ltr"
             />
           </div>
+          {!isInvestment && (
           <div>
             <label className={label} htmlFor="goal-opening">{t("dashboard.goals.openingLabel")}</label>
             <input
@@ -1262,7 +1152,7 @@ function GoalEditorModal({ goal, onClose }: { goal: SavingsGoal | null; onClose:
             <p className="text-[10px] text-[var(--text-muted)] mt-1">
               {t("dashboard.goals.openingHint")}
             </p>
-            {!!freeBefore && freeBefore.free_cash > 0 && (
+            {!!freeBefore && freeBefore.free_cash > 0 && !saveRule.category && (
               <button
                 type="button"
                 data-testid="goal-opening-use-free-cash"
@@ -1282,8 +1172,12 @@ function GoalEditorModal({ goal, onClose }: { goal: SavingsGoal | null; onClose:
               </p>
             )}
           </div>
+          )}
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          {/* A cap limits what a goal takes from surplus; a goal filled by
+              its own income (investment or saved-into) takes none. */}
+          {!isInvestment && !saveRule.category && (
           <div>
             <label className={label} htmlFor="goal-cap">{t("dashboard.goals.capLabel")}</label>
             <input
@@ -1298,12 +1192,17 @@ function GoalEditorModal({ goal, onClose }: { goal: SavingsGoal | null; onClose:
               {t("dashboard.goals.capHint")}
             </p>
           </div>
+          )}
           <div>
             <label className={label} htmlFor="goal-start">{t("dashboard.goals.startMonthLabel")}</label>
             <input
               id="goal-start"
-              type="month" value={startMonth ?? ""}
-              onChange={(e) => setStartMonth(e.target.value)}
+              // The same calendar as the target date. Goals count whole
+              // months, so whichever day is picked, the goal starts with the
+              // month it falls in — shown back as that month's first day.
+              type="date"
+              value={startMonth ? `${startMonth.slice(0, 7)}-01` : ""}
+              onChange={(e) => setStartMonth(e.target.value.slice(0, 7))}
               className={field}
               dir="ltr"
             />
@@ -1322,6 +1221,47 @@ function GoalEditorModal({ goal, onClose }: { goal: SavingsGoal | null; onClose:
             dir="ltr"
           />
         </div>
+        {isInvestment ? (
+          <div className="space-y-3">
+            <InvestmentTagsField
+              testId="goal-invest-rule"
+              label={t("dashboard.goals.investRuleLabel")}
+              hint={t("dashboard.goals.investRuleHint")}
+              tags={saveRule.tags}
+              onChange={(tags) => setSaveRule((rule) => ({ ...rule, tags }))}
+            />
+            <GoalAutoLinkField
+              testId="goal-invest-funding"
+              label={t("dashboard.goals.investFundLabel")}
+              hint={t("dashboard.goals.investFundHint")}
+              category={fundRule.category}
+              tags={fundRule.tags}
+              onChange={(category, tags) => setFundRule({ category, tags })}
+            />
+          </div>
+        ) : (
+        <fieldset className="space-y-3 border-t border-[var(--surface-light)] pt-3">
+          <legend className="text-xs font-semibold text-[var(--text-muted)] pe-2">
+            {t("dashboard.goals.autoLinkTitle")}
+          </legend>
+          <GoalAutoLinkField
+            testId="goal-auto-link-spend"
+            label={t("dashboard.goals.autoLinkSpendLabel")}
+            hint={t("dashboard.goals.autoLinkSpendHint")}
+            category={spendRule.category}
+            tags={spendRule.tags}
+            onChange={(category, tags) => setSpendRule({ category, tags })}
+          />
+          <GoalAutoLinkField
+            testId="goal-auto-link-save"
+            label={t("dashboard.goals.autoLinkSaveLabel")}
+            hint={t("dashboard.goals.autoLinkSaveHint")}
+            category={saveRule.category}
+            tags={saveRule.tags}
+            onChange={(category, tags) => setSaveRule({ category, tags })}
+          />
+        </fieldset>
+        )}
         <div className="flex justify-end gap-2 pt-2">
           <button onClick={onClose} className="px-4 py-2 rounded-lg text-sm font-medium text-[var(--text-muted)] hover:bg-[var(--surface-light)] transition-colors">
             {t("common.cancel")}

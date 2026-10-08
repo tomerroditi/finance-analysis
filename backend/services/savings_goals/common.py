@@ -9,6 +9,8 @@ from collections.abc import Iterator
 
 import pandas as pd
 
+from backend.models.savings_goal import GOAL_KIND_INVESTMENT, SavingsGoal
+
 # Half an agora. Every amount the ledger reports is rounded to two decimals,
 # but `funded` is accumulated by summing dozens of stored rows, so a goal that
 # filled exactly can land a hair under its target through float error alone —
@@ -16,6 +18,11 @@ import pandas as pd
 # Comparisons against a target absorb that with the same precision the rest of
 # the payload is rounded to.
 ROUNDING_EPSILON = 0.005
+
+
+def is_investment_goal(goal: SavingsGoal) -> bool:
+    """Whether a goal is filled by investment transfers rather than surplus."""
+    return goal.kind == GOAL_KIND_INVESTMENT
 
 
 def month_key(value: object) -> tuple[int, int] | None:

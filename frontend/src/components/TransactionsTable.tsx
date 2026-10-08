@@ -38,6 +38,7 @@ import { formatDate } from "../utils/dateFormatting";
 import { humanizeProvider } from "../utils/textFormatting";
 import { useTransactionFilters } from "../hooks/useTransactionFilters";
 import { usePendingRows } from "../hooks/usePendingRows";
+import { useScrollLock } from "../hooks/useScrollLock";
 import { FilterPanel } from "./transactions/FilterPanel";
 import { Pagination } from "./transactions/Pagination";
 import { BulkActionsBar, type BulkEditData } from "./transactions/BulkActionsBar";
@@ -263,6 +264,7 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
     useState<Transaction | null>(null);
   const [deletingTransaction, setDeletingTransaction] =
     useState<Transaction | null>(null);
+  useScrollLock(!!deletingTransaction);
   const [editingTransaction, setEditingTransaction] =
     useState<Transaction | null>(null);
 
@@ -1385,23 +1387,25 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
 
       {/* Delete Confirmation Modal */}
       {deletingTransaction && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center">
+        <div className="modal-overlay fixed inset-0 z-50 flex items-center justify-center">
           <div
             className="absolute inset-0 bg-black/60 backdrop-blur-sm"
             onClick={() => setDeletingTransaction(null)}
           />
-          <div className="relative bg-[var(--surface)] border border-[var(--surface-light)] rounded-xl p-6 shadow-2xl max-w-md w-full mx-4">
-            <h3 className="text-lg font-semibold text-white mb-2">
-              {t("transactions.deleteTransaction")}
-            </h3>
-            <p className="text-[var(--text-muted)] mb-6">
-              {t("transactions.deleteConfirmation")}
-              <br />
-              <span className="text-[var(--text-default)] font-medium">
-                {getDescription(deletingTransaction) || t("transactions.noDescription")}
-              </span>
-            </p>
-            <div className="flex gap-3 justify-end">
+          <div className="relative bg-[var(--surface)] border border-[var(--surface-light)] rounded-xl shadow-2xl max-w-md w-full mx-4 max-h-[90dvh] flex flex-col overflow-hidden">
+            <div className="min-h-0 overflow-y-auto overscroll-contain p-6 pb-0">
+              <h3 className="text-lg font-semibold text-white mb-2">
+                {t("transactions.deleteTransaction")}
+              </h3>
+              <p className="text-[var(--text-muted)] mb-6">
+                {t("transactions.deleteConfirmation")}
+                <br />
+                <span className="text-[var(--text-default)] font-medium">
+                  {getDescription(deletingTransaction) || t("transactions.noDescription")}
+                </span>
+              </p>
+            </div>
+            <div className="shrink-0 flex gap-3 justify-end p-6 pt-0">
               <button
                 onClick={() => setDeletingTransaction(null)}
                 className="px-4 py-2 rounded-lg bg-[var(--surface-light)] hover:bg-[var(--surface-base)] text-[var(--text-default)] text-sm font-medium transition-colors"

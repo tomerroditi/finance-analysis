@@ -233,7 +233,7 @@ w-full max-w-[calc(100vw-2rem)] md:max-w-2xl   (large modals)
 ```
 - Inner padding: `p-4 md:p-6`
 - Form grids: `grid-cols-1 sm:grid-cols-2`
-- Add `max-h-[90vh] flex flex-col` with `overflow-y-auto` on form body
+- Add `max-h-[90dvh] flex flex-col` with a `min-h-0 overflow-y-auto` block body (`dvh`: iOS Safari measures `vh` with its toolbar hidden)
 - The rounded panel also needs `overflow-hidden`, and the scrolling body
   carries the padding: a scrollbar is painted in its element's border box and
   `border-radius` does not clip it, so without that the body's scrollbar runs
@@ -294,6 +294,7 @@ import { useScrollLock } from "../../hooks/useScrollLock";
 useScrollLock(isOpen);
 ```
 Also add `modal-overlay` CSS class to the outermost `fixed inset-0` div for `overscroll-behavior: contain`.
+The lock is only half of it: the dialog must also cap its height and scroll its own body, or tall content is clipped and the gesture has nowhere to go. `<Modal>` does all of this; a hand-rolled overlay must do it by hand — see `frontend_pitfalls.md` → "Dialogs Scroll Themselves, Never the Page" (guarded by `src/modalScrolling.test.ts`).
 
 ### Touch Detection (`chartStyle.ts`)
 For UI that needs to branch on touch capability (e.g. dropdown behavior), import the shared constant:

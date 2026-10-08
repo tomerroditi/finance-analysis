@@ -11,9 +11,14 @@ from typing import Any
 import pandas as pd
 
 from backend.errors import ValidationException
-from backend.models.savings_goal import GOAL_STATUS_CLOSED, SavingsGoal
+from backend.models.savings_goal import (
+    GOAL_KIND_CASH,
+    GOAL_STATUS_CLOSED,
+    SavingsGoal,
+)
 from backend.services.savings_goals.common import (
     ROUNDING_EPSILON,
+    is_investment_goal,
     iter_months,
     month_key,
     month_str,
@@ -88,16 +93,22 @@ class ReadModelsMixin:
             else {}
         )
 
-        context = self._build_context()
-        direct = context["direct"].get((year, month), {})
-        surplus = context["surplus"].get((year, month), 0.0)
+        direct = self._kept_contributions().get((year, month), {})
+        moves = self._bridge_moves().get((year, month), {})
+        surplus = self._last_plan.surplus.get((year, month), 0.0)
 
         rows = []
         for goal in self._goals_in_order():
             allocated = float(by_goal.get(goal.id, 0.0))
             contributed = float(direct.get(goal.id, 0.0))
-            if allocated == 0 and contributed == 0:
+            bridged = float(moves.get(goal.id, 0.0))
+            if allocated == 0 and contributed == 0 and bridged == 0:
                 continue
+            # What a goal *received* is its surplus and its income. Free cash
+            # it borrowed for a bill and repaid from that income is reported
+            # apart as ``bridged`` rather than netted in: netted, a month of
+            # wedding gifts that repaid last year's bills read as a fraction
+            # of the gifts, as if the goal had not used them.
             rows.append(
                 {
                     "goal_id": goal.id,
@@ -106,6 +117,7 @@ class ReadModelsMixin:
                     "status": goal.status,
                     "allocated": round(allocated, 2),
                     "contributed": round(contributed, 2),
+                    "bridged": round(bridged, 2),
                     "total": round(allocated + contributed, 2),
                 }
             )
@@ -138,10 +150,8 @@ class ReadModelsMixin:
         -------
         dict
             ``free_cash`` (the unearmarked pool), ``earmarked`` (the *cash*
-            every goal still holds), ``liquid`` (the two together),
-            ``investment_backed`` (goal progress that sits in holdings rather
-            than cash, reported separately because it is not liquid and never
-            belonged to this pool), ``clawed_back_this_month`` and
+            every cash goal still holds), ``liquid`` (the two together),
+            ``clawed_back_this_month`` and
             ``has_goals``. With no goals the figures are zero and no
             transaction scan happens — the pool only means something relative
             to goals.
@@ -150,7 +160,6 @@ class ReadModelsMixin:
             "free_cash": 0.0,
             "earmarked": 0.0,
             "liquid": 0.0,
-            "investment_backed": 0.0,
             "clawed_back_this_month": 0.0,
             "has_goals": False,
         }
@@ -162,12 +171,12 @@ class ReadModelsMixin:
         today = date.today()
         current = (today.year, today.month)
         free_cash = float(plan.free_cash.get(current, 0.0)) if plan else 0.0
-        # Only the cash half of a goal was ever taken out of this pool, so an
-        # investment-backed goal must not inflate the liquid total.
+        # An investment goal's progress sits in the holding it was moved
+        # into, never in this pool's accounts.
+        # An investment goal's income not yet invested is cash it holds.
         earmarked = sum(
-            max(0.0, g["available"] - g["investment_backed"]) for g in goals
-        )
-        backed = sum(g["investment_backed"] for g in goals)
+            max(0.0, g["available"]) for g in goals if g["kind"] == GOAL_KIND_CASH
+        ) + sum(max(0.0, g["to_invest"]) for g in goals)
         this_month = self.repo.get_month_allocations(*current)
         clawed = (
             -float(this_month.loc[this_month["amount"] < 0, "amount"].sum())
@@ -178,7 +187,6 @@ class ReadModelsMixin:
             "free_cash": round(free_cash, 2),
             "earmarked": round(earmarked, 2),
             "liquid": round(free_cash + earmarked, 2),
-            "investment_backed": round(backed, 2),
             "clawed_back_this_month": round(clawed, 2),
             "has_goals": True,
         }
@@ -284,7 +292,8 @@ class ReadModelsMixin:
 
         self.ensure_allocations()
         plan = self._last_plan
-        context = self._build_context()
+        kept = self._kept_contributions()
+        bridge_moves = self._bridge_moves()
 
         ledger: dict[tuple[int, int], dict[int, float]] = {}
         for (goal_id, year, month), amount in self._stored_allocations().items():
@@ -296,12 +305,14 @@ class ReadModelsMixin:
         rows = []
         for key in iter_months(first, current):
             per_goal = ledger.get(key, {})
-            direct = context["direct"].get(key, {})
+            direct = kept.get(key, {})
+            moves = bridge_moves.get(key, {})
             goal_rows = []
             for goal in goals:
                 allocated = float(per_goal.get(goal.id, 0.0))
                 contributed = float(direct.get(goal.id, 0.0))
-                if allocated == 0 and contributed == 0:
+                bridged = float(moves.get(goal.id, 0.0))
+                if allocated == 0 and contributed == 0 and bridged == 0:
                     continue
                 goal_rows.append(
                     {
@@ -309,6 +320,7 @@ class ReadModelsMixin:
                         "name": goal.name,
                         "allocated": round(allocated, 2),
                         "contributed": round(contributed, 2),
+                        "bridged": round(bridged, 2),
                         "total": round(allocated + contributed, 2),
                     }
                 )
@@ -323,7 +335,9 @@ class ReadModelsMixin:
                     "goals": goal_rows,
                     "allocated": round(funded, 2),
                     "clawed_back": round(clawed, 2),
-                    "surplus": round(float(context["surplus"].get(key, 0.0)), 2),
+                    "surplus": round(float(plan.surplus.get(key, 0.0)), 2)
+                    if plan
+                    else 0.0,
                     # Months the walk never reached (a stray ledger row that
                     # predates every goal's start) have no pool figure; zero
                     # is the honest reading — nothing was earmarked yet.
@@ -383,12 +397,15 @@ class ReadModelsMixin:
                     }
                 )
 
-        context = self._build_context()
         contributed: dict[int, float] = {}
         utilized: dict[int, float] = {}
+        fronted: dict[int, float] = {}
+        released: dict[int, float] = {}
         for bucket, sink in (
-            (context["direct"], contributed),
-            (context["utilized"], utilized),
+            (self._kept_contributions(), contributed),
+            (self._goal_spending(), utilized),
+            (self._per_month(self._last_plan.fronted), fronted),
+            (self._per_month(self._last_plan.released), released),
         ):
             for per_goal in bucket.values():
                 for goal_id, amount in per_goal.items():
@@ -407,8 +424,12 @@ class ReadModelsMixin:
             )
             for goal_id, rows in history.items()
         }
-
-        backing = self._investment_backing()
+        # An investment goal has no ledger rows; what it gained this month is
+        # the month's net transfers.
+        this_month = self._kept_contributions().get(current, {})
+        for goal in goals:
+            if is_investment_goal(goal):
+                provisional[goal.id] = this_month.get(goal.id, 0.0)
 
         return [
             self._enrich(
@@ -419,10 +440,67 @@ class ReadModelsMixin:
                 history,
                 provisional,
                 reclaimed,
-                backing,
+                fronted,
+                released,
+                self._last_plan.to_invest,
             )
             for goal in goals
         ]
+
+    def _goal_spending(self) -> dict[tuple[int, int], dict[int, float]]:
+        """Return what each goal paid for, as ``{(year, month): {goal_id: amount}}``.
+
+        A goal pays only with what it holds, so this is the simulation's
+        figure, not the raw linked spending: the part a goal could not cover
+        came out of free cash.
+        """
+        if self._last_plan is None:
+            self.ensure_allocations()
+        return self._per_month(self._last_plan.spent)
+
+    def _bridge_moves(self) -> dict[tuple[int, int], dict[int, float]]:
+        """Return each month's fronted-minus-released cash per rule-funded goal.
+
+        Free cash a goal fronted for a bill raises what it holds; surplus it
+        hands back once its own income lands lowers it. Neither is a ledger
+        row, so every view that nets a goal's month adds this in.
+        """
+        if self._last_plan is None:
+            self.ensure_allocations()
+        moves: dict[tuple[int, int], dict[int, float]] = {}
+        for source, sign in (
+            (self._last_plan.fronted, 1),
+            (self._last_plan.released, -1),
+        ):
+            for (goal_id, year, month), amount in source.items():
+                per_goal = moves.setdefault((year, month), {})
+                per_goal[goal_id] = per_goal.get(goal_id, 0.0) + sign * amount
+        return moves
+
+    @staticmethod
+    def _per_month(
+        amounts: dict[tuple[int, int, int], float],
+    ) -> dict[tuple[int, int], dict[int, float]]:
+        """Regroup ``{(goal_id, year, month): amount}`` by month."""
+        grouped: dict[tuple[int, int], dict[int, float]] = {}
+        for (goal_id, year, month), amount in amounts.items():
+            grouped.setdefault((year, month), {})[goal_id] = amount
+        return grouped
+
+    def _kept_contributions(self) -> dict[tuple[int, int], dict[int, float]]:
+        """Return the contributions each goal kept, as ``{(year, month): {goal_id: amount}}``.
+
+        Incoming money past a goal's target spills back into the month's
+        surplus, so what a goal kept depends on how full it was at the time —
+        only the simulation knows that, which is why this reads the last plan
+        rather than the raw linked transactions.
+        """
+        if self._last_plan is None:
+            self.ensure_allocations()
+        kept: dict[tuple[int, int], dict[int, float]] = {}
+        for (goal_id, year, month), amount in self._last_plan.contributed.items():
+            kept.setdefault((year, month), {})[goal_id] = amount
+        return kept
 
     @staticmethod
     def _enrich(
@@ -433,7 +511,9 @@ class ReadModelsMixin:
         history: dict[int, list[dict[str, Any]]],
         provisional: dict[int, float],
         reclaimed: dict[int, float],
-        backing: dict[int, float],
+        fronted: dict[int, float],
+        released: dict[int, float],
+        waiting: dict[int, float],
     ) -> dict[str, Any]:
         """Assemble one goal's derived progress metrics."""
         target = float(goal.target_amount or 0.0)
@@ -441,12 +521,19 @@ class ReadModelsMixin:
         allocated = float(totals.get(goal.id, 0.0))
         contributions = float(contributed.get(goal.id, 0.0))
         spent = float(utilized.get(goal.id, 0.0))
-        backed = float(backing.get(goal.id, 0.0))
 
-        # Cash and earmarked holdings both count toward the goal, but only the
-        # cash half can be spent out of it or clawed back by a deficit.
-        funded = opening + allocated + contributions + backed
-        available = funded - spent
+        lent = float(fronted.get(goal.id, 0.0))
+        repaid = float(released.get(goal.id, 0.0))
+        # A goal's progress is what it *received* — surplus and its own
+        # income — so the card agrees with its bars. Free cash it borrowed for
+        # a bill and has not yet repaid is not progress: it is reported as
+        # ``owed`` and counts only toward what the goal could spend, so a
+        # wedding whose bills outran its gifts reads 97% funded with the gap
+        # owed to free cash, not 100% on money it never got.
+        owed = max(0.0, lent - repaid)
+        to_invest = float(waiting.get(goal.id, 0.0))
+        funded = opening + allocated + contributions
+        available = funded + owed - spent
         remaining = max(0.0, target - funded)
         progress_pct = round(
             min(100.0, (funded / target * 100) if target > 0 else 0.0), 1
@@ -486,14 +573,22 @@ class ReadModelsMixin:
             "target_date": goal.target_date,
             "contribution_category": goal.contribution_category,
             "contribution_tags": goal.contribution_tags,
+            "funding_category": goal.funding_category,
+            "funding_tags": goal.funding_tags,
+            "utilization_category": goal.utilization_category,
+            "utilization_tags": goal.utilization_tags,
+            "kind": goal.kind or GOAL_KIND_CASH,
             "status": goal.status,
             "closed_month": goal.closed_month,
             "notes": goal.notes,
             "allocated": round(allocated, 2),
             "contributed": round(contributions, 2),
             "utilized": round(spent, 2),
+            "fronted": round(lent, 2),
+            "released": round(repaid, 2),
+            "owed": round(owed, 2),
+            "to_invest": round(to_invest, 2),
             "clawed_back": round(float(reclaimed.get(goal.id, 0.0)), 2),
-            "investment_backed": round(backed, 2),
             "funded": round(funded, 2),
             "available": round(available, 2),
             "remaining": round(remaining, 2),

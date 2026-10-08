@@ -30,6 +30,11 @@ class SavingsGoalCreate(ApiRequestModel):
     target_date: str | None = None
     contribution_category: str | None = None
     contribution_tags: str | None = None
+    utilization_category: str | None = None
+    utilization_tags: str | None = None
+    funding_category: str | None = None
+    funding_tags: str | None = None
+    kind: Literal["cash", "investment"] = "cash"
     notes: str | None = None
 
 
@@ -44,6 +49,12 @@ class SavingsGoalUpdate(ApiRequestModel):
     target_date: str | None = None
     contribution_category: str | None = None
     contribution_tags: str | None = None
+    utilization_category: str | None = None
+    utilization_tags: str | None = None
+    funding_category: str | None = None
+    funding_tags: str | None = None
+    #: Switches the goal between saving cash and investing; restates history.
+    kind: Literal["cash", "investment"] | None = None
     notes: str | None = None
 
 
@@ -62,13 +73,13 @@ class SavingsGoalLinkCreate(ApiRequestModel):
     link_type: Literal["contribution", "utilization"]
 
 
-class SavingsGoalInvestmentCreate(ApiRequestModel):
-    """Request body for earmarking an investment against a goal."""
+class SavingsGoalSpendingLink(ApiRequestModel):
+    """Request body for naming the spending a goal pays for."""
 
-    investment_id: int
-    #: ``None`` earmarks whatever is left of the holding, so the goal keeps
-    #: tracking its value without the user retyping a number.
-    amount: float | None = Field(None, gt=0)
+    #: ``None`` clears the goal's rule.
+    category: str | None = Field(None, min_length=1)
+    #: Narrows ``category``; empty or ``["all_tags"]`` covers every tag.
+    tags: list[str] | None = None
 
 
 class SavingsGoalRebuild(BaseModel):
@@ -111,7 +122,7 @@ def delete_goal(goal_id: int, db: Session = Depends(get_database)) -> dict[str, 
 def reorder_goals(
     data: SavingsGoalReorder, db: Session = Depends(get_database)
 ) -> list[dict[str, Any]]:
-    """Set the waterfall order. Applies to future allocations only."""
+    """Set the waterfall order and restate allocation history under it."""
     return SavingsGoalService(db).reorder(data.goal_ids)
 
 
@@ -209,35 +220,9 @@ def unlink_transaction(
     return SavingsGoalService(db).unlink_transaction(link_id)
 
 
-@router.get("/investments/available")
-def list_available_investments(
-    db: Session = Depends(get_database),
+@router.put("/{goal_id}/spending-link")
+def set_spending_link(
+    goal_id: int, data: SavingsGoalSpendingLink, db: Session = Depends(get_database)
 ) -> list[dict[str, Any]]:
-    """Return open investments with how much of each is still unearmarked."""
-    return SavingsGoalService(db).get_available_investments()
-
-
-@router.get("/investments")
-def list_investment_backings(
-    goal_id: int | None = None, db: Session = Depends(get_database)
-) -> list[dict[str, Any]]:
-    """Return investment earmarks, optionally scoped to one goal."""
-    return SavingsGoalService(db).get_investment_backings(goal_id)
-
-
-@router.post("/{goal_id}/investments")
-def link_investment(
-    goal_id: int,
-    data: SavingsGoalInvestmentCreate,
-    db: Session = Depends(get_database),
-) -> list[dict[str, Any]]:
-    """Earmark an investment holding against a goal."""
-    return SavingsGoalService(db).link_investment(goal_id=goal_id, **data.model_dump())
-
-
-@router.delete("/investments/{backing_id}")
-def unlink_investment(
-    backing_id: int, db: Session = Depends(get_database)
-) -> list[dict[str, Any]]:
-    """Release an investment earmark."""
-    return SavingsGoalService(db).unlink_investment(backing_id)
+    """Spend a category (optionally narrowed to tags) out of a goal; ``null`` clears it."""
+    return SavingsGoalService(db).set_spending_link(goal_id, data.category, data.tags)

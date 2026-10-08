@@ -31,6 +31,17 @@ export type StackEnds = Map<string, StackEnd>;
 /** The corner radii of a rectangle, clockwise from the top-left. */
 export type CornerRadii = [number, number, number, number];
 
+/**
+ * How a stacked chart that can go below zero must stack.
+ *
+ * Recharts' default piles every series onto one running total, so a negative
+ * segment (a withdrawal, a clawback, a free-cash pool that went negative)
+ * starts from the top of the month's positive bars and is drawn over them.
+ * `"sign"` stacks positives up from zero and negatives down from it — the
+ * layout `stackEnds` and `stackAxis` already assume.
+ */
+export const STACK_OFFSET = "sign" as const;
+
 /** How much the outer end of a column is rounded, in px. */
 export const STACK_CORNER_RADIUS = 4;
 
@@ -131,4 +142,65 @@ export function roundedStackShape(
       />
     );
   };
+}
+
+/** The y-axis a stacked chart should draw: its extent and where to label it. */
+export interface StackAxis {
+  domain: [number, number];
+  ticks: number[];
+}
+
+/** Round a raw tick spacing up to 1, 2, 2.5 or 5 times a power of ten. */
+function niceStep(raw: number): number {
+  const magnitude = 10 ** Math.floor(Math.log10(raw));
+  const normalized = raw / magnitude;
+  const step = [1, 2, 2.5, 5, 10].find((candidate) => normalized <= candidate) ?? 10;
+  return step * magnitude;
+}
+
+/**
+ * Size a stacked chart's y-axis to the stacks it actually draws.
+ *
+ * Left to itself, Recharts rounds a mixed-sign domain out to whole tick steps
+ * on both sides, so one small negative segment (a withdrawal, a clawback)
+ * reserved a whole empty step under the zero line — a third of the plot on a
+ * household whose pool towers over its goals — and the labels between 0 and
+ * the top were thinned away. Here each side extends only as far as the data
+ * needs, plus a little headroom, and is labelled at round steps inside it —
+ * a sliver below zero gets room to show, not a gridline of its own.
+ *
+ * @param rows - Chart rows, one per x value.
+ * @param keys - The series currently drawn; hidden ones do not count.
+ * @param targetTicks - Roughly how many labelled steps the taller side gets.
+ */
+export function stackAxis(
+  rows: StackRow[],
+  keys: string[],
+  targetTicks = 3,
+): StackAxis {
+  let top = 0;
+  let bottom = 0;
+  for (const row of rows) {
+    let up = 0;
+    let down = 0;
+    for (const key of keys) {
+      const value = row[key];
+      if (typeof value !== "number") continue;
+      if (value > 0) up += value;
+      else down += value;
+    }
+    top = Math.max(top, up);
+    bottom = Math.min(bottom, down);
+  }
+  const span = Math.max(top, -bottom);
+  if (span === 0) return { domain: [0, 1], ticks: [0] };
+  const step = niceStep(span / targetTicks);
+  const upper = top * 1.05;
+  const lower = bottom * 1.15;
+  const ticks: number[] = [];
+  for (let tick = Math.ceil(lower / step) * step; tick <= upper; tick += step) {
+    // Adding zero turns the -0 a tick just under the line rounds to into 0.
+    ticks.push(Math.round(tick) + 0);
+  }
+  return { domain: [lower, upper || step], ticks };
 }

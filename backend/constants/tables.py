@@ -53,8 +53,6 @@ class Tables(Enum):
         Name of the table storing per-month surplus allocations to savings goals.
     SAVINGS_GOAL_LINKS : str
         Name of the table storing transaction-to-savings-goal links.
-    SAVINGS_GOAL_INVESTMENTS : str
-        Name of the table storing investment-to-savings-goal earmarks.
     RECURRING_DECISIONS : str
         Name of the table storing user verdicts on detected recurring charges.
     INSIGHT_DISMISSALS : str
@@ -91,7 +89,6 @@ class Tables(Enum):
     SAVINGS_GOALS = "savings_goals"
     SAVINGS_GOAL_ALLOCATIONS = "savings_goal_allocations"
     SAVINGS_GOAL_LINKS = "savings_goal_links"
-    SAVINGS_GOAL_INVESTMENTS = "savings_goal_investments"
     RECURRING_DECISIONS = "recurring_decisions"
     INSIGHT_DISMISSALS = "insight_dismissals"
     CLEARING_HOUSE_REPORTS = "clearing_house_reports"

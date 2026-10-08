@@ -327,16 +327,46 @@ test.describe("Savings goals", () => {
       timeout: 30_000,
     });
 
+    // Reordering restates history itself; there is no manual action left.
+    await expect(page.getByRole("button", { name: /redistribute/i })).toHaveCount(0);
+
+    // Hold the rebuild so the in-between state can be seen: the rows must
+    // move on the click, not when the server answers.
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await page.route("**/savings-goals/reorder", async (route) => {
+      await held;
+      await route.continue();
+    });
+
     await goalRow(page, "E2E Achieved Goal")
       .getByRole("button", { name: /move up/i })
       .click();
 
-    // The promoted goal takes position 1 and the demoted one drops to 2.
+    // The promoted goal takes position 1 and the demoted one drops to 2 —
+    // while the rebuild is still out.
     await expect(
       goalRow(page, "E2E Achieved Goal").getByText("#1"),
     ).toBeVisible();
     await expect(
       goalRow(page, "E2E In Progress Goal").getByText("#2"),
+    ).toBeVisible();
+    const status = page.getByRole("status").filter({ hasText: /recalculating/i });
+    await expect(status).toBeVisible();
+    await expect(
+      goalRow(page, "E2E Achieved Goal").getByTestId("goal-figures"),
+    ).toHaveAttribute("aria-busy", "true");
+
+    // The route stays: unrouting while the held handler is still in flight
+    // abandons the request ("Route is already handled"), and the rebuild then
+    // never lands. Once released, it passes every later reorder straight on.
+    release();
+    await expect(status).toHaveCount(0, { timeout: 30_000 });
+    // The server's answer agrees with the order already on screen.
+    await expect(
+      goalRow(page, "E2E Achieved Goal").getByText("#1"),
     ).toBeVisible();
 
     // Restore the original order so the suite is order-independent.
@@ -346,62 +376,6 @@ test.describe("Savings goals", () => {
     await expect(
       goalRow(page, "E2E In Progress Goal").getByText("#1"),
     ).toBeVisible();
-  });
-
-  test("an investment can back a goal without becoming cash", async ({
-    page,
-  }) => {
-    // Demo data ships open investments; earmark the first one that still has
-    // headroom, rather than assuming a particular holding exists.
-    const available = await (
-      await ctx.get(`${API_BASE}/savings-goals/investments/available`)
-    ).json();
-    const holding = available.find(
-      (row: { available: number }) => row.available > 0,
-    );
-    expect(
-      holding,
-      "demo data should ship an open investment to earmark",
-    ).toBeTruthy();
-
-    const goal = await createGoal({
-      name: "E2E Backed Goal",
-      target_amount: 500000,
-      monthly_cap: 1,
-      start_month: monthsAgo(1),
-    });
-
-    const poolBefore = await (
-      await ctx.get(`${API_BASE}/savings-goals/free-cash`)
-    ).json();
-
-    const linked = await ctx.post(
-      `${API_BASE}/savings-goals/${goal.id}/investments`,
-      { data: { investment_id: holding.id, amount: 1000 } },
-    );
-    expect(linked.ok()).toBeTruthy();
-
-    // The backing counts toward the goal but is not liquid: the free-cash
-    // pool must be untouched, and the holding shows up on its own line.
-    const poolAfter = await (
-      await ctx.get(`${API_BASE}/savings-goals/free-cash`)
-    ).json();
-    expect(poolAfter.free_cash).toBeCloseTo(poolBefore.free_cash, 2);
-    expect(poolAfter.investment_backed).toBeCloseTo(
-      poolBefore.investment_backed + 1000,
-      2,
-    );
-
-    await openDashboardWithGoals(page);
-    const row = goalRow(page, "E2E Backed Goal");
-    await expect(row).toBeVisible({ timeout: 30_000 });
-    await expect(row.getByText(/backed by investments/i)).toBeVisible();
-
-    // The earmark modal lists it and can release it again.
-    await row.getByRole("button", { name: /back with investments/i }).click();
-    await expect(page.getByText(holding.name, { exact: true })).toBeVisible();
-    await page.getByRole("button", { name: /release this earmark/i }).click();
-    await expect(row.getByText(/backed by investments/i)).toHaveCount(0);
   });
 
   test("the budget month shows what was directed into goals", async ({
@@ -518,5 +492,40 @@ test.describe("Savings goals", () => {
     await dialog.getByRole("button", { name: "Save", exact: true }).click();
     await expect(dialog).toHaveCount(0);
     expect(await openingBalance()).toBeCloseTo(claim.free_cash, 2);
+  });
+
+  test("an investment goal is filled by transfers, not by the waterfall", async ({
+    page,
+  }) => {
+    // A cash goal's editor offers the cash-only settings; choosing "Invest"
+    // takes them away and asks for the transfers instead.
+    await openDashboardWithGoals(page);
+    await page.getByRole("button", { name: /add goal/i }).click();
+    const dialog = page.getByRole("dialog");
+    await expect(dialog.getByLabel("Monthly cap")).toBeVisible();
+    // The start is picked on the same calendar as the target date.
+    await expect(dialog.getByLabel("Start from")).toHaveAttribute("type", "date");
+    await dialog.getByRole("radio", { name: /invest/i }).click();
+    await expect(dialog.getByLabel("Monthly cap")).toHaveCount(0);
+    await expect(dialog.getByLabel("Already saved")).toHaveCount(0);
+    await expect(dialog.getByTestId("goal-invest-rule")).toBeVisible();
+    await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
+
+    const goal = await createGoal({
+      name: "E2E Invest Goal",
+      target_amount: 100000,
+      kind: "investment",
+      contribution_category: "Investments",
+      start_month: monthsAgo(12),
+    });
+    expect(goal.kind).toBe("investment");
+    expect(goal.allocated).toBe(0);
+
+    await page.reload();
+    const row = goalRow(page, "E2E Invest Goal");
+    await expect(row).toBeVisible({ timeout: 30_000 });
+    await expect(row.getByLabel("Invest")).toBeVisible();
+    // No free-cash claim on an investment goal.
+    await expect(row.getByRole("button", { name: /free cash/i })).toHaveCount(0);
   });
 });

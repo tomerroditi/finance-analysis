@@ -1152,6 +1152,19 @@ export interface SavingsGoal {
   target_date: string | null;
   contribution_category: string | null;
   contribution_tags: string | null;
+  /** An investment goal's optional income source; its transfers draw on it first. */
+  funding_category: string | null;
+  funding_tags: string | null;
+  /** Category whose spending is utilized from the goal automatically. */
+  utilization_category: string | null;
+  /** Semicolon-separated tags narrowing `utilization_category`; `null` = every tag. */
+  utilization_tags: string | null;
+  /**
+   * `"cash"` earmarks money in the tracked accounts and is filled by the
+   * surplus waterfall; `"investment"` is filled by the net money moved into
+   * the investments its contribution rule names. Switching it restates history.
+   */
+  kind: SavingsGoalKind;
   status: string;
   closed_month: string | null;
   notes: string | null;
@@ -1161,11 +1174,16 @@ export interface SavingsGoal {
   contributed: number;
   /** Money spent back out of the goal. Never reduces `target_amount`. */
   utilized: number;
+  /**
+   * Free cash an income-funded goal borrowed for bills its income has not
+   * repaid. Not part of `funded` — the goal never received it.
+   */
+  owed: number;
+  /** An investment goal's funding income not yet spent on its transfers. */
+  to_invest: number;
   /** Money deficit months pulled back out, once the free-cash pool ran dry. */
   clawed_back: number;
-  /** Goal progress held in earmarked investments rather than cash. */
-  investment_backed: number;
-  /** opening_balance + allocated + contributed + investment_backed, net of any clawback. */
+  /** opening_balance + allocated + contributed, net of any clawback. */
   funded: number;
   /** funded - utilized: what is still earmarked and unspent. */
   available: number;
@@ -1180,8 +1198,12 @@ export interface SavingsGoal {
   history: SavingsGoalAllocationEntry[];
 }
 
+export type SavingsGoalKind = "cash" | "investment";
+
 export interface SavingsGoalInput {
   name: string;
+  /** Switching it on an update clears what the new kind cannot hold and restates history. */
+  kind?: SavingsGoalKind;
   target_amount: number;
   opening_balance?: number;
   monthly_cap?: number | null;
@@ -1189,6 +1211,10 @@ export interface SavingsGoalInput {
   target_date?: string | null;
   contribution_category?: string | null;
   contribution_tags?: string | null;
+  funding_category?: string | null;
+  funding_tags?: string | null;
+  utilization_category?: string | null;
+  utilization_tags?: string | null;
   notes?: string | null;
 }
 
@@ -1271,11 +1297,9 @@ export interface SavingsGoalRebuildResult {
 /** The pool of tracked money that no goal has earmarked. */
 export interface SavingsGoalFreeCash {
   free_cash: number;
-  /** The *cash* goals still hold — investment backing is reported apart. */
+  /** What the goals still hold. */
   earmarked: number;
   liquid: number;
-  /** Goal progress sitting in holdings, which was never part of this pool. */
-  investment_backed: number;
   clawed_back_this_month: number;
   has_goals: boolean;
 }
@@ -1284,30 +1308,6 @@ export interface SavingsGoalFreeCash {
 export interface SavingsGoalFreeCashBefore {
   month: string;
   free_cash: number;
-}
-
-/** An investment holding earmarked against a goal. */
-export interface SavingsGoalInvestment {
-  id: number;
-  goal_id: number;
-  investment_id: number;
-  investment_name: string | null;
-  investment_type: string | null;
-  is_closed: boolean;
-  /** `null` earmarks whatever is left of the holding. */
-  amount: number | null;
-  goal_backed_total: number;
-}
-
-/** An open investment and how much of it is still free to earmark. */
-export interface SavingsGoalAvailableInvestment {
-  id: number;
-  name: string | null;
-  type: string | null;
-  value: number;
-  earmarked: number;
-  available: number;
-  fully_claimed: boolean;
 }
 
 export type SavingsGoalLinkType = "contribution" | "utilization";
@@ -1347,20 +1347,6 @@ export const savingsGoalsApi = {
     api.get<SavingsGoalTimeline>("/savings-goals/timeline", {
       params: { months },
     }),
-  getInvestments: (goalId?: number) =>
-    api.get<SavingsGoalInvestment[]>("/savings-goals/investments", {
-      params: goalId ? { goal_id: goalId } : undefined,
-    }),
-  getAvailableInvestments: () =>
-    api.get<SavingsGoalAvailableInvestment[]>(
-      "/savings-goals/investments/available",
-    ),
-  linkInvestment: (
-    goalId: number,
-    payload: { investment_id: number; amount?: number | null },
-  ) => api.post<SavingsGoal[]>(`/savings-goals/${goalId}/investments`, payload),
-  unlinkInvestment: (backingId: number) =>
-    api.delete(`/savings-goals/investments/${backingId}`),
   getLinks: (goalId?: number) =>
     api.get<SavingsGoalLink[]>("/savings-goals/links", {
       params: goalId ? { goal_id: goalId } : undefined,
@@ -1375,6 +1361,19 @@ export const savingsGoalsApi = {
     },
   ) => api.post<SavingsGoal[]>(`/savings-goals/${goalId}/links`, payload),
   unlink: (linkId: number) => api.delete(`/savings-goals/links/${linkId}`),
+  /**
+   * Spend a category (optionally narrowed to tags) out of a goal — a project
+   * budget or a yearly envelope in one link. `category: null` clears it.
+   */
+  setSpendingLink: (
+    goalId: number,
+    category: string | null,
+    tags: string[] | null = null,
+  ) =>
+    api.put<SavingsGoal[]>(`/savings-goals/${goalId}/spending-link`, {
+      category,
+      tags,
+    }),
 };
 
 export const backupApi = {
