@@ -15,6 +15,7 @@ from backend.constants.budget import ALL_TAGS
 from backend.constants.categories import INVESTMENTS_CATEGORY
 from backend.errors import EntityNotFoundException, ValidationException
 from backend.models.savings_goal import (
+    GOAL_KIND_CASH,
     GOAL_KIND_INVESTMENT,
     GOAL_STATUS_ACTIVE,
     GOAL_STATUS_CLOSED,
@@ -34,7 +35,16 @@ from backend.services.savings_goals.common import (
 _CASH_ONLY_FIELDS = ("monthly_cap", "utilization_category", "utilization_tags")
 
 #: The fields that decide which transfers an investment goal owns.
-_TRANSFER_SCOPE_FIELDS = ("contribution_category", "contribution_tags", "start_month")
+_TRANSFER_SCOPE_FIELDS = (
+    "contribution_category",
+    "contribution_tags",
+    "funding_category",
+    "funding_tags",
+    "start_month",
+)
+
+#: The income an investment goal is paid from; a cash goal cannot carry it.
+_FUNDING_FIELDS = ("funding_category", "funding_tags")
 
 
 class GoalCrudMixin:
@@ -66,6 +76,7 @@ class GoalCrudMixin:
             # always counts it; its tags are the only choice (none = all).
             fields["contribution_category"] = INVESTMENTS_CATEGORY
             self._validate_investment_fields(fields)
+        self._validate_income_claims(None, fields)
         fields.setdefault("priority", self.repo.next_priority())
         if not fields.get("start_month"):
             today = date.today()
@@ -103,6 +114,9 @@ class GoalCrudMixin:
         if "start_month" in fields:
             self._validate_month(fields["start_month"], "start_month")
         goal = self.repo.get(goal_id)
+        new_kind = fields.pop("kind", None)
+        if goal and new_kind and new_kind != (goal.kind or GOAL_KIND_CASH):
+            return self._change_kind(goal, new_kind, fields)
         if goal and is_investment_goal(goal):
             fields.pop("contribution_category", None)
             current = {
@@ -110,6 +124,8 @@ class GoalCrudMixin:
                 "opening_balance": goal.opening_balance,
             }
             self._validate_investment_fields({**current, **fields})
+        if goal:
+            self._validate_income_claims(goal, fields)
         # Adding, dropping or narrowing a goal's own income rule decides, in
         # every month since it started, what it borrowed and handed back — so
         # it restates that history rather than only the months to come.
@@ -363,6 +379,58 @@ class GoalCrudMixin:
         links = links.replace({np.nan: None})
         return links.to_dict("records")
 
+    def _change_kind(
+        self, goal: SavingsGoal, kind: str, fields: dict[str, Any]
+    ) -> list[dict[str, Any]]:
+        """Switch a goal between saving cash and investing, and restate its history.
+
+        What one kind is filled by means nothing to the other, so the switch
+        clears it: a goal turning into an investment goal counts Investments
+        transfers and drops its opening balance, cap, spending rule, saved-into
+        rule and single-transaction links; one turning back into a cash goal
+        drops its investment and funding rules. Fields sent with the switch
+        apply on top. Every month since the goal started was funded from
+        somewhere else, so its history is rebuilt from there.
+
+        Raises
+        ------
+        ValidationException
+            If the goal is closed (its history is frozen), or the result would
+            be an invalid goal of the new kind or claim income another goal
+            already claims.
+        """
+        if goal.status == GOAL_STATUS_CLOSED:
+            raise ValidationException("Reopen the goal before changing its type")
+        if kind == GOAL_KIND_INVESTMENT:
+            fields.pop("contribution_category", None)
+            changes = {
+                "contribution_category": INVESTMENTS_CATEGORY,
+                "contribution_tags": None,
+                "opening_balance": 0.0,
+                "monthly_cap": None,
+                "utilization_category": None,
+                "utilization_tags": None,
+            }
+        else:
+            changes = {
+                "contribution_category": None,
+                "contribution_tags": None,
+                "funding_category": None,
+                "funding_tags": None,
+            }
+        changes = {**changes, **fields, "kind": kind}
+        if kind == GOAL_KIND_INVESTMENT:
+            self._validate_investment_fields(changes)
+        self._validate_income_claims(goal, changes)
+        with self.repo.atomic():
+            self.repo.update(goal.id, **changes)
+            self.repo.delete_links_for_goal(goal.id)
+        earliest = min(
+            (m for m in (goal.start_month, changes.get("start_month")) if m),
+            default=None,
+        )
+        return self._restate_for_transfers(earliest)
+
     def _restate_for_transfers(self, from_month: str | None) -> list[dict[str, Any]]:
         """Rebuild history after the income a goal owns changed.
 
@@ -376,6 +444,68 @@ class GoalCrudMixin:
         """
         self._context_cache = None
         return self.rebuild(from_month=from_month)["goals"]
+
+    def _validate_income_claims(
+        self, goal: SavingsGoal | None, fields: dict[str, Any]
+    ) -> None:
+        """Refuse a funding rule on a cash goal, or income two goals would claim.
+
+        One transaction can only feed one goal. A "saved into" rule and an
+        investment goal's funding rule both claim income, so the same income
+        under two of them would be counted twice; the second claim is refused
+        rather than resolved by a precedence nobody can see.
+
+        Raises
+        ------
+        ValidationException
+            When a cash goal names a funding rule, or this goal's claim
+            overlaps another goal's.
+        """
+        merged = {
+            name: getattr(goal, name, None)
+            for name in (
+                "kind",
+                "contribution_category",
+                "contribution_tags",
+                *_FUNDING_FIELDS,
+            )
+        }
+        merged.update({k: v for k, v in fields.items() if k in merged})
+        investment = merged["kind"] == GOAL_KIND_INVESTMENT
+        if not investment and any(merged.get(name) for name in _FUNDING_FIELDS):
+            raise ValidationException(
+                "Only an investment goal can name the income that pays for it"
+            )
+        claim = (
+            (merged["funding_category"], merged["funding_tags"])
+            if investment
+            else (merged["contribution_category"], merged["contribution_tags"])
+        )
+        if not claim[0]:
+            return
+        for other in self._goals_in_order():
+            if goal is not None and other.id == goal.id:
+                continue
+            other_claim = (
+                (other.funding_category, other.funding_tags)
+                if is_investment_goal(other)
+                else (other.contribution_category, other.contribution_tags)
+            )
+            if self._claims_overlap(claim, other_claim):
+                raise ValidationException(
+                    f"That income already feeds the goal {other.name!r}"
+                )
+
+    def _claims_overlap(
+        self, one: tuple[str | None, str | None], other: tuple[str | None, str | None]
+    ) -> bool:
+        """Whether two category/tag rules can match the same transaction."""
+        if not one[0] or one[0] != other[0]:
+            return False
+        tags, other_tags = self._split_tags(one[1]), self._split_tags(other[1])
+        if not tags or not other_tags or ALL_TAGS in tags or ALL_TAGS in other_tags:
+            return True
+        return bool(set(tags) & set(other_tags))
 
     @staticmethod
     def _owns_transfers(goal: SavingsGoal) -> bool:

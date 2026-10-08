@@ -13,6 +13,7 @@ from backend.constants.categories import PRIOR_WEALTH_TAG
 from backend.constants.tables import TransactionsTableFields
 from backend.models.savings_goal import (
     LINK_CONTRIBUTION,
+    LINK_FUNDING,
     LINK_INVESTED,
     LINK_UTILIZATION,
     SavingsGoal,
@@ -135,6 +136,7 @@ class InputsMixin:
             "drawn": {},
             "utilized": {},
             "invested": {},
+            "funding": {},
         }
         if df.empty:
             return empty
@@ -214,6 +216,7 @@ class InputsMixin:
         drawn: dict[tuple[int, int], dict[int, float]] = {}
         utilized: dict[tuple[int, int], dict[int, float]] = {}
         invested: dict[tuple[int, int], dict[int, float]] = {}
+        funding: dict[tuple[int, int], dict[int, float]] = {}
         for _, row in linked.iterrows():
             key = (int(row["_year"]), int(row["_month"]))
             goal_id = int(row["_goal_id"])
@@ -225,6 +228,12 @@ class InputsMixin:
             if row["_link_type"] == LINK_INVESTED:
                 invested.setdefault(key, {})
                 invested[key][goal_id] = invested[key].get(goal_id, 0.0) + amount
+                continue
+            # Income set aside to pay for an investment goal's transfers keeps
+            # its sign: a refund of it takes back what it had set aside.
+            if row["_link_type"] == LINK_FUNDING:
+                funding.setdefault(key, {})
+                funding[key][goal_id] = funding[key].get(goal_id, 0.0) + raw
                 continue
             bucket = direct if row["_link_type"] == LINK_CONTRIBUTION else utilized
             bucket.setdefault(key, {})
@@ -243,6 +252,7 @@ class InputsMixin:
             "drawn": drawn,
             "utilized": utilized,
             "invested": invested,
+            "funding": funding,
         }
 
     @staticmethod
@@ -317,6 +327,20 @@ class InputsMixin:
             for key, matched in zip(keys, matches, strict=True):
                 if matched:
                     mapping[key] = (goal.id, LINK_CONTRIBUTION, False)
+
+        # The income an investment goal is paid from, from its start month:
+        # set aside for its transfers rather than counted as surplus.
+        for goal in self._goals_in_order():
+            if not (is_investment_goal(goal) and goal.funding_category):
+                continue
+            start = month_key(goal.start_month)
+            matches = df[category_col] == goal.funding_category
+            tags = self._split_tags(goal.funding_tags)
+            if tags and tags != [_ALL_TAGS] and tag_col in df.columns:
+                matches &= df[tag_col].isin(tags)
+            for key, matched, row_month in zip(keys, matches, row_months, strict=True):
+                if matched and (start is None or row_month >= start):
+                    mapping[key] = (goal.id, LINK_FUNDING, False)
 
         # Walked bottom-up so the goal higher in the waterfall writes last.
         for goal in reversed(self._goals_in_order()):

@@ -159,7 +159,7 @@ matters most is drained last.
 
 ## Investment goals: filled by transfers, not by surplus
 
-A goal has a `kind` (`savings_goals.kind`, fixed at creation; `NULL` — a row
+A goal has a `kind` (`savings_goals.kind`; `NULL` — a row
 older than the column, or a demo DB synced by `sync_missing_columns` — reads
 as `cash`, via `common.is_investment_goal`). A **cash** goal is everything
 else in this file. An **investment** goal answers "have I invested X?":
@@ -186,6 +186,29 @@ else in this file. An **investment** goal answers "have I invested X?":
   so `liquid` can sit above the bank for that amount.
 - **It is not cash.** `get_free_cash` leaves it out of `earmarked` and
   `liquid`.
+- **It can name the income that pays for it** (`funding_category` /
+  `funding_tags`, "Paid from income" in the editor; investment goals only).
+  `_goal_by_transaction` maps that income as `LINK_FUNDING` (never stored,
+  from the goal's start month), `_compute_context` reports it in `funding`,
+  out of the surplus, and `_simulate` keeps it in `to_invest`: each deposit
+  is paid from it first and only the rest leaves free cash; a withdrawal
+  still goes back to free cash. What is not yet invested is cash the goal
+  holds — the payload's `to_invest` ("… ready to invest"), counted in
+  `earmarked` and in how far the pool may go negative. Progress is still the
+  net invested.
+- **A goal can switch kind** (`update(kind=...)` → `_change_kind`, the
+  editor's type choice is shown when editing too). What one kind is filled by
+  means nothing to the other, so the switch clears it — to investment: the
+  opening balance, cap, spending rule, saved-into rule and single-transaction
+  links, with the rule set to Investments; to cash: the investment and
+  funding rules — then applies the fields sent with it and restates history
+  from the earlier of the old and new start months. A closed goal must be
+  reopened first. The editor warns before saving and blanks the rules of the
+  kind it leaves (restoring them if switched back).
+- **One income feeds one goal.** A saved-into rule and a funding rule both
+  claim income, so `_validate_income_claims` refuses a second claim on the
+  same category (overlapping tags, or either side covering every tag), and a
+  funding rule on a cash goal.
 - **Cash-goal settings are refused** (`_validate_investment_fields`,
   `_reject_investment_goal`): it takes no
   `opening_balance`, `monthly_cap`, spending rule or single linked

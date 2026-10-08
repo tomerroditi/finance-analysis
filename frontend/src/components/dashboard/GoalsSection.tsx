@@ -876,7 +876,7 @@ function GoalRow({
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1.5 text-[10px] md:text-xs text-[var(--text-muted)]">
           <GoalStatusLine goal={goal} />
         </div>
-        {(showThisMonth || goal.utilized > 0 || goal.owed > 0) && (
+        {(showThisMonth || goal.utilized > 0 || goal.owed > 0 || goal.to_invest > 0) && (
           <div className="flex flex-wrap gap-x-3 gap-y-1 mt-1.5 text-[10px] md:text-xs text-[var(--text-muted)]">
             {showThisMonth && (
               <span>
@@ -901,6 +901,11 @@ function GoalRow({
             {goal.owed > 0 && (
               <span>
                 {t("dashboard.goals.owed", { amount: formatCurrency(goal.owed) })}
+              </span>
+            )}
+            {goal.to_invest > 0 && (
+              <span>
+                {t("dashboard.goals.toInvest", { amount: formatCurrency(goal.to_invest) })}
               </span>
             )}
           </div>
@@ -963,6 +968,32 @@ function GoalEditorModal({ goal, onClose }: { goal: SavingsGoal | null; onClose:
     category: goal?.contribution_category ?? "",
     tags: splitRuleTags(goal?.contribution_tags),
   });
+  // An investment goal's optional income source: transfers are paid from it
+  // before free cash.
+  const [fundRule, setFundRule] = useState({
+    category: goal?.funding_category ?? "",
+    tags: splitRuleTags(goal?.funding_tags),
+  });
+  const originalKind = goal?.kind ?? "cash";
+  const kindChanged = !!goal && kind !== originalKind;
+  /**
+   * Switch between saving cash and investing. The rules of one kind mean
+   * nothing to the other (an investment goal's "Investments" rule would be a
+   * saved-into rule on a cash goal), so they start empty on the new kind and
+   * come back as they were on the original one.
+   */
+  const changeKind = (next: SavingsGoalKind) => {
+    setKind(next);
+    const back = next === originalKind;
+    setSaveRule({
+      category: back ? goal?.contribution_category ?? "" : "",
+      tags: back ? splitRuleTags(goal?.contribution_tags) : [],
+    });
+    setFundRule({
+      category: back ? goal?.funding_category ?? "" : "",
+      tags: back ? splitRuleTags(goal?.funding_tags) : [],
+    });
+  };
   const qk = useQueryKeys();
 
   const effectiveStart = startMonth || currentMonthKey();
@@ -1004,7 +1035,7 @@ function GoalEditorModal({ goal, onClose }: { goal: SavingsGoal | null; onClose:
     // settings are not sent (the backend refuses them).
     if (isInvestment) {
       save.mutate({
-        ...(goal ? {} : { kind }),
+        kind,
         name: name.trim(),
         target_amount: Number(targetAmount),
         start_month: startMonth || null,
@@ -1012,11 +1043,13 @@ function GoalEditorModal({ goal, onClose }: { goal: SavingsGoal | null; onClose:
         // The category is always Investments (the backend sets it); only the
         // holdings narrow it, and none picked means every investment.
         contribution_tags: joinRuleTags(saveRule.tags),
+        funding_category: fundRule.category || null,
+        funding_tags: joinRuleTags(fundRule.category ? fundRule.tags : null),
       });
       return;
     }
     save.mutate({
-      ...(goal ? {} : { kind }),
+      kind,
       name: name.trim(),
       target_amount: Number(targetAmount),
       opening_balance: Number(openingBalance) || 0,
@@ -1045,9 +1078,10 @@ function GoalEditorModal({ goal, onClose }: { goal: SavingsGoal | null; onClose:
       maxWidth="md"
     >
       <div className="space-y-4 p-4 md:p-6">
-        {/* The kind decides what fills the goal, so it is chosen once. */}
-        {!goal && (
-          <div role="radiogroup" aria-label={t("dashboard.goals.kindLabel")}>
+        {/* The kind decides what fills the goal. It can be switched later;
+            the backend clears what the new kind cannot hold and restates the
+            goal's history, which the hint below says before saving. */}
+        <div role="radiogroup" aria-label={t("dashboard.goals.kindLabel")}>
             <span className={label}>{t("dashboard.goals.kindLabel")}</span>
             <div className="grid grid-cols-2 gap-2">
               {(["cash", "investment"] as const).map((option) => (
@@ -1056,7 +1090,7 @@ function GoalEditorModal({ goal, onClose }: { goal: SavingsGoal | null; onClose:
                   type="button"
                   role="radio"
                   aria-checked={kind === option}
-                  onClick={() => setKind(option)}
+                  onClick={() => changeKind(option)}
                   className={`flex flex-col items-start gap-0.5 rounded-lg border px-3 py-2 text-start transition-colors ${
                     kind === option
                       ? "border-[var(--primary)] bg-[var(--primary)]/10"
@@ -1077,8 +1111,12 @@ function GoalEditorModal({ goal, onClose }: { goal: SavingsGoal | null; onClose:
                 </button>
               ))}
             </div>
-          </div>
-        )}
+            {kindChanged && (
+              <p className="text-[10px] text-amber-400 mt-1" data-testid="goal-kind-change-hint">
+                {t("dashboard.goals.kindChangeHint")}
+              </p>
+            )}
+        </div>
         <div>
           <label className={label} htmlFor="goal-name">{t("dashboard.goals.nameLabel")}</label>
           <input
@@ -1184,13 +1222,23 @@ function GoalEditorModal({ goal, onClose }: { goal: SavingsGoal | null; onClose:
           />
         </div>
         {isInvestment ? (
-          <InvestmentTagsField
-            testId="goal-invest-rule"
-            label={t("dashboard.goals.investRuleLabel")}
-            hint={t("dashboard.goals.investRuleHint")}
-            tags={saveRule.tags}
-            onChange={(tags) => setSaveRule((rule) => ({ ...rule, tags }))}
-          />
+          <div className="space-y-3">
+            <InvestmentTagsField
+              testId="goal-invest-rule"
+              label={t("dashboard.goals.investRuleLabel")}
+              hint={t("dashboard.goals.investRuleHint")}
+              tags={saveRule.tags}
+              onChange={(tags) => setSaveRule((rule) => ({ ...rule, tags }))}
+            />
+            <GoalAutoLinkField
+              testId="goal-invest-funding"
+              label={t("dashboard.goals.investFundLabel")}
+              hint={t("dashboard.goals.investFundHint")}
+              category={fundRule.category}
+              tags={fundRule.tags}
+              onChange={(category, tags) => setFundRule({ category, tags })}
+            />
+          </div>
         ) : (
         <fieldset className="space-y-3 border-t border-[var(--surface-light)] pt-3">
           <legend className="text-xs font-semibold text-[var(--text-muted)] pe-2">

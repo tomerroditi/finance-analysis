@@ -29,6 +29,8 @@ GOAL_COLUMNS = [
     "target_date",
     "contribution_category",
     "contribution_tags",
+    "funding_category",
+    "funding_tags",
     "kind",
     "status",
     "closed_month",
@@ -305,6 +307,13 @@ class SavingsGoalRepository:
         if not link:
             raise EntityNotFoundException(f"Savings goal link {link_id} not found")
         self.db.delete(link)
+        self._commit()
+
+    def delete_links_for_goal(self, goal_id: int) -> None:
+        """Delete every transaction link a goal has."""
+        self.db.query(SavingsGoalLink).filter(
+            SavingsGoalLink.goal_id == goal_id
+        ).delete()
         self._commit()
 
     def set_utilization_rule(
