@@ -214,6 +214,19 @@ from then on on the main person (age and statutory exemption). After 60 they
 stack on the taxed spouse's entitling annuity plus the other spouse's, the
 latter net of the 6,110 exemption once *they* are past their statutory age.
 
-Open: none on couples. The earlier readings of this section ("a fixed 0.5203
+**Found by the second random draw (`combos2`, never used for fitting):**
+
+* **A spouse already past the statutory age today draws no allowance** — the
+  same crossing rule as a pension (`cx2_042`: a wife who turned 65 in 2020 is
+  paid nothing), and the bridge leaves it out too.
+* **A 60th birthday in the retirement month** adds a zero-length phase at the
+  full spending to the running mean (`cx2_010`: 132.4 months, the reference's
+  rate to 1e-5; without it 147.4) — the single-person rule's `b(c60) = 0` case.
+* **Goal portfolios must reach their targets while still working**: the
+  solver retires the month after the last one first does (`cx2_018`, `037`,
+  `058`), and a plan whose goal arrives only after the search window cannot
+  retire (`cx2_055`).
+
+Open: none on the couple bridge. The earlier readings of this section ("a fixed 0.5203
 weight", "the partner's single bridge", "the plain mean of the non-zero
 needs") were each one face of this rule.

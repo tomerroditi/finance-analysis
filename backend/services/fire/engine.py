@@ -522,6 +522,7 @@ class Simulator:
                     "at_statutory": at_statutory,
                     "claims_at_60": fund is None
                     or fund.tactic is not PensionTactic.ALL_FROM_STATUTORY,
+                    "draws_allowance": self._draws_allowance(owner, today),
                 }
             )
         horizon = min(81 * 12 - birth for birth in births)
@@ -779,6 +780,10 @@ class Simulator:
         expense_recurring, expense_one_time = self._flow_series(
             plan.expenses, retire_index, today, total_months
         )
+        main_allowance = self._draws_allowance(plan.person, today)
+        partner_allowance = plan.partner is not None and self._draws_allowance(
+            plan.partner, today
+        )
 
         for t in range(total_months):
             age = self.age_at(t, today)
@@ -793,20 +798,23 @@ class Simulator:
             partner_age = (
                 self._partner_age(t, today) if plan.partner is not None else None
             )
-            state_pension = national_insurance.monthly_amount(
-                plan.person, age, plan.partner, partner_age
-            )
-            if plan.partner is not None:
-                state_pension += national_insurance.monthly_amount(
-                    plan.partner, partner_age, plan.person, age
+            cash_in["state_pension"] = (
+                national_insurance.monthly_amount(
+                    plan.person, age, plan.partner, partner_age
                 )
-            cash_in["state_pension"] = national_insurance.monthly_amount(
-                plan.person, age, plan.partner, partner_age
+                if main_allowance
+                else 0.0
             )
+            state_pension = cash_in["state_pension"]
             if plan.partner is not None:
-                cash_in["state_pension_partner"] = national_insurance.monthly_amount(
-                    plan.partner, partner_age, plan.person, age
+                cash_in["state_pension_partner"] = (
+                    national_insurance.monthly_amount(
+                        plan.partner, partner_age, plan.person, age
+                    )
+                    if partner_allowance
+                    else 0.0
                 )
+                state_pension += cash_in["state_pension_partner"]
             cash_out["living"] = expense_recurring[t]
             cash_out["one_time"] = expense_one_time[t]
             expense = expense_recurring[t] + expense_one_time[t]
@@ -1086,7 +1094,7 @@ class Simulator:
             (plan.person, plan.partner),
             (plan.partner, plan.person),
         ):
-            if person is None:
+            if person is None or not self._draws_allowance(person, today):
                 continue
             claim = national_insurance.STATUTORY_AGE[person.gender]
             spouse_age = None
@@ -1213,6 +1221,18 @@ class Simulator:
                     )
                 )
         return out
+
+    def _draws_allowance(self, person: Person, today: date) -> bool:
+        """Whether `person` ever draws the old-age allowance in this simulation.
+
+        Like a pension, it is claimed only in the month its age is crossed: a
+        spouse already past the statutory age today never draws it
+        (`cx2_042`'s wife, 71, is paid nothing).
+        """
+        months = (today.year - person.date_of_birth.year) * 12 + (
+            today.month - person.date_of_birth.month
+        )
+        return months <= national_insurance.STATUTORY_AGE[person.gender] * 12 + 1
 
     def _partner_age(self, index: int, today: date) -> float:
         """Partner's age at month `index`."""

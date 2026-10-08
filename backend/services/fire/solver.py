@@ -73,9 +73,12 @@ def evaluate_goals(plan: Plan, result: SimulationResult) -> list[Goal]:
         # zero, trivially reached.
         if portfolio.designation == PortfolioDesignation.WITHDRAW:
             continue
-        reached = max(
-            month.assets.get(f"portfolio{index}", 0.0) for month in result.months
-        )
+        # The target has to be reached while still working: `cx2_018`,
+        # `cx2_037` and `cx2_058` each retire the month after their last goal
+        # portfolio first reaches its target, and growing past it later
+        # does not count.
+        working = result.months[: max(result.retire_index, 1)]
+        reached = max(month.assets.get(f"portfolio{index}", 0.0) for month in working)
         earmarked.append(
             Goal(
                 f"portfolio{index}",

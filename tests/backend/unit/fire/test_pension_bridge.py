@@ -217,3 +217,19 @@ class TestCoupleBridgeMonths:
     def test_negative_spending_needs_the_whole_horizon(self):
         """`cx1_036`: a one-off income counted forever drives spending below zero."""
         assert couple_bridge_months(28, 436, -297_500, [_spouse(184), _spouse(210, statutory=60)]) == 408
+
+
+class TestAllowanceIsClaimedInTheSimulation:
+    """Bituach Leumi, like a pension, is claimed only in the month its age is crossed."""
+
+    def test_a_spouse_already_past_the_statutory_age_draws_nothing(self):
+        """`cx2_042`: a wife who turned 65 in 2020 is paid no allowance at all."""
+        plan = _plan(PensionTactic.ALL_FROM_60)
+        plan.partner = Person(name="P", gender=Gender.FEMALE, date_of_birth=date(1955, 7, 1))
+        result = Simulator(plan).run(retire_index=1, today=TODAY)
+        assert all(not m.incomes.get("state_pension_partner") for m in result.months)
+
+    def test_one_crossing_it_during_the_run_draws_it(self):
+        """The main person, 36 today, is paid from the month after 67."""
+        result = Simulator(_plan(PensionTactic.ALL_FROM_60)).run(retire_index=1, today=TODAY)
+        assert any(m.incomes.get("state_pension") for m in result.months)

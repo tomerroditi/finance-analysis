@@ -105,8 +105,9 @@ def couple_bridge_months(
     Each spouse is a dict of `month_60`, `month_statutory`, `month_80` (months
     counted from today), `at_60` (net of the national-insurance contributions
     due until the statutory age), `at_60_past_statutory` (the same annuity
-    once they stop), `at_statutory` (monthly amounts) and `claims_at_60` — a
-    spouse on tactic `67` cuts no phase at 60.
+    once they stop), `at_statutory` (monthly amounts), `claims_at_60` — a
+    spouse on tactic `67` cuts no phase at 60 — and `draws_allowance`, false
+    for a spouse already past the statutory age today.
     """
     behind: set[int] = set()
     events = {last_working, horizon}
@@ -119,6 +120,11 @@ def couple_bridge_months(
             elif spouse[key] < horizon:
                 events.add(spouse[key])
     phases = [(month + 1, month) for month in sorted(behind)]
+    if any(
+        spouse["month_60"] == last_working and spouse["claims_at_60"]
+        for spouse in spouses
+    ):
+        phases.append((0, last_working))
     phases += [(end - start, end) for start, end in pairwise(sorted(events))]
     months = 0.0
     needs: list[float] = []
@@ -127,11 +133,14 @@ def couple_bridge_months(
         for spouse, other in zip(spouses, reversed(spouses), strict=True):
             if end > spouse["month_statutory"]:
                 income += spouse["at_60_past_statutory"] + spouse["at_statutory"]
-                income += (
-                    STATE_PENSION_AT_80 if end > spouse["month_80"] else STATE_PENSION
-                )
-                if end <= other["month_60"]:
-                    income += SPOUSE_INCREMENT
+                if spouse.get("draws_allowance", True):
+                    income += (
+                        STATE_PENSION_AT_80
+                        if end > spouse["month_80"]
+                        else STATE_PENSION
+                    )
+                    if end <= other["month_60"]:
+                        income += SPOUSE_INCREMENT
             elif end > spouse["month_60"]:
                 income += spouse["at_60"]
         need = max(spending - income, 0.0)

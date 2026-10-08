@@ -73,6 +73,16 @@ class TestRetireAsapParity:
         plan.person.date_of_birth = date(1930, 1, 1)
         assert solve(plan, RECORDED_IN).simulation is None
 
+    def test_goal_portfolios_must_reach_their_targets_while_working(self):
+        """`cx2_018` retires the month after its P2 first reaches 500,000.
+
+        Retiring at month 1 would let P2 reach its target years later, which
+        the reference does not count: a goal is met only before retirement.
+        """
+        fixture = parity.load("cx2_018")
+        plan = plan_from_reference(fixture["overrides"])
+        assert solve_retire_asap(plan, parity.recorded_in(fixture)).retire_index == 135
+
     def test_cannot_retire_before_working_a_month(self):
         """The earliest retirement the reference will report is month 1."""
         fixture = parity.load("pf_types_all")
