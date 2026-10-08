@@ -43,6 +43,18 @@ _TRANSFER_SCOPE_FIELDS = (
     "start_month",
 )
 
+#: Fields that decide what the waterfall gave every goal in every month since
+#: a goal started: changing one restates that history, not just the months to
+#: come.
+_ALLOCATION_FIELDS = (
+    *_TRANSFER_SCOPE_FIELDS,
+    "target_amount",
+    "monthly_cap",
+    "opening_balance",
+    "utilization_category",
+    "utilization_tags",
+)
+
 #: The income an investment goal is paid from; a cash goal cannot carry it.
 _FUNDING_FIELDS = ("funding_category", "funding_tags")
 
@@ -83,9 +95,9 @@ class GoalCrudMixin:
             fields["start_month"] = month_str((today.year, today.month))
         self._validate_month(fields.get("start_month"), "start_month")
         goal = self.repo.add(**{k: v for k, v in fields.items() if v is not None})
-        if self._owns_transfers(goal):
-            return self._restate_for_transfers(goal.start_month)
-        return self._after_write()
+        # It takes its waterfall turn from its start month, so every month
+        # since then is restated with it in place.
+        return self._restate_for_transfers(goal.start_month)
 
     def update(self, goal_id: int, **fields: Any) -> list[dict[str, Any]]:
         """Update an existing savings goal.
@@ -126,19 +138,21 @@ class GoalCrudMixin:
             self._validate_investment_fields({**current, **fields})
         if goal:
             self._validate_income_claims(goal, fields)
-        # Adding, dropping or narrowing a goal's own income rule decides, in
-        # every month since it started, what it borrowed and handed back — so
-        # it restates that history rather than only the months to come.
-        was_owner = bool(goal and self._owns_transfers(goal))
-        rescoped = any(
+        # Every goal takes its turn in the waterfall, so a goal's start, target,
+        # cap, opening balance or rules decide what it — and every goal below
+        # it — got in each month since it started. A change restates that
+        # history from the earlier of the old and new start month (moving the
+        # start later must clear the months it no longer covers); left to the
+        # months to come, an edit kept last year's allocations as they were.
+        old_start = goal.start_month if goal else None
+        changed = any(
             name in fields and fields[name] != getattr(goal, name, None)
-            for name in _TRANSFER_SCOPE_FIELDS
+            for name in _ALLOCATION_FIELDS
         )
         self.repo.update(goal_id, **fields)
-        goal = self.repo.get(goal_id)
-        if rescoped and (was_owner or self._owns_transfers(goal)):
+        if changed:
             earliest = min(
-                (m for m in (goal.start_month, fields.get("start_month")) if m),
+                (m for m in (old_start, fields.get("start_month")) if m),
                 default=None,
             )
             return self._restate_for_transfers(earliest)
@@ -158,9 +172,10 @@ class GoalCrudMixin:
             If the goal does not exist.
         """
         goal = self.repo.get(goal_id)
-        start = goal.start_month if goal and self._owns_transfers(goal) else None
+        start = goal.start_month if goal else None
         self.repo.delete(goal_id)
-        if start:
+        # What it took in the waterfall goes back to the goals below it.
+        if goal:
             self._restate_for_transfers(start)
 
     def reorder(self, ordered_ids: list[int]) -> list[dict[str, Any]]:
@@ -432,7 +447,7 @@ class GoalCrudMixin:
         return self._restate_for_transfers(earliest)
 
     def _restate_for_transfers(self, from_month: str | None) -> list[dict[str, Any]]:
-        """Rebuild history after the income a goal owns changed.
+        """Rebuild history after something that decides a goal's funding changed.
 
         Which transfers an investment goal owns decides whether each one is
         progress or a deficit that claws back the cash goals, and a saved-into
@@ -506,11 +521,6 @@ class GoalCrudMixin:
         if not tags or not other_tags or ALL_TAGS in tags or ALL_TAGS in other_tags:
             return True
         return bool(set(tags) & set(other_tags))
-
-    @staticmethod
-    def _owns_transfers(goal: SavingsGoal) -> bool:
-        """Whether the goal has income of its own: an investment or a saved-into rule."""
-        return is_investment_goal(goal) or bool(goal.contribution_category)
 
     @staticmethod
     def _validate_investment_fields(fields: dict[str, Any]) -> None:
