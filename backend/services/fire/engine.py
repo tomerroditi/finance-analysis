@@ -49,6 +49,12 @@ SHORTFALL_TOLERANCE = 1e-6
 """Unfunded shekels a plan may accumulate and still count as covering its
 living expenses — float noise, not money."""
 
+SHORTFALL_DISCOUNT_PCT = 5.0
+"""The annual rate the shortfall slice is discounted at — fixed, not the
+portfolio's own return: 28 recorded slices with first portfolios at 3% to 7%
+all back out to 5.000% (`lt2_lifo_p70_r3`'s 3% portfolio is the one the old
+reading, "the first portfolio's gross return", got wrong)."""
+
 HORIZON_AGE = 81.0
 """Simulation end age — a hard-coded constant in the reference, not gender- or
 cohort-derived (verified for male/female and DOB 1980/1990)."""
@@ -252,7 +258,15 @@ class SimulationResult:
         is quoted at 60), and Y is what they all pay together.
         """
         out = []
-        for owner in dict.fromkeys(a.owner for a in self.annuities):
+        # The main person first, whichever of them has the first annuity row:
+        # `tx2_couple_mainnone`'s husband, with only a state pension, is still
+        # quoted before his wife.
+        people = list(self.default_claim_age)
+        owners = sorted(
+            dict.fromkeys(a.owner for a in self.annuities),
+            key=lambda o: people.index(o) if o in people else len(people),
+        )
+        for owner in owners:
             rows = [
                 a
                 for a in self.annuities
@@ -303,7 +317,7 @@ class SimulationResult:
     """Target balance per asset key, for the accounts the plan has one for."""
 
     gross_monthly_factor: float = 1.0
-    """Discount rate for the shortfall slice — gross of the management fee."""
+    """Monthly discount factor for the shortfall slice (`SHORTFALL_DISCOUNT_PCT`)."""
 
     def unallocated_surplus(self) -> list[float]:
         """Return the reference's puzzling "unplanned expense" series.
@@ -586,9 +600,9 @@ class Simulator:
             today,
         )
         for t in range(retire_index):
+            account.annuitise_due((birth + t) / 12)
             if first <= t <= last:
                 account.contribute()
-            account.annuitise_due((birth + t) / 12)
             account.grow()
         share = fund.mukeret_pct / 100
         if fund.withdraw_severance and not account.streams:
@@ -699,9 +713,9 @@ class Simulator:
             today,
         )
         for t in range(min(retire_index, after_60 + 1)):
+            account.annuitise_due(self.age_at(t, today))
             if first <= t <= last:
                 account.contribute()
-            account.annuitise_due(self.age_at(t, today))
             account.grow()
         if account.streams:
             at_60 = [stream for stream in account.streams if stream.claim_age == 60]
@@ -727,11 +741,15 @@ class Simulator:
 
         Withdrawal portfolios switch at retirement from the user's return to the
         confidence-derived decumulation return; goal portfolios keep the user's
-        return for the whole horizon (notes/07).
+        return for the whole horizon (notes/07). The switch happens in the
+        retirement month, so a retirement already behind today never makes it:
+        `cx2_016`, retired three years ago by a pinned age, earns its own 6%
+        throughout.
         """
         if (
             portfolio.designation != PortfolioDesignation.WITHDRAW
             or index < retire_index
+            or retire_index < 0
         ):
             return portfolio.monthly_factor
         # The haircut can never *raise* the return: a 0% portfolio stays at 0%
@@ -866,8 +884,6 @@ class Simulator:
                     retire_index,
                     today,
                 )
-                if first <= t <= last:
-                    account.contribute()
                 # Severance is redeemed in the first retired month — that is
                 # "one month after FIRE", since the reference reports FIRE as
                 # the last *working* month (notes/05, notes/08).
@@ -876,7 +892,12 @@ class Simulator:
                     severance_cash += account.redeem_severance(
                         today.year + (month_number_ - 1) // 12, t
                     )
+                # A claim falling while deposits still run is made before the
+                # month's deposit (`cx2_030`: the reference annuitises 4,627
+                # less, one deposit net of its fee).
                 account.annuitise_due(owner_age)
+                if first <= t <= last:
+                    account.contribute()
                 who = "" if owner is plan.person else "_partner"
                 recognised, entitling = account.income_at(owner_age)
                 tax, insurance = account.deductions_at(
@@ -924,6 +945,9 @@ class Simulator:
                     cash_in,
                     cash_out,
                     taxable_income=self._taxable_income(cash_in, age, partner_age),
+                    exemption=self._gains_exemption(
+                        pensions, cash_in, age, partner_age
+                    ),
                 )
                 if shortfall > 0:
                     solvent = False
@@ -936,7 +960,7 @@ class Simulator:
             for account in funds:
                 account.grow(
                     None
-                    if t < retire_index
+                    if t < retire_index or retire_index < 0
                     else account.decumulation_factor(
                         self._decumulation_return(retire_index)
                     )
@@ -999,11 +1023,7 @@ class Simulator:
                 if portfolio.goal > 0
                 and portfolio.designation is not PortfolioDesignation.WITHDRAW
             },
-            gross_monthly_factor=(
-                (1 + plan.portfolios[0].annual_return_pct / 100) ** (1 / 12)
-                if plan.portfolios
-                else 1.0
-            ),
+            gross_monthly_factor=(1 + SHORTFALL_DISCOUNT_PCT / 100) ** (1 / 12),
             opening=self._opening_assets(),
             annuities=self._annuity_list(pensions, gemel_annuities, gemel_owner, today),
         )
@@ -1265,6 +1285,43 @@ class Simulator:
             ]
         return age, national_insurance.STATUTORY_AGE[self.plan.person.gender]
 
+    def _gains_exemption(
+        self,
+        pensions: list[tuple[object, PensionAccount]],
+        cash_in: dict[str, float],
+        age: float,
+        partner_age: float | None,
+    ) -> float:
+        """Return the taxed spouse's monthly exemption from the statutory age.
+
+        Severance taken tax-free shrinks it for good, for gains as for the
+        pension: `cx2_035`'s redemption cut the cap by 1,223.1 and its gains
+        after 67 are taxed as if the exemption were 4,886.9, not 6,110.
+
+        And while the other spouse's taxable annuity is stacked under the
+        gain, the exemption covers the taxed spouse's own entitling annuity
+        and nothing more: `cx2_010`'s fits at 1,815.8 against an annuity of
+        1,816, and `tx2_couple_mainnone`, with no annuity of its own, gets
+        none. With nothing stacked the leftover shields the gain — a single
+        person (`tx2_single`, `cx2_035`), a couple whose other spouse has no
+        taxable annuity (`tx2_couple_nostack`), and pension-free couples
+        (`cp8_e25000`).
+        """
+        partner_taxed = self._taxed_is_partner(age, partner_age)
+        taxed = self.plan.partner if partner_taxed else self.plan.person
+        exemption = israeli_tax.STATUTORY_AGE_MONTHLY_EXEMPTION
+        for owner, account in pensions:
+            if owner is taxed and account.severance is not None:
+                exemption -= account.severance.exemption_offset
+        own, other = (
+            ("entitling_partner", "entitling")
+            if partner_taxed
+            else ("entitling", "entitling_partner")
+        )
+        if partner_age is not None and cash_in.get(other, 0.0) > 0:
+            exemption = min(exemption, cash_in.get(own, 0.0))
+        return max(exemption, 0.0)
+
     def _taxable_income(
         self, cash_in: dict[str, float], age: float, partner_age: float | None
     ) -> float:
@@ -1301,6 +1358,7 @@ class Simulator:
         cash_in: dict[str, float] | None = None,
         cash_out: dict[str, float] | None = None,
         taxable_income: float = 0.0,
+        exemption: float = israeli_tax.STATUTORY_AGE_MONTHLY_EXEMPTION,
     ) -> tuple[float, float]:
         """Fund a monthly deficit, returning any unmet shortfall.
 
@@ -1334,6 +1392,7 @@ class Simulator:
                     age=age,
                     statutory_age=statutory_age,
                     taxable_income=taxable_income,
+                    exemption=exemption,
                 )
                 remaining -= net
                 drawn[f"portfolio{index}"] = (

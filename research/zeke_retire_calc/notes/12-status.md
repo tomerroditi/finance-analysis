@@ -8,16 +8,16 @@ run's peak net worth), and asserted run by run by `test_corpus_parity.py`.
 
 | | runs | under 0.1% |
 |---|---|---|
-| everything recorded | 2,106 | 2,100 |
+| everything recorded | 2,120 | 2,120 |
 | random households, first draw (`cx1_*`, used to find the rules) | 39 | 39 |
-| random households, second draw (`cx2_*`, out of sample) | 47 | 41 |
+| random households, second draw (`cx2_*`, out of sample) | 47 | 47 |
 
-Every run is under 0.1% except six from the second random draw, which was never
-used for fitting: three LIFO portfolios at high profit fractions (the synthetic
-lot history, notes/13), a pinned retirement age already in the past, a couple's
-tax at a portfolio hand-over, and a partner's annuity at 60. Thirteen more of
-that draw were refused by the reference itself (a main person already past the
-maximum retirement age), which our solver refuses too. The random households are the acceptance test: 40 plans drawn from a
+Every recorded run is under 0.1%. The second random draw was never used for
+fitting; the six of its households it first exposed were closed by rules found
+with targeted probes (`lots2`, `tax2`; notes/13, notes/18 §6), not by tuning
+on them. Thirteen more of that draw were refused by the reference itself (a
+main person already past the maximum retirement age), which our solver refuses
+too. The random households are the acceptance test: 40 plans drawn from a
 seeded generator using every feature at once — couples, several portfolios of
 mixed types and designations, study funds, loans started in the past, real
 estate, one-off flows, rising costs, every pension tactic, severance.

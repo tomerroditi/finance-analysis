@@ -7,7 +7,19 @@
 > two-phase growth the hypothesis fits. The old reasoning is kept at the bottom
 > as a caution.
 
-## The model
+## Update: the history is rounded down and scaled whole (`lots2`)
+
+`lots2` reads the ladder directly — one 8M portfolio sold newest- or
+oldest-first from month 1, at 20-90% profit, 3-8% return, with a fee and at
+24M — where each month's tax over its sale is the gain fraction of exactly the
+lots sold. Our gain fraction ran a steady ~1e-4 high, the signature of the
+*total* basis being off rather than the ages. Every construction was replayed
+against eighteen lot fixtures; the one that fits takes `N` **rounded down** and
+scales basis and value **together** to the stated balance, so the profit
+fraction the history carries lands a little above the typed one instead of
+being forced onto it. Worst gap 28 shekels on 8-24M portfolios, from 1,323.
+
+## The model (as first found)
 
 The reference has no real purchase history — the user types a balance and a
 profit fraction — so it manufactures one: the opening balance is a run of

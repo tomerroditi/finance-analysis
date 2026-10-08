@@ -60,20 +60,25 @@ def monthly_income_tax(monthly_income: float, exemption: float = 0.0) -> float:
 
 
 def capital_gains_tax(
-    gain: float, age: float, statutory_age: int, taxable_income: float = 0.0
+    gain: float,
+    age: float,
+    statutory_age: int,
+    taxable_income: float = 0.0,
+    exemption: float = STATUTORY_AGE_MONTHLY_EXEMPTION,
 ) -> float:
     """Tax on a realised monthly capital gain.
 
     Below 60 the flat 25% applies. From 60 the gain is taxed as ordinary
     income instead, capped at the flat rate — and from the statutory pension
-    age an extra monthly exemption applies on top.
+    age the monthly `exemption` applies on top (smaller once severance has
+    been taken tax-free, `cx2_035`).
     """
     if gain <= 0:
         return 0.0
     flat = CAPITAL_GAINS_FLAT_RATE * gain
     if age <= MARGINAL_TREATMENT_AGE:
         return flat
-    exemption = STATUTORY_AGE_MONTHLY_EXEMPTION if age > statutory_age else 0.0
+    exemption = exemption if age > statutory_age else 0.0
     stacked = monthly_income_tax(taxable_income + gain, exemption) - monthly_income_tax(
         taxable_income, exemption
     )

@@ -141,12 +141,16 @@ def _feasible(plan: Plan, candidate: int, today: date) -> tuple[bool, Simulation
 def has_no_result(plan: Plan, today: date) -> bool:
     """Whether the reference would answer "no results to show" (notes/01).
 
-    Two degenerate cases: the person is already past the retirement age the plan
-    is searching up to, so there is no candidate month to try, or they are past
-    the age-81 horizon, so there is no simulation to run at all. `old_66` is the
-    recorded example — a 66-year-old searching up to 60.
+    Two degenerate cases: a search with no candidate month — the person already
+    past the age it searches up to, `old_66` a 66-year-old searching up to 60 —
+    or a person past the age-81 horizon, with no simulation to run at all. A
+    pinned retirement age is not a search: `cx2_016` asks a 63-year-old to have
+    retired at 60, and the reference answers with a retirement in the past.
     """
-    return search_limit(plan, today) <= 0 or Simulator(plan).month_count(today) <= 0
+    searching = plan.base_problem != BaseProblem.RETIRE_AT_AGE
+    return (searching and search_limit(plan, today) <= 0) or Simulator(
+        plan
+    ).month_count(today) <= 0
 
 
 def solve(plan: Plan, today: date | None = None) -> SolveResult:
@@ -205,11 +209,12 @@ def pinned_retire_index(plan: Plan, today: date) -> int:
     The last working month is the one at exactly the requested age, so the
     first retired month is one later — every `retire_at_age` run the reference
     answered prints that month (a 36.67-year-old asking for 45 works through
-    month 100 and retires in month 101).
+    month 100 and retires in month 101). An age already behind today gives a
+    month before the first: `cx2_016`, 63 asking for 60, retired in month -36.
     """
     target = plan.wanted_retire_age or plan.max_retire_age
     age_now = Simulator(plan).age_at(0, today)
-    return max(int(round((target - age_now) * 12)), 0) + 1  # noqa: RUF046
+    return int(round((target - age_now) * 12)) + 1  # noqa: RUF046
 
 
 def solve_retire_at_age(plan: Plan, today: date | None = None) -> SolveResult:

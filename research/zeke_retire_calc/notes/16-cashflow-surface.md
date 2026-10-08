@@ -104,8 +104,10 @@ shortfall_capital(as_of) = Σ unfunded[t] / f^(t + 1 - as_of)
                          + Σ max(goal - balance[retirement], 0) / f^(retire - as_of)
 ```
 
-with `f` the first portfolio's **gross** monthly return — the management fee is
-not deducted for this one figure. It is discounted to month 0 on the first card
+with `f` a flat **5%** a year (`1.05^(1/12)`). This first read as "the first
+portfolio's gross return", because all seven runs it was recovered from held 5%
+portfolios; `lt2_lifo_p70_r3`'s 3% portfolio broke that, and 28 slices with
+first portfolios at 3-7% all back out to 5.000%. It is discounted to month 0 on the first card
 and to the first *retired* month on the second, one month past the balances
 printed beside it. Recovered from seven recorded runs and exact on every one,
 including `desig_goal`, where the goal component is 9,000,000 wanted against

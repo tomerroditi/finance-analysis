@@ -15,17 +15,18 @@ A 5% portfolio at 50% profit gives 315 lots (26 years); at 90% profit, 907
 (76 years). That is why FIFO starts with a very high taxable share and LIFO
 with almost none. Later deposits simply append lots bought at par.
 
-Where the ladder *starts* is unobservable: the lots are rescaled to the stated
-balance, and shifting every age by a constant is exactly undone by that
-rescale. What the sale prices do see is `N`, and the sum above is the version
-that fits — running it from `a = 0` instead gives one lot more (316 and 908),
-and doubles the worst tax disagreement on every fixture that has a synthetic
-history at all.
-
-Verified by replaying the reference's own withdrawals through this model across
-seven scenarios (FIFO and LIFO, with and without deposits, 50% and 90% profit,
-and two with a *known* deposit history and no synthetic part at all): the
-worst monthly tax disagreement is between 0.05 and 1.83 shekels.
+`N` is the continuous solution **rounded down** to whole months, and the
+history is then scaled — basis and value alike — to the stated balance, so the
+profit fraction it actually carries lands slightly above the one typed rather
+than being forced onto it. `lots2` read this lot by lot: one portfolio sold
+newest- or oldest-first every month from retirement, at 20-90% profit, 3-8%
+return, with a fee, and at three times the size. The month's tax over its sale
+is the gain fraction of exactly the lots sold, and every variant of the
+construction was replayed against eighteen lot fixtures: rounding down and
+scaling both leaves a worst gap of 28 shekels on 8-24M portfolios, where
+rounding to nearest and forcing the typed fraction (the previous model) left
+1,323. Running the sum from `a = 0`, ceiling, or a fractional oldest lot are
+all worse.
 """
 
 from __future__ import annotations
@@ -73,7 +74,7 @@ def solve_lot_count(monthly_factor: float, profit_fraction: float) -> int:
             low = mid
         else:
             high = mid
-    return max(int(round((low + high) / 2)), 1)  # noqa: RUF046
+    return max(int((low + high) / 2), 1)
 
 
 def opening_lots(
@@ -91,16 +92,16 @@ def opening_lots(
     count = solve_lot_count(monthly_factor, profit_fraction)
     if count == 1:
         return [Lot(basis=balance * (1 - profit_fraction), value=balance)]
-    per_lot = balance * (1 - profit_fraction) / count
     lots = [
-        Lot(basis=per_lot, value=per_lot * monthly_factor**age)
+        Lot(basis=1.0, value=monthly_factor**age)
         for age in reversed(range(1, count + 1))
     ]
-    # `count` is a rounded solution of a continuous equation, so rescale to hit
-    # the stated balance exactly.
-    total = sum(lot.value for lot in lots)
-    scale = balance / total
+    # Whole lots only, so the history is scaled — basis and value together — to
+    # the stated balance, and the profit fraction it carries lands a little
+    # above the one typed (`lots2`).
+    scale = balance / sum(lot.value for lot in lots)
     for lot in lots:
+        lot.basis *= scale
         lot.value *= scale
     return lots
 

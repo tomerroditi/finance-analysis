@@ -83,6 +83,19 @@ class TestRetireAsapParity:
         plan = plan_from_reference(fixture["overrides"])
         assert solve_retire_asap(plan, parity.recorded_in(fixture)).retire_index == 135
 
+    def test_a_pinned_age_already_behind_today_still_gets_a_plan(self):
+        """`cx2_016`: 63 asking to retire at 60 retired in month -36.
+
+        Not "no results" — a pinned age is not a search — and the run never
+        switches to the decumulation return, since that switch happens in a
+        retirement month the simulation never reaches.
+        """
+        fixture = parity.load("cx2_016")
+        plan = plan_from_reference(fixture["overrides"])
+        outcome = solve(plan, parity.recorded_in(fixture))
+        assert outcome.retire_index == -36
+        assert outcome.simulation is not None
+
     def test_cannot_retire_before_working_a_month(self):
         """The earliest retirement the reference will report is month 1."""
         fixture = parity.load("pf_types_all")

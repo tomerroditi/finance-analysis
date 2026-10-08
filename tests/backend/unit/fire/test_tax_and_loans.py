@@ -118,12 +118,17 @@ class TestCapitalGainsTax:
         assert net == pytest.approx(5_000)
 
     def test_synthetic_history_reproduces_the_stated_profit_fraction(self):
-        """An opening balance is expanded into lots that net to what was typed."""
+        """An opening balance is expanded into lots worth what was typed.
+
+        The lot count is rounded down and basis and value are scaled together
+        (`lots2`), so the basis lands a little above the typed 50% — never below.
+        """
         portfolio = Portfolio(balance=1_500_000, profit_fraction_pct=50,
                               lot_method=LotMethod.FIFO)
         account = TaxableAccount.from_portfolio(portfolio)
         assert sum(lot.value for lot in account.lots) == pytest.approx(1_500_000)
-        assert sum(lot.basis for lot in account.lots) == pytest.approx(750_000, rel=1e-3)
+        basis = sum(lot.basis for lot in account.lots)
+        assert 750_000 <= basis <= 750_000 * 1.005
         # Oldest lot carries the most gain, newest almost none.
         assert account.lots[0].gain_fraction > account.lots[-1].gain_fraction
         # The newest lot is essentially at par; the residual is the rescale that

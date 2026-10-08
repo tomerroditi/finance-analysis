@@ -237,8 +237,13 @@ class PensionAccount:
                 self.balance *= 1 - mukeret
                 self.annuitised.add(60)
             if due(self.statutory_age):
-                self._claim(1.0, self.statutory_age, False, age)
-                self.balance = 0.0
+                # Only the entitling share converts. A recognised share whose
+                # claim at 60 fell before the plan began is never claimed: it
+                # stays in the fund as an asset, as an unclaimed fund does
+                # (`cx2_016`, 63 today, is paid 80% at 65 and carries the rest).
+                share = 1.0 if 60 in self.annuitised else 1 - mukeret
+                self._claim(share, self.statutory_age, False, age)
+                self.balance *= 1 - share
                 self.annuitised.add(self.statutory_age)
 
     def income_at(self, age: float) -> tuple[float, float]:

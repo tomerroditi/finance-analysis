@@ -107,6 +107,7 @@ class TaxableAccount:
         age: float = 0.0,
         statutory_age: int = 67,
         taxable_income: float = 0.0,
+        exemption: float = israeli_tax.STATUTORY_AGE_MONTHLY_EXEMPTION,
     ) -> tuple[float, float]:
         """Sell enough to net `need`. Returns `(net_received, tax_paid)`.
 
@@ -130,7 +131,7 @@ class TaxableAccount:
 
         def tax_on(gross: float) -> float:
             return israeli_tax.capital_gains_tax(
-                gain_on(gross), age, statutory_age, taxable_income
+                gain_on(gross), age, statutory_age, taxable_income, exemption
             )
 
         ceiling = need / max(1 - CAPITAL_GAINS_RATE * gain_share, 1e-9)
@@ -160,7 +161,7 @@ class TaxableAccount:
         else:
             realised = lot_math.realised_gain(self.lots, self.method, gross)
             tax = israeli_tax.capital_gains_tax(
-                realised, age, statutory_age, taxable_income
+                realised, age, statutory_age, taxable_income, exemption
             )
             self.basis = sum(lot.basis for lot in self.lots)
         self.balance -= gross

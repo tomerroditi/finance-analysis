@@ -227,6 +227,26 @@ latter net of the 6,110 exemption once *they* are past their statutory age.
   `058`), and a plan whose goal arrives only after the search window cannot
   retire (`cx2_055`).
 
+**Also from the second draw, outside the bridge** (`tax2`, `lots2`):
+
+* The statutory-age exemption on gains is shrunk for good by severance taken
+  tax-free (`cx2_035`: by the 1,223.1 the reference prints), and while the
+  other spouse's taxable annuity is stacked under the gain it covers the taxed
+  spouse's own entitling annuity and nothing more (`cx2_010` fits at 1,815.8
+  against 1,816; `tx2_couple_mainnone`, with none, gets none). With nothing
+  stacked, the leftover still shields the gain (`tx2_single`, `cx2_035`).
+* A claim falling while deposits still run is made before that month's
+  deposit, after any severance redemption (`cx2_030`).
+* Under tactic 60-67, a recognised share whose claim at 60 fell before the plan
+  began is never claimed: the statutory claim converts only the entitling share
+  and the rest stays in the fund as an asset (`cx2_016`).
+* A pinned retirement age already behind today retires in the past (month
+  -36 for `cx2_016`) and never switches to the decumulation return — the
+  switch is an event in a retirement month the run never reaches. It is not a
+  "no results" case: that is only for a search with no candidate month.
+* The shortfall slice is discounted at a flat 5%, not the first portfolio's
+  return (28 slices, portfolios at 3-7%, all back out to 5.000%).
+
 Open: none on the couple bridge. The earlier readings of this section ("a fixed 0.5203
 weight", "the partner's single bridge", "the plain mean of the non-zero
 needs") were each one face of this rule.

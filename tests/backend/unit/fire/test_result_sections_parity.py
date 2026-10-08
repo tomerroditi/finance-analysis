@@ -24,7 +24,7 @@ import pytest
 
 import parity
 from backend.services.fire.engine import Simulator
-from test_corpus_parity import CURVE
+from test_corpus_parity import CURVE, LOTS
 from test_corpus_parity import KNOWN_GAPS as CORPUS_GAPS
 from backend.services.fire.reference_form import plan_from_reference
 
@@ -55,6 +55,9 @@ KNOWN_GAPS = {
     # Its charts replay to 5 shekels; the discounted shortfall slice sums 90
     # unfunded months, each a few shekels off, to 2.5.
     "be_net_3m_20k": CURVE,
+    # Every unfunded month matches but the one the portfolio runs dry in, 11.18
+    # shekels off (the lot history's residue), which is 5.4 on the slice.
+    "lt2_lifo_p70_r3": LOTS,
 }
 """Runs whose drawdown differs because of a documented open question.
 
