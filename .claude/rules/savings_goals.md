@@ -194,18 +194,23 @@ else in this file. An **investment** goal answers "have I invested X?":
   is paid from it first and only the rest leaves free cash; a withdrawal
   still goes back to free cash. What is not yet invested is cash the goal
   holds — the payload's `to_invest` ("… ready to invest"), counted in
-  `earmarked` and in how far the pool may go negative. **Its progress is
-  what it holds** — its income plus its waterfall surplus, invested or not.
-  Investing only moves its cash (`plan.invested`, which the card's "invested
-  this month" reads); a deposit it holds no cash for is not its progress,
-  and a withdrawal hands back at most what it invested.
+  `earmarked` and in how far the pool may go negative.
+- **Every investment goal holds cash and takes its waterfall turn.** Its
+  progress is what it holds — income, waterfall surplus and new money
+  invested — invested or not. Investing only moves its cash (`plan.invested`,
+  which the card's "invested this month" reads). A plain investment goal used
+  to be filled only by transfers and skipped the waterfall, so a January
+  withdrawal left "Yearly savings" at −40K beside 300K of free cash.
 - **Two investment goals can match one transfer** (both counting every
   Investments transfer, say). `_goal_by_transaction` no longer settles it —
   it returns each transfer's *group* of matching goals, highest first, and
   `invested` is keyed by group. `_split_transfer` splits each month's net per
-  group: a deposit first draws on the cash the funded goals hold (highest
-  first), and whatever no goal's cash paid for — the rest of a deposit, or a
-  withdrawal — goes to the highest goal without a funding income. Rules used
+  group: a deposit first draws on the cash the goals hold (highest first);
+  the rest is new progress for the highest goal still short of its target
+  that has no income of its own, paid from free cash, or an ordinary transfer
+  when there is none. A withdrawal goes back into the cash of the goals that
+  invested, never past what each invested; the rest returns to free cash. So
+  no investment goal goes negative. Rules used
   to be applied in waterfall order with the last writer winning, so the
   *lowest* goal took every shared transfer from its start month on: a
   "Yearly savings" goal started in January swallowed the deposits made out
@@ -238,15 +243,23 @@ else in this file. An **investment** goal answers "have I invested X?":
   every old clawback in place. Pinned by
   `test_creating_and_deleting_it_restate_the_past`.
 
-## Goals with income of their own: income first, surplus for the rest
+## Goals with income of their own: exactly that income, surplus for the gap
 
 A cash goal with a `contribution_category` (a "saved into" rule — the wedding
 fund fed by `Other Income / Wedding`), and an investment goal with a funding
 income, are **filled by that income first** and still **take their waterfall
 turn** for the rest.
 
-- **Surplus fills what the income has not** (`fill` in `_simulate`, written
-  as ordinary ledger rows). Income is measured against the target *ignoring*
+- **Surplus fills only what the income will never cover.** `surplus_room`
+  is the target less every shekel of the goal's own income in the history
+  (known to date), and caps its `fill`. A goal whose income meets its target
+  takes no free cash at all, even in the months before the income lands —
+  bills there are fronted and repaid. The user's words: Marriage kickstart
+  "takes from free cash instead of the connected income, while the connected
+  income has the exact same amount it needs". The release below is now only
+  a safety net (income that grows past what the history showed).
+- **Surplus it does take is ordinary waterfall money** (`fill` in
+  `_simulate`, written as ordinary ledger rows). Income is measured against the target *ignoring*
   that surplus, so it is always kept; once goal-held money passes the target,
   `give_back_fill` returns the surplus the income made unnecessary to free
   cash as a negative row in the income's month. A goal whose income covers

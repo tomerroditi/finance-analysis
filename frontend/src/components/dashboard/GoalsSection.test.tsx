@@ -766,6 +766,26 @@ describe("GoalsSection", () => {
       ).toMatch(/5,307/);
     });
 
+    it("say nothing about free cash when what it paid rounds to 0 ₪", async () => {
+      await renderGoals([
+        makeGoal({
+          name: "Wedding",
+          contribution_category: "Other Income",
+          utilized: 198878.35,
+          owed: 0.35,
+        }),
+      ]);
+
+      expect(within(rowFor("Wedding")).queryByText(/paid from free cash/i)).toBeNull();
+    });
+
+    it("draw an empty bar for a goal below zero", async () => {
+      await renderGoals([makeGoal({ name: "Short", progress_pct: -33.4 })]);
+
+      const bar = rowFor("Short").querySelector<HTMLElement>("[style*='width']");
+      expect(bar?.style.width).toBe("0%");
+    });
+
     it("offer no free-cash claim, since they hold exactly their income", async () => {
       await renderGoals([
         makeGoal({ id: 1, name: "Trip" }),

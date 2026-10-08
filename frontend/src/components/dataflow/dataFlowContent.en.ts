@@ -365,7 +365,7 @@ const content: DataFlowContent = {
       sections: [
         { heading: "The Waterfall", items: ["Each month\u2019s realized surplus is income \u2212 expenses \u2212 investments, CC-deduped", "It flows down the goals by priority, each taking min(remaining need, monthly cap)", "Linked transactions are pulled out of the surplus and reintroduced explicitly, so no shekel counts twice", "What no goal claims stays in the free-cash pool"] },
         { heading: "A Bad Month", text: "A month that spends more than it earns drains free cash first. Only once that is empty does the shortfall come back out of the goals, lowest priority first, each giving back at most what is funded but not yet spent \u2014 money already spent can never be reclaimed." },
-        { heading: "Investment Goals", text: "An investment goal is filled by the net money moved into the investments it names — deposits add, withdrawals take back. It is never funded from surplus and never clawed back, and it is not cash: never in the free-cash pool. One that names the income paying for it is different: it holds that income, takes its waterfall turn for the rest, and invests from what it holds." },
+        { heading: "Investment Goals", text: "An investment goal takes its waterfall turn like any goal and holds that money as cash ready to invest; deposits into the investments it names are paid from that cash, and withdrawals go back into it. What it has invested is never clawed back. One that names the income paying for it holds exactly that income, and takes free cash only for what the income never covers." },
         { heading: "Closed Goals", text: "Frozen. Their allocations can never be reclaimed or clawed back." },
       ],
     },
