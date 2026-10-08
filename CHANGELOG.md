@@ -1,3 +1,9 @@
+## v1.95.2 (2026-10-08)
+
+### Fix
+
+- **savings-goals**: income-source goals take their waterfall turn and hold their income; past-due goals stop asking for X/mo for 0 mo (#369)
+
 ## v1.95.1 (2026-10-08)
 
 ### Fix
