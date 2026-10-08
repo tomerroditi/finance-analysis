@@ -1750,3 +1750,81 @@ class TestInvestmentGoalFunding:
                 target_amount=1000,
                 contribution_category="Other Income",
             )
+
+
+class TestChangingAGoalsKind:
+    """A goal can switch between saving cash and investing."""
+
+    def test_a_cash_goal_becomes_an_investment_goal(self, db_session, service):
+        """Its cash settings are cleared and it counts investment transfers."""
+        month = _month_str(1)
+        _seed_surplus(db_session, month, income=10000, expenses=7000)
+        transfer = _add_txn(db_session, month, -4000, "Investments", tag="Pakam", day=5)
+        created = service.create(
+            name="Goal",
+            target_amount=20000,
+            opening_balance=500,
+            monthly_cap=1000,
+            start_month=month,
+            utilization_category="Leisure",
+        )
+        goal_id = created[0]["id"]
+        service.link_transaction(
+            goal_id=goal_id,
+            source_type="transaction",
+            source_id=transfer.unique_id,
+            source_table="bank_transactions",
+            link_type=LINK_CONTRIBUTION,
+        )
+
+        updated = service.update(goal_id, kind="investment")
+
+        goal = next(g for g in updated if g["id"] == goal_id)
+        assert goal["kind"] == "investment"
+        assert goal["contribution_category"] == "Investments"
+        assert goal["opening_balance"] == 0
+        assert goal["monthly_cap"] is None
+        assert goal["utilization_category"] is None
+        assert service.get_links(goal_id) == []
+        # Its history is restated: it holds the transfer, not surplus.
+        assert goal["allocated"] == 0
+        assert goal["funded"] == 4000
+
+    def test_an_investment_goal_becomes_a_cash_goal(self, db_session, service):
+        """Its investment and funding rules are cleared and surplus fills it again."""
+        month = _month_str(1)
+        _seed_surplus(db_session, month, income=10000, expenses=7000)
+        created = service.create(
+            name="Goal",
+            target_amount=20000,
+            kind="investment",
+            start_month=month,
+            funding_category="Other Income",
+        )
+        goal_id = created[0]["id"]
+
+        updated = service.update(goal_id, kind="cash")
+
+        goal = next(g for g in updated if g["id"] == goal_id)
+        assert goal["kind"] == "cash"
+        assert goal["contribution_category"] is None
+        assert goal["funding_category"] is None
+        assert goal["funded"] == 3000
+
+    def test_fields_sent_with_the_switch_apply(self, db_session, service):
+        """A switch to cash can set the new kind's settings in the same save."""
+        created = service.create(name="Goal", target_amount=1000, kind="investment")
+        goal_id = created[0]["id"]
+
+        updated = service.update(goal_id, kind="cash", monthly_cap=200)
+
+        assert next(g for g in updated if g["id"] == goal_id)["monthly_cap"] == 200
+
+    def test_a_closed_goal_must_be_reopened_first(self, db_session, service):
+        """A closed goal's history is frozen, so its kind cannot change."""
+        created = service.create(name="Goal", target_amount=1000)
+        goal_id = created[0]["id"]
+        service.close(goal_id)
+
+        with pytest.raises(ValidationException):
+            service.update(goal_id, kind="investment")

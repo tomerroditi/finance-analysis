@@ -15,6 +15,7 @@ from backend.constants.budget import ALL_TAGS
 from backend.constants.categories import INVESTMENTS_CATEGORY
 from backend.errors import EntityNotFoundException, ValidationException
 from backend.models.savings_goal import (
+    GOAL_KIND_CASH,
     GOAL_KIND_INVESTMENT,
     GOAL_STATUS_ACTIVE,
     GOAL_STATUS_CLOSED,
@@ -113,6 +114,9 @@ class GoalCrudMixin:
         if "start_month" in fields:
             self._validate_month(fields["start_month"], "start_month")
         goal = self.repo.get(goal_id)
+        new_kind = fields.pop("kind", None)
+        if goal and new_kind and new_kind != (goal.kind or GOAL_KIND_CASH):
+            return self._change_kind(goal, new_kind, fields)
         if goal and is_investment_goal(goal):
             fields.pop("contribution_category", None)
             current = {
@@ -374,6 +378,58 @@ class GoalCrudMixin:
             return []
         links = links.replace({np.nan: None})
         return links.to_dict("records")
+
+    def _change_kind(
+        self, goal: SavingsGoal, kind: str, fields: dict[str, Any]
+    ) -> list[dict[str, Any]]:
+        """Switch a goal between saving cash and investing, and restate its history.
+
+        What one kind is filled by means nothing to the other, so the switch
+        clears it: a goal turning into an investment goal counts Investments
+        transfers and drops its opening balance, cap, spending rule, saved-into
+        rule and single-transaction links; one turning back into a cash goal
+        drops its investment and funding rules. Fields sent with the switch
+        apply on top. Every month since the goal started was funded from
+        somewhere else, so its history is rebuilt from there.
+
+        Raises
+        ------
+        ValidationException
+            If the goal is closed (its history is frozen), or the result would
+            be an invalid goal of the new kind or claim income another goal
+            already claims.
+        """
+        if goal.status == GOAL_STATUS_CLOSED:
+            raise ValidationException("Reopen the goal before changing its type")
+        if kind == GOAL_KIND_INVESTMENT:
+            fields.pop("contribution_category", None)
+            changes = {
+                "contribution_category": INVESTMENTS_CATEGORY,
+                "contribution_tags": None,
+                "opening_balance": 0.0,
+                "monthly_cap": None,
+                "utilization_category": None,
+                "utilization_tags": None,
+            }
+        else:
+            changes = {
+                "contribution_category": None,
+                "contribution_tags": None,
+                "funding_category": None,
+                "funding_tags": None,
+            }
+        changes = {**changes, **fields, "kind": kind}
+        if kind == GOAL_KIND_INVESTMENT:
+            self._validate_investment_fields(changes)
+        self._validate_income_claims(goal, changes)
+        with self.repo.atomic():
+            self.repo.update(goal.id, **changes)
+            self.repo.delete_links_for_goal(goal.id)
+        earliest = min(
+            (m for m in (goal.start_month, changes.get("start_month")) if m),
+            default=None,
+        )
+        return self._restate_for_transfers(earliest)
 
     def _restate_for_transfers(self, from_month: str | None) -> list[dict[str, Any]]:
         """Rebuild history after the income a goal owns changed.

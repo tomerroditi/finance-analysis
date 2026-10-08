@@ -662,6 +662,42 @@ describe("GoalsSection", () => {
   });
 
   describe("goal editor", () => {
+    it("switches an existing goal from saving cash to investing", async () => {
+      vi.spyOn(taggingApi, "getCategories").mockResolvedValue({
+        data: { Investments: ["Pakam"], "Other Income": ["Wedding"] },
+      } as Awaited<ReturnType<typeof taggingApi.getCategories>>);
+      vi.spyOn(savingsGoalsApi, "getFreeCashBefore").mockResolvedValue({
+        data: { month: "2025-01", free_cash: 0 },
+      } as Awaited<ReturnType<typeof savingsGoalsApi.getFreeCashBefore>>);
+      const update = vi.spyOn(savingsGoalsApi, "update").mockResolvedValue({
+        data: [] as SavingsGoal[],
+      } as Awaited<ReturnType<typeof savingsGoalsApi.update>>);
+      await renderGoals([
+        makeGoal({
+          name: "Trip",
+          monthly_cap: 500,
+          contribution_category: "Other Income",
+          contribution_tags: "Wedding",
+        }),
+      ]);
+
+      fireEvent.click(within(rowFor("Trip")).getByRole("button", { name: /^edit$/i }));
+      const invest = await screen.findByRole("radio", { name: /invest/i });
+      expect(screen.queryByTestId("goal-kind-change-hint")).not.toBeInTheDocument();
+      fireEvent.click(invest);
+
+      // The editor says what the switch does before it is saved.
+      expect(screen.getByTestId("goal-kind-change-hint")).toBeInTheDocument();
+      expect(screen.queryByLabelText(/monthly cap/i)).not.toBeInTheDocument();
+      fireEvent.click(screen.getByRole("button", { name: /^save$/i }));
+
+      await waitFor(() => expect(update).toHaveBeenCalled());
+      const payload = update.mock.calls[0][1];
+      expect(payload).toMatchObject({ kind: "investment", contribution_tags: null });
+      expect(payload).not.toHaveProperty("monthly_cap");
+      expect(payload).not.toHaveProperty("opening_balance");
+    });
+
     it("picks the start on the same calendar as the target date, keeping the month", async () => {
       vi.spyOn(taggingApi, "getCategories").mockResolvedValue({
         data: {},

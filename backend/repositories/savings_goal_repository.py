@@ -309,6 +309,13 @@ class SavingsGoalRepository:
         self.db.delete(link)
         self._commit()
 
+    def delete_links_for_goal(self, goal_id: int) -> None:
+        """Delete every transaction link a goal has."""
+        self.db.query(SavingsGoalLink).filter(
+            SavingsGoalLink.goal_id == goal_id
+        ).delete()
+        self._commit()
+
     def set_utilization_rule(
         self, goal_id: int, category: str | None, tags: str | None
     ) -> None:

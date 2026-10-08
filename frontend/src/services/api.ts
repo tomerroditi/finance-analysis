@@ -1162,7 +1162,7 @@ export interface SavingsGoal {
   /**
    * `"cash"` earmarks money in the tracked accounts and is filled by the
    * surplus waterfall; `"investment"` is filled by the net money moved into
-   * the investments its contribution rule names. Fixed at creation.
+   * the investments its contribution rule names. Switching it restates history.
    */
   kind: SavingsGoalKind;
   status: string;
@@ -1202,7 +1202,7 @@ export type SavingsGoalKind = "cash" | "investment";
 
 export interface SavingsGoalInput {
   name: string;
-  /** Only read on create — a goal's kind never changes. */
+  /** Switching it on an update clears what the new kind cannot hold and restates history. */
   kind?: SavingsGoalKind;
   target_amount: number;
   opening_balance?: number;

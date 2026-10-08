@@ -98,7 +98,8 @@ class SavingsGoal(Base, TimestampMixin):
         ``"investment"`` is filled by the money actually moved into
         investments instead: its ``contribution_category`` / ``_tags`` name
         the transfers, deposits add and withdrawals subtract, and it never
-        takes part in the waterfall or its clawback. Fixed at creation.
+        takes part in the waterfall or its clawback. Switching kind clears
+        what the new kind cannot hold and restates the goal's history.
     status : str
         ``"active"`` or ``"closed"``. A closed goal stops absorbing surplus and
         its existing allocations become immutable.

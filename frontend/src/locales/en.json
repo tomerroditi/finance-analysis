@@ -352,6 +352,7 @@
       "autoLinkSaveLabel": "Saved into this goal",
       "autoLinkSaveHint": "The goal holds exactly this income — it takes nothing from your monthly surplus, and it is never taken back to cover overspending.",
       "kindLabel": "Goal type",
+      "kindChangeHint": "Changing the type clears the settings the new type can't use and recalculates this goal's history from its start month.",
       "kindCash": "Save cash",
       "kindCashHint": "Filled from each month's leftover money",
       "kindInvestment": "Invest",

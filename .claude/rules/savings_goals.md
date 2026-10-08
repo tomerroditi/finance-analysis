@@ -159,7 +159,7 @@ matters most is drained last.
 
 ## Investment goals: filled by transfers, not by surplus
 
-A goal has a `kind` (`savings_goals.kind`, fixed at creation; `NULL` — a row
+A goal has a `kind` (`savings_goals.kind`; `NULL` — a row
 older than the column, or a demo DB synced by `sync_missing_columns` — reads
 as `cash`, via `common.is_investment_goal`). A **cash** goal is everything
 else in this file. An **investment** goal answers "have I invested X?":
@@ -196,6 +196,15 @@ else in this file. An **investment** goal answers "have I invested X?":
   holds — the payload's `to_invest` ("… ready to invest"), counted in
   `earmarked` and in how far the pool may go negative. Progress is still the
   net invested.
+- **A goal can switch kind** (`update(kind=...)` → `_change_kind`, the
+  editor's type choice is shown when editing too). What one kind is filled by
+  means nothing to the other, so the switch clears it — to investment: the
+  opening balance, cap, spending rule, saved-into rule and single-transaction
+  links, with the rule set to Investments; to cash: the investment and
+  funding rules — then applies the fields sent with it and restates history
+  from the earlier of the old and new start months. A closed goal must be
+  reopened first. The editor warns before saving and blanks the rules of the
+  kind it leaves (restoring them if switched back).
 - **One income feeds one goal.** A saved-into rule and a funding rule both
   claim income, so `_validate_income_claims` refuses a second claim on the
   same category (overlapping tags, or either side covering every tag), and a
