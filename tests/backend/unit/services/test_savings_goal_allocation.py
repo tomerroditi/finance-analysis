@@ -263,10 +263,11 @@ class TestExplicitContributions:
 
         goal = service.get_all()[0]
         assert goal["contributed"] == 600
-        # A goal with a saved-into rule holds exactly what the rule brings in:
-        # the month's other 2400 of surplus stays free cash.
-        assert goal["funded"] == 600
-        assert service.get_free_cash()["free_cash"] == 2400
+        # A saved-into rule does not take the goal out of the waterfall: the
+        # month's other 2400 of surplus fills it too.
+        assert goal["allocated"] == 2400
+        assert goal["funded"] == 3000
+        assert service.get_free_cash()["free_cash"] == 0
 
     def test_incoming_contribution_is_new_money_not_a_draw_on_the_pool(
         self, db_session, service
@@ -1493,8 +1494,12 @@ class TestRuleFundedGoals:
         )
         return next(g for g in created if g["name"] == "Wedding")
 
-    def test_it_holds_exactly_its_income_and_never_surplus(self, db_session, service):
-        """Salary surplus stays free cash; the goal is filled by its gifts alone."""
+    def test_its_income_displaces_the_surplus_that_filled_it(self, db_session, service):
+        """Surplus fills it until its gifts land; then the gifts come first.
+
+        The surplus the gifts make unnecessary goes back to free cash, so a
+        goal whose income covers its target ends up holding that income alone.
+        """
         before, gifts = _month_str(2), _month_str(1)
         _seed_surplus(db_session, before, income=10000, expenses=6000)
         _seed_surplus(db_session, gifts, income=10000, expenses=10000)
@@ -1512,8 +1517,8 @@ class TestRuleFundedGoals:
         assert pool["free_cash"] == 6000  # 4000 of salary surplus + 2000 spilled
         assert pool["liquid"] == 16000
 
-    def test_income_short_of_the_target_leaves_it_short(self, db_session, service):
-        """No surplus tops it up: it holds what came in, nothing more."""
+    def test_surplus_tops_up_income_short_of_the_target(self, db_session, service):
+        """Free cash fills what its income leaves short, in waterfall order."""
         before, gifts = _month_str(2), _month_str(1)
         _seed_surplus(db_session, before, income=10000, expenses=6000)
         _add_txn(db_session, gifts, 3000, "Other Income", tag="Wedding", day=6)
@@ -1521,9 +1526,10 @@ class TestRuleFundedGoals:
         self._wedding(service, before)
 
         goal = service.get_all()[0]
-        assert goal["allocated"] == 0
-        assert goal["funded"] == 3000
-        assert service.get_free_cash()["free_cash"] == 4000
+        assert goal["allocated"] == 4000
+        assert goal["contributed"] == 3000
+        assert goal["funded"] == 7000
+        assert service.get_free_cash()["free_cash"] == 0
 
     def test_a_deficit_never_takes_its_income_back(self, db_session, service):
         """Overspending that ate into the gifts shows as negative free cash."""
@@ -1708,7 +1714,8 @@ class TestInvestmentGoalFunding:
 
         goal = self._invest(service, month)
 
-        assert goal["funded"] == 10000
+        # Progress is what the goal holds, invested or not.
+        assert goal["funded"] == 30000
         assert goal["to_invest"] == 20000
         pool = service.get_free_cash()
         assert pool["free_cash"] == 50000
@@ -1727,10 +1734,10 @@ class TestInvestmentGoalFunding:
         assert goal["to_invest"] == 0
         assert service.get_free_cash()["free_cash"] == 30000
 
-    def test_transfers_before_its_income_arrives_are_not_its_progress(
+    def test_its_progress_is_the_income_it_holds_invested_or_not(
         self, db_session, service
     ):
-        """Investing before the income lands, and withdrawing it, never touch the goal."""
+        """Investing only moves the goal's cash; transfers before it held any are not its."""
         early, late = _month_str(3), _month_str(1)
         _add_txn(db_session, early, -8000, "Investments", tag="Pakam", day=5)
         _add_txn(db_session, _month_str(2), 3000, "Investments", tag="Pakam", day=5)
@@ -1739,7 +1746,7 @@ class TestInvestmentGoalFunding:
 
         goal = self._invest(service, early)
 
-        assert goal["funded"] == 20000
+        assert goal["funded"] == 50000
         assert goal["to_invest"] == 30000
 
     def test_two_goals_on_one_investment_split_by_whose_income_paid(
@@ -1770,6 +1777,25 @@ class TestInvestmentGoalFunding:
         assert goals["Invest"]["to_invest"] == 0
         # The withdrawal, and the 5000 of the deposit the income did not cover.
         assert goals["Yearly"]["funded"] == -34000 + 5000
+
+    def test_surplus_fills_it_before_its_income_arrives_and_gives_way_after(
+        self, db_session, service
+    ):
+        """It takes its waterfall turn; once the income covers the target the surplus returns."""
+        before, gifts = _month_str(2), _month_str(1)
+        _seed_surplus(db_session, before, income=10000, expenses=6000)
+        _add_txn(db_session, gifts, 200000, "Other Income", tag="Kickstart", day=2)
+
+        goal = self._invest(service, before)
+
+        assert goal["contributed"] == 200000
+        assert goal["allocated"] == 0
+        assert goal["funded"] == 200000
+        assert goal["is_achieved"] is True
+        assert service.get_free_cash()["free_cash"] == 4000
+        timeline = {row["month"]: row for row in service.get_timeline()["months"]}
+        assert timeline[before]["goals"][0]["allocated"] == 4000
+        assert timeline[gifts]["goals"][0]["allocated"] == -4000
 
     def test_only_an_investment_goal_can_name_a_funding_income(self, service):
         """A cash goal is funded by surplus or its own saved-into rule, not this."""

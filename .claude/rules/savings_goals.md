@@ -195,16 +195,16 @@ else in this file. An **investment** goal answers "have I invested X?":
   still goes back to free cash. What is not yet invested is cash the goal
   holds — the payload's `to_invest` ("… ready to invest"), counted in
   `earmarked` and in how far the pool may go negative. **Its progress is
-  exactly what that income paid for** — the same "exactly its income" rule a
-  saved-into cash goal follows. A deposit before the income arrives, or the
-  part of one the income cannot cover, is not its progress; a withdrawal
-  takes back at most what it holds.
+  what it holds** — its income plus its waterfall surplus, invested or not.
+  Investing only moves its cash (`plan.invested`, which the card's "invested
+  this month" reads); a deposit it holds no cash for is not its progress,
+  and a withdrawal hands back at most what it invested.
 - **Two investment goals can match one transfer** (both counting every
   Investments transfer, say). `_goal_by_transaction` no longer settles it —
   it returns each transfer's *group* of matching goals, highest first, and
   `invested` is keyed by group. `_split_transfer` splits each month's net per
-  group: a deposit first draws on the funded goals' waiting income (highest
-  first), and whatever no income paid for — the rest of a deposit, or a
+  group: a deposit first draws on the cash the funded goals hold (highest
+  first), and whatever no goal's cash paid for — the rest of a deposit, or a
   withdrawal — goes to the highest goal without a funding income. Rules used
   to be applied in waterfall order with the last writer winning, so the
   *lowest* goal took every shared transfer from its start month on: a
@@ -238,18 +238,39 @@ else in this file. An **investment** goal answers "have I invested X?":
   every old clawback in place. Pinned by
   `test_creating_and_deleting_it_restate_the_past`.
 
-## Goals with income of their own hold exactly that income
+## Goals with income of their own: income first, surplus for the rest
 
 A cash goal with a `contribution_category` (a "saved into" rule — the wedding
-fund fed by `Other Income / Wedding`) holds **exactly its income**: the
-wedding gifts, never the salary that was left over while it waited for them.
+fund fed by `Other Income / Wedding`), and an investment goal with a funding
+income, are **filled by that income first** and still **take their waterfall
+turn** for the rest.
 
-- **It never takes surplus from the waterfall** and **is never clawed back**,
-  like an investment goal. An earlier version let it take surplus toward its
-  target until the income came and release it after; on real data that
-  parked 158K of salary in a wedding fund for a year, and a deficit then
-  clawed a 300K goal's own gifts back and refilled it with surplus, so it
-  showed 255K made of the wrong money.
+- **Surplus fills what the income has not** (`fill` in `_simulate`, written
+  as ordinary ledger rows). Income is measured against the target *ignoring*
+  that surplus, so it is always kept; once goal-held money passes the target,
+  `give_back_fill` returns the surplus the income made unnecessary to free
+  cash as a negative row in the income's month. A goal whose income covers
+  its target therefore ends holding the income alone; one whose income falls
+  short is topped up from free cash in priority order. The user asked for
+  this explicitly ("free cash should always fill the goals in a waterfall
+  manner"): a 300K kickstart goal funded by 300K of gifts showed 192K while
+  it ignored the waterfall.
+- **A deficit reclaims only that surplus, never the income.** The clawback
+  caps an income goal's give-back at its `fill`. An earlier waterfall version
+  without that cap clawed a 300K goal's own gifts back and refilled it with
+  surplus, so it showed 255K made of the wrong money. Its other failure —
+  salary parked in the goal for a year while it waited for the gifts — is
+  now the intended behaviour: that is the goal's place in the waterfall, and
+  the gifts hand it back when they land.
+- **Surplus that reaches a goal still owing for a bill repays that debt
+  first** (`repay_bridge`, recorded in `plan.released`), exactly as its
+  income would; a replayed positive row does the same, so a rebuild and a
+  replay agree.
+- **History replay: a goal with rows elsewhere is no newcomer.** In a
+  non-recomputed month only a goal with no stored rows at all may take what
+  the month left unallocated. A net row hides a take that a same-month
+  deficit gave back, so the old "no row this month" test let a lower goal
+  grab that surplus on every replay (a wedding fund gained 14.6K per read).
 - **A bill that lands before the income is paid with borrowed free cash**
   (`plan.fronted`, tracked in `bridge`): the goal pays it in full and owes the
   gap. **Income repays the bridge first** (`plan.released`, credited back to
