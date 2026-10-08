@@ -235,6 +235,19 @@ class AllocationEngineMixin:
         # and is fully spent closes partway through the walk.
         frozen = {g.id: g.status == GOAL_STATUS_CLOSED for g in goals}
         start_of = dict(zip((g.id for g in goals), starts, strict=True))
+        # A goal with a target date takes new money only up to that month — a
+        # "2024" savings goal is 2024's money. Past it, it keeps what it holds
+        # (and can still invest it), but the surplus moves on to the goals
+        # below it instead of topping it up forever.
+        end_of = {g.id: month_key(g.target_date) for g in goals}
+
+        def open_for(goal_id: int, month_key_: tuple[int, int]) -> bool:
+            """Whether a goal still takes new money in a month."""
+            end = end_of[goal_id]
+            return start_of[goal_id] <= month_key_ and (
+                end is None or month_key_ <= end
+            )
+
         goal_by_id = {g.id: g for g in goals}
         # An investment goal holds cash it has not invested yet (``to_invest``)
         # and pays for its transfers out of it. What it has invested is in a
@@ -460,7 +473,7 @@ class AllocationEngineMixin:
             for goal in goals:
                 if pool <= 0:
                     break
-                if frozen[goal.id] or key < start_of[goal.id]:
+                if frozen[goal.id] or not open_for(goal.id, key):
                     continue
                 # In a history month, a goal that already has a row has had its
                 # say — only newcomers may take what is still unallocated. A
@@ -585,7 +598,12 @@ class AllocationEngineMixin:
                         moved,
                         # A goal with income of its own is filled by that
                         # income; a deposit it holds no cash for is not its.
-                        {g: 0.0 if g in surplus_room else needs(g) for g in candidates},
+                        {
+                            g: 0.0
+                            if g in surplus_room or not open_for(g, key)
+                            else needs(g)
+                            for g in candidates
+                        },
                     )
                     for goal_id, share in shares:
                         funded[goal_id] += share

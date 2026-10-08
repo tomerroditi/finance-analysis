@@ -64,6 +64,12 @@ if free_cash < 0:                                (the month overspent)
   priority-1 goal absorbs everything until it fills.
 - **`start_month` gates participation**, so a goal created today cannot claim
   surpluses that predate it. It defaults to the creation month.
+- **A target date ends a goal's turn** (`open_for` in `_simulate`): it takes
+  new money — waterfall surplus, or a deposit no goal's cash covers — only up
+  to its target month. Past it, it keeps what it holds and can still invest
+  that cash, and the surplus moves on to the goals below. Without the end, a
+  "Yearly savings 2024" goal at the top of the order took every surplus of
+  2025 and 2026, starving every goal below it.
 
 ## The free-cash pool
 

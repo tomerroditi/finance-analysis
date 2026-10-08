@@ -2055,3 +2055,46 @@ class TestNegativeFreeCash:
         assert goal["funded"] == 2000
         assert goal["utilized"] == 1500
         assert service.get_free_cash()["free_cash"] == 0
+
+
+class TestTargetDateEndsTheTurn:
+    """A goal takes new money only up to its target month."""
+
+    def test_surplus_after_the_target_month_goes_to_the_goals_below(
+        self, db_session, service
+    ):
+        """A "last year" goal keeps what it got but stops starving the rest."""
+        during, after = _month_str(2), _month_str(1)
+        _seed_surplus(db_session, during, income=10000, expenses=6000)
+        _seed_surplus(db_session, after, income=10000, expenses=7000)
+
+        service.create(
+            name="Last year",
+            target_amount=50000,
+            start_month=during,
+            target_date=f"{during}-28",
+        )
+        service.create(name="Trip", target_amount=50000, start_month=during)
+
+        goals = {g["name"]: g for g in service.get_all()}
+        assert goals["Last year"]["funded"] == 4000
+        assert goals["Trip"]["funded"] == 3000
+
+    def test_after_its_target_month_it_still_invests_what_it_holds(
+        self, db_session, service
+    ):
+        """Its cash can still be invested; only new money passes it by."""
+        during, after = _month_str(2), _month_str(1)
+        _seed_surplus(db_session, during, income=10000, expenses=6000)
+        _add_txn(db_session, after, -6000, "Investments", tag="Pakam", day=5)
+
+        _create_investment_goal(
+            service, start_month=during, target_date=f"{during}-28"
+        )
+
+        goal = service.get_all()[0]
+        # It held 4000 and invested it; the other 2000 was new money it no
+        # longer takes, so it left free cash.
+        assert goal["funded"] == 4000
+        assert goal["to_invest"] == 0
+        assert service.get_free_cash()["free_cash"] == -2000
