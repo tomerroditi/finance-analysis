@@ -1,3 +1,9 @@
+## v1.95.5 (2026-10-08)
+
+### Fix
+
+- **savings-goals**: show negative free cash instead of flooring it at zero (#373)
+
 ## v1.95.4 (2026-10-08)
 
 ### Fix
