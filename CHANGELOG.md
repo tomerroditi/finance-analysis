@@ -1,3 +1,9 @@
+## v1.95.0 (2026-10-08)
+
+### Feat
+
+- **savings-goals**: investment goals can name the income that pays for them; switch a goal between cash and investing (#367)
+
 ## v1.94.3 (2026-10-08)
 
 ### Fix
