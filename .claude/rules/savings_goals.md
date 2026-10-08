@@ -118,9 +118,9 @@ engine starts taking money back out of the goals.
 - **Moving an opening balance restates history.** Stored months keep their
   rows, so a new opening balance replayed against old ones leaves the pool
   short — the next deficit month then claws the difference back out of
-  whichever goal has no row there, which is the wrong goal. The editor
-  therefore runs a `rebuild` from the goal's start month whenever the opening
-  balance changes, and says so before the user saves.
+  whichever goal has no row there, which is the wrong goal. `update` restates
+  it (see "Editing a goal restates its history" below), and the editor says so
+  before the user saves.
 - `free_cash + Σ available` is the liquid money the goals sit over, which is
   what `GET /savings-goals/free-cash` reports as `liquid`. That endpoint
   short-circuits to zeros when the user keeps no goals, so the no-goals path
@@ -434,14 +434,23 @@ Allocations persist per `(goal, month)` in `savings_goal_allocations`.
 - A month already on record keeps its amounts. A goal added later may still
   draw on what that month left *unallocated* — that is additive backfill, and
   it never takes from a goal already funded there.
-- **Reordering is the exception: it restates everything.** `reorder` sets the
+- **Editing a goal restates its history.** Every goal takes its waterfall
+  turn, so a change to anything in `_ALLOCATION_FIELDS` (start month, target,
+  cap, opening balance, saved-into / spending / investment / funding rules)
+  makes `update` rebuild from the **earlier of the old and new start month** —
+  moving a start later must clear the months it no longer covers. `create`
+  and `delete` always restate from the goal's start month too. Only an edit to
+  the transfer rules of an income or investment goal used to restate; moving
+  a cash goal's start date, or changing any goal's target, kept every past
+  month as it was. The client no longer calls `rebuild` after an edit or a
+  free-cash claim — the update already did.
+- **Reordering restates everything.** `reorder` sets the
   priorities and runs a full `rebuild` in the same call. It used to apply
   forward only, with a separate previewed "Redistribute" to restate history
   — which left the list saying one order while every past month was still
   allocated under the old one, until the user found the button. Closed goals
-  keep their frozen rows, as in any rebuild. The editor's opening-balance
-  change and the free-cash claim still call `rebuild` directly;
-  `dry_run=True` stays on the endpoint, but no screen previews any more.
+  keep their frozen rows, as in any rebuild. `dry_run=True` stays on the
+  endpoint, but no screen previews any more.
 - **A rebuild computes first and writes last, in one transaction.** The new
   order (reorder passes it as `rebuild(order=...)`, simulated via
   `_order_override` without touching the stored priorities), the deletion of

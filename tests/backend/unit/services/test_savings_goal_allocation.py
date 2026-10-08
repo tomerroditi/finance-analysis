@@ -1932,3 +1932,64 @@ class TestChangingAGoalsKind:
 
         with pytest.raises(ValidationException):
             service.update(goal_id, kind="investment")
+
+
+class TestEditingAGoalRestatesItsHistory:
+    """An edit that decides what a goal got is applied to every month it covers."""
+
+    def test_moving_the_start_later_clears_the_months_before_it(
+        self, db_session, service
+    ):
+        """Surplus from months the goal no longer covers goes back to free cash."""
+        early, late = _month_str(2), _month_str(1)
+        _seed_surplus(db_session, early, income=10000, expenses=6000)
+        _seed_surplus(db_session, late, income=10000, expenses=7000)
+        created = service.create(name="Trip", target_amount=50000, start_month=early)
+        assert created[0]["funded"] == 7000
+
+        updated = service.update(created[0]["id"], start_month=late)
+
+        assert updated[0]["funded"] == 3000
+        assert service.get_free_cash()["free_cash"] == 4000
+
+    def test_moving_the_start_earlier_fills_the_months_it_now_covers(
+        self, db_session, service
+    ):
+        """Months before the old start join the goal's history."""
+        early, late = _month_str(2), _month_str(1)
+        _seed_surplus(db_session, early, income=10000, expenses=6000)
+        _seed_surplus(db_session, late, income=10000, expenses=7000)
+        created = service.create(name="Trip", target_amount=50000, start_month=late)
+        assert created[0]["funded"] == 3000
+
+        updated = service.update(created[0]["id"], start_month=early)
+
+        assert updated[0]["funded"] == 7000
+
+    def test_a_lower_target_hands_the_surplus_on_in_every_month(
+        self, db_session, service
+    ):
+        """Shrinking the target restates the past, not just the months to come."""
+        early, late = _month_str(2), _month_str(1)
+        _seed_surplus(db_session, early, income=10000, expenses=6000)
+        _seed_surplus(db_session, late, income=10000, expenses=7000)
+        trip = service.create(name="Trip", target_amount=50000, start_month=early)[0]
+        service.create(name="Car", target_amount=50000, start_month=early)
+
+        updated = {g["name"]: g for g in service.update(trip["id"], target_amount=2000)}
+
+        assert updated["Trip"]["funded"] == 2000
+        assert updated["Car"]["funded"] == 5000
+
+    def test_deleting_a_goal_hands_its_surplus_to_the_goals_below(
+        self, db_session, service
+    ):
+        """What a deleted goal took goes to the next goal in line, month by month."""
+        month = _month_str(1)
+        _seed_surplus(db_session, month, income=10000, expenses=7000)
+        trip = service.create(name="Trip", target_amount=50000, start_month=month)[0]
+        service.create(name="Car", target_amount=50000, start_month=month)
+
+        service.delete(trip["id"])
+
+        assert service.get_all()[0]["funded"] == 3000

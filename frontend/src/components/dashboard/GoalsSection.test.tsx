@@ -605,7 +605,7 @@ describe("GoalsSection", () => {
       } as Awaited<ReturnType<typeof savingsGoalsApi.getFreeCashBefore>>);
     }
 
-    it("sets the opening balance and restates from the goal's start", async () => {
+    it("sets the opening balance, which restates the goal's history on the server", async () => {
       await renderGoals([makeGoal({ name: "Vacation", start_month: "2026-01" })]);
       stubFreeCashBefore(24000);
       const update = vi
@@ -613,11 +613,7 @@ describe("GoalsSection", () => {
         .mockResolvedValue({ data: [] } as unknown as Awaited<
           ReturnType<typeof savingsGoalsApi.update>
         >);
-      const rebuild = vi
-        .spyOn(savingsGoalsApi, "rebuild")
-        .mockResolvedValue({ data: {} } as unknown as Awaited<
-          ReturnType<typeof savingsGoalsApi.rebuild>
-        >);
+      const rebuild = vi.spyOn(savingsGoalsApi, "rebuild");
 
       fireEvent.click(
         within(rowFor("Vacation")).getByRole("button", {
@@ -628,7 +624,7 @@ describe("GoalsSection", () => {
       await waitFor(() =>
         expect(update).toHaveBeenCalledWith(1, { opening_balance: 24000 }),
       );
-      await waitFor(() => expect(rebuild).toHaveBeenCalledWith("2026-01", false));
+      expect(rebuild).not.toHaveBeenCalled();
     });
 
     it("says so and writes nothing when the goal already holds it", async () => {

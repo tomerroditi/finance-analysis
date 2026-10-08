@@ -193,12 +193,10 @@ export function GoalsSection() {
   });
 
   const claimMutation = useMutation({
-    mutationFn: async ({ goal, amount, start }: { goal: SavingsGoal; amount: number; start: string }) => {
-      await savingsGoalsApi.update(goal.id, { opening_balance: amount });
-      // Same restate the editor runs: stored months were computed against the
-      // old opening balance, and replaying them would claw from the wrong goal.
-      await savingsGoalsApi.rebuild(start, false);
-    },
+    // The update restates the goal's history itself: stored months were
+    // computed against the old opening balance.
+    mutationFn: ({ goal, amount }: { goal: SavingsGoal; amount: number }) =>
+      savingsGoalsApi.update(goal.id, { opening_balance: amount }),
     onSuccess: invalidate,
   });
 
@@ -241,7 +239,7 @@ export function GoalsSection() {
       }),
       confirmLabel: t("dashboard.goals.claimAction"),
     });
-    if (ok) claimMutation.mutate({ goal, amount, start });
+    if (ok) claimMutation.mutate({ goal, amount });
   };
 
   const goals = data ?? [];
@@ -1022,19 +1020,16 @@ function GoalEditorModal({ goal, onClose }: { goal: SavingsGoal | null; onClose:
     enabled: !isInvestment,
   });
 
-  // Stored months keep their rows, so an opening balance that moves without a
-  // restate leaves history computed against the old pool — a later deficit
-  // month would then take the difference back out of the wrong goal.
+  // Saving restates the goal's history; the editor says so before an opening
+  // balance moves, since that changes every month since the start.
   const openingChanged =
     !isInvestment && (Number(openingBalance) || 0) !== (goal?.opening_balance ?? 0);
 
   const save = useMutation({
     mutationFn: async (payload: SavingsGoalInput) => {
-      const res = goal
+      return goal
         ? await savingsGoalsApi.update(goal.id, payload)
         : await savingsGoalsApi.create(payload);
-      if (openingChanged) await savingsGoalsApi.rebuild(effectiveStart, false);
-      return res;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: qkPrefix.savingsGoals });
