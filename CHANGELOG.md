@@ -1,3 +1,9 @@
+## v1.95.3 (2026-10-08)
+
+### Fix
+
+- **savings-goals**: every investment goal takes its waterfall turn; an income goal takes free cash only for what its income never covers (#370)
+
 ## v1.95.2 (2026-10-08)
 
 ### Fix
