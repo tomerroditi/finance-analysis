@@ -494,7 +494,7 @@ test.describe("Savings goals", () => {
     expect(await openingBalance()).toBeCloseTo(claim.free_cash, 2);
   });
 
-  test("an investment goal is filled by transfers, not by the waterfall", async ({
+  test("an investment goal takes its waterfall turn as cash ready to invest", async ({
     page,
   }) => {
     // A cash goal's editor offers the cash-only settings; choosing "Invest"
@@ -519,7 +519,11 @@ test.describe("Savings goals", () => {
       start_month: monthsAgo(12),
     });
     expect(goal.kind).toBe("investment");
-    expect(goal.allocated).toBe(0);
+    // It takes surplus in its turn like any goal; what it has not invested yet
+    // is cash it holds, and its progress counts both.
+    expect(goal.allocated).toBeGreaterThan(0);
+    expect(goal.funded).toBeGreaterThanOrEqual(goal.to_invest);
+    expect(goal.funded).toBeGreaterThanOrEqual(0);
 
     await page.reload();
     const row = goalRow(page, "E2E Invest Goal");
