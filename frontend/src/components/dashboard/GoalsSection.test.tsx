@@ -41,6 +41,8 @@ function makeGoal(overrides: Partial<SavingsGoal> = {}): SavingsGoal {
     target_date: null,
     contribution_category: null,
     contribution_tags: null,
+    funding_category: null,
+    funding_tags: null,
     utilization_category: null,
     utilization_tags: null,
     kind: "cash",
@@ -51,6 +53,7 @@ function makeGoal(overrides: Partial<SavingsGoal> = {}): SavingsGoal {
     contributed: 0,
     utilized: 0,
     owed: 0,
+    to_invest: 0,
     clawed_back: 0,
     funded: 2500,
     available: 2500,
@@ -786,6 +789,44 @@ describe("GoalsSection", () => {
       await renderGoals([makeGoal({ name: "Trip", this_month_allocation: -800 })]);
 
       expect(within(rowFor("Trip")).queryByText(/this month/i)).not.toBeInTheDocument();
+    });
+
+    it("shows the funding income it has not invested yet", async () => {
+      await renderGoals([invest({ to_invest: 20000 })]);
+
+      expect(
+        within(rowFor("Pakam")).getByText(/ready to invest/i).textContent,
+      ).toMatch(/20,000/);
+    });
+
+    it("can name the income its investing is paid from", async () => {
+      vi.spyOn(taggingApi, "getCategories").mockResolvedValue({
+        data: { Investments: ["Pakam"], "Other Income": ["Kickstart", "Bonus"] },
+      } as Awaited<ReturnType<typeof taggingApi.getCategories>>);
+      vi.spyOn(savingsGoalsApi, "getFreeCashBefore").mockResolvedValue({
+        data: { month: "2026-09", free_cash: 0 },
+      } as Awaited<ReturnType<typeof savingsGoalsApi.getFreeCashBefore>>);
+      const create = vi.spyOn(savingsGoalsApi, "create").mockResolvedValue({
+        data: [] as SavingsGoal[],
+      } as Awaited<ReturnType<typeof savingsGoalsApi.create>>);
+      await renderGoals([makeGoal({ name: "Trip" })]);
+
+      fireEvent.click(screen.getByRole("button", { name: /add goal/i }));
+      fireEvent.click(await screen.findByRole("radio", { name: /invest/i }));
+      fireEvent.change(screen.getByLabelText(/name/i), { target: { value: "Invest" } });
+      fireEvent.change(screen.getByLabelText(/target amount/i), { target: { value: "50000" } });
+
+      const funding = screen.getByTestId("goal-invest-funding");
+      fireEvent.click(within(funding).getAllByRole("button")[0]);
+      fireEvent.click(await screen.findByRole("option", { name: "Other Income" }));
+      fireEvent.click(screen.getByRole("button", { name: /^save$/i }));
+
+      await waitFor(() => expect(create).toHaveBeenCalled());
+      expect(create.mock.calls[0][0]).toMatchObject({
+        kind: "investment",
+        funding_category: "Other Income",
+        funding_tags: null,
+      });
     });
 
     it("creates one from the editor with only the settings it uses", async () => {

@@ -1657,3 +1657,96 @@ class TestRuleFundedGoals:
             if g["name"] == "Wedding"
         )
         assert bars == goal["funded"]
+
+
+class TestInvestmentGoalFunding:
+    """An investment goal can name the income its transfers are paid from."""
+
+    def _invest(self, service, start, **overrides):
+        """Create an investment goal paid for by Other Income / Kickstart."""
+        fields = {
+            "name": "Invest",
+            "target_amount": 200000,
+            "kind": "investment",
+            "start_month": start,
+            "funding_category": "Other Income",
+            "funding_tags": "Kickstart",
+            **overrides,
+        }
+        created = service.create(**fields)
+        return next(g for g in created if g["name"] == "Invest")
+
+    def test_its_income_pays_for_the_transfers_before_free_cash(
+        self, db_session, service
+    ):
+        """A transfer bigger than the income takes only the rest from free cash."""
+        month = _month_str(1)
+        _seed_free_cash(db_session, 50000)
+        _add_txn(db_session, month, 100000, "Other Income", tag="Kickstart", day=2)
+        _add_txn(db_session, month, -123500, "Investments", tag="Pakam", day=5)
+
+        goal = self._invest(service, month)
+
+        assert goal["funded"] == 123500
+        assert goal["to_invest"] == 0
+        pool = service.get_free_cash()
+        assert pool["free_cash"] == 26500  # 50000 - the 23500 the income missed
+        assert pool["liquid"] == 26500
+
+    def test_income_not_yet_invested_waits_as_earmarked_cash(self, db_session, service):
+        """Unspent funding income is cash the goal holds, not free cash."""
+        month = _month_str(1)
+        _seed_free_cash(db_session, 50000)
+        _add_txn(db_session, month, 30000, "Other Income", tag="Kickstart", day=2)
+        _add_txn(db_session, month, -10000, "Investments", tag="Pakam", day=5)
+
+        goal = self._invest(service, month)
+
+        assert goal["funded"] == 10000
+        assert goal["to_invest"] == 20000
+        pool = service.get_free_cash()
+        assert pool["free_cash"] == 50000
+        assert pool["earmarked"] == 20000
+        assert pool["liquid"] == 70000
+
+    def test_income_before_its_start_month_is_ordinary_surplus(
+        self, db_session, service
+    ):
+        """Only income from the goal's start month on is set aside for it."""
+        before, start = _month_str(2), _month_str(1)
+        _add_txn(db_session, before, 30000, "Other Income", tag="Kickstart", day=2)
+
+        goal = self._invest(service, start)
+
+        assert goal["to_invest"] == 0
+        assert service.get_free_cash()["free_cash"] == 30000
+
+    def test_only_an_investment_goal_can_name_a_funding_income(self, service):
+        """A cash goal is funded by surplus or its own saved-into rule, not this."""
+        with pytest.raises(ValidationException):
+            service.create(
+                name="Trip",
+                target_amount=1000,
+                funding_category="Other Income",
+            )
+
+    def test_one_income_can_feed_only_one_goal(self, service):
+        """The same income under two goals would be counted twice."""
+        service.create(
+            name="Kickstart",
+            target_amount=1000,
+            contribution_category="Other Income",
+            contribution_tags="Kickstart",
+        )
+        with pytest.raises(ValidationException):
+            self._invest(service, _month_str(1))
+
+        # A different tag in the same category is a different income.
+        goal = self._invest(service, _month_str(1), funding_tags="Bonus")
+        assert goal["funding_tags"] == "Bonus"
+        with pytest.raises(ValidationException):
+            service.create(
+                name="Bonus fund",
+                target_amount=1000,
+                contribution_category="Other Income",
+            )

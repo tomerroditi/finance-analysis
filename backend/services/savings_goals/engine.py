@@ -45,6 +45,9 @@ class AllocationPlan:
     #: ``{(goal_id, year, month): amount}`` of surplus and fronted cash a
     #: rule-funded goal handed back to free cash once its income arrived.
     released: dict[tuple[int, int, int], float] = field(default_factory=dict)
+    #: ``{goal_id: amount}`` of an investment goal's funding income not yet
+    #: spent on its transfers — cash waiting to be invested.
+    to_invest: dict[int, float] = field(default_factory=dict)
     #: ``{goal_id: total funded}`` after the whole timeline.
     funded: dict[int, float] = field(default_factory=dict)
     #: ``{goal_id: total utilized}`` after the whole timeline.
@@ -244,10 +247,15 @@ class AllocationEngineMixin:
             g.id for g in goals if g.id not in invests and g.contribution_category
         }
         bridge = dict.fromkeys(rule_funded, 0.0)
+        # An investment goal with a funding rule pays for its transfers out of
+        # that income before it touches free cash; what it has not spent yet
+        # waits here to be invested.
+        to_invest = {g.id: 0.0 for g in goals if g.id in invests and g.funding_category}
 
         def income_held() -> float:
             """Cash the income-funded goals still hold — how low the pool may go."""
-            return sum(max(0.0, funded[g] - utilized[g]) for g in bridge)
+            held = sum(max(0.0, funded[g] - utilized[g]) for g in bridge)
+            return held + sum(max(0.0, cash) for cash in to_invest.values())
 
         # An opening balance is money the goal held when it started, so it
         # leaves the pool in that month. Taking every opening balance out when
@@ -451,13 +459,29 @@ class AllocationEngineMixin:
             # overspending. It runs after the clawback so it can never take
             # money back out of another goal: a transfer the pool cannot cover
             # simply empties it. A withdrawal hands the money back.
+            for goal_id, amount in context["funding"].get(key, {}).items():
+                if goal_id in to_invest:
+                    to_invest[goal_id] += amount
             invested_now = context["invested"].get(key, {})
             if invested_now:
+                from_free_cash = 0.0
                 for goal_id, amount in invested_now.items():
-                    if goal_id in funded:
-                        funded[goal_id] += amount
-                        plan.contributed[(goal_id, year, month)] = amount
-                free_cash = max(-income_held(), free_cash - sum(invested_now.values()))
+                    if goal_id not in funded:
+                        continue
+                    funded[goal_id] += amount
+                    plan.contributed[(goal_id, year, month)] = amount
+                    # A deposit is paid from the goal's own funding income
+                    # first; only the rest leaves free cash. A withdrawal
+                    # hands the money back to free cash.
+                    paid = (
+                        min(max(0.0, to_invest[goal_id]), amount)
+                        if goal_id in to_invest and amount > 0
+                        else 0.0
+                    )
+                    if paid:
+                        to_invest[goal_id] -= paid
+                    from_free_cash += amount - paid
+                free_cash = max(-income_held(), free_cash - from_free_cash)
 
             # Adding zero turns the -0.0 a fully drained pool rounds to into 0.0.
             plan.free_cash[key] = round(free_cash, 2) + 0.0
@@ -475,6 +499,7 @@ class AllocationEngineMixin:
 
         plan.funded = funded
         plan.utilized = utilized
+        plan.to_invest = {g: round(cash, 2) for g, cash in to_invest.items()}
         return plan
 
     def _persist(self, plan: AllocationPlan) -> None:

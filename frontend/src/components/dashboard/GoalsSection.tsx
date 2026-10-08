@@ -876,7 +876,7 @@ function GoalRow({
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1.5 text-[10px] md:text-xs text-[var(--text-muted)]">
           <GoalStatusLine goal={goal} />
         </div>
-        {(showThisMonth || goal.utilized > 0 || goal.owed > 0) && (
+        {(showThisMonth || goal.utilized > 0 || goal.owed > 0 || goal.to_invest > 0) && (
           <div className="flex flex-wrap gap-x-3 gap-y-1 mt-1.5 text-[10px] md:text-xs text-[var(--text-muted)]">
             {showThisMonth && (
               <span>
@@ -901,6 +901,11 @@ function GoalRow({
             {goal.owed > 0 && (
               <span>
                 {t("dashboard.goals.owed", { amount: formatCurrency(goal.owed) })}
+              </span>
+            )}
+            {goal.to_invest > 0 && (
+              <span>
+                {t("dashboard.goals.toInvest", { amount: formatCurrency(goal.to_invest) })}
               </span>
             )}
           </div>
@@ -963,6 +968,12 @@ function GoalEditorModal({ goal, onClose }: { goal: SavingsGoal | null; onClose:
     category: goal?.contribution_category ?? "",
     tags: splitRuleTags(goal?.contribution_tags),
   });
+  // An investment goal's optional income source: transfers are paid from it
+  // before free cash.
+  const [fundRule, setFundRule] = useState({
+    category: goal?.funding_category ?? "",
+    tags: splitRuleTags(goal?.funding_tags),
+  });
   const qk = useQueryKeys();
 
   const effectiveStart = startMonth || currentMonthKey();
@@ -1012,6 +1023,8 @@ function GoalEditorModal({ goal, onClose }: { goal: SavingsGoal | null; onClose:
         // The category is always Investments (the backend sets it); only the
         // holdings narrow it, and none picked means every investment.
         contribution_tags: joinRuleTags(saveRule.tags),
+        funding_category: fundRule.category || null,
+        funding_tags: joinRuleTags(fundRule.category ? fundRule.tags : null),
       });
       return;
     }
@@ -1184,13 +1197,23 @@ function GoalEditorModal({ goal, onClose }: { goal: SavingsGoal | null; onClose:
           />
         </div>
         {isInvestment ? (
-          <InvestmentTagsField
-            testId="goal-invest-rule"
-            label={t("dashboard.goals.investRuleLabel")}
-            hint={t("dashboard.goals.investRuleHint")}
-            tags={saveRule.tags}
-            onChange={(tags) => setSaveRule((rule) => ({ ...rule, tags }))}
-          />
+          <div className="space-y-3">
+            <InvestmentTagsField
+              testId="goal-invest-rule"
+              label={t("dashboard.goals.investRuleLabel")}
+              hint={t("dashboard.goals.investRuleHint")}
+              tags={saveRule.tags}
+              onChange={(tags) => setSaveRule((rule) => ({ ...rule, tags }))}
+            />
+            <GoalAutoLinkField
+              testId="goal-invest-funding"
+              label={t("dashboard.goals.investFundLabel")}
+              hint={t("dashboard.goals.investFundHint")}
+              category={fundRule.category}
+              tags={fundRule.tags}
+              onChange={(category, tags) => setFundRule({ category, tags })}
+            />
+          </div>
         ) : (
         <fieldset className="space-y-3 border-t border-[var(--surface-light)] pt-3">
           <legend className="text-xs font-semibold text-[var(--text-muted)] pe-2">

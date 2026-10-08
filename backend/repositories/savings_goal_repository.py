@@ -29,6 +29,8 @@ GOAL_COLUMNS = [
     "target_date",
     "contribution_category",
     "contribution_tags",
+    "funding_category",
+    "funding_tags",
     "kind",
     "status",
     "closed_month",

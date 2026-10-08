@@ -34,7 +34,16 @@ from backend.services.savings_goals.common import (
 _CASH_ONLY_FIELDS = ("monthly_cap", "utilization_category", "utilization_tags")
 
 #: The fields that decide which transfers an investment goal owns.
-_TRANSFER_SCOPE_FIELDS = ("contribution_category", "contribution_tags", "start_month")
+_TRANSFER_SCOPE_FIELDS = (
+    "contribution_category",
+    "contribution_tags",
+    "funding_category",
+    "funding_tags",
+    "start_month",
+)
+
+#: The income an investment goal is paid from; a cash goal cannot carry it.
+_FUNDING_FIELDS = ("funding_category", "funding_tags")
 
 
 class GoalCrudMixin:
@@ -66,6 +75,7 @@ class GoalCrudMixin:
             # always counts it; its tags are the only choice (none = all).
             fields["contribution_category"] = INVESTMENTS_CATEGORY
             self._validate_investment_fields(fields)
+        self._validate_income_claims(None, fields)
         fields.setdefault("priority", self.repo.next_priority())
         if not fields.get("start_month"):
             today = date.today()
@@ -110,6 +120,8 @@ class GoalCrudMixin:
                 "opening_balance": goal.opening_balance,
             }
             self._validate_investment_fields({**current, **fields})
+        if goal:
+            self._validate_income_claims(goal, fields)
         # Adding, dropping or narrowing a goal's own income rule decides, in
         # every month since it started, what it borrowed and handed back — so
         # it restates that history rather than only the months to come.
@@ -376,6 +388,68 @@ class GoalCrudMixin:
         """
         self._context_cache = None
         return self.rebuild(from_month=from_month)["goals"]
+
+    def _validate_income_claims(
+        self, goal: SavingsGoal | None, fields: dict[str, Any]
+    ) -> None:
+        """Refuse a funding rule on a cash goal, or income two goals would claim.
+
+        One transaction can only feed one goal. A "saved into" rule and an
+        investment goal's funding rule both claim income, so the same income
+        under two of them would be counted twice; the second claim is refused
+        rather than resolved by a precedence nobody can see.
+
+        Raises
+        ------
+        ValidationException
+            When a cash goal names a funding rule, or this goal's claim
+            overlaps another goal's.
+        """
+        merged = {
+            name: getattr(goal, name, None)
+            for name in (
+                "kind",
+                "contribution_category",
+                "contribution_tags",
+                *_FUNDING_FIELDS,
+            )
+        }
+        merged.update({k: v for k, v in fields.items() if k in merged})
+        investment = merged["kind"] == GOAL_KIND_INVESTMENT
+        if not investment and any(merged.get(name) for name in _FUNDING_FIELDS):
+            raise ValidationException(
+                "Only an investment goal can name the income that pays for it"
+            )
+        claim = (
+            (merged["funding_category"], merged["funding_tags"])
+            if investment
+            else (merged["contribution_category"], merged["contribution_tags"])
+        )
+        if not claim[0]:
+            return
+        for other in self._goals_in_order():
+            if goal is not None and other.id == goal.id:
+                continue
+            other_claim = (
+                (other.funding_category, other.funding_tags)
+                if is_investment_goal(other)
+                else (other.contribution_category, other.contribution_tags)
+            )
+            if self._claims_overlap(claim, other_claim):
+                raise ValidationException(
+                    f"That income already feeds the goal {other.name!r}"
+                )
+
+    def _claims_overlap(
+        self, one: tuple[str | None, str | None], other: tuple[str | None, str | None]
+    ) -> bool:
+        """Whether two category/tag rules can match the same transaction."""
+        if not one[0] or one[0] != other[0]:
+            return False
+        tags, other_tags = self._split_tags(one[1]), self._split_tags(other[1])
+        if not tags or not other_tags or ALL_TAGS in tags or ALL_TAGS in other_tags:
+            return True
+        return bool(set(tags) & set(other_tags))
 
     @staticmethod
     def _owns_transfers(goal: SavingsGoal) -> bool:
