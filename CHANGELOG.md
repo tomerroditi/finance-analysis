@@ -1,3 +1,9 @@
+## v1.96.0 (2026-10-09)
+
+### Feat
+
+- **goals-chart**: monthly / cumulative toggle on the month-by-month history (#375)
+
 ## v1.95.6 (2026-10-09)
 
 ### Fix
