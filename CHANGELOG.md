@@ -1,3 +1,9 @@
+## v1.101.0 (2026-10-09)
+
+### Feat
+
+- **savings-goals**: this year's savings against a yearly target (#383)
+
 ## v1.100.0 (2026-10-09)
 
 ### Feat
