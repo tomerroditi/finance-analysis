@@ -8,6 +8,7 @@ from backend.models.cash_balance import CashBalance
 from backend.models.category import Category
 from backend.models.clearing_house_report import ClearingHouseReport
 from backend.models.credential import Credential
+from backend.models.fire_scenario import FireScenario
 from backend.models.insight_dismissal import InsightDismissal
 from backend.models.insurance_account import InsuranceAccount
 from backend.models.interest_rate import InterestRate
@@ -45,6 +46,7 @@ __all__ = [
     "ClearingHouseReport",
     "Credential",
     "CreditCardTransaction",
+    "FireScenario",
     "InsightDismissal",
     "InsuranceAccount",
     "InsuranceTransaction",

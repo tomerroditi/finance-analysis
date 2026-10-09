@@ -19,7 +19,7 @@ frontend/src/components/
 ├── transactions/        # Transaction page sub-components (FilterPanel, Pagination, BulkActionsBar, RuleBuilder, etc.)
 ├── budget/              # Budget page sub-components (MonthlyBudgetView, ProjectBudgetView, TransactionCollapsibleList)
 ├── investments/         # Investment page sub-components
-├── retirement/          # Early retirement calculator components
+├── fire/                # Early-retirement calculator: form schema, sections, results, tracked-data links
 ├── layout/              # App layout shell (Layout, Sidebar, TopBar)
 ├── modals/              # Shared modals used across multiple features (ConfirmationModal, LinkRefundModal, SplitTransactionModal, etc.)
 ├── DateRangePicker.tsx        # Shared date range selector

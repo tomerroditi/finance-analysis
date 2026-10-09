@@ -3,13 +3,15 @@ import { enableDemoMode, resetDemoData } from "./helpers";
 
 /**
  * Early Retirement dashboard card — an opt-in (hidden by default) full-width
- * card that surfaces the FIRE readiness, headline KPIs and projection charts
- * from the saved retirement plan, without exposing any plan settings.
+ * card that runs the user's early-retirement plan on today's tracked data and
+ * shows its verdict, headline figures and net-worth path, without exposing
+ * any plan settings.
  *
  * One dashboard load covers the default-hidden policy, the Settings opt-in
  * flow, and the rendered card content — the cold dashboard boot is the
- * expensive step. The demo DB ships with a saved retirement goal, so the card
- * renders the projections path (not the setup CTA).
+ * expensive step. The demo DB ships the old retirement goal, which gives the
+ * derived plan its date of birth, so the card renders a projection (not the
+ * setup CTA).
  */
 test.describe("Dashboard early-retirement card", () => {
   // Restore pristine demo data before this file runs. The `mutating`
@@ -76,14 +78,13 @@ test.describe("Dashboard early-retirement card", () => {
     // their mount until scrolled near.
     await card.scrollIntoViewIfNeeded();
 
-    // Insight KPIs render from the demo plan (readiness + FIRE number).
-    await expect(card.getByText("Readiness", { exact: true })).toBeVisible({
-      timeout: 15_000,
+    // The headline figures render from the demo household's plan, derived
+    // from its tracked data and its old retirement goal.
+    await expect(card.getByText("Retire at", { exact: true })).toBeVisible({
+      timeout: 60_000,
     });
-    await expect(card.getByText("FIRE Number", { exact: true })).toBeVisible();
-    // The demo plan is deliberately tuned to be on track (see
-    // create_retirement_goal in scripts/generate_demo_data.py) — guard it.
-    await expect(card.getByText("On Track", { exact: true })).toBeVisible();
+    await expect(card.getByTestId("retirement-card-verdict")).toBeVisible();
+    await expect(card.getByText("Net worth at retirement", { exact: true })).toBeVisible();
 
     // The net worth projection chart renders an actual Recharts SVG.
     await expect(

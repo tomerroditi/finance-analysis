@@ -249,59 +249,74 @@ export const mockCredentials = [
   },
 ];
 
-export const mockRetirementGoal = {
-  id: 1,
-  current_age: 35,
-  gender: "male",
-  target_retirement_age: 55,
-  life_expectancy: 90,
-  monthly_expenses_in_retirement: 12000,
-  inflation_rate: 2.5,
-  expected_return_rate: 7,
-  withdrawal_rate: 4,
-  pension_monthly_payout_estimate: 3000,
-  keren_hishtalmut_balance: 100000,
-  keren_hishtalmut_monthly_contribution: 2500,
-  bituach_leumi_eligible: true,
-  bituach_leumi_monthly_estimate: 4000,
-  other_passive_income: 0,
+/** A saved plan following one tracked portfolio and the cash balance. */
+export const mockFirePlan = {
+  saved: true,
+  fields: {
+    dateOfBirth: "1990-01-01",
+    gender: "male",
+    base_problem: "retire_asap",
+    base_problem_max_age: "60",
+    balance: "50000",
+    num_expense_fields: "1",
+    expenseSum1: "12000",
+    num_income_fields: "1",
+    incomeSum1: "20000",
+    num_portfolio_fields: "1",
+    portfolioBalance1: "300000",
+    portfolioDescription1: "Index fund",
+    portfolioSource1: "investment:1",
+    num_keren_fields: "0",
+    num_loan_fields: "0",
+    num_realestate_fields: "0",
+  },
+  linked: ["balance"],
+  tracked: {
+    scalars: { balance: "50000" },
+    rows: {
+      portfolio: [
+        {
+          source: "investment:1",
+          label: "Index fund",
+          fields: { portfolioBalance: "300000" },
+          seed: { portfolioDescription: "Index fund" },
+        },
+        {
+          source: "investment:2",
+          label: "Bonds",
+          fields: { portfolioBalance: "80000" },
+          seed: { portfolioDescription: "Bonds" },
+        },
+      ],
+    },
+  },
 };
 
-export const mockRetirementStatus = {
-  net_worth: 500000,
-  avg_monthly_expenses: 10000,
-  avg_monthly_income: 15000,
-  savings_rate: 33.3,
-  total_investments: 35000,
-  monthly_savings: 5000,
-};
-
-export const mockRetirementProjections = {
-  fire_number: 3600000,
-  years_to_fire: 18,
-  fire_age: 53,
-  earliest_possible_retirement_age: 50,
-  monthly_savings_needed: 8000,
-  progress_pct: 13.9,
-  readiness: "off_track" as const,
-  portfolio_depleted_age: 85,
-  target_retirement_age: 55,
-  full_pension_age: 67,
-  net_worth_projection: [
-    { age: 35, net_worth_optimistic: 500000, net_worth_baseline: 500000, net_worth_conservative: 500000 },
-    { age: 45, net_worth_optimistic: 1500000, net_worth_baseline: 1200000, net_worth_conservative: 900000 },
-    { age: 55, net_worth_optimistic: 4000000, net_worth_baseline: 3000000, net_worth_conservative: 2000000 },
+/** The saved plan's projection: retire at 52.5, two goals met. */
+export const mockFireProjection = {
+  status: "success" as const,
+  retire_index: 200,
+  retire_age: 52.5,
+  retire_year: 2042,
+  retire_month: 7,
+  search_limit_months: 300,
+  inferred: false,
+  goals: [
+    { key: "living_expenses", label: "", met: true, shortfall: 0 },
+    { key: "bequest", label: "", met: true, shortfall: 0 },
   ],
-  income_projection: [
-    { age: 55, salary_savings: 0, portfolio_withdrawal: 10000, pension: 3000, bituach_leumi: 4000, passive_income: 0, total_income: 17000, expenses: 12000 },
+  months: [
+    { index: 0, year: 2026, month: 10, age: 36.75, net_worth: 350000, cash: 50000, assets: {}, incomes: {}, expenses: {}, liabilities: 0 },
+    { index: 12, year: 2027, month: 10, age: 37.75, net_worth: 420000, cash: 50000, assets: {}, incomes: {}, expenses: {}, liabilities: 0 },
   ],
-};
-
-export const mockRetirementSuggestions = {
-  target_retirement_age: 58,
-  monthly_expenses_in_retirement: 10000,
-  expected_return_rate: 8,
-  life_expectancy: 85,
+  recommendation: null,
+  annuities: [],
+  withdrawal_plan: [],
+  snapshots: [
+    { label: "now", year: 2026, month: 10, net_worth: 350000, breakdown: {}, shortfall_capital: 0 },
+    { label: "retirement", year: 2042, month: 7, net_worth: 2400000, breakdown: {}, shortfall_capital: 0 },
+  ],
+  pension_income: [{ owner: "", age: 67, monthly: 6500 }],
 };
 
 // ── Handlers ────────────────────────────────────────────────────────
@@ -700,55 +715,21 @@ export const handlers = [
     HttpResponse.json({ id: 1, status: "ok" }),
   ),
 
-  // ── Retirement API ──
-  http.get("/api/retirement/goal", () =>
-    HttpResponse.json(mockRetirementGoal),
+  // ── Early-retirement plan API ──
+  http.get("/api/fire/plan", () => HttpResponse.json(mockFirePlan)),
+  http.put("/api/fire/plan", () => HttpResponse.json(mockFirePlan)),
+  http.delete("/api/fire/plan", () =>
+    HttpResponse.json({ ...mockFirePlan, saved: false }),
   ),
-  http.put("/api/retirement/goal", () =>
-    HttpResponse.json(mockRetirementGoal),
+  http.get("/api/fire/plan/projection", () =>
+    HttpResponse.json(mockFireProjection),
   ),
-  http.get("/api/retirement/status", () =>
-    HttpResponse.json(mockRetirementStatus),
-  ),
-  http.get("/api/retirement/projections", () =>
-    HttpResponse.json(mockRetirementProjections),
-  ),
-  http.post("/api/retirement/projections", () =>
-    HttpResponse.json(mockRetirementProjections),
-  ),
-  http.get("/api/retirement/suggestions", () =>
-    HttpResponse.json(mockRetirementSuggestions),
-  ),
-  http.post("/api/retirement/suggestions", () =>
-    HttpResponse.json(mockRetirementSuggestions),
-  ),
-  // Same class as the budget handlers above: the retirement form fetches this
-  // on mount, and an unhandled request ends up as a late `console.error`.
-  http.get("/api/retirement/scraped-defaults", () =>
-    HttpResponse.json({
-      keren_hishtalmut_balance: null,
-      keren_hishtalmut_monthly_contribution: null,
-      pension_monthly_deposit: null,
-      avg_monthly_salary: null,
-    }),
-  ),
-  http.get("/api/retirement/keren-hishtalmut-balance", () =>
-    HttpResponse.json({ balance: 100000 }),
-  ),
+  http.post("/api/fire/calculate", () => HttpResponse.json(mockFireProjection)),
 
   // ── Insurance Accounts API ──
   http.get("/api/insurance-accounts/", () => HttpResponse.json([])),
   http.get("/api/insurance-accounts/clearing-house-reports", () =>
     HttpResponse.json([]),
-  ),
-  http.get("/api/retirement/pension-forecast", () =>
-    HttpResponse.json({
-      estimate: null,
-      with_deposits: 0,
-      no_deposits: 0,
-      as_of: null,
-      funds: 0,
-    }),
   ),
 
   // ── Backups API ──

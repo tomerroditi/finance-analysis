@@ -55,7 +55,7 @@ const content: DataFlowContent = {
     "invest-svc": { title: "Investments", desc: "P&L, ROI, CAGR. Snapshot-first balance. Fixed-rate compounding." },
     "liab-svc": { title: "Liabilities", desc: "Amortization, remaining balance, total interest, payment tracking." },
     "rates-svc": { title: "Rates", desc: "Bank of Israel key-rate history \u2192 prime. Re-prices prime-linked loans and savings at each step." },
-    "retire-svc": { title: "Retirement", desc: "All-real-terms FIRE model. Projections, drawdown survival, solve-for-a-field, suggestions." },
+    "retire-svc": { title: "Retirement", desc: "The user's early-retirement plan, filled from tracked data and run month by month through a clone of the reference calculator." },
     "onboarding-page": { title: "Onboarding", desc: "First-run gate \u2014 connect an account or add data before the app opens." },
     dashboard: { title: "Dashboard", desc: "Reorderable, hideable cards: forecast, insights, budget, recurring, goals, net worth, heatmap\u2026" },
     "txn-page": { title: "Transactions", desc: "Filterable table, inline tagging, splits, bulk ops, refunds, budget-month override." },
@@ -64,7 +64,7 @@ const content: DataFlowContent = {
     "invest-page": { title: "Investments", desc: "Portfolio overview, allocation, balance history, P&L analysis." },
     "liab-page": { title: "Liabilities", desc: "Debt cards, payment timeline, amortization schedule." },
     "insurance-page": { title: "Pension Savings", desc: "Retirement outlook, savings KPIs, pension and Keren Hishtalmut funds." },
-    "retire-page": { title: "Early Retirement", desc: "FIRE calculator, projections, status cards, suggestions." },
+    "retire-page": { title: "Early Retirement", desc: "The plan's form, filled from tracked accounts; verdict, goals, charts, suggestion." },
     "datasources-page": { title: "Data Sources", desc: "Bank/CC account management, scraping triggers, stale data alerts." },
     "settings-page": { title: "Settings", desc: "Dashboard layout, budget alerts, language, demo toggle, backups, updates, uninstall." },
     pwa: { title: "PWA & Offline", desc: "Installable app. Service worker caches API GETs; the query cache persists to IndexedDB." },
@@ -164,7 +164,7 @@ const content: DataFlowContent = {
       title: "Keren Hishtalmut Sync", tag: "Insurance \u2192 Investments",
       sections: [
         { heading: "What It Does", items: ["Scraped hishtalmut policies become type=hishtalmut investments, keyed by insurance_policy_id", "Balance data upserts a scraped snapshot \u2014 never overwriting a manual one", "Existing policies have their metadata refreshed instead of being duplicated"] },
-        { heading: "Why It Matters For FIRE", text: "A synced policy is already inside tracked net worth. The retirement model therefore swaps the tracked KH value out before adding the goal\u2019s KH bucket, so Keren Hishtalmut counts exactly once for scraped and typed-only users alike." },
+        { heading: "Why It Matters For FIRE", text: "A synced policy becomes its own Keren Hishtalmut row in the early-retirement plan, with its balance, its own deposit and its fee \u2014 and is left out of the taxable portfolios, so it counts exactly once." },
       ],
     },
     "manual-tagging": {
@@ -201,7 +201,7 @@ const content: DataFlowContent = {
       title: "Investment Management", tag: "Lifecycle",
       sections: [
         { heading: "Operations", items: ["Create investment (category, tag, type, rates, commissions)", "Add manual balance snapshots at any date", "Generate compounded snapshots for fixed and prime-linked rates", "Close investment \u2192 creates a 0-balance snapshot on the last transaction date", "Reopen closed investments, edit close date"] },
-        { heading: "Keren Hishtalmut", text: "A scraped hishtalmut policy arrives as a managed investment with its own scraped snapshots. Its value is already in net worth, so the retirement model deliberately swaps it out before adding the KH bucket." },
+        { heading: "Keren Hishtalmut", text: "A scraped hishtalmut policy arrives as a managed investment with its own scraped snapshots. The early-retirement plan holds it as a Keren Hishtalmut row, never as a portfolio, so it is counted once." },
         { heading: "Balance Resolution", items: ["1. Latest snapshot on/before today \u2192 use snapshot", "2. No snapshots \u2192 fallback to \u2212sum(all transactions)", "Snapshot sources: manual > calculated > scraped"] },
       ],
     },
@@ -293,7 +293,7 @@ const content: DataFlowContent = {
     "meta-tables": {
       title: "Metadata Tables", tag: "Configuration",
       sections: [
-        { heading: "Tables", items: ["categories \u2014 name, tags (JSON), icon", "tagging_rules \u2014 name, conditions (recursive JSON), category, tag", "budget_rules \u2014 amount, category, tags (semicolon-separated), period_type, is_closed", "investments + insurance_accounts \u2014 type, rates, commissions, policy metadata", "liabilities + liability_transactions \u2014 principal, rate, term, generated payments", "pending_refunds, refund_links, refund_source_notes", "interest_rates \u2014 Bank of Israel key-rate history", "scraping_history \u2014 the per-account success watermark", "retirement_goal \u2014 the single FIRE plan"] },
+        { heading: "Tables", items: ["categories \u2014 name, tags (JSON), icon", "tagging_rules \u2014 name, conditions (recursive JSON), category, tag", "budget_rules \u2014 amount, category, tags (semicolon-separated), period_type, is_closed", "investments + insurance_accounts \u2014 type, rates, commissions, policy metadata", "liabilities + liability_transactions \u2014 principal, rate, term, generated payments", "pending_refunds, refund_links, refund_source_notes", "interest_rates \u2014 Bank of Israel key-rate history", "scraping_history \u2014 the per-account success watermark", "fire_scenarios \u2014 the saved early-retirement plan, as the calculator\u2019s own form", "retirement_goal \u2014 the previous calculator\u2019s plan, read once to seed the first one"] },
         { heading: "Budget Kinds Are Explicit", text: "budget_rules.period_type discriminates monthly, yearly and project rules as a column \u2014 not inferred from which fields happen to be null." },
       ],
     },
@@ -392,12 +392,12 @@ const content: DataFlowContent = {
       ],
     },
     "retire-svc": {
-      title: "RetirementService", tag: "Real Terms",
+      title: "FirePlanService", tag: "Reference Clone",
       sections: [
-        { heading: "Everything In Today\u2019s Shekels", text: "The whole model is real-terms \u2014 a nominal return is converted through inflation before it is used, so a projection 30 years out is readable as money you understand now." },
-        { heading: "Inputs", items: ["Net worth, income, expenses, savings rate", "Target retirement age, life expectancy, monthly expenses in retirement", "Return rate and withdrawal rate", "Pension and Keren Hishtalmut buckets, pre-filled from scraped data where available"] },
-        { heading: "Counting KH Once", text: "Scraped Keren Hishtalmut policies are already inside tracked net worth. The model swaps that tracked value out before adding the goal\u2019s KH bucket, so it counts exactly once for scraped and typed-only users alike." },
-        { heading: "Outputs", items: ["Years to financial independence and a net-worth projection", "Whether the plan survives drawdown to life expectancy, and where it depletes if not", "Solve for a single field \u2014 what retirement age, spend, return or life expectancy would make the plan work", "Optimization suggestions"] },
+        { heading: "The Engine", text: "A month-by-month simulation in today\u2019s shekels to age 81, reverse-engineered from the zekestories.com calculator and proven against thousands of its recorded answers: Israeli pension annuities, Bituach Leumi, capital-gains tax, keren hishtalmut and loans." },
+        { heading: "Filled From Tracked Data", items: ["Cash: every bank and cash balance", "One portfolio row per open investment, with its balance and profit share", "One Keren Hishtalmut row per fund, with its own deposit and fee", "The pension funds, their deposits and balance-weighted fees", "One loan row per active liability", "Typical monthly spending and income \u2014 the median, so a windfall is not a salary"] },
+        { heading: "Staying In Step", text: "A linked value and a row that follows an account are refreshed from tracked data on every read; typing over one makes it the user\u2019s own. A row whose account closes leaves the plan." },
+        { heading: "Outputs", items: ["The earliest workable retirement month, or a check of a chosen age", "The goal checklist, asset cards, annuities and drawdown plan", "One suggested change and what it would buy"] },
       ],
     },
     "onboarding-page": {
@@ -445,7 +445,7 @@ const content: DataFlowContent = {
     "retire-page": {
       title: "Early Retirement Page", tag: "FIRE Calculator",
       sections: [
-        { heading: "Components", items: ["Retirement goal form, pre-fillable from scraped pension and KH data", "Status grid \u2014 savings rate, years to FI, readiness", "Projection charts in today\u2019s shekels", "Solve-for-a-field: what would have to change for the plan to work", "Optimization suggestions"] },
+        { heading: "Components", items: ["The calculator\u2019s form, filled from tracked accounts, each value marked when it follows the data", "Save, sync with my data, reset", "Verdict, goal checklist and suggestion", "Net-worth, asset, income and spending charts in today\u2019s shekels"] },
       ],
     },
     "categories-page": {
@@ -587,9 +587,9 @@ const content: DataFlowContent = {
       desc: "A FIRE calculator that speaks in today's shekels and knows how Israeli retirement savings actually work.",
       highlights: [
         "Everything real-terms \u2014 a projection 30 years out is still money you recognise",
-        "Pension and Keren Hishtalmut buckets, pre-filled from your scraped policies",
-        "Scraped KH is counted exactly once, never double-added to net worth",
-        "Ask it to solve: what retirement age, spend or return would make this plan work?",
+        "Filled from your accounts, and kept in step with them as balances move",
+        "Pension annuities, Bituach Leumi and capital-gains tax by the Israeli rules",
+        "Finds the earliest month you can retire, or checks the age you have in mind",
       ],
     },
     {
