@@ -1,3 +1,9 @@
+## v1.98.2 (2026-10-09)
+
+### Fix
+
+- **dashboard**: put "View All" beside the recent transactions title and point arrows the reading way in RTL (#380)
+
 ## v1.98.1 (2026-10-09)
 
 ### Fix
