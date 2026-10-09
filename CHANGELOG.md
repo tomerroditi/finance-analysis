@@ -1,3 +1,9 @@
+## v1.98.1 (2026-10-09)
+
+### Fix
+
+- **dashboard**: keep recurring rows to two lines with icon status chips (#379)
+
 ## v1.98.0 (2026-10-09)
 
 ### Feat
