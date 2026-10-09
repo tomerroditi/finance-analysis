@@ -9,6 +9,7 @@ import {
   type SavingsGoal,
   type SavingsGoalFreeCash,
   type SavingsGoalTimeline,
+  type YearlySavings,
 } from "../../services/api";
 import { DemoModeProvider } from "../../context/DemoModeContext";
 
@@ -105,6 +106,16 @@ async function renderGoals(
       ...pool,
     },
   } as Awaited<ReturnType<typeof savingsGoalsApi.getFreeCash>>);
+
+  // The yearly savings section heads the card; its own tests cover it.
+  const yearly: YearlySavings = {
+    current_year: 2026,
+    years: [{ year: 2026, saved: 0, target: null, is_current: true, months: [] }],
+    pace: null,
+  };
+  vi.spyOn(savingsGoalsApi, "getYearly").mockResolvedValue({
+    data: yearly,
+  } as Awaited<ReturnType<typeof savingsGoalsApi.getYearly>>);
 
   vi.spyOn(testingApi, "getDemoModeStatus").mockResolvedValue({
     data: { demo_mode: false, forced: false },

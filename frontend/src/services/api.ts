@@ -1250,6 +1250,34 @@ export interface SavingsGoalTimelineMonth {
   is_provisional: boolean;
 }
 
+/** One calendar year's savings: income minus spending, against its target. */
+export interface YearlySavingsYear {
+  year: number;
+  saved: number;
+  /** `null` until a target is set for the year. */
+  target: number | null;
+  is_current: boolean;
+  /** Every month on record that year, oldest first. */
+  months: { month: string; saved: number }[];
+}
+
+/** Where an even pace toward this year's target stands today. */
+export interface YearlySavingsPace {
+  expected_by_today: number;
+  /** Negative when behind. */
+  ahead_by: number;
+  needed_per_month: number;
+  months_left: number;
+}
+
+export interface YearlySavings {
+  current_year: number;
+  /** Oldest first; always includes the current year. */
+  years: YearlySavingsYear[];
+  /** `null` while the current year has no target. */
+  pace: YearlySavingsPace | null;
+}
+
 export interface SavingsGoalTimeline {
   has_goals: boolean;
   /** Full history length, so the UI offers "all time" only when it adds months. */
@@ -1326,6 +1354,12 @@ export const savingsGoalsApi = {
   getFreeCashBefore: (month: string, goalId?: number) =>
     api.get<SavingsGoalFreeCashBefore>("/savings-goals/free-cash/before", {
       params: goalId ? { month, goal_id: goalId } : { month },
+    }),
+  getYearly: () => api.get<YearlySavings>("/savings-goals/yearly"),
+  /** `null` clears the year's target. */
+  setYearlyTarget: (year: number, targetAmount: number | null) =>
+    api.put<YearlySavings>(`/savings-goals/yearly/${year}/target`, {
+      target_amount: targetAmount,
     }),
   /** Per-month allocation history. `months: 0` asks for the whole timeline. */
   getTimeline: (months: number) =>

@@ -367,6 +367,7 @@ const content: DataFlowContent = {
         { heading: "A Bad Month", text: "A month that spends more than it earns drains free cash first. Only once that is empty does the shortfall come back out of the goals, lowest priority first, each giving back at most what is funded but not yet spent \u2014 money already spent can never be reclaimed." },
         { heading: "Goals Fed by Their Own Income", text: "A goal with a “saved into” rule (wedding gifts, say) is filled by exactly that income, and takes free cash only for what the income will never cover. Bills it pays before the income lands are a loan from free cash that the income repays — never an overspend that takes money back from other goals." },
         { heading: "Closed Goals", text: "Frozen. Their allocations can never be reclaimed or clawed back." },
+        { heading: "This Year\u2019s Savings", text: "Above the goals, the card measures what each year saved \u2014 income minus spending, with money moved into investments counted as saved \u2014 against a target you set for the year, with the pace an even year would be at today and what each remaining month needs. A goal\u2019s own income and the bills it pays are left out of it; a withdrawal that is spent can make a month, or a year, negative." },
       ],
     },
     "invest-svc": {

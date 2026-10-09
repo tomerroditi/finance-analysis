@@ -26,8 +26,9 @@ never be pulled back out, even by a rebuild.
 
 The service is split across mixins: ``inputs`` (context and pool inputs),
 ``engine`` (simulation, persistence, rebuild), ``goals`` (CRUD and
-transaction links) and ``read_models`` (enriched goals, month view, free
-cash, timeline).
+transaction links), ``read_models`` (enriched goals, month view, free
+cash, timeline) and ``yearly`` (how much each year saved, against its target —
+measured from the same transactions, outside the waterfall).
 """
 
 from typing import Any
@@ -39,10 +40,12 @@ from backend.services.savings_goals.engine import AllocationEngineMixin, Allocat
 from backend.services.savings_goals.goals import GoalCrudMixin
 from backend.services.savings_goals.inputs import InputsMixin
 from backend.services.savings_goals.read_models import ReadModelsMixin
+from backend.services.savings_goals.yearly import YearlySavingsMixin
 from backend.services.transactions_service import TransactionsService
 
 
 class SavingsGoalService(
+    YearlySavingsMixin,
     ReadModelsMixin,
     GoalCrudMixin,
     AllocationEngineMixin,

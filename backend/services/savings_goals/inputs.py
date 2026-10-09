@@ -126,7 +126,10 @@ class InputsMixin:
         dict
             ``surplus`` — ``{(year, month): float}``; ``direct`` (every
             contribution), ``drawn`` (the part of it paid out of the pool) and
-            ``utilized`` — ``{(year, month): {goal_id: amount}}``.
+            ``utilized`` — ``{(year, month): {goal_id: amount}}``; and
+            ``invested`` — ``{(year, month): float}``, the net money moved into
+            investments outside any goal (withdrawals negative), which the
+            surplus already took out.
         """
         if self._context_cache is not None:
             return self._context_cache
@@ -141,6 +144,7 @@ class InputsMixin:
             "direct": {},
             "drawn": {},
             "utilized": {},
+            "invested": {},
         }
         if df.empty:
             return empty
@@ -191,6 +195,7 @@ class InputsMixin:
         unlinked = df[df["_goal_id"].isna()]
 
         surplus: dict[tuple[int, int], float] = {}
+        invested: dict[tuple[int, int], float] = {}
         if not unlinked.empty:
             masks = transactions_masks(unlinked)
             income = (
@@ -210,6 +215,9 @@ class InputsMixin:
             # summing all three straight through already nets them out.
             combined = income.add(expenses, fill_value=0).add(investments, fill_value=0)
             surplus = {(int(y), int(m)): float(v) for (y, m), v in combined.items()}
+            invested = {
+                (int(y), int(m)): -float(v) for (y, m), v in investments.items()
+            }
 
         handed_back = card_spent.groupby(["_year", "_month"])[amount_col].sum()
         for (y, m), spent in handed_back.items():
@@ -240,6 +248,7 @@ class InputsMixin:
             "direct": direct,
             "drawn": drawn,
             "utilized": utilized,
+            "invested": invested,
         }
 
     @staticmethod

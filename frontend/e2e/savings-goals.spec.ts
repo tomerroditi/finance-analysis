@@ -494,6 +494,36 @@ test.describe("Savings goals", () => {
     }
   });
 
+  test("this year's savings can be given a target from the card", async ({
+    page,
+  }) => {
+    // The card opens with what this year saved; setting a target turns it
+    // into progress, a pace and what is still needed per month.
+    const year = new Date().getFullYear();
+    await ctx.put(`${API_BASE}/savings-goals/yearly/${year}/target`, {
+      data: { target_amount: null },
+    });
+    try {
+      await openDashboardWithGoals(page);
+      const section = page.getByTestId("yearly-savings");
+      await expect(section).toBeVisible({ timeout: 30_000 });
+      await expect(section.getByText(`${year} savings`)).toBeVisible();
+      await expect(section.getByText(/Expected by today/)).toHaveCount(0);
+
+      await section.getByRole("button", { name: /set target/i }).click();
+      await section.getByLabel(`Savings target for ${year}`).fill("50000");
+      await section.getByRole("button", { name: /save/i }).click();
+
+      await expect(section.getByTestId("yearly-saved")).toContainText("50,000");
+      await expect(section.getByText(/Expected by today/)).toBeVisible();
+      await expect(section.getByRole("button", { name: /edit target/i })).toBeVisible();
+    } finally {
+      await ctx.put(`${API_BASE}/savings-goals/yearly/${year}/target`, {
+        data: { target_amount: null },
+      });
+    }
+  });
+
   test("the budget month shows what was directed into goals", async ({
     page,
   }) => {
