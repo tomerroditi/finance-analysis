@@ -264,14 +264,24 @@
       "totalMonthly": "סה\"כ חודשי",
       "perMonth": "{{amount}} לחודש",
       "next": "הבא: {{date}}",
+      "nextLabel": "הבא:",
       "empty": "לא זוהו חיובים חוזרים עדיין",
       "status": {
         "active": "פעיל",
         "new": "חדש",
         "price_changed": "השתנה מחיר",
-        "ended": "הסתיים"
+        "ended": "הסתיים",
+        "priceUp": "המחיר עלה ב-{{delta}}",
+        "priceDown": "המחיר ירד ב-{{delta}}"
       },
       "cadence": {
+        "monthly": "חודשי",
+        "bimonthly": "דו-חודשי",
+        "quarterly": "רבעוני",
+        "semiannual": "חצי שנתי",
+        "annual": "שנתי"
+      },
+      "cadenceShort": {
         "monthly": "חודשי",
         "bimonthly": "דו-חודשי",
         "quarterly": "רבעוני",

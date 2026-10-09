@@ -264,18 +264,28 @@
       "totalMonthly": "Monthly total",
       "perMonth": "{{amount}} / mo",
       "next": "Next: {{date}}",
+      "nextLabel": "Next:",
       "empty": "No recurring charges detected yet",
       "status": {
         "active": "Active",
         "new": "New",
         "price_changed": "Price changed",
-        "ended": "Ended"
+        "ended": "Ended",
+        "priceUp": "Price went up by {{delta}}",
+        "priceDown": "Price went down by {{delta}}"
       },
       "cadence": {
         "monthly": "Monthly",
         "bimonthly": "Every 2 months",
         "quarterly": "Quarterly",
         "semiannual": "Twice a year",
+        "annual": "Annual"
+      },
+      "cadenceShort": {
+        "monthly": "Monthly",
+        "bimonthly": "Bimonthly",
+        "quarterly": "Quarterly",
+        "semiannual": "Biannual",
         "annual": "Annual"
       },
       "noneConfirmed": "Nothing confirmed yet — review the detected charges above",
