@@ -366,6 +366,56 @@ Drive touch with raw CDP `Input.dispatchTouchEvent` start/move/end events —
 `Input.synthesizeScrollGesture` scrolls nothing in headless Chromium, not even
 the bare page, so a test built on it passes vacuously.
 
+## Search Boxes and the On-Screen Keyboard
+
+A search box is where the phone keyboard comes up, and the keyboard is what
+made the screen jump: a picker focused its search box on every open (the
+keyboard popped before anyone chose to type), and its panel then flipped to
+the other side of its trigger as the keyboard took the room — away from the
+finger on the search box. Every search box follows four rules:
+
+1. **Ask for the search keyboard, no suggestions:** `inputMode="search"`,
+   `enterKeyHint="search"`, `autoComplete="off"`. (`type="search"` is
+   optional; it adds the browser's own clear button, so skip it where the box
+   already has one.)
+2. **Never `autoFocus` a search box.** On a phone that opens the keyboard
+   and shifts the screen before the user decided to search.
+3. **Focus from code only off touch screens, without scrolling:**
+   `if (!isTouchDevice) searchRef.current?.focus({ preventScroll: true })`.
+   On a phone the user taps the search box when they want it.
+4. **A search box in a floating (portaled) panel positions the panel with
+   `useAnchoredPanel`** (`hooks/useAnchoredPanel.ts`). It measures the room
+   in the *visible* viewport (what the keyboard leaves), follows it as it
+   resizes and scrolls, and picks the panel's direction once per open so a
+   keyboard never flips it. Never position such a panel by hand against
+   `innerHeight` — that is the layout viewport, which ignores the keyboard.
+
+```tsx
+// WRONG — pops the keyboard on open, default keyboard, panel sized to innerHeight
+<input ref={searchRef} type="text" autoFocus placeholder={t("common.search")} />
+
+// CORRECT
+const panelStyle = useAnchoredPanel(buttonRef, isOpen, { maxHeight: 208 });
+useEffect(() => {
+  if (isOpen && !isTouchDevice) searchRef.current?.focus({ preventScroll: true });
+}, [isOpen]);
+<input
+  ref={searchRef}
+  type="text"
+  inputMode="search"
+  enterKeyHint="search"
+  autoComplete="off"
+  placeholder={t("common.search")}
+/>
+```
+
+Enforced by `frontend/src/searchBoxes.test.ts` (a source scan, runs in
+`npm test`): it finds every input that is `type="search"` or whose
+placeholder/label is a translation key about searching, and checks all four
+rules. The behavioural half is the phone test in
+`e2e/budget-savings-goal.spec.ts`, which opens a picker and shrinks the
+viewport as a keyboard would — Playwright has no on-screen keyboard.
+
 ## Capped Scroll Regions Swallow the Page's Scroll
 
 A height cap turns an element into a scroll container, and a scroll container

@@ -2,7 +2,7 @@ import { useMemo } from "react";
 import type { Transaction } from "../types/transaction";
 import type { TaggingRule } from "../services/api";
 import { useTaggingRules } from "./useTaggingRules";
-import { findMatchingRules } from "../utils/taggingRuleEval";
+import { findMatchingRules, isRuleApplicable } from "../utils/taggingRuleEval";
 
 /**
  * Result of evaluating a selection of transactions against the auto-tagging
@@ -47,12 +47,6 @@ function uniformCategoryTag(transactions: Transaction[]): [string, string] {
     (tx) => tx.category === first.category && tx.tag === first.tag,
   );
   return agrees ? [first.category, first.tag] : ["", ""];
-}
-
-/** Auto-tagging rules only apply to bank and credit-card transactions. */
-function isRuleApplicable(tx: Transaction): boolean {
-  const src = (tx.source ?? "").toLowerCase();
-  return src.includes("bank") || src.includes("credit_card");
 }
 
 export function useRuleSelectionState(

@@ -19,7 +19,6 @@ from backend.models.savings_goal import (
 )
 from backend.services.savings_goals.common import (
     ROUNDING_EPSILON,
-    is_investment_goal,
     iter_months,
     month_key,
     month_str,
@@ -45,9 +44,6 @@ class AllocationPlan:
     #: ``{(goal_id, year, month): amount}`` of surplus and fronted cash a
     #: rule-funded goal handed back to free cash once its income arrived.
     released: dict[tuple[int, int, int], float] = field(default_factory=dict)
-    #: ``{goal_id: amount}`` of an investment goal's funding income not yet
-    #: spent on its transfers — cash waiting to be invested.
-    to_invest: dict[int, float] = field(default_factory=dict)
     #: ``{goal_id: total funded}`` after the whole timeline.
     funded: dict[int, float] = field(default_factory=dict)
     #: ``{goal_id: total utilized}`` after the whole timeline.
@@ -125,7 +121,12 @@ class AllocationEngineMixin:
             raise ValidationException(f"Invalid from_month: {from_month!r}")
 
         before = self._range_totals(start)
+        # Which goal a transaction belongs to when two goals' rules match it
+        # follows the waterfall order, so a new order needs a fresh context —
+        # and the old order's context must not outlive it either.
         self._order_override = order
+        if order is not None:
+            self._context_cache = None
         try:
             plan = self._simulate(recompute_from=start or (1, 1))
             recomputed_ids = [
@@ -133,6 +134,8 @@ class AllocationEngineMixin:
             ]
         finally:
             self._order_override = None
+            if order is not None:
+                self._context_cache = None
         after: dict[int, float] = {}
         for (goal_id, year, month), amount in plan.computed.items():
             if start is None or (year, month) >= start:
@@ -230,32 +233,91 @@ class AllocationEngineMixin:
         free_cash = self._pool_before(first_month, context)
         # A goal closed by the user is frozen from the outset; one that fills
         # and is fully spent closes partway through the walk.
-        frozen = {g.id: g.status == GOAL_STATUS_CLOSED for g in goals}
-        start_of = dict(zip((g.id for g in goals), starts, strict=True))
-        goal_by_id = {g.id: g for g in goals}
-        # Investment goals are filled by their own transfers, never by the
-        # waterfall, and a deficit never reaches into them — the money is in
-        # a holding, not in the bank the overspend drained.
-        invests = {g.id for g in goals if is_investment_goal(g)}
-        # A cash goal with a "saved into" rule holds exactly its own income —
-        # a wedding fund holds the wedding gifts, not whatever salary was left
-        # over. It never takes surplus from the waterfall, and a deficit never
-        # takes its income back. A bill that lands before the income is paid
-        # with free cash the goal borrows (``bridge``); every shekel of income
-        # that arrives first repays one borrowed shekel.
-        rule_funded = {
-            g.id for g in goals if g.id not in invests and g.contribution_category
+        # A closed goal is frozen once it closed: its rows are never restated.
+        # Up to that month it replays what it lived through — its stored rows,
+        # plus the income, bills and borrowing that are derived every pass —
+        # rather than being frozen from its first month, which skipped the
+        # borrowing that paid its bills and rewrote its history on every read.
+        closed_at = {
+            g.id: month_key(g.closed_month)
+            for g in goals
+            if g.status == GOAL_STATUS_CLOSED
         }
-        bridge = dict.fromkeys(rule_funded, 0.0)
-        # An investment goal with a funding rule pays for its transfers out of
-        # that income before it touches free cash; what it has not spent yet
-        # waits here to be invested.
-        to_invest = {g.id: 0.0 for g in goals if g.id in invests and g.funding_category}
+        locked = set(closed_at)
+        frozen = {g.id: g.id in locked and closed_at[g.id] is None for g in goals}
+        # A goal takes its waterfall turn from its start month on. Its target
+        # date is only a deadline to complete it by: a goal still short past
+        # it keeps collecting free cash until it is full.
+        start_of = dict(zip((g.id for g in goals), starts, strict=True))
 
-        def income_held() -> float:
-            """Cash the income-funded goals still hold — how low the pool may go."""
-            held = sum(max(0.0, funded[g] - utilized[g]) for g in bridge)
-            return held + sum(max(0.0, cash) for cash in to_invest.values())
+        goal_by_id = {g.id: g for g in goals}
+        # A goal with a "saved into" rule is filled by its own income first. A
+        # bill that lands before the income is paid with free cash the goal
+        # borrows (``bridge``); every shekel of income that arrives first
+        # repays one borrowed shekel.
+        bridge = {g.id: 0.0 for g in goals if g.contribution_category}
+        # Every goal takes its place in the waterfall. One filled by income of
+        # its own takes surplus for what the income has not filled (``fill``),
+        # and once the income arrives it comes first — the surplus it makes
+        # unnecessary goes back to free cash. A deficit can reclaim the
+        # surplus such a goal holds, never its income.
+        fill = dict.fromkeys(bridge, 0.0)
+        # Surplus only ever covers what a goal's own income never will: the
+        # history is known up to today, so a goal whose income meets its
+        # target takes no free cash at all, even in the months before that
+        # income lands — bills in those months are fronted and repaid.
+        own_income: dict[int, float] = {}
+        for per_goal in context["direct"].values():
+            for goal_id, amount in per_goal.items():
+                if goal_id in fill:
+                    own_income[goal_id] = own_income.get(goal_id, 0.0) + amount
+        surplus_room = {
+            g.id: max(0.0, float(g.target_amount or 0.0) - own_income.get(g.id, 0.0))
+            for g in goals
+            if g.id in fill and g.id in own_income
+        }
+
+        def lent() -> float:
+            """Free cash lent to goals against income of their own still to come."""
+            return sum(bridge.values())
+
+        def add_row(goal_id: int, amount: float) -> None:
+            """Add to a goal's computed ledger row for the month being walked."""
+            cell = (goal_id, year, month)
+            plan.computed[cell] = round(plan.computed.get(cell, 0.0) + amount, 2)
+
+        def repay_bridge(goal_id: int, take: float) -> float:
+            """Repay a goal's borrowed free cash out of surplus it just took.
+
+            Surplus that reaches a goal still owing for a bill repays that
+            debt first, exactly as its income would. Returns what went back
+            to free cash.
+            """
+            if goal_id not in bridge:
+                return 0.0
+            repay = round(min(bridge[goal_id], take), 2)
+            if repay <= 0:
+                return 0.0
+            bridge[goal_id] -= repay
+            funded[goal_id] -= repay
+            cell = (goal_id, year, month)
+            plan.released[cell] = plan.released.get(cell, 0.0) + repay
+            return repay
+
+        def give_back_fill(goal_id: int, overflow: float) -> float:
+            """Hand surplus an income goal no longer needs back to free cash.
+
+            Only surplus it still holds: what its bills already spent is gone,
+            and handing it back anyway left the goal holding less than nothing.
+            """
+            cash = funded[goal_id] - utilized[goal_id]
+            release = round(min(fill[goal_id], overflow, max(0.0, cash)), 2)
+            if release <= 0:
+                return 0.0
+            add_row(goal_id, -release)
+            fill[goal_id] -= release
+            funded[goal_id] -= release
+            return release
 
         # An opening balance is money the goal held when it started, so it
         # leaves the pool in that month. Taking every opening balance out when
@@ -267,6 +329,10 @@ class AllocationEngineMixin:
         opening_month = {g.id: min(start_of[g.id], current) for g in goals}
 
         plan.surplus = dict(context["surplus"])
+        # The ledger is on record through its last month with rows; a month
+        # after that was never computed (nobody opened the app then), so it
+        # is computed now rather than replayed as empty.
+        horizon = max(((y, m) for _, y, m in stored), default=None)
 
         for year, month in iter_months(first_month, current):
             key = (year, month)
@@ -275,18 +341,21 @@ class AllocationEngineMixin:
                 for g in goals
                 if opening_month[g.id] == key
             )
-            # The goals can claim more than the pool holds, which is a
-            # bookkeeping artefact rather than real debt — floor it at zero so
-            # the first deficit month does not raid goals over a phantom hole.
-            if opening:
-                free_cash = max(0.0, free_cash - opening)
+            # An opening balance is money in the accounts the goal holds from
+            # its start, so it leaves the pool in full. Floored, a balance
+            # bigger than the pool earmarked money that was never there.
+            free_cash -= opening
+            month_start = free_cash + lent()
             # The open month is always restated (it is provisional), as is
             # everything inside an explicit rebuild range. Every other month is
             # history: existing rows stand, and only goals with no row yet may
             # draw on whatever the month left unallocated.
             recompute = (
-                recompute_from is not None and key >= recompute_from
-            ) or key == current
+                (recompute_from is not None and key >= recompute_from)
+                or key == current
+                or horizon is None
+                or key > horizon
+            )
 
             # Contributions are derived from transactions rather than stored,
             # so they are always current. One paid out of the account claims
@@ -300,38 +369,66 @@ class AllocationEngineMixin:
             for goal_id, amount in context["direct"].get(key, {}).items():
                 if goal_id not in funded:
                     continue
-                if frozen[goal_id]:
-                    plan.contributed[(goal_id, year, month)] = amount
-                    continue
                 outgoing = drawn.get(goal_id, 0.0)
+                # A closed goal is finished: money its rule still matches is
+                # ordinary money again — income joins the month's surplus, a
+                # transfer out leaves it — rather than piling up past target.
+                if frozen[goal_id]:
+                    spill += amount - 2 * outgoing
+                    continue
                 goal = goal_by_id[goal_id]
                 # Income first repays what the goal borrowed for earlier bills.
+                release = 0.0
                 if goal_id in bridge and amount > 0 and bridge[goal_id] > 0:
                     release = round(min(bridge[goal_id], amount), 2)
                     bridge[goal_id] -= release
                     funded[goal_id] -= release
                     free_cash += release
                     plan.released[(goal_id, year, month)] = release
+                target = float(goal.target_amount or 0.0)
+                # Surplus the goal holds makes way for its income, so it does
+                # not count against what the income may still fill.
                 need = max(
-                    0.0,
-                    float(goal.target_amount or 0.0) - funded[goal_id] - outgoing,
+                    0.0, target - funded[goal_id] + fill.get(goal_id, 0.0) - outgoing
                 )
-                kept = round(min(amount - outgoing, need), 2)
+                # The part that repaid the goal's own bills is its income spent
+                # on them, whatever the target: spilling it as well handed the
+                # same money to free cash twice.
+                kept = round(min(amount - outgoing, max(need, release)), 2)
                 spill += amount - outgoing - kept
                 outgoing_total += outgoing
                 funded[goal_id] += outgoing + kept
                 plan.contributed[(goal_id, year, month)] = outgoing + kept
+                if goal_id in fill and (
+                    (recompute and goal_id not in locked)
+                    or stored.get((goal_id, year, month)) is None
+                ):
+                    free_cash += give_back_fill(
+                        goal_id, funded[goal_id] - bridge.get(goal_id, 0.0) - target
+                    )
 
             surplus = context["surplus"].get(key, 0.0) + spill
             if spill:
                 plan.surplus[key] = surplus
             # The pool tracks real money, so it moves with the whole month —
-            # a deficit pulls it down just as a surplus lifts it. Only the
-            # positive part is ever handed to the waterfall, and every shekel
-            # a goal takes is debited below, so what the goals leave behind
-            # needs no separate step: it is already in the pool.
+            # a deficit pulls it down just as a surplus lifts it. A pool that
+            # went negative is refilled before any goal takes a shekel: only
+            # what is left of the surplus after that reaches the waterfall.
+            # Every shekel a goal takes is debited below, so what the goals
+            # leave behind needs no separate step: it is already in the pool.
             free_cash += surplus
-            pool = max(0.0, surplus)
+            # Free cash lent to a goal against income of its own still to come
+            # (``bridge``) is owed back by that income, not by the surplus: it
+            # counts as still there for the waterfall and the clawback, and
+            # only the pool shown to the user carries the loan as negative
+            # until the income repays it. Read without the loan, a wedding
+            # fund's bills ahead of its gifts took a year's savings to refill
+            # the hole, and the gifts repaid it after that year's goal closed.
+            pool = max(0.0, free_cash + lent())
+            # A hole carried in from an earlier month is that month's
+            # overspend, already settled — less whatever this month's surplus
+            # repaid. Only a fall below that reaches the goals.
+            floor = min(0.0, month_start + max(0.0, surplus))
 
             # A closed goal keeps whatever it was given; that money is spoken
             # for, so it leaves the pool before anyone else draws on it.
@@ -350,32 +447,40 @@ class AllocationEngineMixin:
             free_cash -= outgoing_total
             pool = max(0.0, pool)
 
-            if not recompute:
-                for goal in goals:
-                    if frozen[goal.id]:
-                        continue
-                    amount = stored.get((goal.id, year, month))
-                    if amount is not None:
-                        funded[goal.id] += amount
-                        pool -= max(0.0, amount)
-                        free_cash -= amount
-                pool = max(0.0, pool)
+            # Stored rows stand in a history month, and always for a closed
+            # goal that has not reached its closing month yet.
+            for goal in goals:
+                if frozen[goal.id] or (recompute and goal.id not in locked):
+                    continue
+                amount = stored.get((goal.id, year, month))
+                if amount is None:
+                    continue
+                funded[goal.id] += amount
+                pool -= max(0.0, amount)
+                free_cash -= amount
+                if goal.id in fill:
+                    fill[goal.id] += amount
+                if amount > 0:
+                    free_cash += repay_bridge(goal.id, amount)
+            pool = max(0.0, pool)
 
             for goal in goals:
                 if pool <= 0:
                     break
-                if (
-                    frozen[goal.id]
-                    or goal.id in invests
-                    or goal.id in bridge
-                    or key < start_of[goal.id]
-                ):
+                if frozen[goal.id] or goal.id in locked or key < start_of[goal.id]:
                     continue
-                # In a history month, a goal that already has a row has had its
-                # say — only newcomers may take what is still unallocated.
-                if not recompute and stored.get((goal.id, year, month)) is not None:
+                # A month on record replays its rows and nothing else. Every
+                # edit, new goal and deletion restates history, so there is no
+                # "newcomer" to top up: letting a goal with no row take what a
+                # net row made look unclaimed wrote new rows on every read.
+                if not recompute:
                     continue
-                need = float(goal.target_amount or 0.0) - funded[goal.id]
+                # Free cash a goal borrowed for a bill is not progress, so it
+                # does not shrink what the goal still needs.
+                borrowed = bridge.get(goal.id, 0.0)
+                need = float(goal.target_amount or 0.0) - funded[goal.id] + borrowed
+                if goal.id in surplus_room:
+                    need = min(need, surplus_room[goal.id] - fill[goal.id])
                 if need <= 0:
                     continue
                 take = min(need, pool)
@@ -384,10 +489,13 @@ class AllocationEngineMixin:
                 take = round(max(0.0, take), 2)
                 if take <= 0:
                     continue
-                plan.computed[(goal.id, year, month)] = take
+                add_row(goal.id, take)
                 funded[goal.id] += take
                 pool -= take
                 free_cash -= take
+                free_cash += repay_bridge(goal.id, take)
+                if goal.id in fill:
+                    fill[goal.id] += take
 
             # Spending out of a goal lands after the month's funding and never
             # reduces its target. A goal can only pay with what it holds, so a
@@ -418,76 +526,50 @@ class AllocationEngineMixin:
             # pool down. Only once the pool is empty does the overspend reach
             # the goals, taking from the least important first — the mirror
             # image of the funding waterfall.
-            if free_cash < -ROUNDING_EPSILON:
-                shortfall = -free_cash
-                free_cash = 0.0
+            # Money lent against a goal's own coming income is not overspent
+            # (see ``pool``), so it never reaches the goals here either.
+            if free_cash + lent() < floor - ROUNDING_EPSILON:
+                shortfall = floor - free_cash - lent()
+                free_cash += shortfall
                 for goal in reversed(goals):
                     if shortfall <= ROUNDING_EPSILON:
                         break
-                    if (
-                        frozen[goal.id]
-                        or goal.id in invests
-                        or goal.id in bridge
-                        or key < start_of[goal.id]
-                    ):
+                    if frozen[goal.id] or goal.id in locked or key < start_of[goal.id]:
                         continue
-                    # A history month's existing rows stand, exactly as they
-                    # do for funding — only an explicit rebuild restates them.
-                    if not recompute and stored.get((goal.id, year, month)) is not None:
+                    # A month on record keeps its rows, exactly as it does for
+                    # funding — only an explicit rebuild restates them.
+                    if not recompute:
                         continue
                     # Money already spent out of a goal is gone; only what it
-                    # still holds can be handed back.
-                    give_back = round(
-                        min(funded[goal.id] - utilized[goal.id], shortfall), 2
-                    )
+                    # still holds can be handed back — and of an income goal,
+                    # only the surplus, never its income.
+                    holds = funded[goal.id] - utilized[goal.id]
+                    if goal.id in fill:
+                        holds = min(holds, fill[goal.id])
+                    give_back = round(min(holds, shortfall), 2)
                     if give_back <= 0:
                         continue
-                    plan.computed[(goal.id, year, month)] = -give_back
+                    add_row(goal.id, -give_back)
                     funded[goal.id] -= give_back
                     shortfall -= give_back
-                # What is left was paid with money a goal holds as its own
-                # income — the gifts a wedding fund was given, spent on
-                # something else. That income is never taken back, so the
-                # pool goes negative by as much: the money is spoken for and
-                # no longer there. Anything deeper came out of money this
-                # model does not track (an overdraft, an untagged account),
-                # and the pool floors there.
-                free_cash = -min(shortfall, income_held())
-
-            # Money moved into an investment goal left the spendable balance,
-            # so it leaves the pool — but it is the goal being met, not
-            # overspending. It runs after the clawback so it can never take
-            # money back out of another goal: a transfer the pool cannot cover
-            # simply empties it. A withdrawal hands the money back.
-            for goal_id, amount in context["funding"].get(key, {}).items():
-                if goal_id in to_invest:
-                    to_invest[goal_id] += amount
-            invested_now = context["invested"].get(key, {})
-            if invested_now:
-                from_free_cash = 0.0
-                for goal_id, amount in invested_now.items():
-                    if goal_id not in funded:
-                        continue
-                    funded[goal_id] += amount
-                    plan.contributed[(goal_id, year, month)] = amount
-                    # A deposit is paid from the goal's own funding income
-                    # first; only the rest leaves free cash. A withdrawal
-                    # hands the money back to free cash.
-                    paid = (
-                        min(max(0.0, to_invest[goal_id]), amount)
-                        if goal_id in to_invest and amount > 0
-                        else 0.0
-                    )
-                    if paid:
-                        to_invest[goal_id] -= paid
-                    from_free_cash += amount - paid
-                free_cash = max(-income_held(), free_cash - from_free_cash)
+                    if goal.id in fill:
+                        fill[goal.id] -= give_back
+                # What is left was paid with money no goal can give back — a
+                # goal's own income — or with money
+                # this model does not track (an overdraft, an untagged
+                # account). Either way it was spent, so the pool shows it as
+                # negative rather than hiding it at zero, and the next
+                # surpluses refill it before any goal is funded.
+                free_cash -= shortfall
 
             # Adding zero turns the -0.0 a fully drained pool rounds to into 0.0.
             plan.free_cash[key] = round(free_cash, 2) + 0.0
 
+            for goal_id, month_closed in closed_at.items():
+                if month_closed == key:
+                    frozen[goal_id] = True
             for goal in goals:
-                if frozen[goal.id] or goal.id in invests:
+                if frozen[goal.id] or goal.id in locked:
                     continue
                 target = float(goal.target_amount or 0.0)
                 total = funded[goal.id]
@@ -499,7 +581,6 @@ class AllocationEngineMixin:
 
         plan.funded = funded
         plan.utilized = utilized
-        plan.to_invest = {g: round(cash, 2) for g, cash in to_invest.items()}
         return plan
 
     def _persist(self, plan: AllocationPlan) -> None:

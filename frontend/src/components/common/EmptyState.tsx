@@ -1,5 +1,6 @@
 import { Fragment, type ComponentType, type ReactNode } from "react";
 import { type LucideProps } from "lucide-react";
+import { ForwardArrow } from "./ForwardArrow";
 
 interface EmptyStateProps {
   /** Lucide icon component shown above the title. Omit for icon-less variant. */
@@ -98,13 +99,7 @@ export function EmptyState({
                 </p>
               </div>
               {i < steps.length - 1 && (
-                <span
-                  className="text-[var(--primary)] text-base shrink-0 mt-3"
-                  dir="ltr"
-                  aria-hidden="true"
-                >
-                  →
-                </span>
+                <ForwardArrow className="text-[var(--primary)] text-base shrink-0 mt-3" />
               )}
             </Fragment>
           ))}

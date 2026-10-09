@@ -45,6 +45,7 @@ import { BulkActionsBar, type BulkEditData } from "./transactions/BulkActionsBar
 import { GoalLinkAction } from "./transactions/GoalLinkAction";
 import { useCategoryTagCreate } from "../hooks/useCategoryTagCreate";
 import { useCategories } from "../hooks/useCategories";
+import { useTaggingRules } from "../hooks/useTaggingRules";
 import { useCashBalances } from "../hooks/useCashBalances";
 import { useTranslation } from "react-i18next";
 import { formatCurrency } from "../utils/numberFormatting";
@@ -68,6 +69,9 @@ export interface TransactionsTableProps {
   showSplitParentsFilter?: boolean;
   includeSplitParents?: boolean;
   onIncludeSplitParentsChange?: (value: boolean) => void;
+
+  // "Without rule" filter: bank/credit-card rows no auto-tagging rule matches
+  showWithoutRuleFilter?: boolean;
 
   // Pagination config
   rowsPerPage?: number;
@@ -179,6 +183,7 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
   showSplitParentsFilter = false,
   includeSplitParents = false,
   onIncludeSplitParentsChange,
+  showWithoutRuleFilter = false,
   rowsPerPage: initialRowsPerPage = 10,
   rowsPerPageOptions = null,
   onTransactionUpdated,
@@ -246,6 +251,7 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
       return next;
     });
   };
+  const { data: taggingRules } = useTaggingRules({ enabled: showWithoutRuleFilter });
   const {
     filters,
     options: filterOptions,
@@ -253,7 +259,7 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
     filteredTransactions,
     updateFilters,
     resetFilters,
-  } = useTransactionFilters(transactions);
+  } = useTransactionFilters(transactions, showWithoutRuleFilter ? taggingRules : undefined);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [filtersOpen, setFiltersOpen] = useState(false);
 
@@ -724,6 +730,9 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
                 className="absolute start-2.5 top-1/2 -translate-y-1/2 text-[var(--text-muted)]"
               />
               <input
+                inputMode="search"
+                enterKeyHint="search"
+                autoComplete="off"
                 type="text"
                 value={filters.filterText}
                 onChange={(e) => updateFilters({ filterText: e.target.value })}
@@ -796,6 +805,27 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
                 className="w-3 h-3 rounded border-slate-700 bg-slate-800 text-blue-500 focus:ring-blue-500 cursor-pointer"
               />
             </label>
+            {showWithoutRuleFilter && (
+              <label
+                htmlFor="table-without-rule"
+                title={t("transactions.filters.withoutRuleHint")}
+                className={`flex items-center gap-2 px-3 py-1.5 bg-[var(--surface-light)]/20 rounded-lg border border-[var(--surface-light)] select-none ${
+                  taggingRules ? "cursor-pointer" : "opacity-40 cursor-not-allowed"
+                }`}
+              >
+                <span className="text-xs font-medium text-[var(--text-muted)] whitespace-nowrap">
+                  {t("transactions.filters.withoutRule")}
+                </span>
+                <input
+                  id="table-without-rule"
+                  type="checkbox"
+                  checked={filters.onlyWithoutRule}
+                  disabled={!taggingRules}
+                  onChange={(e) => updateFilters({ onlyWithoutRule: e.target.checked })}
+                  className="w-3 h-3 rounded border-slate-700 bg-slate-800 text-blue-500 focus:ring-blue-500 cursor-pointer disabled:cursor-not-allowed"
+                />
+              </label>
+            )}
             {showSplitParentsFilter && (
               <label
                 htmlFor="table-split-parents"

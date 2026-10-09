@@ -1952,7 +1952,12 @@ class TestForecastExpensesUseOneDefinition:
 
     @staticmethod
     def _calendar_share(result):
-        """The whole-household projection over the days left on the calendar."""
+        """The whole-household projection over the days left on the calendar.
+
+        Unrounded, while the forecast reports to the agora — compare the two
+        with ``abs=0.01``: on dates where the rounding lands near half an agora
+        a relative tolerance failed it.
+        """
         return (
             result["avg_monthly_expenses"]
             / result["days_in_month"]
@@ -2018,7 +2023,7 @@ class TestForecastExpensesUseOneDefinition:
         result = AnalysisService(db_session).get_cash_flow_forecast()
 
         assert result["observed_through"] == today.strftime("%Y-%m-%d")
-        assert self._projected(result) == pytest.approx(self._calendar_share(result))
+        assert self._projected(result) == pytest.approx(self._calendar_share(result), abs=0.01)
 
     def test_each_account_is_projected_over_its_own_unsynced_days(
         self, db_session, monkeypatch
@@ -2132,7 +2137,7 @@ class TestForecastExpensesUseOneDefinition:
         result = AnalysisService(db_session).get_cash_flow_forecast()
 
         assert result["observed_through"] == today.strftime("%Y-%m-%d")
-        assert self._projected(result) == pytest.approx(self._calendar_share(result))
+        assert self._projected(result) == pytest.approx(self._calendar_share(result), abs=0.01)
 
     def test_a_never_synced_account_does_not_blank_the_month(
         self, db_session, monkeypatch
@@ -2151,7 +2156,7 @@ class TestForecastExpensesUseOneDefinition:
         result = AnalysisService(db_session).get_cash_flow_forecast()
 
         assert result["observed_through"] == today.strftime("%Y-%m-%d")
-        assert self._projected(result) == pytest.approx(self._calendar_share(result))
+        assert self._projected(result) == pytest.approx(self._calendar_share(result), abs=0.01)
 
     def test_nothing_scrapable_means_nothing_stale(self, db_session, monkeypatch):
         """A cash-only household has no sync to be behind on."""
@@ -2161,7 +2166,7 @@ class TestForecastExpensesUseOneDefinition:
         result = AnalysisService(db_session).get_cash_flow_forecast()
 
         assert result["observed_through"] is None
-        assert self._projected(result) == pytest.approx(self._calendar_share(result))
+        assert self._projected(result) == pytest.approx(self._calendar_share(result), abs=0.01)
 
     def test_a_committed_bill_is_counted_once(self, db_session):
         """A confirmed recurring charge is added at its due date and taken out

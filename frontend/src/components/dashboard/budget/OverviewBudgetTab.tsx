@@ -11,6 +11,7 @@ import { formatAmount, formatCurrency } from "../../../utils/numberFormatting";
 import { CommitmentBar } from "../../budget/overview/CommitmentBar";
 import { percentOf, rankRules } from "../../budget/overview/ruleMath";
 import { budgetLink } from "../../../utils/budgetNavigation";
+import { ForwardArrow } from "../../common/ForwardArrow";
 
 /** How many long rules fit the card before it outgrows the dashboard slot. */
 const CARD_ENVELOPES = 2;
@@ -135,7 +136,7 @@ export const OverviewBudgetTab: React.FC<OverviewBudgetTabProps> = ({
             to={budgetLink("overview", { year, month })}
             className="text-sm font-medium text-[var(--primary)] hover:text-[var(--primary-dark)] transition-colors"
           >
-            {t("budget.overview.openOverview")} &rarr;
+            {t("budget.overview.openOverview")} <ForwardArrow />
           </Link>
         </div>
       </div>
@@ -288,7 +289,7 @@ export const OverviewBudgetTab: React.FC<OverviewBudgetTabProps> = ({
           className="text-sm font-medium text-[var(--primary)] hover:underline"
         >
           {t("budget.overview.openOverview")}{" "}
-          {troubled > 0 ? `(${troubled})` : ""} &rarr;
+          {troubled > 0 ? `(${troubled})` : ""} <ForwardArrow />
         </Link>
       </div>
     </div>

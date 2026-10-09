@@ -143,6 +143,8 @@
     "investmentValue": "Investment Value",
     "cashBalance": "Cash Balance",
     "debtPayments": "Debt Payments",
+    "monthlyDebtPayment": "Monthly Payment",
+    "outstandingDebt": "Outstanding Debt",
     "avg3mo": "3-mo avg",
     "mo6": "6M",
     "mo12": "12M",
@@ -265,18 +267,28 @@
       "totalMonthly": "Monthly total",
       "perMonth": "{{amount}} / mo",
       "next": "Next: {{date}}",
+      "nextLabel": "Next:",
       "empty": "No recurring charges detected yet",
       "status": {
         "active": "Active",
         "new": "New",
         "price_changed": "Price changed",
-        "ended": "Ended"
+        "ended": "Ended",
+        "priceUp": "Price went up by {{delta}}",
+        "priceDown": "Price went down by {{delta}}"
       },
       "cadence": {
         "monthly": "Monthly",
         "bimonthly": "Every 2 months",
         "quarterly": "Quarterly",
         "semiannual": "Twice a year",
+        "annual": "Annual"
+      },
+      "cadenceShort": {
+        "monthly": "Monthly",
+        "bimonthly": "Bimonthly",
+        "quarterly": "Quarterly",
+        "semiannual": "Biannual",
         "annual": "Annual"
       },
       "noneConfirmed": "Nothing confirmed yet — review the detected charges above",
@@ -304,6 +316,19 @@
       }
     },
     "goals": {
+      "yearly": {
+        "title": "{{year}} savings",
+        "setTarget": "Set target",
+        "editTarget": "Edit target",
+        "targetLabel": "Savings target for {{year}}",
+        "targetPlaceholder": "e.g. 120000 (empty clears it)",
+        "expected": "Expected by today {{amount}}",
+        "ahead": "{{amount}} ahead",
+        "behind": "{{amount}} behind",
+        "needed_one": "Need {{amount}}/mo for the last month",
+        "needed_other": "Need {{amount}}/mo for the {{count}} months left",
+        "reached": "Target reached 🎉"
+      },
       "title": "Savings Goals",
       "add": "Add goal",
       "empty": "No savings goals yet — add one to track your progress",
@@ -314,13 +339,7 @@
       "targetLabel": "Target amount",
       "openingLabel": "Already saved",
       "openingHint": "Money set aside before tracking started",
-      "openingUseFreeCash": "Use the {{amount}} free before {{month}}",
       "openingRestateHint": "Saving recalculates goal allocations from {{month}}",
-      "claimAriaLabel": "Earmark the free cash from before this goal started",
-      "claimTitle": "Earmark earlier free cash",
-      "claimConfirm": "Set {{name}}'s opening balance to {{amount}}, the free cash in your accounts before {{month}}. Goal allocations from {{month}} on are recalculated.",
-      "claimAction": "Earmark",
-      "claimNothing": "{{name}} already holds all the free cash from before {{month}}.",
       "capLabel": "Monthly cap",
       "capPlaceholder": "No limit",
       "capHint": "Most this goal can take in one month",
@@ -331,6 +350,8 @@
       "closed": "Closed",
       "remaining": "{{amount}} to go",
       "monthlyNeeded": "{{amount}}/mo for {{count}} mo",
+      "dueThisMonth": "{{amount}} still needed this month",
+      "pastDue": "{{amount}} short · target date passed",
       "thisMonth": "{{amount}} this month",
       "utilized": "{{spent}} used · {{available}} left",
       "owed": "{{amount}} paid from free cash",
@@ -339,6 +360,10 @@
       "poolDrained": "Overspending emptied the pool this month and took {{amount}} back out of the goals",
       "historyTitle": "Month by month",
       "historyMonths": "{{count}}M",
+      "historyMonthly": "Monthly",
+      "historyCumulative": "Cumulative",
+      "historyModeLabel": "History view",
+      "historyHintCumulative": "Bars show what each goal has received so far, opening balance included, so each goal's last bar matches its card; free cash is shown as it stood each month. Click a legend entry to hide it, double-click to show it alone.",
       "historyAll": "All",
       "historyHint": "Bars stack each month's funding in priority order, with the unearmarked pool on top; a bar below the line is money a deficit took back. Click a legend entry to hide it, double-click to show it alone.",
       "historyEmpty": "Nothing allocated yet — the first month with a surplus will show up here",
@@ -351,21 +376,7 @@
       "autoLinkSpendLabel": "Spent from this goal",
       "autoLinkSpendHint": "Purchases in this category (and tags) count as spent from the goal, from its start month on — the same link a project or yearly budget's goal button sets.",
       "autoLinkSaveLabel": "Saved into this goal",
-      "autoLinkSaveHint": "The goal holds exactly this income — it takes nothing from your monthly surplus, and it is never taken back to cover overspending.",
-      "kindLabel": "Goal type",
-      "kindChangeHint": "Changing the type clears the settings the new type can't use and recalculates this goal's history from its start month.",
-      "kindCash": "Save cash",
-      "kindCashHint": "Filled from each month's leftover money",
-      "kindInvestment": "Invest",
-      "kindInvestmentHint": "Filled by the money you move into investments",
-      "investRuleLabel": "Only these investments",
-      "investRuleHint": "Leave empty to count every investment. From the start month, deposits add and withdrawals take back — moving money here is progress, never overspending.",
-      "investRuleAll": "All investments",
-      "investFundLabel": "Paid from income (optional)",
-      "investFundHint": "Transfers into investments are paid from this income first; only what it doesn't cover comes out of free cash. Income not yet invested waits as cash ready to invest.",
-      "toInvest": "{{amount}} ready to invest",
-      "investedThisMonth": "{{amount}} invested this month",
-      "withdrawnThisMonth": "{{amount}} withdrawn this month",
+      "autoLinkSaveHint": "This income fills the goal and is never taken back to cover overspending. Free cash covers only what the income never will, in priority order.",
       "autoLinkNone": "None",
       "autoLinkAllTags": "All tags"
     },
@@ -411,7 +422,9 @@
       "empty": "Mark expenses as pending refund to track them here.",
       "moreCount": "+{{count}} more"
     },
-    "noUntaggedTransactions": "No untagged transactions"
+    "noUntaggedTransactions": "No untagged transactions",
+    "noTransactionsWithoutRule": "Every bank and credit-card transaction here matches a rule",
+    "noFilteredTransactions": "No transactions match the selected filters"
   },
   "transactions": {
     "title": "Transactions",
@@ -438,6 +451,8 @@
       "amountRange": "Amount Range",
       "clearAll": "Clear All Filters",
       "onlyUntagged": "Only Untagged",
+      "withoutRule": "Without Rule",
+      "withoutRuleHint": "Bank and credit-card transactions no auto-tagging rule matches",
       "showSplitParents": "Show Split Parents",
       "advancedFilters": "Advanced Filters",
       "allAccounts": "All accounts",
@@ -1609,7 +1624,9 @@
     "deleteGroup": "Delete Group",
     "value": "Value",
     "min": "Min",
-    "max": "Max"
+    "max": "Max",
+    "newCondition": "New",
+    "newConditionHint": "Added from the selected transaction"
   },
   "errorBoundary": {
     "title": "Something went wrong",

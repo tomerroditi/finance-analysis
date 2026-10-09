@@ -40,7 +40,8 @@ def main() -> int:
             if "." not in key:
                 continue
             for locale, keys in locales.items():
-                if key not in keys:
+                # i18next resolves a plural base key to `<key>_other` & co.
+                if key not in keys and f"{key}_other" not in keys:
                     line = src[: m.start()].count("\n") + 1
                     missing.append(f"{rel}:{line}: t(\"{key}\") missing from {locale}.json")
 

@@ -60,12 +60,26 @@ export function evalConditionTree(node: ConditionNode, tx: Transaction): boolean
   return false;
 }
 
+/** Auto-tagging rules only apply to bank and credit-card transactions. */
+export function isRuleApplicable(tx: Transaction): boolean {
+  const src = (tx.source ?? "").toLowerCase();
+  return src.includes("bank") || src.includes("credit_card");
+}
+
 /** Find the first tagging rule whose conditions match a transaction. */
 export function findMatchingRule(
   rules: TaggingRule[],
   tx: Transaction,
 ): TaggingRule | undefined {
   return rules.find((r) => evalConditionTree(r.conditions, tx));
+}
+
+/**
+ * A rule-applicable transaction that no rule matches — a candidate for a new
+ * rule. Cash and manual rows never qualify: no rule can ever reach them.
+ */
+export function isWithoutRule(rules: TaggingRule[], tx: Transaction): boolean {
+  return isRuleApplicable(tx) && !findMatchingRule(rules, tx);
 }
 
 /** Find every tagging rule whose conditions match a transaction. */
@@ -89,7 +103,7 @@ function collectDescriptionContains(node: ConditionNode, into: Set<string>): voi
 
 /**
  * Add one `description contains <value>` branch per value to a rule's existing
- * conditions.
+ * conditions, at the start of the list.
  *
  * This is how a transaction joins the rule that already owns its category/tag
  * instead of spawning a second rule for the same pair — the editor allows only
@@ -97,35 +111,43 @@ function collectDescriptionContains(node: ConditionNode, into: Set<string>): voi
  *
  * An `OR` root takes the new branches directly; anything else (an `AND` group,
  * or a bare condition) is wrapped in an `OR` so the rule goes on matching
- * everything it matched before. Values the tree already tests for are skipped,
- * and when nothing is left to add the tree is returned untouched.
+ * everything it matched before. The new branches lead the list (order inside
+ * an `OR` changes nothing it matches) so the editor shows the change first.
+ * Values the tree already tests for are skipped, and when nothing is left to
+ * add the tree is returned untouched.
+ *
+ * @returns The grown tree, and the branch nodes that were added to it — the
+ *   editor marks exactly those objects as the change.
  */
 export function appendDescriptionConditions(
   conditions: ConditionNode,
   values: string[],
-): ConditionNode {
+): { conditions: ConditionNode; added: ConditionNode[] } {
   const seen = new Set<string>();
   collectDescriptionContains(conditions, seen);
 
-  const additions: ConditionNode[] = [];
+  const added: ConditionNode[] = [];
   for (const value of values) {
     const key = value.toLowerCase();
     if (!value || seen.has(key)) continue;
     seen.add(key);
-    additions.push({
+    added.push({
       type: "CONDITION",
       field: "description",
       operator: "contains",
       value,
     });
   }
-  if (additions.length === 0) return conditions;
+  if (added.length === 0) return { conditions, added };
 
   if (conditions.type === "OR") {
     return {
-      ...conditions,
-      subconditions: [...(conditions.subconditions ?? []), ...additions],
+      conditions: {
+        ...conditions,
+        subconditions: [...added, ...(conditions.subconditions ?? [])],
+      },
+      added,
     };
   }
-  return { type: "OR", subconditions: [conditions, ...additions] };
+  return { conditions: { type: "OR", subconditions: [...added, conditions] }, added };
 }

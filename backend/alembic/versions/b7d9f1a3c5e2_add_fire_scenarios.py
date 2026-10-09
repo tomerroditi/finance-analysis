@@ -1,7 +1,7 @@
 """add fire_scenarios table
 
 Revision ID: b7d9f1a3c5e2
-Revises: 70538fb612c9
+Revises: f54bd91edd97
 Create Date: 2026-10-10 12:00:00.000000
 
 """
@@ -13,7 +13,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "b7d9f1a3c5e2"
-down_revision: str | Sequence[str] | None = "70538fb612c9"
+down_revision: str | Sequence[str] | None = "f54bd91edd97"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

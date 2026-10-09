@@ -9,6 +9,7 @@ import {
   type SavingsGoal,
   type SavingsGoalFreeCash,
   type SavingsGoalTimeline,
+  type YearlySavings,
 } from "../../services/api";
 import { DemoModeProvider } from "../../context/DemoModeContext";
 
@@ -41,11 +42,8 @@ function makeGoal(overrides: Partial<SavingsGoal> = {}): SavingsGoal {
     target_date: null,
     contribution_category: null,
     contribution_tags: null,
-    funding_category: null,
-    funding_tags: null,
     utilization_category: null,
     utilization_tags: null,
-    kind: "cash",
     status: "active",
     closed_month: null,
     notes: null,
@@ -53,7 +51,6 @@ function makeGoal(overrides: Partial<SavingsGoal> = {}): SavingsGoal {
     contributed: 0,
     utilized: 0,
     owed: 0,
-    to_invest: 0,
     clawed_back: 0,
     funded: 2500,
     available: 2500,
@@ -64,6 +61,7 @@ function makeGoal(overrides: Partial<SavingsGoal> = {}): SavingsGoal {
     this_month_allocation: 0,
     months_remaining: null,
     monthly_needed: null,
+    is_past_due: false,
     history: [],
     ...overrides,
   };
@@ -108,6 +106,16 @@ async function renderGoals(
       ...pool,
     },
   } as Awaited<ReturnType<typeof savingsGoalsApi.getFreeCash>>);
+
+  // The yearly savings section heads the card; its own tests cover it.
+  const yearly: YearlySavings = {
+    current_year: 2026,
+    years: [{ year: 2026, saved: 0, target: null, is_current: true, months: [] }],
+    pace: null,
+  };
+  vi.spyOn(savingsGoalsApi, "getYearly").mockResolvedValue({
+    data: yearly,
+  } as Awaited<ReturnType<typeof savingsGoalsApi.getYearly>>);
 
   vi.spyOn(testingApi, "getDemoModeStatus").mockResolvedValue({
     data: { demo_mode: false, forced: false },
@@ -194,6 +202,30 @@ describe("GoalsSection", () => {
       expect(text).not.toContain("to go");
     });
 
+    it("says a goal past its target date is short instead of asking for 0 months", async () => {
+      await renderGoals([
+        makeGoal({
+          name: "Late",
+          months_remaining: 0,
+          monthly_needed: 5307,
+          remaining: 5307,
+          is_past_due: true,
+        }),
+      ]);
+      const text = rowFor("Late").textContent ?? "";
+      expect(text).toContain("target date passed");
+      expect(text).not.toContain("/mo");
+    });
+
+    it("asks for what is left this month when the target date is this month", async () => {
+      await renderGoals([
+        makeGoal({ name: "Soon", months_remaining: 0, monthly_needed: 900 }),
+      ]);
+      const text = rowFor("Soon").textContent ?? "";
+      expect(text).toContain("still needed this month");
+      expect(text).not.toContain("/mo");
+    });
+
     it("prefers achieved over the schedule", async () => {
       await renderGoals([
         makeGoal({
@@ -269,6 +301,12 @@ describe("GoalsSection", () => {
       const text = rowFor("Quiet").textContent ?? "";
       expect(text).not.toContain("this month");
       expect(text).not.toContain("used");
+    });
+
+    it("keeps a clawback month off the row", async () => {
+      await renderGoals([makeGoal({ name: "Trip", this_month_allocation: -800 })]);
+
+      expect(within(rowFor("Trip")).queryByText(/this month/i)).not.toBeInTheDocument();
     });
   });
 
@@ -384,6 +422,19 @@ describe("GoalsSection", () => {
 
       expect(await screen.findByText(/free cash/i)).toBeInTheDocument();
       expect(screen.getByText(/4,200/)).toBeInTheDocument();
+    });
+
+    it("shows a pool below zero in red rather than hiding it", async () => {
+      await renderGoals([makeGoal({ name: "Vacation" })], {
+        free_cash: -22516,
+        earmarked: 2500,
+        liquid: -20016,
+        has_goals: true,
+      });
+
+      const amount = await screen.findByText(/22,516/);
+      expect(amount.textContent).toContain("-");
+      expect(amount.className).toContain("text-red-400");
     });
 
     it("stays hidden while the user keeps no goals", async () => {
@@ -573,131 +624,22 @@ describe("GoalsSection", () => {
     });
   });
 
-  describe("earmarking earlier free cash from the row", () => {
-    function stubFreeCashBefore(freeCash: number) {
-      return vi.spyOn(savingsGoalsApi, "getFreeCashBefore").mockResolvedValue({
-        data: { month: "2026-01", free_cash: freeCash },
-      } as Awaited<ReturnType<typeof savingsGoalsApi.getFreeCashBefore>>);
-    }
-
-    it("sets the opening balance and restates from the goal's start", async () => {
-      await renderGoals([makeGoal({ name: "Vacation", start_month: "2026-01" })]);
-      stubFreeCashBefore(24000);
-      const update = vi
-        .spyOn(savingsGoalsApi, "update")
-        .mockResolvedValue({ data: [] } as unknown as Awaited<
-          ReturnType<typeof savingsGoalsApi.update>
-        >);
-      const rebuild = vi
-        .spyOn(savingsGoalsApi, "rebuild")
-        .mockResolvedValue({ data: {} } as unknown as Awaited<
-          ReturnType<typeof savingsGoalsApi.rebuild>
-        >);
-
-      fireEvent.click(
-        within(rowFor("Vacation")).getByRole("button", {
-          name: /earmark the free cash from before/i,
-        }),
-      );
-
-      await waitFor(() =>
-        expect(update).toHaveBeenCalledWith(1, { opening_balance: 24000 }),
-      );
-      await waitFor(() => expect(rebuild).toHaveBeenCalledWith("2026-01", false));
-    });
-
-    it("says so and writes nothing when the goal already holds it", async () => {
-      await renderGoals([makeGoal({ name: "Vacation", opening_balance: 24000 })]);
-      stubFreeCashBefore(24000);
-      const update = vi.spyOn(savingsGoalsApi, "update");
-
-      fireEvent.click(
-        within(rowFor("Vacation")).getByRole("button", {
-          name: /earmark the free cash from before/i,
-        }),
-      );
-
-      await waitFor(() => expect(notifyInfo).toHaveBeenCalled());
-      expect(update).not.toHaveBeenCalled();
-    });
-
-    it("re-reads the server before deciding there is nothing left to claim", async () => {
-      // The app keeps a query fresh for five minutes, and `fetchQuery` serves
-      // a fresh entry straight from cache. A claim that has reached the server
-      // but whose mutation has not yet settled into an invalidation therefore
-      // leaves the cached list holding the *old* opening balance. Deciding
-      // against that copy re-offered a claim that had already been applied.
-      await renderGoals(
-        [makeGoal({ name: "Vacation", opening_balance: 0 })],
-        {},
-        {},
-        5 * 60 * 1000,
-      );
-      stubFreeCashBefore(24000);
-      const update = vi.spyOn(savingsGoalsApi, "update");
-      // The server now holds the claim; only a re-read can see it.
-      vi.spyOn(savingsGoalsApi, "getAll").mockResolvedValue({
-        data: [makeGoal({ name: "Vacation", opening_balance: 24000 })],
-      } as Awaited<ReturnType<typeof savingsGoalsApi.getAll>>);
-
-      fireEvent.click(
-        within(rowFor("Vacation")).getByRole("button", {
-          name: /earmark the free cash from before/i,
-        }),
-      );
-
-      await waitFor(() => expect(notifyInfo).toHaveBeenCalled());
-      expect(update).not.toHaveBeenCalled();
-    });
-
-    it("is not offered on a closed goal", async () => {
-      await renderGoals([makeGoal({ name: "Vacation", status: "closed", is_closed: true })]);
+  describe("free cash reaches goals by itself", () => {
+    it("offers no button to earmark earlier free cash", async () => {
+      // The waterfall hands a goal the free cash waiting when it starts, so
+      // there is nothing left for a row to claim by hand.
+      await renderGoals([makeGoal({ name: "Vacation" })]);
 
       expect(
         within(rowFor("Vacation")).queryByRole("button", {
           name: /earmark the free cash from before/i,
         }),
       ).not.toBeInTheDocument();
+      expect(screen.queryByTestId("goal-opening-use-free-cash")).not.toBeInTheDocument();
     });
   });
 
   describe("goal editor", () => {
-    it("switches an existing goal from saving cash to investing", async () => {
-      vi.spyOn(taggingApi, "getCategories").mockResolvedValue({
-        data: { Investments: ["Pakam"], "Other Income": ["Wedding"] },
-      } as Awaited<ReturnType<typeof taggingApi.getCategories>>);
-      vi.spyOn(savingsGoalsApi, "getFreeCashBefore").mockResolvedValue({
-        data: { month: "2025-01", free_cash: 0 },
-      } as Awaited<ReturnType<typeof savingsGoalsApi.getFreeCashBefore>>);
-      const update = vi.spyOn(savingsGoalsApi, "update").mockResolvedValue({
-        data: [] as SavingsGoal[],
-      } as Awaited<ReturnType<typeof savingsGoalsApi.update>>);
-      await renderGoals([
-        makeGoal({
-          name: "Trip",
-          monthly_cap: 500,
-          contribution_category: "Other Income",
-          contribution_tags: "Wedding",
-        }),
-      ]);
-
-      fireEvent.click(within(rowFor("Trip")).getByRole("button", { name: /^edit$/i }));
-      const invest = await screen.findByRole("radio", { name: /invest/i });
-      expect(screen.queryByTestId("goal-kind-change-hint")).not.toBeInTheDocument();
-      fireEvent.click(invest);
-
-      // The editor says what the switch does before it is saved.
-      expect(screen.getByTestId("goal-kind-change-hint")).toBeInTheDocument();
-      expect(screen.queryByLabelText(/monthly cap/i)).not.toBeInTheDocument();
-      fireEvent.click(screen.getByRole("button", { name: /^save$/i }));
-
-      await waitFor(() => expect(update).toHaveBeenCalled());
-      const payload = update.mock.calls[0][1];
-      expect(payload).toMatchObject({ kind: "investment", contribution_tags: null });
-      expect(payload).not.toHaveProperty("monthly_cap");
-      expect(payload).not.toHaveProperty("opening_balance");
-    });
-
     it("picks the start on the same calendar as the target date, keeping the month", async () => {
       vi.spyOn(taggingApi, "getCategories").mockResolvedValue({
         data: {},
@@ -741,23 +683,24 @@ describe("GoalsSection", () => {
       ).toMatch(/5,307/);
     });
 
-    it("offer no free-cash claim, since they hold exactly their income", async () => {
+    it("say nothing about free cash when what it paid rounds to 0 ₪", async () => {
       await renderGoals([
-        makeGoal({ id: 1, name: "Trip" }),
         makeGoal({
-          id: 2,
           name: "Wedding",
           contribution_category: "Other Income",
-          contribution_tags: "Wedding",
+          utilized: 198878.35,
+          owed: 0.35,
         }),
       ]);
 
-      expect(
-        within(rowFor("Trip")).getByRole("button", { name: /free cash/i }),
-      ).toBeInTheDocument();
-      expect(
-        within(rowFor("Wedding")).queryByRole("button", { name: /free cash/i }),
-      ).not.toBeInTheDocument();
+      expect(within(rowFor("Wedding")).queryByText(/paid from free cash/i)).toBeNull();
+    });
+
+    it("draw an empty bar for a goal below zero", async () => {
+      await renderGoals([makeGoal({ name: "Short", progress_pct: -33.4 })]);
+
+      const bar = rowFor("Short").querySelector<HTMLElement>("[style*='width']");
+      expect(bar?.style.width).toBe("0%");
     });
 
     it("offer no monthly cap, since they take nothing from surplus", async () => {
@@ -784,132 +727,6 @@ describe("GoalsSection", () => {
       fireEvent.click(within(rowFor("Wedding")).getByRole("button", { name: /^edit$/i }));
       await screen.findByLabelText(/start from/i);
       expect(screen.queryByLabelText(/monthly cap/i)).not.toBeInTheDocument();
-    });
-  });
-
-  describe("investment goals", () => {
-    const invest = (overrides: Partial<SavingsGoal> = {}) =>
-      makeGoal({
-        name: "Pakam",
-        kind: "investment",
-        contribution_category: "Investments",
-        contribution_tags: "Pakam",
-        ...overrides,
-      });
-
-    it("marks the row and drops the cash-goal actions", async () => {
-      await renderGoals([invest()]);
-
-      const row = rowFor("Pakam");
-      expect(within(row).getByLabelText("Invest")).toBeInTheDocument();
-      expect(
-        within(row).queryByRole("button", { name: /free cash/i }),
-      ).not.toBeInTheDocument();
-    });
-
-    it("names this month's net transfers as invested or withdrawn", async () => {
-      await renderGoals([
-        invest({ this_month_allocation: 75000 }),
-        invest({ id: 2, name: "Bonds", this_month_allocation: -12000 }),
-      ]);
-
-      expect(within(rowFor("Pakam")).getByText(/invested this month/i).textContent).toMatch(
-        /75,000/,
-      );
-      expect(within(rowFor("Bonds")).getByText(/withdrawn this month/i).textContent).toMatch(
-        /12,000/,
-      );
-    });
-
-    it("still keeps a cash goal's clawback month off the row", async () => {
-      await renderGoals([makeGoal({ name: "Trip", this_month_allocation: -800 })]);
-
-      expect(within(rowFor("Trip")).queryByText(/this month/i)).not.toBeInTheDocument();
-    });
-
-    it("shows the funding income it has not invested yet", async () => {
-      await renderGoals([invest({ to_invest: 20000 })]);
-
-      expect(
-        within(rowFor("Pakam")).getByText(/ready to invest/i).textContent,
-      ).toMatch(/20,000/);
-    });
-
-    it("can name the income its investing is paid from", async () => {
-      vi.spyOn(taggingApi, "getCategories").mockResolvedValue({
-        data: { Investments: ["Pakam"], "Other Income": ["Kickstart", "Bonus"] },
-      } as Awaited<ReturnType<typeof taggingApi.getCategories>>);
-      vi.spyOn(savingsGoalsApi, "getFreeCashBefore").mockResolvedValue({
-        data: { month: "2026-09", free_cash: 0 },
-      } as Awaited<ReturnType<typeof savingsGoalsApi.getFreeCashBefore>>);
-      const create = vi.spyOn(savingsGoalsApi, "create").mockResolvedValue({
-        data: [] as SavingsGoal[],
-      } as Awaited<ReturnType<typeof savingsGoalsApi.create>>);
-      await renderGoals([makeGoal({ name: "Trip" })]);
-
-      fireEvent.click(screen.getByRole("button", { name: /add goal/i }));
-      fireEvent.click(await screen.findByRole("radio", { name: /invest/i }));
-      fireEvent.change(screen.getByLabelText(/name/i), { target: { value: "Invest" } });
-      fireEvent.change(screen.getByLabelText(/target amount/i), { target: { value: "50000" } });
-
-      const funding = screen.getByTestId("goal-invest-funding");
-      fireEvent.click(within(funding).getAllByRole("button")[0]);
-      fireEvent.click(await screen.findByRole("option", { name: "Other Income" }));
-      fireEvent.click(screen.getByRole("button", { name: /^save$/i }));
-
-      await waitFor(() => expect(create).toHaveBeenCalled());
-      expect(create.mock.calls[0][0]).toMatchObject({
-        kind: "investment",
-        funding_category: "Other Income",
-        funding_tags: null,
-      });
-    });
-
-    it("creates one from the editor with only the settings it uses", async () => {
-      vi.spyOn(taggingApi, "getCategories").mockResolvedValue({
-        data: { Investments: ["Pakam", "Stocks"], Food: ["Groceries"] },
-      } as Awaited<ReturnType<typeof taggingApi.getCategories>>);
-      vi.spyOn(savingsGoalsApi, "getFreeCashBefore").mockResolvedValue({
-        data: { month: "2026-09", free_cash: 0 },
-      } as Awaited<ReturnType<typeof savingsGoalsApi.getFreeCashBefore>>);
-      const create = vi.spyOn(savingsGoalsApi, "create").mockResolvedValue({
-        data: [] as SavingsGoal[],
-      } as Awaited<ReturnType<typeof savingsGoalsApi.create>>);
-      await renderGoals([makeGoal({ name: "Trip" })]);
-
-      fireEvent.click(screen.getByRole("button", { name: /add goal/i }));
-      fireEvent.click(await screen.findByRole("radio", { name: /invest/i }));
-
-      // The cash-goal settings have nothing to act on.
-      expect(screen.queryByLabelText(/monthly cap/i)).not.toBeInTheDocument();
-      expect(screen.queryByLabelText(/already saved/i)).not.toBeInTheDocument();
-      expect(screen.queryByTestId("goal-auto-link-spend")).not.toBeInTheDocument();
-
-      fireEvent.change(screen.getByLabelText(/name/i), { target: { value: "Pakam" } });
-      fireEvent.change(screen.getByLabelText(/target amount/i), { target: { value: "120000" } });
-      const save = screen.getByRole("button", { name: /^save$/i });
-      // No category to pick: it always counts Investments, so it can save
-      // straight away, with only an optional narrowing to some holdings.
-      expect(save).toBeEnabled();
-
-      const rule = screen.getByTestId("goal-invest-rule");
-      expect(within(rule).getByText(/all investments/i)).toBeInTheDocument();
-      fireEvent.click(within(rule).getAllByRole("button")[0]);
-      fireEvent.click(await screen.findByRole("option", { name: "Pakam" }));
-      fireEvent.click(save);
-
-      await waitFor(() => expect(create).toHaveBeenCalled());
-      const payload = create.mock.calls[0][0];
-      expect(payload).toMatchObject({
-        kind: "investment",
-        name: "Pakam",
-        target_amount: 120000,
-        contribution_tags: "Pakam",
-      });
-      expect(payload).not.toHaveProperty("contribution_category");
-      expect(payload).not.toHaveProperty("monthly_cap");
-      expect(payload).not.toHaveProperty("opening_balance");
-      expect(payload).not.toHaveProperty("utilization_category");
     });
   });
 });

@@ -1,3 +1,93 @@
+## v1.101.0 (2026-10-09)
+
+### Feat
+
+- **savings-goals**: this year's savings against a yearly target (#383)
+
+## v1.100.0 (2026-10-09)
+
+### Feat
+
+- **savings-goals**: goals are cash earmarks only - investment goals removed (#382)
+
+## v1.99.0 (2026-10-09)
+
+### Feat
+
+- **dashboard**: draw debt payments as monthly bars with an outstanding-debt line (#381)
+
+## v1.98.2 (2026-10-09)
+
+### Fix
+
+- **dashboard**: put "View All" beside the recent transactions title and point arrows the reading way in RTL (#380)
+
+## v1.98.1 (2026-10-09)
+
+### Fix
+
+- **dashboard**: keep recurring rows to two lines with icon status chips (#379)
+
+## v1.98.0 (2026-10-09)
+
+### Feat
+
+- **transactions**: add a "Without Rule" filter to the recent transactions card and the transactions page (#378)
+
+## v1.97.0 (2026-10-09)
+
+### Feat
+
+- **tagging**: lead with and mark the branch "Add to Rule" adds (#377)
+
+## v1.96.1 (2026-10-09)
+
+### Fix
+
+- **goals-chart**: keep the history controls on one row and its tooltip off the legend (#376)
+
+## v1.96.0 (2026-10-09)
+
+### Feat
+
+- **goals-chart**: monthly / cumulative toggle on the month-by-month history (#375)
+
+## v1.95.6 (2026-10-09)
+
+### Fix
+
+- **savings-goals**: balanced books - target-month turns, full free-cash waterfall, faithful replay, chart stacking, property-tested (#374)
+
+## v1.95.5 (2026-10-08)
+
+### Fix
+
+- **savings-goals**: show negative free cash instead of flooring it at zero (#373)
+
+## v1.95.4 (2026-10-08)
+
+### Fix
+
+- **savings-goals**: editing a goal's start date, target, cap or rules restates its history (#372)
+
+## v1.95.3 (2026-10-08)
+
+### Fix
+
+- **savings-goals**: every investment goal takes its waterfall turn; an income goal takes free cash only for what its income never covers (#370)
+
+## v1.95.2 (2026-10-08)
+
+### Fix
+
+- **savings-goals**: income-source goals take their waterfall turn and hold their income; past-due goals stop asking for X/mo for 0 mo (#369)
+
+## v1.95.1 (2026-10-08)
+
+### Fix
+
+- **ui**: keyboard-safe search boxes — dropdowns no longer jump, and it's now a code standard (#368)
+
 ## v1.95.0 (2026-10-08)
 
 ### Feat
