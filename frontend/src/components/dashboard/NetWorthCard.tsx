@@ -12,7 +12,7 @@ import {
   Legend,
   Cell,
 } from "recharts";
-import { analyticsApi } from "../../services/api";
+import { analyticsApi, liabilitiesApi } from "../../services/api";
 import { useQueryKeys } from "../../hooks/useQueryKeys";
 import { useTranslation } from "react-i18next";
 import { formatCurrency, formatChange, formatPercentChange } from "../../utils/numberFormatting";
@@ -46,6 +46,12 @@ export function NetWorthCard() {
     queryFn: async () => (await analyticsApi.getDebtPaymentsOverTime()).data,
   });
 
+  const { data: debtOverTime } = useQuery<{ total: { date: string; balance: number }[] }>({
+    queryKey: qk.liabilities.debtOverTime(),
+    queryFn: async () => (await liabilitiesApi.getDebtOverTime()).data,
+    enabled: netWorthView === "debt_payments",
+  });
+
   const { data: netWorthData } = useQuery({
     queryKey: qk.analytics.netWorthOverTime(),
     queryFn: async () => (await analyticsApi.getNetWorthOverTime()).data,
@@ -64,21 +70,33 @@ export function NetWorthCard() {
     }));
   }, [netWorthData]);
 
-  // Monthly debt payments stacked per tag, plus the running total paid.
+  // Monthly debt payments stacked per tag, plus the outstanding debt at each month's end.
   const debtSeries = useMemo(() => {
     if (!debtPaymentsData || debtPaymentsData.length === 0) return null;
     const allTags = Array.from(
       new Set(debtPaymentsData.flatMap((d: { tags: Record<string, number> }) => Object.keys(d.tags))),
     ).sort() as string[];
-    let running = 0;
-    const rows = debtPaymentsData.map((d: { month: string; amount: number; tags: Record<string, number> }) => {
-      running += d.amount;
-      const row: Record<string, number | string> = { month: d.month, total_paid: running };
-      for (const tag of allTags) row[tag] = d.tags[tag] || 0;
+    const paymentsByMonth = new Map<string, Record<string, number>>(
+      debtPaymentsData.map((d: { month: string; tags: Record<string, number> }) => [d.month, d.tags]),
+    );
+    const debtPoints = debtOverTime?.total ?? [];
+    const months = Array.from(
+      new Set([...paymentsByMonth.keys(), ...debtPoints.map((p) => p.date.slice(0, 7))]),
+    ).sort();
+    let pointIdx = 0;
+    let debt: number | undefined;
+    const rows = months.map((month) => {
+      while (pointIdx < debtPoints.length && debtPoints[pointIdx].date.slice(0, 7) <= month) {
+        debt = debtPoints[pointIdx].balance;
+        pointIdx++;
+      }
+      const tags = paymentsByMonth.get(month) ?? {};
+      const row: Record<string, number | string | undefined> = { month, debt };
+      for (const tag of allTags) row[tag] = tags[tag] || 0;
       return row;
     });
     return { allTags, rows };
-  }, [debtPaymentsData]);
+  }, [debtPaymentsData, debtOverTime]);
 
   const seriesConfig = {
     bank_balance: {
@@ -136,7 +154,7 @@ export function NetWorthCard() {
               tickFormatter={formatAxisNumber}
               width={56}
               label={{
-                value: t("dashboard.totalDebtPaid"),
+                value: t("dashboard.outstandingDebt"),
                 angle: 90,
                 position: "insideRight",
                 style: { fill: DEBT_TOTAL_COLOR, fontSize: 11 },
@@ -158,8 +176,8 @@ export function NetWorthCard() {
             ))}
             <Line
               yAxisId="right"
-              dataKey="total_paid"
-              name={t("dashboard.totalDebtPaid")}
+              dataKey="debt"
+              name={t("dashboard.outstandingDebt")}
               type="monotone"
               stroke={DEBT_TOTAL_COLOR}
               strokeWidth={3}

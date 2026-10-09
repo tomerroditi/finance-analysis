@@ -143,7 +143,7 @@
     "cashBalance": "יתרת מזומן",
     "debtPayments": "תשלומי חוב",
     "monthlyDebtPayment": "תשלום חודשי",
-    "totalDebtPaid": "סך שולם",
+    "outstandingDebt": "יתרת חוב",
     "avg3mo": "ממוצע 3 ח׳",
     "mo6": "6 ח׳",
     "mo12": "12 ח׳",

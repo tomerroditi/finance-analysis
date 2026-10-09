@@ -48,9 +48,9 @@ test.describe("Dashboard per-chart cards", () => {
     await expect(page.locator('[data-card-id="net_worth"]')).toBeVisible();
     await expect(page.locator('[data-card-id="cash_flow"]')).toHaveCount(0);
 
-    // --- Net Worth → Debt Payments draws monthly bars + a cumulative line ---
+    // --- Net Worth → Debt Payments draws monthly bars + an outstanding-debt line ---
     // Like the per-series views: one stacked bar per loan tag (the demo has a
-    // mortgage and a car loan) and a "Total Paid" running-total line.
+    // mortgage and a car loan) and an "Outstanding Debt" line.
     const netWorthCard = page.locator('[data-card-id="net_worth"]');
     await netWorthCard.scrollIntoViewIfNeeded();
     await netWorthCard.getByRole("button", { name: /^Debt Payments$/ }).click();
@@ -60,8 +60,10 @@ test.describe("Dashboard per-chart cards", () => {
     });
     await expect(netWorthChart.locator(".recharts-bar")).toHaveCount(2);
     await expect(netWorthChart.locator(".recharts-line")).toHaveCount(1);
+    // The debt line reads the liabilities' balances, so it must draw a path.
+    await expect(netWorthChart.locator(".recharts-line-curve")).toHaveAttribute("d", /\d/);
     await expect(netWorthChart.locator(".recharts-area")).toHaveCount(0);
-    await expect(netWorthChart.getByText("Total Paid").first()).toBeVisible();
+    await expect(netWorthChart.getByText("Outstanding Debt").first()).toBeVisible();
 
     await page
       .getByRole("button", { name: /^Settings$/ })
