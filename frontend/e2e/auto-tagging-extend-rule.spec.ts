@@ -154,5 +154,25 @@ test.describe("Auto-tagging quick action — extend an existing rule", () => {
     await expect(
       modal.locator("tbody tr").filter({ hasText: "WOLT" }).first(),
     ).toBeVisible();
+
+    // A tablet-sized window still shows the desktop split pane, which leaves
+    // the conditions far less room than the viewport suggests. The rows lay
+    // out on their own width, so nothing in them may spill past their edge —
+    // the value input and delete button used to run off the end, clipped.
+    await page.setViewportSize({ width: 900, height: 800 });
+    const rows = modal.locator('input[placeholder="Value"]:visible')
+      .locator("xpath=ancestor::div[contains(@class,'rounded-lg')][1]");
+    await expect(rows).toHaveCount(2);
+    for (const row of await rows.all()) {
+      const box = (await row.boundingBox())!;
+      for (const part of [
+        row.locator('input[placeholder="Value"]'),
+        row.getByRole("button", { name: "Delete" }),
+      ]) {
+        await expect(part).toBeVisible();
+        const partBox = (await part.boundingBox())!;
+        expect(partBox.x + partBox.width).toBeLessThanOrEqual(box.x + box.width + 1);
+      }
+    }
   });
 });

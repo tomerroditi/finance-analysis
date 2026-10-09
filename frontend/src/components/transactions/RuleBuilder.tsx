@@ -193,93 +193,98 @@ export function RuleBuilder({ value, onChange, depth = 0, onRemove, highlighted 
         return num;
     };
 
+    // The row lays out on its own width, not the viewport's: the editor's
+    // desktop split pane can be narrower than a phone on a tablet-sized
+    // window, and every nested group takes another indent off it.
     return (
-        <div
-            data-new-condition={isHighlighted || undefined}
-            className={`relative grid grid-cols-[auto_1fr_auto] sm:flex sm:items-center gap-2 p-2 rounded-lg border transition-all ${
-                isHighlighted
-                    ? "bg-[var(--primary)]/10 border-[var(--primary)] ring-1 ring-[var(--primary)]/40"
-                    : "bg-[var(--surface-base)] border-[var(--surface-light)] hover:border-[var(--primary)]/30"
-            }`}
-        >
-            {isHighlighted && (
-                <span
-                    className="absolute -top-2.5 end-10 sm:end-2 px-1.5 rounded-full bg-[var(--primary)] text-white text-[10px] font-bold leading-4"
-                    title={t("ruleBuilder.newConditionHint")}
-                >
-                    {t("ruleBuilder.newCondition")}
-                </span>
-            )}
-            <div className={`p-1.5 rounded self-start sm:self-auto ${
-                isHighlighted ? "bg-[var(--primary)]/20 text-[var(--primary)]" : "bg-[var(--surface)] text-[var(--text-muted)]"
-            }`}>
-                <FileText size={14} />
-            </div>
-
-            <div className="min-w-0 sm:w-32">
-            <SelectDropdown
-                options={FIELDS.map(f => ({ label: t(`ruleBuilder.${f.labelKey}`), value: f.value }))}
-                value={value.field || "description"}
-                onChange={(val) => handleFieldChange(val)}
-                size="sm"
-            />
-            </div>
-
-            <div className="row-start-2 col-span-3 sm:row-auto sm:col-span-1 sm:w-32">
-            <SelectDropdown
-                options={operators.map(op => ({ label: t(`ruleBuilder.${op.labelKey}`), value: op.value }))}
-                value={value.operator || "contains"}
-                onChange={(val) => onChange({ ...value, operator: val as Operator })}
-                size="sm"
-            />
-            </div>
-
-            {value.operator === "between" ? (
-                <div className="row-start-3 col-span-3 sm:row-auto sm:col-span-1 flex items-center gap-1 sm:flex-1">
-                    <input
-                        type="text"
-                        inputMode="decimal"
-                        placeholder={t("ruleBuilder.min")}
-                        value={Array.isArray(value.value) ? value.value[0] : ""}
-                        onChange={(e) => onChange({
-                            ...value,
-                            value: [parseNumericInput(e.target.value), Array.isArray(value.value) ? value.value[1] : 0]
-                        })}
-                        className="flex-1 min-w-0 sm:w-20 sm:flex-initial bg-[var(--surface)] border border-[var(--surface-light)] rounded px-2 py-1.5 text-sm sm:text-xs outline-none focus:border-[var(--primary)]"
-                    />
-                    <span className="text-xs text-[var(--text-muted)]">-</span>
-                    <input
-                        type="text"
-                        inputMode="decimal"
-                        placeholder={t("ruleBuilder.max")}
-                        value={Array.isArray(value.value) ? value.value[1] : ""}
-                        onChange={(e) => onChange({
-                            ...value,
-                            value: [Array.isArray(value.value) ? value.value[0] : 0, parseNumericInput(e.target.value)]
-                        })}
-                        className="flex-1 min-w-0 sm:w-20 sm:flex-initial bg-[var(--surface)] border border-[var(--surface-light)] rounded px-2 py-1.5 text-sm sm:text-xs outline-none focus:border-[var(--primary)]"
-                    />
+        <div className="@container">
+            <div
+                data-new-condition={isHighlighted || undefined}
+                className={`relative grid grid-cols-[auto_1fr_auto] @min-[28rem]:flex @min-[28rem]:items-center gap-2 p-2 rounded-lg border transition-all ${
+                    isHighlighted
+                        ? "bg-[var(--primary)]/10 border-[var(--primary)] ring-1 ring-[var(--primary)]/40"
+                        : "bg-[var(--surface-base)] border-[var(--surface-light)] hover:border-[var(--primary)]/30"
+                }`}
+            >
+                {isHighlighted && (
+                    <span
+                        className="absolute -top-2.5 end-10 @min-[28rem]:end-2 px-1.5 rounded-full bg-[var(--primary)] text-white text-[10px] font-bold leading-4"
+                        title={t("ruleBuilder.newConditionHint")}
+                    >
+                        {t("ruleBuilder.newCondition")}
+                    </span>
+                )}
+                <div className={`p-1.5 rounded self-start @min-[28rem]:self-auto ${
+                    isHighlighted ? "bg-[var(--primary)]/20 text-[var(--primary)]" : "bg-[var(--surface)] text-[var(--text-muted)]"
+                }`}>
+                    <FileText size={14} />
                 </div>
-            ) : (
-                <input
-                    type="text"
-                    inputMode={isNumberField ? "decimal" : undefined}
-                    placeholder={t("ruleBuilder.value")}
-                    value={value.value != null && typeof value.value !== "boolean" && !Array.isArray(value.value) ? value.value : ""}
-                    onChange={(e) => onChange({ ...value, value: isNumberField ? parseNumericInput(e.target.value) : e.target.value })}
-                    className="row-start-3 col-span-3 sm:row-auto sm:col-span-1 sm:flex-1 sm:min-w-[100px] bg-[var(--surface)] border border-[var(--surface-light)] rounded px-2 py-1.5 text-sm sm:text-xs outline-none focus:border-[var(--primary)]"
-                />
-            )}
 
-            {onRemove && (
-                <button
-                    onClick={onRemove}
-                    className="row-start-1 col-start-3 sm:row-auto sm:col-start-auto p-1.5 rounded hover:bg-red-500/10 text-red-400 transition-colors self-start sm:self-auto justify-self-end"
-                    aria-label={t("common.delete")}
-                >
-                    <Trash2 size={14} />
-                </button>
-            )}
+                <div className="min-w-0 @min-[28rem]:w-32">
+                <SelectDropdown
+                    options={FIELDS.map(f => ({ label: t(`ruleBuilder.${f.labelKey}`), value: f.value }))}
+                    value={value.field || "description"}
+                    onChange={(val) => handleFieldChange(val)}
+                    size="sm"
+                />
+                </div>
+
+                <div className="row-start-2 col-span-3 @min-[28rem]:row-auto @min-[28rem]:col-span-1 @min-[28rem]:w-32">
+                <SelectDropdown
+                    options={operators.map(op => ({ label: t(`ruleBuilder.${op.labelKey}`), value: op.value }))}
+                    value={value.operator || "contains"}
+                    onChange={(val) => onChange({ ...value, operator: val as Operator })}
+                    size="sm"
+                />
+                </div>
+
+                {value.operator === "between" ? (
+                    <div className="row-start-3 col-span-3 @min-[28rem]:row-auto @min-[28rem]:col-span-1 flex items-center gap-1 @min-[28rem]:flex-1">
+                        <input
+                            type="text"
+                            inputMode="decimal"
+                            placeholder={t("ruleBuilder.min")}
+                            value={Array.isArray(value.value) ? value.value[0] : ""}
+                            onChange={(e) => onChange({
+                                ...value,
+                                value: [parseNumericInput(e.target.value), Array.isArray(value.value) ? value.value[1] : 0]
+                            })}
+                            className="flex-1 min-w-0 @min-[28rem]:w-20 @min-[28rem]:flex-initial bg-[var(--surface)] border border-[var(--surface-light)] rounded px-2 py-1.5 text-sm @min-[28rem]:text-xs outline-none focus:border-[var(--primary)]"
+                        />
+                        <span className="text-xs text-[var(--text-muted)]">-</span>
+                        <input
+                            type="text"
+                            inputMode="decimal"
+                            placeholder={t("ruleBuilder.max")}
+                            value={Array.isArray(value.value) ? value.value[1] : ""}
+                            onChange={(e) => onChange({
+                                ...value,
+                                value: [Array.isArray(value.value) ? value.value[0] : 0, parseNumericInput(e.target.value)]
+                            })}
+                            className="flex-1 min-w-0 @min-[28rem]:w-20 @min-[28rem]:flex-initial bg-[var(--surface)] border border-[var(--surface-light)] rounded px-2 py-1.5 text-sm @min-[28rem]:text-xs outline-none focus:border-[var(--primary)]"
+                        />
+                    </div>
+                ) : (
+                    <input
+                        type="text"
+                        inputMode={isNumberField ? "decimal" : undefined}
+                        placeholder={t("ruleBuilder.value")}
+                        value={value.value != null && typeof value.value !== "boolean" && !Array.isArray(value.value) ? value.value : ""}
+                        onChange={(e) => onChange({ ...value, value: isNumberField ? parseNumericInput(e.target.value) : e.target.value })}
+                        className="row-start-3 col-span-3 @min-[28rem]:row-auto @min-[28rem]:col-span-1 @min-[28rem]:flex-1 @min-[28rem]:min-w-20 bg-[var(--surface)] border border-[var(--surface-light)] rounded px-2 py-1.5 text-sm @min-[28rem]:text-xs outline-none focus:border-[var(--primary)]"
+                    />
+                )}
+
+                {onRemove && (
+                    <button
+                        onClick={onRemove}
+                        className="row-start-1 col-start-3 @min-[28rem]:row-auto @min-[28rem]:col-start-auto p-1.5 rounded hover:bg-red-500/10 text-red-400 transition-colors self-start @min-[28rem]:self-auto justify-self-end"
+                        aria-label={t("common.delete")}
+                    >
+                        <Trash2 size={14} />
+                    </button>
+                )}
+            </div>
         </div>
     );
 }
