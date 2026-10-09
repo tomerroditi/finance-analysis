@@ -265,6 +265,26 @@ test.describe("Savings goals", () => {
       .click();
     await expect(history).toBeVisible();
 
+    // --- cumulative view ------------------------------------------------
+    // The same months read as running totals, opening balance included, so a
+    // goal's last bar matches its card. The achieved goal never drew on the
+    // waterfall, so the monthly view has no series for it; its opening
+    // balance gives it one here.
+    const panel = page.getByTestId("goals-history");
+    const monthly = panel.getByRole("button", { name: "Monthly" });
+    const cumulative = panel.getByRole("button", { name: "Cumulative" });
+    await expect(monthly).toHaveAttribute("aria-pressed", "true");
+    await cumulative.click();
+    await expect(cumulative).toHaveAttribute("aria-pressed", "true");
+    await expect(
+      history.getByRole("button", { name: "E2E Achieved Goal" }),
+    ).toBeVisible({ timeout: 30_000 });
+    await expect(panel.getByText(/received so far/i)).toBeVisible();
+    await monthly.click();
+    await expect(
+      history.getByRole("button", { name: "E2E Achieved Goal" }),
+    ).toHaveCount(0);
+
     // The toggle closes what it opened, range chips and all.
     await historyToggle.click();
     await expect(history).toBeHidden();
