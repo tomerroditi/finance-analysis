@@ -280,6 +280,27 @@ test.describe("Savings goals", () => {
       history.getByRole("button", { name: "E2E Achieved Goal" }),
     ).toBeVisible({ timeout: 30_000 });
     await expect(panel.getByText(/received so far/i)).toBeVisible();
+    // --- on a phone ------------------------------------------------------
+    // The view and window controls share one row, and a month's tooltip —
+    // a line per goal — stays inside the plot instead of over the legend.
+    const desktop = page.viewportSize();
+    await page.setViewportSize({ width: 390, height: 900 });
+    const groupTops = await panel
+      .getByTestId("goals-history-controls")
+      .locator(":scope > div")
+      .evaluateAll((groups) => groups.map((g) => g.getBoundingClientRect().top));
+    expect(groupTops).toHaveLength(2);
+    expect(Math.abs(groupTops[0] - groupTops[1])).toBeLessThan(2);
+    await history.scrollIntoViewIfNeeded();
+    const lastBar = await history.locator(".recharts-bar-rectangle").last().boundingBox();
+    await page.mouse.move(lastBar!.x + lastBar!.width / 2, lastBar!.y + 2);
+    const tooltipBox = history.locator(".recharts-tooltip-wrapper");
+    await expect(tooltipBox.getByText(/:/).first()).toBeVisible();
+    const tip = await tooltipBox.boundingBox();
+    const legend = await history.locator(".recharts-legend-wrapper").boundingBox();
+    expect(tip!.y + tip!.height).toBeLessThanOrEqual(legend!.y + 1);
+    if (desktop) await page.setViewportSize(desktop);
+
     await monthly.click();
     await expect(
       history.getByRole("button", { name: "E2E Achieved Goal" }),

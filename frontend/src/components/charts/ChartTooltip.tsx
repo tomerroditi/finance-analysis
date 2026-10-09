@@ -20,6 +20,11 @@ interface ChartTooltipProps {
   valueFormatter?: (value: number, entry: TooltipEntry) => string;
   /** Skip entries (e.g. helper series that shouldn't show). */
   filter?: (entry: TooltipEntry) => boolean;
+  /**
+   * Tighter type and padding, for a chart with many series in a small box —
+   * a phone-sized panel whose full-size tooltip ran over its own legend.
+   */
+  compact?: boolean;
 }
 
 /**
@@ -34,6 +39,7 @@ export function ChartTooltip({
   labelFormatter,
   valueFormatter,
   filter,
+  compact = false,
 }: ChartTooltipProps) {
   if (!active || !payload || payload.length === 0) return null;
   const entries = payload.filter(
@@ -42,9 +48,13 @@ export function ChartTooltip({
   if (entries.length === 0) return null;
 
   return (
-    <div className="rounded-lg border border-[rgba(148,163,184,0.2)] bg-[#1e293b] px-3 py-2 text-xs text-[#e2e8f0] shadow-lg">
+    <div
+      className={`rounded-lg border border-[rgba(148,163,184,0.2)] bg-[#1e293b] text-[#e2e8f0] shadow-lg ${
+        compact ? "px-2 py-1.5 text-[10px] leading-snug" : "px-3 py-2 text-xs"
+      }`}
+    >
       {label !== undefined && label !== "" && (
-        <p className="mb-1 font-bold">
+        <p className={compact ? "mb-0.5 font-bold" : "mb-1 font-bold"}>
           {labelFormatter ? labelFormatter(label) : label}
         </p>
       )}
