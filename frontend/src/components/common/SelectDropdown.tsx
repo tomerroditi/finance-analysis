@@ -190,6 +190,12 @@ export const SelectDropdown: React.FC<SelectDropdownProps> = ({
         ref={buttonRef}
         onClick={() => !disabled && setIsOpen(!isOpen)}
         onKeyDown={(e) => {
+          // Focus moves into the panel a frame after it opens, so an Escape
+          // pressed in between lands here and must still close it.
+          if (isOpen && e.key === "Escape") {
+            handleKeyDown(e);
+            return;
+          }
           if (!isOpen && (e.key === "ArrowDown" || e.key === "Enter" || e.key === " ")) {
             e.preventDefault();
             setIsOpen(true);
