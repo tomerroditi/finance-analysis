@@ -500,8 +500,15 @@ function AllocationHistory({ goals }: { goals: SavingsGoal[] }) {
     setIsolated(key);
   };
 
+  // Compact, and without the series that moved nothing that month: with a
+  // goal per row, the full-size tooltip stood taller than a phone's plot
+  // area and ran over the legend.
   const tooltip = (
-    <ChartTooltip labelFormatter={(m) => formatMonthYear(monthDate(String(m)))} />
+    <ChartTooltip
+      compact
+      labelFormatter={(m) => formatMonthYear(monthDate(String(m)))}
+      filter={(entry) => entry.value !== 0}
+    />
   );
   const hasMoreHistory = (data?.total_months ?? 0) > Math.max(...HISTORY_RANGES);
 
@@ -511,20 +518,23 @@ function AllocationHistory({ goals }: { goals: SavingsGoal[] }) {
       data-testid="goals-history"
     >
       <div
-        className={`flex items-center justify-between gap-2 ${open ? "mb-3" : ""}`}
+        className={`flex flex-wrap items-center justify-between gap-2 ${open ? "mb-3" : ""}`}
       >
         <button
           type="button"
           onClick={() => setOpen((isOpen) => !isOpen)}
           aria-expanded={open}
           aria-controls={PANEL_ID}
-          className="flex items-center gap-1 text-xs md:text-sm font-bold hover:text-[var(--primary)] transition-colors"
+          className="flex items-center gap-1 whitespace-nowrap text-xs md:text-sm font-bold hover:text-[var(--primary)] transition-colors"
         >
           {open ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
           {t("dashboard.goals.historyTitle")}
         </button>
         {open && (
-          <div className="flex flex-wrap items-center justify-end gap-1.5">
+          // The view and the window are one set of controls, so they never
+          // split across lines: on a narrow screen they drop under the title
+          // together, side by side.
+          <div className="flex items-center gap-1.5 ms-auto" data-testid="goals-history-controls">
             <div
               className="flex bg-[var(--surface-light)] rounded-lg p-0.5"
               role="group"
@@ -597,7 +607,9 @@ function AllocationHistory({ goals }: { goals: SavingsGoal[] }) {
                   {t("dashboard.goals.historyEmpty")}
                 </p>
               ) : (
-                <div className="h-48 md:h-56">
+                // Taller on a phone: the legend wraps to three lines there and
+                // would leave the bars, and the tooltip, too little room.
+                <div className="h-64 md:h-56">
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart
                       // Recharts 3 stacks bars in the order they first mounted,
@@ -673,6 +685,9 @@ function AllocationHistory({ goals }: { goals: SavingsGoal[] }) {
                       <Tooltip
                         cursor={{ fill: "rgba(148, 163, 184, 0.08)", radius: 6 }}
                         content={tooltip}
+                        // Pinned to the top of the plot, so it grows down over
+                        // the bars and never over the legend under them.
+                        position={{ y: 0 }}
                       />
                       <Legend
                         content={
