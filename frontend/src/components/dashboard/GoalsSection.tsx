@@ -90,6 +90,8 @@ const LIST_CAP_SLACK_PX = 120;
  * lets the card ask whether any reorder is still in flight.
  */
 const REORDER_KEY = ["savings-goals", "reorder"] as const;
+/** Every other goal write: each one restates the history the chart draws. */
+const GOAL_WRITE_KEY = ["savings-goals", "write"] as const;
 
 /** Figures awaiting the rebuilt ledger pulse faintly rather than vanish. */
 const RECALCULATING_CLASS = "animate-pulse opacity-50 transition-opacity";
@@ -148,6 +150,7 @@ export function GoalsSection() {
     queryClient.invalidateQueries({ queryKey: qkPrefix.savingsGoals });
 
   const deleteMutation = useMutation({
+    mutationKey: GOAL_WRITE_KEY,
     mutationFn: (id: number) => savingsGoalsApi.delete(id),
     onSuccess: invalidate,
   });
@@ -397,13 +400,23 @@ function AllocationHistory() {
   // click by click, rather than the isolation they just asked for.
   const [isolated, setIsolated] = useState<string | null>(null);
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isFetching } = useQuery({
     queryKey: qk.savingsGoals.timeline(range),
     queryFn: async () => (await savingsGoalsApi.getTimeline(range)).data,
     // Nothing outside this panel reads the timeline, so a card that is never
     // expanded never pays for the window.
     enabled: open,
   });
+
+  // A goal write restates the whole history server-side, and the chart only
+  // refetches once it lands: until then it would draw the old history beside
+  // goal rows that already show the new one. It says so instead, as the rows
+  // do during a reorder.
+  const writing =
+    useIsMutating({ mutationKey: GOAL_WRITE_KEY }) +
+      useIsMutating({ mutationKey: REORDER_KEY }) >
+    0;
+  const recalculating = writing || (isFetching && !isLoading);
 
   // One row per month with a column per goal, which is the shape a stacked
   // chart wants. Months where nothing moved still get a row — the backend
@@ -540,8 +553,9 @@ function AllocationHistory() {
             </p>
           ) : (
             <div
-              className="rounded-xl border border-[var(--surface-light)] bg-[var(--surface-light)]/20 p-3"
+              className={`rounded-xl border border-[var(--surface-light)] bg-[var(--surface-light)]/20 p-3 ${recalculating ? RECALCULATING_CLASS : ""}`}
               data-testid="goals-history-chart"
+              aria-busy={recalculating}
             >
               {keys.length === 0 ? (
                 // Goals exist, but no month in this window moved a shekel into
@@ -554,6 +568,13 @@ function AllocationHistory() {
                 <div className="h-48 md:h-56">
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart
+                      // Recharts 3 stacks bars in the order they first mounted,
+                      // not the order they render in: a reordered goal, a new
+                      // one, or a series a wider window brings in kept its old
+                      // place — free cash ended up under a goal, and the rounded
+                      // ends landed mid-column. A new series order is a new
+                      // chart.
+                      key={keys.join(",")}
                       data={rows}
                       margin={{ top: 4, bottom: 0, left: 0, right: 4 }}
                       barCategoryGap="22%"
@@ -948,6 +969,7 @@ function GoalEditorModal({ goal, onClose }: { goal: SavingsGoal | null; onClose:
     !isInvestment && (Number(openingBalance) || 0) !== (goal?.opening_balance ?? 0);
 
   const save = useMutation({
+    mutationKey: GOAL_WRITE_KEY,
     mutationFn: async (payload: SavingsGoalInput) => {
       return goal
         ? await savingsGoalsApi.update(goal.id, payload)

@@ -369,6 +369,7 @@ test.describe("Savings goals", () => {
       goalRow(page, "E2E Achieved Goal").getByText("#1"),
     ).toBeVisible();
 
+
     // Restore the original order so the suite is order-independent.
     await goalRow(page, "E2E In Progress Goal")
       .getByRole("button", { name: /move up/i })
@@ -376,6 +377,80 @@ test.describe("Savings goals", () => {
     await expect(
       goalRow(page, "E2E In Progress Goal").getByText("#1"),
     ).toBeVisible();
+  });
+
+  test("a goal added under an open history still stacks under free cash", async ({
+    page,
+  }) => {
+    // Recharts 3 stacks bars in the order they first mounted, not the order
+    // they render in. A series that appeared while the chart was open — a new
+    // goal, or older ones a wider window brings in — mounted after free cash
+    // and was drawn on top of it, and the rounded ends landed mid-column.
+    const seeded = await createGoal({
+      name: "E2E Stack A",
+      target_amount: 500000,
+      monthly_cap: 1000,
+      start_month: monthsAgo(6),
+    });
+    let addedId: number | undefined;
+    try {
+      await openDashboardWithGoals(page);
+      await expect(goalName(page, "E2E Stack A")).toBeVisible({ timeout: 30_000 });
+      const history = page.getByTestId("goals-history");
+      await history.getByRole("button", { name: /month by month/i }).click();
+      const chart = page.getByTestId("goals-history-chart");
+      await expect(chart.locator(".recharts-bar-rectangle").first()).toBeAttached({
+        timeout: 30_000,
+      });
+
+      await page.getByRole("button", { name: /add goal/i }).click();
+      const dialog = page.getByRole("dialog");
+      await dialog.locator("#goal-name").fill("E2E Stack B");
+      await dialog.locator("#goal-target").fill("500000");
+      await dialog.locator("#goal-cap").fill("1000");
+      await dialog.locator("#goal-start").fill(`${monthsAgo(6)}-01`);
+      await dialog.getByRole("button", { name: /^save$/i }).click();
+      await expect(dialog).toHaveCount(0);
+      await expect(goalName(page, "E2E Stack B")).toBeVisible({ timeout: 30_000 });
+      await expect(chart).toHaveAttribute("aria-busy", "false", { timeout: 30_000 });
+
+      const goals: { id: number; name: string }[] = await (
+        await ctx.get(`${API_BASE}/savings-goals/`)
+      ).json();
+      addedId = goals.find((goal) => goal.name === "E2E Stack B")?.id;
+      const added = `url(#goal-fill-${addedId})`;
+      await expect(chart.locator(`[fill="${added}"]`).first()).toBeAttached({
+        timeout: 30_000,
+      });
+
+      // In every column holding both, free cash caps the new goal's segment.
+      const misplaced = await chart.evaluate((root, fill) => {
+        const columns = new Map<number, { goal?: number; free?: number }>();
+        for (const rect of root.querySelectorAll(".recharts-bar-rectangle")) {
+          const shape = rect.querySelector("path, rect") as SVGGraphicsElement | null;
+          if (!shape) continue;
+          const box = shape.getBBox();
+          if (box.height <= 0) continue;
+          const column = columns.get(Math.round(box.x)) ?? {};
+          if (shape.getAttribute("fill") === fill) column.goal = box.y;
+          if (shape.getAttribute("fill") === "url(#goal-fill-free)") column.free = box.y;
+          columns.set(Math.round(box.x), column);
+        }
+        const shared = [...columns.values()].filter(
+          (c) => c.goal !== undefined && c.free !== undefined,
+        );
+        return {
+          shared: shared.length,
+          bad: shared.filter((c) => (c.goal as number) < (c.free as number)).length,
+        };
+      }, added);
+      expect(misplaced.shared).toBeGreaterThan(0);
+      expect(misplaced.bad).toBe(0);
+    } finally {
+      for (const id of [seeded.id, addedId]) {
+        if (id !== undefined) await ctx.delete(`${API_BASE}/savings-goals/${id}`);
+      }
+    }
   });
 
   test("the budget month shows what was directed into goals", async ({
