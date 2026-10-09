@@ -334,8 +334,12 @@ class AllocationEngineMixin:
             return repay
 
         def give_back_fill(goal_id: int, overflow: float) -> float:
-            """Hand surplus an income goal no longer needs back to free cash."""
-            cash = to_invest.get(goal_id, overflow)
+            """Hand surplus an income goal no longer needs back to free cash.
+
+            Only surplus it still holds: what its bills already spent is gone,
+            and handing it back anyway left the goal holding less than nothing.
+            """
+            cash = to_invest.get(goal_id, funded[goal_id] - utilized[goal_id])
             release = round(min(fill[goal_id], overflow, max(0.0, cash)), 2)
             if release <= 0:
                 return 0.0

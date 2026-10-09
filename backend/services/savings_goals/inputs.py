@@ -20,6 +20,7 @@ from backend.models.savings_goal import (
 )
 from backend.services.bank_balance_service import BankBalanceService
 from backend.services.cash_balance_service import CashBalanceService
+from backend.services.investments import InvestmentsService
 from backend.services.savings_goals.common import is_investment_goal, month_key
 from backend.services.transaction_classification import transactions_masks
 
@@ -29,15 +30,8 @@ _PRIOR_WEALTH_SOURCES = {"bank_balances", "investments"}
 
 # Itemized credit-card rows duplicate the bank-side bill payment, and insurance
 # rows are not cash flow. Same exclusion the cashflow analysis applies.
-# A manual investment's transactions are the investment side of a move whose
-# cash side is the bank transfer that paid it (or money never tracked at all);
-# counting them too took every manual deposit out of free cash a second time.
 _CREDIT_CARD_SOURCE = "credit_card_transactions"
-_SURPLUS_EXCLUDED_SOURCES = {
-    _CREDIT_CARD_SOURCE,
-    "insurance_transactions",
-    "manual_investment_transactions",
-}
+_SURPLUS_EXCLUDED_SOURCES = {_CREDIT_CARD_SOURCE, "insurance_transactions"}
 
 _ALL_TAGS = "all_tags"
 
@@ -77,19 +71,26 @@ class InputsMixin:
         Bank and cash *prior wealth* is exactly that opening balance — each
         account stores ``current balance - sum(its tracked transactions)`` —
         so walking the realized surplus forward from here reconstructs the
-        liquid balance, the same way the net-worth chart does. Investment
-        prior wealth is deliberately left out: money sitting in an investment
-        is not free cash, which is also why transfers into one reduce the
-        pool as they happen.
+        liquid balance, the same way the net-worth chart does.
+
+        Investment prior wealth belongs here too, for the same reason it seeds
+        the net-worth chart's bank line: a manual investment's deposits are
+        tracked transactions (they leave the pool when they happen), and its
+        prior wealth — ``-(sum of those deposits)`` — is the money they were
+        paid with, which no tracked account recorded. The two cancel. Counting
+        the deposits without their prior wealth took every manual deposit out
+        of free cash with nothing to pay for it (151K on real data).
 
         Returns
         -------
         float
-            Combined bank + cash prior wealth, ``0.0`` when neither is set up.
+            Combined bank, cash and investment prior wealth, ``0.0`` when none
+            is set up.
         """
         bank = BankBalanceService(self.db).get_total_prior_wealth()
         cash = CashBalanceService(self.db).get_total_prior_wealth()
-        return float(bank) + float(cash)
+        invested = InvestmentsService(self.db).get_total_prior_wealth()
+        return float(bank) + float(cash) + float(invested)
 
     def _pool_before(self, month: tuple[int, int], context: dict[str, Any]) -> float:
         """Return the free cash at the start of ``month``, when no goal has started yet.

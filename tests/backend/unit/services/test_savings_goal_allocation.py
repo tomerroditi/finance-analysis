@@ -2162,13 +2162,29 @@ class TestClosedGoalReplay:
 class TestMoneyIsCountedOnce:
     """Regressions where money vanished from, or doubled in, the books."""
 
-    def test_manual_investment_rows_do_not_drain_free_cash(self, db_session, service):
-        """A manual investment's own record is not a second withdrawal from the bank."""
+    def test_a_manual_deposit_is_paid_by_its_prior_wealth(self, db_session, service):
+        """A manual deposit and its investment prior wealth cancel, as in net worth.
+
+        A manual investment's deposits are tracked transactions, and its prior
+        wealth (``-sum`` of them) is the money that paid for them outside any
+        tracked account. Counting the deposits without the prior wealth took
+        each one out of free cash with nothing to pay for it.
+        """
+        from backend.models.investment import Investment
         from backend.models.transaction import ManualInvestmentTransaction
 
         month = _month_str(1)
         _seed_free_cash(db_session, 10000)
-        _add_txn(db_session, month, -4000, "Investments", tag="Gemel", day=3)
+        db_session.add(
+            Investment(
+                category="Investments",
+                tag="Gemel",
+                type="pension",
+                name="Gemel",
+                created_date=_day_in_month(month, 1),
+                prior_wealth_amount=4000,
+            )
+        )
         db_session.add(
             ManualInvestmentTransaction(
                 id="manual-1",
@@ -2186,8 +2202,14 @@ class TestMoneyIsCountedOnce:
         db_session.commit()
 
         service.create(name="Trip", target_amount=100000, start_month=month)
+        assert service.get_free_cash()["liquid"] == 10000
 
-        assert service.get_free_cash()["liquid"] == 6000
+        # And an investment goal counts the manual deposit as invested.
+        created = service.create(
+            name="Gemel goal", target_amount=50000, kind="investment", start_month=month
+        )
+        goal = next(g for g in created if g["name"] == "Gemel goal")
+        assert goal["funded"] >= 4000
 
     def test_a_closed_goals_later_income_is_ordinary_money(self, db_session, service):
         """Gifts matching a closed goal's rule join the surplus, not the closed goal."""

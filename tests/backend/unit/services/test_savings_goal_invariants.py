@@ -15,7 +15,8 @@ After every step the engine must:
 - stay sane: nothing a goal holds or owes is negative, and nothing is funded
   past its target except money its own bills consumed;
 - match the bank: free cash plus everything earmarked is exactly the money in
-  the tracked accounts.
+  the tracked accounts (a manual investment's deposits and its prior wealth
+  cancel, as they do in net worth).
 
 Every one of these failed at least once — on real data or on one of these
 households — before the engine was fixed.
@@ -28,7 +29,12 @@ from sqlalchemy import text
 
 from backend.errors import ValidationException
 from backend.models.bank_balance import BankBalance
-from backend.models.transaction import BankTransaction, CreditCardTransaction
+from backend.models.investment import Investment
+from backend.models.transaction import (
+    BankTransaction,
+    CreditCardTransaction,
+    ManualInvestmentTransaction,
+)
 from backend.services.savings_goals import SavingsGoalService
 from tests.backend.unit.services.test_savings_goal_allocation import _month_str
 
@@ -120,6 +126,35 @@ def _household(db, rnd):
             n += 1
             _bank_row(db, n, month, float(amount), category, tag, rnd.randint(1, 27))
             total += amount
+    if rnd.random() < 0.5:
+        # A manually tracked investment: its deposits and the prior wealth that
+        # paid for them, the balanced pair the net-worth chart reads.
+        deposits = [rnd.randint(1000, 20000) for _ in range(rnd.randint(1, 4))]
+        for i, amount in enumerate(deposits):
+            db.add(
+                ManualInvestmentTransaction(
+                    id=f"m{i}",
+                    date=f"{rnd.choice(months)}-12",
+                    provider="manual",
+                    account_name="Gemel",
+                    description="fuzz",
+                    amount=float(-amount),
+                    category="Investments",
+                    tag="Gemel",
+                    source="manual_investment_transactions",
+                    type="normal",
+                )
+            )
+        db.add(
+            Investment(
+                category="Investments",
+                tag="Gemel",
+                type="pension",
+                name="Gemel",
+                created_date=f"{months[0]}-01",
+                prior_wealth_amount=float(sum(deposits)),
+            )
+        )
     db.commit()
     return months, total
 

@@ -107,14 +107,18 @@ engine starts taking money back out of the goals.
   what it held and leave `liquid` unchanged;
   `test_deleting_the_earliest_goal_releases_its_earmark` pins that.
 - **`liquid` must equal the tracked bank + cash balance, to the shekel.** The
-  pool is prior wealth walked forward through the realized surplus, so any row
-  counted that never moved tracked money breaks it. Manual investment
-  transactions are one: they are the investment side of a move whose cash
-  side is the bank transfer (or untracked money), so they are excluded like
-  card rows and insurance (`_SURPLUS_EXCLUDED_SOURCES`). Counted, a user's
-  151K of manual 2023 deposits came out of free cash a second time, and the
-  pre-goal floor hid most of it. `test_savings_goal_invariants.py` checks
-  `liquid == bank` on random households after every edit.
+  pool is prior wealth walked forward through the realized surplus, so both
+  halves of every balanced pair must be in it. **Manual investments are such
+  a pair**: their deposits are tracked transactions (they leave the pool when
+  they happen, and an investment goal counts them), and their investment
+  prior wealth — `-(sum of those deposits)` — is the money that paid for them
+  outside any tracked account. `_opening_free_cash` therefore adds investment
+  prior wealth (open and closed investments, as the net-worth chart does) to
+  bank and cash. Counting the deposits without it took a user's 151K of
+  manual deposits out of free cash with nothing to pay for them, and the
+  pre-goal floor hid most of it; the data was not duplicated, the engine read
+  half of the pair. `test_savings_goal_invariants.py` checks `liquid == bank`
+  on random households after every edit.
 - **It moves with the whole month, not just the positive part.** The pool is
   credited with the surplus itself and debited for every shekel a goal takes
   out of it. What the goals do not claim simply stays in the pool.
