@@ -404,7 +404,11 @@
       "empty": "סמנו הוצאות כממתינות להחזר כדי לעקוב אחריהן כאן.",
       "moreCount": "+{{count}} נוספים"
     },
-    "noUntaggedTransactions": "אין תנועות ללא תגית"
+    "noUntaggedTransactions": "אין תנועות ללא תגית",
+    "noTransactionsWithoutRule": "כל תנועות הבנק וכרטיסי האשראי כאן תואמות כלל",
+    "noFilteredTransactions": "אין תנועות התואמות את המסננים שנבחרו",
+    "withoutRuleFilter": "ללא כלל",
+    "withoutRuleFilterHint": "תנועות בנק וכרטיסי אשראי שאף כלל תיוג אוטומטי אינו תואם"
   },
   "transactions": {
     "title": "תנועות",

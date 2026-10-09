@@ -3,7 +3,7 @@ import { enableDemoMode, navigateTo, resetDemoData } from "./helpers";
 
 /**
  * Dashboard "Recent Transactions" card — the row action bar, the
- * only-untagged filter and scroll retention.
+ * only-untagged and without-rule filters and scroll retention.
  *
  * Covers six regressions the card shipped with:
  *  1. Collapsing a row's action bar left the category/tag editor (and the
@@ -262,6 +262,36 @@ test.describe("Dashboard recent transactions — row actions", () => {
 
     await untaggedFilter.click();
     await expect(untaggedFilter).toHaveAttribute("aria-pressed", "false");
+
+    // --- Without-rule filter ----------------------------------------------
+    // Every remaining row is a bank/credit-card row no rule matches, so its
+    // rule quick action offers to create a rule rather than view one.
+    const withoutRuleFilter = card.getByRole("button", { name: "Without Rule" });
+    await expect(withoutRuleFilter).toBeEnabled();
+    await withoutRuleFilter.click();
+    await expect(withoutRuleFilter).toHaveAttribute("aria-pressed", "true");
+    const unruledRow = card.getByTestId("recent-tx-row").first();
+    await expect(unruledRow).toBeVisible();
+    await card.getByRole("button", { name: "More actions" }).first().click();
+    await expect(
+      card.getByTestId("recent-tx-actions").getByRole("button", { name: /Add (to )?Rule/ }),
+    ).toBeVisible();
+    await expect(
+      card.getByTestId("recent-tx-actions").getByRole("button", { name: /View Rule/ }),
+    ).toHaveCount(0);
+    await card.getByRole("button", { name: "More actions" }).first().click();
+
+    await withoutRuleFilter.click();
+    await expect(withoutRuleFilter).toHaveAttribute("aria-pressed", "false");
+
+    // Two filter chips and "View All" share a header whose width follows the
+    // dashboard grid; the link must wrap under the title, not past the card.
+    const cardBox = await card.boundingBox();
+    const viewAllBox = await card.getByRole("link", { name: /View All/ }).boundingBox();
+    expect(cardBox && viewAllBox).toBeTruthy();
+    expect(viewAllBox!.x + viewAllBox!.width).toBeLessThanOrEqual(
+      cardBox!.x + cardBox!.width,
+    );
 
     // --- Phone width: the action bar spans the row, in at most two lines ---
     // The bar used to sit indented past the row's icon column, which left it

@@ -60,6 +60,12 @@ export function evalConditionTree(node: ConditionNode, tx: Transaction): boolean
   return false;
 }
 
+/** Auto-tagging rules only apply to bank and credit-card transactions. */
+export function isRuleApplicable(tx: Transaction): boolean {
+  const src = (tx.source ?? "").toLowerCase();
+  return src.includes("bank") || src.includes("credit_card");
+}
+
 /** Find the first tagging rule whose conditions match a transaction. */
 export function findMatchingRule(
   rules: TaggingRule[],

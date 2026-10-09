@@ -12,6 +12,7 @@ import {
   Info,
   Trash2,
   Filter,
+  Wand2,
 } from "lucide-react";
 import { transactionsApi, pendingRefundsApi } from "../../services/api";
 import { SplitTransactionModal } from "../modals/SplitTransactionModal";
@@ -23,6 +24,8 @@ import { GoalLinkAction } from "../transactions/GoalLinkAction";
 import { RecentTransactionDetails } from "./RecentTransactionDetails";
 import { useCategoryTagCreate } from "../../hooks/useCategoryTagCreate";
 import { useCategories } from "../../hooks/useCategories";
+import { useTaggingRules } from "../../hooks/useTaggingRules";
+import { findMatchingRule, isRuleApplicable } from "../../utils/taggingRuleEval";
 import { qkPrefix } from "../../services/queryKeys";
 import type { Transaction } from "../../types/transaction";
 import { Skeleton } from "../common/Skeleton";
@@ -72,6 +75,7 @@ export function RecentTransactionsFeed({
   const [visibleCount, setVisibleCount] = useState(TRANSACTIONS_PAGE_SIZE);
   const sentinelRef = useRef<HTMLDivElement>(null);
   const [onlyUntagged, setOnlyUntagged] = useState(false);
+  const [onlyWithoutRule, setOnlyWithoutRule] = useState(false);
   const [editingTxKey, setEditingTxKey] = useState<string | null>(null);
   const [stagedCategory, setStagedCategory] = useState<string>("");
   const [stagedTag, setStagedTag] = useState<string>("");
@@ -245,11 +249,34 @@ export function RecentTransactionsFeed({
     );
   }, [transactions]);
 
+  // A row no auto-tagging rule matches — the candidates for a new rule. Only
+  // bank and credit-card rows qualify, since rules never touch anything else.
+  // Undefined until the rules load: treating an empty list as "no rules"
+  // would briefly flag every row.
+  const { data: taggingRules } = useTaggingRules();
+  const isWithoutRule = useMemo(
+    () =>
+      taggingRules
+        ? (tx: Transaction) =>
+            isRuleApplicable(tx) && !findMatchingRule(taggingRules, tx)
+        : undefined,
+    [taggingRules],
+  );
+
   const filtered = useMemo(
-    () => (onlyUntagged ? sorted.filter(isUntagged) : sorted),
-    [sorted, onlyUntagged],
+    () =>
+      sorted.filter(
+        (tx) =>
+          (!onlyUntagged || isUntagged(tx)) &&
+          (!onlyWithoutRule || !isWithoutRule || isWithoutRule(tx)),
+      ),
+    [sorted, onlyUntagged, onlyWithoutRule, isWithoutRule],
   );
   const untaggedCount = useMemo(() => sorted.filter(isUntagged).length, [sorted]);
+  const withoutRuleCount = useMemo(
+    () => (isWithoutRule ? sorted.filter(isWithoutRule).length : undefined),
+    [sorted, isWithoutRule],
+  );
 
   const visible = useMemo(() => filtered.slice(0, visibleCount), [filtered, visibleCount]);
   const hasMore = visibleCount < filtered.length;
@@ -297,11 +324,34 @@ export function RecentTransactionsFeed({
     setVisibleCount(TRANSACTIONS_PAGE_SIZE);
   }
 
-  const toggleOnlyUntagged = () => {
-    setOnlyUntagged((prev) => !prev);
+  const resetFeedPosition = () => {
     setVisibleCount(TRANSACTIONS_PAGE_SIZE);
     feedRef.current?.scrollTo({ top: 0 });
   };
+
+  const toggleOnlyUntagged = () => {
+    setOnlyUntagged((prev) => !prev);
+    resetFeedPosition();
+  };
+
+  const toggleOnlyWithoutRule = () => {
+    setOnlyWithoutRule((prev) => !prev);
+    resetFeedPosition();
+  };
+
+  const emptyFilterMessage =
+    onlyUntagged && onlyWithoutRule
+      ? t("dashboard.noFilteredTransactions")
+      : onlyWithoutRule
+        ? t("dashboard.noTransactionsWithoutRule")
+        : t("dashboard.noUntaggedTransactions");
+
+  const filterButtonClass = (active: boolean) =>
+    `flex items-center gap-1.5 px-2 py-1 rounded-lg text-xs font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
+      active
+        ? "bg-[var(--primary)]/20 text-[var(--primary)]"
+        : "text-[var(--text-muted)] hover:text-white hover:bg-[var(--surface-light)]"
+    }`;
 
   // Group by date label
   const grouped = useMemo(() => {
@@ -332,28 +382,44 @@ export function RecentTransactionsFeed({
 
   return (
     <div className="bg-[var(--surface)] rounded-2xl p-4 md:p-6 border border-[var(--surface-light)]">
-      <div className="flex items-center justify-between gap-2 mb-4">
+      {/* The controls wrap under the title rather than overflow: the card's
+          width follows the dashboard grid, not the viewport, so a desktop
+          column can be narrower than both filter labels and "View All". */}
+      <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
         <p className="text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
           {t("dashboard.recentTransactions")}
         </p>
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex items-center gap-2 shrink-0 ms-auto">
           <button
             type="button"
             onClick={toggleOnlyUntagged}
             aria-pressed={onlyUntagged}
             aria-label={t("transactions.filters.onlyUntagged")}
             title={t("transactions.filters.onlyUntagged")}
-            className={`flex items-center gap-1.5 px-2 py-1 rounded-lg text-xs font-medium transition-colors ${
-              onlyUntagged
-                ? "bg-[var(--primary)]/20 text-[var(--primary)]"
-                : "text-[var(--text-muted)] hover:text-white hover:bg-[var(--surface-light)]"
-            }`}
+            className={filterButtonClass(onlyUntagged)}
           >
             <Filter size={13} className="shrink-0" />
             <span className="hidden sm:inline">{t("transactions.filters.onlyUntagged")}</span>
             <span className="tabular-nums" dir="ltr">
               ({untaggedCount})
             </span>
+          </button>
+          <button
+            type="button"
+            onClick={toggleOnlyWithoutRule}
+            disabled={!isWithoutRule}
+            aria-pressed={onlyWithoutRule}
+            aria-label={t("dashboard.withoutRuleFilter")}
+            title={t("dashboard.withoutRuleFilterHint")}
+            className={filterButtonClass(onlyWithoutRule)}
+          >
+            <Wand2 size={13} className="shrink-0" />
+            <span className="hidden sm:inline">{t("dashboard.withoutRuleFilter")}</span>
+            {withoutRuleCount !== undefined && (
+              <span className="tabular-nums" dir="ltr">
+                ({withoutRuleCount})
+              </span>
+            )}
           </button>
           <Link
             to="/transactions"
@@ -373,7 +439,7 @@ export function RecentTransactionsFeed({
       >
         {filtered.length === 0 && (
           <p className="py-6 text-center text-sm text-[var(--text-muted)]">
-            {t("dashboard.noUntaggedTransactions")}
+            {emptyFilterMessage}
           </p>
         )}
         {/* Date headers are direct children of the scroll root, not of a
