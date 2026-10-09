@@ -17,7 +17,6 @@ import {
   Loader2,
   Lock,
   Wallet,
-  TrendingUp,
 } from "lucide-react";
 import {
   ResponsiveContainer,
@@ -33,7 +32,6 @@ import {
   savingsGoalsApi,
   type SavingsGoal,
   type SavingsGoalInput,
-  type SavingsGoalKind,
   type SavingsGoalFreeCash,
 } from "../../services/api";
 import {
@@ -45,7 +43,7 @@ import {
 } from "./goalHistoryRows";
 import { useQueryKeys } from "../../hooks/useQueryKeys";
 import { useScrollCap } from "../../hooks/useScrollCap";
-import { GoalAutoLinkField, InvestmentTagsField } from "./GoalAutoLinkField";
+import { GoalAutoLinkField } from "./GoalAutoLinkField";
 import { joinRuleTags, splitRuleTags } from "../../utils/goalRuleTags";
 import {
   STACK_OFFSET,
@@ -114,10 +112,6 @@ const RECALCULATING_CLASS = "animate-pulse opacity-50 transition-opacity";
  * Below the waterfall sits the free-cash pool: the tracked money no goal has
  * earmarked. It is the buffer a month of overspending drains first, and only
  * once it is empty does a deficit reach back into the goals.
- *
- * An investment goal sits in the same list but is filled only by the money
- * moved into its investments: it takes no part in the waterfall and never
- * touches the pool.
  */
 export function GoalsSection() {
   const { t } = useTranslation();
@@ -789,12 +783,8 @@ function GoalRow({
   onDelete: () => void;
 }) {
   const { t } = useTranslation();
-  const isInvestment = goal.kind === "investment";
-  // A cash goal's negative month is a clawback, which the row does not
-  // itemize; an investment goal's is a withdrawal, which it does.
-  const showThisMonth = isInvestment
-    ? goal.this_month_allocation !== 0
-    : goal.this_month_allocation > 0;
+  // A negative month is a clawback, which the row does not itemize.
+  const showThisMonth = goal.this_month_allocation > 0;
   const barColor = goal.is_closed
     ? "from-[var(--text-muted)] to-[var(--text-muted)]"
     : goal.is_achieved
@@ -819,13 +809,6 @@ function GoalRow({
           {!!goal.is_closed && <Lock size={13} className="text-[var(--text-muted)] shrink-0" />}
           {!goal.is_closed && !!goal.is_achieved && (
             <Check size={14} className="text-emerald-400 shrink-0" />
-          )}
-          {isInvestment && (
-            <TrendingUp
-              size={13}
-              className="text-[var(--primary)] shrink-0"
-              aria-label={t("dashboard.goals.kindInvestment")}
-            />
           )}
           <p className="font-semibold text-sm truncate" dir="auto" title={goal.name}>{goal.name}</p>
         </div>
@@ -877,18 +860,13 @@ function GoalRow({
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1.5 text-[10px] md:text-xs text-[var(--text-muted)]">
           <GoalStatusLine goal={goal} />
         </div>
-        {(showThisMonth || goal.utilized > 0 || showsShekels(goal.owed) || showsShekels(goal.to_invest)) && (
+        {(showThisMonth || goal.utilized > 0 || showsShekels(goal.owed)) && (
           <div className="flex flex-wrap gap-x-3 gap-y-1 mt-1.5 text-[10px] md:text-xs text-[var(--text-muted)]">
             {showThisMonth && (
               <span>
-                {t(
-                  !isInvestment
-                    ? "dashboard.goals.thisMonth"
-                    : goal.this_month_allocation > 0
-                      ? "dashboard.goals.investedThisMonth"
-                      : "dashboard.goals.withdrawnThisMonth",
-                  { amount: formatCurrency(Math.abs(goal.this_month_allocation)) },
-                )}
+                {t("dashboard.goals.thisMonth", {
+                  amount: formatCurrency(goal.this_month_allocation),
+                })}
               </span>
             )}
             {goal.utilized > 0 && (
@@ -902,11 +880,6 @@ function GoalRow({
             {showsShekels(goal.owed) && (
               <span>
                 {t("dashboard.goals.owed", { amount: formatCurrency(goal.owed) })}
-              </span>
-            )}
-            {showsShekels(goal.to_invest) && (
-              <span>
-                {t("dashboard.goals.toInvest", { amount: formatCurrency(goal.to_invest) })}
               </span>
             )}
           </div>
@@ -968,8 +941,6 @@ function monthKeyLabel(month: string): string {
 function GoalEditorModal({ goal, onClose }: { goal: SavingsGoal | null; onClose: () => void }) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
-  const [kind, setKind] = useState<SavingsGoalKind>(goal?.kind ?? "cash");
-  const isInvestment = kind === "investment";
   const [name, setName] = useState(goal?.name ?? "");
   const [targetAmount, setTargetAmount] = useState(goal ? String(goal.target_amount) : "");
   const [openingBalance, setOpeningBalance] = useState(goal ? String(goal.opening_balance) : "0");
@@ -984,40 +955,13 @@ function GoalEditorModal({ goal, onClose }: { goal: SavingsGoal | null; onClose:
     category: goal?.contribution_category ?? "",
     tags: splitRuleTags(goal?.contribution_tags),
   });
-  // An investment goal's optional income source: transfers are paid from it
-  // before free cash.
-  const [fundRule, setFundRule] = useState({
-    category: goal?.funding_category ?? "",
-    tags: splitRuleTags(goal?.funding_tags),
-  });
-  const originalKind = goal?.kind ?? "cash";
-  const kindChanged = !!goal && kind !== originalKind;
-  /**
-   * Switch between saving cash and investing. The rules of one kind mean
-   * nothing to the other (an investment goal's "Investments" rule would be a
-   * saved-into rule on a cash goal), so they start empty on the new kind and
-   * come back as they were on the original one.
-   */
-  const changeKind = (next: SavingsGoalKind) => {
-    setKind(next);
-    const back = next === originalKind;
-    setSaveRule({
-      category: back ? goal?.contribution_category ?? "" : "",
-      tags: back ? splitRuleTags(goal?.contribution_tags) : [],
-    });
-    setFundRule({
-      category: back ? goal?.funding_category ?? "" : "",
-      tags: back ? splitRuleTags(goal?.funding_tags) : [],
-    });
-  };
 
   const effectiveStart = startMonth || currentMonthKey();
   const startLabel = monthKeyLabel(effectiveStart);
 
   // Saving restates the goal's history; the editor says so before an opening
   // balance moves, since that changes every month since the start.
-  const openingChanged =
-    !isInvestment && (Number(openingBalance) || 0) !== (goal?.opening_balance ?? 0);
+  const openingChanged = (Number(openingBalance) || 0) !== (goal?.opening_balance ?? 0);
 
   const save = useMutation({
     mutationKey: GOAL_WRITE_KEY,
@@ -1036,25 +980,7 @@ function GoalEditorModal({ goal, onClose }: { goal: SavingsGoal | null; onClose:
 
   const handleSubmit = () => {
     if (!canSave) return;
-    // An investment goal is filled by its transfers alone, so the cash-goal
-    // settings are not sent (the backend refuses them).
-    if (isInvestment) {
-      save.mutate({
-        kind,
-        name: name.trim(),
-        target_amount: Number(targetAmount),
-        start_month: startMonth || null,
-        target_date: targetDate || null,
-        // The category is always Investments (the backend sets it); only the
-        // holdings narrow it, and none picked means every investment.
-        contribution_tags: joinRuleTags(saveRule.tags),
-        funding_category: fundRule.category || null,
-        funding_tags: joinRuleTags(fundRule.category ? fundRule.tags : null),
-      });
-      return;
-    }
     save.mutate({
-      kind,
       name: name.trim(),
       target_amount: Number(targetAmount),
       opening_balance: Number(openingBalance) || 0,
@@ -1083,45 +1009,6 @@ function GoalEditorModal({ goal, onClose }: { goal: SavingsGoal | null; onClose:
       maxWidth="md"
     >
       <div className="space-y-4 p-4 md:p-6">
-        {/* The kind decides what fills the goal. It can be switched later;
-            the backend clears what the new kind cannot hold and restates the
-            goal's history, which the hint below says before saving. */}
-        <div role="radiogroup" aria-label={t("dashboard.goals.kindLabel")}>
-            <span className={label}>{t("dashboard.goals.kindLabel")}</span>
-            <div className="grid grid-cols-2 gap-2">
-              {(["cash", "investment"] as const).map((option) => (
-                <button
-                  key={option}
-                  type="button"
-                  role="radio"
-                  aria-checked={kind === option}
-                  onClick={() => changeKind(option)}
-                  className={`flex flex-col items-start gap-0.5 rounded-lg border px-3 py-2 text-start transition-colors ${
-                    kind === option
-                      ? "border-[var(--primary)] bg-[var(--primary)]/10"
-                      : "border-[var(--surface-light)] hover:bg-[var(--surface-light)]/40"
-                  }`}
-                >
-                  <span className="flex items-center gap-1.5 text-sm font-semibold">
-                    {option === "cash" ? <Wallet size={14} /> : <TrendingUp size={14} />}
-                    {t(option === "cash" ? "dashboard.goals.kindCash" : "dashboard.goals.kindInvestment")}
-                  </span>
-                  <span className="text-[10px] text-[var(--text-muted)]">
-                    {t(
-                      option === "cash"
-                        ? "dashboard.goals.kindCashHint"
-                        : "dashboard.goals.kindInvestmentHint",
-                    )}
-                  </span>
-                </button>
-              ))}
-            </div>
-            {kindChanged && (
-              <p className="text-[10px] text-amber-400 mt-1" data-testid="goal-kind-change-hint">
-                {t("dashboard.goals.kindChangeHint")}
-              </p>
-            )}
-        </div>
         <div>
           <label className={label} htmlFor="goal-name">{t("dashboard.goals.nameLabel")}</label>
           <input
@@ -1144,7 +1031,6 @@ function GoalEditorModal({ goal, onClose }: { goal: SavingsGoal | null; onClose:
               dir="ltr"
             />
           </div>
-          {!isInvestment && (
           <div>
             <label className={label} htmlFor="goal-opening">{t("dashboard.goals.openingLabel")}</label>
             <input
@@ -1163,12 +1049,11 @@ function GoalEditorModal({ goal, onClose }: { goal: SavingsGoal | null; onClose:
               </p>
             )}
           </div>
-          )}
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           {/* A cap limits what a goal takes from surplus; a goal filled by
-              its own income (investment or saved-into) takes none. */}
-          {!isInvestment && !saveRule.category && (
+              its own income (a saved-into rule) takes none. */}
+          {!saveRule.category && (
           <div>
             <label className={label} htmlFor="goal-cap">{t("dashboard.goals.capLabel")}</label>
             <input
@@ -1212,25 +1097,6 @@ function GoalEditorModal({ goal, onClose }: { goal: SavingsGoal | null; onClose:
             dir="ltr"
           />
         </div>
-        {isInvestment ? (
-          <div className="space-y-3">
-            <InvestmentTagsField
-              testId="goal-invest-rule"
-              label={t("dashboard.goals.investRuleLabel")}
-              hint={t("dashboard.goals.investRuleHint")}
-              tags={saveRule.tags}
-              onChange={(tags) => setSaveRule((rule) => ({ ...rule, tags }))}
-            />
-            <GoalAutoLinkField
-              testId="goal-invest-funding"
-              label={t("dashboard.goals.investFundLabel")}
-              hint={t("dashboard.goals.investFundHint")}
-              category={fundRule.category}
-              tags={fundRule.tags}
-              onChange={(category, tags) => setFundRule({ category, tags })}
-            />
-          </div>
-        ) : (
         <fieldset className="space-y-3 border-t border-[var(--surface-light)] pt-3">
           <legend className="text-xs font-semibold text-[var(--text-muted)] pe-2">
             {t("dashboard.goals.autoLinkTitle")}
@@ -1252,7 +1118,6 @@ function GoalEditorModal({ goal, onClose }: { goal: SavingsGoal | null; onClose:
             onChange={(category, tags) => setSaveRule({ category, tags })}
           />
         </fieldset>
-        )}
         <div className="flex justify-end gap-2 pt-2">
           <button onClick={onClose} className="px-4 py-2 rounded-lg text-sm font-medium text-[var(--text-muted)] hover:bg-[var(--surface-light)] transition-colors">
             {t("common.cancel")}

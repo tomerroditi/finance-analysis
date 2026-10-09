@@ -41,11 +41,8 @@ function makeGoal(overrides: Partial<SavingsGoal> = {}): SavingsGoal {
     target_date: null,
     contribution_category: null,
     contribution_tags: null,
-    funding_category: null,
-    funding_tags: null,
     utilization_category: null,
     utilization_tags: null,
-    kind: "cash",
     status: "active",
     closed_month: null,
     notes: null,
@@ -53,7 +50,6 @@ function makeGoal(overrides: Partial<SavingsGoal> = {}): SavingsGoal {
     contributed: 0,
     utilized: 0,
     owed: 0,
-    to_invest: 0,
     clawed_back: 0,
     funded: 2500,
     available: 2500,
@@ -294,6 +290,12 @@ describe("GoalsSection", () => {
       const text = rowFor("Quiet").textContent ?? "";
       expect(text).not.toContain("this month");
       expect(text).not.toContain("used");
+    });
+
+    it("keeps a clawback month off the row", async () => {
+      await renderGoals([makeGoal({ name: "Trip", this_month_allocation: -800 })]);
+
+      expect(within(rowFor("Trip")).queryByText(/this month/i)).not.toBeInTheDocument();
     });
   });
 
@@ -627,42 +629,6 @@ describe("GoalsSection", () => {
   });
 
   describe("goal editor", () => {
-    it("switches an existing goal from saving cash to investing", async () => {
-      vi.spyOn(taggingApi, "getCategories").mockResolvedValue({
-        data: { Investments: ["Pakam"], "Other Income": ["Wedding"] },
-      } as Awaited<ReturnType<typeof taggingApi.getCategories>>);
-      vi.spyOn(savingsGoalsApi, "getFreeCashBefore").mockResolvedValue({
-        data: { month: "2025-01", free_cash: 0 },
-      } as Awaited<ReturnType<typeof savingsGoalsApi.getFreeCashBefore>>);
-      const update = vi.spyOn(savingsGoalsApi, "update").mockResolvedValue({
-        data: [] as SavingsGoal[],
-      } as Awaited<ReturnType<typeof savingsGoalsApi.update>>);
-      await renderGoals([
-        makeGoal({
-          name: "Trip",
-          monthly_cap: 500,
-          contribution_category: "Other Income",
-          contribution_tags: "Wedding",
-        }),
-      ]);
-
-      fireEvent.click(within(rowFor("Trip")).getByRole("button", { name: /^edit$/i }));
-      const invest = await screen.findByRole("radio", { name: /invest/i });
-      expect(screen.queryByTestId("goal-kind-change-hint")).not.toBeInTheDocument();
-      fireEvent.click(invest);
-
-      // The editor says what the switch does before it is saved.
-      expect(screen.getByTestId("goal-kind-change-hint")).toBeInTheDocument();
-      expect(screen.queryByLabelText(/monthly cap/i)).not.toBeInTheDocument();
-      fireEvent.click(screen.getByRole("button", { name: /^save$/i }));
-
-      await waitFor(() => expect(update).toHaveBeenCalled());
-      const payload = update.mock.calls[0][1];
-      expect(payload).toMatchObject({ kind: "investment", contribution_tags: null });
-      expect(payload).not.toHaveProperty("monthly_cap");
-      expect(payload).not.toHaveProperty("opening_balance");
-    });
-
     it("picks the start on the same calendar as the target date, keeping the month", async () => {
       vi.spyOn(taggingApi, "getCategories").mockResolvedValue({
         data: {},
@@ -750,132 +716,6 @@ describe("GoalsSection", () => {
       fireEvent.click(within(rowFor("Wedding")).getByRole("button", { name: /^edit$/i }));
       await screen.findByLabelText(/start from/i);
       expect(screen.queryByLabelText(/monthly cap/i)).not.toBeInTheDocument();
-    });
-  });
-
-  describe("investment goals", () => {
-    const invest = (overrides: Partial<SavingsGoal> = {}) =>
-      makeGoal({
-        name: "Pakam",
-        kind: "investment",
-        contribution_category: "Investments",
-        contribution_tags: "Pakam",
-        ...overrides,
-      });
-
-    it("marks the row and drops the cash-goal actions", async () => {
-      await renderGoals([invest()]);
-
-      const row = rowFor("Pakam");
-      expect(within(row).getByLabelText("Invest")).toBeInTheDocument();
-      expect(
-        within(row).queryByRole("button", { name: /free cash/i }),
-      ).not.toBeInTheDocument();
-    });
-
-    it("names this month's net transfers as invested or withdrawn", async () => {
-      await renderGoals([
-        invest({ this_month_allocation: 75000 }),
-        invest({ id: 2, name: "Bonds", this_month_allocation: -12000 }),
-      ]);
-
-      expect(within(rowFor("Pakam")).getByText(/invested this month/i).textContent).toMatch(
-        /75,000/,
-      );
-      expect(within(rowFor("Bonds")).getByText(/withdrawn this month/i).textContent).toMatch(
-        /12,000/,
-      );
-    });
-
-    it("still keeps a cash goal's clawback month off the row", async () => {
-      await renderGoals([makeGoal({ name: "Trip", this_month_allocation: -800 })]);
-
-      expect(within(rowFor("Trip")).queryByText(/this month/i)).not.toBeInTheDocument();
-    });
-
-    it("shows the funding income it has not invested yet", async () => {
-      await renderGoals([invest({ to_invest: 20000 })]);
-
-      expect(
-        within(rowFor("Pakam")).getByText(/ready to invest/i).textContent,
-      ).toMatch(/20,000/);
-    });
-
-    it("can name the income its investing is paid from", async () => {
-      vi.spyOn(taggingApi, "getCategories").mockResolvedValue({
-        data: { Investments: ["Pakam"], "Other Income": ["Kickstart", "Bonus"] },
-      } as Awaited<ReturnType<typeof taggingApi.getCategories>>);
-      vi.spyOn(savingsGoalsApi, "getFreeCashBefore").mockResolvedValue({
-        data: { month: "2026-09", free_cash: 0 },
-      } as Awaited<ReturnType<typeof savingsGoalsApi.getFreeCashBefore>>);
-      const create = vi.spyOn(savingsGoalsApi, "create").mockResolvedValue({
-        data: [] as SavingsGoal[],
-      } as Awaited<ReturnType<typeof savingsGoalsApi.create>>);
-      await renderGoals([makeGoal({ name: "Trip" })]);
-
-      fireEvent.click(screen.getByRole("button", { name: /add goal/i }));
-      fireEvent.click(await screen.findByRole("radio", { name: /invest/i }));
-      fireEvent.change(screen.getByLabelText(/name/i), { target: { value: "Invest" } });
-      fireEvent.change(screen.getByLabelText(/target amount/i), { target: { value: "50000" } });
-
-      const funding = screen.getByTestId("goal-invest-funding");
-      fireEvent.click(within(funding).getAllByRole("button")[0]);
-      fireEvent.click(await screen.findByRole("option", { name: "Other Income" }));
-      fireEvent.click(screen.getByRole("button", { name: /^save$/i }));
-
-      await waitFor(() => expect(create).toHaveBeenCalled());
-      expect(create.mock.calls[0][0]).toMatchObject({
-        kind: "investment",
-        funding_category: "Other Income",
-        funding_tags: null,
-      });
-    });
-
-    it("creates one from the editor with only the settings it uses", async () => {
-      vi.spyOn(taggingApi, "getCategories").mockResolvedValue({
-        data: { Investments: ["Pakam", "Stocks"], Food: ["Groceries"] },
-      } as Awaited<ReturnType<typeof taggingApi.getCategories>>);
-      vi.spyOn(savingsGoalsApi, "getFreeCashBefore").mockResolvedValue({
-        data: { month: "2026-09", free_cash: 0 },
-      } as Awaited<ReturnType<typeof savingsGoalsApi.getFreeCashBefore>>);
-      const create = vi.spyOn(savingsGoalsApi, "create").mockResolvedValue({
-        data: [] as SavingsGoal[],
-      } as Awaited<ReturnType<typeof savingsGoalsApi.create>>);
-      await renderGoals([makeGoal({ name: "Trip" })]);
-
-      fireEvent.click(screen.getByRole("button", { name: /add goal/i }));
-      fireEvent.click(await screen.findByRole("radio", { name: /invest/i }));
-
-      // The cash-goal settings have nothing to act on.
-      expect(screen.queryByLabelText(/monthly cap/i)).not.toBeInTheDocument();
-      expect(screen.queryByLabelText(/already saved/i)).not.toBeInTheDocument();
-      expect(screen.queryByTestId("goal-auto-link-spend")).not.toBeInTheDocument();
-
-      fireEvent.change(screen.getByLabelText(/name/i), { target: { value: "Pakam" } });
-      fireEvent.change(screen.getByLabelText(/target amount/i), { target: { value: "120000" } });
-      const save = screen.getByRole("button", { name: /^save$/i });
-      // No category to pick: it always counts Investments, so it can save
-      // straight away, with only an optional narrowing to some holdings.
-      expect(save).toBeEnabled();
-
-      const rule = screen.getByTestId("goal-invest-rule");
-      expect(within(rule).getByText(/all investments/i)).toBeInTheDocument();
-      fireEvent.click(within(rule).getAllByRole("button")[0]);
-      fireEvent.click(await screen.findByRole("option", { name: "Pakam" }));
-      fireEvent.click(save);
-
-      await waitFor(() => expect(create).toHaveBeenCalled());
-      const payload = create.mock.calls[0][0];
-      expect(payload).toMatchObject({
-        kind: "investment",
-        name: "Pakam",
-        target_amount: 120000,
-        contribution_tags: "Pakam",
-      });
-      expect(payload).not.toHaveProperty("contribution_category");
-      expect(payload).not.toHaveProperty("monthly_cap");
-      expect(payload).not.toHaveProperty("opening_balance");
-      expect(payload).not.toHaveProperty("utilization_category");
     });
   });
 });

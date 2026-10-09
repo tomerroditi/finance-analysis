@@ -18,10 +18,6 @@ never an addition to net worth. Progress is derived rather than typed:
    that pool first, and only claws money back out of goals (lowest priority
    first, never below what a goal has already spent) once the pool is empty.
 
-A goal can instead be an **investment goal**, filled by the net money moved
-into the investments its rule names rather than by surplus — an investment is
-just a category and tag, like any other transfer.
-
 Results are persisted per (goal, month) in ``savings_goal_allocations``. Past
 months are never silently restated: a priority change applies going forward,
 and rewriting history is an explicit ``rebuild`` the user previews first. Goals

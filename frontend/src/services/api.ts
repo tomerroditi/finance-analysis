@@ -1152,19 +1152,10 @@ export interface SavingsGoal {
   target_date: string | null;
   contribution_category: string | null;
   contribution_tags: string | null;
-  /** An investment goal's optional income source; its transfers draw on it first. */
-  funding_category: string | null;
-  funding_tags: string | null;
   /** Category whose spending is utilized from the goal automatically. */
   utilization_category: string | null;
   /** Semicolon-separated tags narrowing `utilization_category`; `null` = every tag. */
   utilization_tags: string | null;
-  /**
-   * `"cash"` earmarks money in the tracked accounts and is filled by the
-   * surplus waterfall; `"investment"` is filled by the net money moved into
-   * the investments its contribution rule names. Switching it restates history.
-   */
-  kind: SavingsGoalKind;
   status: string;
   closed_month: string | null;
   notes: string | null;
@@ -1179,8 +1170,6 @@ export interface SavingsGoal {
    * repaid. Not part of `funded` — the goal never received it.
    */
   owed: number;
-  /** An investment goal's funding income not yet spent on its transfers. */
-  to_invest: number;
   /** Money deficit months pulled back out, once the free-cash pool ran dry. */
   clawed_back: number;
   /** opening_balance + allocated + contributed, net of any clawback. */
@@ -1200,12 +1189,8 @@ export interface SavingsGoal {
   history: SavingsGoalAllocationEntry[];
 }
 
-export type SavingsGoalKind = "cash" | "investment";
-
 export interface SavingsGoalInput {
   name: string;
-  /** Switching it on an update clears what the new kind cannot hold and restates history. */
-  kind?: SavingsGoalKind;
   target_amount: number;
   opening_balance?: number;
   monthly_cap?: number | null;
@@ -1213,8 +1198,6 @@ export interface SavingsGoalInput {
   target_date?: string | null;
   contribution_category?: string | null;
   contribution_tags?: string | null;
-  funding_category?: string | null;
-  funding_tags?: string | null;
   utilization_category?: string | null;
   utilization_tags?: string | null;
   notes?: string | null;

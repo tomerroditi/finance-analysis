@@ -3,10 +3,10 @@
 Hand-written cases only cover the stories someone thought of. These generate
 seeded random households — salaries, spending, investment deposits and
 withdrawals, gifts, card purchases billed from the bank — and random goals of
-every kind (plain, capped, saved-into, spending, investment, funded
-investment, with and without target dates and opening balances), then put
-them through random edits: close, reopen, reorder, retarget, move the start,
-cap, delete, link and unlink transactions, set a spending rule, switch kind.
+every kind (plain, capped, saved-into, spending, with and without target dates
+and opening balances), then put them through random edits: close, reopen,
+reorder, retarget, move the start, cap, delete, link and unlink transactions,
+set a spending rule.
 
 After every step the engine must:
 
@@ -39,7 +39,7 @@ from backend.services.savings_goals import SavingsGoalService
 from tests.backend.unit.services.test_savings_goal_allocation import _month_str
 
 EPS = 0.05
-GOAL_KINDS = ("plain", "capped", "saved", "spend", "invest", "funded")
+GOAL_KINDS = ("plain", "capped", "saved", "spend")
 EDITS = (
     "close",
     "reopen",
@@ -51,7 +51,6 @@ EDITS = (
     "link",
     "unlink",
     "spend",
-    "kind",
 )
 
 
@@ -186,12 +185,7 @@ def _goals(service, rnd, months):
         elif kind == "spend" and "spend" not in taken:
             taken.add("spend")
             fields["utilization_category"] = "Wedding"
-        if kind in ("invest", "funded"):
-            fields.update(kind="investment", contribution_category="Investments")
-        if kind == "funded" and "kick" not in taken:
-            taken.add("kick")
-            fields.update(funding_category="Other Income", funding_tags="Kick")
-        if rnd.random() < 0.2 and fields.get("kind") != "investment":
+        if rnd.random() < 0.2:
             fields["opening_balance"] = float(rnd.choice([1000, 5000]))
         service.create(**fields)
 
@@ -203,7 +197,7 @@ def _edit(db, service, rnd, months):
         return "none"
     goal = rnd.choice(goals)
     op = rnd.choice(EDITS)
-    open_cash = not goal["is_closed"] and goal["kind"] == "cash"
+    open_cash = not goal["is_closed"]
     try:
         if op == "close" and not goal["is_closed"]:
             service.close(goal["id"])
@@ -252,9 +246,6 @@ def _edit(db, service, rnd, months):
                 service.unlink_transaction(int(rnd.choice(list(links["id"]))))
         elif op == "spend" and open_cash:
             service.set_spending_link(goal["id"], rnd.choice(["Wedding", "Food", None]))
-        elif op == "kind" and not goal["is_closed"]:
-            kind = "investment" if goal["kind"] == "cash" else "cash"
-            service.update(goal["id"], kind=kind)
     except ValidationException:
         pass
     return f"{op} {goal['name']}"
@@ -269,7 +260,7 @@ def _violations(db, service, bank_total):
     pool = SavingsGoalService(db).get_free_cash()
     problems = []
     for x, y in zip(rebuilt, read, strict=True):
-        for key in ("funded", "allocated", "contributed", "utilized", "owed", "to_invest"):
+        for key in ("funded", "allocated", "contributed", "utilized", "owed"):
             if abs(x[key] - y[key]) > EPS:
                 problems.append(f"rebuild != read: {x['name']} {key} {x[key]} vs {y[key]}")
     if abs(rebuilt_pool["free_cash"] - pool["free_cash"]) > EPS:
@@ -280,7 +271,7 @@ def _violations(db, service, bank_total):
         received = goal["funded"] - goal["opening_balance"]
         if abs(bars - received) > EPS:
             problems.append(f"bars {goal['name']} {bars} vs card {received}")
-        for key in ("funded", "available", "to_invest", "owed"):
+        for key in ("funded", "available", "owed"):
             if goal[key] < -EPS:
                 problems.append(f"negative {key}: {goal['name']} {goal[key]}")
         ceiling = max(goal["target_amount"], goal["opening_balance"], goal["utilized"])
