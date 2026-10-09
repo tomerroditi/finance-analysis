@@ -48,6 +48,21 @@ test.describe("Dashboard per-chart cards", () => {
     await expect(page.locator('[data-card-id="net_worth"]')).toBeVisible();
     await expect(page.locator('[data-card-id="cash_flow"]')).toHaveCount(0);
 
+    // --- Net Worth → Debt Payments draws monthly bars + a cumulative line ---
+    // Like the per-series views: one stacked bar per loan tag (the demo has a
+    // mortgage and a car loan) and a "Total Paid" running-total line.
+    const netWorthCard = page.locator('[data-card-id="net_worth"]');
+    await netWorthCard.scrollIntoViewIfNeeded();
+    await netWorthCard.getByRole("button", { name: /^Debt Payments$/ }).click();
+    const netWorthChart = netWorthCard.getByTestId("net-worth-chart");
+    await expect(netWorthChart.locator(".recharts-bar-rectangle").first()).toBeVisible({
+      timeout: 15_000,
+    });
+    await expect(netWorthChart.locator(".recharts-bar")).toHaveCount(2);
+    await expect(netWorthChart.locator(".recharts-line")).toHaveCount(1);
+    await expect(netWorthChart.locator(".recharts-area")).toHaveCount(0);
+    await expect(netWorthChart.getByText("Total Paid").first()).toBeVisible();
+
     await page
       .getByRole("button", { name: /^Settings$/ })
       .first()

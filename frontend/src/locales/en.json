@@ -142,6 +142,8 @@
     "investmentValue": "Investment Value",
     "cashBalance": "Cash Balance",
     "debtPayments": "Debt Payments",
+    "monthlyDebtPayment": "Monthly Payment",
+    "totalDebtPaid": "Total Paid",
     "avg3mo": "3-mo avg",
     "mo6": "6M",
     "mo12": "12M",
