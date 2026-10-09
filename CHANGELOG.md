@@ -1,3 +1,9 @@
+## v1.98.0 (2026-10-09)
+
+### Feat
+
+- **transactions**: add a "Without Rule" filter to the recent transactions card and the transactions page (#378)
+
 ## v1.97.0 (2026-10-09)
 
 ### Feat
