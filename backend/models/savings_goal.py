@@ -198,3 +198,26 @@ class SavingsGoalLink(Base, TimestampMixin):
             f"<SavingsGoalLink(goal_id={self.goal_id}, {self.link_type}, "
             f"{self.source_table}#{self.source_id})>"
         )
+
+
+class YearlySavingsTarget(Base, TimestampMixin):
+    """How much the user aims to save in one calendar year.
+
+    One row per year, so a past year keeps the target it was measured
+    against.
+
+    Attributes
+    ----------
+    year : int
+        Calendar year.
+    target_amount : float
+        The amount to save that year.
+    """
+
+    __tablename__ = Tables.YEARLY_SAVINGS_TARGETS.value
+
+    year = Column(Integer, primary_key=True, autoincrement=False)
+    target_amount = Column(Float, nullable=False)
+
+    def __repr__(self) -> str:
+        return f"<YearlySavingsTarget(year={self.year}, target={self.target_amount})>"

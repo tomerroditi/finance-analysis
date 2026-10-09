@@ -56,6 +56,7 @@ import { useConfirm } from "../../context/DialogContext";
 import { Modal } from "../common/Modal";
 import { Skeleton } from "../common/Skeleton";
 import { ChartTooltip } from "../charts/ChartTooltip";
+import { YearlySavingsSection } from "./YearlySavingsSection";
 import { ChartLegend } from "../charts/ChartLegend";
 import { formatCurrency } from "../../utils/numberFormatting";
 import {
@@ -238,6 +239,8 @@ export function GoalsSection() {
           </button>
         </div>
       </div>
+
+      <YearlySavingsSection />
 
       {isLoading ? (
         <Skeleton variant="card" className="h-32" />

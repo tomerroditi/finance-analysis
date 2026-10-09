@@ -315,6 +315,21 @@
       }
     },
     "goals": {
+      "yearly": {
+        "title": "חיסכון {{year}}",
+        "setTarget": "הגדרת יעד",
+        "editTarget": "עריכת יעד",
+        "targetLabel": "יעד החיסכון ל-{{year}}",
+        "targetPlaceholder": "למשל 120000 (ריק מוחק)",
+        "expected": "צפוי עד היום {{amount}}",
+        "ahead": "{{amount}} לפני הקצב",
+        "behind": "{{amount}} מאחורי הקצב",
+        "needed_one": "נדרשים {{amount}} לחודש בחודש האחרון",
+        "needed_two": "נדרשים {{amount}} לחודש בחודשיים שנותרו",
+        "needed_many": "נדרשים {{amount}} לחודש ב-{{count}} החודשים שנותרו",
+        "needed_other": "נדרשים {{amount}} לחודש ב-{{count}} החודשים שנותרו",
+        "reached": "היעד הושג 🎉"
+      },
       "title": "יעדי חיסכון",
       "add": "הוספת יעד",
       "empty": "אין עדיין יעדי חיסכון — הוסיפו אחד כדי לעקוב אחר ההתקדמות",

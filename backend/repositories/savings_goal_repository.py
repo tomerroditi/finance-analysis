@@ -15,6 +15,7 @@ from backend.models.savings_goal import (
     SavingsGoal,
     SavingsGoalAllocation,
     SavingsGoalLink,
+    YearlySavingsTarget,
 )
 from backend.repositories._sql import orm_rows_to_frame
 
@@ -367,3 +368,20 @@ class SavingsGoalRepository:
             .scalars()
             .all()
         )
+
+    def get_yearly_targets(self) -> dict[int, float]:
+        """Return every year's savings target as ``{year: target_amount}``."""
+        rows = self.db.execute(select(YearlySavingsTarget)).scalars().all()
+        return {int(row.year): float(row.target_amount) for row in rows}
+
+    def set_yearly_target(self, year: int, target_amount: float | None) -> None:
+        """Set a year's savings target; ``None`` clears it."""
+        row = self.db.get(YearlySavingsTarget, year)
+        if target_amount is None:
+            if row is not None:
+                self.db.delete(row)
+        elif row is None:
+            self.db.add(YearlySavingsTarget(year=year, target_amount=target_amount))
+        else:
+            row.target_amount = target_amount
+        self._commit()

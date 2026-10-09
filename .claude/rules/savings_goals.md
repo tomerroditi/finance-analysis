@@ -4,6 +4,7 @@ paths:
   - "backend/routes/savings_goals.py"
   - "backend/models/savings_goal.py"
   - "frontend/src/components/dashboard/GoalsSection.tsx"
+  - "frontend/src/components/dashboard/YearlySavingsSection.tsx"
   - "frontend/src/components/budget/SavingsGoalsBudgetSection.tsx"
   - "frontend/src/components/budget/BudgetGoalLink.tsx"
   - "frontend/src/components/dashboard/GoalAutoLinkField.tsx"
@@ -15,7 +16,7 @@ money into goal progress. `SavingsGoalService` (`core.py`) assembles mixins:
 `inputs` (goal order, the transaction context, the pre-goal pool),
 `engine` (`_simulate`, `_persist`, `ensure_allocations`, `rebuild`), `goals`
 (CRUD + transaction links) and `read_models` (enriched goals, month view,
-free cash, timeline); `common` holds the pure month helpers and `ROUNDING_EPSILON`.
+free cash, timeline) and `yearly` (this year's savings against its target, below); `common` holds the pure month helpers and `ROUNDING_EPSILON`.
 Read this before touching the service, the `savings-goals` routes,
 `GoalsSection.tsx`, or the goals block on the monthly budget view.
 
@@ -550,6 +551,45 @@ Relatedly, `get_month_allocations` short-circuits before touching transactions
 when the user has no goals, and `_build_context` is memoised per service
 instance (one request needs it twice — allocating, then enriching). Both exist
 so the many users who keep no goals pay nothing for the section.
+
+## This year's savings: measured, not earmarked
+
+The top of the dashboard card (`YearlySavingsSection.tsx`) answers a
+different question from the goals: how much did each year *save*, against a
+target set for it? `yearly.py` (`YearlySavingsMixin`) computes it straight
+from the transaction context the waterfall reads — never from the allocation
+ledger — so it does not depend on goal order, priorities, caps or clawbacks,
+and a goal edit cannot change it except through what the goal claims as its
+own money.
+
+A month saved its income minus its spending:
+
+- `surplus` (which already took investing out) **plus `invested`** — the net
+  money moved into investments that no goal link claims. Investing is saving;
+  a withdrawal is neutral until it is spent, and a spent withdrawal is
+  spending, so a month or a whole year can be negative (red text, empty bar).
+  Gains and losses on investments never appear.
+- Loans as the rest of the app counts them: a receipt is income, a repayment
+  spending.
+- **A goal with a saved-into rule:** its income is the goal's money, not the
+  year's savings, and the bills it pays with that income are not the year's
+  spending. Only the part of its bills beyond the income received so far
+  (cumulative, per goal) is spending, counted in the month it crosses.
+- **A goal without one:** its utilizations are spending in the month they
+  happen — the money was saved before and is being spent now.
+
+Targets are one per calendar year (`yearly_savings_targets`, `year` primary
+key; `PUT /savings-goals/yearly/{year}/target` with `null` clears it, a
+non-positive amount is a 400). `pace` exists only for the current year with a
+target: `expected_by_today = target × elapsed days / days in year`, `ahead_by`
+is negative when behind, and `needed_per_month` spreads what is left over the
+months left **including the current one**.
+
+The response carries every year from the first month on record to today (plus
+any year with a target), each with its months, so the card can draw this
+year's bars and name the last three years. Its query key
+(`qk.savingsGoals.yearly()`) sits under the savings-goals prefix, so every
+goal write refreshes it.
 
 ## Gotchas
 

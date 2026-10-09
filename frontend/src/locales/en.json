@@ -315,6 +315,19 @@
       }
     },
     "goals": {
+      "yearly": {
+        "title": "{{year}} savings",
+        "setTarget": "Set target",
+        "editTarget": "Edit target",
+        "targetLabel": "Savings target for {{year}}",
+        "targetPlaceholder": "e.g. 120000 (empty clears it)",
+        "expected": "Expected by today {{amount}}",
+        "ahead": "{{amount}} ahead",
+        "behind": "{{amount}} behind",
+        "needed_one": "Need {{amount}}/mo for the last month",
+        "needed_other": "Need {{amount}}/mo for the {{count}} months left",
+        "reached": "Target reached 🎉"
+      },
       "title": "Savings Goals",
       "add": "Add goal",
       "empty": "No savings goals yet — add one to track your progress",

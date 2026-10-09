@@ -337,3 +337,39 @@ class TestBudgetAnalysisCarriesAllocations:
         # stay well-formed and never invent an allocation.
         assert all(row["goal_id"] == goal["id"] for row in block["goals"])
         assert block["total_allocated"] >= 0
+
+
+class TestYearlySavingsRoutes:
+    """The yearly savings view and its per-year target."""
+
+    def test_get_returns_the_current_year(self, test_client):
+        """GET /yearly lists the current year even with no transactions."""
+        res = test_client.get("/api/savings-goals/yearly")
+
+        assert res.status_code == 200
+        body = res.json()
+        assert body["years"][-1]["is_current"] is True
+        assert body["pace"] is None
+
+    def test_put_sets_and_clears_a_target(self, test_client):
+        """PUT /yearly/{year}/target stores the target and returns the view."""
+        year = 2026
+        res = test_client.put(
+            f"/api/savings-goals/yearly/{year}/target", json={"target_amount": 120000}
+        )
+        assert res.status_code == 200
+        assert next(r for r in res.json()["years"] if r["year"] == year)["target"] == 120000
+
+        res = test_client.put(
+            f"/api/savings-goals/yearly/{year}/target", json={"target_amount": None}
+        )
+        assert next(
+            (r for r in res.json()["years"] if r["year"] == year), {"target": None}
+        )["target"] is None
+
+    def test_put_rejects_a_non_positive_target(self, test_client):
+        """A zero target is a validation error."""
+        res = test_client.put(
+            "/api/savings-goals/yearly/2026/target", json={"target_amount": 0}
+        )
+        assert res.status_code == 422
