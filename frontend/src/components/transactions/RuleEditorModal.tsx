@@ -26,6 +26,11 @@ interface RuleEditorModalProps {
      * description-based condition derived from the transaction being marked.
      */
     prefill?: { category?: string; tag?: string; conditions?: ConditionNode };
+    /**
+     * Condition nodes inside `editingRule` to mark as the change — the
+     * branches the "Add to Rule" quick action just added to that rule.
+     */
+    highlightedConditions?: WeakSet<ConditionNode>;
 }
 
 const EMPTY_CONDITIONS: ConditionNode = {
@@ -35,7 +40,7 @@ const EMPTY_CONDITIONS: ConditionNode = {
     ]
 };
 
-export function RuleEditorModal({ isOpen, onClose, editingRule, onSaved, prefill }: RuleEditorModalProps) {
+export function RuleEditorModal({ isOpen, onClose, editingRule, onSaved, prefill, highlightedConditions }: RuleEditorModalProps) {
     const { t, i18n } = useTranslation();
     const isRtl = i18n.language === "he";
     const queryClient = useQueryClient();
@@ -172,6 +177,7 @@ export function RuleEditorModal({ isOpen, onClose, editingRule, onSaved, prefill
             setTag={setTag}
             conditions={conditions}
             setConditions={setConditions}
+            highlightedConditions={highlightedConditions}
             availableCategories={availableCategories}
             availableTags={availableTags}
             onCreateCategory={async (name) => {
@@ -427,6 +433,7 @@ function RuleForm({
     category, setCategory,
     tag, setTag,
     conditions, setConditions,
+    highlightedConditions,
     availableCategories, availableTags,
     onCreateCategory, onCreateTag,
 }: {
@@ -434,6 +441,7 @@ function RuleForm({
     category: string; setCategory: (v: string) => void;
     tag: string; setTag: (v: string) => void;
     conditions: ConditionNode; setConditions: (v: ConditionNode) => void;
+    highlightedConditions?: WeakSet<ConditionNode>;
     availableCategories: string[];
     availableTags: string[];
     onCreateCategory: (name: string) => Promise<void>;
@@ -486,7 +494,7 @@ function RuleForm({
             <div className="space-y-3">
                 <h4 className="text-xs text-[var(--text-muted)] uppercase font-bold tracking-wide">{t("transactions.autoTagging.conditions")}</h4>
                 <div className="p-4 bg-[var(--surface)] rounded-xl border border-[var(--surface-light)]">
-                    <RuleBuilder value={conditions} onChange={setConditions} />
+                    <RuleBuilder value={conditions} onChange={setConditions} highlighted={highlightedConditions} />
                 </div>
             </div>
         </div>

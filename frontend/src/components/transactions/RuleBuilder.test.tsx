@@ -103,3 +103,46 @@ describe("RuleBuilder amount input", () => {
         expect(valueInput.value).toBe("-");
     });
 });
+
+describe("RuleBuilder highlighted conditions", () => {
+    function HighlightedRuleBuilder({ initial, highlighted }: { initial: ConditionNode; highlighted: WeakSet<ConditionNode> }) {
+        const [node, setNode] = useState<ConditionNode>(initial);
+        return <RuleBuilder value={node} onChange={setNode} highlighted={highlighted} />;
+    }
+
+    const added: ConditionNode = { type: "CONDITION", field: "description", operator: "contains", value: "TENBIS" };
+    const existing: ConditionNode = { type: "CONDITION", field: "description", operator: "contains", value: "WOLT" };
+
+    it("marks only the highlighted branch as new", () => {
+        renderWithProviders(
+            <HighlightedRuleBuilder
+                initial={{ type: "OR", subconditions: [added, existing] }}
+                highlighted={new WeakSet([added])}
+            />,
+        );
+
+        const marked = document.querySelectorAll("[data-new-condition]");
+        expect(marked).toHaveLength(1);
+        expect((marked[0].querySelector('input[placeholder="Value"]') as HTMLInputElement).value).toBe("TENBIS");
+        expect(screen.getAllByText("New")).toHaveLength(1);
+    });
+
+    // Correcting the seeded value replaces the node object; the mark must
+    // follow it rather than vanishing on the first keystroke.
+    it("keeps the mark while the user edits the highlighted branch", async () => {
+        const user = userEvent.setup();
+        renderWithProviders(
+            <HighlightedRuleBuilder
+                initial={{ type: "OR", subconditions: [added, existing] }}
+                highlighted={new WeakSet([added])}
+            />,
+        );
+
+        const [newInput] = screen.getAllByPlaceholderText("Value");
+        await user.type(newInput, " TLV");
+
+        const marked = document.querySelectorAll("[data-new-condition]");
+        expect(marked).toHaveLength(1);
+        expect((marked[0].querySelector('input[placeholder="Value"]') as HTMLInputElement).value).toBe("TENBIS TLV");
+    });
+});

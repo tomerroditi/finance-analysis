@@ -1606,7 +1606,9 @@
     "deleteGroup": "מחק קבוצה",
     "value": "ערך",
     "min": "מינימום",
-    "max": "מקסימום"
+    "max": "מקסימום",
+    "newCondition": "חדש",
+    "newConditionHint": "נוסף מהעסקה שנבחרה"
   },
   "errorBoundary": {
     "title": "משהו השתבש",
