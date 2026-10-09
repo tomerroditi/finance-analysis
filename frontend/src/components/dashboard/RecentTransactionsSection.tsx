@@ -37,6 +37,7 @@ import i18n from "../../i18n";
 import { usePendingRows } from "../../hooks/usePendingRows";
 import { useConfirm, useNotify } from "../../context/DialogContext";
 import { useScrollCap } from "../../hooks/useScrollCap";
+import { ForwardArrow } from "../common/ForwardArrow";
 
 function formatTransactionDate(dateStr: string): string {
   const d = new Date(dateStr);
@@ -392,7 +393,7 @@ export function RecentTransactionsFeed({
             to="/transactions"
             className="text-sm font-medium text-[var(--primary)] hover:underline whitespace-nowrap shrink-0"
           >
-            {t("dashboard.viewAll")} &rarr;
+            {t("dashboard.viewAll")} <ForwardArrow />
           </Link>
         </div>
         {/* -ms-2 cancels the chips' px-2, so an inactive chip's icon lines up
