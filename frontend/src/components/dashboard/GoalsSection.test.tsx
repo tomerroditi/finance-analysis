@@ -611,87 +611,18 @@ describe("GoalsSection", () => {
     });
   });
 
-  describe("earmarking earlier free cash from the row", () => {
-    function stubFreeCashBefore(freeCash: number) {
-      return vi.spyOn(savingsGoalsApi, "getFreeCashBefore").mockResolvedValue({
-        data: { month: "2026-01", free_cash: freeCash },
-      } as Awaited<ReturnType<typeof savingsGoalsApi.getFreeCashBefore>>);
-    }
-
-    it("sets the opening balance, which restates the goal's history on the server", async () => {
-      await renderGoals([makeGoal({ name: "Vacation", start_month: "2026-01" })]);
-      stubFreeCashBefore(24000);
-      const update = vi
-        .spyOn(savingsGoalsApi, "update")
-        .mockResolvedValue({ data: [] } as unknown as Awaited<
-          ReturnType<typeof savingsGoalsApi.update>
-        >);
-      const rebuild = vi.spyOn(savingsGoalsApi, "rebuild");
-
-      fireEvent.click(
-        within(rowFor("Vacation")).getByRole("button", {
-          name: /earmark the free cash from before/i,
-        }),
-      );
-
-      await waitFor(() =>
-        expect(update).toHaveBeenCalledWith(1, { opening_balance: 24000 }),
-      );
-      expect(rebuild).not.toHaveBeenCalled();
-    });
-
-    it("says so and writes nothing when the goal already holds it", async () => {
-      await renderGoals([makeGoal({ name: "Vacation", opening_balance: 24000 })]);
-      stubFreeCashBefore(24000);
-      const update = vi.spyOn(savingsGoalsApi, "update");
-
-      fireEvent.click(
-        within(rowFor("Vacation")).getByRole("button", {
-          name: /earmark the free cash from before/i,
-        }),
-      );
-
-      await waitFor(() => expect(notifyInfo).toHaveBeenCalled());
-      expect(update).not.toHaveBeenCalled();
-    });
-
-    it("re-reads the server before deciding there is nothing left to claim", async () => {
-      // The app keeps a query fresh for five minutes, and `fetchQuery` serves
-      // a fresh entry straight from cache. A claim that has reached the server
-      // but whose mutation has not yet settled into an invalidation therefore
-      // leaves the cached list holding the *old* opening balance. Deciding
-      // against that copy re-offered a claim that had already been applied.
-      await renderGoals(
-        [makeGoal({ name: "Vacation", opening_balance: 0 })],
-        {},
-        {},
-        5 * 60 * 1000,
-      );
-      stubFreeCashBefore(24000);
-      const update = vi.spyOn(savingsGoalsApi, "update");
-      // The server now holds the claim; only a re-read can see it.
-      vi.spyOn(savingsGoalsApi, "getAll").mockResolvedValue({
-        data: [makeGoal({ name: "Vacation", opening_balance: 24000 })],
-      } as Awaited<ReturnType<typeof savingsGoalsApi.getAll>>);
-
-      fireEvent.click(
-        within(rowFor("Vacation")).getByRole("button", {
-          name: /earmark the free cash from before/i,
-        }),
-      );
-
-      await waitFor(() => expect(notifyInfo).toHaveBeenCalled());
-      expect(update).not.toHaveBeenCalled();
-    });
-
-    it("is not offered on a closed goal", async () => {
-      await renderGoals([makeGoal({ name: "Vacation", status: "closed", is_closed: true })]);
+  describe("free cash reaches goals by itself", () => {
+    it("offers no button to earmark earlier free cash", async () => {
+      // The waterfall hands a goal the free cash waiting when it starts, so
+      // there is nothing left for a row to claim by hand.
+      await renderGoals([makeGoal({ name: "Vacation" })]);
 
       expect(
         within(rowFor("Vacation")).queryByRole("button", {
           name: /earmark the free cash from before/i,
         }),
       ).not.toBeInTheDocument();
+      expect(screen.queryByTestId("goal-opening-use-free-cash")).not.toBeInTheDocument();
     });
   });
 
@@ -793,25 +724,6 @@ describe("GoalsSection", () => {
 
       const bar = rowFor("Short").querySelector<HTMLElement>("[style*='width']");
       expect(bar?.style.width).toBe("0%");
-    });
-
-    it("offer no free-cash claim, since they hold exactly their income", async () => {
-      await renderGoals([
-        makeGoal({ id: 1, name: "Trip" }),
-        makeGoal({
-          id: 2,
-          name: "Wedding",
-          contribution_category: "Other Income",
-          contribution_tags: "Wedding",
-        }),
-      ]);
-
-      expect(
-        within(rowFor("Trip")).getByRole("button", { name: /free cash/i }),
-      ).toBeInTheDocument();
-      expect(
-        within(rowFor("Wedding")).queryByRole("button", { name: /free cash/i }),
-      ).not.toBeInTheDocument();
     });
 
     it("offer no monthly cap, since they take nothing from surplus", async () => {

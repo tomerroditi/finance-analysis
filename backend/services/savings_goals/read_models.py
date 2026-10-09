@@ -187,7 +187,7 @@ class ReadModelsMixin:
             "free_cash": round(free_cash, 2),
             "earmarked": round(earmarked, 2),
             "liquid": round(free_cash + earmarked, 2),
-            "clawed_back_this_month": round(clawed, 2),
+            "clawed_back_this_month": round(clawed, 2) + 0.0,
             "has_goals": True,
         }
 

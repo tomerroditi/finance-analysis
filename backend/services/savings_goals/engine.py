@@ -233,7 +233,18 @@ class AllocationEngineMixin:
         free_cash = self._pool_before(first_month, context)
         # A goal closed by the user is frozen from the outset; one that fills
         # and is fully spent closes partway through the walk.
-        frozen = {g.id: g.status == GOAL_STATUS_CLOSED for g in goals}
+        # A closed goal is frozen once it closed: its rows are never restated.
+        # Up to that month it replays what it lived through — its stored rows,
+        # plus the income, bills and borrowing that are derived every pass —
+        # rather than being frozen from its first month, which skipped the
+        # borrowing that paid its bills and rewrote its history on every read.
+        closed_at = {
+            g.id: month_key(g.closed_month)
+            for g in goals
+            if g.status == GOAL_STATUS_CLOSED
+        }
+        locked = set(closed_at)
+        frozen = {g.id: g.id in locked and closed_at[g.id] is None for g in goals}
         start_of = dict(zip((g.id for g in goals), starts, strict=True))
         # A goal with a target date takes new money only up to that month — a
         # "2024" savings goal is 2024's money. Past it, it keeps what it holds
@@ -398,7 +409,8 @@ class AllocationEngineMixin:
                 funded[goal_id] += outgoing + kept
                 plan.contributed[(goal_id, year, month)] = outgoing + kept
                 if goal_id in fill and (
-                    recompute or stored.get((goal_id, year, month)) is None
+                    (recompute and goal_id not in locked)
+                    or stored.get((goal_id, year, month)) is None
                 ):
                     free_cash += give_back_fill(
                         goal_id, funded[goal_id] - bridge.get(goal_id, 0.0) - target
@@ -417,7 +429,7 @@ class AllocationEngineMixin:
                 to_invest[goal_id] += kept
                 cell = (goal_id, year, month)
                 plan.contributed[cell] = plan.contributed.get(cell, 0.0) + kept
-                if recompute or stored.get(cell) is None:
+                if (recompute and goal_id not in locked) or stored.get(cell) is None:
                     free_cash += give_back_fill(goal_id, funded[goal_id] - target)
 
             surplus = context["surplus"].get(key, 0.0) + spill
@@ -430,7 +442,7 @@ class AllocationEngineMixin:
             # Every shekel a goal takes is debited below, so what the goals
             # leave behind needs no separate step: it is already in the pool.
             free_cash += surplus
-            pool = max(0.0, min(surplus, free_cash))
+            pool = max(0.0, free_cash)
             # A hole carried in from an earlier month is that month's
             # overspend, already settled — less whatever this month's surplus
             # repaid. Only a fall below that reaches the goals.
@@ -453,27 +465,29 @@ class AllocationEngineMixin:
             free_cash -= outgoing_total
             pool = max(0.0, pool)
 
-            if not recompute:
-                for goal in goals:
-                    if frozen[goal.id]:
-                        continue
-                    amount = stored.get((goal.id, year, month))
-                    if amount is not None:
-                        funded[goal.id] += amount
-                        pool -= max(0.0, amount)
-                        free_cash -= amount
-                        if goal.id in fill:
-                            fill[goal.id] += amount
-                        if goal.id in to_invest:
-                            to_invest[goal.id] += amount
-                        if amount > 0:
-                            free_cash += repay_bridge(goal.id, amount)
-                pool = max(0.0, pool)
+            # Stored rows stand in a history month, and always for a closed
+            # goal that has not reached its closing month yet.
+            for goal in goals:
+                if frozen[goal.id] or (recompute and goal.id not in locked):
+                    continue
+                amount = stored.get((goal.id, year, month))
+                if amount is None:
+                    continue
+                funded[goal.id] += amount
+                pool -= max(0.0, amount)
+                free_cash -= amount
+                if goal.id in fill:
+                    fill[goal.id] += amount
+                if goal.id in to_invest:
+                    to_invest[goal.id] += amount
+                if amount > 0:
+                    free_cash += repay_bridge(goal.id, amount)
+            pool = max(0.0, pool)
 
             for goal in goals:
                 if pool <= 0:
                     break
-                if frozen[goal.id] or not open_for(goal.id, key):
+                if frozen[goal.id] or goal.id in locked or not open_for(goal.id, key):
                     continue
                 # In a history month, a goal that already has a row has had its
                 # say — only newcomers may take what is still unallocated. A
@@ -545,7 +559,7 @@ class AllocationEngineMixin:
                 for goal in reversed(goals):
                     if shortfall <= ROUNDING_EPSILON:
                         break
-                    if frozen[goal.id] or key < start_of[goal.id]:
+                    if frozen[goal.id] or goal.id in locked or key < start_of[goal.id]:
                         continue
                     # A history month's existing rows stand, exactly as they
                     # do for funding — only an explicit rebuild restates them.
@@ -621,8 +635,11 @@ class AllocationEngineMixin:
             # Adding zero turns the -0.0 a fully drained pool rounds to into 0.0.
             plan.free_cash[key] = round(free_cash, 2) + 0.0
 
+            for goal_id, month_closed in closed_at.items():
+                if month_closed == key:
+                    frozen[goal_id] = True
             for goal in goals:
-                if frozen[goal.id] or goal.id in invests:
+                if frozen[goal.id] or goal.id in invests or goal.id in locked:
                     continue
                 target = float(goal.target_amount or 0.0)
                 total = funded[goal.id]
