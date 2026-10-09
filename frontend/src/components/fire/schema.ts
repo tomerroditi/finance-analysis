@@ -6,7 +6,8 @@
  * `research/zeke_retire_calc/notes/02-input-surface.md`.
  */
 
-export type FieldKind = "number" | "text" | "date" | "select" | "checkbox";
+/** `hidden` fields are never rendered: a row's `*Source` names the tracked account it follows. */
+export type FieldKind = "number" | "text" | "date" | "select" | "checkbox" | "hidden";
 
 export interface FieldSpec {
   /** Reference field name, minus the row index for repeatable rows. */
@@ -29,6 +30,12 @@ export interface SectionSpec {
   fields: FieldSpec[];
   /** Repeatable sections are backed by a `num_<countKey>_fields` counter. */
   repeatable?: { countKey: string; addLabelKey: string; max: number };
+  /** The hidden field naming the tracked account a row follows, if rows can follow one. */
+  sourceField?: string;
+}
+
+function sourceField(name: string): FieldSpec {
+  return { name, kind: "hidden", labelKey: "", default: "" };
 }
 
 const startTypeOptions = [
@@ -163,20 +170,23 @@ export const SECTIONS: SectionSpec[] = [
     titleKey: "fire.section.expenses",
     hintKey: "fire.hint.expenses",
     repeatable: { countKey: "expense", addLabelKey: "fire.action.addExpense", max: 20 },
-    fields: flowFields("expense", "forever", "5000"),
+    sourceField: "expenseSource",
+    fields: [...flowFields("expense", "forever", "5000"), sourceField("expenseSource")],
   },
   {
     key: "income",
     titleKey: "fire.section.incomes",
     hintKey: "fire.hint.incomes",
     repeatable: { countKey: "income", addLabelKey: "fire.action.addIncome", max: 20 },
-    fields: flowFields("income", "fire", "10000"),
+    sourceField: "incomeSource",
+    fields: [...flowFields("income", "fire", "10000"), sourceField("incomeSource")],
   },
   {
     key: "portfolio",
     titleKey: "fire.section.portfolios",
     hintKey: "fire.hint.portfolios",
     repeatable: { countKey: "portfolio", addLabelKey: "fire.action.addPortfolio", max: 20 },
+    sourceField: "portfolioSource",
     fields: [
       { name: "portfolioDesignation", kind: "select", labelKey: "fire.field.designation", default: "withdraw",
         options: [
@@ -207,6 +217,7 @@ export const SECTIONS: SectionSpec[] = [
           { value: "lifo", labelKey: "fire.opt.lot.lifo" },
         ] },
       { name: "portfolioDescription", kind: "text", labelKey: "fire.field.description", default: "" },
+      sourceField("portfolioSource"),
     ],
   },
   { key: "pension", titleKey: "fire.section.pension", fields: pensionFields("", "pension_tactics", "pensionEndType1") },
@@ -223,6 +234,7 @@ export const SECTIONS: SectionSpec[] = [
     titleKey: "fire.section.keren",
     hintKey: "fire.hint.keren",
     repeatable: { countKey: "keren", addLabelKey: "fire.action.addKeren", max: 20 },
+    sourceField: "kerenSource",
     fields: [
       { name: "kerenBalance", kind: "number", labelKey: "fire.field.balance", default: "0", min: 0 },
       { name: "kerenDeposit", kind: "number", labelKey: "fire.field.monthlyDeposit", default: "0", min: 0 },
@@ -236,12 +248,14 @@ export const SECTIONS: SectionSpec[] = [
       { name: "kerenEndType", kind: "select", labelKey: "fire.field.depositsEnd", default: "fire", options: endTypeOptions },
       { name: "kerenEndDate", kind: "date", labelKey: "fire.field.endDate", default: "",
         visibleWhen: { field: "kerenEndType", values: ["to_date"] } },
+      sourceField("kerenSource"),
     ],
   },
   {
     key: "loan",
     titleKey: "fire.section.loans",
     repeatable: { countKey: "loan", addLabelKey: "fire.action.addLoan", max: 20 },
+    sourceField: "debtSource",
     fields: [
       { name: "debtStartDate", kind: "date", labelKey: "fire.field.loanStart", default: "" },
       { name: "debtInterest", kind: "number", labelKey: "fire.field.interestRate", default: "3", step: "any" },
@@ -253,6 +267,7 @@ export const SECTIONS: SectionSpec[] = [
           { value: "baloon", labelKey: "fire.opt.loan.balloon" },
           { value: "grace", labelKey: "fire.opt.loan.grace" },
         ] },
+      sourceField("debtSource"),
     ],
   },
   {
@@ -281,6 +296,32 @@ export function initialScenario(): Record<string, string> {
       }
     } else {
       for (const field of section.fields) fields[field.name] = field.default;
+    }
+  }
+  return fields;
+}
+
+/**
+ * A payload completed with the schema's defaults: every non-repeatable field,
+ * and every field of each row its counter declares. A plan read back from the
+ * server carries only what tracked data and the user set.
+ */
+export function normalizeScenario(partial: Record<string, string>): Record<string, string> {
+  const base = initialScenario();
+  const fields: Record<string, string> = {};
+  for (const section of SECTIONS) {
+    if (section.repeatable) {
+      const countKey = `num_${section.repeatable.countKey}_fields`;
+      const count = Number(partial[countKey] ?? base[countKey] ?? 0);
+      fields[countKey] = String(count);
+      for (let row = 1; row <= count; row += 1) {
+        for (const field of section.fields) {
+          const name = `${field.name}${row}`;
+          fields[name] = partial[name] ?? base[name] ?? field.default;
+        }
+      }
+    } else {
+      for (const field of section.fields) fields[field.name] = partial[field.name] ?? field.default;
     }
   }
   return fields;

@@ -1,5 +1,5 @@
 import { lazy, Suspense } from "react";
-import { BrowserRouter, Routes, Route } from "react-router";
+import { BrowserRouter, Navigate, Routes, Route } from "react-router";
 import { PersistQueryClientProvider } from "@tanstack/react-query-persist-client";
 import { Layout } from "./components/layout";
 import { ErrorBoundary } from "./components/ErrorBoundary";
@@ -45,9 +45,6 @@ const EarlyRetirement = lazy(() =>
     default: m.EarlyRetirement,
   })),
 );
-const FireCalculator = lazy(() =>
-  import("./pages/FireCalculator").then((m) => ({ default: m.FireCalculator })),
-);
 const DataFlow = lazy(() =>
   import("./pages/DataFlow").then((m) => ({ default: m.DataFlow })),
 );
@@ -88,7 +85,7 @@ function App() {
                       />
                       <Route
                         path="fire-calculator"
-                        element={<FireCalculator />}
+                        element={<Navigate to="/early-retirement" replace />}
                       />
                       <Route path="data-sources" element={<DataSources />} />
                       <Route path="data-flow" element={<DataFlow />} />

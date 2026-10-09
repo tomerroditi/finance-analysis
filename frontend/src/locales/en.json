@@ -88,8 +88,7 @@
     "insurance": "Pension Savings",
     "dataSources": "Data Sources",
     "earlyRetirement": "Early Retirement",
-    "dataFlow": "Data Flow",
-    "fireCalculator": "FIRE Calculator"
+    "dataFlow": "Data Flow"
   },
   "settings": {
     "title": "Settings",
@@ -403,7 +402,13 @@
       "title": "Early Retirement",
       "viewPlan": "View full plan",
       "noPlan": "Set up your retirement plan to see how close you are to financial independence.",
-      "setupCta": "Set up your plan"
+      "setupCta": "Set up your plan",
+      "notReachable": "Not by your maximum age",
+      "retireAt": "Retire at",
+      "netWorthAtRetirement": "Net worth at retirement",
+      "monthlyPension": "Monthly pension",
+      "goalsMet": "Goals met",
+      "atAge": "Age {{age}}"
     },
     "refundsCard": {
       "title": "Refunds",
@@ -1628,107 +1633,6 @@
     "message": "An unexpected error occurred. Please try reloading the page.",
     "tryAgain": "Try Again"
   },
-  "earlyRetirement": {
-    "title": "Early Retirement Calculator",
-    "subtitle": "Plan your path to financial independence with Israeli savings vehicles",
-    "sections": {
-      "currentStatus": "Current Financial Status",
-      "goals": "Retirement Goals",
-      "projections": "Projections & Insights",
-      "parameters": "Retirement Parameters"
-    },
-    "form": {
-      "currentAge": "Current Age",
-      "gender": "Gender",
-      "male": "Male",
-      "female": "Female",
-      "genderPensionNote": "Full pension age: {{age}}",
-      "targetRetirementAge": "Target Retirement Age",
-      "monthlyExpenses": "Monthly Expenses in Retirement",
-      "lifeExpectancy": "Life Expectancy",
-      "expectedReturn": "Expected Annual Return",
-      "withdrawalRate": "Safe Withdrawal Rate",
-      "inflationRate": "Inflation Rate",
-      "israeliVehicles": "Israeli Savings Vehicles",
-      "pensionPayout": "Monthly Pension",
-      "kerenHishtalmutBalance": "Keren Hishtalmut Balance",
-      "kerenHishtalmutMonthly": "Keren Hishtalmut Monthly",
-      "bituachLeumiEligible": "Bituach Leumi Eligible",
-      "bituachLeumiEstimate": "Bituach Leumi Monthly",
-      "otherPassiveIncome": "Other Passive Income",
-      "calculate": "Calculate",
-      "savePlan": "Save Plan",
-      "resetPlan": "Reset",
-      "useScrapedKh": "Use scraped balance: {{amount}}",
-      "useClearingHouseForecast": "Use the funds' forecast for retiring at {{age}}: {{amount}}",
-      "useScrapedKhMonthly": "Use scraped deposit: {{amount}}",
-      "monthlyIncome": "Monthly Income",
-      "useSalaryAvg": "Use 6-month salary avg: {{amount}}",
-      "saveFailed": "Save failed — check the values and try again"
-    },
-    "status": {
-      "netWorth": "Net Worth",
-      "avgMonthlyIncome": "Avg. Monthly Income",
-      "avgMonthlyExpenses": "Avg. Monthly Expenses",
-      "monthlySavings": "Monthly Savings",
-      "savingsRate": "Savings Rate",
-      "computed": "auto-calculated",
-      "resetToCalculated": "Reset to calculated"
-    },
-    "projections": {
-      "fireNumber": "FIRE Number",
-      "fireAge": "FIRE Age",
-      "earliestRetirement": "Earliest Retirement",
-      "yearsToFire": "Years to FIRE",
-      "monthlySavingsNeeded": "Monthly Savings Needed",
-      "readiness": "Readiness",
-      "readiness_on_track": "On Track",
-      "readiness_close": "Almost There",
-      "readiness_funded": "Funded for Life",
-      "readinessHelp_on_track": "You reach your FIRE number by your target retirement age, and the money lasts through your life expectancy. Nothing to fix.",
-      "readinessHelp_close": "You reach your FIRE number within 5 years of your target age, and never run out. Retiring exactly on target needs a small adjustment.",
-      "readinessHelp_funded": "Your money never runs out — pension and Bituach Leumi carry your retirement spending. You just don't reach the FIRE number, which assumes your portfolio alone funds everything, so early retirement isn't covered.",
-      "readinessHelp_off_track": "Your portfolio runs out before your life expectancy. This is the one case that needs fixing — save more, spend less in retirement, or retire later.",
-      "readiness_off_track": "Off Track",
-      "notReachable": "Not reachable",
-      "onTrackNoExtra": "On track!",
-      "adjustPlan": "Adjust plan to get on track:",
-      "portfolioDepleted": "Portfolio runs out at age {{age}}"
-    },
-    "charts": {
-      "netWorthProjection": "Net Worth Projection",
-      "retirementIncome": "Retirement Income by Source",
-      "age": "Age",
-      "baseline": "Baseline (expected return)",
-      "optimistic": "Optimistic (+1%)",
-      "conservative": "Conservative (-1%)",
-      "fireTarget": "FIRE Target",
-      "retirementAge": "Retirement",
-      "pensionAge": "Pension Age"
-    },
-    "income": {
-      "salarySavings": "Salary & Savings",
-      "portfolioWithdrawal": "Portfolio Withdrawal",
-      "pension": "Pension",
-      "bituachLeumi": "Bituach Leumi",
-      "passiveIncome": "Passive Income",
-      "expenses": "Expenses"
-    },
-    "tooltips": {
-      "fireNumber": "FIRE Number = Annual Expenses ÷ Withdrawal Rate. This is the portfolio size needed to sustain your lifestyle indefinitely, based on the assumption that you can safely withdraw a fixed percentage each year.",
-      "fireAge": "The age at which your projected net worth (baseline scenario) first reaches your FIRE number.",
-      "earliestRetirement": "The earliest age you could retire based on current savings rate and projected growth. This equals the FIRE age in the baseline scenario.",
-      "monthlySavings": "Additional monthly savings needed to reach your FIRE number by your target retirement age. Calculated using the future value of annuity formula.",
-      "withdrawalRate": "The percentage of your portfolio you withdraw annually in retirement. 3.5% is conservative for Israel (vs. the US 4% rule) due to higher inflation.",
-      "pension": "Expected monthly pension payout at full pension age.",
-      "bituachLeumi": "National Insurance old-age pension. Starts at full pension age (67 for men, 65 for women).",
-      "netWorthChart": "Baseline uses your expected return rate adjusted for your inflation rate — all amounts are in today's shekels. Optimistic and conservative show ±1% annual return to illustrate market sensitivity. Includes Keren Hishtalmut as a separate tax-free component.",
-      "incomeChart": "Income sources by age, in today's shekels. Before retirement: salary covers expenses. After retirement: portfolio withdrawals + pension and Bituach Leumi (from full pension age) + passive income.",
-      "kerenHishtalmutBalance": "Your total Keren Hishtalmut balance across all funds (auto-fillable from scraped policies and manually-added KH investments alike). Modelled as a separate tax-free bucket that is drawn first in retirement — and counted exactly once, even when those funds already appear inside your net worth.",
-      "kerenHishtalmutMonthly": "Total monthly deposits into your Keren Hishtalmut (employee + employer). These are deducted from your salary before it reaches the bank, so they count on top of your regular monthly savings.",
-      "otherPassiveIncome": "Monthly income you expect to keep receiving in retirement independent of your portfolio — rent, royalties, a side business. Held constant in today's shekels."
-    }
-  },
   "dataFlow": {
     "title": "Data Flow",
     "subtitle": "How data moves through the system — from sources to dashboard",
@@ -1935,6 +1839,7 @@
       "inferredMode": "This mode is not implemented in the original calculator, so these results are our own interpretation rather than a reproduction.",
       "noResult": "Nothing to show — check the retirement age against the current age.",
       "pensionIncome": "{{owner}}: pension income of {{amount}} a month from age {{age}}.",
+      "pensionIncomeUnnamed": "Pension income of {{amount}} a month from age {{age}}.",
       "success": "You can retire in {{month}}/{{year}} — at age {{age}}."
     },
     "goal": {
@@ -2012,6 +1917,25 @@
     },
     "withdrawal": {
       "row": "{{source}}, from age {{from}} to {{to}}"
+    },
+    "plan": {
+      "subtitle": "Filled from your tracked accounts. Values marked with a link follow your data and update as it changes; type over one to make it your own.",
+      "save": "Save plan",
+      "saving": "Saving…",
+      "sync": "Sync with my data",
+      "notSavedYet": "Not saved yet — this plan was filled from your data.",
+      "unsavedChanges": "Unsaved changes",
+      "previewNote": "Showing an unsaved calculation. Save to keep it, and to update the dashboard card.",
+      "needsSetup": "Enter your date of birth under \"Retiree\" and save, and your plan will run here and on the dashboard.",
+      "linkedField": "Follows your tracked data",
+      "relinkField": "Use the value from your tracked data",
+      "linkedRow": "Follows a tracked account",
+      "resetTitle": "Reset the plan?",
+      "resetMessage": "Your saved plan will be discarded and rebuilt from your tracked data.",
+      "source": {
+        "expenses": "Your typical monthly spending",
+        "income": "Your typical monthly income"
+      }
     }
   }
 }

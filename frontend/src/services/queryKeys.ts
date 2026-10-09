@@ -50,7 +50,7 @@ export const qkPrefix = {
   backups: ["backups"] as const,
   credentialsAccounts: ["credentials-accounts"] as const,
   providers: ["providers"] as const,
-  retirement: ["retirement"] as const,
+  fire: ["fire"] as const,
 } as const;
 
 export function makeQueryKeys(demo: boolean) {
@@ -103,14 +103,9 @@ export function makeQueryKeys(demo: boolean) {
       rulePreview: (conditions: unknown) =>
         ["rule-preview", conditions, demo] as const,
     },
-    retirement: {
-      goal: () => ["retirement", "goal", demo] as const,
-      status: () => ["retirement", "status", demo] as const,
-      projections: () => ["retirement", "projections", demo] as const,
-      suggestions: () => ["retirement", "suggestions", demo] as const,
-      scrapedDefaults: () => ["retirement", "scraped-defaults", demo] as const,
-      pensionForecast: (currentAge: number, targetRetirementAge: number) =>
-        ["retirement", "pension-forecast", currentAge, targetRetirementAge, demo] as const,
+    fire: {
+      plan: () => ["fire", "plan", demo] as const,
+      planProjection: () => ["fire", "plan-projection", demo] as const,
     },
     balances: {
       bank: () => ["bank-balances", demo] as const,

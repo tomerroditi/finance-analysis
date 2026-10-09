@@ -1029,113 +1029,6 @@ export const budgetMonthOverridesApi = {
   remove: (id: number) => api.delete(`/budget-month-overrides/${id}`),
 };
 
-// Retirement API
-export interface RetirementGoal {
-  id: number;
-  current_age: number;
-  gender: string;
-  target_retirement_age: number;
-  life_expectancy: number;
-  monthly_expenses_in_retirement: number;
-  inflation_rate: number;
-  expected_return_rate: number;
-  withdrawal_rate: number;
-  pension_monthly_payout_estimate: number;
-  keren_hishtalmut_balance: number;
-  keren_hishtalmut_monthly_contribution: number;
-  bituach_leumi_eligible: boolean;
-  bituach_leumi_monthly_estimate: number;
-  other_passive_income: number;
-  monthly_income: number | null;
-  net_worth_override: number | null;
-  monthly_expenses_override: number | null;
-  total_investments_override: number | null;
-}
-
-export interface RetirementStatus {
-  net_worth: number;
-  avg_monthly_expenses: number;
-  avg_monthly_income: number;
-  savings_rate: number;
-  total_investments: number;
-  monthly_savings: number;
-}
-
-export interface RetirementSuggestions {
-  target_retirement_age: number;
-  monthly_expenses_in_retirement: number;
-  expected_return_rate: number;
-  life_expectancy: number;
-}
-
-export interface ScrapedDefaults {
-  keren_hishtalmut_balance: number | null;
-  keren_hishtalmut_monthly_contribution: number | null;
-  pension_monthly_deposit: number | null;
-  avg_monthly_salary: number | null;
-}
-
-/** Monthly pension estimated from the funds' own published forecasts. */
-export interface PensionForecast {
-  estimate: number | null;
-  with_deposits: number;
-  no_deposits: number;
-  as_of: string | null;
-  funds: number;
-}
-
-export interface RetirementProjections {
-  fire_number: number;
-  years_to_fire: number;
-  fire_age: number;
-  earliest_possible_retirement_age: number;
-  monthly_savings_needed: number;
-  progress_pct: number;
-  // "funded" = never reaches the FIRE number in the target window, but the
-  // portfolio never depletes either (pension / Bituach Leumi carry it).
-  readiness: "on_track" | "close" | "funded" | "off_track";
-  portfolio_depleted_age: number | null;
-  target_retirement_age: number;
-  full_pension_age: number;
-  net_worth_projection: {
-    age: number;
-    net_worth_optimistic: number;
-    net_worth_baseline: number;
-    net_worth_conservative: number;
-  }[];
-  income_projection: {
-    age: number;
-    salary_savings: number;
-    portfolio_withdrawal: number;
-    pension: number;
-    bituach_leumi: number;
-    passive_income: number;
-    total_income: number;
-    expenses: number;
-  }[];
-}
-
-export const retirementApi = {
-  getGoal: () => api.get<RetirementGoal | null>("/retirement/goal"),
-  upsertGoal: (data: Omit<RetirementGoal, "id">) =>
-    api.put<RetirementGoal>("/retirement/goal", data),
-  getStatus: () => api.get<RetirementStatus>("/retirement/status"),
-  getProjections: () =>
-    api.get<RetirementProjections>("/retirement/projections"),
-  previewProjections: (data: Omit<RetirementGoal, "id">) =>
-    api.post<RetirementProjections>("/retirement/projections", data),
-  getScrapedDefaults: () =>
-    api.get<ScrapedDefaults>("/retirement/scraped-defaults"),
-  getPensionForecast: (currentAge: number, targetRetirementAge: number) =>
-    api.get<PensionForecast>("/retirement/pension-forecast", {
-      params: { current_age: currentAge, target_retirement_age: targetRetirementAge },
-    }),
-  getSuggestions: () =>
-    api.get<RetirementSuggestions>("/retirement/suggestions"),
-  previewSuggestions: (data: Omit<RetirementGoal, "id">) =>
-    api.post<RetirementSuggestions>("/retirement/suggestions", data),
-};
-
 export interface SavingsGoalAllocationEntry {
   month: string;
   amount: number;
@@ -1543,7 +1436,7 @@ export interface FirePensionIncome {
 }
 
 export interface FireProjection {
-  status: "success" | "goals_not_met" | "no_result";
+  status: "success" | "goals_not_met" | "no_result" | "needs_setup";
   retire_index: number | null;
   retire_age: number | null;
   retire_year: number | null;
@@ -1559,10 +1452,37 @@ export interface FireProjection {
   pension_income: FirePensionIncome[];
 }
 
+/** A tracked account the plan can hold as a row: `source` names it (`investment:12`). */
+export interface FireTrackedRow {
+  source: string;
+  label: string;
+  /** Follow the account on every read; keyed by field stem, without the row index. */
+  fields: Record<string, string>;
+  /** Written only when the row is first added. */
+  seed: Record<string, string>;
+}
+
+export interface FirePlan {
+  /** False while the plan is only derived from tracked data and never saved. */
+  saved: boolean;
+  fields: Record<string, string>;
+  /** Single-value fields that follow tracked data until the user edits them. */
+  linked: string[];
+  tracked: {
+    scalars: Record<string, string>;
+    rows: Record<string, FireTrackedRow[]>;
+  };
+}
+
 export const fireApi = {
   calculate: (fields: Record<string, string>, decumulationReturnPct?: number) =>
     api.post<FireProjection>("/fire/calculate", {
       fields,
       decumulation_return_pct: decumulationReturnPct ?? null,
     }),
+  getPlan: () => api.get<FirePlan>("/fire/plan"),
+  savePlan: (fields: Record<string, string>, linked: string[]) =>
+    api.put<FirePlan>("/fire/plan", { fields, linked }),
+  resetPlan: () => api.delete<FirePlan>("/fire/plan"),
+  getPlanProjection: () => api.get<FireProjection>("/fire/plan/projection"),
 };

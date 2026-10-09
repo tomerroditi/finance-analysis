@@ -4,13 +4,19 @@ paths:
   - "backend/routes/retirement.py"
   - "backend/models/retirement_goal.py"
   - "backend/services/investments/insurance_sync.py"
-  - "frontend/src/components/retirement/**/*.{ts,tsx}"
+  - "backend/services/fire_plan_service.py"
 ---
 # Retirement / FIRE Calculations
 
 How `backend/services/retirement_service.py` models early retirement.
 Read this before touching the retirement service, the retirement routes,
-the `retirement/` frontend components, or the demo retirement goal.
+or the demo retirement goal.
+
+**No page uses this model any more.** The `/early-retirement` page and the
+dashboard card run the reference-calculator clone in `backend/services/fire/`
+on a plan `FirePlanService` fills from tracked data (see `CLAUDE.md` →
+"Early-retirement calculator"). The `retirement_goals` row survives only to
+seed a user's first plan from their old one.
 
 ## Everything is computed in REAL terms (today's shekels)
 

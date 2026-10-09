@@ -1,90 +1,43 @@
-import { useState } from "react";
+import { useMemo } from "react";
 import { useNavigate } from "react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import {
+  Area,
+  AreaChart,
+  CartesianGrid,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
+import {
   Flame,
   ChevronRight,
   ChevronLeft,
-  Target,
   Calendar,
-  TrendingUp,
-  Banknote,
-  CheckCircle2,
-  AlertTriangle,
-  ShieldCheck,
-  XCircle,
+  Landmark,
+  Wallet,
+  ListChecks,
 } from "lucide-react";
-import {
-  retirementApi,
-  type RetirementProjections,
-} from "../../services/api";
+import { fireApi, type FireProjection } from "../../services/api";
 import { useQueryKeys } from "../../hooks/useQueryKeys";
 import { Skeleton } from "../common/Skeleton";
-import { InfoTooltip } from "../common/InfoTooltip";
 import { formatCurrency } from "../../utils/numberFormatting";
-import { NetWorthProjectionChart } from "../retirement/NetWorthProjectionChart";
-import { RetirementIncomeChart } from "../retirement/RetirementIncomeChart";
 
-type ChartView = "net_worth" | "income";
-
-const readinessConfig = {
-  on_track: {
-    icon: CheckCircle2,
-    color: "text-emerald-400",
-    bg: "bg-emerald-500/10",
-    border: "border-emerald-500/30",
-    bar: "bg-emerald-500",
-  },
-  close: {
-    icon: AlertTriangle,
-    color: "text-amber-400",
-    bg: "bg-amber-500/10",
-    border: "border-amber-500/30",
-    bar: "bg-amber-500",
-  },
-  // Solvent for life, just never hits the FIRE number — a working plan, so
-  // it reads blue (informational) rather than amber (warning) or red.
-  funded: {
-    icon: ShieldCheck,
-    color: "text-sky-400",
-    bg: "bg-sky-500/10",
-    border: "border-sky-500/30",
-    bar: "bg-sky-500",
-  },
-  off_track: {
-    icon: XCircle,
-    color: "text-rose-400",
-    bg: "bg-rose-500/10",
-    border: "border-rose-500/30",
-    bar: "bg-rose-500",
-  },
-} as const;
-
-/** Dashboard early-retirement (FIRE) insights card: readiness, headline KPIs
- *  and the projection charts from the saved plan — no plan settings exposed.
- *  Opt-in (hidden by default); the full editor lives on the retirement page. */
+/** Dashboard early-retirement card: the saved plan's verdict, headline figures
+ *  and net-worth path, run on today's tracked data. No plan settings here —
+ *  the full editor is the early-retirement page. Opt-in (hidden by default). */
 export function EarlyRetirementCard() {
   const { t, i18n } = useTranslation();
   const navigate = useNavigate();
   const qk = useQueryKeys();
-  const isRtl = i18n.language === "he";
-  const [chartView, setChartView] = useState<ChartView>("net_worth");
+  const ViewPlanChevron = i18n.language === "he" ? ChevronLeft : ChevronRight;
 
-  const { data: goal, isLoading: goalLoading } = useQuery({
-    queryKey: qk.retirement.goal(),
-    queryFn: () => retirementApi.getGoal().then((r) => r.data),
+  const { data: projection, isLoading } = useQuery({
+    queryKey: qk.fire.planProjection(),
+    queryFn: () => fireApi.getPlanProjection().then((r) => r.data),
   });
-
-  const hasGoal = !!goal && goal.id !== -1;
-
-  const { data: projections, isLoading: projectionsLoading } = useQuery({
-    queryKey: qk.retirement.projections(),
-    queryFn: () => retirementApi.getProjections().then((r) => r.data),
-    enabled: hasGoal,
-  });
-
-  const ViewPlanChevron = isRtl ? ChevronLeft : ChevronRight;
 
   return (
     <div className="bg-[var(--surface)] rounded-2xl border border-[var(--surface-light)] p-4 md:p-6">
@@ -93,9 +46,7 @@ export function EarlyRetirementCard() {
           <div className="p-1.5 rounded-lg bg-orange-500/15 text-orange-400">
             <Flame size={16} />
           </div>
-          <p className="text-sm md:text-base font-bold">
-            {t("dashboard.retirementCard.title")}
-          </p>
+          <p className="text-sm md:text-base font-bold">{t("dashboard.retirementCard.title")}</p>
         </div>
         <button
           onClick={() => navigate("/early-retirement")}
@@ -106,64 +57,24 @@ export function EarlyRetirementCard() {
         </button>
       </div>
 
-      {goalLoading || (hasGoal && projectionsLoading) ? (
+      {isLoading ? (
         <div className="space-y-4">
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
-            {Array.from({ length: 5 }).map((_, i) => (
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+            {Array.from({ length: 4 }).map((_, i) => (
               <Skeleton key={i} variant="card" className="h-20" />
             ))}
           </div>
-          <Skeleton variant="card" className="h-72" />
+          <Skeleton variant="card" className="h-64" />
         </div>
-      ) : !hasGoal ? (
+      ) : !projection || projection.status === "needs_setup" ? (
         <NoPlanState onSetup={() => navigate("/early-retirement")} />
-      ) : projections ? (
-        <div className="space-y-4">
-          <KpiRow projections={projections} />
-
-          {/* Chart toggle */}
-          <div className="flex justify-end">
-            <div className="bg-[var(--surface-light)] rounded-xl overflow-hidden">
-            <div className="flex p-1 overflow-x-auto scrollbar-auto-hide">
-              {(
-                [
-                  { key: "net_worth", label: t("earlyRetirement.charts.netWorthProjection") },
-                  { key: "income", label: t("earlyRetirement.charts.retirementIncome") },
-                ] as const
-              ).map(({ key, label }) => (
-                <button
-                  key={key}
-                  onClick={() => setChartView(key)}
-                  className={`px-2 md:px-3 py-1.5 rounded-lg text-xs md:text-sm font-bold transition-all whitespace-nowrap ${
-                    chartView === key
-                      ? "bg-[var(--surface)] text-[var(--primary)] shadow-sm"
-                      : "text-[var(--text-muted)] hover:text-[var(--text-default)]"
-                  }`}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-            </div>
-          </div>
-
-          <div data-testid="retirement-projection-chart">
-            {chartView === "net_worth" ? (
-              <NetWorthProjectionChart
-                data={projections.net_worth_projection}
-                fireNumber={projections.fire_number}
-                targetAge={projections.target_retirement_age}
-                pensionAge={projections.full_pension_age}
-              />
-            ) : (
-              <RetirementIncomeChart data={projections.income_projection} />
-            )}
-          </div>
-        </div>
+      ) : projection.status === "no_result" ? (
+        <p className="text-[var(--text-muted)] text-sm py-6 text-center">{t("fire.result.noResult")}</p>
       ) : (
-        <p className="text-[var(--text-muted)] text-sm py-6 text-center">
-          {t("common.noData")}
-        </p>
+        <div className="space-y-4">
+          <KpiRow projection={projection} />
+          <NetWorthPath projection={projection} />
+        </div>
       )}
     </div>
   );
@@ -176,9 +87,7 @@ function NoPlanState({ onSetup }: { onSetup: () => void }) {
       <div className="p-3 rounded-full bg-orange-500/10 text-orange-400">
         <Flame size={24} />
       </div>
-      <p className="text-sm text-[var(--text-muted)] max-w-sm">
-        {t("dashboard.retirementCard.noPlan")}
-      </p>
+      <p className="text-sm text-[var(--text-muted)] max-w-sm">{t("dashboard.retirementCard.noPlan")}</p>
       <button
         onClick={onSetup}
         className="px-4 py-2 rounded-lg text-sm font-bold bg-[var(--primary)] text-white hover:opacity-90 transition-opacity"
@@ -189,96 +98,55 @@ function NoPlanState({ onSetup }: { onSetup: () => void }) {
   );
 }
 
-function KpiRow({ projections }: { projections: RetirementProjections }) {
+function KpiRow({ projection }: { projection: FireProjection }) {
   const { t } = useTranslation();
-  const readiness = readinessConfig[projections.readiness];
-  const ReadinessIcon = readiness.icon;
+  const succeeded = projection.status === "success";
+  const atRetirement = projection.snapshots.find((s) => s.label === "retirement");
+  const pension = projection.pension_income.reduce((sum, row) => sum + row.monthly, 0);
+  const met = projection.goals.filter((g) => g.met).length;
 
   const kpis = [
     {
-      key: "fireNumber",
-      icon: Target,
-      value: formatCurrency(projections.fire_number),
+      key: "retireAt",
+      icon: Calendar,
+      value: succeeded
+        ? `${String(projection.retire_month).padStart(2, "0")}/${projection.retire_year} · ${projection.retire_age?.toFixed(1)}`
+        : t("dashboard.retirementCard.notReachable"),
+      color: succeeded ? "text-emerald-400" : "text-amber-400",
+      testId: "retirement-card-verdict",
+    },
+    {
+      key: "netWorthAtRetirement",
+      icon: Wallet,
+      value: atRetirement ? formatCurrency(atRetirement.net_worth) : "—",
       color: "text-blue-400",
     },
     {
-      key: "fireAge",
-      icon: Calendar,
-      value:
-        projections.fire_age === -1
-          ? t("earlyRetirement.projections.notReachable")
-          : `${projections.fire_age}`,
-      color:
-        projections.fire_age !== -1 &&
-        projections.fire_age <= projections.target_retirement_age
-          ? "text-emerald-400"
-          : "text-amber-400",
-    },
-    {
-      key: "yearsToFire",
-      icon: TrendingUp,
-      value:
-        projections.years_to_fire === -1 ? "—" : `${projections.years_to_fire}`,
+      key: "monthlyPension",
+      icon: Landmark,
+      value: pension > 0 ? formatCurrency(pension) : "—",
       color: "text-purple-400",
     },
     {
-      key: "monthlySavingsNeeded",
-      icon: Banknote,
-      // "On track!" only when the plan actually is — 0 extra savings can
-      // coexist with off_track readiness (depleting drawdown).
-      value:
-        projections.monthly_savings_needed === 0 &&
-        projections.readiness === "on_track"
-          ? t("earlyRetirement.projections.onTrackNoExtra")
-          : formatCurrency(projections.monthly_savings_needed),
-      color:
-        projections.monthly_savings_needed === 0 &&
-        projections.readiness === "on_track"
-          ? "text-emerald-400"
-          : "text-amber-400",
+      key: "goalsMet",
+      icon: ListChecks,
+      value: `${met}/${projection.goals.length}`,
+      color: met === projection.goals.length ? "text-emerald-400" : "text-amber-400",
     },
   ];
 
   return (
-    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
-      {/* Readiness + progress toward the FIRE number */}
-      <div className={`p-3 rounded-xl ${readiness.bg} border ${readiness.border}`}>
-        <div className="flex items-center gap-1.5 mb-1">
-          <ReadinessIcon size={14} className={`${readiness.color} shrink-0`} />
-          <span className="text-[10px] sm:text-xs text-[var(--text-muted)] truncate">
-            {t("earlyRetirement.projections.readiness")}
-          </span>
-          <InfoTooltip
-            text={t(
-              `earlyRetirement.projections.readinessHelp_${projections.readiness}`,
-            )}
-            iconSize={11}
-            width={220}
-          />
-        </div>
-        <p className={`text-sm font-bold ${readiness.color} truncate`}>
-          {t(`earlyRetirement.projections.readiness_${projections.readiness}`)}
-        </p>
-        <div className="mt-1.5 h-1.5 bg-[var(--surface)] rounded-full overflow-hidden">
-          <div
-            className={`h-full rounded-full ${readiness.bar}`}
-            style={{ width: `${Math.min(Math.max(projections.progress_pct, 0), 100)}%` }}
-          />
-        </div>
-        <span className="text-[10px] text-[var(--text-muted)]" dir="ltr">
-          {projections.progress_pct.toFixed(1)}%
-        </span>
-      </div>
-
+    <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
       {kpis.map((kpi) => (
         <div
           key={kpi.key}
           className="p-3 rounded-xl bg-[var(--surface-light)]/40 border border-[var(--surface-light)]"
+          data-testid={kpi.testId}
         >
           <div className="flex items-center gap-1.5 mb-1">
             <kpi.icon size={14} className={`${kpi.color} shrink-0`} />
             <span className="text-[10px] sm:text-xs text-[var(--text-muted)] truncate">
-              {t(`earlyRetirement.projections.${kpi.key}`)}
+              {t(`dashboard.retirementCard.${kpi.key}`)}
             </span>
           </div>
           <p className={`text-sm font-bold ${kpi.color} truncate`} dir="ltr">
@@ -286,6 +154,45 @@ function KpiRow({ projections }: { projections: RetirementProjections }) {
           </p>
         </div>
       ))}
+    </div>
+  );
+}
+
+function NetWorthPath({ projection }: { projection: FireProjection }) {
+  const { t } = useTranslation();
+  // Yearly points: 500-odd months is more than a card-sized chart can show.
+  const data = useMemo(
+    () =>
+      projection.months
+        .filter((_, index) => index % 12 === 0)
+        .map((m) => ({ age: Number(m.age.toFixed(1)), value: m.net_worth })),
+    [projection.months],
+  );
+  return (
+    <div data-testid="retirement-projection-chart">
+      <p className="mb-2 text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wider">
+        {t("fire.chart.netWorth")}
+      </p>
+      <div className="h-64" dir="ltr">
+        <ResponsiveContainer width="100%" height="100%">
+          <AreaChart data={data} margin={{ top: 4, right: 8, bottom: 0, left: 8 }}>
+            <CartesianGrid strokeDasharray="3 3" stroke="var(--surface-light)" />
+            <XAxis dataKey="age" tick={{ fontSize: 11 }} stroke="var(--text-muted)" />
+            <YAxis
+              tick={{ fontSize: 11 }}
+              stroke="var(--text-muted)"
+              tickFormatter={(v: number) => `${Math.round(v / 1000)}k`}
+              width={56}
+            />
+            <Tooltip
+              formatter={(value) => formatCurrency(Number(value ?? 0))}
+              labelFormatter={(age) => t("dashboard.retirementCard.atAge", { age })}
+              contentStyle={{ background: "var(--surface)", border: "1px solid var(--surface-light)" }}
+            />
+            <Area type="monotone" dataKey="value" stroke="#3b82f6" fill="#3b82f6" fillOpacity={0.15} />
+          </AreaChart>
+        </ResponsiveContainer>
+      </div>
     </div>
   );
 }

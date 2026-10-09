@@ -153,3 +153,47 @@ class TestFireCalculate:
         assert body["status"] in {"success", "goals_not_met"}
         assert all(not any(k.startswith("portfolio") for k in row["assets"])
                    for row in body["months"])
+
+
+class TestPlanEndpoints:
+    """The saved plan: derived, saved, reset, and run for the dashboard card."""
+
+    def test_unsaved_plan_is_derived(self, test_client) -> None:
+        """Before anything is saved, the plan comes from tracked data."""
+        response = test_client.get("/api/fire/plan")
+        assert response.status_code == 200
+        body = response.json()
+        assert body["saved"] is False
+        assert "balance" in body["linked"]
+        assert set(body["tracked"]["rows"]) >= {"portfolio", "keren", "loan"}
+
+    def test_projection_needs_a_date_of_birth(self, test_client) -> None:
+        """A plan with no date of birth asks for setup instead of failing."""
+        response = test_client.get("/api/fire/plan/projection")
+        assert response.status_code == 200
+        assert response.json()["status"] == "needs_setup"
+
+    def test_saved_plan_runs(self, test_client) -> None:
+        """A saved plan round-trips and its projection carries the monthly series."""
+        fields = {
+            "dateOfBirth": "1990-01-01",
+            "base_problem": "retire_at_age",
+            "wanted_retire_age": "55",
+            "num_expense_fields": "1",
+            "expenseSum1": "10000",
+        }
+        saved = test_client.put("/api/fire/plan", json={"fields": fields, "linked": []})
+        assert saved.status_code == 200
+        assert saved.json()["saved"] is True
+        assert saved.json()["fields"]["wanted_retire_age"] == "55"
+
+        projection = test_client.get("/api/fire/plan/projection").json()
+        assert projection["status"] in ("success", "goals_not_met")
+        assert projection["months"]
+
+    def test_reset_forgets_the_saved_plan(self, test_client) -> None:
+        """Deleting the plan returns the derived one."""
+        test_client.put("/api/fire/plan", json={"fields": {"balance": "1"}, "linked": []})
+        response = test_client.delete("/api/fire/plan")
+        assert response.status_code == 200
+        assert response.json()["saved"] is False

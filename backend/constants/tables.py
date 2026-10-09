@@ -62,6 +62,8 @@ class Tables(Enum):
     CLEARING_HOUSE_REPORTS : str
         Name of the table storing the pension clearing house's monthly
         household summaries.
+    FIRE_SCENARIOS : str
+        Name of the table storing the user's saved early-retirement plan.
     """
 
     CREDIT_CARD = "credit_card_transactions"
@@ -95,6 +97,7 @@ class Tables(Enum):
     RECURRING_DECISIONS = "recurring_decisions"
     INSIGHT_DISMISSALS = "insight_dismissals"
     CLEARING_HOUSE_REPORTS = "clearing_house_reports"
+    FIRE_SCENARIOS = "fire_scenarios"
 
 
 # The five transaction tables, keyed by the service name the frontend and API

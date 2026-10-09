@@ -206,7 +206,7 @@ export function ProjectionResults({ projection }: Props) {
         >
           {projection.pension_income.map((row) => (
             <p key={row.owner} className="text-sm text-[var(--text-secondary)]">
-              {t("fire.result.pensionIncome", {
+              {t(row.owner ? "fire.result.pensionIncome" : "fire.result.pensionIncomeUnnamed", {
                 owner: row.owner,
                 age: row.age.toFixed(1),
                 amount: money.format(row.monthly),

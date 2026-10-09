@@ -1,6 +1,18 @@
 import { useTranslation } from "react-i18next";
-import { Plus, Trash2 } from "lucide-react";
+import { Link2, Plus, RotateCcw, Trash2 } from "lucide-react";
 import type { FieldSpec, SectionSpec } from "./schema";
+
+/** How the form ties to tracked data. Absent on a free-standing scenario. */
+export interface TrackedLinks {
+  /** Single-value fields following tracked data. */
+  linked: Set<string>;
+  /** What tracked data says each of those fields is. */
+  scalars: Record<string, string>;
+  /** Tracked account name by source id (`investment:12`). */
+  sourceLabels: Record<string, string>;
+  /** Make a field follow tracked data again. */
+  onRelink: (name: string) => void;
+}
 
 interface Props {
   section: SectionSpec;
@@ -8,6 +20,7 @@ interface Props {
   onChange: (name: string, value: string) => void;
   onAddRow: (section: SectionSpec) => void;
   onRemoveRow: (section: SectionSpec, row: number) => void;
+  links?: TrackedLinks;
 }
 
 const inputClass =
@@ -21,11 +34,40 @@ function isVisible(field: FieldSpec, fields: Record<string, string>, suffix: str
   return field.visibleWhen.values.includes(value ?? "");
 }
 
-function Field({ field, name, fields, onChange }: {
+function LinkMark({ name, links }: { name: string; links?: TrackedLinks }) {
+  const { t } = useTranslation();
+  if (!links || !(name in links.scalars)) return null;
+  if (links.linked.has(name)) {
+    return (
+      <span
+        className="inline-flex items-center text-sky-400"
+        title={t("fire.plan.linkedField")}
+        data-testid={`fire-linked-${name}`}
+      >
+        <Link2 className="w-3 h-3" />
+      </span>
+    );
+  }
+  return (
+    <button
+      type="button"
+      className="inline-flex items-center text-[var(--text-muted)] hover:text-sky-400 transition-colors"
+      title={t("fire.plan.relinkField")}
+      aria-label={t("fire.plan.relinkField")}
+      data-testid={`fire-relink-${name}`}
+      onClick={() => links.onRelink(name)}
+    >
+      <RotateCcw className="w-3 h-3" />
+    </button>
+  );
+}
+
+function Field({ field, name, fields, onChange, links }: {
   field: FieldSpec;
   name: string;
   fields: Record<string, string>;
   onChange: Props["onChange"];
+  links?: TrackedLinks;
 }) {
   const { t } = useTranslation();
   const value = fields[name] ?? "";
@@ -46,8 +88,9 @@ function Field({ field, name, fields, onChange }: {
 
   return (
     <label className="block min-w-0">
-      <span className="block mb-1 text-xs text-[var(--text-muted)] truncate">
-        {t(field.labelKey)}
+      <span className="flex items-center gap-1 mb-1 text-xs text-[var(--text-muted)] min-w-0">
+        <span className="truncate">{t(field.labelKey)}</span>
+        <LinkMark name={name} links={links} />
       </span>
       {field.kind === "select" ? (
         <select className={inputClass} value={value} onChange={(e) => onChange(name, e.target.value)}>
@@ -71,7 +114,25 @@ function Field({ field, name, fields, onChange }: {
   );
 }
 
-export function ScenarioSection({ section, fields, onChange, onAddRow, onRemoveRow }: Props) {
+function RowSource({ source, links }: { source: string; links?: TrackedLinks }) {
+  const { t } = useTranslation();
+  if (!source || !links) return null;
+  // The household's typical spending and income are not accounts with a name.
+  const label = source.startsWith("tracked:")
+    ? t(`fire.plan.source.${source.slice("tracked:".length)}`)
+    : links.sourceLabels[source] ?? t("fire.plan.linkedRow");
+  return (
+    <span
+      className="inline-flex items-center gap-1 text-[10px] text-sky-400 min-w-0"
+      title={t("fire.plan.linkedRow")}
+    >
+      <Link2 className="shrink-0 w-3 h-3" />
+      <span className="truncate" dir="auto">{label}</span>
+    </span>
+  );
+}
+
+export function ScenarioSection({ section, fields, onChange, onAddRow, onRemoveRow, links }: Props) {
   const { t } = useTranslation();
   const repeatable = section.repeatable;
   const rowCount = repeatable ? Number(fields[`num_${repeatable.countKey}_fields`] ?? 0) : 0;
@@ -93,9 +154,16 @@ export function ScenarioSection({ section, fields, onChange, onAddRow, onRemoveR
       {!repeatable && (
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
           {section.fields
-            .filter((field) => isVisible(field, fields, ""))
+            .filter((field) => field.kind !== "hidden" && isVisible(field, fields, ""))
             .map((field) => (
-              <Field key={field.name} field={field} name={field.name} fields={fields} onChange={onChange} />
+              <Field
+                key={field.name}
+                field={field}
+                name={field.name}
+                fields={fields}
+                onChange={onChange}
+                links={links}
+              />
             ))}
         </div>
       )}
@@ -108,8 +176,13 @@ export function ScenarioSection({ section, fields, onChange, onAddRow, onRemoveR
               className="p-3 rounded-xl bg-[var(--surface-light)] border border-[var(--surface-light)]"
               data-testid={`fire-row-${section.key}-${row}`}
             >
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-[10px] text-[var(--text-muted)]">#{row}</span>
+              <div className="flex items-center justify-between gap-2 mb-2">
+                <span className="flex items-center gap-2 min-w-0 text-[10px] text-[var(--text-muted)]">
+                  #{row}
+                  {section.sourceField && (
+                    <RowSource source={fields[`${section.sourceField}${row}`] ?? ""} links={links} />
+                  )}
+                </span>
                 <button
                   type="button"
                   aria-label={t("common.delete")}
@@ -121,7 +194,7 @@ export function ScenarioSection({ section, fields, onChange, onAddRow, onRemoveR
               </div>
               <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
                 {section.fields
-                  .filter((field) => isVisible(field, fields, String(row)))
+                  .filter((field) => field.kind !== "hidden" && isVisible(field, fields, String(row)))
                   .map((field) => (
                     <Field
                       key={field.name}
