@@ -1,3 +1,9 @@
+## v1.95.6 (2026-10-09)
+
+### Fix
+
+- **savings-goals**: balanced books - target-month turns, full free-cash waterfall, faithful replay, chart stacking, property-tested (#374)
+
 ## v1.95.5 (2026-10-08)
 
 ### Fix
