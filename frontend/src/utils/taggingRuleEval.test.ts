@@ -73,50 +73,63 @@ describe("appendDescriptionConditions", () => {
     subconditions: [cond("contains", "SHUFERSAL")],
   };
 
-  it("appends a branch per value to an OR root", () => {
-    const grown = appendDescriptionConditions(orRoot, ["GOZ GOZ", "LOTIE"]);
+  // The new branches lead the list so the editor opens on the change rather
+  // than burying it under the rule's existing conditions.
+  it("prepends a branch per value to an OR root", () => {
+    const { conditions: grown } = appendDescriptionConditions(orRoot, ["GOZ GOZ", "LOTIE"]);
     expect(grown.type).toBe("OR");
     expect(grown.subconditions?.map((s) => s.value)).toEqual([
-      "SHUFERSAL",
       "GOZ GOZ",
       "LOTIE",
+      "SHUFERSAL",
     ]);
+  });
+
+  // The editor highlights the added branches by identity, so the nodes it is
+  // handed must be the very objects placed in the tree.
+  it("returns the added nodes as the same objects that sit in the tree", () => {
+    const { conditions: grown, added } = appendDescriptionConditions(orRoot, ["GOZ GOZ"]);
+    expect(added).toHaveLength(1);
+    expect(grown.subconditions?.[0]).toBe(added[0]);
+    expect(grown.subconditions?.[1]).toBe(orRoot.subconditions?.[0]);
   });
 
   // Wrapping rather than appending keeps an AND rule matching what it always
   // matched — appending into the AND would narrow it instead of widening it.
-  it("wraps a non-OR root in an OR instead of appending into it", () => {
+  it("wraps a non-OR root in an OR instead of adding into it", () => {
     const andRoot: ConditionNode = {
       type: "AND",
       subconditions: [cond("contains", "PAZ"), cond("contains", "FUEL")],
     };
-    const grown = appendDescriptionConditions(andRoot, ["GOZ GOZ"]);
+    const { conditions: grown } = appendDescriptionConditions(andRoot, ["GOZ GOZ"]);
     expect(grown.type).toBe("OR");
-    expect(grown.subconditions?.[0]).toEqual(andRoot);
-    expect(grown.subconditions?.[1].value).toBe("GOZ GOZ");
+    expect(grown.subconditions?.[0].value).toBe("GOZ GOZ");
+    expect(grown.subconditions?.[1]).toEqual(andRoot);
   });
 
   it("wraps a bare condition root", () => {
     const leaf = cond("contains", "PAZ");
-    const grown = appendDescriptionConditions(leaf, ["GOZ GOZ"]);
+    const { conditions: grown } = appendDescriptionConditions(leaf, ["GOZ GOZ"]);
     expect(grown).toEqual({
       type: "OR",
-      subconditions: [leaf, cond("contains", "GOZ GOZ")],
+      subconditions: [cond("contains", "GOZ GOZ"), leaf],
     });
   });
 
   // `contains` is case-insensitive on the backend, so a differently-cased
   // duplicate would be dead weight in the tree.
   it("skips values the tree already tests, ignoring case", () => {
-    expect(appendDescriptionConditions(orRoot, ["shufersal"])).toBe(orRoot);
+    const result = appendDescriptionConditions(orRoot, ["shufersal"]);
+    expect(result.conditions).toBe(orRoot);
+    expect(result.added).toEqual([]);
   });
 
   it("skips blank values and returns the tree untouched when nothing is left", () => {
-    expect(appendDescriptionConditions(orRoot, ["", "  ".trim()])).toBe(orRoot);
+    expect(appendDescriptionConditions(orRoot, ["", "  ".trim()]).conditions).toBe(orRoot);
   });
 
   it("dedupes repeated values within one call", () => {
-    const grown = appendDescriptionConditions(orRoot, ["GOZ GOZ", "goz goz"]);
+    const { conditions: grown } = appendDescriptionConditions(orRoot, ["GOZ GOZ", "goz goz"]);
     expect(grown.subconditions).toHaveLength(2);
   });
 
@@ -127,7 +140,7 @@ describe("appendDescriptionConditions", () => {
         { type: "AND", subconditions: [cond("contains", "PAZ")] },
       ],
     };
-    const grown = appendDescriptionConditions(nested, ["PAZ", "SONOL"]);
-    expect(grown.subconditions?.map((s) => s.value)).toEqual([undefined, "SONOL"]);
+    const { conditions: grown } = appendDescriptionConditions(nested, ["PAZ", "SONOL"]);
+    expect(grown.subconditions?.map((s) => s.value)).toEqual(["SONOL", undefined]);
   });
 });

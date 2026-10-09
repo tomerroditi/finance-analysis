@@ -1602,7 +1602,9 @@
     "deleteGroup": "Delete Group",
     "value": "Value",
     "min": "Min",
-    "max": "Max"
+    "max": "Max",
+    "newCondition": "New",
+    "newConditionHint": "Added from the selected transaction"
   },
   "errorBoundary": {
     "title": "Something went wrong",

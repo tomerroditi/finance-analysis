@@ -61,7 +61,8 @@ test.describe("Auto-tagging quick action — extend an existing rule", () => {
 
     // The editor opens on the existing rule, with its category/tag filled in
     // (a claimed tag used to be filtered out of the dropdown and render blank)
-    // and the transaction's description appended as a new OR branch.
+    // and the transaction's description added as a new OR branch — first in
+    // the list and marked "New", so the change is the first thing seen.
     const modal = page.locator(".modal-overlay").last();
     await expect(modal.getByRole("heading", { name: "Edit Rule" })).toBeVisible();
     // The modal renders its form twice (a mobile tab and a desktop pane), so
@@ -78,7 +79,16 @@ test.describe("Auto-tagging quick action — extend an existing rule", () => {
       await values.evaluateAll((els) =>
         els.map((el) => (el as HTMLInputElement).value),
       ),
-    ).toEqual(["UBER", "GETT", RIDE_REFUND]);
+    ).toEqual([RIDE_REFUND, "UBER", "GETT"]);
+
+    const marked = modal.locator("[data-new-condition]:visible");
+    await expect(marked).toHaveCount(1);
+    await expect(marked.getByText("New")).toBeVisible();
+    await expect(marked.locator('input[placeholder="Value"]')).toHaveValue(RIDE_REFUND);
+
+    // Correcting the seeded value keeps the mark on the branch.
+    await marked.locator('input[placeholder="Value"]').fill("RIDE REFUND");
+    await expect(modal.locator("[data-new-condition]:visible")).toHaveCount(1);
 
     await modal.getByRole("button", { name: "Save Rule" }).click();
     await expect(modal).toHaveCount(0, { timeout: 20_000 });
@@ -89,9 +99,11 @@ test.describe("Auto-tagging quick action — extend an existing rule", () => {
     })).json();
     expect(after).toHaveLength(before.length);
     const grown = after.find((rule: { id: number }) => rule.id === owner.id);
-    expect(
-      JSON.stringify(grown.conditions),
-    ).toContain(RIDE_REFUND);
+    expect(grown.conditions.subconditions[0]).toMatchObject({
+      field: "description",
+      operator: "contains",
+      value: "RIDE REFUND",
+    });
   });
 
   // The bulk bar opens with empty category/tag dropdowns, so nothing is
@@ -129,7 +141,11 @@ test.describe("Auto-tagging quick action — extend an existing rule", () => {
       await values.evaluateAll((els) =>
         els.map((el) => (el as HTMLInputElement).value),
       ),
-    ).toEqual(["WOLT", "TENBIS"]);
+    ).toEqual(["TENBIS", "WOLT"]);
+    await expect(modal.locator("[data-new-condition]:visible")).toHaveCount(1);
+    await expect(
+      modal.locator("[data-new-condition]:visible input[placeholder=\"Value\"]"),
+    ).toHaveValue("TENBIS");
 
     // The original `starts_with WOLT` survives as a branch of the new OR, so
     // the preview still carries the plain WOLT charges it always matched.

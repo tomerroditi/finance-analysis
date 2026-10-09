@@ -14,6 +14,13 @@ interface RuleBuilderProps {
     onChange: (value: ConditionNode) => void;
     depth?: number;
     onRemove?: () => void;
+    /**
+     * Nodes to mark as the change, e.g. the branch the "Add to Rule" quick
+     * action just added to an existing rule. Matched by identity; editing a
+     * marked node hands its mark to the replacement, so the badge survives the
+     * user correcting the value it was seeded with.
+     */
+    highlighted?: WeakSet<ConditionNode>;
 }
 
 const FIELDS = [
@@ -47,7 +54,7 @@ const OPERATORS: Record<string, { value: string; labelKey: string }[]> = {
     ],
 };
 
-export function RuleBuilder({ value, onChange, depth = 0, onRemove }: RuleBuilderProps) {
+export function RuleBuilder({ value, onChange, depth = 0, onRemove, highlighted }: RuleBuilderProps) {
     const { t } = useTranslation();
     const isGroup = value.type === "AND" || value.type === "OR";
 
@@ -76,6 +83,7 @@ export function RuleBuilder({ value, onChange, depth = 0, onRemove }: RuleBuilde
 
     const updateSubCondition = (index: number, newSub: ConditionNode) => {
         const newSubs = [...(value.subconditions || [])];
+        if (highlighted?.has(newSubs[index])) highlighted.add(newSub);
         newSubs[index] = newSub;
         onChange({ ...value, subconditions: newSubs });
     };
@@ -150,12 +158,13 @@ export function RuleBuilder({ value, onChange, depth = 0, onRemove }: RuleBuilde
                                     <div className="w-px h-full bg-[var(--surface-light)] my-1" />
                                 )}
                             </div>
-                            <div className="flex-1">
+                            <div className="flex-1 min-w-0">
                                 <RuleBuilder
                                     value={sub}
                                     onChange={(newSub) => updateSubCondition(idx, newSub)}
                                     depth={depth + 1}
                                     onRemove={() => removeSubCondition(idx)}
+                                    highlighted={highlighted}
                                 />
                             </div>
                         </div>
@@ -169,6 +178,7 @@ export function RuleBuilder({ value, onChange, depth = 0, onRemove }: RuleBuilde
     const fieldDef = FIELDS.find(f => f.value === value.field) || FIELDS[0];
     const isNumberField = fieldDef.type === "number";
     const operators = OPERATORS[fieldDef.type] || OPERATORS.text;
+    const isHighlighted = !!highlighted?.has(value);
 
     // Controlled type="number" inputs silently drop a lone "-" between keystrokes
     // (browsers omit it from e.target.value), making it impossible to type negative
@@ -184,8 +194,25 @@ export function RuleBuilder({ value, onChange, depth = 0, onRemove }: RuleBuilde
     };
 
     return (
-        <div className="grid grid-cols-[auto_1fr_auto] sm:flex sm:items-center gap-2 p-2 rounded-lg bg-[var(--surface-base)] border border-[var(--surface-light)] hover:border-[var(--primary)]/30 transition-all">
-            <div className="p-1.5 rounded bg-[var(--surface)] text-[var(--text-muted)] self-start sm:self-auto">
+        <div
+            data-new-condition={isHighlighted || undefined}
+            className={`relative grid grid-cols-[auto_1fr_auto] sm:flex sm:items-center gap-2 p-2 rounded-lg border transition-all ${
+                isHighlighted
+                    ? "bg-[var(--primary)]/10 border-[var(--primary)] ring-1 ring-[var(--primary)]/40"
+                    : "bg-[var(--surface-base)] border-[var(--surface-light)] hover:border-[var(--primary)]/30"
+            }`}
+        >
+            {isHighlighted && (
+                <span
+                    className="absolute -top-2.5 end-10 sm:end-2 px-1.5 rounded-full bg-[var(--primary)] text-white text-[10px] font-bold leading-4"
+                    title={t("ruleBuilder.newConditionHint")}
+                >
+                    {t("ruleBuilder.newCondition")}
+                </span>
+            )}
+            <div className={`p-1.5 rounded self-start sm:self-auto ${
+                isHighlighted ? "bg-[var(--primary)]/20 text-[var(--primary)]" : "bg-[var(--surface)] text-[var(--text-muted)]"
+            }`}>
                 <FileText size={14} />
             </div>
 
