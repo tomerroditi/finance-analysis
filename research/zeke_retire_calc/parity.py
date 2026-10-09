@@ -279,7 +279,11 @@ def _values(record, attribute: str, keys: list[str]) -> float:
 
 def diff(name: str, plan_hook=None) -> Report:
     """Replay `name` and compare every charted series, every month."""
-    fixture = load(name)
+    return diff_fixture(name, load(name), plan_hook)
+
+
+def diff_fixture(name: str, fixture: dict, plan_hook=None) -> Report:
+    """`diff` for a fixture held in memory — a fresh answer not yet on disk."""
     charts = fixture.get("charts") or {}
     if not charts.get("asset_plot"):
         return Report(name, 0, 0.0, error="no charts (the reference refused the run)")
@@ -337,9 +341,13 @@ def printed_retire_index(fixture: dict) -> int | None:
 
 def solver_check(name: str) -> tuple[int | None, int | None]:
     """`(ours, reference)` first retired month, from each side's own solver."""
+    return solver_check_fixture(load(name))
+
+
+def solver_check_fixture(fixture: dict) -> tuple[int | None, int | None]:
+    """`solver_check` for a fixture held in memory."""
     from backend.services.fire.solver import solve
 
-    fixture = load(name)
     outcome = solve(plan_from_reference(fixture["overrides"]), recorded_in(fixture))
     # The reference prints a retirement date only for a plan that meets its goals.
     return (outcome.retire_index if outcome.succeeded else None,

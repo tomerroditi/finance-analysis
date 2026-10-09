@@ -8,13 +8,14 @@ paths:
 How GitHub Actions are wired up. Read this before touching anything in
 `.github/workflows/`.
 
-## Three workflows, three responsibilities
+## Workflows and their responsibilities
 
 | Workflow                 | Trigger                | Purpose                                          |
 |--------------------------|------------------------|--------------------------------------------------|
 | `.github/workflows/ci.yml`     | `pull_request` (any base), manual | Validate every PR — backend pytest + frontend lint, type-check, build, vitest on all PRs; **the full Playwright e2e suite across 4 parallel shards** additionally runs on PRs targeting `main` or `dev`; the Schemathesis API-fuzz job runs only on PRs targeting `main`. Since feature PRs now target `main`, both extra jobs run on every one of them. Fails the PR if anything breaks. |
 | `.github/workflows/build-smoke.yml` | `pull_request` to main touching `build/`, `backend/`, `scraper/`, deps, or the workflow itself; manual | Build the Windows bundle on `windows-latest` and run its in-bundle smoke test + `--uninstall-cleanup` CLI + bundle-size cap. Green/red signal only — no artifacts uploaded, so it trades fidelity it doesn't need for speed: the frontend (`vite build`, no `tsc -b` — `ci.yml` type-checks) and the NSIS install run in the background during `poetry install`, and the installer is compiled uncompressed (`build_app.py --uncompressed-installer`; LZMA over the bundle was ~80 s of a ~4.5 min job). Like `release.yml` it installs `poetry install --only main,build` — never the dev group, which PyInstaller would follow optional imports into; `excludes` in `build/finance_analysis.spec` keeps a local dev-venv build identical. |
 | `.github/workflows/release.yml`| `push` to main         | `commitizen` bump, build the Windows installer (**no macOS artifact** — see `installation_and_updates.md`), smoke-test it, attach to the GitHub release. |
+| `.github/workflows/fire-canary.yml` | monthly schedule (15th), manual | Re-send ~20 recorded scenarios to the live zekestories.com calculator and fail if the early-retirement engine no longer agrees within 0.1% (`research/zeke_retire_calc/canary.py`). Not a PR gate — it tests an external site, not our diff. The fresh answers are kept as an artifact. |
 
 The split exists because:
 
