@@ -36,6 +36,13 @@ import {
   type SavingsGoalKind,
   type SavingsGoalFreeCash,
 } from "../../services/api";
+import {
+  FREE_CASH_KEY,
+  cumulativeRows,
+  lastMonths,
+  monthlyRows,
+  type HistoryMode,
+} from "./goalHistoryRows";
 import { useQueryKeys } from "../../hooks/useQueryKeys";
 import { useScrollCap } from "../../hooks/useScrollCap";
 import { GoalAutoLinkField, InvestmentTagsField } from "./GoalAutoLinkField";
@@ -74,9 +81,6 @@ const FREE_CASH_COLOR = CHART_TEXT_COLOR;
 
 /** Faint rule for the zero line — present enough to read against, no more. */
 const GRID_COLOR = "rgba(148, 163, 184, 0.25)";
-
-/** Series key for the unearmarked pool. */
-const FREE_CASH_KEY = "free_cash";
 
 /** How tall the waterfall may stand before it scrolls in place (26rem, px). */
 const LIST_CAP_PX = 416;
@@ -289,7 +293,7 @@ export function GoalsSection() {
 
       {!!pool?.has_goals && <FreeCashRow pool={pool} recalculating={recalculating} />}
 
-      {goals.length > 0 && <AllocationHistory />}
+      {goals.length > 0 && <AllocationHistory goals={goals} />}
 
       {editing !== null && (
         <GoalEditorModal
@@ -381,7 +385,7 @@ type HistoryRange = (typeof HISTORY_RANGES)[number];
  * remaining series rescale to their own size, and a double-click narrows to
  * one goal.
  */
-function AllocationHistory() {
+function AllocationHistory({ goals }: { goals: SavingsGoal[] }) {
   const { t } = useTranslation();
   const qk = useQueryKeys();
   const [range, setRange] = useState<HistoryRange>(12);
@@ -400,9 +404,15 @@ function AllocationHistory() {
   // click by click, rather than the isolation they just asked for.
   const [isolated, setIsolated] = useState<string | null>(null);
 
+  // Monthly reads what each month moved; cumulative reads what each goal had
+  // received by then. Running totals only add up from the first month, so the
+  // cumulative view always fetches the whole history and trims to the window
+  // itself.
+  const [mode, setMode] = useState<HistoryMode>("monthly");
+  const fetched = mode === "cumulative" ? 0 : range;
   const { data, isLoading, isFetching } = useQuery({
-    queryKey: qk.savingsGoals.timeline(range),
-    queryFn: async () => (await savingsGoalsApi.getTimeline(range)).data,
+    queryKey: qk.savingsGoals.timeline(fetched),
+    queryFn: async () => (await savingsGoalsApi.getTimeline(fetched)).data,
     // Nothing outside this panel reads the timeline, so a card that is never
     // expanded never pays for the window.
     enabled: open,
@@ -421,16 +431,11 @@ function AllocationHistory() {
   // One row per month with a column per goal, which is the shape a stacked
   // chart wants. Months where nothing moved still get a row — the backend
   // sends them, and a gap in a time series reads as "skipped", not "zero".
-  const rows = (data?.months ?? []).map((month) => {
-    const row: Record<string, number | string> = {
-      month: month.month,
-      [FREE_CASH_KEY]: month.free_cash,
-    };
-    for (const goal of month.goals) {
-      row[`g${goal.goal_id}`] = goal.total;
-    }
-    return row;
-  });
+  const months = data?.months ?? [];
+  const rows =
+    mode === "cumulative"
+      ? lastMonths(cumulativeRows(months, goals), range)
+      : monthlyRows(months);
 
   // Colour follows the goal, not its rank: keyed by id (stable) rather than
   // by priority, so reordering the waterfall never repaints the chart.
@@ -519,26 +524,53 @@ function AllocationHistory() {
           {t("dashboard.goals.historyTitle")}
         </button>
         {open && (
-          <div className="flex bg-[var(--surface-light)] rounded-lg p-0.5">
-            {HISTORY_RANGES.map((option) => (
-              <button
-                key={option}
-                onClick={() => setRange(option)}
-                // "All time" is only honest while there is more history than
-                // the widest fixed window; below that it shows the same months
-                // twice.
-                disabled={option === 0 && !hasMoreHistory}
-                className={`px-2 py-1 rounded-md text-[10px] md:text-xs font-bold transition-colors disabled:opacity-40 ${
-                  range === option
-                    ? "bg-[var(--surface)] text-[var(--primary)] shadow-sm"
-                    : "text-[var(--text-muted)] hover:text-[var(--text-primary)]"
-                }`}
-              >
-                {option === 0
-                  ? t("dashboard.goals.historyAll")
-                  : t("dashboard.goals.historyMonths", { count: option })}
-              </button>
-            ))}
+          <div className="flex flex-wrap items-center justify-end gap-1.5">
+            <div
+              className="flex bg-[var(--surface-light)] rounded-lg p-0.5"
+              role="group"
+              aria-label={t("dashboard.goals.historyModeLabel")}
+            >
+              {(["monthly", "cumulative"] as const).map((option) => (
+                <button
+                  key={option}
+                  type="button"
+                  onClick={() => setMode(option)}
+                  aria-pressed={mode === option}
+                  className={`px-2 py-1 rounded-md text-[10px] md:text-xs font-bold transition-colors ${
+                    mode === option
+                      ? "bg-[var(--surface)] text-[var(--primary)] shadow-sm"
+                      : "text-[var(--text-muted)] hover:text-[var(--text-primary)]"
+                  }`}
+                >
+                  {t(
+                    option === "monthly"
+                      ? "dashboard.goals.historyMonthly"
+                      : "dashboard.goals.historyCumulative",
+                  )}
+                </button>
+              ))}
+            </div>
+            <div className="flex bg-[var(--surface-light)] rounded-lg p-0.5">
+              {HISTORY_RANGES.map((option) => (
+                <button
+                  key={option}
+                  onClick={() => setRange(option)}
+                  // "All time" is only honest while there is more history than
+                  // the widest fixed window; below that it shows the same months
+                  // twice.
+                  disabled={option === 0 && !hasMoreHistory}
+                  className={`px-2 py-1 rounded-md text-[10px] md:text-xs font-bold transition-colors disabled:opacity-40 ${
+                    range === option
+                      ? "bg-[var(--surface)] text-[var(--primary)] shadow-sm"
+                      : "text-[var(--text-muted)] hover:text-[var(--text-primary)]"
+                  }`}
+                >
+                  {option === 0
+                    ? t("dashboard.goals.historyAll")
+                    : t("dashboard.goals.historyMonths", { count: option })}
+                </button>
+              ))}
+            </div>
           </div>
         )}
       </div>
@@ -574,7 +606,7 @@ function AllocationHistory() {
                       // place — free cash ended up under a goal, and the rounded
                       // ends landed mid-column. A new series order is a new
                       // chart.
-                      key={keys.join(",")}
+                      key={`${mode}:${keys.join(",")}`}
                       data={rows}
                       margin={{ top: 4, bottom: 0, left: 0, right: 4 }}
                       barCategoryGap="22%"
@@ -702,7 +734,11 @@ function AllocationHistory() {
           )}
 
           <p className="mt-2 text-[10px] text-[var(--text-muted)]">
-            {t("dashboard.goals.historyHint")}
+            {t(
+              mode === "cumulative"
+                ? "dashboard.goals.historyHintCumulative"
+                : "dashboard.goals.historyHint",
+            )}
           </p>
         </div>
       )}

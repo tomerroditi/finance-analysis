@@ -570,8 +570,14 @@ not closed.
   The timeline query is `enabled` on the panel being open, so a card nobody
   expands never fetches a window.
 
-  Stacked bars carry each month's per-goal funding **with the free-cash pool
-  stacked on top**; a negative segment is a clawback. Positives stack up from zero and negatives
+  A **Monthly / Cumulative** toggle picks the reading
+  (`goalHistoryRows.ts`): monthly bars are what each goal received that month;
+  cumulative bars are what it has received so far, opening balance included,
+  so each goal's last bar matches its card. Running totals only add up from
+  the first month, so the cumulative view fetches the whole history
+  (`timeline?months=0`) and trims to the 6M/12M window itself. Free cash is a
+  standing balance in both. Stacked bars carry each month's per-goal funding
+  **with the free-cash pool stacked on top**; a negative segment is a clawback. Positives stack up from zero and negatives
   down from it (`STACK_OFFSET = "sign"` in `charts/stackedBarShape.tsx`) —
   Recharts' default piles a negative segment onto the positive column and
   draws it over the bars. The pool is a standing
