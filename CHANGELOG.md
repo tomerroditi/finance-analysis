@@ -1,3 +1,9 @@
+## v1.96.1 (2026-10-09)
+
+### Fix
+
+- **goals-chart**: keep the history controls on one row and its tooltip off the legend (#376)
+
 ## v1.96.0 (2026-10-09)
 
 ### Feat
