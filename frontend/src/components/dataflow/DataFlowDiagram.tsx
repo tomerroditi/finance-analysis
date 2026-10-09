@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { Maximize2, Minus, Plus, X } from "lucide-react";
 import { useDataFlowData } from "./useDataFlowData";
 import type { DetailData } from "./dataFlowData";
+import { ForwardArrow } from "../common/ForwardArrow";
 
 const MIN_ZOOM = 0.25;
 const MAX_ZOOM = 1.5;
@@ -428,8 +429,9 @@ export function DataFlowDiagram() {
                 {f.highlights.map((h, j) => (
                   <li
                     key={j}
-                    className="text-[11px] leading-relaxed text-[var(--text-primary)] font-light before:content-['→_'] before:text-slate-500 before:font-medium"
+                    className="text-[11px] leading-relaxed text-[var(--text-primary)] font-light"
                   >
+                    <ForwardArrow className="text-slate-500 font-medium me-1" />
                     {h}
                   </li>
                 ))}
@@ -507,7 +509,7 @@ export function DataFlowDiagram() {
                       {s.flow.map((step, j) => (
                         <span key={j} className="contents">
                           {j > 0 && (
-                            <span className="text-[var(--text-muted)] text-xs">{"→"}</span>
+                            <ForwardArrow className="text-[var(--text-muted)] text-xs" />
                           )}
                           <span className="font-mono text-[11px] px-2.5 py-1 rounded bg-[var(--surface)] border border-[var(--surface-light)] text-[var(--text-primary)]">
                             {step}

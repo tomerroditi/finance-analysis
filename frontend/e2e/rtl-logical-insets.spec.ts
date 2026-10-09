@@ -65,6 +65,25 @@ async function knobIsOn(page: Page, labelText: string) {
   }, labelText);
 }
 
+/**
+ * Horizontal scale of the "View All" arrow on the Recent Transactions card:
+ * 1 unmirrored, -1 mirrored. The `→` glyph does not bidi-mirror on its own,
+ * so in Hebrew it pointed away from the reading direction until
+ * `<ForwardArrow />` started flipping it under RTL.
+ */
+async function viewAllArrowScaleX(page: Page): Promise<number | null> {
+  return page.evaluate(() => {
+    const arrow = document.querySelector(
+      '[data-card-id="recent"] a[href="/transactions"] span[aria-hidden="true"]',
+    );
+    if (!arrow) return null;
+    // Tailwind 4's scale utilities set the individual `scale` property, not
+    // `transform`, so that is the one to read.
+    const { scale } = getComputedStyle(arrow);
+    return scale === "none" ? 1 : Number(scale.split(" ")[0]);
+  });
+}
+
 test.describe("logical inset utilities", () => {
   // Self-heal demo mode, matching the other read-only specs, so the spec is
   // order-independent. Demo Mode lives in the browser context's
@@ -84,6 +103,9 @@ test.describe("logical inset utilities", () => {
     await navigateTo(page, "/");
     await expect(page.locator("aside")).toBeVisible({ timeout: 30_000 });
     await expect(page.locator("html")).toHaveAttribute("dir", "ltr");
+
+    // --- "View All →" points the reading way (LTR: unmirrored) ---
+    await expect.poll(() => viewAllArrowScaleX(page), { timeout: 30_000 }).toBe(1);
 
     // --- Sidebar footer stretches to the sidebar's full width (LTR) ---
     // With the dead class it shrink-wrapped to ~187px inside a 256px
@@ -119,6 +141,9 @@ test.describe("logical inset utilities", () => {
     // --- Flip to Hebrew and re-check, mirrored ---
     await page.getByText("עברית", { exact: true }).click();
     await expect(page.locator("html")).toHaveAttribute("dir", "rtl");
+
+    // --- …and is mirrored in RTL, so it still points the reading way ---
+    await expect.poll(() => viewAllArrowScaleX(page)).toBe(-1);
 
     const rtlOff = await settledKnobOffset(page, "התראות תקציב");
     await page

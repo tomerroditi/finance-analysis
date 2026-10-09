@@ -14,6 +14,7 @@ import { qkPrefix } from "../../../services/queryKeys";
 import { budgetLink } from "../../../utils/budgetNavigation";
 import { BudgetRuleGrid } from "./BudgetRuleGrid";
 import { normalizeAnalysis } from "./normalizeAnalysis";
+import { ForwardArrow } from "../../common/ForwardArrow";
 
 interface ProjectBudgetTabProps {
   selectedProject: string | null;
@@ -208,7 +209,7 @@ export const ProjectBudgetTab: React.FC<ProjectBudgetTabProps> = ({
               to={budgetLink("projects", { project: selectedProject })}
               className="text-sm font-medium text-[var(--primary)] hover:underline"
             >
-              {t("dashboard.viewAllBudgetRules")} &rarr;
+              {t("dashboard.viewAllBudgetRules")} <ForwardArrow />
             </Link>
           </div>
         </>

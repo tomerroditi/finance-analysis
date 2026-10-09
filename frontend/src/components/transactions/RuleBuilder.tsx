@@ -153,7 +153,7 @@ export function RuleBuilder({ value, onChange, depth = 0, onRemove, highlighted 
                     {value.subconditions?.map((sub, idx) => (
                         <div key={idx} className="flex gap-2">
                             <div className="flex flex-col items-center pt-2">
-                                <CornerDownRight size={14} className="text-[var(--text-muted)]" />
+                                <CornerDownRight size={14} className="text-[var(--text-muted)] rtl:-scale-x-100" />
                                 {idx < (value.subconditions?.length || 0) - 1 && (
                                     <div className="w-px h-full bg-[var(--surface-light)] my-1" />
                                 )}

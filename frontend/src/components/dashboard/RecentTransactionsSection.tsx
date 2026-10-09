@@ -37,6 +37,7 @@ import i18n from "../../i18n";
 import { usePendingRows } from "../../hooks/usePendingRows";
 import { useConfirm, useNotify } from "../../context/DialogContext";
 import { useScrollCap } from "../../hooks/useScrollCap";
+import { ForwardArrow } from "../common/ForwardArrow";
 
 function formatTransactionDate(dateStr: string): string {
   const d = new Date(dateStr);
@@ -379,14 +380,25 @@ export function RecentTransactionsFeed({
 
   return (
     <div className="bg-[var(--surface)] rounded-2xl p-4 md:p-6 border border-[var(--surface-light)]">
-      {/* The controls wrap under the title rather than overflow: the card's
-          width follows the dashboard grid, not the viewport, so a desktop
-          column can be narrower than both filter labels and "View All". */}
-      <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
-        <p className="text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
-          {t("dashboard.recentTransactions")}
-        </p>
-        <div className="flex items-center gap-2 shrink-0 ms-auto">
+      {/* Title and "View All" share the top row; the filters get a row of
+          their own beneath, starting from the reading edge. The card's width
+          follows the dashboard grid, not the viewport, so a desktop column is
+          too narrow for all three controls beside the title. */}
+      <div className="mb-4 space-y-2">
+        <div className="flex items-center justify-between gap-2">
+          <p className="text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
+            {t("dashboard.recentTransactions")}
+          </p>
+          <Link
+            to="/transactions"
+            className="text-sm font-medium text-[var(--primary)] hover:underline whitespace-nowrap shrink-0"
+          >
+            {t("dashboard.viewAll")} <ForwardArrow />
+          </Link>
+        </div>
+        {/* -ms-2 cancels the chips' px-2, so an inactive chip's icon lines up
+            with the title above it. */}
+        <div data-testid="recent-tx-filters" className="flex flex-wrap items-center gap-2 -ms-2">
           <button
             type="button"
             onClick={toggleOnlyUntagged}
@@ -418,12 +430,6 @@ export function RecentTransactionsFeed({
               </span>
             )}
           </button>
-          <Link
-            to="/transactions"
-            className="text-sm font-medium text-[var(--primary)] hover:underline whitespace-nowrap"
-          >
-            {t("dashboard.viewAll")} &rarr;
-          </Link>
         </div>
       </div>
 

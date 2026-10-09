@@ -27,6 +27,32 @@ function recentCard(page: Page): Locator {
   return page.locator(RECENT_CARD);
 }
 
+/**
+ * "View All" shares the title's row at the card's end edge; the filter chips
+ * sit on their own row beneath, starting from the title's (start) edge. The
+ * card's width follows the dashboard grid, so all three controls beside the
+ * title used to push "View All" past the card on desktop and onto a second
+ * row with the filters on a phone.
+ */
+async function expectHeaderLayout(card: Locator): Promise<void> {
+  const title = card.getByText("Recent Transactions", { exact: true });
+  const viewAll = card.getByRole("link", { name: /View All/ });
+  const filters = card.getByTestId("recent-tx-filters");
+  await expect(filters).toBeVisible();
+  const [cardBox, titleBox, viewAllBox, filtersBox] = await Promise.all([
+    card.boundingBox(),
+    title.boundingBox(),
+    viewAll.boundingBox(),
+    filters.getByRole("button").first().boundingBox(),
+  ]);
+  const centerY = (box: { y: number; height: number }) => box.y + box.height / 2;
+  expect(Math.abs(centerY(viewAllBox!) - centerY(titleBox!))).toBeLessThan(8);
+  expect(viewAllBox!.x + viewAllBox!.width).toBeLessThanOrEqual(cardBox!.x + cardBox!.width);
+  expect(filtersBox!.y).toBeGreaterThanOrEqual(titleBox!.y + titleBox!.height);
+  // The chip's own padding is pulled back, so its edge sits a few px before the title's.
+  expect(Math.abs(filtersBox!.x - titleBox!.x)).toBeLessThanOrEqual(10);
+}
+
 /** Scroll the feed's own scroll container by `delta` and return its scrollTop. */
 async function scrollFeed(page: Page, delta: number): Promise<number> {
   return page.evaluate(
@@ -284,19 +310,13 @@ test.describe("Dashboard recent transactions — row actions", () => {
     await withoutRuleFilter.click();
     await expect(withoutRuleFilter).toHaveAttribute("aria-pressed", "false");
 
-    // Two filter chips and "View All" share a header whose width follows the
-    // dashboard grid; the link must wrap under the title, not past the card.
-    const cardBox = await card.boundingBox();
-    const viewAllBox = await card.getByRole("link", { name: /View All/ }).boundingBox();
-    expect(cardBox && viewAllBox).toBeTruthy();
-    expect(viewAllBox!.x + viewAllBox!.width).toBeLessThanOrEqual(
-      cardBox!.x + cardBox!.width,
-    );
+    await expectHeaderLayout(card);
 
     // --- Phone width: the action bar spans the row, in at most two lines ---
     // The bar used to sit indented past the row's icon column, which left it
     // narrow enough to wrap seven actions onto three lines.
     await page.setViewportSize({ width: 390, height: 900 });
+    await expectHeaderLayout(card);
     const row = card.getByTestId("recent-tx-row").first();
     await expect(row).toBeVisible();
     await row.click();
