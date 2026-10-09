@@ -311,9 +311,9 @@ class GoalCrudMixin:
             raise EntityNotFoundException(f"Savings goal {goal_id} not found")
         self._reject_investment_goal(goal, "take single transactions")
         self.repo.upsert_link(goal_id, source_type, source_id, source_table, link_type)
-        # Links feed the context, so anything cached before this write is stale.
-        self._context_cache = None
-        return self._after_write()
+        # A link moves money in whatever month the transaction is in, and can
+        # move a transaction off another goal: the whole history is restated.
+        return self._restate_for_transfers(None)
 
     def unlink_transaction(self, link_id: int) -> list[dict[str, Any]]:
         """Detach a transaction from its goal.
@@ -334,8 +334,7 @@ class GoalCrudMixin:
             If the link does not exist.
         """
         self.repo.delete_link(link_id)
-        self._context_cache = None
-        return self._after_write()
+        return self._restate_for_transfers(None)
 
     def set_spending_link(
         self, goal_id: int, category: str | None, tags: list[str] | None = None
@@ -375,8 +374,8 @@ class GoalCrudMixin:
         if goal and category is not None:
             self._reject_investment_goal(goal, "pay for spending")
         self.repo.set_utilization_rule(goal_id, category, self._join_tags(tags))
-        self._context_cache = None
-        return self._after_write()
+        # The rule claims spending in every month since the goal started.
+        return self._restate_for_transfers(goal.start_month if goal else None)
 
     @staticmethod
     def _join_tags(tags: list[str] | None) -> str | None:

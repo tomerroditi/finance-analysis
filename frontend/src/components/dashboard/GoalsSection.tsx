@@ -47,7 +47,7 @@ import {
   roundedStackShape,
 } from "../charts/stackedBarShape";
 import { qkPrefix } from "../../services/queryKeys";
-import { useConfirm, useNotify } from "../../context/DialogContext";
+import { useConfirm } from "../../context/DialogContext";
 import { Modal } from "../common/Modal";
 import { Skeleton } from "../common/Skeleton";
 import { ChartTooltip } from "../charts/ChartTooltip";
@@ -90,6 +90,8 @@ const LIST_CAP_SLACK_PX = 120;
  * lets the card ask whether any reorder is still in flight.
  */
 const REORDER_KEY = ["savings-goals", "reorder"] as const;
+/** Every other goal write: each one restates the history the chart draws. */
+const GOAL_WRITE_KEY = ["savings-goals", "write"] as const;
 
 /** Figures awaiting the rebuilt ledger pulse faintly rather than vanish. */
 const RECALCULATING_CLASS = "animate-pulse opacity-50 transition-opacity";
@@ -118,7 +120,6 @@ export function GoalsSection() {
   const qk = useQueryKeys();
   const queryClient = useQueryClient();
   const confirm = useConfirm();
-  const notify = useNotify();
   const [editing, setEditing] = useState<SavingsGoal | "new" | null>(null);
 
   const recalculating = useIsMutating({ mutationKey: REORDER_KEY }) > 0;
@@ -149,6 +150,7 @@ export function GoalsSection() {
     queryClient.invalidateQueries({ queryKey: qkPrefix.savingsGoals });
 
   const deleteMutation = useMutation({
+    mutationKey: GOAL_WRITE_KEY,
     mutationFn: (id: number) => savingsGoalsApi.delete(id),
     onSuccess: invalidate,
   });
@@ -191,56 +193,6 @@ export function GoalsSection() {
     // history have caught up with the rebuilt ledger too.
     onSettled: () => invalidate(),
   });
-
-  const claimMutation = useMutation({
-    // The update restates the goal's history itself: stored months were
-    // computed against the old opening balance.
-    mutationFn: ({ goal, amount }: { goal: SavingsGoal; amount: number }) =>
-      savingsGoalsApi.update(goal.id, { opening_balance: amount }),
-    onSuccess: invalidate,
-  });
-
-  /** Offer the free cash that predates a goal as its opening balance. */
-  const claimFreeCash = async (goal: SavingsGoal) => {
-    const start = goal.start_month?.slice(0, 7) || currentMonthKey();
-    // The row can still hold the list from before a claim that just landed,
-    // so compare against the server's figures rather than the cache.
-    // `staleTime: 0` is what forces that: the app's default keeps a query
-    // fresh for five minutes, and `fetchQuery` serves a fresh entry from
-    // cache without asking. In the window between a claim reaching the
-    // server and its mutation settling into an invalidation, that cached
-    // entry still holds the pre-claim opening balance — so the guard below
-    // compared the new figure against the old one and re-offered a claim
-    // that had already been applied.
-    const [{ free_cash: amount }, goalsNow] = await Promise.all([
-      queryClient.fetchQuery({
-        queryKey: qk.savingsGoals.freeCashBefore(start, goal.id),
-        queryFn: async () => (await savingsGoalsApi.getFreeCashBefore(start, goal.id)).data,
-        staleTime: 0,
-      }),
-      queryClient.fetchQuery({
-        queryKey: qk.savingsGoals.all(),
-        queryFn: async () => (await savingsGoalsApi.getAll()).data,
-        staleTime: 0,
-      }),
-    ]);
-    const held = goalsNow.find((g) => g.id === goal.id)?.opening_balance ?? goal.opening_balance;
-    const month = monthKeyLabel(start);
-    if (Math.abs(amount - held) < 0.005) {
-      notify.info(t("dashboard.goals.claimNothing", { name: goal.name, month }));
-      return;
-    }
-    const ok = await confirm({
-      title: t("dashboard.goals.claimTitle"),
-      message: t("dashboard.goals.claimConfirm", {
-        name: goal.name,
-        amount: formatCurrency(amount),
-        month,
-      }),
-      confirmLabel: t("dashboard.goals.claimAction"),
-    });
-    if (ok) claimMutation.mutate({ goal, amount });
-  };
 
   const goals = data ?? [];
 
@@ -321,7 +273,6 @@ export function GoalsSection() {
               onMoveUp={() => move(index, -1)}
               onMoveDown={() => move(index, 1)}
               onEdit={() => setEditing(goal)}
-              onClaim={() => void claimFreeCash(goal)}
               onDelete={async () => {
                 const ok = await confirm({
                   title: t("common.deleteTitle"),
@@ -449,13 +400,23 @@ function AllocationHistory() {
   // click by click, rather than the isolation they just asked for.
   const [isolated, setIsolated] = useState<string | null>(null);
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isFetching } = useQuery({
     queryKey: qk.savingsGoals.timeline(range),
     queryFn: async () => (await savingsGoalsApi.getTimeline(range)).data,
     // Nothing outside this panel reads the timeline, so a card that is never
     // expanded never pays for the window.
     enabled: open,
   });
+
+  // A goal write restates the whole history server-side, and the chart only
+  // refetches once it lands: until then it would draw the old history beside
+  // goal rows that already show the new one. It says so instead, as the rows
+  // do during a reorder.
+  const writing =
+    useIsMutating({ mutationKey: GOAL_WRITE_KEY }) +
+      useIsMutating({ mutationKey: REORDER_KEY }) >
+    0;
+  const recalculating = writing || (isFetching && !isLoading);
 
   // One row per month with a column per goal, which is the shape a stacked
   // chart wants. Months where nothing moved still get a row — the backend
@@ -592,8 +553,9 @@ function AllocationHistory() {
             </p>
           ) : (
             <div
-              className="rounded-xl border border-[var(--surface-light)] bg-[var(--surface-light)]/20 p-3"
+              className={`rounded-xl border border-[var(--surface-light)] bg-[var(--surface-light)]/20 p-3 ${recalculating ? RECALCULATING_CLASS : ""}`}
               data-testid="goals-history-chart"
+              aria-busy={recalculating}
             >
               {keys.length === 0 ? (
                 // Goals exist, but no month in this window moved a shekel into
@@ -606,6 +568,13 @@ function AllocationHistory() {
                 <div className="h-48 md:h-56">
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart
+                      // Recharts 3 stacks bars in the order they first mounted,
+                      // not the order they render in: a reordered goal, a new
+                      // one, or a series a wider window brings in kept its old
+                      // place — free cash ended up under a goal, and the rounded
+                      // ends landed mid-column. A new series order is a new
+                      // chart.
+                      key={keys.join(",")}
                       data={rows}
                       margin={{ top: 4, bottom: 0, left: 0, right: 4 }}
                       barCategoryGap="22%"
@@ -756,7 +725,6 @@ function GoalRow({
   onMoveUp,
   onMoveDown,
   onEdit,
-  onClaim,
   onDelete,
 }: {
   goal: SavingsGoal;
@@ -767,7 +735,6 @@ function GoalRow({
   onMoveUp: () => void;
   onMoveDown: () => void;
   onEdit: () => void;
-  onClaim: () => void;
   onDelete: () => void;
 }) {
   const { t } = useTranslation();
@@ -828,21 +795,6 @@ function GoalRow({
           >
             <ChevronDown size={14} />
           </button>
-          {/* A closed goal's history is frozen, so there is nothing to restate;
-              a goal filled by its own income (an investment goal, or a
-              "saved into" rule) holds exactly that income, never free cash —
-              claiming free cash into one was how a wedding fund stopped
-              using its gifts. */}
-          {!goal.is_closed && !isInvestment && !goal.contribution_category && (
-            <button
-              onClick={onClaim}
-              aria-label={t("dashboard.goals.claimAriaLabel")}
-              title={t("dashboard.goals.claimAriaLabel")}
-              className="p-1.5 rounded-lg text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-light)] transition-colors"
-            >
-              <Wallet size={14} />
-            </button>
-          )}
           <button onClick={onEdit} aria-label={t("common.edit")} className="p-1.5 rounded-lg text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-light)] transition-colors">
             <Pencil size={14} />
           </button>
@@ -1007,18 +959,9 @@ function GoalEditorModal({ goal, onClose }: { goal: SavingsGoal | null; onClose:
       tags: back ? splitRuleTags(goal?.funding_tags) : [],
     });
   };
-  const qk = useQueryKeys();
 
   const effectiveStart = startMonth || currentMonthKey();
   const startLabel = monthKeyLabel(effectiveStart);
-
-  const { data: freeBefore } = useQuery({
-    queryKey: qk.savingsGoals.freeCashBefore(effectiveStart, goal?.id),
-    queryFn: async () =>
-      (await savingsGoalsApi.getFreeCashBefore(effectiveStart, goal?.id)).data,
-    // Only a cash goal can take over free cash.
-    enabled: !isInvestment,
-  });
 
   // Saving restates the goal's history; the editor says so before an opening
   // balance moves, since that changes every month since the start.
@@ -1026,6 +969,7 @@ function GoalEditorModal({ goal, onClose }: { goal: SavingsGoal | null; onClose:
     !isInvestment && (Number(openingBalance) || 0) !== (goal?.opening_balance ?? 0);
 
   const save = useMutation({
+    mutationKey: GOAL_WRITE_KEY,
     mutationFn: async (payload: SavingsGoalInput) => {
       return goal
         ? await savingsGoalsApi.update(goal.id, payload)
@@ -1162,20 +1106,6 @@ function GoalEditorModal({ goal, onClose }: { goal: SavingsGoal | null; onClose:
             <p className="text-[10px] text-[var(--text-muted)] mt-1">
               {t("dashboard.goals.openingHint")}
             </p>
-            {!!freeBefore && freeBefore.free_cash > 0 && !saveRule.category && (
-              <button
-                type="button"
-                data-testid="goal-opening-use-free-cash"
-                onClick={() => setOpeningBalance(String(freeBefore.free_cash))}
-                className="mt-1.5 inline-flex items-center gap-1.5 text-start text-xs font-medium text-[var(--primary)] hover:underline"
-              >
-                <Wallet size={12} className="shrink-0" />
-                {t("dashboard.goals.openingUseFreeCash", {
-                  amount: formatCurrency(freeBefore.free_cash),
-                  month: startLabel,
-                })}
-              </button>
-            )}
             {!!goal && openingChanged && (
               <p className="text-[10px] text-amber-400 mt-1">
                 {t("dashboard.goals.openingRestateHint", { month: startLabel })}
