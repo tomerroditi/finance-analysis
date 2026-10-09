@@ -33,6 +33,40 @@ export function monthKeysOfYear(year: number): string[] {
 }
 
 /**
+ * `YYYY-MM` keys a project's trend spans, oldest first: from its first
+ * transaction to the current month — or, once the project is closed, to its
+ * last transaction. A closed project is finished; running its range on to
+ * today stretched the burn-down across months it was never part of and
+ * diluted its average per month with every month since it ended.
+ */
+export function projectMonthKeys(
+  transactions: TrendTransaction[],
+  closed = false,
+  now: Date = new Date(),
+): string[] {
+  const dates = transactions
+    .map((tx) => (tx.date ? String(tx.date).slice(0, 7) : null))
+    .filter((key): key is string => Boolean(key))
+    .sort();
+  const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+  const start = dates[0] ?? today;
+  const end = closed && dates.length ? dates[dates.length - 1] : today;
+
+  const keys: string[] = [];
+  const [startYear, startMonth] = start.split("-").map(Number);
+  const [endYear, endMonth] = end.split("-").map(Number);
+  const cursor = new Date(startYear, startMonth - 1, 1);
+  const guard = new Date(endYear, endMonth - 1, 1);
+  while (cursor <= guard && keys.length < 120) {
+    keys.push(
+      `${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, "0")}`,
+    );
+    cursor.setMonth(cursor.getMonth() + 1);
+  }
+  return keys.length ? keys : [end];
+}
+
+/**
  * Sum transactions into one bucket per month key.
  *
  * Amounts are summed as spend-positive (`-amount`, since expenses are stored

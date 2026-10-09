@@ -5,6 +5,7 @@ import {
   lastActivePeriod,
   monthKeysEndingAt,
   monthKeysOfYear,
+  projectMonthKeys,
 } from "./budgetTrends";
 
 describe("budgetTrends", () => {
@@ -88,6 +89,33 @@ describe("budgetTrends", () => {
 
     it("falls back to the final period when nothing happened", () => {
       expect(lastActivePeriod([0, 0, 0])).toBe(2);
+    });
+  });
+
+  describe("projectMonthKeys", () => {
+    const now = new Date(2026, 9, 9);
+    const transactions = [
+      { date: "2025-11-20", amount: -500 },
+      { date: "2026-01-04", amount: -300 },
+    ];
+
+    it("runs an open project from its first transaction to the current month", () => {
+      const keys = projectMonthKeys(transactions, false, now);
+      expect(keys[0]).toBe("2025-11");
+      expect(keys[keys.length - 1]).toBe("2026-10");
+      expect(keys).toHaveLength(12);
+    });
+
+    it("stops a closed project at its last transaction", () => {
+      expect(projectMonthKeys(transactions, true, now)).toEqual([
+        "2025-11",
+        "2025-12",
+        "2026-01",
+      ]);
+    });
+
+    it("falls back to the current month when there is nothing on record", () => {
+      expect(projectMonthKeys([], true, now)).toEqual(["2026-10"]);
     });
   });
 });
