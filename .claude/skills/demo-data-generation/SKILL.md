@@ -56,7 +56,7 @@ Five goals demonstrate every way a goal can be funded, in one waterfall:
 | # | Goal | Funded by | Demonstrates |
 |---|---|---|---|
 | 1 | Emergency Fund | cash only, capped 2,500/mo | a goal that filled — "Achieved 🎉" |
-| 2 | Kids' Education Fund | an **investment goal** over `Investments / Savings Plan` (the 1,500 monthly deposits) | an investment goal, and `monthly_needed` off a long `target_date` |
+| 2 | Kids' Education Fund | cash, capped 1,500/mo | `monthly_needed` off a long `target_date` |
 | 3 | Wedding Fund | cash, with two wedding bank transfers linked as **utilizations** | money set aside *and* since spent, without the target shrinking |
 | 4 | Home Renovation Fund | cash, with a large `opening_balance` | an opening balance, which comes straight out of the pool in the goal's first month |
 | 5 | New Car Fund | the same, further off and lower priority | a goal still filling behind the others |
@@ -254,7 +254,7 @@ scripts/generate_demo_data.py
 ├── create_pending_refunds          ← 7 refunds covering all statuses + split source
 ├── create_liabilities              ← Mortgage, Car Loan, paid-off Personal Loan
 ├── create_retirement_goal          ← derives KH totals from insurance-account constants
-├── create_savings_goals            ← 5-goal waterfall + an investment goal + utilizations
+├── create_savings_goals            ← 5-goal waterfall + utilizations
 ├── create_scraping_history
 ├── generate_insurance_data         ← pension + KH per Israeli law (see rules above)
 └── main()                          ← orchestrates, drops+recreates the DB, prints row counts

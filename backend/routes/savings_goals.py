@@ -32,9 +32,6 @@ class SavingsGoalCreate(ApiRequestModel):
     contribution_tags: str | None = None
     utilization_category: str | None = None
     utilization_tags: str | None = None
-    funding_category: str | None = None
-    funding_tags: str | None = None
-    kind: Literal["cash", "investment"] = "cash"
     notes: str | None = None
 
 
@@ -51,10 +48,6 @@ class SavingsGoalUpdate(ApiRequestModel):
     contribution_tags: str | None = None
     utilization_category: str | None = None
     utilization_tags: str | None = None
-    funding_category: str | None = None
-    funding_tags: str | None = None
-    #: Switches the goal between saving cash and investing; restates history.
-    kind: Literal["cash", "investment"] | None = None
     notes: str | None = None
 
 

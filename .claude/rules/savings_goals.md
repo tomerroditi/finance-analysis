@@ -72,12 +72,13 @@ if free_cash < 0:                                (the month overspent)
   month; only then is it frozen. Frozen from its first month, it skipped the
   borrowing that had paid its bills, so every read after it auto-closed
   rewrote its history (a wedding fund read 213K against a 199K target).
-- **A target date ends a goal's turn** (`open_for` in `_simulate`): it takes
-  new money — waterfall surplus, or a deposit no goal's cash covers — only up
-  to its target month. Past it, it keeps what it holds and can still invest
-  that cash, and the surplus moves on to the goals below. Without the end, a
-  "Yearly savings 2024" goal at the top of the order took every surplus of
-  2025 and 2026, starving every goal below it.
+- **A target date is a deadline, not an end.** It drives the card's
+  "₪X/mo for N months" and "short · target date passed" lines; a goal still
+  short past it keeps collecting free cash until it is full. (A while ago the
+  target month ended a goal's turn, to stop "Yearly savings 2024" — an
+  investment goal at the top of the order — from taking every later surplus.
+  With investment goals gone that rule only starved a late trip fund, so it
+  was dropped.)
 
 ## The free-cash pool
 
@@ -110,7 +111,7 @@ engine starts taking money back out of the goals.
   pool is prior wealth walked forward through the realized surplus, so both
   halves of every balanced pair must be in it. **Manual investments are such
   a pair**: their deposits are tracked transactions (they leave the pool when
-  they happen, and an investment goal counts them), and their investment
+  they happen), and their investment
   prior wealth — `-(sum of those deposits)` — is the money that paid for them
   outside any tracked account. `_opening_free_cash` therefore adds investment
   prior wealth (open and closed investments, as the net-worth chart does) to
@@ -144,7 +145,7 @@ engine starts taking money back out of the goals.
 - **The waterfall hands out the whole pool, not just the month's new
   surplus** (`pool = max(0, free_cash)`). Free cash exists to fill goals: it
   is left over only once every goal that can still take money is full,
-  capped for the month, or past its target month. Distributing only each
+  or capped for the month. Distributing only each
   month's new surplus left 100K idle on real data while goals sat short —
   money already in the accounts when a goal started, and bills a wedding fund
   borrowed for and its gifts repaid, never reached any goal. The trade-off:
@@ -197,98 +198,29 @@ matters most is drained last.
   It hands money back to `free_cash`, not to the waterfall; getting this wrong
   lets a deficit month fund a goal that had no row there yet.
 
-## Investment goals: filled by transfers, not by surplus
+## Investment goals were removed
 
-A goal has a `kind` (`savings_goals.kind`; `NULL` — a row
-older than the column, or a demo DB synced by `sync_missing_columns` — reads
-as `cash`, via `common.is_investment_goal`). A **cash** goal is everything
-else in this file. An **investment** goal answers "have I invested X?":
+Goals are cash earmarks only. Investment goals (`kind='investment'`, with an
+optional `funding_category` / `funding_tags` income) tried to say, after the
+fact, which goal each investment transfer belonged to: shared transfers
+between goals, withdrawals, cash "ready to invest", income that paid for some
+deposits and not others. Every answer opened a new edge case. Migration
+`2a03db5febd7` deleted them (with their links and allocations — their money
+was invested, so none could become a cash goal: one fed by a gift would claim
+cash sitting in an investment) and dropped the columns.
 
-- **Progress is the net amount moved into investments.** Its
-  `contribution_category` is always `INVESTMENTS_CATEGORY` — the service sets
-  it on create and ignores any change, since every investment transfer lives
-  in that one category — and its optional `contribution_tags` narrow it to
-  some holdings (e.g. Pakam); none means every investment. `_goal_by_transaction` maps them as `LINK_INVESTED` (never stored),
-  **signed** and gated on `start_month` — deposits add, withdrawals take back,
-  earlier transfers stay ordinary. `_compute_context` reports them in
-  `invested`, out of the surplus.
-- **It never takes part in the waterfall or its clawback**, and never
-  auto-closes. `funded` is only its transfers (the plan records them in
-  `contributed`); the row's `this_month_allocation` is the month's net
-  transfers, shown as "invested" / "withdrawn".
-- **Investing is progress, not overspending.** A transfer to a plain
-  Investments category is a deficit that can claw back the cash goals — a
-  75K month into a savings deposit used to take money back out of a trip
-  fund. An investment goal's transfers leave the free-cash pool (the money is
-  no longer liquid) *after* that month's clawback, floored at zero, so they
-  can never reach another goal. A withdrawal hands the money back. The flip
-  side: a transfer the pool could not cover is treated as untracked money,
-  so `liquid` can sit above the bank for that amount.
-- **It is not cash.** `get_free_cash` leaves it out of `earmarked` and
-  `liquid`.
-- **It can name the income that pays for it** (`funding_category` /
-  `funding_tags`, "Paid from income" in the editor; investment goals only).
-  `_goal_by_transaction` maps that income as `LINK_FUNDING` (never stored,
-  from the goal's start month), `_compute_context` reports it in `funding`,
-  out of the surplus, and `_simulate` keeps it in `to_invest`: each deposit
-  is paid from it first and only the rest leaves free cash; a withdrawal
-  still goes back to free cash. What is not yet invested is cash the goal
-  holds — the payload's `to_invest` ("… ready to invest"), counted in
-  `earmarked` and in how far the pool may go negative.
-- **Every investment goal holds cash and takes its waterfall turn.** Its
-  progress is what it holds — income, waterfall surplus and new money
-  invested — invested or not. Investing only moves its cash (`plan.invested`,
-  which the card's "invested this month" reads). A plain investment goal used
-  to be filled only by transfers and skipped the waterfall, so a January
-  withdrawal left "Yearly savings" at −40K beside 300K of free cash.
-- **Two investment goals can match one transfer** (both counting every
-  Investments transfer, say). `_goal_by_transaction` no longer settles it —
-  it returns each transfer's *group* of matching goals, highest first, and
-  `invested` is keyed by group. `_split_transfer` splits each month's net per
-  group: a deposit first draws on the cash the goals hold (highest first);
-  the rest is new progress for the highest goal still short of its target
-  that has no income of its own, paid from free cash, or an ordinary transfer
-  when there is none. A withdrawal goes back into the cash of the goals that
-  invested, never past what each invested; the rest returns to free cash. So
-  no investment goal goes negative. Rules used
-  to be applied in waterfall order with the last writer winning, so the
-  *lowest* goal took every shared transfer from its start month on: a
-  "Yearly savings" goal started in January swallowed the deposits made out
-  of a June wedding gift, and the "Marriage kickstart" goal the gift was for
-  sat on 200K "ready to invest" that had already been invested. Saved-into
-  rules that overlap now go to the higher goal too, as documented.
-- **A goal can switch kind** (`update(kind=...)` → `_change_kind`, the
-  editor's type choice is shown when editing too). What one kind is filled by
-  means nothing to the other, so the switch clears it — to investment: the
-  opening balance, cap, spending rule, saved-into rule and single-transaction
-  links, with the rule set to Investments; to cash: the investment and
-  funding rules — then applies the fields sent with it and restates history
-  from the earlier of the old and new start months. A closed goal must be
-  reopened first. The editor warns before saving and blanks the rules of the
-  kind it leaves (restoring them if switched back).
-- **One income feeds one goal.** A saved-into rule and a funding rule both
-  claim income, so `_validate_income_claims` refuses a second claim on the
-  same category (overlapping tags, or either side covering every tag), and a
-  funding rule on a cash goal.
-- **Cash-goal settings are refused** (`_validate_investment_fields`,
-  `_reject_investment_goal`): it takes no
-  `opening_balance`, `monthly_cap`, spending rule or single linked
-  transaction. The editor
-  offers only name, target, start, date and "Only these investments" (a
-  tags-only picker, `InvestmentTagsField`).
-- **Creating, rescoping or deleting one restates history from its start
-  month** (`_restate_for_transfers` → `rebuild`). Which transfers it owns
-  decides, in every month they touch, whether they are progress or a deficit
-  that clawed back the cash goals; applying that only forward would leave
-  every old clawback in place. Pinned by
-  `test_creating_and_deleting_it_restate_the_past`.
+- **Investing is an ordinary outflow.** A transfer into an investment leaves
+  free cash, and a deposit bigger than the pool is a deficit that can claw a
+  cash goal back, like any other spending of earmarked money.
+- **How much a year saved** — the question the yearly investment goals stood
+  in for — is measured on its own, outside the waterfall. Don't reintroduce
+  a way for a goal to own investment transfers.
 
 ## Goals with income of their own: exactly that income, surplus for the gap
 
-A cash goal with a `contribution_category` (a "saved into" rule — the wedding
-fund fed by `Other Income / Wedding`), and an investment goal with a funding
-income, are **filled by that income first** and still **take their waterfall
-turn** for the rest.
+A goal with a `contribution_category` (a "saved into" rule — the wedding
+fund fed by `Other Income / Wedding`) is **filled by that income first** and
+still **takes its waterfall turn** for the rest.
 
 - **Surplus fills only what the income will never cover.** `surplus_room`
   is the target less every shekel of the goal's own income in the history
@@ -316,8 +248,8 @@ turn** for the rest.
   now the intended behaviour: that is the goal's place in the waterfall, and
   the gifts hand it back when they land.
 - **A closed goal's later income is ordinary money.** Income its rule
-  matches after it closed joins the month's surplus (a funded investment
-  goal's too); it used to be kept without limit, so a closed 3K goal held
+  matches after it closed joins the month's surplus; it used to be kept
+  without limit, so a closed 3K goal held
   34K. Its saved-into rule matches only from its start month, like every
   rule — income before it was claimed, never walked, and vanished.
 - **Income that repays the goal's bills is kept even past target.** When the
@@ -338,6 +270,13 @@ turn** for the rest.
   gap. **Income repays the bridge first** (`plan.released`, credited back to
   free cash); what is still owed when no more income comes — bills beyond the
   gifts — stays owed, and a goal that owes never auto-closes.
+- **That borrowing is a loan, not an overspend** (`lent()` in `_simulate`).
+  The waterfall and the clawback count lent money as still there; only the
+  free cash shown to the user carries it as negative until the goal's own
+  income repays it. Read as an overspend, a wedding's bills ahead of its
+  gifts clawed a yearly savings goal back, later surpluses went to refilling
+  the hole instead of to goals, and the gifts that finally repaid it went to
+  whatever goal was open by then.
 - Income past the target still spills into the month's surplus.
 - **Its progress is what it received, never what it owes.** `funded` is
   opening + surplus + income; free cash borrowed for bills and not yet repaid
@@ -371,11 +310,9 @@ read high by the overshoot.
 ## Investment backing was removed
 
 Goals could once earmark a holding (`savings_goal_investments`, valued live
-off the investment). It was dropped once investment goals existed: an
-investment is just a category and tag, so money moved into one is tracked
-the same way any other transfer is, and a goal about it is an investment
-goal. Migration `b9a0f25d4d28` drops the table. Don't reintroduce a second
-way to count the same holding toward a goal.
+off the investment). Migration `b9a0f25d4d28` drops the table, and
+investment goals that replaced it were removed in turn (above). Don't
+reintroduce a way to count a holding toward a goal.
 
 ## Every shekel is counted once
 
@@ -493,11 +430,11 @@ Allocations persist per `(goal, month)` in `savings_goal_allocations`.
   the old order's matching.
 - **Editing a goal restates its history.** Every goal takes its waterfall
   turn, so a change to anything in `_ALLOCATION_FIELDS` (start month, target,
-  cap, opening balance, saved-into / spending / investment / funding rules)
+  cap, opening balance, saved-into / spending rules)
   makes `update` rebuild from the **earlier of the old and new start month** —
   moving a start later must clear the months it no longer covers. `create`
   and `delete` always restate from the goal's start month too. Only an edit to
-  the transfer rules of an income or investment goal used to restate; moving
+  the rules of a goal fed by its own income used to restate; moving
   a cash goal's start date, or changing any goal's target, kept every past
   month as it was. The client no longer calls `rebuild` after an edit — the
   update already did.
@@ -623,7 +560,7 @@ so the many users who keep no goals pay nothing for the section.
   auto-closes. Both the enrichment and the auto-close check absorb half an
   agora; there is a unit test pinning it.
 - **Demo Mode ships three goals** (`create_savings_goals` in
-  `scripts/generate_demo_data.py`) covering achieved, investment-goal and
+  `scripts/generate_demo_data.py`) covering achieved, long-horizon and
   utilized states. Allocations are deliberately *not* seeded — the engine
   derives them on first read, after `_shift_dates` has re-anchored
   `start_month` / `target_date`. A spec that asserts absolute waterfall

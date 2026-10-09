@@ -549,43 +549,4 @@ test.describe("Savings goals", () => {
     // they took, so a deficit month can explain itself.
     await expect(page.getByText(/^Free cash:/)).toBeVisible();
   });
-
-  test("an investment goal takes its waterfall turn as cash ready to invest", async ({
-    page,
-  }) => {
-    // A cash goal's editor offers the cash-only settings; choosing "Invest"
-    // takes them away and asks for the transfers instead.
-    await openDashboardWithGoals(page);
-    await page.getByRole("button", { name: /add goal/i }).click();
-    const dialog = page.getByRole("dialog");
-    await expect(dialog.getByLabel("Monthly cap")).toBeVisible();
-    // The start is picked on the same calendar as the target date.
-    await expect(dialog.getByLabel("Start from")).toHaveAttribute("type", "date");
-    await dialog.getByRole("radio", { name: /invest/i }).click();
-    await expect(dialog.getByLabel("Monthly cap")).toHaveCount(0);
-    await expect(dialog.getByLabel("Already saved")).toHaveCount(0);
-    await expect(dialog.getByTestId("goal-invest-rule")).toBeVisible();
-    await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
-
-    const goal = await createGoal({
-      name: "E2E Invest Goal",
-      target_amount: 100000,
-      kind: "investment",
-      contribution_category: "Investments",
-      start_month: monthsAgo(12),
-    });
-    expect(goal.kind).toBe("investment");
-    // It takes surplus in its turn like any goal; what it has not invested yet
-    // is cash it holds, and its progress counts both.
-    expect(goal.allocated).toBeGreaterThan(0);
-    expect(goal.funded).toBeGreaterThanOrEqual(goal.to_invest);
-    expect(goal.funded).toBeGreaterThanOrEqual(0);
-
-    await page.reload();
-    const row = goalRow(page, "E2E Invest Goal");
-    await expect(row).toBeVisible({ timeout: 30_000 });
-    await expect(row.getByLabel("Invest")).toBeVisible();
-    // No free-cash claim on an investment goal.
-    await expect(row.getByRole("button", { name: /free cash/i })).toHaveCount(0);
-  });
 });

@@ -2451,7 +2451,7 @@ def create_pending_refunds(session, cc_txns, bank_txns):
     session.flush()
 
 
-def create_savings_goals(session, savings_plan, bank_txns):
+def create_savings_goals(session, bank_txns):
     """Create the Cohens' five savings goals.
 
     The goals demo every way a goal can be funded, in one waterfall:
@@ -2459,11 +2459,8 @@ def create_savings_goals(session, savings_plan, bank_txns):
     1. **Emergency Fund** — the classic first goal. Capped so it fills
        steadily rather than swallowing a single big month, and started early
        enough that it is already achieved.
-    2. **Kids' Education Fund** — an **investment goal**: its progress is the
-       net money moved into the Savings Plan (``Investments / Savings Plan``,
-       the 1,500 monthly deposits) since the goal started. It never draws on
-       the waterfall, and those deposits are progress rather than a deficit
-       that claws back the cash goals.
+    2. **Kids' Education Fund** — a long-horizon goal, capped so it takes a
+       steady share of each month's surplus, with a target date years out.
     3. **Wedding Fund** — the saving side of the wedding arc the rest of the
        dataset already tells. The two largest wedding bank transfers are
        linked as **utilizations**, so the goal shows money set aside *and*
@@ -2516,16 +2513,14 @@ def create_savings_goals(session, savings_plan, bank_txns):
     )
     education = SavingsGoal(
         name="Kids' Education Fund",
-        kind="investment",
         target_amount=150000.0,
         opening_balance=0.0,
         priority=1,
+        monthly_cap=1500.0,
         start_month=month_str(30),
         target_date=(REFERENCE_DATE + timedelta(days=365 * 6)).isoformat(),
-        contribution_category=savings_plan.category,
-        contribution_tags=savings_plan.tag,
         status="active",
-        notes="Whatever goes into the savings plan is for the kids' studies.",
+        notes="Set aside a little every month for the kids' studies.",
     )
     wedding = SavingsGoal(
         name="Wedding Fund",
@@ -3421,9 +3416,9 @@ def main():
         print("  Creating retirement goal...")
         create_retirement_goal(session)
 
-        # 19. Savings goals (waterfall, an investment goal, utilizations)
+        # 19. Savings goals (waterfall, utilizations)
         print("  Creating savings goals...")
-        create_savings_goals(session, savings_plan, bank_txns)
+        create_savings_goals(session, bank_txns)
 
         session.commit()
 
