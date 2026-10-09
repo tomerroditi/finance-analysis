@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { appendDescriptionConditions, evalCondition } from "./taggingRuleEval";
+import { appendDescriptionConditions, evalCondition, isRuleApplicable } from "./taggingRuleEval";
 import type { ConditionNode } from "../services/api";
 import type { Transaction } from "../types/transaction";
 
@@ -64,6 +64,21 @@ describe("evalCondition service field", () => {
   it("ignores operators other than equals", () => {
     expect(evalCondition(serviceNode("contains", "credit"), txSource("credit_card_transactions"))).toBe(false);
     expect(evalCondition(serviceNode("starts_with", "credit"), txSource("credit_card_transactions"))).toBe(false);
+  });
+});
+
+describe("isRuleApplicable", () => {
+  // The dashboard's "Without Rule" filter leans on this: a cash or manual row
+  // can never be matched by a rule, so it is not a candidate for one either.
+  it("accepts bank and credit-card rows", () => {
+    expect(isRuleApplicable({ source: "bank_transactions" } as Transaction)).toBe(true);
+    expect(isRuleApplicable({ source: "credit_card_transactions" } as Transaction)).toBe(true);
+  });
+
+  it("rejects cash, manual investments and rows with no source", () => {
+    expect(isRuleApplicable({ source: "cash_transactions" } as Transaction)).toBe(false);
+    expect(isRuleApplicable({ source: "manual_investment_transactions" } as Transaction)).toBe(false);
+    expect(isRuleApplicable({} as Transaction)).toBe(false);
   });
 });
 

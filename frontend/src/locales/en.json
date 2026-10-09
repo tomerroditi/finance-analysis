@@ -404,7 +404,9 @@
       "empty": "Mark expenses as pending refund to track them here.",
       "moreCount": "+{{count}} more"
     },
-    "noUntaggedTransactions": "No untagged transactions"
+    "noUntaggedTransactions": "No untagged transactions",
+    "noTransactionsWithoutRule": "Every bank and credit-card transaction here matches a rule",
+    "noFilteredTransactions": "No transactions match the selected filters"
   },
   "transactions": {
     "title": "Transactions",
@@ -431,6 +433,8 @@
       "amountRange": "Amount Range",
       "clearAll": "Clear All Filters",
       "onlyUntagged": "Only Untagged",
+      "withoutRule": "Without Rule",
+      "withoutRuleHint": "Bank and credit-card transactions no auto-tagging rule matches",
       "showSplitParents": "Show Split Parents",
       "advancedFilters": "Advanced Filters",
       "allAccounts": "All accounts",

@@ -1,9 +1,12 @@
 import { useState, useMemo, useCallback } from "react";
 import type { Transaction } from "../types/transaction";
+import type { TaggingRule } from "../services/api";
+import { isWithoutRule } from "../utils/taggingRuleEval";
 
 export interface TransactionFilterState {
   filterText: string;
   onlyUntagged: boolean;
+  onlyWithoutRule: boolean;
   selectedAccounts: string[];
   amountMin: number | null;
   amountMax: number | null;
@@ -22,6 +25,7 @@ export interface FilterOptions {
 const DEFAULT_FILTERS: TransactionFilterState = {
   filterText: "",
   onlyUntagged: false,
+  onlyWithoutRule: false,
   selectedAccounts: [],
   amountMin: null,
   amountMax: null,
@@ -41,7 +45,17 @@ const buildAccountLabel = (tx: Transaction): string => {
   return `${provider} - ${account}`;
 };
 
-export function useTransactionFilters(transactions: Transaction[]) {
+/**
+ * Client-side filter state and the filtered list for a transactions table.
+ *
+ * `rules` feeds the "without rule" filter; until it is defined that filter
+ * passes every row, since an empty list would read as "no rules at all" and
+ * flag everything while the rules are still loading.
+ */
+export function useTransactionFilters(
+  transactions: Transaction[],
+  rules?: TaggingRule[],
+) {
   const [filters, setFilters] = useState<TransactionFilterState>(DEFAULT_FILTERS);
 
   const options = useMemo<FilterOptions>(() => {
@@ -85,6 +99,7 @@ export function useTransactionFilters(transactions: Transaction[]) {
   const activeFilterCount = useMemo(() => {
     let count = 0;
     if (filters.onlyUntagged) count++;
+    if (filters.onlyWithoutRule) count++;
     if (filters.selectedAccounts.length > 0) count++;
     if (filters.amountMin !== null) count++;
     if (filters.amountMax !== null) count++;
@@ -100,6 +115,10 @@ export function useTransactionFilters(transactions: Transaction[]) {
 
     if (filters.onlyUntagged) {
       result = result.filter((tx) => !tx.tag || tx.tag === "-");
+    }
+
+    if (filters.onlyWithoutRule && rules) {
+      result = result.filter((tx) => isWithoutRule(rules, tx));
     }
 
     if (filters.filterText.trim()) {
@@ -147,7 +166,7 @@ export function useTransactionFilters(transactions: Transaction[]) {
     }
 
     return result;
-  }, [transactions, filters]);
+  }, [transactions, filters, rules]);
 
   const updateFilters = useCallback(
     (updates: Partial<TransactionFilterState>) => {

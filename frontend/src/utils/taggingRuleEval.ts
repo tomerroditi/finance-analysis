@@ -60,12 +60,26 @@ export function evalConditionTree(node: ConditionNode, tx: Transaction): boolean
   return false;
 }
 
+/** Auto-tagging rules only apply to bank and credit-card transactions. */
+export function isRuleApplicable(tx: Transaction): boolean {
+  const src = (tx.source ?? "").toLowerCase();
+  return src.includes("bank") || src.includes("credit_card");
+}
+
 /** Find the first tagging rule whose conditions match a transaction. */
 export function findMatchingRule(
   rules: TaggingRule[],
   tx: Transaction,
 ): TaggingRule | undefined {
   return rules.find((r) => evalConditionTree(r.conditions, tx));
+}
+
+/**
+ * A rule-applicable transaction that no rule matches — a candidate for a new
+ * rule. Cash and manual rows never qualify: no rule can ever reach them.
+ */
+export function isWithoutRule(rules: TaggingRule[], tx: Transaction): boolean {
+  return isRuleApplicable(tx) && !findMatchingRule(rules, tx);
 }
 
 /** Find every tagging rule whose conditions match a transaction. */

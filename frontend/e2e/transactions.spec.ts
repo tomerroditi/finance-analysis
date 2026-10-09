@@ -88,6 +88,19 @@ test.describe("Transactions", () => {
       const text = (await rows.nth(i).textContent())?.toUpperCase() ?? "";
       expect(text).toContain("PAZ");
     }
+
+    // --- "Without Rule" filter ---
+    // The demo's fuel rule matches every "PAZ" description, so narrowing the
+    // PAZ results to rows no rule matches leaves nothing; clearing the search
+    // brings back the credit-card rows the rules don't cover.
+    const withoutRule = page.getByRole("checkbox", { name: "Without Rule" });
+    await expect(withoutRule).toBeEnabled();
+    await withoutRule.check();
+    await expect(page.getByText(/^0 of \d+ transactions$/)).toBeVisible();
+    await page.getByPlaceholder(/search descriptions/i).fill("");
+    await expect(rows.first()).toBeVisible();
+    await expect(page.getByText(/^[1-9][\d,]* of \d+ transactions$/)).toBeVisible();
+    await withoutRule.uncheck();
   });
 
   test("per-row eraser clears category and tag from a transaction", async ({
