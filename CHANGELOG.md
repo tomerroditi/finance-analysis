@@ -1,3 +1,14 @@
+## v1.102.0 (2026-10-09)
+
+### Feat
+
+- **savings-goals**: goals hold what you put in, free cash is what they don't (#387)
+- **categories**: sort auto-tagging rules alphabetically by name (#384)
+
+### Fix
+
+- **budget**: wrap project actions on mobile and end closed projects' trend at their last charge (#385)
+
 ## v1.101.0 (2026-10-09)
 
 ### Feat
