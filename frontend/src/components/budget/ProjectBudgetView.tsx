@@ -23,7 +23,11 @@ import { useQueryKeys } from "../../hooks/useQueryKeys";
 import { qkPrefix } from "../../services/queryKeys";
 import { formatCurrency } from "../../utils/numberFormatting";
 import { formatMonthCompact } from "../../utils/dateFormatting";
-import { bucketByMonth, type TrendTransaction } from "../../utils/budgetTrends";
+import {
+  bucketByMonth,
+  projectMonthKeys,
+  type TrendTransaction,
+} from "../../utils/budgetTrends";
 import type { Transaction } from "../../types/transaction";
 
 interface ProjectBudgetRule {
@@ -46,29 +50,6 @@ interface ProjectBudgetViewProps {
   tabs: React.ReactNode;
   /** Project to open on, when the link that got here named one. */
   initialProject?: string;
-}
-
-/** Month keys from the project's first transaction to today, oldest first. */
-function projectMonthKeys(transactions: Transaction[]): string[] {
-  const dates = transactions
-    .map((tx) => (tx.date ? String(tx.date).slice(0, 7) : null))
-    .filter((key): key is string => Boolean(key))
-    .sort();
-  const now = new Date();
-  const end = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
-  const start = dates[0] ?? end;
-
-  const keys: string[] = [];
-  const [startYear, startMonth] = start.split("-").map(Number);
-  const cursor = new Date(startYear, startMonth - 1, 1);
-  const guard = new Date(now.getFullYear(), now.getMonth(), 1);
-  while (cursor <= guard && keys.length < 120) {
-    keys.push(
-      `${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, "0")}`,
-    );
-    cursor.setMonth(cursor.getMonth() + 1);
-  }
-  return keys.length ? keys : [end];
 }
 
 export const ProjectBudgetView: React.FC<ProjectBudgetViewProps> = ({
@@ -241,11 +222,15 @@ export const ProjectBudgetView: React.FC<ProjectBudgetViewProps> = ({
       ? { category: selectedProject, total_budget: projectTotalRule.rule.amount }
       : null;
 
-  // Derived inside the memo: `?? []` would otherwise mint a new array on
-  // every render and defeat it.
+  // Spanned over every rule's transactions, not just the anchor's: a project
+  // with no `all_tags` rule otherwise collapsed to the current month alone.
   const monthKeys = useMemo(
-    () => projectMonthKeys(projectTotalRule?.data ?? []),
-    [projectTotalRule],
+    () =>
+      projectMonthKeys(
+        (projectDetails?.rules ?? []).flatMap((r: ProjectRuleItem) => r.data ?? []),
+        isSelectedClosed,
+      ),
+    [projectDetails, isSelectedClosed],
   );
   const allTransactions: Transaction[] = projectTotalRule?.data ?? [];
   const monthLabels = useMemo(
@@ -338,6 +323,7 @@ export const ProjectBudgetView: React.FC<ProjectBudgetViewProps> = ({
                 </button>
                 <button
                   onClick={handleDeleteProject}
+                  data-testid="project-delete"
                   className={`inline-flex items-center gap-2 px-3 md:px-4 text-xs md:text-sm bg-red-500/10 border border-red-500/20 text-red-500 rounded-lg hover:bg-red-500/20 transition-colors shadow-sm font-medium whitespace-nowrap ${BAR_CONTROL}`}
                 >
                   <Trash2 size={18} className="shrink-0" />
