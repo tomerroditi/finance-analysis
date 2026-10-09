@@ -416,6 +416,7 @@ export function Transactions() {
                 showDelete
                 showFilter
                 showSplitParentsFilter
+                showWithoutRuleFilter
                 includeSplitParents={includeSplitParents}
                 onIncludeSplitParentsChange={setIncludeSplitParents}
                 rowsPerPage={100}

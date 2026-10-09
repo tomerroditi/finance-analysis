@@ -74,6 +74,14 @@ export function findMatchingRule(
   return rules.find((r) => evalConditionTree(r.conditions, tx));
 }
 
+/**
+ * A rule-applicable transaction that no rule matches — a candidate for a new
+ * rule. Cash and manual rows never qualify: no rule can ever reach them.
+ */
+export function isWithoutRule(rules: TaggingRule[], tx: Transaction): boolean {
+  return isRuleApplicable(tx) && !findMatchingRule(rules, tx);
+}
+
 /** Find every tagging rule whose conditions match a transaction. */
 export function findMatchingRules(
   rules: TaggingRule[],

@@ -25,7 +25,7 @@ import { RecentTransactionDetails } from "./RecentTransactionDetails";
 import { useCategoryTagCreate } from "../../hooks/useCategoryTagCreate";
 import { useCategories } from "../../hooks/useCategories";
 import { useTaggingRules } from "../../hooks/useTaggingRules";
-import { findMatchingRule, isRuleApplicable } from "../../utils/taggingRuleEval";
+import { isWithoutRule as matchesNoRule } from "../../utils/taggingRuleEval";
 import { qkPrefix } from "../../services/queryKeys";
 import type { Transaction } from "../../types/transaction";
 import { Skeleton } from "../common/Skeleton";
@@ -249,16 +249,13 @@ export function RecentTransactionsFeed({
     );
   }, [transactions]);
 
-  // A row no auto-tagging rule matches — the candidates for a new rule. Only
-  // bank and credit-card rows qualify, since rules never touch anything else.
   // Undefined until the rules load: treating an empty list as "no rules"
   // would briefly flag every row.
   const { data: taggingRules } = useTaggingRules();
   const isWithoutRule = useMemo(
     () =>
       taggingRules
-        ? (tx: Transaction) =>
-            isRuleApplicable(tx) && !findMatchingRule(taggingRules, tx)
+        ? (tx: Transaction) => matchesNoRule(taggingRules, tx)
         : undefined,
     [taggingRules],
   );
@@ -409,12 +406,12 @@ export function RecentTransactionsFeed({
             onClick={toggleOnlyWithoutRule}
             disabled={!isWithoutRule}
             aria-pressed={onlyWithoutRule}
-            aria-label={t("dashboard.withoutRuleFilter")}
-            title={t("dashboard.withoutRuleFilterHint")}
+            aria-label={t("transactions.filters.withoutRule")}
+            title={t("transactions.filters.withoutRuleHint")}
             className={filterButtonClass(onlyWithoutRule)}
           >
             <Wand2 size={13} className="shrink-0" />
-            <span className="hidden sm:inline">{t("dashboard.withoutRuleFilter")}</span>
+            <span className="hidden sm:inline">{t("transactions.filters.withoutRule")}</span>
             {withoutRuleCount !== undefined && (
               <span className="tabular-nums" dir="ltr">
                 ({withoutRuleCount})

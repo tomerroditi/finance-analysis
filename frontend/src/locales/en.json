@@ -406,9 +406,7 @@
     },
     "noUntaggedTransactions": "No untagged transactions",
     "noTransactionsWithoutRule": "Every bank and credit-card transaction here matches a rule",
-    "noFilteredTransactions": "No transactions match the selected filters",
-    "withoutRuleFilter": "Without Rule",
-    "withoutRuleFilterHint": "Bank and credit-card transactions no auto-tagging rule matches"
+    "noFilteredTransactions": "No transactions match the selected filters"
   },
   "transactions": {
     "title": "Transactions",
@@ -435,6 +433,8 @@
       "amountRange": "Amount Range",
       "clearAll": "Clear All Filters",
       "onlyUntagged": "Only Untagged",
+      "withoutRule": "Without Rule",
+      "withoutRuleHint": "Bank and credit-card transactions no auto-tagging rule matches",
       "showSplitParents": "Show Split Parents",
       "advancedFilters": "Advanced Filters",
       "allAccounts": "All accounts",
