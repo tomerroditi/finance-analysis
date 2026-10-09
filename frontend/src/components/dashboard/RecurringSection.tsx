@@ -1,7 +1,20 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import { Check, Eye, EyeOff, Repeat, RotateCcw, X } from "lucide-react";
+import {
+  CalendarClock,
+  Check,
+  CircleOff,
+  Eye,
+  EyeOff,
+  Repeat,
+  RotateCcw,
+  Sparkles,
+  TrendingDown,
+  TrendingUp,
+  X,
+  type LucideIcon,
+} from "lucide-react";
 import {
   analyticsApi,
   type RecurringDecisionInput,
@@ -16,12 +29,51 @@ import { Skeleton } from "../common/Skeleton";
 import { formatCurrency } from "../../utils/numberFormatting";
 import { formatDate } from "../../utils/dateFormatting";
 
-const STATUS_STYLES: Record<RecurringItem["status"], string> = {
-  active: "bg-[var(--surface-light)] text-[var(--text-muted)]",
-  new: "bg-blue-500/15 text-blue-300",
-  price_changed: "bg-amber-500/15 text-amber-300",
-  ended: "bg-rose-500/15 text-rose-300",
+const STATUS_BADGES: Record<
+  Exclude<RecurringItem["status"], "active">,
+  { Icon: LucideIcon; className: string }
+> = {
+  new: { Icon: Sparkles, className: "bg-blue-500/15 text-blue-300" },
+  price_changed: { Icon: TrendingUp, className: "bg-amber-500/15 text-amber-300" },
+  ended: { Icon: CircleOff, className: "bg-rose-500/15 text-rose-300" },
 };
+
+/**
+ * Icon chip standing in for a non-active status. A worded badge ("Price
+ * changed") pushed the next-billing date onto a third line on a phone, so
+ * the words move to the tooltip and accessible name — and a price change
+ * says which way it went and by how much, the part worth knowing.
+ */
+function StatusBadge({ item }: { item: RecurringItem }) {
+  const { t } = useTranslation();
+  if (item.status === "active") return null;
+
+  let { Icon, className } = STATUS_BADGES[item.status];
+  let label = t(`dashboard.recurring.status.${item.status}`);
+  if (item.status === "price_changed") {
+    const up = item.price_change > 0;
+    if (!up) {
+      Icon = TrendingDown;
+      className = "bg-emerald-500/15 text-emerald-300";
+    }
+    label = t(
+      up ? "dashboard.recurring.status.priceUp" : "dashboard.recurring.status.priceDown",
+      { delta: formatCurrency(Math.abs(item.price_change)) },
+    );
+  }
+
+  return (
+    <span
+      role="img"
+      aria-label={label}
+      title={label}
+      data-testid="recurring-status-badge"
+      className={`shrink-0 inline-flex items-center justify-center size-4 md:size-5 rounded ${className}`}
+    >
+      <Icon size={11} aria-hidden />
+    </span>
+  );
+}
 
 /**
  * Dashboard subscriptions / recurring-charges panel from ``/analytics/recurring``.
@@ -292,18 +344,24 @@ export function RecurringSection() {
                 >
                   <div className="min-w-0 flex-1">
                     <p className="text-xs md:text-sm font-medium truncate" dir="auto" title={item.label}>{item.label}</p>
-                    <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
-                      <span className="text-[9px] md:text-[10px] px-1.5 py-0.5 rounded bg-[var(--surface-light)] text-[var(--text-muted)]">
-                        {t(`dashboard.recurring.cadence.${item.cadence}`)}
+                    {/* One line, never wrapping: the label above it and
+                        this make the row's two lines, whatever the status. */}
+                    <div className="flex items-center gap-1.5 mt-0.5 min-w-0" data-testid="recurring-item-meta">
+                      <span
+                        className="shrink-0 text-[9px] md:text-[10px] px-1.5 py-0.5 rounded bg-[var(--surface-light)] text-[var(--text-muted)]"
+                        title={t(`dashboard.recurring.cadence.${item.cadence}`)}
+                      >
+                        {t(`dashboard.recurring.cadenceShort.${item.cadence}`)}
                       </span>
-                      {item.status !== "active" && (
-                        <span className={`text-[9px] md:text-[10px] px-1.5 py-0.5 rounded ${STATUS_STYLES[item.status]}`}>
-                          {t(`dashboard.recurring.status.${item.status}`)}
-                        </span>
-                      )}
+                      <StatusBadge item={item} />
                       {item.status !== "ended" && (
-                        <span className="text-[9px] md:text-[10px] text-[var(--text-muted)]">
-                          {t("dashboard.recurring.next", { date: formatDate(item.next_expected_date) })}
+                        <span
+                          className="flex items-center gap-1 min-w-0 text-[9px] md:text-[10px] text-[var(--text-muted)]"
+                          title={t("dashboard.recurring.next", { date: formatDate(item.next_expected_date) })}
+                        >
+                          <CalendarClock size={10} className="shrink-0" aria-hidden />
+                          <span className="sr-only">{t("dashboard.recurring.nextLabel")}</span>
+                          <span className="truncate">{formatDate(item.next_expected_date)}</span>
                         </span>
                       )}
                     </div>

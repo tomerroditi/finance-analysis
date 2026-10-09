@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { screen } from "@testing-library/react";
+import { fireEvent, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { SelectDropdown } from "./SelectDropdown";
 import { renderWithProviders } from "../../test-utils";
@@ -56,6 +56,18 @@ describe("SelectDropdown", () => {
       await user.click(screen.getByRole("button"));
       // Options should not appear (they are rendered via portal)
       expect(screen.queryAllByText("Food")).toHaveLength(0);
+    });
+
+    it("closes on an Escape pressed before focus reaches the panel", () => {
+      renderDropdown();
+      const trigger = screen.getByRole("button");
+      fireEvent.click(trigger);
+      expect(screen.getByRole("listbox")).toBeInTheDocument();
+
+      // Focus moves into the panel on the next animation frame; until then
+      // the trigger still holds it and receives the key.
+      fireEvent.keyDown(trigger, { key: "Escape" });
+      expect(screen.queryByRole("listbox")).toBeNull();
     });
   });
 
