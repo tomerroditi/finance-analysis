@@ -1,0 +1,46 @@
+fixture                   rule   FIRE  bridge  fitted r%  residual
+cf_credit_0                 85  60.08    6.92     6.0000      0.04
+cf_credit_30k               85  60.08    6.92     6.0000      0.05
+cf_loan_over_fire           85  60.08    6.92     0.0000      0.05
+cf_re_no_rescue             85  60.08    6.92     6.0000      0.04
+cf_rise                     85  60.08    6.92    -0.0343   3226.51   <-- model gap
+desig_goal                  85  60.08    6.92     6.0000      0.05
+dob_1980                    85  58.58    8.42     0.0003      0.05
+sol_at_age_58               85  58.08    8.92     0.0009      0.05
+cf_loan_baloon_grace        85  57.58    9.42     0.0021      0.05
+cf_loan_spitzer             85  57.50    9.50     0.0025      0.05
+cf_credit_100k              85  57.25    9.75     6.0000  10000.05   <-- model gap
+eng_fixedage_i12            85  55.08   11.92     0.0030      0.05
+eng_fixedage_i5             85  55.08   11.92     0.0030      0.05
+eng_idle_fee1               85  55.08   11.92     0.0030      0.05
+eng_idle_goaldesig          85  55.08   11.92     6.0000      0.05
+eng_idle_i20                85  55.08   11.92     0.0030      0.05
+eng_idle_i5                 85  55.08   11.92     0.0030      0.05
+female                      85  52.75   12.25     0.0067      0.05
+cf_loan_edge                85  54.42   12.58     0.0002      0.05
+zero_return                 85  54.17   12.83     0.0000      0.00
+baseline                    85  53.25   13.75     0.0246      0.05
+cf_dob_midmonth             85  53.25   13.75     0.0246      0.05
+cf_fire_split               85  53.25   13.75     0.0246      0.05
+cf_realestate               85  53.25   13.75     0.0246      0.05
+cf_timing_bits              85  53.25   13.75     0.2747  10142.00   <-- model gap
+goal_big_cap                85  51.50   15.50     0.5562      0.05
+pn_bl_partner               85  50.08   16.92     1.0710      0.05
+buffer_20k                  85  49.92   17.08     1.1205  14473.24   <-- model gap
+goal_big                    85  49.92   17.08     1.1217      0.05
+compound_precise            85  47.25   19.75     1.9180  18363.75   <-- model gap
+sol_at_age_45               85  45.08   21.92     2.1292      0.05
+tax_profit_90               85  41.25   25.75     2.6205  14178.17   <-- model gap
+pf_tactics67                85  40.92   26.08     2.5127  13690.50   <-- model gap
+pf_two_same                 85  40.92   26.08     2.4833  12389.49   <-- model gap
+tax_profit_50               85  40.92   26.08     2.5127  13690.50   <-- model gap
+pn_bl_income_work           85  40.67   26.33     2.5693      0.05
+tax_profit_0                85  40.25   26.75     2.6850  12869.16   <-- model gap
+cf_postfire_surplus         85  36.75   30.25     2.7748      0.05
+pf_american                 85  36.75   30.25     2.7748      0.05
+pf_deposit_caps             85  36.75   30.25     2.7748     25.68   <-- model gap
+pf_gemel_two                85  36.75   30.25     2.7748     28.10   <-- model gap
+pf_kaspit_pikadon           85  36.75   30.25     2.7748      0.05
+pf_types_all                85  36.75   30.25     2.7748      0.05
+rule_95                     95  53.25   13.75     0.0001      0.05
+rule_100                   100  53.25   13.75     0.0030      0.05

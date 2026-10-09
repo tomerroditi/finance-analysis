@@ -1,0 +1,868 @@
+{
+ "main": [
+  {
+   "tag": "input",
+   "name": "csrfmiddlewaretoken",
+   "type": "hidden",
+   "value": "Pg6VcWT2pcjuFxZSNm76hP2xdbvBFXaWPxseob3RqJzEAmHZ5NunSCTi8KHJh3Y1",
+   "min": null,
+   "max": null,
+   "required": false
+  },
+  {
+   "tag": "select",
+   "name": "base_problem",
+   "type": "select",
+   "value": "retire_asap",
+   "options": [
+    "retire_asap",
+    "retire_at_age",
+    "improve_cash_to_reach_retire_at_age",
+    "increase_risk_to_reach_retire_at_age"
+   ]
+  },
+  {
+   "tag": "input",
+   "name": "wanted_retire_age",
+   "type": "number",
+   "value": "",
+   "min": null,
+   "max": null,
+   "required": false
+  },
+  {
+   "tag": "input",
+   "name": "base_problem_max_age",
+   "type": "number",
+   "value": "60",
+   "min": null,
+   "max": null,
+   "required": false
+  },
+  {
+   "tag": "input",
+   "name": "base_problem_cash_improve",
+   "type": "number",
+   "value": "0",
+   "min": null,
+   "max": null,
+   "required": false
+  },
+  {
+   "tag": "input",
+   "name": "base_problem_risk_increase",
+   "type": "number",
+   "value": "0",
+   "min": null,
+   "max": null,
+   "required": false
+  },
+  {
+   "tag": "input",
+   "name": "test_json",
+   "type": "hidden",
+   "value": "",
+   "min": null,
+   "max": null,
+   "required": false
+  },
+  {
+   "tag": "input",
+   "name": "pensionName",
+   "type": "text",
+   "value": "",
+   "min": null,
+   "max": null,
+   "required": false
+  },
+  {
+   "tag": "select",
+   "name": "gender",
+   "type": "select",
+   "value": "male",
+   "options": [
+    "male",
+    "female"
+   ]
+  },
+  {
+   "tag": "input",
+   "name": "dateOfBirth",
+   "type": "date",
+   "value": "",
+   "min": null,
+   "max": null,
+   "required": false
+  },
+  {
+   "tag": "select",
+   "name": "is_american",
+   "type": "select",
+   "value": "no",
+   "options": [
+    "no",
+    "yes"
+   ]
+  },
+  {
+   "tag": "input",
+   "name": "pensionTake_2",
+   "type": "checkbox",
+   "value": "",
+   "min": null,
+   "max": null,
+   "required": false
+  },
+  {
+   "tag": "input",
+   "name": "pensionName_2",
+   "type": "text",
+   "value": "",
+   "min": null,
+   "max": null,
+   "required": false
+  },
+  {
+   "tag": "select",
+   "name": "gender_2",
+   "type": "select",
+   "value": "male",
+   "options": [
+    "male",
+    "female"
+   ]
+  },
+  {
+   "tag": "input",
+   "name": "dateOfBirth_2",
+   "type": "date",
+   "value": "",
+   "min": null,
+   "max": null,
+   "required": false
+  },
+  {
+   "tag": "select",
+   "name": "is_american_2",
+   "type": "select",
+   "value": "no",
+   "options": [
+    "no",
+    "yes"
+   ]
+  },
+  {
+   "tag": "input",
+   "name": "retireRule",
+   "type": "number",
+   "value": "85",
+   "min": "0",
+   "max": null,
+   "required": true
+  },
+  {
+   "tag": "select",
+   "name": "prati_hishtalmut_order",
+   "type": "select",
+   "value": "prati",
+   "options": [
+    "prati",
+    "hishtalmut"
+   ]
+  },
+  {
+   "tag": "input",
+   "name": "cashBuffer",
+   "type": "number",
+   "value": "0",
+   "min": "0",
+   "max": null,
+   "required": true
+  },
+  {
+   "tag": "input",
+   "name": "balance",
+   "type": "number",
+   "value": "0",
+   "min": null,
+   "max": null,
+   "required": true
+  },
+  {
+   "tag": "input",
+   "name": "creditLimit",
+   "type": "number",
+   "value": "0",
+   "min": "0",
+   "max": null,
+   "required": false
+  },
+  {
+   "tag": "select",
+   "name": "expenseStartType1",
+   "type": "select",
+   "value": "now",
+   "options": [
+    "now",
+    "fire",
+    "from_date",
+    "one_time"
+   ]
+  },
+  {
+   "tag": "input",
+   "name": "expenseStartDate1",
+   "type": "date",
+   "value": "",
+   "min": null,
+   "max": null,
+   "required": false
+  },
+  {
+   "tag": "select",
+   "name": "expenseEndType1",
+   "type": "select",
+   "value": "forever",
+   "options": [
+    "forever",
+    "fire",
+    "to_date",
+    "60"
+   ]
+  },
+  {
+   "tag": "input",
+   "name": "expenseEndDate1",
+   "type": "date",
+   "value": "",
+   "min": null,
+   "max": null,
+   "required": false
+  },
+  {
+   "tag": "input",
+   "name": "expenseSum1",
+   "type": "number",
+   "value": "5000",
+   "min": "0",
+   "max": null,
+   "required": false
+  },
+  {
+   "tag": "input",
+   "name": "expenseRise1",
+   "type": "number",
+   "value": "0.0",
+   "min": null,
+   "max": null,
+   "required": false
+  },
+  {
+   "tag": "input",
+   "name": "expenseDescription1",
+   "type": "text",
+   "value": "הוצאות חודשיות",
+   "min": null,
+   "max": null,
+   "required": false
+  },
+  {
+   "tag": "select",
+   "name": "incomeStartType1",
+   "type": "select",
+   "value": "now",
+   "options": [
+    "now",
+    "fire",
+    "from_date",
+    "one_time"
+   ]
+  },
+  {
+   "tag": "input",
+   "name": "incomeStartDate1",
+   "type": "date",
+   "value": "",
+   "min": null,
+   "max": null,
+   "required": false
+  },
+  {
+   "tag": "select",
+   "name": "incomeEndType1",
+   "type": "select",
+   "value": "fire",
+   "options": [
+    "forever",
+    "fire",
+    "to_date",
+    "60"
+   ]
+  },
+  {
+   "tag": "input",
+   "name": "incomeEndDate1",
+   "type": "date",
+   "value": "",
+   "min": null,
+   "max": null,
+   "required": false
+  },
+  {
+   "tag": "input",
+   "name": "incomeSum1",
+   "type": "number",
+   "value": "10000",
+   "min": "0",
+   "max": null,
+   "required": false
+  },
+  {
+   "tag": "input",
+   "name": "incomeRise1",
+   "type": "number",
+   "value": "0.0",
+   "min": null,
+   "max": null,
+   "required": false
+  },
+  {
+   "tag": "input",
+   "name": "incomeDescription1",
+   "type": "text",
+   "value": "הכנסות חודשיות",
+   "min": null,
+   "max": null,
+   "required": false
+  },
+  {
+   "tag": "select",
+   "name": "portfolioDesignation1",
+   "type": "select",
+   "value": "goal",
+   "options": [
+    "withdraw",
+    "goal",
+    "mukeret_main",
+    "mukeret_partner"
+   ]
+  },
+  {
+   "tag": "select",
+   "name": "portfolio_type1",
+   "type": "select",
+   "value": "kaspit",
+   "options": [
+    "portfolio",
+    "ibkr",
+    "gemel",
+    "polisa",
+    "kaspit",
+    "pikadon"
+   ]
+  },
+  {
+   "tag": "input",
+   "name": "portfolioBalance1",
+   "type": "number",
+   "value": "0",
+   "min": "0",
+   "max": null,
+   "required": false
+  },
+  {
+   "tag": "input",
+   "name": "portfolio_deposit1",
+   "type": "number",
+   "value": "",
+   "min": "0",
+   "max": null,
+   "required": false
+  },
+  {
+   "tag": "input",
+   "name": "portfolio_goal1",
+   "type": "number",
+   "value": "0",
+   "min": "0",
+   "max": null,
+   "required": false
+  },
+  {
+   "tag": "input",
+   "name": "portfolioInterest1",
+   "type": "number",
+   "value": "5.0",
+   "min": null,
+   "max": null,
+   "required": false
+  },
+  {
+   "tag": "input",
+   "name": "portfolioFee1",
+   "type": "number",
+   "value": "0.1",
+   "min": "0",
+   "max": null,
+   "required": false
+  },
+  {
+   "tag": "input",
+   "name": "portfolioProfitFraction1",
+   "type": "number",
+   "value": "0.0",
+   "min": "0",
+   "max": null,
+   "required": false
+  },
+  {
+   "tag": "select",
+   "name": "portfolio_fifo_lifo1",
+   "type": "select",
+   "value": "flat",
+   "options": [
+    "flat",
+    "fifo",
+    "lifo"
+   ]
+  },
+  {
+   "tag": "input",
+   "name": "portfolioDescription1",
+   "type": "text",
+   "value": "",
+   "min": null,
+   "max": null,
+   "required": false
+  },
+  {
+   "tag": "input",
+   "name": "pensionBalance",
+   "type": "number",
+   "value": "0",
+   "min": "0",
+   "max": null,
+   "required": false
+  },
+  {
+   "tag": "input",
+   "name": "pensionDeposit",
+   "type": "number",
+   "value": "0",
+   "min": "0",
+   "max": null,
+   "required": false
+  },
+  {
+   "tag": "input",
+   "name": "pensionFee1",
+   "type": "number",
+   "value": "0.05",
+   "min": "0",
+   "max": null,
+   "required": false
+  },
+  {
+   "tag": "input",
+   "name": "pensionFee2",
+   "type": "number",
+   "value": "1.5",
+   "min": "0",
+   "max": null,
+   "required": false
+  },
+  {
+   "tag": "input",
+   "name": "pensionInterest",
+   "type": "number",
+   "value": "7.0",
+   "min": null,
+   "max": null,
+   "required": false
+  },
+  {
+   "tag": "select",
+   "name": "pension_tactics",
+   "type": "select",
+   "value": "60",
+   "options": [
+    "60",
+    "67",
+    "60-67"
+   ]
+  },
+  {
+   "tag": "input",
+   "name": "percentage_mukeret",
+   "type": "number",
+   "value": "30",
+   "min": "0",
+   "max": null,
+   "required": false
+  },
+  {
+   "tag": "select",
+   "name": "pensionEndType1",
+   "type": "select",
+   "value": "fire",
+   "options": [
+    "forever",
+    "fire",
+    "to_date",
+    "60"
+   ]
+  },
+  {
+   "tag": "input",
+   "name": "pensionEndDate",
+   "type": "date",
+   "value": "",
+   "min": null,
+   "max": null,
+   "required": false
+  },
+  {
+   "tag": "input",
+   "name": "pensionBalance_2",
+   "type": "number",
+   "value": "0",
+   "min": "0",
+   "max": null,
+   "required": false
+  },
+  {
+   "tag": "input",
+   "name": "pensionDeposit_2",
+   "type": "number",
+   "value": "0",
+   "min": "0",
+   "max": null,
+   "required": false
+  },
+  {
+   "tag": "input",
+   "name": "pensionFee1_2",
+   "type": "number",
+   "value": "0.05",
+   "min": "0",
+   "max": null,
+   "required": false
+  },
+  {
+   "tag": "input",
+   "name": "pensionFee2_2",
+   "type": "number",
+   "value": "1.5",
+   "min": "0",
+   "max": null,
+   "required": false
+  },
+  {
+   "tag": "input",
+   "name": "pensionInterest_2",
+   "type": "number",
+   "value": "7.0",
+   "min": null,
+   "max": null,
+   "required": false
+  },
+  {
+   "tag": "select",
+   "name": "pension_tactics_2",
+   "type": "select",
+   "value": "60",
+   "options": [
+    "60",
+    "67",
+    "60-67"
+   ]
+  },
+  {
+   "tag": "input",
+   "name": "percentage_mukeret_2",
+   "type": "number",
+   "value": "30",
+   "min": "0",
+   "max": null,
+   "required": false
+  },
+  {
+   "tag": "select",
+   "name": "pensionEndType2",
+   "type": "select",
+   "value": "fire",
+   "options": [
+    "forever",
+    "fire",
+    "to_date",
+    "60"
+   ]
+  },
+  {
+   "tag": "input",
+   "name": "pensionEndDate_2",
+   "type": "date",
+   "value": "",
+   "min": null,
+   "max": null,
+   "required": false
+  },
+  {
+   "tag": "input",
+   "name": "withdraw_pizuim",
+   "type": "checkbox",
+   "value": "",
+   "min": null,
+   "max": null,
+   "required": false
+  },
+  {
+   "tag": "input",
+   "name": "work_start_year",
+   "type": "number",
+   "value": "",
+   "min": "1986",
+   "max": "2026",
+   "required": false
+  },
+  {
+   "tag": "input",
+   "name": "withdraw_pizuim_2",
+   "type": "checkbox",
+   "value": "",
+   "min": null,
+   "max": null,
+   "required": false
+  },
+  {
+   "tag": "input",
+   "name": "work_start_year_2",
+   "type": "number",
+   "value": "",
+   "min": "1986",
+   "max": "2026",
+   "required": false
+  },
+  {
+   "tag": "input",
+   "name": "num_loan_fields",
+   "type": "hidden",
+   "value": "0",
+   "min": null,
+   "max": null,
+   "required": false
+  },
+  {
+   "tag": "input",
+   "name": "num_keren_fields",
+   "type": "hidden",
+   "value": "0",
+   "min": null,
+   "max": null,
+   "required": false
+  },
+  {
+   "tag": "input",
+   "name": "num_income_fields",
+   "type": "hidden",
+   "value": "1",
+   "min": null,
+   "max": null,
+   "required": false
+  },
+  {
+   "tag": "input",
+   "name": "num_expense_fields",
+   "type": "hidden",
+   "value": "1",
+   "min": null,
+   "max": null,
+   "required": false
+  },
+  {
+   "tag": "input",
+   "name": "num_portfolio_fields",
+   "type": "hidden",
+   "value": "1",
+   "min": null,
+   "max": null,
+   "required": false
+  },
+  {
+   "tag": "input",
+   "name": "num_realestate_fields",
+   "type": "hidden",
+   "value": "0",
+   "min": null,
+   "max": null,
+   "required": false
+  },
+  {
+   "tag": "input",
+   "name": "smart_advice",
+   "type": "hidden",
+   "value": "",
+   "min": null,
+   "max": null,
+   "required": false
+  },
+  {
+   "tag": "input",
+   "name": "submit_param",
+   "type": "hidden",
+   "value": "do_save",
+   "min": null,
+   "max": null,
+   "required": false
+  },
+  {
+   "tag": "input",
+   "name": "pickle_id",
+   "type": "hidden",
+   "value": "None",
+   "min": null,
+   "max": null,
+   "required": false
+  }
+ ],
+ "rows": {
+  "keren": [
+   {
+    "tag": "input",
+    "name": "kerenBalance1",
+    "type": "number",
+    "value": "0",
+    "min": "0",
+    "max": null,
+    "required": false
+   },
+   {
+    "tag": "input",
+    "name": "kerenDeposit1",
+    "type": "number",
+    "value": "0",
+    "min": "0",
+    "max": null,
+    "required": false
+   },
+   {
+    "tag": "input",
+    "name": "kerenInterest1",
+    "type": "number",
+    "value": "5.0",
+    "min": null,
+    "max": null,
+    "required": false
+   },
+   {
+    "tag": "select",
+    "name": "kerenType1",
+    "type": "select",
+    "value": "maslulit",
+    "options": [
+     "maslulit",
+     "ira"
+    ]
+   },
+   {
+    "tag": "input",
+    "name": "kerenFee1",
+    "type": "number",
+    "value": "0.6",
+    "min": "0",
+    "max": null,
+    "required": false
+   },
+   {
+    "tag": "select",
+    "name": "kerenEndType1",
+    "type": "select",
+    "value": "fire",
+    "options": [
+     "forever",
+     "fire",
+     "to_date",
+     "60"
+    ]
+   },
+   {
+    "tag": "input",
+    "name": "kerenEndDate1",
+    "type": "date",
+    "value": "",
+    "min": null,
+    "max": null,
+    "required": false
+   }
+  ],
+  "loan": [
+   {
+    "tag": "input",
+    "name": "debtStartDate1",
+    "type": "date",
+    "value": "",
+    "min": null,
+    "max": null,
+    "required": false
+   },
+   {
+    "tag": "input",
+    "name": "debtInterest1",
+    "type": "number",
+    "value": "3",
+    "min": null,
+    "max": null,
+    "required": false
+   },
+   {
+    "tag": "input",
+    "name": "debtInitialSum1",
+    "type": "number",
+    "value": "0",
+    "min": "0",
+    "max": null,
+    "required": false
+   },
+   {
+    "tag": "input",
+    "name": "debtTotalPeriod1",
+    "type": "number",
+    "value": "0",
+    "min": "0",
+    "max": "80",
+    "required": false
+   },
+   {
+    "tag": "select",
+    "name": "debtType1",
+    "type": "select",
+    "value": "spitzer",
+    "options": [
+     "spitzer",
+     "baloon",
+     "grace"
+    ]
+   }
+  ],
+  "realestate": [
+   {
+    "tag": "input",
+    "name": "realestateValue1",
+    "type": "number",
+    "value": "0",
+    "min": "0",
+    "max": null,
+    "required": false
+   },
+   {
+    "tag": "input",
+    "name": "realestateRise1",
+    "type": "number",
+    "value": "0.0",
+    "min": null,
+    "max": null,
+    "required": false
+   }
+  ]
+ }
+}
