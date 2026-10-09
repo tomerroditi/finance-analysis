@@ -927,7 +927,9 @@ class LiabilitiesService:
         each actual payment (real or auto-generated), plus a total line across
         all liabilities. The balance after the k-th payment is read off the
         amortization schedule, so interest portions are not counted as
-        principal reduction.
+        principal reduction. A payment dated before the loan's recorded start
+        date moves the start point back to it, so each series stays in date
+        order and the total never reads the loan as absent once it is paid on.
 
         Returns
         -------
@@ -951,6 +953,9 @@ class LiabilitiesService:
             merged = self._merged_transactions(int(record["id"]), tag, liab_txns)
             if not merged.empty:
                 payments = merged[merged["amount"] < 0]
+                if not payments.empty:
+                    first_payment = str(payments["date"].min())[:10]
+                    points[0]["date"] = min(points[0]["date"], first_payment)
 
                 for k, (_, txn) in enumerate(payments.iterrows(), start=1):
                     pos = min(k, len(schedule))

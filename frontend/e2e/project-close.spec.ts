@@ -138,4 +138,65 @@ test.describe("Closing a project budget", () => {
       timeout: 15_000,
     });
   });
+
+  test("a closed project's figures end at its last transaction, not today", async ({
+    page,
+  }) => {
+    // A project whose spending stopped before this month: open, its trend
+    // runs on to today; closed, it must stop where its spending did.
+    const target = "Wedding";
+    const details = await (
+      await page.request.get(`/api/budget/projects/${target}`, {
+        headers: DEMO_HEADERS,
+      })
+    ).json();
+    const months: string[] = details.rules
+      .flatMap((r: { data?: { date: string }[] }) => r.data ?? [])
+      .map((tx: { date: string }) => tx.date.slice(0, 7))
+      .sort();
+    const monthIndex = (key: string) => {
+      const [year, month] = key.split("-").map(Number);
+      return year * 12 + month;
+    };
+    const now = new Date();
+    const first = monthIndex(months[0]);
+    const spanToLast = monthIndex(months[months.length - 1]) - first + 1;
+    const spanToToday = now.getFullYear() * 12 + now.getMonth() + 1 - first + 1;
+    expect(spanToLast).toBeLessThan(spanToToday);
+
+    /** Months the first sparkline plots: its summary is one entry per month plus the allocation. */
+    const plottedMonths = async () =>
+      (
+        (await page
+          .getByTestId("rule-sparkline")
+          .first()
+          .locator("svg")
+          .getAttribute("aria-label")) ?? ""
+      ).split(" · ").length - 1;
+
+    await navigateTo(page, "/budget");
+    await page.getByRole("button", { name: /^Project Budgets$/i }).click();
+    const toggle = page.getByTestId("project-closed-toggle");
+    await expect(toggle).toHaveText(/close project/i, { timeout: 15_000 });
+    await page.getByTestId("project-picker").getByRole("button").click();
+    await page
+      .getByRole("option", { name: new RegExp(`^${target}$`, "i") })
+      .click();
+    await expect(
+      page.getByTestId("project-picker").getByRole("button"),
+    ).toHaveText(new RegExp(target, "i"));
+    await expect.poll(plottedMonths, { timeout: 15_000 }).toBe(spanToToday);
+
+    await toggle.click();
+    await page
+      .locator("div.modal-overlay", {
+        hasText: /stops appearing in the budget overview/i,
+      })
+      .getByRole("button", { name: /^Close project$/i })
+      .click();
+    await expect(page.getByTestId("project-closed-notice")).toBeVisible({
+      timeout: 10_000,
+    });
+    await expect.poll(plottedMonths, { timeout: 15_000 }).toBe(spanToLast);
+  });
 });

@@ -183,7 +183,11 @@ export const BudgetCommandBar: React.FC<BudgetCommandBarProps> = ({
           and the whole page — past a 375px viewport. */}
       <div className="flex flex-wrap items-center justify-between md:justify-start gap-2 md:gap-3 flex-1 min-w-0">
         {children}
-        <div className="flex items-center gap-2 md:ms-auto shrink-0">
+        {/* The actions wrap among themselves too: a selected project brings
+            four `whitespace-nowrap` buttons (new, savings goal, close,
+            delete), wider together than a phone, and an unwrappable group
+            ran off the edge of the bar with the last ones out of reach. */}
+        <div className="flex flex-wrap items-center gap-2 md:ms-auto shrink-0 max-w-full">
           {freshnessBadge}
           {actions}
         </div>

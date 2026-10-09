@@ -3,7 +3,7 @@ import { enableDemoMode, navigateTo, resetDemoData } from "./helpers";
 
 /**
  * Dashboard "Recent Transactions" card — the row action bar, the
- * only-untagged filter and scroll retention.
+ * only-untagged and without-rule filters and scroll retention.
  *
  * Covers six regressions the card shipped with:
  *  1. Collapsing a row's action bar left the category/tag editor (and the
@@ -25,6 +25,32 @@ const RECENT_CARD = '[data-card-id="recent"]';
 
 function recentCard(page: Page): Locator {
   return page.locator(RECENT_CARD);
+}
+
+/**
+ * "View All" shares the title's row at the card's end edge; the filter chips
+ * sit on their own row beneath, starting from the title's (start) edge. The
+ * card's width follows the dashboard grid, so all three controls beside the
+ * title used to push "View All" past the card on desktop and onto a second
+ * row with the filters on a phone.
+ */
+async function expectHeaderLayout(card: Locator): Promise<void> {
+  const title = card.getByText("Recent Transactions", { exact: true });
+  const viewAll = card.getByRole("link", { name: /View All/ });
+  const filters = card.getByTestId("recent-tx-filters");
+  await expect(filters).toBeVisible();
+  const [cardBox, titleBox, viewAllBox, filtersBox] = await Promise.all([
+    card.boundingBox(),
+    title.boundingBox(),
+    viewAll.boundingBox(),
+    filters.getByRole("button").first().boundingBox(),
+  ]);
+  const centerY = (box: { y: number; height: number }) => box.y + box.height / 2;
+  expect(Math.abs(centerY(viewAllBox!) - centerY(titleBox!))).toBeLessThan(8);
+  expect(viewAllBox!.x + viewAllBox!.width).toBeLessThanOrEqual(cardBox!.x + cardBox!.width);
+  expect(filtersBox!.y).toBeGreaterThanOrEqual(titleBox!.y + titleBox!.height);
+  // The chip's own padding is pulled back, so its edge sits a few px before the title's.
+  expect(Math.abs(filtersBox!.x - titleBox!.x)).toBeLessThanOrEqual(10);
 }
 
 /** Scroll the feed's own scroll container by `delta` and return its scrollTop. */
@@ -263,10 +289,34 @@ test.describe("Dashboard recent transactions — row actions", () => {
     await untaggedFilter.click();
     await expect(untaggedFilter).toHaveAttribute("aria-pressed", "false");
 
+    // --- Without-rule filter ----------------------------------------------
+    // Every remaining row is a bank/credit-card row no rule matches, so its
+    // rule quick action offers to create a rule rather than view one.
+    const withoutRuleFilter = card.getByRole("button", { name: "Without Rule" });
+    await expect(withoutRuleFilter).toBeEnabled();
+    await withoutRuleFilter.click();
+    await expect(withoutRuleFilter).toHaveAttribute("aria-pressed", "true");
+    const unruledRow = card.getByTestId("recent-tx-row").first();
+    await expect(unruledRow).toBeVisible();
+    await card.getByRole("button", { name: "More actions" }).first().click();
+    await expect(
+      card.getByTestId("recent-tx-actions").getByRole("button", { name: /Add (to )?Rule/ }),
+    ).toBeVisible();
+    await expect(
+      card.getByTestId("recent-tx-actions").getByRole("button", { name: /View Rule/ }),
+    ).toHaveCount(0);
+    await card.getByRole("button", { name: "More actions" }).first().click();
+
+    await withoutRuleFilter.click();
+    await expect(withoutRuleFilter).toHaveAttribute("aria-pressed", "false");
+
+    await expectHeaderLayout(card);
+
     // --- Phone width: the action bar spans the row, in at most two lines ---
     // The bar used to sit indented past the row's icon column, which left it
     // narrow enough to wrap seven actions onto three lines.
     await page.setViewportSize({ width: 390, height: 900 });
+    await expectHeaderLayout(card);
     const row = card.getByTestId("recent-tx-row").first();
     await expect(row).toBeVisible();
     await row.click();

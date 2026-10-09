@@ -339,41 +339,37 @@ class TestBudgetAnalysisCarriesAllocations:
         assert block["total_allocated"] >= 0
 
 
-class TestInvestmentGoalRoutes:
-    """The API accepts an investment goal and refuses a malformed one."""
+class TestYearlySavingsRoutes:
+    """The yearly savings view and its per-year target."""
 
-    def test_create_an_investment_goal(self, test_client):
-        """POST / with kind=investment round-trips the kind."""
-        res = test_client.post(
-            "/api/savings-goals/",
-            json={
-                "name": "Invest",
-                "target_amount": 1000,
-                "kind": "investment",
-                "contribution_category": "Investments",
-            },
+    def test_get_returns_the_current_year(self, test_client):
+        """GET /yearly lists the current year even with no transactions."""
+        res = test_client.get("/api/savings-goals/yearly")
+
+        assert res.status_code == 200
+        body = res.json()
+        assert body["years"][-1]["is_current"] is True
+        assert body["pace"] is None
+
+    def test_put_sets_and_clears_a_target(self, test_client):
+        """PUT /yearly/{year}/target stores the target and returns the view."""
+        year = 2026
+        res = test_client.put(
+            f"/api/savings-goals/yearly/{year}/target", json={"target_amount": 120000}
         )
         assert res.status_code == 200
-        assert res.json()[0]["kind"] == "investment"
+        assert next(r for r in res.json()["years"] if r["year"] == year)["target"] == 120000
 
-    def test_an_investment_goal_needs_no_category(self, test_client):
-        """The category is always Investments; the API fills it in."""
-        res = test_client.post(
-            "/api/savings-goals/",
-            json={"name": "Invest", "target_amount": 1000, "kind": "investment"},
+        res = test_client.put(
+            f"/api/savings-goals/yearly/{year}/target", json={"target_amount": None}
         )
-        assert res.status_code == 200
-        assert res.json()[0]["contribution_category"] == "Investments"
+        assert next(
+            (r for r in res.json()["years"] if r["year"] == year), {"target": None}
+        )["target"] is None
 
-    def test_an_investment_goal_with_a_cash_setting_is_a_400(self, test_client):
-        """Cash-goal settings are still refused."""
-        res = test_client.post(
-            "/api/savings-goals/",
-            json={
-                "name": "Invest",
-                "target_amount": 1000,
-                "kind": "investment",
-                "monthly_cap": 500,
-            },
+    def test_put_rejects_a_non_positive_target(self, test_client):
+        """A zero target is a validation error."""
+        res = test_client.put(
+            "/api/savings-goals/yearly/2026/target", json={"target_amount": 0}
         )
-        assert res.status_code == 400
+        assert res.status_code == 422

@@ -4,17 +4,15 @@ import {
   ResponsiveContainer,
   ComposedChart,
   LineChart,
-  AreaChart,
   Line,
   Bar,
-  Area,
   XAxis,
   YAxis,
   Tooltip,
   Legend,
   Cell,
 } from "recharts";
-import { analyticsApi } from "../../services/api";
+import { analyticsApi, liabilitiesApi } from "../../services/api";
 import { useQueryKeys } from "../../hooks/useQueryKeys";
 import { useTranslation } from "react-i18next";
 import { formatCurrency, formatChange, formatPercentChange } from "../../utils/numberFormatting";
@@ -23,7 +21,6 @@ import {
   BAR_RADIUS,
   CHART_TEXT_COLOR,
   formatAxisNumber,
-  hexToRgba,
 } from "../../utils/chartStyle";
 import { ChartTooltip } from "../charts/ChartTooltip";
 import { ChartLegend } from "../charts/ChartLegend";
@@ -31,9 +28,10 @@ import { formatMonthCompact, formatMonthYear } from "../../utils/dateFormatting"
 
 type NetWorthView = "all" | "bank_balance" | "investments" | "net_worth" | "debt_payments";
 
+const DEBT_TOTAL_COLOR = "#f43f5e";
 const DEBT_COLORS = [
-  "#f43f5e", "#3b82f6", "#f59e0b", "#8b5cf6",
-  "#06b6d4", "#ec4899", "#10b981", "#f97316",
+  "#3b82f6", "#f59e0b", "#8b5cf6", "#06b6d4",
+  "#ec4899", "#10b981", "#f97316", "#6366f1",
 ];
 
 
@@ -46,6 +44,12 @@ export function NetWorthCard() {
   const { data: debtPaymentsData } = useQuery({
     queryKey: qk.analytics.debtPayments(),
     queryFn: async () => (await analyticsApi.getDebtPaymentsOverTime()).data,
+  });
+
+  const { data: debtOverTime } = useQuery<{ total: { date: string; balance: number }[] }>({
+    queryKey: qk.liabilities.debtOverTime(),
+    queryFn: async () => (await liabilitiesApi.getDebtOverTime()).data,
+    enabled: netWorthView === "debt_payments",
   });
 
   const { data: netWorthData } = useQuery({
@@ -66,23 +70,33 @@ export function NetWorthCard() {
     }));
   }, [netWorthData]);
 
-  // Stacked cumulative debt payments: one row per month, one key per tag.
-  const debtStacked = useMemo(() => {
+  // Monthly debt payments stacked per tag, plus the outstanding debt at each month's end.
+  const debtSeries = useMemo(() => {
     if (!debtPaymentsData || debtPaymentsData.length === 0) return null;
     const allTags = Array.from(
       new Set(debtPaymentsData.flatMap((d: { tags: Record<string, number> }) => Object.keys(d.tags))),
     ).sort() as string[];
-    const running: Record<string, number> = {};
-    const rows = debtPaymentsData.map((d: { month: string; tags: Record<string, number> }) => {
-      const row: Record<string, number | string> = { month: d.month };
-      for (const tag of allTags) {
-        running[tag] = (running[tag] ?? 0) + (d.tags[tag] || 0);
-        row[tag] = running[tag];
+    const paymentsByMonth = new Map<string, Record<string, number>>(
+      debtPaymentsData.map((d: { month: string; tags: Record<string, number> }) => [d.month, d.tags]),
+    );
+    const debtPoints = debtOverTime?.total ?? [];
+    const months = Array.from(
+      new Set([...paymentsByMonth.keys(), ...debtPoints.map((p) => p.date.slice(0, 7))]),
+    ).sort();
+    let pointIdx = 0;
+    let debt: number | undefined;
+    const rows = months.map((month) => {
+      while (pointIdx < debtPoints.length && debtPoints[pointIdx].date.slice(0, 7) <= month) {
+        debt = debtPoints[pointIdx].balance;
+        pointIdx++;
       }
+      const tags = paymentsByMonth.get(month) ?? {};
+      const row: Record<string, number | string | undefined> = { month, debt };
+      for (const tag of allTags) row[tag] = tags[tag] || 0;
       return row;
     });
     return { allTags, rows };
-  }, [debtPaymentsData]);
+  }, [debtPaymentsData, debtOverTime]);
 
   const seriesConfig = {
     bank_balance: {
@@ -111,33 +125,66 @@ export function NetWorthCard() {
 
   const renderChart = () => {
     if (netWorthView === "debt_payments") {
-      if (!debtStacked) {
+      if (!debtSeries) {
         return <p className="text-[var(--text-muted)]">{t("common.noData")}</p>;
       }
+      const lastTag = debtSeries.allTags[debtSeries.allTags.length - 1];
       return (
         <ResponsiveContainer width="100%" height="100%">
-          <AreaChart data={debtStacked.rows} margin={{ top: 8, bottom: 4, left: 0, right: 8 }}>
+          <ComposedChart data={debtSeries.rows} margin={{ top: 8, bottom: 4, left: 0, right: 0 }}>
             <XAxis dataKey="month" {...AXIS_DEFAULTS} tickFormatter={formatMonthCompact} />
-            <YAxis {...AXIS_DEFAULTS} tickFormatter={formatAxisNumber} width={48} />
-            <Tooltip content={chartTooltip} />
+            <YAxis
+              yAxisId="left"
+              {...AXIS_DEFAULTS}
+              tickFormatter={formatAxisNumber}
+              width={56}
+              label={{
+                value: t("dashboard.monthlyDebtPayment"),
+                angle: -90,
+                position: "insideLeft",
+                style: { fill: CHART_TEXT_COLOR, fontSize: 11 },
+              }}
+            />
+            <YAxis
+              yAxisId="right"
+              orientation="right"
+              axisLine={false}
+              tickLine={false}
+              tick={{ fill: DEBT_TOTAL_COLOR, fontSize: 11 }}
+              tickFormatter={formatAxisNumber}
+              width={56}
+              label={{
+                value: t("dashboard.outstandingDebt"),
+                angle: 90,
+                position: "insideRight",
+                style: { fill: DEBT_TOTAL_COLOR, fontSize: 11 },
+              }}
+            />
+            <Tooltip cursor={false} content={chartTooltip} />
             <Legend content={<ChartLegend />} />
-            {debtStacked.allTags.map((tag, i) => {
-              const color = DEBT_COLORS[i % DEBT_COLORS.length];
-              return (
-                <Area
-                  key={tag}
-                  dataKey={tag}
-                  name={tag}
-                  stackId="debt"
-                  type="monotone"
-                  stroke={color}
-                  strokeWidth={2}
-                  fill={hexToRgba(color, 0.25)}
-                  isAnimationActive={false}
-                />
-              );
-            })}
-          </AreaChart>
+            {debtSeries.allTags.map((tag, i) => (
+              <Bar
+                key={tag}
+                yAxisId="left"
+                dataKey={tag}
+                name={tag}
+                stackId="debt"
+                fill={DEBT_COLORS[i % DEBT_COLORS.length]}
+                radius={tag === lastTag ? BAR_RADIUS : 0}
+                isAnimationActive={false}
+              />
+            ))}
+            <Line
+              yAxisId="right"
+              dataKey="debt"
+              name={t("dashboard.outstandingDebt")}
+              type="monotone"
+              stroke={DEBT_TOTAL_COLOR}
+              strokeWidth={3}
+              dot={false}
+              isAnimationActive={false}
+            />
+          </ComposedChart>
         </ResponsiveContainer>
       );
     }

@@ -4,6 +4,7 @@ paths:
   - "backend/routes/savings_goals.py"
   - "backend/models/savings_goal.py"
   - "frontend/src/components/dashboard/GoalsSection.tsx"
+  - "frontend/src/components/dashboard/YearlySavingsSection.tsx"
   - "frontend/src/components/budget/SavingsGoalsBudgetSection.tsx"
   - "frontend/src/components/budget/BudgetGoalLink.tsx"
   - "frontend/src/components/dashboard/GoalAutoLinkField.tsx"
@@ -15,7 +16,7 @@ money into goal progress. `SavingsGoalService` (`core.py`) assembles mixins:
 `inputs` (goal order, the transaction context, the pre-goal pool),
 `engine` (`_simulate`, `_persist`, `ensure_allocations`, `rebuild`), `goals`
 (CRUD + transaction links) and `read_models` (enriched goals, month view,
-free cash, timeline); `common` holds the pure month helpers and `ROUNDING_EPSILON`.
+free cash, timeline) and `yearly` (this year's savings against its target, below); `common` holds the pure month helpers and `ROUNDING_EPSILON`.
 Read this before touching the service, the `savings-goals` routes,
 `GoalsSection.tsx`, or the goals block on the monthly budget view.
 
@@ -58,11 +59,27 @@ if free_cash < 0:                                (the month overspent)
   has left the spendable balance the earmark sits over.
 - **A negative month allocates nothing, and reaches the goals only last.**
   Overspending drains the free-cash pool first (below); a goal is only
-  un-funded once that pool is empty.
+  un-funded once that pool is empty, and what no goal can give back leaves
+  the pool negative.
 - **`monthly_cap` is what stops a big goal starving the rest.** Uncapped, a
   priority-1 goal absorbs everything until it fills.
-- **`start_month` gates participation**, so a goal created today cannot claim
-  surpluses that predate it. It defaults to the creation month.
+- **`start_month` gates participation**: nothing is allocated to a goal
+  before it. It defaults to the creation month. Free cash that built up
+  before a goal started is not lost to it, though — the waterfall hands out
+  the whole pool, so the goal picks that money up in its start month.
+- **A closed goal replays its history up to the month it closed**
+  (`closed_at` / `locked` in `_simulate`): its stored rows stand, and the
+  income, bills and borrowing derived every pass still run, until its closing
+  month; only then is it frozen. Frozen from its first month, it skipped the
+  borrowing that had paid its bills, so every read after it auto-closed
+  rewrote its history (a wedding fund read 213K against a 199K target).
+- **A target date is a deadline, not an end.** It drives the card's
+  "₪X/mo for N months" and "short · target date passed" lines; a goal still
+  short past it keeps collecting free cash until it is full. (A while ago the
+  target month ended a goal's turn, to stop "Yearly savings 2024" — an
+  investment goal at the top of the order — from taking every later surplus.
+  With investment goals gone that rule only starved a late trip fund, so it
+  was dropped.)
 
 ## The free-cash pool
 
@@ -77,50 +94,75 @@ engine starts taking money back out of the goals.
   Anchoring on prior wealth alone would ignore all the history the goals never
   saw.
 - **An opening balance leaves the pool in its own goal's start month** (a
-  future start: the current month), floored at zero. They used to all leave
+  future start: the current month), in full — the pool may go negative for
+  it. Floored at zero, a balance bigger than the pool earmarked money that
+  was never there, and `liquid` read above the bank. They used to all leave
   when the *earliest* goal started, so a later goal's opening balance emptied
   the pool months early: the deficit in between clawed back goals that had
   done nothing, and claiming a goal's earlier free cash moved the figure it
   had just claimed. `test_an_opening_balance_leaves_the_pool_when_its_goal_starts`
   and `test_claiming_does_not_move_the_figure_it_claimed` pin it.
-- **That pre-goal history floors at zero month by month**, just like the walk.
-  Summing it and flooring once put the floor at the earliest goal's start, so
-  deleting that goal moved the floor and changed how much it absorbed. Free
-  cash then rose by far less than the deleted earmark (a 120K goal once
-  released only ~34K). Deleting a goal must hand back exactly what it held and
-  leave `liquid` unchanged; `test_deleting_the_earliest_goal_releases_its_earmark`
-  pins that.
-- **It moves with the whole month, not just the positive part.** The waterfall
-  still only distributes `max(0, surplus)`, but the pool is credited with the
-  surplus itself and debited for every shekel a goal takes out of it. What the
-  goals do not claim simply stays in the pool.
-- **It goes negative only against income a goal holds.** Once the pool and
-  the clawable goals are exhausted, what is left of an overspend was paid with
-  money an income-funded goal holds (below) — gifts spent on something else.
-  That income is never taken back, so the pool goes negative by as much, down
-  to `-income_held()`. Anything deeper came from money this model does not
-  track (an overdraft, an untagged account) and the pool floors there rather
-  than carrying a phantom debt forward. Without the negative, protecting the
-  income made the spent money vanish: `liquid` read 100K high on real data.
+- **That pre-goal history is not floored either**, just like the walk. A
+  floor anywhere made the result depend on where it sat: summing and flooring
+  once put it at the earliest goal's start, so deleting that goal moved it (a
+  120K goal once released only ~34K). Deleting a goal must hand back exactly
+  what it held and leave `liquid` unchanged;
+  `test_deleting_the_earliest_goal_releases_its_earmark` pins that.
+- **`liquid` must equal the tracked bank + cash balance, to the shekel.** The
+  pool is prior wealth walked forward through the realized surplus, so both
+  halves of every balanced pair must be in it. **Manual investments are such
+  a pair**: their deposits are tracked transactions (they leave the pool when
+  they happen), and their investment
+  prior wealth — `-(sum of those deposits)` — is the money that paid for them
+  outside any tracked account. `_opening_free_cash` therefore adds investment
+  prior wealth (open and closed investments, as the net-worth chart does) to
+  bank and cash. Counting the deposits without it took a user's 151K of
+  manual deposits out of free cash with nothing to pay for them, and the
+  pre-goal floor hid most of it; the data was not duplicated, the engine read
+  half of the pair. `test_savings_goal_invariants.py` checks `liquid == bank`
+  on random households after every edit.
+- **It moves with the whole month, not just the positive part.** The pool is
+  credited with the surplus itself and debited for every shekel a goal takes
+  out of it. What the goals do not claim simply stays in the pool.
+- **It goes negative, and shows it.** Once the pool and the clawable goals are
+  exhausted, what is left of an overspend was paid with money no goal can give
+  back (an income goal's own income, money already invested) or money this
+  model does not track (an overdraft, an untagged account). Either way it was
+  spent, so the pool carries the whole hole and the card shows it in red. It
+  used to floor at `-income_held()` and, before that, at zero; both hid real
+  overspending — a 22.5K January of wedding bills read as an exact 0.
+- **A hole is repaid before any goal is funded.** The waterfall distributes
+  `max(0, min(surplus, free_cash))`, so a later surplus first refills the pool
+  and only the rest reaches the goals.
+- **A carried hole never claws back again.** Each month's clawback reaches the
+  goals only for a fall below `min(0, month_start + max(0, surplus))` — the
+  hole it inherited, less what its surplus repaid. Measured against zero, a
+  hole carried from an earlier month took goal money back every month after;
+  measured against the bare month start, an overspend after the surplus had
+  repaid the hole and funded a goal never reached that goal.
 - **It is spendable cash, not a bank statement.** Investment transfers reduce it
   for the same reason they reduce the surplus, so it will sit below the raw
   bank + cash balance for anyone who invests.
-- **Goals never draw on the standing pool, only on each month's new
-  surplus.** Money already in the accounts when a goal starts stays free cash
-  for good — a flat, non-zero pool line under a goal that absorbs every
-  month's surplus is correct, not a leak. The way to earmark that money is the
-  goal's opening balance: `GET /savings-goals/free-cash/before?month=&goal_id=`
-  (`get_free_cash_before`) reports the pool at the start of the goal's start
-  month with the goal itself left out of the walk. The editor offers it as a
-  one-click opening balance, and the goal row has a wallet action that
-  confirms the amount and applies it directly (hidden on closed goals, whose
-  history is frozen).
+- **The waterfall hands out the whole pool, not just the month's new
+  surplus** (`pool = max(0, free_cash)`). Free cash exists to fill goals: it
+  is left over only once every goal that can still take money is full,
+  or capped for the month. Distributing only each
+  month's new surplus left 100K idle on real data while goals sat short —
+  money already in the accounts when a goal started, and bills a wedding fund
+  borrowed for and its gifts repaid, never reached any goal. The trade-off:
+  with no idle pool to cushion it, a deficit month reaches the goals (lowest
+  priority first) straight away.
+- **No free-cash claim.** The row's wallet action and the editor's "use the
+  free cash before …" shortcut are gone — the waterfall already gives a goal
+  the free cash waiting when it starts. `GET /savings-goals/free-cash/before`
+  (`get_free_cash_before`) stays on the API. "Already saved" (the opening
+  balance) stays, for money held outside the tracked accounts.
 - **Moving an opening balance restates history.** Stored months keep their
   rows, so a new opening balance replayed against old ones leaves the pool
   short — the next deficit month then claws the difference back out of
-  whichever goal has no row there, which is the wrong goal. The editor
-  therefore runs a `rebuild` from the goal's start month whenever the opening
-  balance changes, and says so before the user saves.
+  whichever goal has no row there, which is the wrong goal. `update` restates
+  it (see "Editing a goal restates its history" below), and the editor says so
+  before the user saves.
 - `free_cash + Σ available` is the liquid money the goals sit over, which is
   what `GET /savings-goals/free-cash` reports as `liquid`. That endpoint
   short-circuits to zeros when the user keeps no goals, so the no-goals path
@@ -157,88 +199,85 @@ matters most is drained last.
   It hands money back to `free_cash`, not to the waterfall; getting this wrong
   lets a deficit month fund a goal that had no row there yet.
 
-## Investment goals: filled by transfers, not by surplus
+## Investment goals were removed
 
-A goal has a `kind` (`savings_goals.kind`; `NULL` — a row
-older than the column, or a demo DB synced by `sync_missing_columns` — reads
-as `cash`, via `common.is_investment_goal`). A **cash** goal is everything
-else in this file. An **investment** goal answers "have I invested X?":
+Goals are cash earmarks only. Investment goals (`kind='investment'`, with an
+optional `funding_category` / `funding_tags` income) tried to say, after the
+fact, which goal each investment transfer belonged to: shared transfers
+between goals, withdrawals, cash "ready to invest", income that paid for some
+deposits and not others. Every answer opened a new edge case. Migration
+`2a03db5febd7` deleted them (with their links and allocations — their money
+was invested, so none could become a cash goal: one fed by a gift would claim
+cash sitting in an investment) and dropped the columns.
 
-- **Progress is the net amount moved into investments.** Its
-  `contribution_category` is always `INVESTMENTS_CATEGORY` — the service sets
-  it on create and ignores any change, since every investment transfer lives
-  in that one category — and its optional `contribution_tags` narrow it to
-  some holdings (e.g. Pakam); none means every investment. `_goal_by_transaction` maps them as `LINK_INVESTED` (never stored),
-  **signed** and gated on `start_month` — deposits add, withdrawals take back,
-  earlier transfers stay ordinary. `_compute_context` reports them in
-  `invested`, out of the surplus.
-- **It never takes part in the waterfall or its clawback**, and never
-  auto-closes. `funded` is only its transfers (the plan records them in
-  `contributed`); the row's `this_month_allocation` is the month's net
-  transfers, shown as "invested" / "withdrawn".
-- **Investing is progress, not overspending.** A transfer to a plain
-  Investments category is a deficit that can claw back the cash goals — a
-  75K month into a savings deposit used to take money back out of a trip
-  fund. An investment goal's transfers leave the free-cash pool (the money is
-  no longer liquid) *after* that month's clawback, floored at zero, so they
-  can never reach another goal. A withdrawal hands the money back. The flip
-  side: a transfer the pool could not cover is treated as untracked money,
-  so `liquid` can sit above the bank for that amount.
-- **It is not cash.** `get_free_cash` leaves it out of `earmarked` and
-  `liquid`.
-- **It can name the income that pays for it** (`funding_category` /
-  `funding_tags`, "Paid from income" in the editor; investment goals only).
-  `_goal_by_transaction` maps that income as `LINK_FUNDING` (never stored,
-  from the goal's start month), `_compute_context` reports it in `funding`,
-  out of the surplus, and `_simulate` keeps it in `to_invest`: each deposit
-  is paid from it first and only the rest leaves free cash; a withdrawal
-  still goes back to free cash. What is not yet invested is cash the goal
-  holds — the payload's `to_invest` ("… ready to invest"), counted in
-  `earmarked` and in how far the pool may go negative. Progress is still the
-  net invested.
-- **A goal can switch kind** (`update(kind=...)` → `_change_kind`, the
-  editor's type choice is shown when editing too). What one kind is filled by
-  means nothing to the other, so the switch clears it — to investment: the
-  opening balance, cap, spending rule, saved-into rule and single-transaction
-  links, with the rule set to Investments; to cash: the investment and
-  funding rules — then applies the fields sent with it and restates history
-  from the earlier of the old and new start months. A closed goal must be
-  reopened first. The editor warns before saving and blanks the rules of the
-  kind it leaves (restoring them if switched back).
-- **One income feeds one goal.** A saved-into rule and a funding rule both
-  claim income, so `_validate_income_claims` refuses a second claim on the
-  same category (overlapping tags, or either side covering every tag), and a
-  funding rule on a cash goal.
-- **Cash-goal settings are refused** (`_validate_investment_fields`,
-  `_reject_investment_goal`): it takes no
-  `opening_balance`, `monthly_cap`, spending rule or single linked
-  transaction. The card hides the free-cash claim action, and the editor
-  offers only name, target, start, date and "Only these investments" (a
-  tags-only picker, `InvestmentTagsField`).
-- **Creating, rescoping or deleting one restates history from its start
-  month** (`_restate_for_transfers` → `rebuild`). Which transfers it owns
-  decides, in every month they touch, whether they are progress or a deficit
-  that clawed back the cash goals; applying that only forward would leave
-  every old clawback in place. Pinned by
-  `test_creating_and_deleting_it_restate_the_past`.
+- **Investing is an ordinary outflow.** A transfer into an investment leaves
+  free cash, and a deposit bigger than the pool is a deficit that can claw a
+  cash goal back, like any other spending of earmarked money.
+- **How much a year saved** — the question the yearly investment goals stood
+  in for — is measured on its own, outside the waterfall. Don't reintroduce
+  a way for a goal to own investment transfers.
 
-## Goals with income of their own hold exactly that income
+## Goals with income of their own: exactly that income, surplus for the gap
 
-A cash goal with a `contribution_category` (a "saved into" rule — the wedding
-fund fed by `Other Income / Wedding`) holds **exactly its income**: the
-wedding gifts, never the salary that was left over while it waited for them.
+A goal with a `contribution_category` (a "saved into" rule — the wedding
+fund fed by `Other Income / Wedding`) is **filled by that income first** and
+still **takes its waterfall turn** for the rest.
 
-- **It never takes surplus from the waterfall** and **is never clawed back**,
-  like an investment goal. An earlier version let it take surplus toward its
-  target until the income came and release it after; on real data that
-  parked 158K of salary in a wedding fund for a year, and a deficit then
-  clawed a 300K goal's own gifts back and refilled it with surplus, so it
-  showed 255K made of the wrong money.
+- **Surplus fills only what the income will never cover.** `surplus_room`
+  is the target less every shekel of the goal's own income in the history
+  (known to date), and caps its `fill`. A goal whose income meets its target
+  takes no free cash at all, even in the months before the income lands —
+  bills there are fronted and repaid. The user's words: Marriage kickstart
+  "takes from free cash instead of the connected income, while the connected
+  income has the exact same amount it needs". The release below is now only
+  a safety net (income that grows past what the history showed).
+- **Surplus it does take is ordinary waterfall money** (`fill` in
+  `_simulate`, written as ordinary ledger rows). Income is measured against the target *ignoring*
+  that surplus, so it is always kept; once goal-held money passes the target,
+  `give_back_fill` returns the surplus the income made unnecessary to free
+  cash as a negative row in the income's month. A goal whose income covers
+  its target therefore ends holding the income alone; one whose income falls
+  short is topped up from free cash in priority order. The user asked for
+  this explicitly ("free cash should always fill the goals in a waterfall
+  manner"): a 300K kickstart goal funded by 300K of gifts showed 192K while
+  it ignored the waterfall.
+- **A deficit reclaims only that surplus, never the income.** The clawback
+  caps an income goal's give-back at its `fill`. An earlier waterfall version
+  without that cap clawed a 300K goal's own gifts back and refilled it with
+  surplus, so it showed 255K made of the wrong money. Its other failure —
+  salary parked in the goal for a year while it waited for the gifts — is
+  now the intended behaviour: that is the goal's place in the waterfall, and
+  the gifts hand it back when they land.
+- **A closed goal's later income is ordinary money.** Income its rule
+  matches after it closed joins the month's surplus; it used to be kept
+  without limit, so a closed 3K goal held
+  34K. Its saved-into rule matches only from its start month, like every
+  rule — income before it was claimed, never walked, and vanished.
+- **Income that repays the goal's bills is kept even past target.** When the
+  income lands on a goal already at target that borrowed for its bills, the
+  repaying part is its income spent on them; spilled as well, the same money
+  reached free cash twice and the goal read a negative `available`.
+- **Surplus that reaches a goal still owing for a bill repays that debt
+  first** (`repay_bridge`, recorded in `plan.released`), exactly as its
+  income would; a replayed positive row does the same, so a rebuild and a
+  replay agree.
+- **History replay: a goal with rows elsewhere is no newcomer.** In a
+  non-recomputed month only a goal with no stored rows at all may take what
+  the month left unallocated. A net row hides a take that a same-month
+  deficit gave back, so the old "no row this month" test let a lower goal
+  grab that surplus on every replay (a wedding fund gained 14.6K per read).
 - **A bill that lands before the income is paid with borrowed free cash**
   (`plan.fronted`, tracked in `bridge`): the goal pays it in full and owes the
   gap. **Income repays the bridge first** (`plan.released`, credited back to
   free cash); what is still owed when no more income comes — bills beyond the
   gifts — stays owed, and a goal that owes never auto-closes.
+- **That borrowing is a loan, not an overspend** (`lent()` in `_simulate`).
+  The waterfall and the clawback count lent money as still there; only the
+  free cash shown to the user carries it as negative until the goal's own
+  income repays it. Read as an overspend, a wedding's bills ahead of its
+  gifts clawed a yearly savings goal back, later surpluses went to refilling
+  the hole instead of to goals, and the gifts that finally repaid it went to
+  whatever goal was open by then.
 - Income past the target still spills into the month's surplus.
 - **Its progress is what it received, never what it owes.** `funded` is
   opening + surplus + income; free cash borrowed for bills and not yet repaid
@@ -253,11 +292,6 @@ wedding gifts, never the salary that was left over while it waited for them.
   `total`: a goal's bar is what it received (surplus and income), so a gift
   month that repaid earlier bills still reads as the whole gift. Netted in, a
   164K gift month showed as 85K and read as the goal ignoring its income.
-- **No free-cash claim.** The wallet action and the editor's "use earlier
-  free cash" shortcut are hidden on an income-funded goal: free cash claimed
-  as its opening balance is exactly what stopped a wedding fund from using its
-  gifts (the goal reached target on 64K of plain free cash, and the gifts
-  spilled). "Already saved" stays, for money truly received before tracking.
 - **Creating, rescoping or deleting the rule restates history** from the
   goal's start month (`_restate_for_transfers`, shared with investment
   goals).
@@ -277,11 +311,9 @@ read high by the overshoot.
 ## Investment backing was removed
 
 Goals could once earmark a holding (`savings_goal_investments`, valued live
-off the investment). It was dropped once investment goals existed: an
-investment is just a category and tag, so money moved into one is tracked
-the same way any other transfer is, and a goal about it is an investment
-goal. Migration `b9a0f25d4d28` drops the table. Don't reintroduce a second
-way to count the same holding toward a goal.
+off the investment). Migration `b9a0f25d4d28` drops the table, and
+investment goals that replaced it were removed in turn (above). Don't
+reintroduce a way to count a holding toward a goal.
 
 ## Every shekel is counted once
 
@@ -379,19 +411,41 @@ columns through the ordinary goal update. Rules:
 
 Allocations persist per `(goal, month)` in `savings_goal_allocations`.
 
-- `ensure_allocations()` fills in months with no rows and **always recomputes
-  the current month**, which is provisional until it ends.
-- A month already on record keeps its amounts. A goal added later may still
-  draw on what that month left *unallocated* — that is additive backfill, and
-  it never takes from a goal already funded there.
-- **Reordering is the exception: it restates everything.** `reorder` sets the
+- `ensure_allocations()` **always recomputes the current month**, which is
+  provisional until it ends, and every month after the ledger's last month
+  with rows (`horizon` in `_simulate`) — a month nobody opened the app in.
+- **A month on record replays its rows and nothing else**: no waterfall take,
+  no clawback. There is no "newcomer" backfill any more: every create, edit,
+  link and deletion restates history, so a goal never arrives in a month on
+  record. The backfill let a goal with no row take what a net row (a take a
+  same-month deficit gave back) made look unclaimed, and every read then
+  wrote a new row on top of the last — rebuild and read disagreed.
+- **Links restate too.** `link_transaction` and `unlink_transaction` rebuild
+  the whole history (a link can move a transaction between goals), and
+  `set_spending_link` restates from its goal's start month. Explicit links,
+  like every rule, count only from the goal's start month: a row linked
+  before it left the surplus and was never paid by anything.
+- **A new order needs a fresh transaction context.** When two goals' rules
+  match one row, the higher goal takes it, so `rebuild(order=...)` drops the
+  cached context before and after; reused, a reorder restated history under
+  the old order's matching.
+- **Editing a goal restates its history.** Every goal takes its waterfall
+  turn, so a change to anything in `_ALLOCATION_FIELDS` (start month, target,
+  cap, opening balance, saved-into / spending rules)
+  makes `update` rebuild from the **earlier of the old and new start month** —
+  moving a start later must clear the months it no longer covers. `create`
+  and `delete` always restate from the goal's start month too. Only an edit to
+  the rules of a goal fed by its own income used to restate; moving
+  a cash goal's start date, or changing any goal's target, kept every past
+  month as it was. The client no longer calls `rebuild` after an edit — the
+  update already did.
+- **Reordering restates everything.** `reorder` sets the
   priorities and runs a full `rebuild` in the same call. It used to apply
   forward only, with a separate previewed "Redistribute" to restate history
   — which left the list saying one order while every past month was still
   allocated under the old one, until the user found the button. Closed goals
-  keep their frozen rows, as in any rebuild. The editor's opening-balance
-  change and the free-cash claim still call `rebuild` directly;
-  `dry_run=True` stays on the endpoint, but no screen previews any more.
+  keep their frozen rows, as in any rebuild. `dry_run=True` stays on the
+  endpoint, but no screen previews any more.
 - **A rebuild computes first and writes last, in one transaction.** The new
   order (reorder passes it as `rebuild(order=...)`, simulated via
   `_order_override` without touching the stored priorities), the deletion of
@@ -454,8 +508,14 @@ not closed.
   The timeline query is `enabled` on the panel being open, so a card nobody
   expands never fetches a window.
 
-  Stacked bars carry each month's per-goal funding **with the free-cash pool
-  stacked on top**; a negative segment is a clawback. Positives stack up from zero and negatives
+  A **Monthly / Cumulative** toggle picks the reading
+  (`goalHistoryRows.ts`): monthly bars are what each goal received that month;
+  cumulative bars are what it has received so far, opening balance included,
+  so each goal's last bar matches its card. Running totals only add up from
+  the first month, so the cumulative view fetches the whole history
+  (`timeline?months=0`) and trims to the 6M/12M window itself. Free cash is a
+  standing balance in both. Stacked bars carry each month's per-goal funding
+  **with the free-cash pool stacked on top**; a negative segment is a clawback. Positives stack up from zero and negatives
   down from it (`STACK_OFFSET = "sign"` in `charts/stackedBarShape.tsx`) —
   Recharts' default piles a negative segment onto the positive column and
   draws it over the bars. The pool is a standing
@@ -492,6 +552,45 @@ when the user has no goals, and `_build_context` is memoised per service
 instance (one request needs it twice — allocating, then enriching). Both exist
 so the many users who keep no goals pay nothing for the section.
 
+## This year's savings: measured, not earmarked
+
+The top of the dashboard card (`YearlySavingsSection.tsx`) answers a
+different question from the goals: how much did each year *save*, against a
+target set for it? `yearly.py` (`YearlySavingsMixin`) computes it straight
+from the transaction context the waterfall reads — never from the allocation
+ledger — so it does not depend on goal order, priorities, caps or clawbacks,
+and a goal edit cannot change it except through what the goal claims as its
+own money.
+
+A month saved its income minus its spending:
+
+- `surplus` (which already took investing out) **plus `invested`** — the net
+  money moved into investments that no goal link claims. Investing is saving;
+  a withdrawal is neutral until it is spent, and a spent withdrawal is
+  spending, so a month or a whole year can be negative (red text, empty bar).
+  Gains and losses on investments never appear.
+- Loans as the rest of the app counts them: a receipt is income, a repayment
+  spending.
+- **A goal with a saved-into rule:** its income is the goal's money, not the
+  year's savings, and the bills it pays with that income are not the year's
+  spending. Only the part of its bills beyond the income received so far
+  (cumulative, per goal) is spending, counted in the month it crosses.
+- **A goal without one:** its utilizations are spending in the month they
+  happen — the money was saved before and is being spent now.
+
+Targets are one per calendar year (`yearly_savings_targets`, `year` primary
+key; `PUT /savings-goals/yearly/{year}/target` with `null` clears it, a
+non-positive amount is a 400). `pace` exists only for the current year with a
+target: `expected_by_today = target × elapsed days / days in year`, `ahead_by`
+is negative when behind, and `needed_per_month` spreads what is left over the
+months left **including the current one**.
+
+The response carries every year from the first month on record to today (plus
+any year with a target), each with its months, so the card can draw this
+year's bars and name the last three years. Its query key
+(`qk.savingsGoals.yearly()`) sits under the savings-goals prefix, so every
+goal write refreshes it.
+
 ## Gotchas
 
 - **Compare against a target with `ROUNDING_EPSILON`, never bare `>=`.**
@@ -501,7 +600,7 @@ so the many users who keep no goals pay nothing for the section.
   auto-closes. Both the enrichment and the auto-close check absorb half an
   agora; there is a unit test pinning it.
 - **Demo Mode ships three goals** (`create_savings_goals` in
-  `scripts/generate_demo_data.py`) covering achieved, investment-goal and
+  `scripts/generate_demo_data.py`) covering achieved, long-horizon and
   utilized states. Allocations are deliberately *not* seeded — the engine
   derives them on first read, after `_shift_dates` has re-anchored
   `start_month` / `target_date`. A spec that asserts absolute waterfall

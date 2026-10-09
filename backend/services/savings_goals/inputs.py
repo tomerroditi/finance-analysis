@@ -13,14 +13,13 @@ from backend.constants.categories import PRIOR_WEALTH_TAG
 from backend.constants.tables import TransactionsTableFields
 from backend.models.savings_goal import (
     LINK_CONTRIBUTION,
-    LINK_FUNDING,
-    LINK_INVESTED,
     LINK_UTILIZATION,
     SavingsGoal,
 )
 from backend.services.bank_balance_service import BankBalanceService
 from backend.services.cash_balance_service import CashBalanceService
-from backend.services.savings_goals.common import is_investment_goal, month_key
+from backend.services.investments import InvestmentsService
+from backend.services.savings_goals.common import month_key
 from backend.services.transaction_classification import transactions_masks
 
 # Rows synthesised from prior-wealth balances are opening capital, not income.
@@ -67,25 +66,33 @@ class InputsMixin:
         Bank and cash *prior wealth* is exactly that opening balance — each
         account stores ``current balance - sum(its tracked transactions)`` —
         so walking the realized surplus forward from here reconstructs the
-        liquid balance, the same way the net-worth chart does. Investment
-        prior wealth is deliberately left out: money sitting in an investment
-        is not free cash, which is also why transfers into one reduce the
-        pool as they happen.
+        liquid balance, the same way the net-worth chart does.
+
+        Investment prior wealth belongs here too, for the same reason it seeds
+        the net-worth chart's bank line: a manual investment's deposits are
+        tracked transactions (they leave the pool when they happen), and its
+        prior wealth — ``-(sum of those deposits)`` — is the money they were
+        paid with, which no tracked account recorded. The two cancel. Counting
+        the deposits without their prior wealth took every manual deposit out
+        of free cash with nothing to pay for it (151K on real data).
 
         Returns
         -------
         float
-            Combined bank + cash prior wealth, ``0.0`` when neither is set up.
+            Combined bank, cash and investment prior wealth, ``0.0`` when none
+            is set up.
         """
         bank = BankBalanceService(self.db).get_total_prior_wealth()
         cash = CashBalanceService(self.db).get_total_prior_wealth()
-        return float(bank) + float(cash)
+        invested = InvestmentsService(self.db).get_total_prior_wealth()
+        return float(bank) + float(cash) + float(invested)
 
     def _pool_before(self, month: tuple[int, int], context: dict[str, Any]) -> float:
         """Return the free cash at the start of ``month``, when no goal has started yet.
 
-        Prior wealth walked forward through every month before ``month``,
-        floored at zero month by month.
+        Prior wealth walked forward through every month before ``month``. It
+        is not floored: the walk that follows lets the pool go negative, and
+        so does the history before it.
 
         Parameters
         ----------
@@ -97,13 +104,13 @@ class InputsMixin:
         Returns
         -------
         float
-            The pool, never negative.
+            The pool, which may be negative.
         """
         free_cash = self._opening_free_cash()
         for month_seen in sorted(context["surplus"]):
             if month_seen >= month:
                 break
-            free_cash = max(0.0, free_cash + context["surplus"][month_seen])
+            free_cash += context["surplus"][month_seen]
         return free_cash
 
     def _build_context(self) -> dict[str, Any]:
@@ -118,9 +125,11 @@ class InputsMixin:
         -------
         dict
             ``surplus`` — ``{(year, month): float}``; ``direct`` (every
-            contribution), ``drawn`` (the part of it paid out of the pool),
-            ``utilized`` and ``invested`` (an investment goal's net transfers)
-            — ``{(year, month): {goal_id: amount}}``.
+            contribution), ``drawn`` (the part of it paid out of the pool) and
+            ``utilized`` — ``{(year, month): {goal_id: amount}}``; and
+            ``invested`` — ``{(year, month): float}``, the net money moved into
+            investments outside any goal (withdrawals negative), which the
+            surplus already took out.
         """
         if self._context_cache is not None:
             return self._context_cache
@@ -136,7 +145,6 @@ class InputsMixin:
             "drawn": {},
             "utilized": {},
             "invested": {},
-            "funding": {},
         }
         if df.empty:
             return empty
@@ -187,6 +195,7 @@ class InputsMixin:
         unlinked = df[df["_goal_id"].isna()]
 
         surplus: dict[tuple[int, int], float] = {}
+        invested: dict[tuple[int, int], float] = {}
         if not unlinked.empty:
             masks = transactions_masks(unlinked)
             income = (
@@ -206,6 +215,9 @@ class InputsMixin:
             # summing all three straight through already nets them out.
             combined = income.add(expenses, fill_value=0).add(investments, fill_value=0)
             surplus = {(int(y), int(m)): float(v) for (y, m), v in combined.items()}
+            invested = {
+                (int(y), int(m)): -float(v) for (y, m), v in investments.items()
+            }
 
         handed_back = card_spent.groupby(["_year", "_month"])[amount_col].sum()
         for (y, m), spent in handed_back.items():
@@ -215,26 +227,11 @@ class InputsMixin:
         direct: dict[tuple[int, int], dict[int, float]] = {}
         drawn: dict[tuple[int, int], dict[int, float]] = {}
         utilized: dict[tuple[int, int], dict[int, float]] = {}
-        invested: dict[tuple[int, int], dict[int, float]] = {}
-        funding: dict[tuple[int, int], dict[int, float]] = {}
         for _, row in linked.iterrows():
             key = (int(row["_year"]), int(row["_month"]))
             goal_id = int(row["_goal_id"])
             raw = float(row[amount_col])
             amount = -raw if row["_signed"] else abs(raw)
-            # A transfer into an investment is negative in the raw convention
-            # and a withdrawal positive, so the signed amount is exactly the
-            # net invested: deposits add, withdrawals take back.
-            if row["_link_type"] == LINK_INVESTED:
-                invested.setdefault(key, {})
-                invested[key][goal_id] = invested[key].get(goal_id, 0.0) + amount
-                continue
-            # Income set aside to pay for an investment goal's transfers keeps
-            # its sign: a refund of it takes back what it had set aside.
-            if row["_link_type"] == LINK_FUNDING:
-                funding.setdefault(key, {})
-                funding[key][goal_id] = funding[key].get(goal_id, 0.0) + raw
-                continue
             bucket = direct if row["_link_type"] == LINK_CONTRIBUTION else utilized
             bucket.setdefault(key, {})
             bucket[key][goal_id] = bucket[key].get(goal_id, 0.0) + amount
@@ -252,7 +249,6 @@ class InputsMixin:
             "drawn": drawn,
             "utilized": utilized,
             "invested": invested,
-            "funding": funding,
         }
 
     @staticmethod
@@ -313,34 +309,12 @@ class InputsMixin:
             tags = self._split_tags(goal.contribution_tags)
             if tags and tags != [_ALL_TAGS] and tag_col in df.columns:
                 matches &= df[tag_col].isin(tags)
-            # An investment goal counts transfers both ways, and only from its
-            # start month: what was invested before it existed is not
-            # progress toward it, and stays an ordinary transfer of its month.
-            if is_investment_goal(goal):
-                start = month_key(goal.start_month)
-                for key, matched, row_month in zip(
-                    keys, matches, row_months, strict=True
-                ):
-                    if matched and (start is None or row_month >= start):
-                        mapping[key] = (goal.id, LINK_INVESTED, True)
-                continue
-            for key, matched in zip(keys, matches, strict=True):
-                if matched:
-                    mapping[key] = (goal.id, LINK_CONTRIBUTION, False)
-
-        # The income an investment goal is paid from, from its start month:
-        # set aside for its transfers rather than counted as surplus.
-        for goal in self._goals_in_order():
-            if not (is_investment_goal(goal) and goal.funding_category):
-                continue
+            # Income before the goal started was never its money: claimed but
+            # never walked, it vanished from both the goal and free cash.
             start = month_key(goal.start_month)
-            matches = df[category_col] == goal.funding_category
-            tags = self._split_tags(goal.funding_tags)
-            if tags and tags != [_ALL_TAGS] and tag_col in df.columns:
-                matches &= df[tag_col].isin(tags)
             for key, matched, row_month in zip(keys, matches, row_months, strict=True):
                 if matched and (start is None or row_month >= start):
-                    mapping[key] = (goal.id, LINK_FUNDING, False)
+                    mapping.setdefault(key, (goal.id, LINK_CONTRIBUTION, False))
 
         # Walked bottom-up so the goal higher in the waterfall writes last.
         for goal in reversed(self._goals_in_order()):
@@ -357,26 +331,28 @@ class InputsMixin:
 
         links = self.repo.get_links()
         if not links.empty:
+            # A link only counts from its goal's start month, like the rules:
+            # before it the walk never visits the goal, so a row linked there
+            # left the surplus and was never paid by anything.
+            month_of = dict(zip(keys, row_months, strict=True))
+            starts = {g.id: month_key(g.start_month) for g in self._goals_in_order()}
             for _, link in links.iterrows():
+                goal_id = int(link["goal_id"])
+                start = starts.get(goal_id)
                 if link["source_type"] == "split":
-                    key = (None, None, int(link["source_id"]))
-                    for candidate in keys:
-                        if candidate[2] == key[2]:
-                            mapping[candidate] = (
-                                int(link["goal_id"]),
-                                link["link_type"],
-                                False,
-                            )
+                    split_id = int(link["source_id"])
+                    matched = [c for c in keys if c[2] == split_id]
                 else:
-                    for candidate in keys:
-                        if candidate[0] == link["source_table"] and str(
-                            candidate[1]
-                        ) == str(link["source_id"]):
-                            mapping[candidate] = (
-                                int(link["goal_id"]),
-                                link["link_type"],
-                                False,
-                            )
+                    matched = [
+                        c
+                        for c in keys
+                        if c[0] == link["source_table"]
+                        and str(c[1]) == str(link["source_id"])
+                    ]
+                for candidate in matched:
+                    if start is not None and month_of[candidate] < start:
+                        continue
+                    mapping[candidate] = (goal_id, link["link_type"], False)
         return mapping
 
     @staticmethod

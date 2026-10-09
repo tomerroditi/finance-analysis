@@ -21,6 +21,7 @@ from backend.models.savings_goal import (
     SavingsGoal,
     SavingsGoalAllocation,
     SavingsGoalLink,
+    YearlySavingsTarget,
 )
 from backend.models.scraping import ScrapingHistory
 from backend.models.tagging_rules import TaggingRule
@@ -65,4 +66,5 @@ __all__ = [
     "SplitTransaction",
     "TaggingRule",
     "TimestampMixin",
+    "YearlySavingsTarget",
 ]

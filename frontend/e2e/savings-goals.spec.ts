@@ -265,6 +265,47 @@ test.describe("Savings goals", () => {
       .click();
     await expect(history).toBeVisible();
 
+    // --- cumulative view ------------------------------------------------
+    // The same months read as running totals, opening balance included, so a
+    // goal's last bar matches its card. The achieved goal never drew on the
+    // waterfall, so the monthly view has no series for it; its opening
+    // balance gives it one here.
+    const panel = page.getByTestId("goals-history");
+    const monthly = panel.getByRole("button", { name: "Monthly" });
+    const cumulative = panel.getByRole("button", { name: "Cumulative" });
+    await expect(monthly).toHaveAttribute("aria-pressed", "true");
+    await cumulative.click();
+    await expect(cumulative).toHaveAttribute("aria-pressed", "true");
+    await expect(
+      history.getByRole("button", { name: "E2E Achieved Goal" }),
+    ).toBeVisible({ timeout: 30_000 });
+    await expect(panel.getByText(/received so far/i)).toBeVisible();
+    // --- on a phone ------------------------------------------------------
+    // The view and window controls share one row, and a month's tooltip —
+    // a line per goal — stays inside the plot instead of over the legend.
+    const desktop = page.viewportSize();
+    await page.setViewportSize({ width: 390, height: 900 });
+    const groupTops = await panel
+      .getByTestId("goals-history-controls")
+      .locator(":scope > div")
+      .evaluateAll((groups) => groups.map((g) => g.getBoundingClientRect().top));
+    expect(groupTops).toHaveLength(2);
+    expect(Math.abs(groupTops[0] - groupTops[1])).toBeLessThan(2);
+    await history.scrollIntoViewIfNeeded();
+    const lastBar = await history.locator(".recharts-bar-rectangle").last().boundingBox();
+    await page.mouse.move(lastBar!.x + lastBar!.width / 2, lastBar!.y + 2);
+    const tooltipBox = history.locator(".recharts-tooltip-wrapper");
+    await expect(tooltipBox.getByText(/:/).first()).toBeVisible();
+    const tip = await tooltipBox.boundingBox();
+    const legend = await history.locator(".recharts-legend-wrapper").boundingBox();
+    expect(tip!.y + tip!.height).toBeLessThanOrEqual(legend!.y + 1);
+    if (desktop) await page.setViewportSize(desktop);
+
+    await monthly.click();
+    await expect(
+      history.getByRole("button", { name: "E2E Achieved Goal" }),
+    ).toHaveCount(0);
+
     // The toggle closes what it opened, range chips and all.
     await historyToggle.click();
     await expect(history).toBeHidden();
@@ -369,6 +410,7 @@ test.describe("Savings goals", () => {
       goalRow(page, "E2E Achieved Goal").getByText("#1"),
     ).toBeVisible();
 
+
     // Restore the original order so the suite is order-independent.
     await goalRow(page, "E2E In Progress Goal")
       .getByRole("button", { name: /move up/i })
@@ -376,6 +418,110 @@ test.describe("Savings goals", () => {
     await expect(
       goalRow(page, "E2E In Progress Goal").getByText("#1"),
     ).toBeVisible();
+  });
+
+  test("a goal added under an open history still stacks under free cash", async ({
+    page,
+  }) => {
+    // Recharts 3 stacks bars in the order they first mounted, not the order
+    // they render in. A series that appeared while the chart was open — a new
+    // goal, or older ones a wider window brings in — mounted after free cash
+    // and was drawn on top of it, and the rounded ends landed mid-column.
+    const seeded = await createGoal({
+      name: "E2E Stack A",
+      target_amount: 500000,
+      monthly_cap: 1000,
+      start_month: monthsAgo(6),
+    });
+    let addedId: number | undefined;
+    try {
+      await openDashboardWithGoals(page);
+      await expect(goalName(page, "E2E Stack A")).toBeVisible({ timeout: 30_000 });
+      const history = page.getByTestId("goals-history");
+      await history.getByRole("button", { name: /month by month/i }).click();
+      const chart = page.getByTestId("goals-history-chart");
+      await expect(chart.locator(".recharts-bar-rectangle").first()).toBeAttached({
+        timeout: 30_000,
+      });
+
+      await page.getByRole("button", { name: /add goal/i }).click();
+      const dialog = page.getByRole("dialog");
+      await dialog.locator("#goal-name").fill("E2E Stack B");
+      await dialog.locator("#goal-target").fill("500000");
+      await dialog.locator("#goal-cap").fill("1000");
+      await dialog.locator("#goal-start").fill(`${monthsAgo(6)}-01`);
+      await dialog.getByRole("button", { name: /^save$/i }).click();
+      await expect(dialog).toHaveCount(0);
+      await expect(goalName(page, "E2E Stack B")).toBeVisible({ timeout: 30_000 });
+      await expect(chart).toHaveAttribute("aria-busy", "false", { timeout: 30_000 });
+
+      const goals: { id: number; name: string }[] = await (
+        await ctx.get(`${API_BASE}/savings-goals/`)
+      ).json();
+      addedId = goals.find((goal) => goal.name === "E2E Stack B")?.id;
+      const added = `url(#goal-fill-${addedId})`;
+      await expect(chart.locator(`[fill="${added}"]`).first()).toBeAttached({
+        timeout: 30_000,
+      });
+
+      // In every column holding both, free cash caps the new goal's segment.
+      const misplaced = await chart.evaluate((root, fill) => {
+        const columns = new Map<number, { goal?: number; free?: number }>();
+        for (const rect of root.querySelectorAll(".recharts-bar-rectangle")) {
+          const shape = rect.querySelector("path, rect") as SVGGraphicsElement | null;
+          if (!shape) continue;
+          const box = shape.getBBox();
+          if (box.height <= 0) continue;
+          const column = columns.get(Math.round(box.x)) ?? {};
+          if (shape.getAttribute("fill") === fill) column.goal = box.y;
+          if (shape.getAttribute("fill") === "url(#goal-fill-free)") column.free = box.y;
+          columns.set(Math.round(box.x), column);
+        }
+        const shared = [...columns.values()].filter(
+          (c) => c.goal !== undefined && c.free !== undefined,
+        );
+        return {
+          shared: shared.length,
+          bad: shared.filter((c) => (c.goal as number) < (c.free as number)).length,
+        };
+      }, added);
+      expect(misplaced.shared).toBeGreaterThan(0);
+      expect(misplaced.bad).toBe(0);
+    } finally {
+      for (const id of [seeded.id, addedId]) {
+        if (id !== undefined) await ctx.delete(`${API_BASE}/savings-goals/${id}`);
+      }
+    }
+  });
+
+  test("this year's savings can be given a target from the card", async ({
+    page,
+  }) => {
+    // The card opens with what this year saved; setting a target turns it
+    // into progress, a pace and what is still needed per month.
+    const year = new Date().getFullYear();
+    await ctx.put(`${API_BASE}/savings-goals/yearly/${year}/target`, {
+      data: { target_amount: null },
+    });
+    try {
+      await openDashboardWithGoals(page);
+      const section = page.getByTestId("yearly-savings");
+      await expect(section).toBeVisible({ timeout: 30_000 });
+      await expect(section.getByText(`${year} savings`)).toBeVisible();
+      await expect(section.getByText(/Expected by today/)).toHaveCount(0);
+
+      await section.getByRole("button", { name: /set target/i }).click();
+      await section.getByLabel(`Savings target for ${year}`).fill("50000");
+      await section.getByRole("button", { name: /save/i }).click();
+
+      await expect(section.getByTestId("yearly-saved")).toContainText("50,000");
+      await expect(section.getByText(/Expected by today/)).toBeVisible();
+      await expect(section.getByRole("button", { name: /edit target/i })).toBeVisible();
+    } finally {
+      await ctx.put(`${API_BASE}/savings-goals/yearly/${year}/target`, {
+        data: { target_amount: null },
+      });
+    }
   });
 
   test("the budget month shows what was directed into goals", async ({
@@ -432,100 +578,5 @@ test.describe("Savings goals", () => {
     // The month's footer names what the goals left behind as well as what
     // they took, so a deficit month can explain itself.
     await expect(page.getByText(/^Free cash:/)).toBeVisible();
-  });
-
-  test("a goal can take over the free cash that predates it", async ({
-    page,
-  }) => {
-    const start = monthsAgo(3);
-    const goal = await createGoal({
-      name: "E2E Claim Goal",
-      target_amount: 5_000_000,
-      monthly_cap: 1,
-      start_month: start,
-    });
-    const claim = await (
-      await ctx.get(`${API_BASE}/savings-goals/free-cash/before`, {
-        params: { month: start, goal_id: goal.id },
-      })
-    ).json();
-    expect(
-      claim.free_cash,
-      "demo data should leave free cash before the goal starts",
-    ).toBeGreaterThan(0);
-
-    const openingBalance = async () =>
-      (await (await ctx.get(`${API_BASE}/savings-goals/`)).json()).find(
-        (g: { id: number }) => g.id === goal.id,
-      ).opening_balance;
-
-    await openDashboardWithGoals(page);
-    const row = goalRow(page, "E2E Claim Goal");
-    await expect(row).toBeVisible({ timeout: 30_000 });
-    const claimButton = row.getByRole("button", {
-      name: /earmark the free cash from before/i,
-    });
-
-    // From the card: a confirm names the amount, then applies it.
-    await claimButton.click();
-    const confirmDialog = page.getByRole("alertdialog");
-    await expect(confirmDialog.getByText(/opening balance to/i)).toBeVisible();
-    await confirmDialog.getByRole("button", { name: "Earmark", exact: true }).click();
-    await expect(confirmDialog).toHaveCount(0);
-    await expect.poll(openingBalance).toBeCloseTo(claim.free_cash, 2);
-
-    // Asking again straight away changes nothing and says so — even before
-    // the post-write refetch has repainted the row.
-    await claimButton.click();
-    await expect(page.getByText(/already holds all the free cash/i)).toBeVisible();
-
-    // From the editor: the same amount, one click away from a cleared field.
-    await row.getByRole("button", { name: "Edit", exact: true }).click();
-    const dialog = page.getByRole("dialog");
-    await dialog.getByLabel("Already saved").fill("0");
-    // Moving the opening balance restates history, and the editor says so.
-    await expect(dialog.getByText(/recalculates goal allocations/i)).toBeVisible();
-    await dialog.getByTestId("goal-opening-use-free-cash").click();
-    await expect(dialog.getByLabel("Already saved")).toHaveValue(
-      String(claim.free_cash),
-    );
-    await dialog.getByRole("button", { name: "Save", exact: true }).click();
-    await expect(dialog).toHaveCount(0);
-    expect(await openingBalance()).toBeCloseTo(claim.free_cash, 2);
-  });
-
-  test("an investment goal is filled by transfers, not by the waterfall", async ({
-    page,
-  }) => {
-    // A cash goal's editor offers the cash-only settings; choosing "Invest"
-    // takes them away and asks for the transfers instead.
-    await openDashboardWithGoals(page);
-    await page.getByRole("button", { name: /add goal/i }).click();
-    const dialog = page.getByRole("dialog");
-    await expect(dialog.getByLabel("Monthly cap")).toBeVisible();
-    // The start is picked on the same calendar as the target date.
-    await expect(dialog.getByLabel("Start from")).toHaveAttribute("type", "date");
-    await dialog.getByRole("radio", { name: /invest/i }).click();
-    await expect(dialog.getByLabel("Monthly cap")).toHaveCount(0);
-    await expect(dialog.getByLabel("Already saved")).toHaveCount(0);
-    await expect(dialog.getByTestId("goal-invest-rule")).toBeVisible();
-    await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
-
-    const goal = await createGoal({
-      name: "E2E Invest Goal",
-      target_amount: 100000,
-      kind: "investment",
-      contribution_category: "Investments",
-      start_month: monthsAgo(12),
-    });
-    expect(goal.kind).toBe("investment");
-    expect(goal.allocated).toBe(0);
-
-    await page.reload();
-    const row = goalRow(page, "E2E Invest Goal");
-    await expect(row).toBeVisible({ timeout: 30_000 });
-    await expect(row.getByLabel("Invest")).toBeVisible();
-    // No free-cash claim on an investment goal.
-    await expect(row.getByRole("button", { name: /free cash/i })).toHaveCount(0);
   });
 });
