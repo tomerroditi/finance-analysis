@@ -5,153 +5,166 @@ import {
   useQueryClient,
   useIsMutating,
 } from "@tanstack/react-query";
+import type { AxiosResponse } from "axios";
 import { useTranslation } from "react-i18next";
 import {
   Target,
   Plus,
+  Minus,
   Pencil,
   Trash2,
   Check,
+  X,
   ChevronUp,
   ChevronDown,
-  Loader2,
   Lock,
+  LockOpen,
   Wallet,
+  Undo2,
+  HandCoins,
 } from "lucide-react";
-import {
-  ResponsiveContainer,
-  BarChart,
-  Bar,
-  ReferenceLine,
-  XAxis,
-  YAxis,
-  Tooltip,
-  Legend,
-} from "recharts";
 import {
   savingsGoalsApi,
   type SavingsGoal,
-  type SavingsGoalInput,
+  type SavingsGoalEntry,
   type SavingsGoalFreeCash,
 } from "../../services/api";
-import {
-  FREE_CASH_KEY,
-  cumulativeRows,
-  lastMonths,
-  monthlyRows,
-  type HistoryMode,
-} from "./goalHistoryRows";
 import { useQueryKeys } from "../../hooks/useQueryKeys";
 import { useScrollCap } from "../../hooks/useScrollCap";
-import { GoalAutoLinkField } from "./GoalAutoLinkField";
-import { joinRuleTags, splitRuleTags } from "../../utils/goalRuleTags";
-import {
-  STACK_OFFSET,
-  stackAxis,
-  stackEnds,
-  roundedStackShape,
-} from "../charts/stackedBarShape";
+import { usePendingRows } from "../../hooks/usePendingRows";
 import { qkPrefix } from "../../services/queryKeys";
-import { useConfirm } from "../../context/DialogContext";
-import { Modal } from "../common/Modal";
+import { useConfirm, useNotify } from "../../context/DialogContext";
 import { Skeleton } from "../common/Skeleton";
-import { ChartTooltip } from "../charts/ChartTooltip";
 import { YearlySavingsSection } from "./YearlySavingsSection";
-import { ChartLegend } from "../charts/ChartLegend";
-import { formatCurrency } from "../../utils/numberFormatting";
-import {
-  formatMonthCompact,
-  formatMonthYear,
-} from "../../utils/dateFormatting";
-import {
-  AXIS_DEFAULTS,
-  CHART_COLORS,
-  CHART_TEXT_COLOR,
-  formatAxisNumber,
-  hexToRgba,
-} from "../../utils/chartStyle";
+import { GoalsHistoryPanel } from "./GoalsHistoryPanel";
+import { GoalEditorModal } from "./GoalEditorModal";
+import { formatChange, formatCurrency } from "../../utils/numberFormatting";
+import { formatDate } from "../../utils/dateFormatting";
 
-/**
- * The free-cash pool is drawn in neutral ink rather than a palette hue: it is
- * the money *no* goal claimed, so borrowing a goal's colour would imply it
- * belongs to one.
- */
-const FREE_CASH_COLOR = CHART_TEXT_COLOR;
-
-/** Faint rule for the zero line — present enough to read against, no more. */
-const GRID_COLOR = "rgba(148, 163, 184, 0.25)";
-
-/** How tall the waterfall may stand before it scrolls in place (26rem, px). */
+/** How tall the goal list may stand before it scrolls in place (26rem, px). */
 const LIST_CAP_PX = 416;
 
 /** A goal row, roughly — the least overflow worth capping for (see the hook). */
 const LIST_CAP_SLACK_PX = 120;
 
+/** How many entries a goal lists before "show all". */
+const ENTRIES_SHOWN = 5;
+
 /**
  * Every reorder shares this key and scope. The scope makes the server calls
  * run one after another, so rapid clicks cannot land out of order; the key
- * lets the card ask whether any reorder is still in flight.
+ * lets the card hold its list query while any reorder is still in flight.
  */
 const REORDER_KEY = ["savings-goals", "reorder"] as const;
-/** Every other goal write: each one restates the history the chart draws. */
-const GOAL_WRITE_KEY = ["savings-goals", "write"] as const;
 
-/** Figures awaiting the rebuilt ledger pulse faintly rather than vanish. */
-const RECALCULATING_CLASS = "animate-pulse opacity-50 transition-opacity";
-
+/** Whether an amount survives rounding to whole shekels — "0 ₪" is noise. */
+function showsShekels(amount: number): boolean {
+  return amount >= 0.5;
+}
 
 /**
  * Dashboard savings-goals panel.
  *
- * Goals fill themselves from each month's surplus in priority order, so the
- * list is a waterfall: the top goal is funded first and spills what it cannot
- * take (its target, or its monthly cap) down to the next one. Reordering
- * restates the whole history under the new order: the rows move the moment
- * an arrow is clicked, and their figures show as recalculating until the
- * server's rebuilt ledger arrives.
+ * A goal holds what the user puts into it: "Add money" and "Take out" write
+ * dated entries, each listed under the goal and undoable. Spending linked to a
+ * goal draws it down and income matching its saved-into rule fills it, on
+ * their own. A goal with a monthly amount offers to fund it ("Fund ₪X"), and
+ * "Fund all" funds every suggestion in priority order.
  *
- * Below the waterfall sits the free-cash pool: the tracked money no goal has
- * earmarked. It is the buffer a month of overspending drains first, and only
- * once it is empty does a deficit reach back into the goals.
+ * Under the goals sits free cash: bank and cash less what the goals hold. It
+ * goes negative when more is set aside than there is, and "Cover it" then
+ * offers a plan that takes money back from the lowest-priority goals first —
+ * nothing moves until the user confirms it.
  */
 export function GoalsSection() {
   const { t } = useTranslation();
   const qk = useQueryKeys();
   const queryClient = useQueryClient();
   const confirm = useConfirm();
+  const notify = useNotify();
   const [editing, setEditing] = useState<SavingsGoal | "new" | null>(null);
 
-  const recalculating = useIsMutating({ mutationKey: REORDER_KEY }) > 0;
+  const reordering = useIsMutating({ mutationKey: REORDER_KEY }) > 0;
 
   const { data, isLoading } = useQuery({
     queryKey: qk.savingsGoals.all(),
-    queryFn: async () => {
-      const res = await savingsGoalsApi.getAll();
-      return res.data;
-    },
-    // Held while reorders are queued. A refetch in between — an earlier
-    // reorder's invalidation, or the app-wide sweep after it — answers with
-    // an order the user has already moved past and snaps the rows back. A
-    // disabled query keeps its data and ignores invalidation, then refetches
-    // once when the last reorder has landed.
-    enabled: !recalculating,
+    queryFn: async () => (await savingsGoalsApi.getAll()).data,
+    // Held while reorders are queued: a refetch in between answers with an
+    // order the user has already moved past and snaps the rows back. A
+    // disabled query keeps its data and refetches once re-enabled.
+    enabled: !reordering,
   });
 
   const { data: pool } = useQuery({
     queryKey: qk.savingsGoals.freeCash(),
-    queryFn: async () => {
-      const res = await savingsGoalsApi.getFreeCash();
-      return res.data;
-    },
+    queryFn: async () => (await savingsGoalsApi.getFreeCash()).data,
   });
 
   const invalidate = () =>
     queryClient.invalidateQueries({ queryKey: qkPrefix.savingsGoals });
 
+  /** Every goal write answers with the whole list; show it, then refresh the rest. */
+  const applyGoals = (res: AxiosResponse<SavingsGoal[]>) => {
+    if (Array.isArray(res.data)) {
+      queryClient.setQueryData(qk.savingsGoals.all(), res.data);
+    }
+    return invalidate();
+  };
+  const failed = () => notify.error(t("dashboard.goals.writeFailed"));
+
+  // One mutation serves every row, so each row is gated on its own write.
+  const pending = usePendingRows<string>();
+
   const deleteMutation = useMutation({
-    mutationKey: GOAL_WRITE_KEY,
     mutationFn: (id: number) => savingsGoalsApi.delete(id),
     onSuccess: invalidate,
+    onError: failed,
+  });
+
+  const entryMutation = useMutation({
+    mutationFn: ({ goalId, amount, note }: { goalId: number; amount: number; note: string | null }) =>
+      savingsGoalsApi.addEntry(goalId, amount, note),
+    onMutate: ({ goalId }) => pending.begin(`goal:${goalId}`),
+    onSettled: (_data, _error, { goalId }) => pending.end(`goal:${goalId}`),
+    onSuccess: applyGoals,
+    onError: failed,
+  });
+
+  const undoMutation = useMutation({
+    mutationFn: (entryId: number) => savingsGoalsApi.deleteEntry(entryId),
+    onMutate: (entryId) => pending.begin(`entry:${entryId}`),
+    onSettled: (_data, _error, entryId) => pending.end(`entry:${entryId}`),
+    onSuccess: applyGoals,
+    onError: failed,
+  });
+
+  const fundOneMutation = useMutation({
+    mutationFn: (goalId: number) => savingsGoalsApi.fund([goalId]),
+    onMutate: (goalId) => pending.begin(`goal:${goalId}`),
+    onSettled: (_data, _error, goalId) => pending.end(`goal:${goalId}`),
+    onSuccess: applyGoals,
+    onError: failed,
+  });
+
+  const fundAllMutation = useMutation({
+    mutationFn: () => savingsGoalsApi.fund(null),
+    onSuccess: applyGoals,
+    onError: failed,
+  });
+
+  const closeMutation = useMutation({
+    mutationFn: ({ goalId, close }: { goalId: number; close: boolean }) =>
+      close ? savingsGoalsApi.close(goalId) : savingsGoalsApi.reopen(goalId),
+    onMutate: ({ goalId }) => pending.begin(`goal:${goalId}`),
+    onSettled: (_data, _error, { goalId }) => pending.end(`goal:${goalId}`),
+    onSuccess: applyGoals,
+    onError: failed,
+  });
+
+  const coverMutation = useMutation({
+    mutationFn: () => savingsGoalsApi.cover(),
+    onSuccess: applyGoals,
+    onError: failed,
   });
 
   const reorderMutation = useMutation({
@@ -188,21 +201,20 @@ export function GoalsSection() {
         queryClient.setQueryData(qk.savingsGoals.all(), context.previous);
       }
     },
-    // Awaited, so "recalculating" lasts until the free-cash pool and the
-    // history have caught up with the rebuilt ledger too.
     onSettled: () => invalidate(),
   });
 
   const goals = data ?? [];
+  const canFundAll = goals.some(
+    (goal) => !goal.is_closed && showsShekels(goal.suggested_this_month),
+  );
 
-  // Measured rather than counted: rows differ in height (a goal with a monthly
-  // figure, a spending line or a clawback note runs taller than a plain
-  // one), and what matters is how much a cap would actually hide. `data`, not
-  // `goals`: the query's array is stable between renders, while the `?? []`
-  // fallback is a fresh one every time.
+  // Measured rather than counted: rows differ in height (an open entry form or
+  // entry list runs far taller than a plain row). `data`, not `goals`: the
+  // query's array is stable between renders, the `?? []` fallback is not.
   const [listRef, capped] = useScrollCap(LIST_CAP_PX, data, LIST_CAP_SLACK_PX);
 
-  /** Swap a goal with its neighbour and persist the new waterfall order. */
+  /** Swap a goal with its neighbour and persist the new order. */
   const move = (index: number, direction: -1 | 1) => {
     const next = index + direction;
     if (next < 0 || next >= goals.length) return;
@@ -211,26 +223,44 @@ export function GoalsSection() {
     reorderMutation.mutate(ids);
   };
 
+  const cover = async (plan: SavingsGoalFreeCash) => {
+    const steps = plan.cover_plan
+      .map((step) =>
+        t("dashboard.goals.coverStep", { name: step.name, amount: formatCurrency(step.amount) }),
+      )
+      .join("\n");
+    const ok = await confirm({
+      title: t("dashboard.goals.coverTitle"),
+      message: `${t("dashboard.goals.coverConfirm", { amount: formatCurrency(plan.shortfall) })}\n\n${steps}`,
+      confirmLabel: t("dashboard.goals.coverIt"),
+    });
+    if (ok) coverMutation.mutate();
+  };
+
   return (
     <div className="bg-[var(--surface)] rounded-2xl border border-[var(--surface-light)] p-4 md:p-6">
       <div className="flex items-center justify-between gap-2 mb-4">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 min-w-0">
           <div className="p-1.5 rounded-lg bg-[var(--primary)]/15 text-[var(--primary)]">
             <Target size={16} />
           </div>
-          <p className="text-sm md:text-base font-bold">{t("dashboard.goals.title")}</p>
+          <p className="text-sm md:text-base font-bold truncate">{t("dashboard.goals.title")}</p>
         </div>
-        <div className="flex items-center gap-3">
-          {recalculating && (
-            <span
-              role="status"
-              className="flex items-center gap-1 text-xs md:text-sm text-[var(--text-muted)]"
+        <div className="flex items-center gap-3 shrink-0">
+          {canFundAll && (
+            <button
+              type="button"
+              onClick={() => fundAllMutation.mutate()}
+              disabled={fundAllMutation.isPending}
+              title={t("dashboard.goals.fundAllHint")}
+              className="flex items-center gap-1 text-xs md:text-sm font-medium text-emerald-400 hover:opacity-80 disabled:opacity-50 transition-opacity"
             >
-              <Loader2 size={14} className="animate-spin" />
-              {t("dashboard.goals.recalculating")}
-            </span>
+              <HandCoins size={15} />
+              {t("dashboard.goals.fundAll")}
+            </button>
           )}
           <button
+            type="button"
             onClick={() => setEditing("new")}
             className="flex items-center gap-1 text-xs md:text-sm font-medium text-[var(--primary)] hover:opacity-80 transition-opacity"
           >
@@ -247,17 +277,10 @@ export function GoalsSection() {
       ) : goals.length === 0 ? (
         <p className="text-[var(--text-muted)] text-sm py-6 text-center">{t("dashboard.goals.empty")}</p>
       ) : (
-        /* The waterfall scrolls in place past a few goals. A dozen of them
-           would otherwise carry the free-cash row and the history panel down
-           the page — off the screen entirely on mobile, where the dashboard
-           grid leaves card heights uncapped, and behind the card's own
-           scrollbar at >=lg, where the 39rem cap scrolls the header away with
-           them. The list is what grows without bound, so it is what is capped,
-           and only once a cap would hide something worth scrolling to: until
-           then it is a plain block, so a finger dragged across it scrolls the
-           page like the rest of the card. The cap is sized to sit under the
-           card cap with the history collapsed, so the two scrollers don't both
-           appear at rest. */
+        /* The list scrolls in place past a few goals, so a dozen of them do
+           not carry free cash and the history panel off the screen — but only
+           once a cap would hide something worth scrolling to; until then it is
+           a plain block, so a drag across it scrolls the page. */
         <div
           ref={listRef}
           className={`space-y-3 ${capped ? "max-h-[26rem] overflow-y-auto pe-1" : ""}`}
@@ -268,12 +291,33 @@ export function GoalsSection() {
               key={goal.id}
               goal={goal}
               rank={index + 1}
-              recalculating={recalculating}
+              busy={pending.isPending(`goal:${goal.id}`)}
+              isUndoing={(entryId) => pending.isPending(`entry:${entryId}`)}
               canMoveUp={index > 0}
               canMoveDown={index < goals.length - 1}
               onMoveUp={() => move(index, -1)}
               onMoveDown={() => move(index, 1)}
               onEdit={() => setEditing(goal)}
+              onEntry={(amount, note, done) =>
+                entryMutation.mutate({ goalId: goal.id, amount, note }, { onSuccess: done })
+              }
+              onUndo={(entryId) => undoMutation.mutate(entryId)}
+              onFund={() => fundOneMutation.mutate(goal.id)}
+              onToggleClosed={async () => {
+                if (goal.is_closed) {
+                  closeMutation.mutate({ goalId: goal.id, close: false });
+                  return;
+                }
+                const ok = await confirm({
+                  title: t("dashboard.goals.closeTitle"),
+                  message: t("dashboard.goals.confirmClose", {
+                    name: goal.name,
+                    amount: formatCurrency(goal.available),
+                  }),
+                  confirmLabel: t("dashboard.goals.close"),
+                });
+                if (ok) closeMutation.mutate({ goalId: goal.id, close: true });
+              }}
               onDelete={async () => {
                 const ok = await confirm({
                   title: t("common.deleteTitle"),
@@ -288,9 +332,15 @@ export function GoalsSection() {
         </div>
       )}
 
-      {!!pool?.has_goals && <FreeCashRow pool={pool} recalculating={recalculating} />}
+      {!!pool?.has_goals && (
+        <FreeCashRow
+          pool={pool}
+          covering={coverMutation.isPending}
+          onCover={() => cover(pool)}
+        />
+      )}
 
-      {goals.length > 0 && <AllocationHistory goals={goals} />}
+      {goals.length > 0 && <GoalsHistoryPanel />}
 
       {editing !== null && (
         <GoalEditorModal
@@ -303,24 +353,27 @@ export function GoalsSection() {
 }
 
 /**
- * The unearmarked remainder of the tracked money, shown under the waterfall.
+ * Bank and cash less what the goals hold — the money nothing is set aside for.
  *
- * It is deliberately not a goal: nothing fills it and nothing spends it on
- * purpose. It exists so a deficit month has somewhere to land before the
- * engine starts taking money back out of the goals themselves.
+ * Below zero it says so in red: more has been set aside than there is, and
+ * "Cover it" offers to take the difference back from the lowest-priority
+ * goals first.
  */
 function FreeCashRow({
   pool,
-  recalculating,
+  covering,
+  onCover,
 }: {
   pool: SavingsGoalFreeCash;
-  recalculating: boolean;
+  covering: boolean;
+  onCover: () => void;
 }) {
   const { t } = useTranslation();
+  const short = showsShekels(pool.shortfall);
 
   return (
     <div
-      className="mt-3 border border-dashed border-[var(--surface-light)] rounded-xl p-3"
+      className={`mt-3 border border-dashed rounded-xl p-3 ${short ? "border-red-400/50" : "border-[var(--surface-light)]"}`}
       data-testid="goals-free-cash"
     >
       <div className="flex items-center justify-between gap-2">
@@ -333,473 +386,94 @@ function FreeCashRow({
               {t("dashboard.goals.freeCash")}
             </p>
             <p className="text-[10px] md:text-xs text-[var(--text-muted)]">
-              {t("dashboard.goals.freeCashHint")}
+              {t("dashboard.goals.freeCashHint", {
+                liquid: formatCurrency(pool.liquid),
+                earmarked: formatCurrency(pool.earmarked),
+              })}
             </p>
           </div>
         </div>
         <span
-          className={`text-sm md:text-base font-bold shrink-0 ${pool.free_cash < -0.5 ? "text-red-400" : ""} ${recalculating ? RECALCULATING_CLASS : ""}`}
-          dir="ltr"
+          className={`text-sm md:text-base font-bold shrink-0 ${pool.free_cash < -0.5 ? "text-red-400" : ""}`}
+          data-testid="goals-free-cash-amount"
         >
           {formatCurrency(pool.free_cash)}
         </span>
       </div>
-      {pool.clawed_back_this_month > 0 && (
-        <p className="mt-1.5 text-[10px] md:text-xs text-amber-400">
-          {t("dashboard.goals.poolDrained", {
-            amount: formatCurrency(pool.clawed_back_this_month),
-          })}
-        </p>
-      )}
-    </div>
-  );
-}
-
-/** Trailing windows the history panel offers; 0 means the whole timeline. */
-const HISTORY_RANGES = [6, 12, 0] as const;
-
-/** Ties the collapse toggle to the panel it reveals. */
-const PANEL_ID = "goals-history-panel";
-
-type HistoryRange = (typeof HISTORY_RANGES)[number];
-
-/**
- * The waterfall read month by month, under the current standings.
- *
- * The rows above answer "where is each goal now"; this answers "how did it get
- * there" — which months fed a goal, which month a deficit took money back out
- * of one (a negative segment, below the axis), and how much was left
- * unearmarked each time.
- *
- * Each bar stacks what the goals took that month, in priority order, with
- * the free-cash pool on top — the money that is tracked and liquid but which
- * no goal has claimed. A segment below the line is money a deficit month took
- * back out of a goal.
- *
- * The pool is a standing balance and the allocations are monthly flows, so a
- * household with real savings will show a tall pool over thin goal segments.
- * That is the point of the legend being clickable: hide the pool and the
- * remaining series rescale to their own size, and a double-click narrows to
- * one goal.
- */
-function AllocationHistory({ goals }: { goals: SavingsGoal[] }) {
-  const { t } = useTranslation();
-  const qk = useQueryKeys();
-  const [range, setRange] = useState<HistoryRange>(12);
-  // Collapsed by default: the standings above answer "where is each goal now",
-  // which is what the card is opened for — the ledger behind them is a second
-  // question, and two charts' worth of it pushed the rows off a dashboard
-  // screen before anyone asked.
-  const [open, setOpen] = useState(false);
-  // Series the reader has clicked away in the legend. Keyed by series key, so
-  // a goal renamed between fetches keeps its state and a goal that leaves the
-  // window simply stops mattering.
-  const [hidden, setHidden] = useState<ReadonlySet<string>>(new Set());
-  // Which series a double-click narrowed to, so that double-clicking it again
-  // is what brings the others back. Inferring "already alone" from `hidden`
-  // instead would make a double-click undo a state the reader had built up
-  // click by click, rather than the isolation they just asked for.
-  const [isolated, setIsolated] = useState<string | null>(null);
-
-  // Monthly reads what each month moved; cumulative reads what each goal had
-  // received by then. Running totals only add up from the first month, so the
-  // cumulative view always fetches the whole history and trims to the window
-  // itself.
-  const [mode, setMode] = useState<HistoryMode>("monthly");
-  const fetched = mode === "cumulative" ? 0 : range;
-  const { data, isLoading, isFetching } = useQuery({
-    queryKey: qk.savingsGoals.timeline(fetched),
-    queryFn: async () => (await savingsGoalsApi.getTimeline(fetched)).data,
-    // Nothing outside this panel reads the timeline, so a card that is never
-    // expanded never pays for the window.
-    enabled: open,
-  });
-
-  // A goal write restates the whole history server-side, and the chart only
-  // refetches once it lands: until then it would draw the old history beside
-  // goal rows that already show the new one. It says so instead, as the rows
-  // do during a reorder.
-  const writing =
-    useIsMutating({ mutationKey: GOAL_WRITE_KEY }) +
-      useIsMutating({ mutationKey: REORDER_KEY }) >
-    0;
-  const recalculating = writing || (isFetching && !isLoading);
-
-  // One row per month with a column per goal, which is the shape a stacked
-  // chart wants. Months where nothing moved still get a row — the backend
-  // sends them, and a gap in a time series reads as "skipped", not "zero".
-  const months = data?.months ?? [];
-  const rows =
-    mode === "cumulative"
-      ? lastMonths(cumulativeRows(months, goals), range)
-      : monthlyRows(months);
-
-  // Colour follows the goal, not its rank: keyed by id (stable) rather than
-  // by priority, so reordering the waterfall never repaints the chart.
-  const palette = new Map(
-    [...(data?.goals ?? [])]
-      .sort((a, b) => a.id - b.id)
-      .map((goal, index) => [goal.id, CHART_COLORS[index % CHART_COLORS.length]]),
-  );
-  // A goal that took nothing in this window would be a legend entry with no
-  // mark, so only the ones that actually moved get a series.
-  const series = (data?.goals ?? []).filter((goal) =>
-    rows.some((row) => row[`g${goal.id}`] !== undefined && row[`g${goal.id}`] !== 0),
-  );
-  // Free cash stacks last, so it caps the column: the goals take their share
-  // from the bottom in priority order and what is left sits on top. A window
-  // where every month's surplus was fully claimed drops it, on the same terms
-  // as a goal that took nothing.
-  const hasFreeCash = rows.some((row) => row[FREE_CASH_KEY] !== 0);
-  const keys = [
-    ...series.map((goal) => `g${goal.id}`),
-    ...(hasFreeCash ? [FREE_CASH_KEY] : []),
-  ];
-  // Which segment sits at each end of a month's stack, so only the outer
-  // corners are rounded and the column reads as one shape rather than a
-  // string of beads.
-  // Only what is on screen shapes the chart: the rounded corners follow the
-  // visible stack, and so does the zero line.
-  const visible = keys.filter((key) => !hidden.has(key));
-  const ends = stackEnds(rows, visible, "month");
-  const yAxis = stackAxis(rows, visible);
-  // A segment under the line is money a deficit month took back out of a goal.
-  const hasDeficit = rows.some((row) =>
-    visible.some((key) => typeof row[key] === "number" && (row[key] as number) < 0),
-  );
-
-  /**
-   * Hide or show one series.
-   *
-   * Hiding the last one is allowed: an empty plot under a legend of dimmed
-   * entries says what happened and where to undo it, which a click that
-   * silently does nothing does not.
-   */
-  const toggleSeries = (key: string) => {
-    setHidden((current) => {
-      const next = new Set(current);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
-      return next;
-    });
-    // Whatever the chart shows now, the reader built it by hand.
-    setIsolated(null);
-  };
-
-  /** Narrow to one series; double-clicking the same one again undoes it. */
-  const isolateSeries = (key: string) => {
-    if (isolated === key) {
-      setHidden(new Set());
-      setIsolated(null);
-      return;
-    }
-    setHidden(new Set(keys.filter((other) => other !== key)));
-    setIsolated(key);
-  };
-
-  // Compact, and without the series that moved nothing that month: with a
-  // goal per row, the full-size tooltip stood taller than a phone's plot
-  // area and ran over the legend.
-  const tooltip = (
-    <ChartTooltip
-      compact
-      labelFormatter={(m) => formatMonthYear(monthDate(String(m)))}
-      filter={(entry) => entry.value !== 0}
-    />
-  );
-  const hasMoreHistory = (data?.total_months ?? 0) > Math.max(...HISTORY_RANGES);
-
-  return (
-    <div
-      className="mt-4 pt-4 border-t border-[var(--surface-light)]"
-      data-testid="goals-history"
-    >
-      <div
-        className={`flex flex-wrap items-center justify-between gap-2 ${open ? "mb-3" : ""}`}
-      >
-        <button
-          type="button"
-          onClick={() => setOpen((isOpen) => !isOpen)}
-          aria-expanded={open}
-          aria-controls={PANEL_ID}
-          className="flex items-center gap-1 whitespace-nowrap text-xs md:text-sm font-bold hover:text-[var(--primary)] transition-colors"
-        >
-          {open ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-          {t("dashboard.goals.historyTitle")}
-        </button>
-        {open && (
-          // The view and the window are one set of controls, so they never
-          // split across lines: on a narrow screen they drop under the title
-          // together, side by side.
-          <div className="flex items-center gap-1.5 ms-auto" data-testid="goals-history-controls">
-            <div
-              className="flex bg-[var(--surface-light)] rounded-lg p-0.5"
-              role="group"
-              aria-label={t("dashboard.goals.historyModeLabel")}
-            >
-              {(["monthly", "cumulative"] as const).map((option) => (
-                <button
-                  key={option}
-                  type="button"
-                  onClick={() => setMode(option)}
-                  aria-pressed={mode === option}
-                  className={`px-2 py-1 rounded-md text-[10px] md:text-xs font-bold transition-colors ${
-                    mode === option
-                      ? "bg-[var(--surface)] text-[var(--primary)] shadow-sm"
-                      : "text-[var(--text-muted)] hover:text-[var(--text-primary)]"
-                  }`}
-                >
-                  {t(
-                    option === "monthly"
-                      ? "dashboard.goals.historyMonthly"
-                      : "dashboard.goals.historyCumulative",
-                  )}
-                </button>
-              ))}
-            </div>
-            <div className="flex bg-[var(--surface-light)] rounded-lg p-0.5">
-              {HISTORY_RANGES.map((option) => (
-                <button
-                  key={option}
-                  onClick={() => setRange(option)}
-                  // "All time" is only honest while there is more history than
-                  // the widest fixed window; below that it shows the same months
-                  // twice.
-                  disabled={option === 0 && !hasMoreHistory}
-                  className={`px-2 py-1 rounded-md text-[10px] md:text-xs font-bold transition-colors disabled:opacity-40 ${
-                    range === option
-                      ? "bg-[var(--surface)] text-[var(--primary)] shadow-sm"
-                      : "text-[var(--text-muted)] hover:text-[var(--text-primary)]"
-                  }`}
-                >
-                  {option === 0
-                    ? t("dashboard.goals.historyAll")
-                    : t("dashboard.goals.historyMonths", { count: option })}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-      </div>
-
-      {open && (
-        <div id={PANEL_ID}>
-          {isLoading ? (
-            <Skeleton variant="chart" className="h-40" />
-          ) : rows.length === 0 ? (
-            <p className="text-[10px] md:text-xs text-[var(--text-muted)] py-4 text-center">
-              {t("dashboard.goals.historyEmpty")}
-            </p>
-          ) : (
-            <div
-              className={`rounded-xl border border-[var(--surface-light)] bg-[var(--surface-light)]/20 p-3 ${recalculating ? RECALCULATING_CLASS : ""}`}
-              data-testid="goals-history-chart"
-              aria-busy={recalculating}
-            >
-              {keys.length === 0 ? (
-                // Goals exist, but no month in this window moved a shekel into
-                // one or left any surplus behind. There is nothing to stack, so
-                // an empty axis is left out.
-                <p className="text-[10px] md:text-xs text-[var(--text-muted)] py-2 text-center">
-                  {t("dashboard.goals.historyEmpty")}
-                </p>
-              ) : (
-                // Taller on a phone: the legend wraps to three lines there and
-                // would leave the bars, and the tooltip, too little room.
-                <div className="h-64 md:h-56">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart
-                      // Recharts 3 stacks bars in the order they first mounted,
-                      // not the order they render in: a reordered goal, a new
-                      // one, or a series a wider window brings in kept its old
-                      // place — free cash ended up under a goal, and the rounded
-                      // ends landed mid-column. A new series order is a new
-                      // chart.
-                      key={`${mode}:${keys.join(",")}`}
-                      data={rows}
-                      margin={{ top: 4, bottom: 0, left: 0, right: 4 }}
-                      barCategoryGap="22%"
-                      stackOffset={STACK_OFFSET}
-                    >
-                      <defs>
-                        {series.map((goal) => (
-                          <linearGradient
-                            key={goal.id}
-                            id={`goal-fill-${goal.id}`}
-                            x1="0"
-                            y1="0"
-                            x2="0"
-                            y2="1"
-                          >
-                            <stop
-                              offset="0%"
-                              stopColor={hexToRgba(palette.get(goal.id)!, 0.95)}
-                            />
-                            <stop
-                              offset="100%"
-                              stopColor={hexToRgba(palette.get(goal.id)!, 0.55)}
-                            />
-                          </linearGradient>
-                        ))}
-                        <linearGradient
-                          id="goal-fill-free"
-                          x1="0"
-                          y1="0"
-                          x2="0"
-                          y2="1"
-                        >
-                          <stop
-                            offset="0%"
-                            stopColor={hexToRgba(FREE_CASH_COLOR, 0.55)}
-                          />
-                          <stop
-                            offset="100%"
-                            stopColor={hexToRgba(FREE_CASH_COLOR, 0.28)}
-                          />
-                        </linearGradient>
-                      </defs>
-                      {/* The months were labelled by the pool panel that used
-                          to sit below; with one chart left, this axis carries
-                          them. */}
-                      <XAxis
-                        dataKey="month"
-                        {...AXIS_DEFAULTS}
-                        tickFormatter={formatMonthCompact}
-                      />
-                      <YAxis
-                        {...AXIS_DEFAULTS}
-                        tickFormatter={formatAxisNumber}
-                        domain={yAxis.domain}
-                        ticks={yAxis.ticks}
-                        allowDataOverflow
-                        width={44}
-                      />
-                      {/* Only drawn when a deficit actually pulled a bar under the
-                          line — with nothing below it, the axis is the baseline. */}
-                      {hasDeficit && (
-                        <ReferenceLine y={0} stroke={GRID_COLOR} strokeWidth={1} />
-                    )}
-                      <Tooltip
-                        cursor={{ fill: "rgba(148, 163, 184, 0.08)", radius: 6 }}
-                        content={tooltip}
-                        // Pinned to the top of the plot, so it grows down over
-                        // the bars and never over the legend under them.
-                        position={{ y: 0 }}
-                      />
-                      <Legend
-                        content={
-                          <ChartLegend
-                            fontSize={10}
-                            hidden={hidden}
-                            onToggle={toggleSeries}
-                            onIsolate={isolateSeries}
-                          />
-                        }
-                      />
-                      {series.map((goal) => (
-                        <Bar
-                          key={goal.id}
-                          dataKey={`g${goal.id}`}
-                          name={goal.name}
-                          stackId="allocations"
-                          // The gradient goes on the drawn segment, not on the
-                          // series, so the legend swatch keeps a flat colour it
-                          // can actually paint — a `url(#…)` fill renders as
-                          // nothing in a CSS background.
-                          fill={palette.get(goal.id)}
-                          // A hidden series leaves the stack entirely, so the
-                          // y-axis refits to what is left.
-                          hide={hidden.has(`g${goal.id}`)}
-                          maxBarSize={30}
-                          shape={roundedStackShape(
-                            ends,
-                            `g${goal.id}`,
-                            "month",
-                            `url(#goal-fill-${goal.id})`,
-                          )}
-                          isAnimationActive={false}
-                        />
-                      ))}
-                      {hasFreeCash && (
-                        <Bar
-                          dataKey={FREE_CASH_KEY}
-                          name={t("dashboard.goals.freeCash")}
-                          stackId="allocations"
-                          fill={FREE_CASH_COLOR}
-                          hide={hidden.has(FREE_CASH_KEY)}
-                          maxBarSize={30}
-                          shape={roundedStackShape(
-                            ends,
-                            FREE_CASH_KEY,
-                            "month",
-                            "url(#goal-fill-free)",
-                          )}
-                          isAnimationActive={false}
-                        />
-                      )}
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
-              )}
-
-            </div>
-          )}
-
-          <p className="mt-2 text-[10px] text-[var(--text-muted)]">
-            {t(
-              mode === "cumulative"
-                ? "dashboard.goals.historyHintCumulative"
-                : "dashboard.goals.historyHint",
-            )}
+      {short && (
+        <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
+          <p className="text-[10px] md:text-xs text-red-400">
+            {t("dashboard.goals.shortfall", { amount: formatCurrency(pool.shortfall) })}
           </p>
+          {pool.cover_plan.length > 0 && (
+            <button
+              type="button"
+              onClick={onCover}
+              disabled={covering}
+              className="px-2.5 py-1 rounded-lg text-xs font-bold bg-red-500/15 text-red-400 hover:bg-red-500/25 disabled:opacity-50 transition-colors"
+            >
+              {t("dashboard.goals.coverIt")}
+            </button>
+          )}
         </div>
       )}
     </div>
   );
 }
 
-/** Parse a `YYYY-MM` key into a local-time Date (never UTC midnight). */
-function monthDate(month: string): Date {
-  const [year, index] = month.split("-").map(Number);
-  return new Date(year, index - 1, 1);
-}
+const ICON_BUTTON =
+  "p-1.5 rounded-lg text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-light)] disabled:opacity-30 disabled:hover:bg-transparent transition-colors";
+const CHIP =
+  "flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] md:text-xs font-medium bg-[var(--surface-light)] hover:bg-[var(--primary)]/20 disabled:opacity-40 disabled:hover:bg-[var(--surface-light)] transition-colors";
 
 function GoalRow({
   goal,
   rank,
-  recalculating,
+  busy,
+  isUndoing,
   canMoveUp,
   canMoveDown,
   onMoveUp,
   onMoveDown,
   onEdit,
+  onEntry,
+  onUndo,
+  onFund,
+  onToggleClosed,
   onDelete,
 }: {
   goal: SavingsGoal;
   rank: number;
-  recalculating: boolean;
+  /** A write on this goal is in flight. */
+  busy: boolean;
+  isUndoing: (entryId: number) => boolean;
   canMoveUp: boolean;
   canMoveDown: boolean;
   onMoveUp: () => void;
   onMoveDown: () => void;
   onEdit: () => void;
+  /** Signed amount; `done` runs once the entry is saved. */
+  onEntry: (amount: number, note: string | null, done: () => void) => void;
+  onUndo: (entryId: number) => void;
+  onFund: () => void;
+  onToggleClosed: () => void;
   onDelete: () => void;
 }) {
   const { t } = useTranslation();
-  // A negative month is a clawback, which the row does not itemize.
-  const showThisMonth = goal.this_month_allocation > 0;
-  const barColor = goal.is_closed
+  const [form, setForm] = useState<"add" | "take" | null>(null);
+  const [showEntries, setShowEntries] = useState(false);
+  const closed = !!goal.is_closed;
+  const barColor = closed
     ? "from-[var(--text-muted)] to-[var(--text-muted)]"
     : goal.is_achieved
       ? "from-emerald-500 to-emerald-400"
       : "from-[var(--primary)] to-blue-400";
+  const canTakeOut = showsShekels(goal.available);
 
   return (
     <div className="group border border-[var(--surface-light)] rounded-xl p-3 hover:bg-[var(--surface-light)]/30 transition-colors">
-      {/* The name owns its own line. It used to share one with the funded /
-          target pair and five buttons, which on a phone left it about eight
-          characters wide — "New car fund" rendered as "New …", and the row
-          named nothing at all. */}
+      {/* The name owns its own line: sharing one with the figures and the
+          action buttons left it about eight characters wide on a phone. */}
       <div className="flex items-center justify-between gap-2 mb-2">
         <div className="flex items-center gap-1.5 min-w-0 flex-1">
           <span
@@ -809,45 +483,59 @@ function GoalRow({
           >
             #{rank}
           </span>
-          {!!goal.is_closed && <Lock size={13} className="text-[var(--text-muted)] shrink-0" />}
-          {!goal.is_closed && !!goal.is_achieved && (
+          {closed && <Lock size={13} className="text-[var(--text-muted)] shrink-0" />}
+          {!closed && !!goal.is_achieved && (
             <Check size={14} className="text-emerald-400 shrink-0" />
           )}
           <p className="font-semibold text-sm truncate" dir="auto" title={goal.name}>{goal.name}</p>
         </div>
         <div className="flex items-center gap-0.5 shrink-0">
           <button
+            type="button"
             onClick={onMoveUp}
             disabled={!canMoveUp}
             aria-label={t("dashboard.goals.moveUp")}
-            className="p-1 rounded-lg text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-light)] disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
+            className={ICON_BUTTON}
           >
             <ChevronUp size={14} />
           </button>
           <button
+            type="button"
             onClick={onMoveDown}
             disabled={!canMoveDown}
             aria-label={t("dashboard.goals.moveDown")}
-            className="p-1 rounded-lg text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-light)] disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
+            className={ICON_BUTTON}
           >
             <ChevronDown size={14} />
           </button>
-          <button onClick={onEdit} aria-label={t("common.edit")} className="p-1.5 rounded-lg text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-light)] transition-colors">
+          <button type="button" onClick={onEdit} aria-label={t("common.edit")} className={ICON_BUTTON}>
             <Pencil size={14} />
           </button>
-          <button onClick={onDelete} aria-label={t("common.delete")} className="p-1.5 rounded-lg text-[var(--text-muted)] hover:text-rose-400 hover:bg-[var(--surface-light)] transition-colors">
+          <button
+            type="button"
+            onClick={onToggleClosed}
+            disabled={busy}
+            aria-label={t(closed ? "dashboard.goals.reopen" : "dashboard.goals.close")}
+            title={t(closed ? "dashboard.goals.reopen" : "dashboard.goals.close")}
+            className={ICON_BUTTON}
+          >
+            {closed ? <LockOpen size={14} /> : <Lock size={14} />}
+          </button>
+          <button
+            type="button"
+            onClick={onDelete}
+            aria-label={t("common.delete")}
+            className={`${ICON_BUTTON} hover:text-rose-400`}
+          >
             <Trash2 size={14} />
           </button>
         </div>
       </div>
-      <div
-        className={recalculating ? RECALCULATING_CLASS : undefined}
-        aria-busy={recalculating || undefined}
-        data-testid="goal-figures"
-      >
+
+      <div data-testid="goal-figures">
         <div className="flex items-baseline justify-between gap-2 mb-1.5">
-          <span dir="ltr" className="text-sm md:text-base font-bold tabular-nums">
-            {formatCurrency(goal.funded)}
+          <span dir="ltr" className="text-sm md:text-base font-bold tabular-nums" data-testid="goal-balance">
+            {formatCurrency(goal.available)}
             <span className="text-[var(--text-muted)] text-xs md:text-sm font-normal">
               {" / "}
               {formatCurrency(goal.target_amount)}
@@ -858,43 +546,287 @@ function GoalRow({
           </span>
         </div>
         <div className="w-full bg-[var(--surface-light)] rounded-full h-2 overflow-hidden">
-          <div className={`h-2 rounded-full bg-gradient-to-r ${barColor} transition-all duration-500`} style={{ width: `${Math.max(0, goal.progress_pct)}%` }} />
+          <div
+            className={`h-2 rounded-full bg-gradient-to-r ${barColor} transition-all duration-500`}
+            style={{ width: `${Math.min(100, Math.max(0, goal.progress_pct))}%` }}
+          />
         </div>
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1.5 text-[10px] md:text-xs text-[var(--text-muted)]">
           <GoalStatusLine goal={goal} />
         </div>
-        {(showThisMonth || goal.utilized > 0 || showsShekels(goal.owed)) && (
+        {(showsShekels(goal.added_this_month) ||
+          showsShekels(goal.spent) ||
+          showsShekels(goal.owed)) && (
           <div className="flex flex-wrap gap-x-3 gap-y-1 mt-1.5 text-[10px] md:text-xs text-[var(--text-muted)]">
-            {showThisMonth && (
+            {showsShekels(goal.added_this_month) && (
               <span>
-                {t("dashboard.goals.thisMonth", {
-                  amount: formatCurrency(goal.this_month_allocation),
+                {t("dashboard.goals.addedThisMonth", {
+                  amount: formatCurrency(goal.added_this_month),
                 })}
               </span>
             )}
-            {goal.utilized > 0 && (
+            {showsShekels(goal.spent) && (
               <span>
-                {t("dashboard.goals.utilized", {
-                  spent: formatCurrency(goal.utilized),
-                  available: formatCurrency(goal.available),
+                {t("dashboard.goals.savedSpent", {
+                  saved: formatCurrency(goal.saved),
+                  spent: formatCurrency(goal.spent),
                 })}
               </span>
             )}
             {showsShekels(goal.owed) && (
-              <span>
+              <span className="text-amber-400">
                 {t("dashboard.goals.owed", { amount: formatCurrency(goal.owed) })}
               </span>
             )}
           </div>
         )}
       </div>
+
+      <div className="flex flex-wrap items-center gap-1.5 mt-2">
+        {!closed && (
+          <>
+            <button
+              type="button"
+              onClick={() => setForm(form === "add" ? null : "add")}
+              aria-pressed={form === "add"}
+              disabled={busy}
+              className={CHIP}
+            >
+              <Plus size={12} />
+              {t("dashboard.goals.addMoney")}
+            </button>
+            <button
+              type="button"
+              onClick={() => setForm(form === "take" ? null : "take")}
+              aria-pressed={form === "take"}
+              disabled={busy || !canTakeOut}
+              className={CHIP}
+            >
+              <Minus size={12} />
+              {t("dashboard.goals.takeOut")}
+            </button>
+            {showsShekels(goal.suggested_this_month) && (
+              <button
+                type="button"
+                onClick={onFund}
+                disabled={busy}
+                title={t("dashboard.goals.fundHint")}
+                className={`${CHIP} text-emerald-400`}
+              >
+                <HandCoins size={12} />
+                {t("dashboard.goals.fund", {
+                  amount: formatCurrency(goal.suggested_this_month),
+                })}
+              </button>
+            )}
+          </>
+        )}
+        {goal.entries.length > 0 && (
+          <button
+            type="button"
+            onClick={() => setShowEntries((shown) => !shown)}
+            aria-expanded={showEntries}
+            className="ms-auto flex items-center gap-1 text-[10px] md:text-xs text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
+          >
+            {showEntries ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+            {t("dashboard.goals.entries", { count: goal.entries.length })}
+          </button>
+        )}
+      </div>
+
+      {form && !closed && (
+        <EntryForm
+          key={form}
+          mode={form}
+          goal={goal}
+          busy={busy}
+          onCancel={() => setForm(null)}
+          onSubmit={(amount, note) => onEntry(amount, note, () => setForm(null))}
+        />
+      )}
+
+      {showEntries && goal.entries.length > 0 && (
+        <EntryList
+          entries={goal.entries}
+          canUndo={!closed}
+          isUndoing={isUndoing}
+          onUndo={onUndo}
+        />
+      )}
     </div>
   );
 }
 
-/** Whether an amount survives rounding to whole shekels — "0 ₪ owed" is noise. */
-function showsShekels(amount: number): boolean {
-  return amount >= 0.5;
+/** The inline amount form behind "Add money" / "Take out". */
+function EntryForm({
+  mode,
+  goal,
+  busy,
+  onCancel,
+  onSubmit,
+}: {
+  mode: "add" | "take";
+  goal: SavingsGoal;
+  busy: boolean;
+  onCancel: () => void;
+  /** Signed: taking out submits a negative amount. */
+  onSubmit: (amount: number, note: string | null) => void;
+}) {
+  const { t } = useTranslation();
+  const [amount, setAmount] = useState("");
+  const [note, setNote] = useState("");
+  const value = Number(amount);
+  // Half an agora of slack, so taking out everything the card shows works.
+  const tooMuch = mode === "take" && value > goal.available + 0.005;
+  const valid = value > 0 && !tooMuch;
+
+  return (
+    <form
+      className="mt-2 space-y-1.5"
+      data-testid="goal-entry-form"
+      onSubmit={(event) => {
+        event.preventDefault();
+        if (!valid) return;
+        onSubmit(mode === "take" ? -value : value, note.trim() || null);
+      }}
+    >
+      <div className="flex items-center gap-2">
+        <input
+          type="number"
+          inputMode="decimal"
+          min={0}
+          step="any"
+          value={amount}
+          onChange={(event) => setAmount(event.target.value)}
+          aria-label={t(
+            mode === "add" ? "dashboard.goals.addAmountLabel" : "dashboard.goals.takeAmountLabel",
+            { name: goal.name },
+          )}
+          placeholder={t("dashboard.goals.amountPlaceholder")}
+          className="w-28 shrink-0 rounded-lg bg-[var(--surface-light)] px-3 py-1.5 text-sm"
+          dir="ltr"
+        />
+        <input
+          type="text"
+          value={note}
+          onChange={(event) => setNote(event.target.value)}
+          aria-label={t("dashboard.goals.noteLabel")}
+          placeholder={t("dashboard.goals.notePlaceholder")}
+          className="min-w-0 flex-1 rounded-lg bg-[var(--surface-light)] px-3 py-1.5 text-sm"
+          dir="auto"
+        />
+        <button
+          type="submit"
+          disabled={!valid || busy}
+          aria-label={t("common.save")}
+          className="p-2 rounded-lg text-emerald-400 hover:bg-[var(--surface-light)] disabled:opacity-50"
+        >
+          <Check size={16} />
+        </button>
+        <button
+          type="button"
+          onClick={onCancel}
+          aria-label={t("common.cancel")}
+          className="p-2 rounded-lg text-[var(--text-muted)] hover:bg-[var(--surface-light)]"
+        >
+          <X size={16} />
+        </button>
+      </div>
+      {mode === "take" && (
+        <p className={`text-[10px] md:text-xs ${tooMuch ? "text-amber-400" : "text-[var(--text-muted)]"}`}>
+          {t("dashboard.goals.takeAvailable", { amount: formatCurrency(goal.available) })}
+        </p>
+      )}
+    </form>
+  );
+}
+
+/** A goal's entries, newest first, each with an undo. */
+function EntryList({
+  entries,
+  canUndo,
+  isUndoing,
+  onUndo,
+}: {
+  entries: SavingsGoalEntry[];
+  /** A closed goal's entries are history: reopen it to change them. */
+  canUndo: boolean;
+  isUndoing: (entryId: number) => boolean;
+  onUndo: (entryId: number) => void;
+}) {
+  const { t } = useTranslation();
+  const [showAll, setShowAll] = useState(false);
+  const shown = showAll ? entries : entries.slice(0, ENTRIES_SHOWN);
+
+  /** What the entry was, in words: its note, or where it came from. */
+  const describe = (entry: SavingsGoalEntry): string => {
+    if (entry.note) return entry.note;
+    switch (entry.source) {
+      case "cover":
+        return t("dashboard.goals.entrySource.cover");
+      case "migrated":
+        return t("dashboard.goals.entrySource.migrated");
+      case "close":
+        return t("dashboard.goals.entrySource.close");
+      default:
+        return t(
+          entry.amount >= 0
+            ? "dashboard.goals.entrySource.added"
+            : "dashboard.goals.entrySource.takenOut",
+        );
+    }
+  };
+
+  return (
+    <div className="mt-2 border-t border-[var(--surface-light)] pt-2" data-testid="goal-entries">
+      <ul className="space-y-1">
+        {shown.map((entry) => (
+          <li
+            key={entry.id}
+            className="flex items-center gap-2 text-[10px] md:text-xs"
+            data-testid="goal-entry"
+          >
+            <span className="text-[var(--text-muted)] tabular-nums shrink-0" dir="ltr">
+              {formatDate(entry.date)}
+            </span>
+            <span className="min-w-0 flex-1 truncate" dir="auto" title={describe(entry)}>
+              {describe(entry)}
+            </span>
+            <span
+              className={`font-semibold tabular-nums shrink-0 ${entry.amount < 0 ? "text-amber-400" : "text-emerald-400"}`}
+            >
+              {formatChange(entry.amount, { compact: false })}
+            </span>
+            {canUndo && entry.source !== "close" ? (
+              <button
+                type="button"
+                onClick={() => onUndo(entry.id)}
+                disabled={isUndoing(entry.id)}
+                aria-label={t("dashboard.goals.undoEntry")}
+                title={t("dashboard.goals.undoEntry")}
+                className="p-1 rounded-md text-[var(--text-muted)] hover:text-rose-400 hover:bg-[var(--surface-light)] disabled:opacity-40 transition-colors shrink-0"
+              >
+                <Undo2 size={12} />
+              </button>
+            ) : (
+              <span className="w-5 shrink-0" />
+            )}
+          </li>
+        ))}
+      </ul>
+      {entries.length > ENTRIES_SHOWN && (
+        <button
+          type="button"
+          onClick={() => setShowAll((all) => !all)}
+          className="mt-1 text-[10px] md:text-xs text-[var(--primary)] hover:opacity-80"
+        >
+          {showAll
+            ? t("dashboard.goals.showFewerEntries")
+            : t("dashboard.goals.showAllEntries", { count: entries.length })}
+        </button>
+      )}
+    </div>
+  );
 }
 
 /** The status line: closed, achieved, past due, on-schedule, or plain remainder. */
@@ -928,212 +860,4 @@ function GoalStatusLine({ goal }: { goal: SavingsGoal }) {
     );
   }
   return <span>{t("dashboard.goals.remaining", { amount: formatCurrency(goal.remaining) })}</span>;
-}
-
-/** `YYYY-MM` for the current month — the start a goal gets when none is set. */
-function currentMonthKey(): string {
-  const today = new Date();
-  return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}`;
-}
-
-/** "January 2026" for a `YYYY-MM` key, parsed in local time. */
-function monthKeyLabel(month: string): string {
-  return formatMonthYear(new Date(`${month.slice(0, 7)}-01T00:00:00`));
-}
-
-function GoalEditorModal({ goal, onClose }: { goal: SavingsGoal | null; onClose: () => void }) {
-  const { t } = useTranslation();
-  const queryClient = useQueryClient();
-  const [name, setName] = useState(goal?.name ?? "");
-  const [targetAmount, setTargetAmount] = useState(goal ? String(goal.target_amount) : "");
-  const [openingBalance, setOpeningBalance] = useState(goal ? String(goal.opening_balance) : "0");
-  const [monthlyCap, setMonthlyCap] = useState(goal?.monthly_cap != null ? String(goal.monthly_cap) : "");
-  const [startMonth, setStartMonth] = useState(goal?.start_month ?? "");
-  const [targetDate, setTargetDate] = useState(goal?.target_date ?? "");
-  const [spendRule, setSpendRule] = useState({
-    category: goal?.utilization_category ?? "",
-    tags: splitRuleTags(goal?.utilization_tags),
-  });
-  const [saveRule, setSaveRule] = useState({
-    category: goal?.contribution_category ?? "",
-    tags: splitRuleTags(goal?.contribution_tags),
-  });
-
-  const effectiveStart = startMonth || currentMonthKey();
-  const startLabel = monthKeyLabel(effectiveStart);
-
-  // Saving restates the goal's history; the editor says so before an opening
-  // balance moves, since that changes every month since the start.
-  const openingChanged = (Number(openingBalance) || 0) !== (goal?.opening_balance ?? 0);
-
-  const save = useMutation({
-    mutationKey: GOAL_WRITE_KEY,
-    mutationFn: async (payload: SavingsGoalInput) => {
-      return goal
-        ? await savingsGoalsApi.update(goal.id, payload)
-        : await savingsGoalsApi.create(payload);
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: qkPrefix.savingsGoals });
-      onClose();
-    },
-  });
-
-  const canSave = name.trim().length > 0 && Number(targetAmount) > 0;
-
-  const handleSubmit = () => {
-    if (!canSave) return;
-    save.mutate({
-      name: name.trim(),
-      target_amount: Number(targetAmount),
-      opening_balance: Number(openingBalance) || 0,
-      // An empty cap field means uncapped, so the goal can fill in one month.
-      monthly_cap:
-        saveRule.category || monthlyCap.trim() === "" ? null : Number(monthlyCap),
-      start_month: startMonth || null,
-      target_date: targetDate || null,
-      utilization_category: spendRule.category || null,
-      utilization_tags: joinRuleTags(spendRule.category ? spendRule.tags : null),
-      contribution_category: saveRule.category || null,
-      contribution_tags: joinRuleTags(saveRule.category ? saveRule.tags : null),
-    });
-  };
-
-  const field =
-    "w-full bg-[var(--surface-light)] border border-[var(--surface-light)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[var(--primary)]";
-  const label = "block text-xs font-medium text-[var(--text-muted)] mb-1";
-
-  return (
-    <Modal
-      isOpen
-      onClose={onClose}
-      title={goal ? t("dashboard.goals.editTitle") : t("dashboard.goals.addTitle")}
-      titleIcon={<Target size={18} />}
-      maxWidth="md"
-    >
-      <div className="space-y-4 p-4 md:p-6">
-        <div>
-          <label className={label} htmlFor="goal-name">{t("dashboard.goals.nameLabel")}</label>
-          <input
-            id="goal-name"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder={t("dashboard.goals.namePlaceholder")}
-            className={field}
-            dir="auto"
-          />
-        </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <div>
-            <label className={label} htmlFor="goal-target">{t("dashboard.goals.targetLabel")}</label>
-            <input
-              id="goal-target"
-              type="number" inputMode="decimal" value={targetAmount}
-              onChange={(e) => setTargetAmount(e.target.value)}
-              className={field}
-              dir="ltr"
-            />
-          </div>
-          <div>
-            <label className={label} htmlFor="goal-opening">{t("dashboard.goals.openingLabel")}</label>
-            <input
-              id="goal-opening"
-              type="number" inputMode="decimal" value={openingBalance}
-              onChange={(e) => setOpeningBalance(e.target.value)}
-              className={field}
-              dir="ltr"
-            />
-            <p className="text-[10px] text-[var(--text-muted)] mt-1">
-              {t("dashboard.goals.openingHint")}
-            </p>
-            {!!goal && openingChanged && (
-              <p className="text-[10px] text-amber-400 mt-1">
-                {t("dashboard.goals.openingRestateHint", { month: startLabel })}
-              </p>
-            )}
-          </div>
-        </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          {/* A cap limits what a goal takes from surplus; a goal filled by
-              its own income (a saved-into rule) takes none. */}
-          {!saveRule.category && (
-          <div>
-            <label className={label} htmlFor="goal-cap">{t("dashboard.goals.capLabel")}</label>
-            <input
-              id="goal-cap"
-              type="number" inputMode="decimal" value={monthlyCap}
-              onChange={(e) => setMonthlyCap(e.target.value)}
-              placeholder={t("dashboard.goals.capPlaceholder")}
-              className={field}
-              dir="ltr"
-            />
-            <p className="text-[10px] text-[var(--text-muted)] mt-1">
-              {t("dashboard.goals.capHint")}
-            </p>
-          </div>
-          )}
-          <div>
-            <label className={label} htmlFor="goal-start">{t("dashboard.goals.startMonthLabel")}</label>
-            <input
-              id="goal-start"
-              // The same calendar as the target date. Goals count whole
-              // months, so whichever day is picked, the goal starts with the
-              // month it falls in — shown back as that month's first day.
-              type="date"
-              value={startMonth ? `${startMonth.slice(0, 7)}-01` : ""}
-              onChange={(e) => setStartMonth(e.target.value.slice(0, 7))}
-              className={field}
-              dir="ltr"
-            />
-            <p className="text-[10px] text-[var(--text-muted)] mt-1">
-              {t("dashboard.goals.startMonthHint")}
-            </p>
-          </div>
-        </div>
-        <div>
-          <label className={label} htmlFor="goal-date">{t("dashboard.goals.dateLabel")}</label>
-          <input
-            id="goal-date"
-            type="date" value={targetDate ?? ""}
-            onChange={(e) => setTargetDate(e.target.value)}
-            className={field}
-            dir="ltr"
-          />
-        </div>
-        <fieldset className="space-y-3 border-t border-[var(--surface-light)] pt-3">
-          <legend className="text-xs font-semibold text-[var(--text-muted)] pe-2">
-            {t("dashboard.goals.autoLinkTitle")}
-          </legend>
-          <GoalAutoLinkField
-            testId="goal-auto-link-spend"
-            label={t("dashboard.goals.autoLinkSpendLabel")}
-            hint={t("dashboard.goals.autoLinkSpendHint")}
-            category={spendRule.category}
-            tags={spendRule.tags}
-            onChange={(category, tags) => setSpendRule({ category, tags })}
-          />
-          <GoalAutoLinkField
-            testId="goal-auto-link-save"
-            label={t("dashboard.goals.autoLinkSaveLabel")}
-            hint={t("dashboard.goals.autoLinkSaveHint")}
-            category={saveRule.category}
-            tags={saveRule.tags}
-            onChange={(category, tags) => setSaveRule({ category, tags })}
-          />
-        </fieldset>
-        <div className="flex justify-end gap-2 pt-2">
-          <button onClick={onClose} className="px-4 py-2 rounded-lg text-sm font-medium text-[var(--text-muted)] hover:bg-[var(--surface-light)] transition-colors">
-            {t("common.cancel")}
-          </button>
-          <button
-            onClick={handleSubmit}
-            disabled={!canSave || save.isPending}
-            className="px-4 py-2 rounded-lg text-sm font-bold bg-[var(--primary)] text-white disabled:opacity-50 hover:opacity-90 transition-opacity"
-          >
-            {t("common.save")}
-          </button>
-        </div>
-      </div>
-    </Modal>
-  );
 }

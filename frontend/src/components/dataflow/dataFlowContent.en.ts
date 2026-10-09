@@ -42,7 +42,7 @@ const content: DataFlowContent = {
     "liab-mgmt": { title: "Liability Management", desc: "Create loans, track payments, mark as paid off. Amortization schedule generation." },
     "budget-mgmt": { title: "Budget Management", desc: "Three rule kinds \u2014 monthly, yearly, project. Copy forward, close a finished one, alerts." },
     "month-override": { title: "Budget Month Override", desc: "Count a transaction in a neighbouring month without changing its date. Capped at \u00B11 month." },
-    "savings-goals-mgmt": { title: "Savings Goals", desc: "Prioritised earmarks over money already tracked. Cap, target, links." },
+    "savings-goals-mgmt": { title: "Savings Goals", desc: "Earmarks over money already tracked: what you put in, a monthly amount, a target, links." },
     "recurring-review": { title: "Recurring Review", desc: "Confirm, dismiss or re-open a detected commitment. Only confirmed ones are acted on." },
     "balance-mgmt": { title: "Balance Management", desc: "Bank balance entry (post-scrape), cash envelope CRUD. Triggers prior wealth recalculation." },
     "cat-mgmt": { title: "Category & Rules", desc: "Create/rename/delete categories and tags. Manage tagging rules. Changes cascade to all transactions." },
@@ -51,7 +51,7 @@ const content: DataFlowContent = {
     "recurring-svc": { title: "Recurring Detection", desc: "Finds commitments on cadence, regularity and amount stability. Scores each with a confidence." },
     "insights-svc": { title: "Insights", desc: "Only what the budget does not already explain \u2014 spikes, pace, big charges, repriced subscriptions." },
     "budget-svc": { title: "Budget", desc: "Budget vs actual across monthly, yearly and project rules. Fixed/variable split, alerts." },
-    "goals-svc": { title: "Savings Goals Engine", desc: "Each month\u2019s realized surplus flows down goals by priority. Free cash is what none claims." },
+    "goals-svc": { title: "Goals Ledger", desc: "A goal holds what you put in, plus its own income, less its spending. Free cash is the bank and cash no goal holds." },
     "invest-svc": { title: "Investments", desc: "P&L, ROI, CAGR. Snapshot-first balance. Fixed-rate compounding." },
     "liab-svc": { title: "Liabilities", desc: "Amortization, remaining balance, total interest, payment tracking." },
     "rates-svc": { title: "Rates", desc: "Bank of Israel key-rate history \u2192 prime. Re-prices prime-linked loans and savings at each step." },
@@ -233,8 +233,8 @@ const content: DataFlowContent = {
       title: "Savings Goals", tag: "Virtual Earmarks",
       sections: [
         { heading: "What A Goal Is", text: "A claim over money already sitting in tracked accounts \u2014 never an addition to net worth. You are not moving shekels, you are naming what they are for." },
-        { heading: "Operations", items: ["Name, target amount, opening balance, optional monthly cap and target date", "Priority order \u2014 reorder with the arrows; history is recalculated under the new order", "Link a transaction as a contribution or a utilization", "Pay for a project, a yearly envelope or any category/tags from a goal \u2014 one link, every matching purchase (past and future, card purchases included) counts as spent from the goal", "Close a goal \u2014 its allocations freeze and can never be reclaimed"] },
-        { heading: "Rewriting History", text: "A priority change applies from today. Recomputing past months is an explicit rebuild, and it is previewed before it is written." },
+        { heading: "Operations", items: ["Name, target amount, optional monthly amount, start month and target date", "Add money or take it out \u2014 every move is a dated entry with undo; \u201cFund\u201d puts in the month\u2019s suggestion", "Order with the arrows \u2014 it only decides who is funded first and who gives back first", "Link an incoming transaction as the goal\u2019s income, or any transaction as spending from it", "Pay for a project, a yearly envelope or any category/tags from a goal \u2014 one link, every matching purchase (past and future, card purchases included) counts as spent from the goal", "Close a goal \u2014 what it still holds goes back to free cash; reopening restores it"] },
+        { heading: "Nothing Moves On Its Own", text: "A goal changes only because you moved money or a transaction tied to it happened. A shortfall in free cash is shown, never quietly taken from a goal \u2014 covering it is your click." },
       ],
     },
     "recurring-review": {
@@ -300,8 +300,8 @@ const content: DataFlowContent = {
     "goal-tables": {
       title: "Savings Goal Tables", tag: "Earmarks",
       sections: [
-        { heading: "Tables", items: ["savings_goals \u2014 target, opening balance, priority, monthly cap, status", "savings_goal_allocations \u2014 one row per (goal, month), auto or manual", "savings_goal_links \u2014 transactions tied to a goal as contribution or utilization"] },
-        { heading: "Why Allocations Persist", text: "Progress is derived from surplus, but the derivation is stored per month so a later priority change does not silently rewrite last year. Rewriting is an explicit, previewed rebuild." },
+        { heading: "Tables", items: ["savings_goals \u2014 target, priority, monthly amount, start and target dates, rules, status", "savings_goal_entries \u2014 money you put into or took out of a goal, dated", "savings_goal_links \u2014 transactions tied to a goal as income or spending"] },
+        { heading: "Nothing Derived Is Stored", text: "A goal\u2019s balance is replayed from its entries and transactions on every read, so there is nothing to rebuild and nothing that can drift. Only your own moves are written." },
       ],
     },
     "decision-tables": {
@@ -361,12 +361,13 @@ const content: DataFlowContent = {
       ],
     },
     "goals-svc": {
-      title: "Savings Goals Engine", tag: "Surplus Waterfall",
+      title: "Goals Ledger", tag: "Earmarks You Set",
       sections: [
-        { heading: "The Waterfall", items: ["Each month\u2019s realized surplus is income \u2212 expenses \u2212 investments, CC-deduped", "It flows down the goals by priority, each taking min(remaining need, monthly cap)", "Linked transactions are pulled out of the surplus and reintroduced explicitly, so no shekel counts twice", "What no goal claims stays in the free-cash pool"] },
-        { heading: "A Bad Month", text: "A month that spends more than it earns drains free cash first. Only once that is empty does the shortfall come back out of the goals, lowest priority first, each giving back at most what is funded but not yet spent \u2014 money already spent can never be reclaimed." },
-        { heading: "Goals Fed by Their Own Income", text: "A goal with a “saved into” rule (wedding gifts, say) is filled by exactly that income, and takes free cash only for what the income will never cover. Bills it pays before the income lands are a loan from free cash that the income repays — never an overspend that takes money back from other goals." },
-        { heading: "Closed Goals", text: "Frozen. Their allocations can never be reclaimed or clawed back." },
+        { heading: "What a Goal Holds", items: ["The money you put in or took out \u2014 every move is a dated entry you can undo", "Plus income its \u201csaved into\u201d rule or links claim (wedding gifts, say)", "Less spending its spending rule or links pay for, refunds netted"] },
+        { heading: "Free Cash", text: "Bank and cash balances less everything the goals hold. It can go negative when goals hold more than there is: the card shows the shortfall and offers to cover it from the lowest goals first, but nothing moves until you confirm." },
+        { heading: "Funding", text: "A goal can carry a monthly amount; the card suggests the month\u2019s remainder and \u201cFund all\u201d puts it in, top of the list first, never past free cash." },
+        { heading: "Spending Ahead of Income", text: "A goal fed by its own income may pay bills before that income lands \u2014 a loan from free cash the income repays. Any other goal pays only with what it holds." },
+        { heading: "Closed Goals", text: "Closing hands what the goal still holds back to free cash; reopening restores it." },
         { heading: "This Year\u2019s Savings", text: "Above the goals, the card measures what each year saved \u2014 income minus spending, with money moved into investments counted as saved \u2014 against a target you set for the year, with the pace an even year would be at today and what each remaining month needs. A goal\u2019s own income and the bills it pays are left out of it; a withdrawal that is spent can make a month, or a year, negative." },
       ],
     },
@@ -535,10 +536,10 @@ const content: DataFlowContent = {
       title: "Savings Goals",
       desc: "Name what your money is for. Goals are earmarks over cash you already have \u2014 never an imaginary extra balance.",
       highlights: [
-        "Each month's leftover flows down your goals in priority order",
-        "An optional monthly cap keeps one goal from eating the whole surplus",
-        "What no goal claims stays in a free-cash pool you can see",
-        "A bad month drains free cash first, and only gives back what a goal hasn't already spent",
+        "You decide what goes into each goal \u2014 nothing moves on its own",
+        "A monthly amount per goal, suggested each month and funded in one click",
+        "Free cash is what no goal holds, and it turns red when you\u2019ve set aside too much",
+        "One click covers a shortfall from your lowest goals, after you confirm",
       ],
     },
     {

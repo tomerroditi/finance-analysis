@@ -1136,64 +1136,74 @@ export const retirementApi = {
     api.post<RetirementSuggestions>("/retirement/suggestions", data),
 };
 
-export interface SavingsGoalAllocationEntry {
-  month: string;
+/** Where an entry came from: by hand, a "cover it" plan, the move to manual goals, or closing the goal. */
+export type SavingsGoalEntrySource = "manual" | "cover" | "migrated" | "close";
+
+/** One dated movement of money into (+) or out of (-) a goal. */
+export interface SavingsGoalEntry {
+  id: number;
+  goal_id: number;
+  /** `YYYY-MM-DD` */
+  date: string;
+  /** Signed: positive was added, negative was taken out. */
   amount: number;
+  source: SavingsGoalEntrySource;
+  note: string | null;
 }
 
 export interface SavingsGoal {
   id: number;
   name: string;
   target_amount: number;
-  opening_balance: number;
   priority: number;
-  monthly_cap: number | null;
+  /** Suggested monthly funding — never moves money on its own. */
+  monthly_amount: number | null;
   start_month: string | null;
   target_date: string | null;
   contribution_category: string | null;
   contribution_tags: string | null;
-  /** Category whose spending is utilized from the goal automatically. */
+  /** Category whose spending is drawn from the goal automatically. */
   utilization_category: string | null;
   /** Semicolon-separated tags narrowing `utilization_category`; `null` = every tag. */
   utilization_tags: string | null;
-  status: string;
+  status: "active" | "closed";
   closed_month: string | null;
   notes: string | null;
-  /** Surplus the waterfall directed here across every month. */
-  allocated: number;
-  /** Money attached to the goal by an explicit transaction link or category rule. */
-  contributed: number;
-  /** Money spent back out of the goal. Never reduces `target_amount`. */
-  utilized: number;
-  /**
-   * Free cash an income-funded goal borrowed for bills its income has not
-   * repaid. Not part of `funded` — the goal never received it.
-   */
-  owed: number;
-  /** Money deficit months pulled back out, once the free-cash pool ran dry. */
-  clawed_back: number;
-  /** opening_balance + allocated + contributed, net of any clawback. */
-  funded: number;
-  /** funded - utilized: what is still earmarked and unspent. */
+  /** Net money put in by hand (the sum of its entries). */
+  added: number;
+  /** Income its saved-into rule or links brought in. */
+  income: number;
+  /** Money spent out of it (linked spending, refunds netted). */
+  spent: number;
+  /** added + income — progress toward the target. */
+  saved: number;
+  /** saved - spent; negative only for a goal that spent ahead of its income. */
+  balance: number;
+  /** max(0, balance) — what it holds now. */
   available: number;
+  /** max(0, -balance) — spent ahead of its income, repaid as that income arrives. */
+  owed: number;
   remaining: number;
   progress_pct: number;
   is_achieved: boolean;
   is_closed: boolean;
-  /** This month's allocation, still provisional until the month closes. */
-  this_month_allocation: number;
   months_remaining: number | null;
   monthly_needed: number | null;
   /** The target date has passed and the goal is still short. */
   is_past_due: boolean;
-  history: SavingsGoalAllocationEntry[];
+  added_this_month: number;
+  /** What to put in this month; 0 when there is nothing to suggest. */
+  suggested_this_month: number;
+  /** Newest first. */
+  entries: SavingsGoalEntry[];
 }
 
+/** Create payload; an update takes a `Partial` and ignores `initial_amount`. */
 export interface SavingsGoalInput {
   name: string;
   target_amount: number;
-  opening_balance?: number;
-  monthly_cap?: number | null;
+  priority?: number | null;
+  monthly_amount?: number | null;
   start_month?: string | null;
   target_date?: string | null;
   contribution_category?: string | null;
@@ -1201,53 +1211,47 @@ export interface SavingsGoalInput {
   utilization_category?: string | null;
   utilization_tags?: string | null;
   notes?: string | null;
+  /** Create only, >= 0: becomes the goal's first entry. */
+  initial_amount?: number;
 }
 
+/** One goal's movement in a single month. */
 export interface SavingsGoalMonthRow {
   goal_id: number;
   name: string;
   priority: number;
   status: string;
-  allocated: number;
-  contributed: number;
-  total: number;
+  added: number;
+  income: number;
+  spent: number;
+  /** added + income - spent */
+  change: number;
 }
 
-export interface SavingsGoalMonthAllocations {
+/** A month of goal movement — also the budget month analysis' `savings_goals`. */
+export interface SavingsGoalMonth {
   year: number;
   month: number;
+  /** Only goals with any movement that month. */
   goals: SavingsGoalMonthRow[];
-  total_allocated: number;
-  surplus: number;
-  unallocated: number;
-  /** Unearmarked money left in the pool at the end of this month. */
-  free_cash: number;
-  /** Money this month's deficit pulled back out of goals (positive). */
-  clawed_back: number;
-  is_provisional: boolean;
+  total_added: number;
+  total_change: number;
 }
 
-/** One goal's share of a single month in the allocation timeline. */
+/** One goal at the end of a month in the timeline. */
 export interface SavingsGoalTimelineGoal {
   goal_id: number;
-  name: string;
-  /** Waterfall allocation; negative when a deficit clawed money back. */
-  allocated: number;
-  contributed: number;
-  total: number;
+  /** What it held at month end. */
+  balance: number;
+  /** How much that moved during the month. */
+  change: number;
 }
 
-/** One month of the waterfall: who took what, and what was left unearmarked. */
 export interface SavingsGoalTimelineMonth {
   month: string;
-  goals: SavingsGoalTimelineGoal[];
-  /** Money that went into goals this month (clawbacks reported apart). */
-  allocated: number;
-  clawed_back: number;
-  surplus: number;
-  /** Unearmarked pool at the end of this month. */
+  /** Free cash at month end; may be negative. */
   free_cash: number;
-  is_provisional: boolean;
+  goals: SavingsGoalTimelineGoal[];
 }
 
 /** One calendar year's savings: income minus spending, against its target. */
@@ -1282,6 +1286,7 @@ export interface SavingsGoalTimeline {
   has_goals: boolean;
   /** Full history length, so the UI offers "all time" only when it adds months. */
   total_months: number;
+  /** Oldest first. */
   months: SavingsGoalTimelineMonth[];
   goals: {
     id: number;
@@ -1292,35 +1297,26 @@ export interface SavingsGoalTimeline {
   }[];
 }
 
-export interface SavingsGoalRebuildChange {
+/** One step of the plan that takes money back from goals to cover a shortfall. */
+export interface SavingsGoalCoverStep {
   goal_id: number;
   name: string;
-  before: number;
-  after: number;
-  delta: number;
+  amount: number;
 }
 
-export interface SavingsGoalRebuildResult {
-  from_month: string | null;
-  dry_run: boolean;
-  changes: SavingsGoalRebuildChange[];
-  goals: SavingsGoal[];
-}
-
-/** The pool of tracked money that no goal has earmarked. */
+/** Bank and cash, less what the goals hold. */
 export interface SavingsGoalFreeCash {
+  /** May be negative: more set aside than there is. */
   free_cash: number;
-  /** What the goals still hold. */
+  /** What the goals hold (the sum of their `available`). */
   earmarked: number;
+  /** Bank + cash. */
   liquid: number;
-  clawed_back_this_month: number;
   has_goals: boolean;
-}
-
-/** Free cash that existed when a goal starting in `month` began. */
-export interface SavingsGoalFreeCashBefore {
-  month: string;
-  free_cash: number;
+  /** max(0, -free_cash) */
+  shortfall: number;
+  /** Lowest priority first; empty unless there is a shortfall. */
+  cover_plan: SavingsGoalCoverStep[];
 }
 
 export type SavingsGoalLinkType = "contribution" | "utilization";
@@ -1344,24 +1340,29 @@ export const savingsGoalsApi = {
     api.post<SavingsGoal[]>("/savings-goals/reorder", { goal_ids: goalIds }),
   close: (id: number) => api.post<SavingsGoal[]>(`/savings-goals/${id}/close`),
   reopen: (id: number) => api.post<SavingsGoal[]>(`/savings-goals/${id}/reopen`),
-  rebuild: (fromMonth: string | null, dryRun: boolean) =>
-    api.post<SavingsGoalRebuildResult>("/savings-goals/rebuild", {
-      from_month: fromMonth,
-      dry_run: dryRun,
+  /** Put money in (positive) or take it out (negative). */
+  addEntry: (goalId: number, amount: number, note?: string | null) =>
+    api.post<SavingsGoal[]>(`/savings-goals/${goalId}/entries`, {
+      amount,
+      note: note ?? null,
     }),
+  deleteEntry: (entryId: number) =>
+    api.delete<SavingsGoal[]>(`/savings-goals/entries/${entryId}`),
+  /** Fund this month's suggestions; `null` funds every goal that has one. */
+  fund: (goalIds: number[] | null) =>
+    api.post<SavingsGoal[]>("/savings-goals/fund", { goal_ids: goalIds }),
   getFreeCash: () => api.get<SavingsGoalFreeCash>("/savings-goals/free-cash"),
-  /** Leaves `goalId` out of the figure, so it can become that goal's opening balance. */
-  getFreeCashBefore: (month: string, goalId?: number) =>
-    api.get<SavingsGoalFreeCashBefore>("/savings-goals/free-cash/before", {
-      params: goalId ? { month, goal_id: goalId } : { month },
-    }),
+  /** Applies the current `cover_plan`. */
+  cover: () => api.post<SavingsGoal[]>("/savings-goals/free-cash/cover"),
+  getMonth: (year: number, month: number) =>
+    api.get<SavingsGoalMonth>(`/savings-goals/month/${year}/${month}`),
   getYearly: () => api.get<YearlySavings>("/savings-goals/yearly"),
   /** `null` clears the year's target. */
   setYearlyTarget: (year: number, targetAmount: number | null) =>
     api.put<YearlySavings>(`/savings-goals/yearly/${year}/target`, {
       target_amount: targetAmount,
     }),
-  /** Per-month allocation history. `months: 0` asks for the whole timeline. */
+  /** Month-end balances and changes. `months: 0` asks for the whole timeline. */
   getTimeline: (months: number) =>
     api.get<SavingsGoalTimeline>("/savings-goals/timeline", {
       params: { months },

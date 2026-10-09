@@ -4,12 +4,11 @@ Savings-goal service package.
 Modules:
 
 - ``common`` — shared constants and pure month helpers.
-- ``inputs`` — goals in waterfall order, the transaction context (surplus and
-  goal-linked amounts) and the pre-goal pool.
-- ``engine`` — the surplus waterfall simulation, clawback, ledger persistence
-  and ``rebuild``.
-- ``goals`` — goal CRUD and transaction links.
-- ``read_models`` — enriched goals, the month view, free cash and timeline.
+- ``inputs`` — goals in list order and everything read off transactions.
+- ``ledger`` — each goal's balance and free cash, month by month.
+- ``goals`` — goal CRUD, money in and out, fund, cover and transaction links.
+- ``read_models`` — the goal list, free cash, timeline and month view.
+- ``yearly`` — how much each year saved, against its target.
 - ``core`` — the public ``SavingsGoalService`` class assembling the mixins.
 """
 

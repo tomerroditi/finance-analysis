@@ -1,8 +1,11 @@
-"""Inputs to the savings-goal allocation engine.
+"""Transaction inputs of the savings-goal service.
 
-Provides ``InputsMixin``: the goals in waterfall order, the per-month
-realized surplus and goal-linked amounts derived from transactions (the
-*context*) and the free-cash pool that predates every goal. Mixed into ``SavingsGoalService`` (see ``core.py``).
+Provides ``InputsMixin``: the goals in list order, and everything the
+service reads off transactions (the *context*) — each month's realized
+surplus for the yearly savings figure, the dated income and spending each
+goal's rules and links claim, and the money moving through the bank and cash
+accounts that free cash is measured against. Mixed into
+``SavingsGoalService`` (see ``core.py``).
 """
 
 from typing import Any
@@ -12,13 +15,13 @@ import pandas as pd
 from backend.constants.categories import PRIOR_WEALTH_TAG
 from backend.constants.tables import TransactionsTableFields
 from backend.models.savings_goal import (
+    GOAL_STATUS_CLOSED,
     LINK_CONTRIBUTION,
     LINK_UTILIZATION,
     SavingsGoal,
 )
 from backend.services.bank_balance_service import BankBalanceService
 from backend.services.cash_balance_service import CashBalanceService
-from backend.services.investments import InvestmentsService
 from backend.services.savings_goals.common import month_key
 from backend.services.transaction_classification import transactions_masks
 
@@ -33,103 +36,59 @@ _SURPLUS_EXCLUDED_SOURCES = {_CREDIT_CARD_SOURCE, "insurance_transactions"}
 
 _ALL_TAGS = "all_tags"
 
+#: The accounts whose money goals and free cash divide between them.
+_LIQUID_SOURCES = {"bank_transactions", "cash_transactions"}
+
 #: ``(source_table, unique_id, split_id)`` — identifies one analysis row.
 _RowKey = tuple[Any, Any, int | None]
 
-#: ``(goal_id, link_type, signed)`` — how one row counts toward a goal.
-#: ``signed`` rows keep their direction (a refund nets against the purchases
-#: it repays); the rest count by magnitude, as an explicit link always has.
-_GoalLink = tuple[int, str, bool]
+#: ``(goal_id, link_type)`` — how one row counts toward a goal.
+_GoalLink = tuple[int, str]
 
 
 class InputsMixin:
-    """Context-building and pool-input methods for ``SavingsGoalService``."""
+    """Goal order and transaction inputs for ``SavingsGoalService``."""
 
     def _goals_in_order(self) -> list[SavingsGoal]:
-        """Return every goal (active and closed) in waterfall order.
-
-        While a reorder is being simulated the order it is about to write
-        stands in for the stored priorities.
-        """
+        """Return every goal (active and closed) in list order."""
         df = self.repo.get_all()
         if df.empty:
             return []
         ids = df.sort_values(["priority", "id"])["id"].tolist()
-        if self._order_override is not None:
-            rank = {goal_id: i for i, goal_id in enumerate(self._order_override)}
-            ids.sort(key=lambda goal_id: rank.get(goal_id, len(rank)))
         return [self.repo.get(int(i)) for i in ids]
 
-    def _opening_free_cash(self) -> float:
-        """Return the liquid money that existed before any transaction was tracked.
+    def _opening_liquid(self) -> float:
+        """Return the bank and cash money that predates every tracked transaction.
 
-        Bank and cash *prior wealth* is exactly that opening balance — each
-        account stores ``current balance - sum(its tracked transactions)`` —
-        so walking the realized surplus forward from here reconstructs the
-        liquid balance, the same way the net-worth chart does.
-
-        Investment prior wealth belongs here too, for the same reason it seeds
-        the net-worth chart's bank line: a manual investment's deposits are
-        tracked transactions (they leave the pool when they happen), and its
-        prior wealth — ``-(sum of those deposits)`` — is the money they were
-        paid with, which no tracked account recorded. The two cancel. Counting
-        the deposits without their prior wealth took every manual deposit out
-        of free cash with nothing to pay for it (151K on real data).
+        Each account stores ``current balance - sum(its tracked
+        transactions)`` as its prior wealth, so this plus every bank and cash
+        transaction up to a date is what the accounts held on that date.
 
         Returns
         -------
         float
-            Combined bank, cash and investment prior wealth, ``0.0`` when none
-            is set up.
+            Combined bank and cash prior wealth, ``0.0`` when none is set up.
         """
         bank = BankBalanceService(self.db).get_total_prior_wealth()
         cash = CashBalanceService(self.db).get_total_prior_wealth()
-        invested = InvestmentsService(self.db).get_total_prior_wealth()
-        return float(bank) + float(cash) + float(invested)
-
-    def _pool_before(self, month: tuple[int, int], context: dict[str, Any]) -> float:
-        """Return the free cash at the start of ``month``, when no goal has started yet.
-
-        Prior wealth walked forward through every month before ``month``. It
-        is not floored: the walk that follows lets the pool go negative, and
-        so does the history before it.
-
-        Parameters
-        ----------
-        month : tuple
-            ``(year, month)`` the pool is measured at the start of.
-        context : dict
-            The transaction context from :meth:`_build_context`.
-
-        Returns
-        -------
-        float
-            The pool, which may be negative.
-        """
-        free_cash = self._opening_free_cash()
-        for month_seen in sorted(context["surplus"]):
-            if month_seen >= month:
-                break
-            free_cash += context["surplus"][month_seen]
-        return free_cash
+        return float(bank) + float(cash)
 
     def _build_context(self) -> dict[str, Any]:
-        """Compute per-month surplus and per-month goal-linked amounts, memoised.
-
-        Goal-linked transactions are pulled out of the surplus calculation
-        before it runs, then reintroduced explicitly — a contribution consumes
-        the pool, a utilization draws down what was set aside earlier. Leaving
-        them in would deduct the same shekel twice.
+        """Read everything the service needs off transactions, memoised.
 
         Returns
         -------
         dict
-            ``surplus`` — ``{(year, month): float}``; ``direct`` (every
-            contribution), ``drawn`` (the part of it paid out of the pool) and
-            ``utilized`` — ``{(year, month): {goal_id: amount}}``; and
-            ``invested`` — ``{(year, month): float}``, the net money moved into
-            investments outside any goal (withdrawals negative), which the
-            surplus already took out.
+            ``surplus`` — ``{(year, month): float}``, income less spending and
+            investing of the rows no goal claims; ``direct`` (income a goal
+            claims) and ``utilized`` (spending paid out of a goal, refunds
+            netted) — ``{(year, month): {goal_id: amount}}``; ``invested`` —
+            ``{(year, month): float}``, the net money moved into investments
+            outside any goal (withdrawals negative), which the surplus already
+            took out; ``events`` — ``[(date, goal_id, link_type, amount)]``,
+            the dated rows behind ``direct`` and ``utilized``; and ``liquid``
+            — ``{(year, month): float}``, the net of every bank and cash
+            transaction that month.
         """
         if self._context_cache is not None:
             return self._context_cache
@@ -142,9 +101,10 @@ class InputsMixin:
         empty: dict[str, Any] = {
             "surplus": {},
             "direct": {},
-            "drawn": {},
             "utilized": {},
             "invested": {},
+            "events": [],
+            "liquid": {},
         }
         if df.empty:
             return empty
@@ -175,18 +135,26 @@ class InputsMixin:
         parsed = parsed[parsed.notna()]
         df["_year"] = parsed.dt.year.astype(int)
         df["_month"] = parsed.dt.month.astype(int)
+        df["_date"] = parsed.dt.strftime("%Y-%m-%d")
+
+        liquid_rows = df[df[source_col].isin(_LIQUID_SOURCES)]
+        liquid = {
+            (int(y), int(m)): float(v)
+            for (y, m), v in liquid_rows.groupby(["_year", "_month"])[amount_col]
+            .sum()
+            .items()
+        }
 
         keys = self._row_keys(df)
         goal_of = self._goal_by_transaction(df, keys)
-        df["_goal_id"] = [goal_of.get(k, (None, None, False))[0] for k in keys]
-        df["_link_type"] = [goal_of.get(k, (None, None, False))[1] for k in keys]
-        df["_signed"] = [goal_of.get(k, (None, None, False))[2] for k in keys]
+        df["_goal_id"] = [goal_of.get(k, (None, None))[0] for k in keys]
+        df["_link_type"] = [goal_of.get(k, (None, None))[1] for k in keys]
 
         # A card purchase only ever reaches the goals as money spent out of
         # one. The bank-side bill that paid for it is already inside the
         # surplus, so the purchase hands that amount back to the month it was
-        # made in — otherwise the same shekel would leave both the pool and
-        # the goal.
+        # made in — otherwise the same shekel would count against both the
+        # month and the goal.
         is_card = df[source_col] == _CREDIT_CARD_SOURCE
         card_spent = df[is_card & (df["_link_type"] == LINK_UTILIZATION)]
         df = df[~is_card]
@@ -225,30 +193,29 @@ class InputsMixin:
             surplus[key] = surplus.get(key, 0.0) - float(spent)
 
         direct: dict[tuple[int, int], dict[int, float]] = {}
-        drawn: dict[tuple[int, int], dict[int, float]] = {}
         utilized: dict[tuple[int, int], dict[int, float]] = {}
+        events: list[tuple[str, int, str, float]] = []
         for _, row in linked.iterrows():
             key = (int(row["_year"]), int(row["_month"]))
             goal_id = int(row["_goal_id"])
             raw = float(row[amount_col])
-            amount = -raw if row["_signed"] else abs(raw)
-            bucket = direct if row["_link_type"] == LINK_CONTRIBUTION else utilized
+            # Income counts as it arrives and spending by what it cost, so a
+            # refund nets against the purchase it repays.
+            if row["_link_type"] == LINK_CONTRIBUTION:
+                bucket, amount = direct, raw
+            else:
+                bucket, amount = utilized, -raw
             bucket.setdefault(key, {})
             bucket[key][goal_id] = bucket[key].get(goal_id, 0.0) + amount
-            # Only a contribution that left the account (a transfer out to
-            # savings) was paid out of the pool. Income linked to a goal — a
-            # gift, sale proceeds — arrives already earmarked and never was
-            # free cash, so charging it to the pool would count it twice.
-            if row["_link_type"] == LINK_CONTRIBUTION and raw < 0:
-                drawn.setdefault(key, {})
-                drawn[key][goal_id] = drawn[key].get(goal_id, 0.0) + amount
+            events.append((row["_date"], goal_id, row["_link_type"], amount))
 
         return {
             "surplus": surplus,
             "direct": direct,
-            "drawn": drawn,
             "utilized": utilized,
             "invested": invested,
+            "events": events,
+            "liquid": liquid,
         }
 
     @staticmethod
@@ -273,16 +240,17 @@ class InputsMixin:
     def _goal_by_transaction(
         self, df: pd.DataFrame, keys: list[_RowKey]
     ) -> dict[_RowKey, _GoalLink]:
-        """Map each linked transaction key to its ``(goal_id, link_type, signed)``.
+        """Map each linked transaction key to its ``(goal_id, link_type)``.
 
         Explicit per-transaction links win over both category/tag rules, so a
         single correction on one transaction always beats the broad rule, and
         a utilization rule wins over a contribution rule on the same row.
 
-        A utilization rule claims its rows from the goal's start month on.
-        Spending that predates the goal was never paid for out of it, so it
-        stays an ordinary expense of the month it happened in. When two goals'
-        rules match one row, the goal higher in the waterfall takes it.
+        Rules claim rows from the goal's start month through the month it
+        closed in (a closed goal's rules stop there). Spending that predates
+        the goal was never paid for out of it, so it stays an ordinary expense
+        of the month it happened in. When two goals' rules match one row, the
+        goal higher in the list takes it.
 
         Parameters
         ----------
@@ -294,7 +262,7 @@ class InputsMixin:
         Returns
         -------
         dict
-            Row key -> ``(goal_id, link_type, signed)`` for every linked row.
+            Row key -> ``(goal_id, link_type)`` for every linked row.
         """
         mapping: dict[_RowKey, _GoalLink] = {}
 
@@ -309,36 +277,31 @@ class InputsMixin:
             tags = self._split_tags(goal.contribution_tags)
             if tags and tags != [_ALL_TAGS] and tag_col in df.columns:
                 matches &= df[tag_col].isin(tags)
-            # Income before the goal started was never its money: claimed but
-            # never walked, it vanished from both the goal and free cash.
-            start = month_key(goal.start_month)
+            span = self._claim_span(goal)
             for key, matched, row_month in zip(keys, matches, row_months, strict=True):
-                if matched and (start is None or row_month >= start):
-                    mapping.setdefault(key, (goal.id, LINK_CONTRIBUTION, False))
+                if matched and self._in_span(row_month, span):
+                    mapping.setdefault(key, (goal.id, LINK_CONTRIBUTION))
 
-        # Walked bottom-up so the goal higher in the waterfall writes last.
+        # Walked bottom-up so the goal higher in the list writes last.
         for goal in reversed(self._goals_in_order()):
             if not goal.utilization_category:
                 continue
-            start = month_key(goal.start_month)
+            span = self._claim_span(goal)
             matches = df[category_col] == goal.utilization_category
             tags = self._split_tags(goal.utilization_tags)
             if tags and tags != [_ALL_TAGS] and tag_col in df.columns:
                 matches &= df[tag_col].isin(tags)
             for key, matched, row_month in zip(keys, matches, row_months, strict=True):
-                if matched and (start is None or row_month >= start):
-                    mapping[key] = (goal.id, LINK_UTILIZATION, True)
+                if matched and self._in_span(row_month, span):
+                    mapping[key] = (goal.id, LINK_UTILIZATION)
 
         links = self.repo.get_links()
         if not links.empty:
-            # A link only counts from its goal's start month, like the rules:
-            # before it the walk never visits the goal, so a row linked there
-            # left the surplus and was never paid by anything.
             month_of = dict(zip(keys, row_months, strict=True))
-            starts = {g.id: month_key(g.start_month) for g in self._goals_in_order()}
+            spans = {g.id: self._claim_span(g) for g in self._goals_in_order()}
             for _, link in links.iterrows():
                 goal_id = int(link["goal_id"])
-                start = starts.get(goal_id)
+                span = spans.get(goal_id, (None, None))
                 if link["source_type"] == "split":
                     split_id = int(link["source_id"])
                     matched = [c for c in keys if c[2] == split_id]
@@ -350,10 +313,28 @@ class InputsMixin:
                         and str(c[1]) == str(link["source_id"])
                     ]
                 for candidate in matched:
-                    if start is not None and month_of[candidate] < start:
-                        continue
-                    mapping[candidate] = (goal_id, link["link_type"], False)
+                    if self._in_span(month_of[candidate], span):
+                        mapping[candidate] = (goal_id, link["link_type"])
         return mapping
+
+    @staticmethod
+    def _claim_span(
+        goal: SavingsGoal,
+    ) -> tuple[tuple[int, int] | None, tuple[int, int] | None]:
+        """Return the first and last month a goal's rules and links claim rows in."""
+        last = (
+            month_key(goal.closed_month) if goal.status == GOAL_STATUS_CLOSED else None
+        )
+        return month_key(goal.start_month), last
+
+    @staticmethod
+    def _in_span(
+        month: tuple[int, int],
+        span: tuple[tuple[int, int] | None, tuple[int, int] | None],
+    ) -> bool:
+        """Whether ``month`` falls inside a goal's claim span."""
+        first, last = span
+        return (first is None or month >= first) and (last is None or month <= last)
 
     @staticmethod
     def _split_tags(tags: str | None) -> list[str]:

@@ -15,11 +15,12 @@ import { usePendingRows } from "../../hooks/usePendingRows";
 /**
  * Row action for attaching one transaction to a savings goal.
  *
- * Two roles, and the sign of the transaction decides which one is offered by
- * default: money going out can either be *set aside* for a goal (a
- * contribution, which consumes that month's surplus before the waterfall runs)
- * or *spent out of* one (a utilization, which draws the goal down without ever
- * moving its target).
+ * Two roles: money coming in can be *saved into* a goal (a contribution,
+ * which fills it), and any transaction can be *paid from* one (a utilization,
+ * which draws the goal down without ever moving its target; a refund nets
+ * back). Only incoming money can be a contribution — putting money aside by
+ * hand is the goal's "Add money", not a link — so spending is offered the
+ * utilization alone.
  *
  * The button hides itself when the user keeps no goals, so the actions column
  * stays uncluttered for everyone who does not use the feature.
@@ -58,6 +59,7 @@ export function GoalLinkAction({
 
   const sourceTable = transaction.source ?? "";
   const sourceId = Number(transaction.unique_id ?? transaction.id ?? NaN);
+  const isIncoming = transaction.amount > 0;
 
   const existing = links?.find(
     (link) =>
@@ -154,7 +156,9 @@ export function GoalLinkAction({
         >
           <div className="space-y-3 p-4 md:p-6">
             <p className="text-xs text-[var(--text-muted)]">
-              {t("transactions.goalLink.explainer")}
+              {isIncoming
+                ? t("transactions.goalLink.explainer")
+                : t("transactions.goalLink.explainerSpending")}
             </p>
 
             {openGoals.map((goal) => (
@@ -166,18 +170,20 @@ export function GoalLinkAction({
                   {goal.name}
                 </span>
                 <div className="flex items-center gap-1 shrink-0">
-                  <button
-                    onClick={() =>
-                      linkMutation.mutate({
-                        goalId: goal.id,
-                        linkType: "contribution",
-                      })
-                    }
-                    disabled={linking.isPending(goal.id)}
-                    className="px-2 py-1 rounded-md text-xs font-medium bg-[var(--surface-light)] hover:bg-[var(--primary)]/20 disabled:opacity-50 transition-colors"
-                  >
-                    {t("transactions.goalLink.asContribution")}
-                  </button>
+                  {isIncoming && (
+                    <button
+                      onClick={() =>
+                        linkMutation.mutate({
+                          goalId: goal.id,
+                          linkType: "contribution",
+                        })
+                      }
+                      disabled={linking.isPending(goal.id)}
+                      className="px-2 py-1 rounded-md text-xs font-medium bg-[var(--surface-light)] hover:bg-[var(--primary)]/20 disabled:opacity-50 transition-colors"
+                    >
+                      {t("transactions.goalLink.asContribution")}
+                    </button>
+                  )}
                   <button
                     onClick={() =>
                       linkMutation.mutate({

@@ -1,34 +1,22 @@
 """Business logic for savings goals.
 
-A goal is a **virtual earmark** over money already sitting in tracked accounts,
-never an addition to net worth. Progress is derived rather than typed:
+A goal is a **virtual earmark** over money already sitting in the tracked bank
+and cash accounts, never an addition to net worth. A goal holds:
 
-1. Each month's *realized surplus* is computed from transactions —
-   ``income - expenses - investments``, credit-card-deduped exactly like the
-   rest of the analysis layer (see ``.claude/rules/kpi_calculations.md``).
-2. Transactions attached to a goal are excluded from that surplus and handled
-   explicitly, so every shekel is counted once: a **contribution** consumes the
-   month's pool before the waterfall runs, and a **utilization** (money spent
-   back out of a goal) reduces the goal's available balance without touching
-   the pool — it was set aside in an earlier month.
-3. Whatever is left flows down the goals by ``priority``, each taking up to
-   ``min(remaining need, monthly_cap)`` and spilling the rest to the next goal.
-4. Whatever *still* remains lands in the **free-cash pool** — the tracked
-   money no goal has earmarked. A month that spends more than it earns drains
-   that pool first, and only claws money back out of goals (lowest priority
-   first, never below what a goal has already spent) once the pool is empty.
+- the money the user put into it or took out of it (``savings_goal_entries``),
+- plus income its "saved into" rule or income links claim,
+- less spending its spending rule or links pay for.
 
-Results are persisted per (goal, month) in ``savings_goal_allocations``. Past
-months are never silently restated: a priority change applies going forward,
-and rewriting history is an explicit ``rebuild`` the user previews first. Goals
-that have been closed are frozen — their allocations are replayed as-is and can
-never be pulled back out, even by a rebuild.
+Nothing is distributed automatically and nothing restates the past. **Free
+cash** is the bank and cash money no goal holds; when goals hold more than
+there is, it goes negative and the user covers it — one click applies a plan
+that takes the shortfall back from the lowest goals first.
 
-The service is split across mixins: ``inputs`` (context and pool inputs),
-``engine`` (simulation, persistence, rebuild), ``goals`` (CRUD and
-transaction links), ``read_models`` (enriched goals, month view, free
-cash, timeline) and ``yearly`` (how much each year saved, against its target —
-measured from the same transactions, outside the waterfall).
+The service is split across mixins: ``inputs`` (goals and everything read off
+transactions), ``ledger`` (each goal's balance and free cash, month by month),
+``goals`` (CRUD, money in and out, fund, cover, links), ``read_models`` (the
+goal list, free cash, timeline and month view) and ``yearly`` (how much each
+year saved against its target — measured from the same transactions).
 """
 
 from typing import Any
@@ -36,9 +24,9 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from backend.repositories.savings_goal_repository import SavingsGoalRepository
-from backend.services.savings_goals.engine import AllocationEngineMixin, AllocationPlan
 from backend.services.savings_goals.goals import GoalCrudMixin
 from backend.services.savings_goals.inputs import InputsMixin
+from backend.services.savings_goals.ledger import Ledger, LedgerMixin
 from backend.services.savings_goals.read_models import ReadModelsMixin
 from backend.services.savings_goals.yearly import YearlySavingsMixin
 from backend.services.transactions_service import TransactionsService
@@ -48,10 +36,10 @@ class SavingsGoalService(
     YearlySavingsMixin,
     ReadModelsMixin,
     GoalCrudMixin,
-    AllocationEngineMixin,
+    LedgerMixin,
     InputsMixin,
 ):
-    """Manage savings goals and distribute each month's surplus across them.
+    """Manage savings goals: what each holds, and the free cash beside them.
 
     Parameters
     ----------
@@ -64,15 +52,7 @@ class SavingsGoalService(
         self.repo = SavingsGoalRepository(db)
         self.transactions_service = TransactionsService(db)
         # Building the context scans every transaction, and a single request
-        # needs it more than once (the allocation pass, then the enrichment).
-        # The service is constructed per request, so caching it here is
-        # request-scoped and never goes stale mid-call.
+        # reads it more than once. The service is constructed per request, so
+        # these caches are request-scoped; every write drops them.
         self._context_cache: dict[str, Any] | None = None
-        # The last simulation pass, kept so the free-cash pool and the
-        # per-month deficit figures can be read back without walking the
-        # whole timeline a second time.
-        self._last_plan: AllocationPlan | None = None
-        # A waterfall order not yet written: a reorder simulates under it
-        # first and only then persists it, together with the ledger, in one
-        # short transaction (see ``rebuild``).
-        self._order_override: list[int] | None = None
+        self._ledger_cache: Ledger | None = None
