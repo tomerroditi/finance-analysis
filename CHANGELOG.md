@@ -1,3 +1,9 @@
+## v1.99.0 (2026-10-09)
+
+### Feat
+
+- **dashboard**: draw debt payments as monthly bars with an outstanding-debt line (#381)
+
 ## v1.98.2 (2026-10-09)
 
 ### Fix
