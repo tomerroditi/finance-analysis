@@ -310,6 +310,10 @@ class AllocationEngineMixin:
             target = float(goal_by_id[goal_id].target_amount or 0.0)
             return target - funded[goal_id] + bridge.get(goal_id, 0.0)
 
+        def lent() -> float:
+            """Free cash lent to goals against income of their own still to come."""
+            return sum(bridge.values())
+
         def add_row(goal_id: int, amount: float) -> None:
             """Add to a goal's computed ledger row for the month being walked."""
             cell = (goal_id, year, month)
@@ -376,7 +380,7 @@ class AllocationEngineMixin:
             # its start, so it leaves the pool in full. Floored, a balance
             # bigger than the pool earmarked money that was never there.
             free_cash -= opening
-            month_start = free_cash
+            month_start = free_cash + lent()
             # The open month is always restated (it is provisional), as is
             # everything inside an explicit rebuild range. Every other month is
             # history: existing rows stand, and only goals with no row yet may
@@ -467,7 +471,14 @@ class AllocationEngineMixin:
             # Every shekel a goal takes is debited below, so what the goals
             # leave behind needs no separate step: it is already in the pool.
             free_cash += surplus
-            pool = max(0.0, free_cash)
+            # Free cash lent to a goal against income of its own still to come
+            # (``bridge``) is owed back by that income, not by the surplus: it
+            # counts as still there for the waterfall and the clawback, and
+            # only the pool shown to the user carries the loan as negative
+            # until the income repays it. Read without the loan, a wedding
+            # fund's bills ahead of its gifts took a year's savings to refill
+            # the hole, and the gifts repaid it after that year's goal closed.
+            pool = max(0.0, free_cash + lent())
             # A hole carried in from an earlier month is that month's
             # overspend, already settled — less whatever this month's surplus
             # repaid. Only a fall below that reaches the goals.
@@ -573,9 +584,11 @@ class AllocationEngineMixin:
             # pool down. Only once the pool is empty does the overspend reach
             # the goals, taking from the least important first — the mirror
             # image of the funding waterfall.
-            if free_cash < floor - ROUNDING_EPSILON:
-                shortfall = floor - free_cash
-                free_cash = floor
+            # Money lent against a goal's own coming income is not overspent
+            # (see ``pool``), so it never reaches the goals here either.
+            if free_cash + lent() < floor - ROUNDING_EPSILON:
+                shortfall = floor - free_cash - lent()
+                free_cash += shortfall
                 for goal in reversed(goals):
                     if shortfall <= ROUNDING_EPSILON:
                         break
@@ -671,7 +684,7 @@ class AllocationEngineMixin:
 
         plan.funded = funded
         plan.utilized = utilized
-        plan.to_invest = {g: round(cash, 2) for g, cash in to_invest.items()}
+        plan.to_invest = {g: round(cash, 2) + 0.0 for g, cash in to_invest.items()}
         return plan
 
     @staticmethod
