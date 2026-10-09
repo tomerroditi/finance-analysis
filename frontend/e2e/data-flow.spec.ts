@@ -139,9 +139,9 @@ test.describe("DataFlow diagram", () => {
     // --- A newer node's detail panel actually opens ---------------------
     // `details[activeNode] ?? null` leaves the panel closed when a node has
     // no detail entry, so clicking is the only way to know it has one.
-    await page.getByText("Savings Goals Engine", { exact: true }).first().click();
-    await expect(detailPanel.getByText("Surplus Waterfall")).toBeVisible();
-    await expect(detailPanel.getByText("The Waterfall")).toBeVisible();
+    await page.getByText("Goals Ledger", { exact: true }).first().click();
+    await expect(detailPanel.getByText("Earmarks You Set")).toBeVisible();
+    await expect(detailPanel.getByText("What a Goal Holds")).toBeVisible();
     await page.keyboard.press("Escape");
     await expect(detailPanel).toHaveClass(/translate-y-full/);
 

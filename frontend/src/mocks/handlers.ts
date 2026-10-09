@@ -411,8 +411,9 @@ export const handlers = [
       free_cash: 0,
       earmarked: 0,
       liquid: 0,
-      clawed_back_this_month: 0,
       has_goals: false,
+      shortfall: 0,
+      cover_plan: [],
     }),
   ),
   http.get("/api/budget/category-conflicts", () =>

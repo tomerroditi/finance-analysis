@@ -1,17 +1,15 @@
 """SavingsGoal database models.
 
 A savings goal is a **virtual earmark** over money that already sits in the
-user's tracked accounts — it never adds to net worth. Progress is derived, not
-typed: each closed month's realized surplus is distributed across goals by
-priority (see ``backend.services.savings_goals``), and the resulting
-per-month amounts are persisted in ``savings_goal_allocations`` so history stays
-stable when priorities later change.
+user's tracked bank and cash accounts — it never adds to net worth. A goal
+holds what the user put there (``savings_goal_entries``), plus income its
+"saved into" rule claims, less spending paid out of it. Nothing is
+distributed automatically.
 
 Individual transactions can also be attached to a goal via
-``savings_goal_links`` — either as a *contribution* (money put aside for the
-goal, which consumes that month's surplus before the waterfall runs) or as a
-*utilization* (money actually spent out of the goal, which never reduces the
-goal's target).
+``savings_goal_links`` — either as a *contribution* (income that belongs to
+the goal) or as a *utilization* (money spent out of it, which never reduces
+the goal's target).
 """
 
 from sqlalchemy import Column, Float, Integer, String, UniqueConstraint
@@ -27,9 +25,11 @@ GOAL_STATUS_CLOSED = "closed"
 LINK_CONTRIBUTION = "contribution"
 LINK_UTILIZATION = "utilization"
 
-#: ``savings_goal_allocations.source`` values.
-ALLOCATION_AUTO = "auto"
-ALLOCATION_MANUAL = "manual"
+#: ``savings_goal_entries.source`` values.
+ENTRY_MANUAL = "manual"
+ENTRY_COVER = "cover"
+ENTRY_CLOSE = "close"
+ENTRY_MIGRATED = "migrated"
 
 
 class SavingsGoal(Base, TimestampMixin):
@@ -42,19 +42,15 @@ class SavingsGoal(Base, TimestampMixin):
     target_amount : float
         Amount the user wants to reach (NIS). Fixed — utilizing money out of a
         goal never reduces it.
-    opening_balance : float
-        Money already set aside for this goal before tracking began. Counts
-        toward ``funded`` without consuming any month's surplus.
     priority : int
-        Waterfall position; lower runs first. Surplus fills priority 1 before
-        anything below it.
-    monthly_cap : float or None
-        Optional ceiling on how much surplus this goal may absorb in a single
-        month. ``None`` means uncapped, so the goal can fill in one month.
+        List position; lower comes first. It orders "fund all" and the plan
+        that covers a free-cash shortfall (lowest priority gives back first).
+    monthly_amount : float or None
+        How much the user means to put in each month; the card suggests it.
+        ``None`` falls back to what the target date needs, if there is one.
     start_month : str or None
-        First month (``YYYY-MM``) this goal participates in allocation.
-        Defaults to the goal's creation month so a new goal never claims
-        surpluses that predate it.
+        First month (``YYYY-MM``) the goal's rules claim transactions from.
+        Defaults to the goal's creation month.
     target_date : str or None
         Optional target date in ``YYYY-MM-DD`` format.
     contribution_category : str or None
@@ -72,8 +68,9 @@ class SavingsGoal(Base, TimestampMixin):
         Semicolon-separated tag names narrowing ``utilization_category``;
         ``None`` covers every tag in the category.
     status : str
-        ``"active"`` or ``"closed"``. A closed goal stops absorbing surplus and
-        its existing allocations become immutable.
+        ``"active"`` or ``"closed"``. Closing hands what the goal still holds
+        back to free cash, and its rules stop claiming transactions after the
+        month it closed in.
     closed_month : str or None
         Month (``YYYY-MM``) the goal was closed in.
     notes : str or None
@@ -85,9 +82,8 @@ class SavingsGoal(Base, TimestampMixin):
     id = Column(Integer, primary_key=True, autoincrement=True)
     name = Column(String, nullable=False)
     target_amount = Column(Float, nullable=False)
-    opening_balance = Column(Float, nullable=False, default=0.0)
     priority = Column(Integer, nullable=False, default=0)
-    monthly_cap = Column(Float, nullable=True)
+    monthly_amount = Column(Float, nullable=True)
     start_month = Column(String, nullable=True)
     target_date = Column(String, nullable=True)
     contribution_category = Column(String, nullable=True)
@@ -105,50 +101,43 @@ class SavingsGoal(Base, TimestampMixin):
         )
 
 
-class SavingsGoalAllocation(Base, TimestampMixin):
-    """One month's surplus allocation to one goal.
+class SavingsGoalEntry(Base, TimestampMixin):
+    """Money the user put into a goal, or took back out of it.
 
-    Rows are written by the allocation engine, one per (goal, month). Past
-    months are left untouched on subsequent runs — only an explicit rebuild
-    rewrites them — so a priority change never silently restates history. The
-    single row per month carries the net movement: funding is positive, a
-    deficit month's clawback is negative.
+    The only way free cash becomes a goal's money: every entry is a choice the
+    user made (or confirmed, for a ``cover`` plan), so a goal's balance never
+    moves for a reason they cannot see.
 
     Attributes
     ----------
     goal_id : int
         Owning ``savings_goals.id``.
-    year, month : int
-        Calendar month this allocation belongs to.
+    date : str
+        ``YYYY-MM-DD`` the money moved.
     amount : float
-        Money directed into the goal that month. Normally positive; a month
-        that spent more than it earned, and drained the free-cash pool dry,
-        writes a **negative** row for the amount it had to take back out of
-        the goal (never more than the goal still had available).
+        Signed: positive puts money into the goal, negative takes it out.
     source : str
-        ``"auto"`` for engine-computed rows, ``"manual"`` for user overrides.
+        ``"manual"`` (added or taken out by hand), ``"cover"`` (taken out by a
+        confirmed free-cash cover plan), ``"close"`` (handed back when the
+        goal closed) or ``"migrated"`` (carried over from the old automatic
+        ledger).
+    note : str or None
+        Optional free text.
     """
 
-    __tablename__ = Tables.SAVINGS_GOAL_ALLOCATIONS.value
+    __tablename__ = Tables.SAVINGS_GOAL_ENTRIES.value
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     goal_id = Column(Integer, nullable=False, index=True)
-    year = Column(Integer, nullable=False)
-    month = Column(Integer, nullable=False)
-    amount = Column(Float, nullable=False, default=0.0)
-    source = Column(String, nullable=False, default=ALLOCATION_AUTO)
-
-    # One allocation row per goal per month — the engine upserts.
-    __table_args__ = (
-        UniqueConstraint(
-            "goal_id", "year", "month", name="uq_savings_goal_allocation_month"
-        ),
-    )
+    date = Column(String, nullable=False)
+    amount = Column(Float, nullable=False)
+    source = Column(String, nullable=False, default=ENTRY_MANUAL)
+    note = Column(String, nullable=True)
 
     def __repr__(self) -> str:
         return (
-            f"<SavingsGoalAllocation(goal_id={self.goal_id}, "
-            f"{self.year}-{self.month:02d}, amount={self.amount})>"
+            f"<SavingsGoalEntry(goal_id={self.goal_id}, {self.date}, "
+            f"amount={self.amount}, source={self.source!r})>"
         )
 
 

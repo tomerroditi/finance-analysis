@@ -11,10 +11,10 @@ import pytest
 
 from backend.errors import ValidationException
 from backend.services.savings_goals import SavingsGoalService
-from tests.backend.unit.services.test_savings_goal_allocation import (
-    _add_txn,
-    _month_str,
-    _seed_surplus,
+from tests.backend.unit.services.savings_goal_helpers import (
+    add_txn,
+    month_str,
+    seed_surplus,
 )
 
 
@@ -26,7 +26,7 @@ def service(db_session):
 
 def _months_this_year(count: int) -> list[str]:
     """The last ``count`` months that fall in the current calendar year."""
-    months = [_month_str(offset) for offset in range(count)]
+    months = [month_str(offset) for offset in range(count)]
     year = str(date.today().year)
     return [m for m in months if m.startswith(year)]
 
@@ -41,8 +41,8 @@ class TestWhatAYearSaved:
 
     def test_income_minus_spending(self, db_session, service):
         """A month's saving is what it earned less what it spent."""
-        month = _month_str(0)
-        _seed_surplus(db_session, month, income=10000, expenses=7000)
+        month = month_str(0)
+        seed_surplus(db_session, month, income=10000, expenses=7000)
 
         result = service.get_yearly_savings()
 
@@ -52,10 +52,10 @@ class TestWhatAYearSaved:
         self, db_session, service
     ):
         """Money moved into or out of an investment never changes the figure."""
-        month = _month_str(0)
-        _seed_surplus(db_session, month, income=10000, expenses=7000)
-        _add_txn(db_session, month, -5000, "Investments", tag="Pakam", day=3)
-        _add_txn(db_session, month, 2000, "Investments", tag="Pakam", day=20)
+        month = month_str(0)
+        seed_surplus(db_session, month, income=10000, expenses=7000)
+        add_txn(db_session, month, -5000, "Investments", tag="Pakam", day=3)
+        add_txn(db_session, month, 2000, "Investments", tag="Pakam", day=20)
 
         result = service.get_yearly_savings()
 
@@ -65,9 +65,9 @@ class TestWhatAYearSaved:
         self, db_session, service
     ):
         """A withdrawal spent on living leaves a negative year."""
-        month = _month_str(0)
-        _seed_surplus(db_session, month, income=5000, expenses=9000)
-        _add_txn(db_session, month, 4000, "Investments", tag="Pakam", day=3)
+        month = month_str(0)
+        seed_surplus(db_session, month, income=5000, expenses=9000)
+        add_txn(db_session, month, 4000, "Investments", tag="Pakam", day=3)
 
         result = service.get_yearly_savings()
 
@@ -77,10 +77,10 @@ class TestWhatAYearSaved:
         self, db_session, service
     ):
         """Wedding gifts and the bills they pay are the goal's, not the year's."""
-        month = _month_str(0)
-        _seed_surplus(db_session, month, income=10000, expenses=7000)
-        _add_txn(db_session, month, 20000, "Other Income", tag="Wedding", day=4)
-        _add_txn(db_session, month, -15000, "Wedding", tag="Venue", day=9)
+        month = month_str(0)
+        seed_surplus(db_session, month, income=10000, expenses=7000)
+        add_txn(db_session, month, 20000, "Other Income", tag="Wedding", day=4)
+        add_txn(db_session, month, -15000, "Wedding", tag="Venue", day=9)
         service.create(
             name="Wedding",
             target_amount=20000,
@@ -98,10 +98,10 @@ class TestWhatAYearSaved:
         self, db_session, service
     ):
         """What the gifts did not cover came out of the household's own money."""
-        month = _month_str(0)
-        _seed_surplus(db_session, month, income=10000, expenses=7000)
-        _add_txn(db_session, month, 8000, "Other Income", tag="Wedding", day=4)
-        _add_txn(db_session, month, -10000, "Wedding", tag="Venue", day=9)
+        month = month_str(0)
+        seed_surplus(db_session, month, income=10000, expenses=7000)
+        add_txn(db_session, month, 8000, "Other Income", tag="Wedding", day=4)
+        add_txn(db_session, month, -10000, "Wedding", tag="Venue", day=9)
         service.create(
             name="Wedding",
             target_amount=20000,
@@ -117,9 +117,9 @@ class TestWhatAYearSaved:
 
     def test_spending_out_of_savings_is_spending(self, db_session, service):
         """A trip paid from a goal without income of its own is spent this year."""
-        month = _month_str(0)
-        _seed_surplus(db_session, month, income=10000, expenses=7000)
-        _add_txn(db_session, month, -2000, "Travel", day=9)
+        month = month_str(0)
+        seed_surplus(db_session, month, income=10000, expenses=7000)
+        add_txn(db_session, month, -2000, "Travel", day=9)
         service.create(
             name="Trip",
             target_amount=5000,
@@ -135,7 +135,7 @@ class TestWhatAYearSaved:
         """Each month on record is listed, and they sum to the year's figure."""
         months = _months_this_year(3)
         for amount, month in zip((1000, 2000, -500), months, strict=False):
-            _seed_surplus(db_session, month, income=10000 + amount, expenses=10000)
+            seed_surplus(db_session, month, income=10000 + amount, expenses=10000)
 
         row = _year(service.get_yearly_savings(), date.today().year)
 
@@ -169,8 +169,8 @@ class TestYearlyTargets:
         self, db_session, service
     ):
         """Expected-by-today is the elapsed share; needed is what is left per month."""
-        month = _month_str(0)
-        _seed_surplus(db_session, month, income=10000, expenses=4000)
+        month = month_str(0)
+        seed_surplus(db_session, month, income=10000, expenses=4000)
         today = date.today()
         start = date(today.year, 1, 1)
         share = ((today - start).days + 1) / (date(today.year + 1, 1, 1) - start).days

@@ -33,10 +33,10 @@ seen = []
 t = threading.Thread(target=lambda: seen.append(AppConfig().is_demo_mode))
 t.start(); t.join()
 template = DemoSessionStore.template_path()
-allocations = 0
+goal_entries = 0
 if os.path.exists(template):
     c = sqlite3.connect(template)
-    allocations = c.execute("SELECT COUNT(*) FROM savings_goal_allocations").fetchone()[0]
+    goal_entries = c.execute("SELECT COUNT(*) FROM savings_goal_entries").fetchone()[0]
     c.close()
 
 sid = sys.argv[1]
@@ -53,7 +53,7 @@ print(json.dumps({
     "demo_mode_seen_by_thread": seen,
     "forced_mode": AppConfig._forced_mode,
     "sessions_enabled": demo_sessions.sessions_enabled(),
-    "template_allocations": allocations,
+    "template_goal_entries": goal_entries,
     "status_code": status.status_code,
     "status": status.json(),
     "categories_code": categories.status_code,
@@ -131,8 +131,8 @@ class TestVercelForcesDemoMode:
         assert vercel_entry["demo_mode_seen_by_thread"] == [True]
         assert vercel_entry["forced_mode"] is True
         assert vercel_entry["sessions_enabled"] is True
-        assert vercel_entry["template_allocations"] > 0, (
-            "template missing or has no pre-computed allocations"
+        assert vercel_entry["template_goal_entries"] > 0, (
+            "template missing or carries no savings-goal entries"
         )
 
 

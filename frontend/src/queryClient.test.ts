@@ -56,10 +56,11 @@ describe("PERSIST_BUSTER", () => {
   // sparkline draws its reference from, then investment analysis traded
   // `monthly_transactions` for per-date `flows`, and then the Income &
   // Expenses card re-keyed its two remaining queries and started reporting a
-  // category left in credit as a negative. Bump this string whenever a cached
-  // response shape changes.
-  it("is past v8, the last shape-incompatible cache generation", () => {
-    expect(PERSIST_BUSTER).not.toBe("v8");
-    expect(PERSIST_BUSTER).toBe("v9");
+  // category left in credit as a negative, and then savings goals became
+  // manual and every goal payload changed shape. Bump this string whenever a
+  // cached response shape changes.
+  it("is past v9, the last shape-incompatible cache generation", () => {
+    expect(PERSIST_BUSTER).not.toBe("v9");
+    expect(PERSIST_BUSTER).toBe("v10");
   });
 });
