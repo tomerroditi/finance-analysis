@@ -62,12 +62,12 @@ export function RulesSection() {
 }
 
 /**
- * Full-screen modal that lists every auto-tagging rule with per-rule apply /
+ * Full-screen modal that lists every auto-tagging rule, sorted by name, with per-rule apply /
  * edit / delete actions, a search box, and "New Rule" / "Apply Rules" controls.
  * Rule creation / editing reuses {@link RuleEditorModal} on top.
  */
 function RulesManagerModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
-    const { t } = useTranslation();
+    const { t, i18n } = useTranslation();
     const queryClient = useQueryClient();
     const confirm = useConfirm();
     useScrollLock(isOpen);
@@ -126,15 +126,17 @@ function RulesManagerModal({ isOpen, onClose }: { isOpen: boolean; onClose: () =
         },
     });
 
-    const filteredRules = rules?.filter((rule) => {
-        if (!searchQuery) return true;
-        const q = searchQuery.toLowerCase();
-        return (
-            rule.name.toLowerCase().includes(q) ||
-            rule.category.toLowerCase().includes(q) ||
-            (rule.tag && rule.tag.toLowerCase().includes(q))
-        );
-    });
+    const filteredRules = rules
+        ?.filter((rule) => {
+            if (!searchQuery) return true;
+            const q = searchQuery.toLowerCase();
+            return (
+                rule.name.toLowerCase().includes(q) ||
+                rule.category.toLowerCase().includes(q) ||
+                (rule.tag && rule.tag.toLowerCase().includes(q))
+            );
+        })
+        .sort((a, b) => a.name.localeCompare(b.name, i18n.language, { sensitivity: "base", numeric: true }));
 
     const openCreate = () => {
         setEditingRule(null);
@@ -233,6 +235,7 @@ function RulesManagerModal({ isOpen, onClose }: { isOpen: boolean; onClose: () =
                             {filteredRules?.map((rule) => (
                                 <div
                                     key={rule.id}
+                                    data-testid="rule-card"
                                     className="group p-3 bg-[var(--surface)] rounded-xl border border-[var(--surface-light)] hover:border-[var(--primary)]/30 transition-all"
                                 >
                                     <div className="flex justify-between items-start gap-2 mb-2">
