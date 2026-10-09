@@ -1,3 +1,9 @@
+## v1.100.0 (2026-10-09)
+
+### Feat
+
+- **savings-goals**: goals are cash earmarks only - investment goals removed (#382)
+
 ## v1.99.0 (2026-10-09)
 
 ### Feat
