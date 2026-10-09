@@ -29,8 +29,15 @@ _PRIOR_WEALTH_SOURCES = {"bank_balances", "investments"}
 
 # Itemized credit-card rows duplicate the bank-side bill payment, and insurance
 # rows are not cash flow. Same exclusion the cashflow analysis applies.
+# A manual investment's transactions are the investment side of a move whose
+# cash side is the bank transfer that paid it (or money never tracked at all);
+# counting them too took every manual deposit out of free cash a second time.
 _CREDIT_CARD_SOURCE = "credit_card_transactions"
-_SURPLUS_EXCLUDED_SOURCES = {_CREDIT_CARD_SOURCE, "insurance_transactions"}
+_SURPLUS_EXCLUDED_SOURCES = {
+    _CREDIT_CARD_SOURCE,
+    "insurance_transactions",
+    "manual_investment_transactions",
+}
 
 _ALL_TAGS = "all_tags"
 
@@ -87,8 +94,9 @@ class InputsMixin:
     def _pool_before(self, month: tuple[int, int], context: dict[str, Any]) -> float:
         """Return the free cash at the start of ``month``, when no goal has started yet.
 
-        Prior wealth walked forward through every month before ``month``,
-        floored at zero month by month.
+        Prior wealth walked forward through every month before ``month``. It
+        is not floored: the walk that follows lets the pool go negative, and
+        so does the history before it.
 
         Parameters
         ----------
@@ -100,13 +108,13 @@ class InputsMixin:
         Returns
         -------
         float
-            The pool, never negative.
+            The pool, which may be negative.
         """
         free_cash = self._opening_free_cash()
         for month_seen in sorted(context["surplus"]):
             if month_seen >= month:
                 break
-            free_cash = max(0.0, free_cash + context["surplus"][month_seen])
+            free_cash += context["surplus"][month_seen]
         return free_cash
 
     def _build_context(self) -> dict[str, Any]:
@@ -341,8 +349,11 @@ class InputsMixin:
                         groups[key] = (*groups.get(key, ()), goal.id)
                         mapping.setdefault(key, (goal.id, LINK_INVESTED, True))
                 continue
-            for key, matched in zip(keys, matches, strict=True):
-                if matched:
+            # Income before the goal started was never its money: claimed but
+            # never walked, it vanished from both the goal and free cash.
+            start = month_key(goal.start_month)
+            for key, matched, row_month in zip(keys, matches, row_months, strict=True):
+                if matched and (start is None or row_month >= start):
                     mapping.setdefault(key, (goal.id, LINK_CONTRIBUTION, False))
 
         # The income an investment goal is paid from, from its start month:
@@ -374,26 +385,28 @@ class InputsMixin:
 
         links = self.repo.get_links()
         if not links.empty:
+            # A link only counts from its goal's start month, like the rules:
+            # before it the walk never visits the goal, so a row linked there
+            # left the surplus and was never paid by anything.
+            month_of = dict(zip(keys, row_months, strict=True))
+            starts = {g.id: month_key(g.start_month) for g in self._goals_in_order()}
             for _, link in links.iterrows():
+                goal_id = int(link["goal_id"])
+                start = starts.get(goal_id)
                 if link["source_type"] == "split":
-                    key = (None, None, int(link["source_id"]))
-                    for candidate in keys:
-                        if candidate[2] == key[2]:
-                            mapping[candidate] = (
-                                int(link["goal_id"]),
-                                link["link_type"],
-                                False,
-                            )
+                    split_id = int(link["source_id"])
+                    matched = [c for c in keys if c[2] == split_id]
                 else:
-                    for candidate in keys:
-                        if candidate[0] == link["source_table"] and str(
-                            candidate[1]
-                        ) == str(link["source_id"]):
-                            mapping[candidate] = (
-                                int(link["goal_id"]),
-                                link["link_type"],
-                                False,
-                            )
+                    matched = [
+                        c
+                        for c in keys
+                        if c[0] == link["source_table"]
+                        and str(c[1]) == str(link["source_id"])
+                    ]
+                for candidate in matched:
+                    if start is not None and month_of[candidate] < start:
+                        continue
+                    mapping[candidate] = (goal_id, link["link_type"], False)
         return mapping, groups
 
     @staticmethod

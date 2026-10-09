@@ -92,19 +92,29 @@ engine starts taking money back out of the goals.
   Anchoring on prior wealth alone would ignore all the history the goals never
   saw.
 - **An opening balance leaves the pool in its own goal's start month** (a
-  future start: the current month), floored at zero. They used to all leave
+  future start: the current month), in full — the pool may go negative for
+  it. Floored at zero, a balance bigger than the pool earmarked money that
+  was never there, and `liquid` read above the bank. They used to all leave
   when the *earliest* goal started, so a later goal's opening balance emptied
   the pool months early: the deficit in between clawed back goals that had
   done nothing, and claiming a goal's earlier free cash moved the figure it
   had just claimed. `test_an_opening_balance_leaves_the_pool_when_its_goal_starts`
   and `test_claiming_does_not_move_the_figure_it_claimed` pin it.
-- **That pre-goal history floors at zero month by month**, just like the walk.
-  Summing it and flooring once put the floor at the earliest goal's start, so
-  deleting that goal moved the floor and changed how much it absorbed. Free
-  cash then rose by far less than the deleted earmark (a 120K goal once
-  released only ~34K). Deleting a goal must hand back exactly what it held and
-  leave `liquid` unchanged; `test_deleting_the_earliest_goal_releases_its_earmark`
-  pins that.
+- **That pre-goal history is not floored either**, just like the walk. A
+  floor anywhere made the result depend on where it sat: summing and flooring
+  once put it at the earliest goal's start, so deleting that goal moved it (a
+  120K goal once released only ~34K). Deleting a goal must hand back exactly
+  what it held and leave `liquid` unchanged;
+  `test_deleting_the_earliest_goal_releases_its_earmark` pins that.
+- **`liquid` must equal the tracked bank + cash balance, to the shekel.** The
+  pool is prior wealth walked forward through the realized surplus, so any row
+  counted that never moved tracked money breaks it. Manual investment
+  transactions are one: they are the investment side of a move whose cash
+  side is the bank transfer (or untracked money), so they are excluded like
+  card rows and insurance (`_SURPLUS_EXCLUDED_SOURCES`). Counted, a user's
+  151K of manual 2023 deposits came out of free cash a second time, and the
+  pre-goal floor hid most of it. `test_savings_goal_invariants.py` checks
+  `liquid == bank` on random households after every edit.
 - **It moves with the whole month, not just the positive part.** The pool is
   credited with the surplus itself and debited for every shekel a goal takes
   out of it. What the goals do not claim simply stays in the pool.
@@ -301,6 +311,15 @@ turn** for the rest.
   salary parked in the goal for a year while it waited for the gifts — is
   now the intended behaviour: that is the goal's place in the waterfall, and
   the gifts hand it back when they land.
+- **A closed goal's later income is ordinary money.** Income its rule
+  matches after it closed joins the month's surplus (a funded investment
+  goal's too); it used to be kept without limit, so a closed 3K goal held
+  34K. Its saved-into rule matches only from its start month, like every
+  rule — income before it was claimed, never walked, and vanished.
+- **Income that repays the goal's bills is kept even past target.** When the
+  income lands on a goal already at target that borrowed for its bills, the
+  repaying part is its income spent on them; spilled as well, the same money
+  reached free cash twice and the goal read a negative `available`.
 - **Surplus that reaches a goal still owing for a bill repays that debt
   first** (`repay_bridge`, recorded in `plan.released`), exactly as its
   income would; a replayed positive row does the same, so a rebuild and a
@@ -450,11 +469,24 @@ columns through the ordinary goal update. Rules:
 
 Allocations persist per `(goal, month)` in `savings_goal_allocations`.
 
-- `ensure_allocations()` fills in months with no rows and **always recomputes
-  the current month**, which is provisional until it ends.
-- A month already on record keeps its amounts. A goal added later may still
-  draw on what that month left *unallocated* — that is additive backfill, and
-  it never takes from a goal already funded there.
+- `ensure_allocations()` **always recomputes the current month**, which is
+  provisional until it ends, and every month after the ledger's last month
+  with rows (`horizon` in `_simulate`) — a month nobody opened the app in.
+- **A month on record replays its rows and nothing else**: no waterfall take,
+  no clawback. There is no "newcomer" backfill any more: every create, edit,
+  link and deletion restates history, so a goal never arrives in a month on
+  record. The backfill let a goal with no row take what a net row (a take a
+  same-month deficit gave back) made look unclaimed, and every read then
+  wrote a new row on top of the last — rebuild and read disagreed.
+- **Links restate too.** `link_transaction` and `unlink_transaction` rebuild
+  the whole history (a link can move a transaction between goals), and
+  `set_spending_link` restates from its goal's start month. Explicit links,
+  like every rule, count only from the goal's start month: a row linked
+  before it left the surplus and was never paid by anything.
+- **A new order needs a fresh transaction context.** When two goals' rules
+  match one row, the higher goal takes it, so `rebuild(order=...)` drops the
+  cached context before and after; reused, a reorder restated history under
+  the old order's matching.
 - **Editing a goal restates its history.** Every goal takes its waterfall
   turn, so a change to anything in `_ALLOCATION_FIELDS` (start month, target,
   cap, opening balance, saved-into / spending / investment / funding rules)
