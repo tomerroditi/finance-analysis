@@ -621,3 +621,46 @@ class TestDebtOverTime:
 
         assert result["series"][0]["points"] == [{"date": "2024-05-01", "balance": 8000.0}]
         assert result["total"] == [{"date": "2024-05-01", "balance": 8000.0}]
+
+    def test_payment_before_start_date_moves_the_start_point_back(self, db_session):
+        """A payment dated before the loan's start keeps the series in date order and the total non-zero."""
+        db_session.add(
+            Liability(
+                name="Early Loan",
+                category="Liabilities",
+                tag="Early Loan",
+                principal_amount=1000.0,
+                interest_rate=0.0,
+                term_months=2,
+                start_date="2024-01-10",
+                is_paid_off=0,
+                created_date="2024-01-10",
+            )
+        )
+        for i, d in enumerate(["2024-01-05", "2024-02-05"]):
+            db_session.add(
+                BankTransaction(
+                    id=f"early_{i}",
+                    date=d,
+                    provider="leumi",
+                    account_name="Checking",
+                    description="payment",
+                    amount=-500.0,
+                    category="Liabilities",
+                    tag="Early Loan",
+                    source="bank_transactions",
+                    type="normal",
+                    status="completed",
+                )
+            )
+        db_session.commit()
+
+        result = LiabilitiesService(db_session).get_debt_over_time()
+        points = result["series"][0]["points"]
+
+        assert [p["date"] for p in points] == ["2024-01-05", "2024-01-05", "2024-02-05"]
+        assert [round(p["balance"], 2) for p in points] == [1000.0, 500.0, 0.0]
+        assert [(t["date"], t["balance"]) for t in result["total"]] == [
+            ("2024-01-05", 500.0),
+            ("2024-02-05", 0.0),
+        ]

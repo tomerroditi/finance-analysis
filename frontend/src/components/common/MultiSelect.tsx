@@ -2,18 +2,11 @@ import React, { useState, useRef, useEffect, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { ChevronDown, X, Check, CheckCheck, Search } from "lucide-react";
 import { useTranslation } from "react-i18next";
+import { useAnchoredPanel } from "../../hooks/useAnchoredPanel";
+import { isTouchDevice } from "../../utils/chartStyle";
 
 /** Tallest the panel grows. */
 const PANEL_MAX_HEIGHT_PX = 208;
-
-/** Enough for the search box and a couple of options, however cramped. */
-const PANEL_MIN_HEIGHT_PX = 120;
-
-/** Gap between the trigger and the panel. */
-const PANEL_GAP_PX = 4;
-
-/** Breathing room kept between the panel and the viewport edge. */
-const VIEWPORT_MARGIN_PX = 8;
 
 interface MultiSelectProps {
   options: string[];
@@ -44,12 +37,9 @@ export const MultiSelect: React.FC<MultiSelectProps> = ({
   const buttonRef = useRef<HTMLButtonElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
-  const [pos, setPos] = useState({
-    top: 0,
-    left: 0,
-    width: 0,
-    openUp: false,
+  const panelStyle = useAnchoredPanel(buttonRef, isOpen, {
     maxHeight: PANEL_MAX_HEIGHT_PX,
+    minWidth: 220,
   });
 
   const closeDropdown = useCallback(() => {
@@ -57,46 +47,16 @@ export const MultiSelect: React.FC<MultiSelectProps> = ({
     setSearch("");
   }, []);
 
-  // The panel is fixed to the viewport, so it has to fit in it: near the
-  // bottom of a scrolled dialog it used to open downward regardless and run
-  // off the screen. It opens toward the roomier side and caps itself to the
-  // space there. The visual viewport is what is actually on screen — on a
-  // phone the search box's keyboard takes the lower half of `innerHeight`.
-  const updatePosition = useCallback(() => {
-    if (!buttonRef.current) return;
-    const rect = buttonRef.current.getBoundingClientRect();
-    const dropdownWidth = Math.max(rect.width, Math.min(220, window.innerWidth - 16));
-    const maxLeft = window.innerWidth - dropdownWidth - 8;
-    const viewportHeight = window.visualViewport?.height ?? window.innerHeight;
-    const spaceBelow = viewportHeight - rect.bottom - PANEL_GAP_PX - VIEWPORT_MARGIN_PX;
-    const spaceAbove = rect.top - PANEL_GAP_PX - VIEWPORT_MARGIN_PX;
-    const openUp = spaceBelow < PANEL_MAX_HEIGHT_PX && spaceAbove > spaceBelow;
-    setPos({
-      top: openUp ? rect.top - PANEL_GAP_PX : rect.bottom + PANEL_GAP_PX,
-      left: Math.max(8, Math.min(rect.left, maxLeft)),
-      width: dropdownWidth,
-      openUp,
-      maxHeight: Math.max(
-        PANEL_MIN_HEIGHT_PX,
-        Math.min(PANEL_MAX_HEIGHT_PX, openUp ? spaceAbove : spaceBelow),
-      ),
-    });
-  }, []);
-
+  // Typing straight away is the point on a desktop. On a phone it would pop
+  // the keyboard on every open, shoving the screen around before the user
+  // even looked at the options — they tap the search box when they want it.
   useEffect(() => {
-    if (!isOpen) return;
-    updatePosition();
-    requestAnimationFrame(() => searchRef.current?.focus());
-    const onScroll = () => updatePosition();
-    window.addEventListener("scroll", onScroll, true);
-    window.addEventListener("resize", onScroll);
-    window.visualViewport?.addEventListener("resize", onScroll);
-    return () => {
-      window.removeEventListener("scroll", onScroll, true);
-      window.removeEventListener("resize", onScroll);
-      window.visualViewport?.removeEventListener("resize", onScroll);
-    };
-  }, [isOpen, updatePosition]);
+    if (!isOpen || isTouchDevice) return;
+    const frame = requestAnimationFrame(() =>
+      searchRef.current?.focus({ preventScroll: true }),
+    );
+    return () => cancelAnimationFrame(frame);
+  }, [isOpen]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -218,16 +178,7 @@ export const MultiSelect: React.FC<MultiSelectProps> = ({
             ref={dropdownRef}
             data-testid="multiselect-panel"
             className="fixed bg-[var(--surface)] border border-[var(--surface-light)] rounded-lg shadow-xl flex flex-col outline-none overflow-hidden"
-            style={{
-              top: pos.openUp ? undefined : pos.top,
-              bottom: pos.openUp
-                ? (window.visualViewport?.height ?? window.innerHeight) - pos.top
-                : undefined,
-              left: pos.left,
-              width: pos.width,
-              maxHeight: pos.maxHeight,
-              zIndex: 9999,
-            }}
+            style={{ ...panelStyle, zIndex: 9999 }}
           >
             <div className="sticky top-0 p-1.5 bg-[var(--surface)] border-b border-[var(--surface-light)]">
               <div className="relative">
@@ -238,6 +189,9 @@ export const MultiSelect: React.FC<MultiSelectProps> = ({
                 <input
                   ref={searchRef}
                   type="text"
+                  inputMode="search"
+                  enterKeyHint="search"
+                  autoComplete="off"
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                   placeholder={t("common.search") + "..."}

@@ -54,7 +54,10 @@ export function RuleQuickAction({
      * whenever the parent re-renders (call sites pass `[tx]` inline), so
      * deriving it during render would wipe out whatever the user had typed.
      */
-    const [grownRule, setGrownRule] = useState<TaggingRule | null>(null);
+    const [grownRule, setGrownRule] = useState<{
+        rule: TaggingRule;
+        added: WeakSet<ConditionNode>;
+    } | null>(null);
 
     const closeEditor = () => {
         setOpen(false);
@@ -91,17 +94,17 @@ export function RuleQuickAction({
         // Open the owning rule with the new `contains` branches already in it,
         // so saving updates that rule instead of creating a duplicate the
         // backend's one-rule-per-(category, tag) check would reject anyway.
+        // The branches lead the list and are marked, so the user sees what the
+        // action changed before saving.
         const owner = state.rule;
         const seeds = state.seedKeywords;
-        editingRule = grownRule;
+        editingRule = grownRule?.rule ?? null;
         button = (
             <button
                 type="button"
                 onClick={() => {
-                    setGrownRule({
-                        ...owner,
-                        conditions: appendDescriptionConditions(owner.conditions, seeds),
-                    });
+                    const { conditions, added } = appendDescriptionConditions(owner.conditions, seeds);
+                    setGrownRule({ rule: { ...owner, conditions }, added: new WeakSet(added) });
                     setOpen(true);
                 }}
                 className={`${baseBtn} bg-[var(--primary)]/15 text-[var(--primary)] hover:bg-[var(--primary)]/25`}
@@ -176,6 +179,7 @@ export function RuleQuickAction({
                         onClose={closeEditor}
                         editingRule={editingRule}
                         prefill={prefill}
+                        highlightedConditions={grownRule?.added}
                     />,
                     document.body,
                 )}

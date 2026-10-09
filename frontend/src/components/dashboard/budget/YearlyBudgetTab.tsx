@@ -14,6 +14,7 @@ import { BudgetRuleGrid } from "./BudgetRuleGrid";
 import { RuleRowAction } from "./RuleRowAction";
 import type { BudgetRule } from "./types";
 import { budgetLink } from "../../../utils/budgetNavigation";
+import { ForwardArrow } from "../../common/ForwardArrow";
 
 interface YearlyBudgetTabProps {
   year: number;
@@ -242,7 +243,7 @@ export const YearlyBudgetTab: React.FC<YearlyBudgetTabProps> = ({
           to={budgetLink("yearly", { year })}
           className="text-sm font-medium text-[var(--primary)] hover:underline"
         >
-          {t("dashboard.viewAllBudgetRules")} &rarr;
+          {t("dashboard.viewAllBudgetRules")} <ForwardArrow />
         </Link>
       </div>
       {modal}

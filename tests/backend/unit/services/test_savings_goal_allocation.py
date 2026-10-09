@@ -151,7 +151,7 @@ class TestMonthlyCap:
         )
 
         goal = service.get_all()[0]
-        assert goal["funded"] == 1200
+        assert goal["funded"] == 1600
 
 
 class TestAchievement:
@@ -198,10 +198,14 @@ class TestSurplusDefinition:
 
         assert service.get_all()[0]["funded"] == 1000
 
-    def test_goal_starts_after_start_month_ignores_earlier_surplus(
+    def test_a_late_goal_takes_the_free_cash_waiting_when_it_starts(
         self, db_session, service
     ):
-        """A goal never claims surpluses from months that predate it."""
+        """Nothing is allocated before its start; then the waiting pool fills it.
+
+        Free cash is there to fill goals: money that built up before a goal
+        started is handed to it in its start month, never left idle.
+        """
         _seed_surplus(db_session, _month_str(3), income=10000, expenses=5000)
         _seed_surplus(db_session, _month_str(1), income=10000, expenses=9800)
 
@@ -209,7 +213,9 @@ class TestSurplusDefinition:
             name="Late", target_amount=5000, priority=0, start_month=_month_str(1)
         )
 
-        assert service.get_all()[0]["funded"] == 200
+        assert service.get_all()[0]["funded"] == 5000
+        months = {m["month"]: m for m in service.get_timeline(months=0)["months"]}
+        assert months[_month_str(1)]["goals"][0]["allocated"] == 5000
 
 
 class TestExplicitContributions:
@@ -263,10 +269,11 @@ class TestExplicitContributions:
 
         goal = service.get_all()[0]
         assert goal["contributed"] == 600
-        # A goal with a saved-into rule holds exactly what the rule brings in:
-        # the month's other 2400 of surplus stays free cash.
-        assert goal["funded"] == 600
-        assert service.get_free_cash()["free_cash"] == 2400
+        # A saved-into rule does not take the goal out of the waterfall: the
+        # month's other 2400 of surplus fills it too.
+        assert goal["allocated"] == 2400
+        assert goal["funded"] == 3000
+        assert service.get_free_cash()["free_cash"] == 0
 
     def test_incoming_contribution_is_new_money_not_a_draw_on_the_pool(
         self, db_session, service
@@ -435,10 +442,10 @@ class TestSpendingLink:
         assert goal["utilized"] == 1000
         # History keeps its rows, so the goal's funding stands; the project's
         # 1000 now comes out of the goal instead of out of free cash.
-        assert goal["funded"] == 3000
-        assert goal["available"] == 2000
+        assert goal["funded"] == 4000
+        assert goal["available"] == 3000
         pool = service.get_free_cash()
-        assert pool["free_cash"] == 1000
+        assert pool["free_cash"] == 0
         assert pool["liquid"] == liquid
 
     def test_refund_nets_against_the_project_spend(self, db_session, service):
@@ -497,7 +504,7 @@ class TestSpendingLink:
         # The bill no longer shrinks the month's free cash — the goal paid it —
         # and the card purchase is not charged a second time on top of it.
         pool = service.get_free_cash()
-        assert pool["free_cash"] == 900
+        assert pool["free_cash"] == 0
         assert pool["liquid"] == 1100
 
     def test_explicit_link_on_a_card_purchase_is_utilized(self, db_session, service):
@@ -527,8 +534,9 @@ class TestSpendingLink:
         _add_txn(db_session, last, -500, "Wedding", day=6)
         other = _add_txn(db_session, last, -200, "Wedding", day=8)
 
+        # Wedding fund fills at 1000, so Honeymoon holds the rest to pay with.
         created = service.create(
-            name="Wedding fund", target_amount=5000, priority=0, start_month=last
+            name="Wedding fund", target_amount=1000, priority=0, start_month=last
         )
         created = service.create(
             name="Honeymoon", target_amount=5000, priority=1, start_month=last
@@ -838,10 +846,10 @@ class TestFreeCashPool:
         service.create(name="Goal", target_amount=5000, priority=0, start_month=good)
 
         goal = service.get_all()[0]
-        assert goal["funded"] == 1000
+        assert goal["funded"] == 5000
         assert goal["clawed_back"] == 0
-        # 20000 opening + 1000 - 3000, less the 1000 the goal earmarked.
-        assert service.get_free_cash()["free_cash"] == 17000
+        # 20000 opening + 1000, less the 5000 that filled the goal, - 3000.
+        assert service.get_free_cash()["free_cash"] == 13000
 
     def test_goals_absorb_only_what_the_pool_could_not(self, db_session, service):
         """Once the pool is dry the remainder comes out of the goals."""
@@ -853,11 +861,12 @@ class TestFreeCashPool:
         service.create(name="Goal", target_amount=5000, priority=0, start_month=good)
 
         goal = service.get_all()[0]
-        # Pool holds 500 opening + 0 unallocated; the 3000 deficit empties it
-        # and takes the remaining 2500 from the goal, which only had 1000.
-        assert goal["clawed_back"] == 1000
+        # The 500 opening and the 1000 surplus both went to the goal; the 3000
+        # deficit takes those 1500 back and the pool ends 1500 below zero
+        # rather than hiding it.
+        assert goal["clawed_back"] == 1500
         assert goal["funded"] == 0
-        assert service.get_free_cash()["free_cash"] == 0
+        assert service.get_free_cash()["free_cash"] == -1500
 
     def test_clawback_runs_in_reverse_priority(self, db_session, service):
         """The least important goal is drained first — the waterfall in reverse."""
@@ -942,15 +951,17 @@ class TestFreeCashPool:
         year, month = (int(part) for part in bad.split("-"))
         view = service.get_month_allocations(year, month)
         assert view["clawed_back"] == 1000
-        assert view["free_cash"] == 0
+        # The 3000 overspend took the goal's 1000; the other 2000 was spent
+        # from money no goal held, and the pool shows it.
+        assert view["free_cash"] == -2000
         assert view["goals"][0]["allocated"] == -1000
 
     def test_deleting_the_earliest_goal_releases_its_earmark(self, db_session, service):
         """Deleting a goal hands exactly its earmark back to the pool.
 
-        The history before the goals dips below zero, so the pool has to floor
-        somewhere. Where it floors must not depend on which goal starts first,
-        or deleting that goal moves the floor and quietly destroys free cash.
+        The history before the goals dips below zero. That hole is carried, not
+        floored, so it never depends on which goal starts first: deleting the
+        earliest goal cannot move it and quietly destroy free cash.
         """
         overspent, early, middle, late = (_month_str(n) for n in (4, 3, 2, 1))
         _seed_free_cash(db_session, 1000)
@@ -966,7 +977,8 @@ class TestFreeCashPool:
         service.delete(early_id)
         after = service.get_free_cash()
 
-        assert before["free_cash"] == 5000
+        # 1000 - 5000 + 3 x 3000 = 5000 of real money, 4000 of it earmarked.
+        assert before["free_cash"] == 1000
         assert after["free_cash"] == before["free_cash"] + 3000
         assert after["liquid"] == before["liquid"]
 
@@ -974,11 +986,13 @@ class TestFreeCashPool:
         """A pool drained to nothing reads 0.0, never the -0.0 rounding leaves."""
         good, bad = _month_str(2), _month_str(1)
         _seed_surplus(db_session, good, income=10000, expenses=9000)
-        _seed_surplus(db_session, bad, income=5000, expenses=8000)
+        _seed_surplus(db_session, bad, income=5000, expenses=4000)
+        _seed_surplus(db_session, _month_str(0), income=1000, expenses=2000)
         service.create(name="Goal", target_amount=5000, priority=0, start_month=good)
 
         pools = [row["free_cash"] for row in service.get_timeline(months=None)["months"]]
-        assert all(math.copysign(1.0, pool) == 1.0 for pool in pools)
+        assert 0.0 in pools
+        assert all(math.copysign(1.0, pool) == 1.0 for pool in pools if pool == 0)
 
 
 class TestFreeCashBefore:
@@ -1042,7 +1056,7 @@ class TestFreeCashBefore:
             name="Goal", target_amount=50000, start_month=start
         )[0]["id"]
         before = service.get_free_cash()
-        assert before["free_cash"] == 1000
+        assert before["free_cash"] == 0
 
         claim = service.get_free_cash_before(start, goal_id)["free_cash"]
         service.update(goal_id, opening_balance=claim)
@@ -1068,7 +1082,8 @@ class TestFreeCashBefore:
         _seed_free_cash(db_session, 5000)
         _seed_surplus(db_session, early, income=10000, expenses=8000)
         _seed_surplus(db_session, deficit, income=5000, expenses=9000)
-        service.create(name="Early", target_amount=10000, priority=0, start_month=early)
+        # Early fills at 2000, so the rest of the pool stays free for the deficit.
+        service.create(name="Early", target_amount=2000, priority=0, start_month=early)
         service.create(
             name="Late", target_amount=10000, opening_balance=3000, priority=1,
             start_month=late,
@@ -1099,10 +1114,10 @@ class TestFreeCashBefore:
         service.update(goal_id, opening_balance=claim)
         service.rebuild(from_month=start)
 
-        assert claim == 500
+        assert claim == 0
         assert service.get_free_cash_before(start, goal_id)["free_cash"] == claim
         early_goal = next(g for g in service.get_all() if g["name"] == "Early")
-        assert early_goal["clawed_back"] == 0
+        assert early_goal["clawed_back"] == 4000
 
     def test_rejects_a_malformed_month(self, service):
         """An unparseable month is a validation error, not a silent zero."""
@@ -1256,7 +1271,7 @@ class TestTimeline:
         assert by_month[good]["allocated"] == 1000
         assert by_month[bad]["clawed_back"] == 1000
         assert by_month[bad]["allocated"] == 0
-        assert by_month[bad]["free_cash"] == 0
+        assert by_month[bad]["free_cash"] == -2000
 
     def test_window_trims_to_the_trailing_months_it_was_asked_for(
         self, db_session, service
@@ -1293,79 +1308,13 @@ class TestTimeline:
         assert calls == []
 
 
-def _create_investment_goal(service, **overrides):
-    """Create an investment goal over Investments / Pakam and return its payload."""
-    fields = {
-        "name": "Invest",
-        "target_amount": 100000,
-        "kind": "investment",
-        "contribution_category": "Investments",
-        "contribution_tags": "Pakam",
-        **overrides,
-    }
-    created = service.create(**fields)
-    return next(g for g in created if g["name"] == fields["name"])
+class TestInvestingLeavesFreeCash:
+    """Money moved into investments is no longer liquid, so it leaves free cash."""
 
-
-class TestInvestmentGoals:
-    """An investment goal is filled by the money actually moved into investments."""
-
-    def test_progress_is_the_net_invested_from_its_start_month(
+    def test_a_transfer_into_investments_can_claw_back_a_cash_goal(
         self, db_session, service
     ):
-        """Deposits add, withdrawals take back, and earlier transfers don't count."""
-        before, first, second = _month_str(3), _month_str(2), _month_str(1)
-        _add_txn(db_session, before, -9000, "Investments", tag="Pakam", day=3)
-        _add_txn(db_session, first, -30000, "Investments", tag="Pakam", day=3)
-        _add_txn(db_session, second, -20000, "Investments", tag="Pakam", day=3)
-        _add_txn(db_session, second, 5000, "Investments", tag="Pakam", day=20)
-        _add_txn(db_session, second, -7000, "Investments", tag="Stocks", day=4)
-
-        goal = _create_investment_goal(service, start_month=first)
-
-        assert goal["kind"] == "investment"
-        assert goal["contributed"] == 45000
-        assert goal["funded"] == 45000
-        assert goal["allocated"] == 0
-        assert goal["progress_pct"] == 45.0
-
-    def test_it_never_draws_on_the_waterfall(self, db_session, service):
-        """Surplus flows past an investment goal to the cash goals below it."""
-        last = _month_str(1)
-        _seed_surplus(db_session, last, income=10000, expenses=7000)
-
-        _create_investment_goal(service, priority=0, start_month=last)
-        service.create(name="Trip", target_amount=5000, priority=1, start_month=last)
-
-        goals = {g["name"]: g for g in service.get_all()}
-        assert goals["Invest"]["funded"] == 0
-        assert goals["Trip"]["funded"] == 3000
-
-    def test_investing_is_not_overspending(self, db_session, service):
-        """A transfer bigger than the pool never takes money back from a cash goal."""
-        good, big = _month_str(2), _month_str(1)
-        _seed_surplus(db_session, good, income=10000, expenses=7000)
-        _seed_surplus(db_session, big, income=10000, expenses=10000)
-        _add_txn(db_session, big, -50000, "Investments", tag="Pakam", day=3)
-
-        service.create(name="Trip", target_amount=2000, priority=0, start_month=good)
-        _create_investment_goal(service, priority=1, start_month=good)
-
-        goals = {g["name"]: g for g in service.get_all()}
-        assert goals["Trip"]["funded"] == 2000
-        assert goals["Trip"]["clawed_back"] == 0
-        assert goals["Invest"]["funded"] == 50000
-        pool = service.get_free_cash()
-        # The 1000 left free after Trip went into Pakam; the pool floors at 0.
-        assert pool["free_cash"] == 0
-        # The invested money is not cash, so it is neither earmarked nor liquid.
-        assert pool["earmarked"] == 2000
-        assert pool["liquid"] == 2000
-
-    def test_the_same_transfer_as_a_plain_expense_does_claw_back(
-        self, db_session, service
-    ):
-        """Without the investment goal the transfer is a deficit, as before."""
+        """A deposit bigger than the pool is a deficit like any other outflow."""
         good, big = _month_str(2), _month_str(1)
         _seed_surplus(db_session, good, income=10000, expenses=7000)
         _seed_surplus(db_session, big, income=10000, expenses=10000)
@@ -1373,104 +1322,6 @@ class TestInvestmentGoals:
 
         service.create(name="Trip", target_amount=2000, priority=0, start_month=good)
 
-        assert service.get_all()[0]["clawed_back"] == 2000
-
-    def test_a_withdrawal_returns_to_the_pool(self, db_session, service):
-        """Money taken back out of the investment is spendable again."""
-        first, second = _month_str(2), _month_str(1)
-        _seed_surplus(db_session, first, income=10000, expenses=0)
-        _add_txn(db_session, first, -10000, "Investments", tag="Pakam", day=3)
-        _add_txn(db_session, second, 4000, "Investments", tag="Pakam", day=3)
-
-        goal = _create_investment_goal(service, start_month=first)
-
-        assert goal["funded"] == 6000
-        assert service.get_free_cash()["free_cash"] == 4000
-
-    def test_this_month_shows_the_months_net_transfers(self, db_session, service):
-        """The row's "this month" figure is what moved this month."""
-        now = _month_str(0)
-        _add_txn(db_session, now, -3000, "Investments", tag="Pakam", day=1)
-
-        goal = _create_investment_goal(service, start_month=now)
-
-        assert goal["this_month_allocation"] == 3000
-
-    def test_cash_only_settings_are_refused(self, db_session, service):
-        """An investment goal takes no cash-goal settings."""
-        with pytest.raises(ValidationException):
-            _create_investment_goal(service, name="Capped", monthly_cap=500)
-        with pytest.raises(ValidationException):
-            _create_investment_goal(service, name="Opening", opening_balance=500)
-
-        goal = _create_investment_goal(service)
-        with pytest.raises(ValidationException):
-            service.set_spending_link(goal["id"], "Leisure")
-        with pytest.raises(ValidationException):
-            service.link_transaction(
-                goal_id=goal["id"],
-                source_type="transaction",
-                source_id=1,
-                source_table="bank_transactions",
-                link_type=LINK_CONTRIBUTION,
-            )
-
-    def test_it_always_counts_the_investments_category(self, db_session, service):
-        """No category to pick: every investment transfer counts unless tags narrow it."""
-        month = _month_str(1)
-        _add_txn(db_session, month, -4000, "Investments", tag="Pakam", day=3)
-        _add_txn(db_session, month, -1500, "Investments", tag="Stocks", day=4)
-        _add_txn(db_session, month, -900, "Savings", tag="Pakam", day=5)
-
-        created = service.create(
-            name="All", target_amount=10000, kind="investment", start_month=month
-        )
-        every = next(g for g in created if g["name"] == "All")
-        assert every["contribution_category"] == "Investments"
-        assert every["funded"] == 5500
-
-        created = service.create(
-            name="Pakam only",
-            target_amount=10000,
-            kind="investment",
-            start_month=month,
-            contribution_category="Savings",
-            contribution_tags="Pakam",
-        )
-        narrowed = next(g for g in created if g["name"] == "Pakam only")
-        # A category sent anyway is ignored; the tag still narrows it.
-        assert narrowed["contribution_category"] == "Investments"
-        assert narrowed["funded"] == 4000
-
-    def test_its_category_cannot_be_changed(self, db_session, service):
-        """An update naming another category leaves the goal on Investments."""
-        goal = _create_investment_goal(service)
-
-        updated = service.update(goal["id"], contribution_category="Savings")
-
-        assert next(g for g in updated if g["id"] == goal["id"])["contribution_category"] == "Investments"
-
-    def test_goals_without_a_kind_are_cash_goals(self, db_session, service):
-        """Rows older than the column read as cash goals."""
-        created = service.create(name="Old", target_amount=1000)
-        goal_id = created[0]["id"]
-        service.repo.update(goal_id, kind=None)
-
-        assert service.get_all()[0]["kind"] == "cash"
-
-    def test_creating_and_deleting_it_restate_the_past(self, db_session, service):
-        """Past clawbacks follow whether the transfers belong to a goal."""
-        good, big = _month_str(2), _month_str(1)
-        _seed_surplus(db_session, good, income=10000, expenses=7000)
-        _seed_surplus(db_session, big, income=10000, expenses=10000)
-        _add_txn(db_session, big, -50000, "Investments", tag="Pakam", day=3)
-        service.create(name="Trip", target_amount=2000, priority=0, start_month=good)
-        assert service.get_all()[0]["clawed_back"] == 2000
-
-        goal = _create_investment_goal(service, priority=1, start_month=good)
-        assert {g["name"]: g for g in service.get_all()}["Trip"]["clawed_back"] == 0
-
-        service.delete(goal["id"])
         assert service.get_all()[0]["clawed_back"] == 2000
 
 
@@ -1491,8 +1342,12 @@ class TestRuleFundedGoals:
         )
         return next(g for g in created if g["name"] == "Wedding")
 
-    def test_it_holds_exactly_its_income_and_never_surplus(self, db_session, service):
-        """Salary surplus stays free cash; the goal is filled by its gifts alone."""
+    def test_its_income_displaces_the_surplus_that_filled_it(self, db_session, service):
+        """Surplus fills it until its gifts land; then the gifts come first.
+
+        The surplus the gifts make unnecessary goes back to free cash, so a
+        goal whose income covers its target ends up holding that income alone.
+        """
         before, gifts = _month_str(2), _month_str(1)
         _seed_surplus(db_session, before, income=10000, expenses=6000)
         _seed_surplus(db_session, gifts, income=10000, expenses=10000)
@@ -1510,8 +1365,8 @@ class TestRuleFundedGoals:
         assert pool["free_cash"] == 6000  # 4000 of salary surplus + 2000 spilled
         assert pool["liquid"] == 16000
 
-    def test_income_short_of_the_target_leaves_it_short(self, db_session, service):
-        """No surplus tops it up: it holds what came in, nothing more."""
+    def test_surplus_tops_up_income_short_of_the_target(self, db_session, service):
+        """Free cash fills what its income leaves short, in waterfall order."""
         before, gifts = _month_str(2), _month_str(1)
         _seed_surplus(db_session, before, income=10000, expenses=6000)
         _add_txn(db_session, gifts, 3000, "Other Income", tag="Wedding", day=6)
@@ -1519,9 +1374,10 @@ class TestRuleFundedGoals:
         self._wedding(service, before)
 
         goal = service.get_all()[0]
-        assert goal["allocated"] == 0
-        assert goal["funded"] == 3000
-        assert service.get_free_cash()["free_cash"] == 4000
+        assert goal["allocated"] == 4000
+        assert goal["contributed"] == 3000
+        assert goal["funded"] == 7000
+        assert service.get_free_cash()["free_cash"] == 0
 
     def test_a_deficit_never_takes_its_income_back(self, db_session, service):
         """Overspending that ate into the gifts shows as negative free cash."""
@@ -1540,17 +1396,46 @@ class TestRuleFundedGoals:
         assert pool["free_cash"] == -6000
         assert pool["liquid"] == 4000
 
-    def test_the_pool_goes_no_deeper_than_the_income_goals_hold(
+    def test_an_overspend_past_the_income_held_shows_in_full(
         self, db_session, service
     ):
-        """An overspend past the income held came from money this model does not track."""
+        """The pool shows the whole overspend, even past what the income goals hold."""
         gifts, spent = _month_str(2), _month_str(1)
         _add_txn(db_session, gifts, 10000, "Other Income", tag="Wedding", day=6)
         _seed_surplus(db_session, spent, income=0, expenses=15000)
 
         self._wedding(service, gifts)
 
-        assert service.get_free_cash()["free_cash"] == -10000
+        assert service.get_free_cash()["free_cash"] == -15000
+
+    def test_a_later_surplus_refills_the_hole_before_any_goal(
+        self, db_session, service
+    ):
+        """A negative pool is repaid first; only the rest of a surplus funds goals."""
+        bad, good = _month_str(2), _month_str(1)
+        _seed_surplus(db_session, bad, income=0, expenses=3000)
+        _seed_surplus(db_session, good, income=5000, expenses=0)
+
+        service.create(name="Trip", target_amount=10000, start_month=bad)
+
+        goal = service.get_all()[0]
+        assert goal["funded"] == 2000
+        assert goal["clawed_back"] == 0
+        assert service.get_free_cash()["free_cash"] == 0
+
+    def test_a_carried_hole_never_claws_back_again(self, db_session, service):
+        """Last month's overspend is settled; a quiet month takes nothing more."""
+        funded, bad, quiet = _month_str(3), _month_str(2), _month_str(1)
+        _seed_surplus(db_session, funded, income=4000, expenses=0)
+        _seed_surplus(db_session, bad, income=0, expenses=6000)
+        _seed_surplus(db_session, quiet, income=1000, expenses=1000)
+
+        service.create(name="Trip", target_amount=10000, start_month=funded)
+
+        goal = service.get_all()[0]
+        assert goal["clawed_back"] == 4000
+        assert goal["funded"] == 0
+        assert service.get_free_cash()["free_cash"] == -2000
 
     def test_a_plain_goal_is_still_clawed_back_first(self, db_session, service):
         """Ordinary earmarks give money back before the pool goes negative."""
@@ -1609,9 +1494,9 @@ class TestRuleFundedGoals:
         goal = next(g for g in created if g["name"] == "Plain")
 
         assert goal["fronted"] == 0
-        assert goal["utilized"] == 0
-        assert goal["available"] == 0
-        assert service.get_free_cash()["free_cash"] == 12000
+        assert goal["utilized"] == 8000
+        assert goal["available"] == 2000
+        assert service.get_free_cash()["free_cash"] == 10000
 
     def test_the_timeline_bar_is_its_income_not_what_the_income_repaid(
         self, db_session, service
@@ -1627,15 +1512,18 @@ class TestRuleFundedGoals:
         months = {m["month"]: m for m in service.get_timeline(months=0)["months"]}
         paid = next(g for g in months[bill]["goals"] if g["name"] == "Wedding")
         given = next(g for g in months[gifts]["goals"] if g["name"] == "Wedding")
-        assert paid["total"] == 0
-        assert paid["bridged"] == 8000
+        assert paid["total"] == 5000
+        assert paid["bridged"] == 3000
         assert given["total"] == 15000
-        assert given["bridged"] == -8000
+        assert given["bridged"] == -3000
 
     def test_bills_beyond_its_income_are_owed_not_funded(self, db_session, service):
-        """Progress is what it received; the unrepaid gap is reported as owed."""
+        """Progress is what it received; the unrepaid gap is reported as owed.
+
+        With no free cash for the waterfall to top it up from, the 2000 of the
+        bill its gifts never covered stays owed rather than counted as funding.
+        """
         bill, gifts = _month_str(2), _month_str(1)
-        _seed_free_cash(db_session, 20000)
         _add_txn(db_session, bill, -12000, "Wedding", tag="Venue", day=9)
         _add_txn(db_session, gifts, 10000, "Other Income", tag="Wedding", day=6)
 
@@ -1659,79 +1547,11 @@ class TestRuleFundedGoals:
         assert bars == goal["funded"]
 
 
-class TestInvestmentGoalFunding:
-    """An investment goal can name the income its transfers are paid from."""
+class TestOneIncomeFeedsOneGoal:
+    """The same income under two saved-into rules would be counted twice."""
 
-    def _invest(self, service, start, **overrides):
-        """Create an investment goal paid for by Other Income / Kickstart."""
-        fields = {
-            "name": "Invest",
-            "target_amount": 200000,
-            "kind": "investment",
-            "start_month": start,
-            "funding_category": "Other Income",
-            "funding_tags": "Kickstart",
-            **overrides,
-        }
-        created = service.create(**fields)
-        return next(g for g in created if g["name"] == "Invest")
-
-    def test_its_income_pays_for_the_transfers_before_free_cash(
-        self, db_session, service
-    ):
-        """A transfer bigger than the income takes only the rest from free cash."""
-        month = _month_str(1)
-        _seed_free_cash(db_session, 50000)
-        _add_txn(db_session, month, 100000, "Other Income", tag="Kickstart", day=2)
-        _add_txn(db_session, month, -123500, "Investments", tag="Pakam", day=5)
-
-        goal = self._invest(service, month)
-
-        assert goal["funded"] == 123500
-        assert goal["to_invest"] == 0
-        pool = service.get_free_cash()
-        assert pool["free_cash"] == 26500  # 50000 - the 23500 the income missed
-        assert pool["liquid"] == 26500
-
-    def test_income_not_yet_invested_waits_as_earmarked_cash(self, db_session, service):
-        """Unspent funding income is cash the goal holds, not free cash."""
-        month = _month_str(1)
-        _seed_free_cash(db_session, 50000)
-        _add_txn(db_session, month, 30000, "Other Income", tag="Kickstart", day=2)
-        _add_txn(db_session, month, -10000, "Investments", tag="Pakam", day=5)
-
-        goal = self._invest(service, month)
-
-        assert goal["funded"] == 10000
-        assert goal["to_invest"] == 20000
-        pool = service.get_free_cash()
-        assert pool["free_cash"] == 50000
-        assert pool["earmarked"] == 20000
-        assert pool["liquid"] == 70000
-
-    def test_income_before_its_start_month_is_ordinary_surplus(
-        self, db_session, service
-    ):
-        """Only income from the goal's start month on is set aside for it."""
-        before, start = _month_str(2), _month_str(1)
-        _add_txn(db_session, before, 30000, "Other Income", tag="Kickstart", day=2)
-
-        goal = self._invest(service, start)
-
-        assert goal["to_invest"] == 0
-        assert service.get_free_cash()["free_cash"] == 30000
-
-    def test_only_an_investment_goal_can_name_a_funding_income(self, service):
-        """A cash goal is funded by surplus or its own saved-into rule, not this."""
-        with pytest.raises(ValidationException):
-            service.create(
-                name="Trip",
-                target_amount=1000,
-                funding_category="Other Income",
-            )
-
-    def test_one_income_can_feed_only_one_goal(self, service):
-        """The same income under two goals would be counted twice."""
+    def test_a_second_claim_on_the_same_income_is_refused(self, service):
+        """Overlapping saved-into rules are refused; a different tag is not."""
         service.create(
             name="Kickstart",
             target_amount=1000,
@@ -1739,92 +1559,331 @@ class TestInvestmentGoalFunding:
             contribution_tags="Kickstart",
         )
         with pytest.raises(ValidationException):
-            self._invest(service, _month_str(1))
-
-        # A different tag in the same category is a different income.
-        goal = self._invest(service, _month_str(1), funding_tags="Bonus")
-        assert goal["funding_tags"] == "Bonus"
+            service.create(
+                name="Again",
+                target_amount=1000,
+                contribution_category="Other Income",
+                contribution_tags="Kickstart",
+            )
         with pytest.raises(ValidationException):
             service.create(
-                name="Bonus fund",
+                name="Every tag",
                 target_amount=1000,
                 contribution_category="Other Income",
             )
 
+        created = service.create(
+            name="Bonus",
+            target_amount=1000,
+            contribution_category="Other Income",
+            contribution_tags="Bonus",
+        )
+        assert any(g["contribution_tags"] == "Bonus" for g in created)
 
-class TestChangingAGoalsKind:
-    """A goal can switch between saving cash and investing."""
 
-    def test_a_cash_goal_becomes_an_investment_goal(self, db_session, service):
-        """Its cash settings are cleared and it counts investment transfers."""
+class TestEditingAGoalRestatesItsHistory:
+    """An edit that decides what a goal got is applied to every month it covers."""
+
+    def test_moving_the_start_later_clears_the_months_before_it(
+        self, db_session, service
+    ):
+        """The months it no longer covers lose their rows; the pool reaches it later."""
+        early, late = _month_str(2), _month_str(1)
+        _seed_surplus(db_session, early, income=10000, expenses=6000)
+        _seed_surplus(db_session, late, income=10000, expenses=7000)
+        created = service.create(name="Trip", target_amount=50000, start_month=early)
+
+        service.update(created[0]["id"], start_month=late)
+
+        months = {m["month"]: m for m in service.get_timeline(months=0)["months"]}
+        # The timeline now starts at the new start month.
+        assert early not in months
+        assert months[late]["goals"][0]["allocated"] == 7000
+
+    def test_moving_the_start_earlier_fills_the_months_it_now_covers(
+        self, db_session, service
+    ):
+        """Months before the old start join the goal's history."""
+        early, late = _month_str(2), _month_str(1)
+        _seed_surplus(db_session, early, income=10000, expenses=6000)
+        _seed_surplus(db_session, late, income=10000, expenses=7000)
+        created = service.create(name="Trip", target_amount=50000, start_month=late)
+
+        service.update(created[0]["id"], start_month=early)
+
+        months = {m["month"]: m for m in service.get_timeline(months=0)["months"]}
+        assert months[early]["goals"][0]["allocated"] == 4000
+        assert months[late]["goals"][0]["allocated"] == 3000
+
+    def test_a_lower_target_hands_the_surplus_on_in_every_month(
+        self, db_session, service
+    ):
+        """Shrinking the target restates the past, not just the months to come."""
+        early, late = _month_str(2), _month_str(1)
+        _seed_surplus(db_session, early, income=10000, expenses=6000)
+        _seed_surplus(db_session, late, income=10000, expenses=7000)
+        trip = service.create(name="Trip", target_amount=50000, start_month=early)[0]
+        service.create(name="Car", target_amount=50000, start_month=early)
+
+        updated = {g["name"]: g for g in service.update(trip["id"], target_amount=2000)}
+
+        assert updated["Trip"]["funded"] == 2000
+        assert updated["Car"]["funded"] == 5000
+
+    def test_deleting_a_goal_hands_its_surplus_to_the_goals_below(
+        self, db_session, service
+    ):
+        """What a deleted goal took goes to the next goal in line, month by month."""
         month = _month_str(1)
         _seed_surplus(db_session, month, income=10000, expenses=7000)
-        transfer = _add_txn(db_session, month, -4000, "Investments", tag="Pakam", day=5)
+        trip = service.create(name="Trip", target_amount=50000, start_month=month)[0]
+        service.create(name="Car", target_amount=50000, start_month=month)
+
+        service.delete(trip["id"])
+
+        assert service.get_all()[0]["funded"] == 3000
+
+
+class TestNegativeFreeCash:
+    """A pool below zero is shown, repaid first, and never claws back twice."""
+
+    def test_a_new_overspend_after_the_hole_is_repaid_reaches_the_goals(
+        self, db_session, service
+    ):
+        """Once a surplus repays the hole, this month's own overspend claws back."""
+        bad, mixed = _month_str(2), _month_str(1)
+        _seed_surplus(db_session, bad, income=0, expenses=3000)
+        _seed_surplus(db_session, mixed, income=5000, expenses=0)
+        _add_txn(db_session, mixed, -1500, "Wedding", day=20)
+
+        service.create(
+            name="Wedding",
+            target_amount=10000,
+            start_month=bad,
+            utilization_category="Wedding",
+        )
+
+        goal = service.get_all()[0]
+        # 5000 repays the 3000 hole; the goal takes the other 2000 and pays the
+        # 1500 bill out of it.
+        assert goal["funded"] == 2000
+        assert goal["utilized"] == 1500
+        assert service.get_free_cash()["free_cash"] == 0
+
+
+class TestTargetDateIsADeadline:
+    """A target date is when to complete a goal by, not when it stops."""
+
+    def test_a_goal_past_its_target_date_keeps_collecting(self, db_session, service):
+        """Still short after its deadline, it goes on taking free cash until full."""
+        during, after = _month_str(2), _month_str(1)
+        _seed_surplus(db_session, during, income=10000, expenses=6000)
+        _seed_surplus(db_session, after, income=10000, expenses=7000)
+
+        service.create(
+            name="Last year",
+            target_amount=50000,
+            start_month=during,
+            target_date=f"{during}-28",
+        )
+        service.create(name="Trip", target_amount=50000, start_month=during)
+
+        goals = {g["name"]: g for g in service.get_all()}
+        assert goals["Last year"]["funded"] == 7000
+        assert goals["Last year"]["is_past_due"] is True
+        assert goals["Trip"]["funded"] == 0
+
+
+class TestClosedGoalReplay:
+    """A goal that auto-closed replays its own history faithfully."""
+
+    def test_a_closed_goal_keeps_the_bills_it_borrowed_for(self, db_session, service):
+        """Once closed, later reads still see the bill it paid before its gifts.
+
+        A closed goal used to be frozen from its first month, which skipped the
+        borrowing that had paid its bill: the next read showed most of the bill
+        as never paid out of it.
+        """
+        bill, gifts = _month_str(2), _month_str(1)
+        _add_txn(db_session, bill, -12000, "Wedding", tag="Venue", day=9)
+        _add_txn(db_session, gifts, 12000, "Other Income", tag="Wedding", day=6)
         created = service.create(
-            name="Goal",
-            target_amount=20000,
-            opening_balance=500,
-            monthly_cap=1000,
-            start_month=month,
-            utilization_category="Leisure",
+            name="Wedding",
+            target_amount=12000,
+            start_month=bill,
+            contribution_category="Other Income",
+            contribution_tags="Wedding",
+            utilization_category="Wedding",
         )
-        goal_id = created[0]["id"]
-        service.link_transaction(
-            goal_id=goal_id,
-            source_type="transaction",
-            source_id=transfer.unique_id,
-            source_table="bank_transactions",
-            link_type=LINK_CONTRIBUTION,
-        )
+        assert created[0]["is_closed"]
 
-        updated = service.update(goal_id, kind="investment")
+        for _ in range(2):
+            goal = service.get_all()[0]
+            assert goal["utilized"] == 12000
+            assert goal["funded"] == 12000
+            assert goal["owed"] == 0
 
-        goal = next(g for g in updated if g["id"] == goal_id)
-        assert goal["kind"] == "investment"
-        assert goal["contribution_category"] == "Investments"
-        assert goal["opening_balance"] == 0
-        assert goal["monthly_cap"] is None
-        assert goal["utilization_category"] is None
-        assert service.get_links(goal_id) == []
-        # Its history is restated: it holds the transfer, not surplus.
-        assert goal["allocated"] == 0
-        assert goal["funded"] == 4000
 
-    def test_an_investment_goal_becomes_a_cash_goal(self, db_session, service):
-        """Its investment and funding rules are cleared and surplus fills it again."""
+class TestMoneyIsCountedOnce:
+    """Regressions where money vanished from, or doubled in, the books."""
+
+    def test_a_manual_deposit_is_paid_by_its_prior_wealth(self, db_session, service):
+        """A manual deposit and its investment prior wealth cancel, as in net worth.
+
+        A manual investment's deposits are tracked transactions, and its prior
+        wealth (``-sum`` of them) is the money that paid for them outside any
+        tracked account. Counting the deposits without the prior wealth took
+        each one out of free cash with nothing to pay for it.
+        """
+        from backend.models.investment import Investment
+        from backend.models.transaction import ManualInvestmentTransaction
+
         month = _month_str(1)
-        _seed_surplus(db_session, month, income=10000, expenses=7000)
-        created = service.create(
-            name="Goal",
-            target_amount=20000,
-            kind="investment",
-            start_month=month,
-            funding_category="Other Income",
+        _seed_free_cash(db_session, 10000)
+        db_session.add(
+            Investment(
+                category="Investments",
+                tag="Gemel",
+                type="pension",
+                name="Gemel",
+                created_date=_day_in_month(month, 1),
+                prior_wealth_amount=4000,
+            )
         )
-        goal_id = created[0]["id"]
+        db_session.add(
+            ManualInvestmentTransaction(
+                id="manual-1",
+                date=_day_in_month(month, 3),
+                provider="manual",
+                account_name="Gemel",
+                description="deposit",
+                amount=-4000,
+                category="Investments",
+                tag="Gemel",
+                source="manual_investment_transactions",
+                type="normal",
+            )
+        )
+        db_session.commit()
 
-        updated = service.update(goal_id, kind="cash")
+        service.create(name="Trip", target_amount=100000, start_month=month)
+        assert service.get_free_cash()["liquid"] == 10000
 
-        goal = next(g for g in updated if g["id"] == goal_id)
-        assert goal["kind"] == "cash"
-        assert goal["contribution_category"] is None
-        assert goal["funding_category"] is None
+    def test_a_closed_goals_later_income_is_ordinary_money(self, db_session, service):
+        """Gifts matching a closed goal's rule join the surplus, not the closed goal."""
+        gifts, later = _month_str(2), _month_str(1)
+        _add_txn(db_session, gifts, 3000, "Other Income", tag="Gift", day=3)
+        _add_txn(db_session, gifts, -3000, "Wedding", day=9)
+        _add_txn(db_session, later, 30000, "Other Income", tag="Gift", day=3)
+        service.create(
+            name="Small",
+            target_amount=3000,
+            start_month=gifts,
+            contribution_category="Other Income",
+            contribution_tags="Gift",
+            utilization_category="Wedding",
+        )
+
+        # Filled and fully spent, it closes in the gifts month; the later gift
+        # is ordinary income again.
+        goal = service.get_all()[0]
+        assert goal["is_closed"]
         assert goal["funded"] == 3000
+        assert service.get_free_cash()["free_cash"] == 30000
 
-    def test_fields_sent_with_the_switch_apply(self, db_session, service):
-        """A switch to cash can set the new kind's settings in the same save."""
-        created = service.create(name="Goal", target_amount=1000, kind="investment")
-        goal_id = created[0]["id"]
+    def test_income_before_a_goal_starts_stays_free_cash(self, db_session, service):
+        """A saved-into rule claims no income from before its goal started."""
+        before, start = _month_str(2), _month_str(1)
+        _add_txn(db_session, before, 8000, "Other Income", tag="Gift", day=3)
+        service.create(
+            name="Wedding",
+            target_amount=1000,
+            start_month=start,
+            contribution_category="Other Income",
+            contribution_tags="Gift",
+        )
 
-        updated = service.update(goal_id, kind="cash", monthly_cap=200)
+        pool = service.get_free_cash()
+        assert pool["liquid"] == 8000
 
-        assert next(g for g in updated if g["id"] == goal_id)["monthly_cap"] == 200
+    def test_a_link_before_the_goal_started_is_ordinary_spending(
+        self, db_session, service
+    ):
+        """A bill linked from before the goal's start never left the books unpaid."""
+        before, start = _month_str(2), _month_str(1)
+        _seed_free_cash(db_session, 5000)
+        bill = _add_txn(db_session, before, -2000, "Food", day=3)
+        goal = service.create(name="Trip", target_amount=100000, start_month=start)[0]
 
-    def test_a_closed_goal_must_be_reopened_first(self, db_session, service):
-        """A closed goal's history is frozen, so its kind cannot change."""
-        created = service.create(name="Goal", target_amount=1000)
-        goal_id = created[0]["id"]
-        service.close(goal_id)
+        service.link_transaction(
+            goal_id=goal["id"],
+            source_type="transaction",
+            source_id=bill.unique_id,
+            source_table="bank_transactions",
+            link_type=LINK_UTILIZATION,
+        )
 
-        with pytest.raises(ValidationException):
-            service.update(goal_id, kind="investment")
+        assert service.get_all()[0]["utilized"] == 0
+        assert service.get_free_cash()["liquid"] == 3000
+
+    def test_a_reorder_rematches_shared_rules(self, db_session, service):
+        """After a reorder the goal on top pays the bill both goals' rules match."""
+        month = _month_str(1)
+        _seed_surplus(db_session, month, income=10000, expenses=0)
+        _add_txn(db_session, month, -1000, "Wedding", day=9)
+        first = service.create(
+            name="First",
+            target_amount=4000,
+            start_month=month,
+            utilization_category="Wedding",
+        )[0]
+        second = next(
+            g
+            for g in service.create(
+                name="Second",
+                target_amount=4000,
+                start_month=month,
+                utilization_category="Wedding",
+            )
+            if g["name"] == "Second"
+        )
+
+        service.reorder([second["id"], first["id"]])
+        service.rebuild()
+        rebuilt = {g["name"]: g["utilized"] for g in service.get_all()}
+        fresh = {
+            g["name"]: g["utilized"] for g in SavingsGoalService(db_session).get_all()
+        }
+
+        assert rebuilt == fresh == {"Second": 1000, "First": 0}
+
+
+class TestLendingAgainstComingIncome:
+    """Free cash lent to a goal ahead of its own income is a loan, not an overspend."""
+
+    def test_bills_ahead_of_the_gifts_never_claw_another_goal(
+        self, db_session, service
+    ):
+        """The trip keeps its money; free cash carries the loan until the gifts land."""
+        saved, bill, gifts = _month_str(3), _month_str(2), _month_str(1)
+        _seed_surplus(db_session, saved, income=10000, expenses=6000)
+        _add_txn(db_session, bill, -9000, "Wedding", tag="Venue", day=9)
+        _add_txn(db_session, gifts, 9000, "Other Income", tag="Wedding", day=6)
+
+        service.create(name="Trip", target_amount=4000, start_month=saved)
+        service.create(
+            name="Wedding",
+            target_amount=9000,
+            start_month=saved,
+            contribution_category="Other Income",
+            contribution_tags="Wedding",
+            utilization_category="Wedding",
+        )
+
+        goals = {g["name"]: g for g in service.get_all()}
+        assert goals["Trip"]["funded"] == 4000
+        assert goals["Trip"]["clawed_back"] == 0
+        timeline = {m["month"]: m for m in service.get_timeline(months=0)["months"]}
+        # Borrowed for the bill, repaid by the gifts.
+        assert timeline[bill]["free_cash"] == -9000
+        assert timeline[gifts]["free_cash"] == 0

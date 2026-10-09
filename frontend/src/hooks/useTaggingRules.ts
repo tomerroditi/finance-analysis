@@ -6,10 +6,11 @@ import { useQueryKeys } from "./useQueryKeys";
  * Shared hook for fetching tagging rules.
  * Replaces 4 duplicate useQuery calls across components.
  */
-export function useTaggingRules() {
+export function useTaggingRules(options?: { enabled?: boolean }) {
   const qk = useQueryKeys();
   return useQuery<TaggingRule[]>({
     queryKey: qk.tagging.rules(),
     queryFn: () => taggingApi.getRules().then((res) => res.data as TaggingRule[]),
+    enabled: options?.enabled ?? true,
   });
 }

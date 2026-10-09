@@ -18,10 +18,6 @@ never an addition to net worth. Progress is derived rather than typed:
    that pool first, and only claws money back out of goals (lowest priority
    first, never below what a goal has already spent) once the pool is empty.
 
-A goal can instead be an **investment goal**, filled by the net money moved
-into the investments its rule names rather than by surplus — an investment is
-just a category and tag, like any other transfer.
-
 Results are persisted per (goal, month) in ``savings_goal_allocations``. Past
 months are never silently restated: a priority change applies going forward,
 and rewriting history is an explicit ``rebuild`` the user previews first. Goals
@@ -30,8 +26,9 @@ never be pulled back out, even by a rebuild.
 
 The service is split across mixins: ``inputs`` (context and pool inputs),
 ``engine`` (simulation, persistence, rebuild), ``goals`` (CRUD and
-transaction links) and ``read_models`` (enriched goals, month view, free
-cash, timeline).
+transaction links), ``read_models`` (enriched goals, month view, free
+cash, timeline) and ``yearly`` (how much each year saved, against its target —
+measured from the same transactions, outside the waterfall).
 """
 
 from typing import Any
@@ -43,10 +40,12 @@ from backend.services.savings_goals.engine import AllocationEngineMixin, Allocat
 from backend.services.savings_goals.goals import GoalCrudMixin
 from backend.services.savings_goals.inputs import InputsMixin
 from backend.services.savings_goals.read_models import ReadModelsMixin
+from backend.services.savings_goals.yearly import YearlySavingsMixin
 from backend.services.transactions_service import TransactionsService
 
 
 class SavingsGoalService(
+    YearlySavingsMixin,
     ReadModelsMixin,
     GoalCrudMixin,
     AllocationEngineMixin,

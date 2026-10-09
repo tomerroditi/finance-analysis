@@ -245,7 +245,7 @@ export function CategoryDetailPanel({
                             className="p-1 hover:bg-blue-500/10 text-blue-400 rounded transition-colors"
                             title={t("categories.relocateTag")}
                           >
-                            <MoveRight size={12} />
+                            <MoveRight size={12} className="rtl:-scale-x-100" />
                           </button>
                           <button
                             onClick={async () => {
@@ -393,7 +393,7 @@ export function CategoryDetailPanel({
                   </div>
                   <MoveRight
                     size={16}
-                    className="opacity-100 md:opacity-0 group-hover:opacity-100 transition-all"
+                    className="opacity-100 md:opacity-0 group-hover:opacity-100 transition-all rtl:-scale-x-100"
                   />
                 </div>
               </button>

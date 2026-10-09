@@ -336,4 +336,47 @@ describe("RecurringSection", () => {
       expect(screen.queryByTestId("recurring-pending-item")).toBeNull();
     });
   });
+
+  describe("a confirmed row stays two lines", () => {
+    it("shows a price change as a directional icon, not a worded badge", async () => {
+      await renderCard([
+        makeItem({
+          confirmation: "confirmed",
+          status: "price_changed",
+          price_change: 12,
+        }),
+        makeItem({
+          label: "SPOTIFY",
+          normalized: "spotify",
+          confirmation: "confirmed",
+          status: "price_changed",
+          price_change: -5,
+        }),
+      ]);
+
+      // The words live in the accessible name and tooltip, so the meta line
+      // never has to wrap to fit them.
+      expect(
+        await screen.findByRole("img", { name: /Price went up by .*12/ }),
+      ).toBeTruthy();
+      expect(screen.getByRole("img", { name: /Price went down by .*5/ })).toBeTruthy();
+      expect(screen.queryByText("Price changed")).toBeNull();
+    });
+
+    it("keeps the cadence, status and next date on one unwrapped line", async () => {
+      await renderCard([
+        makeItem({
+          confirmation: "confirmed",
+          cadence: "semiannual",
+          status: "new",
+        }),
+      ]);
+
+      const meta = await screen.findByTestId("recurring-item-meta");
+      expect(meta.className).not.toMatch(/flex-wrap/);
+      expect(meta.textContent).toContain("Biannual");
+      expect(meta.textContent).toContain("01/10/2026");
+      expect(screen.getByRole("img", { name: "New" })).toBeTruthy();
+    });
+  });
 });

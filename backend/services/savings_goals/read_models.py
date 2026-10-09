@@ -12,13 +12,11 @@ import pandas as pd
 
 from backend.errors import ValidationException
 from backend.models.savings_goal import (
-    GOAL_KIND_CASH,
     GOAL_STATUS_CLOSED,
     SavingsGoal,
 )
 from backend.services.savings_goals.common import (
     ROUNDING_EPSILON,
-    is_investment_goal,
     iter_months,
     month_key,
     month_str,
@@ -171,12 +169,7 @@ class ReadModelsMixin:
         today = date.today()
         current = (today.year, today.month)
         free_cash = float(plan.free_cash.get(current, 0.0)) if plan else 0.0
-        # An investment goal's progress sits in the holding it was moved
-        # into, never in this pool's accounts.
-        # An investment goal's income not yet invested is cash it holds.
-        earmarked = sum(
-            max(0.0, g["available"]) for g in goals if g["kind"] == GOAL_KIND_CASH
-        ) + sum(max(0.0, g["to_invest"]) for g in goals)
+        earmarked = sum(max(0.0, g["available"]) for g in goals)
         this_month = self.repo.get_month_allocations(*current)
         clawed = (
             -float(this_month.loc[this_month["amount"] < 0, "amount"].sum())
@@ -187,7 +180,7 @@ class ReadModelsMixin:
             "free_cash": round(free_cash, 2),
             "earmarked": round(earmarked, 2),
             "liquid": round(free_cash + earmarked, 2),
-            "clawed_back_this_month": round(clawed, 2),
+            "clawed_back_this_month": round(clawed, 2) + 0.0,
             "has_goals": True,
         }
 
@@ -424,13 +417,6 @@ class ReadModelsMixin:
             )
             for goal_id, rows in history.items()
         }
-        # An investment goal has no ledger rows; what it gained this month is
-        # the month's net transfers.
-        this_month = self._kept_contributions().get(current, {})
-        for goal in goals:
-            if is_investment_goal(goal):
-                provisional[goal.id] = this_month.get(goal.id, 0.0)
-
         return [
             self._enrich(
                 goal,
@@ -442,7 +428,6 @@ class ReadModelsMixin:
                 reclaimed,
                 fronted,
                 released,
-                self._last_plan.to_invest,
             )
             for goal in goals
         ]
@@ -513,7 +498,6 @@ class ReadModelsMixin:
         reclaimed: dict[int, float],
         fronted: dict[int, float],
         released: dict[int, float],
-        waiting: dict[int, float],
     ) -> dict[str, Any]:
         """Assemble one goal's derived progress metrics."""
         target = float(goal.target_amount or 0.0)
@@ -531,7 +515,6 @@ class ReadModelsMixin:
         # wedding whose bills outran its gifts reads 97% funded with the gap
         # owed to free cash, not 100% on money it never got.
         owed = max(0.0, lent - repaid)
-        to_invest = float(waiting.get(goal.id, 0.0))
         funded = opening + allocated + contributions
         available = funded + owed - spent
         remaining = max(0.0, target - funded)
@@ -542,6 +525,7 @@ class ReadModelsMixin:
 
         months_remaining = None
         monthly_needed = None
+        is_past_due = False
         if goal.target_date and pd.notna(goal.target_date):
             today = pd.Timestamp.today().normalize()
             target_ts = pd.Timestamp(goal.target_date)
@@ -555,6 +539,7 @@ class ReadModelsMixin:
                 # months out as two full months even when only ~39 days
                 # remain, understating what the user must save each month.
                 days_remaining = max(0, (target_ts - today).days)
+                is_past_due = target_ts < today
                 months_of_runway = days_remaining / DAYS_PER_MONTH
                 monthly_needed = (
                     round(remaining / months_of_runway, 2)
@@ -573,11 +558,8 @@ class ReadModelsMixin:
             "target_date": goal.target_date,
             "contribution_category": goal.contribution_category,
             "contribution_tags": goal.contribution_tags,
-            "funding_category": goal.funding_category,
-            "funding_tags": goal.funding_tags,
             "utilization_category": goal.utilization_category,
             "utilization_tags": goal.utilization_tags,
-            "kind": goal.kind or GOAL_KIND_CASH,
             "status": goal.status,
             "closed_month": goal.closed_month,
             "notes": goal.notes,
@@ -587,7 +569,6 @@ class ReadModelsMixin:
             "fronted": round(lent, 2),
             "released": round(repaid, 2),
             "owed": round(owed, 2),
-            "to_invest": round(to_invest, 2),
             "clawed_back": round(float(reclaimed.get(goal.id, 0.0)), 2),
             "funded": round(funded, 2),
             "available": round(available, 2),
@@ -598,5 +579,6 @@ class ReadModelsMixin:
             "this_month_allocation": round(float(provisional.get(goal.id, 0.0)), 2),
             "months_remaining": months_remaining,
             "monthly_needed": monthly_needed,
+            "is_past_due": is_past_due,
             "history": history.get(goal.id, []),
         }

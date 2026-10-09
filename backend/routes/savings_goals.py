@@ -32,9 +32,6 @@ class SavingsGoalCreate(ApiRequestModel):
     contribution_tags: str | None = None
     utilization_category: str | None = None
     utilization_tags: str | None = None
-    funding_category: str | None = None
-    funding_tags: str | None = None
-    kind: Literal["cash", "investment"] = "cash"
     notes: str | None = None
 
 
@@ -51,11 +48,13 @@ class SavingsGoalUpdate(ApiRequestModel):
     contribution_tags: str | None = None
     utilization_category: str | None = None
     utilization_tags: str | None = None
-    funding_category: str | None = None
-    funding_tags: str | None = None
-    #: Switches the goal between saving cash and investing; restates history.
-    kind: Literal["cash", "investment"] | None = None
     notes: str | None = None
+
+
+class YearlySavingsTargetUpdate(ApiRequestModel):
+    """Request body for a year's savings target; ``None`` clears it."""
+
+    target_amount: float | None = Field(None, gt=0)
 
 
 class SavingsGoalReorder(ApiRequestModel):
@@ -140,6 +139,22 @@ def reopen_goal(
 ) -> list[dict[str, Any]]:
     """Reopen a closed goal so it absorbs surplus again."""
     return SavingsGoalService(db).reopen(goal_id)
+
+
+@router.get("/yearly")
+def get_yearly_savings(db: Session = Depends(get_database)) -> dict[str, Any]:
+    """Return how much each year saved, its target, and this year's pace."""
+    return SavingsGoalService(db).get_yearly_savings()
+
+
+@router.put("/yearly/{year}/target")
+def set_yearly_target(
+    year: int,
+    data: YearlySavingsTargetUpdate,
+    db: Session = Depends(get_database),
+) -> dict[str, Any]:
+    """Set or clear how much to save in ``year``; returns the yearly view."""
+    return SavingsGoalService(db).set_yearly_target(year, data.target_amount)
 
 
 @router.get("/free-cash")

@@ -192,5 +192,23 @@ test.describe("Dashboard — forecast, recurring, goals", () => {
       .click();
     await expect(dismissedRows).toHaveCount(1);
     await expect(pending).toHaveCount(pendingBefore - 1);
+
+    // A confirmed row is two lines on a phone whatever its status: the demo
+    // data's repriced arnona and home insurance carry an icon chip that names
+    // the direction, not a worded badge that wrapped the next date away.
+    await page.getByRole("button", { name: /Confirm all/i }).click();
+    await expect(pending).toHaveCount(0);
+    await page.setViewportSize({ width: 360, height: 800 });
+    await expect(
+      page.getByRole("img", { name: /Price went (up|down) by/ }).first(),
+    ).toBeVisible();
+    await expect(page.getByText("Price changed")).toHaveCount(0);
+    const metaHeights = await page
+      .getByTestId("recurring-item-meta")
+      .evaluateAll((lines) =>
+        lines.map((line) => line.getBoundingClientRect().height),
+      );
+    expect(metaHeights.length).toBeGreaterThan(0);
+    for (const height of metaHeights) expect(height).toBeLessThan(24);
   });
 });

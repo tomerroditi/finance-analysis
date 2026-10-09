@@ -254,6 +254,25 @@ test.describe("Paying for a budget out of a savings goal", () => {
     expect(panelBox.y).toBeGreaterThanOrEqual(0);
     expect(panelBox.y + panelBox.height).toBeLessThanOrEqual(700);
     await expect(panel.getByRole("option").first()).toBeInViewport();
+
+    // --- the keyboard comes up ------------------------------------------
+    // Tapping the panel's search box raises the on-screen keyboard, which
+    // shrinks what is visible. Playwright cannot summon a keyboard, so the
+    // viewport is shrunk the same way. The panel must stay on the side of the
+    // trigger it opened on — flipping took the search box away from the
+    // finger — and shrink to fit what is still visible.
+    const trigger = save.getByRole("button").nth(1);
+    const above = async () =>
+      (await panel.boundingBox())!.y < (await trigger.boundingBox())!.y;
+    const openedAbove = await above();
+    await page.setViewportSize({ width: 390, height: 520 });
+    await expect.poll(above).toBe(openedAbove);
+    await expect
+      .poll(async () => {
+        const box = (await panel.boundingBox())!;
+        return box.y >= 0 && box.y + box.height <= 520;
+      })
+      .toBe(true);
     await context.close();
   });
 });

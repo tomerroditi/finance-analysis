@@ -316,6 +316,18 @@ test.describe("Budget", () => {
     const stripBox = await strip.boundingBox();
     const pickerBox = await page.getByTestId("project-picker").boundingBox();
     expect(pickerBox!.width).toBeGreaterThan(stripBox!.width * 0.6);
+
+    // --- A selected project's actions wrap inside the bar instead of running
+    // off its edge: the page clips sideways overflow, so `scrollWidth` alone
+    // would not catch the last buttons being cut off. ---
+    await expect(page.getByTestId("project-delete")).toBeVisible();
+    for (const testId of ["project-closed-toggle", "project-delete"]) {
+      const box = await page.getByTestId(testId).boundingBox();
+      expect(box!.x).toBeGreaterThanOrEqual(stripBox!.x - 1);
+      expect(box!.x + box!.width).toBeLessThanOrEqual(
+        stripBox!.x + stripBox!.width + 1,
+      );
+    }
   });
 
   test("over-budget rules are flagged inline; the alerts toggle gates the bell", async ({

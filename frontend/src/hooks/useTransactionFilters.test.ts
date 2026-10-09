@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import { renderHook, act } from "@testing-library/react";
 import { useTransactionFilters } from "./useTransactionFilters";
 import type { Transaction } from "../types/transaction";
+import type { TaggingRule } from "../services/api";
 
 const makeTx = (overrides: Partial<Transaction> = {}): Transaction => ({
   id: 1,
@@ -90,6 +91,39 @@ describe("useTransactionFilters", () => {
       const { result } = renderHook(() => useTransactionFilters(sampleTransactions));
       act(() => result.current.updateFilters({ onlyUntagged: true }));
       expect(result.current.activeFilterCount).toBe(1);
+    });
+  });
+
+  describe("onlyWithoutRule filter", () => {
+    const fuelRule = {
+      id: 1,
+      name: "Fuel",
+      category: "Transport",
+      tag: "Fuel",
+      conditions: { type: "CONDITION", field: "description", operator: "contains", value: "fuel" },
+    } as TaggingRule;
+    const withCash = [
+      ...sampleTransactions,
+      makeTx({ id: 6, description: "Allowance", source: "cash_transactions" }),
+    ];
+
+    it("keeps bank/credit-card rows no rule matches, dropping cash rows", () => {
+      const { result } = renderHook(() => useTransactionFilters(withCash, [fuelRule]));
+      act(() => result.current.updateFilters({ onlyWithoutRule: true }));
+      expect(result.current.filteredTransactions.map((tx) => tx.id)).toEqual([1, 2, 3, 4]);
+      expect(result.current.activeFilterCount).toBe(1);
+    });
+
+    it("passes every row until the rules load", () => {
+      const { result } = renderHook(() => useTransactionFilters(withCash));
+      act(() => result.current.updateFilters({ onlyWithoutRule: true }));
+      expect(result.current.filteredTransactions).toHaveLength(6);
+    });
+
+    it("combines with onlyUntagged", () => {
+      const { result } = renderHook(() => useTransactionFilters(withCash, [fuelRule]));
+      act(() => result.current.updateFilters({ onlyWithoutRule: true, onlyUntagged: true }));
+      expect(result.current.filteredTransactions.map((tx) => tx.id)).toEqual([3]);
     });
   });
 

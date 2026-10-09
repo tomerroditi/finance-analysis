@@ -60,6 +60,21 @@ test.describe("Categories", () => {
       searchBoxBox!.height,
     );
 
+    // --- Auto-tagging rules modal lists rules alphabetically by name ---
+    await rulesCard.click();
+    const rulesDialog = page.getByRole("dialog", { name: /Auto-Tagging Rules/i });
+    const ruleNames = rulesDialog.getByTestId("rule-card").locator("h4");
+    await expect(ruleNames.first()).toBeVisible({ timeout: 10_000 });
+    const names = await ruleNames.allTextContents();
+    expect(names.length).toBeGreaterThan(1);
+    expect(names).toEqual(
+      [...names].sort((a, b) =>
+        a.localeCompare(b, "en", { sensitivity: "base", numeric: true }),
+      ),
+    );
+    await rulesDialog.getByRole("button", { name: /^close$/i }).click();
+    await expect(rulesDialog).toBeHidden({ timeout: 3_000 });
+
     // --- Non-protected category panel: delete button visible without hover ---
     const foodCard = page.locator('[data-testid="category-card-Food"]');
     await expect(foodCard).toBeVisible({ timeout: 10_000 });

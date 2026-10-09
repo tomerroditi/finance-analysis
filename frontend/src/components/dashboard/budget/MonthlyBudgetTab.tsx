@@ -11,6 +11,7 @@ import { formatMonthYear } from "../../../utils/dateFormatting";
 import { BudgetRuleGrid } from "./BudgetRuleGrid";
 import { normalizeAnalysis } from "./normalizeAnalysis";
 import { budgetLink } from "../../../utils/budgetNavigation";
+import { ForwardArrow } from "../../common/ForwardArrow";
 
 interface MonthlyBudgetTabProps {
   year: number;
@@ -156,7 +157,7 @@ export const MonthlyBudgetTab: React.FC<MonthlyBudgetTabProps> = ({
           to={budgetLink("monthly", { year, month })}
           className="text-sm font-medium text-[var(--primary)] hover:underline"
         >
-          {t("dashboard.viewAllBudgetRules")} &rarr;
+          {t("dashboard.viewAllBudgetRules")} <ForwardArrow />
         </Link>
       </div>
     </div>

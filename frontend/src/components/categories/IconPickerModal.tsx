@@ -35,6 +35,9 @@ export function IconPickerModal({ isOpen, onClose, category, currentIcon, onSave
         <div className="relative">
           <Search size={16} className="absolute start-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)]" />
           <input
+            inputMode="search"
+            enterKeyHint="search"
+            autoComplete="off"
             type="text"
             placeholder={t("categories.searchEmojis")}
             value={emojiSearch}
