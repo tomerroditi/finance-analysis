@@ -1,3 +1,9 @@
+## v1.97.0 (2026-10-09)
+
+### Feat
+
+- **tagging**: lead with and mark the branch "Add to Rule" adds (#377)
+
 ## v1.96.1 (2026-10-09)
 
 ### Fix
