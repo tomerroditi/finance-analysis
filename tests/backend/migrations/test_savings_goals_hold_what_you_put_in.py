@@ -15,6 +15,7 @@ import pytest
 import sqlalchemy as sa
 from alembic import command
 from alembic.config import Config
+from alembic.script import ScriptDirectory
 
 from backend.models.base import Base
 from backend.models.savings_goal import SavingsGoalEntry
@@ -261,9 +262,11 @@ class TestFreshDatabases:
         engine.dispose()
         monkeypatch.setattr("backend.database.get_database_url", lambda *a, **k: url)
 
-        command.upgrade(_alembic_config(url), "head")
+        cfg = _alembic_config(url)
+        command.upgrade(cfg, "head")
 
         columns = {row[1] for row in _query(url, "PRAGMA table_info(savings_goals)")}
         assert "monthly_amount" in columns
         assert not columns & {"monthly_cap", "opening_balance"}
-        assert _query(url, "SELECT version_num FROM alembic_version") == [(REVISION,)]
+        head = ScriptDirectory.from_config(cfg).get_current_head()
+        assert _query(url, "SELECT version_num FROM alembic_version") == [(head,)]

@@ -227,7 +227,7 @@ Prior wealth represents money that existed **before the system started tracking 
 
 | Source | Stored In | Calculation | When Set |
 |--------|-----------|-------------|----------|
-| **Bank prior wealth** | `bank_balances.prior_wealth_amount` | `user_entered_balance - sum(all bank txns for account)` | Auto-computed when user enters current bank balance (after scraping) |
+| **Bank prior wealth** | `bank_balances.prior_wealth_amount` | `balance - sum(all bank txns for account)` | Re-derived on every scrape from the balance the bank reports (`BankBalanceService.apply_scraped_balance`; the sum of the credential's checking accounts, savings deposits excluded), or when the user enters one by hand. Banks reporting none (Union, Yahav) keep the stored prior wealth and re-add transactions. The gap the bank's figure closed is kept as `last_drift` and shown on the account card — a non-zero drift means a transaction is missing, duplicated or mis-dated |
 | **Investment prior wealth** | `investments.prior_wealth_amount` | `-(sum of manual_investment_transactions)` | Auto-recalculated when manually inserted investment transactions change |
 | **Cash prior wealth** | `cash_balances.prior_wealth_amount` | Calculated when user enters current balance via API (`POST /api/cash-balances`). Auto-recalculates after transaction changes via service integration. |
 

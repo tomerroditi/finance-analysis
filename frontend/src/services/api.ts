@@ -879,6 +879,10 @@ export interface BankBalance {
   prior_wealth_amount: number;
   last_manual_update: string | null;
   last_scrape_update: string | null;
+  /** Where ``balance`` last came from; null on rows predating both. */
+  balance_source: "scraped" | "manual" | null;
+  /** Bank's balance less the one the app computed, at the last scrape that reported one. */
+  last_drift: number | null;
 }
 
 export const bankBalancesApi = {
