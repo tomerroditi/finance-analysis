@@ -190,8 +190,8 @@ is negative when behind, and `needed_per_month` spreads what is left over the
 months left **including the current one**.
 
 The response carries every year from the first month on record to today (plus
-any year with a target), each with its months, so the card can draw this
-year's bars and name the last three years. Its query key
+any year with a target), each with its months (the card names the last three years; it no longer
+draws this year's months as bars). Its query key
 (`qk.savingsGoals.yearly()`) sits under the savings-goals prefix, so every
 goal write refreshes it.
 
