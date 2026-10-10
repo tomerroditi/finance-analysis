@@ -1,3 +1,9 @@
+## v1.104.0 (2026-10-10)
+
+### Feat
+
+- **bank-balances**: take the balance the bank reports on every scrape (#392)
+
 ## v1.103.2 (2026-10-10)
 
 ### Fix
