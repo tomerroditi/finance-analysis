@@ -1,3 +1,9 @@
+## v1.103.0 (2026-10-10)
+
+### Feat
+
+- **savings-goals**: show what a spending goal saved and what is left to spend (#389)
+
 ## v1.102.0 (2026-10-09)
 
 ### Feat
