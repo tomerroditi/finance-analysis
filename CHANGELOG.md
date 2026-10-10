@@ -1,3 +1,9 @@
+## v1.103.2 (2026-10-10)
+
+### Fix
+
+- **savings-goals**: count yearly savings the way Income & Expenses does (#391)
+
 ## v1.103.1 (2026-10-10)
 
 ### Fix
