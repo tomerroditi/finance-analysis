@@ -469,6 +469,13 @@ function GoalRow({
       ? "from-emerald-500 to-emerald-400"
       : "from-[var(--primary)] to-blue-400";
   const canTakeOut = showsShekels(goal.available);
+  // Once a goal pays for something, the headline is what it gathered and
+  // the bar splits into what is spent and what is left of it.
+  const hasSpent = showsShekels(goal.spent);
+  const toPercent = (amount: number) =>
+    goal.target_amount > 0 ? Math.min(100, Math.max(0, (amount / goal.target_amount) * 100)) : 0;
+  const filledPct = Math.min(100, Math.max(0, goal.progress_pct));
+  const spentPct = hasSpent ? Math.min(filledPct, toPercent(Math.min(goal.spent, goal.saved))) : 0;
 
   return (
     <div className="group border border-[var(--surface-light)] rounded-xl p-3 hover:bg-[var(--surface-light)]/30 transition-colors">
@@ -535,20 +542,36 @@ function GoalRow({
       <div data-testid="goal-figures">
         <div className="flex items-baseline justify-between gap-2 mb-1.5">
           <span dir="ltr" className="text-sm md:text-base font-bold tabular-nums" data-testid="goal-balance">
-            {formatCurrency(goal.available)}
+            {formatCurrency(hasSpent ? goal.saved : goal.available)}
             <span className="text-[var(--text-muted)] text-xs md:text-sm font-normal">
               {" / "}
               {formatCurrency(goal.target_amount)}
             </span>
+            {hasSpent && (
+              <span
+                className="text-[var(--text-muted)] text-[10px] md:text-xs font-normal"
+                data-testid="goal-left-to-spend"
+              >
+                {" · "}
+                {t("dashboard.goals.leftToSpend", { amount: formatCurrency(goal.available) })}
+              </span>
+            )}
           </span>
           <span dir="ltr" className="text-[10px] md:text-xs text-[var(--text-muted)] tabular-nums shrink-0">
             {goal.progress_pct}%
           </span>
         </div>
-        <div className="w-full bg-[var(--surface-light)] rounded-full h-2 overflow-hidden">
+        <div className="flex w-full bg-[var(--surface-light)] rounded-full h-2 overflow-hidden">
+          {spentPct > 0 && (
+            <div
+              className="h-2 bg-slate-400 transition-all duration-500"
+              style={{ width: `${spentPct}%` }}
+              data-testid="goal-bar-spent"
+            />
+          )}
           <div
-            className={`h-2 rounded-full bg-gradient-to-r ${barColor} transition-all duration-500`}
-            style={{ width: `${Math.min(100, Math.max(0, goal.progress_pct))}%` }}
+            className={`h-2 bg-gradient-to-r ${barColor} transition-all duration-500 ${spentPct > 0 ? "" : "rounded-full"}`}
+            style={{ width: `${filledPct - spentPct}%` }}
           />
         </div>
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1.5 text-[10px] md:text-xs text-[var(--text-muted)]">
@@ -566,11 +589,9 @@ function GoalRow({
               </span>
             )}
             {showsShekels(goal.spent) && (
-              <span>
-                {t("dashboard.goals.savedSpent", {
-                  saved: formatCurrency(goal.saved),
-                  spent: formatCurrency(goal.spent),
-                })}
+              <span className="flex items-center gap-1">
+                <span className="inline-block h-2 w-2 rounded-full bg-slate-400" aria-hidden />
+                {t("dashboard.goals.spentAmount", { amount: formatCurrency(goal.spent) })}
               </span>
             )}
             {showsShekels(goal.owed) && (

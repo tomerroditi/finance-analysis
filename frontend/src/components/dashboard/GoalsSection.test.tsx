@@ -308,14 +308,30 @@ describe("GoalsSection", () => {
       expect(balance).toMatch(/10,000/);
     });
 
-    it("says how much was saved and spent once the goal pays for something", async () => {
+    it("shows what was saved, what is left to spend, and the spent part of the bar", async () => {
       await renderGoals([
-        makeGoal({ name: "Wedding", saved: 9000, spent: 4000, available: 5000 }),
+        makeGoal({
+          name: "Wedding",
+          saved: 9000,
+          spent: 4000,
+          available: 5000,
+          target_amount: 10000,
+          progress_pct: 90,
+        }),
       ]);
 
-      const text = rowFor("Wedding").textContent ?? "";
-      expect(text).toMatch(/9,000.*saved/);
-      expect(text).toMatch(/4,000.*spent/);
+      const row = within(rowFor("Wedding"));
+      expect(row.getByTestId("goal-balance").textContent).toMatch(/9,000.*10,000/);
+      expect(row.getByTestId("goal-left-to-spend").textContent).toMatch(/5,000.*left to spend/);
+      expect(row.getByTestId("goal-bar-spent").style.width).toBe("40%");
+      expect(rowFor("Wedding").textContent).toMatch(/4,000.*spent/);
+    });
+
+    it("draws no spent part while the goal has spent nothing", async () => {
+      await renderGoals([makeGoal({ name: "Trip", available: 2500, target_amount: 10000 })]);
+
+      expect(within(rowFor("Trip")).queryByTestId("goal-bar-spent")).toBeNull();
+      expect(within(rowFor("Trip")).queryByTestId("goal-left-to-spend")).toBeNull();
     });
 
     it("says what was added this month, and nothing when nothing was", async () => {

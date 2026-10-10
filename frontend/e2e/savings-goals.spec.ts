@@ -391,6 +391,35 @@ test.describe("Savings goals", () => {
     await expect(page.getByRole("button", { name: /^Fund all$/i })).toHaveCount(0);
   });
 
+  test("a goal that paid for something shows what it saved and what is left", async ({
+    page,
+  }) => {
+    // The demo's wedding bills land in the goal through its spending rule:
+    // the headline stays on what was saved, the bar marks the spent part.
+    const goal = await createGoal({
+      name: "E2E Spending Goal",
+      target_amount: 300000,
+      start_month: monthsAgo(12),
+      utilization_category: "Wedding",
+    });
+    // Put in before the bills: a goal pays only with what it held then.
+    await ctx.post(`${API_BASE}/savings-goals/${goal.id}/entries`, {
+      data: { amount: 250000, date: `${monthsAgo(12)}-01` },
+    });
+    try {
+      await openDashboardWithGoals(page);
+      const row = goalRow(page, "E2E Spending Goal");
+      await expect(row).toBeVisible({ timeout: 30_000 });
+      await expect(row.getByTestId("goal-balance")).toContainText("250,000");
+      await expect(row.getByTestId("goal-left-to-spend")).toContainText(/left to spend/);
+      await expect(row.getByTestId("goal-bar-spent")).toBeVisible();
+      await expect(row.getByText(/ spent$/)).toBeVisible();
+    } finally {
+      await ctx.delete(`${API_BASE}/savings-goals/${goal.id}`);
+      created.splice(created.indexOf(goal.id), 1);
+    }
+  });
+
   test("reordering moves a goal up at once", async ({ page }) => {
     await openDashboardWithGoals(page);
     await expect(goalName(page, "E2E Achieved Goal")).toBeVisible({ timeout: 30_000 });
