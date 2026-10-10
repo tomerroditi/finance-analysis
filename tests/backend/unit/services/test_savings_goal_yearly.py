@@ -10,8 +10,10 @@ from datetime import date
 import pytest
 
 from backend.errors import ValidationException
+from backend.services.pending_refunds_service import PendingRefundsService
 from backend.services.savings_goals import SavingsGoalService
 from tests.backend.unit.services.savings_goal_helpers import (
+    add_card_txn,
     add_txn,
     month_str,
     seed_surplus,
@@ -141,6 +143,67 @@ class TestWhatAYearSaved:
 
         assert [m["month"] for m in row["months"]] == sorted(months)
         assert row["saved"] == sum(m["saved"] for m in row["months"])
+
+
+def _month(result: dict, month: str) -> float:
+    """What ``month`` saved, from whichever year lists it."""
+    for row in result["years"]:
+        for entry in row["months"]:
+            if entry["month"] == month:
+                return entry["saved"]
+    return 0.0
+
+
+class TestMatchesIncomeAndExpenses:
+    """A year saves what the Income & Expenses card nets for it."""
+
+    def test_moving_money_between_own_accounts_is_not_spending(
+        self, db_session, service
+    ):
+        """An Ignore transfer out to an untracked account leaves the figure alone."""
+        month = month_str(0)
+        seed_surplus(db_session, month, income=10000, expenses=7000)
+        add_txn(db_session, month, -3000, "Ignore", tag="Internal Transactions", day=8)
+
+        assert _month(service.get_yearly_savings(), month) == 3000
+
+    def test_card_purchases_count_when_made_not_when_the_bill_is_paid(
+        self, db_session, service
+    ):
+        """A purchase counts in its own month; the bank-side bill counts nowhere."""
+        bought, billed = month_str(1), month_str(0)
+        add_txn(db_session, bought, 10000, "Salary", day=1)
+        add_card_txn(db_session, bought, -4000, "Food", day=20)
+        add_txn(db_session, billed, -4000, "Credit Cards", day=2)
+
+        result = service.get_yearly_savings()
+
+        assert _month(result, bought) == 6000
+        assert _month(result, billed) == 0
+
+    def test_a_matched_refund_counts_against_its_purchase(self, db_session, service):
+        """The refund comes off the purchase's month, not the month it landed in."""
+        bought, refunded = month_str(1), month_str(0)
+        purchase = add_txn(db_session, bought, -1000, "Health", day=5)
+        refund = add_txn(db_session, refunded, 600, "Health", day=5)
+        refunds = PendingRefundsService(db_session)
+        pending = refunds.mark_as_pending_refund(
+            source_type="transaction",
+            source_id=purchase.unique_id,
+            source_table="banks",
+            expected_amount=600,
+        )
+        refunds.link_refund(
+            pending_refund_id=pending["id"],
+            refund_transaction_id=refund.unique_id,
+            refund_source="banks",
+            amount=600,
+        )
+
+        result = service.get_yearly_savings()
+
+        assert _month(result, bought) == -400
+        assert _month(result, refunded) == 0
 
 
 class TestYearlyTargets:

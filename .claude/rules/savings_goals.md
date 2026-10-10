@@ -166,7 +166,15 @@ from the transaction context — never from what the goals hold — so putting
 money into a goal or taking it out never changes it; only what a goal claims
 as its own money does.
 
-A month saved its income minus its spending:
+A month saved its income minus its spending, **on the Income & Expenses
+card's basis** (`_compute_context` in `inputs.py`): card purchases count in
+the month they were made and the bank-side `Credit Cards` bill counts nowhere;
+`Ignore` rows (money moved between the household's own accounts, including to
+an untracked one) are neither income nor spending; a refund matched to its
+purchase (`refund_links`) comes off the purchase's month. Without goal income
+the yearly figure and the card's yearly net are the same number — when they
+were not (bills dated by payment, transfers counted as spending) the two sat
+on one dashboard ₪66k apart for the same year.
 
 - `surplus` (which already took investing out) **plus `invested`** — the net
   money moved into investments that no goal link claims. Investing is saving;
