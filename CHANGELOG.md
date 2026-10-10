@@ -1,3 +1,9 @@
+## v1.103.1 (2026-10-10)
+
+### Fix
+
+- **dashboard**: show credited categories in the expense breakdown (#390)
+
 ## v1.103.0 (2026-10-10)
 
 ### Feat
