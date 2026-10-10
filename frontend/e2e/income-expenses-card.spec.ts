@@ -615,6 +615,52 @@ test.describe("Income & Expenses dashboard card", () => {
     expect(digits(noLoans.ledger)).toBeLessThan(digits(noProjects.ledger));
   });
 
+  // Its own test on purpose: it stubs the expense series before the app boots,
+  // so it cannot share the journey test's page.
+  test("a category left in credit is named under the total, not hidden", async ({ page }) => {
+    // A month whose Shopping refunds outran its spending: the total is net
+    // (6,769 − 1,000 = 5,769), but the bar can only draw the two positive
+    // slices. Before the fix the loan read "101%" of that month and nothing
+    // on screen said where the missing 1,000 went.
+    await page.route("**/analytics/expenses-by-category-over-time**", (route) =>
+      route.fulfill({
+        json: [
+          { month: "2026-08", categories: { Loan: 5823, Food: 946, Shopping: -1000 } },
+          { month: "2026-09", categories: { Food: 1000, Rent: 3000 } },
+        ],
+      }),
+    );
+    const card = await openCard(page);
+    await card.getByRole("button", { name: "Expenses Breakdown" }).click();
+
+    const august = card.locator('[data-testid="composition-row"][data-month="2026-08"]');
+    await expect(august).toBeVisible({ timeout: 45_000 });
+    await expect(august).toContainText("5,769");
+
+    // Shares are of the drawn bar, so they add up to 100% of it.
+    const loan = august.getByRole("button", { name: /^Loan:/ });
+    await expect(loan).toHaveAttribute("aria-label", /\(86%\)$/);
+    await expect(august.getByRole("button", { name: /^Food:/ })).toHaveAttribute(
+      "aria-label",
+      /\(14%\)$/,
+    );
+
+    // The credit is on the row, and hovering it names the category behind it.
+    const credit = august.getByTestId("composition-credit");
+    await expect(credit).toHaveText(/-1,000.*credit/);
+    await credit.hover();
+    const tooltip = page.getByTestId("composition-tooltip");
+    await expect(tooltip).toBeVisible();
+    await expect(tooltip.getByTestId("composition-tooltip-line")).toHaveText([/^Shopping: \u2066?-1,000/]);
+    // It names no single series to filter to, so it offers no filter.
+    await expect(tooltip).not.toContainText("Click to filter");
+
+    // A month with nothing in credit carries no credit line.
+    const september = card.locator('[data-testid="composition-row"][data-month="2026-09"]');
+    await expect(september).toContainText("4,000");
+    await expect(september.getByTestId("composition-credit")).toHaveCount(0);
+  });
+
   // Its own test on purpose: it needs Hebrew seeded before the app boots, so
   // it cannot share the journey test's page.
   test("an over-scale bar marks its growing tip under RTL", async ({ page }) => {

@@ -12,6 +12,7 @@ import {
   barCap,
   formatPeriodLabel,
   sliceWindow,
+  splitPeriod,
   toAllComposition,
   toAllLedger,
   toLedger,
@@ -933,8 +934,8 @@ function LedgerBar({
  * fit the handful of widest ones, so the row read as a few arbitrary numbers
  * over a band of anonymous colour. There is deliberately no colour legend
  * either — with 20+ categories it was a wall of swatches nobody could scan.
- * Instead every slice names itself, with both its amount and its share, in a
- * tooltip that follows the cursor and appears instantly (the native `title`
+ * Instead every slice names itself, with both its amount and its share of the
+ * drawn bar, in a tooltip that follows the cursor and appears instantly (the native `title`
  * attribute made you wait a second per slice, which is unusable for hunting a
  * category).
  *
@@ -942,6 +943,12 @@ function LedgerBar({
  * the readout that names it is already under the cursor, so the click that
  * follows needs nothing added around the chart. The tooltip says so, since a
  * bar gives no other hint that it can be clicked.
+ *
+ * A category left in credit for the period has no slice to draw, but it is
+ * still in the total on the right — so the row names it there instead, as a
+ * credit line under the total that lists the credited categories on hover or
+ * tap. Without it the slices added up to more than the total beside them and
+ * nothing on screen said why (see `splitPeriod`).
  */
 function CompositionView({
   rows,
@@ -981,6 +988,21 @@ function CompositionView({
       text: `${name}: ${formatCurrency(val)} (${Math.round(pct)}%)`,
       color,
       pinned,
+      filterable: true,
+    });
+
+  /** The credit line's readout: every series the period left in credit. */
+  const showCreditTip = (e: ReactMouseEvent, credits: { name: string; value: number }[], pinned = false) =>
+    setTip({
+      x: Math.min(Math.max(e.clientX, 130), window.innerWidth - 130),
+      y: e.clientY < 56 ? e.clientY + 20 : e.clientY - 12,
+      below: e.clientY < 56,
+      name: "",
+      text: t("dashboard.creditTooltipTitle"),
+      lines: credits.map((c) => `${c.name}: ${formatCurrency(c.value)}`),
+      color: "var(--success)",
+      pinned,
+      filterable: false,
     });
 
   /**
@@ -1016,17 +1038,17 @@ function CompositionView({
     else onSelect(name);
   };
 
-  const totalOf = (v: Record<string, number>) => series.reduce((s, name) => s + (v[name] || 0), 0);
   // Median-anchored meter cap over the FULL history so widths stay stable across
   // "Show earlier months"; totals above it are flagged as outliers.
-  const meterCap = barCap(rows.map((d) => totalOf(d.values)));
+  const meterCap = barCap(rows.map((d) => splitPeriod(d.values).net));
   const lastPeriod = rows[rows.length - 1]?.month;
   const visible = rows.slice(-limit).reverse();
 
   return (
     <div className="min-w-[320px]" onMouseLeave={hideTip}>
       {visible.map((d) => {
-        const total = totalOf(d.values);
+        const { net: total, gross, credits } = splitPeriod(d.values);
+        const credit = credits.reduce((s, c) => s + c.value, 0);
         const isCurrent = d.month === lastPeriod;
         return (
           <div
@@ -1043,7 +1065,7 @@ function CompositionView({
               {series.map((name) => {
                 const val = d.values[name] || 0;
                 if (val <= 0) return null;
-                const pct = (val / total) * 100;
+                const pct = (val / gross) * 100;
                 const segColor = colorOf(name);
                 return (
                   <button
@@ -1063,6 +1085,24 @@ function CompositionView({
             </div>
             <div className="text-end">
               <div className="text-xs font-extrabold whitespace-nowrap tabular-nums">{formatCurrency(total)}</div>
+              {credits.length > 0 && (
+                <button
+                  type="button"
+                  data-testid="composition-credit"
+                  aria-label={`${t("dashboard.creditNetted", { amount: formatCurrency(credit) })} — ${credits
+                    .map((c) => `${c.name}: ${formatCurrency(c.value)}`)
+                    .join(", ")}`}
+                  className="block ms-auto text-[10px] font-semibold whitespace-nowrap tabular-nums text-[var(--success)] underline decoration-dotted underline-offset-2"
+                  onClick={(e) => {
+                    if (isTouchDevice) showCreditTip(e, credits, true);
+                  }}
+                  onMouseEnter={(e) => showCreditTip(e, credits)}
+                  onMouseMove={(e) => showCreditTip(e, credits)}
+                  onMouseLeave={hideTip}
+                >
+                  {t("dashboard.creditNetted", { amount: formatCurrency(credit) })}
+                </button>
+              )}
               <div
                 className="h-[3px] rounded-sm bg-[var(--surface-light)] mt-1 overflow-hidden"
                 title={total > meterCap ? t("dashboard.barAboveScale") : undefined}
@@ -1106,8 +1146,12 @@ type Tip = {
   below: boolean;
   name: string;
   text: string;
+  /** Extra rows under `text` (the credit readout lists one per series). */
+  lines?: string[];
   color: string;
   pinned: boolean;
+  /** Whether the readout names one series the view can be filtered to. */
+  filterable: boolean;
 };
 
 /**
@@ -1154,7 +1198,12 @@ function SegmentTooltip({
           <i className="h-2 w-2 flex-none rounded-sm" style={{ background: tip.color }} />
           {tip.text}
         </span>
-        {tip.pinned ? (
+        {tip.lines?.map((line) => (
+          <span key={line} data-testid="composition-tooltip-line" className="block ps-3.5" dir="auto">
+            {line}
+          </span>
+        ))}
+        {!tip.filterable ? null : tip.pinned ? (
           // The filter is a button here because the tap that opened this
           // readout is the only gesture a phone has: spend it on the reading,
           // and let the filter be a second, deliberate one.

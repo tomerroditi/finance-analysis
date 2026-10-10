@@ -139,6 +139,11 @@ month it was bought.
 category it lands in, so a month can end in credit. Anything that draws a
 category (a bar segment, a pie slice) skips those; anything that totals a
 month must keep them, or the refund vanishes from the month it belongs to.
+A breakdown bar measures each slice's share against the *drawn* (gross)
+spend, not the net total, and names the credit under the month's total
+(`splitPeriod` in `incomeExpensesScope.ts`): shares against the net total
+summed past 100% (a loan read "101%" of its month) with nothing on screen
+saying why.
 
 ## The "This Month" forecast: due money, not average money
 
