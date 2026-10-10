@@ -463,6 +463,10 @@ function GoalRow({
   const [form, setForm] = useState<"add" | "take" | null>(null);
   const [showEntries, setShowEntries] = useState(false);
   const closed = !!goal.is_closed;
+  const stripeColor = closed ? "var(--text-muted)" : goal.is_achieved ? "#10b981" : "var(--primary)";
+  const spentStripes = {
+    backgroundImage: `repeating-linear-gradient(135deg, ${stripeColor} 0 2px, transparent 2px 5px)`,
+  };
   const barColor = closed
     ? "from-[var(--text-muted)] to-[var(--text-muted)]"
     : goal.is_achieved
@@ -564,8 +568,8 @@ function GoalRow({
         <div className="flex w-full bg-[var(--surface-light)] rounded-full h-2 overflow-hidden">
           {spentPct > 0 && (
             <div
-              className="h-2 bg-slate-400 transition-all duration-500"
-              style={{ width: `${spentPct}%` }}
+              className="h-2 transition-all duration-500"
+              style={{ width: `${spentPct}%`, ...spentStripes }}
               data-testid="goal-bar-spent"
             />
           )}
@@ -590,7 +594,7 @@ function GoalRow({
             )}
             {showsShekels(goal.spent) && (
               <span className="flex items-center gap-1">
-                <span className="inline-block h-2 w-2 rounded-full bg-slate-400" aria-hidden />
+                <span className="inline-block h-2 w-3 rounded-sm" style={spentStripes} aria-hidden />
                 {t("dashboard.goals.spentAmount", { amount: formatCurrency(goal.spent) })}
               </span>
             )}
