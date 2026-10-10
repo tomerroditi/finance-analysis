@@ -274,3 +274,37 @@ export function barCap(values: number[], multiplier = 1.6): number {
   const median = positives[Math.floor(positives.length / 2)];
   return (median || positives[positives.length - 1] || 1) * multiplier;
 }
+
+/**
+ * How one period's breakdown splits into what a bar can draw and what it
+ * cannot.
+ *
+ * A category can end a period in credit (an unmatched refund nets against the
+ * category it lands in), and a bar has no negative slice to give it. Shares
+ * are therefore measured against `gross` — the drawn slices alone — so they
+ * add up to 100% of the bar they are read off. Measured against the net total
+ * instead, a month with a credit gave its slices shares summing past 100%
+ * (a loan read "101%" of its month), and nothing on screen said why.
+ *
+ * `net` stays the period's total: it is the figure the Totals tab and the
+ * KPIs show, and `gross - Σ credits = net` is what the row lets you check.
+ */
+export type PeriodSplit = {
+  net: number;
+  gross: number;
+  /** Series left in credit this period, largest credit first (values < 0). */
+  credits: { name: string; value: number }[];
+};
+
+export function splitPeriod(values: Record<string, number>): PeriodSplit {
+  let net = 0;
+  let gross = 0;
+  const credits: { name: string; value: number }[] = [];
+  for (const [name, value] of Object.entries(values)) {
+    net += value;
+    if (value > 0) gross += value;
+    else if (value < 0) credits.push({ name, value });
+  }
+  credits.sort((a, b) => a.value - b.value);
+  return { net, gross, credits };
+}

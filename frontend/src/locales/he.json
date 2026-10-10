@@ -222,6 +222,8 @@
     "breakdownTotal": "סה\"כ",
     "clickToFilter": "לחצו לסינון",
     "tapToFilter": "הקישו לסינון",
+    "creditNetted": "זיכוי {{amount}}",
+    "creditTooltipTitle": "החזרים מעבר להוצאה:",
     "filterToSeries": "סינון לפריט זה",
     "clearFilter": "ניקוי הסינון",
     "focusPerMonth": "לחודש",

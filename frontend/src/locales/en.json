@@ -222,6 +222,8 @@
     "breakdownTotal": "Total",
     "clickToFilter": "Click to filter",
     "tapToFilter": "Tap to filter",
+    "creditNetted": "{{amount}} credit",
+    "creditTooltipTitle": "Refunds beyond spending:",
     "filterToSeries": "Filter to this",
     "clearFilter": "Clear filter",
     "focusPerMonth": "per month",
