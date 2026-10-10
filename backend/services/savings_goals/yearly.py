@@ -3,10 +3,15 @@
 Provides ``YearlySavingsMixin``. Saving is measured, not earmarked: it never
 depends on what the goals hold. Mixed into
 ``SavingsGoalService`` (see ``core.py``), because it reads the same
-transaction context the goals do — the same card deduplication, and the
-same goal rules deciding which money belongs to a goal.
+transaction context the goals do — the same goal rules deciding which
+money belongs to a goal.
 
-What a month saved is its income minus its spending:
+What a month saved is its income minus its spending, counted the way the
+Income & Expenses card counts them, so a year with no goal income reads the
+same net on both: card purchases on the day they were made (the bank-side
+bill counts nowhere), transfers between the household's own accounts
+(``Ignore``) neither earned nor spent, and a matched refund taken off its
+purchase's month.
 
 - **Investing is saving.** Money moved into an investment stays saved, and a
   withdrawal is neutral until it is spent. Investment gains and losses are not
