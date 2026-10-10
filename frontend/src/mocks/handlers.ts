@@ -74,6 +74,8 @@ export const mockBankBalances = [
     prior_wealth_amount: 30000,
     last_manual_update: "2026-03-01",
     last_scrape_update: "2026-03-15",
+    balance_source: "manual",
+    last_drift: 0,
   },
 ];
 

@@ -21,7 +21,7 @@ const content: DataFlowContent = {
     adapter: { title: "ScraperAdapter", desc: "Result \u2192 DataFrame. Generates unique_id, normalizes fields, triggers pipeline." },
     "api-routes": { title: "API Routes", desc: "One router per feature area under /api. Host allowlist, bearer token for non-loopback, same-origin guard on writes." },
     "auto-tag": { title: "Auto-Tagging", desc: "Recursive AND/OR rule engine. Creation order, first match wins. CC bill matching." },
-    "balance-recalc": { title: "Balance Recalculation", desc: "Recomputes running bank balance from transaction history after each scrape." },
+    "balance-recalc": { title: "Balance Recalculation", desc: "After each scrape, takes the balance the bank reports (or re-adds transactions when it reports none)." },
     "prior-wealth": { title: "Prior Wealth", desc: "Bridges pre-tracking capital. entered_balance \u2212 sum(transactions). Injected as synthetic rows." },
     "kh-sync": { title: "Keren Hishtalmut Sync", desc: "Scraped insurance policies become type=hishtalmut investments with scraped snapshots." },
     "txn-tables": { title: "Transaction Tables", desc: "5 parallel tables: bank, credit_card, cash, manual_investment, insurance + split_transactions." },
@@ -148,15 +148,17 @@ const content: DataFlowContent = {
     "balance-recalc": {
       title: "Balance Recalculation", tag: "Bank Only",
       sections: [
-        { heading: "When", text: "Triggered after every bank scrape. Recomputes running balance from full transaction history." },
-        { heading: "Why", text: "New transactions change cumulative sum. Stored balance must stay consistent." },
+        { heading: "When", text: "Triggered after every bank scrape." },
+        { heading: "Bank-reported", text: "Most banks report the account balance. It becomes the balance, and prior wealth is re-derived so prior wealth + transactions equals it. Savings deposits are left out (they are investments)." },
+        { heading: "Drift", text: "Before correcting, the gap between the bank's figure and the one the transactions gave is kept as last_drift and shown on the account card: a missing, duplicated or mis-dated transaction." },
+        { heading: "No balance reported", text: "Union and Yahav report none: the stored prior wealth is kept and the transactions are re-added. Manual entry stays available for every bank." },
       ],
     },
     "prior-wealth": {
       title: "Prior Wealth", tag: "Synthetic Rows",
       sections: [
         { heading: "Formula", text: "prior_wealth = user_entered_balance \u2212 sum(all_tracked_transactions)" },
-        { heading: "Three Sources", items: ["Bank: calculated when user enters balance after scraping", "Cash: calculated when user sets cash balance", "Investments: investment.prior_wealth_amount = \u2212sum(all inv txns)"] },
+        { heading: "Three Sources", items: ["Bank: re-derived from the balance the bank reports on each scrape, or when the user enters one by hand", "Cash: calculated when user sets cash balance", "Investments: investment.prior_wealth_amount = \u2212sum(all inv txns)"] },
         { heading: "Why Inv Prior Wealth Lives in Bank", text: "Investment deposits came from bank accounts. Keeping inv_prior_wealth in bank balance maintains: net_worth = bank_balance + investment_value." },
       ],
     },

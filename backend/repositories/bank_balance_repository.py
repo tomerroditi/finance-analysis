@@ -69,6 +69,8 @@ class BankBalanceRepository:
         prior_wealth_amount: float,
         last_manual_update: str | None = None,
         last_scrape_update: str | None = None,
+        balance_source: str | None = None,
+        last_drift: float | None = None,
     ) -> BankBalance:
         """Create or update a balance record for an account.
 
@@ -86,6 +88,11 @@ class BankBalanceRepository:
             ISO date of the last manual balance entry, or None.
         last_scrape_update : str | None
             ISO date of the last scraped update, or None.
+        balance_source : str | None
+            ``"scraped"`` or ``"manual"``; left unchanged when None.
+        last_drift : float | None
+            Bank balance less the computed one at the last reporting scrape;
+            left unchanged when None.
 
         Returns
         -------
@@ -100,6 +107,10 @@ class BankBalanceRepository:
             values["last_manual_update"] = last_manual_update
         if last_scrape_update is not None:
             values["last_scrape_update"] = last_scrape_update
+        if balance_source is not None:
+            values["balance_source"] = balance_source
+        if last_drift is not None:
+            values["last_drift"] = last_drift
 
         def _try_update() -> int:
             stmt = (
@@ -126,6 +137,8 @@ class BankBalanceRepository:
                     prior_wealth_amount=prior_wealth_amount,
                     last_manual_update=last_manual_update,
                     last_scrape_update=last_scrape_update,
+                    balance_source=balance_source,
+                    last_drift=last_drift,
                 )
                 self.db.add(record)
                 self.db.commit()
