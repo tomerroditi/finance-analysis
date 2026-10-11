@@ -14,6 +14,10 @@ sequence of (month, day) pairs read off the ``billing_date`` its own rows
 carry, never one number. An estimate for a purchase uses the day in force
 nearest to the month it was billed in.
 
+A card refund is often not credited on a bill at all but paid straight into
+the bank account a few days later; such a refund counts on the day the bank
+received it.
+
 Where no row of a card reports a billing date yet, its bills still show in
 the bank: the paying account is found by matching the card's monthly totals
 against each bank-side ``Credit Cards`` bill stream, and that stream's usual
@@ -25,6 +29,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass, field
 from datetime import date, timedelta
 from functools import lru_cache
+from itertools import combinations
 
 import pandas as pd
 from holidays.countries.israel import Israel
@@ -63,6 +68,14 @@ _MATCH_MIN_MONTHS = 3
 _MATCH_MIN_SHARE = 0.5
 #: How far back the pairing looks, in months.
 _MATCH_WINDOW_MONTHS = 18
+
+#: A refund paid straight to the bank arrives within this many days of
+#: showing on the card (2–5 days in practice), and covers at most this many
+#: refund rows; the candidates searched are capped to keep it cheap.
+_DIRECT_REFUND_DAYS = 10
+_DIRECT_REFUND_MAX_ROWS = 3
+_DIRECT_REFUND_POOL = 12
+_AGORA = 0.005
 
 #: ``(provider, account_name, account_number)`` — one physical card.
 CardKey = tuple[str, str, str]
@@ -137,6 +150,29 @@ def billing_months(purchased: pd.Series, billing_day: int) -> pd.Series:
     month = purchased.dt.to_period("M")
     late = purchased.dt.day > billing_day - CYCLE_CLOSE_DAYS
     return month.where(~late, month + 1)
+
+
+def _subset_summing_to(pool: pd.DataFrame, target: float) -> list[str]:
+    """Return the fewest rows of ``pool`` whose amounts make up ``target``.
+
+    Parameters
+    ----------
+    pool : pd.DataFrame
+        Candidate rows, ``_uid`` and ``amount``, most likely first.
+    target : float
+        The amount to make up.
+
+    Returns
+    -------
+    list of str
+        The rows' ``_uid`` values, or empty when no combination fits.
+    """
+    rows = list(zip(pool["_uid"], pool[_AMOUNT], strict=True))
+    for size in range(1, _DIRECT_REFUND_MAX_ROWS + 1):
+        for combo in combinations(rows, size):
+            if abs(sum(amount for _, amount in combo) - target) < _AGORA:
+                return [uid for uid, _ in combo]
+    return []
 
 
 def nominal_billing_day(charged: date, posting_lag: int = 0) -> int:
@@ -237,11 +273,16 @@ class BillingSchedule:
         Card -> the bill stream its totals matched.
     stream_days : dict
         Bill stream -> its usual billing day, read off the bank's dates.
+    direct_refunds : dict
+        Card row (its ``unique_id``) -> the day the bank received it, for a
+        refund the issuer paid straight into the bank account rather than
+        crediting it on a bill.
     """
 
     history: dict[CardKey, list[tuple[pd.Period, int]]] = field(default_factory=dict)
     paid_from: dict[CardKey, StreamKey] = field(default_factory=dict)
     stream_days: dict[StreamKey, int] = field(default_factory=dict)
+    direct_refunds: dict[str, pd.Timestamp] = field(default_factory=dict)
 
     @classmethod
     def from_frame(cls, df: pd.DataFrame) -> "BillingSchedule":
@@ -298,7 +339,51 @@ class BillingSchedule:
 
         if not bills.empty:
             schedule._match_streams(cards, bills)
+            schedule._match_direct_refunds(cards, bills)
         return schedule
+
+    def _match_direct_refunds(self, cards: pd.DataFrame, bills: pd.DataFrame) -> None:
+        """Find card refunds the issuer paid straight into a bank account.
+
+        A refund is often not credited on the next bill but transferred to
+        the paying account a few days after it shows on the card — a positive
+        bank-side ``Credit Cards`` row. Each such credit is matched to the
+        card refunds (up to :data:`_DIRECT_REFUND_MAX_ROWS` of them, summing to
+        it to the agora) dated in the :data:`_DIRECT_REFUND_DAYS` before it,
+        on cards that bank account pays (or whose payer is unknown).
+        """
+        if "unique_id" not in cards.columns:
+            return
+        credits = bills[bills[_AMOUNT] > 0]
+        credits = credits.assign(_day=pd.to_datetime(credits[_DATE], errors="coerce"))
+        credits = credits.dropna(subset=["_day"]).sort_values("_day")
+        refunds = cards[cards[_AMOUNT] > 0]
+        refunds = refunds.assign(
+            _day=pd.to_datetime(refunds[_DATE], errors="coerce"),
+            _uid=refunds["unique_id"].astype(str),
+        )
+        refunds = refunds.dropna(subset=["_day"])
+        if credits.empty or refunds.empty:
+            return
+        payer = {key: stream[:2] for key, stream in self.paid_from.items()}
+        refunds = refunds.assign(_payer=refunds["_key"].map(payer))
+        for _, credit in credits.iterrows():
+            bank = (str(credit["provider"]), str(credit["account_name"]))
+            window = refunds[
+                (refunds["_day"] <= credit["_day"])
+                & (
+                    refunds["_day"]
+                    >= credit["_day"] - timedelta(days=_DIRECT_REFUND_DAYS)
+                )
+                & ~refunds["_uid"].isin(self.direct_refunds)
+                & refunds["_payer"].map(lambda p, b=bank: pd.isna(p) or p == b)
+            ].sort_values("_day", ascending=False)
+            match = _subset_summing_to(
+                window[["_uid", _AMOUNT]].head(_DIRECT_REFUND_POOL),
+                float(credit[_AMOUNT]),
+            )
+            for uid in match:
+                self.direct_refunds[uid] = credit["_day"]
 
     def _match_streams(self, cards: pd.DataFrame, bills: pd.DataFrame) -> None:
         """Pair each card with the bill stream its monthly totals follow."""

@@ -204,3 +204,39 @@ class TestCardBillingService:
         db_session.commit()
 
         assert CardBillingService(db_session).get_all(today=date(2026, 6, 20)) == []
+
+
+def _refund_frame(credit_amount: float, credit_account: str = "Main") -> pd.DataFrame:
+    """Two card refunds on one day and a bank credit four days later."""
+    return _frame([
+        {"unique_id": 1, "date": "2026-08-13", "amount": 261.02},
+        {"unique_id": 2, "date": "2026-08-13", "amount": 473.31},
+        {"unique_id": 3, "date": "2026-08-01", "amount": -50.0},
+        {
+            "unique_id": 9,
+            "date": "2026-08-17",
+            "amount": credit_amount,
+            "source": "bank_transactions",
+            "category": "Credit Cards",
+            "provider": "onezero",
+            "account_name": credit_account,
+            "account_number": None,
+        },
+    ])
+
+
+class TestDirectRefunds:
+    """A refund the issuer paid straight into the bank counts when it landed."""
+
+    def test_refunds_adding_up_to_a_bank_credit_are_dated_by_it(self):
+        """Two refunds summing to the credit take its date."""
+        schedule = BillingSchedule.from_frame(_refund_frame(734.33))
+
+        assert {uid: day.date() for uid, day in schedule.direct_refunds.items()} == {
+            "1": date(2026, 8, 17),
+            "2": date(2026, 8, 17),
+        }
+
+    def test_a_credit_that_matches_no_refund_claims_nothing(self):
+        """Refunds that do not add up to the credit stay on the bill."""
+        assert BillingSchedule.from_frame(_refund_frame(700.00)).direct_refunds == {}

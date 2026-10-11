@@ -13,7 +13,8 @@ money counts and in what a refund is:
   the day the card company charged it to the bank — so a month's card
   spending is that month's bills, split by what the bills paid for — and one
   not charged yet does not count at all. A refund is income on the day it
-  arrived, and every purchase counts at its full price.
+  arrived — on the card's bill, or in the bank account when the issuer paid
+  it there directly — and every purchase counts at its full price.
 
 A card row's charge day is its ``billing_date`` as the card's site reported
 it. Rows scraped before that was kept have none until a scrape sees them
@@ -104,6 +105,10 @@ def date_cards_by_billing(
         else pd.Series(pd.NaT, index=cards.index)
     )
     charged = reported.fillna(_estimated_billing(cards[reported.isna()], schedule))
+    if schedule.direct_refunds and "unique_id" in cards.columns:
+        # A refund paid straight into the bank counts the day it arrived.
+        received = cards["unique_id"].astype(str).map(schedule.direct_refunds)
+        charged = received.fillna(charged)
     df.loc[is_card, "date"] = charged.dt.strftime("%Y-%m-%d").fillna(cards["date"])
     not_charged = pd.Series(False, index=df.index)
     not_charged.loc[is_card] = charged > pd.Timestamp(today or date.today())

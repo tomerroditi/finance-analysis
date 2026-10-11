@@ -103,6 +103,23 @@ class TestDateCardsByBilling:
 
         assert date_cards_by_billing(df, _TODAY)["date"].tolist() == ["2026-10-02"]
 
+    def test_a_refund_paid_into_the_bank_counts_the_day_it_arrived(self):
+        """Not on the next bill: on the day the bank received it."""
+        df = pd.concat([
+            _cards([{"unique_id": 1, "date": "2026-08-13", "amount": 261.02}]),
+            pd.DataFrame([{
+                "unique_id": 9, "source": "bank_transactions", "date": "2026-08-16",
+                "provider": "onezero", "account_name": "Main", "amount": 261.02,
+                "category": "Credit Cards", "description": "ישראכרט",
+            }]),
+        ], ignore_index=True)
+
+        dated = date_cards_by_billing(df, _TODAY)
+
+        assert dated.loc[dated["source"] == "credit_card_transactions", "date"].tolist() == [
+            "2026-08-16"
+        ]
+
     def test_bank_rows_are_untouched(self):
         """Only card rows have a billing day."""
         df = pd.DataFrame([{
