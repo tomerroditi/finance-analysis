@@ -1,3 +1,9 @@
+## v1.105.0 (2026-10-11)
+
+### Feat
+
+- **fire**: add a reverse-engineered early-retirement calculator (#263)
+
 ## v1.104.0 (2026-10-10)
 
 ### Feat
