@@ -14,6 +14,12 @@ const SEVERITY_STYLES: Record<Insight["severity"], { box: string; icon: typeof I
   positive: { box: "bg-emerald-500/10 border-emerald-500/25 text-emerald-300", icon: Sparkles },
 };
 
+/** A card the user dismissed, and the position it held in the list. */
+interface DismissedInsight {
+  insight: Insight;
+  index: number;
+}
+
 /**
  * Insight codes that only restate what a full dashboard card already shows:
  * the "This Month" hero *is* the pace projection, and the Subscriptions panel
@@ -81,10 +87,13 @@ export function InsightsStrip() {
   const queryClient = useQueryClient();
   const message = useInsightMessage();
   const { layout } = useDashboardLayout();
-  // The key of the card just dismissed, so a misclick has a way back. Kept in
-  // component state rather than derived: it is about this interaction, not
-  // about what the server knows.
-  const [undoKey, setUndoKey] = useState<string | null>(null);
+  // Every card dismissed in this visit, most recent last, so undo walks back
+  // through them one at a time. Each entry keeps the card itself and where it
+  // stood, so undo can put it back on screen before the slow insights
+  // recompute answers. Kept in component state rather than derived: it is
+  // about this interaction, not about what the server knows.
+  const [undoStack, setUndoStack] = useState<DismissedInsight[]>([]);
+  const lastDismissed = undoStack.at(-1);
 
   const { data } = useQuery({
     queryKey: qk.analytics.insights(),
@@ -117,17 +126,24 @@ export function InsightsStrip() {
       dismissing.begin(key);
       await queryClient.cancelQueries({ queryKey: qk.analytics.insights() });
       const previous = queryClient.getQueryData<Insight[]>(qk.analytics.insights());
+      const list = previous ?? [];
+      const index = list.findIndex((insight) => insight.key === key);
       queryClient.setQueryData<Insight[]>(qk.analytics.insights(), (old) =>
         (old ?? []).filter((insight) => insight.key !== key),
       );
-      return { previous };
+      return { previous, dismissed: index >= 0 ? { insight: list[index], index } : null };
     },
     onError: (_error, _key, context) => {
       if (context?.previous) {
         queryClient.setQueryData(qk.analytics.insights(), context.previous);
       }
     },
-    onSuccess: (_res, key) => setUndoKey(key),
+    // Offered only once the write has landed: an undo sent while the dismissal
+    // is still in flight could reach the server first and be overwritten by it.
+    onSuccess: (_res, _key, context) => {
+      const dismissed = context?.dismissed;
+      if (dismissed) setUndoStack((stack) => [...stack, dismissed]);
+    },
     onSettled: (_data, _error, key) => {
       dismissing.end(key);
       refresh();
@@ -135,11 +151,29 @@ export function InsightsStrip() {
   });
 
   const restore = useMutation({
-    mutationFn: (key: string) => analyticsApi.restoreInsight(key),
-    onSuccess: () => {
-      setUndoKey(null);
-      refresh();
+    mutationFn: (entry: DismissedInsight) => analyticsApi.restoreInsight(entry.insight.key),
+    // Put the card back where it was right away. Without this the undo button
+    // vanished on click and the card only reappeared once the insights
+    // recompute answered — seconds later, which reads as an undo that did
+    // nothing.
+    onMutate: async (entry) => {
+      setUndoStack((stack) => stack.filter((item) => item.insight.key !== entry.insight.key));
+      await queryClient.cancelQueries({ queryKey: qk.analytics.insights() });
+      queryClient.setQueryData<Insight[]>(qk.analytics.insights(), (old) => {
+        const current = old ?? [];
+        if (current.some((insight) => insight.key === entry.insight.key)) return current;
+        const next = [...current];
+        next.splice(Math.min(entry.index, next.length), 0, entry.insight);
+        return next;
+      });
     },
+    onError: (_error, entry) => {
+      queryClient.setQueryData<Insight[]>(qk.analytics.insights(), (old) =>
+        (old ?? []).filter((insight) => insight.key !== entry.insight.key),
+      );
+      setUndoStack((stack) => [...stack, entry]);
+    },
+    onSettled: () => refresh(),
   });
 
   const visible = (data ?? [])
@@ -152,18 +186,18 @@ export function InsightsStrip() {
     .map((insight) => ({ insight, text: message(insight) }))
     .filter(({ text }) => text !== "");
 
-  if (visible.length === 0 && !undoKey) return null;
+  if (visible.length === 0 && !lastDismissed) return null;
 
   return (
     <div>
       <div className="flex items-center gap-2 mb-2 text-[var(--text-muted)]">
         <Lightbulb size={14} />
         <p className="text-xs font-bold uppercase tracking-wider">{t("dashboard.insights.title")}</p>
-        {!!undoKey && (
+        {!!lastDismissed && (
           <button
             type="button"
-            onClick={() => restore.mutate(undoKey)}
-            disabled={restore.isPending}
+            data-testid="insight-undo"
+            onClick={() => restore.mutate(lastDismissed)}
             className="ms-auto flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
           >
             <Undo2 size={12} />
