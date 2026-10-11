@@ -76,6 +76,9 @@ _DIRECT_REFUND_DAYS = 10
 _DIRECT_REFUND_MAX_ROWS = 3
 _DIRECT_REFUND_POOL = 12
 _AGORA = 0.005
+#: How far a batch of foreign-currency refunds may sit from the shekel
+#: transfer that repaid it (one card's rate against another's).
+_FX_TOLERANCE = 0.02
 
 #: ``(provider, account_name, account_number)`` — one physical card.
 CardKey = tuple[str, str, str]
@@ -172,6 +175,33 @@ def _subset_summing_to(pool: pd.DataFrame, target: float) -> list[str]:
         for combo in combinations(rows, size):
             if abs(sum(amount for _, amount in combo) - target) < _AGORA:
                 return [uid for uid, _ in combo]
+    return []
+
+
+def _batch_summing_to(window: pd.DataFrame, target: float) -> list[str]:
+    """Return one card's refunds of one day that together make up ``target``.
+
+    A batch of refunds — eight cancelled ad charges, say — is paid back as one
+    transfer, and when they were charged in a foreign currency the transfer is
+    converted at a different rate than the refunds were. So a whole day's
+    refunds on one card match within :data:`_FX_TOLERANCE` rather than to the
+    agora, the latest such day first.
+
+    Parameters
+    ----------
+    window : pd.DataFrame
+        Candidate refunds with ``_key``, ``_day``, ``_uid`` and ``amount``.
+    target : float
+        The bank credit.
+
+    Returns
+    -------
+    list of str
+        The batch's ``_uid`` values, or empty when no batch fits.
+    """
+    for _, batch in window.groupby(["_key", "_day"], sort=False):
+        if abs(batch[_AMOUNT].sum() - target) <= target * _FX_TOLERANCE:
+            return batch["_uid"].tolist()
     return []
 
 
@@ -348,9 +378,11 @@ class BillingSchedule:
         A refund is often not credited on the next bill but transferred to
         the paying account a few days after it shows on the card — a positive
         bank-side ``Credit Cards`` row. Each such credit is matched to the
-        card refunds (up to :data:`_DIRECT_REFUND_MAX_ROWS` of them, summing to
-        it to the agora) dated in the :data:`_DIRECT_REFUND_DAYS` before it,
-        on cards that bank account pays (or whose payer is unknown).
+        card refunds dated in the :data:`_DIRECT_REFUND_DAYS` before it, on
+        cards that bank account pays (or whose payer is unknown): up to
+        :data:`_DIRECT_REFUND_MAX_ROWS` of them summing to it to the agora,
+        or else one card's refunds of one day summing to it within
+        :data:`_FX_TOLERANCE`.
         """
         if "unique_id" not in cards.columns:
             return
@@ -378,10 +410,10 @@ class BillingSchedule:
                 & ~refunds["_uid"].isin(self.direct_refunds)
                 & refunds["_payer"].map(lambda p, b=bank: pd.isna(p) or p == b)
             ].sort_values("_day", ascending=False)
+            target = float(credit[_AMOUNT])
             match = _subset_summing_to(
-                window[["_uid", _AMOUNT]].head(_DIRECT_REFUND_POOL),
-                float(credit[_AMOUNT]),
-            )
+                window[["_uid", _AMOUNT]].head(_DIRECT_REFUND_POOL), target
+            ) or _batch_summing_to(window, target)
             for uid in match:
                 self.direct_refunds[uid] = credit["_day"]
 

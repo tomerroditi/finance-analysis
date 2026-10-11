@@ -240,3 +240,27 @@ class TestDirectRefunds:
     def test_a_credit_that_matches_no_refund_claims_nothing(self):
         """Refunds that do not add up to the credit stay on the bill."""
         assert BillingSchedule.from_frame(_refund_frame(700.00)).direct_refunds == {}
+
+    def test_a_day_of_foreign_currency_refunds_matches_its_transfer(self):
+        """Many refunds repaid as one shekel transfer at another rate still pair."""
+        refunds = [
+            {"unique_id": i, "date": "2026-06-17", "amount": amount}
+            for i, amount in enumerate([415.30, 319.42, 426.80, 401.55, 228.69], 1)
+        ]
+        df = _frame([
+            *refunds,
+            {
+                "unique_id": 9,
+                "date": "2026-06-18",
+                "amount": 1820.0,
+                "source": "bank_transactions",
+                "category": "Credit Cards",
+                "provider": "onezero",
+                "account_name": "Main",
+                "account_number": None,
+            },
+        ])
+
+        matched = BillingSchedule.from_frame(df).direct_refunds
+
+        assert sorted(matched) == ["1", "2", "3", "4", "5"]
