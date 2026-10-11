@@ -1,3 +1,13 @@
+## v1.106.0 (2026-10-11)
+
+### Feat
+
+- **fire**: monthly canary that re-asks the live reference (#386)
+
+### Fix
+
+- **budget**: rename "Still committed" to "Fixed, committed" (#393)
+
 ## v1.105.0 (2026-10-11)
 
 ### Feat
