@@ -20,7 +20,7 @@ Pages are top-level views mapped to routes. They orchestrate layout, compose fea
 | `DataSources.tsx` | `/data-sources` | Bank/CC account management and scraping triggers |
 | `Liabilities.tsx` | `/liabilities` | Loan/debt tracking |
 | `Insurances.tsx` | `/insurances` | Insurance policy tracking |
-| `EarlyRetirement.tsx` | `/early-retirement` | FIRE calculator |
+| `EarlyRetirement.tsx` | `/early-retirement` | The user's early-retirement plan, filled from tracked data (`/fire-calculator` redirects here) |
 | `DataFlow.tsx` | `/data-flow` | Visual map of how data moves through the system (`components/dataflow/dataFlowData.ts`) |
 | `Onboarding.tsx` | `/onboarding` | First-run setup — the one page **outside** `Layout` |
 

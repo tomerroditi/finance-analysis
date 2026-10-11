@@ -257,28 +257,35 @@ class InsuranceAccountService:
             Total monthly contribution across active accounts, or None
             if no active accounts exist.
         """
-        accounts = self.repo.get_by_policy_type(policy_type)
-        if not accounts:
-            return None
+        contributions = self.get_monthly_contributions(policy_type)
+        return sum(contributions.values()) if contributions else None
 
+    def get_monthly_contributions(self, policy_type: str) -> dict[str, float]:
+        """Estimated monthly contribution of each active account of a policy type.
+
+        An account is active when its latest transaction falls in the current
+        or previous month; its contribution is that transaction's amount.
+
+        Parameters
+        ----------
+        policy_type : str
+            One of ``pension`` or ``hishtalmut``.
+
+        Returns
+        -------
+        dict[str, float]
+            ``{policy_id: monthly contribution}`` for the active accounts only.
+        """
         today = date.today()
         first_of_this_month = today.replace(day=1)
         first_of_prev_month = (first_of_this_month - timedelta(days=1)).replace(day=1)
         cutoff = first_of_prev_month.isoformat()
 
-        total = 0.0
-        found_active = False
-
-        for account in accounts:
+        contributions: dict[str, float] = {}
+        for account in self.repo.get_by_policy_type(policy_type):
             latest_txn = self.insurance_transactions_repo.get_latest_for_policy(
                 account.policy_id
             )
-
-            if latest_txn is None:
-                continue
-
-            if latest_txn.date >= cutoff:
-                found_active = True
-                total += abs(latest_txn.amount)
-
-        return total if found_active else None
+            if latest_txn is not None and latest_txn.date >= cutoff:
+                contributions[account.policy_id] = abs(latest_txn.amount)
+        return contributions

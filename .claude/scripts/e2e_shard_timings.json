@@ -53,8 +53,6 @@
   "e2e/recent-transactions-actions.spec.ts": 12.445,
   "e2e/recent-transactions-create-category-tag.spec.ts": 6.538,
   "e2e/refunds.spec.ts": 2.554,
-  "e2e/retirement-readiness.spec.ts": 2.264,
-  "e2e/retirement-snapshot-fields.spec.ts": 6.898,
   "e2e/route-prefetch.spec.ts": 4.841,
   "e2e/row-actions-not-locked.spec.ts": 1.834,
   "e2e/rtl-chevrons.spec.ts": 4.497,
