@@ -5,6 +5,7 @@ import {
   formatPeriodLabel,
   isYearKey,
   sliceWindow,
+  splitPeriod,
   toAllComposition,
   toAllLedger,
   toLedger,
@@ -294,5 +295,35 @@ describe("toLedger", () => {
     expect(
       toLedger([], [{ month: "2026-01", values: { Food: 50, Shopping: -70 } }]),
     ).toEqual([{ month: "2026-01", income: 0, expenses: -20 }]);
+  });
+});
+
+/**
+ * A breakdown bar has no negative slice, so a category left in credit is
+ * split out: shares are measured against the drawn (gross) spend, and the
+ * credit is carried separately so gross − credits still equals the net total.
+ */
+describe("splitPeriod", () => {
+  it("measures shares against the drawn spend, not the net total", () => {
+    // The reported month: a 5,823 loan payment in a month that totals 5,769.
+    const split = splitPeriod({ Loan: 5823, Food: 946, Shopping: -1000 });
+    expect(split.net).toBe(5769);
+    expect(split.gross).toBe(6769);
+    expect(Math.round((5823 / split.gross) * 100)).toBe(86);
+  });
+
+  it("lists every credited series, largest credit first, and they reconcile", () => {
+    const split = splitPeriod({ Food: 500, Health: -50, Shopping: -200, Zero: 0 });
+    expect(split.credits).toEqual([
+      { name: "Shopping", value: -200 },
+      { name: "Health", value: -50 },
+    ]);
+    const credit = split.credits.reduce((s, c) => s + c.value, 0);
+    expect(split.gross + credit).toBe(split.net);
+  });
+
+  it("reports no credits for an all-positive period", () => {
+    const split = splitPeriod({ Food: 300, Rent: 700 });
+    expect(split).toEqual({ net: 1000, gross: 1000, credits: [] });
   });
 });

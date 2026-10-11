@@ -161,3 +161,52 @@ class TestBankBalanceService:
         result = service.set_balance("hapoalim", "Main", 50000.0)
         assert result["prior_wealth_amount"] == 50000.0
         assert result["balance"] == 50000.0
+
+    def test_scraped_balance_creates_the_record(
+        self, service: BankBalanceService, setup_bank_transactions
+    ):
+        """A first reported balance sets prior wealth with nothing to compare."""
+        drift = service.apply_scraped_balance("hapoalim", "Main", 20000.0)
+
+        [row] = service.get_all_balances()
+        assert drift is None
+        assert row["balance"] == 20000.0
+        assert row["prior_wealth_amount"] == 20000.0 - 9300.0
+        assert row["balance_source"] == "scraped"
+        assert row["last_drift"] == 0.0
+
+    def test_scraped_balance_corrects_prior_wealth_and_records_the_drift(
+        self, service: BankBalanceService, setup_bank_transactions, setup_scrape_today
+    ):
+        """The bank's figure wins, and how far the app was off is kept."""
+        service.set_balance("hapoalim", "Main", 50000.0)
+
+        drift = service.apply_scraped_balance("hapoalim", "Main", 47666.83)
+
+        [row] = service.get_all_balances()
+        assert drift == pytest.approx(-2333.17)
+        assert row["last_drift"] == -2333.17
+        assert row["balance"] == 47666.83
+        assert row["prior_wealth_amount"] == pytest.approx(47666.83 - 9300.0)
+        assert row["balance_source"] == "scraped"
+
+    def test_scraped_balance_that_matches_has_no_drift(
+        self, service: BankBalanceService, setup_bank_transactions, setup_scrape_today
+    ):
+        """A bank figure equal to the computed one is not a drift."""
+        service.set_balance("hapoalim", "Main", 50000.0)
+
+        assert service.apply_scraped_balance("hapoalim", "Main", 50000.0) == 0.0
+        assert service.get_all_balances()[0]["last_drift"] == 0.0
+
+    def test_manual_balance_is_marked_manual_and_clears_the_drift(
+        self, service: BankBalanceService, setup_bank_transactions, setup_scrape_today
+    ):
+        """Typing a balance over a scraped one takes over and clears the notice."""
+        service.apply_scraped_balance("hapoalim", "Main", 20000.0)
+        service.apply_scraped_balance("hapoalim", "Main", 19000.0)
+
+        result = service.set_balance("hapoalim", "Main", 21000.0)
+
+        assert result["balance_source"] == "manual"
+        assert result["last_drift"] == 0.0

@@ -412,7 +412,9 @@ class ScraperAdapter:
                             self._data = self._data.sort_values(by=["date"])
                         self._save_scraped_transactions()
                         self._apply_auto_tagging()
-                        self._recalculate_bank_balances()
+                        self._recalculate_bank_balances(
+                            self._reported_bank_balance(result)
+                        )
                         self._post_save_hook(result)
                 else:
                     self._error_type = result.error_type or "GENERAL_ERROR"
@@ -901,17 +903,51 @@ class ScraperAdapter:
                 scrub(exc),
             )
 
-    def _recalculate_bank_balances(self) -> None:
-        """Recalculate bank balance after a successful bank scrape."""
+    @staticmethod
+    def _reported_bank_balance(result: "ScrapingResult") -> float | None:
+        """Return what the bank says the credential's accounts hold.
+
+        Sums the checking accounts' reported balances. Savings deposits are
+        left out: money moved into one is tracked as an investment, not as
+        bank cash. ``None`` when any checking account came back without a
+        balance — a partial sum would read as money gone missing.
+        """
+        checking = [a for a in result.accounts if not a.savings_account]
+        if not checking or any(a.balance is None for a in checking):
+            return None
+        return float(sum(float(a.balance) for a in checking))
+
+    def _recalculate_bank_balances(self, reported: float | None = None) -> None:
+        """Update the bank balance after a successful bank scrape.
+
+        Parameters
+        ----------
+        reported : float or None
+            The balance the bank reported (see
+            :meth:`_reported_bank_balance`). When given it becomes the
+            account's balance; without it the stored prior wealth is kept
+            and the transactions are re-added to it.
+        """
         if self.service_name != Services.BANK.value:
             return
         try:
             with get_db_context() as db:
                 balance_service = BankBalanceService(db)
-                balance_service.recalculate_for_account(
-                    self.provider_name,
-                    self.account_name,
+                if reported is None:
+                    balance_service.recalculate_for_account(
+                        self.provider_name,
+                        self.account_name,
+                    )
+                    return
+                drift = balance_service.apply_scraped_balance(
+                    self.provider_name, self.account_name, reported
                 )
+                if drift:
+                    logger.warning(
+                        "%s: bank balance differs from tracked transactions by %.2f",
+                        scrub(self._log_id),
+                        drift,
+                    )
         except Exception as exc:
             logger.error(
                 "%s: Error recalculating bank balance — %s",

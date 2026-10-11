@@ -88,11 +88,11 @@ class DummyRegularScraper(BaseScraper):
                 )
             )
 
-        total = round(sum(t.charged_amount for t in transactions), 2)
+        # No balance: a made-up one would overwrite the demo account's real
+        # balance on every demo scrape.
         account = AccountResult(
             account_number="DEMO-000000",
             transactions=transactions,
-            balance=round(10000 + total, 2),
         )
         return [account]
 

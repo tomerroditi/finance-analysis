@@ -2,25 +2,14 @@ import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { Check, Pencil, X } from "lucide-react";
-import { Bar, BarChart, Cell, ReferenceLine, ResponsiveContainer, Tooltip } from "recharts";
-import { savingsGoalsApi, type YearlySavingsYear } from "../../services/api";
+import { savingsGoalsApi } from "../../services/api";
 import { useQueryKeys } from "../../hooks/useQueryKeys";
 import { qkPrefix } from "../../services/queryKeys";
 import { formatCurrency } from "../../utils/numberFormatting";
-import { formatMonthYear } from "../../utils/dateFormatting";
-import { ChartTooltip } from "../charts/ChartTooltip";
 import { Skeleton } from "../common/Skeleton";
 
 /** How many past years the summary line names. */
 const PAST_YEARS_SHOWN = 3;
-
-const SAVED_COLOR = "#10b981";
-const DEFICIT_COLOR = "#f87171";
-
-/** "January 2026" for a `YYYY-MM` key, parsed in local time. */
-function monthLabel(month: string): string {
-  return formatMonthYear(new Date(`${month}-01T00:00:00`));
-}
 
 /**
  * This year's savings against the target set for it.
@@ -185,8 +174,6 @@ export function YearlySavingsSection() {
         </div>
       )}
 
-      <MonthlyBars year={thisYear} />
-
       {past.length > 0 && (
         <p className="mt-2 text-[10px] md:text-xs text-[var(--text-muted)]" data-testid="yearly-past">
           {past.map((row, index) => (
@@ -203,25 +190,3 @@ export function YearlySavingsSection() {
   );
 }
 
-/** This year's months as small bars: a month below the line saved less than nothing. */
-function MonthlyBars({ year }: { year: YearlySavingsYear }) {
-  if (year.months.length === 0) return null;
-  return (
-    <div className="mt-2 h-14" data-testid="yearly-months">
-      <ResponsiveContainer width="100%" height="100%">
-        <BarChart data={year.months} margin={{ top: 2, bottom: 2, left: 0, right: 0 }}>
-          <ReferenceLine y={0} stroke="rgba(148, 163, 184, 0.25)" />
-          <Tooltip
-            cursor={{ fill: "rgba(148, 163, 184, 0.08)" }}
-            content={<ChartTooltip compact labelFormatter={(m) => monthLabel(String(m))} />}
-          />
-          <Bar dataKey="saved" maxBarSize={18} radius={[3, 3, 3, 3]} isAnimationActive={false}>
-            {year.months.map((row) => (
-              <Cell key={row.month} fill={row.saved < 0 ? DEFICIT_COLOR : SAVED_COLOR} />
-            ))}
-          </Bar>
-        </BarChart>
-      </ResponsiveContainer>
-    </div>
-  );
-}

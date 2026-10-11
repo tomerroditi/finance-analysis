@@ -49,8 +49,8 @@ class Tables(Enum):
         Name of the table storing provider account credentials.
     LIABILITY_TRANSACTIONS : str
         Name of the table storing auto-generated liability payment transactions.
-    SAVINGS_GOAL_ALLOCATIONS : str
-        Name of the table storing per-month surplus allocations to savings goals.
+    SAVINGS_GOAL_ENTRIES : str
+        Name of the table storing money the user put into or took out of goals.
     SAVINGS_GOAL_LINKS : str
         Name of the table storing transaction-to-savings-goal links.
     YEARLY_SAVINGS_TARGETS : str
@@ -89,7 +89,7 @@ class Tables(Enum):
     INTEREST_RATES = "interest_rates"
     RETIREMENT_GOAL = "retirement_goals"
     SAVINGS_GOALS = "savings_goals"
-    SAVINGS_GOAL_ALLOCATIONS = "savings_goal_allocations"
+    SAVINGS_GOAL_ENTRIES = "savings_goal_entries"
     SAVINGS_GOAL_LINKS = "savings_goal_links"
     YEARLY_SAVINGS_TARGETS = "yearly_savings_targets"
     RECURRING_DECISIONS = "recurring_decisions"

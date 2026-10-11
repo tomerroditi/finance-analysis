@@ -235,6 +235,9 @@ test.describe("Budget", () => {
     await expect(page.getByTestId("commitment-segment-variable").first()).toBeVisible();
     await expect(page.getByTestId("commitment-segment-committed").first()).toBeVisible();
     await expect(page.getByTestId("commitment-segment-free").first()).toBeVisible();
+    // Both fixed parts are named as one pair: what was charged, what is still to come.
+    await expect(bar.getByText("Fixed, charged")).toBeVisible();
+    await expect(bar.getByText("Fixed, committed")).toBeVisible();
 
     // --- Three pools, stated as three pools ---
     await expect(page.getByTestId("budget-across-all-three")).toBeVisible();

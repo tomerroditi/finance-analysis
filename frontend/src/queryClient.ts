@@ -144,4 +144,7 @@ export function shouldDehydrateQuery(query: Query): boolean {
 // never be read again, so they would sit in IndexedDB until something else
 // bumped this; the category breakdown also started reporting a category left
 // in credit as a negative, which a v8 snapshot has no way to show.
-export const PERSIST_BUSTER = "v9";
+// v10: savings goals became manual — every goal, free-cash, timeline and
+// budget-month payload changed shape (entries, balances, a cover plan in
+// place of the waterfall's allocations), so a v9 snapshot cannot render.
+export const PERSIST_BUSTER = "v10";

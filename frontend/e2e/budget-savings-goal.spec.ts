@@ -12,7 +12,8 @@ interface Goal {
   name: string;
   utilization_category: string | null;
   utilization_tags: string | null;
-  utilized: number;
+  /** Money spent out of the goal by its spending rule or links. */
+  spent: number;
   is_closed: boolean | number;
 }
 
@@ -68,21 +69,21 @@ test.describe("Paying for a budget out of a savings goal", () => {
     await expect(modal).toBeVisible();
     await modal.getByRole("button", { name: goal.name }).click();
 
-    // One click: the button now names the goal, and the goal pays for every
-    // purchase in the project.
+    // One click: the button now names the goal, and the goal pays for the
+    // project's purchases out of what it holds.
     await expect(modal).toBeHidden();
     await expect(action).toHaveText(goal.name, { timeout: 10_000 });
     const linked = (await readGoals(page)).find((g) => g.id === goal.id)!;
     expect(linked.utilization_category).toBe(project);
     expect(linked.utilization_tags).toBeNull();
-    expect(linked.utilized).toBeGreaterThan(goal.utilized);
+    expect(linked.spent).toBeGreaterThan(goal.spent);
 
     await action.click();
     await modal.getByRole("button", { name: /^Remove link$/i }).click();
     await expect(action).toHaveText(/savings goal/i, { timeout: 10_000 });
     const detached = (await readGoals(page)).find((g) => g.id === goal.id)!;
     expect(detached.utilization_category).toBeNull();
-    expect(detached.utilized).toBe(goal.utilized);
+    expect(detached.spent).toBeCloseTo(goal.spent, 2);
   });
 
   test("links a yearly envelope with its category and tags", async ({ page }) => {
@@ -184,6 +185,30 @@ test.describe("Paying for a budget out of a savings goal", () => {
     await expect
       .poll(async () => (await readGoals(page)).find((g) => g.id === goal.id))
       .toMatchObject({ utilization_category: category, utilization_tags: null });
+  });
+
+  test("a transaction is saved into a goal only when money comes in", async ({ page }) => {
+    // Setting money aside is the goal's "Add money", never a link on a
+    // transfer, so spending is offered "Paid from" alone; income gets both.
+    await navigateTo(page, "/transactions");
+    const rows = page.locator("table tbody tr");
+    await expect(rows.first()).toBeVisible({ timeout: 30_000 });
+    const linkButton = page.getByRole("button", { name: "Link to a savings goal" });
+    const dialog = page.getByRole("dialog");
+
+    const expense = rows.filter({ has: page.locator("td.text-red-500") }).filter({ has: linkButton }).first();
+    await expense.hover();
+    await expense.getByRole("button", { name: "Link to a savings goal" }).click();
+    await expect(dialog.getByRole("button", { name: "Paid from" }).first()).toBeVisible();
+    await expect(dialog.getByRole("button", { name: "Saved into" })).toHaveCount(0);
+    await dialog.getByRole("button", { name: /^Cancel$/ }).click();
+    await expect(dialog).toHaveCount(0);
+
+    const income = rows.filter({ has: page.locator("td.text-emerald-500") }).filter({ has: linkButton }).first();
+    await income.hover();
+    await income.getByRole("button", { name: "Link to a savings goal" }).click();
+    await expect(dialog.getByRole("button", { name: "Saved into" }).first()).toBeVisible();
+    await expect(dialog.getByRole("button", { name: "Paid from" }).first()).toBeVisible();
   });
 
   test("the goal editor scrolls under a finger on a phone", async ({ browser }) => {

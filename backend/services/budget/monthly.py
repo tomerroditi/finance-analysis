@@ -531,8 +531,8 @@ class MonthlyBudgetService(BudgetService):
               project spend for the month (from ``get_monthly_project_spending_summary``).
             - ``pending_refunds`` – dict with ``items`` (pending refund list) and
               ``total_expected`` (sum of expected amounts).
-            - ``savings_goals`` – how much of the month's surplus each goal
-              received (from ``SavingsGoalService.get_month_allocations``).
+            - ``savings_goals`` – what moved into and out of each goal that
+              month (from ``SavingsGoalService.get_month``).
             - ``copied_from`` – source month name if rules were auto-filled,
               or ``None``.
             - ``skipped_yearly_conflicts`` – tag names dropped from an
@@ -562,7 +562,7 @@ class MonthlyBudgetService(BudgetService):
         # add another participant to every refresh of the same screen.
         from backend.services.savings_goals import SavingsGoalService
 
-        savings_goals = SavingsGoalService(self.db).get_month_allocations(year, month)
+        savings_goals = SavingsGoalService(self.db).get_month(year, month)
 
         pending_refunds = self.pending_refunds_service.get_all_pending(status="pending")
         budget_adjustment = self.pending_refunds_service.get_budget_adjustment(

@@ -50,6 +50,7 @@ from backend.models import (  # noqa: E402
     RefundLink,
     RetirementGoal,
     SavingsGoal,
+    SavingsGoalEntry,
     SavingsGoalLink,
     ScrapingHistory,
     SplitTransaction,
@@ -2452,45 +2453,36 @@ def create_pending_refunds(session, cc_txns, bank_txns):
 
 
 def create_savings_goals(session, bank_txns):
-    """Create the Cohens' five savings goals.
+    """Create the Cohens' five savings goals, with the money they put into each.
 
-    The goals demo every way a goal can be funded, in one waterfall:
+    A goal holds what the couple put into it (one dated entry per month of
+    saving), less what it paid for:
 
-    1. **Emergency Fund** — the classic first goal. Capped so it fills
-       steadily rather than swallowing a single big month, and started early
-       enough that it is already achieved.
-    2. **Kids' Education Fund** — a long-horizon goal, capped so it takes a
-       steady share of each month's surplus, with a target date years out.
+    1. **Emergency Fund** — the classic first goal: 2,500 a month until it
+       reached its target, so it reads "Achieved 🎉".
+    2. **Kids' Education Fund** — a long-horizon goal, 1,500 a month, with a
+       target date years out (the older child reaching university), so its
+       monthly-needed figure is a realistic number rather than a panic.
     3. **Wedding Fund** — the saving side of the wedding arc the rest of the
-       dataset already tells. The two largest wedding bank transfers are
-       linked as **utilizations**, so the goal shows money set aside *and*
-       money since spent out of it, without its target shrinking. It carries
-       no target date: the wedding is already being paid for, and a deadline
-       weeks away would only render an implausible "catch up by" figure.
-
+       dataset tells. The two largest wedding bank transfers are linked as
+       **spending** out of it, so the goal shows money set aside *and* money
+       since spent, without its target shrinking. No target date: the wedding
+       is already being paid for.
     4. **Home Renovation Fund** — the saving side of the renovation the
-       budget project tracks, carrying a large opening balance: money the
-       couple had already set aside when they started tracking. Opening
-       balances come straight out of the free-cash pool in the goal's first
-       month, which is what keeps the pool in proportion to the rest of the
-       card.
-    5. **New Car Fund** — the same, further off and lower priority, so the
-       waterfall has a goal that is still filling behind the others.
+       budget project tracks. It starts with a large first entry — money the
+       couple had already set aside when they started tracking — then a
+       monthly amount until the target.
+    5. **New Car Fund** — the same, further off and still filling.
 
-    Only the education fund carries a ``target_date`` — far enough out (the
-    older child reaching university) that the monthly-needed figure it drives
-    is a realistic number rather than a panic.
+    Every goal carries a ``monthly_amount``, so the card offers this month's
+    "Fund" suggestion; the current month is left unfunded for that reason.
+    What the goals do not hold is free cash, which stays positive: the
+    Cohens' accounts are large because the app counts loan receipts as income
+    (see ``.claude/rules/kpi_calculations.md``) and the mortgage and car loan
+    were never spent back out.
 
-    Whatever the five leave unclaimed each month stays in the free-cash pool,
-    which is what a negative month drains before any goal is touched. The
-    Cohens' pool is large because the app counts loan receipts as income (see
-    ``.claude/rules/kpi_calculations.md``) and the demo's mortgage and car
-    loan were never spent back out; the two goals above earmark the part of it
-    that has a job.
-
-    No allocation rows are seeded: the engine derives the whole ledger on
-    first read, and doing it here would anchor it to this script's reference
-    date instead of the date-shifted one Demo Mode actually serves.
+    Entry dates are real dates, so ``backend/demo_setup.py`` moves them with
+    the rest of the data.
     """
     def month_str(months_back: int) -> str:
         """``YYYY-MM`` for the month ``months_back`` before the reference."""
@@ -2504,9 +2496,8 @@ def create_savings_goals(session, bank_txns):
     emergency = SavingsGoal(
         name="Emergency Fund",
         target_amount=60000.0,
-        opening_balance=0.0,
         priority=0,
-        monthly_cap=2500.0,
+        monthly_amount=2500.0,
         start_month=month_str(34),
         status="active",
         notes="Six months of expenses, kept liquid.",
@@ -2514,9 +2505,8 @@ def create_savings_goals(session, bank_txns):
     education = SavingsGoal(
         name="Kids' Education Fund",
         target_amount=150000.0,
-        opening_balance=0.0,
         priority=1,
-        monthly_cap=1500.0,
+        monthly_amount=1500.0,
         start_month=month_str(30),
         target_date=(REFERENCE_DATE + timedelta(days=365 * 6)).isoformat(),
         status="active",
@@ -2525,9 +2515,8 @@ def create_savings_goals(session, bank_txns):
     wedding = SavingsGoal(
         name="Wedding Fund",
         target_amount=120000.0,
-        opening_balance=0.0,
         priority=2,
-        monthly_cap=3000.0,
+        monthly_amount=3000.0,
         start_month=month_str(24),
         status="active",
         notes="Saving for the wedding the budget project tracks spending against.",
@@ -2535,9 +2524,8 @@ def create_savings_goals(session, bank_txns):
     renovation = SavingsGoal(
         name="Home Renovation Fund",
         target_amount=350000.0,
-        opening_balance=260000.0,
         priority=3,
-        monthly_cap=4000.0,
+        monthly_amount=4000.0,
         start_month=month_str(28),
         status="active",
         notes="Kitchen and bathrooms — what the renovation budget spends against.",
@@ -2545,9 +2533,8 @@ def create_savings_goals(session, bank_txns):
     car = SavingsGoal(
         name="New Car Fund",
         target_amount=180000.0,
-        opening_balance=110000.0,
         priority=4,
-        monthly_cap=3000.0,
+        monthly_amount=3000.0,
         start_month=month_str(16),
         status="active",
         notes="Replacing the family car once the car loan is paid off.",
@@ -2575,6 +2562,27 @@ def create_savings_goals(session, bank_txns):
                 link_type="utilization",
             )
         )
+
+    def save_monthly(goal, months_back: int, amount: float, first: float = 0.0) -> None:
+        """Put ``amount`` in on the 5th of each month, up to the target."""
+        held = 0.0
+        for back in range(months_back, 0, -1):
+            put = first if back == months_back and first else amount
+            put = min(put, goal.target_amount - held)
+            if put <= 0:
+                break
+            session.add(
+                SavingsGoalEntry(
+                    goal_id=goal.id, date=f"{month_str(back)}-05", amount=put, source="manual"
+                )
+            )
+            held += put
+
+    save_monthly(emergency, 34, 2500.0)
+    save_monthly(education, 30, 1500.0)
+    save_monthly(wedding, 24, 3000.0)
+    save_monthly(renovation, 28, 4000.0, first=260000.0)
+    save_monthly(car, 16, 3000.0, first=110000.0)
 
     session.flush()
     return emergency, education, wedding, renovation, car
