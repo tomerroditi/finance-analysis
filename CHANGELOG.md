@@ -1,3 +1,9 @@
+## v1.107.1 (2026-10-11)
+
+### Refactor
+
+- **retirement**: remove the old retirement API and its real-terms model
+
 ## v1.107.0 (2026-10-11)
 
 ### Feat
