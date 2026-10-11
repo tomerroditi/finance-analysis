@@ -164,5 +164,100 @@ describe("InsightsStrip", () => {
         expect(restore).toHaveBeenCalledWith("categorySpike:Food:2026-09");
       });
     });
+
+    it("puts the card back on undo without waiting for the refetch", async () => {
+      // The insights recompute takes seconds on a real database. Undo used to
+      // hide its own button and leave the strip empty until that refetch
+      // answered, which read as a click that did nothing.
+      hiddenCards = ["forecast", "recurring"];
+      vi.spyOn(analyticsApi, "dismissInsight").mockResolvedValue({
+        data: { key: "categorySpike:Food:2026-09", dismissed: true },
+      } as Awaited<ReturnType<typeof analyticsApi.dismissInsight>>);
+      vi.spyOn(analyticsApi, "restoreInsight").mockResolvedValue({
+        data: { key: "categorySpike:Food:2026-09", dismissed: false },
+      } as Awaited<ReturnType<typeof analyticsApi.restoreInsight>>);
+
+      await renderStrip([makeInsight()]);
+      vi.mocked(analyticsApi.getInsights).mockResolvedValue({
+        data: [] as Insight[],
+      } as Awaited<ReturnType<typeof analyticsApi.getInsights>>);
+      fireEvent.click(await screen.findByTestId("insight-dismiss"));
+      const undo = await screen.findByTestId("insight-undo");
+      expect(screen.queryByTestId("insight-card")).toBeNull();
+
+      // From here on the server never answers a read again.
+      vi.spyOn(analyticsApi, "getInsights").mockReturnValue(
+        new Promise(() => {}) as ReturnType<typeof analyticsApi.getInsights>,
+      );
+      fireEvent.click(undo);
+
+      const card = await screen.findByTestId("insight-card");
+      expect(card.getAttribute("data-insight-key")).toBe("categorySpike:Food:2026-09");
+      expect(screen.queryByTestId("insight-undo")).toBeNull();
+    });
+
+    it("undoes each of several dismissals, most recent first", async () => {
+      hiddenCards = ["forecast", "recurring"];
+      vi.spyOn(analyticsApi, "dismissInsight").mockImplementation(
+        async (key: string) =>
+          ({ data: { key, dismissed: true } }) as Awaited<
+            ReturnType<typeof analyticsApi.dismissInsight>
+          >,
+      );
+      const restore = vi.spyOn(analyticsApi, "restoreInsight").mockImplementation(
+        async (key: string) =>
+          ({ data: { key, dismissed: false } }) as Awaited<
+            ReturnType<typeof analyticsApi.restoreInsight>
+          >,
+      );
+      const food = makeInsight();
+      const transport = makeInsight({
+        key: "categorySpike:Transport:2026-09",
+        data: { category: "Transport", percent: 40, amount: 900 },
+      });
+      await renderStrip([food, transport]);
+
+      // Every refetch reflects only what is still dismissed on the "server".
+      const dismissed = new Set<string>();
+      vi.mocked(analyticsApi.dismissInsight).mockImplementation(async (key: string) => {
+        dismissed.add(key);
+        return { data: { key, dismissed: true } } as Awaited<
+          ReturnType<typeof analyticsApi.dismissInsight>
+        >;
+      });
+      restore.mockImplementation(async (key: string) => {
+        dismissed.delete(key);
+        return { data: { key, dismissed: false } } as Awaited<
+          ReturnType<typeof analyticsApi.restoreInsight>
+        >;
+      });
+      vi.mocked(analyticsApi.getInsights).mockImplementation(
+        async () =>
+          ({
+            data: [food, transport].filter((insight) => !dismissed.has(insight.key)),
+          }) as Awaited<ReturnType<typeof analyticsApi.getInsights>>,
+      );
+
+      fireEvent.click((await screen.findAllByTestId("insight-dismiss"))[0]);
+      await waitFor(() => expect(screen.getAllByTestId("insight-card")).toHaveLength(1));
+      fireEvent.click(await screen.findByTestId("insight-dismiss"));
+      await waitFor(() => expect(screen.queryByTestId("insight-card")).toBeNull());
+
+      fireEvent.click(await screen.findByTestId("insight-undo"));
+      await waitFor(() => {
+        expect(restore).toHaveBeenLastCalledWith("categorySpike:Transport:2026-09");
+      });
+      // The first dismissal is still undoable.
+      fireEvent.click(await screen.findByTestId("insight-undo"));
+      await waitFor(() => {
+        expect(restore).toHaveBeenLastCalledWith("categorySpike:Food:2026-09");
+      });
+      await waitFor(() => {
+        expect(
+          screen.getAllByTestId("insight-card").map((card) => card.getAttribute("data-insight-key")),
+        ).toEqual(["categorySpike:Food:2026-09", "categorySpike:Transport:2026-09"]);
+      });
+      expect(screen.queryByTestId("insight-undo")).toBeNull();
+    });
   });
 });

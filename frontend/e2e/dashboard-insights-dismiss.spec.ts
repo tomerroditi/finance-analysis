@@ -46,7 +46,7 @@ test.describe("Dashboard insight dismissal", () => {
     await page.goto("/");
 
     const cards = page.getByTestId("insight-card");
-    await expect(cards.first()).toBeVisible({ timeout: 45_000 });
+    await expect(cards.nth(1)).toBeVisible({ timeout: 45_000 });
     const before = await cards.count();
 
     // Let the React Query persister's 1 s throttle write this list to
@@ -55,25 +55,42 @@ test.describe("Dashboard insight dismissal", () => {
     // is instant and the global five-minute staleTime meant nothing
     // refetched. There is no event to await here — it is a timer.
     await page.waitForTimeout(1500);
-    const dismissedKey = await cards.first().getAttribute("data-insight-key");
-    expect(dismissedKey).toBeTruthy();
+    const firstKey = await cards.nth(0).getAttribute("data-insight-key");
+    const secondKey = await cards.nth(1).getAttribute("data-insight-key");
+    expect(firstKey).toBeTruthy();
+    expect(secondKey).toBeTruthy();
+    const first = page.locator(`[data-insight-key="${firstKey}"]`);
+    const second = page.locator(`[data-insight-key="${secondKey}"]`);
 
     // --- dismiss: the card goes, the rest stay ---
-    await cards.first().getByTestId("insight-dismiss").click();
-    await expect(page.locator(`[data-insight-key="${dismissedKey}"]`)).toHaveCount(0);
-    await expect(cards).toHaveCount(before - 1);
+    await first.getByTestId("insight-dismiss").click();
+    await expect(first).toHaveCount(0);
+    await expect(second).toBeVisible();
+    await second.getByTestId("insight-dismiss").click();
+    await expect(second).toHaveCount(0);
 
-    // --- it is a real write, not just local state ---
-    await page.reload();
-    await expect(cards.first()).toBeVisible({ timeout: 45_000 });
-    await expect(page.locator(`[data-insight-key="${dismissedKey}"]`)).toHaveCount(0);
-
-    // --- undo brings it back ---
-    await cards.first().getByTestId("insight-dismiss").click();
-    const undo = page.getByRole("button", { name: /undo|שחזר/i });
-    await expect(undo).toBeVisible();
+    // --- undo walks back through every dismissal, most recent first, and
+    // puts each card back at once rather than after the insights recompute ---
+    const undo = page.getByTestId("insight-undo");
     await undo.click();
-    await expect(page.getByTestId("insight-card").first()).toBeVisible();
-    await expect(cards).toHaveCount(before - 1);
+    await expect(second).toBeVisible({ timeout: 1_000 });
+    await expect(first).toHaveCount(0);
+    await undo.click();
+    await expect(first).toBeVisible({ timeout: 1_000 });
+    await expect(undo).toHaveCount(0);
+    await expect(cards).toHaveCount(before);
+
+    // --- the undos were real writes ---
+    await page.reload();
+    await expect(first).toBeVisible({ timeout: 45_000 });
+    await expect(second).toBeVisible();
+
+    // --- and so is a dismissal ---
+    await first.getByTestId("insight-dismiss").click();
+    await expect(first).toHaveCount(0);
+    await expect(undo).toBeVisible();
+    await page.reload();
+    await expect(second).toBeVisible({ timeout: 45_000 });
+    await expect(first).toHaveCount(0);
   });
 });
