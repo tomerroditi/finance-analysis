@@ -135,7 +135,7 @@ export const CommitmentBar: React.FC<CommitmentBarProps> = ({
       key: "committed",
       grow: Math.max(committed, 0),
       style: COMMITTED_FILL,
-      label: t("budget.overview.stillCommitted"),
+      label: t("budget.overview.fixedCommitted"),
       amount: committed,
       sub: t("budget.overview.chargesDueCount", { count: chargesDue.length }),
     });
