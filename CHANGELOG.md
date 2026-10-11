@@ -1,3 +1,9 @@
+## v1.107.3 (2026-10-11)
+
+### Perf
+
+- **fire**: solve the plan once, skip the card's advice, and cache answers (#396)
+
 ## v1.107.2 (2026-10-11)
 
 ### Fix
