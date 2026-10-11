@@ -29,7 +29,12 @@ import pandas as pd
 
 from backend.constants.categories import NON_EXPENSE_CATEGORIES
 from backend.constants.tables import Tables
-from backend.services.card_billing import BillingSchedule, card_key, charge_date
+from backend.services.card_billing import (
+    CYCLE_CLOSE_DAYS,
+    BillingSchedule,
+    card_key,
+    charge_date,
+)
 
 Basis = Literal["net_cost", "cash_flow"]
 BASIS_NET_COST: Basis = "net_cost"
@@ -106,7 +111,7 @@ def date_cards_by_billing(
 
 
 def _estimated_billing(cards: pd.DataFrame, schedule: BillingSchedule) -> pd.Series:
-    """Estimate when each card row was charged: its card's day next month.
+    """Estimate when each card row was charged: the bill its cycle closed into.
 
     Parameters
     ----------
@@ -124,18 +129,22 @@ def _estimated_billing(cards: pd.DataFrame, schedule: BillingSchedule) -> pd.Ser
     if cards.empty:
         return pd.Series(pd.NaT, index=cards.index, dtype="datetime64[ns]")
     numbers = cards.get("account_number", pd.Series(None, index=cards.index))
-    month = pd.to_datetime(cards["date"], errors="coerce").dt.to_period("M") + 1
+    purchased = pd.to_datetime(cards["date"], errors="coerce")
     charged: dict[tuple[object, ...], pd.Timestamp] = {}
     values = []
-    for provider, account, number, billed in zip(
-        cards["provider"], cards["account_name"], numbers, month, strict=True
+    for provider, account, number, when in zip(
+        cards["provider"], cards["account_name"], numbers, purchased, strict=True
     ):
-        if pd.isna(billed):
+        if pd.isna(when):
             values.append(pd.NaT)
             continue
         key = card_key(provider, account, number)
-        if (key, billed) not in charged:
-            day, _ = schedule.day_for(key, billed)
-            charged[(key, billed)] = pd.Timestamp(charge_date(day, billed))
-        values.append(charged[(key, billed)])
+        month = when.to_period("M")
+        day, _ = schedule.day_for(key, month)
+        if when.day > day - CYCLE_CLOSE_DAYS:
+            month += 1
+            day, _ = schedule.day_for(key, month)
+        if (key, month, day) not in charged:
+            charged[(key, month, day)] = pd.Timestamp(charge_date(day, month))
+        values.append(charged[(key, month, day)])
     return pd.Series(values, index=cards.index, dtype="datetime64[ns]")

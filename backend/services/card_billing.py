@@ -38,6 +38,11 @@ NOMINAL_BILLING_DAYS = (1, 2, 10)
 #: Billing day assumed for a card nothing else is known about.
 DEFAULT_BILLING_DAY = 10
 
+#: A card's cycle closes this many days before its billing day. Fitted on
+#: real Isracard data: 10th cards bill purchases up to the 8th the same
+#: month, 1st/2nd cards bill the whole previous month.
+CYCLE_CLOSE_DAYS = 2
+
 #: Friday and Saturday, as ``date.weekday()`` numbers them.
 _WEEKEND = (4, 5)
 
@@ -107,6 +112,31 @@ def charge_date(billing_day: int, month: pd.Period) -> date:
     """
     day = min(billing_day, month.days_in_month)
     return next_business_day(date(month.year, month.month, day))
+
+
+def billing_months(purchased: pd.Series, billing_day: int) -> pd.Series:
+    """Return the month each purchase is billed in, for a card billing on a day.
+
+    A card's cycle closes :data:`CYCLE_CLOSE_DAYS` before its billing day: a
+    purchase up to then is on that month's bill, a later one on next month's.
+    So a 10th-of-the-month card bills a purchase from the 5th five days later,
+    and a 1st or 2nd card always bills the month after.
+
+    Parameters
+    ----------
+    purchased : pd.Series
+        Purchase dates (datetime).
+    billing_day : int
+        The card's day of the month.
+
+    Returns
+    -------
+    pd.Series
+        Billing months (Period).
+    """
+    month = purchased.dt.to_period("M")
+    late = purchased.dt.day > billing_day - CYCLE_CLOSE_DAYS
+    return month.where(~late, month + 1)
 
 
 def nominal_billing_day(charged: date, posting_lag: int = 0) -> int:
@@ -298,17 +328,23 @@ class BillingSchedule:
         }
 
         purchased = pd.to_datetime(cards[_DATE], errors="coerce")
-        month = (
-            cards["_reported"].dt.to_period("M").fillna(purchased.dt.to_period("M") + 1)
-        )
-        cards = cards.assign(_month=month).dropna(subset=["_month"])
+        cards = cards.assign(_purchased=purchased).dropna(subset=["_purchased"])
         latest = bills["_month"].max()
         first = latest - _MATCH_WINDOW_MONTHS
         for key, rows in cards.groupby("_key"):
-            totals = rows.groupby("_month")[_AMOUNT].sum()
-            totals = totals[(totals.index > first) & (totals.index <= latest)]
+            reported_day = self.history[key][-1][1] if key in self.history else None
             best: tuple[float, int, StreamKey] | None = None
             for stream, bill_totals in stream_totals.items():
+                # Paid from this stream, the card bills on its day: bucket the
+                # purchases into the bills they would have landed on.
+                day = reported_day or self.stream_days.get(stream, DEFAULT_BILLING_DAY)
+                month = (
+                    rows["_reported"]
+                    .dt.to_period("M")
+                    .fillna(billing_months(rows["_purchased"], day))
+                )
+                totals = rows.groupby(month)[_AMOUNT].sum()
+                totals = totals[(totals.index > first) & (totals.index <= latest)]
                 both = pd.concat([totals, bill_totals], axis=1, keys=["card", "bill"])
                 both = both.dropna()
                 both = both[both["card"] != 0]

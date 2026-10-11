@@ -55,6 +55,18 @@ class TestDateCardsByBilling:
 
         assert date_cards_by_billing(df, _TODAY)["date"].tolist() == ["2026-06-10"]
 
+    def test_a_10th_card_bills_early_purchases_the_same_month(self):
+        """Its cycle closes two days before the 10th: the 5th is on that bill."""
+        df = _cards([
+            {"date": "2026-05-05"},
+            {"date": "2026-05-09"},
+        ])
+
+        assert date_cards_by_billing(df, _TODAY)["date"].tolist() == [
+            "2026-05-10",
+            "2026-06-10",
+        ]
+
     def test_a_bill_on_a_weekend_is_charged_on_sunday(self):
         """Friday 10 July 2026 is charged on Sunday the 12th."""
         df = _cards([{"date": "2026-06-14"}])

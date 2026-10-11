@@ -7,6 +7,7 @@ import pandas as pd
 from backend.models.transaction import BankTransaction, CreditCardTransaction
 from backend.services.card_billing import (
     BillingSchedule,
+    billing_months,
     charge_date,
     is_business_day,
     issuer_key,
@@ -31,6 +32,22 @@ class TestBusinessDays:
     def test_a_short_month_bills_on_its_last_day(self):
         """A 31st-of-the-month card bills on 30 April."""
         assert charge_date(31, pd.Period("2026-04", "M")) == date(2026, 4, 30)
+
+
+class TestBillingMonths:
+    """A purchase lands on the first bill its cycle closes into."""
+
+    def test_the_cycle_closes_two_days_before_the_billing_day(self):
+        """For a 10th card, the 8th is this month's bill and the 9th next month's."""
+        purchased = pd.to_datetime(pd.Series(["2026-05-08", "2026-05-09"]))
+
+        assert billing_months(purchased, 10).astype(str).tolist() == ["2026-05", "2026-06"]
+
+    def test_a_card_billing_on_the_2nd_bills_the_month_after(self):
+        """Every purchase of May is on June's bill."""
+        purchased = pd.to_datetime(pd.Series(["2026-05-01", "2026-05-31"]))
+
+        assert billing_months(purchased, 2).astype(str).tolist() == ["2026-06", "2026-06"]
 
 
 class TestNominalBillingDay:
