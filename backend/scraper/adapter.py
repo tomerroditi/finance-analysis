@@ -184,6 +184,24 @@ def _format_key_amount(amount: float | str | None) -> str:
         return str(amount)
 
 
+def _billing_date(processed_date: str | None) -> str | None:
+    """Normalise a card's reported charge date to ``YYYY-MM-DD``.
+
+    Parameters
+    ----------
+    processed_date : str or None
+        The scraper's ``processed_date``, a date or an ISO timestamp.
+
+    Returns
+    -------
+    str or None
+        The date part, or None when the card reported none.
+    """
+    if not processed_date:
+        return None
+    return str(processed_date).split("T")[0]
+
+
 def create_adapter(
     service_name: str,
     provider_name: str,
@@ -857,6 +875,10 @@ class ScraperAdapter:
                 TransactionsTableFields.UNIQUE_ID.value: unique_id,
                 TransactionsTableFields.SPLIT_ID.value: None,
             }
+            if service_name == Services.CREDIT_CARD.value:
+                row["billing_date"] = _billing_date(
+                    getattr(txn, "processed_date", None)
+                )
             rows.append(row)
 
         if not rows:

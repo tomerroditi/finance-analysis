@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 
 from backend.dependencies import get_database
 from backend.routes.schemas import ApiRequestModel
+from backend.services.cash_flow_basis import BASIS_NET_COST, Basis
 from backend.services.savings_goals import SavingsGoalService
 
 router = APIRouter()
@@ -172,19 +173,22 @@ def fund_goals(
 
 
 @router.get("/yearly")
-def get_yearly_savings(db: Session = Depends(get_database)) -> dict[str, Any]:
+def get_yearly_savings(
+    basis: Basis = BASIS_NET_COST, db: Session = Depends(get_database)
+) -> dict[str, Any]:
     """Return how much each year saved, its target, and this year's pace."""
-    return SavingsGoalService(db).get_yearly_savings()
+    return SavingsGoalService(db).get_yearly_savings(basis)
 
 
 @router.put("/yearly/{year}/target")
 def set_yearly_target(
     year: int,
     data: YearlySavingsTargetUpdate,
+    basis: Basis = BASIS_NET_COST,
     db: Session = Depends(get_database),
 ) -> dict[str, Any]:
     """Set or clear how much to save in ``year``; returns the yearly view."""
-    return SavingsGoalService(db).set_yearly_target(year, data.target_amount)
+    return SavingsGoalService(db).set_yearly_target(year, data.target_amount, basis)
 
 
 @router.get("/free-cash")

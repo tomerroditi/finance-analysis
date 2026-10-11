@@ -167,11 +167,17 @@ money into a goal or taking it out never changes it; only what a goal claims
 as its own money does.
 
 A month saved its income minus its spending, **on the Income & Expenses
-card's basis** (`_compute_context` in `inputs.py`): card purchases count in
-the month they were made and the bank-side `Credit Cards` bill counts nowhere;
-`Ignore` rows (money moved between the household's own accounts, including to
-an untracked one) are neither income nor spending; a refund matched to its
-purchase (`refund_links`) comes off the purchase's month. Without goal income
+card's basis** (`_surplus(basis)` in `inputs.py`, `GET
+/savings-goals/yearly?basis=`): card purchases count one by one and the
+bank-side `Credit Cards` bill counts nowhere; `Ignore` rows (money moved
+between the household's own accounts, including to an untracked one) are
+neither income nor spending. On **net cost** (the default) a purchase counts
+in the month it was made and a refund matched to it (`refund_links`) comes
+off that month; on **cash flow** a card purchase counts in the month its card
+charged the bank (one not charged yet not at all) and a refund in the month
+it arrived — see `backend/services/cash_flow_basis.py`. The basis is the
+Settings toggle the Income & Expenses card reads too; the target `PUT` takes
+it as well, so its reply is the view on screen. Without goal income
 the yearly figure and the card's yearly net are the same number — when they
 were not (bills dated by payment, transfers counted as spending) the two sat
 on one dashboard ₪66k apart for the same year.
@@ -200,7 +206,7 @@ months left **including the current one**.
 The response carries every year from the first month on record to today (plus
 any year with a target), each with its months (the card names the last three years; it no longer
 draws this year's months as bars). Its query key
-(`qk.savingsGoals.yearly()`) sits under the savings-goals prefix, so every
+(`qk.savingsGoals.yearly(basis)`) sits under the savings-goals prefix, so every
 goal write refreshes it.
 
 ## Gotchas

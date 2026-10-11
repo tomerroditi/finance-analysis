@@ -86,6 +86,7 @@ const READ_ONLY_SPECS = [
   "**/investments.spec.ts",
   "**/liabilities.spec.ts",
   "**/mobile-top-bar.spec.ts",
+  "**/money-basis.spec.ts",
   "**/route-prefetch.spec.ts",
   "**/rtl-chevrons.spec.ts",
   "**/rtl-logical-insets.spec.ts",

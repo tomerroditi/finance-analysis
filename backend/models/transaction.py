@@ -108,10 +108,17 @@ class BankTransaction(Base, TransactionBase):
 
 
 class CreditCardTransaction(Base, TransactionBase):
-    """ORM model for credit card transactions (``credit_card_transactions`` table)."""
+    """ORM model for credit card transactions (``credit_card_transactions`` table).
+
+    Extends TransactionBase with ``billing_date``: the day the card company
+    charged the purchase to the bank, as the card's site reports it. Rows
+    scraped before it was stored have none until a scrape sees them again.
+    """
 
     __tablename__ = Tables.CREDIT_CARD.value
     __table_args__ = _transaction_indexes(Tables.CREDIT_CARD.value)
+
+    billing_date = Column(String, nullable=True)
 
 
 class CashTransaction(Base, TransactionBase):

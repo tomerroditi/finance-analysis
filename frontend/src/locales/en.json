@@ -90,6 +90,16 @@
     "earlyRetirement": "Early Retirement",
     "dataFlow": "Data Flow"
   },
+  "basis": {
+    "title": "How money is counted",
+    "net_cost": "Net cost",
+    "cash_flow": "Cash flow",
+    "changeInSettings": "Change it in Settings → How money is counted.",
+    "explain": {
+      "net_cost": "Net cost: what things really cost. A purchase counts on the day you made it, and a refund comes off the purchase it pays back, in that purchase's month. Transfers between your own accounts are left out.",
+      "cash_flow": "Cash flow: money as it moved. A card purchase counts on the day the card charged your bank, and one not charged yet doesn't count. A refund counts as income on the day it arrived, and every purchase at its full price. Transfers between your own accounts are left out."
+    }
+  },
   "settings": {
     "title": "Settings",
     "language": "Language",

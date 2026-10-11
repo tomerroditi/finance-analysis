@@ -7,11 +7,13 @@ transaction context the goals do — the same goal rules deciding which
 money belongs to a goal.
 
 What a month saved is its income minus its spending, counted the way the
-Income & Expenses card counts them, so a year with no goal income reads the
-same net on both: card purchases on the day they were made (the bank-side
-bill counts nowhere), transfers between the household's own accounts
-(``Ignore``) neither earned nor spent, and a matched refund taken off its
-purchase's month.
+Income & Expenses card counts them on the same basis, so a year with no goal
+income reads the same net on both: card purchases one by one (the bank-side
+bill counts nowhere) and transfers between the household's own accounts
+(``Ignore``) neither earned nor spent. On the net-cost basis a purchase counts
+the day it was made and a matched refund comes off its purchase's month; on
+the cash-flow basis a purchase counts the day its card charged it and a refund
+the day it arrived (``backend.services.cash_flow_basis``).
 
 - **Investing is saving.** Money moved into an investment stays saved, and a
   withdrawal is neutral until it is spent. Investment gains and losses are not
@@ -32,14 +34,20 @@ from datetime import date
 from typing import Any
 
 from backend.errors import ValidationException
+from backend.services.cash_flow_basis import BASIS_NET_COST, Basis
 from backend.services.savings_goals.common import iter_months, month_str
 
 
 class YearlySavingsMixin:
     """Yearly savings and their targets for ``SavingsGoalService``."""
 
-    def get_yearly_savings(self) -> dict[str, Any]:
+    def get_yearly_savings(self, basis: Basis = BASIS_NET_COST) -> dict[str, Any]:
         """Return what each year saved, its target, and this year's pace.
+
+        Parameters
+        ----------
+        basis : {"net_cost", "cash_flow"}, optional
+            How purchases and refunds are counted. Defaults to net cost.
 
         Returns
         -------
@@ -53,7 +61,7 @@ class YearlySavingsMixin:
         """
         today = date.today()
         current = (today.year, today.month)
-        monthly = self._saved_by_month(current)
+        monthly = self._saved_by_month(current, basis)
         targets = self.repo.get_yearly_targets()
 
         by_year: dict[int, list[dict[str, Any]]] = {}
@@ -84,9 +92,11 @@ class YearlySavingsMixin:
         }
 
     def set_yearly_target(
-        self, year: int, target_amount: float | None
+        self, year: int, target_amount: float | None, basis: Basis = BASIS_NET_COST
     ) -> dict[str, Any]:
         """Set (or, with ``None``, clear) how much to save in ``year``.
+
+        Returns the yearly view on ``basis``, so the caller can show it as is.
 
         Raises
         ------
@@ -96,17 +106,15 @@ class YearlySavingsMixin:
         if target_amount is not None and target_amount <= 0:
             raise ValidationException("A yearly savings target must be positive")
         self.repo.set_yearly_target(year, target_amount)
-        return self.get_yearly_savings()
+        return self.get_yearly_savings(basis)
 
-    def _saved_by_month(self, current: tuple[int, int]) -> dict[tuple[int, int], float]:
+    def _saved_by_month(
+        self, current: tuple[int, int], basis: Basis
+    ) -> dict[tuple[int, int], float]:
         """Return income minus spending for every month on record, by month."""
         context = self._build_context()
-        months = [
-            *context["surplus"],
-            *context["direct"],
-            *context["utilized"],
-            *context["invested"],
-        ]
+        surplus, invested = self._surplus(basis)
+        months = [*surplus, *context["direct"], *context["utilized"], *invested]
         if not months:
             return {}
         own_income = {g.id for g in self._goals_in_order() if g.contribution_category}
@@ -119,7 +127,7 @@ class YearlySavingsMixin:
         overspent: dict[int, float] = {}
         for key in iter_months(min(months), current):
             # The surplus took investing out; investing is saving.
-            total = context["surplus"].get(key, 0.0) + context["invested"].get(key, 0.0)
+            total = surplus.get(key, 0.0) + invested.get(key, 0.0)
             for goal_id, amount in context["direct"].get(key, {}).items():
                 if goal_id in own_income:
                     received[goal_id] = received.get(goal_id, 0.0) + amount

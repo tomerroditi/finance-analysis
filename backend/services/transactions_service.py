@@ -1178,6 +1178,10 @@ class TransactionsService:
         if TransactionsTableFields.SPLIT_ID.value not in df.columns:
             df[TransactionsTableFields.SPLIT_ID.value] = _empty_split_id(df.index)
 
+        # A card row's charge day, which the cash-flow basis dates it by.
+        if "billing_date" in df.columns:
+            analysis_cols.append("billing_date")
+
         return (
             df[analysis_cols].reset_index(drop=True)
             if all(c in df.columns for c in analysis_cols)

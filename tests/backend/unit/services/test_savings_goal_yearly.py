@@ -206,6 +206,72 @@ class TestMatchesIncomeAndExpenses:
         assert _month(result, refunded) == 0
 
 
+class TestCashFlowBasis:
+    """On the cash-flow basis money counts when it moved."""
+
+    def test_a_card_purchase_counts_when_the_card_charged_it(
+        self, db_session, service
+    ):
+        """A purchase billed next month moves to the bill's month."""
+        bought, billed = month_str(1), month_str(0)
+        add_txn(db_session, bought, 10000, "Salary", day=1)
+        add_card_txn(
+            db_session, bought, -4000, "Food", day=20,
+            billing_date=f"{billed}-01",
+        )
+
+        result = service.get_yearly_savings(basis="cash_flow")
+
+        assert _month(result, bought) == 10000
+        assert _month(result, billed) == -4000
+
+    def test_a_charge_still_to_come_has_not_left_the_bank(self, db_session, service):
+        """A purchase whose bill is due after today does not count yet."""
+        month = month_str(0)
+        add_txn(db_session, month, 10000, "Salary", day=1)
+        add_card_txn(db_session, month, -4000, "Food", day=1, billing_date="2999-01-02")
+
+        assert _month(service.get_yearly_savings(basis="cash_flow"), month) == 10000
+
+    def test_a_refund_counts_where_it_landed(self, db_session, service):
+        """A matched refund is not moved back onto its purchase."""
+        bought, refunded = month_str(1), month_str(0)
+        purchase = add_txn(db_session, bought, -1000, "Health", day=5)
+        refund = add_txn(db_session, refunded, 600, "Health", day=5)
+        refunds = PendingRefundsService(db_session)
+        pending = refunds.mark_as_pending_refund(
+            source_type="transaction",
+            source_id=purchase.unique_id,
+            source_table="banks",
+            expected_amount=600,
+        )
+        refunds.link_refund(
+            pending_refund_id=pending["id"],
+            refund_transaction_id=refund.unique_id,
+            refund_source="banks",
+            amount=600,
+        )
+
+        result = service.get_yearly_savings(basis="cash_flow")
+
+        assert _month(result, bought) == -1000
+        assert _month(result, refunded) == 600
+
+    def test_setting_a_target_answers_on_the_basis_asked_for(
+        self, db_session, service
+    ):
+        """The view a target write returns is the one the card is showing."""
+        bought, billed = month_str(1), month_str(0)
+        add_card_txn(
+            db_session, bought, -4000, "Food", day=20,
+            billing_date=f"{billed}-01",
+        )
+
+        result = service.set_yearly_target(date.today().year, 1000, "cash_flow")
+
+        assert _month(result, billed) == -4000
+
+
 class TestYearlyTargets:
     """One target per year, and where an even pace toward it stands today."""
 

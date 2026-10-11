@@ -1,6 +1,7 @@
 import axios from "axios";
 import { readOrCreateDemoSessionId, readStoredDemoMode } from "./demoMode";
 import type { Transaction } from "../types/transaction";
+import type { MoneyBasis } from "../hooks/useMoneyBasis";
 
 const api = axios.create({
   baseURL: "/api",
@@ -723,6 +724,7 @@ export const analyticsApi = {
     excludePendingRefunds = true,
     excludeProjects = false,
     excludeLiabilities = false,
+    basis: MoneyBasis = "net_cost",
   ) =>
     api.get<{ month: string; categories: Record<string, number> }[]>(
       "/analytics/expenses-by-category-over-time",
@@ -731,6 +733,7 @@ export const analyticsApi = {
           exclude_pending_refunds: excludePendingRefunds,
           exclude_projects: excludeProjects,
           exclude_liabilities: excludeLiabilities,
+          basis,
         },
       }
     ),
@@ -739,13 +742,20 @@ export const analyticsApi = {
     api.get<{ month: string; bank_balance: number; investment_value: number; cash: number; net_worth: number }[]>(
       "/analytics/net-worth-over-time"
     ),
-  getIncomeBySourceOverTime: (excludePendingRefunds = true, excludeLiabilities = false) =>
+  getIncomeBySourceOverTime: (
+    excludePendingRefunds = true,
+    excludeLiabilities = false,
+    excludeProjects = false,
+    basis: MoneyBasis = "net_cost",
+  ) =>
     api.get<{ month: string; sources: Record<string, number>; total: number }[]>(
       "/analytics/income-by-source-over-time",
       {
         params: {
           exclude_pending_refunds: excludePendingRefunds,
           exclude_liabilities: excludeLiabilities,
+          exclude_projects: excludeProjects,
+          basis,
         },
       }
     ),
@@ -1253,12 +1263,15 @@ export const savingsGoalsApi = {
   cover: () => api.post<SavingsGoal[]>("/savings-goals/free-cash/cover"),
   getMonth: (year: number, month: number) =>
     api.get<SavingsGoalMonth>(`/savings-goals/month/${year}/${month}`),
-  getYearly: () => api.get<YearlySavings>("/savings-goals/yearly"),
-  /** `null` clears the year's target. */
-  setYearlyTarget: (year: number, targetAmount: number | null) =>
-    api.put<YearlySavings>(`/savings-goals/yearly/${year}/target`, {
-      target_amount: targetAmount,
-    }),
+  getYearly: (basis: MoneyBasis = "net_cost") =>
+    api.get<YearlySavings>("/savings-goals/yearly", { params: { basis } }),
+  /** `null` clears the year's target. The reply is the view on `basis`. */
+  setYearlyTarget: (year: number, targetAmount: number | null, basis: MoneyBasis = "net_cost") =>
+    api.put<YearlySavings>(
+      `/savings-goals/yearly/${year}/target`,
+      { target_amount: targetAmount },
+      { params: { basis } },
+    ),
   /** Month-end balances and changes. `months: 0` asks for the whole timeline. */
   getTimeline: (months: number) =>
     api.get<SavingsGoalTimeline>("/savings-goals/timeline", {

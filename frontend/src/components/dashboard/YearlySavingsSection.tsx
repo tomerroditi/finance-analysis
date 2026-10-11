@@ -4,9 +4,11 @@ import { useTranslation } from "react-i18next";
 import { Check, Pencil, X } from "lucide-react";
 import { savingsGoalsApi } from "../../services/api";
 import { useQueryKeys } from "../../hooks/useQueryKeys";
+import { useMoneyBasis } from "../../hooks/useMoneyBasis";
 import { qkPrefix } from "../../services/queryKeys";
 import { formatCurrency } from "../../utils/numberFormatting";
 import { Skeleton } from "../common/Skeleton";
+import { InfoTooltip } from "../common/InfoTooltip";
 
 /** How many past years the summary line names. */
 const PAST_YEARS_SHOWN = 3;
@@ -24,19 +26,20 @@ export function YearlySavingsSection() {
   const { t } = useTranslation();
   const qk = useQueryKeys();
   const queryClient = useQueryClient();
+  const { basis } = useMoneyBasis();
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");
 
   const { data, isLoading } = useQuery({
-    queryKey: qk.savingsGoals.yearly(),
-    queryFn: async () => (await savingsGoalsApi.getYearly()).data,
+    queryKey: qk.savingsGoals.yearly(basis),
+    queryFn: async () => (await savingsGoalsApi.getYearly(basis)).data,
   });
 
   const save = useMutation({
     mutationFn: ({ year, target }: { year: number; target: number | null }) =>
-      savingsGoalsApi.setYearlyTarget(year, target),
+      savingsGoalsApi.setYearlyTarget(year, target, basis),
     onSuccess: (res) => {
-      queryClient.setQueryData(qk.savingsGoals.yearly(), res.data);
+      queryClient.setQueryData(qk.savingsGoals.yearly(basis), res.data);
       queryClient.invalidateQueries({ queryKey: qkPrefix.savingsGoals });
       setEditing(false);
     },
@@ -72,9 +75,19 @@ export function YearlySavingsSection() {
       data-testid="yearly-savings"
     >
       <div className="flex items-center justify-between gap-2">
-        <p className="text-xs md:text-sm font-bold">
-          {t("dashboard.goals.yearly.title", { year: thisYear.year })}
-        </p>
+        <div className="flex items-center gap-1.5">
+          <p className="text-xs md:text-sm font-bold">
+            {t("dashboard.goals.yearly.title", { year: thisYear.year })}
+          </p>
+          <span data-testid="yearly-savings-basis-info" className="inline-flex">
+            <InfoTooltip
+              text={`${t(`basis.explain.${basis}`)} ${t("basis.changeInSettings")}`}
+              iconSize={12}
+              width={260}
+              placement="bottom"
+            />
+          </span>
+        </div>
         {!editing && (
           <button
             type="button"

@@ -17,6 +17,8 @@
  * and bumping PERSIST_BUSTER.
  */
 
+import type { MoneyBasis } from "../hooks/useMoneyBasis";
+
 export const qkPrefix = {
   transactions: ["transactions"] as const,
   // Matches only transaction LIST entries (["transactions","list",...]) —
@@ -150,7 +152,7 @@ export function makeQueryKeys(demo: boolean) {
         ["savings-goals", "month", year, month, demo] as const,
       timeline: (months: number) =>
         ["savings-goals", "timeline", months, demo] as const,
-      yearly: () => ["savings-goals", "yearly", demo] as const,
+      yearly: (basis: MoneyBasis) => ["savings-goals", "yearly", basis, demo] as const,
       links: (goalId?: number) =>
         ["savings-goals", "links", goalId ?? "all", demo] as const,
     },
@@ -163,6 +165,7 @@ export function makeQueryKeys(demo: boolean) {
         excludePendingRefunds: boolean,
         excludeProjects: boolean,
         excludeLiabilities: boolean,
+        basis: MoneyBasis,
       ) =>
         [
           "analytics",
@@ -170,14 +173,22 @@ export function makeQueryKeys(demo: boolean) {
           excludePendingRefunds,
           excludeProjects,
           excludeLiabilities,
+          basis,
           demo,
         ] as const,
-      incomeBySourceOverTime: (excludePendingRefunds: boolean, excludeLiabilities: boolean) =>
+      incomeBySourceOverTime: (
+        excludePendingRefunds: boolean,
+        excludeLiabilities: boolean,
+        excludeProjects: boolean,
+        basis: MoneyBasis,
+      ) =>
         [
           "analytics",
           "income-by-source-over-time",
           excludePendingRefunds,
           excludeLiabilities,
+          excludeProjects,
+          basis,
           demo,
         ] as const,
       recurring: (includeDismissed = false) =>

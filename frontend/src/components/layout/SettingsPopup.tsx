@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { X } from "lucide-react";
 import { useDemoMode } from "../../context/DemoModeContext";
 import { useBudgetAlertSettings } from "../../hooks/useBudgetAlertSettings";
+import { useMoneyBasis, type MoneyBasis } from "../../hooks/useMoneyBasis";
 import { useConfirm, useNotify } from "../../context/DialogContext";
 import { useScrollLock } from "../../hooks/useScrollLock";
 import { backupApi, testingApi } from "../../services/api";
@@ -37,6 +38,7 @@ export function SettingsPopup({
     setEnabled: setAlertsEnabled,
     setThreshold: setAlertsThreshold,
   } = useBudgetAlertSettings();
+  const { basis, setBasis } = useMoneyBasis();
   const confirm = useConfirm();
   const notify = useNotify();
   const queryClient = useQueryClient();
@@ -203,6 +205,41 @@ export function SettingsPopup({
               עברית
             </span>
           </div>
+        </div>
+
+        {/* Counting basis — read by Income & Expenses and yearly savings */}
+        <div>
+          <label
+            id="money-basis-label"
+            className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wider mb-2 block"
+          >
+            {t("basis.title")}
+          </label>
+          <div
+            role="radiogroup"
+            aria-labelledby="money-basis-label"
+            className="flex bg-[var(--surface-light)] rounded-lg p-1 gap-1"
+          >
+            {(["net_cost", "cash_flow"] as MoneyBasis[]).map((option) => (
+              <button
+                key={option}
+                type="button"
+                role="radio"
+                aria-checked={basis === option}
+                onClick={() => setBasis(option)}
+                className={`flex-1 py-1.5 text-sm font-medium rounded-md transition-colors ${
+                  basis === option
+                    ? "bg-[var(--primary)] text-white shadow-sm"
+                    : "text-[var(--text-muted)] hover:text-[var(--text-default)]"
+                }`}
+              >
+                {t(`basis.${option}`)}
+              </button>
+            ))}
+          </div>
+          <p className="mt-2 text-[11px] text-[var(--text-muted)]" data-testid="money-basis-help">
+            {t(`basis.explain.${basis}`)}
+          </p>
         </div>
 
         {/* Demo Mode Toggle */}

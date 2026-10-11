@@ -22,6 +22,11 @@ from backend.models.savings_goal import (
 )
 from backend.services.bank_balance_service import BankBalanceService
 from backend.services.cash_balance_service import CashBalanceService
+from backend.services.cash_flow_basis import (
+    BASIS_CASH_FLOW,
+    Basis,
+    date_cards_by_billing,
+)
 from backend.services.pending_refunds_service import (
     PendingRefundsService,
     apply_refund_amount_adjustments,
@@ -87,13 +92,11 @@ class InputsMixin:
         Returns
         -------
         dict
-            ``surplus`` — ``{(year, month): float}``, income less spending and
-            investing of the rows no goal claims; ``direct`` (income a goal
+            ``unlinked`` — the rows no goal claims that count toward the
+            yearly surplus (see :meth:`_surplus`); ``direct`` (income a goal
             claims) and ``utilized`` (spending paid out of a goal, refunds
-            netted) — ``{(year, month): {goal_id: amount}}``; ``invested`` —
-            ``{(year, month): float}``, the net money moved into investments
-            outside any goal (withdrawals negative), which the surplus already
-            took out; ``events`` — ``[(date, goal_id, link_type, amount)]``,
+            netted) — ``{(year, month): {goal_id: amount}}``; ``events`` —
+            ``[(date, goal_id, link_type, amount)]``,
             the dated rows behind ``direct`` and ``utilized``; and ``liquid``
             — ``{(year, month): float}``, the net of every bank and cash
             transaction that month.
@@ -107,12 +110,12 @@ class InputsMixin:
         """Do the actual transaction scan behind :meth:`_build_context`."""
         df = self.transactions_service.get_data_for_analysis()
         empty: dict[str, Any] = {
-            "surplus": {},
+            "unlinked": pd.DataFrame(),
             "direct": {},
             "utilized": {},
-            "invested": {},
             "events": [],
             "liquid": {},
+            "surplus_by_basis": {},
         }
         if df.empty:
             return empty
@@ -162,39 +165,6 @@ class InputsMixin:
             & ~df[TransactionsTableFields.CATEGORY.value].isin(_NOT_SAVING_CATEGORIES)
         ]
 
-        surplus: dict[tuple[int, int], float] = {}
-        invested: dict[tuple[int, int], float] = {}
-        if not unlinked.empty:
-            # A refund matched to its purchase counts in the purchase's month,
-            # as the Income & Expenses card counts it.
-            unlinked = apply_refund_amount_adjustments(
-                unlinked,
-                PendingRefundsService(self.db).get_refund_amount_adjustments(
-                    exclude_open=False
-                ),
-            )
-            masks = transactions_masks(unlinked)
-            income = (
-                unlinked[masks["income"]].groupby(["_year", "_month"])[amount_col].sum()
-            )
-            expenses = (
-                unlinked[masks["expenses"]]
-                .groupby(["_year", "_month"])[amount_col]
-                .sum()
-            )
-            investments = (
-                unlinked[masks["investments"]]
-                .groupby(["_year", "_month"])[amount_col]
-                .sum()
-            )
-            # Expenses and investments are negative in the raw convention, so
-            # summing all three straight through already nets them out.
-            combined = income.add(expenses, fill_value=0).add(investments, fill_value=0)
-            surplus = {(int(y), int(m)): float(v) for (y, m), v in combined.items()}
-            invested = {
-                (int(y), int(m)): -float(v) for (y, m), v in investments.items()
-            }
-
         direct: dict[tuple[int, int], dict[int, float]] = {}
         utilized: dict[tuple[int, int], dict[int, float]] = {}
         events: list[tuple[str, int, str, float]] = []
@@ -213,13 +183,74 @@ class InputsMixin:
             events.append((row["_date"], goal_id, row["_link_type"], amount))
 
         return {
-            "surplus": surplus,
+            "unlinked": unlinked,
             "direct": direct,
             "utilized": utilized,
-            "invested": invested,
             "events": events,
             "liquid": liquid,
+            "surplus_by_basis": {},
         }
+
+    def _surplus(
+        self, basis: Basis
+    ) -> tuple[dict[tuple[int, int], float], dict[tuple[int, int], float]]:
+        """Return each month's surplus and investing on one counting basis.
+
+        Parameters
+        ----------
+        basis : {"net_cost", "cash_flow"}
+            Net cost counts a matched refund in its purchase's month, as the
+            Income & Expenses card does on that basis; cash flow counts card
+            rows on the day they were charged and each refund where it landed
+            (see ``backend.services.cash_flow_basis``).
+
+        Returns
+        -------
+        tuple of dict
+            ``surplus`` — ``{(year, month): float}``, income less spending
+            and investing of the rows no goal claims — and ``invested`` —
+            ``{(year, month): float}``, the net money moved into investments
+            outside any goal (withdrawals negative), which the surplus
+            already took out.
+        """
+        context = self._build_context()
+        cached = context["surplus_by_basis"].get(basis)
+        if cached is not None:
+            return cached
+        unlinked = context["unlinked"]
+        surplus: dict[tuple[int, int], float] = {}
+        invested: dict[tuple[int, int], float] = {}
+        if not unlinked.empty:
+            if basis == BASIS_CASH_FLOW:
+                unlinked = date_cards_by_billing(unlinked)
+                parsed = pd.to_datetime(unlinked[TransactionsTableFields.DATE.value])
+                unlinked = unlinked.assign(
+                    _year=parsed.dt.year.astype(int), _month=parsed.dt.month.astype(int)
+                )
+            else:
+                unlinked = apply_refund_amount_adjustments(
+                    unlinked,
+                    PendingRefundsService(self.db).get_refund_amount_adjustments(
+                        exclude_open=False
+                    ),
+                )
+            amount_col = TransactionsTableFields.AMOUNT.value
+            masks = transactions_masks(unlinked)
+            by_month = ["_year", "_month"]
+            income = unlinked[masks["income"]].groupby(by_month)[amount_col].sum()
+            expenses = unlinked[masks["expenses"]].groupby(by_month)[amount_col].sum()
+            investments = (
+                unlinked[masks["investments"]].groupby(by_month)[amount_col].sum()
+            )
+            # Expenses and investments are negative in the raw convention, so
+            # summing all three straight through already nets them out.
+            combined = income.add(expenses, fill_value=0).add(investments, fill_value=0)
+            surplus = {(int(y), int(m)): float(v) for (y, m), v in combined.items()}
+            invested = {
+                (int(y), int(m)): -float(v) for (y, m), v in investments.items()
+            }
+        context["surplus_by_basis"][basis] = (surplus, invested)
+        return surplus, invested
 
     @staticmethod
     def _row_keys(df: pd.DataFrame) -> list[_RowKey]:

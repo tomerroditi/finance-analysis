@@ -59,7 +59,12 @@ def add_txn(
 
 
 def add_card_txn(
-    db: Session, month: str, amount: float, category: str, day: int = 15
+    db: Session,
+    month: str,
+    amount: float,
+    category: str,
+    day: int = 15,
+    billing_date: str | None = None,
 ) -> CreditCardTransaction:
     """Insert one itemized credit-card purchase into a month and return it."""
     txn = CreditCardTransaction(
@@ -72,6 +77,7 @@ def add_card_txn(
         category=category,
         source="credit_card_transactions",
         type="normal",
+        billing_date=billing_date,
     )
     db.add(txn)
     db.commit()
