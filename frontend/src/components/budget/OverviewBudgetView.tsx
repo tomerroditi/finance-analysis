@@ -330,7 +330,7 @@ export const OverviewBudgetView: React.FC<OverviewBudgetViewProps> = ({
         />
         {isCurrent ? (
           <Kpi
-            label={t("budget.overview.stillCommitted")}
+            label={t("budget.overview.fixedCommitted")}
             value={formatCurrency(committed)}
             sub={t("budget.overview.chargesDueCount", { count: chargesDue.length })}
           />
