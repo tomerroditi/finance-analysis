@@ -14,9 +14,11 @@ sequence of (month, day) pairs read off the ``billing_date`` its own rows
 carry, never one number. An estimate for a purchase uses the day in force
 nearest to the month it was billed in.
 
-A card refund is often not credited on a bill at all but paid straight into
-the bank account a few days later; such a refund counts on the day the bank
-received it.
+Not every card row reaches the monthly bill. Some purchases are charged
+immediately (subscriptions and foreign purchases on some cards), each as its
+own bank debit a few days later, and a refund is often paid straight into the
+bank account instead of credited on a bill. Such rows count on the day the
+bank paid or received them.
 
 Where no row of a card reports a billing date yet, its bills still show in
 the bank: the paying account is found by matching the card's monthly totals
@@ -69,16 +71,21 @@ _MATCH_MIN_SHARE = 0.5
 #: How far back the pairing looks, in months.
 _MATCH_WINDOW_MONTHS = 18
 
-#: A refund paid straight to the bank arrives within this many days of
-#: showing on the card (2–5 days in practice), and covers at most this many
-#: refund rows; the candidates searched are capped to keep it cheap.
-_DIRECT_REFUND_DAYS = 10
-_DIRECT_REFUND_MAX_ROWS = 3
-_DIRECT_REFUND_POOL = 12
-_AGORA = 0.005
-#: How far a batch of foreign-currency refunds may sit from the shekel
-#: transfer that repaid it (one card's rate against another's).
-_FX_TOLERANCE = 0.02
+#: A card row settled straight with the bank — an immediate charge, a refund
+#: paid back to the account — usually reaches it 1–5 days after showing on
+#: the card, but a disputed charge can take three weeks. An exact match (up
+#: to four rows summing to the agora) looks back
+#: :data:`_DIRECT_DAYS`; a match within :data:`_FX_TOLERANCE` only
+#: :data:`_DIRECT_FX_DAYS`, where a loose amount is still telling. The
+#: candidates searched are capped (a month of one card is ~60 rows).
+_DIRECT_DAYS = 25
+_DIRECT_FX_DAYS = 5
+_DIRECT_POOL = 80
+#: How far a foreign-currency charge or refund may sit from the shekel amount
+#: the bank saw (the card's conversion against the settlement's; up to ~5%).
+_FX_TOLERANCE = 0.06
+#: A monthly bill lands on its billing day or up to this many days later.
+_REGULAR_BILL_SLACK_DAYS = 3
 
 #: ``(provider, account_name, account_number)`` — one physical card.
 CardKey = tuple[str, str, str]
@@ -158,6 +165,11 @@ def billing_months(purchased: pd.Series, billing_day: int) -> pd.Series:
 def _subset_summing_to(pool: pd.DataFrame, target: float) -> list[str]:
     """Return the fewest rows of ``pool`` whose amounts make up ``target``.
 
+    Up to four rows, exactly to the agora. Amounts are compared in whole
+    agorot through a table of pair sums, so a three- or four-row match costs
+    a lookup per row or pair rather than a pass over every combination —
+    which keeps a whole month of candidates affordable.
+
     Parameters
     ----------
     pool : pd.DataFrame
@@ -170,37 +182,57 @@ def _subset_summing_to(pool: pd.DataFrame, target: float) -> list[str]:
     list of str
         The rows' ``_uid`` values, or empty when no combination fits.
     """
-    rows = list(zip(pool["_uid"], pool[_AMOUNT], strict=True))
-    for size in range(1, _DIRECT_REFUND_MAX_ROWS + 1):
-        for combo in combinations(rows, size):
-            if abs(sum(amount for _, amount in combo) - target) < _AGORA:
-                return [uid for uid, _ in combo]
+    uids = list(pool["_uid"])
+    cents = [round(float(a) * 100) for a in pool[_AMOUNT]]
+    goal = round(target * 100)
+    singles: dict[int, int] = {}
+    for i, c in enumerate(cents):
+        singles.setdefault(c, i)
+    if goal in singles:
+        return [uids[singles[goal]]]
+    pairs: dict[int, tuple[int, int]] = {}
+    for i, j in combinations(range(len(cents)), 2):
+        pairs.setdefault(cents[i] + cents[j], (i, j))
+    if goal in pairs:
+        return [uids[k] for k in pairs[goal]]
+    for i, c in enumerate(cents):
+        pair = pairs.get(goal - c)
+        if pair and i not in pair:
+            return [uids[k] for k in (i, *pair)]
+    for i, j in combinations(range(len(cents)), 2):
+        pair = pairs.get(goal - cents[i] - cents[j])
+        if pair and not {i, j} & set(pair):
+            return [uids[k] for k in (i, j, *pair)]
     return []
 
 
 def _batch_summing_to(window: pd.DataFrame, target: float) -> list[str]:
-    """Return one card's refunds of one day that together make up ``target``.
+    """Return the row, or one card's rows of one day, that make up ``target``.
 
-    A batch of refunds — eight cancelled ad charges, say — is paid back as one
-    transfer, and when they were charged in a foreign currency the transfer is
-    converted at a different rate than the refunds were. So a whole day's
-    refunds on one card match within :data:`_FX_TOLERANCE` rather than to the
-    agora, the latest such day first.
+    A foreign-currency charge or refund reaches the bank converted at another
+    rate than the card showed, and a batch of refunds — eight cancelled ad
+    charges, say — comes back as one transfer. So the closest single row, or
+    else a whole day's rows on one card, match within :data:`_FX_TOLERANCE`
+    rather than to the agora.
 
     Parameters
     ----------
     window : pd.DataFrame
-        Candidate refunds with ``_key``, ``_day``, ``_uid`` and ``amount``.
+        Candidate card rows with ``_key``, ``_day``, ``_uid`` and ``amount``.
     target : float
-        The bank credit.
+        The bank row's amount.
 
     Returns
     -------
     list of str
         The batch's ``_uid`` values, or empty when no batch fits.
     """
+    tolerance = abs(target) * _FX_TOLERANCE
+    gaps = (window[_AMOUNT] - target).abs()
+    if not gaps.empty and gaps.min() <= tolerance:
+        return [window.loc[gaps.idxmin(), "_uid"]]
     for _, batch in window.groupby(["_key", "_day"], sort=False):
-        if abs(batch[_AMOUNT].sum() - target) <= target * _FX_TOLERANCE:
+        if abs(batch[_AMOUNT].sum() - target) <= tolerance:
             return batch["_uid"].tolist()
     return []
 
@@ -303,16 +335,16 @@ class BillingSchedule:
         Card -> the bill stream its totals matched.
     stream_days : dict
         Bill stream -> its usual billing day, read off the bank's dates.
-    direct_refunds : dict
-        Card row (its ``unique_id``) -> the day the bank received it, for a
-        refund the issuer paid straight into the bank account rather than
-        crediting it on a bill.
+    settled_directly : dict
+        Card row (its ``unique_id``) -> the day the bank paid or received it,
+        for a purchase charged immediately or a refund paid straight into the
+        bank account — anything settled outside the monthly bill.
     """
 
     history: dict[CardKey, list[tuple[pd.Period, int]]] = field(default_factory=dict)
     paid_from: dict[CardKey, StreamKey] = field(default_factory=dict)
     stream_days: dict[StreamKey, int] = field(default_factory=dict)
-    direct_refunds: dict[str, pd.Timestamp] = field(default_factory=dict)
+    settled_directly: dict[str, pd.Timestamp] = field(default_factory=dict)
 
     @classmethod
     def from_frame(cls, df: pd.DataFrame) -> "BillingSchedule":
@@ -369,53 +401,81 @@ class BillingSchedule:
 
         if not bills.empty:
             schedule._match_streams(cards, bills)
-            schedule._match_direct_refunds(cards, bills)
+            schedule._match_direct_settlements(cards, bills)
         return schedule
 
-    def _match_direct_refunds(self, cards: pd.DataFrame, bills: pd.DataFrame) -> None:
-        """Find card refunds the issuer paid straight into a bank account.
+    def _match_direct_settlements(
+        self, cards: pd.DataFrame, bills: pd.DataFrame
+    ) -> None:
+        """Find card rows settled with the bank outside the monthly bill.
 
-        A refund is often not credited on the next bill but transferred to
-        the paying account a few days after it shows on the card — a positive
-        bank-side ``Credit Cards`` row. Each such credit is matched to the
-        card refunds dated in the :data:`_DIRECT_REFUND_DAYS` before it, on
-        cards that bank account pays (or whose payer is unknown): up to
-        :data:`_DIRECT_REFUND_MAX_ROWS` of them summing to it to the agora,
-        or else one card's refunds of one day summing to it within
-        :data:`_FX_TOLERANCE`.
+        Two kinds of card row never reach the monthly bill. Some purchases
+        are charged immediately — subscriptions and foreign purchases on
+        some cards — as their own bank-side ``Credit Cards`` debit a day or
+        three later; and a refund is often transferred to the paying account
+        a few days after it shows on the card rather than credited on the
+        bill. Every bank-side card row that is not the stream's regular bill
+        (any credit, and any debit off the stream's billing day) is matched to
+        the card rows of the same sign before it, on cards that bank account
+        pays (or whose payer is unknown): up to four of
+        them summing to it to the agora within :data:`_DIRECT_DAYS`, or else a
+        single row or one card's rows of one day within :data:`_FX_TOLERANCE`
+        and :data:`_DIRECT_FX_DAYS`, for amounts converted at another rate.
         """
         if "unique_id" not in cards.columns:
             return
-        credits = bills[bills[_AMOUNT] > 0]
-        credits = credits.assign(_day=pd.to_datetime(credits[_DATE], errors="coerce"))
-        credits = credits.dropna(subset=["_day"]).sort_values("_day")
-        refunds = cards[cards[_AMOUNT] > 0]
-        refunds = refunds.assign(
-            _day=pd.to_datetime(refunds[_DATE], errors="coerce"),
-            _uid=refunds["unique_id"].astype(str),
-        )
-        refunds = refunds.dropna(subset=["_day"])
-        if credits.empty or refunds.empty:
+        settled = bills.assign(_day=pd.to_datetime(bills[_DATE], errors="coerce"))
+        settled = settled.dropna(subset=["_day"])
+        settled = settled[
+            (settled[_AMOUNT] > 0) | ~settled.apply(self._is_regular_bill, axis=1)
+        ].sort_values("_day")
+        rows = cards.assign(
+            _day=pd.to_datetime(cards[_DATE], errors="coerce"),
+            _uid=cards["unique_id"].astype(str),
+        ).dropna(subset=["_day"])
+        if settled.empty or rows.empty:
             return
         payer = {key: stream[:2] for key, stream in self.paid_from.items()}
-        refunds = refunds.assign(_payer=refunds["_key"].map(payer))
-        for _, credit in credits.iterrows():
-            bank = (str(credit["provider"]), str(credit["account_name"]))
-            window = refunds[
-                (refunds["_day"] <= credit["_day"])
-                & (
-                    refunds["_day"]
-                    >= credit["_day"] - timedelta(days=_DIRECT_REFUND_DAYS)
-                )
-                & ~refunds["_uid"].isin(self.direct_refunds)
-                & refunds["_payer"].map(lambda p, b=bank: pd.isna(p) or p == b)
+        rows = rows.assign(_payer=rows["_key"].map(payer))
+        for _, bank_row in settled.iterrows():
+            bank = (str(bank_row["provider"]), str(bank_row["account_name"]))
+            amount = float(bank_row[_AMOUNT])
+            window = rows[
+                (rows["_day"] <= bank_row["_day"])
+                & (rows["_day"] >= bank_row["_day"] - timedelta(days=_DIRECT_DAYS))
+                & ((rows[_AMOUNT] > 0) == (amount > 0))
+                & ~rows["_uid"].isin(self.settled_directly)
+                & rows["_payer"].map(lambda p, b=bank: pd.isna(p) or p == b)
             ].sort_values("_day", ascending=False)
-            target = float(credit[_AMOUNT])
+            recent = window[
+                window["_day"] >= bank_row["_day"] - timedelta(days=_DIRECT_FX_DAYS)
+            ]
             match = _subset_summing_to(
-                window[["_uid", _AMOUNT]].head(_DIRECT_REFUND_POOL), target
-            ) or _batch_summing_to(window, target)
+                window[["_uid", _AMOUNT]].head(_DIRECT_POOL), amount
+            ) or _batch_summing_to(recent, amount)
             for uid in match:
-                self.direct_refunds[uid] = credit["_day"]
+                self.settled_directly[uid] = bank_row["_day"]
+
+    def _is_regular_bill(self, bank_row: pd.Series) -> bool:
+        """Whether a bank-side card debit is its stream's monthly bill.
+
+        It is when it lands on the stream's billing day for its month, or up
+        to :data:`_REGULAR_BILL_SLACK_DAYS` after it (closed days, posting;
+        some banks charge on weekends, so the window starts at the day itself).
+        A stream with no known billing day counts every debit as a bill.
+        """
+        stream = (
+            str(bank_row["provider"]),
+            str(bank_row["account_name"]),
+            issuer_key(bank_row["description"]),
+        )
+        day = self.stream_days.get(stream)
+        if day is None:
+            return True
+        month = bank_row["_day"].to_period("M")
+        nominal = date(month.year, month.month, min(day, month.days_in_month))
+        late = (bank_row["_day"].date() - nominal).days
+        return 0 <= late <= _REGULAR_BILL_SLACK_DAYS
 
     def _match_streams(self, cards: pd.DataFrame, bills: pd.DataFrame) -> None:
         """Pair each card with the bill stream its monthly totals follow."""

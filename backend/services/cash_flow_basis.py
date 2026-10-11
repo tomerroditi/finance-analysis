@@ -105,9 +105,10 @@ def date_cards_by_billing(
         else pd.Series(pd.NaT, index=cards.index)
     )
     charged = reported.fillna(_estimated_billing(cards[reported.isna()], schedule))
-    if schedule.direct_refunds and "unique_id" in cards.columns:
-        # A refund paid straight into the bank counts the day it arrived.
-        received = cards["unique_id"].astype(str).map(schedule.direct_refunds)
+    if schedule.settled_directly and "unique_id" in cards.columns:
+        # Charged immediately, or refunded straight into the bank: the
+        # bank's own date.
+        received = cards["unique_id"].astype(str).map(schedule.settled_directly)
         charged = received.fillna(charged)
     df.loc[is_card, "date"] = charged.dt.strftime("%Y-%m-%d").fillna(cards["date"])
     not_charged = pd.Series(False, index=df.index)

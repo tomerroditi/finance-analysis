@@ -232,14 +232,14 @@ class TestDirectRefunds:
         """Two refunds summing to the credit take its date."""
         schedule = BillingSchedule.from_frame(_refund_frame(734.33))
 
-        assert {uid: day.date() for uid, day in schedule.direct_refunds.items()} == {
+        assert {uid: day.date() for uid, day in schedule.settled_directly.items()} == {
             "1": date(2026, 8, 17),
             "2": date(2026, 8, 17),
         }
 
     def test_a_credit_that_matches_no_refund_claims_nothing(self):
         """Refunds that do not add up to the credit stay on the bill."""
-        assert BillingSchedule.from_frame(_refund_frame(700.00)).direct_refunds == {}
+        assert BillingSchedule.from_frame(_refund_frame(100.00)).settled_directly == {}
 
     def test_a_day_of_foreign_currency_refunds_matches_its_transfer(self):
         """Many refunds repaid as one shekel transfer at another rate still pair."""
@@ -261,6 +261,50 @@ class TestDirectRefunds:
             },
         ])
 
-        matched = BillingSchedule.from_frame(df).direct_refunds
+        matched = BillingSchedule.from_frame(df).settled_directly
 
         assert sorted(matched) == ["1", "2", "3", "4", "5"]
+
+
+class TestImmediateCharges:
+    """A purchase debited on its own, off the billing day, counts on that day."""
+
+    @staticmethod
+    def _frame_with(debits: list[tuple[str, float]]) -> pd.DataFrame:
+        """A 10th-of-the-month card, a few purchases, and the bank's debits."""
+        rows = [
+            {"unique_id": 1, "date": "2026-04-13", "amount": -21.90},
+            {"unique_id": 2, "date": "2026-04-22", "amount": -1913.97},
+            {"unique_id": 3, "date": "2026-04-20", "amount": -300.00},
+        ]
+        for i, (day, amount) in enumerate(debits, 10):
+            rows.append({
+                "unique_id": i, "date": day, "amount": amount,
+                "source": "bank_transactions", "category": "Credit Cards",
+                "provider": "hapoalim", "account_name": "Shir",
+                "description": "מסטרקרד", "account_number": None,
+            })
+        return _frame(rows)
+
+    def test_exact_and_converted_debits_claim_their_purchases(self):
+        """₪21.90 exactly, and a foreign purchase 5% off, are each matched."""
+        df = self._frame_with([
+            ("2026-03-10", -5000.0),
+            ("2026-04-10", -5000.0),
+            ("2026-04-14", -21.90),
+            ("2026-04-24", -2017.03),
+            ("2026-05-10", -300.0),
+        ])
+
+        settled = BillingSchedule.from_frame(df).settled_directly
+
+        assert {uid: day.date() for uid, day in settled.items()} == {
+            "1": date(2026, 4, 14),
+            "2": date(2026, 4, 24),
+        }
+
+    def test_the_monthly_bill_claims_nothing(self):
+        """A debit on the billing day is the bill, not an immediate charge."""
+        df = self._frame_with([("2026-03-10", -5000.0), ("2026-04-10", -21.90)])
+
+        assert BillingSchedule.from_frame(df).settled_directly == {}
