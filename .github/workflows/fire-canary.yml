@@ -1,0 +1,61 @@
+name: Early-retirement reference canary
+
+# The early-retirement calculator (`backend/services/fire/`) is a clone of
+# zekestories.com's, proven against answers recorded from it. This re-asks the
+# live site ~20 of those questions once a month and fails when our engine no
+# longer agrees, so a formula the author changes is noticed. See
+# `research/zeke_retire_calc/canary.py`.
+
+on:
+  schedule:
+    # Mid-month: the reference and the runner must agree on what "this month"
+    # is, and the 15th is far from either edge.
+    - cron: "0 6 15 * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fire-canary
+  cancel-in-progress: false
+
+jobs:
+  canary:
+    runs-on: ubuntu-latest
+    name: Re-probe the reference
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Install Poetry
+        run: pip install poetry
+
+      - name: Cache Poetry virtualenv
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/pypoetry/virtualenvs
+          key: poetry-${{ runner.os }}-${{ hashFiles('poetry.lock') }}
+          restore-keys: |
+            poetry-${{ runner.os }}-
+
+      - name: Install dependencies
+        run: poetry install --no-root
+
+      - name: Run the canaries
+        env:
+          PYTHONIOENCODING: utf-8
+        run: poetry run python research/zeke_retire_calc/canary.py --out canary-answers
+
+      - name: Keep the fresh answers
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: canary-answers
+          path: canary-answers/
+          retention-days: 90

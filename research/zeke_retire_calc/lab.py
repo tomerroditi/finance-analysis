@@ -40,6 +40,13 @@ import zeke  # noqa: E402
 
 def record(session: zeke.Session, name: str, payload: dict, family: str) -> dict:
     """Submit one scenario and record the answer as fixture `name`."""
+    fixture = probe(session, name, payload, family)
+    parity.save(name, fixture)
+    return fixture
+
+
+def probe(session: zeke.Session, name: str, payload: dict, family: str) -> dict:
+    """Submit one scenario and return the answer as a fixture, without saving it."""
     started = time.time()
     answer = session.calc(payload, verbose=False)
     body = answer.get("results", "")
@@ -51,9 +58,9 @@ def record(session: zeke.Session, name: str, payload: dict, family: str) -> dict
         "charts": extract.charts(body),
         "meta": {"seconds": round(time.time() - started, 1), "job": answer.get("_job"),
                  "family": family, "recorded_in": date.today().replace(day=1).isoformat(),
-                 "messages": zeke.text(answer.get("messages_html") or "")},
+                 "messages": zeke.text(answer.get("messages_html") or ""),
+                 "errors": zeke.text(answer.get("form_errors") or "")},
     }
-    parity.save(name, fixture)
     return fixture
 
 
