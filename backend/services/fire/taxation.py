@@ -129,9 +129,15 @@ class TaxableAccount:
                 return gross * gain_share
             return lot_math.realised_gain(self.lots, self.method, gross, commit=False)
 
+        # The tax on the other income is the same for every gross the
+        # bisection below tries; price it once.
+        base_tax = israeli_tax.stacked_base_tax(
+            age, statutory_age, taxable_income, exemption
+        )
+
         def tax_on(gross: float) -> float:
             return israeli_tax.capital_gains_tax(
-                gain_on(gross), age, statutory_age, taxable_income, exemption
+                gain_on(gross), age, statutory_age, taxable_income, exemption, base_tax
             )
 
         ceiling = need / max(1 - CAPITAL_GAINS_RATE * gain_share, 1e-9)

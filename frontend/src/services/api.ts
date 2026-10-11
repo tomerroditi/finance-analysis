@@ -1489,5 +1489,7 @@ export const fireApi = {
   savePlan: (fields: Record<string, string>, linked: string[]) =>
     api.put<FirePlan>("/fire/plan", { fields, linked }),
   resetPlan: () => api.delete<FirePlan>("/fire/plan"),
-  getPlanProjection: () => api.get<FireProjection>("/fire/plan/projection"),
+  /** `advice: false` skips the optimiser's second search; the dashboard card does not show it. */
+  getPlanProjection: (advice = true) =>
+    api.get<FireProjection>("/fire/plan/projection", { params: { advice } }),
 };

@@ -197,3 +197,23 @@ class TestPlanEndpoints:
         response = test_client.delete("/api/fire/plan")
         assert response.status_code == 200
         assert response.json()["saved"] is False
+
+
+class TestPlanProjectionAdvice:
+    """The dashboard card asks for the plan without the optimiser's advice."""
+
+    def test_advice_can_be_left_out(self, test_client) -> None:
+        """`advice=false` answers the same plan with no recommendation."""
+        fields = {
+            "dateOfBirth": "1990-01-01",
+            "num_expense_fields": "1",
+            "expenseSum1": "10000",
+            "num_income_fields": "1",
+            "incomeSum1": "20000",
+        }
+        test_client.put("/api/fire/plan", json={"fields": fields, "linked": []})
+        bare = test_client.get("/api/fire/plan/projection", params={"advice": "false"})
+        full = test_client.get("/api/fire/plan/projection")
+        assert bare.status_code == full.status_code == 200
+        assert bare.json()["recommendation"] is None
+        assert bare.json()["retire_index"] == full.json()["retire_index"]

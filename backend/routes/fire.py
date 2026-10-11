@@ -12,19 +12,15 @@ dashboard card shows.
 
 from __future__ import annotations
 
-from datetime import date
 from typing import Literal
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from backend.dependencies import get_database
 from backend.routes.schemas import ApiRequestModel
-from backend.services.fire.advice import advise
-from backend.services.fire.models import Plan
-from backend.services.fire.reference_form import plan_from_reference
-from backend.services.fire.solver import solve
+from backend.services.fire.projection import project
 from backend.services.fire_plan_service import FirePlanService
 
 router = APIRouter()
@@ -205,21 +201,27 @@ def reset_plan(db: Session = Depends(get_database)) -> dict:
 
 
 @router.get("/plan/projection", response_model=FireProjection)
-def plan_projection(db: Session = Depends(get_database)) -> FireProjection:
+def plan_projection(
+    advice: bool = Query(
+        True,
+        description=(
+            "Include the optimiser's suggestion. It searches the plan a second "
+            "time; the dashboard card, which does not show it, asks without."
+        ),
+    ),
+    db: Session = Depends(get_database),
+) -> FireProjection:
     """Run the user's plan, as saved and refreshed from tracked data."""
     fields = FirePlanService(db).runnable_fields()
     if fields is None:
         return _empty("needs_setup", 0, inferred=False)
-    return _project(plan_from_reference(fields))
+    return _project(fields, with_advice=advice)
 
 
 @router.post("/calculate", response_model=FireProjection)
 def calculate(scenario: FireScenario) -> FireProjection:
     """Run a scenario and return its projection."""
-    plan = plan_from_reference(scenario.fields)
-    if scenario.decumulation_return_pct is not None:
-        plan.decumulation_return_pct = scenario.decumulation_return_pct
-    return _project(plan)
+    return _project(scenario.fields, scenario.decumulation_return_pct)
 
 
 def _empty(status: str, search_limit: int, inferred: bool) -> FireProjection:
@@ -242,15 +244,19 @@ def _empty(status: str, search_limit: int, inferred: bool) -> FireProjection:
     )
 
 
-def _project(plan: Plan) -> FireProjection:
-    """Solve a plan from this month and shape the answer for the results view."""
-    today = date.today().replace(day=1)
-    result = solve(plan, today)
+def _project(
+    fields: dict[str, str],
+    decumulation_return_pct: float | None = None,
+    with_advice: bool = True,
+) -> FireProjection:
+    """Solve a form from this month and shape the answer for the results view."""
+    projection = project(fields, decumulation_return_pct, with_advice)
+    result = projection.result
 
     if result.simulation is None:
         return _empty("no_result", result.search_limit, result.inferred)
 
-    recommendation = advise(plan, result, today)
+    recommendation = projection.recommendation
     retired = (
         result.simulation.months[result.retire_index - 1]
         if result.retire_index
