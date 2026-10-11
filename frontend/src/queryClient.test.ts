@@ -17,7 +17,7 @@ describe("shouldDehydrateQuery", () => {
     expect(shouldDehydrateQuery(query(qk.transactions.list("all", false)))).toBe(
       true,
     );
-    expect(shouldDehydrateQuery(query(qk.retirement.projections()))).toBe(true);
+    expect(shouldDehydrateQuery(query(qk.fire.planProjection()))).toBe(true);
   });
 
   it("never persists a query that has not settled successfully", () => {
