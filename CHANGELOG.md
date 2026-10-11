@@ -1,3 +1,9 @@
+## v1.107.2 (2026-10-11)
+
+### Fix
+
+- **insights**: make undo restore the card at once and walk back every dismissal (#394)
+
 ## v1.107.1 (2026-10-11)
 
 ### Refactor
