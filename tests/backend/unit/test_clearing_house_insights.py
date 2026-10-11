@@ -1,135 +1,16 @@
 """Tests for what the app derives from the pension clearing house's data.
 
-Covers the monthly-pension estimate re-derived from the providers' own
-forecasts for the user's target retirement age, and the mirroring of loans
-taken against a pension/Keren Hishtalmut policy onto the Liabilities page.
-The forecast figures are shaped like two real funds' published numbers.
+Covers the mirroring of loans taken against a pension/Keren Hishtalmut policy
+onto the Liabilities page.
 """
 
 import json
 
-import pytest
 from sqlalchemy import select
 
-from backend.models.insurance_account import InsuranceAccount
 from backend.models.liability import Liability
 from backend.services.liabilities_service import LiabilitiesService
-from backend.services.retirement_service import (
-    RetirementService,
-    project_pension_payout,
-)
 from backend.services.tagging_service import CategoriesTagsService
-
-COMPREHENSIVE = {
-    "balance": 254624.49,
-    "retirement_age": 67,
-    "capital_no_deposits": 1041302.16,
-    "capital_with_deposits": 5755063.0,
-    "pension_no_deposits": 5307.35,
-    "pension_with_deposits": 29333.0,
-}
-SUPPLEMENTARY = {
-    "balance": 38816.18,
-    "retirement_age": 67,
-    "capital_no_deposits": 114268.0,
-    "capital_with_deposits": 2326919.0,
-    "pension_no_deposits": 557.76,
-    "pension_with_deposits": 11358.0,
-}
-
-
-def _pension_account(policy_id: str, forecast: dict) -> InsuranceAccount:
-    """An insurance account whose details carry a clearing-house forecast."""
-    return InsuranceAccount(
-        provider="mislaka",
-        policy_id=policy_id,
-        policy_type="pension",
-        pension_type="makifa",
-        account_name="Pension",
-        balance=forecast["balance"],
-        balance_date="2026-08-31",
-        details=json.dumps(
-            {
-                "source_date": "2026-08-31",
-                "retirement_age": forecast["retirement_age"],
-                "balance_forecast": forecast["capital_with_deposits"],
-                "balance_forecast_no_deposits": forecast["capital_no_deposits"],
-                "monthly_pension_forecast": forecast["pension_with_deposits"],
-                "monthly_pension_forecast_no_deposits": forecast["pension_no_deposits"],
-            }
-        ),
-    )
-
-
-class TestProjectPensionPayout:
-    """The per-fund re-derivation for a given stop age."""
-
-    @pytest.mark.parametrize("fund", [COMPREHENSIVE, SUPPLEMENTARY])
-    def test_depositing_to_retirement_age_is_the_providers_own_forecast(self, fund):
-        """Verify stopping at retirement age reproduces "deposits continue"."""
-        assert project_pension_payout(fund, 30, 67) == pytest.approx(
-            fund["pension_with_deposits"]
-        )
-
-    @pytest.mark.parametrize("fund", [COMPREHENSIVE, SUPPLEMENTARY])
-    def test_stopping_today_is_the_providers_no_deposit_forecast(self, fund):
-        """Verify stopping now reproduces "no further deposits"."""
-        assert project_pension_payout(fund, 30, 30) == pytest.approx(
-            fund["pension_no_deposits"]
-        )
-
-    def test_later_stop_ages_pay_more(self):
-        """Verify the estimate rises with every extra year of deposits."""
-        payouts = [project_pension_payout(COMPREHENSIVE, 30, age) for age in range(30, 68)]
-
-        assert payouts == sorted(payouts)
-        assert payouts[0] < payouts[20] < payouts[-1]
-
-    def test_a_fund_without_a_deposit_forecast_pays_its_no_deposit_pension(self):
-        """Verify an inactive fund contributes its frozen pension only."""
-        frozen = {**COMPREHENSIVE, "pension_with_deposits": 0, "capital_with_deposits": 0}
-
-        assert project_pension_payout(frozen, 30, 60) == frozen["pension_no_deposits"]
-
-
-class TestGetPensionForecast:
-    """``RetirementService.get_pension_forecast`` over stored accounts."""
-
-    def test_no_forecast_without_clearing_house_data(self, db_session):
-        """Verify the estimate is None when no pension publishes a forecast."""
-        forecast = RetirementService(db_session).get_pension_forecast(30, 50)
-
-        assert forecast["estimate"] is None
-        assert forecast["funds"] == 0
-
-    def test_sums_every_fund_for_the_plan_ages(self, db_session):
-        """Verify both funds are projected and the totals reported."""
-        db_session.add_all(
-            [
-                _pension_account("1215029099", COMPREHENSIVE),
-                _pension_account("7187793018", SUPPLEMENTARY),
-            ]
-        )
-        db_session.commit()
-
-        forecast = RetirementService(db_session).get_pension_forecast(30, 67)
-
-        assert forecast["estimate"] == 40691
-        assert (forecast["with_deposits"], forecast["no_deposits"]) == (40691, 5865)
-        assert forecast["as_of"] == "2026-08-31"
-        assert forecast["funds"] == 2
-
-    def test_without_ages_or_a_plan_the_deposits_continue_figure_is_used(
-        self, db_session
-    ):
-        """Verify the default when there is nothing to take the ages from."""
-        db_session.add(_pension_account("1215029099", COMPREHENSIVE))
-        db_session.commit()
-
-        forecast = RetirementService(db_session).get_pension_forecast()
-
-        assert forecast["estimate"] == 29333
-
 
 LOAN = {
     "amount": 30000.0,

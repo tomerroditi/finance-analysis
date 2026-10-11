@@ -78,6 +78,6 @@ without touching the code: `backend_services.md`, `backend_repositories.md`,
 `frontend_pitfalls.md`, `frontend_responsive.md`, `frontend_i18n.md`,
 `frontend_i18n_checklist.md`, `frontend_utils.md`, `frontend_pwa.md`,
 `api_paths.md`, `testing.md`, `ci_and_release.md`, `kpi_calculations.md`,
-`retirement_calculations.md`, `savings_goals.md`, `split_transactions.md`,
+`savings_goals.md`, `split_transactions.md`,
 `installation_and_updates.md`, `onezero_mtls.md`, `backend_resources.md`,
 `vercel_demo.md`.

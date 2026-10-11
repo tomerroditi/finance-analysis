@@ -1188,50 +1188,6 @@ class TestMonthlyExpenseAveragesExcludePartialMonth:
         assert result["avg_3_months"] == 3000.0
 
 
-class TestAvgMonthlySalary:
-    """Tests for ``get_avg_monthly_salary`` (the retirement auto-fill default)."""
-
-    def test_averages_per_month_salary_totals(self, db_session, seed_base_transactions):
-        """The three seeded salary months average to their mean."""
-        service = AnalysisService(db_session)
-        assert service.get_avg_monthly_salary() == pytest.approx((8000 + 8500 + 8200) / 3)
-
-    def test_window_keeps_only_the_most_recent_months(self, db_session, seed_base_transactions):
-        """``months`` limits the average to the latest N salary months."""
-        service = AnalysisService(db_session)
-        assert service.get_avg_monthly_salary(months=2) == pytest.approx((8500 + 8200) / 2)
-        assert service.get_avg_monthly_salary(months=1) == pytest.approx(8200)
-
-    def test_two_salary_lines_in_one_month_are_summed_first(self, db_session):
-        """Averaging happens over per-month totals, not individual transactions."""
-        for i, (d, amt) in enumerate([("2024-01-01", 5000.0), ("2024-01-15", 3000.0), ("2024-02-01", 6000.0)]):
-            db_session.add(
-                BankTransaction(
-                    id=f"sal_{i}", date=d, provider="leumi", account_name="Checking",
-                    description="Salary", amount=amt, category="Salary", source="bank_transactions",
-                )
-            )
-        db_session.commit()
-
-        assert AnalysisService(db_session).get_avg_monthly_salary() == pytest.approx(7000.0)
-
-    def test_none_when_no_transactions(self, db_session):
-        """An empty database has no salary to average."""
-        assert AnalysisService(db_session).get_avg_monthly_salary() is None
-
-    def test_none_when_no_salary_category(self, db_session):
-        """Income that is not in the Salary category does not count."""
-        db_session.add(
-            BankTransaction(
-                id="other_income", date="2024-01-01", provider="leumi", account_name="Checking",
-                description="Gift", amount=1000.0, category="Other Income", source="bank_transactions",
-            )
-        )
-        db_session.commit()
-
-        assert AnalysisService(db_session).get_avg_monthly_salary() is None
-
-
 class TestDebtPaymentsOverTime:
     """Tests for ``get_debt_payments_over_time`` with real liability transactions."""
 

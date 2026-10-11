@@ -165,44 +165,33 @@ The demo DB contains **six** rows in `investments`: the three manual ones
 with `scraped` balance snapshots — mirroring what
 `InsuranceSyncMixin.sync_from_insurance` creates for real users when KH
 policies are scraped. Because net worth values investments snapshot-first,
-**the 255k KH is part of the demo's tracked net worth**. The retirement
-calculator swaps it out via `status["tracked_kh_value"]` before adding the
-goal's KH bucket (see `.claude/rules/retirement_calculations.md`). Keep the
+**the 255k KH is part of the demo's tracked net worth**. The early-retirement
+plan (`FirePlanService`) holds each of them as a keren hishtalmut row and
+leaves them out of its portfolios, so they count once. Keep the
 synced-investment balances identical to the `insurance_accounts` balances,
 and never add the KH as extra manual-investment *transactions* — its value
 must flow only through the scraped snapshots.
 
-### Retirement plan must stay ON TRACK
+### The retirement goal seeds the demo's early-retirement plan
 
-The demo `RetirementGoal` is deliberately tuned so Demo Mode shows the
-healthy readiness path — **`readiness == "on_track"`, FIRE age ≤ 55,
-`monthly_savings_needed == 0`** — and the dashboard early-retirement card
-e2e (`dashboard-retirement-card.spec.ts`) asserts the green "On Track"
-readiness, so drifting off track is a CI failure, not just a cosmetic
-change.
+No page reads the demo `RetirementGoal` directly any more. It seeds the
+early-retirement plan `FirePlanService` derives while none is saved: its
+`current_age` becomes the plan's date of birth, `target_retirement_age` the
+latest retirement age the search allows, and `monthly_expenses_override`
+(22,000, the steady state without the wedding and renovation arcs) and
+`monthly_expenses_in_retirement` (16,500) become today's and retirement's
+spending rows. Without it the demo plan has no date of birth, and the
+dashboard card (`dashboard-retirement-card.spec.ts`) shows the setup prompt
+instead of a projection — a CI failure.
 
-The last 12 tracked months include the wedding + renovation arcs, which
-push calculated average expenses above income; the goal therefore ships
-with `monthly_expenses_override=22000` (steady-state spending — this also
-demos the snapshot-override reset button, which
-`retirement-snapshot-fields.spec.ts` asserts is visible exactly once
-initially), `expected_return_rate=0.07` (nominal), and
-`monthly_expenses_in_retirement=16500`.
-
-After ANY change to demo transactions, balances, insurance accounts, or
-the calculator math, re-verify readiness under **both** demo date-shift
-variants (all-months-complete AND running-month-excluded — the
-date-shifted app excludes the running month from the averages):
+After a change to demo balances, insurance accounts or the goal, check the
+derived plan still runs:
 
 ```python
 # against the freshly generated backend/resources/demo_data.db
-svc = RetirementService(session)
-svc.get_projections()  # readiness must be "on_track", with fire_age
-                       # comfortably below 55 (>= 1 year of buffer)
+from backend.services.fire_plan_service import FirePlanService
+assert FirePlanService(session).runnable_fields() is not None
 ```
-
-If it drifts, re-tune the goal params in `create_retirement_goal`
-(keep them realistic — see the docstring) rather than weakening the specs.
 
 ### Mashlima account rule
 

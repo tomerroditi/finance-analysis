@@ -233,33 +233,34 @@ def seed_insurance_with_transactions(db_session):
 
 
 class TestMonthlyContributions:
-    """Tests for get_monthly_contribution_by_type with active account detection."""
+    """Tests for get_monthly_contributions with active account detection."""
 
     def test_hishtalmut_sums_active_accounts(
         self, insurance_service, seed_insurance_with_transactions
     ):
         """Sums last transaction amounts for active hishtalmut accounts only."""
-        result = insurance_service.get_monthly_contribution_by_type("hishtalmut")
-        # KH-A (1500) + KH-B (800) = 2300; KH-OLD excluded (too old)
-        assert result == 2300.0
+        result = insurance_service.get_monthly_contributions("hishtalmut")
+        # KH-A (1500) + KH-B (800); KH-OLD excluded (too old)
+        assert sum(result.values()) == 2300.0
+        assert len(result) == 2
 
     def test_pension_sums_active_accounts(
         self, insurance_service, seed_insurance_with_transactions
     ):
         """Sums last transaction amounts for active pension accounts only."""
-        result = insurance_service.get_monthly_contribution_by_type("pension")
+        result = insurance_service.get_monthly_contributions("pension")
         # PN-A (2500); PN-OLD excluded (too old)
-        assert result == 2500.0
+        assert list(result.values()) == [2500.0]
 
-    def test_returns_none_when_no_accounts(self, insurance_service):
-        """Returns None when no accounts of the given type exist."""
-        result = insurance_service.get_monthly_contribution_by_type("hishtalmut")
-        assert result is None
+    def test_returns_nothing_when_no_accounts(self, insurance_service):
+        """Returns nothing when no accounts of the given type exist."""
+        result = insurance_service.get_monthly_contributions("hishtalmut")
+        assert result == {}
 
-    def test_returns_none_when_no_active_accounts(
+    def test_returns_nothing_when_no_active_accounts(
         self, insurance_service, db_session
     ):
-        """Returns None when accounts exist but none are active."""
+        """Returns nothing when accounts exist but none are active."""
         db_session.add(
             InsuranceAccount(
                 provider="hafenix",
@@ -282,13 +283,13 @@ class TestMonthlyContributions:
             )
         )
         db_session.commit()
-        result = insurance_service.get_monthly_contribution_by_type("hishtalmut")
-        assert result is None
+        result = insurance_service.get_monthly_contributions("hishtalmut")
+        assert result == {}
 
-    def test_returns_none_when_no_transactions(
+    def test_returns_nothing_when_no_transactions(
         self, insurance_service, db_session
     ):
-        """Returns None when accounts exist but have no transactions at all."""
+        """Returns nothing when accounts exist but have no transactions at all."""
         db_session.add(
             InsuranceAccount(
                 provider="hafenix",
@@ -299,8 +300,8 @@ class TestMonthlyContributions:
             )
         )
         db_session.commit()
-        result = insurance_service.get_monthly_contribution_by_type("hishtalmut")
-        assert result is None
+        result = insurance_service.get_monthly_contributions("hishtalmut")
+        assert result == {}
 
     def test_uses_latest_transaction_per_account(
         self, insurance_service, db_session
@@ -342,6 +343,6 @@ class TestMonthlyContributions:
             )
         )
         db_session.commit()
-        result = insurance_service.get_monthly_contribution_by_type("hishtalmut")
+        result = insurance_service.get_monthly_contributions("hishtalmut")
         # Should use latest (1200), not older (900)
-        assert result == 1200.0
+        assert result == {"KH-MULTI": 1200.0}
