@@ -1742,12 +1742,17 @@
       "withdrawalPlan": "Drawdown plan"
     },
     "hint": {
-      "problem": "\"Retire ASAP\" searches for the earliest workable retirement month, up to the maximum age you allow.",
       "withdrawal": "The confidence level sets how conservatively the portfolio is assumed to perform during retirement.",
       "expenses": "One row per recurring expense. Use \"one-time\" for a wedding, a car, or a big trip. Loans belong in the Loans section.",
       "incomes": "Work you will retire from ends \"at early retirement\". Part-time work afterwards starts there. Rent is \"forever\".",
       "portfolios": "Order matters: it sets both the order accounts are filled and the order they are drawn down. A goal of 0 means the account never receives deposits.",
-      "keren": "Dormant funds have a balance and no monthly deposit; active ones have both."
+      "keren": "Dormant funds have a balance and no monthly deposit; active ones have both.",
+      "problemFor": {
+        "retire_asap": "\"Retire ASAP\" searches for the earliest month you can retire, up to the maximum age you allow.",
+        "retire_at_age": "\"Check-up\" retires you at the target age and shows whether each goal still holds there.",
+        "improve_cash_to_reach_retire_at_age": "Finds the smallest monthly improvement to your cash flow, up to the maximum you set, that lets you retire at the target age.",
+        "increase_risk_to_reach_retire_at_age": "Finds the smallest extra annual return, up to the maximum you set, that lets you retire at the target age."
+      }
     },
     "field": {
       "baseProblem": "Problem",
@@ -1798,7 +1803,9 @@
       "termYears": "Term (years)",
       "loanType": "Repayment type",
       "currentValue": "Current value",
-      "annualAppreciation": "Annual appreciation [%]"
+      "annualAppreciation": "Annual appreciation [%]",
+      "paymentDate": "Date",
+      "oneTimeAmount": "Amount"
     },
     "opt": {
       "start": {
@@ -1867,7 +1874,9 @@
       "addPortfolio": "Add portfolio",
       "addKeren": "Add fund",
       "addLoan": "Add loan",
-      "addProperty": "Add property"
+      "addProperty": "Add property",
+      "moveUp": "Move up",
+      "moveDown": "Move down"
     },
     "result": {
       "advice": "Suggestion",
@@ -1974,6 +1983,68 @@
         "expenses": "Your typical monthly spending",
         "income": "Your typical monthly income"
       }
+    },
+    "help": {
+      "base_problem": "Which question to answer. Retire ASAP: the earliest month that works. Check-up: does the plan hold if you retire at a given age? The last two find how much better cash flow, or how much extra return, you would need to retire at a given age. Zeke's own site currently fails on those two, so this app solves them as their descriptions say.",
+      "wanted_retire_age": "The age you want to retire at. A check-up retires you exactly here; the last two modes search for what it takes to get here.",
+      "base_problem_max_age": "The latest retirement age the search will consider. If no month before this age works, the plan reports that it could not reach its goals.",
+      "base_problem_cash_improve": "The largest monthly improvement (more income or less spending, in today's shekels) the search may assume.",
+      "base_problem_risk_increase": "The largest number of percentage points the search may add to your portfolios' expected annual return.",
+      "pensionName": "Only labels the charts and the pension rows.",
+      "gender": "Sets the statutory retirement age, when Bituach Leumi's old-age pension starts, and the annuity factor that turns a pension balance into a monthly pension.",
+      "dateOfBirth": "Every age in the plan comes from this: retirement, age 60, the statutory age and the end of the projection at 81. Only the month matters.",
+      "is_american": "Zeke's form asks for it, but in every test it changed nothing, so the model ignores it.",
+      "pensionTake": "Adds a partner: their age, their pension fund and their Bituach Leumi pension join the plan.",
+      "retireRule": "How sure (80–100%) you want to be that the portfolios do not run out before the pension starts. From the Trinity study at 75% stocks. A higher value means a lower return is assumed for withdrawal portfolios after you retire, so you retire later.",
+      "prati_hishtalmut_order": "After retirement, which pot pays the bills first: the taxed portfolios (25% tax on the profit you withdraw) or the Keren Hishtalmut (tax-free). Only the order changes.",
+      "cashBuffer": "How much to keep in the checking account. Each month's surplus tops it up to this first. After retirement it is the last money spent. It earns no return.",
+      "balance": "What is in the checking account today. It earns no return.",
+      "creditLimit": "How far the account may go below zero. A month that would need more is counted as not covered.",
+      "flow": {
+        "start": "Now: from this month. From early retirement: from the month after you stop working. From a date: from that month on. One-time: a single payment in one month.",
+        "startDate": "The month the row starts, or for a one-time row, the month it is paid. Only the month matters. A one-time date in the past is ignored.",
+        "end": "Forever: to the end of the projection (age 81). Until early retirement: through your last working month. Until a date: through that month. Until age 60: through the month the main retiree turns 60.",
+        "endDate": "The last month the row is paid (included).",
+        "rise": "How much the amount grows each year beyond inflation, in %. 0 keeps it fixed in today's money. Growth counts from the row's first month.",
+        "description": "A name for the row, shown in the charts."
+      },
+      "expenseSum": "The amount in today's shekels: per month, or the whole payment for a one-time row. Loan repayments go in the Loans section, not here.",
+      "incomeSum": "Take-home pay or other income after tax, in today's shekels: per month, or the whole sum for a one-time row. Your pension and Bituach Leumi are added by the plan; don't enter them here.",
+      "portfolioDesignation": "Funds living expenses: drawn on to pay the bills after retirement. Earmarked for a goal: grows untouched and is never used for living. Recognised annuity (Gemel le'hashkaa only): turned in full at age 60 into a tax-free pension for the retiree or the partner; before 60 it acts like a goal account.",
+      "portfolio_type": "Return, fees and tax are the same for every type. Only Gemel le'hashkaa differs: deposits are capped at ₪76,449 a year, and only it can become a recognised annuity.",
+      "portfolioBalance": "What the portfolio is worth today.",
+      "portfolio_deposit": "The most that goes into this portfolio each month; blank means no limit. Each month's surplus fills the portfolios in list order.",
+      "portfolio_goal": "Deposits stop once the balance reaches this. 0 means this portfolio never receives deposits, and the surplus stays in checking, earning nothing.",
+      "portfolioInterest": "Expected annual return beyond inflation, before fees. A withdrawal portfolio switches to a lower return, set by the confidence level, once you retire.",
+      "portfolioFee": "Annual management fee, in %. It is taken off the return each year.",
+      "portfolioProfitFraction": "What share of today's balance is unrealised profit. Withdrawals pay 25% tax on their profit share, so a higher share means more must be withdrawn for each shekel spent.",
+      "portfolio_fifo_lifo": "Which purchases a withdrawal is treated as selling. Proportional: every shekel carries the same share of profit. FIFO: oldest first (most profit, more tax early on). LIFO: newest first (least profit, less tax early on).",
+      "portfolioDescription": "A name for the portfolio, shown in the charts.",
+      "pensionBalance": "What the pension fund holds today, as on your latest statement.",
+      "pensionDeposit": "The full monthly deposit: your part, the employer's and severance.",
+      "pensionFee1": "Annual management fee on the balance, in %.",
+      "pensionFee2": "Management fee on each deposit, in %.",
+      "pensionInterest": "Expected annual return of the pension fund beyond inflation, before fees.",
+      "pension_tactics": "When the balance becomes a monthly pension. All at 60: an earlier start, so a smaller pension. All at the statutory age: a larger pension, later. Split: the recognised (tax-free) part from 60, the entitling (taxed) part from the statutory age.",
+      "percentage_mukeret": "The share of the monthly pension that is a recognised annuity (קצבה מוכרת), which is free of income tax. The rest (מזכה) is taxed as income, with an exemption from the statutory age.",
+      "pensionEndType": "When deposits into the fund stop. Usually when you stop working (at early retirement).",
+      "pensionEndDate": "The last month a deposit is made (included).",
+      "withdraw_pizuim": "Take your current employer's severance as cash when you retire instead of leaving it in the pension. Part of it is tax-free, depending on how many years you worked there; the rest is taxed.",
+      "work_start_year": "The year you started at your current employer. It sets your years of service, and so how much of the severance is tax-free.",
+      "kerenBalance": "What the fund holds today. Withdrawals from a Keren Hishtalmut are tax-free in this model.",
+      "kerenDeposit": "Monthly deposit, including the employer's part. Use 0 for a fund you no longer pay into.",
+      "kerenInterest": "Expected annual return beyond inflation, before fees.",
+      "kerenType": "A managed track costs 0.6 percentage points a year more than a self-directed (IRA) fund, on top of the fee you enter. Nothing else differs.",
+      "kerenFee": "Annual management fee, in %.",
+      "kerenEndType": "When deposits stop. Usually at early retirement.",
+      "kerenEndDate": "The last month a deposit is made (included).",
+      "debtStartDate": "When the loan was taken. A loan taken in the past is repaid on its original schedule from that date. A loan whose term already ended is ignored.",
+      "debtInterest": "The loan's annual interest rate, in %.",
+      "debtInitialSum": "The amount originally borrowed, not what is left today.",
+      "debtTotalPeriod": "The loan's original length, in years.",
+      "debtType": "Spitzer: equal monthly payments. Balloon: no payments; interest builds up and everything is repaid at the end. Grace: interest only each month, with the principal repaid at the end. What is still owed is taken off your net worth.",
+      "realestateValue": "What the property is worth today, your home included. It counts in your net worth, but it pays no rent and is never sold; enter rent as an income row.",
+      "realestateRise": "Expected annual rise in value beyond inflation, in %."
     }
   }
 }

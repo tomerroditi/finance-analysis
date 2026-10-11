@@ -27,7 +27,8 @@ test.describe("Early retirement plan", () => {
     // --- every input section renders, filled from the demo household ------
     const sections = page.locator('[data-testid^="fire-section-"]');
     await expect(sections.first()).toBeVisible();
-    await expect(sections).toHaveCount(13);
+    // The partner's pension appears only once a partner is included.
+    await expect(sections).toHaveCount(12);
     await expect(page.locator('[data-testid="fire-row-portfolio-1"]')).toBeVisible();
     await expect(page.locator('[data-testid^="fire-row-keren-"]')).toHaveCount(3);
     await expect(page.locator('[data-testid^="fire-row-loan-"]')).toHaveCount(3);
@@ -43,16 +44,71 @@ test.describe("Early retirement plan", () => {
     // --- conditional fields follow the control that gates them ------------
     const partnerSection = page.locator('[data-testid="fire-section-partner"]');
     await expect(partnerSection.locator("select")).toHaveCount(0);
+    const partnerPension = page.getByTestId("fire-section-partnerPension");
+    await expect(partnerPension).toHaveCount(0);
     await partnerSection.getByRole("checkbox").check();
     await expect(partnerSection.locator("select").first()).toBeVisible();
+    await expect(partnerPension).toBeVisible();
     await partnerSection.getByRole("checkbox").uncheck();
     await expect(partnerSection.locator("select")).toHaveCount(0);
+    await expect(partnerPension).toHaveCount(0);
+
+    // As on the reference, the maximum age belongs to "retire ASAP" alone.
+    const problem = page.getByTestId("fire-section-problem");
+    const hint = page.getByTestId("fire-hint-problem");
+    const asapHint = await hint.textContent();
+    await problem.locator("select").first().selectOption("retire_at_age");
+    await expect(page.getByTestId("fire-help-base_problem_max_age")).toHaveCount(0);
+    await expect(page.getByTestId("fire-help-wanted_retire_age")).toBeVisible();
+    await expect(hint).not.toHaveText(asapHint ?? "");
+    await problem.locator("select").first().selectOption("retire_asap");
+    await expect(page.getByTestId("fire-help-base_problem_max_age")).toBeVisible();
+
+    // --- every field explains itself behind an info icon ------------------
+    const help = page.getByTestId("fire-help-balance");
+    await help.getByRole("button").click();
+    const panel = help.getByTestId("info-tooltip-panel");
+    await expect(panel).toHaveCSS("opacity", "1");
+    await expect(panel).toContainText(/checking account|עובר ושב/);
+
+    // --- a one-time row asks for a date and an amount, nothing more -------
+    const expenses = page.locator('[data-testid^="fire-row-expense-"]');
+    const expenseRows = await expenses.count();
+    const added = expenseRows + 1;
+    await page
+      .getByTestId("fire-section-expense")
+      .getByRole("button", { name: /add|הוסף/i })
+      .click();
+    const oneTime = page.getByTestId(`fire-row-expense-${added}`);
+    await expect(page.getByTestId(`fire-help-expenseEndType${added}`)).toBeVisible();
+    await oneTime.locator("select").first().selectOption("one_time");
+    await expect(page.getByTestId(`fire-help-expenseStartDate${added}`)).toBeVisible();
+    await expect(page.getByTestId(`fire-help-expenseEndType${added}`)).toHaveCount(0);
+    await expect(page.getByTestId(`fire-help-expenseRise${added}`)).toHaveCount(0);
+    await page.getByTestId(`fire-remove-expense-${added}`).click();
+    await expect(expenses).toHaveCount(expenseRows);
+
+    // --- portfolios can be reordered: the order is the fill/draw order ----
+    const portfolios = page.locator('[data-testid^="fire-row-portfolio-"]');
+    const last = (await portfolios.count()) + 1;
+    await page
+      .getByTestId("fire-section-portfolio")
+      .getByRole("button", { name: /add|הוסף/i })
+      .click();
+    const balanceOf = (row: number) =>
+      page.getByTestId(`fire-row-portfolio-${row}`).getByLabel(/^(Balance|יתרה)$/);
+    await balanceOf(last).fill("4242");
+    await expect(page.getByTestId(`fire-move-down-portfolio-${last}`)).toBeDisabled();
+    await page.getByTestId(`fire-move-up-portfolio-${last}`).click();
+    await expect(balanceOf(last - 1)).toHaveValue("4242");
+    await page.getByTestId(`fire-remove-portfolio-${last - 1}`).click();
+    await expect(portfolios).toHaveCount(last - 1);
 
     // --- repeatable rows can be added and removed -------------------------
     const realEstate = page.locator('[data-testid="fire-section-realestate"]');
     await realEstate.getByRole("button", { name: /add|הוסף/i }).click();
     await expect(page.locator('[data-testid="fire-row-realestate-1"]')).toBeVisible();
-    await page.locator('[data-testid="fire-row-realestate-1"]').getByRole("button").click();
+    await page.getByTestId("fire-remove-realestate-1").click();
     await expect(page.locator('[data-testid="fire-row-realestate-1"]')).toHaveCount(0);
 
     // --- the plan's own projection, then a fresh calculation --------------

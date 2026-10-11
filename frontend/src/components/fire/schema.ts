@@ -9,6 +9,12 @@
 /** `hidden` fields are never rendered: a row's `*Source` names the tracked account it follows. */
 export type FieldKind = "number" | "text" | "date" | "select" | "checkbox" | "hidden";
 
+/** Holds when `field` (the row's own, in a repeatable row) has one of `values`. */
+export interface Condition {
+  field: string;
+  values: string[];
+}
+
 export interface FieldSpec {
   /** Reference field name, minus the row index for repeatable rows. */
   name: string;
@@ -19,19 +25,67 @@ export interface FieldSpec {
   min?: number;
   max?: number;
   step?: string;
-  /** Shown only when this other field has one of these values. */
-  visibleWhen?: { field: string; values: string[] };
+  /** Shown only while every one of these holds. */
+  visibleWhen?: Condition | Condition[];
+  /** The explanation behind the field's info icon, when not `fire.help.<name>`. */
+  helpKey?: string;
+  /** A label that replaces `labelKey` while its condition holds. */
+  altLabel?: Condition & { labelKey: string };
 }
 
 export interface SectionSpec {
   key: string;
   titleKey: string;
   hintKey?: string;
+  /** A hint per value of `field`, keyed `<prefix>.<value>`, shown instead of `hintKey`. */
+  hintVariants?: { field: string; prefix: string };
   fields: FieldSpec[];
   /** Repeatable sections are backed by a `num_<countKey>_fields` counter. */
   repeatable?: { countKey: string; addLabelKey: string; max: number };
   /** The hidden field naming the tracked account a row follows, if rows can follow one. */
   sourceField?: string;
+  /** Rows can be moved: the engine fills and draws them in list order. */
+  reorderable?: boolean;
+  /** Rendered only while this holds. */
+  visibleWhen?: Condition;
+}
+
+/** A field's explanation; a partner's field shares its counterpart's. */
+export function helpKey(field: FieldSpec): string {
+  return field.helpKey ?? `fire.help.${field.name.replace(/_2$/, "")}`;
+}
+
+/** Whether `condition` holds, reading a row's own fields through its `suffix`. */
+export function holds(condition: Condition, fields: Record<string, string>, suffix = ""): boolean {
+  const value = fields[`${condition.field}${suffix}`] ?? fields[condition.field];
+  return condition.values.includes(value ?? "");
+}
+
+export function isFieldVisible(field: FieldSpec, fields: Record<string, string>, suffix = ""): boolean {
+  if (!field.visibleWhen) return true;
+  const all = Array.isArray(field.visibleWhen) ? field.visibleWhen : [field.visibleWhen];
+  return all.every((condition) => holds(condition, fields, suffix));
+}
+
+export function fieldLabelKey(field: FieldSpec, fields: Record<string, string>, suffix = ""): string {
+  return field.altLabel && holds(field.altLabel, fields, suffix)
+    ? field.altLabel.labelKey
+    : field.labelKey;
+}
+
+/** `fields` with rows `a` and `b` of `section` swapped, the tracked-account link included. */
+export function swapRows(
+  fields: Record<string, string>,
+  section: SectionSpec,
+  a: number,
+  b: number,
+): Record<string, string> {
+  const next = { ...fields };
+  for (const field of section.fields) {
+    next[`${field.name}${a}`] = fields[`${field.name}${b}`] ?? field.default;
+    next[`${field.name}${b}`] = fields[`${field.name}${a}`] ?? field.default;
+  }
+  return next;
 }
 
 function sourceField(name: string): FieldSpec {
@@ -52,19 +106,31 @@ const endTypeOptions = [
   { value: "60", labelKey: "fire.opt.end.age60" },
 ];
 
+/**
+ * An income or expense row. A one-time row is a single month at its date, and
+ * the engine ignores its end and its rise: the reference hides the end, and
+ * the rise goes with it.
+ */
 function flowFields(prefix: string, defaultEnd: string, defaultSum: string): FieldSpec[] {
+  const oneTime: Condition = { field: `${prefix}StartType`, values: ["one_time"] };
+  const recurring: Condition = { field: `${prefix}StartType`, values: ["now", "fire", "from_date"] };
   return [
     { name: `${prefix}StartType`, kind: "select", labelKey: "fire.field.start",
-      default: "now", options: startTypeOptions },
+      default: "now", options: startTypeOptions, helpKey: "fire.help.flow.start" },
     { name: `${prefix}StartDate`, kind: "date", labelKey: "fire.field.startDate", default: "",
-      visibleWhen: { field: `${prefix}StartType`, values: ["from_date", "one_time"] } },
+      visibleWhen: { field: `${prefix}StartType`, values: ["from_date", "one_time"] },
+      helpKey: "fire.help.flow.startDate", altLabel: { ...oneTime, labelKey: "fire.field.paymentDate" } },
     { name: `${prefix}EndType`, kind: "select", labelKey: "fire.field.end",
-      default: defaultEnd, options: endTypeOptions },
+      default: defaultEnd, options: endTypeOptions, visibleWhen: recurring, helpKey: "fire.help.flow.end" },
     { name: `${prefix}EndDate`, kind: "date", labelKey: "fire.field.endDate", default: "",
-      visibleWhen: { field: `${prefix}EndType`, values: ["to_date"] } },
-    { name: `${prefix}Sum`, kind: "number", labelKey: "fire.field.amount", default: defaultSum, min: 0 },
-    { name: `${prefix}Rise`, kind: "number", labelKey: "fire.field.annualRise", default: "0.0", step: "any" },
-    { name: `${prefix}Description`, kind: "text", labelKey: "fire.field.description", default: "" },
+      visibleWhen: [recurring, { field: `${prefix}EndType`, values: ["to_date"] }],
+      helpKey: "fire.help.flow.endDate" },
+    { name: `${prefix}Sum`, kind: "number", labelKey: "fire.field.amount", default: defaultSum, min: 0,
+      altLabel: { ...oneTime, labelKey: "fire.field.oneTimeAmount" } },
+    { name: `${prefix}Rise`, kind: "number", labelKey: "fire.field.annualRise", default: "0.0", step: "any",
+      visibleWhen: recurring, helpKey: "fire.help.flow.rise" },
+    { name: `${prefix}Description`, kind: "text", labelKey: "fire.field.description", default: "",
+      helpKey: "fire.help.flow.description" },
   ];
 }
 
@@ -99,20 +165,24 @@ function pensionFields(suffix: string, tacticKey: string, endKey: string): Field
         { value: "60-67", labelKey: "fire.opt.tactic.split" },
       ] },
     { name: `percentage_mukeret${suffix}`, kind: "number", labelKey: "fire.field.mukeretPct", default: "30", min: 0, max: 100 },
-    { name: endKey, kind: "select", labelKey: "fire.field.depositsEnd", default: "fire", options: endTypeOptions },
+    { name: endKey, kind: "select", labelKey: "fire.field.depositsEnd", default: "fire", options: endTypeOptions,
+      helpKey: "fire.help.pensionEndType" },
     { name: `pensionEndDate${suffix}`, kind: "date", labelKey: "fire.field.endDate", default: "",
       visibleWhen: { field: endKey, values: ["to_date"] } },
     { name: `withdraw_pizuim${suffix}`, kind: "checkbox", labelKey: "fire.field.withdrawSeverance", default: "" },
     { name: `work_start_year${suffix}`, kind: "number", labelKey: "fire.field.workStartYear", default: "", min: 1986,
+      max: new Date().getFullYear(),
       visibleWhen: { field: `withdraw_pizuim${suffix}`, values: ["on"] } },
   ];
 }
+
+const partnerIncluded: Condition = { field: "pensionTake_2", values: ["on"] };
 
 export const SECTIONS: SectionSpec[] = [
   {
     key: "problem",
     titleKey: "fire.section.problem",
-    hintKey: "fire.hint.problem",
+    hintVariants: { field: "base_problem", prefix: "fire.hint.problemFor" },
     fields: [
       { name: "base_problem", kind: "select", labelKey: "fire.field.baseProblem", default: "retire_asap",
         options: [
@@ -124,7 +194,8 @@ export const SECTIONS: SectionSpec[] = [
       { name: "wanted_retire_age", kind: "number", labelKey: "fire.field.targetAge", default: "", min: 18, max: 100,
         visibleWhen: { field: "base_problem", values: [
           "retire_at_age", "improve_cash_to_reach_retire_at_age", "increase_risk_to_reach_retire_at_age"] } },
-      { name: "base_problem_max_age", kind: "number", labelKey: "fire.field.maxAge", default: "60", min: 18, max: 100 },
+      { name: "base_problem_max_age", kind: "number", labelKey: "fire.field.maxAge", default: "60", min: 18, max: 100,
+        visibleWhen: { field: "base_problem", values: ["retire_asap"] } },
       { name: "base_problem_cash_improve", kind: "number", labelKey: "fire.field.maxCashImprovement", default: "0", min: 0,
         visibleWhen: { field: "base_problem", values: ["improve_cash_to_reach_retire_at_age"] } },
       { name: "base_problem_risk_increase", kind: "number", labelKey: "fire.field.maxRiskIncrease", default: "0", min: 0, step: "any",
@@ -137,10 +208,7 @@ export const SECTIONS: SectionSpec[] = [
     titleKey: "fire.section.partner",
     fields: [
       { name: "pensionTake_2", kind: "checkbox", labelKey: "fire.field.includePartner", default: "" },
-      ...personFields("_2").map((f) => ({
-        ...f,
-        visibleWhen: { field: "pensionTake_2", values: ["on"] },
-      })),
+      ...personFields("_2").map((f) => ({ ...f, visibleWhen: partnerIncluded })),
     ],
   },
   {
@@ -187,6 +255,7 @@ export const SECTIONS: SectionSpec[] = [
     hintKey: "fire.hint.portfolios",
     repeatable: { countKey: "portfolio", addLabelKey: "fire.action.addPortfolio", max: 20 },
     sourceField: "portfolioSource",
+    reorderable: true,
     fields: [
       { name: "portfolioDesignation", kind: "select", labelKey: "fire.field.designation", default: "withdraw",
         options: [
@@ -224,10 +293,8 @@ export const SECTIONS: SectionSpec[] = [
   {
     key: "partnerPension",
     titleKey: "fire.section.partnerPension",
-    fields: pensionFields("_2", "pension_tactics_2", "pensionEndType2").map((f) => ({
-      ...f,
-      visibleWhen: f.visibleWhen ?? { field: "pensionTake_2", values: ["on"] },
-    })),
+    visibleWhen: partnerIncluded,
+    fields: pensionFields("_2", "pension_tactics_2", "pensionEndType2"),
   },
   {
     key: "keren",

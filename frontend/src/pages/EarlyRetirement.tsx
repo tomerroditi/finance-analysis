@@ -6,7 +6,7 @@ import { fireApi, type FirePlan, type FireProjection } from "../services/api";
 import { useQueryKeys } from "../hooks/useQueryKeys";
 import { ScenarioSection, type TrackedLinks } from "../components/fire/ScenarioFields";
 import { ProjectionResults } from "../components/fire/ProjectionResults";
-import { SECTIONS, normalizeScenario, type SectionSpec } from "../components/fire/schema";
+import { SECTIONS, normalizeScenario, swapRows, type SectionSpec } from "../components/fire/schema";
 import {
   editField,
   relink,
@@ -136,6 +136,13 @@ export function EarlyRetirement() {
     [update],
   );
 
+  const onMoveRow = useCallback(
+    (section: SectionSpec, row: number, to: number) => {
+      update((d) => ({ ...d, fields: swapRows(d.fields, section, row, to) }));
+    },
+    [update],
+  );
+
   const onRemoveRow = useCallback(
     (section: SectionSpec, row: number) => {
       const repeatable = section.repeatable;
@@ -254,6 +261,7 @@ export function EarlyRetirement() {
               onChange={onChange}
               onAddRow={onAddRow}
               onRemoveRow={onRemoveRow}
+              onMoveRow={onMoveRow}
               links={links}
             />
           ))}
