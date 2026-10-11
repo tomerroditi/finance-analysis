@@ -25,6 +25,9 @@ alembic = "^1.14.0"
 # Scraper dependencies
 playwright = "^1.57.0"
 httpx = "^0.28.0"
+# Israeli bank holidays, which push a card's billing day to the next
+# business day (backend/services/card_billing.py).
+holidays = "==0.106"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^9.0.3"

@@ -895,6 +895,30 @@ export interface BankBalance {
   last_drift: number | null;
 }
 
+/** One connected card, as `GET /card-billing/` reports it. */
+export interface CardBilling {
+  account_number: string;
+  /** The card's day of the month; the bill moves past weekends and holidays. */
+  billing_day: number;
+  /** "reported" by the card's site, read off the bank's "bills", or a "default" guess. */
+  billing_day_source: "reported" | "bills" | "default";
+  next_billing_date: string;
+  /** The billing day over time, oldest first (months as YYYY-MM). */
+  changes: { day: number; from: string; to: string }[];
+  /** The bank account whose card bills match this card's totals. */
+  paid_from: { provider: string; account_name: string } | null;
+}
+
+export interface CardBillingLogin {
+  provider: string;
+  account_name: string;
+  cards: CardBilling[];
+}
+
+export const cardBillingApi = {
+  getAll: () => api.get<CardBillingLogin[]>("/card-billing/"),
+};
+
 export const bankBalancesApi = {
   getAll: () => api.get<BankBalance[]>("/bank-balances/"),
   setBalance: (data: {

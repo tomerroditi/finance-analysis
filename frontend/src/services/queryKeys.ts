@@ -44,6 +44,7 @@ export const qkPrefix = {
   taggingRules: ["tagging-rules"] as const,
   bankBalances: ["bank-balances"] as const,
   cashBalances: ["cash-balances"] as const,
+  cardBilling: ["card-billing"] as const,
   savingsGoals: ["savings-goals"] as const,
   insuranceAccounts: ["insurance-accounts"] as const,
   lastScrapes: ["last-scrapes"] as const,
@@ -113,6 +114,7 @@ export function makeQueryKeys(demo: boolean) {
     balances: {
       bank: () => ["bank-balances", demo] as const,
       cash: () => ["cash-balances", demo] as const,
+      cardBilling: () => ["card-billing", demo] as const,
     },
     scraping: {
       lastScrapes: () => ["last-scrapes", demo] as const,

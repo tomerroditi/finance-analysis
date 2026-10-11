@@ -1,0 +1,369 @@
+"""When each credit card bills, and which bank account pays it.
+
+Israeli cards bill on a fixed day of the month — almost always the 1st, the
+2nd or the 10th — and a bill that falls on a Friday, a Saturday or a bank
+holiday is charged on the next business day. Both facts matter twice: a
+reported charge date has to be read back to the day the card *meant* (a bill
+on Sunday the 12th is a 10th-of-the-month card, not a 12th one), and an
+estimated one has to be pushed forward the way the bank would push it.
+
+The billing day is per card, not per login: two cards behind one Isracard
+login can bill on different days into different bank accounts. And it can
+change — a cardholder can move their billing day — so a card's history is a
+sequence of (month, day) pairs read off the ``billing_date`` its own rows
+carry, never one number. An estimate for a purchase uses the day in force
+nearest to the month it was billed in.
+
+Where no row of a card reports a billing date yet, its bills still show in
+the bank: the paying account is found by matching the card's monthly totals
+against each bank-side ``Credit Cards`` bill stream, and that stream's usual
+day stands in for the card's. Isracard and Max do not report the paying
+account, so this match is the only source for it.
+"""
+
+from collections.abc import Iterable
+from dataclasses import dataclass, field
+from datetime import date, timedelta
+from functools import lru_cache
+
+import pandas as pd
+from holidays.countries.israel import Israel
+
+from backend.constants.categories import CREDIT_CARDS
+from backend.constants.tables import Tables
+
+#: The days of the month Israeli cards bill on.
+NOMINAL_BILLING_DAYS = (1, 2, 10)
+
+#: Billing day assumed for a card nothing else is known about.
+DEFAULT_BILLING_DAY = 10
+
+#: Friday and Saturday, as ``date.weekday()`` numbers them.
+_WEEKEND = (4, 5)
+
+#: Longest run of closed days a bill can be pushed across (a two-day holiday
+#: that meets a weekend).
+_MAX_SHIFT_DAYS = 6
+
+#: Bank-side bill dates can trail the card's charge by a posting day.
+_BANK_POSTING_LAG_DAYS = 1
+
+#: A month where the card's total and the bill are within this share (plus
+#: :data:`_MATCH_SLACK`) of each other counts as a match.
+_MATCH_TOLERANCE = 0.25
+_MATCH_SLACK = 5.0
+#: Months a card and a bill stream must share before they can be paired, and
+#: the share of them that must match.
+_MATCH_MIN_MONTHS = 3
+_MATCH_MIN_SHARE = 0.5
+#: How far back the pairing looks, in months.
+_MATCH_WINDOW_MONTHS = 18
+
+#: ``(provider, account_name, account_number)`` — one physical card.
+CardKey = tuple[str, str, str]
+#: ``(provider, account_name, issuer)`` — one bank-side bill stream, the issuer
+#: being its description in :func:`issuer_key` form.
+StreamKey = tuple[str, str, str]
+
+_SOURCE = "source"
+_DATE = "date"
+_AMOUNT = "amount"
+_BILLING_DATE = "billing_date"
+
+
+@lru_cache(maxsize=64)
+def _bank_holidays(year: int) -> frozenset[date]:
+    """Return Israel's public holidays in ``year`` — the days banks close."""
+    return frozenset(Israel(years=year))
+
+
+def is_business_day(day: date) -> bool:
+    """Whether Israeli banks charge on ``day`` (not Fri/Sat, not a holiday)."""
+    return day.weekday() not in _WEEKEND and day not in _bank_holidays(day.year)
+
+
+def next_business_day(day: date) -> date:
+    """Return ``day`` itself, or the first business day after it."""
+    while not is_business_day(day):
+        day += timedelta(days=1)
+    return day
+
+
+def charge_date(billing_day: int, month: pd.Period) -> date:
+    """Return the day a card billing on ``billing_day`` charges in ``month``.
+
+    Parameters
+    ----------
+    billing_day : int
+        The card's day of the month.
+    month : pd.Period
+        The billing month.
+
+    Returns
+    -------
+    date
+        That day (the month's last, for a day the month lacks), moved past
+        any weekend or holiday.
+    """
+    day = min(billing_day, month.days_in_month)
+    return next_business_day(date(month.year, month.month, day))
+
+
+def nominal_billing_day(charged: date, posting_lag: int = 0) -> int:
+    """Read the card's own billing day back from a date it was charged on.
+
+    A charge on a usual billing day is that day. Otherwise the date may be a
+    usual day pushed past closed days, so the walk goes back over the days
+    before it that were closed (and ``posting_lag`` more, for a date the
+    bank recorded) and takes the nearest usual day it reaches.
+
+    Parameters
+    ----------
+    charged : date
+        When the bill was charged.
+    posting_lag : int, optional
+        Extra days a bank may post a bill after the card charged it.
+
+    Returns
+    -------
+    int
+        The card's day of the month.
+    """
+    if charged.day in NOMINAL_BILLING_DAYS:
+        return charged.day
+    day = charged - timedelta(days=1)
+    lag_left = posting_lag
+    for _ in range(_MAX_SHIFT_DAYS + posting_lag):
+        if is_business_day(day):
+            # An open day would have been charged on, unless the bank only
+            # posted the bill late.
+            if lag_left == 0:
+                break
+            lag_left -= 1
+        if day.day in NOMINAL_BILLING_DAYS:
+            return day.day
+        day -= timedelta(days=1)
+    return charged.day
+
+
+_FINAL_LETTERS = str.maketrans("ךםןףץ", "כמנפצ")
+_DEBIT_PREFIX = "חיובמ"
+
+
+def issuer_key(description: object) -> str:
+    """Reduce a bank's card-bill description to the issuer it names.
+
+    One issuer's bills reach the bank under several spellings: with and
+    without "חיוב מ-", with and without dashes, a card number run into the
+    name, and — from an older scraper — the Hebrew stored backwards. Letters
+    only, final forms folded, the debit prefix dropped, and the one of the
+    string and its reverse that sorts first: every spelling lands on one key.
+
+    Parameters
+    ----------
+    description : object
+        The bank row's description.
+
+    Returns
+    -------
+    str
+        The issuer key.
+    """
+    letters = "".join(ch for ch in str(description) if ch.isalpha())
+    letters = letters.translate(_FINAL_LETTERS)
+    if letters.endswith(_DEBIT_PREFIX[::-1]):
+        letters = letters[::-1]
+    letters = letters.removeprefix(_DEBIT_PREFIX)
+    return min(letters, letters[::-1])
+
+
+def _mode(values: Iterable[int]) -> int | None:
+    """Return the most common value (the smallest on a tie), or None when empty."""
+    series = pd.Series(list(values), dtype="Int64").dropna()
+    if series.empty:
+        return None
+    return int(series.mode().min())
+
+
+def card_key(row_provider: object, row_account: object, row_number: object) -> CardKey:
+    """Build a :data:`CardKey`, tolerating missing values."""
+    return (
+        str(row_provider),
+        str(row_account),
+        "" if pd.isna(row_number) else str(row_number),
+    )
+
+
+@dataclass
+class BillingSchedule:
+    """Every card's billing day over time, and the bank account paying it.
+
+    Attributes
+    ----------
+    history : dict
+        Card -> ``[(billing month, day), ...]`` in month order, from the
+        billing dates the card reported.
+    paid_from : dict
+        Card -> the bill stream its totals matched.
+    stream_days : dict
+        Bill stream -> its usual billing day, read off the bank's dates.
+    """
+
+    history: dict[CardKey, list[tuple[pd.Period, int]]] = field(default_factory=dict)
+    paid_from: dict[CardKey, StreamKey] = field(default_factory=dict)
+    stream_days: dict[StreamKey, int] = field(default_factory=dict)
+
+    @classmethod
+    def from_frame(cls, df: pd.DataFrame) -> "BillingSchedule":
+        """Build the schedule from a frame holding card rows and bank bills.
+
+        Parameters
+        ----------
+        df : pd.DataFrame
+            Transactions with ``source``, ``provider``, ``account_name``,
+            ``account_number``, ``date``, ``amount``, ``category`` and, for
+            card rows, ``billing_date``.
+
+        Returns
+        -------
+        BillingSchedule
+            The schedule; empty when the frame holds no card rows.
+        """
+        schedule = cls()
+        if df.empty or _SOURCE not in df.columns:
+            return schedule
+        cards = df[df[_SOURCE] == Tables.CREDIT_CARD.value]
+        if cards.empty:
+            return schedule
+        bills = df[
+            (df[_SOURCE] == Tables.BANK.value) & (df["category"] == CREDIT_CARDS)
+        ]
+        keys = [
+            card_key(p, a, n)
+            for p, a, n in zip(
+                cards["provider"],
+                cards["account_name"],
+                cards.get("account_number", pd.Series(index=cards.index, dtype=object)),
+                strict=True,
+            )
+        ]
+        cards = cards.assign(_key=keys)
+        reported = (
+            pd.to_datetime(cards[_BILLING_DATE], errors="coerce")
+            if _BILLING_DATE in cards.columns
+            else pd.Series(pd.NaT, index=cards.index)
+        )
+        cards = cards.assign(_reported=reported)
+
+        for key, rows in cards[cards["_reported"].notna()].groupby("_key"):
+            by_month: dict[pd.Period, list[int]] = {}
+            for charged in rows["_reported"].drop_duplicates():
+                by_month.setdefault(charged.to_period("M"), []).append(
+                    nominal_billing_day(charged.date())
+                )
+            schedule.history[key] = sorted(
+                (month, _mode(days) or DEFAULT_BILLING_DAY)
+                for month, days in by_month.items()
+            )
+
+        if not bills.empty:
+            schedule._match_streams(cards, bills)
+        return schedule
+
+    def _match_streams(self, cards: pd.DataFrame, bills: pd.DataFrame) -> None:
+        """Pair each card with the bill stream its monthly totals follow."""
+        bill_dates = pd.to_datetime(bills[_DATE], errors="coerce")
+        bills = bills.assign(
+            _stream=list(
+                zip(
+                    bills["provider"].astype(str),
+                    bills["account_name"].astype(str),
+                    bills["description"].map(issuer_key),
+                    strict=True,
+                )
+            ),
+            _month=bill_dates.dt.to_period("M"),
+            _day=bill_dates,
+        ).dropna(subset=["_day"])
+        for stream, rows in bills.groupby("_stream"):
+            day = _mode(
+                nominal_billing_day(d.date(), _BANK_POSTING_LAG_DAYS)
+                for d in rows["_day"]
+            )
+            if day is not None:
+                self.stream_days[stream] = day
+        stream_totals = {
+            stream: rows.groupby("_month")[_AMOUNT].sum()
+            for stream, rows in bills.groupby("_stream")
+        }
+
+        purchased = pd.to_datetime(cards[_DATE], errors="coerce")
+        month = (
+            cards["_reported"].dt.to_period("M").fillna(purchased.dt.to_period("M") + 1)
+        )
+        cards = cards.assign(_month=month).dropna(subset=["_month"])
+        latest = bills["_month"].max()
+        first = latest - _MATCH_WINDOW_MONTHS
+        for key, rows in cards.groupby("_key"):
+            totals = rows.groupby("_month")[_AMOUNT].sum()
+            totals = totals[(totals.index > first) & (totals.index <= latest)]
+            best: tuple[float, int, StreamKey] | None = None
+            for stream, bill_totals in stream_totals.items():
+                both = pd.concat([totals, bill_totals], axis=1, keys=["card", "bill"])
+                both = both.dropna()
+                both = both[both["card"] != 0]
+                if len(both) < _MATCH_MIN_MONTHS:
+                    continue
+                gap = (both["card"] - both["bill"]).abs()
+                share = float(
+                    (gap <= both["card"].abs() * _MATCH_TOLERANCE + _MATCH_SLACK).mean()
+                )
+                candidate = (share, len(both), stream)
+                if share >= _MATCH_MIN_SHARE and (
+                    best is None or candidate[:2] > best[:2]
+                ):
+                    best = candidate
+            if best is not None:
+                self.paid_from[key] = best[2]
+
+    def day_for(self, key: CardKey, month: pd.Period) -> tuple[int, str]:
+        """Return a card's billing day for ``month``, and where it came from.
+
+        Parameters
+        ----------
+        key : CardKey
+            The card.
+        month : pd.Period
+            The billing month asked about.
+
+        Returns
+        -------
+        tuple of (int, str)
+            The day, and ``"reported"`` (the card's own dates, from the
+            month nearest ``month``; an earlier one on a tie), ``"bills"``
+            (the paying bill stream's usual day) or ``"default"``.
+        """
+        history = self.history.get(key)
+        if history:
+            nearest = min(history, key=lambda item: (abs((item[0] - month).n), item[0]))
+            return nearest[1], "reported"
+        stream = self.paid_from.get(key)
+        if stream is not None and stream in self.stream_days:
+            return self.stream_days[stream], "bills"
+        return DEFAULT_BILLING_DAY, "default"
+
+    def changes(self, key: CardKey) -> list[dict[str, object]]:
+        """Return a card's billing day as consecutive runs, oldest first.
+
+        Returns
+        -------
+        list of dict
+            ``{"day", "from", "to"}`` with months as ``YYYY-MM``.
+        """
+        runs: list[dict[str, object]] = []
+        for month, day in self.history.get(key, []):
+            if runs and runs[-1]["day"] == day:
+                runs[-1]["to"] = str(month)
+            else:
+                runs.append({"day": day, "from": str(month), "to": str(month)})
+        return runs

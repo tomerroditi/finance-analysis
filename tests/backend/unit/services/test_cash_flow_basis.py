@@ -51,18 +51,36 @@ class TestDateCardsByBilling:
 
     def test_a_card_with_no_reported_day_bills_on_the_10th(self):
         """With nothing to learn from, the common Israeli billing day is assumed."""
+        df = _cards([{"date": "2026-05-14"}])
+
+        assert date_cards_by_billing(df, _TODAY)["date"].tolist() == ["2026-06-10"]
+
+    def test_a_bill_on_a_weekend_is_charged_on_sunday(self):
+        """Friday 10 July 2026 is charged on Sunday the 12th."""
         df = _cards([{"date": "2026-06-14"}])
 
-        assert date_cards_by_billing(df, _TODAY)["date"].tolist() == ["2026-07-10"]
+        assert date_cards_by_billing(df, _TODAY)["date"].tolist() == ["2026-07-12"]
 
-    def test_a_late_billing_day_fits_a_short_month(self):
-        """A card billing on the 31st charges February on its last day."""
+    def test_a_holiday_and_the_weekend_after_it_push_the_bill_on(self):
+        """Yom Kippur on 2 Oct 2025, then Friday and Saturday: Sunday the 5th."""
         df = _cards([
-            {"date": "2026-04-03", "billing_date": "2026-05-31"},
-            {"date": "2026-01-14"},
+            {"date": "2025-07-03", "billing_date": "2025-08-03"},
+            {"date": "2025-09-14"},
         ])
 
-        assert date_cards_by_billing(df, _TODAY)["date"].tolist()[1] == "2026-02-28"
+        assert date_cards_by_billing(df, _TODAY)["date"].tolist()[1] == "2025-10-05"
+
+    def test_each_card_keeps_its_own_day(self):
+        """Two cards behind one login can bill on different days."""
+        df = _cards([
+            {"date": "2026-07-03", "billing_date": "2026-08-02", "account_number": "1"},
+            {"date": "2026-07-03", "billing_date": "2026-08-10", "account_number": "2"},
+            {"date": "2026-05-14", "account_number": "1"},
+            {"date": "2026-05-14", "account_number": "2"},
+        ])
+
+        dates = date_cards_by_billing(df, _TODAY)["date"].tolist()
+        assert dates[2:] == ["2026-06-02", "2026-06-10"]
 
     def test_a_charge_still_to_come_is_dropped(self):
         """Money the card has not taken from the bank yet has not moved."""

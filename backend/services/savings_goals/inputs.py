@@ -21,6 +21,7 @@ from backend.models.savings_goal import (
     SavingsGoal,
 )
 from backend.services.bank_balance_service import BankBalanceService
+from backend.services.card_billing import BillingSchedule
 from backend.services.cash_balance_service import CashBalanceService
 from backend.services.cash_flow_basis import (
     BASIS_CASH_FLOW,
@@ -116,6 +117,7 @@ class InputsMixin:
             "events": [],
             "liquid": {},
             "surplus_by_basis": {},
+            "billing": None,
         }
         if df.empty:
             return empty
@@ -189,6 +191,9 @@ class InputsMixin:
             "events": events,
             "liquid": liquid,
             "surplus_by_basis": {},
+            # Read off the whole frame: the bank's card bills, which the
+            # surplus leaves out, are what pair a card with its billing day.
+            "billing": BillingSchedule.from_frame(df),
         }
 
     def _surplus(
@@ -222,7 +227,7 @@ class InputsMixin:
         invested: dict[tuple[int, int], float] = {}
         if not unlinked.empty:
             if basis == BASIS_CASH_FLOW:
-                unlinked = date_cards_by_billing(unlinked)
+                unlinked = date_cards_by_billing(unlinked, schedule=context["billing"])
                 parsed = pd.to_datetime(unlinked[TransactionsTableFields.DATE.value])
                 unlinked = unlinked.assign(
                     _year=parsed.dt.year.astype(int), _month=parsed.dt.month.astype(int)

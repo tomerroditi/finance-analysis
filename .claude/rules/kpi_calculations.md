@@ -139,7 +139,7 @@ month it was bought.
 (`backend/services/cash_flow_basis.py`). `net_cost` (default) is everything
 above: purchases on the day made, matched refunds netted into the purchase.
 `cash_flow` re-dates card rows to the day the card charged the bank
-(`billing_date`, estimated for old rows — see the module docstring), drops a
+(`billing_date`; old rows are estimated per card from `card_billing.BillingSchedule` — the card's billing day nearest that month, pushed past weekends and Israeli holidays), drops a
 charge still to come, and moves every refund (a positive row in a spending
 category, card ones included) out of the expense breakdown and into income as
 a `Refunds` source, at full price on both sides; the projects chip then drops

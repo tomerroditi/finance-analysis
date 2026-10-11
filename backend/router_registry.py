@@ -48,6 +48,7 @@ ROUTERS: tuple[RouterMount, ...] = (
     RouterMount("tagging_rules", "/api/tagging-rules", "Tagging Rules"),
     RouterMount("bank_balances", "/api/bank-balances", "Bank Balances"),
     RouterMount("cash_balances", "/api/cash-balances", "Cash Balances"),
+    RouterMount("card_billing", "/api/card-billing", "Card Billing"),
     RouterMount("insurance_accounts", "/api/insurance-accounts", "Insurance Accounts"),
     RouterMount("savings_goals", "/api/savings-goals", "Savings Goals"),
     RouterMount("onboarding", "/api/onboarding", "Onboarding"),

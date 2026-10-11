@@ -502,5 +502,17 @@ test.describe("DataSources", () => {
     const checkboxBox = await checkbox.boundingBox();
     const logoBox = await logo.boundingBox();
     expect(checkboxBox!.x).toBeGreaterThan(logoBox!.x + logoBox!.width);
+
+    // --- a credit card says when it bills, when next, and who pays it ---
+    // Demo Mode moves every date by the days since the snapshot was built,
+    // so the day itself and the bill match vary; the line's shape does not.
+    const billing = cardFor("Family Card").getByTestId("card-billing-row");
+    await expect(billing).toHaveCount(1);
+    await expect(billing.getByTestId("card-billing-day")).toHaveText(/^Billing day: ~?\d{1,2}/);
+    await expect(billing).toContainText(/Next bill /);
+    await expect(billing.getByTestId("card-paid-from")).toHaveText(
+      /^(Paid from Hapoalim · Main Account|Paying account not found)$/,
+    );
+    await expect(bankCard.getByTestId("card-billing")).toHaveCount(0);
   });
 });
