@@ -106,6 +106,7 @@ export function makeQueryKeys(demo: boolean) {
     fire: {
       plan: () => ["fire", "plan", demo] as const,
       planProjection: () => ["fire", "plan-projection", demo] as const,
+      planProjectionSummary: () => ["fire", "plan-projection-summary", demo] as const,
     },
     balances: {
       bank: () => ["bank-balances", demo] as const,

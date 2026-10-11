@@ -123,14 +123,17 @@ def evaluate_goals(plan: Plan, result: SimulationResult) -> list[Goal]:
     return goals
 
 
-def _feasible(plan: Plan, candidate: int, today: date) -> tuple[bool, SimulationResult]:
+def _feasible(
+    plan: Plan, candidate: int, today: date, simulator: Simulator | None = None
+) -> tuple[bool, SimulationResult]:
     """Whether retiring at `candidate` meets every goal, and the run that says so.
 
     The run stops at its first unfunded month: that alone fails the
     living-expenses goal, so a truncated run is infeasible and its result is
-    never used as a plan.
+    never used as a plan. A search passes one `simulator` for all its
+    candidates, so what no retirement month changes is computed once.
     """
-    simulator = Simulator(plan)
+    simulator = simulator or Simulator(plan)
     result = simulator.run(retire_index=candidate, today=today, stop_on_shortfall=True)
     if len(result.months) < simulator.month_count(today):
         return False, result
@@ -181,7 +184,7 @@ def solve_retire_asap(plan: Plan, today: date | None = None) -> SolveResult:
     # The earliest possible retirement is month 1: the reference reports the
     # *last working* month, and the earliest that can be is the current one.
     for candidate in range(1, max(limit, 1) + 1):
-        ok, result = _feasible(plan, candidate, today)
+        ok, result = _feasible(plan, candidate, today, simulator)
         if ok:
             return SolveResult(
                 problem=BaseProblem.RETIRE_ASAP,
@@ -192,7 +195,7 @@ def solve_retire_asap(plan: Plan, today: date | None = None) -> SolveResult:
                 goals=evaluate_goals(plan, result),
             )
 
-    result = Simulator(plan).run(retire_index=max(limit, 0), today=today)
+    result = simulator.run(retire_index=max(limit, 0), today=today)
     return SolveResult(
         problem=BaseProblem.RETIRE_ASAP,
         retire_index=None,

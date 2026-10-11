@@ -82,6 +82,7 @@ export function EarlyRetirement() {
     (next: FirePlan) => {
       queryClient.setQueryData(qk.fire.plan(), next);
       void queryClient.invalidateQueries({ queryKey: qk.fire.planProjection() });
+      void queryClient.invalidateQueries({ queryKey: qk.fire.planProjectionSummary() });
       setDraft(null);
       setPreview(null);
     },

@@ -61,6 +61,19 @@ cohort-derived (verified for male/female and DOB 1980/1990)."""
 
 
 @dataclass
+class MonthSeries:
+    """Per-month values that do not depend on the retirement month."""
+
+    age: list[float] = field(default_factory=list)
+    partner_age: list[float | None] = field(default_factory=list)
+    state_pension: list[float] = field(default_factory=list)
+    state_pension_partner: list[float] = field(default_factory=list)
+    debt_service: list[float] = field(default_factory=list)
+    liabilities: list[float] = field(default_factory=list)
+    real_estate: list[list[float]] = field(default_factory=list)
+
+
+@dataclass
 class MonthRecord:
     """One simulated month."""
 
@@ -349,6 +362,9 @@ class Simulator:
         """Per-run memos: a flow's window and the decumulation rate are fixed
         for a given retirement month, and recomputing them every month was most
         of a run's cost."""
+        self._series: tuple[date, MonthSeries] | None = None
+        """What every month holds whatever the retirement month — ages, state
+        pensions, loans, property — computed once for all of a search's runs."""
         if plan.person.date_of_birth is None:
             raise ValueError("date of birth is required")
         self.dob = plan.person.date_of_birth
@@ -757,6 +773,67 @@ class Simulator:
         rate = min(self._decumulation_return(retire_index), portfolio.annual_return_pct)
         return ((1 + rate / 100) * (1 - portfolio.annual_fee_pct / 100)) ** (1 / 12)
 
+    def _month_series(self, today: date, total_months: int) -> MonthSeries:
+        """Compute the per-month values no retirement month changes, for `today`.
+
+        The solver tries a couple of hundred retirement months on one plan, and
+        each run used to recompute these from scratch.
+        """
+        if self._series is not None and self._series[0] == today:
+            return self._series[1]
+        plan = self.plan
+        loan_starts = [
+            self._index_of(loan.start_date, today) if loan.start_date else 0
+            for loan in plan.loans
+        ]
+        main_allowance = self._draws_allowance(plan.person, today)
+        partner_allowance = plan.partner is not None and self._draws_allowance(
+            plan.partner, today
+        )
+        series = MonthSeries()
+        for t in range(total_months):
+            age = self.age_at(t, today)
+            partner_age = (
+                self._partner_age(t, today) if plan.partner is not None else None
+            )
+            series.age.append(age)
+            series.partner_age.append(partner_age)
+            series.state_pension.append(
+                national_insurance.monthly_amount(
+                    plan.person, age, plan.partner, partner_age
+                )
+                if main_allowance
+                else 0.0
+            )
+            series.state_pension_partner.append(
+                national_insurance.monthly_amount(
+                    plan.partner, partner_age, plan.person, age
+                )
+                if plan.partner is not None and partner_allowance
+                else 0.0
+            )
+            series.debt_service.append(
+                sum(
+                    loan_math.payment_at(loan, t - start)
+                    for loan, start in zip(plan.loans, loan_starts, strict=False)
+                )
+            )
+            series.liabilities.append(
+                sum(
+                    loan_math.balance_at(loan, t - start)
+                    for loan, start in zip(plan.loans, loan_starts, strict=False)
+                )
+            )
+            series.real_estate.append(
+                [
+                    property_.value
+                    * (1 + property_.annual_rise_pct / 100) ** ((t + 1) / 12)
+                    for property_ in plan.real_estate
+                ]
+            )
+        self._series = (today, series)
+        return series
+
     # -- main loop ---------------------------------------------------------
 
     def run(
@@ -786,9 +863,44 @@ class Simulator:
         gemel_annuities: dict[int, float] = {}
         gemel_owner: dict[int, str] = {}
         converted: set[int] = set()
-        loan_starts = [
-            self._index_of(loan.start_date, today) if loan.start_date else 0
-            for loan in plan.loans
+        series = self._month_series(today, total_months)
+        # Fixed for the whole run: when each fund takes deposits, and what each
+        # balance grows by before and after retirement.
+        pension_windows = [
+            self._window(
+                CashFlow(
+                    start_type=StartType.NOW,
+                    end_type=account.plan_pension.end_type,
+                    end_date=account.plan_pension.end_date,
+                ),
+                retire_index,
+                today,
+            )
+            for _, account in pensions
+        ]
+        keren_windows = [
+            self._window(
+                CashFlow(
+                    start_type=StartType.NOW,
+                    end_type=fund.end_type,
+                    end_date=fund.end_date,
+                ),
+                retire_index,
+                today,
+            )
+            for fund in plan.kranot_hishtalmut
+        ]
+        working_factors = [p.monthly_factor for p in plan.portfolios]
+        retires = 0 <= retire_index < total_months
+        retired_factors = [
+            self._monthly_factor(p, retire_index, retire_index) if retires else 1.0
+            for p in plan.portfolios
+        ]
+        keren_retired_factors = [
+            account.decumulation_factor(self._decumulation_return(retire_index))
+            if retires
+            else 1.0
+            for account in funds
         ]
         months: list[MonthRecord] = []
         solvent = True
@@ -798,13 +910,9 @@ class Simulator:
         expense_recurring, expense_one_time = self._flow_series(
             plan.expenses, retire_index, today, total_months
         )
-        main_allowance = self._draws_allowance(plan.person, today)
-        partner_allowance = plan.partner is not None and self._draws_allowance(
-            plan.partner, today
-        )
 
         for t in range(total_months):
-            age = self.age_at(t, today)
+            age = series.age[t]
             cash_in: dict[str, float] = {}
             cash_out: dict[str, float] = {}
             cash_in["work"] = income_recurring[t]
@@ -813,33 +921,16 @@ class Simulator:
             if t < retire_index:
                 income += plan.monthly_cash_improvement
                 cash_in["work"] += plan.monthly_cash_improvement
-            partner_age = (
-                self._partner_age(t, today) if plan.partner is not None else None
-            )
-            cash_in["state_pension"] = (
-                national_insurance.monthly_amount(
-                    plan.person, age, plan.partner, partner_age
-                )
-                if main_allowance
-                else 0.0
-            )
+            partner_age = series.partner_age[t]
+            cash_in["state_pension"] = series.state_pension[t]
             state_pension = cash_in["state_pension"]
             if plan.partner is not None:
-                cash_in["state_pension_partner"] = (
-                    national_insurance.monthly_amount(
-                        plan.partner, partner_age, plan.person, age
-                    )
-                    if partner_allowance
-                    else 0.0
-                )
+                cash_in["state_pension_partner"] = series.state_pension_partner[t]
                 state_pension += cash_in["state_pension_partner"]
             cash_out["living"] = expense_recurring[t]
             cash_out["one_time"] = expense_one_time[t]
             expense = expense_recurring[t] + expense_one_time[t]
-            debt_service = sum(
-                loan_math.payment_at(loan, t - start)
-                for loan, start in zip(plan.loans, loan_starts, strict=False)
-            )
+            debt_service = series.debt_service[t]
             surplus = income + state_pension - expense - debt_service
 
             # A gemel portfolio earmarked as a recognised annuity converts in
@@ -873,17 +964,10 @@ class Simulator:
             annuity_income = 0.0
             annuity_deductions = 0.0
             severance_cash = 0.0
-            for owner, account in pensions:
-                owner_age = age if owner is plan.person else self._partner_age(t, today)
-                first, last = self._window(
-                    CashFlow(
-                        start_type=StartType.NOW,
-                        end_type=account.plan_pension.end_type,
-                        end_date=account.plan_pension.end_date,
-                    ),
-                    retire_index,
-                    today,
-                )
+            for (owner, account), (first, last) in zip(
+                pensions, pension_windows, strict=True
+            ):
+                owner_age = age if owner is plan.person else partner_age
                 # Severance is redeemed in the first retired month — that is
                 # "one month after FIRE", since the reference reports FIRE as
                 # the last *working* month (notes/05, notes/08).
@@ -918,16 +1002,9 @@ class Simulator:
             surplus += annuity_income - annuity_deductions + severance_cash
 
             # Study-fund deposits are funded outside the modelled surplus.
-            for fund, account in zip(plan.kranot_hishtalmut, funds, strict=False):
-                first, last = self._window(
-                    CashFlow(
-                        start_type=StartType.NOW,
-                        end_type=fund.end_type,
-                        end_date=fund.end_date,
-                    ),
-                    retire_index,
-                    today,
-                )
+            for fund, account, (first, last) in zip(
+                plan.kranot_hishtalmut, funds, keren_windows, strict=False
+            ):
                 if first <= t <= last:
                     account.deposit(fund.monthly_deposit)
 
@@ -955,16 +1032,11 @@ class Simulator:
                     if stop_on_shortfall and shortfall > SHORTFALL_TOLERANCE:
                         break
 
-            for i, portfolio in enumerate(plan.portfolios):
-                accounts[i].grow(self._monthly_factor(portfolio, t, retire_index))
-            for account in funds:
-                account.grow(
-                    None
-                    if t < retire_index or retire_index < 0
-                    else account.decumulation_factor(
-                        self._decumulation_return(retire_index)
-                    )
-                )
+            retired = 0 <= retire_index <= t
+            for i, account in enumerate(accounts):
+                account.grow(retired_factors[i] if retired else working_factors[i])
+            for i, account in enumerate(funds):
+                account.grow(keren_retired_factors[i] if retired else None)
             for _, account in pensions:
                 account.grow()
 
@@ -974,15 +1046,10 @@ class Simulator:
             assets.update(
                 {f"pension{i}": a.balance for i, (_, a) in enumerate(pensions)}
             )
-            for i, property_ in enumerate(plan.real_estate):
-                assets[f"realestate{i}"] = property_.value * (
-                    1 + property_.annual_rise_pct / 100
-                ) ** ((t + 1) / 12)
+            for i, value in enumerate(series.real_estate[t]):
+                assets[f"realestate{i}"] = value
 
-            liabilities = sum(
-                loan_math.balance_at(loan, t - start)
-                for loan, start in zip(plan.loans, loan_starts, strict=False)
-            )
+            liabilities = series.liabilities[t]
 
             month_number = today.month + t
             months.append(

@@ -65,13 +65,16 @@ def capital_gains_tax(
     statutory_age: int,
     taxable_income: float = 0.0,
     exemption: float = STATUTORY_AGE_MONTHLY_EXEMPTION,
+    base_tax: float | None = None,
 ) -> float:
     """Tax on a realised monthly capital gain.
 
     Below 60 the flat 25% applies. From 60 the gain is taxed as ordinary
     income instead, capped at the flat rate — and from the statutory pension
     age the monthly `exemption` applies on top (smaller once severance has
-    been taken tax-free, `cx2_035`).
+    been taken tax-free, `cx2_035`). `base_tax` is the tax on `taxable_income`
+    alone, for a caller pricing many gains on the same income
+    (`stacked_base_tax`).
     """
     if gain <= 0:
         return 0.0
@@ -79,7 +82,15 @@ def capital_gains_tax(
     if age <= MARGINAL_TREATMENT_AGE:
         return flat
     exemption = exemption if age > statutory_age else 0.0
-    stacked = monthly_income_tax(taxable_income + gain, exemption) - monthly_income_tax(
-        taxable_income, exemption
-    )
+    if base_tax is None:
+        base_tax = monthly_income_tax(taxable_income, exemption)
+    stacked = monthly_income_tax(taxable_income + gain, exemption) - base_tax
     return min(flat, stacked)
+
+
+def stacked_base_tax(
+    age: float, statutory_age: int, taxable_income: float, exemption: float
+) -> float:
+    """Return the `base_tax` `capital_gains_tax` would compute for these arguments."""
+    exemption = exemption if age > statutory_age else 0.0
+    return monthly_income_tax(taxable_income, exemption)

@@ -35,8 +35,8 @@ export function EarlyRetirementCard() {
   const ViewPlanChevron = i18n.language === "he" ? ChevronLeft : ChevronRight;
 
   const { data: projection, isLoading } = useQuery({
-    queryKey: qk.fire.planProjection(),
-    queryFn: () => fireApi.getPlanProjection().then((r) => r.data),
+    queryKey: qk.fire.planProjectionSummary(),
+    queryFn: () => fireApi.getPlanProjection(false).then((r) => r.data),
   });
 
   return (
