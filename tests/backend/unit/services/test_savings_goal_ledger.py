@@ -197,9 +197,8 @@ class TestSpendingOutOfAGoal:
     def test_a_refund_comes_back_to_the_goal(self, db_session, service):
         """Refunds net against the purchase they repay."""
         month = _month(0)
-        goal = service.create(
-            name="Trip", target_amount=5000, initial_amount=2000, start_month=month
-        )[0]
+        goal = service.create(name="Trip", target_amount=5000, start_month=month)[0]
+        service.add_entry(goal["id"], 2000, entry_date=f"{month}-05")
         service.set_spending_link(goal["id"], "Travel")
         _bank(db_session, month, -1500, "Travel", day=10)
         _bank(db_session, month, 500, "Travel", day=12)
