@@ -82,26 +82,6 @@ class ValuationMixin:
             )
         return self._calculate_balance_from_transactions(transactions_df)
 
-    def get_hishtalmut_total_balance(self) -> float | None:
-        """Return the total current balance across open Keren Hishtalmut investments.
-
-        Covers both scraped policies (auto-synced by ``InsuranceSyncMixin``)
-        and manually-created KH investments, so the retirement projection can
-        subtract exactly what it adds back as its KH bucket.
-
-        Returns
-        -------
-        float or None
-            Summed current balance, or ``None`` when no open KH investment
-            carries a positive balance.
-        """
-        total = sum(
-            self.calculate_current_balance(int(inv["id"]))
-            for inv in self.get_all_investments()
-            if inv.get("type") == HISHTALMUT_TYPE
-        )
-        return total if total > 0 else None
-
     def get_total_values_at_dates(self, target_dates: list[str]) -> dict[str, float]:
         """Return the snapshot-resolved total portfolio value at many dates in one pass.
 

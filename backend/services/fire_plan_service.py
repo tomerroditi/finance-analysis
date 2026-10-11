@@ -244,7 +244,7 @@ class FirePlanService:
 
         Complete months only, and the median rather than the mean on both
         sides — 6 months of income, 12 of expenses — so one windfall or one
-        wedding does not become the plan (see `retirement_calculations.md`).
+        wedding does not become the plan.
         """
         months = self.analysis.get_income_expenses_over_time()
         if not months:
