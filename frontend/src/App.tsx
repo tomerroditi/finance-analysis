@@ -45,6 +45,9 @@ const EarlyRetirement = lazy(() =>
     default: m.EarlyRetirement,
   })),
 );
+const FireCalculator = lazy(() =>
+  import("./pages/FireCalculator").then((m) => ({ default: m.FireCalculator })),
+);
 const DataFlow = lazy(() =>
   import("./pages/DataFlow").then((m) => ({ default: m.DataFlow })),
 );
@@ -82,6 +85,10 @@ function App() {
                       <Route
                         path="early-retirement"
                         element={<EarlyRetirement />}
+                      />
+                      <Route
+                        path="fire-calculator"
+                        element={<FireCalculator />}
                       />
                       <Route path="data-sources" element={<DataSources />} />
                       <Route path="data-flow" element={<DataFlow />} />

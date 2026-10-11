@@ -41,6 +41,7 @@ ROUTERS: tuple[RouterMount, ...] = (
     RouterMount("investments", "/api/investments", "Investments"),
     RouterMount("liabilities", "/api/liabilities", "Liabilities"),
     RouterMount("analytics", "/api/analytics", "Analytics"),
+    RouterMount("fire", "/api/fire", "Early Retirement"),
     RouterMount("rates", "/api/rates", "Rates"),
     RouterMount("backup", "/api/backups", "Backups"),
     RouterMount("pending_refunds", "/api/pending-refunds", "Pending Refunds"),
