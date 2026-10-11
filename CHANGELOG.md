@@ -1,3 +1,9 @@
+## v1.107.0 (2026-10-11)
+
+### Feat
+
+- **fire**: run the user's plan on tracked data, replacing the old retirement page and card (#388)
+
 ## v1.106.0 (2026-10-11)
 
 ### Feat
