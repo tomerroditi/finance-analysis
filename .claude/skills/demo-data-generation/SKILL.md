@@ -51,45 +51,32 @@ The dataset models **the Cohens**, a dual-income Israeli couple with two kids (o
 
 ### Savings goals
 
-Five goals demonstrate every way a goal can be funded, in one waterfall:
+Five goals, each with the money the Cohens put into it — one dated
+`savings_goal_entries` row on the 5th of each month of saving, up to the
+target — and a `monthly_amount`, so the card offers this month's "Fund"
+suggestion (the current month is left unfunded on purpose):
 
-| # | Goal | Funded by | Demonstrates |
+| # | Goal | Entries | Demonstrates |
 |---|---|---|---|
-| 1 | Emergency Fund | cash only, capped 2,500/mo | a goal that filled — "Achieved 🎉" |
-| 2 | Kids' Education Fund | cash, capped 1,500/mo | `monthly_needed` off a long `target_date` |
-| 3 | Wedding Fund | cash, with two wedding bank transfers linked as **utilizations** | money set aside *and* since spent, without the target shrinking |
-| 4 | Home Renovation Fund | cash, with a large `opening_balance` | an opening balance, which comes straight out of the pool in the goal's first month |
-| 5 | New Car Fund | the same, further off and lower priority | a goal still filling behind the others |
+| 1 | Emergency Fund | 2,500/mo until 60k | a goal that filled — "Achieved 🎉" |
+| 2 | Kids' Education Fund | 1,500/mo | `monthly_needed` off a long `target_date` |
+| 3 | Wedding Fund | 3,000/mo, two wedding bank transfers linked as **spending** | money set aside *and* since spent, without the target shrinking |
+| 4 | Home Renovation Fund | a 260k first entry, then 4,000/mo to 350k | money already set aside when tracking began; achieved |
+| 5 | New Car Fund | a 110k first entry, then 3,000/mo | a goal still filling |
 
-Whatever the five leave unclaimed each month is the **free-cash pool**, which
-a negative month drains before any goal is touched (see
-`.claude/rules/savings_goals.md`).
+What the goals do not hold is **free cash** (bank + cash − goals), which
+stays comfortably positive: the app counts a **loan receipt as income**
+(`kpi_calculations.md`), and the demo's 450k mortgage and 120k car loan
+arrive without a matching purchase ever leaving the accounts. If you raise
+the entries, check free cash stays positive — a negative demo would greet
+every visitor with a red shortfall.
 
-The Cohens' pool is large on purpose-by-accident: the app counts a **loan
-receipt as income** (`kpi_calculations.md`), and the demo's 450k mortgage and
-120k car loan arrive without a matching purchase ever leaving the accounts, so
-they sit in the pool for the rest of the window. Goals 4 and 5 earmark the
-part of it that has a job, which is what keeps the dashboard card's stacked
-history in proportion. Raising or lowering their `opening_balance` is the
-lever on that pool — it is taken in the goal's first month.
-
-Two constraints on anything you add here:
-
-- **Never seed `savings_goal_allocations`.** The engine derives the whole
-  ledger on first read. Rows written by the generator would be anchored to
-  `REFERENCE_DATE` instead of the date-shifted months Demo Mode actually
-  serves, and `_shift_dates` deliberately does not move them.
-- **Only bank/cash transactions can be linked.** Credit-card and insurance
-  rows are filtered out of the surplus *before* links are resolved, so a
-  `savings_goal_links` row pointing at a CC transaction is silently inert.
-  The wedding utilizations use the bank-side venue/catering deposits for
-  exactly this reason.
-
-`savings_goals.start_month` / `closed_month` (YYYY-MM strings) and
-`target_date` are shifted by `_shift_dates` in `backend/demo_setup.py` (see
-"How Demo Mode re-anchors the data" below). A new date-ish column on these
-tables needs adding there too, or it freezes at the snapshot's build date
-while everything around it moves.
+Entry `date`s are real dates: `_shift_dates` moves them by the day offset,
+while `savings_goals.start_month` / `closed_month` (YYYY-MM strings) move by
+whole months and `target_date` by the day offset (see "How Demo Mode
+re-anchors the data" below). A new date-ish column on these tables needs
+adding there too, or it freezes at the snapshot's build date while
+everything around it moves.
 
 ### How Demo Mode re-anchors the data
 
@@ -101,7 +88,7 @@ copies it and `_shift_dates` moves it forward by
 
 | Column kind | Examples | Moves by |
 |---|---|---|
-| Real dates | transaction `date`, balance-snapshot `date`, `target_date`, investment/liability dates, `categories.created_at` | the raw day offset |
+| Real dates | transaction `date`, balance-snapshot `date`, `target_date`, savings-goal entry `date`, investment/liability dates, `categories.created_at` | the raw day offset |
 | Calendar-month periods | `budget_rules.year`/`month`, `savings_goals.start_month`/`closed_month` | whole months, `REFERENCE_DATE`'s month → today's month (yearly rules: whole years) |
 | Month relative to a transaction | `budget_month_overrides` | the shifted transaction's month ± its original direction |
 
@@ -254,7 +241,7 @@ scripts/generate_demo_data.py
 ├── create_pending_refunds          ← 7 refunds covering all statuses + split source
 ├── create_liabilities              ← Mortgage, Car Loan, paid-off Personal Loan
 ├── create_retirement_goal          ← derives KH totals from insurance-account constants
-├── create_savings_goals            ← 5-goal waterfall + utilizations
+├── create_savings_goals            ← 5 goals with monthly entries + utilizations
 ├── create_scraping_history
 ├── generate_insurance_data         ← pension + KH per Israeli law (see rules above)
 └── main()                          ← orchestrates, drops+recreates the DB, prints row counts

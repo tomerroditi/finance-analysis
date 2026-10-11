@@ -19,7 +19,7 @@ from backend.models.recurring_decision import RecurringDecision
 from backend.models.retirement_goal import RetirementGoal
 from backend.models.savings_goal import (
     SavingsGoal,
-    SavingsGoalAllocation,
+    SavingsGoalEntry,
     SavingsGoalLink,
     YearlySavingsTarget,
 )
@@ -60,7 +60,7 @@ __all__ = [
     "RefundLink",
     "RetirementGoal",
     "SavingsGoal",
-    "SavingsGoalAllocation",
+    "SavingsGoalEntry",
     "SavingsGoalLink",
     "ScrapingHistory",
     "SplitTransaction",

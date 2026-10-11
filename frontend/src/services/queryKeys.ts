@@ -150,8 +150,8 @@ export function makeQueryKeys(demo: boolean) {
     savingsGoals: {
       all: () => ["savings-goals", demo] as const,
       freeCash: () => ["savings-goals", "free-cash", demo] as const,
-      freeCashBefore: (month: string, goalId?: number) =>
-        ["savings-goals", "free-cash", "before", month, goalId ?? "new", demo] as const,
+      month: (year: number, month: number) =>
+        ["savings-goals", "month", year, month, demo] as const,
       timeline: (months: number) =>
         ["savings-goals", "timeline", months, demo] as const,
       yearly: () => ["savings-goals", "yearly", demo] as const,

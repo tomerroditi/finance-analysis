@@ -42,7 +42,7 @@ def _source_db_path() -> str:
 
 #: Columns removed from a model that the frozen demo snapshot may still carry.
 RETIRED_COLUMNS: dict[str, tuple[str, ...]] = {
-    "savings_goals": ("current_amount",),
+    "savings_goals": ("current_amount", "opening_balance", "monthly_cap"),
 }
 
 
@@ -481,10 +481,15 @@ def _shift_dates(engine: Engine, offset_days: int) -> None:
             {"offset": offset_str},
         )
 
+        # Money put into a goal moved on a real date, like a transaction.
+        if inspect(conn).has_table("savings_goal_entries"):
+            conn.execute(
+                text("UPDATE savings_goal_entries SET date = date(date, :offset)"),
+                {"offset": offset_str},
+            )
+
         # Savings-goal months are "YYYY-MM" strings and move by whole calendar
-        # months, like budget_rules below. Allocation rows are deliberately NOT
-        # shifted — the snapshot ships none, and the engine recomputes the
-        # whole ledger on first read from the already-shifted transactions.
+        # months, like budget_rules below.
         for column in ("start_month", "closed_month"):
             months = conn.execute(
                 text(

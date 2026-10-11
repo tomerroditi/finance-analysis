@@ -357,7 +357,7 @@ export const MonthlyBudgetView: React.FC<MonthlyBudgetViewProps> = ({
 
   // SavingsGoalsBudgetSection self-hides when there is nothing to show, so the
   // row needs the same test to decide whether the goals half exists at all.
-  const hasGoalAllocations = (analysis?.savings_goals?.goals?.length ?? 0) > 0;
+  const hasGoalMovement = (analysis?.savings_goals?.goals?.length ?? 0) > 0;
   const monthProjects = (project_spending?.projects ?? []) as ProjectSpendingItem[];
 
   const totalItem = rules.find(
@@ -587,11 +587,11 @@ export const MonthlyBudgetView: React.FC<MonthlyBudgetViewProps> = ({
           which left a tall column of empty space under it and was too narrow
           for the transaction lists it now expands to. Either half takes the
           whole row when the other has nothing to show. */}
-      {(hasGoalAllocations || monthProjects.length > 0) && (
+      {(hasGoalMovement || monthProjects.length > 0) && (
         <div className="flex flex-col xl:flex-row items-start gap-1.5">
-          {hasGoalAllocations && (
+          {hasGoalMovement && (
             <div className="w-full min-w-0 xl:flex-1">
-              <SavingsGoalsBudgetSection allocations={analysis?.savings_goals} />
+              <SavingsGoalsBudgetSection month={analysis?.savings_goals} />
             </div>
           )}
           {monthProjects.length > 0 && (

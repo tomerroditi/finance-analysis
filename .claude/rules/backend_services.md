@@ -26,7 +26,7 @@ The biggest domains are split into subpackages rather than one long
 module — `analysis/` (`core`, `cashflow`, `forecast`, `net_worth`),
 `budget/` (`core`, `monthly`, `project`, `yearly`), `investments/`
 (`core`, `snapshots`, `valuation`, `insurance_sync`), `savings_goals/`
-(`core`, `inputs`, `engine`, `goals`, `read_models`, `yearly`, `common`).
+(`core`, `inputs`, `ledger`, `goals`, `read_models`, `yearly`, `common`).
 New logic in those domains goes in the matching module, not back into a flat
 `*_service.py`.
 

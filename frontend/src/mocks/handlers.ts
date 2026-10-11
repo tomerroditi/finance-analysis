@@ -74,6 +74,8 @@ export const mockBankBalances = [
     prior_wealth_amount: 30000,
     last_manual_update: "2026-03-01",
     last_scrape_update: "2026-03-15",
+    balance_source: "manual",
+    last_drift: 0,
   },
 ];
 
@@ -411,8 +413,9 @@ export const handlers = [
       free_cash: 0,
       earmarked: 0,
       liquid: 0,
-      clawed_back_this_month: 0,
       has_goals: false,
+      shortfall: 0,
+      cover_plan: [],
     }),
   ),
   http.get("/api/budget/category-conflicts", () =>

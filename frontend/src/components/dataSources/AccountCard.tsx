@@ -12,6 +12,7 @@ import {
   CheckCircle2,
   Clock,
   KeyRound,
+  AlertTriangle,
 } from "lucide-react";
 import type { BankBalance, CredentialAccount } from "../../services/api";
 import type { ResendError, ScraperState } from "../../hooks/useScraping";
@@ -145,7 +146,19 @@ export function AccountCard({
                 <span className="text-xs text-[var(--text-muted)]">
                   {t("dataSources.balanceLabel")}
                 </span>
-                <span className="text-sm font-semibold text-amber-400">
+                <span
+                  className="text-sm font-semibold text-amber-400"
+                  data-testid="bank-balance"
+                  title={
+                    balance.balance_source === "scraped"
+                      ? t("dataSources.balanceFromBank")
+                      : balance.last_manual_update
+                        ? t("dataSources.balanceEnteredManually", {
+                            date: balance.last_manual_update,
+                          })
+                        : undefined
+                  }
+                >
                   {formatCurrency(balance.balance)}
                 </span>
               </span>
@@ -313,6 +326,26 @@ export function AccountCard({
         </div>
       </div>
       </div>
+
+      {acc.service === "banks" &&
+        balance?.balance_source === "scraped" &&
+        Math.abs(balance.last_drift ?? 0) >= 1 && (
+          <p
+            className="mt-2 flex items-start gap-1.5 text-[11px] text-amber-400"
+            data-testid="balance-drift"
+            title={t("dataSources.balanceDriftHint")}
+          >
+            <AlertTriangle size={12} className="shrink-0 mt-0.5" />
+            <span>
+              {t(
+                (balance.last_drift ?? 0) > 0
+                  ? "dataSources.balanceDriftMore"
+                  : "dataSources.balanceDriftLess",
+                { amount: formatCurrency(Math.abs(balance.last_drift ?? 0)) },
+              )}
+            </span>
+          </p>
+        )}
 
       {/* 2FA Inline Section */}
       {scraper?.status === "waiting_for_2fa" && (() => {

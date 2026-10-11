@@ -76,6 +76,29 @@ test.describe("Income & Expenses on touch", () => {
     await expect(card.getByTestId("composition-row").first()).toBeVisible();
   });
 
+  test("a tap on a month's credit reads it without offering a filter", async ({ page }) => {
+    await page.route("**/analytics/expenses-by-category-over-time**", (route) =>
+      route.fulfill({
+        json: [{ month: "2026-08", categories: { Loan: 5823, Food: 946, Shopping: -1000 } }],
+      }),
+    );
+    const card = await openCard(page);
+    await card.getByRole("button", { name: "Expenses Breakdown" }).click();
+
+    const credit = card.getByTestId("composition-credit");
+    await expect(credit).toBeVisible({ timeout: 45_000 });
+    await credit.tap();
+
+    // Pinned by the tap, so it survives the synthesized mouseleave.
+    const tooltip = page.getByTestId("composition-tooltip");
+    await expect(tooltip).toBeVisible();
+    await expect(tooltip.getByTestId("composition-tooltip-line")).toHaveText([/^Shopping: \u2066?-1,000/]);
+    await expect(page.getByTestId("composition-tooltip-filter")).toHaveCount(0);
+
+    await page.getByTestId("composition-tooltip-backdrop").tap();
+    await expect(tooltip).toBeHidden();
+  });
+
   test("the all-time donut leads with its legend and filters from a row", async ({
     page,
   }) => {

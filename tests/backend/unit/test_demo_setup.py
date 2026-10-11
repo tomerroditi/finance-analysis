@@ -400,9 +400,9 @@ class TestShiftSavingsGoalMonths:
             conn.execute(
                 text(
                     "INSERT INTO savings_goals "
-                    "(id, name, target_amount, opening_balance, priority, status, "
+                    "(id, name, target_amount, priority, status, "
                     "start_month, closed_month, created_at, updated_at) "
-                    "VALUES (1, 'Wedding Fund', 1000.0, 0.0, 1, 'active', "
+                    "VALUES (1, 'Wedding Fund', 1000.0, 1, 'active', "
                     ":start, :closed, :ts, :ts)"
                 ),
                 {"start": start_month, "closed": closed_month, "ts": ts},

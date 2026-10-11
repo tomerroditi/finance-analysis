@@ -1,19 +1,17 @@
-"""Data access for savings goals: goals, allocations and transaction links."""
+"""Data access for savings goals: goals, entries, transaction links and yearly targets."""
 
 from collections.abc import Iterator
 from contextlib import contextmanager
 from typing import Any
 
 import pandas as pd
-from sqlalchemy import func, select, update
-from sqlalchemy.dialects.sqlite import insert as sqlite_insert
+from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
 from backend.errors import EntityNotFoundException
 from backend.models.savings_goal import (
-    GOAL_STATUS_ACTIVE,
     SavingsGoal,
-    SavingsGoalAllocation,
+    SavingsGoalEntry,
     SavingsGoalLink,
     YearlySavingsTarget,
 )
@@ -23,19 +21,20 @@ GOAL_COLUMNS = [
     "id",
     "name",
     "target_amount",
-    "opening_balance",
     "priority",
-    "monthly_cap",
+    "monthly_amount",
     "start_month",
     "target_date",
     "contribution_category",
     "contribution_tags",
+    "utilization_category",
+    "utilization_tags",
     "status",
     "closed_month",
     "notes",
 ]
 
-ALLOCATION_COLUMNS = ["id", "goal_id", "year", "month", "amount", "source"]
+ENTRY_COLUMNS = ["id", "goal_id", "date", "amount", "source", "note"]
 
 LINK_COLUMNS = [
     "id",
@@ -66,20 +65,14 @@ class SavingsGoalRepository:
     def atomic(self) -> Iterator[None]:
         """Group every write inside the block into one transaction.
 
-        Each write normally commits on its own. A rebuild is many of them — the
-        new priorities, deleting the history it restates, then one upsert per
-        (goal, month) — and committed one by one, a request running alongside
-        (another tab's reorder, a dashboard read topping up missing months)
-        could see the history deleted but not yet rewritten and fill it in
-        under the old order. Inside this block writes only flush, and the
-        block commits once at the end, so everyone else sees the old ledger or
-        the new one and never half of each. Any error rolls the whole block
-        back. Blocks nest; only the outermost one commits.
-
-        A block that wrote nothing does not commit at all. Every commit
-        discards the cross-request caches (``backend/utils/data_cache.py``),
-        and ``ensure_allocations`` opens a block on every read — most of which
-        find the ledger already current.
+        Each write normally commits on its own. Funding every goal, or
+        covering a shortfall out of several, is one entry per goal — committed
+        one by one, a failure halfway would leave half the plan applied.
+        Inside this block writes only flush, and the block commits once at the
+        end. Any error rolls the whole block back. Blocks nest; only the
+        outermost one commits, and a block that wrote nothing does not commit
+        at all (every commit discards the cross-request caches,
+        ``backend/utils/data_cache.py``).
 
         Yields
         ------
@@ -151,7 +144,7 @@ class SavingsGoalRepository:
         return goal
 
     def delete(self, goal_id: int) -> None:
-        """Delete a goal with its allocations and transaction links.
+        """Delete a goal with its entries and transaction links.
 
         Raises
         ------
@@ -161,8 +154,8 @@ class SavingsGoalRepository:
         goal = self.db.get(SavingsGoal, goal_id)
         if not goal:
             raise EntityNotFoundException(f"Savings goal {goal_id} not found")
-        self.db.query(SavingsGoalAllocation).filter(
-            SavingsGoalAllocation.goal_id == goal_id
+        self.db.query(SavingsGoalEntry).filter(
+            SavingsGoalEntry.goal_id == goal_id
         ).delete()
         self.db.query(SavingsGoalLink).filter(
             SavingsGoalLink.goal_id == goal_id
@@ -171,7 +164,7 @@ class SavingsGoalRepository:
         self._commit()
 
     def set_priorities(self, ordered_ids: list[int]) -> None:
-        """Rewrite the waterfall order from a list of goal ids, first funded first."""
+        """Rewrite the list order from a list of goal ids, first one first."""
         goals = {g.id: g for g in self.db.execute(select(SavingsGoal)).scalars().all()}
         for position, goal_id in enumerate(ordered_ids):
             goal = goals.get(goal_id)
@@ -179,75 +172,54 @@ class SavingsGoalRepository:
                 goal.priority = position
         self._commit()
 
-    def get_allocations(self, goal_id: int | None = None) -> pd.DataFrame:
-        """Return allocation rows, optionally scoped to a single goal."""
-        stmt = select(SavingsGoalAllocation)
+    def get_entries(self, goal_id: int | None = None) -> pd.DataFrame:
+        """Return entries, optionally scoped to one goal, oldest first."""
+        stmt = select(SavingsGoalEntry).order_by(
+            SavingsGoalEntry.date, SavingsGoalEntry.id
+        )
         if goal_id is not None:
-            stmt = stmt.where(SavingsGoalAllocation.goal_id == goal_id)
-        return orm_rows_to_frame(
-            self.db.execute(stmt).scalars().all(), ALLOCATION_COLUMNS
-        )
+            stmt = stmt.where(SavingsGoalEntry.goal_id == goal_id)
+        return orm_rows_to_frame(self.db.execute(stmt).scalars().all(), ENTRY_COLUMNS)
 
-    def get_month_allocations(self, year: int, month: int) -> pd.DataFrame:
-        """Return every goal's allocation for one calendar month."""
-        stmt = select(SavingsGoalAllocation).where(
-            SavingsGoalAllocation.year == year, SavingsGoalAllocation.month == month
-        )
-        return orm_rows_to_frame(
-            self.db.execute(stmt).scalars().all(), ALLOCATION_COLUMNS
-        )
+    def get_entry(self, entry_id: int) -> SavingsGoalEntry | None:
+        """Return a single entry by id, or None."""
+        return self.db.get(SavingsGoalEntry, entry_id)
 
-    def upsert_allocation(
-        self, goal_id: int, year: int, month: int, amount: float, source: str
-    ) -> SavingsGoalAllocation:
-        """Insert or update the single allocation row for a (goal, month).
-
-        A single ``INSERT ... ON CONFLICT DO UPDATE`` rather than
-        select-then-insert: the allocation engine runs from read paths
-        (``ensure_allocations`` on every budget-month GET), so two parallel
-        requests against a fresh database used to race between the SELECT
-        and the INSERT and one of them died on the unique constraint.
-        """
-        stmt = sqlite_insert(SavingsGoalAllocation).values(
-            goal_id=goal_id, year=year, month=month, amount=amount, source=source
+    def add_entry(
+        self,
+        goal_id: int,
+        entry_date: str,
+        amount: float,
+        source: str,
+        note: str | None = None,
+    ) -> SavingsGoalEntry:
+        """Record money put into (positive) or taken out of (negative) a goal."""
+        entry = SavingsGoalEntry(
+            goal_id=goal_id, date=entry_date, amount=amount, source=source, note=note
         )
-        stmt = stmt.on_conflict_do_update(
-            index_elements=["goal_id", "year", "month"],
-            set_={
-                "amount": stmt.excluded.amount,
-                "source": stmt.excluded.source,
-                "updated_at": func.now(),
-            },
-        )
-        self.db.execute(stmt)
+        self.db.add(entry)
         self._commit()
-        self.db.expire_all()
-        return self.db.execute(
-            select(SavingsGoalAllocation).where(
-                SavingsGoalAllocation.goal_id == goal_id,
-                SavingsGoalAllocation.year == year,
-                SavingsGoalAllocation.month == month,
-            )
-        ).scalar_one()
+        return entry
 
-    def delete_allocations(
-        self, goal_ids: list[int], from_year: int, from_month: int
-    ) -> None:
-        """Delete allocations for the given goals at or after a month.
+    def delete_entry(self, entry_id: int) -> None:
+        """Delete one entry.
 
-        Used by a rebuild to clear the range it is about to recompute. Goals
-        whose history must stay frozen are simply left out of ``goal_ids``.
+        Raises
+        ------
+        EntityNotFoundException
+            If no entry with ``entry_id`` exists.
         """
-        if not goal_ids:
-            return
-        rows = (
-            self.db.query(SavingsGoalAllocation)
-            .filter(SavingsGoalAllocation.goal_id.in_(goal_ids))
-            .all()
-        )
-        for row in rows:
-            if (row.year, row.month) >= (from_year, from_month):
-                self.db.delete(row)
+        entry = self.db.get(SavingsGoalEntry, entry_id)
+        if not entry:
+            raise EntityNotFoundException(f"Savings goal entry {entry_id} not found")
+        self.db.delete(entry)
+        self._commit()
+
+    def delete_entries(self, goal_id: int, source: str) -> None:
+        """Delete every entry of one ``source`` on a goal."""
+        self.db.query(SavingsGoalEntry).filter(
+            SavingsGoalEntry.goal_id == goal_id, SavingsGoalEntry.source == source
+        ).delete()
         self._commit()
 
     def get_links(self, goal_id: int | None = None) -> pd.DataFrame:
@@ -356,18 +328,6 @@ class SavingsGoalRepository:
         goal.utilization_category = category
         goal.utilization_tags = tags if category is not None else None
         self._commit()
-
-    def active_goals(self) -> list[SavingsGoal]:
-        """Return active goals in waterfall order (priority ascending)."""
-        return list(
-            self.db.execute(
-                select(SavingsGoal)
-                .where(SavingsGoal.status == GOAL_STATUS_ACTIVE)
-                .order_by(SavingsGoal.priority, SavingsGoal.id)
-            )
-            .scalars()
-            .all()
-        )
 
     def get_yearly_targets(self) -> dict[int, float]:
         """Return every year's savings target as ``{year: target_amount}``."""

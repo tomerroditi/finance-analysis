@@ -64,7 +64,7 @@ export function BudgetGoalLink({
         : savingsGoalsApi.setSpendingLink(goalId, null),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: qkPrefix.savingsGoals });
-      // The monthly budget view carries each goal's allocations.
+      // The monthly budget view carries each goal's month of movement.
       queryClient.invalidateQueries({ queryKey: qkPrefix.budget });
       setIsOpen(false);
     },

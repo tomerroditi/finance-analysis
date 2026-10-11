@@ -1,4 +1,13 @@
-"""Service for managing bank account balances and prior wealth calculations."""
+"""Service for managing bank account balances and prior wealth calculations.
+
+An account's balance comes from one of two places. Most banks report it on
+every scrape, and that figure wins: the account's prior wealth is re-derived
+so that prior wealth plus every tracked transaction lands on what the bank
+says (:meth:`BankBalanceService.apply_scraped_balance`). Banks that report
+none — and anyone correcting a figure by hand — set it manually
+(:meth:`BankBalanceService.set_balance`); between those entries a scrape only
+re-adds the transactions to the prior wealth already stored.
+"""
 
 from datetime import date
 from typing import Any
@@ -10,6 +19,12 @@ from backend.errors import ValidationException
 from backend.repositories.bank_balance_repository import BankBalanceRepository
 from backend.repositories.scraping_history_repository import ScrapingHistoryRepository
 from backend.repositories.transactions import TransactionsRepository
+
+SOURCE_SCRAPED = "scraped"
+SOURCE_MANUAL = "manual"
+
+#: Below this a drift between the bank and the app is rounding, not a gap.
+DRIFT_TOLERANCE = 0.005
 
 
 class BankBalanceService:
@@ -72,6 +87,8 @@ class BankBalanceService:
             balance=balance,
             prior_wealth_amount=prior_wealth,
             last_manual_update=date.today().isoformat(),
+            balance_source=SOURCE_MANUAL,
+            last_drift=0.0,
         )
 
         return {
@@ -82,10 +99,59 @@ class BankBalanceService:
             "prior_wealth_amount": record.prior_wealth_amount,
             "last_manual_update": record.last_manual_update,
             "last_scrape_update": record.last_scrape_update,
+            "balance_source": record.balance_source,
+            "last_drift": record.last_drift,
         }
 
+    def apply_scraped_balance(
+        self, provider: str, account_name: str, balance: float
+    ) -> float | None:
+        """Take the balance a scrape reported as the account's balance.
+
+        Prior wealth becomes ``balance - sum(all tracked transactions)``, so
+        the account's computed balance equals the bank's from now on, and its
+        history moves with it. Before that, the gap between the bank's figure
+        and the one the app would have computed is kept as ``last_drift``:
+        a non-zero drift means the tracked transactions do not add up to what
+        the bank holds — one is missing, duplicated or wrong — which the
+        correction itself would otherwise hide.
+
+        Parameters
+        ----------
+        provider : str
+            Bank provider name.
+        account_name : str
+            User's display name for the account.
+        balance : float
+            The balance the bank reported, summed over the credential's
+            checking accounts.
+
+        Returns
+        -------
+        float or None
+            The drift (bank less computed), or None for an account that had
+            no balance to compare with yet.
+        """
+        txn_sum = self._get_account_transaction_sum(provider, account_name)
+        existing = self.balance_repo.get_by_account(provider, account_name)
+        drift = None
+        if existing is not None:
+            drift = balance - (existing.prior_wealth_amount + txn_sum)
+            if abs(drift) < DRIFT_TOLERANCE:
+                drift = 0.0
+        self.balance_repo.upsert(
+            provider=provider,
+            account_name=account_name,
+            balance=balance,
+            prior_wealth_amount=balance - txn_sum,
+            last_scrape_update=date.today().isoformat(),
+            balance_source=SOURCE_SCRAPED,
+            last_drift=round(drift, 2) if drift is not None else 0.0,
+        )
+        return drift
+
     def recalculate_for_account(self, provider: str, account_name: str) -> None:
-        """Recalculate balance after a scrape.
+        """Recalculate balance after a scrape that reported no balance.
 
         balance = prior_wealth (fixed) + sum(all scraped bank txns).
         Only acts if a balance record exists for this account.

@@ -1,3 +1,38 @@
+## v1.104.0 (2026-10-10)
+
+### Feat
+
+- **bank-balances**: take the balance the bank reports on every scrape (#392)
+
+## v1.103.2 (2026-10-10)
+
+### Fix
+
+- **savings-goals**: count yearly savings the way Income & Expenses does (#391)
+
+## v1.103.1 (2026-10-10)
+
+### Fix
+
+- **dashboard**: show credited categories in the expense breakdown (#390)
+
+## v1.103.0 (2026-10-10)
+
+### Feat
+
+- **savings-goals**: show what a spending goal saved and what is left to spend (#389)
+
+## v1.102.0 (2026-10-09)
+
+### Feat
+
+- **savings-goals**: goals hold what you put in, free cash is what they don't (#387)
+- **categories**: sort auto-tagging rules alphabetically by name (#384)
+
+### Fix
+
+- **budget**: wrap project actions on mobile and end closed projects' trend at their last charge (#385)
+
 ## v1.101.0 (2026-10-09)
 
 ### Feat

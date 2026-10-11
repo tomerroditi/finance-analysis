@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 import { formatCurrency } from "../../utils/numberFormatting";
 import {
   barCap,
+  splitPeriod,
   formatPeriodLabel,
   type CompositionRow,
   type Scope,
@@ -58,10 +59,12 @@ export function IncomeExpensesFocus({
     return () => window.removeEventListener("keydown", onKey);
   }, [onClear]);
 
+  // Shares are of the period's drawn spend, not its net total, so they match
+  // the slice the composition bar draws for the same period (`splitPeriod`).
   const points = rows.map((row) => {
     const value = row.values[series] ?? 0;
-    const periodTotal = Object.values(row.values).reduce((s, v) => s + v, 0);
-    return { month: row.month, value, share: periodTotal > 0 ? value / periodTotal : 0 };
+    const { gross } = splitPeriod(row.values);
+    return { month: row.month, value, share: gross > 0 ? value / gross : 0 };
   });
 
   const total = points.reduce((s, p) => s + p.value, 0);
@@ -70,10 +73,7 @@ export function IncomeExpensesFocus({
   // onward, or the figure says more about when tracking began than about the
   // series.
   const active = points.filter((p) => p.value > 0).length;
-  const windowTotal = rows.reduce(
-    (s, row) => s + Object.values(row.values).reduce((inner, v) => inner + v, 0),
-    0,
-  );
+  const windowTotal = rows.reduce((s, row) => s + splitPeriod(row.values).gross, 0);
   const cap = barCap(points.map((p) => p.value));
   const visible = points.slice(-limit).reverse();
 

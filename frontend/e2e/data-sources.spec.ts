@@ -221,6 +221,8 @@ test.describe("DataSources", () => {
                 prior_wealth_amount: 0,
                 last_manual_update: null,
                 last_scrape_update: today,
+                balance_source: "scraped",
+                last_drift: -2333.17,
               },
             ],
           });
@@ -245,6 +247,17 @@ test.describe("DataSources", () => {
       );
       await page.goto("/data-sources");
 
+      // The bank reported this balance, and it was off from the transactions:
+      // the card says where it came from and by how much the bank differed.
+      await expect(page.getByTestId("bank-balance").first()).toHaveAttribute(
+        "title",
+        /Reported by the bank/,
+      );
+      await expect(page.getByTestId("balance-drift")).toContainText(
+        /2,333.*less than the transactions/,
+      );
+
+      // Manual entry stays available over a scraped balance.
       // The seeded bank row's amber "$" button (enabled because scraped today).
       const setBtn = page
         .getByRole("button", { name: /^Set Balance$/ })

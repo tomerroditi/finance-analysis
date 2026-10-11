@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next";
 import { useQuery, keepPreviousData } from "@tanstack/react-query";
 import { AlertTriangle, HelpCircle, Lock, Target, Undo2, Wallet } from "lucide-react";
 import i18n from "../../i18n";
-import { budgetApi, type BudgetLongRule } from "../../services/api";
+import { budgetApi, type BudgetLongRule, type SavingsGoalMonth } from "../../services/api";
 import { formatCurrency } from "../../utils/numberFormatting";
 import { formatShortDate } from "../../utils/dateFormatting";
 import { Skeleton } from "../common/Skeleton";
@@ -304,7 +304,8 @@ export const OverviewBudgetView: React.FC<OverviewBudgetViewProps> = ({
     0,
   );
   const refunds = analysis?.pending_refunds;
-  const goals = analysis?.savings_goals;
+  const goals: SavingsGoalMonth | undefined = analysis?.savings_goals;
+  const intoGoals = (goals?.goals ?? []).reduce((sum, row) => sum + row.added + row.income, 0);
 
   const ruleCount =
     (analysis?.rules ?? []).filter(
@@ -439,8 +440,8 @@ export const OverviewBudgetView: React.FC<OverviewBudgetViewProps> = ({
               />
               <LooseEnd
                 icon={Target}
-                figure={formatCurrency(goals?.total_allocated ?? 0)}
-                caption={t("budget.goals.title")}
+                figure={formatCurrency(intoGoals)}
+                caption={t("budget.goals.into")}
               />
             </div>
           </div>
