@@ -54,13 +54,25 @@ class TestScrapedCardRowsKeepTheirBillingDate:
         rows = db_session.query(CreditCardTransaction).all()
         assert [r.billing_date for r in rows] == ["2026-09-02"]
 
-    def test_a_stored_billing_date_is_left_alone(self, db_session):
-        """Only missing dates are filled."""
+    def test_a_changed_billing_date_follows_the_scrape(self, db_session):
+        """A purchase the card moved to the next bill is moved too."""
         repo = TransactionsRepository(db_session)
         repo.add_scraped_transactions(_scraped([{}]), "credit_card_transactions")
 
         repo.add_scraped_transactions(
             _scraped([{"billing_date": "2026-10-02"}]), "credit_card_transactions"
+        )
+
+        row = db_session.query(CreditCardTransaction).one()
+        assert row.billing_date == "2026-10-02"
+
+    def test_a_scrape_without_a_billing_date_keeps_the_stored_one(self, db_session):
+        """A scrape that reports none does not erase what is known."""
+        repo = TransactionsRepository(db_session)
+        repo.add_scraped_transactions(_scraped([{}]), "credit_card_transactions")
+
+        repo.add_scraped_transactions(
+            _scraped([{"billing_date": None}]), "credit_card_transactions"
         )
 
         row = db_session.query(CreditCardTransaction).one()
