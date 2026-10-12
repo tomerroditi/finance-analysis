@@ -20,6 +20,7 @@ import {
 import {
   credentialsApi,
   bankBalancesApi,
+  cardBillingApi,
   scrapingApi,
 } from "../services/api";
 import type { BankBalance, CredentialAccount } from "../services/api";
@@ -191,6 +192,12 @@ export function DataSources() {
   const { data: bankBalances } = useQuery({
     queryKey: qk.balances.bank(),
     queryFn: () => bankBalancesApi.getAll().then((res) => res.data),
+  });
+
+  // When each card bills and which bank account pays it.
+  const { data: cardBilling } = useQuery({
+    queryKey: qk.balances.cardBilling(),
+    queryFn: () => cardBillingApi.getAll().then((res) => res.data),
   });
 
   const { data: lastScrapes } = useQuery({
@@ -460,6 +467,13 @@ export function DataSources() {
                   scraper={scraper}
                   lastScrapeDate={lastScrape?.last_scrape_date}
                   balance={bal}
+                  cardBilling={
+                    acc.service === "credit_cards"
+                      ? cardBilling?.find(
+                          (c) => c.provider === acc.provider && c.account_name === acc.account_name,
+                        )
+                      : undefined
+                  }
                   scrapedToday={isScrapedToday(acc.provider, acc.account_name)}
                   selected={selectedKeys.has(accountKey(acc))}
                   onToggleSelected={(isSelected) => toggleSelected(acc, isSelected)}

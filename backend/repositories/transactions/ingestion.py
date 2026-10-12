@@ -9,7 +9,7 @@ into ``TransactionsRepository`` (see ``core.py``).
 import logging
 
 import pandas as pd
-from sqlalchemy import select
+from sqlalchemy import select, update
 
 from backend.constants.tables import table_aliases
 from backend.models.pending_refund import PendingRefund, RefundLink
@@ -110,6 +110,8 @@ class IngestionMixin:
         else:
             new_rows = df
 
+        self._sync_billing_dates(repo, df)
+
         if new_rows.empty:
             # Still commit any pending-row deletions from the reconcile step.
             self.db.commit()
@@ -141,6 +143,64 @@ class IngestionMixin:
 
         self.db.add_all(instances)
         self.db.commit()
+
+    def _sync_billing_dates(self, repo: ServiceRepository, df: pd.DataFrame) -> None:
+        """Bring stored card rows' billing dates up to what the scrape reports.
+
+        A scrape that sees a stored row again only skips it as a duplicate,
+        but its billing date is the card site's current word on it: rows
+        scraped before ``billing_date`` was kept have none, and a recent
+        purchase can move to another bill (the site re-assigns it to the next
+        cycle, or reports an immediate charge's own date once it settles).
+        Each scrape re-reads the days before the previous one, so writing the
+        reported date onto every row it matched — filling a missing one,
+        replacing a changed one — keeps the recent rows current. The caller
+        commits.
+
+        Parameters
+        ----------
+        repo : ServiceRepository
+            Sub-repository being written to; tables without the column are
+            left alone.
+        df : pd.DataFrame
+            Incoming scraped rows, dedup columns already string-typed.
+        """
+        model = repo.model
+        if "billing_date" not in df.columns or not hasattr(model, "billing_date"):
+            return
+        incoming = df[df["billing_date"].notna()]
+        if incoming.empty:
+            return
+        dedup_columns = repo.unique_columns
+        stmt = select(
+            model.unique_id,
+            model.billing_date,
+            *(getattr(model, c) for c in dedup_columns),
+        ).where(
+            model.provider.in_([str(p) for p in incoming["provider"].unique()]),
+            model.date >= str(incoming["date"].min()),
+        )
+        stored = pd.read_sql(stmt, self.db.connection())
+        if stored.empty:
+            return
+        stored = stored.astype(dict.fromkeys(dedup_columns, str))
+        matched = stored.merge(
+            incoming[[*dedup_columns, "billing_date"]].drop_duplicates(dedup_columns),
+            on=dedup_columns,
+            suffixes=("_stored", ""),
+        )
+        changed = matched[
+            matched["billing_date_stored"].fillna("").astype(str)
+            != matched["billing_date"].astype(str)
+        ]
+        for unique_id, billing_date in zip(
+            changed["unique_id"], changed["billing_date"], strict=True
+        ):
+            self.db.execute(
+                update(model)
+                .where(model.unique_id == int(unique_id))
+                .values(billing_date=str(billing_date))
+            )
 
     def _reconcile_pending_rows(
         self,

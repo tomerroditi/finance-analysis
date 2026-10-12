@@ -90,6 +90,16 @@
     "earlyRetirement": "Early Retirement",
     "dataFlow": "Data Flow"
   },
+  "basis": {
+    "title": "How money is counted",
+    "net_cost": "Net cost",
+    "cash_flow": "Cash flow",
+    "changeInSettings": "Change it in Settings → How money is counted.",
+    "explain": {
+      "net_cost": "Net cost: what things really cost. A purchase counts on the day you made it, and a refund comes off the purchase it pays back, in that purchase's month. Transfers between your own accounts are left out.",
+      "cash_flow": "Cash flow: money as it moved. A card purchase counts on the day the card charged your bank, and one not charged yet doesn't count. A refund counts as income on the day it arrived, and every purchase at its full price. Transfers between your own accounts are left out."
+    }
+  },
   "settings": {
     "title": "Settings",
     "language": "Language",
@@ -1192,6 +1202,18 @@
     "balanceDriftMore": "At the last sync the bank held {{amount}} more than the transactions add up to. The balance now follows the bank.",
     "balanceDriftLess": "At the last sync the bank held {{amount}} less than the transactions add up to. The balance now follows the bank.",
     "balanceDriftHint": "A transaction is probably missing, duplicated or on the wrong date. Compare the account with a bank statement to find it.",
+    "billingDay": "Billing day: {{day}}",
+    "billingDayAbout": "Billing day: ~{{day}}",
+    "billingDayEstimated": {
+      "bills": "Estimated from when the paying bank account was charged. The card's own billing date replaces it after the next sync.",
+      "default": "Not known yet: the 10th is assumed until the card's next sync reports its billing date."
+    },
+    "billingDayRun": "Day {{day}}: {{from}} – {{to}}",
+    "billingDayChanged": "changed",
+    "nextBill": "Next bill {{date}}",
+    "paidFrom": "Paid from {{account}}",
+    "paidFromUnknown": "Paying account not found",
+    "paidFromHint": "Matched by comparing this card's monthly totals with the card bills in your bank accounts.",
     "setBalance": "Set Balance",
     "scrapeFirstToSetBalance": "Scrape first to set balance",
     "abortScraping": "Abort Scraping",

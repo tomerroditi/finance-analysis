@@ -19,8 +19,16 @@ from backend.constants.categories import (
     NON_EXPENSE_CATEGORIES,
     PRIOR_WEALTH_TAG,
 )
-from backend.constants.tables import TransactionsTableFields
+from backend.constants.tables import Tables, TransactionsTableFields
 from backend.repositories.budget_repository import BudgetRepository
+from backend.services.cash_flow_basis import (
+    BASIS_CASH_FLOW,
+    BASIS_NET_COST,
+    REFUNDS_SOURCE_LABEL,
+    Basis,
+    date_cards_by_billing,
+    refund_mask,
+)
 from backend.services.transaction_classification import (
     income_mask,
     transactions_masks,
@@ -68,6 +76,33 @@ class CashflowMixin:
             exclude_open=exclude_pending_refunds
         )
         return apply_refund_amount_adjustments(df, adjustments)
+
+    def _on_basis(
+        self, df: pd.DataFrame, basis: Basis, exclude_pending_refunds: bool
+    ) -> pd.DataFrame:
+        """
+        Put a frame on the requested counting basis.
+
+        Parameters
+        ----------
+        df : pd.DataFrame
+            Transactions frame, straight from the repository.
+        basis : {"net_cost", "cash_flow"}
+            See ``backend.services.cash_flow_basis``. Net cost nets matched
+            refunds into their purchases; cash flow moves card rows to the
+            day they were charged and leaves every refund where it landed.
+        exclude_pending_refunds : bool
+            Passed to :meth:`_net_matched_refunds` on the net-cost basis; a
+            refund still to come has no place in money that already moved.
+
+        Returns
+        -------
+        pd.DataFrame
+            The frame on that basis.
+        """
+        if basis == BASIS_CASH_FLOW:
+            return date_cards_by_billing(df)
+        return self._net_matched_refunds(df, exclude_pending_refunds)
 
     @staticmethod
     def _filter_date_window(
@@ -317,6 +352,7 @@ class CashflowMixin:
         exclude_pending_refunds: bool = True,
         exclude_projects: bool = False,
         exclude_liabilities: bool = False,
+        basis: Basis = BASIS_NET_COST,
     ) -> list[dict[str, Any]]:
         """
         Get monthly expenses broken down by category over time.
@@ -343,6 +379,10 @@ class CashflowMixin:
             Defaults to False, because the money did leave the account; a
             caller taking the envelope view of spending (where loan principal
             is a transfer into net worth rather than consumption) passes True.
+        basis : {"net_cost", "cash_flow"}, optional
+            Net cost (the default) nets refunds as above. Cash flow dates card
+            purchases by the day they were charged and counts them at full
+            price: refunds are income there, so they are left out of here.
 
         Returns
         -------
@@ -358,7 +398,9 @@ class CashflowMixin:
         if df.empty:
             return []
 
-        df = self._net_matched_refunds(df, exclude_pending_refunds)
+        df = self._on_basis(df, basis, exclude_pending_refunds)
+        if basis == BASIS_CASH_FLOW:
+            df = df[~refund_mask(df)]
 
         # Expense categories at any sign — a positive row in one is a refund,
         # and it belongs in its category's total, not dropped. Liabilities is
@@ -412,7 +454,11 @@ class CashflowMixin:
         ]
 
     def get_income_by_source_over_time(
-        self, exclude_pending_refunds: bool = True, exclude_liabilities: bool = False
+        self,
+        exclude_pending_refunds: bool = True,
+        exclude_liabilities: bool = False,
+        exclude_projects: bool = False,
+        basis: Basis = BASIS_NET_COST,
     ) -> list[dict[str, Any]]:
         """
         Get monthly income broken down by source (category+tag combination).
@@ -429,6 +475,14 @@ class CashflowMixin:
             from the expense breakdown: taking a loan out of the outflow while
             leaving the money it paid in as income would report a household as
             saving the whole loan. Defaults to False.
+        exclude_projects : bool, optional
+            If True, refunds in a project's category are left out — the
+            income half of the expense breakdown's projects switch. Only the
+            cash-flow basis has refunds on this side. Defaults to False.
+        basis : {"net_cost", "cash_flow"}, optional
+            Net cost (the default) nets refunds into what they repay. Cash
+            flow counts every refund — card ones included, on the day the card
+            credited them — as income under ``REFUNDS_SOURCE_LABEL``.
 
         Returns
         -------
@@ -441,13 +495,19 @@ class CashflowMixin:
         if df.empty:
             return []
 
-        df = self._net_matched_refunds(df, exclude_pending_refunds)
+        df = self._on_basis(df, basis, exclude_pending_refunds)
+
+        refunds = pd.DataFrame()
+        if basis == BASIS_CASH_FLOW:
+            refunds = df[refund_mask(df) & (df["source"] != Tables.INSURANCE.value)]
+            if exclude_projects and not refunds.empty:
+                project_names = BudgetRepository(self.db).read_project_category_names()
+                refunds = refunds[~refunds["category"].isin(project_names)]
+            refunds = refunds.copy()
+            refunds["source_label"] = REFUNDS_SOURCE_LABEL
 
         # Credit card and insurance rows are excluded, as in the other income methods.
         df = df[~df["source"].isin(self.repo._CASHFLOW_EXCLUDED)]
-
-        if df.empty:
-            return []
 
         income_df = df[income_mask(df)].copy()
         income_df = income_df[income_df["tag"] != PRIOR_WEALTH_TAG]
@@ -455,10 +515,12 @@ class CashflowMixin:
         if exclude_liabilities:
             income_df = income_df[income_df["category"] != LIABILITIES_CATEGORY]
 
+        if not income_df.empty:
+            income_df = self._add_source_label_column(income_df)
+        if not refunds.empty:
+            income_df = pd.concat([income_df, refunds], ignore_index=True)
         if income_df.empty:
             return []
-
-        income_df = self._add_source_label_column(income_df)
 
         income_df["month"] = to_month_series(income_df["date"])
 

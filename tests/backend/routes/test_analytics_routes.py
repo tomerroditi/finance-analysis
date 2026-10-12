@@ -321,3 +321,14 @@ class TestInsightDismissalRoutes:
         response = test_client.post("/api/analytics/insights/dismiss", json={})
         assert response.status_code == 422
 
+
+
+class TestCardBillingRoute:
+    """GET /api/card-billing/ lists cards with their billing day."""
+
+    def test_empty_database_lists_nothing(self, test_client):
+        """No cards, no rows."""
+        response = test_client.get("/api/card-billing/")
+
+        assert response.status_code == 200
+        assert response.json() == []

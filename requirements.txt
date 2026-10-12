@@ -21,3 +21,5 @@ pydantic>=2.13.4
 # (the GitHub Releases probe). Vercel installs from requirements.txt, not
 # pyproject.toml, so it must be listed here even though poetry already pins it.
 httpx>=0.28.0
+# Israeli bank holidays — the card billing schedule the analytics read.
+holidays==0.106

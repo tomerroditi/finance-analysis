@@ -522,6 +522,7 @@ export const handlers = [
   http.get("/api/bank-balances/", () =>
     HttpResponse.json(mockBankBalances),
   ),
+  http.get("/api/card-billing/", () => HttpResponse.json([])),
   http.post("/api/bank-balances/", () =>
     HttpResponse.json(mockBankBalances[0]),
   ),

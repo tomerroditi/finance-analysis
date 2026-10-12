@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 
 from backend.dependencies import get_database
 from backend.services.analysis import AnalysisService
+from backend.services.cash_flow_basis import BASIS_NET_COST, Basis
 from backend.services.insights_service import InsightsService
 from backend.services.recurring_service import RecurringService
 
@@ -140,6 +141,7 @@ def get_expenses_by_category_over_time(
     exclude_pending_refunds: bool = True,
     exclude_projects: bool = False,
     exclude_liabilities: bool = False,
+    basis: Basis = BASIS_NET_COST,
 ) -> list[dict[str, Any]]:
     """Return monthly expenses broken down by category.
 
@@ -153,12 +155,16 @@ def get_expenses_by_category_over_time(
         If True, categories owned by a project budget are left out.
     exclude_liabilities : bool
         If True, debt payments (loan principal) are left out.
+    basis : {"net_cost", "cash_flow"}
+        How purchases and refunds are counted — see
+        ``backend.services.cash_flow_basis``.
     """
     service = AnalysisService(db)
     return service.get_expenses_by_category_over_time(
         exclude_pending_refunds=exclude_pending_refunds,
         exclude_projects=exclude_projects,
         exclude_liabilities=exclude_liabilities,
+        basis=basis,
     )
 
 
@@ -191,6 +197,8 @@ def get_income_by_source_over_time(
     db: Session = Depends(get_database),
     exclude_pending_refunds: bool = True,
     exclude_liabilities: bool = False,
+    exclude_projects: bool = False,
+    basis: Basis = BASIS_NET_COST,
 ) -> list[dict[str, Any]]:
     """Return monthly income broken down by source (category+tag).
 
@@ -202,6 +210,12 @@ def get_income_by_source_over_time(
     exclude_liabilities : bool
         If True, loan receipts are left out — the income half of the switch
         that drops debt payments from the expense breakdown.
+    exclude_projects : bool
+        If True, refunds in a project's category are left out (cash-flow
+        basis only — net cost has no refunds on the income side).
+    basis : {"net_cost", "cash_flow"}
+        How purchases and refunds are counted — see
+        ``backend.services.cash_flow_basis``.
 
     Returns
     -------
@@ -213,6 +227,8 @@ def get_income_by_source_over_time(
     return service.get_income_by_source_over_time(
         exclude_pending_refunds=exclude_pending_refunds,
         exclude_liabilities=exclude_liabilities,
+        exclude_projects=exclude_projects,
+        basis=basis,
     )
 
 

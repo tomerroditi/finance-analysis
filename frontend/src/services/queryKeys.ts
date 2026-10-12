@@ -17,6 +17,8 @@
  * and bumping PERSIST_BUSTER.
  */
 
+import type { MoneyBasis } from "../hooks/useMoneyBasis";
+
 export const qkPrefix = {
   transactions: ["transactions"] as const,
   // Matches only transaction LIST entries (["transactions","list",...]) —
@@ -42,6 +44,7 @@ export const qkPrefix = {
   taggingRules: ["tagging-rules"] as const,
   bankBalances: ["bank-balances"] as const,
   cashBalances: ["cash-balances"] as const,
+  cardBilling: ["card-billing"] as const,
   savingsGoals: ["savings-goals"] as const,
   insuranceAccounts: ["insurance-accounts"] as const,
   lastScrapes: ["last-scrapes"] as const,
@@ -111,6 +114,7 @@ export function makeQueryKeys(demo: boolean) {
     balances: {
       bank: () => ["bank-balances", demo] as const,
       cash: () => ["cash-balances", demo] as const,
+      cardBilling: () => ["card-billing", demo] as const,
     },
     scraping: {
       lastScrapes: () => ["last-scrapes", demo] as const,
@@ -150,7 +154,7 @@ export function makeQueryKeys(demo: boolean) {
         ["savings-goals", "month", year, month, demo] as const,
       timeline: (months: number) =>
         ["savings-goals", "timeline", months, demo] as const,
-      yearly: () => ["savings-goals", "yearly", demo] as const,
+      yearly: (basis: MoneyBasis) => ["savings-goals", "yearly", basis, demo] as const,
       links: (goalId?: number) =>
         ["savings-goals", "links", goalId ?? "all", demo] as const,
     },
@@ -163,6 +167,7 @@ export function makeQueryKeys(demo: boolean) {
         excludePendingRefunds: boolean,
         excludeProjects: boolean,
         excludeLiabilities: boolean,
+        basis: MoneyBasis,
       ) =>
         [
           "analytics",
@@ -170,14 +175,22 @@ export function makeQueryKeys(demo: boolean) {
           excludePendingRefunds,
           excludeProjects,
           excludeLiabilities,
+          basis,
           demo,
         ] as const,
-      incomeBySourceOverTime: (excludePendingRefunds: boolean, excludeLiabilities: boolean) =>
+      incomeBySourceOverTime: (
+        excludePendingRefunds: boolean,
+        excludeLiabilities: boolean,
+        excludeProjects: boolean,
+        basis: MoneyBasis,
+      ) =>
         [
           "analytics",
           "income-by-source-over-time",
           excludePendingRefunds,
           excludeLiabilities,
+          excludeProjects,
+          basis,
           demo,
         ] as const,
       recurring: (includeDismissed = false) =>

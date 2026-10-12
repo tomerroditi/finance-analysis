@@ -135,6 +135,19 @@ hidden the same disagreement all along: the ledger billed a purchase to the
 month its *card statement* was paid, while the breakdown billed it to the
 month it was bought.
 
+**Two bases, one Settings toggle.** Both series take `basis`
+(`backend/services/cash_flow_basis.py`). `net_cost` (default) is everything
+above: purchases on the day made, matched refunds netted into the purchase.
+`cash_flow` re-dates card rows to the day the card charged the bank
+(`billing_date`; old rows are estimated per card from `card_billing.BillingSchedule` — the card's billing day nearest that month, pushed past weekends and Israeli holidays), drops a
+charge still to come, and moves every refund (a positive row in a spending
+category, card ones included) out of the expense breakdown and into income as
+a `Refunds` source, at full price on both sides; the projects chip then drops
+a project's refunds from income too (`exclude_projects` on the income
+endpoint). Neither basis ever counts the bank-side bill. The card hides the
+pending-refunds chip on cash flow — nothing is awaiting a refund in money that
+already moved.
+
 **A category can come out negative.** An unmatched refund nets against the
 category it lands in, so a month can end in credit. Anything that draws a
 category (a bar segment, a pie slice) skips those; anything that totals a

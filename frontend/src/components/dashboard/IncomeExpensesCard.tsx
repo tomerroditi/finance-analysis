@@ -4,6 +4,8 @@ import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { TrendingUp, TrendingDown, ArrowUp, ArrowDown, Minus, ChevronDown, ChevronUp } from "lucide-react";
 import { analyticsApi } from "../../services/api";
 import { useQueryKeys } from "../../hooks/useQueryKeys";
+import { useMoneyBasis } from "../../hooks/useMoneyBasis";
+import { InfoTooltip } from "../common/InfoTooltip";
 import { useTranslation } from "react-i18next";
 import { formatCurrency, formatChange } from "../../utils/numberFormatting";
 import { CHART_COLORS, isTouchDevice } from "../../utils/chartStyle";
@@ -213,6 +215,12 @@ export function IncomeExpensesCard() {
   // It moves the loan's flows and nothing else — what a loan costs and what
   // is left on it are the Liabilities page's, from the loan's own terms.
   const [excludeLoans, setExcludeLoans] = useState(false);
+  // Set in Settings, shared with the yearly savings figure. On the cash-flow
+  // basis nothing is waiting to be refunded — money is counted as it moved —
+  // so the pending-refunds chip has nothing to act on and is not offered.
+  const { basis } = useMoneyBasis();
+  const cashFlow = basis === "cash_flow";
+  const pendingRefundsExcluded = !cashFlow && excludePendingRefunds;
 
   // Both series come from the same itemized classification, filtered the same
   // way, so every view in this card is one number summed three ways. The card
@@ -223,16 +231,18 @@ export function IncomeExpensesCard() {
   // See `.claude/rules/kpi_calculations.md` → "The Income & Expenses card".
   const { data: expensesByCategoryOverTime } = useQuery({
     queryKey: qk.analytics.expensesByCategoryOverTime(
-      excludePendingRefunds,
+      pendingRefundsExcluded,
       excludeProjects,
       excludeLoans,
+      basis,
     ),
     queryFn: async () =>
       (
         await analyticsApi.getExpensesByCategoryOverTime(
-          excludePendingRefunds,
+          pendingRefundsExcluded,
           excludeProjects,
           excludeLoans,
+          basis,
         )
       ).data,
     // Every chip is part of the key, so a toggle is a *different* query with
@@ -243,9 +253,21 @@ export function IncomeExpensesCard() {
     placeholderData: keepPreviousData,
   });
   const { data: incomeBySourceData } = useQuery({
-    queryKey: qk.analytics.incomeBySourceOverTime(excludePendingRefunds, excludeLoans),
+    queryKey: qk.analytics.incomeBySourceOverTime(
+      pendingRefundsExcluded,
+      excludeLoans,
+      excludeProjects,
+      basis,
+    ),
     queryFn: async () =>
-      (await analyticsApi.getIncomeBySourceOverTime(excludePendingRefunds, excludeLoans)).data,
+      (
+        await analyticsApi.getIncomeBySourceOverTime(
+          pendingRefundsExcluded,
+          excludeLoans,
+          excludeProjects,
+          basis,
+        )
+      ).data,
     placeholderData: keepPreviousData,
   });
 
@@ -425,7 +447,17 @@ export function IncomeExpensesCard() {
   return (
     <div className="bg-[var(--surface)] rounded-2xl border border-[var(--surface-light)] overflow-hidden flex flex-col">
       <div className="px-3 md:px-6 pt-4 md:pt-5 flex items-center justify-between gap-2">
-        <h2 className="text-sm md:text-base font-bold">{t("dashboard.incomeAndExpenses")}</h2>
+        <div className="flex items-center gap-1.5 min-w-0">
+          <h2 className="text-sm md:text-base font-bold">{t("dashboard.incomeAndExpenses")}</h2>
+          <span data-testid="income-expenses-basis-info" className="inline-flex">
+            <InfoTooltip
+              text={`${t(`basis.explain.${basis}`)} ${t("basis.changeInSettings")}`}
+              iconSize={13}
+              width={260}
+              placement="bottom"
+            />
+          </span>
+        </div>
         <ScopeToggle scope={scope} onChange={changeScope} />
       </div>
       <div className="px-3 md:px-6 pb-4 md:pb-6 pt-4 min-h-[400px] md:h-[600px] overflow-y-auto flex flex-col">
@@ -438,12 +470,14 @@ export function IncomeExpensesCard() {
                 own on a phone, where it read as a heading for the tabs under
                 it rather than as one more filter. */}
             <div className="flex min-w-0 gap-2 overflow-x-auto scrollbar-auto-hide">
-              <FilterChip
-                active={excludePendingRefunds}
-                onToggle={() => setExcludePendingRefunds(!excludePendingRefunds)}
-                activeLabel={t("dashboard.pendingRefundsExcluded")}
-                inactiveLabel={t("dashboard.pendingRefundsIncluded")}
-              />
+              {!cashFlow && (
+                <FilterChip
+                  active={excludePendingRefunds}
+                  onToggle={() => setExcludePendingRefunds(!excludePendingRefunds)}
+                  activeLabel={t("dashboard.pendingRefundsExcluded")}
+                  inactiveLabel={t("dashboard.pendingRefundsIncluded")}
+                />
+              )}
               <FilterChip
                 active={excludeProjects}
                 onToggle={() => setExcludeProjects(!excludeProjects)}

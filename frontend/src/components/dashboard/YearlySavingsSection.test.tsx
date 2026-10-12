@@ -57,6 +57,7 @@ async function renderSection(data: YearlySavings) {
 
 beforeEach(() => {
   vi.restoreAllMocks();
+  window.localStorage.removeItem("fa.moneyBasis");
 });
 
 describe("YearlySavingsSection", () => {
@@ -82,8 +83,18 @@ describe("YearlySavingsSection", () => {
 
     const saved = within(section).getByTestId("yearly-saved");
     expect(saved.querySelector(".text-red-400")?.textContent).toMatch(/-4,000/);
-    const bar = section.querySelector<HTMLElement>("[style*='width']");
+    const bar = section.querySelector<HTMLElement>(".rounded-full [style*='width']");
     expect(bar?.style.width).toBe("0%");
+  });
+
+  it("counts on the basis chosen in Settings and says how", async () => {
+    window.localStorage.setItem("fa.moneyBasis", "cash_flow");
+    const section = await renderSection(yearly());
+
+    expect(savingsGoalsApi.getYearly).toHaveBeenCalledWith("cash_flow");
+    expect(within(section).getByTestId("info-tooltip-panel").textContent).toMatch(
+      /^Cash flow: money as it moved\..*Settings/,
+    );
   });
 
   it("offers to set a target when the year has none", async () => {
@@ -106,7 +117,7 @@ describe("YearlySavingsSection", () => {
     fireEvent.change(input, { target: { value: "150000" } });
     fireEvent.click(within(section).getByRole("button", { name: /save/i }));
 
-    await waitFor(() => expect(update).toHaveBeenCalledWith(2026, 150000));
+    await waitFor(() => expect(update).toHaveBeenCalledWith(2026, 150000, "net_cost"));
   });
 
   it("clears the target when the editor is left empty", async () => {
@@ -121,6 +132,6 @@ describe("YearlySavingsSection", () => {
     });
     fireEvent.click(within(section).getByRole("button", { name: /save/i }));
 
-    await waitFor(() => expect(update).toHaveBeenCalledWith(2026, null));
+    await waitFor(() => expect(update).toHaveBeenCalledWith(2026, null, "net_cost"));
   });
 });

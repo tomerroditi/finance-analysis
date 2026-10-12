@@ -32,6 +32,7 @@ export const SCRAPE_COMPLETION_PREFIXES = [
   qkPrefix.pendingRefunds,
   qkPrefix.insuranceAccounts,
   qkPrefix.bankBalances,
+  qkPrefix.cardBilling,
   qkPrefix.lastScrapes,
 ] as const;
 

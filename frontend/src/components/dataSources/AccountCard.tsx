@@ -13,13 +13,15 @@ import {
   Clock,
   KeyRound,
   AlertTriangle,
+  CalendarClock,
+  Landmark,
 } from "lucide-react";
-import type { BankBalance, CredentialAccount } from "../../services/api";
+import type { BankBalance, CardBilling, CardBillingLogin, CredentialAccount } from "../../services/api";
 import type { ResendError, ScraperState } from "../../hooks/useScraping";
 import { ProviderLogo } from "../common/ProviderLogo";
 import { ScrapeErrorTooltip } from "../common/ScrapeErrorTooltip";
 import { humanizeAccountType, humanizeProvider } from "../../utils/textFormatting";
-import { formatRelativeDate } from "../../utils/dateFormatting";
+import { formatDate, formatMonthYear, formatRelativeDate } from "../../utils/dateFormatting";
 import { formatCurrency } from "../../utils/numberFormatting";
 
 interface AccountCardProps {
@@ -27,6 +29,8 @@ interface AccountCardProps {
   scraper: ScraperState | undefined;
   lastScrapeDate: string | null | undefined;
   balance: BankBalance | undefined;
+  /** A card login's cards: when each bills and which bank account pays it. */
+  cardBilling?: CardBillingLogin;
   /** Whether this account was scraped today (gates balance entry + badge). */
   scrapedToday: boolean;
   /** Whether this source is picked for the toolbar's multi-source scrape. */
@@ -55,6 +59,7 @@ export function AccountCard({
   scraper,
   lastScrapeDate,
   balance,
+  cardBilling,
   scrapedToday,
   selected,
   onToggleSelected,
@@ -347,6 +352,14 @@ export function AccountCard({
           </p>
         )}
 
+      {acc.service === "credit_cards" && !!cardBilling?.cards.length && (
+        <ul className="mt-2 space-y-1" data-testid="card-billing">
+          {cardBilling.cards.map((card) => (
+            <CardBillingRow key={card.account_number} card={card} />
+          ))}
+        </ul>
+      )}
+
       {/* 2FA Inline Section */}
       {scraper?.status === "waiting_for_2fa" && (() => {
         // Rate-limit detail is the backend's own actionable
@@ -408,5 +421,71 @@ export function AccountCard({
         );
       })()}
     </div>
+  );
+}
+
+/**
+ * One card's billing line: its last digits, billing day (marked when only
+ * estimated), next bill, and the bank account paying it. A card whose billing
+ * day changed names the earlier days in the day's tooltip.
+ */
+function CardBillingRow({ card }: { card: CardBilling }) {
+  const { t } = useTranslation();
+  const estimated = card.billing_day_source !== "reported";
+  const history =
+    card.changes.length > 1
+      ? card.changes
+          .map((run) =>
+            t("dataSources.billingDayRun", {
+              day: run.day,
+              from: formatMonthYear(`${run.from}-01`),
+              to: formatMonthYear(`${run.to}-01`),
+            }),
+          )
+          .join("\n")
+      : undefined;
+  return (
+    <li
+      data-testid="card-billing-row"
+      className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px] text-[var(--text-muted)]"
+    >
+      {!!card.account_number && (
+        <span className="font-semibold text-[var(--text-default)]" dir="ltr">
+          •••• {card.account_number}
+        </span>
+      )}
+      <span
+        className="inline-flex items-center gap-1"
+        data-testid="card-billing-day"
+        title={
+          estimated
+            ? t(`dataSources.billingDayEstimated.${card.billing_day_source}`)
+            : history
+        }
+      >
+        <CalendarClock size={12} className="shrink-0" />
+        {t(estimated ? "dataSources.billingDayAbout" : "dataSources.billingDay", {
+          day: card.billing_day,
+        })}
+        {card.changes.length > 1 && (
+          <span className="text-amber-400" data-testid="card-billing-changed">
+            {t("dataSources.billingDayChanged")}
+          </span>
+        )}
+      </span>
+      <span>{t("dataSources.nextBill", { date: formatDate(card.next_billing_date) })}</span>
+      <span
+        className="inline-flex items-center gap-1"
+        data-testid="card-paid-from"
+        title={card.paid_from ? t("dataSources.paidFromHint") : undefined}
+      >
+        <Landmark size={12} className="shrink-0" />
+        {card.paid_from
+          ? t("dataSources.paidFrom", {
+              account: `${humanizeProvider(card.paid_from.provider)} · ${card.paid_from.account_name}`,
+            })
+          : t("dataSources.paidFromUnknown")}
+      </span>
+    </li>
   );
 }
