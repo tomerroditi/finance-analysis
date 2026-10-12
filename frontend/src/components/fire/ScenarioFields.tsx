@@ -1,6 +1,15 @@
+import { useId } from "react";
 import { useTranslation } from "react-i18next";
-import { Link2, Plus, RotateCcw, Trash2 } from "lucide-react";
-import type { FieldSpec, SectionSpec } from "./schema";
+import { ChevronDown, ChevronUp, Link2, Plus, RotateCcw, Trash2 } from "lucide-react";
+import { InfoTooltip } from "../common/InfoTooltip";
+import {
+  fieldLabelKey,
+  helpKey,
+  holds,
+  isFieldVisible,
+  type FieldSpec,
+  type SectionSpec,
+} from "./schema";
 
 /** How the form ties to tracked data. Absent on a free-standing scenario. */
 export interface TrackedLinks {
@@ -20,6 +29,8 @@ interface Props {
   onChange: (name: string, value: string) => void;
   onAddRow: (section: SectionSpec) => void;
   onRemoveRow: (section: SectionSpec, row: number) => void;
+  /** Swap a row with its neighbour; only reorderable sections offer it. */
+  onMoveRow?: (section: SectionSpec, row: number, to: number) => void;
   links?: TrackedLinks;
 }
 
@@ -27,12 +38,6 @@ const inputClass =
   "w-full px-2.5 py-1.5 text-sm rounded-lg bg-[var(--surface)] border " +
   "border-[var(--surface-light)] text-[var(--text-primary)] " +
   "focus:outline-none focus:ring-1 focus:ring-[var(--primary)]";
-
-function isVisible(field: FieldSpec, fields: Record<string, string>, suffix: string) {
-  if (!field.visibleWhen) return true;
-  const value = fields[`${field.visibleWhen.field}${suffix}`] ?? fields[field.visibleWhen.field];
-  return field.visibleWhen.values.includes(value ?? "");
-}
 
 function LinkMark({ name, links }: { name: string; links?: TrackedLinks }) {
   const { t } = useTranslation();
@@ -62,44 +67,72 @@ function LinkMark({ name, links }: { name: string; links?: TrackedLinks }) {
   );
 }
 
-function Field({ field, name, fields, onChange, links }: {
+function Help({ field, name }: { field: FieldSpec; name: string }) {
+  const { t } = useTranslation();
+  return (
+    <span className="shrink-0 inline-flex" data-testid={`fire-help-${name}`}>
+      <InfoTooltip text={t(helpKey(field))} iconSize={12} width={260} />
+    </span>
+  );
+}
+
+/**
+ * One input with its label and explanation. The label points at the input
+ * rather than wrapping it, so the info button beside it is not the label's
+ * control: clicking the label still focuses the input.
+ */
+function Field({ field, name, suffix, fields, onChange, links }: {
   field: FieldSpec;
   name: string;
+  suffix: string;
   fields: Record<string, string>;
   onChange: Props["onChange"];
   links?: TrackedLinks;
 }) {
   const { t } = useTranslation();
+  const id = useId();
   const value = fields[name] ?? "";
+  const label = t(fieldLabelKey(field, fields, suffix));
 
   if (field.kind === "checkbox") {
     return (
-      <label className="flex items-center gap-2 text-sm text-[var(--text-primary)] cursor-pointer">
+      <div className="flex items-center gap-2 min-w-0">
         <input
+          id={id}
           type="checkbox"
           className="shrink-0 w-3.5 h-3.5 rounded border-gray-600 text-blue-500 focus:ring-blue-500 bg-[var(--surface)] cursor-pointer"
           checked={value === "on"}
           onChange={(e) => onChange(name, e.target.checked ? "on" : "")}
         />
-        {t(field.labelKey)}
-      </label>
+        <label htmlFor={id} className="text-sm text-[var(--text-primary)] cursor-pointer">
+          {label}
+        </label>
+        <Help field={field} name={name} />
+      </div>
     );
   }
 
   return (
-    <label className="block min-w-0">
-      <span className="flex items-center gap-1 mb-1 text-xs text-[var(--text-muted)] min-w-0">
-        <span className="truncate">{t(field.labelKey)}</span>
+    <div className="min-w-0">
+      <div className="flex items-center gap-1 mb-1 text-xs text-[var(--text-muted)] min-w-0">
+        <label htmlFor={id} className="truncate">{label}</label>
+        <Help field={field} name={name} />
         <LinkMark name={name} links={links} />
-      </span>
+      </div>
       {field.kind === "select" ? (
-        <select className={inputClass} value={value} onChange={(e) => onChange(name, e.target.value)}>
+        <select
+          id={id}
+          className={inputClass}
+          value={value}
+          onChange={(e) => onChange(name, e.target.value)}
+        >
           {field.options?.map((option) => (
             <option key={option.value} value={option.value}>{t(option.labelKey)}</option>
           ))}
         </select>
       ) : (
         <input
+          id={id}
           className={inputClass}
           type={field.kind === "number" ? "number" : field.kind}
           value={value}
@@ -110,7 +143,7 @@ function Field({ field, name, fields, onChange, links }: {
           onChange={(e) => onChange(name, e.target.value)}
         />
       )}
-    </label>
+    </div>
   );
 }
 
@@ -132,10 +165,32 @@ function RowSource({ source, links }: { source: string; links?: TrackedLinks }) 
   );
 }
 
-export function ScenarioSection({ section, fields, onChange, onAddRow, onRemoveRow, links }: Props) {
+function sectionHintKey(section: SectionSpec, fields: Record<string, string>): string | undefined {
+  if (section.hintVariants) {
+    return `${section.hintVariants.prefix}.${fields[section.hintVariants.field] ?? ""}`;
+  }
+  return section.hintKey;
+}
+
+const rowButtonClass =
+  "shrink-0 p-1 text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors " +
+  "disabled:opacity-30 disabled:hover:text-[var(--text-muted)]";
+
+export function ScenarioSection({
+  section,
+  fields,
+  onChange,
+  onAddRow,
+  onRemoveRow,
+  onMoveRow,
+  links,
+}: Props) {
   const { t } = useTranslation();
+  if (section.visibleWhen && !holds(section.visibleWhen, fields)) return null;
   const repeatable = section.repeatable;
   const rowCount = repeatable ? Number(fields[`num_${repeatable.countKey}_fields`] ?? 0) : 0;
+  const hintKey = sectionHintKey(section, fields);
+  const reorder = section.reorderable && onMoveRow ? onMoveRow : undefined;
 
   return (
     <section
@@ -146,20 +201,23 @@ export function ScenarioSection({ section, fields, onChange, onAddRow, onRemoveR
         <h3 className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wider">
           {t(section.titleKey)}
         </h3>
-        {section.hintKey && (
-          <p className="text-xs text-[var(--text-muted)] mt-1">{t(section.hintKey)}</p>
+        {hintKey && (
+          <p className="text-xs text-[var(--text-muted)] mt-1" data-testid={`fire-hint-${section.key}`}>
+            {t(hintKey)}
+          </p>
         )}
       </div>
 
       {!repeatable && (
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
           {section.fields
-            .filter((field) => field.kind !== "hidden" && isVisible(field, fields, ""))
+            .filter((field) => field.kind !== "hidden" && isFieldVisible(field, fields))
             .map((field) => (
               <Field
                 key={field.name}
                 field={field}
                 name={field.name}
+                suffix=""
                 fields={fields}
                 onChange={onChange}
                 links={links}
@@ -183,23 +241,53 @@ export function ScenarioSection({ section, fields, onChange, onAddRow, onRemoveR
                     <RowSource source={fields[`${section.sourceField}${row}`] ?? ""} links={links} />
                   )}
                 </span>
-                <button
-                  type="button"
-                  aria-label={t("common.delete")}
-                  className="shrink-0 text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
-                  onClick={() => onRemoveRow(section, row)}
-                >
-                  <Trash2 className="w-3.5 h-3.5" />
-                </button>
+                <span className="flex items-center gap-1">
+                  {reorder && (
+                    <>
+                      <button
+                        type="button"
+                        aria-label={t("fire.action.moveUp")}
+                        title={t("fire.action.moveUp")}
+                        className={rowButtonClass}
+                        disabled={row === 1}
+                        data-testid={`fire-move-up-${section.key}-${row}`}
+                        onClick={() => reorder(section, row, row - 1)}
+                      >
+                        <ChevronUp className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        aria-label={t("fire.action.moveDown")}
+                        title={t("fire.action.moveDown")}
+                        className={rowButtonClass}
+                        disabled={row === rowCount}
+                        data-testid={`fire-move-down-${section.key}-${row}`}
+                        onClick={() => reorder(section, row, row + 1)}
+                      >
+                        <ChevronDown className="w-3.5 h-3.5" />
+                      </button>
+                    </>
+                  )}
+                  <button
+                    type="button"
+                    aria-label={t("common.delete")}
+                    className={rowButtonClass}
+                    data-testid={`fire-remove-${section.key}-${row}`}
+                    onClick={() => onRemoveRow(section, row)}
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </span>
               </div>
               <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
                 {section.fields
-                  .filter((field) => field.kind !== "hidden" && isVisible(field, fields, String(row)))
+                  .filter((field) => field.kind !== "hidden" && isFieldVisible(field, fields, String(row)))
                   .map((field) => (
                     <Field
                       key={field.name}
                       field={field}
                       name={`${field.name}${row}`}
+                      suffix={String(row)}
                       fields={fields}
                       onChange={onChange}
                     />
