@@ -1,3 +1,9 @@
+## v1.108.0 (2026-10-12)
+
+### Feat
+
+- **fire**: explain every plan field, and match the reference's form (#398)
+
 ## v1.107.3 (2026-10-11)
 
 ### Perf
