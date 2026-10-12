@@ -12,6 +12,11 @@ import {
   YAxis,
 } from "recharts";
 import type { FireProjection } from "../../services/api";
+import { formatCurrency } from "../../utils/numberFormatting";
+import { AnnuitiesTable, DrawdownTable } from "./PlanTables";
+import { assetLabel, flowLabel, seriesNames } from "./labels";
+import { ChartTooltip } from "../charts/ChartTooltip";
+import { AXIS_DEFAULTS, CHART_TEXT_COLOR, formatAxisNumber } from "../../utils/chartStyle";
 
 interface Props {
   projection: FireProjection;
@@ -19,18 +24,8 @@ interface Props {
 
 const SERIES_COLORS = ["#3b82f6", "#10b981", "#f59e0b", "#a78bfa", "#ef4444", "#14b8a6"];
 
-function useMoney() {
-  const { i18n } = useTranslation();
-  return useMemo(
-    () =>
-      new Intl.NumberFormat(i18n.language === "he" ? "he-IL" : "en-US", {
-        style: "currency",
-        currency: "ILS",
-        maximumFractionDigits: 0,
-      }),
-    [i18n.language],
-  );
-}
+/** Amounts as the rest of the app writes them: digits, then the shekel sign. */
+const money = { format: (value: number) => formatCurrency(value) };
 
 /** Down-sample to yearly points — 533 monthly points is more than a chart can show. */
 function yearly<T extends { age: number }>(rows: T[]): T[] {
@@ -54,21 +49,73 @@ function ChartCard({
       <h4 className="mb-3 text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wider">
         {title}
       </h4>
-      <div className="h-64" dir="ltr">
-        <ResponsiveContainer width="100%" height="100%">
-          {children as React.ReactElement}
-        </ResponsiveContainer>
-      </div>
+      <div dir="ltr">{children}</div>
     </div>
   );
 }
 
-/** Name a cash-flow row. Indexed rows (`portfolio2`, `keren0`) keep their number. */
-function flowLabel(key: string, t: (k: string) => string): string {
-  const match = /^([a-z_]+?)(\d+)$/.exec(key);
-  const stem = match ? match[1] : key;
-  const label = t(`fire.flow.${stem}`);
-  return match ? `${label} ${Number(match[2]) + 1}` : label;
+/**
+ * Stacked areas over age. The tooltip is the app's dark one, lists only the
+ * series carrying money at that age, and stays inside the plot; the legend
+ * sits below the plot rather than inside it.
+ */
+function StackedAreas({
+  rows,
+  series,
+  legend = false,
+}: {
+  rows: Record<string, number>[];
+  series: { key: string; name: string }[];
+  legend?: boolean;
+}) {
+  const { t } = useTranslation();
+  return (
+    <ResponsiveContainer width="100%" height={legend ? 320 : 256}>
+      <AreaChart data={rows} margin={{ top: 8, right: 8, bottom: 4, left: 0 }}>
+        <CartesianGrid strokeDasharray="3 3" stroke="var(--surface-light)" vertical={false} />
+        <XAxis
+          {...AXIS_DEFAULTS}
+          dataKey="age"
+          type="number"
+          domain={["dataMin", "dataMax"]}
+          tickFormatter={(age: number) => String(Math.floor(age))}
+          allowDecimals={false}
+        />
+        <YAxis {...AXIS_DEFAULTS} width={48} tickFormatter={formatAxisNumber} />
+        <Tooltip
+          cursor={{ stroke: CHART_TEXT_COLOR, strokeDasharray: "3 3" }}
+          wrapperStyle={{ zIndex: 20, pointerEvents: "none" }}
+          content={
+            <ChartTooltip
+              compact
+              filter={(entry) => Math.abs(Number(entry.value ?? 0)) >= 0.5}
+              labelFormatter={(age) => t("fire.chart.atAge", { age: Math.floor(Number(age)) })}
+            />
+          }
+        />
+        {legend && (
+          <Legend
+            iconType="circle"
+            iconSize={8}
+            wrapperStyle={{ fontSize: 11, color: CHART_TEXT_COLOR, paddingTop: 8 }}
+          />
+        )}
+        {series.map(({ key, name }, index) => (
+          <Area
+            key={key}
+            type="monotone"
+            dataKey={key}
+            name={name}
+            stackId="stack"
+            stroke={SERIES_COLORS[index % SERIES_COLORS.length]}
+            fill={SERIES_COLORS[index % SERIES_COLORS.length]}
+            fillOpacity={0.25}
+            isAnimationActive={false}
+          />
+        ))}
+      </AreaChart>
+    </ResponsiveContainer>
+  );
 }
 
 /** The rows of one cash-flow chart, and the keys that actually carry money. */
@@ -93,7 +140,6 @@ function useFlowSeries(projection: FireProjection, side: "incomes" | "expenses")
 
 export function ProjectionResults({ projection }: Props) {
   const { t } = useTranslation();
-  const money = useMoney();
 
   const netWorth = useMemo(
     () => yearly(projection.months.map((m) => ({ age: Number(m.age.toFixed(2)), value: m.net_worth }))),
@@ -119,6 +165,7 @@ export function ProjectionResults({ projection }: Props) {
     [projection.months, assetKeys],
   );
 
+  const names = useMemo(() => seriesNames(projection), [projection]);
   const income = useFlowSeries(projection, "incomes");
   const spending = useFlowSeries(projection, "expenses");
 
@@ -255,137 +302,41 @@ export function ProjectionResults({ projection }: Props) {
         </div>
       )}
 
-      {projection.annuities.length > 0 && (
-        <div
-          data-testid="fire-annuities"
-          className="p-4 rounded-xl bg-[var(--surface)] border border-[var(--surface-light)]"
-        >
-          <h4 className="mb-3 text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wider">
-            {t("fire.section.annuities")}
-          </h4>
-          <ul className="space-y-1 text-sm text-[var(--text-secondary)]">
-            {projection.annuities.map((annuity, index) => (
-              <li key={index} className="flex justify-between gap-4">
-                <span>
-                  {t(annuity.owner ? "fire.annuity.row" : "fire.annuity.rowUnnamed", {
-                    owner: annuity.owner,
-                    source: annuity.description
-                      || t(`fire.annuitySource.${annuity.source}`),
-                    component: t(`fire.annuityComponent.${annuity.component}`),
-                    kind: t(annuity.recognised ? "fire.annuity.recognised" : "fire.annuity.entitling"),
-                    age: annuity.claim_age.toFixed(0),
-                  })}
-                </span>
-                <span dir="ltr" className="whitespace-nowrap">
-                  {money.format(annuity.monthly)}
-                  {annuity.factor ? ` (${annuity.factor.toFixed(1)})` : ""}
-                </span>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
+      {projection.annuities.length > 0 && <AnnuitiesTable annuities={projection.annuities} />}
 
       {projection.withdrawal_plan.length > 0 && (
-        <div
-          data-testid="fire-withdrawal-plan"
-          className="p-4 rounded-xl bg-[var(--surface)] border border-[var(--surface-light)]"
-        >
-          <h4 className="mb-3 text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wider">
-            {t("fire.section.withdrawalPlan")}
-          </h4>
-          <ul className="space-y-1 text-sm text-[var(--text-secondary)]">
-            {projection.withdrawal_plan.map((segment, index) => (
-              <li key={index} className="flex justify-between gap-4">
-                <span>
-                  {t("fire.withdrawal.row", {
-                    source: segment.description || flowLabel(segment.source, t),
-                    from: segment.from_age.toFixed(1),
-                    to: segment.to_age.toFixed(1),
-                  })}
-                </span>
-                <span dir="ltr" className="whitespace-nowrap">
-                  {money.format(segment.monthly_average)}
-                </span>
-              </li>
-            ))}
-          </ul>
-        </div>
+        <DrawdownTable segments={projection.withdrawal_plan} />
       )}
 
       <ChartCard id="net-worth" title={t("fire.chart.netWorth")}>
-        <AreaChart data={netWorth}>
-          <CartesianGrid strokeDasharray="3 3" stroke="var(--surface-light)" />
-          <XAxis dataKey="age" tick={{ fontSize: 11 }} stroke="var(--text-muted)" />
-          <YAxis tick={{ fontSize: 11 }} stroke="var(--text-muted)" width={70} />
-          <Tooltip formatter={(value) => money.format(Number(value ?? 0))} />
-          <Area type="monotone" dataKey="value" stroke={SERIES_COLORS[0]} fill={SERIES_COLORS[0]} fillOpacity={0.2} />
-        </AreaChart>
+        <StackedAreas
+          rows={netWorth}
+          series={[{ key: "value", name: t("fire.chart.netWorth") }]}
+        />
       </ChartCard>
 
       <ChartCard id="assets" title={t("fire.chart.assets")}>
-        <AreaChart data={assets}>
-          <CartesianGrid strokeDasharray="3 3" stroke="var(--surface-light)" />
-          <XAxis dataKey="age" tick={{ fontSize: 11 }} stroke="var(--text-muted)" />
-          <YAxis tick={{ fontSize: 11 }} stroke="var(--text-muted)" width={70} />
-          <Tooltip formatter={(value) => money.format(Number(value ?? 0))} />
-          <Legend wrapperStyle={{ fontSize: 11 }} />
-          {assetKeys.map((key, index) => (
-            <Area
-              key={key}
-              type="monotone"
-              dataKey={key}
-              stackId="assets"
-              stroke={SERIES_COLORS[index % SERIES_COLORS.length]}
-              fill={SERIES_COLORS[index % SERIES_COLORS.length]}
-              fillOpacity={0.25}
-            />
-          ))}
-        </AreaChart>
+        <StackedAreas
+          rows={assets}
+          series={assetKeys.map((key) => ({ key, name: assetLabel(key, t, names) }))}
+          legend
+        />
       </ChartCard>
 
       <ChartCard id="income" title={t("fire.chart.income")}>
-        <AreaChart data={income.rows}>
-          <CartesianGrid strokeDasharray="3 3" stroke="var(--surface-light)" />
-          <XAxis dataKey="age" tick={{ fontSize: 11 }} stroke="var(--text-muted)" />
-          <YAxis tick={{ fontSize: 11 }} stroke="var(--text-muted)" width={70} />
-          <Tooltip formatter={(value) => money.format(Number(value ?? 0))} />
-          <Legend wrapperStyle={{ fontSize: 11 }} />
-          {income.keys.map((key, index) => (
-            <Area
-              key={key}
-              type="monotone"
-              dataKey={key}
-              name={flowLabel(key, t)}
-              stackId="income"
-              stroke={SERIES_COLORS[index % SERIES_COLORS.length]}
-              fill={SERIES_COLORS[index % SERIES_COLORS.length]}
-              fillOpacity={0.25}
-            />
-          ))}
-        </AreaChart>
+        <StackedAreas
+          rows={income.rows}
+          series={income.keys.map((key) => ({ key, name: flowLabel(key, t, names) }))}
+          legend
+        />
       </ChartCard>
 
       <ChartCard id="spending" title={t("fire.chart.spending")}>
-        <AreaChart data={spending.rows}>
-          <CartesianGrid strokeDasharray="3 3" stroke="var(--surface-light)" />
-          <XAxis dataKey="age" tick={{ fontSize: 11 }} stroke="var(--text-muted)" />
-          <YAxis tick={{ fontSize: 11 }} stroke="var(--text-muted)" width={70} />
-          <Tooltip formatter={(value) => money.format(Number(value ?? 0))} />
-          <Legend wrapperStyle={{ fontSize: 11 }} />
-          {spending.keys.map((key, index) => (
-            <Area
-              key={key}
-              type="monotone"
-              dataKey={key}
-              name={flowLabel(key, t)}
-              stackId="spending"
-              stroke={SERIES_COLORS[index % SERIES_COLORS.length]}
-              fill={SERIES_COLORS[index % SERIES_COLORS.length]}
-              fillOpacity={0.25}
-            />
-          ))}
-        </AreaChart>
+        <StackedAreas
+          rows={spending.rows}
+          series={spending.keys.map((key) => ({ key, name: flowLabel(key, t, names) }))}
+          legend
+        />
       </ChartCard>
     </div>
   );
