@@ -330,24 +330,20 @@ class FirePlanService:
             policy = policies.get(investment.get("insurance_policy_id") or "")
             deposit = deposits.get(policy.policy_id, 0.0) if policy else 0.0
             fee = policy.commission_savings_pct if policy else None
-            fields = {"kerenBalance": _fmt(balance), "kerenDeposit": _fmt(deposit)}
-            seed = {
-                "kerenInterest": "5.0",
-                "kerenType": "maslulit",
-                "kerenEndType": "fire",
-            }
-            # The provider's fee changes with the fund, so it follows the
-            # account like the balance does; without one, a default is seeded.
-            if fee is not None:
-                fields["kerenFee"] = _fmt(fee)
-            else:
-                seed["kerenFee"] = "0.6"
             rows.append(
                 TrackedRow(
                     source=f"investment:{investment['id']}",
                     label=investment["name"],
-                    fields=fields,
-                    seed=seed,
+                    fields={
+                        "kerenBalance": _fmt(balance),
+                        "kerenDeposit": _fmt(deposit),
+                    },
+                    seed={
+                        "kerenInterest": "5.0",
+                        "kerenType": "maslulit",
+                        "kerenFee": _fmt(fee) if fee is not None else "0.6",
+                        "kerenEndType": "fire",
+                    },
                 )
             )
         return rows

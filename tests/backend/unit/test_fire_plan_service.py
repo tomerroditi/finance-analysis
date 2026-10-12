@@ -139,10 +139,10 @@ class TestTrackedData:
         rows = _service(db_session).tracked().rows["loan"]
         assert [r.label for r in rows] == ["Mortgage"]
 
-    def test_keren_fee_follows_the_provider(
+    def test_keren_fee_is_seeded_then_the_users(
         self, db_session: Session, tracked: dict
     ) -> None:
-        """A keren's fee comes from its policy and refreshes like its balance."""
+        """A keren's fee starts as its provider's; a fee the user typed is kept."""
         db_session.add(
             InsuranceAccount(
                 provider="mislaka",
@@ -156,8 +156,9 @@ class TestTrackedData:
         tracked["keren"].insurance_policy_id = "KH-1"
         db_session.commit()
         service = _service(db_session)
-        service.save_plan({**service.get_plan()["fields"], "kerenFee1": "0"}, [])
         assert service.get_plan()["fields"]["kerenFee1"] == "0.39"
+        service.save_plan({**service.get_plan()["fields"], "kerenFee1": "0"}, [])
+        assert service.get_plan()["fields"]["kerenFee1"] == "0"
 
     def test_empty_database(self, db_session: Session) -> None:
         """A fresh install derives a plan without error, with nothing to follow."""

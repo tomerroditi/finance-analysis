@@ -2044,7 +2044,7 @@
       "kerenBalance": "What the fund holds today. Withdrawals from a Keren Hishtalmut are tax-free in this model.",
       "kerenDeposit": "Monthly deposit, including the employer's part. Use 0 for a fund you no longer pay into.",
       "kerenInterest": "Expected annual return beyond inflation, before fees.",
-      "kerenType": "A managed track costs 0.6 percentage points a year more than a self-directed (IRA) fund, on top of the fee you enter. Nothing else differs.",
+      "kerenType": "Managed track: Zeke's calculator adds 0.6% a year to the fee you enter. It is his own assumption and he doesn't explain it. IRA: only the fee you enter is charged. If the fee you enter is already your fund's full fee (as on your statement), choose IRA.",
       "kerenFee": "Annual management fee, in %.",
       "kerenEndType": "When deposits stop. Usually at early retirement.",
       "kerenEndDate": "The last month a deposit is made (included).",
