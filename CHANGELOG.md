@@ -1,3 +1,9 @@
+## v1.108.1 (2026-10-13)
+
+### Fix
+
+- **fire**: skip paid-up loans, explain managed track, readable results (#399)
+
 ## v1.108.0 (2026-10-12)
 
 ### Feat
