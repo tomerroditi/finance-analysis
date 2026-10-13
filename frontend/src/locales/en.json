@@ -1905,7 +1905,8 @@
       "netWorth": "Net worth",
       "assets": "Assets over time",
       "income": "Income by source",
-      "spending": "Spending by destination"
+      "spending": "Spending by destination",
+      "atAge": "Age {{age}}"
     },
     "flow": {
       "buffer": "To cash buffer",
@@ -1948,13 +1949,17 @@
     "annuity": {
       "entitling": "entitling",
       "recognised": "recognised",
-      "row": "{{owner}} — {{source}} {{component}} {{kind}}, from age {{age}}",
-      "rowUnnamed": "{{source}} {{component}} {{kind}}, from age {{age}}"
+      "colSource": "Source",
+      "colFrom": "From age",
+      "colMonthly": "Per month",
+      "factor": "factor {{factor}}",
+      "total": "Total, once all have started",
+      "legend": "Recognised: free of income tax. Entitling: taxed as income, with an exemption from the statutory age. The factor is what the balance is divided by to get the monthly pension."
     },
     "annuitySource": {
-      "gemel": "gemel le'hashkaa",
+      "gemel": "Gemel le'hashkaa",
       "national_insurance": "Bituach Leumi",
-      "pension": "pension fund"
+      "pension": "Pension fund"
     },
     "annuityComponent": {
       "gemel": "annuity",
@@ -1963,7 +1968,12 @@
       "tagmulim": "contributions"
     },
     "withdrawal": {
-      "row": "{{source}}, from age {{from}} to {{to}}"
+      "colSource": "Drawn from",
+      "colAges": "Ages",
+      "colMonthly": "Avg. per month",
+      "months_one": "{{count}} month",
+      "months_other": "{{count}} months",
+      "years": "{{years}} years"
     },
     "plan": {
       "subtitle": "Filled from your tracked accounts. Values marked with a link follow your data and update as it changes; type over one to make it your own.",
@@ -2034,7 +2044,7 @@
       "kerenBalance": "What the fund holds today. Withdrawals from a Keren Hishtalmut are tax-free in this model.",
       "kerenDeposit": "Monthly deposit, including the employer's part. Use 0 for a fund you no longer pay into.",
       "kerenInterest": "Expected annual return beyond inflation, before fees.",
-      "kerenType": "A managed track costs 0.6 percentage points a year more than a self-directed (IRA) fund, on top of the fee you enter. Nothing else differs.",
+      "kerenType": "Managed track: Zeke's calculator adds 0.6% a year to the fee you enter. It is his own assumption and he doesn't explain it. IRA: only the fee you enter is charged. If the fee you enter is already your fund's full fee (as on your statement), choose IRA.",
       "kerenFee": "Annual management fee, in %.",
       "kerenEndType": "When deposits stop. Usually at early retirement.",
       "kerenEndDate": "The last month a deposit is made (included).",
@@ -2045,6 +2055,13 @@
       "debtType": "Spitzer: equal monthly payments. Balloon: no payments; interest builds up and everything is repaid at the end. Grace: interest only each month, with the principal repaid at the end. What is still owed is taken off your net worth.",
       "realestateValue": "What the property is worth today, your home included. It counts in your net worth, but it pays no rent and is never sold; enter rent as an income row.",
       "realestateRise": "Expected annual rise in value beyond inflation, in %."
+    },
+    "assetSeries": {
+      "cash": "Checking",
+      "portfolio": "Portfolio",
+      "keren": "Study fund",
+      "pension": "Pension fund",
+      "realestate": "Real estate"
     }
   }
 }

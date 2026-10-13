@@ -128,6 +128,20 @@ test.describe("Early retirement plan", () => {
     const incomeChart = page.getByTestId("fire-chart-income");
     await expect(incomeChart.locator(".recharts-legend-item-text").first()).toBeVisible();
     await expect(incomeChart.getByText(/portfolio\d|keren\d|state_pension/)).toHaveCount(0);
+    const assetChart = page.getByTestId("fire-chart-assets");
+    await expect(assetChart.locator(".recharts-legend-item-text").first()).toBeVisible();
+    await expect(assetChart.getByText(/^(cash|portfolio\d|keren\d|pension\d|realestate\d)$/)).toHaveCount(0);
+
+    // Hovering a chart shows the app's tooltip: the age, then what carries money there.
+    const plot = incomeChart.locator(".recharts-wrapper").first();
+    const size = await plot.boundingBox();
+    if (!size) throw new Error("income chart has no box");
+    await plot.hover({ position: { x: size.width * 0.6, y: size.height * 0.3 } });
+    await expect(incomeChart.locator(".recharts-tooltip-wrapper")).toContainText(/Age \d+|גיל \d+/);
+
+    // Annuities and the drawdown read as tables.
+    await expect(page.getByTestId("fire-annuities").locator("thead th")).toHaveCount(3);
+    await expect(page.getByTestId("fire-withdrawal-row").first()).toBeVisible();
   });
 
   test("typing over a linked value unlinks it; save keeps it; reset restores it", async ({

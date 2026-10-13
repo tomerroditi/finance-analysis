@@ -112,6 +112,15 @@ AMORTIZATION_TO_LOAN_TYPE = {"shpitzer": "spitzer", "balloon": "baloon"}
 has no counterpart; it is modelled as Spitzer, the same term and rate."""
 
 
+def _paid_up(loan: dict[str, Any], today: date) -> bool:
+    """Whether a liability is owed nothing, though it is not marked paid off."""
+    if float(loan.get("remaining_balance") or 0) <= 0.5:
+        return True
+    start = pd.Timestamp(loan["start_date"])
+    months_run = (today.year - start.year) * 12 + (today.month - start.month)
+    return months_run >= int(loan["term_months"])
+
+
 def _fmt(value: float) -> str:
     """Write a number as the form does: two decimals at most, no trailing zeros."""
     return f"{value:.2f}".rstrip("0").rstrip(".") or "0"
@@ -376,9 +385,16 @@ class FirePlanService:
         return scalars
 
     def _loan_rows(self) -> list[TrackedRow]:
-        """One row per active liability."""
+        """One row per liability still owed.
+
+        A loan is paid up when it is marked so, when the payments made have
+        cleared its balance, or when its term is over — a loan run to term is
+        rarely marked by hand.
+        """
         rows = []
         for loan in self.liabilities.get_all_liabilities(include_paid_off=False):
+            if _paid_up(loan, date.today()):
+                continue
             rate = loan.get("current_rate")
             rows.append(
                 TrackedRow(
