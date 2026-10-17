@@ -160,6 +160,36 @@ class TestRefundNetting:
         assert monthly["expenses"].abs().sum() == 0.0
         assert monthly["income"].sum() == 0.0
 
+    def test_card_purchase_refunded_to_the_bank(self, db_session):
+        """Verify each view nets only a pair it sees both halves of.
+
+        The bank view has the 300 statement that paid the card purchase but
+        not the purchase itself, so the refund stays money back against the
+        bill; the spending view has the purchase and nets the pair to nothing.
+        """
+        purchase = _add(db_session, "credit_card_transactions", -300.0, "Shopping")
+        _add(db_session, "bank_transactions", -300.0, "Credit Cards")
+        refund = _add(
+            db_session, "bank_transactions", 300.0, "Shopping", date="2026-04-02"
+        )
+        service = PendingRefundsService(db_session)
+        pending = service.mark_as_pending_refund(
+            source_type="transaction",
+            source_id=purchase,
+            source_table="credit_cards",
+            expected_amount=300.0,
+        )
+        service.link_refund(
+            pending_refund_id=pending["id"],
+            refund_transaction_id=refund,
+            refund_source="banks",
+            amount=300.0,
+        )
+        views = TransactionViews(db_session)
+
+        assert views.bank().totals()["expenses"] == 0.0
+        assert views.spending().totals()["expenses"] == 0.0
+
     def test_purchase_awaiting_its_refund_is_dropped_only_on_request(self, db_session):
         """Verify the pending-refunds option decides what an open expectation costs."""
         purchase = _add(db_session, "bank_transactions", -400.0, "Electronics")

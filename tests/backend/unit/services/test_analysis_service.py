@@ -249,12 +249,9 @@ class TestAnalysisServiceIncomeExpenses:
     """Tests for income/expense classification logic."""
 
     def test_get_income_and_expenses(self, db_session, seed_base_transactions):
-        """Verify income vs expense calculation via direct method call."""
-        service = AnalysisService(db_session)
-
-        # Call get_income_investments_and_expenses directly with the full transactions df
-        df = service.repo.get_table()
-        income, _investments, expenses = service.get_income_investments_and_expenses(df)
+        """Verify income vs expense totals on the bank view."""
+        totals = AnalysisService(db_session).views.bank().totals()
+        income, expenses = totals["income"], totals["expenses"]
 
         # Income from bank+cash only (CC excluded): Salary 24700 + Other Income 3500
         assert income == 28200.0
@@ -358,8 +355,9 @@ class TestAnalysisServiceSankey:
         pw_links = [link for link in result["links"] if link["source"] == pw_node_idx]
         assert len(pw_links) == 1
 
-        # Prior Wealth value = cash_pw (5000) + bank balances (20000 + 15000) + all investments (12000 + -160)
-        assert pw_links[0]["value"] == 51840.0
+        # Prior Wealth value = cash_pw (5000) + bank balances (20000 + 15000)
+        # + all investments (12000 + -160) + the tagged cash row (5000)
+        assert pw_links[0]["value"] == 56840.0
 
     def test_get_sankey_data_empty(self, db_session):
         """Verify empty nodes/links for no data."""
@@ -2183,3 +2181,75 @@ class TestOpeningBalancesAreNotIncome:
         months = AnalysisService(db_session).get_income_expenses_over_time()
 
         assert [m["income"] for m in months] == [400.0]
+
+
+class TestOverviewNetsMatchedRefunds:
+    """A refund matched to its purchase is one event in the overview totals."""
+
+    def test_matched_refund_cancels_out_of_overview(self, db_session):
+        """Verify a refund booked as income no longer inflates income and expenses.
+
+        A refund in the purchase's own category cancelled out even before
+        netting; one booked as Other Income used to count the money twice.
+        """
+        rows = {}
+        for id_, amount, d, category in (
+            ("tv", -1000.0, "2026-03-10", "Electronics"),
+            ("tv-back", 1000.0, "2026-05-02", "Other Income"),
+        ):
+            row = BankTransaction(
+                id=id_, date=d, provider="leumi", account_name="Main",
+                description=id_, amount=amount, category=category,
+                source="bank_transactions",
+            )
+            db_session.add(row)
+            db_session.commit()
+            rows[id_] = row.unique_id
+        refunds = PendingRefundsService(db_session)
+        pending = refunds.mark_as_pending_refund(
+            source_type="transaction", source_id=rows["tv"],
+            source_table="banks", expected_amount=1000.0,
+        )
+        refunds.link_refund(
+            pending_refund_id=pending["id"], refund_transaction_id=rows["tv-back"],
+            refund_source="banks", amount=1000.0,
+        )
+
+        overview = AnalysisService(db_session).get_overview()
+
+        assert overview["total_expenses"] == 0.0
+        assert overview["total_income"] == 0.0
+
+
+class TestTaggedPriorWealth:
+    """A deposit tagged ``Prior Wealth`` is starting money, counted exactly once."""
+
+    @pytest.fixture
+    def opening_deposit(self, db_session):
+        """A 15,000 tagged opening deposit beside a 4,000 salary."""
+        for id_, amount, category, tag in (
+            ("opening", 15000.0, "Other Income", "Prior Wealth"),
+            ("salary", 4000.0, "Salary", None),
+        ):
+            db_session.add(
+                BankTransaction(
+                    id=id_, date="2026-03-01", provider="leumi", account_name="Main",
+                    description=id_, amount=amount, category=category, tag=tag,
+                    source="bank_transactions",
+                )
+            )
+        db_session.commit()
+
+    def test_overview_counts_it_as_prior_wealth(self, db_session, opening_deposit):
+        """Verify total income keeps the deposit, as prior wealth rather than income."""
+        overview = AnalysisService(db_session).get_overview()
+
+        assert overview["total_income"] == 19000.0
+
+    def test_sankey_prior_wealth_node_includes_it(self, db_session, opening_deposit):
+        """Verify the Prior Wealth node carries the tagged deposit."""
+        result = AnalysisService(db_session).get_sankey_data()
+
+        pw_node_idx = result["node_labels"].index("Prior Wealth")
+        pw_links = [link for link in result["links"] if link["source"] == pw_node_idx]
+        assert [link["value"] for link in pw_links] == [15000.0]

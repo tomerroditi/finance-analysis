@@ -22,7 +22,6 @@ from backend.constants.tables import TransactionsTableFields
 from backend.services.transaction_views import (
     TransactionView,
     income_mask,
-    transactions_masks,
 )
 from backend.utils.dataframe_dates import to_month_series
 
@@ -179,42 +178,6 @@ class CashflowMixin:
             }
             for month, row in pivot.iterrows()
         ]
-
-    def get_income_investments_and_expenses(
-        self, df: pd.DataFrame, exclude_refunds: bool = False
-    ) -> tuple[float, float, float]:
-        """
-        Calculate total income, investments, and expenses from a transactions DataFrame.
-
-        Parameters
-        ----------
-        df : pd.DataFrame
-            Transactions DataFrame (typically the full merged table).
-        exclude_refunds : bool, optional
-            If True, only count positive amounts as income and negative amounts
-            as expenses (exclude refunds/reversals). Defaults to False.
-
-        Returns
-        -------
-        tuple[float, float, float]
-            A ``(income, investments, expenses)`` triple where income and expenses
-            are non-negative. ``expenses`` is the absolute value of negative amounts.
-        """
-        df = df[~df["source"].isin(self.repo._CASHFLOW_EXCLUDED)]
-
-        is_income, is_investment, is_expense = transactions_masks(df).values()
-
-        income_df = df[is_income]
-        expense_df = df[is_expense]
-
-        if exclude_refunds:
-            income_df = income_df[income_df["amount"] > 0]
-            expense_df = expense_df[expense_df["amount"] < 0]
-
-        income = float(income_df["amount"].sum())
-        investments = float(df[is_investment]["amount"].sum()) * -1
-        expenses = float(expense_df["amount"].sum()) * -1
-        return income, investments, expenses
 
     def _add_source_label_column(self, income_df: pd.DataFrame) -> pd.DataFrame:
         """Add a vectorized ``source_label`` column to an income frame.

@@ -154,9 +154,13 @@ class ForecastMixin:
             df["date_parsed"] = pd.to_datetime(df["date"])
             mtd = df[(df["date_parsed"] >= month_start) & (df["date_parsed"] <= today)]
             if not mtd.empty:
-                actual_income, _, cash_out_to_date = (
-                    self.get_income_investments_and_expenses(mtd)
+                totals = (
+                    self.views.bank(exclude_pending_refunds=False)
+                    .between(month_start, today)
+                    .totals()
                 )
+                actual_income = totals["income"]
+                cash_out_to_date = totals["expenses"]
                 per_day_net = (
                     mtd.groupby(mtd["date_parsed"].dt.day)["amount"].sum().to_dict()
                 )
