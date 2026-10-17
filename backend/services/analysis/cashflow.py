@@ -106,15 +106,9 @@ class CashflowMixin:
             - ``amount`` – total debt payments for the month (positive value).
             - ``tags`` – payments per liability tag (positive values only).
         """
-        df = self.repo.get_table()
-
-        if df.empty:
-            return []
-
-        df = df[~df["source"].isin(self.repo._CASHFLOW_EXCLUDED)]
-        liabilities = df[
-            (df[TransactionsTableFields.CATEGORY.value] == LIABILITIES_CATEGORY)
-            & (df[TransactionsTableFields.AMOUNT.value] < 0)
+        expenses = self.views.bank(exclude_pending_refunds=False).expenses
+        liabilities = expenses[
+            expenses[TransactionsTableFields.CATEGORY.value] == LIABILITIES_CATEGORY
         ].copy()
 
         if liabilities.empty:

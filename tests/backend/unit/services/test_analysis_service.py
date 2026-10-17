@@ -1251,6 +1251,35 @@ class TestDebtPaymentsOverTime:
 
         assert result == [{"month": "2024-03", "amount": 400.0, "tags": {"Uncategorized": 400.0}}]
 
+    def test_refunded_overpayment_nets_against_the_payment(self, db_session):
+        """An overpaid instalment the lender returned counts only what was kept."""
+        payment = BankTransaction(
+            id="overpaid_debt", date="2024-03-05", provider="leumi", account_name="Checking",
+            description="Loan", amount=-1000.0, category="Liabilities", tag="Car Loan",
+            source="bank_transactions",
+        )
+        returned = BankTransaction(
+            id="overpaid_debt_back", date="2024-03-20", provider="leumi",
+            account_name="Checking", description="Loan overpayment",
+            amount=200.0, category="Liabilities", tag="Car Loan",
+            source="bank_transactions",
+        )
+        db_session.add_all([payment, returned])
+        db_session.commit()
+        refunds = PendingRefundsService(db_session)
+        pending = refunds.mark_as_pending_refund(
+            source_type="transaction", source_id=payment.unique_id,
+            source_table="banks", expected_amount=200.0,
+        )
+        refunds.link_refund(
+            pending_refund_id=pending["id"], refund_transaction_id=returned.unique_id,
+            refund_source="banks", amount=200.0,
+        )
+
+        result = AnalysisService(db_session).get_debt_payments_over_time()
+
+        assert result == [{"month": "2024-03", "amount": 800.0, "tags": {"Car Loan": 800.0}}]
+
     def test_credit_card_liability_rows_are_excluded(self, db_session):
         """CC-sourced rows are outside the cashflow view and never counted."""
         db_session.add(

@@ -12,7 +12,6 @@ import pandas as pd
 
 from backend.constants.providers import Services
 from backend.constants.tables import TransactionsTableFields
-from backend.services.transaction_views import transactions_masks
 from backend.utils.dataframe_dates import to_month_series
 
 
@@ -505,10 +504,9 @@ class ForecastMixin:
         dict[tuple[str, str], float]
             ``(provider, account_name)`` -> share, summing to 1.
         """
-        df = self.repo.get_cashflow_transactions()
-        if df.empty:
-            return {}
-        return self._spend_shares(df[transactions_masks(df)["expenses"]], month_start)
+        return self._spend_shares(
+            self.views.bank(exclude_pending_refunds=False).expenses, month_start
+        )
 
     def _spend_shares(
         self, frame: pd.DataFrame, month_start: pd.Timestamp
