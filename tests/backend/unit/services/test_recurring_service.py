@@ -7,6 +7,7 @@ from backend.constants.tables import Tables
 from backend.errors import ValidationException
 from backend.models.transaction import BankTransaction, CreditCardTransaction
 from backend.services import recurring_detection
+from backend.services.pending_refunds_service import PendingRefundsService
 from backend.services.recurring_service import RecurringService
 
 
@@ -938,6 +939,38 @@ class TestRecurringIncomeDetection:
         assert len(items) == 1
         assert items[0]["amount_kind"] == "variable"
         assert items[0]["expected_amount"] < items[0]["amount"]
+
+    def test_a_reimbursement_linked_to_its_bill_is_not_a_stream(self, db_session):
+        """Money back for a bill, linked as its refund, is not earnings.
+
+        An employer repaying the monthly phone bill nets against the bill on
+        every view, so the forecast must not plan it as income either.
+        """
+        refunds = PendingRefundsService(db_session)
+        for n in range(6):
+            bill = BankTransaction(
+                id=f"phone-{n}", date=_months_ago(n), provider="leumi",
+                account_name="Checking", description="PHONE BILL", amount=-150.0,
+                category="Utilities", source=Tables.BANK.value,
+            )
+            repaid = BankTransaction(
+                id=f"phone-back-{n}", date=_months_ago(n), provider="leumi",
+                account_name="Checking", description="EMPLOYER PHONE REFUND",
+                amount=150.0, category="Other Income", source=Tables.BANK.value,
+            )
+            db_session.add_all([bill, repaid])
+            db_session.commit()
+            pending = refunds.mark_as_pending_refund(
+                source_type="transaction", source_id=bill.unique_id,
+                source_table="banks", expected_amount=150.0,
+            )
+            refunds.link_refund(
+                pending_refund_id=pending["id"],
+                refund_transaction_id=repaid.unique_id,
+                refund_source="banks", amount=150.0,
+            )
+
+        assert RecurringService(db_session).get_recurring_income()["items"] == []
 
     def test_a_windfall_is_not_a_stream(self, db_session):
         """Gifts banked on one day are one event, however many deposits it took."""
