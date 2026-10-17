@@ -161,9 +161,8 @@ class TestSpendingOutOfAGoal:
         """A purchase the goal pays for leaves the goal, not free cash."""
         _liquid(db_session, 20000)
         month = _month(0)
-        goal = service.create(
-            name="Trip", target_amount=5000, initial_amount=4000, start_month=month
-        )[0]
+        goal = service.create(name="Trip", target_amount=5000, start_month=month)[0]
+        service.add_entry(goal["id"], 4000, entry_date=f"{month}-05")
         service.set_spending_link(goal["id"], "Travel")
         _bank(db_session, month, -1500, "Travel", day=20)
 
@@ -212,9 +211,8 @@ class TestSpendingOutOfAGoal:
     def test_a_card_purchase_is_paid_by_its_goal(self, db_session, service):
         """Itemized card purchases can be paid out of a goal too."""
         month = _month(0)
-        goal = service.create(
-            name="Trip", target_amount=5000, initial_amount=2000, start_month=month
-        )[0]
+        goal = service.create(name="Trip", target_amount=5000, start_month=month)[0]
+        service.add_entry(goal["id"], 2000, entry_date=f"{month}-05")
         service.set_spending_link(goal["id"], "Travel")
         _card(db_session, month, -800, "Travel")
 
@@ -471,9 +469,8 @@ class TestMonthByMonth:
     def test_month_view_splits_added_income_and_spent(self, db_session, service):
         """The budget page sees what moved into and out of each goal."""
         month = _month(0)
-        goal = service.create(
-            name="Trip", target_amount=5000, initial_amount=2000, start_month=month
-        )[0]
+        goal = service.create(name="Trip", target_amount=5000, start_month=month)[0]
+        service.add_entry(goal["id"], 2000, entry_date=f"{month}-05")
         service.set_spending_link(goal["id"], "Travel")
         _bank(db_session, month, -500, "Travel")
 
