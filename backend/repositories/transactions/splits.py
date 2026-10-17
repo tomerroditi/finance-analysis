@@ -109,6 +109,12 @@ class SplitsMixin:
                     "tag": split[SplitTransactionsTableFields.TAG.value],
                     "type": "split_child",
                     "source": split[src_col],
+                    # What the slice was carved from, so a view can show the
+                    # tag a split part had before it was split.
+                    "parent_unique_id": int(parent_dict["unique_id"]),
+                    "parent_category": parent_dict.get("category"),
+                    "parent_tag": parent_dict.get("tag"),
+                    "parent_amount": parent_dict.get("amount"),
                 }
             )
 

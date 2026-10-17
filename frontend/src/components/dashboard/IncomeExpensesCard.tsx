@@ -29,6 +29,18 @@ import {
 } from "./incomeExpensesScope";
 import { IncomeExpensesDonut } from "./IncomeExpensesDonut";
 import { IncomeExpensesFocus } from "./IncomeExpensesFocus";
+import {
+  byOriginalTag,
+  hasOrigins,
+  mergeOrigins,
+  originsOf,
+  parseOriginKey,
+  seriesFill,
+  seriesLabel,
+  toOriginRows,
+  withOriginColors,
+  withOriginSeries,
+} from "./splitOrigins";
 
 const INCOME_COLOR = "#10b981";
 const EXPENSE_COLOR = "#f43f5e";
@@ -218,6 +230,10 @@ export function IncomeExpensesCard() {
   // It moves the loan's flows and nothing else — what a loan costs and what
   // is left on it are the Liabilities page's, from the loan's own terms.
   const [excludeLoans, setExcludeLoans] = useState(false);
+  // Draws money a split moved onto another tag back under the tag its parent
+  // carries, hatched in the colour of the tag it carries now. Display only:
+  // every total stays what it was.
+  const [byOrigin, setByOrigin] = useState(false);
 
   // Both series come from the same itemized classification, filtered the same
   // way, so every view in this card is one number summed three ways. The card
@@ -284,6 +300,24 @@ export function IncomeExpensesCard() {
     return yearly ? toYearlyComposition(rows) : rows;
   }, [yearly, all, range, rawCategoryRows]);
 
+  // What splits carried between tags, folded to the same periods as the rows
+  // above so a year or the whole window reports its origins the same way.
+  const rawSourceOrigins = useMemo(() => toOriginRows(incomeBySourceData ?? []), [incomeBySourceData]);
+  const rawCategoryOrigins = useMemo(
+    () => toOriginRows(expensesByCategoryOverTime ?? []),
+    [expensesByCategoryOverTime],
+  );
+  const sourceOrigins = useMemo(() => {
+    const rows = windowed(rawSourceOrigins, all, range);
+    if (all) return toAllComposition(rows);
+    return yearly ? toYearlyComposition(rows) : rows;
+  }, [yearly, all, range, rawSourceOrigins]);
+  const categoryOrigins = useMemo(() => {
+    const rows = windowed(rawCategoryOrigins, all, range);
+    if (all) return toAllComposition(rows);
+    return yearly ? toYearlyComposition(rows) : rows;
+  }, [yearly, all, range, rawCategoryOrigins]);
+
   // Series order — and with it every series' colour — is derived from the
   // whole monthly history, never from the rows on screen. Derived per view it
   // would be derived from a *different* set each time: a window that drops a
@@ -291,8 +325,14 @@ export function IncomeExpensesCard() {
   // same category changed hue between the scope toggle's three positions.
   const sourceSeries = useMemo(() => seriesOrder(rawSourceRows, false), [rawSourceRows]);
   const categorySeries = useMemo(() => seriesOrder(rawCategoryRows, true), [rawCategoryRows]);
-  const sourceColorOf = useMemo(() => colorLookup(sourceSeries, CHART_COLORS), [sourceSeries]);
-  const categoryColorOf = useMemo(() => colorLookup(categorySeries, CATEGORY_COLORS), [categorySeries]);
+  const sourceColorOf = useMemo(
+    () => withOriginColors(colorLookup(sourceSeries, CHART_COLORS)),
+    [sourceSeries],
+  );
+  const categoryColorOf = useMemo(
+    () => withOriginColors(colorLookup(categorySeries, CATEGORY_COLORS)),
+    [categorySeries],
+  );
 
   // Every KPI folds the very rows the ledger draws, so no scope can disagree
   // with another — or with the tab below it — about a month, a year or a
@@ -386,17 +426,21 @@ export function IncomeExpensesCard() {
    * scope, and a composition row per period otherwise.
    */
   const breakdown = (
-    rows: CompositionRow[],
-    series: string[],
+    plainRows: CompositionRow[],
+    plainSeries: string[],
+    origins: CompositionRow[],
+    rawOrigins: CompositionRow[],
     colorOf: (name: string) => string,
     seriesHeading: string,
     emptyMessage: string,
   ) => {
-    if (rows.length === 0) return <p className="text-[var(--text-muted)] text-sm">{emptyMessage}</p>;
+    if (plainRows.length === 0) return <p className="text-[var(--text-muted)] text-sm">{emptyMessage}</p>;
+    const rows = byOrigin ? byOriginalTag(plainRows, origins) : plainRows;
+    const series = byOrigin ? withOriginSeries(plainSeries, rawOrigins) : plainSeries;
     if (focus) {
       return (
         <IncomeExpensesFocus
-          rows={rows}
+          rows={byOrigin ? mergeOrigins(rows) : rows}
           series={focus}
           color={colorOf(focus)}
           scope={scope}
@@ -412,7 +456,7 @@ export function IncomeExpensesCard() {
           values={rows[0].values}
           colorOf={colorOf}
           seriesHeading={seriesHeading}
-          onSelect={focusOverTime}
+          onSelect={(name) => focusOverTime(seriesLabel(name))}
         />
       );
     }
@@ -420,9 +464,10 @@ export function IncomeExpensesCard() {
       <CompositionView
         rows={rows}
         series={series}
+        origins={origins}
         colorOf={colorOf}
         limit={visiblePeriods}
-        onSelect={setFocus}
+        onSelect={(name) => setFocus(seriesLabel(name))}
       />
     );
   };
@@ -501,6 +546,20 @@ export function IncomeExpensesCard() {
 
           {all && <RangeChips range={range} onChange={setRange} />}
 
+          {((incomeView === "by_source" && hasOrigins(rawSourceOrigins)) ||
+            (incomeView === "by_category" && hasOrigins(rawCategoryOrigins))) && (
+            <div className="mb-3">
+              <FilterChip
+                active={byOrigin}
+                onToggle={() => setByOrigin(!byOrigin)}
+                activeLabel={t("dashboard.byOriginalTag")}
+                inactiveLabel={t("dashboard.byOriginalTag")}
+                title={t("dashboard.byOriginalTagTitle")}
+                testId="original-tag-toggle"
+              />
+            </div>
+          )}
+
           <div ref={viewportRef} className="flex-1 min-h-0 overflow-y-auto">
             {incomeView === "overview" && (
               <LedgerView rows={ledgerRows} scope={scope} limit={visiblePeriods} />
@@ -509,6 +568,8 @@ export function IncomeExpensesCard() {
               breakdown(
                 sourceRows,
                 sourceSeries,
+                sourceOrigins,
+                rawSourceOrigins,
                 sourceColorOf,
                 t("dashboard.breakdownSource"),
                 `📭 ${t("dashboard.noIncomeSourceData")}`,
@@ -517,6 +578,8 @@ export function IncomeExpensesCard() {
               breakdown(
                 categoryRows,
                 categorySeries,
+                categoryOrigins,
+                rawCategoryOrigins,
                 categoryColorOf,
                 t("dashboard.breakdownCategory"),
                 t("common.noData"),
@@ -583,6 +646,7 @@ function FilterChip({
   activeLabel,
   inactiveLabel,
   title,
+  testId,
 }: {
   active: boolean;
   onToggle: () => void;
@@ -591,10 +655,12 @@ function FilterChip({
   /** Shown while everything is counted. */
   inactiveLabel: string;
   title?: string;
+  testId?: string;
 }) {
   return (
     <button
       type="button"
+      data-testid={testId}
       onClick={onToggle}
       aria-pressed={active}
       title={title}
@@ -971,6 +1037,7 @@ function LedgerBar({
 function CompositionView({
   rows,
   series,
+  origins,
   colorOf,
   limit,
   onSelect,
@@ -978,6 +1045,8 @@ function CompositionView({
   rows: CompositionRow[];
   /** Series names in colour order, shared with the donut and focus views. */
   series: string[];
+  /** Per period, what splits carried between tags (see `splitOrigins`). */
+  origins: CompositionRow[];
   colorOf: (name: string) => string;
   limit: number;
   /** Filter the tab down to one series. */
@@ -988,14 +1057,32 @@ function CompositionView({
   // is gone, so it has to be instant. Portalled to <body> because the bar clips
   // its children (`overflow-hidden`) and the card may sit in a scroll container.
   const [tip, setTip] = useState<Tip | null>(null);
+  const originsByPeriod = useMemo(() => new Map(origins.map((row) => [row.month, row])), [origins]);
+
+  /**
+   * Where a slice's money came from when a split put it there: under its
+   * current tag, the parent tags it was split from; drawn back under its
+   * parent (hatched), the tag it carries now.
+   */
+  const splitLines = (period: string, name: string): string[] => {
+    const origin = parseOriginKey(name);
+    if (origin) return [t("dashboard.splitNowTagged", { tag: origin.child })];
+    return originsOf(originsByPeriod.get(period), name).map((o) =>
+      t("dashboard.splitFrom", { parent: o.parent, amount: formatCurrency(o.amount) }),
+    );
+  };
+
   const showTip = (
     e: ReactMouseEvent,
+    period: string,
     name: string,
     val: number,
     pct: number,
     color: string,
     pinned = false,
-  ) =>
+  ) => {
+    const label = seriesLabel(name);
+    const lines = splitLines(period, name);
     setTip({
       x: Math.min(Math.max(e.clientX, 90), window.innerWidth - 90),
       // Above the cursor, unless the row sits so close to the top of the
@@ -1003,11 +1090,13 @@ function CompositionView({
       y: e.clientY < 56 ? e.clientY + 20 : e.clientY - 12,
       below: e.clientY < 56,
       name,
-      text: `${name}: ${formatCurrency(val)} (${Math.round(pct)}%)`,
+      text: `${label}: ${formatCurrency(val)} (${Math.round(pct)}%)`,
+      lines: lines.length > 0 ? lines : undefined,
       color,
       pinned,
       filterable: true,
     });
+  };
 
   /** The credit line's readout: every series the period left in credit. */
   const showCreditTip = (e: ReactMouseEvent, credits: { name: string; value: number }[], pinned = false) =>
@@ -1047,12 +1136,13 @@ function CompositionView({
    */
   const onSegmentClick = (
     e: ReactMouseEvent,
+    period: string,
     name: string,
     val: number,
     pct: number,
     color: string,
   ) => {
-    if (isTouchDevice) showTip(e, name, val, pct, color, true);
+    if (isTouchDevice) showTip(e, period, name, val, pct, color, true);
     else onSelect(name);
   };
 
@@ -1085,17 +1175,19 @@ function CompositionView({
                 if (val <= 0) return null;
                 const pct = (val / gross) * 100;
                 const segColor = colorOf(name);
+                const hatched = parseOriginKey(name) !== null;
                 return (
                   <button
                     key={name}
                     type="button"
                     data-testid="composition-segment"
-                    aria-label={`${name}: ${formatCurrency(val)} (${Math.round(pct)}%)`}
+                    data-hatched={hatched ? "true" : undefined}
+                    aria-label={`${seriesLabel(name)}: ${formatCurrency(val)} (${Math.round(pct)}%)`}
                     className="h-full"
-                    style={{ width: `${pct}%`, background: segColor }}
-                    onClick={(e) => onSegmentClick(e, name, val, pct, segColor)}
-                    onMouseEnter={(e) => showTip(e, name, val, pct, segColor)}
-                    onMouseMove={(e) => showTip(e, name, val, pct, segColor)}
+                    style={{ width: `${pct}%`, background: seriesFill(name, colorOf) }}
+                    onClick={(e) => onSegmentClick(e, d.month, name, val, pct, segColor)}
+                    onMouseEnter={(e) => showTip(e, d.month, name, val, pct, segColor)}
+                    onMouseMove={(e) => showTip(e, d.month, name, val, pct, segColor)}
                     onMouseLeave={hideTip}
                   />
                 );

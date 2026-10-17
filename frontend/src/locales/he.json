@@ -231,6 +231,10 @@
     "creditNetted": "זיכוי {{amount}}",
     "creditTooltipTitle": "החזרים מעבר להוצאה:",
     "filterToSeries": "סינון לפריט זה",
+    "byOriginalTag": "לפי התיוג המקורי",
+    "byOriginalTagTitle": "הצגת כסף שפוצל לתיוג אחר תחת התיוג של העסקה המקורית, בקווקוו בצבע התיוג הנוכחי שלו",
+    "splitFrom": "פוצל מ־{{parent}} · {{amount}}",
+    "splitNowTagged": "מתויג כעת {{tag}}",
     "clearFilter": "ניקוי הסינון",
     "focusPerMonth": "לחודש",
     "focusPerYear": "לשנה",
@@ -704,6 +708,15 @@
       "provider": "ספק",
       "cardNumber": "מספר כרטיס",
       "accountNumber": "מספר חשבון"
+    },
+    "splitPart": {
+      "untagged": "ללא תיוג",
+      "badgeTitle": "פוצל מ־{{parent}}",
+      "title": "חלק מפיצול",
+      "parent": "פוצל מ־",
+      "parts_one": "חלק אחד בתצוגה זו",
+      "parts_two": "{{count}} חלקים בתצוגה זו",
+      "parts_other": "{{count}} חלקים בתצוגה זו"
     },
     "refundsRetagged_one": "החזר מקושר אחד הועבר יחד עם הרכישה",
     "refundsRetagged_two": "{{count}} החזרים מקושרים הועברו יחד עם הרכישה",

@@ -17,4 +17,11 @@ export interface Transaction {
   account_number?: string;
   pending_refund_id?: number;
   split_id?: number | null;
+  /** `"split_child"` on a part of a split transaction. */
+  type?: string | null;
+  /** On a split part: the transaction it was carved from, and its tag then. */
+  parent_unique_id?: number | null;
+  parent_category?: string | null;
+  parent_tag?: string | null;
+  parent_amount?: number | null;
 }
