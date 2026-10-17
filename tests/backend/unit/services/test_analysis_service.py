@@ -1118,6 +1118,45 @@ class TestAnalysisServiceIncomeBySourceAggregate:
         result = AnalysisService(db_session).get_income_by_source()
         assert result == {"sources": [], "total": 0.0, "start": None, "end": None}
 
+    def test_matched_refund_is_not_income(self, db_session):
+        """A refund booked under an income category nets against its purchase.
+
+        It is money coming back, as on the over-time chart, so it neither
+        adds to the total nor leaves a zero-amount source behind.
+        """
+        self._seed(db_session)
+        purchase = BankTransaction(
+            id="agg_tv", date="2024-01-05", provider="hapoalim",
+            account_name="Checking", description="TV",
+            amount=-2000.0, category="Electronics", tag=None,
+            source="bank_transactions", type="normal", status="completed",
+        )
+        refund = BankTransaction(
+            id="agg_tv_refund", date="2024-02-20", provider="hapoalim",
+            account_name="Checking", description="TV refund",
+            amount=2000.0, category="Other Income", tag="Refunds",
+            source="bank_transactions", type="normal", status="completed",
+        )
+        db_session.add_all([purchase, refund])
+        db_session.commit()
+        refunds = PendingRefundsService(db_session)
+        pending = refunds.mark_as_pending_refund(
+            source_type="transaction", source_id=purchase.unique_id,
+            source_table="banks", expected_amount=2000.0,
+        )
+        refunds.link_refund(
+            pending_refund_id=pending["id"], refund_transaction_id=refund.unique_id,
+            refund_source="banks", amount=2000.0,
+        )
+
+        result = AnalysisService(db_session).get_income_by_source()
+
+        assert result["total"] == 26700.0
+        assert [s["label"] for s in result["sources"]] == [
+            "Salary",
+            "Other Income / Freelance",
+        ]
+
     def test_one_sided_windows_filter_independently(self, db_session):
         """A start-only window and an end-only window each filter on their own edge."""
 

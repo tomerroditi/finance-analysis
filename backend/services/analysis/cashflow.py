@@ -14,50 +14,14 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from backend.constants.categories import (
-    LIABILITIES_CATEGORY,
-    PRIOR_WEALTH_TAG,
-)
+from backend.constants.categories import LIABILITIES_CATEGORY
 from backend.constants.tables import TransactionsTableFields
-from backend.services.transaction_views import (
-    TransactionView,
-    income_mask,
-)
+from backend.services.transaction_views import TransactionView
 from backend.utils.dataframe_dates import to_month_series
 
 
 class CashflowMixin:
     """Cash-flow aggregation methods for ``AnalysisService``."""
-
-    @staticmethod
-    def _filter_date_window(
-        df: pd.DataFrame, start: date | None, end: date | None
-    ) -> pd.DataFrame:
-        """
-        Keep only the rows whose ``date`` falls inside an inclusive window.
-
-        Parameters
-        ----------
-        df : pd.DataFrame
-            Frame carrying a ``date`` column.
-        start, end : date | None
-            Inclusive bounds. ``None`` means unbounded on that side, so both
-            ``None`` returns the frame untouched.
-
-        Returns
-        -------
-        pd.DataFrame
-            The rows inside the window.
-        """
-        if df.empty or (start is None and end is None):
-            return df
-        parsed = pd.to_datetime(df["date"])
-        mask = pd.Series(True, index=df.index)
-        if start is not None:
-            mask &= parsed >= pd.Timestamp(start)
-        if end is not None:
-            mask &= parsed <= pd.Timestamp(end)
-        return df[mask]
 
     def get_income_expenses_over_time(
         self,
@@ -343,8 +307,8 @@ class CashflowMixin:
         Aggregate total income amount per source within a date window.
 
         "Income source" is the category+tag label (same as
-        ``get_income_by_source_over_time``). Credit-card source and
-        Prior Wealth transactions are excluded, matching the over-time chart.
+        ``get_income_by_source_over_time``) and the rows are that chart's:
+        the bank view's income, a matched refund netted against its purchase.
 
         Parameters
         ----------
@@ -366,25 +330,13 @@ class CashflowMixin:
             "end": end.isoformat() if end else None,
         }
 
-        df = self.repo.get_table()
-        if df.empty:
-            return empty
-
-        df = df[~df["source"].isin(self.repo._CASHFLOW_EXCLUDED)]
-        if df.empty:
-            return empty
-
-        income_df = df[income_mask(df)].copy()
-        income_df = income_df[income_df["tag"] != PRIOR_WEALTH_TAG]
-        if income_df.empty:
-            return empty
-
-        income_df = self._filter_date_window(income_df, start, end)
+        income_df = self.views.bank().between(start, end).income
         if income_df.empty:
             return empty
 
         income_df = self._add_source_label_column(income_df)
         grouped = income_df.groupby("source_label")["amount"].sum()
+        grouped = grouped[grouped.round(2) > 0]
         total = float(grouped.sum())
 
         sources = [
