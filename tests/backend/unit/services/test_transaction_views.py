@@ -196,7 +196,7 @@ class TestRefundNetting:
         assert views.spending().totals()["expenses"] == 0.0
 
     @pytest.mark.parametrize("refund_category", ["Shopping", "Other Income"])
-    def test_views_agree_on_net_savings(self, db_session, refund_category):
+    def test_views_agree_on_net_savings(self, links_predating_tag_alignment, db_session, refund_category):
         """Verify a card purchase refunded to the bank leaves the same net either way.
 
         The views split the money differently — the bank view keeps the refund

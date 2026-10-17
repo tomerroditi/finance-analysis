@@ -1096,7 +1096,7 @@ class TestAnalysisServiceIncomeBySourceAggregate:
         result = AnalysisService(db_session).get_income_by_source()
         assert result == {"sources": [], "total": 0.0, "start": None, "end": None}
 
-    def test_matched_refund_is_not_income(self, db_session):
+    def test_matched_refund_is_not_income(self, links_predating_tag_alignment, db_session):
         """A refund booked under an income category nets against its purchase.
 
         It is money coming back, as on the over-time chart, so it neither
@@ -1483,7 +1483,7 @@ class TestRefundNettingAcrossMonths:
             )
             assert self._month(result, "2024-01")["expenses"] == 500.0
 
-    def test_refund_nets_against_its_purchases_category_not_its_own(self, db_session):
+    def test_refund_nets_against_its_purchases_category_not_its_own(self, links_predating_tag_alignment, db_session):
         """The breakdown credits the category that was charged, not the refund's."""
         self._seed(db_session, [
             ("tv", "2024-01-10", -1000.0, "Electronics", None),
@@ -1547,7 +1547,7 @@ class TestRefundNettingAcrossMonths:
 
         assert "Unknown" not in nodes
 
-    def test_matched_refund_is_not_counted_as_income(self, db_session):
+    def test_matched_refund_is_not_counted_as_income(self, links_predating_tag_alignment, db_session):
         """A repayment landing in an income category is money back, not earnings."""
         self._seed(db_session, [
             ("salary", "2024-03-01", 8000.0, "Salary", None),
@@ -1604,7 +1604,7 @@ class TestRefundNettingAcrossMonths:
 
         assert spent == {RefundMode.NONE: 800.0, RefundMode.LINKED: 800.0, RefundMode.PENDING: 0.0}
 
-    def test_no_refund_handling_keeps_a_refund_tagged_as_income(self, db_session):
+    def test_no_refund_handling_keeps_a_refund_tagged_as_income(self, links_predating_tag_alignment, db_session):
         """A linked refund sitting in an income category stays income only under ``NONE``."""
         self._seed(db_session, [
             ("tv", "2024-01-10", -1000.0, "Electronics", None),
@@ -2286,7 +2286,7 @@ class TestOpeningBalancesAreNotIncome:
 class TestOverviewNetsMatchedRefunds:
     """A refund matched to its purchase is one event in the overview totals."""
 
-    def test_matched_refund_cancels_out_of_overview(self, db_session):
+    def test_matched_refund_cancels_out_of_overview(self, links_predating_tag_alignment, db_session):
         """Verify a refund booked as income no longer inflates income and expenses.
 
         A refund in the purchase's own category cancelled out even before

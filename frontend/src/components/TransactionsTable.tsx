@@ -1386,6 +1386,9 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
             amount: linkingTransaction.amount,
             description:
               linkingTransaction.description || linkingTransaction.desc || "",
+            category: linkingTransaction.category ?? null,
+            tag: linkingTransaction.tag ?? null,
+            splitId: linkingTransaction.split_id ?? null,
           }}
         />
       )}

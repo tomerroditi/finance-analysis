@@ -16,4 +16,5 @@ export interface Transaction {
   account_name?: string;
   account_number?: string;
   pending_refund_id?: number;
+  split_id?: number | null;
 }

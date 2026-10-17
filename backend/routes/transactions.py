@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 
 from backend.constants.providers import Services
 from backend.dependencies import get_database
-from backend.routes.schemas import ApiRequestModel, StatusResponse
+from backend.routes.schemas import ApiRequestModel, StatusResponse, TagWriteResponse
 from backend.services.transactions_service import TransactionsService
 
 router = APIRouter()
@@ -116,10 +116,10 @@ def create_transaction(
     return {"status": "success"}
 
 
-@router.put("/{unique_id}", response_model=StatusResponse)
+@router.put("/{unique_id}", response_model=TagWriteResponse)
 def update_transaction(
     unique_id: str, data: TransactionUpdate, db: Session = Depends(get_database)
-) -> dict[str, str]:
+) -> dict[str, Any]:
     """Update editable fields of a transaction.
 
     The set of editable fields depends on the transaction source: scraped
@@ -142,12 +142,15 @@ def update_transaction(
         ``{"status": "no_changes"}`` if nothing changed. A ``unique_id``
         that does not exist in ``source`` is a 404.
     """
-    updated = TransactionsService(db).update_transaction(
+    result = TransactionsService(db).update_transaction(
         unique_id,
         data.source,
         data.model_dump(exclude={"source"}, exclude_none=True),
     )
-    return {"status": "success" if updated else "no_changes"}
+    return {
+        "status": "success" if result["updated"] else "no_changes",
+        "refunds_retagged": result["refunds_retagged"],
+    }
 
 
 @router.delete("/{unique_id}", response_model=StatusResponse)
@@ -187,12 +190,12 @@ def revert_split(
     return {"status": "success"}
 
 
-@router.post("/bulk-tag", response_model=StatusResponse)
+@router.post("/bulk-tag", response_model=TagWriteResponse)
 def bulk_tag_transactions(
     data: BulkTagUpdate, db: Session = Depends(get_database)
-) -> dict[str, str]:
+) -> dict[str, Any]:
     """Apply tagging and optional field updates to multiple transactions of the same source."""
-    TransactionsService(db).bulk_tag_transactions(
+    retagged = TransactionsService(db).bulk_tag_transactions(
         data.transaction_ids,
         data.source,
         data.category,
@@ -202,7 +205,7 @@ def bulk_tag_transactions(
         data.date,
         data.amount,
     )
-    return {"status": "success"}
+    return {"status": "success", "refunds_retagged": retagged}
 
 
 @router.get("/latest-date", response_model=LatestDateResponse)
@@ -236,7 +239,7 @@ def get_transaction(
     return TransactionsService(db).get_transaction(transaction_id, source).to_dict()
 
 
-@router.put("/{transaction_id}/tag", response_model=StatusResponse)
+@router.put("/{transaction_id}/tag", response_model=TagWriteResponse)
 def update_transaction_tag(
     transaction_id: str,
     category: str,
@@ -245,7 +248,7 @@ def update_transaction_tag(
         ..., description="Source table or service alias, e.g. bank_transactions / banks"
     ),
     db: Session = Depends(get_database),
-) -> dict[str, str]:
+) -> dict[str, Any]:
     """Update the category and tag of a single transaction.
 
     Legacy endpoint retained for backwards compatibility; prefer the
@@ -263,5 +266,7 @@ def update_transaction_tag(
         Table name (``credit_card_transactions``) or service alias
         (``credit_cards``) used to target the correct table.
     """
-    TransactionsService(db).update_tagging_by_id(service, transaction_id, category, tag)
-    return {"status": "success"}
+    retagged = TransactionsService(db).update_tagging_by_id(
+        service, transaction_id, category, tag
+    )
+    return {"status": "success", "refunds_retagged": retagged}

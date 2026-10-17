@@ -1340,3 +1340,20 @@ def sample_credentials_yaml() -> dict:
             ],
         },
     }
+
+
+@pytest.fixture
+def links_predating_tag_alignment(monkeypatch):
+    """Let ``link_refund`` link a refund tagged apart from its purchase, untouched.
+
+    Linking now moves the refund under the purchase's tag. Links made before
+    that rule — a refund still sitting in ``Other Income`` — remain in every
+    existing database, and the netting must keep treating them right. Hiding
+    the purchase's tagging makes ``link_refund`` see nothing to align, so a
+    test can build that older state through the service.
+    """
+    from backend.services.refund_tag_alignment import RefundTagAlignmentService
+
+    monkeypatch.setattr(
+        RefundTagAlignmentService, "purchase_tagging", lambda self, pending: None
+    )
