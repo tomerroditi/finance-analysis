@@ -21,6 +21,7 @@ from backend.models.savings_goal import (
     SavingsGoal,
 )
 from backend.services.bank_balance_service import BankBalanceService
+from backend.services.budget.ledger import is_all_tags
 from backend.services.cash_balance_service import CashBalanceService
 from backend.services.savings_goals.common import month_key
 from backend.services.transaction_views import INVESTMENT, TransactionViews
@@ -32,8 +33,6 @@ _PRIOR_WEALTH_SOURCES = {"bank_balances", "investments"}
 # Insurance rows are not cash flow. Same exclusion the cashflow analysis applies.
 _CREDIT_CARD_SOURCE = "credit_card_transactions"
 _SURPLUS_EXCLUDED_SOURCES = {"insurance_transactions"}
-
-_ALL_TAGS = "all_tags"
 
 #: The accounts whose money goals and free cash divide between them.
 _LIQUID_SOURCES = {"bank_transactions", "cash_transactions"}
@@ -260,7 +259,7 @@ class InputsMixin:
                 continue
             matches = df[category_col] == goal.contribution_category
             tags = self._split_tags(goal.contribution_tags)
-            if tags and tags != [_ALL_TAGS] and tag_col in df.columns:
+            if tags and not is_all_tags(tags) and tag_col in df.columns:
                 matches &= df[tag_col].isin(tags)
             span = self._claim_span(goal)
             for key, matched, row_month in zip(keys, matches, row_months, strict=True):
@@ -274,7 +273,7 @@ class InputsMixin:
             span = self._claim_span(goal)
             matches = df[category_col] == goal.utilization_category
             tags = self._split_tags(goal.utilization_tags)
-            if tags and tags != [_ALL_TAGS] and tag_col in df.columns:
+            if tags and not is_all_tags(tags) and tag_col in df.columns:
                 matches &= df[tag_col].isin(tags)
             for key, matched, row_month in zip(keys, matches, row_months, strict=True):
                 if matched and self._in_span(row_month, span):

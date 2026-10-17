@@ -40,6 +40,7 @@ from backend.repositories.insight_dismissals_repository import (
     InsightDismissalsRepository,
 )
 from backend.services.analysis import AnalysisService
+from backend.services.budget import ledger
 from backend.services.budget.core import BudgetService
 from backend.services.recurring_service import RecurringService
 from backend.services.transaction_views import TransactionViews
@@ -80,6 +81,16 @@ class _PlannedSpend:
             return False
         budget = self.monthly_budgets.get(category, 0.0)
         return budget > 0 and spent <= budget
+
+
+def _row_keys(rows: pd.DataFrame) -> list[tuple[Any, Any, Any]]:
+    """Return each row's ``(source, unique_id, split_id)`` identity."""
+    split_ids = (
+        [None if pd.isna(s) else int(s) for s in rows["split_id"]]
+        if "split_id" in rows.columns
+        else [None] * len(rows)
+    )
+    return list(zip(rows["source"], rows["unique_id"], split_ids, strict=True))
 
 
 class InsightsService:
@@ -258,6 +269,21 @@ class InsightsService:
 
         self._cache["planned"] = planned
         return planned
+
+    def _envelope_rows(self) -> set[tuple[Any, Any, Any]]:
+        """Return the rows a project or yearly envelope owns (memoized).
+
+        Read off the budget ledger, so it is tag- and override-aware: a yearly
+        rule on one tag of a category leaves its siblings unexplained. Rows are
+        keyed by ``(source, unique_id, split_id)`` — ``unique_id`` is per-table
+        and a split shares its parent's.
+        """
+        if "envelope_rows" not in self._cache:
+            claims = ledger.of_kind(
+                self.budget.get_claims(), ledger.KIND_PROJECT, ledger.KIND_YEARLY
+            )
+            self._cache["envelope_rows"] = set(_row_keys(claims))
+        return self._cache["envelope_rows"]
 
     def _recurring_summary(self) -> dict[str, Any]:
         """Return recurring detection for this request (memoized — it is costly)."""
@@ -517,20 +543,21 @@ class InsightsService:
                 >= month_start - pd.DateOffset(months=self._LARGE_TXN_HISTORY_MONTHS)
             )
         ]
-        planned = self._planned_spend()
+        envelope_rows = self._envelope_rows()
         confirmed = self._confirmed_recurring_keys()
         floor = max(
             self._LARGE_TXN_MIN,
             self._spending_baseline() * self._LARGE_TXN_MIN_SHARE,
         )
 
+        this_month = this_month.assign(_key=_row_keys(this_month))
         for _, row in this_month.sort_values("amount_abs", ascending=False).iterrows():
             amount = float(row["amount_abs"])
             if amount < floor or amount < median * self._LARGE_TXN_RATIO:
                 # Sorted high to low — nothing further down can qualify.
                 break
             category = row.get("category")
-            if planned.is_long_envelope(category):
+            if row["_key"] in envelope_rows:
                 continue
             if (
                 RecurringService.normalize_description(row.get("description"))

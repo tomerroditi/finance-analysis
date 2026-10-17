@@ -175,6 +175,19 @@ class TestSpendingOutOfAGoal:
         assert goal["saved"] == 4000
         assert service.get_free_cash()["free_cash"] == 20000 - 1500 - 2500
 
+    def test_legacy_mixed_case_all_tags_matches_every_tag(self, db_session, service):
+        """A rule saved as ``All_Tags`` covers the whole category, like ``all_tags``."""
+        _liquid(db_session, 20000)
+        month = _month(0)
+        goal = service.create(
+            name="Trip", target_amount=5000, initial_amount=4000, start_month=month
+        )[0]
+        service.set_spending_link(goal["id"], "Travel", ["All_Tags"])
+        _bank(db_session, month, -1500, "Travel", tag="Hotels", day=date.today().day)
+
+        service._invalidate()
+        assert _goal(service.get_all(), "Trip")["spent"] == 1500
+
     def test_a_goal_without_income_never_goes_below_zero(self, db_session, service):
         """A bill beyond what the goal holds is paid by free cash for good."""
         _liquid(db_session, 20000)

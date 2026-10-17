@@ -17,6 +17,7 @@ from backend.services.budget_month_override_service import (
     BudgetMonthOverrideService,
 )
 from backend.services.budget import MonthlyBudgetService
+from backend.services.budget.ledger import budget_months
 from backend.services.transactions_service import TransactionsService
 
 
@@ -37,11 +38,6 @@ def _cc_jan_5_uid(db_session: Session) -> int:
     all_data = TransactionsService(db_session).get_data_for_analysis()
     cc_jan_5 = all_data[all_data["id"] == "cc_jan_5"].iloc[0]
     return int(cc_jan_5["unique_id"])
-
-
-def _project_spend(summary: dict) -> dict:
-    """Map each project category to its spent total."""
-    return {p["category"]: p["spent"] for p in summary["projects"]}
 
 
 def _project_tx_ids(summary: dict) -> dict:
@@ -123,17 +119,14 @@ class TestBudgetMonthOverridePipeline:
         jan_after = budget_svc.get_monthly_budget_view(2024, 1)[0]["current_amount"]
         assert jan_after == pytest.approx(jan_before)
 
-    def test_override_only_rebuckets_the_monthly_view(
+    def test_override_moves_the_row_in_every_pool(
         self, db_session: Session, seed_base_transactions, seed_project_transactions
     ):
-        """Pin the override's scope: yearly view and project summary ignore it.
+        """One budget month per row: yearly and project pools follow the override.
 
-        ``BudgetMonthOverride``'s model docstring: the transaction keeps its
-        real ``date`` everywhere else in the app; the record "only changes
-        which month the monthly budget view buckets it into". So moving a
-        December 2023 -> January 2024 boundary case must not shift yearly
-        totals, and moving a project transaction must not move it between
-        months of the project spending summary.
+        A December 2023 -> January 2024 boundary case used to stay in its real
+        year's envelope while the monthly view moved it, so the two counted it
+        in different years. Every pool now reads the row's budget month.
         """
         from backend.services.budget import YearlyBudgetService
 
@@ -152,13 +145,14 @@ class TestBudgetMonthOverridePipeline:
         )
         yearly_after = yearly_svc.get_yearly_budget_view(2024)[0]["current_amount"]
         assert yearly_before == pytest.approx(250.0)
-        assert yearly_after == pytest.approx(yearly_before)
+        assert yearly_after == pytest.approx(0.0)
 
         # cc_wedding_1 (Wedding/Venue, -5000, 2024-01-15) -> February 2024.
         budget_svc = MonthlyBudgetService(db_session)
         all_data = TransactionsService(db_session).get_data_for_analysis()
         wedding_uid = int(all_data[all_data["id"] == "cc_wedding_1"].iloc[0]["unique_id"])
         jan_before = budget_svc.get_monthly_project_spending_summary(2024, 1)
+        feb_before = budget_svc.get_monthly_project_spending_summary(2024, 2)
         override_svc.set_override(
             source_type="transaction",
             source_id=wedding_uid,
@@ -167,13 +161,13 @@ class TestBudgetMonthOverridePipeline:
             override_month=2,
         )
         jan_after = budget_svc.get_monthly_project_spending_summary(2024, 1)
+        feb_after = budget_svc.get_monthly_project_spending_summary(2024, 2)
         assert jan_before["total_spent"] == pytest.approx(8200.0)
-        # Compared field by field rather than as whole dicts: the rows carry a
-        # NaN ``split_id``, and NaN never equals itself, so dict equality can
-        # never hold however unchanged the summary is.
-        assert jan_after["total_spent"] == pytest.approx(jan_before["total_spent"])
-        assert _project_spend(jan_after) == _project_spend(jan_before)
-        assert _project_tx_ids(jan_after) == _project_tx_ids(jan_before)
+        assert jan_after["total_spent"] == pytest.approx(3200.0)
+        assert feb_after.get("total_spent", 0.0) == pytest.approx(
+            feb_before.get("total_spent", 0.0) + 5000.0
+        )
+        assert "cc_wedding_1" not in _project_tx_ids(jan_after).get("Wedding", [])
 
     def test_override_does_not_leak_across_tables_with_same_uid(
         self, db_session: Session, seed_base_transactions
@@ -187,7 +181,6 @@ class TestBudgetMonthOverridePipeline:
         """
         import pandas as pd
 
-        budget_svc = MonthlyBudgetService(db_session)
         override_svc = BudgetMonthOverrideService(db_session)
         uid = _cc_jan_5_uid(db_session)
 
@@ -217,9 +210,6 @@ class TestBudgetMonthOverridePipeline:
                 },
             ]
         )
-        result = budget_svc._apply_month_overrides(expenses)
+        _, months = budget_months(expenses, override_svc.get_override_map())
 
-        cc_row = result[result["source"] == "credit_card_transactions"].iloc[0]
-        bank_row = result[result["source"] == "bank_transactions"].iloc[0]
-        assert int(cc_row["budget_month"]) == 2
-        assert int(bank_row["budget_month"]) == 1
+        assert months.tolist() == [2, 1]

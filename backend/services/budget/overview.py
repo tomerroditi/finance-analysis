@@ -27,11 +27,11 @@ scoped to a viewed month is what that month *contributed*. Both facts are
 returned per envelope so a caller can show them side by side under their own
 headings.
 
-The three pools are genuinely separate, which is easy to get wrong when they sit
-next to each other: :meth:`BudgetService.get_filtered_expenses` drops project
-categories and :meth:`MonthlyBudgetService._exclude_yearly_claimed` drops
-yearly-claimed spend, so neither is inside the monthly budget. ``total_out`` is
-the only figure here that adds the three together.
+Every figure here comes from one read of the claim ledger
+(:mod:`backend.services.budget.ledger`), which gives each expense row one
+budget month and one owning pool. The three pools are therefore disjoint by
+construction, and ``total_out`` — the only figure that adds them together —
+is everything the month spent.
 """
 
 from calendar import monthrange
@@ -42,11 +42,12 @@ import pandas as pd
 from backend.constants.budget import (
     AMOUNT,
     CATEGORY,
+    ID,
     NAME,
     TAGS,
-    TOTAL_BUDGET,
 )
 from backend.constants.tables import TransactionsTableFields
+from backend.services.budget import ledger
 from backend.services.budget.core import BudgetService, _today
 from backend.services.budget.monthly import MonthlyBudgetService
 from backend.services.budget.project import ProjectBudgetService
@@ -69,8 +70,8 @@ class BudgetOverviewService(BudgetService):
         month : int
             Calendar month (1–12).
         include_split_parents : bool, optional
-            When ``True``, include the original parent transactions of splits
-            alongside the split rows. Defaults to ``False``.
+            Accepted for API compatibility; totals never count a split parent,
+            whose splits carry its amount.
 
         Returns
         -------
@@ -81,8 +82,11 @@ class BudgetOverviewService(BudgetService):
             - ``is_current_month`` — whether the month is still open. Committed
               charges and a projection are only meaningful when it is.
             - ``days_in_month``, ``days_elapsed``, ``days_left``.
-            - ``monthly_budget``, ``monthly_spent`` — the Total Budget rule and
-              spend against it. Both ``0.0`` when no Total Budget rule exists.
+            - ``monthly_budget`` — the month's Total Budget, or for an empty
+              current/future month the one auto-fill would copy in (read, not
+              written). ``0.0`` when there is none.
+            - ``monthly_spent`` — the month's monthly pool: every row no
+              project or yearly envelope owns, whether or not a rule names it.
             - ``fixed_spent``, ``variable_spent`` — the split of
               ``monthly_spent``. They always sum to it.
             - ``fixed_charge_count`` — how many of the month's transactions fell
@@ -120,8 +124,12 @@ class BudgetOverviewService(BudgetService):
             days_elapsed = 0
         days_left = days_in_month - days_elapsed
 
-        monthly_spent, monthly_budget, month_data = self._monthly_totals(
-            year, month, include_split_parents
+        claims = self.get_claims()
+        month_rows = ledger.in_budget_month(claims, year, month)
+        pool = ledger.of_kind(month_rows, *ledger.MONTHLY_POOL)
+        monthly_spent = ledger.spent(pool)
+        monthly_budget = MonthlyBudgetService(self.db).effective_total_budget(
+            year, month
         )
 
         # Confirmed only: an unreviewed guess must never hold money back from
@@ -129,7 +137,7 @@ class BudgetOverviewService(BudgetService):
         recurring = RecurringService(self.db).get_confirmed_items()
 
         fixed_spent, variable_spent, fixed_charge_count = self._split_fixed_variable(
-            month_data, recurring
+            pool.to_dict(orient="records"), recurring
         )
         charges_due = (
             self._charges_due(recurring, year, month, today.isoformat())
@@ -145,7 +153,9 @@ class BudgetOverviewService(BudgetService):
             else None
         )
 
-        long_envelopes = self._long_envelopes(year, month, include_split_parents)
+        long_envelopes = self._yearly_envelopes(
+            claims, month_rows, year
+        ) + self._project_envelopes(claims, month_rows)
         yearly_month_spent = float(
             sum(
                 e["month_contribution"] for e in long_envelopes if e["kind"] == "yearly"
@@ -189,48 +199,13 @@ class BudgetOverviewService(BudgetService):
             "charges_due": charges_due,
             "projects_month_spent": round(projects_month_spent, 2),
             "yearly_month_spent": round(yearly_month_spent, 2),
-            "total_out": round(
-                monthly_spent + projects_month_spent + yearly_month_spent, 2
-            ),
+            "total_out": round(ledger.spent(month_rows), 2),
             "long_envelopes": open_envelopes,
         }
 
     # ------------------------------------------------------------------ #
     # Monthly pool
     # ------------------------------------------------------------------ #
-
-    def _monthly_totals(
-        self, year: int, month: int, include_split_parents: bool
-    ) -> tuple[float, float, list[dict[str, Any]]]:
-        """Return ``(spent, budget, transactions)`` for the monthly pool.
-
-        The Total Budget row already carries the month's monthly-pool
-        transactions — project categories and yearly-claimed spend removed — so
-        it is both the figure the page shows and the exact set the fixed/variable
-        split must run over. A month with no Total Budget rule has no monthly
-        budget to speak of, and yields zeroes rather than an error.
-
-        Goes through ``get_monthly_analysis`` rather than the raw view because
-        only the analysis auto-fills an empty current month from the last month
-        that had rules. Reading the view directly made the Overview report a
-        zero budget for the live month until the user happened to open the
-        Monthly tab and trigger the fill.
-        """
-        analysis = MonthlyBudgetService(self.db).get_monthly_analysis(
-            year, month, include_split_parents
-        )
-        view = analysis.get("rules") or []
-        if not view:
-            return 0.0, 0.0, []
-        for entry in view:
-            rule = entry.get("rule") or {}
-            if rule.get(CATEGORY) == TOTAL_BUDGET:
-                return (
-                    float(entry.get("current_amount") or 0.0),
-                    float(rule.get(AMOUNT) or 0.0),
-                    entry.get("data") or [],
-                )
-        return 0.0, 0.0, []
 
     @staticmethod
     def _split_fixed_variable(
@@ -303,28 +278,14 @@ class BudgetOverviewService(BudgetService):
     # Yearly and project envelopes
     # ------------------------------------------------------------------ #
 
-    def _long_envelopes(
-        self, year: int, month: int, include_split_parents: bool
-    ) -> list[dict[str, Any]]:
-        """Return yearly and project envelopes, each with its month share and standing.
-
-        ``month_contribution`` is scoped to the viewed month; ``spent`` and
-        ``budget`` describe the envelope as a whole and therefore always
-        describe today. Callers must label the two differently — that pairing is
-        the whole reason this method exists.
-        """
-        return self._yearly_envelopes(
-            year, month, include_split_parents
-        ) + self._project_envelopes(year, month, include_split_parents)
-
     def _yearly_envelopes(
-        self, year: int, month: int, include_split_parents: bool
+        self, claims: pd.DataFrame, month_rows: pd.DataFrame, year: int
     ) -> list[dict[str, Any]]:
         """Return yearly rules with their year-to-date spend and this month's share.
 
-        The month share is taken on the transaction's own date rather than its
-        budget month: a month override moves spend between *monthly* envelopes,
-        and must not shuffle a yearly envelope's history.
+        ``month_contribution`` is scoped to the viewed month; ``spent`` and
+        ``budget`` describe the envelope as a whole and therefore always
+        describe today. Callers must label the two differently.
 
         Every rule for the year is measured, closed ones included, and each
         carries a ``closed`` flag :meth:`get_overview` uses to drop it from the
@@ -338,44 +299,30 @@ class BudgetOverviewService(BudgetService):
         rules = yearly.get_year_rules(year)
         if rules.empty:
             return []
-
-        expenses = self.get_filtered_expenses(
-            exclude_pending_refunds=True,
-            include_split_parents=include_split_parents,
-            # Envelopes report what a month cost, net of refunds matched to
-            # their purchase — the same definition the dashboard now uses.
-            net_refunds=True,
+        year_rows = (
+            claims.loc[claims[ledger.BUDGET_YEAR] == year]
+            if not claims.empty
+            else claims
         )
-        month_data = self._rows_in_month(expenses, year, month)
-
-        view = yearly.get_yearly_budget_view(year, include_split_parents) or []
-        spent_by_name = {
-            (entry.get("rule") or {}).get(NAME): float(
-                entry.get("current_amount") or 0.0
-            )
-            for entry in view
-        }
-
-        envelopes = []
-        for _, rule in rules.iterrows():
-            matched = self._rows_for_rule(month_data, rule[CATEGORY], rule[TAGS])
-            envelopes.append(
-                {
-                    "name": str(rule[NAME] or ""),
-                    "kind": "yearly",
-                    "category": str(rule[CATEGORY] or ""),
-                    "month_contribution": round(self._sum_expenses(matched), 2),
-                    "spent": round(spent_by_name.get(rule[NAME], 0.0), 2),
-                    "budget": round(float(rule[AMOUNT] or 0.0), 2),
-                    # Measured either way; get_overview is what drops the
-                    # closed ones, so their spend still reaches the totals.
-                    "closed": yearly.rule_is_closed(rule),
-                }
-            )
-        return envelopes
+        return [
+            {
+                "name": str(rule[NAME] or ""),
+                "kind": "yearly",
+                "category": str(rule[CATEGORY] or ""),
+                "month_contribution": round(
+                    ledger.spent(ledger.of_rule(month_rows, rule[ID])), 2
+                ),
+                "spent": round(ledger.spent(ledger.of_rule(year_rows, rule[ID])), 2),
+                "budget": round(float(rule[AMOUNT] or 0.0), 2),
+                # Measured either way; get_overview is what drops the
+                # closed ones, so their spend still reaches the totals.
+                "closed": yearly.rule_is_closed(rule),
+            }
+            for _, rule in rules.iterrows()
+        ]
 
     def _project_envelopes(
-        self, year: int, month: int, include_split_parents: bool
+        self, claims: pd.DataFrame, month_rows: pd.DataFrame
     ) -> list[dict[str, Any]]:
         """Return projects with their lifetime spend and this month's share.
 
@@ -398,33 +345,27 @@ class BudgetOverviewService(BudgetService):
             return []
 
         rules = projects.get_all_rules()
-
-        all_data = projects.transactions_service.get_data_for_analysis(
-            include_split_parents
-        )
-        all_data = self._drop_split_parents(all_data)
-
         category = TransactionsTableFields.CATEGORY.value
-        envelopes = []
-        for name in names:
-            budget = self._project_budget(rules[rules[CATEGORY] == name])
-            rows = (
-                all_data[all_data[category] == name] if not all_data.empty else all_data
-            )
-            envelopes.append(
-                {
-                    "name": str(name),
-                    "kind": "project",
-                    "category": str(name),
-                    "month_contribution": round(
-                        self._sum_expenses(self._rows_in_month(rows, year, month)), 2
-                    ),
-                    "spent": round(self._sum_expenses(rows), 2),
-                    "budget": round(budget, 2),
-                    "closed": name in closed,
-                }
-            )
-        return envelopes
+        lifetime = ledger.of_kind(claims, ledger.KIND_PROJECT)
+        this_month = ledger.of_kind(month_rows, ledger.KIND_PROJECT)
+        return [
+            {
+                "name": str(name),
+                "kind": "project",
+                "category": str(name),
+                "month_contribution": round(
+                    ledger.spent(this_month.loc[this_month[category] == name]), 2
+                ),
+                "spent": round(
+                    ledger.spent(lifetime.loc[lifetime[category] == name]), 2
+                ),
+                "budget": round(
+                    self._project_budget(rules[rules[CATEGORY] == name]), 2
+                ),
+                "closed": name in closed,
+            }
+            for name in names
+        ]
 
     @staticmethod
     def _project_budget(project_rules: pd.DataFrame) -> float:
@@ -446,36 +387,3 @@ class BudgetOverviewService(BudgetService):
         if not anchor.empty:
             return float(anchor.iloc[0][AMOUNT] or 0.0)
         return float(project_rules[AMOUNT].max() or 0.0)
-
-    # ------------------------------------------------------------------ #
-    # Frame helpers
-    # ------------------------------------------------------------------ #
-
-    @staticmethod
-    def _rows_in_month(rows: pd.DataFrame, year: int, month: int) -> pd.DataFrame:
-        """Restrict rows to one calendar month by transaction date."""
-        if rows is None or rows.empty:
-            return rows
-        dates = pd.to_datetime(rows[TransactionsTableFields.DATE.value])
-        return rows.loc[(dates.dt.year == year) & (dates.dt.month == month)]
-
-    @staticmethod
-    def _rows_for_rule(
-        rows: pd.DataFrame, category: str, tags: list[str] | None
-    ) -> pd.DataFrame:
-        """Restrict rows to those a ``(category, tags)`` envelope claims."""
-        if rows is None or rows.empty:
-            return rows
-        matched = rows[rows[TransactionsTableFields.CATEGORY.value] == category]
-        if not BudgetService._is_all_tags(tags):
-            matched = matched[
-                matched[TransactionsTableFields.TAG.value].isin(list(tags or []))
-            ]
-        return matched
-
-    @staticmethod
-    def _sum_expenses(rows: pd.DataFrame) -> float:
-        """Sum a frame's amounts as positive expense values."""
-        if rows is None or rows.empty:
-            return 0.0
-        return float(rows[TransactionsTableFields.AMOUNT.value].sum() * -1)

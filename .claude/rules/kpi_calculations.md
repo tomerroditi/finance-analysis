@@ -232,6 +232,35 @@ purchase swallow the whole month's expectation, including the stale bank's
 direct debits that nothing had reported at all. Pinned by
 `test_a_fresh_account_s_spending_does_not_cancel_a_stale_one_s_gap`.
 
+## Budget figures: one claim ledger
+
+Every budget number — the Monthly, Yearly and Project tabs, the trend, the
+Overview and the large-charge insight — is a sum over one frame,
+`BudgetService.get_claims()` (`backend/services/budget/ledger.py`). Each expense
+row gets:
+
+- **One budget month** (`budget_year` / `budget_month`): its
+  `budget_month_overrides` row, else its date — for every pool, yearly
+  included, so a purchase moved into January counts in January's year.
+- **One owner** (`claim_kind` / `claim_rule_id`): a project category first
+  (whatever the tag), then a yearly rule of the budget year, then a monthly
+  rule of the budget month, else `other`. Within a kind the most specific rule
+  claims first — fewer tags beat more, all-tags takes the leftovers. Total
+  Budget never claims; it caps the monthly pool (`monthly` + `other`).
+
+Consequences the views rely on:
+
+| Rule | Why |
+|------|-----|
+| Pools are disjoint and sum to everything spent | `other` belongs to the monthly pool even in a month with no rules, so `total_out` never drops unbudgeted spend |
+| Amounts are net, lists are gross | Pools net matched refunds and the still-expected part of open pending refunds; `ledger.transaction_records` restores gross amounts for the rows shown under them |
+| A split parent never sits beside its slices | The ledger is built from the split-merged frame |
+| The Overview never writes | It reads `effective_total_budget` — what auto-fill *would* copy into an empty current/future month — instead of calling `get_monthly_analysis`, which persists the copy |
+
+Add a new budget figure by filtering the ledger (`in_budget_month`, `of_kind`,
+`of_rule`, `spent`), never by re-matching rules against transactions — a second
+matcher is how the Overview and the tabs used to disagree.
+
 ## Prior Wealth
 
 Prior wealth represents money that existed **before the system started tracking transactions**. Without it, cumulative balance charts would start at zero instead of the user's actual starting balance.

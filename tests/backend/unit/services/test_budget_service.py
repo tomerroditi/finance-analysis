@@ -644,7 +644,7 @@ class TestProjectBudgetService:
         )
 
         service.transactions_service.get_data_for_analysis = (
-            lambda include_split_parents: test_transactions
+            lambda include_split_parents=False: test_transactions
         )
 
         view_result = service.get_project_budget_view(project_name)
@@ -661,12 +661,12 @@ class TestProjectBudgetService:
         # 4. "Random" Rule (synthetic)
 
         # Find Venue rule
-        venue_rule = next(
-            (r for r in rules_view if r["rule"][NAME] == "Venue Rule"), None
-        )
-        assert venue_rule is not None
-        assert venue_rule["current_amount"] == 1000.0
-        assert len(venue_rule["data"]) == 1
+        # create_project already minted a "Venue" rule, so two rules name the
+        # tag; the row belongs to exactly one of them, never both.
+        venue_rules = [r for r in rules_view if r["rule"][TAGS] == ["Venue"]]
+        assert len(venue_rules) == 2
+        assert sum(r["current_amount"] for r in venue_rules) == 1000.0
+        assert sum(len(r["data"]) for r in venue_rules) == 1
 
         # Find "Other" tag rule (which should now be auto-created and real)
         other_tag_rule = next(
@@ -780,7 +780,7 @@ class TestProjectBudgetService:
             ]
         )
         service.transactions_service.get_data_for_analysis = (
-            lambda include_split_parents: wedding_txns
+            lambda include_split_parents=False: wedding_txns
         )
 
         service.delete_project("Wedding")
@@ -2007,7 +2007,7 @@ class TestGetProjectBudgetViewConstruction:
             ]
         )
         service.transactions_service.get_data_for_analysis = (
-            lambda include_split_parents: test_transactions
+            lambda include_split_parents=False: test_transactions
         )
 
         view = service.get_project_budget_view("Wedding")
@@ -2046,7 +2046,7 @@ class TestGetProjectBudgetViewConstruction:
             ]
         )
         service.transactions_service.get_data_for_analysis = (
-            lambda include_split_parents: test_transactions
+            lambda include_split_parents=False: test_transactions
         )
 
         view = service.get_project_budget_view("Wedding")
@@ -2071,7 +2071,7 @@ class TestGetProjectBudgetViewConstruction:
             ]
         )
         service.transactions_service.get_data_for_analysis = (
-            lambda include_split_parents: test_transactions
+            lambda include_split_parents=False: test_transactions
         )
 
         view = service.get_project_budget_view("Wedding")

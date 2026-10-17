@@ -630,3 +630,159 @@ class TestRuleShapesInTheWild:
         result = BudgetOverviewService(db_session).get_overview(2026, 3)
         assert result["fixed_charge_count"] == 1
         assert result["charges_due"] == []
+
+
+def _seed_id(db_session, date, category, tag, amount, table="bank_transactions"):
+    """Seed one transaction and return its ``unique_id``."""
+    from backend.models.transaction import BankTransaction, CreditCardTransaction
+
+    model = BankTransaction if table == "bank_transactions" else CreditCardTransaction
+    txn = model(
+        id=f"id_{date}_{tag}_{amount}",
+        date=date,
+        provider="p",
+        account_name="a",
+        description="x",
+        amount=amount,
+        category=category,
+        tag=tag,
+        source=table,
+        type="normal",
+        status="completed",
+    )
+    db_session.add(txn)
+    db_session.commit()
+    return txn.unique_id
+
+
+class TestOneLedger:
+    """The Overview reads the same claim ledger as every budget tab."""
+
+    def test_spend_counts_in_a_month_without_a_budget(self, db_session, frozen_today):
+        """A month nobody budgeted still owns its spend, as the monthly pool's."""
+        _seed(db_session, "2026-03-11", "Food", "Groceries", -400.0)
+        _seed(db_session, "2026-03-12", "Fun", "Movies", -100.0)
+
+        result = BudgetOverviewService(db_session).get_overview(2026, 3)
+        assert result["monthly_budget"] == 0.0
+        assert result["monthly_spent"] == 500.0
+        assert result["total_out"] == 500.0
+
+    def test_reading_the_overview_writes_no_rules(self, db_session, frozen_today):
+        """The inherited budget is shown, not copied into the month."""
+        monthly = MonthlyBudgetService(db_session)
+        monthly.create_rule("Total Budget", 20000.0, "Total Budget", ["all_tags"], 2, 2026)
+        before = len(monthly.get_all_rules())
+
+        result = BudgetOverviewService(db_session).get_overview(2026, 3)
+
+        assert result["monthly_budget"] == 20000.0
+        assert len(monthly.get_all_rules()) == before
+
+    def test_project_refund_is_netted(self, db_session, frozen_today):
+        """A refund matched to a project purchase lowers the project's month spend."""
+        from backend.services.pending_refunds_service import PendingRefundsService
+
+        ProjectBudgetService(db_session).add_rule(
+            name="Total Budget",
+            amount=30000.0,
+            category="Home Renovation",
+            tags=["all_tags"],
+            month=None,
+            year=None,
+        )
+        purchase = _seed_id(db_session, "2026-03-09", "Home Renovation", "Materials", -4200.0)
+        refund = _seed_id(db_session, "2026-03-12", "Home Renovation", "Materials", 1200.0)
+        refunds = PendingRefundsService(db_session)
+        pending = refunds.mark_as_pending_refund(
+            source_type="transaction",
+            source_id=purchase,
+            source_table="banks",
+            expected_amount=1200.0,
+        )
+        refunds.link_refund(
+            pending_refund_id=pending["id"],
+            refund_transaction_id=refund,
+            refund_source="banks",
+            amount=1200.0,
+        )
+
+        result = BudgetOverviewService(db_session).get_overview(2026, 3)
+        assert result["projects_month_spent"] == 3000.0
+        assert result["total_out"] == 3000.0
+
+    def test_month_override_moves_spend_between_overview_months(
+        self, db_session, frozen_today
+    ):
+        """A purchase moved into March is March's spend, not February's."""
+        from backend.services.budget_month_override_service import (
+            BudgetMonthOverrideService,
+        )
+
+        moved = _seed_id(db_session, "2026-02-27", "Food", "Groceries", -700.0)
+        BudgetMonthOverrideService(db_session).set_override(
+            "transaction", moved, "bank_transactions", 2026, 3
+        )
+
+        overview = BudgetOverviewService(db_session)
+        assert overview.get_overview(2026, 3)["monthly_spent"] == 700.0
+        assert overview.get_overview(2026, 2)["monthly_spent"] == 0.0
+
+    def test_split_parent_is_not_counted_beside_its_slices(
+        self, db_session, frozen_today
+    ):
+        """The monthly project summary counts a split's slices, never its parent too."""
+        from backend.services.transactions_service import TransactionsService
+
+        ProjectBudgetService(db_session).add_rule(
+            name="Total Budget",
+            amount=30000.0,
+            category="Home Renovation",
+            tags=["all_tags"],
+            month=None,
+            year=None,
+        )
+        parent = _seed_id(db_session, "2026-03-09", "Home Renovation", "Materials", -1000.0)
+        TransactionsService(db_session).split_transaction(
+            parent,
+            "bank_transactions",
+            [
+                {"amount": -600.0, "category": "Home Renovation", "tag": "Materials"},
+                {"amount": -400.0, "category": "Home Renovation", "tag": "Labor"},
+            ],
+        )
+
+        summary = MonthlyBudgetService(db_session).get_monthly_project_spending_summary(
+            2026, 3, include_split_parents=True
+        )
+        assert summary["total_spent"] == 1000.0
+
+
+class TestEffectiveTotalBudget:
+    """The month's budget as auto-fill would give it, read without writing."""
+
+    def test_month_with_rules_answers_with_its_own(self, db_session, frozen_today):
+        """A month's own Total Budget wins over any earlier month's."""
+        monthly = MonthlyBudgetService(db_session)
+        monthly.create_rule("Total Budget", 20000.0, "Total Budget", ["all_tags"], 2, 2026)
+        monthly.create_rule("Total Budget", 18000.0, "Total Budget", ["all_tags"], 3, 2026)
+        assert monthly.effective_total_budget(2026, 3) == 18000.0
+
+    def test_empty_future_month_inherits_the_latest_earlier_one(
+        self, db_session, frozen_today
+    ):
+        """An empty month from the current one on shows what auto-fill would copy."""
+        monthly = MonthlyBudgetService(db_session)
+        monthly.create_rule("Total Budget", 15000.0, "Total Budget", ["all_tags"], 1, 2026)
+        monthly.create_rule("Total Budget", 20000.0, "Total Budget", ["all_tags"], 2, 2026)
+        assert monthly.effective_total_budget(2026, 5) == 20000.0
+
+    def test_empty_past_month_has_no_budget(self, db_session, frozen_today):
+        """Auto-fill never reaches back, so an empty past month stays at zero."""
+        monthly = MonthlyBudgetService(db_session)
+        monthly.create_rule("Total Budget", 20000.0, "Total Budget", ["all_tags"], 1, 2026)
+        assert monthly.effective_total_budget(2026, 2) == 0.0
+
+    def test_no_rules_at_all(self, db_session, frozen_today):
+        """With nothing configured the budget is zero."""
+        assert MonthlyBudgetService(db_session).effective_total_budget(2026, 3) == 0.0

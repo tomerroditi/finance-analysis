@@ -31,6 +31,7 @@ from backend.constants.budget import (
 from backend.constants.tables import TransactionsTableFields
 from backend.errors import EntityNotFoundException, ValidationException
 from backend.repositories.budget_repository import BudgetRepository
+from backend.services.budget.ledger import assign_claims, is_all_tags
 from backend.services.budget_month_override_service import BudgetMonthOverrideService
 from backend.services.pending_refunds_service import (
     GROSS_AMOUNT_COLUMN,
@@ -269,19 +270,7 @@ class BudgetService:
             & (rules[CATEGORY] == category)
         ]
 
-    @staticmethod
-    def _is_all_tags(tags: list[str] | str | None) -> bool:
-        """Return whether a tag list is the all-tags sentinel (case-insensitive).
-
-        This is the single comparison point for the sentinel — legacy rows
-        stored ``"All Tags"`` in mixed case, so exact matches against
-        ``ALL_TAGS`` silently miss them. Accepts the raw semicolon string too.
-        """
-        if isinstance(tags, str):
-            tags = tags.split(";")
-        if not tags:
-            return False
-        return [str(t).lower() for t in tags] == [ALL_TAGS.lower()]
+    _is_all_tags = staticmethod(is_all_tags)
 
     @staticmethod
     def _tags_error(tags: list[str] | None) -> str | None:
@@ -718,6 +707,40 @@ class BudgetService:
         if "type" not in rows.columns:
             return rows
         return rows[rows["type"] != "split_parent"]
+
+    def get_claims(self) -> pd.DataFrame:
+        """
+        Return every expense row with its budget month and the pool that owns it.
+
+        The single source every budget figure aggregates from — see
+        :mod:`backend.services.budget.ledger`. Rows are the budget's expenses
+        (non-expense categories and split parents out), netted against the
+        refunds matched to them plus the still-expected part of open pending
+        refunds; each row's pre-netting amount is kept in
+        :data:`GROSS_AMOUNT_COLUMN` for the transaction lists, which show the
+        real figures.
+
+        Returns
+        -------
+        pd.DataFrame
+            Expense rows with ``budget_year``, ``budget_month``,
+            ``claim_kind`` and ``claim_rule_id`` added.
+        """
+        expenses = self.transactions_service.get_data_for_analysis()
+        if not expenses.empty:
+            expenses = self._drop_split_parents(self._expense_rows(expenses))
+            expenses = apply_refund_amount_adjustments(
+                expenses,
+                self.pending_refunds_service.get_refund_amount_adjustments(
+                    exclude_open=True
+                ),
+                keep_gross_in=GROSS_AMOUNT_COLUMN,
+            )
+        return assign_claims(
+            expenses,
+            BudgetService.get_all_rules(self),
+            self.month_override_service.get_override_map(),
+        )
 
     def get_filtered_expenses(
         self,

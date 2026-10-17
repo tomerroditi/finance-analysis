@@ -13,7 +13,6 @@ from backend.constants.budget import (
     MONTH,
     NAME,
     PERIOD_MONTHLY,
-    PERIOD_PROJECT,
     PERIOD_TYPE,
     PERIOD_YEARLY,
     TAGS,
@@ -22,9 +21,8 @@ from backend.constants.budget import (
 )
 from backend.constants.tables import TransactionsTableFields
 from backend.errors import ValidationException
+from backend.services.budget import ledger
 from backend.services.budget.core import BudgetService, _auto_fill_lock
-from backend.services.budget.yearly import YearlyBudgetService
-from backend.services.pending_refunds_service import restore_gross_amounts
 
 # Auto-fill copies the newest month's rules into every empty month up to the
 # one being viewed. Past this many months of gap the target is almost
@@ -229,6 +227,54 @@ class MonthlyBudgetService(BudgetService):
         self._auto_fill_skipped = skipped
         source_month_name = calendar.month_name[source_month]
         return f"{source_month_name} {source_year}"
+
+    def effective_total_budget(
+        self, year: int, month: int, budget_rules: pd.DataFrame | None = None
+    ) -> float:
+        """Return the month's Total Budget, or the one auto-fill would give it.
+
+        Read-only: a month with rules answers with its own Total Budget rule
+        (``0.0`` without one). An empty current or future month answers with
+        the Total Budget of the latest earlier month that has rules — exactly
+        what :meth:`auto_fill_empty_months` would copy in — without writing
+        it. An empty past month has no budget, as auto-fill never touches the
+        past.
+
+        Parameters
+        ----------
+        year : int
+            Calendar year.
+        month : int
+            Calendar month (1–12).
+        budget_rules : pd.DataFrame, optional
+            All monthly rules; read here when omitted.
+
+        Returns
+        -------
+        float
+            The month's total budget.
+        """
+        if budget_rules is None:
+            budget_rules = self.get_all_rules()
+        rules = (
+            budget_rules.dropna(subset=[YEAR, MONTH])
+            if not budget_rules.empty
+            else budget_rules
+        )
+        if rules.empty:
+            return 0.0
+        month_rules = rules[(rules[YEAR] == year) & (rules[MONTH] == month)]
+        if month_rules.empty:
+            today = date.today()
+            if (year, month) < (today.year, today.month):
+                return 0.0
+            earlier = rules[rules[YEAR] * 12 + rules[MONTH] < year * 12 + month]
+            if earlier.empty:
+                return 0.0
+            latest = (earlier[YEAR] * 12 + earlier[MONTH]).max()
+            month_rules = earlier[earlier[YEAR] * 12 + earlier[MONTH] == latest]
+        total = month_rules[month_rules[CATEGORY] == TOTAL_BUDGET]
+        return float(total.iloc[0][AMOUNT] or 0.0) if not total.empty else 0.0
 
     def get_month_rules(
         self, year: int, month: int, budget_rules: pd.DataFrame | None = None
@@ -449,6 +495,8 @@ class MonthlyBudgetService(BudgetService):
             name to its spend and ``limits`` mapping each rule name to the
             cap it carried that month.
         """
+        claims = self.get_claims()
+        budget_rules = self.get_all_rules()
         series: list[dict[str, Any]] = []
         for offset in range(months - 1, -1, -1):
             # Month arithmetic through a zero-based absolute index, so
@@ -456,12 +504,7 @@ class MonthlyBudgetService(BudgetService):
             absolute = (year * 12 + month - 1) - offset
             point_year, point_month = divmod(absolute, 12)
             point_month += 1
-            view = (
-                self.get_monthly_budget_view(
-                    point_year, point_month, include_split_parents
-                )
-                or []
-            )
+            view = self._month_view(claims, budget_rules, point_year, point_month) or []
 
             # The "Total Budget" row is the source of truth for the headline
             # pair, exactly as the monthly gauge reads it. Summing the
@@ -583,121 +626,18 @@ class MonthlyBudgetService(BudgetService):
             "skipped_yearly_conflicts": skipped_yearly,
         }
 
-    def _apply_month_overrides(self, expenses: pd.DataFrame) -> pd.DataFrame:
-        """
-        Add ``budget_year``/``budget_month`` columns honoring month overrides.
-
-        By default a transaction is bucketed into the month of its real
-        ``date``. Transactions (or splits) with an active budget month override
-        are bucketed into the override's month instead, so they leave their
-        natural month and appear in the target month of the monthly budget.
-
-        Parameters
-        ----------
-        expenses : pd.DataFrame
-            Filtered expense transactions with a parsed ``date`` column.
-
-        Returns
-        -------
-        pd.DataFrame
-            Copy of ``expenses`` with ``budget_year`` and ``budget_month``
-            integer columns added.
-        """
-        expenses = expenses.copy()
-        dates = pd.to_datetime(expenses[TransactionsTableFields.DATE.value])
-        budget_year = dates.dt.year
-        budget_month = dates.dt.month
-
-        overrides = self.month_override_service.get_override_map()
-
-        tx_map = overrides["transaction"]
-        if tx_map:
-            # Key by (source table, unique_id): unique_id is a per-table
-            # auto-increment, so the bare integer collides across tables.
-            keys = pd.Series(
-                list(
-                    zip(
-                        expenses[TransactionsTableFields.SOURCE.value],
-                        expenses[TransactionsTableFields.UNIQUE_ID.value],
-                        strict=True,
-                    )
-                ),
-                index=expenses.index,
-            )
-            budget_year = keys.map({k: v[0] for k, v in tx_map.items()}).fillna(
-                budget_year
-            )
-            budget_month = keys.map({k: v[1] for k, v in tx_map.items()}).fillna(
-                budget_month
-            )
-
-        split_map = overrides["split"]
-        if split_map and TransactionsTableFields.SPLIT_ID.value in expenses.columns:
-            sid = expenses[TransactionsTableFields.SPLIT_ID.value]
-            budget_year = sid.map({k: v[0] for k, v in split_map.items()}).fillna(
-                budget_year
-            )
-            budget_month = sid.map({k: v[1] for k, v in split_map.items()}).fillna(
-                budget_month
-            )
-
-        expenses["budget_year"] = budget_year.astype(int)
-        expenses["budget_month"] = budget_month.astype(int)
-        return expenses
-
-    def _exclude_yearly_claimed(
-        self, month_data: pd.DataFrame, year: int
-    ) -> pd.DataFrame:
-        """Drop transactions whose (category, tag) is owned by a yearly rule for ``year``.
-
-        Yearly-managed tags are mutually exclusive with monthly rules, so their
-        spend must not leak into the monthly view's per-rule matching or the
-        synthetic "Other Expenses" remainder.
-        """
-        if month_data.empty:
-            return month_data
-        yearly_rules = YearlyBudgetService(self.db).get_year_rules(year)
-        if yearly_rules.empty:
-            return month_data
-        cat_col = TransactionsTableFields.CATEGORY.value
-        tag_col = TransactionsTableFields.TAG.value
-        mask = pd.Series(False, index=month_data.index)
-        for _, rule in yearly_rules.iterrows():
-            in_cat = month_data[cat_col] == rule[CATEGORY]
-            if self._is_all_tags(rule[TAGS]):
-                mask |= in_cat
-            else:
-                mask |= in_cat & month_data[tag_col].isin(rule[TAGS])
-        return month_data.loc[~mask]
-
-    @classmethod
-    def _claim_order(cls, rules: pd.DataFrame) -> list[int]:
-        """Return positions of ``rules`` in the order they claim transactions.
-
-        The most specific rule claims first: a rule naming fewer tags beats one
-        naming more, and ``all_tags`` goes last so it covers only what no sibling
-        tag rule claimed — the category-level counterpart of "Other Expenses".
-        Ties keep the rules' own order.
-        """
-
-        def priority(position: int) -> tuple[bool, int, int]:
-            """Sort key: all-tags last, then fewer tags first, then position."""
-            tags = rules.iloc[position][TAGS]
-            return cls._is_all_tags(tags), len(tags), position
-
-        return sorted(range(len(rules)), key=priority)
-
     def get_monthly_budget_view(
         self, year: int, month: int, include_split_parents: bool = False
     ) -> list[dict[str, Any]] | None:
         """
         Compute budget rule usage view for a given month.
 
-        Matches transactions to budget rules and calculates actual spend per rule.
-        Each transaction counts toward exactly one rule — the most specific one
-        that matches (see ``_claim_order``) — so a category's ``all_tags`` rule
-        reports only the spend its sibling tag rules leave unclaimed.
-        Project-category transactions and pending-refund transactions are excluded.
+        Reads the claim ledger (:meth:`get_claims`): each transaction counts
+        toward exactly one rule — the most specific one that matches (see
+        :func:`ledger.claim_order`) — so a category's ``all_tags`` rule reports
+        only the spend its sibling tag rules leave unclaimed. Rows are bucketed
+        by budget month, and project- and yearly-owned rows are not in the
+        monthly pool.
         If spend remains after all rules are matched, an ``"Other Expenses"`` entry
         is appended using the unallocated portion of the total budget.
 
@@ -723,78 +663,58 @@ class MonthlyBudgetService(BudgetService):
             - ``allow_edit`` – whether the rule amount can be changed.
             - ``allow_delete`` – whether the rule can be deleted.
         """
-        budget_rules = self.get_all_rules()
-        expenses = self.get_filtered_expenses(
-            exclude_pending_refunds=True,
-            include_split_parents=include_split_parents,
-            # Envelopes report what a month cost, net of refunds matched to
-            # their purchase — the same definition the dashboard now uses.
-            net_refunds=True,
-        )
+        return self._month_view(self.get_claims(), self.get_all_rules(), year, month)
 
-        if not expenses.empty:
-            expenses = self._apply_month_overrides(expenses)
-            month_data = expenses.loc[
-                (expenses["budget_year"] == year) & (expenses["budget_month"] == month)
-            ]
-            month_data = self._exclude_yearly_claimed(month_data, year)
-        else:
-            month_data = expenses
+    @staticmethod
+    def _month_view(
+        claims: pd.DataFrame, budget_rules: pd.DataFrame, year: int, month: int
+    ) -> list[dict[str, Any]] | None:
+        """Build one month's rule view from the claim ledger.
 
+        The Total Budget row carries the month's whole monthly pool — every row
+        a monthly rule claimed plus every row none did — so it always agrees
+        with the Overview's ``monthly_spent``.
+        """
+        if budget_rules.empty:
+            return None
         rules = budget_rules[
             (budget_rules[YEAR] == year) & (budget_rules[MONTH] == month)
         ]
         if rules.empty:
             return None
 
+        pool = ledger.of_kind(
+            ledger.in_budget_month(claims, year, month), *ledger.MONTHLY_POOL
+        )
         view = []
 
         total_rule = rules[rules[CATEGORY] == TOTAL_BUDGET]
         if not total_rule.empty:
-            total = month_data[TransactionsTableFields.AMOUNT.value].sum() * -1
             view.append(
                 {
                     "rule": total_rule.iloc[0].to_dict(),
-                    "current_amount": total,
-                    "data": restore_gross_amounts(month_data).to_dict(orient="records"),
+                    "current_amount": ledger.spent(pool),
+                    "data": ledger.transaction_records(pool),
                     "allow_edit": True,
                     "allow_delete": False,
                 }
             )
             rules = rules.loc[~rules.index.isin(total_rule.index)]
-        remaining_data = month_data.copy()
-        claimed: dict[int, pd.DataFrame] = {}
-        for position in self._claim_order(rules):
-            rule = rules.iloc[position]
-            tags = rule[TAGS]
-            cat_data = remaining_data[
-                remaining_data[TransactionsTableFields.CATEGORY.value] == rule[CATEGORY]
-            ]
-            if not self._is_all_tags(tags):
-                cat_data = cat_data[
-                    cat_data[TransactionsTableFields.TAG.value].isin(tags)
-                ]
-            claimed[position] = cat_data
-            remaining_data = remaining_data.loc[
-                ~remaining_data.index.isin(cat_data.index)
-            ]
 
-        for position in range(len(rules)):
-            cat_data = claimed[position]
+        for _, rule in rules.iterrows():
+            claimed = ledger.of_rule(pool, rule[ID])
             view.append(
                 {
-                    "rule": rules.iloc[position].to_dict(),
-                    "current_amount": cat_data[
-                        TransactionsTableFields.AMOUNT.value
-                    ].sum()
-                    * -1,
-                    "data": restore_gross_amounts(cat_data).to_dict(orient="records"),
+                    "rule": rule.to_dict(),
+                    "current_amount": ledger.spent(claimed),
+                    "data": ledger.transaction_records(claimed),
                     "allow_edit": True,
                     "allow_delete": True,
                 }
             )
 
-        if not remaining_data.empty and not rules.empty and not total_rule.empty:
+        unclaimed = ledger.of_kind(pool, ledger.KIND_OTHER)
+        if not unclaimed.empty and not rules.empty and not total_rule.empty:
             total_alloc = rules[AMOUNT].sum()
             # When per-category rules sum to more than the total budget, the
             # remainder is negative — surface it as 0 (no headroom) rather than
@@ -810,13 +730,8 @@ class MonthlyBudgetService(BudgetService):
                         TAGS: "Other Expenses",
                         ID: f"{year}{month}_Other_Expenses",
                     },
-                    "current_amount": remaining_data[
-                        TransactionsTableFields.AMOUNT.value
-                    ].sum()
-                    * -1,
-                    "data": restore_gross_amounts(remaining_data).to_dict(
-                        orient="records"
-                    ),
+                    "current_amount": ledger.spent(unclaimed),
+                    "data": ledger.transaction_records(unclaimed),
                     "allow_edit": False,
                     "allow_delete": False,
                 }
@@ -845,32 +760,10 @@ class MonthlyBudgetService(BudgetService):
             Filtered transactions DataFrame, or ``None`` if there are no project
             categories or no matching transactions for the month.
         """
-        budget_rules = self.budget_repository.read_all()
-        all_data = self.transactions_service.get_data_for_analysis(
-            include_split_parents
+        rows = ledger.of_kind(
+            ledger.in_budget_month(self.get_claims(), year, month), ledger.KIND_PROJECT
         )
-
-        if all_data.empty:
-            return None
-
-        expenses = self._expense_rows(all_data)
-
-        # Keyed on the explicit discriminator, not on null year/month — a
-        # yearly rule also has a null month.
-        project_categories = budget_rules.loc[
-            budget_rules[PERIOD_TYPE] == PERIOD_PROJECT, CATEGORY
-        ].unique()
-
-        if len(project_categories) == 0:
-            return None
-
-        project_transactions = expenses.loc[
-            (expenses[TransactionsTableFields.DATE.value].dt.year == year)
-            & (expenses[TransactionsTableFields.DATE.value].dt.month == month)
-            & expenses[TransactionsTableFields.CATEGORY.value].isin(project_categories)
-        ]
-
-        return project_transactions if not project_transactions.empty else None
+        return rows if not rows.empty else None
 
     def get_monthly_project_spending_summary(
         self, year: int, month: int, include_split_parents: bool = False
@@ -903,26 +796,19 @@ class MonthlyBudgetService(BudgetService):
         if project_txns is None or project_txns.empty:
             return {"projects": []}
 
-        cat_col = TransactionsTableFields.CATEGORY.value
-        amount_col = TransactionsTableFields.AMOUNT.value
-
-        projects_summary = []
-        for project_name, group in project_txns.groupby(cat_col):
-            # Handle NaNs for JSON serialization
-            group_processed = group.where(pd.notnull(group), None)
-            total_spent = group_processed[amount_col].sum() * -1
-            projects_summary.append(
-                {
-                    "category": str(project_name),
-                    "spent": float(total_spent),
-                    "transactions": group_processed.to_dict(orient="records"),
-                }
+        projects_summary = [
+            {
+                "category": str(project_name),
+                "spent": ledger.spent(group),
+                "transactions": ledger.transaction_records(
+                    group.where(pd.notnull(group), None)
+                ),
+            }
+            for project_name, group in project_txns.groupby(
+                TransactionsTableFields.CATEGORY.value
             )
-
-        return {
-            "projects": projects_summary,
-            "total_spent": float(project_txns[amount_col].sum() * -1),
-        }
+        ]
+        return {"projects": projects_summary, "total_spent": ledger.spent(project_txns)}
 
     def get_current_month_alerts(
         self, warning_threshold: float = 0.8

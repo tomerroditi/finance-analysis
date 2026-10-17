@@ -228,7 +228,7 @@ const content: DataFlowContent = {
       title: "Budget Month Override", tag: "\u00B11 Month",
       sections: [
         { heading: "The Problem", text: "A charge lands on the 1st for a bill that belongs to last month, or the supermarket run for next month\u2019s holiday clears early. Its real date is correct; the month the budget counts it in is not." },
-        { heading: "How It Works", items: ["The transaction keeps its real date \u2014 only the monthly budget view moves", "Movement is capped at one month before or after the real month", "Works on a split as well as a whole transaction", "Stored in budget_month_overrides; removing the override puts it back"] },
+        { heading: "How It Works", items: ["The transaction keeps its real date \u2014 only its budget month moves, in every budget view (monthly, yearly, project, Overview)", "Movement is capped at one month before or after the real month", "Works on a split as well as a whole transaction", "Stored in budget_month_overrides; removing the override puts it back"] },
       ],
     },
     "savings-goals-mgmt": {
