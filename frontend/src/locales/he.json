@@ -163,7 +163,6 @@
     "expensesByCategory": "הוצאות לפי קטגוריה",
     "netBalanceOverTime": "מאזן נטו לאורך זמן",
     "netWorthOverTime": "שווי נקי לאורך זמן",
-    "cashFlow": "תזרים מזומנים",
     "budgetProgress": "מעקב תקציב",
     "recentTransactions": "תנועות אחרונות",
     "financialHealth": "בריאות פיננסית",
@@ -441,7 +440,6 @@
       "heatmap": "לוח הוצאות",
       "incomeExpenses": "הכנסות והוצאות",
       "netWorth": "שווי נקי",
-      "cashFlow": "תזרים מזומנים",
       "refunds": "החזרים",
       "retirement": "פרישה מוקדמת"
     },

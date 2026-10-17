@@ -44,17 +44,6 @@ class TestAnalyticsRoutes:
         assert "income" in entry
         assert "expenses" in entry
 
-    def test_get_sankey_data(self, test_client, seed_base_transactions):
-        """GET /api/analytics/sankey returns sankey diagram data."""
-        response = test_client.get("/api/analytics/sankey")
-        assert response.status_code == 200
-        data = response.json()
-        assert isinstance(data, dict)
-        assert "nodes" in data
-        assert "links" in data
-        assert len(data["nodes"]) > 0
-        assert len(data["links"]) > 0
-
     def test_get_overview_empty(self, test_client):
         """GET /api/analytics/overview with no data returns zero-valued totals.
 
@@ -70,15 +59,6 @@ class TestAnalyticsRoutes:
         assert data["total_expenses"] == 0
         assert data["total_investments"] == 0
         assert data["net_balance_change"] == 0
-
-    def test_get_sankey_empty(self, test_client):
-        """GET /api/analytics/sankey with no data returns empty sankey."""
-        response = test_client.get("/api/analytics/sankey")
-        assert response.status_code == 200
-        data = response.json()
-        assert isinstance(data, dict)
-        assert data["nodes"] == []
-        assert data["links"] == []
 
     def test_get_income_by_source_over_time(self, test_client, seed_base_transactions):
         """GET /api/analytics/income-by-source-over-time returns income breakdown."""

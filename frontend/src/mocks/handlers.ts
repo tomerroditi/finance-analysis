@@ -482,12 +482,6 @@ export const handlers = [
       { month: "2026-03", categories: { Food: 1200, Transport: 300 } },
     ]),
   ),
-  http.get("/api/analytics/sankey", () =>
-    HttpResponse.json({
-      nodes: [],
-      links: [],
-    }),
-  ),
   http.get("/api/analytics/net-worth-over-time", () =>
     HttpResponse.json([
       { month: "2026-01", bank_balance: 45000, investment_value: 30000, cash: 500, net_worth: 75500 },

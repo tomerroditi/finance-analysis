@@ -157,7 +157,7 @@ class CashBalanceService:
         Prevents deletion of the default "Wallet" account. Both the account's
         transactions **and** its prior wealth are folded into "Wallet" before
         deletion, so the envelope's money is preserved rather than dropped
-        from net worth, the Sankey "Prior Wealth" node and the overview.
+        from net worth and the overview.
 
         Parameters
         ----------

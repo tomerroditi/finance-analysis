@@ -31,7 +31,7 @@ The dataset models **the Cohens**, a dual-income Israeli couple with two kids (o
 ### Monthly fixed outflows
 - Mortgage (Liabilities / Mortgage) — constant amortization payment
 - Car loan (received mid-period, then monthly payments)
-- CC bill payments (Max + Visa Cal), posted on the 2nd of the following month with small ±2–3% variance vs. the itemized totals — this is the source of the "CC gap" in the Sankey
+- CC bill payments (Max + Visa Cal), posted on the 2nd of the following month with small ±2–3% variance vs. the itemized totals, like a real card bill
 - Standing orders every other month (Bituach Leumi / Arnona)
 - Monthly transfer from *hapoalim* Main Account → *leumi* Savings Account (tagged `Ignore / Internal Transactions`)
 
@@ -296,6 +296,6 @@ When an e2e/UI test needs data the dataset lacks:
 
 - **"Transport" vs "Transportation"** — the category is `Transportation`; writing `Transport` creates orphan rows that never render in the category pie chart. Auto-tagged transactions and refund back-payments have hit this bug before.
 - **Date anchors that assume 14 months** — several thresholds (home renovation last 6 months, wedding last 10 months) were originally tied to a shorter window. When extending the span, verify each `timedelta(days=…)` still picks the intended slice.
-- **CC bill variance** — bank CC bill amounts are deliberately `cc_total × uniform(0.98, 1.03)` so the Sankey's CC gap is non-zero. Don't "fix" this to exact totals.
+- **CC bill variance** — bank CC bill amounts are deliberately `cc_total × uniform(0.98, 1.03)` so the CC gap (bill vs itemized purchases) is non-zero, as it is in real data. Don't "fix" this to exact totals.
 - **Prior wealth in investments** — after any change to investment transactions, the per-investment `prior_wealth_amount` must be recalculated as `−sum(txns)`. The script does this in `create_investments`; don't bypass it.
 - **Memo sum must equal transaction amount** — a pension deposit of 4,070 whose memo reads `עובד: 1320 / מעסיק: 1430 / פיצויים: 1320` is valid; if the three Hebrew fields don't sum to the `amount`, the UI will display an inconsistent breakdown.
