@@ -190,8 +190,12 @@
     "avg3Months": "Avg 3 Months",
     "avg6Months": "Avg 6 Months",
     "avg12Months": "Avg 12 Months",
-    "pendingRefundsExcluded": "Pending Refunds Excluded",
-    "pendingRefundsIncluded": "Pending Refunds Included",
+    "refundMode": {
+      "none": "Refunds counted as is",
+      "linked": "Refunds netted",
+      "pending": "Refunds + pending netted"
+    },
+    "refundModeTitle": "How refunds you linked to a purchase in the app are counted. Netted: the refund cancels its purchase in the purchase's month. Counted as is: each stays in its own month. Pending: a purchase still awaiting its refund is also left out. A refund you never linked always counts in the month it arrived.",
     "projectExpensesIncluded": "Projects Included",
     "projectExpensesExcluded": "Projects Excluded",
     "loansIncluded": "Loans Included",

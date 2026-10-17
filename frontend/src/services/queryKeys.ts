@@ -17,6 +17,8 @@
  * and bumping PERSIST_BUSTER.
  */
 
+import type { RefundMode } from "./api";
+
 export const qkPrefix = {
   transactions: ["transactions"] as const,
   // Matches only transaction LIST entries (["transactions","list",...]) —
@@ -160,23 +162,23 @@ export function makeQueryKeys(demo: boolean) {
       debtPayments: () => ["analytics", "debt-payments-over-time", demo] as const,
       sankey: () => ["analytics", "sankey", demo] as const,
       expensesByCategoryOverTime: (
-        excludePendingRefunds: boolean,
+        refunds: RefundMode,
         excludeProjects: boolean,
         excludeLiabilities: boolean,
       ) =>
         [
           "analytics",
           "expenses-by-category-over-time",
-          excludePendingRefunds,
+          refunds,
           excludeProjects,
           excludeLiabilities,
           demo,
         ] as const,
-      incomeBySourceOverTime: (excludePendingRefunds: boolean, excludeLiabilities: boolean) =>
+      incomeBySourceOverTime: (refunds: RefundMode, excludeLiabilities: boolean) =>
         [
           "analytics",
           "income-by-source-over-time",
-          excludePendingRefunds,
+          refunds,
           excludeLiabilities,
           demo,
         ] as const,

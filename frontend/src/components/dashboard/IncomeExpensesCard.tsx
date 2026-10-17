@@ -2,7 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as R
 import { createPortal } from "react-dom";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { TrendingUp, TrendingDown, ArrowUp, ArrowDown, Minus, ChevronDown, ChevronUp } from "lucide-react";
-import { analyticsApi } from "../../services/api";
+import { analyticsApi, type RefundMode } from "../../services/api";
+import { SelectDropdown } from "../common/SelectDropdown";
 import { useQueryKeys } from "../../hooks/useQueryKeys";
 import { useTranslation } from "react-i18next";
 import { formatCurrency, formatChange } from "../../utils/numberFormatting";
@@ -203,7 +204,11 @@ export function IncomeExpensesCard() {
   // of that. Phrasing one of them the other way round (an "include projects"
   // switch) made the row unreadable — three chips in the same grey, two of
   // them meaning "off, so included" and one meaning "off, so excluded".
-  const [excludePendingRefunds, setExcludePendingRefunds] = useState(false);
+  // Refunds are the one three-way setting, and it opens netted: a refund the
+  // user linked to its purchase is that purchase costing less, not income.
+  // Only links made in the app are acted on — an unlinked refund lowers its
+  // category in the month it arrived under every option.
+  const [refundMode, setRefundMode] = useState<RefundMode>("linked");
   const [excludeProjects, setExcludeProjects] = useState(false);
   // Loan payments are money that left the account, so they count until this
   // is switched on, which takes the envelope view — loan principal as a
@@ -223,14 +228,14 @@ export function IncomeExpensesCard() {
   // See `.claude/rules/kpi_calculations.md` → "The Income & Expenses card".
   const { data: expensesByCategoryOverTime } = useQuery({
     queryKey: qk.analytics.expensesByCategoryOverTime(
-      excludePendingRefunds,
+      refundMode,
       excludeProjects,
       excludeLoans,
     ),
     queryFn: async () =>
       (
         await analyticsApi.getExpensesByCategoryOverTime(
-          excludePendingRefunds,
+          refundMode,
           excludeProjects,
           excludeLoans,
         )
@@ -243,9 +248,9 @@ export function IncomeExpensesCard() {
     placeholderData: keepPreviousData,
   });
   const { data: incomeBySourceData } = useQuery({
-    queryKey: qk.analytics.incomeBySourceOverTime(excludePendingRefunds, excludeLoans),
+    queryKey: qk.analytics.incomeBySourceOverTime(refundMode, excludeLoans),
     queryFn: async () =>
-      (await analyticsApi.getIncomeBySourceOverTime(excludePendingRefunds, excludeLoans)).data,
+      (await analyticsApi.getIncomeBySourceOverTime(refundMode, excludeLoans)).data,
     placeholderData: keepPreviousData,
   });
 
@@ -441,12 +446,20 @@ export function IncomeExpensesCard() {
                 own on a phone, where it read as a heading for the tabs under
                 it rather than as one more filter. */}
             <div className="flex min-w-0 gap-2 overflow-x-auto scrollbar-auto-hide">
-              <FilterChip
-                active={excludePendingRefunds}
-                onToggle={() => setExcludePendingRefunds(!excludePendingRefunds)}
-                activeLabel={t("dashboard.pendingRefundsExcluded")}
-                inactiveLabel={t("dashboard.pendingRefundsIncluded")}
-              />
+              <div className="shrink-0" data-testid="refund-mode" title={t("dashboard.refundModeTitle")}>
+                <SelectDropdown
+                  size="sm"
+                  value={refundMode}
+                  onChange={(next) => setRefundMode(next as RefundMode)}
+                  options={REFUND_MODES.map((mode) => ({
+                    value: mode,
+                    label: t(`dashboard.refundMode.${mode}`),
+                  }))}
+                  triggerClassName={`whitespace-nowrap !text-xs font-medium ${
+                    refundMode === "none" ? "" : "!bg-[var(--primary)]/10 !border-[var(--primary)]/20"
+                  }`}
+                />
+              </div>
               <FilterChip
                 active={excludeProjects}
                 onToggle={() => setExcludeProjects(!excludeProjects)}
@@ -551,6 +564,8 @@ function ScopeToggle({ scope, onChange }: { scope: Scope; onChange: (next: Scope
     </div>
   );
 }
+
+const REFUND_MODES: RefundMode[] = ["none", "linked", "pending"];
 
 /**
  * One filter chip: off is "included", on is "excluded".

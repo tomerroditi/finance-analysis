@@ -5,6 +5,7 @@ from datetime import date
 import pandas as pd
 import pytest
 
+from backend.constants.refunds import RefundMode
 from backend.constants.tables import Tables
 from backend.models.transaction import BankTransaction, CreditCardTransaction
 from backend.services.analysis import AnalysisService
@@ -873,7 +874,7 @@ class TestAnalysisServiceEmptyDatabaseSafety:
         """Verify empty database is handled when toggle flags are passed."""
         service = AnalysisService(db_session)
         result = service.get_income_expenses_over_time(
-            exclude_projects=True, exclude_liabilities=True, exclude_refunds=True
+            exclude_projects=True, exclude_liabilities=True, exclude_pending_refunds=False
         )
         assert result == []
 
@@ -1291,8 +1292,8 @@ class TestIncomeExpensesOverTimeFlags:
         assert {r["month"] for r in excluded} == {"2024-01", "2024-02", "2024-03"}
         assert self._month(excluded, "2024-01") == self._month(default, "2024-01")
 
-    def test_exclude_refunds_ignores_positive_expense_and_negative_income_rows(self, db_session):
-        """Refunds (positive expense rows) and income reversals are dropped when flagged."""
+    def test_unlinked_refund_is_money_back_in_its_own_month(self, db_session):
+        """A positive expense row no link names lowers that month's expenses; nothing drops it."""
         rows = [
             ("rent", "2024-01-03", -3000.0, "Home", "Rent"),
             ("refund", "2024-01-20", 200.0, "Home", "Rent"),
@@ -1309,11 +1310,11 @@ class TestIncomeExpensesOverTimeFlags:
         db_session.commit()
         service = AnalysisService(db_session)
 
-        default = self._month(service.get_income_expenses_over_time(), "2024-01")
-        strict = self._month(service.get_income_expenses_over_time(exclude_refunds=True), "2024-01")
-
-        assert (default["income"], default["expenses"]) == (7700.0, 2800.0)
-        assert (strict["income"], strict["expenses"]) == (8000.0, 3000.0)
+        for exclude in (True, False):
+            jan = self._month(
+                service.get_income_expenses_over_time(exclude_pending_refunds=exclude), "2024-01"
+            )
+            assert (jan["income"], jan["expenses"]) == (7700.0, 2800.0)
 
     def test_exclude_projects_removes_project_category_spend(self, db_session, seed_project_transactions):
         """Rows whose category is a project budget name vanish when ``exclude_projects`` is set."""
@@ -1564,6 +1565,60 @@ class TestRefundNettingAcrossMonths:
         march_sources = self._month(by_source, "2024-03")["sources"]
         assert sum(march_sources.values()) == 8000.0
         assert not any("Other Income" in label for label in march_sources)
+
+    def test_no_refund_handling_counts_both_sides_in_their_own_months(self, db_session):
+        """``RefundMode.NONE`` leaves the purchase in January and the refund in March."""
+        self._seed(db_session, [
+            ("tv", "2024-01-10", -1000.0, "Electronics", None),
+            ("tv-refund", "2024-03-14", 1000.0, "Electronics", None),
+        ])
+        uids = self._uids(db_session)
+        self._link(db_session, uids["tv"], uids["tv-refund"], 1000.0, 1000.0)
+        service = AnalysisService(db_session)
+
+        gross = service.get_expenses_by_category_over_time(refunds=RefundMode.NONE)
+        netted = service.get_expenses_by_category_over_time(refunds=RefundMode.LINKED)
+
+        assert self._month(gross, "2024-01")["categories"]["Electronics"] == 1000.0
+        assert self._month(gross, "2024-03")["categories"]["Electronics"] == -1000.0
+        for row in netted:
+            assert "Electronics" not in row["categories"]
+
+    def test_pending_mode_alone_drops_an_open_expectation(self, db_session):
+        """Only ``RefundMode.PENDING`` takes a purchase awaiting its refund off."""
+        self._seed(db_session, [
+            ("loan-to-friend", "2024-01-10", -800.0, "Other", None),
+        ])
+        uids = self._uids(db_session)
+        PendingRefundsService(db_session).mark_as_pending_refund(
+            source_type="transaction", source_id=uids["loan-to-friend"],
+            source_table="banks", expected_amount=800.0,
+        )
+        service = AnalysisService(db_session)
+
+        spent = {
+            mode: (self._month(service.get_expenses_by_category_over_time(refunds=mode), "2024-01")
+                   or {"categories": {}})["categories"].get("Other", 0.0)
+            for mode in RefundMode
+        }
+
+        assert spent == {RefundMode.NONE: 800.0, RefundMode.LINKED: 800.0, RefundMode.PENDING: 0.0}
+
+    def test_no_refund_handling_keeps_a_refund_tagged_as_income(self, db_session):
+        """A linked refund sitting in an income category stays income only under ``NONE``."""
+        self._seed(db_session, [
+            ("tv", "2024-01-10", -1000.0, "Electronics", None),
+            ("bit", "2024-01-14", 1000.0, "Other Income", "Bit"),
+        ])
+        uids = self._uids(db_session)
+        self._link(db_session, uids["tv"], uids["bit"], 1000.0, 1000.0)
+        service = AnalysisService(db_session)
+
+        gross = self._month(service.get_income_by_source_over_time(refunds=RefundMode.NONE), "2024-01")
+        netted = self._month(service.get_income_by_source_over_time(refunds=RefundMode.LINKED), "2024-01")
+
+        assert gross["sources"] == {"Other Income / Bit": 1000.0}
+        assert netted is None or netted["sources"] == {}
 
 
 class TestExpenseBreakdownFilters:
@@ -2298,3 +2353,4 @@ class TestTaggedPriorWealth:
         pw_node_idx = result["node_labels"].index("Prior Wealth")
         pw_links = [link for link in result["links"] if link["source"] == pw_node_idx]
         assert [link["value"] for link in pw_links] == [15000.0]
+

@@ -128,8 +128,16 @@ composition (the two breakdown tabs) of the same money. They therefore read
   left on it belong to the Liabilities page, which derives them from the loan's
   own terms (`liabilities_service`'s amortisation schedule) rather than from a
   debit.
-- **Every chip is an exclusion, and every one starts off** — pending refunds
-  included too. The card opens on everything the household actually did, and
+- **Refunds are one three-way select** (`refunds=` on both breakdown
+  endpoints, `RefundMode` in `backend/constants/refunds.py`), and it opens on
+  `linked`: a refund linked to its purchase in the app cancels that purchase in
+  the purchase's month. `none` counts each side in its own month (the view's
+  `net_refunds=False`); `pending` also takes off what a purchase still awaits
+  back. Only in-app links and expectations are acted on — a positive row in an
+  expense category that no link names is money back in the month it arrived,
+  under every option. The endpoints default to `pending` for other callers
+  (the insights strip); the card always sends its choice.
+- **Every chip is an exclusion, and every one starts off.** The card opens on everything the household actually did, and
   each chip takes something out of that; they share one accent colour, so
   nothing coloured means nothing is being left out. A chip phrased the other
   way round ("include projects") sat in the same grey as its neighbours while

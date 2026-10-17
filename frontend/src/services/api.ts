@@ -189,6 +189,13 @@ export const budgetApi = {
     }),
 };
 
+/**
+ * How the Income & Expenses breakdowns treat refunds linked in the app:
+ * `none` counts a refund and its purchase each in their own month, `linked`
+ * nets them, `pending` also drops a purchase still awaiting its refund.
+ */
+export type RefundMode = "none" | "linked" | "pending";
+
 /** One recurring charge the month still owes. */
 /** One month of `GET /budget/trend/{year}/{month}`. */
 export interface BudgetTrendPointResponse {
@@ -720,7 +727,7 @@ export const analyticsApi = {
       "/analytics/debt-payments-over-time"
     ),
   getExpensesByCategoryOverTime: (
-    excludePendingRefunds = true,
+    refunds: RefundMode = "pending",
     excludeProjects = false,
     excludeLiabilities = false,
   ) =>
@@ -728,7 +735,7 @@ export const analyticsApi = {
       "/analytics/expenses-by-category-over-time",
       {
         params: {
-          exclude_pending_refunds: excludePendingRefunds,
+          refunds,
           exclude_projects: excludeProjects,
           exclude_liabilities: excludeLiabilities,
         },
@@ -739,12 +746,12 @@ export const analyticsApi = {
     api.get<{ month: string; bank_balance: number; investment_value: number; cash: number; net_worth: number }[]>(
       "/analytics/net-worth-over-time"
     ),
-  getIncomeBySourceOverTime: (excludePendingRefunds = true, excludeLiabilities = false) =>
+  getIncomeBySourceOverTime: (refunds: RefundMode = "pending", excludeLiabilities = false) =>
     api.get<{ month: string; sources: Record<string, number>; total: number }[]>(
       "/analytics/income-by-source-over-time",
       {
         params: {
-          exclude_pending_refunds: excludePendingRefunds,
+          refunds,
           exclude_liabilities: excludeLiabilities,
         },
       }

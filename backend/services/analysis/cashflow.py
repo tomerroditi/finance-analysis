@@ -15,8 +15,8 @@ import numpy as np
 import pandas as pd
 
 from backend.constants.categories import LIABILITIES_CATEGORY
+from backend.constants.refunds import RefundMode
 from backend.constants.tables import TransactionsTableFields
-from backend.services.transaction_views import TransactionView
 from backend.utils.dataframe_dates import to_month_series
 
 
@@ -27,7 +27,6 @@ class CashflowMixin:
         self,
         exclude_projects: bool = False,
         exclude_liabilities: bool = False,
-        exclude_refunds: bool = False,
         exclude_pending_refunds: bool = True,
     ) -> list[dict[str, Any]]:
         """
@@ -43,10 +42,6 @@ class CashflowMixin:
             budget name. Defaults to False.
         exclude_liabilities : bool, optional
             If True, drop the Liabilities category entirely. Defaults to False.
-        exclude_refunds : bool, optional
-            If True, ignore *unmatched* refunds — a positive amount in an
-            expense category, or a negative one in an income category — so the
-            figures are gross rather than net. Defaults to False.
         exclude_pending_refunds : bool, optional
             Passed to :meth:`TransactionViews.bank`: whether a purchase still
             awaiting its refund is dropped. Matched refunds are netted either
@@ -71,14 +66,7 @@ class CashflowMixin:
         if not view.months:
             return []
 
-        income = view.income
-        expenses = view.expenses
-        if exclude_refunds:
-            income = income[income["amount"] > 0]
-            expenses = expenses[expenses["amount"] < 0]
-        monthly = TransactionView(
-            rows=pd.concat([income, expenses, view.investments]), months=view.months
-        ).monthly()
+        monthly = view.monthly()
 
         return [
             {
@@ -169,7 +157,7 @@ class CashflowMixin:
 
     def get_expenses_by_category_over_time(
         self,
-        exclude_pending_refunds: bool = True,
+        refunds: RefundMode = RefundMode.PENDING,
         exclude_projects: bool = False,
         exclude_liabilities: bool = False,
     ) -> list[dict[str, Any]]:
@@ -187,8 +175,10 @@ class CashflowMixin:
 
         Parameters
         ----------
-        exclude_pending_refunds : bool, optional
-            Passed to :meth:`TransactionViews.spending`. Defaults to True.
+        refunds : RefundMode, optional
+            How linked refunds and purchases awaiting one are treated. Under
+            ``NONE`` a refund lowers the category it is tagged with in the
+            month it arrived. Defaults to ``PENDING``.
         exclude_projects : bool, optional
             If True, drop categories that are project-budget names — planned
             lumpy spending the caller may want out of its ordinary-spend view.
@@ -209,9 +199,10 @@ class CashflowMixin:
               (positive for spend, negative for a category left in credit).
         """
         expenses = self.views.spending(
-            exclude_pending_refunds=exclude_pending_refunds,
+            exclude_pending_refunds=refunds.excludes_pending,
             exclude_projects=exclude_projects,
             exclude_liabilities=exclude_liabilities,
+            net_refunds=refunds.nets_links,
         ).expenses.copy()
 
         if expenses.empty:
@@ -243,17 +234,20 @@ class CashflowMixin:
         ]
 
     def get_income_by_source_over_time(
-        self, exclude_pending_refunds: bool = True, exclude_liabilities: bool = False
+        self,
+        refunds: RefundMode = RefundMode.PENDING,
+        exclude_liabilities: bool = False,
     ) -> list[dict[str, Any]]:
         """
         Get monthly income broken down by source (category+tag combination).
 
         Parameters
         ----------
-        exclude_pending_refunds : bool, optional
-            Passed to :meth:`TransactionViews.bank`. A refund that landed in an
-            income category is money coming back, not earnings, so netting it
-            keeps it out of the breakdown. Defaults to True.
+        refunds : RefundMode, optional
+            How linked refunds are treated. A refund that landed in an income
+            category is money coming back, not earnings, so netting it keeps
+            it out of the breakdown; ``NONE`` leaves it in. Defaults to
+            ``PENDING``.
         exclude_liabilities : bool, optional
             If True, drop loan receipts (positive ``Liabilities`` rows). This
             is the income half of the same switch that drops debt payments
@@ -268,8 +262,9 @@ class CashflowMixin:
             ordered chronologically. Prior Wealth transactions are excluded.
         """
         income_df = self.views.bank(
-            exclude_pending_refunds=exclude_pending_refunds,
+            exclude_pending_refunds=refunds.excludes_pending,
             exclude_liabilities=exclude_liabilities,
+            net_refunds=refunds.nets_links,
         ).income.copy()
 
         if income_df.empty:
