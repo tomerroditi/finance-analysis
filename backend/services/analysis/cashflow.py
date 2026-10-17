@@ -20,7 +20,6 @@ from backend.constants.categories import (
 )
 from backend.constants.tables import TransactionsTableFields
 from backend.services.transaction_views import (
-    INCOME,
     TransactionView,
     income_mask,
     transactions_masks,
@@ -109,15 +108,7 @@ class CashflowMixin:
         if not view.months:
             return []
 
-        # Temporary: the bank view leaves prior-wealth rows out, but this
-        # series has always counted them as income. Goes when the series
-        # stops counting an opening balance as earned income.
-        legacy = self.repo.get_cashflow_transactions()
-        legacy = legacy[
-            (legacy[TransactionsTableFields.TAG.value] == PRIOR_WEALTH_TAG)
-            & income_mask(legacy)
-        ]
-        income = pd.concat([view.income, legacy.assign(kind=INCOME)])
+        income = view.income
         expenses = view.expenses
         if exclude_refunds:
             income = income[income["amount"] > 0]

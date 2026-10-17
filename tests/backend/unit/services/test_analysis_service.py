@@ -2163,3 +2163,23 @@ class TestForecastExpensesUseOneDefinition:
         assert projected <= result["committed_remaining"] + result[
             "avg_monthly_expenses"
         ]
+
+
+class TestOpeningBalancesAreNotIncome:
+    """A prior-wealth row is an opening balance, never a month's earnings."""
+
+    def test_income_expenses_over_time_leaves_prior_wealth_out(self, db_session):
+        """Verify a Prior Wealth-tagged Other Income row adds nothing to income."""
+        for id_, amount, tag in (("opening", 15000.0, "Prior Wealth"), ("gift", 400.0, None)):
+            db_session.add(
+                BankTransaction(
+                    id=id_, date="2026-02-10", provider="leumi", account_name="Main",
+                    description=id_, amount=amount, category="Other Income", tag=tag,
+                    source="bank_transactions",
+                )
+            )
+        db_session.commit()
+
+        months = AnalysisService(db_session).get_income_expenses_over_time()
+
+        assert [m["income"] for m in months] == [400.0]
