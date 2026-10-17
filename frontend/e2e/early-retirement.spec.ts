@@ -10,7 +10,8 @@ import { enableDemoMode, navigateTo, resetDemoData } from "./helpers";
  * retirement goal's age and spending), linked fields and sourced rows are
  * marked, conditional fields and rows behave, and Calculate returns the
  * verdict, goals and charts. The second test writes: it edits a linked field,
- * saves, reloads, and resets.
+ * saves, reloads, and resets. The phone block checks the page never scrolls
+ * sideways into empty space, in both directions.
  */
 test.describe("Early retirement plan", () => {
   test.beforeAll(async () => {
@@ -173,5 +174,39 @@ test.describe("Early retirement plan", () => {
     await resetButtons.last().click();
     await expect(cash).toHaveValue(tracked);
     await expect(page.getByTestId("fire-linked-balance")).toBeVisible();
+  });
+
+  test.describe("on a phone", () => {
+    test.use({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+
+    test("the page never scrolls sideways, with field help closed or open", async ({ page }) => {
+      const overflow = () =>
+        page.evaluate(
+          () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+        );
+
+      for (const lang of ["en", "he"]) {
+        await page.addInitScript((l) => localStorage.setItem("language", l), lang);
+        await navigateTo(page, "/early-retirement");
+        await expect(page.getByTestId("fire-verdict")).toBeVisible({ timeout: 60_000 });
+        // Closed help panels used to keep their full width in layout, so every
+        // icon near the end edge pushed the page wider than the screen.
+        expect(await overflow(), `${lang}: closed help`).toBe(0);
+
+        for (const id of ["balance", "base_problem_max_age"]) {
+          const help = page.getByTestId(`fire-help-${id}`);
+          await help.getByRole("button").tap();
+          const panel = help.getByTestId("info-tooltip-panel");
+          await expect(panel).toBeVisible();
+          const box = await panel.boundingBox();
+          if (!box) throw new Error(`${id} help has no box`);
+          expect(box.x, `${lang}: ${id} start`).toBeGreaterThanOrEqual(0);
+          expect(box.x + box.width, `${lang}: ${id} end`).toBeLessThanOrEqual(390);
+          expect(await overflow(), `${lang}: ${id} open`).toBe(0);
+          await help.getByRole("button").tap();
+          await expect(panel).toBeHidden();
+        }
+      }
+    });
   });
 });

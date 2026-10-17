@@ -42,8 +42,12 @@ function clipBounds(el: HTMLElement): { start: number; end: number } {
  *
  * The panel is anchored to the icon, so on a card near the container's end
  * edge it would render past it. Before it becomes visible the panel is
- * measured and shifted back inside its clipping bounds (and capped to their
+ * placed and shifted back inside its clipping bounds (and capped to their
  * width), which works the same in LTR and RTL.
+ *
+ * A closed panel is `display: none`, not just transparent: a transparent one
+ * still occupies layout at its unshifted spot, and on a phone a page full of
+ * them near the end edge scrolls sideways into empty space.
  */
 export function InfoTooltip({
   text,
@@ -60,24 +64,30 @@ export function InfoTooltip({
   const [maxWidth, setMaxWidth] = useState<number | null>(null);
 
   /**
-   * Re-measure the panel and shift it back inside its clipping bounds. Called
-   * before the panel is revealed — on tap, on focus, and on pointer enter for
-   * the CSS-driven desktop hover — so it never paints in the clipped spot.
+   * Work out where the panel lands and shift it back inside its clipping
+   * bounds. Called before the panel is revealed — on tap, on focus, and on
+   * pointer enter for the CSS-driven desktop hover — so it never paints in the
+   * clipped spot.
+   *
+   * The unshifted spot is computed from the anchor rather than measured: the
+   * panel is pinned to the anchor's start edge at a known width, and laying it
+   * out there even for a moment is enough for a mobile browser to widen its
+   * layout viewport to fit it, leaving the page scrollable sideways for good.
    */
   const reposition = useCallback(() => {
     const panel = panelRef.current;
-    if (!panel) return;
+    const anchor = wrapRef.current;
+    if (!panel || !anchor) return;
     const { start, end } = clipBounds(panel);
     const available = Math.max(0, end - start);
     const nextMaxWidth = Math.min(width, available);
-    // Measure unshifted and at the width we are about to apply, so repeated
-    // openings correct from the same baseline instead of compounding.
-    panel.style.transform = "translateX(0px)";
-    panel.style.maxWidth = `${nextMaxWidth}px`;
-    const rect = panel.getBoundingClientRect();
+    const box = anchor.getBoundingClientRect();
+    const rtl = getComputedStyle(anchor).direction === "rtl";
+    const left = rtl ? box.right - nextMaxWidth : box.left;
     let next = 0;
-    if (rect.right > end) next = end - rect.right;
-    if (rect.left + next < start) next = start - rect.left;
+    if (left + nextMaxWidth > end) next = end - (left + nextMaxWidth);
+    if (left + next < start) next = start - left;
+    panel.style.maxWidth = `${nextMaxWidth}px`;
     panel.style.transform = `translateX(${next}px)`;
     setMaxWidth(nextMaxWidth);
     setShift(next);
@@ -133,7 +143,7 @@ export function InfoTooltip({
           maxWidth: maxWidth ?? "calc(100vw - 3rem)",
           transform: `translateX(${shift}px)`,
         }}
-        className={`absolute start-0 ${placementClasses} p-2 rounded-lg bg-[var(--surface-light)] text-[10px] leading-snug text-white pointer-events-none z-20 shadow-xl border border-white/5 transition-opacity ${show ? "opacity-100" : "opacity-0"} md:group-hover/tip:opacity-100`}
+        className={`absolute start-0 ${placementClasses} p-2 rounded-lg bg-[var(--surface-light)] text-[10px] leading-snug text-white pointer-events-none z-20 shadow-xl border border-white/5 ${show ? "block" : "hidden"} md:group-hover/tip:block`}
       >
         {text}
       </span>
