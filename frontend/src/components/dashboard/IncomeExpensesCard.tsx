@@ -431,6 +431,9 @@ export function IncomeExpensesCard() {
       <div className="px-3 md:px-6 pb-4 md:pb-6 pt-4 min-h-[400px] md:h-[600px] overflow-y-auto flex flex-col">
         <div className="flex flex-col flex-1 min-h-0">
           <KpiCards income={incomeSummary} expenses={expenseSummary} />
+          <p data-testid="card-refund-note" className="text-[11px] md:text-xs text-[var(--text-muted)] -mt-1 mb-3">
+            {t("dashboard.cardRefundNote")}
+          </p>
 
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-2 mb-3">
             {/* One line, scrolled rather than wrapped: the chips are a set to
