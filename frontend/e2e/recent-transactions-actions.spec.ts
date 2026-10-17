@@ -33,24 +33,29 @@ function recentCard(page: Page): Locator {
  * card's width follows the dashboard grid, so all three controls beside the
  * title used to push "View All" past the card on desktop and onto a second
  * row with the filters on a phone.
+ *
+ * Retried until it holds: after a viewport change the layout's margin animates
+ * for 300 ms, and boxes read one by one mid-animation disagree with each other.
  */
 async function expectHeaderLayout(card: Locator): Promise<void> {
   const title = card.getByText("Recent Transactions", { exact: true });
   const viewAll = card.getByRole("link", { name: /View All/ });
   const filters = card.getByTestId("recent-tx-filters");
   await expect(filters).toBeVisible();
-  const [cardBox, titleBox, viewAllBox, filtersBox] = await Promise.all([
-    card.boundingBox(),
-    title.boundingBox(),
-    viewAll.boundingBox(),
-    filters.getByRole("button").first().boundingBox(),
-  ]);
-  const centerY = (box: { y: number; height: number }) => box.y + box.height / 2;
-  expect(Math.abs(centerY(viewAllBox!) - centerY(titleBox!))).toBeLessThan(8);
-  expect(viewAllBox!.x + viewAllBox!.width).toBeLessThanOrEqual(cardBox!.x + cardBox!.width);
-  expect(filtersBox!.y).toBeGreaterThanOrEqual(titleBox!.y + titleBox!.height);
-  // The chip's own padding is pulled back, so its edge sits a few px before the title's.
-  expect(Math.abs(filtersBox!.x - titleBox!.x)).toBeLessThanOrEqual(10);
+  await expect(async () => {
+    const [cardBox, titleBox, viewAllBox, filtersBox] = await Promise.all([
+      card.boundingBox(),
+      title.boundingBox(),
+      viewAll.boundingBox(),
+      filters.getByRole("button").first().boundingBox(),
+    ]);
+    const centerY = (box: { y: number; height: number }) => box.y + box.height / 2;
+    expect(Math.abs(centerY(viewAllBox!) - centerY(titleBox!))).toBeLessThan(8);
+    expect(viewAllBox!.x + viewAllBox!.width).toBeLessThanOrEqual(cardBox!.x + cardBox!.width);
+    expect(filtersBox!.y).toBeGreaterThanOrEqual(titleBox!.y + titleBox!.height);
+    // The chip's own padding is pulled back, so its edge sits a few px before the title's.
+    expect(Math.abs(filtersBox!.x - titleBox!.x)).toBeLessThanOrEqual(10);
+  }).toPass({ timeout: 5_000 });
 }
 
 /** Scroll the feed's own scroll container by `delta` and return its scrollTop. */
