@@ -214,7 +214,7 @@ class TestSpendingOutOfAGoal:
         goal = service.create(name="Trip", target_amount=5000, start_month=month)[0]
         service.add_entry(goal["id"], 2000, entry_date=f"{month}-05")
         service.set_spending_link(goal["id"], "Travel")
-        _card(db_session, month, -800, "Travel")
+        _card(db_session, month, -800, "Travel", day=date.today().day)
 
         service._invalidate()
         goal = _goal(service.get_all(), "Trip")
@@ -472,7 +472,7 @@ class TestMonthByMonth:
         goal = service.create(name="Trip", target_amount=5000, start_month=month)[0]
         service.add_entry(goal["id"], 2000, entry_date=f"{month}-05")
         service.set_spending_link(goal["id"], "Travel")
-        _bank(db_session, month, -500, "Travel")
+        _bank(db_session, month, -500, "Travel", day=date.today().day)
 
         service._invalidate()
         view = service.get_month(int(month[:4]), int(month[5:]))
