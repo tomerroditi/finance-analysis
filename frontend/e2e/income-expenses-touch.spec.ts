@@ -35,6 +35,14 @@ test.describe("Income & Expenses on touch", () => {
     return card;
   }
 
+  /**
+   * Tap the backdrop's corner: its centre is wherever the readout happens to
+   * be pinned when the card sits mid-screen, and the readout swallows the tap.
+   */
+  async function tapOffReadout(page: Page): Promise<void> {
+    await page.getByTestId("composition-tooltip-backdrop").tap({ position: { x: 8, y: 8 } });
+  }
+
   test("a tap reads a slice; only the readout's button filters", async ({ page }) => {
     const card = await openCard(page);
     await card.getByRole("button", { name: "Expenses Breakdown" }).click();
@@ -56,7 +64,7 @@ test.describe("Income & Expenses on touch", () => {
     await expect(card.getByTestId("series-focus-row")).toHaveCount(0);
 
     // --- Tapping off it dismisses it, still without filtering ---
-    await page.getByTestId("composition-tooltip-backdrop").tap();
+    await tapOffReadout(page);
     await expect(tooltip).toHaveCount(0);
     await expect(card.getByTestId("series-focus-row")).toHaveCount(0);
 
@@ -95,7 +103,7 @@ test.describe("Income & Expenses on touch", () => {
     await expect(tooltip.getByTestId("composition-tooltip-line")).toHaveText([/^Shopping: \u2066?-1,000/]);
     await expect(page.getByTestId("composition-tooltip-filter")).toHaveCount(0);
 
-    await page.getByTestId("composition-tooltip-backdrop").tap();
+    await tapOffReadout(page);
     await expect(tooltip).toBeHidden();
   });
 
