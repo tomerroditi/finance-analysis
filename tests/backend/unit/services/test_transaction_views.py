@@ -90,12 +90,17 @@ class TestRowsNoViewKeeps:
 
         assert view.income["amount"].tolist() == [4000.0]
 
-    def test_spending_view_leaves_ignore_out(self, db_session):
-        """Verify an internal transfer is neither income nor spending."""
-        _add(db_session, "bank_transactions", -1000.0, "Ignore", id_="out")
-        _add(db_session, "bank_transactions", 1000.0, "Ignore", id_="in")
+    @pytest.mark.parametrize("view_name", ["bank", "spending"])
+    def test_ignore_is_left_out(self, db_session, view_name):
+        """Verify an internal transfer is neither income nor spending.
 
-        assert TransactionViews(db_session).spending().rows.empty
+        Only one side is tracked here, as when money moves to an account the
+        app does not scrape; counting it would book the household's own
+        money as spent.
+        """
+        _add(db_session, "bank_transactions", -1000.0, "Ignore", id_="out")
+
+        assert getattr(TransactionViews(db_session), view_name)().rows.empty
 
 
 class TestClassification:

@@ -10,7 +10,6 @@ from backend.models.transaction import BankTransaction, CreditCardTransaction
 from backend.services.analysis import AnalysisService
 from backend.services.pending_refunds_service import PendingRefundsService
 from backend.services.recurring_service import RecurringService
-from backend.services.transaction_views import income_mask, investment_mask
 
 
 def _months_ago(n: int, day: int = 10) -> str:
@@ -259,37 +258,27 @@ class TestAnalysisServiceIncomeExpenses:
         # Expenses from bank+cash only: Home/Rent 9000 + Coffee 45 + Parking 30
         assert expenses == 9075.0
 
-    def test_income_mask_includes_salary(self, db_session, seed_base_transactions):
-        """Verify Salary category counted as income by the income mask."""
-        service = AnalysisService(db_session)
-        df = service.repo.get_table()
-        df = df[df["source"] != "credit_card_transactions"]
-
-        mask = income_mask(df)
-        income_rows = df[mask]
+    def test_income_includes_salary(self, db_session, seed_base_transactions):
+        """Verify Salary category counted as income by the bank view."""
+        income_rows = AnalysisService(db_session).views.bank().income
 
         # Salary rows should be in income
         salary_rows = income_rows[income_rows["category"] == "Salary"]
         assert not salary_rows.empty
         assert salary_rows["amount"].sum() == 24700.0  # 8000 + 8500 + 8200
 
-    def test_income_mask_includes_other_income(
+    def test_income_includes_other_income(
         self, db_session, seed_base_transactions
     ):
-        """Verify Other Income category counted as income by the income mask."""
-        service = AnalysisService(db_session)
-        df = service.repo.get_table()
-        df = df[df["source"] != "credit_card_transactions"]
-
-        mask = income_mask(df)
-        income_rows = df[mask]
+        """Verify Other Income category counted as income by the bank view."""
+        income_rows = AnalysisService(db_session).views.bank().income
 
         # Other Income rows should be in income
         other_income_rows = income_rows[income_rows["category"] == "Other Income"]
         assert not other_income_rows.empty
         assert other_income_rows["amount"].sum() == 3500.0  # Freelance payment
 
-    def test_income_mask_liability_positive_is_income(self, db_session):
+    def test_income_liability_positive_is_income(self, db_session):
         """Verify positive Liabilities amounts (loans received) counted as income."""
         service = AnalysisService(db_session)
 
@@ -640,8 +629,8 @@ class TestAnalysisServiceIncomeBySource:
         result = service.get_income_by_source_over_time()
         assert result == []
 
-class TestIncomeMaskPositiveLiabilities:
-    """Tests for income_mask handling of positive liabilities (loan receipts)."""
+class TestPositiveLiabilitiesAreIncome:
+    """Tests for the views classifying positive liabilities (loan receipts) as income."""
 
     def test_mixed_liabilities_only_positive_is_income(self, db_session):
         """Verify only positive Liabilities rows are income when mixed with negative."""
@@ -676,20 +665,16 @@ class TestIncomeMaskPositiveLiabilities:
         db_session.add_all(records)
         db_session.commit()
 
-        service = AnalysisService(db_session)
-        df = service.repo.get_table()
-        mask = income_mask(df)
-
-        income_rows = df[mask]
+        income_rows = AnalysisService(db_session).views.bank().income
         assert len(income_rows) == 1
         assert income_rows.iloc[0]["amount"] == 50000.0
 
 
-class TestInvestmentMask:
-    """Tests for investment_mask identifying investment transactions."""
+class TestInvestmentClassification:
+    """Tests for the views identifying investment transactions."""
 
     def test_non_investment_category_not_classified(self, db_session):
-        """Verify non-investment categories are excluded by the investment mask."""
+        """Verify non-investment categories are not investments on the bank view."""
         records = [
             BankTransaction(
                 id="bank_salary_mask",
@@ -721,15 +706,11 @@ class TestInvestmentMask:
         db_session.add_all(records)
         db_session.commit()
 
-        service = AnalysisService(db_session)
-        df = service.repo.get_table()
-        mask = investment_mask(df)
-
-        investment_rows = df[mask]
+        investment_rows = AnalysisService(db_session).views.bank().investments
         assert investment_rows.empty
 
-    def test_investment_mask_with_mixed_categories(self, db_session):
-        """Verify investment mask correctly picks only Investments from mixed data."""
+    def test_investments_with_mixed_categories(self, db_session):
+        """Verify only the Investments category is an investment in mixed data."""
         records = [
             BankTransaction(
                 id="bank_inv_mixed_1",
@@ -774,11 +755,7 @@ class TestInvestmentMask:
         db_session.add_all(records)
         db_session.commit()
 
-        service = AnalysisService(db_session)
-        df = service.repo.get_table()
-        mask = investment_mask(df)
-
-        investment_rows = df[mask]
+        investment_rows = AnalysisService(db_session).views.bank().investments
         assert len(investment_rows) == 1
         assert investment_rows.iloc[0]["amount"] == -10000.0
 

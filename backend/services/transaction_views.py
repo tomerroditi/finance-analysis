@@ -13,11 +13,15 @@ Every row of a view is **income**, **expense** or **investment** (see
 - **Income**: category in ``IncomeCategories``, or ``Liabilities`` with a
   positive amount (loan receipt).
 - **Investment**: category is exactly ``Investments``.
-- **Expense**: on the bank view, everything else — which deliberately
-  includes ``Liabilities`` rows with negative amounts (debt payments are real
-  money outflows). On the spending view, an expense category at any sign (a
-  positive row is a refund) plus debt payments; ``Ignore`` and the
-  ``Credit Cards`` bill are left out.
+- **Expense**: on the bank view, everything else but ``Ignore`` — which
+  deliberately includes ``Liabilities`` rows with negative amounts (debt
+  payments are real money outflows). On the spending view, an expense
+  category at any sign (a positive row is a refund) plus debt payments; the
+  ``Credit Cards`` bill is left out.
+
+``Ignore`` (a transfer between the household's own accounts) is in neither
+view: when only one side of a transfer is tracked, counting it would book
+the household's own money as spent or earned.
 
 Insurance deposits and prior-wealth rows are never in a view, and a refund
 matched to a purchase the view keeps is always netted against it. A refund
@@ -71,7 +75,7 @@ _KIND = "kind"
 _MONTH = "month"
 
 
-def income_mask(df: pd.DataFrame) -> pd.Series:
+def _income_mask(df: pd.DataFrame) -> pd.Series:
     """Return a boolean mask of income rows.
 
     Parameters
@@ -89,7 +93,7 @@ def income_mask(df: pd.DataFrame) -> pd.Series:
     )
 
 
-def investment_mask(df: pd.DataFrame) -> pd.Series:
+def _investment_mask(df: pd.DataFrame) -> pd.Series:
     """Return a boolean mask of investment rows (category is exactly ``Investments``).
 
     Parameters
@@ -103,30 +107,6 @@ def investment_mask(df: pd.DataFrame) -> pd.Series:
         Boolean Series aligned with ``df``.
     """
     return df["category"] == INVESTMENTS_CATEGORY
-
-
-def transactions_masks(df: pd.DataFrame) -> dict[str, pd.Series]:
-    """Return the income/investments/expenses masks of the bank-view rules.
-
-    Parameters
-    ----------
-    df : pd.DataFrame
-        Transactions frame with ``category`` and ``amount`` columns.
-
-    Returns
-    -------
-    dict[str, pd.Series]
-        Keys ``"income"``, ``"investments"``, ``"expenses"`` mapping to
-        boolean Series aligned with ``df``. Expenses is the complement of the
-        other two.
-    """
-    income = income_mask(df)
-    investments = investment_mask(df)
-    return {
-        "income": income,
-        "investments": investments,
-        "expenses": ~income & ~investments,
-    }
 
 
 @dataclass(frozen=True)
@@ -404,10 +384,10 @@ class TransactionViews:
         df = df[~df[source_col].isin(left_out)]
         df = df[df[TransactionsTableFields.TAG.value] != PRIOR_WEALTH_TAG]
 
-        income = income_mask(df)
-        investment = investment_mask(df)
+        income = _income_mask(df)
+        investment = _investment_mask(df)
         if name == "bank":
-            expense = ~income & ~investment
+            expense = ~income & ~investment & (df[category_col] != IGNORE_CATEGORY)
         else:
             expense = ~df[category_col].isin(NON_EXPENSE_CATEGORIES) | (
                 (df[category_col] == LIABILITIES_CATEGORY) & (df["amount"] < 0)
