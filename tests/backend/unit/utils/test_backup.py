@@ -25,6 +25,7 @@ import pytest
 
 from backend.config import AppConfig
 from backend.errors import BadRequestException, EntityNotFoundException
+from backend.services import credentials_service, tagging_service
 from backend.utils.backup import (
     _upgrade_restored_db,
     backup_db,
@@ -32,6 +33,7 @@ from backend.utils.backup import (
     list_backups,
     restore_backup,
 )
+from backend.utils.db_path_cache import cache_key
 
 
 def _make_sqlite_file(path: Path) -> None:
@@ -324,9 +326,52 @@ class TestRestoreBackupValidation:
         ):
             restore_backup("data_20260101_000000.db")
 
-        reset.assert_called_once()
+        assert reset.call_count == 2
         upgrade.assert_called_once()
         assert len(list(backup_dir.glob("data_*.db"))) == 2
+
+
+class TestRestoreBackupForgetsCaches:
+    """A restore must not leave categories or credentials read from the old file."""
+
+    def _restore(self, tmp_path: Path, during_copy=None) -> None:
+        """Restore a backup over a live DB, running ``during_copy`` mid-restore."""
+        _install_live_db(tmp_path)
+        backup_dir = get_backup_dir()
+        backup_dir.mkdir(parents=True)
+        _make_sqlite_file(backup_dir / "data_20260101_000000.db")
+        with patch(
+            "backend.utils.backup._upgrade_restored_db", side_effect=during_copy
+        ):
+            restore_backup("data_20260101_000000.db")
+
+    def test_cached_categories_and_credentials_are_dropped(self, tmp_path):
+        """Entries cached from the pre-restore file are gone once it is replaced."""
+        self._restore(tmp_path)
+        key = cache_key()
+        tagging_service._categories_cache[key] = {"Stale": []}
+        credentials_service._credentials_cache[key] = {"banks": {"stale": {}}}
+
+        self._restore_again(tmp_path)
+
+        assert key not in tagging_service._categories_cache
+        assert key not in credentials_service._credentials_cache
+
+    def test_entries_cached_while_the_copy_runs_are_dropped(self, tmp_path):
+        """A request that re-reads the old file mid-restore cannot keep its copy."""
+
+        def reread_old_file() -> None:
+            """Stand in for a request served between engine disposal and the end."""
+            tagging_service._categories_cache[cache_key()] = {"Stale": []}
+
+        self._restore(tmp_path, during_copy=reread_old_file)
+
+        assert cache_key() not in tagging_service._categories_cache
+
+    def _restore_again(self, tmp_path: Path) -> None:
+        """Restore the same backup once more over the now-live database."""
+        with patch("backend.utils.backup._upgrade_restored_db"):
+            restore_backup("data_20260101_000000.db")
 
 
 class TestUpgradeRestoredDb:

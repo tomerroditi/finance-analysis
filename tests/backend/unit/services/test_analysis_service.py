@@ -10,7 +10,7 @@ from backend.models.transaction import BankTransaction, CreditCardTransaction
 from backend.services.analysis import AnalysisService
 from backend.services.pending_refunds_service import PendingRefundsService
 from backend.services.recurring_service import RecurringService
-from backend.services.transaction_classification import income_mask, investment_mask
+from backend.services.transaction_views import income_mask, investment_mask
 
 
 def _months_ago(n: int, day: int = 10) -> str:

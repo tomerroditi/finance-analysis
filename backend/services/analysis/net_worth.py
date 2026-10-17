@@ -13,8 +13,6 @@ import pandas as pd
 
 from backend.constants.categories import (
     CREDIT_CARDS,
-    IGNORE_CATEGORY,
-    INVESTMENTS_CATEGORY,
     LIABILITIES_CATEGORY,
     PRIOR_WEALTH_TAG,
     IncomeCategories,
@@ -93,10 +91,9 @@ class NetWorthMixin:
         (added when income exceeds expenses). Credit Cards and Ignore
         categories are excluded.
 
-        A refund matched to its purchase is netted against it (see
-        :meth:`CashflowMixin._net_matched_refunds`), so a fully repaid charge
-        stops flowing out to its category and stops flowing back in as a
-        ``Refunds:`` source. The ``Unknown`` destination is deliberately
+        Read off the spending view, so a refund matched to its purchase is
+        netted against it: a fully repaid charge stops flowing out to its
+        category and stops flowing back in as a ``Refunds:`` source. The ``Unknown`` destination is deliberately
         measured *before* netting: it is how much of the card bill has no
         itemized detail, a question about coverage that a refund does not
         answer. Netting first would shrink the itemized side of that
@@ -106,8 +103,7 @@ class NetWorthMixin:
         Parameters
         ----------
         exclude_pending_refunds : bool, optional
-            Passed to :meth:`CashflowMixin._net_matched_refunds`.
-            Defaults to True.
+            Passed to :meth:`TransactionViews.spending`. Defaults to True.
 
         Returns
         -------
@@ -119,22 +115,22 @@ class NetWorthMixin:
             - ``links`` – list of dicts with ``source`` (int), ``target`` (int),
               ``value`` (float), and ``label`` (str).
         """
-        df = self.repo.get_itemized_transactions(include_split_parents=False)
+        raw = self.repo.get_itemized_transactions(include_split_parents=False)
 
-        if df.empty:
+        if raw.empty:
             return {"nodes": [], "links": []}
 
-        # Calculate CC gap before filtering out Credit Cards category — and
-        # before netting, which would otherwise shrink only the itemized side.
-        bank_cc_payments = abs(df[df["category"] == CREDIT_CARDS]["amount"].sum())
+        # Card coverage is measured on the raw rows, before netting, which
+        # would otherwise shrink only the itemized side.
+        bank_cc_payments = abs(raw[raw["category"] == CREDIT_CARDS]["amount"].sum())
         itemized_cc_total = abs(
-            df[df["source"] == Tables.CREDIT_CARD.value]["amount"].sum()
+            raw[raw["source"] == Tables.CREDIT_CARD.value]["amount"].sum()
         )
         cc_gap = bank_cc_payments - itemized_cc_total
 
-        df = self._net_matched_refunds(df, exclude_pending_refunds)
-
-        df = df[df["category"] != CREDIT_CARDS]
+        view = self.views.spending(exclude_pending_refunds=exclude_pending_refunds)
+        income = view.income
+        expenses = view.expenses
 
         SALARY = IncomeCategories.SALARY.value
         OTHER_INCOME = IncomeCategories.OTHER_INCOME.value
@@ -144,38 +140,23 @@ class NetWorthMixin:
         sources: dict[str, float] = {}
         destinations: dict[str, float] = {}
 
-        sources[SALARY] = df[df["category"] == SALARY]["amount"].sum()
-        other_income_df = df[df["category"] == OTHER_INCOME]
+        sources[SALARY] = income[income["category"] == SALARY]["amount"].sum()
         sources[PRIOR_WEALTH_TAG] = (
             self.cash_balance_service.get_total_prior_wealth()
             + self.bank_balance_service.get_total_prior_wealth()
             + self.investments_service.get_total_prior_wealth()
         )
-        sources[OTHER_INCOME] = other_income_df[
-            other_income_df["tag"] != PRIOR_WEALTH_TAG
-        ]["amount"].sum()
-        sources["Loans"] = df[
-            (df["category"] == LIABILITIES_CATEGORY) & (df["amount"] > 0)
-        ]["amount"].sum()
+        sources[OTHER_INCOME] = income[income["category"] == OTHER_INCOME][
+            "amount"
+        ].sum()
+        is_debt = expenses["category"] == LIABILITIES_CATEGORY
+        sources["Loans"] = income[income["category"] == LIABILITIES_CATEGORY][
+            "amount"
+        ].sum()
 
-        destinations["Paid Debt"] = abs(
-            df[(df["category"] == LIABILITIES_CATEGORY) & (df["amount"] < 0)][
-                "amount"
-            ].sum()
-        )
+        destinations["Paid Debt"] = abs(expenses[is_debt]["amount"].sum())
 
-        # Ignore covers internal transfers and CC bill summaries. Its two legs
-        # only cancel when both are tracked, so any residual would otherwise
-        # surface as a phantom expense (or refund) and skew Wealth Growth.
-        exclude_cats = [
-            SALARY,
-            OTHER_INCOME,
-            LIABILITIES_CATEGORY,
-            INVESTMENTS_CATEGORY,
-            IGNORE_CATEGORY,
-        ]
-        expenses_df = df[~df["category"].isin(exclude_cats)]
-        for cat, group in expenses_df.groupby("category"):
+        for cat, group in expenses[~is_debt].groupby("category"):
             net = group["amount"].sum()
             if net > 0:
                 sources[f"Refunds: {cat}"] = net

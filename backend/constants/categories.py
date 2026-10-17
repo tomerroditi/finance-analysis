@@ -26,18 +26,6 @@ class IncomeCategories(Enum):
     OTHER_INCOME = "Other Income"
 
 
-# Categories excluded from expense breakdowns / analytics. Combines the
-# non-expense base set (Investments, Liabilities, the Credit Cards bank
-# bill-payment category, Ignore) with the income categories.
-NON_EXPENSE_CATEGORIES = [
-    INVESTMENTS_CATEGORY,
-    LIABILITIES_CATEGORY,
-    CREDIT_CARDS,
-    IGNORE_CATEGORY,
-    *(c.value for c in IncomeCategories),
-]
-
-
 #: A category is considered unused when it has had no transactions for this
 #: many months AND was itself created longer ago than this. One constant
 #: governs both windows so the rule reads as a single sentence.

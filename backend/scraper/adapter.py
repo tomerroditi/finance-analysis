@@ -33,6 +33,7 @@ from backend.repositories.credentials_repository import CredentialsRepository
 from backend.repositories.scraping_history_repository import ScrapingHistoryRepository
 from backend.repositories.transactions import TransactionsRepository
 from backend.services.bank_balance_service import BankBalanceService
+from backend.services.credentials_service import CredentialsService
 from backend.services.tagging_rules_service import TaggingRulesService
 from backend.services.tagging_service import CategoriesTagsService
 from backend.utils.log_sanitize import scrub
@@ -563,6 +564,9 @@ class ScraperAdapter:
                 CredentialsRepository(db).save_credentials(
                     self.service_name, self.provider_name, self.account_name, merged
                 )
+            # Written past the service, whose cache would go on holding the old
+            # token.
+            CredentialsService.clear_cache()
             logger.info(
                 "%s: Persisted long-term token; later scrapes can skip the SMS",
                 scrub(self._log_id),

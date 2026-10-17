@@ -6,6 +6,7 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
+from backend import database
 from backend.config import AppConfig
 from backend.constants.providers import (
     Fields,
@@ -31,6 +32,17 @@ CredentialsTree = dict[str, dict[str, dict[str, dict[str, Any]]]]
 # In-memory credentials cache, partitioned by the resolved database path
 # (see ``backend.utils.db_path_cache``).
 _credentials_cache: dict[str, CredentialsTree] = {}
+
+
+def _forget_credentials(db_path: str | None) -> None:
+    """Drop the cached credentials of one database file, or of every file."""
+    if db_path is None:
+        _credentials_cache.clear()
+    else:
+        _credentials_cache.pop(db_path, None)
+
+
+database.register_path_cache(_forget_credentials)
 
 
 # Sentinel returned by the API in place of stored secret values. Clients send
@@ -486,9 +498,4 @@ class CredentialsService:
     @staticmethod
     def clear_cache() -> None:
         """Clear the in-memory credentials cache for every partition."""
-        _credentials_cache.clear()
-
-    @staticmethod
-    def clear_cache_for(db_path: str) -> None:
-        """Drop the cache entry of one database file (replaced on disk)."""
-        _credentials_cache.pop(db_path, None)
+        _forget_credentials(None)

@@ -1,6 +1,7 @@
 ---
 paths:
   - "backend/services/analysis/**/*.py"
+  - "backend/services/transaction_views.py"
   - "backend/services/investments/**/*.py"
   - "backend/services/bank_balance_service.py"
   - "backend/services/cash_balance_service.py"
@@ -10,6 +11,17 @@ paths:
 # KPI Calculations - Financial Analysis Logic
 
 How we calculate financial KPIs across the dashboard. Every analytics method must follow these rules.
+
+**Where the rules live:** `backend/services/transaction_views.py`. Ask
+`TransactionViews(db)` for the **bank view** (what the accounts did — card
+statements as one bank debit) or the **spending view** (purchases one by one,
+the `Credit Cards` bill left out); each comes classified into income /
+expenses / investments, refund-netted, with insurance and prior-wealth rows
+left out. Don't re-filter `repo.get_table()` by category or source in a new
+method — a second copy of these rules is how the cards drifted apart. Terms:
+`CONTEXT.md`. Not yet on a view, because they don't net refunds yet: the
+overview totals, the forecast's month-to-date figures, `get_income_by_source`,
+`get_debt_payments_over_time` and recurring detection.
 
 ## Core Concepts
 
@@ -375,6 +387,6 @@ All previously identified code misalignments have been fixed:
 - `get_expenses_by_category()` now excludes `Credit Cards` category alongside other non-expense categories
 - `get_income_investments_and_expenses()` now filters non-expense categories from expenses, with negative Liabilities overriding back into expenses
 - Overview and net worth chart both use transaction-based investment totals (`-sum(all inv txns)`), not portfolio value
-- Ignore category is part of `NON_EXPENSE_CATEGORIES` (excluded from category breakdowns like the expense pie), but gets no special treatment in the income/expense masks used by aggregate totals
+- Ignore category is part of `NON_EXPENSE_CATEGORIES` in `transaction_views.py` (left out of the spending view), but the bank view still counts it as an expense (the complement rule)
 - `"Salay"` typo in `PROTECTED_CATEGORIES` corrected to `"Salary"`
 - `NonExpensesCategories` enum removed; non-expense categories now built from individual constants (`INVESTMENTS_CATEGORY`, `LIABILITIES_CATEGORY`) and `IncomeCategories` enum

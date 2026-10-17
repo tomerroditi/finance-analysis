@@ -649,14 +649,11 @@ def build_demo_database() -> None:
     # keyring, which the Vercel runtime does not ship, and this module is
     # imported by index.py and backend.demo_sessions on every cold start.
     from backend.services.credentials_service import CredentialsService
-    from backend.services.tagging_service import CategoriesTagsService
 
     config = AppConfig()
     token = config.set_demo_mode(True)
     try:
         database.reset_engines()
-        CredentialsService.clear_cache()
-        CategoriesTagsService.clear_cache()
 
         prepare_demo_database()
 

@@ -4,8 +4,9 @@ Real mode, demo mode and every per-visitor demo sandbox (see
 ``backend/demo_sessions.py``) each resolve to a different database file, so a
 module-level cache keyed by that path can never serve one context's data to
 another. ``CredentialsService`` and ``CategoriesTagsService`` key their caches
-this way; ``demo_sessions`` drops a sandbox's entries by the same path when
-its file is replaced.
+this way and register them with ``backend.database.register_path_cache``, so
+every engine reset — backup restore, demo rebuild, sandbox wipe — forgets the
+entries of the file it replaced.
 """
 
 from backend.config import AppConfig

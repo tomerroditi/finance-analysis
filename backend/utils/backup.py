@@ -240,7 +240,8 @@ def restore_backup(filename: str) -> None:
     # deleting the backup we're about to restore)
     backup_db(max_backups=0)
 
-    # Dispose every SQLAlchemy engine so no connections hold the DB file open
+    # Dispose every SQLAlchemy engine so no connections hold the DB file open,
+    # and forget every cache read through them
     from backend.database import reset_engines
 
     reset_engines()
@@ -264,6 +265,10 @@ def restore_backup(filename: str) -> None:
     # otherwise only runs at startup, so restoring an old backup produced
     # "no such column" errors until the app was restarted.
     _upgrade_restored_db()
+
+    # Again, now that the restored file is in place: a request served while
+    # the copy ran may have re-read the old file into a path-keyed cache.
+    reset_engines()
 
     logger.info("Database restored from %s", scrub(filename))
 
