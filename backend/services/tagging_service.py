@@ -7,6 +7,7 @@ from typing import Any
 import pandas as pd
 from sqlalchemy.orm import Session
 
+from backend import database
 from backend.constants.categories import (
     PROTECTED_CATEGORIES,
     PROTECTED_TAGS,
@@ -29,6 +30,17 @@ from backend.utils.text_utils import to_title_case
 # In-memory categories cache, partitioned by the resolved database path
 # (see ``backend.utils.db_path_cache``).
 _categories_cache: dict[str, dict[str, list[str]]] = {}
+
+
+def _forget_categories(db_path: str | None) -> None:
+    """Drop the cached categories of one database file, or of every file."""
+    if db_path is None:
+        _categories_cache.clear()
+    else:
+        _categories_cache.pop(db_path, None)
+
+
+database.register_path_cache(_forget_categories)
 
 
 def _clean_name(name: object) -> str | None:
@@ -107,12 +119,7 @@ class CategoriesTagsService:
     @staticmethod
     def clear_cache() -> None:
         """Clear the in-memory categories cache for every partition."""
-        _categories_cache.clear()
-
-    @staticmethod
-    def clear_cache_for(db_path: str) -> None:
-        """Drop the cache entry of one database file (replaced on disk)."""
-        _categories_cache.pop(db_path, None)
+        _forget_categories(None)
 
     def get_categories_icons(self) -> dict[str, str]:
         """Load the category icons.

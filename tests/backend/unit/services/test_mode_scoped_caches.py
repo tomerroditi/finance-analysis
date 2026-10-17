@@ -7,6 +7,7 @@ from ever serving another's cached categories or credentials.
 
 from contextlib import contextmanager
 
+from backend import database
 from backend.config import AppConfig
 from backend.services import credentials_service, tagging_service
 
@@ -87,15 +88,24 @@ class TestCredentialsCacheIsPathScoped:
 
         assert credentials_service._credentials_cache == {}
 
-    def test_clear_cache_for_drops_only_that_path(self):
+    def test_engine_reset_for_one_path_drops_only_that_path(self):
         """Verify a replaced sandbox file evicts its own entry and nothing else."""
         real, sandbox = credentials_service.cache_key(), _demo_key(SANDBOX_ID)
         credentials_service._credentials_cache[real] = {"real": {}}
         credentials_service._credentials_cache[sandbox] = {"sandbox": {}}
 
-        credentials_service.CredentialsService.clear_cache_for(sandbox)
+        database.reset_engine_for(sandbox)
 
         assert credentials_service._credentials_cache == {real: {"real": {}}}
+
+    def test_engine_reset_drops_every_path(self):
+        """Verify replacing every database (a backup restore) evicts every entry."""
+        credentials_service._credentials_cache[credentials_service.cache_key()] = {"real": {}}
+        credentials_service._credentials_cache[_demo_key()] = {"demo": {}}
+
+        database.reset_engines()
+
+        assert credentials_service._credentials_cache == {}
 
 
 class TestCategoriesCacheIsPathScoped:
@@ -147,6 +157,15 @@ class TestCategoriesCacheIsPathScoped:
         tagging_service._categories_cache[demo] = {"Shared": []}
         tagging_service._categories_cache[sandbox] = {"Mine": []}
 
-        tagging_service.CategoriesTagsService.clear_cache_for(sandbox)
+        database.reset_engine_for(sandbox)
 
         assert tagging_service._categories_cache == {demo: {"Shared": []}}
+
+    def test_engine_reset_drops_every_path(self):
+        """Verify replacing every database (a backup restore) evicts every entry."""
+        tagging_service._categories_cache[tagging_service.cache_key()] = {"Real": []}
+        tagging_service._categories_cache[_demo_key()] = {"Demo": []}
+
+        database.reset_engines()
+
+        assert tagging_service._categories_cache == {}

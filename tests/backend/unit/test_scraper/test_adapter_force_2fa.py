@@ -5,6 +5,8 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 from backend.scraper.adapter import ScraperAdapter
+from backend.services import credentials_service
+from backend.utils.db_path_cache import cache_key
 
 
 def _adapter(force_2fa: bool) -> ScraperAdapter:
@@ -56,6 +58,23 @@ class TestPersistRefreshedOtpToken:
             adapter._persist_refreshed_otp_token(scraper)
 
         assert mock_repo.save_credentials.call_args.args[3]["otpLongTermToken"] == "NEW"
+
+    def test_persisting_drops_the_cached_credentials(self, monkeypatch):
+        """A fresh token evicts the service's cached copy of the old one."""
+        monkeypatch.setattr(
+            credentials_service,
+            "_credentials_cache",
+            {cache_key(): {"banks": {"onezero": {"Acc": {"otpLongTermToken": "OLD"}}}}},
+        )
+        adapter = _adapter(force_2fa=True)
+        scraper = SimpleNamespace(refreshed_otp_long_term_token="NEW")
+        with patch("backend.scraper.adapter.CredentialsRepository"), patch(
+            "backend.scraper.adapter.get_db_context"
+        ) as mock_ctx:
+            mock_ctx.return_value.__enter__.return_value = MagicMock()
+            adapter._persist_refreshed_otp_token(scraper)
+
+        assert credentials_service._credentials_cache == {}
 
     def test_no_persist_when_the_token_is_unchanged(self):
         """A token identical to the stored one skips the Keyring write."""

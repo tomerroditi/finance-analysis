@@ -133,21 +133,12 @@ def blob_pathname(session_id: str) -> str:
 def _forget_database(db_path: str) -> None:
     """Drop everything the process remembers about a replaced DB file.
 
-    The engine registry and the module-level categories/credentials caches
-    are all partitioned by path; a sandbox that was restored, re-seeded or
-    wiped must not be served from state belonging to the previous file.
+    The engine registry and every path-keyed cache it tracks (categories,
+    credentials) are forgotten together; a sandbox that was restored,
+    re-seeded or wiped must not be served from state belonging to the
+    previous file.
     """
     database.reset_engine_for(db_path)
-    from backend.services.tagging_service import CategoriesTagsService
-
-    CategoriesTagsService.clear_cache_for(db_path)
-    try:
-        from backend.services.credentials_service import CredentialsService
-    except ImportError:
-        # The Vercel runtime ships no keyring, so credentials_service cannot
-        # import there — and then its cache cannot hold anything either.
-        return
-    CredentialsService.clear_cache_for(db_path)
 
 
 def _discard_local_copy(db_path: str) -> None:

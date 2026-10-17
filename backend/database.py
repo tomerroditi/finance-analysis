@@ -6,7 +6,7 @@ real and demo databases (and per-visitor demo sandboxes) each get their own.
 
 import os
 import threading
-from collections.abc import Generator
+from collections.abc import Callable, Generator
 from contextlib import contextmanager, suppress
 
 from sqlalchemy import create_engine
@@ -94,6 +94,11 @@ def create_db_engine(db_path: str | None = None, echo: bool = False) -> Engine:
 # to resolve to the same file correctly share one engine.
 _engines: dict[str, Engine] = {}
 _session_factories: dict[str, sessionmaker[Session]] = {}
+
+# Module-level caches keyed by database path (categories, credentials), each
+# forgotten alongside the engine it was read through — see
+# ``register_path_cache``.
+_path_caches: list[Callable[[str | None], None]] = []
 
 # Guards lazy creation. Requests are served from a threadpool, so two threads
 # can miss the cache for the same path at once; without the lock they would
@@ -231,7 +236,7 @@ def reset_engine_for(db_path: str) -> None:
         _session_factories.pop(db_path, None)
     if engine is not None:
         engine.dispose()
-    data_cache.clear()
+    _forget_path_caches(db_path)
 
 
 def reset_engines() -> None:
@@ -247,4 +252,27 @@ def reset_engines() -> None:
         _session_factories.clear()
     for engine in engines:
         engine.dispose()
+    _forget_path_caches(None)
+
+
+def register_path_cache(forget: Callable[[str | None], None]) -> None:
+    """
+    Register a process-wide cache that is partitioned by database path.
+
+    Every engine reset calls ``forget`` with the path being reset, or with
+    ``None`` when every path is, so a cache can never outlive the database
+    file it was read from. Register once, at module import.
+
+    Parameters
+    ----------
+    forget : Callable[[str | None], None]
+        Drops the cache's entries for one path, or for every path on ``None``.
+    """
+    _path_caches.append(forget)
+
+
+def _forget_path_caches(db_path: str | None) -> None:
+    """Drop every cached read of ``db_path`` (or of every path on ``None``)."""
     data_cache.clear()
+    for forget in _path_caches:
+        forget(db_path)
