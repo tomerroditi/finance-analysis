@@ -1,3 +1,9 @@
+## v1.108.3 (2026-10-17)
+
+### Fix
+
+- forget caches on backup restore, read analytics through one transaction view (#404)
+
 ## v1.108.2 (2026-10-17)
 
 ### Fix
