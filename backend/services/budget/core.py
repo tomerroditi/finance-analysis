@@ -38,7 +38,7 @@ from backend.services.pending_refunds_service import (
     apply_refund_amount_adjustments,
 )
 from backend.services.tagging_service import CategoriesTagsService
-from backend.services.transaction_classification import EXPENSE_EXCLUDED_CATEGORIES
+from backend.services.transaction_views import NON_EXPENSE_CATEGORIES
 from backend.services.transactions_service import TransactionsService
 
 # Serializes the auto-fill of a month's budget rules across concurrent
@@ -704,7 +704,7 @@ class BudgetService:
         """Return a copy of ``all_data`` without non-expense categories, dates parsed."""
         expenses = all_data.loc[
             ~all_data[TransactionsTableFields.CATEGORY.value].isin(
-                EXPENSE_EXCLUDED_CATEGORIES
+                NON_EXPENSE_CATEGORIES
             )
         ].copy()
         expenses[TransactionsTableFields.DATE.value] = pd.to_datetime(

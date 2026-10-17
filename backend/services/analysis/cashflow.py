@@ -3,8 +3,8 @@ Cash-flow aggregations for the analysis service.
 
 Provides the ``CashflowMixin`` with income/expense/debt-over-time series,
 income-by-source and expenses-by-category-over-time breakdowns, and the
-income/investments/expenses totals. Row classification itself lives in
-``backend.services.transaction_classification``. Mixed into
+income/investments/expenses totals. Which rows count as what lives in
+``backend.services.transaction_views``. Mixed into
 ``AnalysisService`` (see ``core.py``).
 """
 
@@ -16,12 +16,12 @@ import pandas as pd
 
 from backend.constants.categories import (
     LIABILITIES_CATEGORY,
-    NON_EXPENSE_CATEGORIES,
     PRIOR_WEALTH_TAG,
 )
 from backend.constants.tables import TransactionsTableFields
-from backend.repositories.budget_repository import BudgetRepository
-from backend.services.transaction_classification import (
+from backend.services.transaction_views import (
+    INCOME,
+    TransactionView,
     income_mask,
     transactions_masks,
 )
@@ -30,44 +30,6 @@ from backend.utils.dataframe_dates import to_month_series
 
 class CashflowMixin:
     """Cash-flow aggregation methods for ``AnalysisService``."""
-
-    def _net_matched_refunds(
-        self, df: pd.DataFrame, exclude_pending_refunds: bool
-    ) -> pd.DataFrame:
-        """
-        Net refunds matched to a purchase out of both sides of a frame.
-
-        A refund and the purchase it pays back are one event, but they rarely
-        share a month, and an unlinked positive amount can only ever net
-        against the month it lands in. ``refund_links`` records which purchase
-        each incoming transaction repays, so the matched money is taken off
-        the purchase and off the refund alike, whatever months they fell in,
-        and neither shows up as that month's expense or income.
-
-        Parameters
-        ----------
-        df : pd.DataFrame
-            Transactions frame to net, straight from the repository.
-        exclude_pending_refunds : bool
-            Whether a still-outstanding expectation is dropped from its
-            purchase as well — the card's "Pending Refunds Excluded" chip.
-
-        Returns
-        -------
-        pd.DataFrame
-            The frame with ``amount`` netted.
-        """
-        # Local import: pending_refunds_service imports the transactions
-        # repository, which the analysis service is itself constructed with.
-        from backend.services.pending_refunds_service import (
-            PendingRefundsService,
-            apply_refund_amount_adjustments,
-        )
-
-        adjustments = PendingRefundsService(self.db).get_refund_amount_adjustments(
-            exclude_open=exclude_pending_refunds
-        )
-        return apply_refund_amount_adjustments(df, adjustments)
 
     @staticmethod
     def _filter_date_window(
@@ -109,8 +71,8 @@ class CashflowMixin:
         """
         Aggregate income and expenses by month over time.
 
-        Credit card transactions are excluded to avoid double-counting
-        (bank debits already capture the net payment).
+        Read off the bank view: a card statement counts once, as the bank
+        debit that paid it.
 
         Parameters
         ----------
@@ -124,7 +86,7 @@ class CashflowMixin:
             expense category, or a negative one in an income category — so the
             figures are gross rather than net. Defaults to False.
         exclude_pending_refunds : bool, optional
-            Passed to :meth:`_net_matched_refunds`: whether a purchase still
+            Passed to :meth:`TransactionViews.bank`: whether a purchase still
             awaiting its refund is dropped. Matched refunds are netted either
             way. Defaults to True.
 
@@ -139,58 +101,39 @@ class CashflowMixin:
               for deposits).
             - ``expenses`` – total expenses for the month (absolute value).
         """
-        df = self.repo.get_table()
-
-        if df.empty:
+        view = self.views.bank(
+            exclude_pending_refunds=exclude_pending_refunds,
+            exclude_projects=exclude_projects,
+            exclude_liabilities=exclude_liabilities,
+        )
+        if not view.months:
             return []
 
-        df = self._net_matched_refunds(df, exclude_pending_refunds)
-
-        if exclude_projects:
-            project_names = BudgetRepository(self.db).read_project_category_names()
-            if project_names:
-                df = df[~df[TransactionsTableFields.CATEGORY.value].isin(project_names)]
-
-        if exclude_liabilities:
-            df = df[df[TransactionsTableFields.CATEGORY.value] != LIABILITIES_CATEGORY]
-
-        df["month"] = to_month_series(df["date"])
-        # Month index from the *pre-exclusion* frame: a CC-only month must
-        # still appear (with zeros), matching the historical per-month loop.
-        months = sorted(df["month"].unique())
-
-        flow = df[~df["source"].isin(self.repo._CASHFLOW_EXCLUDED)]
-        masks = transactions_masks(flow)
-
-        income_amounts = flow["amount"].where(masks["income"], 0.0)
-        expense_amounts = flow["amount"].where(masks["expenses"], 0.0)
+        # Temporary: the bank view leaves prior-wealth rows out, but this
+        # series has always counted them as income. Removed by
+        # .scratch/transaction-views/issues/03 (prior wealth).
+        legacy = self.repo.get_cashflow_transactions()
+        legacy = legacy[
+            (legacy[TransactionsTableFields.TAG.value] == PRIOR_WEALTH_TAG)
+            & income_mask(legacy)
+        ]
+        income = pd.concat([view.income, legacy.assign(kind=INCOME)])
+        expenses = view.expenses
         if exclude_refunds:
-            income_amounts = income_amounts.where(flow["amount"] > 0, 0.0)
-            expense_amounts = expense_amounts.where(flow["amount"] < 0, 0.0)
-        investment_amounts = flow["amount"].where(masks["investments"], 0.0)
-
-        grouped = (
-            pd.DataFrame(
-                {
-                    "month": flow["month"],
-                    "income": income_amounts,
-                    "investments": investment_amounts,
-                    "expenses": expense_amounts,
-                }
-            )
-            .groupby("month")
-            .sum()
-            .reindex(months, fill_value=0.0)
-        )
+            income = income[income["amount"] > 0]
+            expenses = expenses[expenses["amount"] < 0]
+        monthly = TransactionView(
+            rows=pd.concat([income, expenses, view.investments]), months=view.months
+        ).monthly()
 
         return [
             {
                 "month": month,
                 "income": float(row["income"]),
-                "investments": float(row["investments"]) * -1,
-                "expenses": float(row["expenses"]) * -1,
+                "investments": float(row["investments"]),
+                "expenses": float(row["expenses"]),
             }
-            for month, row in grouped.iterrows()
+            for month, row in monthly.iterrows()
         ]
 
     def get_debt_payments_over_time(self) -> list[dict[str, Any]]:
@@ -333,7 +276,7 @@ class CashflowMixin:
         Parameters
         ----------
         exclude_pending_refunds : bool, optional
-            Passed to :meth:`_net_matched_refunds`. Defaults to True.
+            Passed to :meth:`TransactionViews.spending`. Defaults to True.
         exclude_projects : bool, optional
             If True, drop categories that are project-budget names — planned
             lumpy spending the caller may want out of its ordinary-spend view.
@@ -353,35 +296,11 @@ class CashflowMixin:
             - ``categories`` – dict mapping category name to expense amount
               (positive for spend, negative for a category left in credit).
         """
-        df = self.repo.get_itemized_transactions()
-
-        if df.empty:
-            return []
-
-        df = self._net_matched_refunds(df, exclude_pending_refunds)
-
-        # Expense categories at any sign — a positive row in one is a refund,
-        # and it belongs in its category's total, not dropped. Liabilities is
-        # the exception: a positive one is a loan receipt, which is income.
-        regular_expense_mask = ~df["category"].isin(NON_EXPENSE_CATEGORIES)
-        debt_payment_mask = (df["category"] == LIABILITIES_CATEGORY) & (
-            df["amount"] < 0
-        )
-        expense_mask = (
-            regular_expense_mask
-            if exclude_liabilities
-            else regular_expense_mask | debt_payment_mask
-        )
-        expenses = df[expense_mask].copy()
-
-        if exclude_projects:
-            project_names = BudgetRepository(self.db).read_project_category_names()
-            if project_names:
-                expenses = expenses[
-                    ~expenses[TransactionsTableFields.CATEGORY.value].isin(
-                        project_names
-                    )
-                ]
+        expenses = self.views.spending(
+            exclude_pending_refunds=exclude_pending_refunds,
+            exclude_projects=exclude_projects,
+            exclude_liabilities=exclude_liabilities,
+        ).expenses.copy()
 
         if expenses.empty:
             return []
@@ -420,7 +339,7 @@ class CashflowMixin:
         Parameters
         ----------
         exclude_pending_refunds : bool, optional
-            Passed to :meth:`_net_matched_refunds`. A refund that landed in an
+            Passed to :meth:`TransactionViews.bank`. A refund that landed in an
             income category is money coming back, not earnings, so netting it
             keeps it out of the breakdown. Defaults to True.
         exclude_liabilities : bool, optional
@@ -436,24 +355,10 @@ class CashflowMixin:
             List of ``{month, sources: {label: amount}, total}`` records
             ordered chronologically. Prior Wealth transactions are excluded.
         """
-        df = self.repo.get_table()
-
-        if df.empty:
-            return []
-
-        df = self._net_matched_refunds(df, exclude_pending_refunds)
-
-        # Credit card and insurance rows are excluded, as in the other income methods.
-        df = df[~df["source"].isin(self.repo._CASHFLOW_EXCLUDED)]
-
-        if df.empty:
-            return []
-
-        income_df = df[income_mask(df)].copy()
-        income_df = income_df[income_df["tag"] != PRIOR_WEALTH_TAG]
-
-        if exclude_liabilities:
-            income_df = income_df[income_df["category"] != LIABILITIES_CATEGORY]
+        income_df = self.views.bank(
+            exclude_pending_refunds=exclude_pending_refunds,
+            exclude_liabilities=exclude_liabilities,
+        ).income.copy()
 
         if income_df.empty:
             return []

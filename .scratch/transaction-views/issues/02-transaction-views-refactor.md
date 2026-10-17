@@ -1,6 +1,6 @@
 # 02 — Transaction views: pure refactor
 
-Status: ready-for-agent
+Status: claimed
 Blocked by: 01
 
 No figure on any card or endpoint moves. See `../spec.md` for the decisions.
@@ -18,21 +18,26 @@ No figure on any card or endpoint moves. See `../spec.md` for the decisions.
    interface on a seeded DB: card dedup per view, insurance left out,
    prior-wealth left out, refund netting (matched always, pending by
    option), projects, liabilities, `monthly()` keeps empty months.
-4. **Migrate callers.**
-   - `analysis/cashflow.py`: `get_income_expenses_over_time`,
-     `get_income_investments_and_expenses`, `get_income_by_source(_over_time)`,
-     `get_expenses_by_category_over_time`, `get_monthly_expenses`;
-     `_net_matched_refunds` deleted.
-   - `analysis/net_worth.py` Sankey (still adds prior wealth itself).
-   - `recurring_service.py` expense and income filters.
-   - `insights_service.py`.
-   - `savings_goals/inputs.py` (drops its own claimed rows; claimed rows
-     still read raw).
-   - `analysis/forecast.py` classification.
-   - `fire_plan_service.py` typical month.
-   - `budget/core.py`: only switches to the module's category constant.
+4. **Migrate callers that already net refunds.**
+   - `analysis/cashflow.py`: `get_income_expenses_over_time` (bank),
+     `get_expenses_by_category_over_time` (spending),
+     `get_income_by_source_over_time` (bank); `_net_matched_refunds` deleted.
+     `get_income_expenses_over_time` keeps a marked shim adding prior-wealth
+     rows back as income — the demo has a 15,000 one — removed in 03.
+   - `analysis/net_worth.py` Sankey (spending view; still adds prior wealth
+     itself and measures card coverage on raw rows).
+   - `insights_service.py` large-charge rule; its `_net_matched_refunds`
+     deleted. (Its category spend already comes via cashflow.)
+   - `savings_goals/inputs.py` surplus (spending view, pending kept; drops its
+     own claimed rows; claimed rows still read raw).
+   - Forecast and FIRE plan follow automatically through
+     `get_income_expenses_over_time`.
+   - `budget/core.py`: only switches to the module's category constant; the
+     duplicate `constants.categories.NON_EXPENSE_CATEGORIES` is deleted.
 5. Repository: `_CASHFLOW_EXCLUDED`, `get_cashflow_transactions`,
-   `get_itemized_transactions` read only by the views module.
+   `get_itemized_transactions` end up read only by the views module once 03
+   moves the remaining callers (the Sankey keeps one raw read for card
+   coverage).
 6. Update `.claude/rules/kpi_calculations.md` to point at the module.
 
 ## Done when

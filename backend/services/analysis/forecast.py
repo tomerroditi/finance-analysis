@@ -12,7 +12,7 @@ import pandas as pd
 
 from backend.constants.providers import Services
 from backend.constants.tables import TransactionsTableFields
-from backend.services.transaction_classification import transactions_masks
+from backend.services.transaction_views import transactions_masks
 from backend.utils.dataframe_dates import to_month_series
 
 

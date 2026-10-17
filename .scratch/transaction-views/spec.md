@@ -29,7 +29,7 @@ re-derived by hand in 4–5 services, and the copies disagree:
 
 | # | Decision |
 |---|----------|
-| Q1 | Two named views, **bank** and **spending**, each classified into income / expenses / investments. The Sankey moves onto the bank view. |
+| Q1 | Two named views, **bank** and **spending**, each classified into income / expenses / investments. The Sankey moves onto the spending view (it reads card purchases item by item — corrected during step 1). |
 | Q2 | `Ignore` is left out of both views (lands in step 2 — it changes figures). |
 | Q3 | Matched refunds are always netted inside a view; only `exclude_pending_refunds` varies. |
 | Q4 | Two steps: a pure refactor that moves no figure, then the fixes, each with its own before/after test. |
@@ -37,7 +37,7 @@ re-derived by hand in 4–5 services, and the copies disagree:
 | Q6 | A view exposes `.income`, `.expenses`, `.investments` row frames plus `.monthly()` (every month present, signed as the cards show it). |
 | Q7 | View options: `exclude_pending_refunds`, `exclude_projects`, `exclude_liabilities`. Date windows stay with callers. No generic row-exclusion option. |
 | Q8 | Savings asks for the spending view and drops its own goal-claimed rows; in step 1 it keeps reading claimed rows raw. |
-| Q9 | Step 1 migrates every caller except budget's `get_filtered_expenses`, which only switches to the module's category constant; its filtering moves with the budget claim-ledger work. |
+| Q9 | Step 1 migrates every caller that already nets refunds; callers that don't (overview, forecast month-to-date, `income-by-source`, recurring, debt payments) move in step 2, since netting them moves figures. Budget's `get_filtered_expenses` only switches to the module's category constant; its filtering moves with the budget claim-ledger work. |
 | Q10 | Step 1 is proven by temporary golden snapshots against the bundled demo DB plus permanent table-driven view tests, one per rule. |
 | Q11 | Prior-wealth rows are left out of both views; the Sankey reads prior wealth itself. |
 | Q12 | Each view is memoised by `(view, options)` through `data_cache`. |

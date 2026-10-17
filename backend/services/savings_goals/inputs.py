@@ -12,7 +12,7 @@ from typing import Any
 
 import pandas as pd
 
-from backend.constants.categories import CREDIT_CARDS, IGNORE_CATEGORY, PRIOR_WEALTH_TAG
+from backend.constants.categories import PRIOR_WEALTH_TAG
 from backend.constants.tables import TransactionsTableFields
 from backend.models.savings_goal import (
     GOAL_STATUS_CLOSED,
@@ -22,12 +22,8 @@ from backend.models.savings_goal import (
 )
 from backend.services.bank_balance_service import BankBalanceService
 from backend.services.cash_balance_service import CashBalanceService
-from backend.services.pending_refunds_service import (
-    PendingRefundsService,
-    apply_refund_amount_adjustments,
-)
 from backend.services.savings_goals.common import month_key
-from backend.services.transaction_classification import transactions_masks
+from backend.services.transaction_views import INVESTMENT, TransactionViews
 
 # Rows synthesised from prior-wealth balances are opening capital, not income.
 # Counting them would hand one month an enormous phantom surplus.
@@ -36,11 +32,6 @@ _PRIOR_WEALTH_SOURCES = {"bank_balances", "investments"}
 # Insurance rows are not cash flow. Same exclusion the cashflow analysis applies.
 _CREDIT_CARD_SOURCE = "credit_card_transactions"
 _SURPLUS_EXCLUDED_SOURCES = {"insurance_transactions"}
-
-# Neither earned nor spent, for the surplus: the bank-side bill that pays for
-# card purchases already counted one by one, and money moved between the
-# household's own accounts. The Income & Expenses card leaves out the same.
-_NOT_SAVING_CATEGORIES = {CREDIT_CARDS, IGNORE_CATEGORY}
 
 _ALL_TAGS = "all_tags"
 
@@ -151,45 +142,36 @@ class InputsMixin:
         df["_goal_id"] = [goal_of.get(k, (None, None))[0] for k in keys]
         df["_link_type"] = [goal_of.get(k, (None, None))[1] for k in keys]
 
-        # The surplus measures a month the way the Income & Expenses card
-        # does: card purchases one by one, on the day they were made. A card
-        # row only reaches a goal as money spent out of it.
+        # A card row only reaches a goal as money spent out of it.
         is_card = df[source_col] == _CREDIT_CARD_SOURCE
         card_income = is_card & (df["_link_type"] == LINK_CONTRIBUTION)
         linked = df[df["_goal_id"].notna() & ~card_income]
-        unlinked = df[
-            df["_goal_id"].isna()
-            & ~df[TransactionsTableFields.CATEGORY.value].isin(_NOT_SAVING_CATEGORIES)
-        ]
 
+        # The surplus measures a month the way the Income & Expenses card
+        # does — the spending view, card purchases on the day they were made
+        # and a matched refund in its purchase's month — less what the goals
+        # claim for themselves.
         surplus: dict[tuple[int, int], float] = {}
         invested: dict[tuple[int, int], float] = {}
+        spending = TransactionViews(self.db).spending(exclude_pending_refunds=False)
+        unlinked = spending.rows[
+            [k not in goal_of for k in self._row_keys(spending.rows)]
+        ]
         if not unlinked.empty:
-            # A refund matched to its purchase counts in the purchase's month,
-            # as the Income & Expenses card counts it.
-            unlinked = apply_refund_amount_adjustments(
-                unlinked,
-                PendingRefundsService(self.db).get_refund_amount_adjustments(
-                    exclude_open=False
-                ),
-            )
-            masks = transactions_masks(unlinked)
-            income = (
-                unlinked[masks["income"]].groupby(["_year", "_month"])[amount_col].sum()
-            )
-            expenses = (
-                unlinked[masks["expenses"]]
-                .groupby(["_year", "_month"])[amount_col]
-                .sum()
-            )
-            investments = (
-                unlinked[masks["investments"]]
-                .groupby(["_year", "_month"])[amount_col]
-                .sum()
+            parsed_unlinked = pd.to_datetime(unlinked[date_col])
+            unlinked = unlinked.assign(
+                _ym=list(
+                    zip(parsed_unlinked.dt.year, parsed_unlinked.dt.month, strict=True)
+                )
             )
             # Expenses and investments are negative in the raw convention, so
-            # summing all three straight through already nets them out.
-            combined = income.add(expenses, fill_value=0).add(investments, fill_value=0)
+            # summing every kind straight through already nets them out.
+            combined = unlinked.groupby("_ym")[amount_col].sum()
+            investments = (
+                unlinked[unlinked["kind"] == INVESTMENT]
+                .groupby("_ym")[amount_col]
+                .sum()
+            )
             surplus = {(int(y), int(m)): float(v) for (y, m), v in combined.items()}
             invested = {
                 (int(y), int(m)): -float(v) for (y, m), v in investments.items()

@@ -36,18 +36,13 @@ from backend.constants.budget import (
     TOTAL_BUDGET,
     YEAR,
 )
-from backend.constants.categories import NON_EXPENSE_CATEGORIES
 from backend.repositories.insight_dismissals_repository import (
     InsightDismissalsRepository,
 )
-from backend.repositories.transactions import TransactionsRepository
 from backend.services.analysis import AnalysisService
 from backend.services.budget.core import BudgetService
-from backend.services.pending_refunds_service import (
-    PendingRefundsService,
-    apply_refund_amount_adjustments,
-)
 from backend.services.recurring_service import RecurringService
+from backend.services.transaction_views import TransactionViews
 
 
 @dataclass(frozen=True)
@@ -118,7 +113,7 @@ class InsightsService:
         self.db = db
         self.analysis = AnalysisService(db)
         self.recurring = RecurringService(db)
-        self.repo = TransactionsRepository(db)
+        self.views = TransactionViews(db)
         self.budget = BudgetService(db)
         self.dismissals = InsightDismissalsRepository(db)
         # Per-request memo: every rule below needs the forecast, the budget
@@ -279,25 +274,6 @@ class InsightsService:
                 if item.get("confirmation") == "confirmed" and item.get("normalized")
             }
         return self._cache["recurring_keys"]
-
-    def _net_matched_refunds(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Net refunds matched to their purchase out of a transactions frame.
-
-        Parameters
-        ----------
-        df : pd.DataFrame
-            Transactions frame straight from the repository.
-
-        Returns
-        -------
-        pd.DataFrame
-            The frame with ``amount`` netted.
-        """
-        if "refund_adjustments" not in self._cache:
-            self._cache["refund_adjustments"] = PendingRefundsService(
-                self.db
-            ).get_refund_amount_adjustments(exclude_open=True)
-        return apply_refund_amount_adjustments(df, self._cache["refund_adjustments"])
 
     def _monthly_category_spend(self) -> list[dict[str, Any]]:
         """Return monthly expense totals per category (memoized)."""
@@ -515,11 +491,7 @@ class InsightsService:
         only ever looked at negative ones. The netting applies to the trailing
         history and the median too, so the comparison stays like for like.
         """
-        df = self._net_matched_refunds(self.repo.get_itemized_transactions())
-        if df.empty:
-            return []
-
-        df = df[~df["category"].isin(NON_EXPENSE_CATEGORIES)]
+        df = self.views.spending(exclude_liabilities=True).expenses
         df = df[df["amount"] < 0].copy()
         if df.empty:
             return []

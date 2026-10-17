@@ -51,7 +51,7 @@ from backend.services.recurring_detection import (
     detect_streams,
     normalize,
 )
-from backend.services.transaction_classification import income_mask
+from backend.services.transaction_views import income_mask
 from backend.utils import data_cache
 
 

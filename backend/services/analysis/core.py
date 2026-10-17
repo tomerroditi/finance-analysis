@@ -20,6 +20,7 @@ from backend.services.analysis.net_worth import NetWorthMixin
 from backend.services.bank_balance_service import BankBalanceService
 from backend.services.cash_balance_service import CashBalanceService
 from backend.services.investments import InvestmentsService
+from backend.services.transaction_views import TransactionViews
 
 
 class AnalysisService(CashflowMixin, NetWorthMixin, ForecastMixin):
@@ -42,6 +43,7 @@ class AnalysisService(CashflowMixin, NetWorthMixin, ForecastMixin):
         """
         self.db = db
         self.repo = TransactionsRepository(db)
+        self.views = TransactionViews(db)
         self.balance_repo = BankBalanceRepository(db)
         self.investments_repo = InvestmentsRepository(db)
         self.investments_service = InvestmentsService(db)
