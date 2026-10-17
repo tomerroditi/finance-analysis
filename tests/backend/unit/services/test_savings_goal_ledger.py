@@ -165,7 +165,7 @@ class TestSpendingOutOfAGoal:
             name="Trip", target_amount=5000, initial_amount=4000, start_month=month
         )[0]
         service.set_spending_link(goal["id"], "Travel")
-        _bank(db_session, month, -1500, "Travel", day=20)
+        _bank(db_session, month, -1500, "Travel", day=date.today().day)
 
         service._invalidate()
         goal = _goal(service.get_all(), "Trip")
