@@ -19,8 +19,9 @@ the `Credit Cards` bill left out); each comes classified into income /
 expenses / investments, refund-netted, with insurance and prior-wealth rows
 left out. Don't re-filter `repo.get_table()` by category or source in a new
 method — a second copy of these rules is how the cards drifted apart. Terms:
-`CONTEXT.md`. Callers not yet moved onto a view (they don't net refunds yet):
-`.scratch/transaction-views/issues/03-transaction-views-fixes.md`.
+`CONTEXT.md`. Not yet on a view, because they don't net refunds yet: the
+overview totals, the forecast's month-to-date figures, `get_income_by_source`,
+`get_debt_payments_over_time` and recurring detection.
 
 ## Core Concepts
 
@@ -386,6 +387,6 @@ All previously identified code misalignments have been fixed:
 - `get_expenses_by_category()` now excludes `Credit Cards` category alongside other non-expense categories
 - `get_income_investments_and_expenses()` now filters non-expense categories from expenses, with negative Liabilities overriding back into expenses
 - Overview and net worth chart both use transaction-based investment totals (`-sum(all inv txns)`), not portfolio value
-- Ignore category is part of `NON_EXPENSE_CATEGORIES` in `transaction_views.py` (left out of the spending view), but the bank view still counts it as an expense until `.scratch/transaction-views/issues/03` lands
+- Ignore category is part of `NON_EXPENSE_CATEGORIES` in `transaction_views.py` (left out of the spending view), but the bank view still counts it as an expense (the complement rule)
 - `"Salay"` typo in `PROTECTED_CATEGORIES` corrected to `"Salary"`
 - `NonExpensesCategories` enum removed; non-expense categories now built from individual constants (`INVESTMENTS_CATEGORY`, `LIABILITIES_CATEGORY`) and `IncomeCategories` enum
