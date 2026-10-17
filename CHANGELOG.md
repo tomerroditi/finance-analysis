@@ -1,3 +1,9 @@
+## v1.108.2 (2026-10-17)
+
+### Fix
+
+- **tooltip**: stop closed and RTL help panels widening the page on phones (#402)
+
 ## v1.108.1 (2026-10-13)
 
 ### Fix
