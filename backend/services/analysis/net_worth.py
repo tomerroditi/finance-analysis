@@ -141,11 +141,7 @@ class NetWorthMixin:
         destinations: dict[str, float] = {}
 
         sources[SALARY] = income[income["category"] == SALARY]["amount"].sum()
-        sources[PRIOR_WEALTH_TAG] = (
-            self.cash_balance_service.get_total_prior_wealth()
-            + self.bank_balance_service.get_total_prior_wealth()
-            + self.investments_service.get_total_prior_wealth()
-        )
+        sources[PRIOR_WEALTH_TAG] = self.get_total_prior_wealth()
         sources[OTHER_INCOME] = income[income["category"] == OTHER_INCOME][
             "amount"
         ].sum()

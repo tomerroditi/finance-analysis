@@ -12,7 +12,6 @@ import pandas as pd
 
 from backend.constants.providers import Services
 from backend.constants.tables import TransactionsTableFields
-from backend.services.transaction_views import transactions_masks
 from backend.utils.dataframe_dates import to_month_series
 
 
@@ -154,9 +153,13 @@ class ForecastMixin:
             df["date_parsed"] = pd.to_datetime(df["date"])
             mtd = df[(df["date_parsed"] >= month_start) & (df["date_parsed"] <= today)]
             if not mtd.empty:
-                actual_income, _, cash_out_to_date = (
-                    self.get_income_investments_and_expenses(mtd)
+                totals = (
+                    self.views.bank(exclude_pending_refunds=False)
+                    .between(month_start, today)
+                    .totals()
                 )
+                actual_income = totals["income"]
+                cash_out_to_date = totals["expenses"]
                 per_day_net = (
                     mtd.groupby(mtd["date_parsed"].dt.day)["amount"].sum().to_dict()
                 )
@@ -501,10 +504,9 @@ class ForecastMixin:
         dict[tuple[str, str], float]
             ``(provider, account_name)`` -> share, summing to 1.
         """
-        df = self.repo.get_cashflow_transactions()
-        if df.empty:
-            return {}
-        return self._spend_shares(df[transactions_masks(df)["expenses"]], month_start)
+        return self._spend_shares(
+            self.views.bank(exclude_pending_refunds=False).expenses, month_start
+        )
 
     def _spend_shares(
         self, frame: pd.DataFrame, month_start: pd.Timestamp

@@ -90,12 +90,17 @@ class TestRowsNoViewKeeps:
 
         assert view.income["amount"].tolist() == [4000.0]
 
-    def test_spending_view_leaves_ignore_out(self, db_session):
-        """Verify an internal transfer is neither income nor spending."""
-        _add(db_session, "bank_transactions", -1000.0, "Ignore", id_="out")
-        _add(db_session, "bank_transactions", 1000.0, "Ignore", id_="in")
+    @pytest.mark.parametrize("view_name", ["bank", "spending"])
+    def test_ignore_is_left_out(self, db_session, view_name):
+        """Verify an internal transfer is neither income nor spending.
 
-        assert TransactionViews(db_session).spending().rows.empty
+        Only one side is tracked here, as when money moves to an account the
+        app does not scrape; counting it would book the household's own
+        money as spent.
+        """
+        _add(db_session, "bank_transactions", -1000.0, "Ignore", id_="out")
+
+        assert getattr(TransactionViews(db_session), view_name)().rows.empty
 
 
 class TestClassification:
@@ -159,6 +164,71 @@ class TestRefundNetting:
 
         assert monthly["expenses"].abs().sum() == 0.0
         assert monthly["income"].sum() == 0.0
+
+    def test_card_purchase_refunded_to_the_bank(self, db_session):
+        """Verify each view nets only a pair it sees both halves of.
+
+        The bank view has the 300 statement that paid the card purchase but
+        not the purchase itself, so the refund stays money back against the
+        bill; the spending view has the purchase and nets the pair to nothing.
+        """
+        purchase = _add(db_session, "credit_card_transactions", -300.0, "Shopping")
+        _add(db_session, "bank_transactions", -300.0, "Credit Cards")
+        refund = _add(
+            db_session, "bank_transactions", 300.0, "Shopping", date="2026-04-02"
+        )
+        service = PendingRefundsService(db_session)
+        pending = service.mark_as_pending_refund(
+            source_type="transaction",
+            source_id=purchase,
+            source_table="credit_cards",
+            expected_amount=300.0,
+        )
+        service.link_refund(
+            pending_refund_id=pending["id"],
+            refund_transaction_id=refund,
+            refund_source="banks",
+            amount=300.0,
+        )
+        views = TransactionViews(db_session)
+
+        assert views.bank().totals()["expenses"] == 0.0
+        assert views.spending().totals()["expenses"] == 0.0
+
+    @pytest.mark.parametrize("refund_category", ["Shopping", "Other Income"])
+    def test_views_agree_on_net_savings(self, db_session, refund_category):
+        """Verify a card purchase refunded to the bank leaves the same net either way.
+
+        The views split the money differently — the bank view keeps the refund
+        as money in beside the full bill, the spending view nets it against the
+        purchase — so income and expenses may each differ, but what was saved
+        must not.
+        """
+        _add(db_session, "bank_transactions", 10_000.0, "Salary")
+        purchase = _add(db_session, "credit_card_transactions", -300.0, "Shopping")
+        _add(db_session, "bank_transactions", -300.0, "Credit Cards")
+        refund = _add(
+            db_session, "bank_transactions", 300.0, refund_category, date="2026-04-02"
+        )
+        service = PendingRefundsService(db_session)
+        pending = service.mark_as_pending_refund(
+            source_type="transaction",
+            source_id=purchase,
+            source_table="credit_cards",
+            expected_amount=300.0,
+        )
+        service.link_refund(
+            pending_refund_id=pending["id"],
+            refund_transaction_id=refund,
+            refund_source="banks",
+            amount=300.0,
+        )
+        views = TransactionViews(db_session)
+
+        def net(totals):
+            return totals["income"] - totals["expenses"]
+
+        assert net(views.bank().totals()) == net(views.spending().totals()) == 10_000.0
 
     def test_purchase_awaiting_its_refund_is_dropped_only_on_request(self, db_session):
         """Verify the pending-refunds option decides what an open expectation costs."""

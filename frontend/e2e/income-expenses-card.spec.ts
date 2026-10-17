@@ -81,6 +81,11 @@ test.describe("Income & Expenses dashboard card", () => {
   }) => {
     const card = await openCard(page);
 
+    // --- The card says a card refund lands when it arrives, not on the purchase ---
+    await expect(card.getByTestId("card-refund-note")).toHaveText(
+      /refund for a card purchase shows in the month it arrives/,
+    );
+
     // --- Totals tab: ledger renders newest-first with a Net column ---
     await expect(
       card.getByText("Month", { exact: true }).first(),
