@@ -163,7 +163,6 @@
     "expensesByCategory": "Expenses by Category",
     "netBalanceOverTime": "Net Balance Over Time",
     "netWorthOverTime": "Net Worth Over Time",
-    "cashFlow": "Cash Flow",
     "budgetProgress": "Budget Progress",
     "recentTransactions": "Recent Transactions",
     "financialHealth": "Financial Health",
@@ -190,8 +189,12 @@
     "avg3Months": "Avg 3 Months",
     "avg6Months": "Avg 6 Months",
     "avg12Months": "Avg 12 Months",
-    "pendingRefundsExcluded": "Pending Refunds Excluded",
-    "pendingRefundsIncluded": "Pending Refunds Included",
+    "refundMode": {
+      "none": "Refunds counted as is",
+      "linked": "Refunds netted",
+      "pending": "Refunds + pending netted"
+    },
+    "refundModeTitle": "How refunds you linked to a purchase in the app are counted. Netted: the refund cancels its purchase in the purchase's month. Counted as is: each stays in its own month. Pending: a purchase still awaiting its refund is also left out. A refund you never linked always counts in the month it arrived.",
     "projectExpensesIncluded": "Projects Included",
     "projectExpensesExcluded": "Projects Excluded",
     "loansIncluded": "Loans Included",
@@ -227,6 +230,10 @@
     "creditNetted": "{{amount}} credit",
     "creditTooltipTitle": "Refunds beyond spending:",
     "filterToSeries": "Filter to this",
+    "byOriginalTag": "By original tag",
+    "byOriginalTagTitle": "Draw money a split moved onto another tag under the tag its original transaction carries, hatched in the colour of the tag it carries now",
+    "splitFrom": "split from {{parent}} · {{amount}}",
+    "splitNowTagged": "now tagged {{tag}}",
     "clearFilter": "Clear filter",
     "focusPerMonth": "per month",
     "focusPerYear": "per year",
@@ -429,7 +436,6 @@
       "heatmap": "Spending calendar",
       "incomeExpenses": "Income & Expenses",
       "netWorth": "Net Worth",
-      "cashFlow": "Cash Flow",
       "refunds": "Refunds",
       "retirement": "Early Retirement"
     },
@@ -665,7 +671,20 @@
       "sourcesPanel": "Refund sources",
       "sourcesCount": "{{count}} txns",
       "panelHint": "refunded / expected · remaining",
-      "crossHint": "Hover a source to highlight the requests it funds — and vice-versa."
+      "crossHint": "Hover a source to highlight the requests it funds — and vice-versa.",
+      "tagMismatch": {
+        "chip_one": "1 linked refund is tagged differently from its purchase",
+        "chip_other": "{{count}} linked refunds are tagged differently from their purchases",
+        "dismiss": "Dismiss",
+        "title": "Refunds tagged apart from their purchase",
+        "explain": "These refunds were linked before linking required matching tags. Fixing moves each refund under the tag of the purchase it pays back; a refund larger than the linked amount is split, and only the linked part moves.",
+        "move": "{{from}} → {{to}}",
+        "fixAll_one": "Fix 1 refund",
+        "fixAll_other": "Fix {{count}} refunds",
+        "fixed_one": "1 refund moved under its purchase's tag",
+        "fixed_other": "{{count}} refunds moved under their purchase's tag",
+        "failed": "Fixing failed. Please try again."
+      }
     },
     "goalLink": {
       "action": "Link to a savings goal",
@@ -682,7 +701,17 @@
       "provider": "Provider",
       "cardNumber": "Card number",
       "accountNumber": "Account number"
-    }
+    },
+    "splitPart": {
+      "untagged": "Untagged",
+      "badgeTitle": "Split from {{parent}}",
+      "title": "Split part",
+      "parent": "Split from",
+      "parts_one": "{{count}} part in this view",
+      "parts_other": "{{count}} parts in this view"
+    },
+    "refundsRetagged_one": "1 linked refund moved with the purchase",
+    "refundsRetagged_other": "{{count}} linked refunds moved with the purchase"
   },
   "budget": {
     "title": "Budget",
@@ -1525,7 +1554,12 @@
       "suggestedBadge": "Suggested · amount match",
       "allIncoming": "All incoming transactions",
       "suggestedPendingHeader": "Suggested — expecting exactly this amount",
-      "allPending": "All pending refunds"
+      "allPending": "All pending refunds",
+      "retagTitle": "Move the refund under the purchase's tag?",
+      "retagMessage": "This refund is tagged {{from}}, but the purchase it pays back is tagged {{to}}. Linking moves the refund to {{to}} so it nets against the purchase. If the refund is larger than the linked amount, only the linked part is split off and moved.",
+      "retagMessageUnknown": "This refund is tagged differently from the purchase it pays back. Linking moves it to {{to}} so it nets against the purchase. If the refund is larger than the linked amount, only the linked part is split off and moved.",
+      "retagConfirm": "Move and link",
+      "linkFailed": "Linking failed. Please try again."
     },
     "project": {
       "title": "Project Budget",

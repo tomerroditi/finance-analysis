@@ -97,3 +97,13 @@ class StatusResponse(BaseModel):
     """Generic ``{"status": ...}`` acknowledgement returned by write endpoints."""
 
     status: str
+
+
+class TagWriteResponse(StatusResponse):
+    """Acknowledgement of a write that may retag transactions.
+
+    ``refunds_retagged`` counts the linked refunds that followed a purchase to
+    its new category and tag, so the client can say so.
+    """
+
+    refunds_retagged: int = 0

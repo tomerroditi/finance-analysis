@@ -1,7 +1,7 @@
 """Pending refunds repository with SQLAlchemy ORM."""
 
 import pandas as pd
-from sqlalchemy import ColumnElement, delete, select
+from sqlalchemy import ColumnElement, Select, delete, select, update
 from sqlalchemy.orm import Session
 
 from backend.models.pending_refund import (
@@ -10,6 +10,20 @@ from backend.models.pending_refund import (
     RefundSourceNote,
 )
 from backend.repositories._sql import chunked
+
+
+def _read_links(db: Session, stmt: Select) -> pd.DataFrame:
+    """Read refund links, with a missing ``refund_split_id`` as ``None``.
+
+    pandas reads a nullable integer column holding any null as floats with
+    ``NaN``, which neither compares to a split id nor serializes to JSON.
+    """
+    links = pd.read_sql(stmt, db.bind)
+    if "refund_split_id" in links.columns:
+        links["refund_split_id"] = [
+            None if pd.isna(v) else int(v) for v in links["refund_split_id"]
+        ]
+    return links
 
 
 class PendingRefundsRepository:
@@ -138,6 +152,7 @@ class PendingRefundsRepository:
         refund_transaction_id: int,
         refund_source: str,
         amount: float,
+        refund_split_id: int | None = None,
     ) -> RefundLink:
         """
         Link a refund transaction to a pending refund.
@@ -152,6 +167,9 @@ class PendingRefundsRepository:
             Table where refund lives.
         amount : float
             Amount this refund covers.
+        refund_split_id : int or None, optional
+            Split part of the refund transaction the link covers; ``None``
+            links the whole transaction.
 
         Returns
         -------
@@ -163,6 +181,7 @@ class PendingRefundsRepository:
             refund_transaction_id=refund_transaction_id,
             refund_source=refund_source,
             amount=amount,
+            refund_split_id=refund_split_id,
         )
         self.db.add(link)
         self.db.commit()
@@ -184,7 +203,7 @@ class PendingRefundsRepository:
             DataFrame of refund links.
         """
         stmt = select(RefundLink).where(RefundLink.pending_refund_id == pending_id)
-        return pd.read_sql(stmt, self.db.bind)
+        return _read_links(self.db, stmt)
 
     def get_links_for_pendings(self, pending_ids: list[int]) -> pd.DataFrame:
         """
@@ -204,7 +223,7 @@ class PendingRefundsRepository:
         if not pending_ids:
             return pd.DataFrame()
         stmt = select(RefundLink).where(RefundLink.pending_refund_id.in_(pending_ids))
-        return pd.read_sql(stmt, self.db.bind)
+        return _read_links(self.db, stmt)
 
     def get_all_links(self) -> pd.DataFrame:
         """
@@ -215,7 +234,7 @@ class PendingRefundsRepository:
         pd.DataFrame
             All refund link records; empty when none exist.
         """
-        return pd.read_sql(select(RefundLink), self.db.bind)
+        return _read_links(self.db, select(RefundLink))
 
     def update_notes(self, pending_id: int, notes: str | None) -> None:
         """
@@ -478,3 +497,44 @@ class PendingRefundsRepository:
             The link if found, None otherwise.
         """
         return self.db.get(RefundLink, link_id)
+
+    def set_link_split(self, link_id: int, refund_split_id: int | None) -> None:
+        """
+        Point a link at a split part of its refund transaction, or at all of it.
+
+        Parameters
+        ----------
+        link_id : int
+            ID of the link.
+        refund_split_id : int or None
+            Split part the link now covers; ``None`` for the whole transaction.
+        """
+        self.db.execute(
+            update(RefundLink)
+            .where(RefundLink.id == link_id)
+            .values(refund_split_id=refund_split_id)
+        )
+        self.db.commit()
+
+    def unpin_links_from_splits(self, split_ids: list[int]) -> None:
+        """
+        Re-point links at deleted split parts back to their whole transaction.
+
+        The refund money is still there — only the parts it was carved into
+        are gone (a revert or re-split) — so the link survives, and split ids
+        SQLite would hand to the next part never adopt it.
+
+        Parameters
+        ----------
+        split_ids : list[int]
+            Primary keys of the deleted ``split_transactions`` rows.
+        """
+        if not split_ids:
+            return
+        for chunk in chunked(split_ids):
+            self.db.execute(
+                update(RefundLink)
+                .where(RefundLink.refund_split_id.in_(chunk))
+                .values(refund_split_id=None)
+            )
+        self.db.commit()

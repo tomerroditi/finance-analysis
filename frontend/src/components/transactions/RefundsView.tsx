@@ -19,6 +19,7 @@ import {
 } from "../../services/api";
 import { humanizeProvider, humanizeService } from "../../utils/textFormatting";
 import { LinkRefundModal } from "../modals/LinkRefundModal";
+import { RefundTagMismatchNotice } from "./RefundTagMismatchNotice";
 import { useConfirm } from "../../context/DialogContext";
 import { useQueryKeys } from "../../hooks/useQueryKeys";
 import { qkPrefix } from "../../services/queryKeys";
@@ -699,6 +700,7 @@ const RefundsView: React.FC = () => {
           />
         </div>
       </div>
+      <RefundTagMismatchNotice refunds={refunds} />
 
       {/* ── Two-pane main ── */}
       <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_330px] gap-3.5 mt-3.5 items-start">

@@ -15,9 +15,109 @@ import numpy as np
 import pandas as pd
 
 from backend.constants.categories import LIABILITIES_CATEGORY
+from backend.constants.refunds import RefundMode
 from backend.constants.tables import TransactionsTableFields
-from backend.services.transaction_views import TransactionView
 from backend.utils.dataframe_dates import to_month_series
+
+
+def _source_labels(
+    category: pd.Series, tag: pd.Series, amount: pd.Series
+) -> np.ndarray:
+    """Label income rows the way the income-by-source breakdown names them.
+
+    Loan receipts label as ``"Loans[ / tag]"``, everything else as
+    ``"<category>[ / <tag>]"``.
+
+    Parameters
+    ----------
+    category, tag, amount : pd.Series
+        The rows' category, tag and signed amount.
+
+    Returns
+    -------
+    np.ndarray
+        One label per row.
+    """
+    tag_present = tag.notna() & (tag != "")
+    tag_str = tag.astype(object)
+    is_loan = (category == LIABILITIES_CATEGORY) & (amount > 0)
+    loan_label = np.where(tag_present, "Loans / " + tag_str.astype(str), "Loans")
+    non_loan_label = np.where(
+        tag_present, category.astype(str) + " / " + tag_str.astype(str), category
+    )
+    return np.where(is_loan, loan_label, non_loan_label)
+
+
+def _expense_labels(expenses: pd.DataFrame, prefix: str = "") -> pd.Series | None:
+    """Label expense rows the way the expenses-by-category breakdown names them.
+
+    A debt payment is named after its loan (the tag); everything else after
+    its category.
+
+    Parameters
+    ----------
+    expenses : pd.DataFrame
+        Expense rows.
+    prefix : str, optional
+        ``"parent_"`` labels each split part by the row it was split from.
+
+    Returns
+    -------
+    pd.Series or None
+        One label per row, or ``None`` when the frame has no such columns.
+    """
+    category_col, tag_col = f"{prefix}category", f"{prefix}tag"
+    if category_col not in expenses.columns:
+        return None
+    category = expenses[category_col]
+    labels = category.where(
+        category != LIABILITIES_CATEGORY,
+        expenses[tag_col].fillna(LIABILITIES_CATEGORY),
+    )
+    return labels.fillna("Uncategorized")
+
+
+def _split_origins(
+    df: pd.DataFrame, label_col: str, parent_labels: Any, sign: int
+) -> dict[str, dict[str, dict[str, float]]]:
+    """Total, per month, what each label holds of split parts tagged apart.
+
+    Only a split part whose label differs from the label of the transaction
+    it was split from counts; a part that kept its parent's tag says nothing
+    a chart has to show.
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        Rows with ``month``, ``amount``, ``parent_unique_id`` and ``label_col``.
+    label_col : str
+        Column holding each row's current label.
+    parent_labels : array-like or None
+        Each row's parent label, aligned with ``df``; ``None`` when the frame
+        carries no split parts.
+    sign : int
+        ``-1`` to report spend as positive, ``1`` to keep amounts as they are.
+
+    Returns
+    -------
+    dict[str, dict[str, dict[str, float]]]
+        ``{month: {label: {parent_label: amount}}}``.
+    """
+    if parent_labels is None or "parent_unique_id" not in df.columns:
+        return {}
+    parts = df.assign(parent_label=np.asarray(parent_labels, dtype=object))
+    parts = parts[
+        parts["parent_unique_id"].notna() & (parts["parent_label"] != parts[label_col])
+    ]
+    if parts.empty:
+        return {}
+    totals = parts.groupby(["month", label_col, "parent_label"])["amount"].sum()
+    origins: dict[str, dict[str, dict[str, float]]] = {}
+    for (month, label, parent_label), amount in totals.items():
+        value = round(float(amount) * sign, 2)
+        if value > 0:
+            origins.setdefault(month, {}).setdefault(label, {})[parent_label] = value
+    return origins
 
 
 class CashflowMixin:
@@ -27,7 +127,6 @@ class CashflowMixin:
         self,
         exclude_projects: bool = False,
         exclude_liabilities: bool = False,
-        exclude_refunds: bool = False,
         exclude_pending_refunds: bool = True,
     ) -> list[dict[str, Any]]:
         """
@@ -43,10 +142,6 @@ class CashflowMixin:
             budget name. Defaults to False.
         exclude_liabilities : bool, optional
             If True, drop the Liabilities category entirely. Defaults to False.
-        exclude_refunds : bool, optional
-            If True, ignore *unmatched* refunds — a positive amount in an
-            expense category, or a negative one in an income category — so the
-            figures are gross rather than net. Defaults to False.
         exclude_pending_refunds : bool, optional
             Passed to :meth:`TransactionViews.bank`: whether a purchase still
             awaiting its refund is dropped. Matched refunds are netted either
@@ -71,14 +166,7 @@ class CashflowMixin:
         if not view.months:
             return []
 
-        income = view.income
-        expenses = view.expenses
-        if exclude_refunds:
-            income = income[income["amount"] > 0]
-            expenses = expenses[expenses["amount"] < 0]
-        monthly = TransactionView(
-            rows=pd.concat([income, expenses, view.investments]), months=view.months
-        ).monthly()
+        monthly = view.monthly()
 
         return [
             {
@@ -153,23 +241,14 @@ class CashflowMixin:
         pd.DataFrame
             The same frame with ``source_label`` added.
         """
-        category = income_df["category"]
-        tag = income_df["tag"]
-        amount = income_df["amount"]
-        tag_present = tag.notna() & (tag != "")
-        tag_str = tag.astype(object)
-
-        is_loan = (category == LIABILITIES_CATEGORY) & (amount > 0)
-        loan_label = np.where(tag_present, "Loans / " + tag_str.astype(str), "Loans")
-        non_loan_label = np.where(
-            tag_present, category.astype(str) + " / " + tag_str.astype(str), category
+        income_df["source_label"] = _source_labels(
+            income_df["category"], income_df["tag"], income_df["amount"]
         )
-        income_df["source_label"] = np.where(is_loan, loan_label, non_loan_label)
         return income_df
 
     def get_expenses_by_category_over_time(
         self,
-        exclude_pending_refunds: bool = True,
+        refunds: RefundMode = RefundMode.PENDING,
         exclude_projects: bool = False,
         exclude_liabilities: bool = False,
     ) -> list[dict[str, Any]]:
@@ -187,8 +266,10 @@ class CashflowMixin:
 
         Parameters
         ----------
-        exclude_pending_refunds : bool, optional
-            Passed to :meth:`TransactionViews.spending`. Defaults to True.
+        refunds : RefundMode, optional
+            How linked refunds and purchases awaiting one are treated. Under
+            ``NONE`` a refund lowers the category it is tagged with in the
+            month it arrived. Defaults to ``PENDING``.
         exclude_projects : bool, optional
             If True, drop categories that are project-budget names — planned
             lumpy spending the caller may want out of its ordinary-spend view.
@@ -209,9 +290,10 @@ class CashflowMixin:
               (positive for spend, negative for a category left in credit).
         """
         expenses = self.views.spending(
-            exclude_pending_refunds=exclude_pending_refunds,
+            exclude_pending_refunds=refunds.excludes_pending,
             exclude_projects=exclude_projects,
             exclude_liabilities=exclude_liabilities,
+            net_refunds=refunds.nets_links,
         ).expenses.copy()
 
         if expenses.empty:
@@ -231,6 +313,9 @@ class CashflowMixin:
             .mul(-1)
             .unstack(fill_value=0)
         )
+        split_from = _split_origins(
+            expenses, "category", _expense_labels(expenses, "parent_"), sign=-1
+        )
 
         return [
             {
@@ -238,22 +323,26 @@ class CashflowMixin:
                 "categories": {
                     cat: round(float(val), 2) for cat, val in row.items() if val != 0
                 },
+                "split_from": split_from.get(month, {}),
             }
             for month, row in pivot.iterrows()
         ]
 
     def get_income_by_source_over_time(
-        self, exclude_pending_refunds: bool = True, exclude_liabilities: bool = False
+        self,
+        refunds: RefundMode = RefundMode.PENDING,
+        exclude_liabilities: bool = False,
     ) -> list[dict[str, Any]]:
         """
         Get monthly income broken down by source (category+tag combination).
 
         Parameters
         ----------
-        exclude_pending_refunds : bool, optional
-            Passed to :meth:`TransactionViews.bank`. A refund that landed in an
-            income category is money coming back, not earnings, so netting it
-            keeps it out of the breakdown. Defaults to True.
+        refunds : RefundMode, optional
+            How linked refunds are treated. A refund that landed in an income
+            category is money coming back, not earnings, so netting it keeps
+            it out of the breakdown; ``NONE`` leaves it in. Defaults to
+            ``PENDING``.
         exclude_liabilities : bool, optional
             If True, drop loan receipts (positive ``Liabilities`` rows). This
             is the income half of the same switch that drops debt payments
@@ -268,8 +357,9 @@ class CashflowMixin:
             ordered chronologically. Prior Wealth transactions are excluded.
         """
         income_df = self.views.bank(
-            exclude_pending_refunds=exclude_pending_refunds,
+            exclude_pending_refunds=refunds.excludes_pending,
             exclude_liabilities=exclude_liabilities,
+            net_refunds=refunds.nets_links,
         ).income.copy()
 
         if income_df.empty:
@@ -278,6 +368,16 @@ class CashflowMixin:
         income_df = self._add_source_label_column(income_df)
 
         income_df["month"] = to_month_series(income_df["date"])
+        parent_labels = (
+            _source_labels(
+                income_df["parent_category"],
+                income_df["parent_tag"],
+                income_df["amount"],
+            )
+            if "parent_category" in income_df.columns
+            else None
+        )
+        split_from = _split_origins(income_df, "source_label", parent_labels, sign=1)
 
         result: list[dict[str, Any]] = []
         for month, month_df in income_df.groupby("month", sort=True):
@@ -290,7 +390,14 @@ class CashflowMixin:
                 if amount > 0:
                     sources[label] = amount
             total = round(sum(sources.values()), 2)
-            result.append({"month": month, "sources": sources, "total": total})
+            result.append(
+                {
+                    "month": month,
+                    "sources": sources,
+                    "total": total,
+                    "split_from": split_from.get(month, {}),
+                }
+            )
 
         return result
 

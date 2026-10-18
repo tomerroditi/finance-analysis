@@ -302,9 +302,11 @@ class TransactionsService:
         unique_id: int | str,
         category: str | None,
         tag: str | None,
-    ) -> None:
+    ) -> int:
         """
         Update the category and tag for a transaction identified by table and ID.
+
+        Refund money linked to the transaction follows it to the new tag.
 
         Parameters
         ----------
@@ -319,6 +321,11 @@ class TransactionsService:
         tag : str or None
             New tag value. Empty strings are normalised to ``None``.
 
+        Returns
+        -------
+        int
+            How many linked refunds were moved to the new tag.
+
         Raises
         ------
         ValidationException
@@ -330,10 +337,32 @@ class TransactionsService:
         repo = self.transactions_repository.get_repo_by_source(table_name)
         if repo is None:
             raise ValidationException(f"Invalid table name: {table_name}")
-        repo.update_tagging_by_unique_id(
-            _coerce_unique_id(unique_id, ValidationException), category, tag
-        )
+        uid = _coerce_unique_id(unique_id, ValidationException)
+        repo.update_tagging_by_unique_id(uid, category, tag)
+        retagged = self._cascade_to_linked_refunds(table_name, [uid])
         self.realign_closed_investments()
+        return retagged
+
+    def _cascade_to_linked_refunds(self, source: str, unique_ids: list[int]) -> int:
+        """Move refund money linked to retagged purchases to their new tag.
+
+        Parameters
+        ----------
+        source : str
+            Table or service name of the retagged transactions.
+        unique_ids : list[int]
+            The retagged transactions.
+
+        Returns
+        -------
+        int
+            How many links had their refund money moved.
+        """
+        from backend.services.refund_tag_alignment import RefundTagAlignmentService
+
+        return RefundTagAlignmentService(self.db).cascade_from_transactions(
+            source, unique_ids
+        )
 
     def realign_closed_investments(self) -> None:
         """Move closed investments' zero snapshots after their transactions change.
@@ -587,7 +616,7 @@ class TransactionsService:
 
     def update_transaction(
         self, unique_id: int | str, source: str, updates: dict[str, Any]
-    ) -> bool:
+    ) -> dict[str, Any]:
         """
         Update a transaction with source-based permission constraints.
 
@@ -597,7 +626,8 @@ class TransactionsService:
         sources can only update ``category`` and ``tag``. When
         ``account_name`` changes on a cash transaction, balances are
         recalculated for both the old and new account. Empty strings in
-        category/tag are normalised to ``None``.
+        category/tag are normalised to ``None``. A new category or tag carries
+        the refund money linked to the transaction along with it.
 
         Parameters
         ----------
@@ -611,9 +641,10 @@ class TransactionsService:
 
         Returns
         -------
-        bool
-            ``True`` if updates were applied, ``False`` if no applicable fields
-            were provided.
+        dict
+            ``updated`` — whether updates were applied (``False`` when no
+            applicable fields were provided) — and ``refunds_retagged``, how
+            many linked refunds followed a new category or tag.
 
         Raises
         ------
@@ -640,7 +671,7 @@ class TransactionsService:
         filtered_updates = self._filter_updates_for_source(source, updates)
 
         if not filtered_updates:
-            return False
+            return {"updated": False, "refunds_retagged": 0}
 
         result = target_repo.update_transaction_by_unique_id(
             unique_id, filtered_updates
@@ -657,9 +688,12 @@ class TransactionsService:
             if new_account_name and new_account_name != old_account_name:
                 cash_balance_svc.recalculate_current_balance(new_account_name)
 
+        retagged = 0
+        if result and ({"category", "tag"} & filtered_updates.keys()):
+            retagged = self._cascade_to_linked_refunds(source, [unique_id])
         if result:
             self.realign_closed_investments()
-        return result
+        return {"updated": bool(result), "refunds_retagged": retagged}
 
     def delete_transaction(self, unique_id: int | str, source: str) -> None:
         """
@@ -803,8 +837,10 @@ class TransactionsService:
         Remove every record that pointed at now-deleted split slices.
 
         A pending refund or budget month override can be scoped to a slice
-        (``source_type="split"``). ``split_transactions`` ids are recycled by
-        SQLite just like transaction ids, so an orphan would be inherited by
+        (``source_type="split"``), and a refund link can cover one; the link
+        outlives the slice and goes back to covering the whole transaction.
+        ``split_transactions`` ids are recycled by SQLite just like
+        transaction ids, so an orphan would be inherited by
         the next slice created — including the replacement slices of a
         re-split.
 
@@ -824,7 +860,9 @@ class TransactionsService:
             PendingRefundsRepository,
         )
 
-        PendingRefundsRepository(self.db).delete_for_splits(split_ids)
+        pending_repo = PendingRefundsRepository(self.db)
+        pending_repo.delete_for_splits(split_ids)
+        pending_repo.unpin_links_from_splits(split_ids)
 
         # Split ids are global, but the override table is keyed by source
         # table as well; accept every spelling a client may have stored.
@@ -1008,7 +1046,7 @@ class TransactionsService:
         account_name: str | None = None,
         date: str | None = None,
         amount: float | None = None,
-    ) -> None:
+    ) -> int:
         """
         Apply the same category, tag, and optional fields to multiple transactions.
 
@@ -1038,6 +1076,12 @@ class TransactionsService:
         amount : float or None, optional
             Amount to apply. Only written for manual sources.
 
+        Returns
+        -------
+        int
+            How many linked refunds followed the transactions to their new
+            category and tag.
+
         Raises
         ------
         ValidationException
@@ -1062,7 +1106,7 @@ class TransactionsService:
 
         filtered_updates = self._filter_updates_for_source(source, updates)
         if not filtered_updates or not transaction_ids:
-            return
+            return 0
 
         ids = [int(uid) for uid in transaction_ids]
 
@@ -1078,6 +1122,7 @@ class TransactionsService:
         # One commit for the whole batch instead of a commit (plus a
         # cash-balance recalculation) per row.
         self.transactions_repository.bulk_update_fields(source, ids, filtered_updates)
+        retagged = self._cascade_to_linked_refunds(source, ids)
 
         if affected_accounts:
             from backend.services.cash_balance_service import CashBalanceService
@@ -1086,6 +1131,7 @@ class TransactionsService:
             for account in sorted(affected_accounts):
                 cash_balance_svc.recalculate_current_balance(account)
         self.realign_closed_investments()
+        return retagged
 
     def get_latest_data_date(self) -> datetime | None:
         """

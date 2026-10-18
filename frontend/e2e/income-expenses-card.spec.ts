@@ -300,7 +300,7 @@ test.describe("Income & Expenses dashboard card", () => {
     await expect.poll(() => rows.allTextContents()).toEqual(monthlyNets);
     await expect(income.getByText("3-mo avg")).toBeVisible();
 
-    // --- Filter chips: pending-refunds, projects, loans ---
+    // --- Filters: the refund mode, then the projects and loans chips ---
     // "Refunds Included/Excluded" is gone: a refund is a positive amount in an
     // expense category, so it already nets off the month it lands in, and the
     // opt-out only ever reached the ledger and the income KPI — never the
@@ -310,7 +310,11 @@ test.describe("Income & Expenses dashboard card", () => {
     // on everything the household did and each chip takes something out. A
     // chip phrased the other way round would sit in the same grey as its
     // neighbours while meaning the opposite of them.
-    for (const name of ["Pending Refunds Included", "Projects Included", "Loans Included"]) {
+    // Refunds are a three-way select that opens on "netted": a refund the
+    // user linked to its purchase cancels that purchase.
+    const refundMode = card.getByTestId("refund-mode").getByRole("button");
+    await expect(refundMode).toContainText("Refunds netted");
+    for (const name of ["Projects Included", "Loans Included"]) {
       const chip = card.getByRole("button", { name, exact: true });
       await expect(chip).toBeVisible();
       await expect(chip).toHaveAttribute("aria-pressed", "false");
@@ -362,22 +366,28 @@ test.describe("Income & Expenses dashboard card", () => {
     await expect(compositionRows.first()).toBeVisible({ timeout: 45_000 });
     expect(await compositionRows.count()).toBeGreaterThan(0);
 
-    // --- The pending-refunds chip now reaches the breakdown too ---
-    // It used to move only the expense KPI; the breakdown and ledger ignored
-    // it. Demo data carries open credit-card refund expectations in the
-    // recent months, so flipping the chip must change what a month cost.
+    // --- The refund mode reaches the breakdown ---
+    // Demo data carries open credit-card refund expectations in the recent
+    // months, so leaving those out must change what a month cost; counting
+    // linked refunds as is moves the totals again.
+    const pickRefundMode = async (label: string) => {
+      await refundMode.click();
+      await page.getByRole("option", { name: label }).click();
+      await expect(refundMode).toContainText(label);
+    };
     const totalsBefore = await compositionRows.allTextContents();
-    const refundsChip = card.getByRole("button", { name: /^Pending Refunds (Ex|In)cluded$/ });
-    await refundsChip.click();
-    await expect(refundsChip).toHaveAttribute("aria-pressed", "true");
-    await expect(refundsChip).toHaveText("Pending Refunds Excluded");
+    await pickRefundMode("Refunds + pending netted");
     await expect
       .poll(() => compositionRows.allTextContents(), { timeout: 20_000 })
       .not.toEqual(totalsBefore);
+    await pickRefundMode("Refunds counted as is");
+    await expect(compositionRows.first()).toBeVisible({ timeout: 20_000 });
 
     // Put it back so the rest of the journey sees the default view.
-    await refundsChip.click();
-    await expect(refundsChip).toHaveAttribute("aria-pressed", "false");
+    await pickRefundMode("Refunds netted");
+    await expect
+      .poll(() => compositionRows.allTextContents(), { timeout: 20_000 })
+      .toEqual(totalsBefore);
 
     // --- An over-scale month's meter is dashed, and legibly so ---
     // Project spend is the lumpy kind — a wedding lands in two months — and

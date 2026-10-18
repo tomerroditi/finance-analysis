@@ -459,7 +459,7 @@ class TestTransactionsRoutesAdditional:
         with patch("backend.routes.transactions.TransactionsService") as mock_cls:
             mock_svc = MagicMock()
             mock_cls.return_value = mock_svc
-            mock_svc.update_tagging_by_id.return_value = None
+            mock_svc.update_tagging_by_id.return_value = 0
             response = test_client.put(
                 "/api/transactions/1/tag?category=Food&tag=Groceries&service=credit_cards"
             )

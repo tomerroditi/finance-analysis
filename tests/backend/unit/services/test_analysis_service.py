@@ -5,6 +5,7 @@ from datetime import date
 import pandas as pd
 import pytest
 
+from backend.constants.refunds import RefundMode
 from backend.constants.tables import Tables
 from backend.models.transaction import BankTransaction, CreditCardTransaction
 from backend.services.analysis import AnalysisService
@@ -305,211 +306,6 @@ class TestAnalysisServiceIncomeExpenses:
         assert result["total_income"] == 10000.0
         assert result["total_expenses"] == 0.0
 
-
-class TestAnalysisServiceSankey:
-    """Tests for Sankey diagram data generation."""
-
-    def test_get_sankey_data_structure(self, db_session, seed_base_transactions):
-        """Verify Sankey returns nodes and links."""
-        service = AnalysisService(db_session)
-        result = service.get_sankey_data()
-
-        assert "nodes" in result
-        assert "links" in result
-        assert "node_labels" in result
-
-        # Should have at least Total Income node plus source/destination nodes
-        assert len(result["nodes"]) > 0
-        assert "Total Income" in result["nodes"]
-
-        # Every link should have source, target, value, label
-        for link in result["links"]:
-            assert "source" in link
-            assert "target" in link
-            assert "value" in link
-            assert "label" in link
-
-    def test_get_sankey_data_includes_prior_wealth(
-        self, db_session, seed_base_transactions, seed_prior_wealth_transactions, seed_investments
-    ):
-        """Verify Prior Wealth node included from bank balances and open investments."""
-        service = AnalysisService(db_session)
-        result = service.get_sankey_data()
-
-        # Prior Wealth should appear as a node
-        assert "Prior Wealth" in result["nodes"]
-
-        # Find the Prior Wealth link
-        pw_node_idx = result["node_labels"].index("Prior Wealth")
-        pw_links = [link for link in result["links"] if link["source"] == pw_node_idx]
-        assert len(pw_links) == 1
-
-        # Prior Wealth value = cash_pw (5000) + bank balances (20000 + 15000)
-        # + all investments (12000 + -160) + the tagged cash row (5000)
-        assert pw_links[0]["value"] == 56840.0
-
-    def test_get_sankey_data_empty(self, db_session):
-        """Verify empty nodes/links for no data."""
-        service = AnalysisService(db_session)
-        result = service.get_sankey_data()
-
-        assert result["nodes"] == []
-        assert result["links"] == []
-
-    def test_get_sankey_data_excludes_ignore_category(self, db_session):
-        """Verify an unbalanced Ignore transfer is not a Sankey flow.
-
-        Ignore marks internal transfers and CC bill summaries. Its legs only
-        cancel when both are tracked, so any residual must be dropped rather
-        than surfacing as a phantom expense that skews Wealth Growth.
-        """
-        from backend.models.transaction import BankTransaction
-
-        for i, (category, amount) in enumerate(
-            [("Salary", 10000.0), ("Food", -1200.0), ("Ignore", -5000.0)]
-        ):
-            db_session.add(
-                BankTransaction(
-                    id=f"sankey-ignore-{i}", date="2026-03-10", provider="p",
-                    account_name="a", description=f"d{i}", amount=amount,
-                    category=category, tag=None, source="bank_transactions",
-                    type="normal", status="completed",
-                )
-            )
-        db_session.commit()
-
-        result = AnalysisService(db_session).get_sankey_data()
-        labels = result["node_labels"]
-        assert "Ignore" not in labels
-        assert "Refunds: Ignore" not in labels
-
-        flows = {
-            (labels[link["source"]], labels[link["target"]]): link["value"]
-            for link in result["links"]
-        }
-        # 10000 income - 1200 real expenses; the 5000 transfer is not spending.
-        assert flows[("Total Income", "Wealth Growth")] == 8800.0
-
-    def test_get_sankey_data_unknown_cc_gap(self, db_session):
-        """Verify Unknown destination appears when bank CC payments exceed itemized CC total."""
-        # Bank CC bill payment: 500
-        bank_cc = BankTransaction(
-            id="bank_cc_1",
-            date="2024-01-10",
-            provider="hapoalim",
-            account_name="Checking",
-            description="Credit Card Payment - Isracard",
-            amount=-500.0,
-            category="Credit Cards",
-            tag=None,
-            source="bank_transactions",
-            type="normal",
-            status="completed",
-        )
-        # Itemized CC transactions: 150 + 200 = 350
-        cc_txn_1 = CreditCardTransaction(
-            id="cc_gap_1",
-            date="2024-01-05",
-            provider="isracard",
-            account_name="Isracard",
-            description="Grocery Store",
-            amount=-150.0,
-            category="Food",
-            tag="Groceries",
-            source="credit_card_transactions",
-            type="normal",
-            status="completed",
-        )
-        cc_txn_2 = CreditCardTransaction(
-            id="cc_gap_2",
-            date="2024-01-08",
-            provider="isracard",
-            account_name="Isracard",
-            description="Gas Station",
-            amount=-200.0,
-            category="Transport",
-            tag="Gas",
-            source="credit_card_transactions",
-            type="normal",
-            status="completed",
-        )
-        # Also add a salary so the diagram has income
-        salary = BankTransaction(
-            id="bank_salary_gap",
-            date="2024-01-01",
-            provider="hapoalim",
-            account_name="Checking",
-            description="Salary",
-            amount=8000.0,
-            category="Salary",
-            tag=None,
-            source="bank_transactions",
-            type="normal",
-            status="completed",
-        )
-        db_session.add_all([bank_cc, cc_txn_1, cc_txn_2, salary])
-        db_session.commit()
-
-        service = AnalysisService(db_session)
-        result = service.get_sankey_data()
-
-        # Gap = 500 - 350 = 150 → should appear as Unknown
-        assert "Unknown" in result["nodes"]
-        unknown_idx = result["node_labels"].index("Unknown")
-        unknown_links = [
-            link for link in result["links"] if link["target"] == unknown_idx
-        ]
-        assert len(unknown_links) == 1
-        assert unknown_links[0]["value"] == 150.0
-
-    def test_get_sankey_data_no_unknown_when_no_gap(self, db_session):
-        """Verify Unknown does not appear when bank CC payments equal itemized CC total."""
-        bank_cc = BankTransaction(
-            id="bank_cc_no_gap",
-            date="2024-01-10",
-            provider="hapoalim",
-            account_name="Checking",
-            description="Credit Card Payment",
-            amount=-300.0,
-            category="Credit Cards",
-            tag=None,
-            source="bank_transactions",
-            type="normal",
-            status="completed",
-        )
-        cc_txn = CreditCardTransaction(
-            id="cc_no_gap_1",
-            date="2024-01-05",
-            provider="isracard",
-            account_name="Isracard",
-            description="Grocery Store",
-            amount=-300.0,
-            category="Food",
-            tag="Groceries",
-            source="credit_card_transactions",
-            type="normal",
-            status="completed",
-        )
-        salary = BankTransaction(
-            id="bank_salary_no_gap",
-            date="2024-01-01",
-            provider="hapoalim",
-            account_name="Checking",
-            description="Salary",
-            amount=8000.0,
-            category="Salary",
-            tag=None,
-            source="bank_transactions",
-            type="normal",
-            status="completed",
-        )
-        db_session.add_all([bank_cc, cc_txn, salary])
-        db_session.commit()
-
-        service = AnalysisService(db_session)
-        result = service.get_sankey_data()
-
-        assert "Unknown" not in result["nodes"]
 
 class TestAnalysisServiceIncomeBySource:
     """Tests for income breakdown by source over time."""
@@ -873,7 +669,7 @@ class TestAnalysisServiceEmptyDatabaseSafety:
         """Verify empty database is handled when toggle flags are passed."""
         service = AnalysisService(db_session)
         result = service.get_income_expenses_over_time(
-            exclude_projects=True, exclude_liabilities=True, exclude_refunds=True
+            exclude_projects=True, exclude_liabilities=True, exclude_pending_refunds=False
         )
         assert result == []
 
@@ -1095,7 +891,7 @@ class TestAnalysisServiceIncomeBySourceAggregate:
         result = AnalysisService(db_session).get_income_by_source()
         assert result == {"sources": [], "total": 0.0, "start": None, "end": None}
 
-    def test_matched_refund_is_not_income(self, db_session):
+    def test_matched_refund_is_not_income(self, links_predating_tag_alignment, db_session):
         """A refund booked under an income category nets against its purchase.
 
         It is money coming back, as on the over-time chart, so it neither
@@ -1291,8 +1087,8 @@ class TestIncomeExpensesOverTimeFlags:
         assert {r["month"] for r in excluded} == {"2024-01", "2024-02", "2024-03"}
         assert self._month(excluded, "2024-01") == self._month(default, "2024-01")
 
-    def test_exclude_refunds_ignores_positive_expense_and_negative_income_rows(self, db_session):
-        """Refunds (positive expense rows) and income reversals are dropped when flagged."""
+    def test_unlinked_refund_is_money_back_in_its_own_month(self, db_session):
+        """A positive expense row no link names lowers that month's expenses; nothing drops it."""
         rows = [
             ("rent", "2024-01-03", -3000.0, "Home", "Rent"),
             ("refund", "2024-01-20", 200.0, "Home", "Rent"),
@@ -1309,11 +1105,11 @@ class TestIncomeExpensesOverTimeFlags:
         db_session.commit()
         service = AnalysisService(db_session)
 
-        default = self._month(service.get_income_expenses_over_time(), "2024-01")
-        strict = self._month(service.get_income_expenses_over_time(exclude_refunds=True), "2024-01")
-
-        assert (default["income"], default["expenses"]) == (7700.0, 2800.0)
-        assert (strict["income"], strict["expenses"]) == (8000.0, 3000.0)
+        for exclude in (True, False):
+            jan = self._month(
+                service.get_income_expenses_over_time(exclude_pending_refunds=exclude), "2024-01"
+            )
+            assert (jan["income"], jan["expenses"]) == (7700.0, 2800.0)
 
     def test_exclude_projects_removes_project_category_spend(self, db_session, seed_project_transactions):
         """Rows whose category is a project budget name vanish when ``exclude_projects`` is set."""
@@ -1482,7 +1278,7 @@ class TestRefundNettingAcrossMonths:
             )
             assert self._month(result, "2024-01")["expenses"] == 500.0
 
-    def test_refund_nets_against_its_purchases_category_not_its_own(self, db_session):
+    def test_refund_nets_against_its_purchases_category_not_its_own(self, links_predating_tag_alignment, db_session):
         """The breakdown credits the category that was charged, not the refund's."""
         self._seed(db_session, [
             ("tv", "2024-01-10", -1000.0, "Electronics", None),
@@ -1499,54 +1295,7 @@ class TestRefundNettingAcrossMonths:
         for row in result:
             assert "Uncategorized Refunds" not in row["categories"]
 
-    def test_sankey_stops_flowing_a_repaid_charge_out_and_back(self, db_session):
-        """A netted purchase is neither an expense destination nor a Refunds source."""
-        self._seed(db_session, [
-            ("salary", "2024-01-01", 9000.0, "Salary", None),
-            ("tv", "2024-01-10", -1000.0, "Electronics", None),
-            ("tv-refund", "2024-03-14", 1000.0, "Electronics", None),
-        ])
-        uids = self._uids(db_session)
-        self._link(db_session, uids["tv"], uids["tv-refund"], 1000.0, 1000.0)
-
-        nodes = AnalysisService(db_session).get_sankey_data()["nodes"]
-
-        assert "Electronics" not in nodes
-        assert not any(n.startswith("Refunds:") for n in nodes)
-
-    def test_sankey_unknown_gap_is_measured_before_netting(self, db_session):
-        """Netting must not invent untracked card spend out of a refund."""
-        # A card purchase repaid into the bank: the bill still covered the
-        # full charge, so the itemized detail is complete and there is no gap.
-        db_session.add(
-            CreditCardTransaction(
-                id="cc-tv", date="2024-01-10", provider="max", account_name="Visa",
-                description="tv", amount=-1000.0, category="Electronics",
-                source="credit_card_transactions",
-            )
-        )
-        self._seed(db_session, [
-            ("cc-bill", "2024-02-02", -1000.0, "Credit Cards", None),
-            ("tv-refund", "2024-03-14", 1000.0, "Electronics", None),
-        ])
-        db_session.commit()
-        cc_uid = db_session.query(CreditCardTransaction).one().unique_id
-        service = PendingRefundsService(db_session)
-        pending = service.mark_as_pending_refund(
-            source_type="transaction", source_id=cc_uid,
-            source_table="credit_cards", expected_amount=1000.0,
-        )
-        service.link_refund(
-            pending_refund_id=pending["id"],
-            refund_transaction_id=self._uids(db_session)["tv-refund"],
-            refund_source="banks", amount=1000.0,
-        )
-
-        nodes = AnalysisService(db_session).get_sankey_data()["nodes"]
-
-        assert "Unknown" not in nodes
-
-    def test_matched_refund_is_not_counted_as_income(self, db_session):
+    def test_matched_refund_is_not_counted_as_income(self, links_predating_tag_alignment, db_session):
         """A repayment landing in an income category is money back, not earnings."""
         self._seed(db_session, [
             ("salary", "2024-03-01", 8000.0, "Salary", None),
@@ -1564,6 +1313,60 @@ class TestRefundNettingAcrossMonths:
         march_sources = self._month(by_source, "2024-03")["sources"]
         assert sum(march_sources.values()) == 8000.0
         assert not any("Other Income" in label for label in march_sources)
+
+    def test_no_refund_handling_counts_both_sides_in_their_own_months(self, db_session):
+        """``RefundMode.NONE`` leaves the purchase in January and the refund in March."""
+        self._seed(db_session, [
+            ("tv", "2024-01-10", -1000.0, "Electronics", None),
+            ("tv-refund", "2024-03-14", 1000.0, "Electronics", None),
+        ])
+        uids = self._uids(db_session)
+        self._link(db_session, uids["tv"], uids["tv-refund"], 1000.0, 1000.0)
+        service = AnalysisService(db_session)
+
+        gross = service.get_expenses_by_category_over_time(refunds=RefundMode.NONE)
+        netted = service.get_expenses_by_category_over_time(refunds=RefundMode.LINKED)
+
+        assert self._month(gross, "2024-01")["categories"]["Electronics"] == 1000.0
+        assert self._month(gross, "2024-03")["categories"]["Electronics"] == -1000.0
+        for row in netted:
+            assert "Electronics" not in row["categories"]
+
+    def test_pending_mode_alone_drops_an_open_expectation(self, db_session):
+        """Only ``RefundMode.PENDING`` takes a purchase awaiting its refund off."""
+        self._seed(db_session, [
+            ("loan-to-friend", "2024-01-10", -800.0, "Other", None),
+        ])
+        uids = self._uids(db_session)
+        PendingRefundsService(db_session).mark_as_pending_refund(
+            source_type="transaction", source_id=uids["loan-to-friend"],
+            source_table="banks", expected_amount=800.0,
+        )
+        service = AnalysisService(db_session)
+
+        spent = {
+            mode: (self._month(service.get_expenses_by_category_over_time(refunds=mode), "2024-01")
+                   or {"categories": {}})["categories"].get("Other", 0.0)
+            for mode in RefundMode
+        }
+
+        assert spent == {RefundMode.NONE: 800.0, RefundMode.LINKED: 800.0, RefundMode.PENDING: 0.0}
+
+    def test_no_refund_handling_keeps_a_refund_tagged_as_income(self, links_predating_tag_alignment, db_session):
+        """A linked refund sitting in an income category stays income only under ``NONE``."""
+        self._seed(db_session, [
+            ("tv", "2024-01-10", -1000.0, "Electronics", None),
+            ("bit", "2024-01-14", 1000.0, "Other Income", "Bit"),
+        ])
+        uids = self._uids(db_session)
+        self._link(db_session, uids["tv"], uids["bit"], 1000.0, 1000.0)
+        service = AnalysisService(db_session)
+
+        gross = self._month(service.get_income_by_source_over_time(refunds=RefundMode.NONE), "2024-01")
+        netted = self._month(service.get_income_by_source_over_time(refunds=RefundMode.LINKED), "2024-01")
+
+        assert gross["sources"] == {"Other Income / Bit": 1000.0}
+        assert netted is None or netted["sources"] == {}
 
 
 class TestExpenseBreakdownFilters:
@@ -2231,7 +2034,7 @@ class TestOpeningBalancesAreNotIncome:
 class TestOverviewNetsMatchedRefunds:
     """A refund matched to its purchase is one event in the overview totals."""
 
-    def test_matched_refund_cancels_out_of_overview(self, db_session):
+    def test_matched_refund_cancels_out_of_overview(self, links_predating_tag_alignment, db_session):
         """Verify a refund booked as income no longer inflates income and expenses.
 
         A refund in the purchase's own category cancelled out even before
@@ -2290,11 +2093,3 @@ class TestTaggedPriorWealth:
         overview = AnalysisService(db_session).get_overview()
 
         assert overview["total_income"] == 19000.0
-
-    def test_sankey_prior_wealth_node_includes_it(self, db_session, opening_deposit):
-        """Verify the Prior Wealth node carries the tagged deposit."""
-        result = AnalysisService(db_session).get_sankey_data()
-
-        pw_node_idx = result["node_labels"].index("Prior Wealth")
-        pw_links = [link for link in result["links"] if link["source"] == pw_node_idx]
-        assert [link["value"] for link in pw_links] == [15000.0]
