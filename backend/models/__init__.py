@@ -1,5 +1,6 @@
 """SQLAlchemy ORM models, one module per table (or tightly coupled table group)."""
 
+from backend.models.applied_data_fix import AppliedDataFix
 from backend.models.bank_balance import BankBalance
 from backend.models.base import Base, TimestampMixin
 from backend.models.budget import BudgetRule
@@ -36,6 +37,7 @@ from backend.models.transaction import (
 )
 
 __all__ = [
+    "AppliedDataFix",
     "BankBalance",
     "BankTransaction",
     "Base",

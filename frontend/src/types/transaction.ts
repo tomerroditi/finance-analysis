@@ -24,4 +24,6 @@ export interface Transaction {
   parent_category?: string | null;
   parent_tag?: string | null;
   parent_amount?: number | null;
+  /** Budget views only: what a refund-netted row counts for in its pool. */
+  net_amount?: number | null;
 }

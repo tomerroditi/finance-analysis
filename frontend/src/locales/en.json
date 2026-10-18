@@ -480,7 +480,9 @@
       "source": "Source",
       "memo": "Memo",
       "chargedAmount": "Charged Amount",
-      "originalAmount": "Original Amount"
+      "originalAmount": "Original Amount",
+      "afterRefunds": "{{amount}} after refunds",
+      "refundNetted": "Netted into its purchase"
     },
     "filters": {
       "title": "Filters",
