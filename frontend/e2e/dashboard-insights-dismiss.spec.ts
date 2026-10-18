@@ -19,7 +19,6 @@ test.describe("Dashboard insight dismissal", () => {
       "forecast",
       "recurring",
       "goals",
-      "cash_flow",
       "category",
       "income_expenses",
       "net_worth",

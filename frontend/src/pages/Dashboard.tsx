@@ -22,7 +22,6 @@ import { GoalsSection } from "../components/dashboard/GoalsSection";
 import { SpendingHeatmap } from "../components/dashboard/SpendingHeatmap";
 import { IncomeExpensesCard } from "../components/dashboard/IncomeExpensesCard";
 import { NetWorthCard } from "../components/dashboard/NetWorthCard";
-import { CashFlowCard } from "../components/dashboard/CashFlowCard";
 import { RefundsCard } from "../components/dashboard/RefundsCard";
 import { EarlyRetirementCard } from "../components/dashboard/EarlyRetirementCard";
 import { Skeleton } from "../components/common/Skeleton";
@@ -454,7 +453,6 @@ export function Dashboard() {
     heatmap: () => <SpendingHeatmap transactions={allTransactions} size={cardSize("heatmap")} />,
     income_expenses: () => <IncomeExpensesCard />,
     net_worth: () => <NetWorthCard />,
-    cash_flow: () => <CashFlowCard />,
     refunds: () => <RefundsCard />,
     retirement: () => <EarlyRetirementCard />,
   };

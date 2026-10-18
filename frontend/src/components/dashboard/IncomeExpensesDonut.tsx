@@ -5,6 +5,7 @@ import { formatCompactCurrency, formatCurrency } from "../../utils/numberFormatt
 import { DonutChart } from "../charts/DonutChart";
 import { useScrollCap } from "../../hooks/useScrollCap";
 import { isTouchDevice } from "../../utils/chartStyle";
+import { parseOriginKey, seriesFill, seriesLabel } from "./splitOrigins";
 
 /**
  * The all-scope breakdown: one hollow pie over the whole window plus a
@@ -67,7 +68,11 @@ export function IncomeExpensesDonut({
     <div className="flex flex-col gap-4">
       <div className="w-full min-h-[240px]">
         <DonutChart
-          data={slices}
+          data={slices.map((s) => ({
+            ...s,
+            label: seriesLabel(s.name),
+            hatched: parseOriginKey(s.name) !== null,
+          }))}
           colors={slices.map((s) => colorOf(s.name))}
           height={240}
           onSliceClick={isTouchDevice ? undefined : onSelect}
@@ -132,11 +137,16 @@ export function IncomeExpensesDonut({
                         >
                           <span
                             className="inline-block w-2.5 h-2.5 rounded-full shrink-0"
-                            style={{ backgroundColor: colorOf(slice.name) }}
+                            style={{ background: seriesFill(slice.name, colorOf) }}
                           />
                           <span className="min-w-0 truncate" dir="auto">
-                            {slice.name}
+                            {seriesLabel(slice.name)}
                           </span>
+                          {parseOriginKey(slice.name) && (
+                            <span className="shrink-0 text-[10px] text-[var(--text-muted)]" dir="auto">
+                              {t("dashboard.splitNowTagged", { tag: parseOriginKey(slice.name)?.child })}
+                            </span>
+                          )}
                         </button>
                       </td>
                       <td className="text-center px-2 py-2 whitespace-nowrap tabular-nums">

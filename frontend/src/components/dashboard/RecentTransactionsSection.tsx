@@ -815,6 +815,9 @@ export function RecentTransactionsFeed({
             source: linkingTransaction.source || "unknown",
             amount: linkingTransaction.amount,
             description: linkingTransaction.description || "",
+            category: linkingTransaction.category ?? null,
+            tag: linkingTransaction.tag ?? null,
+            splitId: linkingTransaction.split_id ?? null,
           }}
         />
       )}

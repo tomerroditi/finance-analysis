@@ -7,7 +7,7 @@ describe("makeQueryKeys", () => {
     expect(k.transactions.list("all", false)).toEqual([
       "transactions", "list", "all", false, true,
     ]);
-    expect(k.analytics.sankey()).toEqual(["analytics", "sankey", true]);
+    expect(k.analytics.netWorthOverTime()).toEqual(["analytics", "net-worth-over-time", true]);
     expect(k.budget.analysis(2026, 7, false)).toEqual([
       "budget", "analysis", 2026, 7, false, true,
     ]);

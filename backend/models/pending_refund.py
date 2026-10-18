@@ -102,6 +102,10 @@ class RefundLink(Base, TimestampMixin):
         older rows may hold the service name ('banks', 'credit_cards', 'cash').
     amount : float
         Amount this refund covers (may be partial).
+    refund_split_id : int, optional
+        The split part of the refund transaction this link covers, when the
+        refund was split so the linked part could carry the purchase's tag.
+        ``None`` links the whole transaction.
     """
 
     __tablename__ = Tables.REFUND_LINKS.value
@@ -111,3 +115,4 @@ class RefundLink(Base, TimestampMixin):
     refund_transaction_id = Column(Integer, nullable=False)
     refund_source = Column(String, nullable=False)
     amount = Column(Float, nullable=False)
+    refund_split_id = Column(Integer, nullable=True)

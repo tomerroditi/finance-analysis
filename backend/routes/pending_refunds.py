@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 from backend.dependencies import get_database
 from backend.routes.schemas import ApiRequestModel
 from backend.services.pending_refunds_service import PendingRefundsService
+from backend.services.refund_tag_alignment import RefundTagAlignmentService
 
 router = APIRouter(tags=["pending-refunds"])
 
@@ -32,6 +33,8 @@ class LinkRefundRequest(ApiRequestModel):
     refund_transaction_id: int
     refund_source: str
     amount: float
+    retag: bool = False
+    refund_split_id: int | None = None
 
 
 class UpdatePendingRefundRequest(ApiRequestModel):
@@ -133,6 +136,18 @@ def set_refund_source_note(
     )
 
 
+@router.get("/tag-mismatches")
+def get_tag_mismatches(db: Session = Depends(get_database)) -> list[dict[str, Any]]:
+    """List linked refunds tagged differently from the purchase they pay back."""
+    return RefundTagAlignmentService(db).get_mismatches()
+
+
+@router.post("/tag-mismatches/fix")
+def fix_tag_mismatches(db: Session = Depends(get_database)) -> dict[str, int]:
+    """Move every mismatched linked refund under its purchase's tag."""
+    return {"fixed": RefundTagAlignmentService(db).fix_mismatches()}
+
+
 @router.patch("/{pending_id}")
 def update_pending_refund(
     pending_id: int,
@@ -178,6 +193,8 @@ def link_refund(
         refund_transaction_id=request.refund_transaction_id,
         refund_source=request.refund_source,
         amount=request.amount,
+        retag=request.retag,
+        refund_split_id=request.refund_split_id,
     )
 
 

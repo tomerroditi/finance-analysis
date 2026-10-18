@@ -381,7 +381,7 @@ class TestGetAllPendingEnrichment:
         assert (item["category"], item["tag"]) == ("Home", "Rent")
         assert item["original_currency"] == "ILS"
 
-    def test_enriches_link_details(self, db_session, seed_base_transactions):
+    def test_enriches_link_details(self, links_predating_tag_alignment, db_session, seed_base_transactions):
         """Verify get_all_pending enriches linked refund transactions with details."""
         expense_txn = db_session.query(BankTransaction).filter(
             BankTransaction.amount < 0
@@ -513,6 +513,7 @@ class TestGetBudgetAdjustment:
         assert result == 50.0
 
 
+@pytest.mark.usefixtures("links_predating_tag_alignment")
 class TestLinkRefundAllocation:
     """Tests for multi-refund allocation of a single refund transaction."""
 
@@ -646,6 +647,7 @@ class TestLinkRefundAllocation:
         assert result["total_refunded"] == 50.0
 
 
+@pytest.mark.usefixtures("links_predating_tag_alignment")
 class TestLinkRefundAvailabilityTolerance:
     """The availability check allows a float epsilon, not a real overdraw.
 
@@ -702,6 +704,7 @@ class TestLinkRefundAvailabilityTolerance:
         assert service.get_pending_by_id(pending["id"])["links"] == []
 
 
+@pytest.mark.usefixtures("links_predating_tag_alignment")
 class TestGetRefundSources:
     """Tests for the refund-sources allocation summary."""
 
@@ -810,7 +813,7 @@ class TestRefundNotes:
         assert result["note"] is None
         assert service.repo.get_all_source_notes().empty
 
-    def test_refund_sources_include_note(self, db_session, seed_base_transactions):
+    def test_refund_sources_include_note(self, links_predating_tag_alignment, db_session, seed_base_transactions):
         """get_refund_sources surfaces the stored note per source."""
         expense = db_session.query(BankTransaction).filter(
             BankTransaction.amount < 0
@@ -866,7 +869,7 @@ class TestActivePendingIdentifiers:
         assert ids["split_ids"] == {1}
         assert ids["transaction_keys"] == set()
 
-    def test_resolved_refunds_are_not_active(self, db_session, seed_refund_sources):
+    def test_resolved_refunds_are_not_active(self, links_predating_tag_alignment, db_session, seed_refund_sources):
         """Resolved pending refunds drop out of the active identifier sets."""
         refund = BankTransaction(
             id="ident-refund", date="2026-03-12", provider="p",

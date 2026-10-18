@@ -163,7 +163,6 @@
     "expensesByCategory": "הוצאות לפי קטגוריה",
     "netBalanceOverTime": "מאזן נטו לאורך זמן",
     "netWorthOverTime": "שווי נקי לאורך זמן",
-    "cashFlow": "תזרים מזומנים",
     "budgetProgress": "מעקב תקציב",
     "recentTransactions": "תנועות אחרונות",
     "financialHealth": "בריאות פיננסית",
@@ -231,6 +230,10 @@
     "creditNetted": "זיכוי {{amount}}",
     "creditTooltipTitle": "החזרים מעבר להוצאה:",
     "filterToSeries": "סינון לפריט זה",
+    "byOriginalTag": "לפי התיוג המקורי",
+    "byOriginalTagTitle": "הצגת כסף שפוצל לתיוג אחר תחת התיוג של העסקה המקורית, בקווקוו בצבע התיוג הנוכחי שלו",
+    "splitFrom": "פוצל מ־{{parent}} · {{amount}}",
+    "splitNowTagged": "מתויג כעת {{tag}}",
     "clearFilter": "ניקוי הסינון",
     "focusPerMonth": "לחודש",
     "focusPerYear": "לשנה",
@@ -437,7 +440,6 @@
       "heatmap": "לוח הוצאות",
       "incomeExpenses": "הכנסות והוצאות",
       "netWorth": "שווי נקי",
-      "cashFlow": "תזרים מזומנים",
       "refunds": "החזרים",
       "retirement": "פרישה מוקדמת"
     },
@@ -673,7 +675,23 @@
       "sourcesPanel": "מקורות החזר",
       "sourcesCount": "{{count}} תנועות",
       "panelHint": "הוחזר / צפוי · נותר",
-      "crossHint": "רחפו מעל מקור כדי להאיר את הבקשות שהוא מממן — ולהפך."
+      "crossHint": "רחפו מעל מקור כדי להאיר את הבקשות שהוא מממן — ולהפך.",
+      "tagMismatch": {
+        "chip_one": "החזר מקושר אחד מתויג אחרת מהרכישה שלו",
+        "chip_two": "{{count}} החזרים מקושרים מתויגים אחרת מהרכישות שלהם",
+        "chip_other": "{{count}} החזרים מקושרים מתויגים אחרת מהרכישות שלהם",
+        "dismiss": "הסתר",
+        "title": "תיוג החזרים שלא תואם לרכישה",
+        "explain": "החזרים אלה קושרו לפני שקישור דרש תיוג תואם. תיקון מעביר כל החזר לתיוג של הרכישה שהוא מחזיר; החזר גדול מהסכום המקושר מפוצל, ורק החלק המקושר עובר.",
+        "move": "{{from}} ← {{to}}",
+        "fixAll_one": "תקן החזר אחד",
+        "fixAll_two": "תקן {{count}} החזרים",
+        "fixAll_other": "תקן {{count}} החזרים",
+        "fixed_one": "החזר אחד הועבר לתיוג של הרכישה",
+        "fixed_two": "{{count}} החזרים הועברו לתיוג של הרכישה",
+        "fixed_other": "{{count}} החזרים הועברו לתיוג של הרכישה",
+        "failed": "התיקון נכשל. נסו שוב."
+      }
     },
     "goalLink": {
       "action": "קישור ליעד חיסכון",
@@ -690,7 +708,19 @@
       "provider": "ספק",
       "cardNumber": "מספר כרטיס",
       "accountNumber": "מספר חשבון"
-    }
+    },
+    "splitPart": {
+      "untagged": "ללא תיוג",
+      "badgeTitle": "פוצל מ־{{parent}}",
+      "title": "חלק מפיצול",
+      "parent": "פוצל מ־",
+      "parts_one": "חלק אחד בתצוגה זו",
+      "parts_two": "{{count}} חלקים בתצוגה זו",
+      "parts_other": "{{count}} חלקים בתצוגה זו"
+    },
+    "refundsRetagged_one": "החזר מקושר אחד הועבר יחד עם הרכישה",
+    "refundsRetagged_two": "{{count}} החזרים מקושרים הועברו יחד עם הרכישה",
+    "refundsRetagged_other": "{{count}} החזרים מקושרים הועברו יחד עם הרכישה"
   },
   "budget": {
     "title": "תקציב",
@@ -1537,7 +1567,12 @@
       "suggestedBadge": "מוצע · התאמת סכום",
       "allIncoming": "כל התנועות הנכנסות",
       "suggestedPendingHeader": "מוצע — מצפה בדיוק לסכום הזה",
-      "allPending": "כל בקשות ההחזר"
+      "allPending": "כל בקשות ההחזר",
+      "retagTitle": "להעביר את ההחזר לתיוג של הרכישה?",
+      "retagMessage": "ההחזר מתויג כ-{{from}}, והרכישה שהוא מחזיר מתויגת כ-{{to}}. קישור יעביר את ההחזר ל-{{to}}, כדי שיקוזז מול הרכישה. אם ההחזר גדול מהסכום המקושר, רק החלק המקושר יפוצל ויועבר.",
+      "retagMessageUnknown": "ההחזר מתויג אחרת מהרכישה שהוא מחזיר. קישור יעביר אותו ל-{{to}}, כדי שיקוזז מול הרכישה. אם ההחזר גדול מהסכום המקושר, רק החלק המקושר יפוצל ויועבר.",
+      "retagConfirm": "העבר וקשר",
+      "linkFailed": "הקישור נכשל. נסו שוב."
     },
     "project": {
       "title": "תקציב פרויקט",

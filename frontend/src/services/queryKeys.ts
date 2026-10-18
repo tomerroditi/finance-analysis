@@ -69,6 +69,7 @@ export function makeQueryKeys(demo: boolean) {
       // the full list and drop resolved/closed items from the refunds view.
       active: () => ["pending-refunds", "active", demo] as const,
       sources: () => ["pending-refunds", "sources", demo] as const,
+      tagMismatches: () => ["pending-refunds", "tag-mismatches", demo] as const,
     },
     budget: {
       analysis: (year: number, month: number, includeSplitParents: boolean) =>
@@ -160,7 +161,6 @@ export function makeQueryKeys(demo: boolean) {
       overview: () => ["analytics", "overview", demo] as const,
       netWorthOverTime: () => ["analytics", "net-worth-over-time", demo] as const,
       debtPayments: () => ["analytics", "debt-payments-over-time", demo] as const,
-      sankey: () => ["analytics", "sankey", demo] as const,
       expensesByCategoryOverTime: (
         refunds: RefundMode,
         excludeProjects: boolean,

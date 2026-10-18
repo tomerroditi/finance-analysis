@@ -64,6 +64,8 @@ class Tables(Enum):
         household summaries.
     FIRE_SCENARIOS : str
         Name of the table storing the user's saved early-retirement plan.
+    APPLIED_DATA_FIXES : str
+        Name of the table recording which one-time data repairs have run.
     """
 
     CREDIT_CARD = "credit_card_transactions"
@@ -98,6 +100,7 @@ class Tables(Enum):
     INSIGHT_DISMISSALS = "insight_dismissals"
     CLEARING_HOUSE_REPORTS = "clearing_house_reports"
     FIRE_SCENARIOS = "fire_scenarios"
+    APPLIED_DATA_FIXES = "applied_data_fixes"
 
 
 # The five transaction tables, keyed by the service name the frontend and API

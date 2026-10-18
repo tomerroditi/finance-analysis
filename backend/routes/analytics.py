@@ -159,30 +159,6 @@ def get_expenses_by_category_over_time(
     )
 
 
-@router.get("/sankey")
-def get_sankey_data(
-    db: Session = Depends(get_database),
-    exclude_pending_refunds: bool = True,
-) -> dict[str, Any]:
-    """Return Sankey chart data showing income-to-expense flow.
-
-    Parameters
-    ----------
-    exclude_pending_refunds : bool
-        If True, a purchase still awaiting its refund is left out. Refunds
-        already matched to a purchase are netted against that purchase
-        either way.
-
-    Returns
-    -------
-    dict
-        ``{nodes: list[str], links: list[{source, target, value}]}`` structure
-        suitable for rendering a Sankey diagram (income sources -> categories -> tags).
-    """
-    service = AnalysisService(db)
-    return service.get_sankey_data(exclude_pending_refunds=exclude_pending_refunds)
-
-
 @router.get("/income-by-source-over-time")
 def get_income_by_source_over_time(
     db: Session = Depends(get_database),

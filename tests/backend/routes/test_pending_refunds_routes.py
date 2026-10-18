@@ -133,6 +133,7 @@ class TestPendingRefundsRoutes:
                 "refund_transaction_id": refund_tx["unique_id"],
                 "refund_source": refund_tx["source"],
                 "amount": min(abs(tx["amount"]), refund_tx["amount"]),
+                "retag": True,
             },
         )
         assert response.status_code == 200
@@ -262,6 +263,7 @@ class TestRefundSourcesRoute:
                 "refund_transaction_id": refund_tx["unique_id"],
                 "refund_source": refund_tx["source"],
                 "amount": link_amount,
+                "retag": True,
             },
         )
         assert link_resp.status_code == 200
@@ -319,3 +321,66 @@ class TestRefundNotesRoutes:
         })
         assert resp.status_code == 200
         assert resp.json()["note"] is None
+
+
+class TestTagMismatchRoutes:
+    """Links whose refund sits under another tag than the purchase."""
+
+    def test_mismatch_is_listed_then_fixed(
+        self, test_client, seed_base_transactions, links_predating_tag_alignment, monkeypatch
+    ):
+        """GET lists a link made before alignment; POST /fix moves it and empties the list."""
+        create = _mark_bank_expense(test_client)
+        pending_id = create.json()["id"]
+        expense = test_client.get(f"/api/pending-refunds/{pending_id}").json()
+        txns = test_client.get("/api/transactions/?service=banks").json()
+        refund = next(
+            t
+            for t in txns
+            if t["amount"] >= 100.0 and t["category"] != expense.get("category")
+        )
+        link = test_client.post(
+            f"/api/pending-refunds/{pending_id}/link",
+            json={
+                "refund_transaction_id": refund["unique_id"],
+                "refund_source": refund["source"],
+                "amount": 100.0,
+            },
+        )
+        assert link.status_code == 200
+        monkeypatch.undo()
+
+        listed = test_client.get("/api/pending-refunds/tag-mismatches")
+        assert listed.status_code == 200
+        mismatches = listed.json()
+        assert len(mismatches) == 1
+        assert mismatches[0]["pending_refund_id"] == pending_id
+        assert mismatches[0]["refund_transaction_id"] == refund["unique_id"]
+
+        fixed = test_client.post("/api/pending-refunds/tag-mismatches/fix")
+        assert fixed.status_code == 200
+        assert fixed.json() == {"fixed": 1}
+        assert test_client.get("/api/pending-refunds/tag-mismatches").json() == []
+
+    def test_link_without_retag_is_refused(self, test_client, seed_base_transactions):
+        """A refund tagged apart from its purchase is a 400 unless retag is sent."""
+        pending_id = _mark_bank_expense(test_client).json()["id"]
+        expense = test_client.get(f"/api/pending-refunds/{pending_id}").json()
+        txns = test_client.get("/api/transactions/?service=banks").json()
+        refund = next(
+            t
+            for t in txns
+            if t["amount"] >= 100.0 and t["category"] != expense.get("category")
+        )
+
+        response = test_client.post(
+            f"/api/pending-refunds/{pending_id}/link",
+            json={
+                "refund_transaction_id": refund["unique_id"],
+                "refund_source": refund["source"],
+                "amount": 100.0,
+            },
+        )
+
+        assert response.status_code == 400
+        assert "retag" in response.json()["detail"]

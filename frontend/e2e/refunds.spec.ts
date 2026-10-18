@@ -12,6 +12,10 @@ import { API_BASE, enableDemoMode, navigateTo } from "./helpers";
  * - the link dialog's SUGGESTED section (exact amount match pinned on top)
  *   and linking through it — reusing the multi-link model
  * - the sources rail: allocation chips, free-amount chip
+ * - linking across tags: the dialog asks to move the refund under the
+ *   purchase's tag before it links, and a link whose refund was retagged
+ *   afterwards surfaces as the "tagged differently" chip, fixed from its
+ *   preview
  *
  * Mutating spec: seeds its own pending refunds via the API in beforeAll and
  * relies on the demo-DB re-copy on the next demo-mode enable for cleanup.
@@ -27,6 +31,8 @@ interface ApiTxn {
   source: string;
   amount: number;
   date?: string;
+  category?: string | null;
+  tag?: string | null;
   description?: string;
   desc?: string;
 }
@@ -115,7 +121,9 @@ test.describe("Refunds redesign", () => {
     expense2 = expenses.find(
       (t) =>
         descOf(t) !== descOf(expense1) &&
-        Math.abs(t.amount) >= income2.amount,
+        Math.abs(t.amount) >= income2.amount &&
+        // Tagged apart from income2, so linking them asks to retag.
+        t.category !== income2.category,
     )!;
     expect(
       expense1,
@@ -153,6 +161,7 @@ test.describe("Refunds redesign", () => {
         refund_transaction_id: income1.unique_id,
         refund_source: income1.source,
         amount: 7,
+        retag: true,
       },
     });
     expect(l1.ok()).toBeTruthy();
@@ -226,15 +235,21 @@ test.describe("Refunds redesign", () => {
       expectedDefault,
     );
 
+    // income2 is tagged apart from expense2: linking asks to move it first.
+    await dialog.getByRole("button", { name: "Link Refund", exact: true }).click();
+    await expect(
+      page.getByText("Move the refund under the purchase's tag?"),
+    ).toBeVisible();
     const [linkResp] = await Promise.all([
       page.waitForResponse(
         (r) =>
           r.url().includes(`/pending-refunds/${p2Id}/link`) &&
           r.request().method() === "POST",
       ),
-      dialog.getByRole("button", { name: "Link Refund", exact: true }).click(),
+      page.getByRole("button", { name: "Move and link" }).click(),
     ]);
     expect(linkResp.ok()).toBeTruthy();
+    expect(linkResp.request().postDataJSON().retag).toBe(true);
     await expect(row2.getByText("settled")).toBeVisible();
 
     // --- sources rail: income1 shows free chip; add a source note (PUT) ---
@@ -260,5 +275,36 @@ test.describe("Refunds redesign", () => {
     ]);
     expect(putResp.ok()).toBeTruthy();
     await expect(srcItem.getByText('"shared source note"')).toBeVisible();
+
+    // --- a refund retagged after linking shows up as a mismatch; fix all ---
+    const retag = await page.request.put(
+      `${API_BASE}/transactions/${income2.unique_id}`,
+      {
+        headers: { "X-FAD-Demo": "1" },
+        data: { source: income2.source, category: "Other Income" },
+      },
+    );
+    expect(retag.ok()).toBeTruthy();
+    await page.reload();
+    await page.getByRole("button", { name: /Refunds/ }).click();
+    const chip = page.getByTestId("refund-tag-mismatch-chip");
+    await expect(chip).toContainText("tagged differently");
+    await chip.getByRole("button").first().click();
+    const preview = page.getByRole("dialog", {
+      name: "Refunds tagged apart from their purchase",
+    });
+    await expect(
+      preview.getByTestId("refund-tag-mismatch-list").getByText(descOf(expense2)),
+    ).toBeVisible();
+    const [fixResp] = await Promise.all([
+      page.waitForResponse(
+        (r) =>
+          r.url().includes("/pending-refunds/tag-mismatches/fix") &&
+          r.request().method() === "POST",
+      ),
+      preview.getByRole("button", { name: /^Fix \d+ refunds?$/ }).click(),
+    ]);
+    expect(fixResp.ok()).toBeTruthy();
+    await expect(chip).toHaveCount(0);
   });
 });

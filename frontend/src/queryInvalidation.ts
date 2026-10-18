@@ -9,7 +9,7 @@ export const INVALIDATE_DEBOUNCE_MS = 200;
  * Any successful mutation alters server state, so every cached query could
  * now be stale. Sweeping the whole cache beats per-mutation invalidation: a
  * mutation in one feature frequently has knock-on effects (a new transaction
- * shifts budgets, KPIs, sankey, net-worth) and listing every dependent key at
+ * shifts budgets, KPIs, net-worth) and listing every dependent key at
  * every mutation site is fragile. Mounted queries refetch immediately;
  * unmounted ones refetch on next mount and the persister updates the
  * IndexedDB snapshot through its throttle.

@@ -22,6 +22,7 @@ from backend.repositories.tagging_rule_match_repository import (
 )
 from backend.repositories.tagging_rules_repository import TaggingRulesRepository
 from backend.repositories.transactions import TransactionsRepository
+from backend.services.refund_tag_alignment import RefundTagAlignmentService
 from backend.services.tagging_service import CategoriesTagsService
 from backend.services.transactions_service import TransactionsService
 
@@ -71,6 +72,7 @@ class TaggingRulesService:
         self.transactions_repo = TransactionsRepository(db)
         self.categories_tags_service = CategoriesTagsService(db)
         self.transactions_service = TransactionsService(db)
+        self.alignment = RefundTagAlignmentService(db)
 
     def get_all_rules(self) -> pd.DataFrame:
         """
@@ -703,6 +705,9 @@ class TaggingRulesService:
             if not matched:
                 continue
 
+            # A refund linked whole carries its purchase's tag; a rule taking
+            # it back would leave the purchase netted under another tag.
+            linked = self.alignment.linked_refund_ids(table)
             ids_to_update = [
                 uid
                 for uid in self.match_repo.match_writable_ids(
@@ -713,12 +718,13 @@ class TaggingRulesService:
                     overwrite=overwrite,
                     previous=previous,
                 )
-                if uid in matched
+                if uid in matched and uid not in linked
             ]
             if not ids_to_update:
                 continue
 
             self.match_repo.assign(table, ids_to_update, rule["category"], rule["tag"])
+            self.alignment.cascade_from_transactions(table, ids_to_update)
 
             modified_pairs.update((table, uid) for uid in ids_to_update)
 
