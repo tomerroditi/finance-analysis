@@ -482,7 +482,9 @@
       "source": "מקור",
       "memo": "הערה",
       "chargedAmount": "סכום שחויב",
-      "originalAmount": "סכום מקורי"
+      "originalAmount": "סכום מקורי",
+      "afterRefunds": "{{amount}} אחרי החזרים",
+      "refundNetted": "קוזז מול הרכישה"
     },
     "filters": {
       "title": "מסננים",

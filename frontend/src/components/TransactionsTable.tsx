@@ -1014,6 +1014,19 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
                       dir="ltr"
                     >
                       {formatCurrency(tx.amount, 2)}
+                      {tx.net_amount != null && (
+                        <div
+                          className="text-[10px] font-normal text-[var(--text-muted)]"
+                          dir="auto"
+                          data-testid="tx-net-amount"
+                        >
+                          {tx.amount > 0
+                            ? t("transactions.table.refundNetted")
+                            : t("transactions.table.afterRefunds", {
+                                amount: formatCurrency(tx.net_amount, 2),
+                              })}
+                        </div>
+                      )}
                     </td>
                   )}
                   {visibleColumns.has("account") && (
