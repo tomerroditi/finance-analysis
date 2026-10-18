@@ -18,10 +18,9 @@ from backend.constants.budget import (
     TAGS,
     YEAR,
 )
-from backend.constants.tables import TransactionsTableFields
 from backend.errors import EntityNotFoundException, ValidationException
+from backend.services.budget import ledger
 from backend.services.budget.core import BudgetService, _auto_fill_lock, _today
-from backend.services.pending_refunds_service import restore_gross_amounts
 
 
 class YearlyBudgetService(BudgetService):
@@ -260,44 +259,18 @@ class YearlyBudgetService(BudgetService):
         if rules.empty:
             return None
 
-        expenses = self.get_filtered_expenses(
-            exclude_pending_refunds=True,
-            include_split_parents=include_split_parents,
-            # Envelopes report what a month cost, net of refunds matched to
-            # their purchase — the same definition the dashboard now uses.
-            net_refunds=True,
-        )
-        if not expenses.empty:
-            year_data = expenses.loc[
-                pd.to_datetime(expenses[TransactionsTableFields.DATE.value]).dt.year
-                == year
-            ]
-        else:
-            year_data = expenses
+        claims = self.get_claims()
+        if not claims.empty:
+            claims = claims.loc[claims[ledger.BUDGET_YEAR] == year]
 
         view = []
         for _, rule in rules.iterrows():
-            tags = rule[TAGS]
-            if year_data.empty:
-                cat_data = year_data
-            else:
-                cat_data = year_data[
-                    year_data[TransactionsTableFields.CATEGORY.value] == rule[CATEGORY]
-                ]
-                if not self._is_all_tags(tags):
-                    cat_data = cat_data[
-                        cat_data[TransactionsTableFields.TAG.value].isin(tags)
-                    ]
-            amt = (
-                cat_data[TransactionsTableFields.AMOUNT.value].sum() * -1
-                if not cat_data.empty
-                else 0.0
-            )
+            claimed = ledger.of_rule(claims, rule[ID])
             view.append(
                 {
                     "rule": rule.to_dict(),
-                    "current_amount": amt,
-                    "data": restore_gross_amounts(cat_data).to_dict(orient="records"),
+                    "current_amount": ledger.spent(claimed),
+                    "data": ledger.transaction_records(claimed),
                     "allow_edit": True,
                     "allow_delete": True,
                     "closed": self.rule_is_closed(rule),

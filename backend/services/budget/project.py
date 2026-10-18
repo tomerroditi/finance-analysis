@@ -26,12 +26,12 @@ from backend.errors import (
     EntityNotFoundException,
     ValidationException,
 )
+from backend.services.budget import ledger
 from backend.services.budget.core import BudgetService
-from backend.services.pending_refunds_service import (
-    GROSS_AMOUNT_COLUMN,
-    apply_refund_amount_adjustments,
-    restore_gross_amounts,
-)
+from backend.services.pending_refunds_service import GROSS_AMOUNT_COLUMN
+
+#: Claim kind given to a split parent listed for display: never counted.
+SPLIT_PARENT = "split_parent"
 
 
 class ProjectBudgetService(BudgetService):
@@ -269,36 +269,48 @@ class ProjectBudgetService(BudgetService):
         self, project: str, include_split_parents: bool = False
     ) -> pd.DataFrame:
         """
-        Get all transactions categorised under a project category.
+        Get the rows a project owns, each with the per-tag rule that claimed it.
 
         Parameters
         ----------
         project : str
             Project category name.
         include_split_parents : bool, optional
-            When ``True``, include split parent transactions. Default is ``False``.
+            When ``True``, also list split parent transactions. They are for
+            display only: their splits already carry the amount, so a parent
+            keeps its own gross amount and never adds to a total.
 
         Returns
         -------
         pd.DataFrame
-            Transactions where category equals ``project``, with matched
-            refunds netted against the purchases they repay and each row's
-            pre-netting amount kept in :data:`GROSS_AMOUNT_COLUMN`.
+            The project's ledger rows (see :meth:`get_claims`) — amounts net
+            of matched refunds, the pre-netting amount in
+            :data:`GROSS_AMOUNT_COLUMN`.
         """
+        claims = ledger.of_kind(self.get_claims(), ledger.KIND_PROJECT)
+        rows = claims.loc[claims[TransactionsTableFields.CATEGORY.value] == project]
+        if not include_split_parents:
+            return rows
+
         all_data = self.transactions_service.get_data_for_analysis(
-            include_split_parents
+            include_split_parents=True
         )
-        rows = all_data.loc[all_data[TransactionsTableFields.CATEGORY.value] == project]
-        # A project envelope reports what the project cost, net of refunds
-        # matched to their purchase — the definition the monthly and yearly
-        # envelopes and the dashboard already use. The gross amount rides
-        # along so the transaction list underneath keeps real figures.
-        adjustments = self.pending_refunds_service.get_refund_amount_adjustments(
-            exclude_open=True
+        if "type" not in all_data.columns:
+            return rows
+        parents = all_data.loc[
+            (all_data[TransactionsTableFields.CATEGORY.value] == project)
+            & (all_data["type"] == "split_parent")
+        ]
+        if parents.empty:
+            return rows
+        parents = ledger.assign_claims(
+            self._expense_rows(parents),
+            self.get_rules_for_project(project),
+            self.month_override_service.get_override_map(),
         )
-        return apply_refund_amount_adjustments(
-            rows, adjustments, keep_gross_in=GROSS_AMOUNT_COLUMN
-        )
+        parents[ledger.CLAIM_KIND] = SPLIT_PARENT
+        parents[GROSS_AMOUNT_COLUMN] = parents[TransactionsTableFields.AMOUNT.value]
+        return pd.concat([rows, parents])
 
     def get_all_projects_names(self) -> list[str]:
         """
@@ -374,76 +386,44 @@ class ProjectBudgetService(BudgetService):
         # ``rules`` is consumed below (the anchor row is dropped out of it), so
         # the closed state is read off the full set before that happens.
         rules_for_state = rules
-        transactions = self.get_project_transactions(project, include_split_parents)
+        listed = self.get_project_transactions(project, include_split_parents)
+        listed = listed.where(pd.notnull(listed), None)
+        counted = listed.loc[listed[ledger.CLAIM_KIND] != SPLIT_PARENT]
+        total_spent = ledger.spent(counted)
 
         view = []
-
-        total_rule = pd.DataFrame()
         if not rules.empty:
             total_rule = rules[rules[TAGS].apply(self._is_all_tags)]
-
-        # Ensure transactions is JSON serializable (handle NaNs)
-        transactions_processed = transactions.where(pd.notnull(transactions), None)
-
-        total_spent = (
-            self._drop_split_parents(transactions)[
-                TransactionsTableFields.AMOUNT.value
-            ].sum()
-            * -1
-        )
-
-        if not total_rule.empty:
-            view.append(
-                {
-                    "rule": total_rule.iloc[0].to_dict(),
-                    "current_amount": total_spent,
-                    "data": restore_gross_amounts(transactions_processed).to_dict(
-                        orient="records"
-                    ),
-                    "allow_edit": True,
-                    "allow_delete": False,
-                }
-            )
-            rules = rules.drop(total_rule.index)
-
-        matched_txns_indices: set[int] = set()
+            if not total_rule.empty:
+                view.append(
+                    {
+                        "rule": total_rule.iloc[0].to_dict(),
+                        "current_amount": total_spent,
+                        "data": ledger.transaction_records(listed),
+                        "allow_edit": True,
+                        "allow_delete": False,
+                    }
+                )
+                rules = rules.drop(total_rule.index)
 
         for _, rule in rules.iterrows():
-            tags = rule[TAGS]
-            tag_txns_orig = transactions[
-                transactions[TransactionsTableFields.TAG.value].isin(tags)
-            ]
-            matched_txns_indices.update(tag_txns_orig.index)
-            spent = (
-                self._drop_split_parents(tag_txns_orig)[
-                    TransactionsTableFields.AMOUNT.value
-                ].sum()
-                * -1
-            )
-
-            tag_txns_display = transactions_processed[
-                transactions_processed[TransactionsTableFields.TAG.value].isin(tags)
-            ]
-
             view.append(
                 {
                     "rule": rule.to_dict(),
-                    "current_amount": spent,
-                    "data": restore_gross_amounts(tag_txns_display).to_dict(
-                        orient="records"
+                    "current_amount": ledger.spent(ledger.of_rule(counted, rule[ID])),
+                    "data": ledger.transaction_records(
+                        ledger.of_rule(listed, rule[ID])
                     ),
                     "allow_edit": True,
                     "allow_delete": True,
                 }
             )
 
-        # Handle unmatched transactions ("Other" or random tags)
-        unmatched_txns = transactions.loc[
-            ~transactions.index.isin(matched_txns_indices)
-        ]
-
-        if not unmatched_txns.empty:
-            groups = list(unmatched_txns.groupby(TransactionsTableFields.TAG.value))
+        # A tag no rule names yet mints its own zero-budget rule, so every
+        # shekel of the project shows under some tag.
+        unmatched = listed.loc[listed[ledger.CLAIM_RULE_ID].isna()]
+        if not unmatched.empty:
+            groups = list(unmatched.groupby(TransactionsTableFields.TAG.value))
             # Create all missing zero-amount rules first, then re-read the
             # rules table once — instead of a full read after every insert.
             for tag, _group in groups:
@@ -458,21 +438,11 @@ class ProjectBudgetService(BudgetService):
             new_rule_df = self.budget_repository.read_all()
 
             for tag, group in groups:
-                spent = (
-                    self._drop_split_parents(group)[
-                        TransactionsTableFields.AMOUNT.value
-                    ].sum()
-                    * -1
-                )
-
-                group_display = transactions_processed.loc[group.index]
-
                 new_rule = new_rule_df[
                     (new_rule_df[CATEGORY] == project)
                     & (new_rule_df[PERIOD_TYPE] == PERIOD_PROJECT)
                     & (new_rule_df[NAME] == tag)
                 ]
-
                 if not new_rule.empty:
                     rule_dict = new_rule.iloc[0].to_dict()
                     if isinstance(rule_dict[TAGS], str):
@@ -489,10 +459,10 @@ class ProjectBudgetService(BudgetService):
                 view.append(
                     {
                         "rule": rule_dict,
-                        "current_amount": spent,
-                        "data": restore_gross_amounts(group_display).to_dict(
-                            orient="records"
+                        "current_amount": ledger.spent(
+                            group.loc[group[ledger.CLAIM_KIND] != SPLIT_PARENT]
                         ),
+                        "data": ledger.transaction_records(group),
                         "allow_edit": True,
                         "allow_delete": True,
                     }

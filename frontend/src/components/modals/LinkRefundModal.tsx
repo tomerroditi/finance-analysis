@@ -14,13 +14,38 @@ import { useScrollLock } from "../../hooks/useScrollLock";
 import type { Transaction } from "../../types/transaction";
 import { useQueryKeys } from "../../hooks/useQueryKeys";
 import { qkPrefix } from "../../services/queryKeys";
+import { useDialog } from "../../context/DialogContext";
 
 interface RefundTransactionInfo {
   id: string | number;
   source: string;
   amount: number;
   description: string;
+  category?: string | null;
+  tag?: string | null;
+  splitId?: number | null;
 }
+
+interface LinkParams {
+  pendingId: number;
+  refundId: string | number;
+  refundSource: string;
+  amount: number;
+  refundSplitId?: number | null;
+  retag?: boolean;
+}
+
+const tagLabel = (category?: string | null, tag?: string | null) =>
+  [category, tag].filter(Boolean).join(" / ");
+
+const errorDetail = (err: unknown) =>
+  (err as { response?: { data?: { detail?: unknown } } })?.response?.data?.detail;
+
+/** The server refuses a link across tags until the caller agrees to retag. */
+const needsRetag = (err: unknown) => {
+  const detail = errorDetail(err);
+  return typeof detail === "string" && detail.includes("retag");
+};
 
 interface LinkRefundModalProps {
   isOpen: boolean;
@@ -43,6 +68,7 @@ export const LinkRefundModal: React.FC<LinkRefundModalProps> = ({
   const { t } = useTranslation();
   useScrollLock(isOpen);
   const queryClient = useQueryClient();
+  const { confirm } = useDialog();
   const qk = useQueryKeys();
   const [selectedPendingId, setSelectedPendingId] = useState<number | null>(
     null,
@@ -110,11 +136,13 @@ export const LinkRefundModal: React.FC<LinkRefundModalProps> = ({
   const isLoading = isReverseMode ? isLoadingTransactions : isLoadingPending;
 
   const linkMutation = useMutation({
-    mutationFn: (params: { pendingId: number; refundId: string | number; refundSource: string; amount: number }) =>
+    mutationFn: (params: LinkParams) =>
       pendingRefundsApi.linkRefund(params.pendingId, {
         refund_transaction_id: params.refundId,
         refund_source: params.refundSource,
         amount: params.amount,
+        refund_split_id: params.refundSplitId ?? null,
+        retag: params.retag ?? false,
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: qkPrefix.transactions });
@@ -210,25 +238,80 @@ export const LinkRefundModal: React.FC<LinkRefundModalProps> = ({
         return sel ? Math.min(givenTxnAvailable, pendingRemaining(sel)) : givenTxnAvailable;
       })();
 
+  /** Ask before a link moves the refund under the purchase's tag. Known
+   *  tags are compared up front; a refund whose tags the caller didn't pass
+   *  is caught by the server refusing the link, which asks the same thing. */
+  const confirmRetag = (purchase: PendingRefund, refund: { category?: string | null; tag?: string | null }) =>
+    confirm({
+      title: t("modals.linkRefund.retagTitle"),
+      message: refund.category
+        ? t("modals.linkRefund.retagMessage", {
+            from: tagLabel(refund.category, refund.tag),
+            to: tagLabel(purchase.category, purchase.tag),
+          })
+        : t("modals.linkRefund.retagMessageUnknown", {
+            to: tagLabel(purchase.category, purchase.tag),
+          }),
+      confirmLabel: t("modals.linkRefund.retagConfirm"),
+    });
+
+  const linkWithRetagPrompt = async (
+    params: LinkParams,
+    purchase: PendingRefund,
+    refund: { category?: string | null; tag?: string | null },
+  ) => {
+    const known = refund.category !== undefined;
+    const differs =
+      known &&
+      ((refund.category ?? null) !== (purchase.category ?? null) ||
+        (refund.tag ?? null) !== (purchase.tag ?? null));
+    if (differs) {
+      if (!(await confirmRetag(purchase, refund))) return;
+      linkMutation.mutate({ ...params, retag: true });
+      return;
+    }
+    try {
+      await linkMutation.mutateAsync(params);
+    } catch (err) {
+      if (!needsRetag(err)) return;
+      linkMutation.reset();
+      if (!(await confirmRetag(purchase, refund))) return;
+      linkMutation.mutate({ ...params, retag: true });
+    }
+  };
+
   const handleLink = () => {
     if (isReverseMode) {
       if (!selectedTransaction || !pendingRefund || linkAmount <= 0) return;
-      linkMutation.mutate({
-        pendingId: pendingRefund.id,
-        refundId: selectedTransaction.unique_id || selectedTransaction.id || 0,
-        refundSource: selectedTransaction.source || "unknown",
-        amount: linkAmount,
-      });
+      void linkWithRetagPrompt(
+        {
+          pendingId: pendingRefund.id,
+          refundId: selectedTransaction.unique_id || selectedTransaction.id || 0,
+          refundSource: selectedTransaction.source || "unknown",
+          amount: linkAmount,
+          refundSplitId: selectedTransaction.split_id ?? null,
+        },
+        pendingRefund,
+        { category: selectedTransaction.category ?? null, tag: selectedTransaction.tag ?? null },
+      );
     } else {
-      if (!selectedPendingId || !refundTransaction || linkAmount <= 0) return;
-      linkMutation.mutate({
-        pendingId: selectedPendingId,
-        refundId: refundTransaction.id,
-        refundSource: refundTransaction.source,
-        amount: linkAmount,
-      });
+      const purchase = (pendingRefunds || []).find((p: PendingRefund) => p.id === selectedPendingId);
+      if (!purchase || !refundTransaction || linkAmount <= 0) return;
+      void linkWithRetagPrompt(
+        {
+          pendingId: purchase.id,
+          refundId: refundTransaction.id,
+          refundSource: refundTransaction.source,
+          amount: linkAmount,
+          refundSplitId: refundTransaction.splitId ?? null,
+        },
+        purchase,
+        { category: refundTransaction.category, tag: refundTransaction.tag },
+      );
     }
   };
+
+  const linkError = linkMutation.error ? errorDetail(linkMutation.error) : null;
 
   return (
     <div className="modal-overlay fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -502,6 +585,11 @@ export const LinkRefundModal: React.FC<LinkRefundModalProps> = ({
                 </p>
               )}
             </div>
+          )}
+          {linkMutation.isError && (
+            <p role="alert" className="text-xs text-red-400 mt-3" dir="auto">
+              {typeof linkError === "string" ? linkError : t("modals.linkRefund.linkFailed")}
+            </p>
           )}
         </div>
 

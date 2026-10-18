@@ -268,7 +268,7 @@ class TestTransactionsServiceCRUD:
             "amount": -75.0,
             "provider": "updated_provider",
         }
-        assert service.update_transaction(unique_id, "cash_transactions", updates) is True
+        assert service.update_transaction(unique_id, "cash_transactions", updates)["updated"] is True
 
         updated_df = service.get_merged_transactions(service="cash")
         updated_row = updated_df[updated_df["unique_id"] == unique_id].iloc[0]
@@ -296,7 +296,7 @@ class TestTransactionsServiceCRUD:
         }
         assert service.update_transaction(
             unique_id, "credit_card_transactions", updates
-        ) is True
+        )["updated"] is True
 
         updated_df = service.get_merged_transactions(service="credit_cards")
         updated_row = updated_df[updated_df["unique_id"] == unique_id].iloc[0]
@@ -313,7 +313,7 @@ class TestTransactionsServiceCRUD:
 
         assert service.update_transaction(
             unique_id, "cash_transactions", {"date": "2024-06-15"}
-        ) is True
+        )["updated"] is True
 
         updated_df = service.get_merged_transactions(service="cash")
         updated_row = updated_df[updated_df["unique_id"] == unique_id].iloc[0]
@@ -336,7 +336,7 @@ class TestTransactionsServiceCRUD:
 
         assert service.update_transaction(
             unique_id, "cash_transactions", {"account_name": "Wallet B"}
-        ) is True
+        )["updated"] is True
 
         wallet_a = cash_balance_svc.get_by_account_name("Wallet A")
         wallet_b = cash_balance_svc.get_by_account_name("Wallet B")
@@ -586,7 +586,7 @@ class TestTransactionsServiceStaticMethods:
 
         assert service.update_transaction(
             unique_id, "credit_card_transactions", {}
-        ) is False
+        )["updated"] is False
 
 
 class TestBuildPriorWealthRowsEmptyData:
@@ -875,7 +875,7 @@ class TestClearCategoryAndTag:
 
         assert service.update_transaction(
             uid, "bank_transactions", {"category": "", "tag": ""}
-        ) is True
+        )["updated"] is True
         refreshed = service.transactions_repository.get_transaction_by_id(
             uid, "bank_transactions"
         )
@@ -887,7 +887,7 @@ class TestClearCategoryAndTag:
         service = TransactionsService(db_session)
         uid = _add_bank(db_session, "clear_tag_test_2", -100.0)
 
-        assert service.update_transaction(uid, "bank_transactions", {"tag": ""}) is True
+        assert service.update_transaction(uid, "bank_transactions", {"tag": ""})["updated"] is True
         refreshed = service.transactions_repository.get_transaction_by_id(
             uid, "bank_transactions"
         )

@@ -24,7 +24,8 @@ view: when only one side of a transfer is tracked, counting it would book
 the household's own money as spent or earned.
 
 Insurance deposits and prior-wealth rows are never in a view, and a refund
-matched to a purchase the view keeps is always netted against it. A refund
+matched to a purchase the view keeps is netted against it unless the caller
+asks for every row at its own amount (``net_refunds=False``). A refund
 whose purchase the view leaves out — a card purchase refunded to the bank, on
 the bank view — stays as money back: the statement that paid the purchase is
 still counted in full.
@@ -249,6 +250,7 @@ class TransactionViews:
         exclude_pending_refunds: bool = True,
         exclude_projects: bool = False,
         exclude_liabilities: bool = False,
+        net_refunds: bool = True,
     ) -> TransactionView:
         """Return what the tracked accounts did, card statements as one bank debit.
 
@@ -263,6 +265,10 @@ class TransactionViews:
         exclude_liabilities : bool, optional
             Leave out every ``Liabilities`` row — loan receipts and debt
             payments alike. Defaults to False.
+        net_refunds : bool, optional
+            Net linked refunds against their purchases. ``False`` leaves every
+            row at its own amount in its own month, and then no purchase is
+            taken off for an open expectation either. Defaults to True.
 
         Returns
         -------
@@ -270,7 +276,11 @@ class TransactionViews:
             The classified bank view.
         """
         return self._view(
-            "bank", exclude_pending_refunds, exclude_projects, exclude_liabilities
+            "bank",
+            exclude_pending_refunds,
+            exclude_projects,
+            exclude_liabilities,
+            net_refunds,
         )
 
     def spending(
@@ -278,6 +288,7 @@ class TransactionViews:
         exclude_pending_refunds: bool = True,
         exclude_projects: bool = False,
         exclude_liabilities: bool = False,
+        net_refunds: bool = True,
     ) -> TransactionView:
         """Return purchases one by one, card bills left out.
 
@@ -289,6 +300,8 @@ class TransactionViews:
             As for :meth:`bank`. Defaults to False.
         exclude_liabilities : bool, optional
             As for :meth:`bank`. Defaults to False.
+        net_refunds : bool, optional
+            As for :meth:`bank`. Defaults to True.
 
         Returns
         -------
@@ -296,7 +309,11 @@ class TransactionViews:
             The classified spending view.
         """
         return self._view(
-            "spending", exclude_pending_refunds, exclude_projects, exclude_liabilities
+            "spending",
+            exclude_pending_refunds,
+            exclude_projects,
+            exclude_liabilities,
+            net_refunds,
         )
 
     def tagged_prior_wealth(self) -> float:
@@ -330,6 +347,7 @@ class TransactionViews:
         exclude_pending_refunds: bool,
         exclude_projects: bool,
         exclude_liabilities: bool,
+        net_refunds: bool,
     ) -> TransactionView:
         """Build (or reuse) one view; see :meth:`bank` for the options."""
         view = data_cache.cached(
@@ -340,9 +358,14 @@ class TransactionViews:
                 exclude_pending_refunds,
                 exclude_projects,
                 exclude_liabilities,
+                net_refunds,
             ),
             lambda: self._build(
-                name, exclude_pending_refunds, exclude_projects, exclude_liabilities
+                name,
+                exclude_pending_refunds,
+                exclude_projects,
+                exclude_liabilities,
+                net_refunds,
             ),
         )
         return TransactionView(rows=view.rows.copy(), months=list(view.months))
@@ -353,6 +376,7 @@ class TransactionViews:
         exclude_pending_refunds: bool,
         exclude_projects: bool,
         exclude_liabilities: bool,
+        net_refunds: bool,
     ) -> TransactionView:
         """Load, net, filter and classify one view's rows."""
         category_col = TransactionsTableFields.CATEGORY.value
@@ -367,10 +391,12 @@ class TransactionViews:
         left_out = [Tables.INSURANCE.value]
         if name == "bank":
             left_out.append(Tables.CREDIT_CARD.value)
-        adjustments = PendingRefundsService(self.db).get_refund_amount_adjustments(
-            exclude_open=exclude_pending_refunds, exclude_tables=frozenset(left_out)
-        )
-        df = apply_refund_amount_adjustments(df, adjustments)
+        if net_refunds:
+            adjustments = PendingRefundsService(self.db).get_refund_amount_adjustments(
+                exclude_open=exclude_pending_refunds,
+                exclude_tables=frozenset(left_out),
+            )
+            df = apply_refund_amount_adjustments(df, adjustments)
 
         if exclude_projects:
             projects = BudgetRepository(self.db).read_project_category_names()

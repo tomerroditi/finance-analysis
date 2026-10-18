@@ -12,6 +12,7 @@ import os
 from sqlalchemy.orm import Session
 
 from backend.config import AppConfig
+from backend.data_fixes import run_pending_data_fixes
 from backend.database import get_db_context, get_engine
 from backend.migrations_runner import upgrade_to_head
 from backend.models import Base
@@ -81,6 +82,7 @@ def run_startup_tasks() -> None:
         config = AppConfig()
         _seed_categories(db, config)
         _migrate_credentials(db, config)
+        run_pending_data_fixes(db)
 
 
 async def run_shutdown_tasks() -> None:

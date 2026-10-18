@@ -49,7 +49,7 @@ test.describe("Dashboard — forecast, recurring, goals", () => {
             "income_expenses",
             "net_worth",
           ],
-          hidden: ["cash_flow", "category"],
+          hidden: ["category"],
         }),
       );
     });

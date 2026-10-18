@@ -3,12 +3,12 @@ import { enableDemoMode, resetDemoData } from "./helpers";
 
 /**
  * The former single tabbed "Charts & analytics" panel became independent
- * dashboard cards. Income & Expenses + Net Worth ship visible; Cash Flow ships
- * hidden (opt-in) but — unlike beta cards — carries no Beta pill. Each card is
- * reorderable/hideable via Settings → Dashboard like any other.
+ * dashboard cards. Income & Expenses + Net Worth ship visible. The Cash Flow
+ * (Sankey) card was retired; a layout that still names it simply drops it.
+ * Each card is reorderable/hideable via Settings → Dashboard like any other.
  *
- * One dashboard load covers the default card set, the Hidden-cards badge
- * rules, and the opt-in flow — the cold dashboard boot is the expensive step.
+ * One dashboard load covers the default card set and the Hidden-cards badge
+ * rules — the cold dashboard boot is the expensive step.
  */
 test.describe("Dashboard per-chart cards", () => {
   // Restore pristine demo data before this file runs. The `mutating`
@@ -35,13 +35,13 @@ test.describe("Dashboard per-chart cards", () => {
     );
   });
 
-  test("default cards, Hidden-cards badges, and the Cash Flow opt-in on one load", async ({
+  test("default cards and the Hidden-cards badges on one load", async ({
     page,
   }) => {
     await page.goto("/");
 
     // Income & Expenses and Net Worth render as separate cards by default;
-    // Cash Flow is opt-in: not rendered on the default dashboard.
+    // the retired Cash Flow card is gone.
     await expect(page.locator('[data-card-id="income_expenses"]')).toBeVisible({
       timeout: 45_000,
     });
@@ -71,38 +71,23 @@ test.describe("Dashboard per-chart cards", () => {
       .click();
     await page.getByRole("button", { name: /^Dashboard$/ }).click();
 
-    // Cash Flow is under Hidden cards…
+    // A default-hidden card that is not beta (Early Retirement) carries no
+    // Beta pill; the forecast card, which is beta, does.
+    // Rows are matched by their show button, since the sidebar also names
+    // "Early Retirement".
     await expect(page.getByText("Hidden cards", { exact: true })).toBeVisible();
-    const cashFlowRow = page
-      .getByText("Cash Flow", { exact: true })
-      .locator("xpath=..");
-    await expect(cashFlowRow).toBeVisible();
-    // …but it is default-hidden, NOT beta, so it carries no Beta pill (contrast
-    // the forecast card, which does).
-    await expect(cashFlowRow.getByText(/^Beta$/i)).toHaveCount(0);
-    const forecastRow = page
-      .getByText("This Month (forecast)", { exact: true })
-      .locator("xpath=..");
+    const hiddenRows = page.locator("div").filter({
+      has: page.getByRole("button", { name: "Show card" }),
+      hasNot: page.locator("div"),
+    });
+    const retirementRow = hiddenRows.filter({ hasText: "Early Retirement" });
+    await expect(retirementRow).toHaveCount(1);
+    await expect(retirementRow.getByText(/^Beta$/i)).toHaveCount(0);
+    const forecastRow = hiddenRows.filter({ hasText: "This Month (forecast)" });
     await expect(forecastRow.getByText(/^Beta$/i)).toBeVisible();
 
-    // Opting Cash Flow in shows it on the dashboard.
-    await cashFlowRow.getByRole("button", { name: /Show card/i }).click();
-    await page.keyboard.press("Escape");
-
-    await expect(page.locator('[data-card-id="cash_flow"]')).toBeVisible({
-      timeout: 30_000,
-    });
-    // The newly enabled card is appended below the fold, where cards defer
-    // their mount until scrolled near — scroll it in first (the placeholder is
-    // "visible" to Playwright even off-screen, but the Sankey only renders
-    // after mount, once its container measures a non-zero width).
-    await page.locator('[data-card-id="cash_flow"]').scrollIntoViewIfNeeded();
-    // The card must render the actual Sankey flow SVG (guards the Recharts
-    // Sankey against silently falling into the error boundary / no-data path).
-    await expect(
-      page
-        .locator('[data-card-id="cash_flow"] [data-testid="sankey-chart"] svg')
-        .first(),
-    ).toBeVisible({ timeout: 15_000 });
+    // The retired Cash Flow card is not offered any more.
+    await expect(hiddenRows.filter({ hasText: "Cash Flow" })).toHaveCount(0);
+    await expect(page.getByText("Cash Flow", { exact: true })).toHaveCount(0);
   });
 });

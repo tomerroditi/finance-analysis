@@ -940,7 +940,7 @@ class TestRecurringIncomeDetection:
         assert items[0]["amount_kind"] == "variable"
         assert items[0]["expected_amount"] < items[0]["amount"]
 
-    def test_a_reimbursement_linked_to_its_bill_is_not_a_stream(self, db_session):
+    def test_a_reimbursement_linked_to_its_bill_is_not_a_stream(self, links_predating_tag_alignment, db_session):
         """Money back for a bill, linked as its refund, is not earnings.
 
         An employer repaying the monthly phone bill nets against the bill on

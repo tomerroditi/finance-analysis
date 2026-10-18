@@ -63,10 +63,6 @@ class TransactionsRepository(IngestionMixin, SplitsMixin):
         Tables.INSURANCE.value,
     ]
 
-    # Services excluded from itemized category breakdowns (insurance deposits
-    # are not regular expenses, but CC items are kept for per-category detail).
-    _ITEMIZED_EXCLUDED: ClassVar[list[str]] = [Tables.INSURANCE.value]
-
     def __init__(self, db: Session) -> None:
         """Initialize the repository with sub-repositories for each transaction type.
 
@@ -157,24 +153,6 @@ class TransactionsRepository(IngestionMixin, SplitsMixin):
             Filtered transactions suitable for cashflow aggregations.
         """
         return self.get_table(exclude_services=self._CASHFLOW_EXCLUDED, **kwargs)
-
-    def get_itemized_transactions(self, **kwargs: Any) -> pd.DataFrame:
-        """Get transactions for category breakdowns with itemized CC detail.
-
-        Keeps credit card items for per-category analysis but excludes
-        insurance deposits.
-
-        Parameters
-        ----------
-        **kwargs
-            Forwarded to ``get_table`` (e.g. ``include_split_parents``).
-
-        Returns
-        -------
-        pd.DataFrame
-            Filtered transactions suitable for category-level analysis.
-        """
-        return self.get_table(exclude_services=self._ITEMIZED_EXCLUDED, **kwargs)
 
     def get_table(
         self,

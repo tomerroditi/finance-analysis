@@ -61,8 +61,19 @@ api.interceptors.request.use((config) => {
 // could exfiltrate them. When the request never reached the server (no
 // `response`), also dispatches an `api-network-failed` window event so the
 // global NetworkStatusToast can surface a single transient toast.
+// A tag write that carried linked refunds along with the purchase reports how
+// many in `refunds_retagged`; an `api-refunds-retagged` event lets one global
+// listener tell the user, whichever of the many tag editors made the write.
 api.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    const retagged = response.data?.refunds_retagged;
+    if (typeof window !== "undefined" && typeof retagged === "number" && retagged > 0) {
+      window.dispatchEvent(
+        new CustomEvent("api-refunds-retagged", { detail: { count: retagged } }),
+      );
+    }
+    return response;
+  },
   (error) => {
     const safeError = {
       method: error.config?.method,
@@ -82,6 +93,12 @@ api.interceptors.response.use(
 );
 
 // Transactions API
+/** A tag write's reply: how many linked refunds followed the purchase's new tag. */
+export interface TagWriteResult {
+  status: string;
+  refunds_retagged?: number;
+}
+
 export const transactionsApi = {
   getAll: (service?: string, includeSplitParents = false) =>
     api.get("/transactions/", {
@@ -91,11 +108,11 @@ export const transactionsApi = {
     api.get<{ count: number }>("/transactions/uncategorized-count"),
   create: (data: Record<string, unknown>) => api.post("/transactions/", data),
   update: (uniqueId: string, data: Record<string, unknown>) =>
-    api.put(`/transactions/${encodeURIComponent(uniqueId)}`, data),
+    api.put<TagWriteResult>(`/transactions/${encodeURIComponent(uniqueId)}`, data),
   delete: (uniqueId: string, source: string) =>
     api.delete(`/transactions/${encodeURIComponent(uniqueId)}`, { params: { source } }),
   updateTag: (id: string, category: string, tag: string, service: string) =>
-    api.put(`/transactions/${encodeURIComponent(id)}/tag`, null, {
+    api.put<TagWriteResult>(`/transactions/${encodeURIComponent(id)}/tag`, null, {
       params: { category, tag, service },
     }),
   bulkTag: (data: {
@@ -107,7 +124,7 @@ export const transactionsApi = {
     account_name?: string;
     date?: string;
     amount?: number;
-  }) => api.post("/transactions/bulk-tag", data),
+  }) => api.post<TagWriteResult>("/transactions/bulk-tag", data),
   split: (
     uniqueId: string | number,
     data: {
@@ -188,6 +205,19 @@ export const budgetApi = {
       params: { include_split_parents: includeSplitParents },
     }),
 };
+
+/**
+ * How the Income & Expenses breakdowns treat refunds linked in the app:
+ * `none` counts a refund and its purchase each in their own month, `linked`
+ * nets them, `pending` also drops a purchase still awaiting its refund.
+ */
+export type RefundMode = "none" | "linked" | "pending";
+
+/**
+ * Per series, the money in it that a split carried over from a parent tagged
+ * otherwise: `{ "Salary / Bonus": { "Other Income / Bit": 1000 } }`.
+ */
+export type SplitFrom = Record<string, Record<string, number>>;
 
 /** One recurring charge the month still owes. */
 /** One month of `GET /budget/trend/{year}/{month}`. */
@@ -720,31 +750,30 @@ export const analyticsApi = {
       "/analytics/debt-payments-over-time"
     ),
   getExpensesByCategoryOverTime: (
-    excludePendingRefunds = true,
+    refunds: RefundMode = "pending",
     excludeProjects = false,
     excludeLiabilities = false,
   ) =>
-    api.get<{ month: string; categories: Record<string, number> }[]>(
+    api.get<{ month: string; categories: Record<string, number>; split_from?: SplitFrom }[]>(
       "/analytics/expenses-by-category-over-time",
       {
         params: {
-          exclude_pending_refunds: excludePendingRefunds,
+          refunds,
           exclude_projects: excludeProjects,
           exclude_liabilities: excludeLiabilities,
         },
       }
     ),
-  getSankeyData: () => api.get("/analytics/sankey"),
   getNetWorthOverTime: () =>
     api.get<{ month: string; bank_balance: number; investment_value: number; cash: number; net_worth: number }[]>(
       "/analytics/net-worth-over-time"
     ),
-  getIncomeBySourceOverTime: (excludePendingRefunds = true, excludeLiabilities = false) =>
-    api.get<{ month: string; sources: Record<string, number>; total: number }[]>(
+  getIncomeBySourceOverTime: (refunds: RefundMode = "pending", excludeLiabilities = false) =>
+    api.get<{ month: string; sources: Record<string, number>; total: number; split_from?: SplitFrom }[]>(
       "/analytics/income-by-source-over-time",
       {
         params: {
-          exclude_pending_refunds: excludePendingRefunds,
+          refunds,
           exclude_liabilities: excludeLiabilities,
         },
       }
@@ -971,6 +1000,18 @@ export interface RefundSource {
   allocations: RefundSourceAllocation[];
 }
 
+export interface RefundTagMismatch {
+  link_id: number;
+  pending_refund_id: number;
+  amount: number;
+  purchase_category: string | null;
+  purchase_tag: string | null;
+  refund_category: string | null;
+  refund_tag: string | null;
+  refund_source: string;
+  refund_transaction_id: number;
+}
+
 export const pendingRefundsApi = {
   create: (data: {
     source_type: "transaction" | "split";
@@ -989,8 +1030,14 @@ export const pendingRefundsApi = {
       refund_transaction_id: string | number;
       refund_source: string;
       amount: number;
+      retag?: boolean;
+      refund_split_id?: number | null;
     },
   ) => api.post(`/pending-refunds/${pendingId}/link`, data),
+  getTagMismatches: () =>
+    api.get<RefundTagMismatch[]>("/pending-refunds/tag-mismatches"),
+  fixTagMismatches: () =>
+    api.post<{ fixed: number }>("/pending-refunds/tag-mismatches/fix"),
   unlinkRefund: (linkId: number) =>
     api.delete(`/pending-refunds/links/${linkId}`),
   close: (id: number) => api.post(`/pending-refunds/${id}/close`),

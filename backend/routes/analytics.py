@@ -11,6 +11,7 @@ from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
+from backend.constants.refunds import RefundMode
 from backend.dependencies import get_database
 from backend.services.analysis import AnalysisService
 from backend.services.insights_service import InsightsService
@@ -94,7 +95,6 @@ def get_income_expenses_over_time(
     db: Session = Depends(get_database),
     exclude_projects: bool = False,
     exclude_liabilities: bool = False,
-    exclude_refunds: bool = False,
     exclude_pending_refunds: bool = True,
 ) -> list[dict[str, Any]]:
     """Return monthly income and expense totals over time.
@@ -105,8 +105,6 @@ def get_income_expenses_over_time(
         If True, exclude project budget transactions.
     exclude_liabilities : bool
         If True, exclude liability/loan transactions.
-    exclude_refunds : bool
-        If True, only count positive income and negative expenses.
     exclude_pending_refunds : bool
         If True, a purchase still awaiting its refund is left out. Refunds
         already matched to a purchase are netted out either way.
@@ -120,7 +118,6 @@ def get_income_expenses_over_time(
     return service.get_income_expenses_over_time(
         exclude_projects=exclude_projects,
         exclude_liabilities=exclude_liabilities,
-        exclude_refunds=exclude_refunds,
         exclude_pending_refunds=exclude_pending_refunds,
     )
 
@@ -137,7 +134,7 @@ def get_debt_payments_over_time(
 @router.get("/expenses-by-category-over-time")
 def get_expenses_by_category_over_time(
     db: Session = Depends(get_database),
-    exclude_pending_refunds: bool = True,
+    refunds: RefundMode = RefundMode.PENDING,
     exclude_projects: bool = False,
     exclude_liabilities: bool = False,
 ) -> list[dict[str, Any]]:
@@ -145,10 +142,10 @@ def get_expenses_by_category_over_time(
 
     Parameters
     ----------
-    exclude_pending_refunds : bool
-        If True, a purchase still awaiting its refund is left out. Refunds
-        already matched to a purchase are netted against that purchase's
-        category either way.
+    refunds : RefundMode
+        ``none`` counts a linked refund and its purchase each in their own
+        month, ``linked`` nets them against the purchase's category, and
+        ``pending`` also takes off a purchase still awaiting its refund.
     exclude_projects : bool
         If True, categories owned by a project budget are left out.
     exclude_liabilities : bool
@@ -156,49 +153,25 @@ def get_expenses_by_category_over_time(
     """
     service = AnalysisService(db)
     return service.get_expenses_by_category_over_time(
-        exclude_pending_refunds=exclude_pending_refunds,
+        refunds=refunds,
         exclude_projects=exclude_projects,
         exclude_liabilities=exclude_liabilities,
     )
 
 
-@router.get("/sankey")
-def get_sankey_data(
-    db: Session = Depends(get_database),
-    exclude_pending_refunds: bool = True,
-) -> dict[str, Any]:
-    """Return Sankey chart data showing income-to-expense flow.
-
-    Parameters
-    ----------
-    exclude_pending_refunds : bool
-        If True, a purchase still awaiting its refund is left out. Refunds
-        already matched to a purchase are netted against that purchase
-        either way.
-
-    Returns
-    -------
-    dict
-        ``{nodes: list[str], links: list[{source, target, value}]}`` structure
-        suitable for rendering a Sankey diagram (income sources -> categories -> tags).
-    """
-    service = AnalysisService(db)
-    return service.get_sankey_data(exclude_pending_refunds=exclude_pending_refunds)
-
-
 @router.get("/income-by-source-over-time")
 def get_income_by_source_over_time(
     db: Session = Depends(get_database),
-    exclude_pending_refunds: bool = True,
+    refunds: RefundMode = RefundMode.PENDING,
     exclude_liabilities: bool = False,
 ) -> list[dict[str, Any]]:
     """Return monthly income broken down by source (category+tag).
 
     Parameters
     ----------
-    exclude_pending_refunds : bool
-        If True, a purchase still awaiting its refund is left out. Refunds
-        already matched to a purchase are netted out either way.
+    refunds : RefundMode
+        ``none`` leaves a linked refund that landed in an income category
+        in; ``linked`` and ``pending`` net it against its purchase.
     exclude_liabilities : bool
         If True, loan receipts are left out — the income half of the switch
         that drops debt payments from the expense breakdown.
@@ -211,7 +184,7 @@ def get_income_by_source_over_time(
     """
     service = AnalysisService(db)
     return service.get_income_by_source_over_time(
-        exclude_pending_refunds=exclude_pending_refunds,
+        refunds=refunds,
         exclude_liabilities=exclude_liabilities,
     )
 

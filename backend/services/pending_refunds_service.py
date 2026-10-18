@@ -10,6 +10,7 @@ from backend.constants.tables import TransactionsTableFields, canonical_table
 from backend.errors import EntityNotFoundException, ValidationException
 from backend.repositories.pending_refunds_repository import PendingRefundsRepository
 from backend.repositories.transactions import TransactionsRepository
+from backend.services.refund_tag_alignment import RefundTagAlignmentService, Tagging
 
 logger = logging.getLogger(__name__)
 
@@ -192,6 +193,8 @@ class PendingRefundsService:
         refund_transaction_id: int,
         refund_source: str,
         amount: float,
+        retag: bool = False,
+        refund_split_id: int | None = None,
     ) -> dict[str, Any]:
         """
         Link a refund transaction to a pending refund.
@@ -200,6 +203,12 @@ class PendingRefundsService:
         long as the total allocated across all of them does not exceed the
         transaction's amount. The linked amount is clamped to the pending
         refund's remaining expectation.
+
+        The linked money must sit under the purchase's category and tag, or
+        the refund would cancel the purchase in the totals but not in the
+        purchase's own category. When it does not, ``retag`` moves it there
+        (see :class:`RefundTagAlignmentService`); without it the link is
+        refused.
 
         Parameters
         ----------
@@ -211,6 +220,13 @@ class PendingRefundsService:
             Table where refund lives.
         amount : float
             Amount this refund covers.
+        retag : bool, optional
+            Move the linked money under the purchase's category and tag when
+            it sits elsewhere — retagging it, or carving it off as a split
+            part when it is only part of the refund. Default is ``False``.
+        refund_split_id : int or None, optional
+            The split part of the refund transaction to link, when it is
+            split. Picked automatically when omitted.
 
         Returns
         -------
@@ -224,7 +240,9 @@ class PendingRefundsService:
         ValidationException
             If the amount is not positive, ``refund_source`` is not a known
             table, the transaction is already linked to this pending refund,
-            or the amount exceeds what's still available on the transaction.
+            the amount exceeds what's still available on the transaction (or
+            its split part), the split part is not the transaction's, or the
+            refund's tag differs from the purchase's and ``retag`` is off.
         """
         pending = self.repo.get_by_id(pending_refund_id)
         if not pending:
@@ -257,9 +275,13 @@ class PendingRefundsService:
                     "This transaction is already linked to this refund request"
                 )
 
+        alignment = RefundTagAlignmentService(self.db)
+        target = alignment.purchase_tagging(pending)
+
         # Validate against the money still available on the transaction
         # (skipped when the transaction can't be resolved, e.g. manual data).
         txn = self.transactions_repo.get_record(refund_source, refund_transaction_id)
+        current = None
         if txn is not None:
             allocated = self.get_allocated_for_transaction(
                 refund_transaction_id, refund_source
@@ -270,6 +292,28 @@ class PendingRefundsService:
                     f"Only {max(0.0, available):.2f} of this transaction is still "
                     "available for refund matching"
                 )
+            if txn.type == "split_parent":
+                refund_split_id, current = self._resolve_refund_part(
+                    alignment,
+                    refund_source,
+                    refund_transaction_id,
+                    amount,
+                    target,
+                    refund_split_id,
+                )
+            elif refund_split_id is not None:
+                raise ValidationException("This transaction is not split")
+            else:
+                current = Tagging.of(txn.category, txn.tag)
+        elif refund_split_id is not None:
+            raise ValidationException("This transaction is not split")
+
+        mismatched = target is not None and current is not None and current != target
+        if mismatched and not retag:
+            raise ValidationException(
+                "The refund is tagged differently from the purchase it pays back; "
+                "link it with retag to move it under the purchase's tag"
+            )
 
         already_refunded = (
             existing_links["amount"].sum() if not existing_links.empty else 0
@@ -279,12 +323,14 @@ class PendingRefundsService:
 
         # Store the canonical table name so links of the same transaction
         # always group together.
-        self.repo.add_refund_link(
+        link = self.repo.add_refund_link(
             pending_refund_id=pending_refund_id,
             refund_transaction_id=refund_transaction_id,
             refund_source=canonical_table(refund_source),
             amount=actual_link_amount,
+            refund_split_id=refund_split_id,
         )
+        retagged = alignment.align_link(link.id) if mismatched else False
 
         links = self.repo.get_links_for_pending(pending_refund_id)
         total_refunded = links["amount"].sum() if not links.empty else 0
@@ -304,7 +350,73 @@ class PendingRefundsService:
             "expected_amount": pending.expected_amount,
             "total_refunded": total_refunded,
             "remaining": remaining,
+            "retagged": retagged,
         }
+
+    @staticmethod
+    def _resolve_refund_part(
+        alignment: RefundTagAlignmentService,
+        refund_source: str,
+        refund_transaction_id: int,
+        amount: float,
+        target: Tagging | None,
+        refund_split_id: int | None,
+    ) -> tuple[int, Tagging]:
+        """
+        Pick and validate the split part of a split refund a link covers.
+
+        Parameters
+        ----------
+        alignment : RefundTagAlignmentService
+            Service reading the parts and their allocations.
+        refund_source : str
+            Table of the refund transaction.
+        refund_transaction_id : int
+            unique_id of the refund transaction.
+        amount : float
+            Amount to link.
+        target : Tagging or None
+            The purchase's tagging (``None`` when the purchase is gone).
+        refund_split_id : int or None
+            The part the caller chose, if any.
+
+        Returns
+        -------
+        tuple[int, Tagging]
+            The part's split id and its current tagging.
+
+        Raises
+        ------
+        ValidationException
+            If the chosen part is not this transaction's, or no part has room
+            for ``amount``.
+        """
+        if refund_split_id is None:
+            picked = alignment.pick_split_part(
+                refund_source,
+                refund_transaction_id,
+                amount,
+                target or Tagging(None, None),
+            )
+            if picked is None:
+                raise ValidationException(
+                    "No part of this split refund has that much left to link"
+                )
+            return picked
+        split = alignment.split_repo.get_split(refund_split_id)
+        if (
+            split is None
+            or int(split.transaction_id) != int(refund_transaction_id)
+            or canonical_table(split.source) != canonical_table(refund_source)
+        ):
+            raise ValidationException("That split part is not this transaction's")
+        room = alignment.split_room(refund_split_id) or 0.0
+        if amount > room + 1e-6:
+            raise ValidationException(
+                f"Only {max(0.0, room):.2f} of this split part is still "
+                "available for refund matching"
+            )
+        return refund_split_id, Tagging.of(split.category, split.tag)
 
     def update_notes(self, pending_refund_id: int, notes: str | None) -> dict[str, Any]:
         """
@@ -897,8 +1009,16 @@ class PendingRefundsService:
             # carried it. One incoming transaction may fund several
             # expectations, so only its linked share is removed — the rest is
             # somebody else's refund, or genuine income.
+            # A link carved to a split part of the refund nets that part.
             if links is not None:
                 for _, link in links.iterrows():
+                    split_id = link.get("refund_split_id")
+                    if split_id is not None and pd.notna(split_id):
+                        split_id = int(split_id)
+                        split_adj[split_id] = split_adj.get(split_id, 0.0) - float(
+                            link["amount"]
+                        )
+                        continue
                     key = (
                         canonical_table(link["refund_source"]),
                         int(link["refund_transaction_id"]),

@@ -85,12 +85,10 @@ Causes: timing differences, pending transactions, fees, foreign currency roundin
 | `get_net_worth_over_time()` | Keep bank view, drop CC items | `exclude_services=["credit_card_transactions"]` |
 | `get_income_by_source[_over_time]()` | Bank view | `views.bank().income` |
 | `get_expenses_by_category()` | Uses itemized CC view | Filter out non-expense categories (`INVESTMENTS_CATEGORY`, `LIABILITIES_CATEGORY`, `IncomeCategories`, `CREDIT_CARDS`) |
-| `get_sankey_data()` | Hybrid — uses both to calculate gap | Calculates CC gap, then filters out `Credit Cards` category |
 
 **Rule of thumb:**
 - For **aggregate totals** (income, expenses, balances): use bank transactions only, exclude CC source.
 - For **category breakdowns** (pie charts, per-category): use itemized CC transactions, exclude the "Credit Cards" bank category.
-- For **flow diagrams** (Sankey): use both to detect the CC gap, then filter.
 - For **anything the user can filter by category**: itemized, always — see below.
 
 ### A filterable total cannot use the bank view
@@ -128,8 +126,16 @@ composition (the two breakdown tabs) of the same money. They therefore read
   left on it belong to the Liabilities page, which derives them from the loan's
   own terms (`liabilities_service`'s amortisation schedule) rather than from a
   debit.
-- **Every chip is an exclusion, and every one starts off** — pending refunds
-  included too. The card opens on everything the household actually did, and
+- **Refunds are one three-way select** (`refunds=` on both breakdown
+  endpoints, `RefundMode` in `backend/constants/refunds.py`), and it opens on
+  `linked`: a refund linked to its purchase in the app cancels that purchase in
+  the purchase's month. `none` counts each side in its own month (the view's
+  `net_refunds=False`); `pending` also takes off what a purchase still awaits
+  back. Only in-app links and expectations are acted on — a positive row in an
+  expense category that no link names is money back in the month it arrived,
+  under every option. The endpoints default to `pending` for other callers
+  (the insights strip); the card always sends its choice.
+- **Every chip is an exclusion, and every one starts off.** The card opens on everything the household actually did, and
   each chip takes something out of that; they share one accent colour, so
   nothing coloured means nothing is being left out. A chip phrased the other
   way round ("include projects") sat in the same grey as its neighbours while
@@ -232,6 +238,35 @@ purchase swallow the whole month's expectation, including the stale bank's
 direct debits that nothing had reported at all. Pinned by
 `test_a_fresh_account_s_spending_does_not_cancel_a_stale_one_s_gap`.
 
+## Budget figures: one claim ledger
+
+Every budget number — the Monthly, Yearly and Project tabs, the trend, the
+Overview and the large-charge insight — is a sum over one frame,
+`BudgetService.get_claims()` (`backend/services/budget/ledger.py`). Each expense
+row gets:
+
+- **One budget month** (`budget_year` / `budget_month`): its
+  `budget_month_overrides` row, else its date — for every pool, yearly
+  included, so a purchase moved into January counts in January's year.
+- **One owner** (`claim_kind` / `claim_rule_id`): a project category first
+  (whatever the tag), then a yearly rule of the budget year, then a monthly
+  rule of the budget month, else `other`. Within a kind the most specific rule
+  claims first — fewer tags beat more, all-tags takes the leftovers. Total
+  Budget never claims; it caps the monthly pool (`monthly` + `other`).
+
+Consequences the views rely on:
+
+| Rule | Why |
+|------|-----|
+| Pools are disjoint and sum to everything spent | `other` belongs to the monthly pool even in a month with no rules, so `total_out` never drops unbudgeted spend |
+| Amounts are net, lists are gross | Pools net matched refunds and the still-expected part of open pending refunds; `ledger.transaction_records` restores gross amounts for the rows shown under them |
+| A split parent never sits beside its slices | The ledger is built from the split-merged frame |
+| The Overview never writes | It reads `effective_total_budget` — what auto-fill *would* copy into an empty current/future month — instead of calling `get_monthly_analysis`, which persists the copy |
+
+Add a new budget figure by filtering the ledger (`in_budget_month`, `of_kind`,
+`of_rule`, `spent`), never by re-matching rules against transactions — a second
+matcher is how the Overview and the tabs used to disagree.
+
 ## Prior Wealth
 
 Prior wealth represents money that existed **before the system started tracking transactions**. Without it, cumulative balance charts would start at zero instead of the user's actual starting balance.
@@ -259,12 +294,11 @@ net_worth = bank_balance + investment_value
 
 The anchor point (1 month before earliest data) shows all prior wealth as `bank_balance` with `investment_value = 0`, representing the state before any tracked transactions.
 
-### Prior Wealth in Overview & Sankey
+### Prior Wealth in the Overview
 
-Both read `AnalysisService.get_total_prior_wealth()`: bank + investment + cash prior wealth, plus the bank and cash rows tagged `Prior Wealth` (`TransactionViews.tagged_prior_wealth`). The tagged rows are added back because the stored bank and cash figures are derived net of every transaction in the account, those rows included, and no view counts them as income.
+The overview reads `AnalysisService.get_total_prior_wealth()`: bank + investment + cash prior wealth, plus the bank and cash rows tagged `Prior Wealth` (`TransactionViews.tagged_prior_wealth`). The tagged rows are added back because the stored bank and cash figures are derived net of every transaction in the account, those rows included, and no view counts them as income.
 
 - **Overview `total_income`**: transaction income + total prior wealth. Represents "total resources available" (starting capital + earned income).
-- **Sankey "Prior Wealth" source node**: the same total.
 
 ### Cash Prior Wealth Calculation
 
@@ -328,12 +362,6 @@ Known structural residual: **net cash position** from cash transactions. Cash in
 - **Prior wealth:** Bank/investment prior wealth seeds `bank_balance`; investment movements shift value between the bank and investment lines via the inv_prior offset. Cash prior wealth seeds `cash`.
 - **Investments:** snapshot-resolved per investment per month-end via `InvestmentsService.get_total_values_at_dates` (snapshot-first, transaction-based fallback when no snapshot exists). Closed investments naturally contribute 0 after their auto-created close snapshot, and their historical pre-close value before. Market gains/losses recorded as snapshots flow through into both `investment_value` and `net_worth`. **This includes scraped Keren Hishtalmut policies** — `InsuranceSyncMixin` auto-creates a `type='hishtalmut'` investment with scraped snapshots per policy, so scraped KH is part of `investment_value`/`net_worth` even though the analysis layer never reads `insurance_accounts` directly.
 - **Formula:** `net_worth = bank_balance + investment_value + cash` for each month. See "Why Investment Prior Wealth Lives in Bank Balance" above for the bank↔investment offset.
-
-### `get_sankey_data()`
-- **Purpose:** Cash flow diagram (sources → Total Income → destinations)
-- **CC handling:** Calculates CC gap, filters out `Credit Cards` category, adds gap as "Unknown" destination
-- **Prior wealth:** Shown as dedicated "Prior Wealth" source node (`get_total_prior_wealth()`)
-- **Balance nodes:** "Wealth Growth" (income > expenses) or "Wealth Deficit" (expenses > income)
 
 ### `get_income_by_source_over_time()`
 - **Purpose:** Stacked bar chart of income broken down by source

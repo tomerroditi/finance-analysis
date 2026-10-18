@@ -481,6 +481,31 @@ class TestLargeTransactionInsight:
 
         assert InsightsService(db_session)._large_transaction_insight() == []
 
+    def test_a_yearly_envelope_explains_only_the_tags_it_covers(self, db_session):
+        """An envelope on one tag leaves its category's other charges unexplained.
+
+        The skip used to be by category, so a yearly rule on Home/Insurance hid
+        a record Home/Repairs bill too. It now asks the budget ledger which
+        rows an envelope owns.
+        """
+        self._seed_baseline(db_session)
+        _add(db_session, "INSURER", -9000.0, _months_ago(0, day=3), category="Home").tag = "Insurance"
+        _add(db_session, "PLUMBER", -4200.0, _months_ago(0, day=4), category="Home").tag = "Repairs"
+        db_session.add(
+            BudgetRule(
+                name="Insurance",
+                amount=12000.0,
+                category="Home",
+                tags="Insurance",
+                year=pd.Timestamp.today().year,
+                period_type=PERIOD_YEARLY,
+            )
+        )
+        db_session.commit()
+
+        result = InsightsService(db_session)._large_transaction_insight()
+        assert [i["data"]["label"] for i in result] == ["PLUMBER"]
+
     def test_a_skipped_charge_does_not_hide_a_real_one_below_it(self, db_session):
         """The scan continues past an explained charge to the next candidate."""
         self._seed_baseline(db_session)

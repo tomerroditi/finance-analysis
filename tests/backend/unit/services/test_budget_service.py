@@ -644,7 +644,7 @@ class TestProjectBudgetService:
         )
 
         service.transactions_service.get_data_for_analysis = (
-            lambda include_split_parents: test_transactions
+            lambda include_split_parents=False: test_transactions
         )
 
         view_result = service.get_project_budget_view(project_name)
@@ -661,12 +661,12 @@ class TestProjectBudgetService:
         # 4. "Random" Rule (synthetic)
 
         # Find Venue rule
-        venue_rule = next(
-            (r for r in rules_view if r["rule"][NAME] == "Venue Rule"), None
-        )
-        assert venue_rule is not None
-        assert venue_rule["current_amount"] == 1000.0
-        assert len(venue_rule["data"]) == 1
+        # create_project already minted a "Venue" rule, so two rules name the
+        # tag; the row belongs to exactly one of them, never both.
+        venue_rules = [r for r in rules_view if r["rule"][TAGS] == ["Venue"]]
+        assert len(venue_rules) == 2
+        assert sum(r["current_amount"] for r in venue_rules) == 1000.0
+        assert sum(len(r["data"]) for r in venue_rules) == 1
 
         # Find "Other" tag rule (which should now be auto-created and real)
         other_tag_rule = next(
@@ -780,7 +780,7 @@ class TestProjectBudgetService:
             ]
         )
         service.transactions_service.get_data_for_analysis = (
-            lambda include_split_parents: wedding_txns
+            lambda include_split_parents=False: wedding_txns
         )
 
         service.delete_project("Wedding")
@@ -2007,7 +2007,7 @@ class TestGetProjectBudgetViewConstruction:
             ]
         )
         service.transactions_service.get_data_for_analysis = (
-            lambda include_split_parents: test_transactions
+            lambda include_split_parents=False: test_transactions
         )
 
         view = service.get_project_budget_view("Wedding")
@@ -2046,7 +2046,7 @@ class TestGetProjectBudgetViewConstruction:
             ]
         )
         service.transactions_service.get_data_for_analysis = (
-            lambda include_split_parents: test_transactions
+            lambda include_split_parents=False: test_transactions
         )
 
         view = service.get_project_budget_view("Wedding")
@@ -2071,7 +2071,7 @@ class TestGetProjectBudgetViewConstruction:
             ]
         )
         service.transactions_service.get_data_for_analysis = (
-            lambda include_split_parents: test_transactions
+            lambda include_split_parents=False: test_transactions
         )
 
         view = service.get_project_budget_view("Wedding")
@@ -2912,6 +2912,43 @@ class TestMonthlyBudgetRefundNetting:
         # The total still nets, so the two deliberately disagree.
         assert envelope["current_amount"] == 700.0
 
+    def test_a_netted_row_names_what_it_counts_for(self, db_session):
+        """A refund from another month leaves the purchase's row explaining the total.
+
+        The charge is listed gross but carries ``net_amount``; an untouched row
+        carries ``None``. Dates go out as plain ``YYYY-MM-DD`` so the edit
+        dialog's date input and the edit endpoint both accept them.
+        """
+        from backend.services.pending_refunds_service import PendingRefundsService
+
+        self._rules(db_session)
+        tv = self._seed(db_session, "tv", "2026-01-10", "Electronics", None, -1000.0)
+        self._seed(db_session, "cable", "2026-01-12", "Electronics", None, -50.0)
+        refund = self._seed(db_session, "tv-refund", "2026-03-14", "Electronics", None, 300.0)
+
+        service = PendingRefundsService(db_session)
+        pending = service.mark_as_pending_refund(
+            source_type="transaction", source_id=tv,
+            source_table="banks", expected_amount=300.0,
+        )
+        service.link_refund(
+            pending_refund_id=pending["id"], refund_transaction_id=refund,
+            refund_source="banks", amount=300.0,
+        )
+
+        rows = self._envelope(
+            MonthlyBudgetService(db_session).get_monthly_budget_view(2026, 1),
+            "Electronics",
+        )["data"]
+        by_id = {r["id"]: r for r in rows}
+
+        assert by_id["tv"]["net_amount"] == -700.0
+        assert by_id["cable"]["net_amount"] is None
+        assert sorted(r[TransactionsTableFields.DATE.value] for r in rows) == [
+            "2026-01-10",
+            "2026-01-12",
+        ]
+
     def test_an_open_expectation_still_leaves_the_envelope(self, db_session):
         """Nothing matched yet means the money is expected back, so it is not spend."""
         from backend.services.pending_refunds_service import PendingRefundsService
@@ -2994,3 +3031,9 @@ class TestProjectBudgetRefundNetting:
         assert all(GROSS_AMOUNT_COLUMN not in r for r in rows)
         # The total nets even though the rows do not.
         assert self._total(view) == 7500.0
+        # Each row also says what it counts for: the charge less its refund,
+        # and the refund absorbed into it.
+        assert {r["id"]: r["net_amount"] for r in rows} == {
+            "venue": -7500.0,
+            "venue-refund": 0.0,
+        }

@@ -8,10 +8,12 @@ from backend.models.base import Base, TimestampMixin
 
 class BudgetMonthOverride(Base, TimestampMixin):
     """
-    Reassigns a transaction/split to a different month for monthly-budget purposes.
+    Reassigns a transaction/split to a different budget month.
 
-    The transaction keeps its real ``date`` everywhere else in the app; this
-    record only changes which month the monthly budget view buckets it into.
+    The transaction keeps its real ``date`` everywhere outside the budget; this
+    record changes which month every budget pool counts it in — monthly,
+    yearly (whose year follows the moved month) and project alike, the
+    Overview included (see :mod:`backend.services.budget.ledger`).
     A transaction may be moved at most one month away from its real month
     (enforced in the service layer).
 

@@ -11,7 +11,6 @@ describe("cardSize", () => {
   it("returns 'full' for the chart cards", () => {
     expect(cardSize("income_expenses")).toBe("full");
     expect(cardSize("net_worth")).toBe("full");
-    expect(cardSize("cash_flow")).toBe("full");
   });
 
   it("every declared card has a size", () => {
@@ -22,15 +21,16 @@ describe("cardSize", () => {
 });
 
 describe("default visibility", () => {
-  it("ships income_expenses + net_worth visible and cash_flow hidden", () => {
-    const { order, hidden } = normalize({});
+  it("ships income_expenses + net_worth visible", () => {
+    const { order } = normalize({});
     expect(order).toContain("income_expenses");
     expect(order).toContain("net_worth");
-    expect(hidden).toContain("cash_flow");
   });
 
-  it("default-hidden chart cards are NOT flagged beta", () => {
-    expect(isBetaCard("cash_flow")).toBe(false);
+  it("drops the retired Cash Flow (Sankey) card from a stored layout", () => {
+    const { order, hidden } = normalize({ v: 5, order: ["budget", "cash_flow"], hidden: ["cash_flow"] });
+    expect(order).not.toContain("cash_flow");
+    expect(hidden).not.toContain("cash_flow");
   });
 
   it("ships the retirement card hidden, full-width, and not beta", () => {
@@ -116,18 +116,17 @@ describe("v2 -> v3 migration of the old 'charts' card", () => {
     expect(order).toContain("income_expenses");
     expect(order).toContain("net_worth");
     expect(order).not.toContain("charts");
-    expect(hidden).toEqual(expect.arrayContaining(["cash_flow"]));
-    // "category" was a card when v3 shipped; it is dropped as an unknown id now.
+    // "cash_flow" and "category" were cards when v3 shipped; both are
+    // dropped as unknown ids now.
+    expect(hidden).not.toContain("cash_flow");
     expect(hidden).not.toContain("category");
     expect(order).toContain("budget");
     expect(order).toContain("recent");
   });
 
-  it("keeps all four new cards hidden when charts was hidden", () => {
+  it("keeps the new chart cards hidden when charts was hidden", () => {
     const { order, hidden } = normalize({ v: 2, order: ["budget", "recent"], hidden: ["charts"] });
-    expect(hidden).toEqual(
-      expect.arrayContaining(["income_expenses", "net_worth", "cash_flow"]),
-    );
+    expect(hidden).toEqual(expect.arrayContaining(["income_expenses", "net_worth"]));
     expect(order).not.toContain("income_expenses");
     expect(order).not.toContain("charts");
   });

@@ -2,7 +2,7 @@
 Analysis service — public API and dashboard overview.
 
 Defines ``AnalysisService``, assembling the cash-flow (``cashflow.py``),
-net-worth/Sankey (``net_worth.py``), and forecasting (``forecast.py``)
+net-worth (``net_worth.py``), and forecasting (``forecast.py``)
 mixins around the dashboard overview aggregation.
 """
 
@@ -28,7 +28,7 @@ class AnalysisService(CashflowMixin, NetWorthMixin, ForecastMixin):
     Service for financial analysis and dashboard aggregations.
 
     Computes income/expense breakdowns, category summaries, net balance
-    trends, Sankey diagram data, and net worth over time by querying
+    trends, and net worth over time by querying
     transaction, bank balance, and investment repositories.
     """
 

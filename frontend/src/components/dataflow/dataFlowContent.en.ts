@@ -46,7 +46,7 @@ const content: DataFlowContent = {
     "recurring-review": { title: "Recurring Review", desc: "Confirm, dismiss or re-open a detected commitment. Only confirmed ones are acted on." },
     "balance-mgmt": { title: "Balance Management", desc: "Bank balance entry (post-scrape), cash envelope CRUD. Triggers prior wealth recalculation." },
     "cat-mgmt": { title: "Category & Rules", desc: "Create/rename/delete categories and tags. Manage tagging rules. Changes cascade to all transactions." },
-    "analysis-svc": { title: "Analysis", desc: "Overview, income/expenses, net balance, net worth, Sankey, income by source, heatmap." },
+    "analysis-svc": { title: "Analysis", desc: "Overview, income/expenses, net balance, net worth, income by source, heatmap." },
     "forecast-svc": { title: "Cash-Flow Forecast", desc: "Projects month end from trend + month-to-date. Safe-to-spend nets out committed charges." },
     "recurring-svc": { title: "Recurring Detection", desc: "Finds commitments on cadence, regularity and amount stability. Scores each with a confidence." },
     "insights-svc": { title: "Insights", desc: "Only what the budget does not already explain \u2014 spikes, pace, big charges, repriced subscriptions." },
@@ -187,7 +187,7 @@ const content: DataFlowContent = {
       title: "CC Deduplication", tag: "Critical Pattern",
       sections: [
         { heading: "The Problem", text: "A 3,000\u20AA CC bill = ONE bank txn AND ~N itemized CC txns totaling ~3,000\u20AA. Both = double-count." },
-        { heading: "Strategy by KPI", items: ["Aggregate KPIs (income, balance, net worth) \u2192 bank view, exclude CC source", "Category breakdowns (pie, budgets) \u2192 itemized CC, exclude Credit Cards category", "Sankey flow \u2192 hybrid, CC gap shown as Unknown"] },
+        { heading: "Strategy by KPI", items: ["Aggregate KPIs (income, balance, net worth) \u2192 bank view, exclude CC source", "Category breakdowns (pie, budgets) \u2192 itemized CC, exclude Credit Cards category"] },
         { heading: "CC Gap", text: "cc_gap = abs(bank CC bills) \u2212 abs(itemized CC). Caused by timing, pending txns, fees, FX rounding." },
       ],
     },
@@ -228,7 +228,7 @@ const content: DataFlowContent = {
       title: "Budget Month Override", tag: "\u00B11 Month",
       sections: [
         { heading: "The Problem", text: "A charge lands on the 1st for a bill that belongs to last month, or the supermarket run for next month\u2019s holiday clears early. Its real date is correct; the month the budget counts it in is not." },
-        { heading: "How It Works", items: ["The transaction keeps its real date \u2014 only the monthly budget view moves", "Movement is capped at one month before or after the real month", "Works on a split as well as a whole transaction", "Stored in budget_month_overrides; removing the override puts it back"] },
+        { heading: "How It Works", items: ["The transaction keeps its real date \u2014 only its budget month moves, in every budget view (monthly, yearly, project, Overview)", "Movement is capped at one month before or after the real month", "Works on a split as well as a whole transaction", "Stored in budget_month_overrides; removing the override puts it back"] },
       ],
     },
     "savings-goals-mgmt": {
@@ -324,7 +324,7 @@ const content: DataFlowContent = {
     "analysis-svc": {
       title: "AnalysisService", tag: "11 KPI Reads",
       sections: [
-        { heading: "Core KPIs", items: ["overview \u2014 totals + net change", "income-expenses-over-time \u2014 monthly bars", "net-balance-over-time \u2014 cumulative trend", "net-worth-over-time \u2014 bank + cash + investments", "expenses-by-category-over-time", "sankey \u2014 income \u2192 expenses flow", "income-by-source (+ over time) \u2014 stacked breakdown", "debt-payments-over-time, monthly-expenses (spending heatmap)"] },
+        { heading: "Core KPIs", items: ["overview \u2014 totals + net change", "income-expenses-over-time \u2014 monthly bars", "net-balance-over-time \u2014 cumulative trend", "net-worth-over-time \u2014 bank + cash + investments", "expenses-by-category-over-time", "income-by-source (+ over time) \u2014 stacked breakdown", "debt-payments-over-time, monthly-expenses (spending heatmap)"] },
         { heading: "Transaction Masks", items: ["Income: Salary, Other Income, + positive Liabilities", "Investment: Investments category", "Expense: everything else + negative Liabilities"] },
         { heading: "Also Hosted Here", text: "The same service hosts the cash-flow forecast, which is its own card here. Recurring detection and insights are separate services reading the same merged transaction view." },
       ],
@@ -611,7 +611,7 @@ const content: DataFlowContent = {
   callouts: [
     { title: "Auto-sync from Israeli banks and credit cards.", text: "Connect your accounts once and let the app handle the rest \u2014 17 bank providers and 6 credit card providers supported, with 2FA out of the box. Credentials live in your OS keyring, never in plain text." },
     { title: "Categories that travel with your data.", text: "Rename a category and every transaction, split, rule, and budget updates automatically. Drag-and-drop to reorder. Custom tags inside each category give you finer control without cluttering the top level." },
-    { title: "Net worth, cash flow, and FIRE projections.", text: "See where every shekel goes with a Sankey flow chart, watch your net worth trend over time, and run early-retirement scenarios with the built-in FIRE calculator \u2014 all from the same data." },
+    { title: "Net worth, cash flow, and FIRE projections.", text: "See where every shekel goes by category and income source, watch your net worth trend over time, and run early-retirement scenarios with the built-in FIRE calculator \u2014 all from the same data." },
     { title: "Try everything without risk via Demo Mode.", text: "Open Settings from the sidebar and toggle demo mode to switch to an isolated database with realistic sample data. Explore every feature, click every button, then switch back when you're done. Your real finances stay untouched." },
     { title: "Backups and history, just in case.", text: "Snapshot your data anytime, browse your backup list, and restore on demand. A safety backup is taken first, so even an accidental restore can be undone." },
     { title: "Nothing is decided behind your back.", text: "A detected subscription stays pending until you confirm it. An insight card can be dismissed and comes back only if the thing it was about changes. A finished project or yearly rule is closed, not deleted \u2014 it keeps its history and its category. The app proposes; you rule." },
