@@ -1126,7 +1126,7 @@ class TestNullNumericValueIsRejected:
             )
 
 
-class TestApplyingRulesRealignsClosedInvestments:
+class TestApplyingRulesMovesClosingZero:
     """Tagging a late withdrawal onto a closed investment moves its closing zero."""
 
     def test_apply_rules_moves_the_zero_onto_the_newly_tagged_row(
@@ -1156,7 +1156,6 @@ class TestApplyingRulesRealignsClosedInvestments:
 
         service.apply_rules()
 
-        snapshots = investments.snapshots_repo.get_snapshots_for_investment(stock_fund.id)
-        assert snapshots.loc[snapshots["source"] == "closed", "date"].tolist() == [
-            "2024-03-01"
-        ]
+        snapshots = investments.get_balance_snapshots(stock_fund.id)
+        assert [s["date"] for s in snapshots if s["source"] == "closed"] == ["2024-03-01"]
+        assert investments.get_total_values_at_dates(["2024-03-31"])["2024-03-31"] == 0.0

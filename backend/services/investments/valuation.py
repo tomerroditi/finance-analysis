@@ -7,15 +7,12 @@ metrics, portfolio aggregations, and the shared transaction-fetch helpers.
 Mixed into ``InvestmentsService`` (see ``core.py``).
 """
 
-from bisect import bisect_right
 from datetime import date, datetime
 from typing import Any
 
-import numpy as np
 import pandas as pd
 
-#: One day as a numpy timedelta, for date arithmetic on datetime64 values.
-_ONE_DAY = np.timedelta64(1, "D")
+from backend.services.investments.timeline import ValuationTimeline
 
 HISHTALMUT_TYPE = "hishtalmut"
 """Investment ``type`` marking a Keren Hishtalmut account.
@@ -23,9 +20,6 @@ HISHTALMUT_TYPE = "hishtalmut"
 Matches ``insurance_accounts.policy_type`` so scraped policies and
 manually-created KH investments share one identity.
 """
-
-CLOSED_SOURCE = "closed"
-"""Snapshot ``source`` of the zero balance written when an investment closes."""
 
 OPENING_BALANCE_COLUMN = "is_opening_balance"
 """Marks the synthetic opening-balance row of an insurance-linked investment.
@@ -46,8 +40,7 @@ class ValuationMixin:
         """Calculate the current balance for an investment.
 
         Uses the latest balance snapshot if available — carried forward by
-        the transactions recorded after it (see
-        :meth:`_carry_snapshot_forward`) — otherwise falls back to the
+        the transactions recorded after it — otherwise falls back to the
         transaction-based calculation ``-(sum of amounts)``.
         Returns ``0.0`` for closed investments.
 
@@ -64,23 +57,7 @@ class ValuationMixin:
         investment = self.investments_repo.get_by_id(investment_id)
         if investment.empty:
             return 0.0
-
-        inv = investment.iloc[0]
-
-        if inv["is_closed"]:
-            return 0.0
-
-        transactions_df = self._get_all_transactions_for_investment(
-            inv["category"], inv["tag"], investment_id=investment_id
-        )
-        latest = self.snapshots_repo.get_latest_snapshot_on_or_before(
-            investment_id, date.today().strftime("%Y-%m-%d")
-        )
-        if latest is not None:
-            return self._carry_snapshot_forward(
-                float(latest["balance"]), str(latest["date"]), transactions_df
-            )
-        return self._calculate_balance_from_transactions(transactions_df)
+        return self._timeline(investment.iloc[0]).current_value(_today())
 
     def get_total_values_at_dates(self, target_dates: list[str]) -> dict[str, float]:
         """Return the snapshot-resolved total portfolio value at many dates in one pass.
@@ -91,14 +68,9 @@ class ValuationMixin:
         investments) database walk into O(investments) — the per-month
         resolution then happens in-memory.
 
-        Per investment and per date the resolution matches
-        ``calculate_current_balance``: the latest snapshot on or before the
-        date if one exists (snapshots are unique per ``(investment, date)``
-        and stored as ``YYYY-MM-DD`` strings, so an ordered lexical search is
-        exact), carried forward by the transactions between the snapshot and
-        the date; otherwise the transaction-based ``-sum(amounts up to the
-        date)``. Closed investments are included — they auto-receive a
-        0-balance snapshot at close, so they value at 0 after the close and at
+        Per investment and per date the resolution is
+        ``ValuationTimeline.value_at``. Closed investments are included: their
+        derived zero values them at 0 after their last transaction and at
         their pre-close value before it.
 
         Parameters
@@ -117,110 +89,41 @@ class ValuationMixin:
             return totals
 
         investments = self.investments_repo.get_all_investments(include_closed=True)
-        if investments.empty:
-            return totals
-
         for _, inv in investments.iterrows():
-            inv_id = int(inv["id"])
-            snapshots = self.snapshots_repo.get_snapshots_for_investment(inv_id)
-            snapshot_dates = snapshots["date"].tolist() if not snapshots.empty else []
-            snapshot_balances = (
-                snapshots["balance"].tolist() if not snapshots.empty else []
-            )
-
-            txns = self._get_all_transactions_for_investment(
-                inv["category"], inv["tag"], investment_id=inv_id
-            )
-            # Index once per investment, not once per (investment, date):
-            # re-parsing the date column per date cost the net-worth chart
-            # ~370 full date parses for 8 investments over 46 months. Each
-            # date is now a binary search into a running total.
-            index = self._balance_index(txns)
+            timeline = self._timeline(inv)
             for target_date in target_dates:
-                idx = bisect_right(snapshot_dates, target_date) - 1
-                if idx >= 0:
-                    totals[target_date] += float(
-                        snapshot_balances[idx]
-                    ) + self._balance_at(
-                        index, target_date, after_date=str(snapshot_dates[idx])
-                    )
-                    continue
-                totals[target_date] += self._balance_at(index, target_date)
+                totals[target_date] += timeline.value_at(target_date)
         return totals
 
-    @staticmethod
-    def _balance_index(
-        transactions_df: pd.DataFrame,
-    ) -> tuple[np.ndarray, np.ndarray]:
-        """Build a date-ordered running balance for point-in-time lookups.
+    def _timeline(
+        self, inv: pd.Series, transactions_df: pd.DataFrame | None = None
+    ) -> ValuationTimeline:
+        """Build an investment's valuation timeline.
 
         Parameters
         ----------
-        transactions_df : pd.DataFrame
-            One investment's transactions.
+        inv : pd.Series
+            The investment row.
+        transactions_df : pd.DataFrame, optional
+            Its transactions, when the caller already fetched them.
 
         Returns
         -------
-        tuple of np.ndarray
-            ``(dates, cumulative)`` — ``dates`` are ``YYYY-MM-DD`` strings in
-            ascending order (which for that format is also chronological, the
-            same property the snapshot lookup relies on) and ``cumulative[i]``
-            is the balance implied by every transaction up to and including
-            ``dates[i]``. Rows with an unparseable date are dropped — ``NaT``
-            can never satisfy a cut-off.
+        ValuationTimeline
+            Its transactions, stored snapshots and closed state.
         """
-        empty = (np.array([], dtype="<U10"), np.array([], dtype=float))
-        if transactions_df.empty or "amount" not in transactions_df.columns:
-            return empty
-
-        dates = pd.to_datetime(transactions_df["date"], errors="coerce")
-        amounts = pd.to_numeric(transactions_df["amount"], errors="coerce").fillna(0.0)
-        valid = dates.notna()
-        if not valid.any():
-            return empty
-        dates, amounts = dates[valid], amounts[valid]
-
-        order = np.argsort(dates.to_numpy(), kind="stable")
-        # Balance is the negated sum: a deposit of -1000 adds 1000.
-        return (
-            dates.dt.strftime("%Y-%m-%d").to_numpy().astype("<U10")[order],
-            np.cumsum(-amounts.to_numpy(dtype=float)[order]),
+        investment_id = int(inv["id"])
+        if transactions_df is None:
+            transactions_df = self._get_all_transactions_for_investment(
+                inv["category"], inv["tag"], investment_id=investment_id
+            )
+        closed_date = inv.get("closed_date")
+        return ValuationTimeline(
+            transactions_df,
+            self.snapshots_repo.get_snapshots_for_investment(investment_id),
+            is_closed=bool(inv["is_closed"]),
+            closed_date=str(closed_date) if pd.notna(closed_date) else None,
         )
-
-    @staticmethod
-    def _balance_at(
-        index: tuple[np.ndarray, np.ndarray],
-        as_of_date: str,
-        after_date: str | None = None,
-    ) -> float:
-        """Read a balance out of a :meth:`_balance_index`.
-
-        Parameters
-        ----------
-        index : tuple of np.ndarray
-            As returned by :meth:`_balance_index`.
-        as_of_date : str
-            Cut-off date (inclusive) in ``YYYY-MM-DD`` format.
-        after_date : str, optional
-            When given, only transactions dated strictly after this date
-            count — the snapshot carry-forward case, where anything on or
-            before the snapshot is already inside its balance.
-
-        Returns
-        -------
-        float
-            The balance those transactions imply.
-        """
-        dates, cumulative = index
-        if dates.size == 0:
-            return 0.0
-
-        end = int(np.searchsorted(dates, as_of_date, side="right"))
-        total = float(cumulative[end - 1]) if end > 0 else 0.0
-        if after_date is not None:
-            start = int(np.searchsorted(dates, after_date, side="right"))
-            total -= float(cumulative[start - 1]) if start > 0 else 0.0
-        return total
 
     def calculate_balance_over_time(
         self, investment_id: int, start_date: str, end_date: str
@@ -240,7 +143,7 @@ class ValuationMixin:
         snapshot the line is that snapshot carried forward by the
         transactions recorded after it (a deposit made after the last
         valuation raises the balance instead of vanishing until the next
-        snapshot).
+        snapshot). A closed investment's line ends at its derived zero.
 
         Parameters
         ----------
@@ -260,103 +163,25 @@ class ValuationMixin:
         if investment.empty:
             return []
 
-        inv = investment.iloc[0]
-        transactions_df = self._get_all_transactions_for_investment(
-            inv["category"], inv["tag"], investment_id=investment_id
-        )
-
-        snapshots_df = self.snapshots_repo.get_snapshots_for_investment(investment_id)
-
-        if transactions_df.empty and snapshots_df.empty:
+        timeline = self._timeline(investment.iloc[0])
+        if timeline.is_empty:
             return []
 
-        # For closed investments, stop at the last transaction date
-        actual_end_date = end_date
-        if inv["is_closed"] and not transactions_df.empty:
-            last_txn_date = pd.to_datetime(transactions_df["date"]).max().date()
-            requested_end_date = datetime.strptime(end_date, "%Y-%m-%d").date()
-            actual_end_date = min(last_txn_date, requested_end_date).strftime(
-                "%Y-%m-%d"
-            )
-
         start_ts = pd.Timestamp(start_date)
-        end_ts = pd.Timestamp(actual_end_date)
+        end_ts = pd.Timestamp(end_date)
+        # A closed investment's line ends at its zero.
+        if timeline.closing_date is not None:
+            end_ts = min(end_ts, pd.Timestamp(timeline.closing_date))
         sample_dates = pd.DatetimeIndex([start_ts, end_ts]).union(
             pd.date_range(start=start_ts, end=end_ts, freq="MS")
         )
-        if not transactions_df.empty:
-            txn_dates = pd.to_datetime(transactions_df["date"])
-            sample_dates = sample_dates.union(
-                txn_dates[(txn_dates >= start_ts) & (txn_dates <= end_ts)]
-            )
-        if not snapshots_df.empty:
-            snap_dates = pd.to_datetime(snapshots_df["date"])
-            sample_dates = sample_dates.union(
-                snap_dates[(snap_dates >= start_ts) & (snap_dates <= end_ts)]
-            )
-
-        # Index the transactions once for the whole series rather than
-        # re-parsing the date column per sample date — for the portfolio
-        # overview (8 investments × ~39 samples) that was over 300 full date
-        # parses for one request.
-        index = self._balance_index(transactions_df)
-
-        if snapshots_df.empty:
-            balances = [
-                {
-                    "date": d.strftime("%Y-%m-%d"),
-                    "balance": self._balance_at(index, d.strftime("%Y-%m-%d")),
-                }
-                for d in sample_dates
-            ]
-        else:
-            snapshots_df = snapshots_df.copy()
-            snapshots_df["date"] = pd.to_datetime(snapshots_df["date"])
-            snapshots_df = snapshots_df.sort_values("date")
-            # Bracketing each sample date by binary search rather than two
-            # boolean masks over the whole frame per date.
-            snap_dates = snapshots_df["date"].to_numpy()
-            snap_balances = snapshots_df["balance"].to_numpy(dtype=float)
-
-            balances = []
-            for d in sample_dates:
-                d_str = d.strftime("%Y-%m-%d")
-                d64 = d.to_datetime64()
-                # Last snapshot on or before d, and first on or after it.
-                prev_idx = int(np.searchsorted(snap_dates, d64, side="right")) - 1
-                next_idx = int(np.searchsorted(snap_dates, d64, side="left"))
-
-                has_prev = prev_idx >= 0
-                has_next = next_idx < snap_dates.size
-
-                if has_prev and has_next:
-                    prev_date = snap_dates[prev_idx]
-                    next_date = snap_dates[next_idx]
-                    prev_balance = float(snap_balances[prev_idx])
-
-                    if prev_date == next_date:
-                        balance = prev_balance
-                    else:
-                        total_days = (next_date - prev_date) / _ONE_DAY
-                        elapsed_days = (d64 - prev_date) / _ONE_DAY
-                        frac = elapsed_days / total_days if total_days > 0 else 0
-                        balance = prev_balance + frac * (
-                            float(snap_balances[next_idx]) - prev_balance
-                        )
-                elif has_prev:
-                    balance = float(snap_balances[prev_idx]) + self._balance_at(
-                        index,
-                        d_str,
-                        after_date=pd.Timestamp(snap_dates[prev_idx]).strftime(
-                            "%Y-%m-%d"
-                        ),
-                    )
-                else:
-                    balance = self._balance_at(index, d_str)
-
-                balances.append({"date": d_str, "balance": balance})
-
-        return balances
+        events = pd.to_datetime(
+            [*timeline.event_dates, *timeline.snapshot_dates]
+        ).unique()
+        sample_dates = sample_dates.union(
+            events[(events >= start_ts) & (events <= end_ts)]
+        )
+        return timeline.series(sample_dates)
 
     def calculate_profit_loss(self, investment_id: int) -> dict[str, Any]:
         """
@@ -396,15 +221,14 @@ class ValuationMixin:
         transactions_df = self._get_all_transactions_for_investment(
             inv["category"], inv["tag"], investment_id=investment_id
         )
+        timeline = self._timeline(inv, transactions_df)
 
         if transactions_df.empty:
             # No transactions — check if there's a snapshot (e.g. insurance-synced)
             if not inv["is_closed"]:
-                latest = self.snapshots_repo.get_latest_snapshot_on_or_before(
-                    investment_id, date.today().strftime("%Y-%m-%d")
-                )
-                if latest is not None:
-                    balance = float(latest["balance"])
+                today = _today()
+                if timeline.snapshot_dates and timeline.snapshot_dates[0] <= today:
+                    balance = timeline.current_value(today)
                     return {
                         "total_deposits": 0.0,
                         "total_withdrawals": 0.0,
@@ -444,23 +268,10 @@ class ValuationMixin:
         cost_basis = total_deposits + opening_balance
         net_invested = cost_basis - total_withdrawals
 
+        current_balance = timeline.current_value(_today())
         if inv["is_closed"]:
-            current_balance = 0.0
             absolute_profit_loss = total_withdrawals - cost_basis
         else:
-            # Snapshot first (carried forward by later transactions), fall
-            # back to transaction-based
-            latest = self.snapshots_repo.get_latest_snapshot_on_or_before(
-                investment_id, date.today().strftime("%Y-%m-%d")
-            )
-            if latest is not None:
-                current_balance = self._carry_snapshot_forward(
-                    float(latest["balance"]), str(latest["date"]), transactions_df
-                )
-            else:
-                current_balance = self._calculate_balance_from_transactions(
-                    transactions_df
-                )
             absolute_profit_loss = current_balance - net_invested
 
         final_value = (
@@ -783,8 +594,6 @@ class ValuationMixin:
             the opening row when the first snapshot exceeds the deposits.
         """
         snapshots = self.snapshots_repo.get_snapshots_for_investment(investment_id)
-        if not snapshots.empty:
-            snapshots = snapshots[snapshots["source"] != CLOSED_SOURCE]
         if snapshots.empty:
             return transactions_df
 
@@ -818,97 +627,7 @@ class ValuationMixin:
         flagged = transactions_df.assign(**{OPENING_BALANCE_COLUMN: False})
         return pd.concat([opening_row, flagged], ignore_index=True)
 
-    def _carry_snapshot_forward(
-        self,
-        snapshot_balance: float,
-        snapshot_date: str,
-        transactions_df: pd.DataFrame,
-        as_of_date: str | None = None,
-    ) -> float:
-        """Resolve a balance from a snapshot plus the transactions after it.
 
-        A snapshot is an observation of the whole holding on its date, so
-        transactions on or before that date are already inside it. Anything
-        recorded strictly after the snapshot (and on or before
-        ``as_of_date``) has not been observed yet and is added on top with
-        the usual sign convention (a deposit of ``-1000`` adds ``1000``).
-
-        Parameters
-        ----------
-        snapshot_balance : float
-            Balance recorded by the snapshot.
-        snapshot_date : str
-            Snapshot date in ``YYYY-MM-DD`` format.
-        transactions_df : pd.DataFrame
-            All transactions of the investment.
-        as_of_date : str, optional
-            Cut-off date (inclusive) in ``YYYY-MM-DD`` format. Defaults to
-            today.
-
-        Returns
-        -------
-        float
-            The carried-forward balance.
-        """
-        return snapshot_balance + self._calculate_balance_from_transactions(
-            transactions_df, as_of_date=as_of_date, after_date=snapshot_date
-        )
-
-    def _calculate_balance_from_transactions(
-        self,
-        transactions_df: pd.DataFrame,
-        as_of_date: str | None = None,
-        after_date: str | None = None,
-    ) -> float:
-        """
-        Calculate a balance as the negated sum of transaction amounts.
-
-        Deposits are negative amounts (money leaving the account for the
-        investment), so negating the sum yields a positive balance.
-
-        Parameters
-        ----------
-        transactions_df : pd.DataFrame
-            Transactions to sum.
-        as_of_date : str, optional
-            Include transactions dated on or before this ``YYYY-MM-DD`` date.
-            Defaults to today.
-        after_date : str, optional
-            When given, only transactions dated strictly after this
-            ``YYYY-MM-DD`` date are included.
-
-        Returns
-        -------
-        float
-            The balance those transactions imply.
-        """
-        cutoff = (
-            datetime.today().date()
-            if as_of_date is None
-            else datetime.strptime(as_of_date, "%Y-%m-%d").date()
-        )
-
-        if transactions_df.empty:
-            return 0.0
-
-        transactions_df = transactions_df.copy()
-        transactions_df["date"] = pd.to_datetime(transactions_df["date"])
-
-        txn_dates = transactions_df["date"].dt.date
-        mask = txn_dates <= cutoff
-        if after_date is not None:
-            mask &= txn_dates > datetime.strptime(after_date, "%Y-%m-%d").date()
-        filtered_df = transactions_df.loc[mask]
-
-        if filtered_df.empty:
-            return 0.0
-
-        if "amount" not in filtered_df.columns:
-            return 0.0
-
-        filtered_df.loc[:, "amount"] = pd.to_numeric(
-            filtered_df.loc[:, "amount"], errors="coerce"
-        ).fillna(0.0)
-
-        # A -1000 deposit then a +200 withdrawal leaves -(-1000 + 200) = 800.
-        return float(-filtered_df.loc[:, "amount"].sum())
+def _today() -> str:
+    """Return today's date in ``YYYY-MM-DD`` format."""
+    return date.today().strftime("%Y-%m-%d")

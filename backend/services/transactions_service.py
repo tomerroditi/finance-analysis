@@ -339,9 +339,7 @@ class TransactionsService:
             raise ValidationException(f"Invalid table name: {table_name}")
         uid = _coerce_unique_id(unique_id, ValidationException)
         repo.update_tagging_by_unique_id(uid, category, tag)
-        retagged = self._cascade_to_linked_refunds(table_name, [uid])
-        self.realign_closed_investments()
-        return retagged
+        return self._cascade_to_linked_refunds(table_name, [uid])
 
     def _cascade_to_linked_refunds(self, source: str, unique_ids: list[int]) -> int:
         """Move refund money linked to retagged purchases to their new tag.
@@ -363,17 +361,6 @@ class TransactionsService:
         return RefundTagAlignmentService(self.db).cascade_from_transactions(
             source, unique_ids
         )
-
-    def realign_closed_investments(self) -> None:
-        """Move closed investments' zero snapshots after their transactions change.
-
-        Every write that can add, remove, re-date or retag an investment's
-        transactions calls this — see
-        ``InvestmentsService.realign_closing_snapshots``.
-        """
-        from backend.services.investments import InvestmentsService
-
-        InvestmentsService(self.db).realign_closing_snapshots()
 
     def get_transactions_by_tag(
         self, category: str, tag: str | None = None
@@ -558,7 +545,6 @@ class TransactionsService:
                 InvestmentsService(self.db).recalculate_prior_wealth_by_tag(
                     category, tag
                 )
-        self.realign_closed_investments()
 
     def _filter_updates_for_source(
         self, source: str, updates: dict[str, Any]
@@ -691,8 +677,6 @@ class TransactionsService:
         retagged = 0
         if result and ({"category", "tag"} & filtered_updates.keys()):
             retagged = self._cascade_to_linked_refunds(source, [unique_id])
-        if result:
-            self.realign_closed_investments()
         return {"updated": bool(result), "refunds_retagged": retagged}
 
     def delete_transaction(self, unique_id: int | str, source: str) -> None:
@@ -774,7 +758,6 @@ class TransactionsService:
             InvestmentsService(self.db).recalculate_prior_wealth_by_tag(
                 inv_category, inv_tag
             )
-        self.realign_closed_investments()
 
     def _purge_dependent_records(self, unique_ids: list[int], source: str) -> None:
         """
@@ -915,7 +898,6 @@ class TransactionsService:
         self._purge_dependent_records(unique_ids, source)
 
         deleted = repo.delete_transactions_for_account(provider, account_name)
-        self.realign_closed_investments()
         return {"transactions_deleted": deleted}
 
     def _get_parent_for_split(self, unique_id: int, source: str) -> pd.Series:
@@ -999,7 +981,6 @@ class TransactionsService:
         if not success:
             raise BadRequestException("Failed to split transaction")
         self._purge_split_dependents(old_split_ids)
-        self.realign_closed_investments()
 
     def revert_split(self, unique_id: int, source: str) -> None:
         """Revert a split transaction back to a normal transaction.
@@ -1034,7 +1015,6 @@ class TransactionsService:
         if not success:
             raise BadRequestException("Failed to revert split")
         self._purge_split_dependents(split_ids)
-        self.realign_closed_investments()
 
     def bulk_tag_transactions(
         self,
@@ -1130,7 +1110,6 @@ class TransactionsService:
             cash_balance_svc = CashBalanceService(self.db)
             for account in sorted(affected_accounts):
                 cash_balance_svc.recalculate_current_balance(account)
-        self.realign_closed_investments()
         return retagged
 
     def get_latest_data_date(self) -> datetime | None:

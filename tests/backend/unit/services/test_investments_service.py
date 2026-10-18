@@ -192,8 +192,8 @@ class TestInvestmentsServiceCalculations:
 
         assert totals["2023-01-01"] == 0.0  # before any transaction
         assert totals["2023-06-15"] == 15000.0  # stock 10000 + bond 5000
-        assert totals["2024-01-10"] == pytest.approx(9840.0)  # 10000 + (-160)
-        assert totals["2024-01-15"] == pytest.approx(11840.0)  # 12000 + (-160)
+        assert totals["2024-01-10"] == pytest.approx(10000.0)  # bond closed: 0
+        assert totals["2024-01-15"] == pytest.approx(12000.0)
 
         # A single-date call must agree with the batch call, entry for entry.
         for d in dates:
@@ -224,8 +224,8 @@ class TestInvestmentsServiceCalculations:
         # On the snapshot date: stock snapshot 11000 + bond txns 5000.
         assert totals["2023-12-31"] == pytest.approx(16000.0)
         # After the snapshot: stock snapshot 11000 carried forward over the
-        # 2024-01-15 deposit of 2000, plus bond -160.
-        assert totals["2024-01-15"] == pytest.approx(12840.0)
+        # 2024-01-15 deposit of 2000; the bond fund closed at zero.
+        assert totals["2024-01-15"] == pytest.approx(13000.0)
 
     def test_get_total_values_at_dates_empty_inputs(self, db_session):
         """Verify empty date list and empty portfolio both return safe defaults."""
@@ -644,18 +644,6 @@ class TestInvestmentsServiceEdgeCases:
         assert metrics["current_balance"] == 0.0
         assert metrics["roi_percentage"] == 0.0
 
-    def test_calculate_balance_from_transactions_empty_df(self, db_session):
-        """Verify _calculate_balance_from_transactions returns 0 for empty DataFrame."""
-        service = InvestmentsService(db_session)
-        result = service._calculate_balance_from_transactions(pd.DataFrame())
-        assert result == 0.0
-
-    def test_calculate_balance_from_transactions_missing_amount_column(self, db_session):
-        """Verify _calculate_balance_from_transactions returns 0 when amount column missing."""
-        service = InvestmentsService(db_session)
-        df = pd.DataFrame({"date": ["2024-01-01"], "description": ["test"]})
-        result = service._calculate_balance_from_transactions(df)
-        assert result == 0.0
 
 class TestSyncFromInsurance:
     """Tests for syncing investments from scraped insurance data."""
@@ -1154,12 +1142,21 @@ class TestBalanceOverTimeSnapshotEdges:
         assert balance_by_date["2023-08-01"] == 11000.0
         assert balance_by_date["2023-09-01"] == 11500.0
 
+    def test_the_closing_date_is_sampled_once(self, db_session, seed_investments):
+        """The closing zero, on the last transaction's date, is sampled once."""
+        service = InvestmentsService(db_session)
+        stock_fund = seed_investments["investments"][0]
+        service.close_investment(stock_fund.id, closed_date="2024-01-20")
+
+        history = service.calculate_balance_over_time(stock_fund.id, "2023-06-01", "2024-02-01")
+        dates = [e["date"] for e in history]
+
+        assert dates.count("2024-01-15") == 1
+
 def _closing_dates(db_session, investment_id: int) -> list[str]:
-    """Dates of the zero snapshots written by closing an investment."""
-    snapshots = InvestmentsService(db_session).snapshots_repo.get_snapshots_for_investment(
-        investment_id
-    )
-    return snapshots.loc[snapshots["source"] == "closed", "date"].tolist()
+    """Dates of the derived closing zero in an investment's snapshot list."""
+    snapshots = InvestmentsService(db_session).get_balance_snapshots(investment_id)
+    return [s["date"] for s in snapshots if s["source"] == "closed"]
 
 
 def _bank_row(db_session, day: str, amount: float, description: str) -> BankTransaction:
@@ -1175,14 +1172,13 @@ def _bank_row(db_session, day: str, amount: float, description: str) -> BankTran
     return row
 
 
-class TestClosingSnapshotRealignment:
-    """The zero written at close follows the investment's last transaction.
+class TestDerivedClosingZero:
+    """A closed investment's zero follows its last transaction.
 
-    Closing pins the zero to the last transaction that exists at that moment.
-    A transaction that lands later — the transfer settling a sale days after
-    it, a scraped row re-dated, a row tagged onto the investment after it
-    closed — would otherwise sit past the zero, be carried forward, and value
-    the closed fund below zero in net worth.
+    The zero is derived on every read, not stored, so a transaction that lands
+    after the close — the transfer settling a sale days after it, a scraped row
+    re-dated, a row tagged onto the investment after it closed — moves it, and
+    is never carried past it to value the closed fund below zero.
     """
 
     def test_withdrawal_recorded_after_close_moves_the_zero(self, db_session, seed_investments):
@@ -1206,10 +1202,8 @@ class TestClosingSnapshotRealignment:
         )
 
         assert _closing_dates(db_session, stock_fund.id) == ["2024-02-01"]
-        # The stock fund is worth nothing; -160 is the seeded bond fund, which
-        # was closed without a snapshot and still resolves from transactions.
         totals = service.get_total_values_at_dates(["2024-02-29"])
-        assert totals["2024-02-29"] == pytest.approx(-160.0)
+        assert totals["2024-02-29"] == 0.0
 
     def test_tagging_a_later_bank_row_onto_a_closed_investment_moves_the_zero(
         self, db_session, seed_investments
@@ -1255,17 +1249,61 @@ class TestClosingSnapshotRealignment:
 
         assert _closing_dates(db_session, stock_fund.id) == ["2024-01-15"]
 
-    def test_open_investments_are_untouched(self, db_session, seed_investments):
-        """Only a closing zero moves — an open fund's snapshots stay where they are."""
+    def test_open_investments_have_no_closing_zero(self, db_session, seed_investments):
+        """An open fund's snapshot list is exactly what is stored."""
         service = InvestmentsService(db_session)
         stock_fund = seed_investments["investments"][0]
         service.create_balance_snapshot(stock_fund.id, "2023-12-31", 0.0)
         _bank_row(db_session, "2024-03-01", -500.0, "Top up")
 
-        service.realign_closing_snapshots()
+        snapshots = service.get_balance_snapshots(stock_fund.id)
 
-        snapshots = service.snapshots_repo.get_snapshots_for_investment(stock_fund.id)
-        assert snapshots[["date", "source"]].values.tolist() == [["2023-12-31", "manual"]]
+        assert [(s["date"], s["source"]) for s in snapshots] == [("2023-12-31", "manual")]
+
+    def test_closing_writes_no_snapshot(self, db_session, seed_investments):
+        """Closing stores nothing; the zero is listed read-only with no id."""
+        service = InvestmentsService(db_session)
+        stock_fund = seed_investments["investments"][0]
+
+        service.close_investment(stock_fund.id, closed_date="2024-01-20")
+
+        assert service.snapshots_repo.get_snapshots_for_investment(stock_fund.id).empty
+        assert service.get_balance_snapshots(stock_fund.id) == [
+            {
+                "id": None,
+                "investment_id": stock_fund.id,
+                "date": "2024-01-15",
+                "balance": 0.0,
+                "source": "closed",
+            }
+        ]
+
+    def test_zero_shadows_a_stored_snapshot_on_its_date(self, db_session, seed_investments):
+        """A stored snapshot on the closing date is replaced by the zero."""
+        service = InvestmentsService(db_session)
+        stock_fund = seed_investments["investments"][0]
+        service.create_balance_snapshot(stock_fund.id, "2024-01-01", 9000.0)
+        service.create_balance_snapshot(stock_fund.id, "2024-01-15", 9999.0)
+
+        service.close_investment(stock_fund.id, closed_date="2024-01-20")
+
+        snapshots = service.get_balance_snapshots(stock_fund.id)
+        assert [(s["date"], s["balance"]) for s in snapshots] == [
+            ("2024-01-01", 9000.0),
+            ("2024-01-15", 0.0),
+        ]
+        assert service.calculate_current_balance(stock_fund.id) == 0.0
+
+    def test_reopening_drops_the_zero(self, db_session, seed_investments):
+        """A reopened fund is valued from its transactions again."""
+        service = InvestmentsService(db_session)
+        stock_fund = seed_investments["investments"][0]
+        service.close_investment(stock_fund.id, closed_date="2024-01-20")
+
+        service.reopen_investment(stock_fund.id)
+
+        assert _closing_dates(db_session, stock_fund.id) == []
+        assert service.calculate_current_balance(stock_fund.id) > 0
 
 
 class TestProfitLossWithoutTransactions:
@@ -1345,111 +1383,6 @@ class TestInsuranceAndManualTransactionMerge:
         txns = service._get_all_transactions_for_investment(inv["category"], inv["tag"], investment_id=inv["id"])
 
         assert txns["amount"].tolist() == [-250.0]
-
-
-class TestBalanceIndexMatchesScanning:
-    """The batch valuation's date index must agree with the scanning fallback.
-
-    `get_total_values_at_dates` used to call
-    `_calculate_balance_from_transactions` once per (investment, date) — each
-    call copying the frame and re-parsing its date column with format
-    inference, so the net-worth chart paid hundreds of full date parses. It
-    now indexes each investment once and binary-searches a running total.
-    These pin the two to the same answers, including the cases where a
-    cumulative sum is easiest to get wrong: unordered rows, same-day
-    transactions, dates outside the data, and unparseable dates.
-    """
-
-    @staticmethod
-    def _frame(rows: list[tuple[str, float]]) -> pd.DataFrame:
-        """Build a transactions frame from ``(date, amount)`` pairs."""
-        return pd.DataFrame(
-            {"date": [r[0] for r in rows], "amount": [r[1] for r in rows]}
-        )
-
-    def _assert_agrees(self, db_session, rows, dates, after_date=None):
-        """Assert indexed lookups equal the scanning implementation."""
-        service = InvestmentsService(db_session)
-        frame = self._frame(rows)
-        index = service._balance_index(frame)
-
-        for as_of in dates:
-            assert service._balance_at(
-                index, as_of, after_date=after_date
-            ) == pytest.approx(
-                service._calculate_balance_from_transactions(
-                    frame, as_of_date=as_of, after_date=after_date
-                )
-            )
-
-    def test_agrees_on_unordered_rows(self, db_session):
-        """Storage order must not change the balance at any date."""
-        rows = [
-            ("2024-03-01", -300.0),
-            ("2024-01-01", -1000.0),
-            ("2024-02-01", 250.0),
-        ]
-        self._assert_agrees(
-            db_session,
-            rows,
-            ["2023-12-31", "2024-01-01", "2024-01-15", "2024-02-01", "2024-12-31"],
-        )
-
-    def test_agrees_on_same_day_transactions(self, db_session):
-        """Several rows on one day all land on the same side of the cut-off."""
-        rows = [
-            ("2024-01-10", -500.0),
-            ("2024-01-10", -250.0),
-            ("2024-01-10", 100.0),
-            ("2024-02-10", -50.0),
-        ]
-        self._assert_agrees(
-            db_session, rows, ["2024-01-09", "2024-01-10", "2024-01-11"]
-        )
-
-    def test_agrees_when_carrying_forward_from_a_snapshot(self, db_session):
-        """The `after_date` window (snapshot carry-forward) matches too."""
-        rows = [
-            ("2024-01-01", -1000.0),
-            ("2024-02-01", -500.0),
-            ("2024-03-01", 200.0),
-        ]
-        self._assert_agrees(
-            db_session,
-            rows,
-            ["2024-01-31", "2024-02-01", "2024-03-15"],
-            after_date="2024-01-31",
-        )
-
-    def test_agrees_when_a_date_is_missing(self, db_session):
-        """A row the repository could not date is excluded by both paths.
-
-        This is the shape a corrupt date actually reaches valuation in:
-        `_normalize_dates` coerces what it cannot parse to ``NaN`` so one bad
-        row can't 500 every analytics endpoint.
-        """
-        rows = [("2024-01-01", -1000.0), (float("nan"), -9999.0)]
-        self._assert_agrees(db_session, rows, ["2024-06-01"])
-
-    def test_unparseable_date_string_is_dropped_not_raised(self, db_session):
-        """The index tolerates a raw bad date; the old scan raised on it.
-
-        Nothing upstream produces this today, but tolerating it is the same
-        promise `_normalize_dates` already makes one layer down.
-        """
-        service = InvestmentsService(db_session)
-        frame = self._frame([("2024-01-01", -1000.0), ("not-a-date", -9999.0)])
-
-        index = service._balance_index(frame)
-
-        assert service._balance_at(index, "2024-06-01") == pytest.approx(1000.0)
-
-    def test_empty_frame_values_at_zero(self, db_session):
-        """An investment with no transactions is worth nothing, at any date."""
-        service = InvestmentsService(db_session)
-        index = service._balance_index(pd.DataFrame({"date": [], "amount": []}))
-
-        assert service._balance_at(index, "2024-01-01") == 0.0
 
 
 class TestBalanceOverTimeSnapshotBracketing:

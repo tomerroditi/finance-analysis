@@ -12,6 +12,8 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
+from backend.services.investments.timeline import CLOSED_SOURCE
+
 
 class SnapshotsMixin:
     """Balance-snapshot methods for ``InvestmentsService``."""
@@ -34,8 +36,7 @@ class SnapshotsMixin:
         balance : float
             Market value on this date.
         source : str
-            Origin: ``"manual"``, ``"scraped"``, ``"calculated"``, or
-            ``"closed"`` (the zero written by ``close_investment``).
+            Origin: ``"manual"``, ``"scraped"`` or ``"calculated"``.
         """
         self.snapshots_repo.upsert_snapshot(investment_id, date, balance, source)
 
@@ -51,18 +52,31 @@ class SnapshotsMixin:
         -------
         list[dict]
             Snapshot records ordered by date, with ``NaN`` replaced by ``None``.
+            A closed investment's list ends with its derived zero
+            (``id=None``, ``source="closed"``): it is what valuation reads, so
+            it is shown, but it is not stored and cannot be edited. A stored
+            snapshot on that date is shadowed by it and left out.
 
         Raises
         ------
         EntityNotFoundException
             If no investment with ``investment_id`` exists.
         """
-        self.investments_repo.get_by_id(investment_id)
+        inv = self.investments_repo.get_by_id(investment_id).iloc[0]
         df = self.snapshots_repo.get_snapshots_for_investment(investment_id)
-        if df.empty:
-            return []
-        df = df.replace({np.nan: None})
-        return df.to_dict(orient="records")
+        records = [] if df.empty else df.replace({np.nan: None}).to_dict("records")
+        closing_date = self._timeline(inv).closing_date
+        if closing_date is None:
+            return records
+        return [r for r in records if r["date"] != closing_date] + [
+            {
+                "id": None,
+                "investment_id": investment_id,
+                "date": closing_date,
+                "balance": 0.0,
+                "source": CLOSED_SOURCE,
+            }
+        ]
 
     def update_balance_snapshot(self, snapshot_id: int, **fields: Any) -> None:
         """Update a balance snapshot.
@@ -185,7 +199,7 @@ class SnapshotsMixin:
             investment_id, source="calculated"
         )
 
-        # Every snapshot left after the clear is manual/scraped/closed and must
+        # Every snapshot left after the clear is manual/scraped and must
         # not be overwritten by a calculated one.
         existing_df = self.snapshots_repo.get_snapshots_for_investment(investment_id)
         protected_dates: set[str] = set()

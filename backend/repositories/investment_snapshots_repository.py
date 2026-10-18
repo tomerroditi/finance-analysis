@@ -144,44 +144,6 @@ class InvestmentSnapshotsRepository:
         )
         return dict(rows)
 
-    def get_latest_snapshot_on_or_before(
-        self, investment_id: int, target_date: str
-    ) -> dict[str, Any] | None:
-        """Find the most recent snapshot on or before a target date.
-
-        Parameters
-        ----------
-        investment_id : int
-            Primary key of the investment to query.
-        target_date : str
-            Upper bound date in ``YYYY-MM-DD`` format (inclusive).
-
-        Returns
-        -------
-        dict or None
-            A dictionary with snapshot fields if found, otherwise ``None``.
-        """
-        snapshot = (
-            self.db.query(InvestmentBalanceSnapshot)
-            .filter(
-                InvestmentBalanceSnapshot.investment_id == investment_id,
-                InvestmentBalanceSnapshot.date <= target_date,
-            )
-            .order_by(InvestmentBalanceSnapshot.date.desc())
-            .first()
-        )
-
-        if snapshot is None:
-            return None
-
-        return {
-            "id": snapshot.id,
-            "investment_id": snapshot.investment_id,
-            "date": snapshot.date,
-            "balance": snapshot.balance,
-            "source": snapshot.source,
-        }
-
     def update_snapshot(self, snapshot_id: int, **fields: Any) -> None:
         """Update a snapshot by its ID.
 

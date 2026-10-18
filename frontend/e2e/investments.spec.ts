@@ -123,5 +123,21 @@ test.describe("Investments", () => {
     await expect(khModal.getByTestId("snapshot-not-available").first()).toHaveText(
       "Not available",
     );
+
+    // --- Closed investment: the closing zero is derived and read-only ---
+    // A closed fund's zero is computed from its transactions, not stored, so
+    // its row carries a lock instead of the edit / delete actions.
+    await page.locator(".modal-overlay").getByRole("button").first().click();
+    await page
+      .locator("div.group")
+      .filter({ hasText: "Corporate Bond" })
+      .getByRole("button", { name: "View Analysis" })
+      .click();
+    const closedModal = page.locator(".modal-overlay");
+    const closingRow = closedModal
+      .locator("tbody tr")
+      .filter({ has: page.getByTestId("snapshot-closing-zero") });
+    await expect(closingRow).toHaveCount(1, { timeout: 15_000 });
+    await expect(closingRow.getByRole("button")).toHaveCount(0);
   });
 });
