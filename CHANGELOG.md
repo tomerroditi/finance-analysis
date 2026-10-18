@@ -1,3 +1,13 @@
+## v2.0.0 (2026-10-18)
+
+### BREAKING CHANGE
+
+- the Sankey diagram feature and its analytics endpoint are removed.
+
+### Feat
+
+- **budget**: one claim ledger, refunds that follow their purchase, split parts that keep their parent (#406)
+
 ## v1.108.4 (2026-10-18)
 
 ### Fix
