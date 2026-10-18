@@ -1,3 +1,9 @@
+## v1.108.4 (2026-10-18)
+
+### Fix
+
+- **analytics**: move the remaining analytics onto the transaction views (#405)
+
 ## v1.108.3 (2026-10-17)
 
 ### Fix
