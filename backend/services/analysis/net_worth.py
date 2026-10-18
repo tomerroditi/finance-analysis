@@ -1,28 +1,21 @@
 """
-Net-balance / net-worth trends and the Sankey flow diagram.
+Net-balance / net-worth trends.
 
-Provides the ``NetWorthMixin`` with the cumulative net-balance series,
-the monthly net-worth reconstruction (bank + investments + cash), and the
-two-layer Sankey cash-flow data. Mixed into ``AnalysisService`` (see
-``core.py``).
+Provides the ``NetWorthMixin`` with the cumulative net-balance series and
+the monthly net-worth reconstruction (bank + investments + cash). Mixed into
+``AnalysisService`` (see ``core.py``).
 """
 
 from typing import Any
 
 import pandas as pd
 
-from backend.constants.categories import (
-    CREDIT_CARDS,
-    LIABILITIES_CATEGORY,
-    PRIOR_WEALTH_TAG,
-    IncomeCategories,
-)
 from backend.constants.tables import Tables
 from backend.utils.dataframe_dates import to_month_series
 
 
 class NetWorthMixin:
-    """Net-balance, net-worth, and Sankey methods for ``AnalysisService``."""
+    """Net-balance and net-worth methods for ``AnalysisService``."""
 
     def get_net_balance_over_time(self) -> list[dict[str, Any]]:
         """
@@ -77,137 +70,6 @@ class NetWorthMixin:
             )
 
         return trend
-
-    def get_sankey_data(self, exclude_pending_refunds: bool = True) -> dict[str, Any]:
-        """
-        Get data for a two-layer Sankey (flow) diagram.
-
-        Layer 1 flows: income sources → ``Total Income`` node.
-        Layer 2 flows: ``Total Income`` node → expense destinations.
-
-        Sources include: Salary, Prior Wealth, Other Income, Loans, and
-        Wealth Deficit (added when expenses exceed income). Destinations
-        include: per-category expenses, Paid Debt, and Wealth Growth
-        (added when income exceeds expenses). Credit Cards and Ignore
-        categories are excluded.
-
-        Read off the spending view, so a refund matched to its purchase is
-        netted against it: a fully repaid charge stops flowing out to its
-        category and stops flowing back in as a ``Refunds:`` source. The ``Unknown`` destination is deliberately
-        measured *before* netting: it is how much of the card bill has no
-        itemized detail, a question about coverage that a refund does not
-        answer. Netting first would shrink the itemized side of that
-        subtraction while the bill it is compared against stayed put, and
-        invent untracked spend that never happened.
-
-        Parameters
-        ----------
-        exclude_pending_refunds : bool, optional
-            Passed to :meth:`TransactionViews.spending`. Defaults to True.
-
-        Returns
-        -------
-        dict[str, Any]
-            Dictionary with keys:
-
-            - ``nodes`` – list of node names sorted with ``Total Income`` first.
-            - ``node_labels`` – list of node names in link-index order.
-            - ``links`` – list of dicts with ``source`` (int), ``target`` (int),
-              ``value`` (float), and ``label`` (str).
-        """
-        raw = self.repo.get_itemized_transactions(include_split_parents=False)
-
-        if raw.empty:
-            return {"nodes": [], "links": []}
-
-        # Card coverage is measured on the raw rows, before netting, which
-        # would otherwise shrink only the itemized side.
-        bank_cc_payments = abs(raw[raw["category"] == CREDIT_CARDS]["amount"].sum())
-        itemized_cc_total = abs(
-            raw[raw["source"] == Tables.CREDIT_CARD.value]["amount"].sum()
-        )
-        cc_gap = bank_cc_payments - itemized_cc_total
-
-        view = self.views.spending(exclude_pending_refunds=exclude_pending_refunds)
-        income = view.income
-        expenses = view.expenses
-
-        SALARY = IncomeCategories.SALARY.value
-        OTHER_INCOME = IncomeCategories.OTHER_INCOME.value
-
-        total_income_node = "Total Income"
-
-        sources: dict[str, float] = {}
-        destinations: dict[str, float] = {}
-
-        sources[SALARY] = income[income["category"] == SALARY]["amount"].sum()
-        sources[PRIOR_WEALTH_TAG] = self.get_total_prior_wealth()
-        sources[OTHER_INCOME] = income[income["category"] == OTHER_INCOME][
-            "amount"
-        ].sum()
-        is_debt = expenses["category"] == LIABILITIES_CATEGORY
-        sources["Loans"] = income[income["category"] == LIABILITIES_CATEGORY][
-            "amount"
-        ].sum()
-
-        destinations["Paid Debt"] = abs(expenses[is_debt]["amount"].sum())
-
-        for cat, group in expenses[~is_debt].groupby("category"):
-            net = group["amount"].sum()
-            if net > 0:
-                sources[f"Refunds: {cat}"] = net
-            elif net < 0:
-                destinations[cat] = abs(net)
-
-        if cc_gap > 0:
-            destinations["Unknown"] = cc_gap
-
-        net = sum(sources.values()) - sum(destinations.values())
-        if net < 0:
-            sources["Wealth Deficit"] = abs(net)
-        else:
-            destinations["Wealth Growth"] = net
-
-        nodes: list[str] = []
-        node_idx: dict[str, int] = {}
-        links: list[dict[str, Any]] = []
-
-        def get_node_idx(name: str) -> int:
-            """Return ``name``'s node index, registering it on first sight."""
-            idx = node_idx.get(name)
-            if idx is None:
-                idx = len(nodes)
-                nodes.append(name)
-                node_idx[name] = idx
-            return idx
-
-        # Layer 1: income sources -> Total Income.
-        for name, val in sources.items():
-            links.append(
-                {
-                    "source": get_node_idx(name),
-                    "target": get_node_idx(total_income_node),
-                    "value": round(val, 2),
-                    "label": "",
-                }
-            )
-
-        # Layer 2: Total Income -> destinations.
-        for name, val in destinations.items():
-            links.append(
-                {
-                    "source": get_node_idx(total_income_node),
-                    "target": get_node_idx(name),
-                    "value": round(val, 2),
-                    "label": "",
-                }
-            )
-
-        return {
-            "nodes": sorted(nodes, key=lambda x: (x != total_income_node, x)),
-            "node_labels": nodes,
-            "links": links,
-        }
 
     def get_net_worth_over_time(self) -> list[dict[str, Any]]:
         """

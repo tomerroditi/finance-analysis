@@ -764,7 +764,6 @@ export const analyticsApi = {
         },
       }
     ),
-  getSankeyData: () => api.get("/analytics/sankey"),
   getNetWorthOverTime: () =>
     api.get<{ month: string; bank_balance: number; investment_value: number; cash: number; net_worth: number }[]>(
       "/analytics/net-worth-over-time"

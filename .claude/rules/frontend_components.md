@@ -24,7 +24,6 @@ frontend/src/components/
 ├── modals/              # Shared modals used across multiple features (ConfirmationModal, LinkRefundModal, SplitTransactionModal, etc.)
 ├── DateRangePicker.tsx        # Shared date range selector
 ├── ErrorBoundary.tsx          # Error boundary wrapper
-├── SankeyChart.tsx            # Sankey flow diagram
 └── TransactionsTable.tsx      # Core transaction table (used by Transactions page + budget views)
 ```
 

@@ -85,12 +85,10 @@ Causes: timing differences, pending transactions, fees, foreign currency roundin
 | `get_net_worth_over_time()` | Keep bank view, drop CC items | `exclude_services=["credit_card_transactions"]` |
 | `get_income_by_source[_over_time]()` | Bank view | `views.bank().income` |
 | `get_expenses_by_category()` | Uses itemized CC view | Filter out non-expense categories (`INVESTMENTS_CATEGORY`, `LIABILITIES_CATEGORY`, `IncomeCategories`, `CREDIT_CARDS`) |
-| `get_sankey_data()` | Hybrid — uses both to calculate gap | Calculates CC gap, then filters out `Credit Cards` category |
 
 **Rule of thumb:**
 - For **aggregate totals** (income, expenses, balances): use bank transactions only, exclude CC source.
 - For **category breakdowns** (pie charts, per-category): use itemized CC transactions, exclude the "Credit Cards" bank category.
-- For **flow diagrams** (Sankey): use both to detect the CC gap, then filter.
 - For **anything the user can filter by category**: itemized, always — see below.
 
 ### A filterable total cannot use the bank view
@@ -296,12 +294,11 @@ net_worth = bank_balance + investment_value
 
 The anchor point (1 month before earliest data) shows all prior wealth as `bank_balance` with `investment_value = 0`, representing the state before any tracked transactions.
 
-### Prior Wealth in Overview & Sankey
+### Prior Wealth in the Overview
 
-Both read `AnalysisService.get_total_prior_wealth()`: bank + investment + cash prior wealth, plus the bank and cash rows tagged `Prior Wealth` (`TransactionViews.tagged_prior_wealth`). The tagged rows are added back because the stored bank and cash figures are derived net of every transaction in the account, those rows included, and no view counts them as income.
+The overview reads `AnalysisService.get_total_prior_wealth()`: bank + investment + cash prior wealth, plus the bank and cash rows tagged `Prior Wealth` (`TransactionViews.tagged_prior_wealth`). The tagged rows are added back because the stored bank and cash figures are derived net of every transaction in the account, those rows included, and no view counts them as income.
 
 - **Overview `total_income`**: transaction income + total prior wealth. Represents "total resources available" (starting capital + earned income).
-- **Sankey "Prior Wealth" source node**: the same total.
 
 ### Cash Prior Wealth Calculation
 
@@ -365,12 +362,6 @@ Known structural residual: **net cash position** from cash transactions. Cash in
 - **Prior wealth:** Bank/investment prior wealth seeds `bank_balance`; investment movements shift value between the bank and investment lines via the inv_prior offset. Cash prior wealth seeds `cash`.
 - **Investments:** snapshot-resolved per investment per month-end via `InvestmentsService.get_total_values_at_dates` (snapshot-first, transaction-based fallback when no snapshot exists). Closed investments naturally contribute 0 after their auto-created close snapshot, and their historical pre-close value before. Market gains/losses recorded as snapshots flow through into both `investment_value` and `net_worth`. **This includes scraped Keren Hishtalmut policies** — `InsuranceSyncMixin` auto-creates a `type='hishtalmut'` investment with scraped snapshots per policy, so scraped KH is part of `investment_value`/`net_worth` even though the analysis layer never reads `insurance_accounts` directly.
 - **Formula:** `net_worth = bank_balance + investment_value + cash` for each month. See "Why Investment Prior Wealth Lives in Bank Balance" above for the bank↔investment offset.
-
-### `get_sankey_data()`
-- **Purpose:** Cash flow diagram (sources → Total Income → destinations)
-- **CC handling:** Calculates CC gap, filters out `Credit Cards` category, adds gap as "Unknown" destination
-- **Prior wealth:** Shown as dedicated "Prior Wealth" source node (`get_total_prior_wealth()`)
-- **Balance nodes:** "Wealth Growth" (income > expenses) or "Wealth Deficit" (expenses > income)
 
 ### `get_income_by_source_over_time()`
 - **Purpose:** Stacked bar chart of income broken down by source

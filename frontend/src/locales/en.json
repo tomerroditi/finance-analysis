@@ -163,7 +163,6 @@
     "expensesByCategory": "Expenses by Category",
     "netBalanceOverTime": "Net Balance Over Time",
     "netWorthOverTime": "Net Worth Over Time",
-    "cashFlow": "Cash Flow",
     "budgetProgress": "Budget Progress",
     "recentTransactions": "Recent Transactions",
     "financialHealth": "Financial Health",
@@ -437,7 +436,6 @@
       "heatmap": "Spending calendar",
       "incomeExpenses": "Income & Expenses",
       "netWorth": "Net Worth",
-      "cashFlow": "Cash Flow",
       "refunds": "Refunds",
       "retirement": "Early Retirement"
     },
