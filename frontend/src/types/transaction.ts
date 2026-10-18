@@ -16,4 +16,6 @@ export interface Transaction {
   account_name?: string;
   account_number?: string;
   pending_refund_id?: number;
+  /** Budget views only: what a refund-netted row counts for in its pool. */
+  net_amount?: number | null;
 }

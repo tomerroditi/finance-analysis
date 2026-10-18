@@ -2912,6 +2912,43 @@ class TestMonthlyBudgetRefundNetting:
         # The total still nets, so the two deliberately disagree.
         assert envelope["current_amount"] == 700.0
 
+    def test_a_netted_row_names_what_it_counts_for(self, db_session):
+        """A refund from another month leaves the purchase's row explaining the total.
+
+        The charge is listed gross but carries ``net_amount``; an untouched row
+        carries ``None``. Dates go out as plain ``YYYY-MM-DD`` so the edit
+        dialog's date input and the edit endpoint both accept them.
+        """
+        from backend.services.pending_refunds_service import PendingRefundsService
+
+        self._rules(db_session)
+        tv = self._seed(db_session, "tv", "2026-01-10", "Electronics", None, -1000.0)
+        self._seed(db_session, "cable", "2026-01-12", "Electronics", None, -50.0)
+        refund = self._seed(db_session, "tv-refund", "2026-03-14", "Electronics", None, 300.0)
+
+        service = PendingRefundsService(db_session)
+        pending = service.mark_as_pending_refund(
+            source_type="transaction", source_id=tv,
+            source_table="banks", expected_amount=300.0,
+        )
+        service.link_refund(
+            pending_refund_id=pending["id"], refund_transaction_id=refund,
+            refund_source="banks", amount=300.0,
+        )
+
+        rows = self._envelope(
+            MonthlyBudgetService(db_session).get_monthly_budget_view(2026, 1),
+            "Electronics",
+        )["data"]
+        by_id = {r["id"]: r for r in rows}
+
+        assert by_id["tv"]["net_amount"] == -700.0
+        assert by_id["cable"]["net_amount"] is None
+        assert sorted(r[TransactionsTableFields.DATE.value] for r in rows) == [
+            "2026-01-10",
+            "2026-01-12",
+        ]
+
     def test_an_open_expectation_still_leaves_the_envelope(self, db_session):
         """Nothing matched yet means the money is expected back, so it is not spend."""
         from backend.services.pending_refunds_service import PendingRefundsService
@@ -2994,3 +3031,9 @@ class TestProjectBudgetRefundNetting:
         assert all(GROSS_AMOUNT_COLUMN not in r for r in rows)
         # The total nets even though the rows do not.
         assert self._total(view) == 7500.0
+        # Each row also says what it counts for: the charge less its refund,
+        # and the refund absorbed into it.
+        assert {r["id"]: r["net_amount"] for r in rows} == {
+            "venue": -7500.0,
+            "venue-refund": 0.0,
+        }

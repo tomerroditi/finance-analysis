@@ -27,6 +27,7 @@ touches no database, so its rules are tested on hand-built frames.
 
 from typing import Any
 
+import numpy as np
 import pandas as pd
 
 from backend.constants.budget import (
@@ -43,12 +44,16 @@ from backend.constants.budget import (
     YEAR,
 )
 from backend.constants.tables import TransactionsTableFields
-from backend.services.pending_refunds_service import restore_gross_amounts
+from backend.services.pending_refunds_service import (
+    GROSS_AMOUNT_COLUMN,
+    restore_gross_amounts,
+)
 
 BUDGET_YEAR = "budget_year"
 BUDGET_MONTH = "budget_month"
 CLAIM_KIND = "claim_kind"
 CLAIM_RULE_ID = "claim_rule_id"
+NET_AMOUNT = "net_amount"
 
 KIND_PROJECT = "project"
 KIND_YEARLY = "yearly"
@@ -258,9 +263,25 @@ def transaction_records(rows: pd.DataFrame) -> list[dict[str, Any]]:
 
     A pool totals what its rows *cost*, net of refunds, but the list under it
     shows the real transactions the user can act on (see
-    :func:`restore_gross_amounts`).
+    :func:`restore_gross_amounts`). A row a refund reduced also carries
+    ``net_amount`` — what it counts for in the pool — so the list can say so:
+    without it a refund landing in a later month was netted into the purchase's
+    month while nothing listed there explained the smaller total. Every other
+    row carries ``net_amount = None``.
+
+    Dates go out as plain ``YYYY-MM-DD``: the ledger parses them for month
+    arithmetic, and a timestamp is neither what the other transaction lists
+    serve nor something a date input or the edit endpoint accepts.
     """
-    listed = restore_gross_amounts(
-        rows.drop(columns=[CLAIM_KIND, CLAIM_RULE_ID], errors="ignore")
-    )
+    listed = rows.drop(columns=[CLAIM_KIND, CLAIM_RULE_ID], errors="ignore")
+    amount = TransactionsTableFields.AMOUNT.value
+    net = None
+    if GROSS_AMOUNT_COLUMN in listed.columns:
+        reduced = ~np.isclose(listed[amount], listed[GROSS_AMOUNT_COLUMN])
+        net = listed[amount].astype(object).where(reduced, None)
+    listed = restore_gross_amounts(listed)
+    listed[NET_AMOUNT] = net
+    date = TransactionsTableFields.DATE.value
+    if date in listed.columns:
+        listed[date] = pd.to_datetime(listed[date]).dt.strftime("%Y-%m-%d")
     return listed.to_dict(orient="records")
