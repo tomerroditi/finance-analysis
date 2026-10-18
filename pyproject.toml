@@ -127,17 +127,16 @@ version_provider = "poetry"
 version_files = [
     "pyproject.toml:tool.poetry.version",
     "frontend/package.json:\"version\"",
-    # The lockfile carries the app version twice (top level and the root
-    # `packages[""]` entry). Bumping package.json without it left the lockfile
-    # frozen at 1.52.1, so every fresh `npm install` produced a spurious 2-line
-    # diff. Both lines are rewritten here because commitizen substitutes the
-    # *current* version string on every line matching the pattern — see
-    # tests/backend/unit/test_version_files_consistency.py, which guards the
-    # one hazard that comes with it: a dependency pinned at the same version
-    # would be rewritten too.
-    "frontend/package-lock.json:\"version\"",
     "build/installer_script.nsi:^!define APP_VERSION \".*\"$",
 ]
+# The lockfile carries the app version twice (top level and the root
+# `packages[""]` entry), but it cannot go in version_files: commitizen rewrites
+# every line matching a pattern, and the root entry's "version" line looks just
+# like every dependency's — at 2.0.0 eight dependencies shared the app version.
+# The hook rewrites only the two app fields; `cz bump` commits with -a, so the
+# edit lands in the bump commit. Guarded by
+# tests/backend/unit/test_version_files_consistency.py.
+pre_bump_hooks = ["python build/bump_lockfile_version.py"]
 update_changelog_on_bump = true
 bump_message = "bump: version $current_version → $new_version [skip ci]"
 
