@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useId, type ReactNode } from "react";
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from "recharts";
 import { ChartTooltip } from "./ChartTooltip";
 import { ChartLegend } from "./ChartLegend";
@@ -8,6 +8,10 @@ import { formatCurrency } from "../../utils/numberFormatting";
 export interface DonutSlice {
   name: string;
   value: number;
+  /** What the slice is called on screen, when that differs from its key. */
+  label?: string;
+  /** Draw the slice as diagonal stripes in its colour rather than solid. */
+  hatched?: boolean;
 }
 
 interface DonutChartProps {
@@ -114,7 +118,10 @@ export function DonutChart({
   labelMode = "none",
   onSliceClick,
 }: DonutChartProps) {
-  const slices = sorted ? [...data].sort((a, b) => b.value - a.value) : data;
+  const sortedSlices = sorted ? [...data].sort((a, b) => b.value - a.value) : data;
+  const slices = sortedSlices.map((slice) => ({ ...slice, label: slice.label ?? slice.name }));
+  // React's ids carry colons, which a `url(#…)` reference cannot.
+  const patternId = `hatch${useId().replace(/[^a-zA-Z0-9_-]/g, "")}`;
   const total = slices.reduce((sum, s) => sum + s.value, 0);
   const hasOutsideLabels = labelMode === "label-percent-outside";
 
@@ -131,10 +138,26 @@ export function DonutChart({
       <div className="relative min-h-0 w-full flex-1">
         <ResponsiveContainer width="100%" height="100%">
           <PieChart margin={hasOutsideLabels ? { top: 16, bottom: 16, left: 16, right: 16 } : undefined}>
+            <defs>
+              {slices.map((slice, i) =>
+                slice.hatched ? (
+                  <pattern
+                    key={slice.name}
+                    id={`${patternId}-${i}`}
+                    width={6}
+                    height={6}
+                    patternUnits="userSpaceOnUse"
+                    patternTransform="rotate(45)"
+                  >
+                    <rect width={3} height={6} fill={colors[i % colors.length]} />
+                  </pattern>
+                ) : null,
+              )}
+            </defs>
             <Pie
               data={slices}
               dataKey="value"
-              nameKey="name"
+              nameKey="label"
               innerRadius="62%"
               outerRadius={hasOutsideLabels ? "78%" : "92%"}
               stroke={CHART_SURFACE_COLOR}
@@ -156,7 +179,10 @@ export function DonutChart({
               }
             >
               {slices.map((slice, i) => (
-                <Cell key={slice.name} fill={colors[i % colors.length]} />
+                <Cell
+                  key={slice.name}
+                  fill={slice.hatched ? `url(#${patternId}-${i})` : colors[i % colors.length]}
+                />
               ))}
             </Pie>
             <Tooltip
@@ -181,7 +207,7 @@ export function DonutChart({
       {showLegend && (
         <ChartLegend
           payload={slices.map((slice, i) => ({
-            value: slice.name,
+            value: slice.label,
             color: colors[i % colors.length],
           }))}
         />

@@ -163,7 +163,6 @@
     "expensesByCategory": "Expenses by Category",
     "netBalanceOverTime": "Net Balance Over Time",
     "netWorthOverTime": "Net Worth Over Time",
-    "cashFlow": "Cash Flow",
     "budgetProgress": "Budget Progress",
     "recentTransactions": "Recent Transactions",
     "financialHealth": "Financial Health",
@@ -231,6 +230,10 @@
     "creditNetted": "{{amount}} credit",
     "creditTooltipTitle": "Refunds beyond spending:",
     "filterToSeries": "Filter to this",
+    "byOriginalTag": "By original tag",
+    "byOriginalTagTitle": "Draw money a split moved onto another tag under the tag its original transaction carries, hatched in the colour of the tag it carries now",
+    "splitFrom": "split from {{parent}} · {{amount}}",
+    "splitNowTagged": "now tagged {{tag}}",
     "clearFilter": "Clear filter",
     "focusPerMonth": "per month",
     "focusPerYear": "per year",
@@ -433,7 +436,6 @@
       "heatmap": "Spending calendar",
       "incomeExpenses": "Income & Expenses",
       "netWorth": "Net Worth",
-      "cashFlow": "Cash Flow",
       "refunds": "Refunds",
       "retirement": "Early Retirement"
     },
@@ -699,6 +701,14 @@
       "provider": "Provider",
       "cardNumber": "Card number",
       "accountNumber": "Account number"
+    },
+    "splitPart": {
+      "untagged": "Untagged",
+      "badgeTitle": "Split from {{parent}}",
+      "title": "Split part",
+      "parent": "Split from",
+      "parts_one": "{{count}} part in this view",
+      "parts_other": "{{count}} parts in this view"
     },
     "refundsRetagged_one": "1 linked refund moved with the purchase",
     "refundsRetagged_other": "{{count}} linked refunds moved with the purchase"

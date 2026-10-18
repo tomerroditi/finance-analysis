@@ -43,6 +43,8 @@ import { FilterPanel } from "./transactions/FilterPanel";
 import { Pagination } from "./transactions/Pagination";
 import { BulkActionsBar, type BulkEditData } from "./transactions/BulkActionsBar";
 import { GoalLinkAction } from "./transactions/GoalLinkAction";
+import { SplitPartBadge } from "./transactions/SplitPartBadge";
+import { isSplitPart } from "../utils/splitParts";
 import { useCategoryTagCreate } from "../hooks/useCategoryTagCreate";
 import { useCategories } from "../hooks/useCategories";
 import { useTaggingRules } from "../hooks/useTaggingRules";
@@ -996,16 +998,19 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
                     <td
                       className={`px-4 ${compact ? "py-2" : "py-3"} text-center text-[var(--text-muted)] overflow-hidden`}
                     >
-                      <span
-                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-[var(--surface-light)] text-xs whitespace-nowrap max-w-full overflow-hidden"
-                        title={`${tx.category || "-"}${tx.tag ? ` / ${tx.tag}` : ""}`}
-                      >
-                        {categoryIcons?.[tx.category as string] && <span className="shrink-0">{categoryIcons[tx.category as string]}</span>}
-                        <span className="truncate" dir="auto">
-                          {tx.category || "-"}
-                          {tx.tag && <span className="text-[var(--text-muted)]"> / {tx.tag}</span>}
+                      <div className="inline-flex items-center gap-1 max-w-full">
+                        <span
+                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-[var(--surface-light)] text-xs whitespace-nowrap max-w-full overflow-hidden"
+                          title={`${tx.category || "-"}${tx.tag ? ` / ${tx.tag}` : ""}`}
+                        >
+                          {categoryIcons?.[tx.category as string] && <span className="shrink-0">{categoryIcons[tx.category as string]}</span>}
+                          <span className="truncate" dir="auto">
+                            {tx.category || "-"}
+                            {tx.tag && <span className="text-[var(--text-muted)]"> / {tx.tag}</span>}
+                          </span>
                         </span>
-                      </span>
+                        {isSplitPart(tx) && <SplitPartBadge transaction={tx} transactions={transactions} />}
+                      </div>
                     </td>
                   )}
                   {visibleColumns.has("amount") && (

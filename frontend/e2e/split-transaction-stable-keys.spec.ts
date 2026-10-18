@@ -1,5 +1,5 @@
-import { test, expect } from "@playwright/test";
-import { enableDemoMode, navigateTo, resetDemoData } from "./helpers";
+import { test, expect, request as playwrightRequest } from "@playwright/test";
+import { API_BASE, enableDemoMode, navigateTo, resetDemoData } from "./helpers";
 
 /**
  * Regression coverage for SplitTransactionModal.tsx.
@@ -155,5 +155,98 @@ test.describe("Split transaction modal stable keys", () => {
 
     // Dialog closes on success.
     await expect(dialog).toBeHidden();
+  });
+
+  // A split moves money onto another tag; both the table and the dashboard
+  // have to keep the tag it came from in view.
+  test("a split part keeps its parent's tag in view, in the table and on the dashboard", async ({
+    page,
+  }) => {
+    const request = await playwrightRequest.newContext({
+      extraHTTPHeaders: { "X-FAD-Demo": "1" },
+    });
+    type ApiTxn = {
+      unique_id: number | string;
+      source: string;
+      amount: number;
+      date: string;
+      category?: string | null;
+      tag?: string | null;
+      description?: string;
+      desc?: string;
+      type?: string;
+    };
+    const txns: ApiTxn[] = await (await request.get(`${API_BASE}/transactions/`)).json();
+    // A card purchase in the latest month on file, outside Food and the
+    // non-expense categories, big enough for its slice to be hoverable.
+    const latest = txns.map((t) => t.date.slice(0, 7)).sort().at(-1)!;
+    const parent = txns
+      .filter(
+        (t) =>
+          t.source === "credit_card_transactions" &&
+          t.type !== "split_child" &&
+          t.date.startsWith(latest) &&
+          t.amount <= -300 &&
+          t.category &&
+          !["Food", "Ignore", "Liabilities", "Investments", "Salary", "Other Income"].includes(t.category),
+      )
+      .sort((a, b) => a.amount - b.amount)[0];
+    expect(parent, "a card purchase to split").toBeTruthy();
+    const parentCategory = parent.category as string;
+    const foodPart = Math.round(parent.amount * 0.8 * 100) / 100;
+    const split = await request.post(`${API_BASE}/transactions/${parent.unique_id}/split`, {
+      data: {
+        source: parent.source,
+        splits: [
+          { amount: foodPart, category: "Food", tag: "Groceries" },
+          {
+            amount: Math.round((parent.amount - foodPart) * 100) / 100,
+            category: parentCategory,
+            tag: parent.tag ?? "",
+          },
+        ],
+      },
+    });
+    expect(split.status()).toBe(200);
+    await request.dispose();
+
+    // --- Dashboard: the Food slice says where its money came from ---
+    await navigateTo(page, "/");
+    const card = page.locator('[data-card-id="income_expenses"]');
+    await expect(card).toBeVisible({ timeout: 45_000 });
+    await card.scrollIntoViewIfNeeded();
+    await card.getByRole("button", { name: "Expenses Breakdown" }).click();
+    const month = card.locator(`[data-testid="composition-row"][data-month="${latest}"]`);
+    await expect(month).toBeVisible({ timeout: 45_000 });
+    await month.getByRole("button", { name: /^Food:/ }).hover();
+    const tooltip = page.getByTestId("composition-tooltip");
+    await expect(tooltip.getByTestId("composition-tooltip-line")).toContainText([
+      `split from ${parentCategory}`,
+    ]);
+
+    // "By original tag" draws the Food part back under its parent, hatched.
+    const toggle = card.getByTestId("original-tag-toggle");
+    await toggle.click();
+    await expect(toggle).toHaveAttribute("aria-pressed", "true");
+    // The earlier test in this file may have split another purchase of the
+    // month into Food, so pick this purchase's hatched part by its parent.
+    const hatched = month.locator(
+      `[data-testid="composition-segment"][data-hatched="true"][aria-label^=${JSON.stringify(`${parentCategory}:`)}]`,
+    );
+    await expect(hatched).toHaveCount(1);
+    await hatched.hover();
+    await expect(tooltip.getByTestId("composition-tooltip-line")).toHaveText(["now tagged Food"]);
+
+    // --- Transactions: the part carries a mark that opens its parent ---
+    await navigateTo(page, "/transactions");
+    await page.getByPlaceholder(/search descriptions/i).fill(parent.description ?? parent.desc ?? "");
+    const foodRow = page.locator("table tbody tr", { hasText: "Groceries" }).filter({
+      has: page.getByTestId("split-part-badge"),
+    });
+    await foodRow.first().getByTestId("split-part-badge").click();
+    const details = page.getByTestId("split-part-details");
+    await expect(details).toBeVisible();
+    await expect(details).toContainText(parentCategory);
+    await expect(details.getByTestId("split-part-row")).toHaveCount(2);
   });
 });

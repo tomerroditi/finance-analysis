@@ -213,6 +213,12 @@ export const budgetApi = {
  */
 export type RefundMode = "none" | "linked" | "pending";
 
+/**
+ * Per series, the money in it that a split carried over from a parent tagged
+ * otherwise: `{ "Salary / Bonus": { "Other Income / Bit": 1000 } }`.
+ */
+export type SplitFrom = Record<string, Record<string, number>>;
+
 /** One recurring charge the month still owes. */
 /** One month of `GET /budget/trend/{year}/{month}`. */
 export interface BudgetTrendPointResponse {
@@ -748,7 +754,7 @@ export const analyticsApi = {
     excludeProjects = false,
     excludeLiabilities = false,
   ) =>
-    api.get<{ month: string; categories: Record<string, number> }[]>(
+    api.get<{ month: string; categories: Record<string, number>; split_from?: SplitFrom }[]>(
       "/analytics/expenses-by-category-over-time",
       {
         params: {
@@ -758,13 +764,12 @@ export const analyticsApi = {
         },
       }
     ),
-  getSankeyData: () => api.get("/analytics/sankey"),
   getNetWorthOverTime: () =>
     api.get<{ month: string; bank_balance: number; investment_value: number; cash: number; net_worth: number }[]>(
       "/analytics/net-worth-over-time"
     ),
   getIncomeBySourceOverTime: (refunds: RefundMode = "pending", excludeLiabilities = false) =>
-    api.get<{ month: string; sources: Record<string, number>; total: number }[]>(
+    api.get<{ month: string; sources: Record<string, number>; total: number; split_from?: SplitFrom }[]>(
       "/analytics/income-by-source-over-time",
       {
         params: {

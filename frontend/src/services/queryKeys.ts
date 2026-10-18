@@ -161,7 +161,6 @@ export function makeQueryKeys(demo: boolean) {
       overview: () => ["analytics", "overview", demo] as const,
       netWorthOverTime: () => ["analytics", "net-worth-over-time", demo] as const,
       debtPayments: () => ["analytics", "debt-payments-over-time", demo] as const,
-      sankey: () => ["analytics", "sankey", demo] as const,
       expensesByCategoryOverTime: (
         refunds: RefundMode,
         excludeProjects: boolean,
