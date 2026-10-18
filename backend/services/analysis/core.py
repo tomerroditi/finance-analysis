@@ -76,13 +76,13 @@ class AnalysisService(CashflowMixin, NetWorthMixin, ForecastMixin):
             else latest_date_val
         )
 
-        income, investments, expenses = self.get_income_investments_and_expenses(df)
-        prior_wealth = (
-            self.bank_balance_service.get_total_prior_wealth()
-            + self.investments_service.get_total_prior_wealth()
-            + self.cash_balance_service.get_total_prior_wealth()
-        )
-        income += prior_wealth
+        # The overview has no pending-refunds chip: a purchase still awaiting
+        # its refund did leave the account.
+        totals = self.views.bank(exclude_pending_refunds=False).totals()
+        income = totals["income"]
+        investments = totals["investments"]
+        expenses = totals["expenses"]
+        income += self.get_total_prior_wealth()
 
         return {
             "latest_data_date": latest_date,
@@ -91,3 +91,21 @@ class AnalysisService(CashflowMixin, NetWorthMixin, ForecastMixin):
             "total_investments": investments,
             "net_balance_change": income - expenses,
         }
+
+    def get_total_prior_wealth(self) -> float:
+        """
+        Get the money the household had before tracking began.
+
+        Returns
+        -------
+        float
+            Stored bank, cash and investment prior wealth, plus the bank and
+            cash rows tagged ``Prior Wealth`` (which the stored bank and cash
+            figures are derived net of).
+        """
+        return (
+            self.bank_balance_service.get_total_prior_wealth()
+            + self.investments_service.get_total_prior_wealth()
+            + self.cash_balance_service.get_total_prior_wealth()
+            + self.views.tagged_prior_wealth()
+        )

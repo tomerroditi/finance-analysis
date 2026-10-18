@@ -19,9 +19,10 @@ the `Credit Cards` bill left out); each comes classified into income /
 expenses / investments, refund-netted, with insurance and prior-wealth rows
 left out. Don't re-filter `repo.get_table()` by category or source in a new
 method — a second copy of these rules is how the cards drifted apart. Terms:
-`CONTEXT.md`. Not yet on a view, because they don't net refunds yet: the
-overview totals, the forecast's month-to-date figures, `get_income_by_source`,
-`get_debt_payments_over_time` and recurring detection.
+`CONTEXT.md`. A refund is netted only against a purchase the view keeps: a
+card purchase refunded to the bank stays money back on the bank view, where
+the statement that paid it is counted in full. `Ignore` (a transfer between
+the household's own accounts) is in neither view.
 
 ## Core Concepts
 
@@ -79,10 +80,10 @@ Causes: timing differences, pending transactions, fees, foreign currency roundin
 
 | Method | Strategy | How |
 |--------|----------|-----|
-| `get_income_investments_and_expenses()` | Keep bank view, drop CC items | Filter `source != "credit_card_transactions"` |
+| `get_overview()` | Bank view | `views.bank(exclude_pending_refunds=False).totals()` |
 | `get_net_balance_over_time()` | Keep bank view, drop CC items | `exclude_services=["credit_card_transactions"]` |
 | `get_net_worth_over_time()` | Keep bank view, drop CC items | `exclude_services=["credit_card_transactions"]` |
-| `get_income_by_source_over_time()` | Keep bank view, drop CC items | Filter `source != "credit_card_transactions"` |
+| `get_income_by_source[_over_time]()` | Bank view | `views.bank().income` |
 | `get_expenses_by_category()` | Uses itemized CC view | Filter out non-expense categories (`INVESTMENTS_CATEGORY`, `LIABILITIES_CATEGORY`, `IncomeCategories`, `CREDIT_CARDS`) |
 | `get_sankey_data()` | Hybrid — uses both to calculate gap | Calculates CC gap, then filters out `Credit Cards` category |
 
@@ -260,8 +261,10 @@ The anchor point (1 month before earliest data) shows all prior wealth as `bank_
 
 ### Prior Wealth in Overview & Sankey
 
-- **Overview `total_income`**: Adds `bank_prior_wealth + investment_prior_wealth` (all investments) to transaction-based income. Represents "total resources available" (starting capital + earned income).
-- **Sankey "Prior Wealth" source node**: Sums all three sources — transaction-tagged prior wealth + bank prior wealth + investment prior wealth.
+Both read `AnalysisService.get_total_prior_wealth()`: bank + investment + cash prior wealth, plus the bank and cash rows tagged `Prior Wealth` (`TransactionViews.tagged_prior_wealth`). The tagged rows are added back because the stored bank and cash figures are derived net of every transaction in the account, those rows included, and no view counts them as income.
+
+- **Overview `total_income`**: transaction income + total prior wealth. Represents "total resources available" (starting capital + earned income).
+- **Sankey "Prior Wealth" source node**: the same total.
 
 ### Cash Prior Wealth Calculation
 
@@ -294,16 +297,16 @@ Known structural residual: **net cash position** from cash transactions. Cash in
 
 ### `get_overview()`
 - **Purpose:** Dashboard stat cards (Total Income, Total Expenses, Total Bank Balance, Total Investments)
-- **CC handling:** Excludes CC source in `get_income_investments_and_expenses()`
+- **Basis:** the bank view with pending refunds kept (a purchase awaiting its refund did leave the account)
 - **Expenses:** Excludes non-expense categories, but negative Liabilities (debt payments) are included as expenses
-- **Prior wealth:** All investment prior wealth (open + closed) added to income
+- **Prior wealth:** `get_total_prior_wealth()` (all investments, open + closed) added to income
 - **Investments:** Transaction-based total: `-sum(all investment transactions)` — money directed to investments, not reflecting profit/loss
 - **Bank balance:** Displayed from `bankBalancesApi` (frontend), not computed in overview API
 - **Formula:** `net_balance_change = income (+ prior_wealth) - expenses`
 
 ### `get_income_expenses_over_time()`
 - **Purpose:** Monthly income vs expenses bar chart
-- **CC handling:** Excludes CC source in `get_income_investments_and_expenses()`
+- **Basis:** the bank view
 - **Expenses:** Includes negative Liabilities (debt payments) as expenses
 - **Prior wealth:** Not included (monthly view shows transaction-based activity only)
 
@@ -329,7 +332,7 @@ Known structural residual: **net cash position** from cash transactions. Cash in
 ### `get_sankey_data()`
 - **Purpose:** Cash flow diagram (sources → Total Income → destinations)
 - **CC handling:** Calculates CC gap, filters out `Credit Cards` category, adds gap as "Unknown" destination
-- **Prior wealth:** Shown as dedicated "Prior Wealth" source node (all three sources combined)
+- **Prior wealth:** Shown as dedicated "Prior Wealth" source node (`get_total_prior_wealth()`)
 - **Balance nodes:** "Wealth Growth" (income > expenses) or "Wealth Deficit" (expenses > income)
 
 ### `get_income_by_source_over_time()`
@@ -385,8 +388,7 @@ Where `final_value = current_balance + total_withdrawals` (open) or `total_withd
 
 All previously identified code misalignments have been fixed:
 - `get_expenses_by_category()` now excludes `Credit Cards` category alongside other non-expense categories
-- `get_income_investments_and_expenses()` now filters non-expense categories from expenses, with negative Liabilities overriding back into expenses
 - Overview and net worth chart both use transaction-based investment totals (`-sum(all inv txns)`), not portfolio value
-- Ignore category is part of `NON_EXPENSE_CATEGORIES` in `transaction_views.py` (left out of the spending view), but the bank view still counts it as an expense (the complement rule)
+- `Ignore` is left out of both views; the bank view used to count it as an expense (the complement rule), which booked a one-sided transfer as spending
 - `"Salay"` typo in `PROTECTED_CATEGORIES` corrected to `"Salary"`
 - `NonExpensesCategories` enum removed; non-expense categories now built from individual constants (`INVESTMENTS_CATEGORY`, `LIABILITIES_CATEGORY`) and `IncomeCategories` enum

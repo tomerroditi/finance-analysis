@@ -13,17 +13,25 @@ Every row of a view is **income**, **expense** or **investment** (see
 - **Income**: category in ``IncomeCategories``, or ``Liabilities`` with a
   positive amount (loan receipt).
 - **Investment**: category is exactly ``Investments``.
-- **Expense**: on the bank view, everything else — which deliberately
-  includes ``Liabilities`` rows with negative amounts (debt payments are real
-  money outflows). On the spending view, an expense category at any sign (a
-  positive row is a refund) plus debt payments; ``Ignore`` and the
-  ``Credit Cards`` bill are left out.
+- **Expense**: on the bank view, everything else but ``Ignore`` — which
+  deliberately includes ``Liabilities`` rows with negative amounts (debt
+  payments are real money outflows). On the spending view, an expense
+  category at any sign (a positive row is a refund) plus debt payments; the
+  ``Credit Cards`` bill is left out.
+
+``Ignore`` (a transfer between the household's own accounts) is in neither
+view: when only one side of a transfer is tracked, counting it would book
+the household's own money as spent or earned.
 
 Insurance deposits and prior-wealth rows are never in a view, and a refund
-matched to its purchase is always netted against it.
+matched to a purchase the view keeps is always netted against it. A refund
+whose purchase the view leaves out — a card purchase refunded to the bank, on
+the bank view — stays as money back: the statement that paid the purchase is
+still counted in full.
 """
 
 from dataclasses import dataclass
+from datetime import date
 
 import pandas as pd
 from sqlalchemy.orm import Session
@@ -67,7 +75,7 @@ _KIND = "kind"
 _MONTH = "month"
 
 
-def income_mask(df: pd.DataFrame) -> pd.Series:
+def _income_mask(df: pd.DataFrame) -> pd.Series:
     """Return a boolean mask of income rows.
 
     Parameters
@@ -85,7 +93,7 @@ def income_mask(df: pd.DataFrame) -> pd.Series:
     )
 
 
-def investment_mask(df: pd.DataFrame) -> pd.Series:
+def _investment_mask(df: pd.DataFrame) -> pd.Series:
     """Return a boolean mask of investment rows (category is exactly ``Investments``).
 
     Parameters
@@ -99,30 +107,6 @@ def investment_mask(df: pd.DataFrame) -> pd.Series:
         Boolean Series aligned with ``df``.
     """
     return df["category"] == INVESTMENTS_CATEGORY
-
-
-def transactions_masks(df: pd.DataFrame) -> dict[str, pd.Series]:
-    """Return the income/investments/expenses masks of the bank-view rules.
-
-    Parameters
-    ----------
-    df : pd.DataFrame
-        Transactions frame with ``category`` and ``amount`` columns.
-
-    Returns
-    -------
-    dict[str, pd.Series]
-        Keys ``"income"``, ``"investments"``, ``"expenses"`` mapping to
-        boolean Series aligned with ``df``. Expenses is the complement of the
-        other two.
-    """
-    income = income_mask(df)
-    investments = investment_mask(df)
-    return {
-        "income": income,
-        "investments": investments,
-        "expenses": ~income & ~investments,
-    }
 
 
 @dataclass(frozen=True)
@@ -157,6 +141,52 @@ class TransactionView:
     def investments(self) -> pd.DataFrame:
         """Investment rows (negative = a deposit into an investment)."""
         return self.rows[self.rows[_KIND] == INVESTMENT]
+
+    def between(self, start: date | None, end: date | None) -> "TransactionView":
+        """Return the rows dated inside an inclusive window.
+
+        Parameters
+        ----------
+        start, end : date | None
+            Inclusive bounds; ``None`` leaves that side open.
+
+        Returns
+        -------
+        TransactionView
+            The same view narrowed to the window, its months narrowed alike.
+        """
+        parsed = pd.to_datetime(self.rows["date"])
+        keep = pd.Series(True, index=self.rows.index)
+        if start is not None:
+            keep &= parsed >= pd.Timestamp(start)
+        if end is not None:
+            keep &= parsed <= pd.Timestamp(end)
+        lo = pd.Timestamp(start).strftime("%Y-%m") if start is not None else None
+        hi = pd.Timestamp(end).strftime("%Y-%m") if end is not None else None
+        months = [
+            m
+            for m in self.months
+            if (lo is None or m >= lo) and (hi is None or m <= hi)
+        ]
+        return TransactionView(rows=self.rows[keep], months=months)
+
+    def totals(self) -> pd.Series:
+        """Sum the whole view, signed the way the cards show it.
+
+        Returns
+        -------
+        pd.Series
+            ``income`` (money in), ``expenses`` (money out, positive) and
+            ``investments`` (net deposits, positive).
+        """
+        amount = TransactionsTableFields.AMOUNT.value
+        return pd.Series(
+            {
+                "income": float(self.income[amount].sum()),
+                "expenses": -float(self.expenses[amount].sum()),
+                "investments": -float(self.investments[amount].sum()),
+            }
+        )
 
     def monthly(self) -> pd.DataFrame:
         """Per-month totals, signed the way the cards show them.
@@ -269,6 +299,31 @@ class TransactionViews:
             "spending", exclude_pending_refunds, exclude_projects, exclude_liabilities
         )
 
+    def tagged_prior_wealth(self) -> float:
+        """Sum the bank and cash rows the user tagged as prior wealth.
+
+        Such a row is money the household already had, landing in a tracked
+        account — neither view's income. A stored bank or cash prior wealth
+        is derived net of every transaction in the account, these rows
+        included, so whatever totals the household's starting resources must
+        add them back on top.
+
+        Returns
+        -------
+        float
+            The tagged rows' signed total; ``0.0`` when there are none.
+        """
+        df = self.repo.get_table()
+        if df.empty:
+            return 0.0
+        tagged = df[
+            (df[TransactionsTableFields.TAG.value] == PRIOR_WEALTH_TAG)
+            & ~df[TransactionsTableFields.SOURCE.value].isin(
+                [Tables.CREDIT_CARD.value, Tables.INSURANCE.value]
+            )
+        ]
+        return float(tagged[TransactionsTableFields.AMOUNT.value].sum())
+
     def _view(
         self,
         name: str,
@@ -309,8 +364,11 @@ class TransactionViews:
                 rows=df.assign(**{_KIND: pd.Series(dtype=str)}), months=[]
             )
 
+        left_out = [Tables.INSURANCE.value]
+        if name == "bank":
+            left_out.append(Tables.CREDIT_CARD.value)
         adjustments = PendingRefundsService(self.db).get_refund_amount_adjustments(
-            exclude_open=exclude_pending_refunds
+            exclude_open=exclude_pending_refunds, exclude_tables=frozenset(left_out)
         )
         df = apply_refund_amount_adjustments(df, adjustments)
 
@@ -323,16 +381,13 @@ class TransactionViews:
 
         months = sorted(to_month_series(df["date"]).unique()) if not df.empty else []
 
-        left_out = [Tables.INSURANCE.value]
-        if name == "bank":
-            left_out.append(Tables.CREDIT_CARD.value)
         df = df[~df[source_col].isin(left_out)]
         df = df[df[TransactionsTableFields.TAG.value] != PRIOR_WEALTH_TAG]
 
-        income = income_mask(df)
-        investment = investment_mask(df)
+        income = _income_mask(df)
+        investment = _investment_mask(df)
         if name == "bank":
-            expense = ~income & ~investment
+            expense = ~income & ~investment & (df[category_col] != IGNORE_CATEGORY)
         else:
             expense = ~df[category_col].isin(NON_EXPENSE_CATEGORIES) | (
                 (df[category_col] == LIABILITIES_CATEGORY) & (df["amount"] < 0)

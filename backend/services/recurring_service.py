@@ -30,28 +30,19 @@ from typing import Any
 import pandas as pd
 from sqlalchemy.orm import Session
 
-from backend.constants.categories import (
-    CREDIT_CARDS,
-    IGNORE_CATEGORY,
-    INVESTMENTS_CATEGORY,
-    LIABILITIES_CATEGORY,
-    IncomeCategories,
-)
 from backend.errors import ValidationException
-from backend.repositories.budget_repository import BudgetRepository
 from backend.repositories.recurring_decisions_repository import (
     DECISIONS,
     PENDING,
     RecurringDecisionsRepository,
 )
-from backend.repositories.transactions import TransactionsRepository
 from backend.services.recurring_detection import (
     INFLOW,
     OUTFLOW,
     detect_streams,
     normalize,
 )
-from backend.services.transaction_views import income_mask
+from backend.services.transaction_views import TransactionViews
 from backend.utils import data_cache
 
 
@@ -72,7 +63,7 @@ class RecurringService:
 
     def __init__(self, db: Session) -> None:
         self.db = db
-        self.repo = TransactionsRepository(db)
+        self.views = TransactionViews(db)
         self.decisions = RecurringDecisionsRepository(db)
 
     @staticmethod
@@ -185,22 +176,13 @@ class RecurringService:
             "dismissed_count": 0,
         }
 
-        df = self.repo.get_itemized_transactions()
-        if df.empty:
-            return empty
-
-        exclude = [
-            CREDIT_CARDS,
-            IGNORE_CATEGORY,
-            INVESTMENTS_CATEGORY,
-            LIABILITIES_CATEGORY,
-            *IncomeCategories._value2member_map_.keys(),
-        ]
         # Time-boxed project budgets (renovation, wedding…) are one-off arcs,
         # not ongoing commitments — keep them out of "recurring".
-        exclude += BudgetRepository(self.db).read_project_category_names()
-
-        df = df[~df["category"].isin(exclude)].copy()
+        df = self.views.spending(
+            exclude_pending_refunds=False,
+            exclude_projects=True,
+            exclude_liabilities=True,
+        ).expenses
         if df.empty:
             return empty
 
@@ -307,11 +289,7 @@ class RecurringService:
         """
         empty: dict[str, Any] = {"items": [], "total_monthly": 0.0}
 
-        df = self.repo.get_itemized_transactions()
-        if df.empty:
-            return empty
-
-        df = df[income_mask(df) & (df["category"] != IGNORE_CATEGORY)]
+        df = self.views.spending(exclude_pending_refunds=False).income
         if df.empty:
             return empty
 
@@ -420,10 +398,7 @@ class RecurringService:
         dict[str, float]
             Normalized merchant key -> net inflow so far this month.
         """
-        df = self.repo.get_itemized_transactions()
-        if df.empty:
-            return {}
-        df = df[income_mask(df) & (df["category"] != IGNORE_CATEGORY)]
+        df = self.views.spending(exclude_pending_refunds=False).income
         if df.empty:
             return {}
         parsed = pd.to_datetime(df["date"]).dt.normalize()

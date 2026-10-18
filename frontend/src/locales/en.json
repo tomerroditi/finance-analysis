@@ -196,6 +196,7 @@
     "projectExpensesExcluded": "Projects Excluded",
     "loansIncluded": "Loans Included",
     "loansExcluded": "Loans Excluded",
+    "cardRefundNote": "Card spending counts here as its monthly bill, so a refund for a card purchase shows in the month it arrives instead of netting the purchase.",
     "loansChipTitle": "Counts loan and mortgage payments as expenses, and money received from a loan as income. Excluding both takes the budget view, where loan principal is a transfer into your own net worth rather than spending.",
     "projectExpenses": "Project Expenses",
     "amountILS": "Amount (ILS)",

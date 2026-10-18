@@ -830,7 +830,7 @@ class PendingRefundsService:
         return {"transaction_keys": transaction_keys, "split_ids": split_ids}
 
     def get_refund_amount_adjustments(
-        self, exclude_open: bool = True
+        self, exclude_open: bool = True, exclude_tables: frozenset[str] = frozenset()
     ) -> dict[str, dict[Any, float]]:
         """
         Build per-row amount adjustments netting matched refunds against purchases.
@@ -856,6 +856,13 @@ class PendingRefundsService:
             too — the "Pending Refunds Excluded" view. A ``closed`` refund is
             money the user gave up on, so its unmatched remainder always stays
             an expense however this is set. Default is ``True``.
+        exclude_tables : frozenset[str], optional
+            Canonical tables the caller's frame leaves out. A purchase in one
+            is not netted at all, and neither is any refund linked to it: with
+            only the refund in the frame, netting it would cancel money that
+            really came back against a cost the frame still carries in full
+            (a card purchase refunded to the bank, read beside the card bill).
+            Default is empty.
 
         Returns
         -------
@@ -881,6 +888,8 @@ class PendingRefundsService:
         split_adj: dict[int, float] = {}
 
         for _, pending in pending_df.iterrows():
+            if canonical_table(pending["source_table"]) in exclude_tables:
+                continue
             links = links_by_pending.get(pending["id"])
             matched = float(links["amount"].sum()) if links is not None else 0.0
 
