@@ -1046,6 +1046,7 @@
     "openingBalance": "Opening Balance",
     "notAvailable": "Not available",
     "noBalanceReading": "No balance was recorded for this month, so its balance and profit are unknown. Balances are recorded on each sync; the provider only reports older deposits.",
+    "closingBalanceReadOnly": "Set by closing the investment — reopen it to change this balance.",
     "years": "years",
     "calculating": "Calculating...",
     "calculateFixedRate": "Calculate Fixed Rate",

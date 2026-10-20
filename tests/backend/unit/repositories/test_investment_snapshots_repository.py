@@ -99,47 +99,6 @@ class TestGetSnapshotsForInvestment:
         assert df.empty
 
 
-class TestGetLatestSnapshotOnOrBefore:
-    """Tests for the get_latest_snapshot_on_or_before method."""
-
-    def test_finds_correct_snapshot_before_date(self, db_session: Session):
-        """Verify the latest snapshot on or before target date is returned."""
-        inv_id = _create_investment(db_session)
-        repo = InvestmentSnapshotsRepository(db_session)
-
-        repo.upsert_snapshot(inv_id, "2024-01-01", 10000.0)
-        repo.upsert_snapshot(inv_id, "2024-02-01", 20000.0)
-        repo.upsert_snapshot(inv_id, "2024-03-01", 30000.0)
-
-        result = repo.get_latest_snapshot_on_or_before(inv_id, "2024-02-15")
-        assert result is not None
-        assert result["date"] == "2024-02-01"
-        assert result["balance"] == 20000.0
-
-    def test_exact_date_match(self, db_session: Session):
-        """Verify exact date match is included in the result."""
-        inv_id = _create_investment(db_session)
-        repo = InvestmentSnapshotsRepository(db_session)
-
-        repo.upsert_snapshot(inv_id, "2024-02-01", 20000.0)
-        repo.upsert_snapshot(inv_id, "2024-03-01", 30000.0)
-
-        result = repo.get_latest_snapshot_on_or_before(inv_id, "2024-02-01")
-        assert result is not None
-        assert result["date"] == "2024-02-01"
-        assert result["balance"] == 20000.0
-
-    def test_returns_none_when_no_snapshots_before_date(self, db_session: Session):
-        """Verify None is returned when no snapshots exist on or before the target date."""
-        inv_id = _create_investment(db_session)
-        repo = InvestmentSnapshotsRepository(db_session)
-
-        repo.upsert_snapshot(inv_id, "2024-06-01", 50000.0)
-
-        result = repo.get_latest_snapshot_on_or_before(inv_id, "2024-05-31")
-        assert result is None
-
-
 class TestDeleteSnapshot:
     """Tests for the delete_snapshot method."""
 

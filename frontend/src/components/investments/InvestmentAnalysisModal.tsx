@@ -12,6 +12,7 @@ import {
   Pencil,
   Check,
   BarChart2,
+  Lock,
 } from "lucide-react";
 import {
   ResponsiveContainer,
@@ -46,7 +47,8 @@ interface BalancePoint {
 }
 
 interface Snapshot {
-  id: number;
+  /** ``null`` for a closed investment's closing zero, which is derived, not stored. */
+  id: number | null;
   date: string;
   balance: number;
   source: string;
@@ -399,7 +401,7 @@ export function InvestmentAnalysisModal({
                 const snapshotRows: MonthRow[] = [...(selectedSnapshots ?? [])]
                   .sort((a: Snapshot, b: Snapshot) => a.date.localeCompare(b.date))
                   .map((snap: Snapshot) => ({
-                    key: `s-${snap.id}`,
+                    key: `s-${snap.id ?? "closed"}`,
                     month: snap.date.slice(0, 7),
                     date: snap.date,
                     snapshot: snap,
@@ -478,7 +480,7 @@ export function InvestmentAnalysisModal({
                         <tbody>
                           {rows.map((row) => {
                             const isEditing =
-                              row.snapshot && editingSnapshotId === row.snapshot.id;
+                              row.snapshot?.id != null && editingSnapshotId === row.snapshot.id;
                             return (
                               <tr
                                 key={row.key}
@@ -570,7 +572,7 @@ export function InvestmentAnalysisModal({
                                   {row.snapshot && isEditing ? (
                                     <div className="inline-flex items-center gap-1">
                                       <button
-                                        onClick={() => saveEdit(row.snapshot!.id)}
+                                        onClick={() => saveEdit(row.snapshot!.id!)}
                                         disabled={updateSnapshotMutation.isPending}
                                         className="p-1 rounded hover:bg-emerald-500/20 text-emerald-400 transition-all disabled:opacity-50"
                                         title={t("common.save")}
@@ -585,6 +587,15 @@ export function InvestmentAnalysisModal({
                                         <X size={14} />
                                       </button>
                                     </div>
+                                  ) : row.snapshot?.id === null ? (
+                                    <span
+                                      data-testid="snapshot-closing-zero"
+                                      className="inline-flex p-1 text-[var(--text-muted)]"
+                                      title={t("investments.closingBalanceReadOnly")}
+                                      aria-label={t("investments.closingBalanceReadOnly")}
+                                    >
+                                      <Lock size={14} />
+                                    </span>
                                   ) : row.snapshot ? (
                                     <div className="inline-flex items-center gap-1">
                                       <button
@@ -597,7 +608,7 @@ export function InvestmentAnalysisModal({
                                       <button
                                         onClick={() =>
                                           deleteSnapshotMutation.mutate({
-                                            snapshotId: row.snapshot!.id,
+                                            snapshotId: row.snapshot!.id!,
                                           })
                                         }
                                         className="p-1 rounded hover:bg-red-500/20 text-[var(--text-muted)] hover:text-red-400 transition-all"

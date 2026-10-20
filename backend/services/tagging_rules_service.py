@@ -357,7 +357,6 @@ class TaggingRulesService:
                 rule, overwrite=overwrite, claimed=claimed
             )
 
-        self.transactions_service.realign_closed_investments()
         return len(modified)
 
     def apply_rule_by_id(self, rule_id: int, overwrite: bool = False) -> int:
@@ -391,11 +390,9 @@ class TaggingRulesService:
             "category": rule.category,
             "tag": rule.tag,
         }
-        count = len(
+        return len(
             self._apply_single_rule_returning_ids(rule_dict, overwrite=overwrite)
         )
-        self.transactions_service.realign_closed_investments()
-        return count
 
     def preview_rule(
         self, conditions: dict[str, Any], limit: int | None = None
@@ -874,9 +871,6 @@ class TaggingRulesService:
                     unique_id = bank_tag_month_data_amount.iloc[0][
                         TransactionsTableFields.UNIQUE_ID.value
                     ]
-                    # A bill row becomes "Credit Cards", never an investment,
-                    # so it skips the per-row investment realignment that
-                    # update_tagging_by_id runs.
                     self.transactions_repo.get_repo_by_source(
                         Tables.BANK.value
                     ).update_tagging_by_unique_id(unique_id, "Credit Cards", cc_tag)
