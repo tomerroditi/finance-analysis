@@ -222,6 +222,8 @@ export function IncomeExpensesCard() {
   // Only links made in the app are acted on — an unlinked refund lowers its
   // category in the month it arrived under every option.
   const [refundMode, setRefundMode] = useState<RefundMode>("linked");
+  const refundTone =
+    refundMode === "none" ? "" : "!bg-[var(--primary)]/10 !border-[var(--primary)]/20";
   const [excludeProjects, setExcludeProjects] = useState(false);
   // Loan payments are money that left the account, so they count until this
   // is switched on, which takes the envelope view — loan principal as a
@@ -492,21 +494,25 @@ export function IncomeExpensesCard() {
                 own on a phone, where it read as a heading for the tabs under
                 it rather than as one more filter. */}
             <div className="flex min-w-0 gap-2 overflow-x-auto scrollbar-auto-hide">
-              <div className="shrink-0" data-testid="refund-mode">
-                <SelectDropdown
-                  size="sm"
-                  value={refundMode}
-                  onChange={(next) => setRefundMode(next as RefundMode)}
-                  options={REFUND_MODES.map((mode) => ({
-                    value: mode,
-                    label: t(`dashboard.refundMode.${mode}`),
-                  }))}
-                  triggerClassName={`whitespace-nowrap !text-xs font-medium ${
-                    refundMode === "none" ? "" : "!bg-[var(--primary)]/10 !border-[var(--primary)]/20"
-                  }`}
-                />
+              {/* The select and its explanation are one control: the info
+                  button is the select's end segment, sharing its border and
+                  tint, so it reads as part of the refund setting rather than
+                  one more chip in the row. */}
+              <div className="shrink-0 flex">
+                <div data-testid="refund-mode">
+                  <SelectDropdown
+                    size="sm"
+                    value={refundMode}
+                    onChange={(next) => setRefundMode(next as RefundMode)}
+                    options={REFUND_MODES.map((mode) => ({
+                      value: mode,
+                      label: t(`dashboard.refundMode.${mode}`),
+                    }))}
+                    triggerClassName={`whitespace-nowrap !text-xs font-medium !rounded-e-none ${refundTone}`}
+                  />
+                </div>
+                <RefundModeInfo mode={refundMode} tone={refundTone} />
               </div>
-              <RefundModeInfo mode={refundMode} />
               <FilterChip
                 active={excludeProjects}
                 onToggle={() => setExcludeProjects(!excludeProjects)}
@@ -641,7 +647,7 @@ const REFUND_MODES: RefundMode[] = ["none", "linked", "pending"];
  * without trying each. It is portalled because the chip row scrolls
  * sideways, and a scroll container clips anything hanging out of it.
  */
-function RefundModeInfo({ mode }: { mode: RefundMode }) {
+function RefundModeInfo({ mode, tone }: { mode: RefundMode; tone: string }) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const buttonRef = useRef<HTMLButtonElement>(null);
@@ -676,11 +682,11 @@ function RefundModeInfo({ mode }: { mode: RefundMode }) {
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
         aria-label={t("dashboard.refundInfo.title")}
-        className={`shrink-0 self-center p-1.5 rounded-lg transition-colors ${
+        className={`-ms-px flex items-center px-2 rounded-e-lg border border-[var(--surface-light)] bg-[var(--surface-base)] transition-colors hover:border-[var(--primary)] ${tone} ${
           open ? "text-[var(--primary)]" : "text-[var(--text-muted)] hover:text-[var(--text-default)]"
         }`}
       >
-        <Info size={15} />
+        <Info size={14} />
       </button>
       {open &&
         createPortal(
