@@ -143,6 +143,12 @@ test.describe("Early retirement plan", () => {
     // Annuities and the drawdown read as tables.
     await expect(page.getByTestId("fire-annuities").locator("thead th")).toHaveCount(3);
     await expect(page.getByTestId("fire-withdrawal-row").first()).toBeVisible();
+
+    // --- a partner with no date of birth asks for setup, not an error -----
+    await partnerSection.getByRole("checkbox").check();
+    await page.getByTestId("fire-calculate").click();
+    await expect(page.getByTestId("fire-needs-setup")).toBeVisible();
+    await expect(page.getByText(/calculation failed|החישוב נכשל/)).toHaveCount(0);
   });
 
   test("typing over a linked value unlinks it; save keeps it; reset restores it", async ({

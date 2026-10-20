@@ -2021,7 +2021,7 @@
       "notSavedYet": "Not saved yet — this plan was filled from your data.",
       "unsavedChanges": "Unsaved changes",
       "previewNote": "Showing an unsaved calculation. Save to keep it, and to update the dashboard card.",
-      "needsSetup": "Enter your date of birth under \"Retiree\" and save, and your plan will run here and on the dashboard.",
+      "needsSetup": "Enter your date of birth under \"Retiree\" (and your partner's, if you included one) and save, and your plan will run here and on the dashboard.",
       "linkedField": "Follows your tracked data",
       "relinkField": "Use the value from your tracked data",
       "linkedRow": "Follows a tracked account",

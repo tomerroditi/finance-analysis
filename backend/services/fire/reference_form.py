@@ -163,6 +163,18 @@ def _pension(
     )
 
 
+def is_runnable(payload: dict) -> bool:
+    """Whether a form names every date of birth the calculator counts months from.
+
+    The person's is always needed, and the partner's once a partner is on the
+    plan. Tracked data carries neither, so a plan without them asks for setup
+    rather than being solved.
+    """
+    if not payload.get("dateOfBirth"):
+        return False
+    return not payload.get("pensionTake_2") or bool(payload.get("dateOfBirth_2"))
+
+
 def plan_from_reference(payload: dict) -> Plan:
     """Build a :class:`Plan` from a reference form payload."""
     person = Person(
