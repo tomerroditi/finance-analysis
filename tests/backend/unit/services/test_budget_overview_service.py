@@ -266,13 +266,14 @@ class TestSeparatePools:
         YearlyBudgetService(db_session).create_rule(
             "Vacations", 20000.0, "Travel", ["Hotels"], 2026
         )
-        ProjectBudgetService(db_session).add_rule(
+        ProjectBudgetService(db_session).rules.insert(
             name="Total Budget",
             amount=30000.0,
             category="Home Renovation",
             tags=["all_tags"],
             month=None,
             year=None,
+            kind="project",
         )
         _seed(db_session, "2026-03-08", "Travel", "Hotels", -3000.0)
         _seed(db_session, "2026-03-09", "Home Renovation", "Materials", -4200.0)
@@ -317,13 +318,14 @@ class TestLongEnvelopes:
         This is the trap the Overview exists to avoid: the standing always
         describes today, so only the contribution may move with the viewed month.
         """
-        ProjectBudgetService(db_session).add_rule(
+        ProjectBudgetService(db_session).rules.insert(
             name="Total Budget",
             amount=30000.0,
             category="Home Renovation",
             tags=["all_tags"],
             month=None,
             year=None,
+            kind="project",
         )
         _seed(db_session, "2026-01-08", "Home Renovation", "Materials", -9000.0)
         _seed(db_session, "2026-03-09", "Home Renovation", "Materials", -4200.0)
@@ -349,13 +351,14 @@ class TestClosedProjects:
     def _open_project(db_session):
         """Seed one project envelope with spend in and before the viewed month."""
         service = ProjectBudgetService(db_session)
-        service.add_rule(
+        service.rules.insert(
             name="Total Budget",
             amount=30000.0,
             category="Home Renovation",
             tags=["all_tags"],
             month=None,
             year=None,
+            kind="project",
         )
         _seed(db_session, "2026-01-08", "Home Renovation", "Materials", -9000.0)
         _seed(db_session, "2026-03-09", "Home Renovation", "Materials", -4200.0)
@@ -416,13 +419,14 @@ class TestClosedProjects:
     ):
         """Closing one project must not take the others with it."""
         service = self._open_project(db_session)
-        service.add_rule(
+        service.rules.insert(
             name="Total Budget",
             amount=10000.0,
             category="Wedding",
             tags=["all_tags"],
             month=None,
             year=None,
+            kind="project",
         )
         _seed(db_session, "2026-03-11", "Wedding", "Venue", -2500.0)
         service.set_project_closed("Home Renovation", True)
@@ -540,13 +544,14 @@ class TestRuleShapesInTheWild:
         with every tag in the project. Matching only the anchor reported every
         such project as having no budget at all.
         """
-        ProjectBudgetService(db_session).add_rule(
+        ProjectBudgetService(db_session).rules.insert(
             name="Home Renovation",
             amount=30000.0,
             category="Home Renovation",
             tags=["Materials", "Labor", "Furniture"],
             month=None,
             year=None,
+            kind="project",
         )
         _seed(db_session, "2026-03-09", "Home Renovation", "Materials", -4200.0)
 
@@ -562,21 +567,23 @@ class TestRuleShapesInTheWild:
     def test_all_tags_anchor_wins_over_a_larger_tag_rule(self, db_session, frozen_today):
         """With an anchor present, per-tag budgets never inflate the total."""
         projects = ProjectBudgetService(db_session)
-        projects.add_rule(
+        projects.rules.insert(
             name="Total Budget",
             amount=30000.0,
             category="Home Renovation",
             tags=["all_tags"],
             month=None,
             year=None,
+            kind="project",
         )
-        projects.add_rule(
+        projects.rules.insert(
             name="Materials",
             amount=44000.0,
             category="Home Renovation",
             tags=["Materials"],
             month=None,
             year=None,
+            kind="project",
         )
 
         envelope = next(
@@ -683,13 +690,14 @@ class TestOneLedger:
         """A refund matched to a project purchase lowers the project's month spend."""
         from backend.services.pending_refunds_service import PendingRefundsService
 
-        ProjectBudgetService(db_session).add_rule(
+        ProjectBudgetService(db_session).rules.insert(
             name="Total Budget",
             amount=30000.0,
             category="Home Renovation",
             tags=["all_tags"],
             month=None,
             year=None,
+            kind="project",
         )
         purchase = _seed_id(db_session, "2026-03-09", "Home Renovation", "Materials", -4200.0)
         refund = _seed_id(db_session, "2026-03-12", "Home Renovation", "Materials", 1200.0)
@@ -734,13 +742,14 @@ class TestOneLedger:
         """The monthly project summary counts a split's slices, never its parent too."""
         from backend.services.transactions_service import TransactionsService
 
-        ProjectBudgetService(db_session).add_rule(
+        ProjectBudgetService(db_session).rules.insert(
             name="Total Budget",
             amount=30000.0,
             category="Home Renovation",
             tags=["all_tags"],
             month=None,
             year=None,
+            kind="project",
         )
         parent = _seed_id(db_session, "2026-03-09", "Home Renovation", "Materials", -1000.0)
         TransactionsService(db_session).split_transaction(

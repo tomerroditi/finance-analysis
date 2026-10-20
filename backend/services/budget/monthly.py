@@ -20,7 +20,6 @@ from backend.constants.budget import (
     YEAR,
 )
 from backend.constants.tables import TransactionsTableFields
-from backend.errors import ValidationException
 from backend.services.budget import ledger
 from backend.services.budget.core import BudgetService, _auto_fill_lock
 
@@ -102,6 +101,7 @@ class MonthlyBudgetService(BudgetService):
             conflict_period_type=PERIOD_YEARLY,
             target_year=year,
             target_month=month,
+            kind=PERIOD_MONTHLY,
             total_budget_passthrough=True,
         )
 
@@ -217,6 +217,7 @@ class MonthlyBudgetService(BudgetService):
                         conflict_period_type=PERIOD_YEARLY,
                         target_year=y,
                         target_month=m,
+                        kind=PERIOD_MONTHLY,
                         total_budget_passthrough=True,
                     )
                 )
@@ -308,13 +309,11 @@ class MonthlyBudgetService(BudgetService):
         amount: float,
         category: str,
         tags: str | list[str],
-        month: int | None = None,
-        year: int | None = None,
+        month: int,
+        year: int,
     ) -> None:
         """
-        Create a budget rule with input validation and tag normalization.
-
-        Validates via ``validate_rule_inputs`` before persisting.
+        Create a monthly budget rule; see :func:`~backend.services.budget.rules.rule_error`.
 
         Parameters
         ----------
@@ -323,124 +322,21 @@ class MonthlyBudgetService(BudgetService):
         amount : float
             Budget limit amount.
         category : str
-            Category the rule applies to.
+            Category the rule applies to, or ``"Total Budget"`` for the
+            month's cap.
         tags : str or list[str]
             Tags the rule covers (string or list; stored as semicolon-separated).
-        month : int or None, optional
-            Calendar month (1–12). ``None`` for project budgets.
-        year : int or None, optional
-            Calendar year. ``None`` for project budgets.
+        month : int
+            Calendar month (1–12).
+        year : int
+            Calendar year.
 
         Raises
         ------
         ValidationException
-            If validation fails (invalid inputs or budget cap exceeded), or if
-            any tag is already claimed by a yearly rule for the same ``year``.
+            If the rule fails validation.
         """
-        name = str(name).strip()
-        parsed_tags = self._parse_tags(tags)
-        if category != TOTAL_BUDGET and self.is_category_project_owned(category):
-            raise ValidationException(
-                f"The '{category}' category belongs to a project budget. "
-                f"A monthly rule can't target a project category."
-            )
-        if category != TOTAL_BUDGET and year is not None:
-            conflicts = self.find_conflicting_tags(
-                category, parsed_tags, year, PERIOD_YEARLY
-            )
-            if conflicts:
-                joined = ", ".join(conflicts)
-                raise ValidationException(
-                    f"{joined} is already used by your yearly budget for {year}. "
-                    f"A tag can't be in both for the same year."
-                )
-
-        budget_rules = self.get_all_rules()
-        is_valid, msg = self.validate_rule_inputs(
-            budget_rules, name, category, parsed_tags, amount, year, month, None
-        )
-        if not is_valid:
-            raise ValidationException(msg)
-
-        self.add_rule(name, amount, category, tags, month, year)
-
-    def update_rule(self, id_: int, **fields: Any) -> None:
-        """Update a monthly rule, guarding edits that would claim a yearly-owned tag.
-
-        The ``PUT /budget/rules/{id}`` route is shared between monthly and
-        project rules (both are edited through the same ``rule_id``), so this
-        loads the target row through the base, unfiltered
-        ``BudgetService.get_all_rules`` — ``self.get_all_rules()`` here would
-        be pre-filtered to ``period_type == "monthly"`` and silently miss a
-        project rule's id.
-
-        Runs the monthly-vs-yearly conflict check when the row being edited
-        is itself a monthly rule (non-null ``year``) outside the
-        ``Total Budget`` category — mirroring the guard in
-        :meth:`create_rule`. Also guards the opposite case: this route is
-        the same one project rules are edited through (``year`` is
-        ``NaN`` for a project row), so a category change on a project rule
-        that targets a category already claimed by a monthly/yearly budget
-        is rejected too — otherwise the invariant "a category is never both
-        project-owned and budget-used" could be broken via this shared
-        endpoint alone. Edits that never touch ``category``/``tags`` fall
-        straight through to the base update as a no-op.
-
-        Parameters
-        ----------
-        id_ : int
-            ID of the budget rule to update.
-        **fields
-            Fields to update; see ``BudgetService.update_rule``.
-
-        Raises
-        ------
-        ValidationException
-            If the edit would claim a tag already owned by a yearly rule for
-            the same year, or (for a project rule) would move it onto a
-            category already used by a monthly or yearly budget.
-        """
-        all_rules = BudgetService.get_all_rules(self)
-        if not all_rules.empty:
-            row = all_rules.loc[all_rules[ID] == id_]
-            if not row.empty:
-                row = row.iloc[0]
-                year = row[YEAR]
-                category = fields.get(CATEGORY, row[CATEGORY])
-                if pd.notnull(year) and category != TOTAL_BUDGET:
-                    if self.is_category_project_owned(category):
-                        raise ValidationException(
-                            f"The '{category}' category belongs to a project "
-                            f"budget. A monthly rule can't target a project category."
-                        )
-                    tags = fields.get(TAGS, row[TAGS])
-                    parsed_tags = (
-                        tags.split(";") if isinstance(tags, str) else list(tags)
-                    )
-                    conflicts = self.find_conflicting_tags(
-                        category,
-                        parsed_tags,
-                        int(year),
-                        PERIOD_YEARLY,
-                        exclude_rule_id=id_,
-                    )
-                    if conflicts:
-                        joined = ", ".join(conflicts)
-                        raise ValidationException(
-                            f"{joined} is already used by your yearly budget for "
-                            f"{int(year)}. A tag can't be in both for the same year."
-                        )
-                elif (
-                    pd.isnull(year) and CATEGORY in fields and category != row[CATEGORY]
-                ):
-                    if self.category_used_by_monthly_or_yearly(category):
-                        raise ValidationException(
-                            f"The '{category}' category is already used by a "
-                            f"monthly or yearly budget and can't be assigned to a "
-                            f"project rule."
-                        )
-
-        BudgetService.update_rule(self, id_, **fields)
+        self.rules.create(PERIOD_MONTHLY, name, amount, category, tags, year, month)
 
     def get_budget_trend(
         self,

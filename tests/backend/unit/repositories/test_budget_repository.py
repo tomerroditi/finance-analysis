@@ -30,6 +30,7 @@ class TestBudgetRepository:
             tags="Groceries;Restaurants;Coffee",
             month=1,
             year=2024,
+            period_type="monthly",
         )
 
         result = repo.read_all()
@@ -53,6 +54,7 @@ class TestBudgetRepository:
             tags="Venue;Catering",
             month=None,
             year=None,
+            period_type="project",
         )
 
         result = repo.read_all()
@@ -68,9 +70,9 @@ class TestBudgetRepository:
     def test_read_all(self, db_session: Session):
         """Verify read_all returns all rules as DataFrame."""
         repo = BudgetRepository(db_session)
-        repo.add("Food", 2000.0, "Food", "Groceries", month=1, year=2024)
-        repo.add("Transport", 500.0, "Transport", "Gas", month=1, year=2024)
-        repo.add("Wedding", 50000.0, "Wedding", "Venue;Catering", month=None, year=None)
+        repo.add("Food", 2000.0, "Food", "Groceries", month=1, year=2024, period_type="monthly")
+        repo.add("Transport", 500.0, "Transport", "Gas", month=1, year=2024, period_type="monthly")
+        repo.add("Wedding", 50000.0, "Wedding", "Venue;Catering", month=None, year=None, period_type="project")
 
         result = repo.read_all()
         assert len(result) == 3
@@ -79,7 +81,7 @@ class TestBudgetRepository:
     def test_update_rule(self, db_session: Session):
         """Verify update changes the specified fields."""
         repo = BudgetRepository(db_session)
-        repo.add("Food", 2000.0, "Food", "Groceries", month=1, year=2024)
+        repo.add("Food", 2000.0, "Food", "Groceries", month=1, year=2024, period_type="monthly")
 
         all_rules = repo.read_all()
         rule_id = int(all_rules.iloc[0]["id"])
@@ -103,7 +105,7 @@ class TestBudgetRepository:
     def test_delete_rule(self, db_session: Session):
         """Verify delete removes the rule."""
         repo = BudgetRepository(db_session)
-        repo.add("Food", 2000.0, "Food", "Groceries", month=1, year=2024)
+        repo.add("Food", 2000.0, "Food", "Groceries", month=1, year=2024, period_type="monthly")
 
         all_rules = repo.read_all()
         rule_id = int(all_rules.iloc[0]["id"])
@@ -116,9 +118,9 @@ class TestBudgetRepository:
     def test_delete_by_month(self, db_session: Session):
         """Verify delete_by_month removes all rules for that month."""
         repo = BudgetRepository(db_session)
-        repo.add("Food Jan", 2000.0, "Food", "Groceries", month=1, year=2024)
-        repo.add("Transport Jan", 500.0, "Transport", "Gas", month=1, year=2024)
-        repo.add("Food Feb", 2500.0, "Food", "Groceries", month=2, year=2024)
+        repo.add("Food Jan", 2000.0, "Food", "Groceries", month=1, year=2024, period_type="monthly")
+        repo.add("Transport Jan", 500.0, "Transport", "Gas", month=1, year=2024, period_type="monthly")
+        repo.add("Food Feb", 2500.0, "Food", "Groceries", month=2, year=2024, period_type="monthly")
 
         repo.delete_by_month(year=2024, month=1)
 
@@ -130,11 +132,11 @@ class TestBudgetRepository:
         """Verify delete_by_category removes only project rules for that category."""
         repo = BudgetRepository(db_session)
         # Project rule
-        repo.add("Wedding Budget", 50000.0, "Wedding", "Venue;Catering", month=None, year=None)
+        repo.add("Wedding Budget", 50000.0, "Wedding", "Venue;Catering", month=None, year=None, period_type="project")
         # Monthly rule with same category -- should NOT be deleted
-        repo.add("Wedding Jan", 5000.0, "Wedding", "Venue", month=1, year=2024)
+        repo.add("Wedding Jan", 5000.0, "Wedding", "Venue", month=1, year=2024, period_type="monthly")
         # Another project rule
-        repo.add("Renovation", 25000.0, "Renovation", "Materials", month=None, year=None)
+        repo.add("Renovation", 25000.0, "Renovation", "Materials", month=None, year=None, period_type="project")
 
         repo.delete_by_category("Wedding")
 
@@ -153,8 +155,8 @@ class TestBudgetRepository:
         on the same category.
         """
         repo = BudgetRepository(db_session)
-        repo.add("Wedding Project", 50000.0, "Wedding", "all_tags", month=None, year=None)
-        repo.add("Wedding Y", 5000.0, "Wedding", "Venue", month=None, year=2024)
+        repo.add("Wedding Project", 50000.0, "Wedding", "all_tags", month=None, year=None, period_type="project")
+        repo.add("Wedding Y", 5000.0, "Wedding", "Venue", month=None, year=2024, period_type="yearly")
 
         repo.delete_by_category("Wedding")
 
@@ -169,7 +171,7 @@ class TestBudgetRepositoryEmptyUpdate:
     def test_update_empty_fields_is_noop_for_existing_rule(self, db_session: Session):
         """Verify update leaves an existing rule untouched when no fields are given."""
         repo = BudgetRepository(db_session)
-        repo.add("Food", 2000.0, "Food", "Groceries", month=1, year=2024)
+        repo.add("Food", 2000.0, "Food", "Groceries", month=1, year=2024, period_type="monthly")
 
         all_rules = repo.read_all()
         rule_id = int(all_rules.iloc[0]["id"])
@@ -193,18 +195,26 @@ class TestBudgetRepositoryEmptyUpdate:
 
 
 class TestBudgetRepositoryPeriodType:
-    """period_type is derived on write."""
+    """period_type is stored exactly as the caller names it."""
 
-    def test_add_derives_period_type(self, db_session):
-        """add() sets monthly/yearly/project from year/month when not passed."""
+    def test_add_stores_the_given_period_type(self, db_session):
+        """add() writes the kind it is told, even where month/year would suggest another."""
         from backend.repositories.budget_repository import BudgetRepository
         repo = BudgetRepository(db_session)
-        repo.add("M", 10.0, "Food", "Groceries", month=5, year=2026)
-        repo.add("Y", 20.0, "Travel", "Hotels", month=None, year=2026)
-        repo.add("P", 30.0, "Reno", "all_tags", month=None, year=None)
+        repo.add("M", 10.0, "Food", "Groceries", month=5, year=2026, period_type="monthly")
+        repo.add("Y", 20.0, "Travel", "Hotels", month=None, year=2026, period_type="yearly")
+        repo.add("P", 30.0, "Reno", "all_tags", month=None, year=None, period_type="project")
 
         by_name = {r["name"]: r["period_type"] for r in repo.read_all().to_dict("records")}
         assert by_name == {"M": "monthly", "Y": "yearly", "P": "project"}
+
+    def test_add_requires_a_period_type(self, db_session):
+        """add() has no inference left to fall back on, so the kind is mandatory."""
+        from backend.repositories.budget_repository import BudgetRepository
+        repo = BudgetRepository(db_session)
+
+        with pytest.raises(TypeError, match="period_type"):
+            repo.add("M", 10.0, "Food", "Groceries", month=5, year=2026)
 
 
 @contextmanager
@@ -248,6 +258,7 @@ class TestReadAllIsRequestCached:
         repo.add(
             name="Fresh", amount=100.0, category="Food", tags="Groceries",
             month=1, year=2024,
+            period_type="monthly",
         )
 
         assert len(repo.read_all()) == before + 1
@@ -269,10 +280,10 @@ class TestReadProjectCategoryNames:
         repo = BudgetRepository(db_session)
         assert repo.read_project_category_names() == []
 
-        repo.add("Total Budget", 100.0, "Wedding", "", None, None, "project")
-        repo.add("Food", 50.0, "Food", "", 1, 2024, "monthly")
-        repo.add("Venue", 60.0, "Wedding", "Venue", None, None, "project")
-        repo.add("Total Budget", 70.0, "Renovation", "", None, None, "project")
+        repo.add("Total Budget", 100.0, "Wedding", "", None, None, period_type="project")
+        repo.add("Food", 50.0, "Food", "", 1, 2024, period_type="monthly")
+        repo.add("Venue", 60.0, "Wedding", "Venue", None, None, period_type="project")
+        repo.add("Total Budget", 70.0, "Renovation", "", None, None, period_type="project")
         db_session.expire_all()
         rules = repo.read_all()
         renovation = rules[rules["period_type"] == "project"]

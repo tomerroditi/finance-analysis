@@ -123,12 +123,12 @@ class TestYearlyValidation:
     def test_validate_scalar_branches(
         self, db_session, name, category, tags, amount, expected
     ):
-        """Each scalar precondition of ``_validate`` raises its own message."""
+        """Each scalar precondition of a yearly create raises its own message."""
         from backend.services.budget import YearlyBudgetService
 
         svc = YearlyBudgetService(db_session)
         with pytest.raises(ValidationException, match=f"(?i){expected}"):
-            svc._validate(name, category, tags, amount, 2026, None)
+            svc.create_rule(name, amount, category, tags, 2026)
         assert svc.get_year_rules(2026).empty
 
     def test_create_strips_name(self, db_session):

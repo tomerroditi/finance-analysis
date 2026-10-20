@@ -12,10 +12,8 @@ from backend.constants.budget import (
     IS_CLOSED,
     MONTH,
     NAME,
-    PERIOD_MONTHLY,
     PERIOD_PROJECT,
     PERIOD_TYPE,
-    PERIOD_YEARLY,
     TAGS,
     TOTAL_BUDGET,
     YEAR,
@@ -28,6 +26,7 @@ from backend.errors import (
 )
 from backend.services.budget import ledger
 from backend.services.budget.core import BudgetService
+from backend.services.budget.rules import budgeted_categories
 from backend.services.pending_refunds_service import GROSS_AMOUNT_COLUMN
 
 #: Claim kind given to a split parent listed for display: never counted.
@@ -115,18 +114,13 @@ class ProjectBudgetService(BudgetService):
             If ``category`` is not a known category, so no rules are written
             for a name that can't be tagged against.
         ValidationException
-            If ``category`` already has a monthly or yearly budget rule. A
-            category can't be in both a project and a monthly/yearly budget.
+            If ``category`` already has a monthly or yearly budget rule (a
+            category can't be in both a project and a monthly/yearly budget),
+            or ``total_budget`` is not positive.
         """
         if category in self.get_all_projects_names():
             raise EntityAlreadyExistsException(
                 f"A project for the '{category}' category already exists."
-            )
-        if self.category_used_by_monthly_or_yearly(category):
-            raise ValidationException(
-                f"The '{category}' category is already used by a monthly or "
-                f"yearly budget. A category can't be in both a project and a "
-                f"monthly/yearly budget."
             )
         # Resolve the tag list before writing anything: an unknown category
         # used to fail here *after* the total rule was persisted.
@@ -134,19 +128,36 @@ class ProjectBudgetService(BudgetService):
         if category not in all_tags:
             raise ValidationException(f"Unknown category '{category}'.")
 
-        self.add_rule(
-            name=TOTAL_BUDGET,
-            amount=total_budget,
-            category=category,
-            tags=[ALL_TAGS],
-            month=None,
-            year=None,
+        self.rules.create(
+            PERIOD_PROJECT, TOTAL_BUDGET, total_budget, category, [ALL_TAGS]
         )
-
         for tag in all_tags[category]:
-            self.add_rule(
-                name=tag, amount=0, category=category, tags=[tag], month=None, year=None
-            )
+            self.rules.insert(tag, 0, category, [tag], kind=PERIOD_PROJECT)
+
+    def create_rule(
+        self, name: str, amount: float, category: str, tags: str | list[str]
+    ) -> None:
+        """
+        Add a rule to a project; see :func:`~backend.services.budget.rules.rule_error`.
+
+        Parameters
+        ----------
+        name : str
+            Human-readable label for the rule.
+        amount : float
+            The rule's share of the project's total (may be zero).
+        category : str
+            The project's category.
+        tags : str or list[str]
+            Tags the rule covers.
+
+        Raises
+        ------
+        ValidationException
+            If the rule fails validation — including when ``category`` has no
+            project total to add it under.
+        """
+        self.rules.create(PERIOD_PROJECT, name, amount, category, tags)
 
     def update_project(self, category: str, total_budget: float) -> None:
         """
@@ -336,19 +347,7 @@ class ProjectBudgetService(BudgetService):
             monthly or yearly budget rule.
         """
         current_projects = self.get_all_projects_names()
-        # One rules read + set membership instead of a full budget_rules read
-        # per candidate category (category_used_by_monthly_or_yearly re-reads
-        # the table on every call).
-        rules = BudgetService.get_all_rules(self)
-        if rules.empty:
-            claimed: set[str] = set()
-        else:
-            claimed = set(
-                rules.loc[
-                    rules[PERIOD_TYPE].isin([PERIOD_MONTHLY, PERIOD_YEARLY]),
-                    CATEGORY,
-                ]
-            ) - {TOTAL_BUDGET}
+        claimed = budgeted_categories(self.rules.all())
         return [
             cat
             for cat in self.categories_tags_service.get_categories_and_tags(copy=True)
@@ -427,26 +426,15 @@ class ProjectBudgetService(BudgetService):
             # Create all missing zero-amount rules first, then re-read the
             # rules table once — instead of a full read after every insert.
             for tag, _group in groups:
-                self.add_rule(
-                    name=tag,
-                    amount=0,
-                    category=project,
-                    tags=[tag],
-                    month=None,
-                    year=None,
-                )
-            new_rule_df = self.budget_repository.read_all()
+                self.rules.insert(tag, 0, project, [tag], kind=PERIOD_PROJECT)
+            new_rule_df = self.rules.of_kind(PERIOD_PROJECT)
 
             for tag, group in groups:
                 new_rule = new_rule_df[
-                    (new_rule_df[CATEGORY] == project)
-                    & (new_rule_df[PERIOD_TYPE] == PERIOD_PROJECT)
-                    & (new_rule_df[NAME] == tag)
+                    (new_rule_df[CATEGORY] == project) & (new_rule_df[NAME] == tag)
                 ]
                 if not new_rule.empty:
                     rule_dict = new_rule.iloc[0].to_dict()
-                    if isinstance(rule_dict[TAGS], str):
-                        rule_dict[TAGS] = rule_dict[TAGS].split(";")
                 else:
                     rule_dict = {
                         NAME: tag,

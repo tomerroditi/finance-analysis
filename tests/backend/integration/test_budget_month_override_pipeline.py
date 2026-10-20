@@ -60,11 +60,11 @@ class TestBudgetMonthOverridePipeline:
         must drop by 250 and the February total must rise by 250.
         """
         budget_svc = MonthlyBudgetService(db_session)
-        budget_svc.add_rule(
-            "Total Budget", 15000, TOTAL_BUDGET, [ALL_TAGS], month=1, year=2024
+        budget_svc.rules.insert(
+            "Total Budget", 15000, TOTAL_BUDGET, [ALL_TAGS], month=1, year=2024, kind="monthly"
         )
-        budget_svc.add_rule(
-            "Total Budget", 15000, TOTAL_BUDGET, [ALL_TAGS], month=2, year=2024
+        budget_svc.rules.insert(
+            "Total Budget", 15000, TOTAL_BUDGET, [ALL_TAGS], month=2, year=2024, kind="monthly"
         )
 
         jan_before = budget_svc.get_monthly_budget_view(2024, 1)[0]["current_amount"]
@@ -90,8 +90,8 @@ class TestBudgetMonthOverridePipeline:
     ):
         """Verify targeting the real month removes the override and restores totals."""
         budget_svc = MonthlyBudgetService(db_session)
-        budget_svc.add_rule(
-            "Total Budget", 15000, TOTAL_BUDGET, [ALL_TAGS], month=1, year=2024
+        budget_svc.rules.insert(
+            "Total Budget", 15000, TOTAL_BUDGET, [ALL_TAGS], month=1, year=2024, kind="monthly"
         )
         jan_before = budget_svc.get_monthly_budget_view(2024, 1)[0]["current_amount"]
 
