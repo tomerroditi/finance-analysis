@@ -1,3 +1,9 @@
+## v2.0.1 (2026-10-20)
+
+### Refactor
+
+- **investments**: derive the closing zero instead of storing it (#411)
+
 ## v2.0.0 (2026-10-18)
 
 ### BREAKING CHANGE
