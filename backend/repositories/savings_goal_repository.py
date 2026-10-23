@@ -36,6 +36,11 @@ GOAL_COLUMNS = [
 
 ENTRY_COLUMNS = ["id", "goal_id", "date", "amount", "source", "note"]
 
+_RULE_SLOTS = (
+    ("contribution_category", "contribution_tags"),
+    ("utilization_category", "utilization_tags"),
+)
+
 LINK_COLUMNS = [
     "id",
     "goal_id",
@@ -328,6 +333,134 @@ class SavingsGoalRepository:
         goal.utilization_category = category
         goal.utilization_tags = tags if category is not None else None
         self._commit()
+
+    def rename_category(self, old_name: str, new_name: str) -> None:
+        """Point every goal rule on ``old_name`` at ``new_name``.
+
+        Parameters
+        ----------
+        old_name : str
+            Current category name.
+        new_name : str
+            New category name.
+        """
+        for category_col, _ in _RULE_SLOTS:
+            self.db.execute(
+                update(SavingsGoal)
+                .where(getattr(SavingsGoal, category_col) == old_name)
+                .values({category_col: new_name})
+            )
+        self._commit()
+
+    def clear_category(self, category: str) -> None:
+        """Drop every goal rule on ``category``.
+
+        Parameters
+        ----------
+        category : str
+            Category being deleted.
+        """
+        for category_col, tags_col in _RULE_SLOTS:
+            self.db.execute(
+                update(SavingsGoal)
+                .where(getattr(SavingsGoal, category_col) == category)
+                .values({category_col: None, tags_col: None})
+            )
+        self._commit()
+
+    def rename_tag(self, category: str, old_tag: str, new_tag: str) -> None:
+        """Rename ``old_tag`` in every goal rule on ``category``.
+
+        Rule tags are semicolon-separated, so each list is parsed rather than
+        string-replaced (renaming ``Food`` must not touch ``Fast Food``).
+
+        Parameters
+        ----------
+        category : str
+            Category the tag belongs to.
+        old_tag : str
+            Current tag name.
+        new_tag : str
+            New tag name.
+        """
+        for goal, _, tags_col, tags in self._rules_naming(category, old_tag):
+            setattr(
+                goal,
+                tags_col,
+                ";".join(new_tag if t == old_tag else t for t in tags),
+            )
+        self._commit()
+
+    def reallocate_tag(self, old_category: str, new_category: str, tag: str) -> None:
+        """Follow a tag that moved from ``old_category`` to ``new_category``.
+
+        A rule on that tag alone moves with it. A rule on several tags stays
+        on ``old_category`` and drops the moved one, like budget rules do.
+
+        Parameters
+        ----------
+        old_category : str
+            Category the tag is leaving.
+        new_category : str
+            Category the tag is joining.
+        tag : str
+            Tag being moved.
+        """
+        for goal, category_col, tags_col, tags in self._rules_naming(old_category, tag):
+            if tags == [tag]:
+                setattr(goal, category_col, new_category)
+            else:
+                setattr(goal, tags_col, ";".join(t for t in tags if t != tag))
+        self._commit()
+
+    def drop_tag(self, category: str, tag: str) -> None:
+        """Remove a deleted tag from every goal rule on ``category``.
+
+        A rule left with no tag is cleared rather than kept with an empty
+        list, which would read as "every tag" and widen it to the whole
+        category.
+
+        Parameters
+        ----------
+        category : str
+            Category the tag belonged to.
+        tag : str
+            Tag being deleted.
+        """
+        for goal, category_col, tags_col, tags in self._rules_naming(category, tag):
+            remaining = [t for t in tags if t != tag]
+            if remaining:
+                setattr(goal, tags_col, ";".join(remaining))
+            else:
+                setattr(goal, category_col, None)
+                setattr(goal, tags_col, None)
+        self._commit()
+
+    def _rules_naming(
+        self, category: str, tag: str
+    ) -> Iterator[tuple[SavingsGoal, str, str, list[str]]]:
+        """Yield each goal rule on ``category`` whose tag list names ``tag``.
+
+        Yields
+        ------
+        tuple
+            ``(goal, category column, tags column, parsed tags)``.
+        """
+        for category_col, tags_col in _RULE_SLOTS:
+            goals = (
+                self.db.execute(
+                    select(SavingsGoal).where(
+                        getattr(SavingsGoal, category_col) == category,
+                        getattr(SavingsGoal, tags_col).like(f"%{tag}%"),
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            for goal in goals:
+                tags = getattr(goal, tags_col).split(";")
+                if tag in tags:
+                    yield goal, category_col, tags_col, tags
 
     def get_yearly_targets(self) -> dict[int, float]:
         """Return every year's savings target as ``{year: target_amount}``."""

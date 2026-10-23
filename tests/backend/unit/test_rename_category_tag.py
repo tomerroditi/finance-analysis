@@ -47,6 +47,7 @@ def _make_service(categories_and_tags: dict) -> CategoriesTagsService:
     service.budget_repo = MagicMock()
     service.investments_repo = MagicMock()
     service.liabilities_repo = MagicMock()
+    service.savings_goal_repo = MagicMock()
     service._invalidate_cache = MagicMock()
     return service
 
@@ -89,6 +90,9 @@ class TestRenameCategory:
         service.split_transactions_repo.rename_category.assert_called_once_with("Food", "Dining")
         service.tagging_rules_repo.rename_category.assert_called_once_with("Food", "Dining")
         service.budget_repo.rename_category.assert_called_once_with("Food", "Dining")
+        service.savings_goal_repo.rename_category.assert_called_once_with(
+            "Food", "Dining"
+        )
         service.tagging_repo.rename_category.assert_called_once_with("Food", "Dining")
         service._invalidate_cache.assert_called_once()
 
@@ -149,6 +153,9 @@ class TestRenameTag:
             "Food", "Groceries", "Supermarket"
         )
         service.liabilities_repo.rename_tag.assert_called_once_with(
+            "Food", "Groceries", "Supermarket"
+        )
+        service.savings_goal_repo.rename_tag.assert_called_once_with(
             "Food", "Groceries", "Supermarket"
         )
         service.tagging_repo.rename_tag.assert_called_once_with("Food", "Groceries", "Supermarket")
