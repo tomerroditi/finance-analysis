@@ -314,6 +314,22 @@ test.describe("Income & Expenses dashboard card", () => {
     // user linked to its purchase cancels that purchase.
     const refundMode = card.getByTestId("refund-mode").getByRole("button");
     await expect(refundMode).toContainText("Refunds netted");
+
+    // The "i" beside it explains all three modes on a tap (a phone has no
+    // hover), marking the one in force; a tap off it closes it.
+    await card.getByTestId("refund-mode-info").click();
+    const refundInfo = page.getByTestId("refund-mode-info-panel");
+    await expect(refundInfo).toBeVisible();
+    await expect(refundInfo.getByTestId("refund-mode-info-row")).toHaveCount(3);
+    await expect(refundInfo.locator('[aria-current="true"]')).toContainText("Refunds netted");
+    await expect(refundInfo).toContainText("never linked");
+    await page.keyboard.press("Escape");
+    await expect(refundInfo).toHaveCount(0);
+    await card.getByTestId("refund-mode-info").click();
+    await expect(refundInfo).toBeVisible();
+    await card.getByRole("heading", { name: "Income & Expenses" }).click();
+    await expect(refundInfo).toHaveCount(0);
+
     for (const name of ["Projects Included", "Loans Included"]) {
       const chip = card.getByRole("button", { name, exact: true });
       await expect(chip).toBeVisible();

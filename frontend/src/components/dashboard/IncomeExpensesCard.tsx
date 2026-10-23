@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import { createPortal } from "react-dom";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
-import { TrendingUp, TrendingDown, ArrowUp, ArrowDown, Minus, ChevronDown, ChevronUp } from "lucide-react";
+import { TrendingUp, TrendingDown, ArrowUp, ArrowDown, Minus, ChevronDown, ChevronUp, Info } from "lucide-react";
 import { analyticsApi, type RefundMode } from "../../services/api";
 import { SelectDropdown } from "../common/SelectDropdown";
 import { useQueryKeys } from "../../hooks/useQueryKeys";
+import { useAnchoredPanel } from "../../hooks/useAnchoredPanel";
 import { useTranslation } from "react-i18next";
 import { formatCurrency, formatChange } from "../../utils/numberFormatting";
 import { CHART_COLORS, isTouchDevice } from "../../utils/chartStyle";
@@ -221,6 +222,8 @@ export function IncomeExpensesCard() {
   // Only links made in the app are acted on — an unlinked refund lowers its
   // category in the month it arrived under every option.
   const [refundMode, setRefundMode] = useState<RefundMode>("linked");
+  const refundTone =
+    refundMode === "none" ? "" : "!bg-[var(--primary)]/10 !border-[var(--primary)]/20";
   const [excludeProjects, setExcludeProjects] = useState(false);
   // Loan payments are money that left the account, so they count until this
   // is switched on, which takes the envelope view — loan principal as a
@@ -491,19 +494,24 @@ export function IncomeExpensesCard() {
                 own on a phone, where it read as a heading for the tabs under
                 it rather than as one more filter. */}
             <div className="flex min-w-0 gap-2 overflow-x-auto scrollbar-auto-hide">
-              <div className="shrink-0" data-testid="refund-mode" title={t("dashboard.refundModeTitle")}>
-                <SelectDropdown
-                  size="sm"
-                  value={refundMode}
-                  onChange={(next) => setRefundMode(next as RefundMode)}
-                  options={REFUND_MODES.map((mode) => ({
-                    value: mode,
-                    label: t(`dashboard.refundMode.${mode}`),
-                  }))}
-                  triggerClassName={`whitespace-nowrap !text-xs font-medium ${
-                    refundMode === "none" ? "" : "!bg-[var(--primary)]/10 !border-[var(--primary)]/20"
-                  }`}
-                />
+              {/* The select and its explanation are one control: the info
+                  button is the select's end segment, sharing its border and
+                  tint, so it reads as part of the refund setting rather than
+                  one more chip in the row. */}
+              <div className="shrink-0 flex">
+                <div data-testid="refund-mode">
+                  <SelectDropdown
+                    size="sm"
+                    value={refundMode}
+                    onChange={(next) => setRefundMode(next as RefundMode)}
+                    options={REFUND_MODES.map((mode) => ({
+                      value: mode,
+                      label: t(`dashboard.refundMode.${mode}`),
+                    }))}
+                    triggerClassName={`whitespace-nowrap !text-xs font-medium !rounded-e-none ${refundTone}`}
+                  />
+                </div>
+                <RefundModeInfo mode={refundMode} tone={refundTone} />
               </div>
               <FilterChip
                 active={excludeProjects}
@@ -629,6 +637,101 @@ function ScopeToggle({ scope, onChange }: { scope: Scope; onChange: (next: Scope
 }
 
 const REFUND_MODES: RefundMode[] = ["none", "linked", "pending"];
+
+/**
+ * What each refund setting does, next to the select that picks one.
+ *
+ * The three option labels are too short to say what they change, and the old
+ * explanation lived in a hover `title` a phone never shows. The panel lists
+ * every mode with the current one marked, so a reader can compare them
+ * without trying each. It is portalled because the chip row scrolls
+ * sideways, and a scroll container clips anything hanging out of it.
+ */
+function RefundModeInfo({ mode, tone }: { mode: RefundMode; tone: string }) {
+  const { t } = useTranslation();
+  const [open, setOpen] = useState(false);
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const panelStyle = useAnchoredPanel(buttonRef, open, { maxHeight: 360, minWidth: 300 });
+
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    const onPointer = (e: PointerEvent) => {
+      const target = e.target as Node;
+      if (!panelRef.current?.contains(target) && !buttonRef.current?.contains(target)) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener("keydown", onKey);
+    document.addEventListener("pointerdown", onPointer);
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.removeEventListener("pointerdown", onPointer);
+    };
+  }, [open]);
+
+  return (
+    <>
+      <button
+        ref={buttonRef}
+        type="button"
+        data-testid="refund-mode-info"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        aria-label={t("dashboard.refundInfo.title")}
+        className={`-ms-px flex items-center px-2 rounded-e-lg border border-[var(--surface-light)] bg-[var(--surface-base)] transition-colors hover:border-[var(--primary)] ${tone} ${
+          open ? "text-[var(--primary)]" : "text-[var(--text-muted)] hover:text-[var(--text-default)]"
+        }`}
+      >
+        <Info size={14} />
+      </button>
+      {open &&
+        createPortal(
+            <div
+              ref={panelRef}
+              role="dialog"
+              data-testid="refund-mode-info-panel"
+              aria-label={t("dashboard.refundInfo.title")}
+              style={panelStyle}
+              className="fixed z-50 flex flex-col overflow-hidden rounded-xl border border-[var(--surface-light)] bg-[var(--surface)] shadow-xl"
+            >
+              <div className="min-h-0 overflow-y-auto overscroll-contain p-3 space-y-2 text-xs">
+                <p className="font-bold text-[var(--text-default)]">{t("dashboard.refundInfo.title")}</p>
+                {REFUND_MODES.map((option) => (
+                  <div
+                    key={option}
+                    data-testid="refund-mode-info-row"
+                    aria-current={option === mode ? "true" : undefined}
+                    className={`rounded-lg border px-2.5 py-2 ${
+                      option === mode
+                        ? "border-[var(--primary)]/30 bg-[var(--primary)]/10"
+                        : "border-[var(--surface-light)]"
+                    }`}
+                  >
+                    <p className="flex items-center justify-between gap-2 font-semibold text-[var(--text-default)]">
+                      {t(`dashboard.refundMode.${option}`)}
+                      {option === mode && (
+                        <span className="text-[10px] font-bold uppercase tracking-wide text-[var(--primary)]">
+                          {t("dashboard.refundInfo.current")}
+                        </span>
+                      )}
+                    </p>
+                    <p className="mt-0.5 leading-snug text-[var(--text-muted)]">
+                      {t(`dashboard.refundInfo.${option}`)}
+                    </p>
+                  </div>
+                ))}
+                <p className="leading-snug text-[var(--text-muted)]">{t("dashboard.refundInfo.unlinked")}</p>
+              </div>
+            </div>,
+          document.body,
+        )}
+    </>
+  );
+}
 
 /**
  * One filter chip: off is "included", on is "excluded".
