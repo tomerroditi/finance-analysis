@@ -1,3 +1,9 @@
+## v2.1.2 (2026-10-23)
+
+### Refactor
+
+- **transactions**: route write after-effects through one tracker (#414)
+
 ## v2.1.1 (2026-10-23)
 
 ### Refactor
