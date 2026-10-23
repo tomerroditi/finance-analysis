@@ -376,8 +376,13 @@ class TransactionsRepository(IngestionMixin, SplitsMixin):
             return None
         return split, self.get_record(split.source, split.transaction_id)
 
-    def get_account_names(self, source: str, unique_ids: list[int]) -> list[str | None]:
-        """Return the ``account_name`` of each existing transaction in a batch.
+    def get_holding_keys(
+        self, source: str, unique_ids: list[int]
+    ) -> list[tuple[str | None, str | None, str | None]]:
+        """Return ``(account_name, category, tag)`` of each existing transaction.
+
+        These are the fields a transaction's balance-bearing holding is keyed
+        by: a cash account by its name, an investment by its category and tag.
 
         Parameters
         ----------
@@ -388,7 +393,7 @@ class TransactionsRepository(IngestionMixin, SplitsMixin):
 
         Returns
         -------
-        list[str or None]
+        list[tuple[str or None, str or None, str or None]]
             One entry per matched row (unordered, may repeat).
 
         Raises
@@ -397,18 +402,18 @@ class TransactionsRepository(IngestionMixin, SplitsMixin):
             If ``source`` is not a known table/service name.
         """
         repo = self._require_repo(source)
-        names: list[str | None] = []
+        model = repo.model
+        keys: list[tuple[str | None, str | None, str | None]] = []
         for chunk in chunked(unique_ids):
-            names.extend(
-                self.db.execute(
-                    select(repo.model.account_name).where(
-                        repo.model.unique_id.in_(chunk)
+            keys.extend(
+                tuple(row)
+                for row in self.db.execute(
+                    select(model.account_name, model.category, model.tag).where(
+                        model.unique_id.in_(chunk)
                     )
-                )
-                .scalars()
-                .all()
+                ).all()
             )
-        return names
+        return keys
 
     def bulk_update_fields(
         self, source: str, unique_ids: list[int], values: dict[str, Any]

@@ -1144,15 +1144,15 @@ class TestRecordLookups:
         assert repo.get_split_with_parent(split.id) == (split, parent)
         assert repo.get_split_with_parent(999_999) is None
 
-    def test_bulk_update_fields_and_account_names(self, db_session):
+    def test_bulk_update_fields_and_holding_keys(self, db_session):
         """One batched write updates every listed row and nothing else."""
         a = _bank(db_session, "b1", -1.0, account_name="A")
         b = _bank(db_session, "b2", -2.0, account_name="B")
         untouched = _bank(db_session, "b3", -3.0, account_name="C")
         repo = TransactionsRepository(db_session)
 
-        assert sorted(repo.get_account_names("banks", [a.unique_id, b.unique_id])) == [
-            "A", "B",
+        assert sorted(repo.get_holding_keys("banks", [a.unique_id, b.unique_id])) == [
+            ("A", None, None), ("B", None, None),
         ]
         repo.bulk_update_fields(
             "bank_transactions", [a.unique_id, b.unique_id], {"category": "Food"}
