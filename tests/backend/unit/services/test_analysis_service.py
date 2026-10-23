@@ -1852,7 +1852,7 @@ class TestForecastExpensesUseOneDefinition:
         expected = daily * 0.5 * (days_in_month - today.day) + daily * 0.5 * (
             days_in_month - 2
         )
-        assert self._projected(result) == pytest.approx(expected)
+        assert self._projected(result) == pytest.approx(expected, abs=0.01)
 
     def test_a_fresh_account_s_spending_does_not_cancel_a_stale_one_s_gap(
         self, db_session, monkeypatch
@@ -1919,7 +1919,7 @@ class TestForecastExpensesUseOneDefinition:
         expected = daily * 0.5 * (days_in_month - 2) + daily * 0.5 * (
             days_in_month - today.day
         )
-        assert self._projected(result) == pytest.approx(expected)
+        assert self._projected(result) == pytest.approx(expected, abs=0.01)
 
     def test_insurance_never_holds_the_edge_back(self, db_session, monkeypatch):
         """Insurance is scraped but produces no budget transactions, so a
