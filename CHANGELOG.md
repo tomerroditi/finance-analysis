@@ -1,3 +1,9 @@
+## v2.1.0 (2026-10-23)
+
+### Feat
+
+- **dashboard**: explain the refund modes behind an info popover (#412)
+
 ## v2.0.1 (2026-10-20)
 
 ### Refactor
