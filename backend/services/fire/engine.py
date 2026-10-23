@@ -563,13 +563,6 @@ class Simulator:
             spouses=spouses,
         )
 
-    def _spending_after_60(self, retire_index: int, today: date) -> float:
-        """Spending the bridge has to carry after 60, net of other income."""
-        birth = (today.year - self.dob.year) * 12 + (today.month - self.dob.month)
-        return self._spending_at(
-            max(60 * 12 - birth + 1, retire_index), retire_index, today
-        )
-
     def _spending_at(self, at: int, retire_index: int, today: date) -> float:
         """Typed spending less non-salary income of the rows live in month `at`.
 

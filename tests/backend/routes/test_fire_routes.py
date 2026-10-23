@@ -147,6 +147,16 @@ class TestFireCalculate:
         assert response.status_code in {400, 422}, response.text
         assert any(field in response.text for field in bad)
 
+    @pytest.mark.parametrize("missing", [
+        {"dateOfBirth": ""},
+        {"dateOfBirth_2": ""},
+    ], ids=["person", "partner"])
+    def test_a_missing_date_of_birth_asks_for_setup(self, test_client, missing):
+        """Without a date of birth to count months from, the answer is setup, not a 500."""
+        body = _calculate(test_client, {**EVERYTHING, **missing})
+        assert body["status"] == "needs_setup"
+        assert body["months"] == []
+
     def test_a_nonsense_row_count_means_no_rows(self, test_client):
         """How many rows the form had is a UI detail, not part of the plan."""
         body = _calculate(test_client, {**BASELINE, "num_portfolio_fields": "-1"})
@@ -190,6 +200,16 @@ class TestPlanEndpoints:
         projection = test_client.get("/api/fire/plan/projection").json()
         assert projection["status"] in ("success", "goals_not_met")
         assert projection["months"]
+
+    def test_a_saved_plan_with_an_undated_partner_asks_for_setup(self, test_client) -> None:
+        """A partner on the plan needs a date of birth too, or the projection asks for setup."""
+        fields = {"dateOfBirth": "1990-01-01", "pensionTake_2": "on", "pensionName_2": "S"}
+        test_client.put("/api/fire/plan", json={"fields": fields, "linked": []})
+
+        response = test_client.get("/api/fire/plan/projection")
+
+        assert response.status_code == 200
+        assert response.json()["status"] == "needs_setup"
 
     def test_reset_forgets_the_saved_plan(self, test_client) -> None:
         """Deleting the plan returns the derived one."""

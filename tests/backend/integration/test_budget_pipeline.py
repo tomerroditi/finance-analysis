@@ -76,8 +76,8 @@ class TestBudgetPipeline:
         svc = ProjectBudgetService(db_session)
 
         # Create project with only a total rule (no tag-specific rules)
-        svc.add_rule(
-            TOTAL_BUDGET, 10000, "TestProject", [ALL_TAGS], month=None, year=None
+        svc.rules.insert(
+            TOTAL_BUDGET, 10000, "TestProject", [ALL_TAGS], month=None, year=None, kind="project"
         )
 
         # Insert transactions with tags that have no rules
@@ -134,7 +134,7 @@ class TestBudgetPipeline:
         spending calculations.
         """
         svc = MonthlyBudgetService(db_session)
-        svc.add_rule("Total Budget", 15000, TOTAL_BUDGET, [ALL_TAGS], month=1, year=2024)
+        svc.rules.insert("Total Budget", 15000, TOTAL_BUDGET, [ALL_TAGS], month=1, year=2024, kind="monthly")
 
         view = svc.get_monthly_budget_view(2024, 1)
 
@@ -152,7 +152,7 @@ class TestBudgetPipeline:
         )
 
         # Feb has Salary(+8500) and Other Income(+3500) which must be excluded
-        svc.add_rule("Total Budget Feb", 15000, TOTAL_BUDGET, [ALL_TAGS], month=2, year=2024)
+        svc.rules.insert("Total Budget Feb", 15000, TOTAL_BUDGET, [ALL_TAGS], month=2, year=2024, kind="monthly")
         view_feb = svc.get_monthly_budget_view(2024, 2)
         assert view_feb is not None
         feb_total = view_feb[0]
@@ -174,7 +174,7 @@ class TestBudgetPipeline:
         should not appear in the monthly budget view.
         """
         svc = MonthlyBudgetService(db_session)
-        svc.add_rule("Total Budget", 50000, TOTAL_BUDGET, [ALL_TAGS], month=1, year=2024)
+        svc.rules.insert("Total Budget", 50000, TOTAL_BUDGET, [ALL_TAGS], month=1, year=2024, kind="monthly")
 
         view = svc.get_monthly_budget_view(2024, 1)
 
@@ -204,9 +204,9 @@ class TestBudgetPipeline:
         children amounts and exclude the parent from calculations.
         """
         svc = MonthlyBudgetService(db_session)
-        svc.add_rule("Total Budget", 20000, TOTAL_BUDGET, [ALL_TAGS], month=2, year=2024)
-        svc.add_rule("Food", 3000, "Food", [ALL_TAGS], month=2, year=2024)
-        svc.add_rule("Home", 5000, "Home", [ALL_TAGS], month=2, year=2024)
+        svc.rules.insert("Total Budget", 20000, TOTAL_BUDGET, [ALL_TAGS], month=2, year=2024, kind="monthly")
+        svc.rules.insert("Food", 3000, "Food", [ALL_TAGS], month=2, year=2024, kind="monthly")
+        svc.rules.insert("Home", 5000, "Home", [ALL_TAGS], month=2, year=2024, kind="monthly")
 
         # With split parents included so they appear in data but excluded from calc
         view = svc.get_monthly_budget_view(2024, 2, include_split_parents=True)
@@ -239,7 +239,7 @@ class TestBudgetPipeline:
         be counted in the monthly budget view totals.
         """
         svc = MonthlyBudgetService(db_session)
-        svc.add_rule("Total Budget", 15000, TOTAL_BUDGET, [ALL_TAGS], month=1, year=2024)
+        svc.rules.insert("Total Budget", 15000, TOTAL_BUDGET, [ALL_TAGS], month=1, year=2024, kind="monthly")
 
         # First get the view without any pending refunds
         view_before = svc.get_monthly_budget_view(2024, 1)

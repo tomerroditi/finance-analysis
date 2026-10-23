@@ -427,6 +427,49 @@ class TestCategoryConflictsRoutes:
         assert unchanged_rule["category"] == "Renovation"
 
 
+    def test_post_rules_adds_a_project_tag_rule(self, test_client, monkeypatch):
+        """POST /budget/rules with no year adds a tag rule under a project.
+
+        It used to be validated as a monthly rule and refused for targeting a
+        project category.
+        """
+        monkeypatch.setattr(
+            "backend.services.tagging_service._categories_cache",
+            {categories_cache_key(): SAMPLE_CATEGORIES},
+        )
+        test_client.post(
+            "/api/budget/projects", json={"category": "Wedding", "total_budget": 5000}
+        )
+
+        r = test_client.post("/api/budget/rules", json={
+            "name": "Flowers", "amount": 300, "category": "Wedding",
+            "tags": ["Flowers"], "month": None, "year": None,
+        })
+
+        assert r.status_code == 200
+        names = {
+            rule["name"]
+            for rule in test_client.get("/api/budget/rules").json()
+            if rule["category"] == "Wedding"
+        }
+        assert "Flowers" in names
+
+    def test_put_rules_validates_a_yearly_rule_as_yearly(self, test_client):
+        """PUT /budget/rules/{id} on a yearly id applies the yearly checks."""
+        test_client.post("/api/budget/yearly/rules", json={
+            "name": "Vacations", "amount": 1000, "category": "Travel",
+            "tags": ["Hotels"], "year": 2026,
+        })
+        rule = next(
+            r for r in test_client.get("/api/budget/rules").json()
+            if r["name"] == "Vacations"
+        )
+
+        r = test_client.put(f"/api/budget/rules/{rule['id']}", json={"amount": -5})
+
+        assert r.status_code == 400
+        assert "positive" in r.json()["detail"]
+
 class TestBudgetOverviewRoute:
     """Tests for GET /api/budget/overview/{year}/{month}."""
 

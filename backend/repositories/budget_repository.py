@@ -6,7 +6,7 @@ import pandas as pd
 from sqlalchemy import delete, select, update
 from sqlalchemy.orm import Session
 
-from backend.constants.budget import PERIOD_MONTHLY, PERIOD_PROJECT, PERIOD_YEARLY
+from backend.constants.budget import PERIOD_PROJECT
 from backend.errors import EntityNotFoundException
 from backend.models.budget import BudgetRule
 from backend.utils.session_cache import session_cache_get, session_cache_set
@@ -33,7 +33,8 @@ class BudgetRepository:
         tags: str,
         month: int | None,
         year: int | None,
-        period_type: str | None = None,
+        *,
+        period_type: str,
     ) -> None:
         """Create a new budget rule.
 
@@ -51,18 +52,10 @@ class BudgetRepository:
             Calendar month (1-12). None for yearly/project rules.
         year : int or None
             Calendar year. None for project rules.
-        period_type : str or None
-            One of ``"monthly"``/``"yearly"``/``"project"``. When ``None`` it is
-            derived: ``month`` set ⇒ monthly, ``year`` set only ⇒ yearly,
-            neither ⇒ project.
+        period_type : str
+            One of ``"monthly"``/``"yearly"``/``"project"`` — always explicit,
+            never derived from which of ``month``/``year`` are null.
         """
-        if period_type is None:
-            if month is not None:
-                period_type = PERIOD_MONTHLY
-            elif year is not None:
-                period_type = PERIOD_YEARLY
-            else:
-                period_type = PERIOD_PROJECT
         new_rule = BudgetRule(
             name=name,
             amount=amount,

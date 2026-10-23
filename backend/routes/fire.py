@@ -21,6 +21,7 @@ from sqlalchemy.orm import Session
 from backend.dependencies import get_database
 from backend.routes.schemas import ApiRequestModel
 from backend.services.fire.projection import project
+from backend.services.fire.reference_form import is_runnable
 from backend.services.fire_plan_service import FirePlanService
 
 router = APIRouter()
@@ -221,6 +222,8 @@ def plan_projection(
 @router.post("/calculate", response_model=FireProjection)
 def calculate(scenario: FireScenario) -> FireProjection:
     """Run a scenario and return its projection."""
+    if not is_runnable(scenario.fields):
+        return _empty("needs_setup", 0, inferred=False)
     return _project(scenario.fields, scenario.decumulation_return_pct)
 
 

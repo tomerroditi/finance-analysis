@@ -132,11 +132,15 @@ def get_budget_rules_by_month(
 def create_budget_rule(
     rule: BudgetRuleCreate, db: Session = Depends(get_database)
 ) -> dict[str, str]:
-    """Create a new budget rule."""
-    service = MonthlyBudgetService(db)
-    service.create_rule(
-        rule.name, rule.amount, rule.category, rule.tags, rule.month, rule.year
-    )
+    """Create a monthly rule (``month`` + ``year``) or a project rule (neither)."""
+    if rule.year is None:
+        ProjectBudgetService(db).create_rule(
+            rule.name, rule.amount, rule.category, rule.tags
+        )
+    else:
+        MonthlyBudgetService(db).create_rule(
+            rule.name, rule.amount, rule.category, rule.tags, rule.month, rule.year
+        )
     return {"status": "success"}
 
 
@@ -144,18 +148,9 @@ def create_budget_rule(
 def update_budget_rule(
     rule_id: int, rule: BudgetRuleUpdate, db: Session = Depends(get_database)
 ) -> dict[str, str]:
-    """Update a budget rule.
-
-    This route is shared between monthly and project rules (both are edited
-    through the same ``rule_id``), so it uses ``MonthlyBudgetService`` — its
-    ``update_rule`` override guards monthly edits against claiming a
-    yearly-owned or project-owned tag/category, and guards project edits
-    against claiming a category already used by a monthly/yearly budget. It
-    is a no-op passthrough only when the edit doesn't touch category/tags.
-    """
-    service = MonthlyBudgetService(db)
+    """Update a budget rule of any kind, validated by the stored rule's kind."""
     updates = {k: v for k, v in rule.model_dump().items() if v is not None}
-    service.update_rule(rule_id, **updates)
+    BudgetService(db).update_rule(rule_id, **updates)
     return {"status": "success"}
 
 
@@ -501,7 +496,7 @@ def create_project(
 @router.get("/category-conflicts")
 def get_category_conflicts(db: Session = Depends(get_database)) -> dict[str, Any]:
     """Categories currently in BOTH a project and a monthly/yearly budget."""
-    return {"conflicts": BudgetService(db).find_category_overlaps()}
+    return {"conflicts": BudgetService(db).rules.find_category_overlaps()}
 
 
 @router.put("/projects/{name}")

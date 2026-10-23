@@ -1,9 +1,10 @@
 """
 Core budget service.
 
-This module provides the base ``BudgetService`` — rule CRUD, tag parsing,
-validation, conflict helpers, and budget-style expense filtering shared by
-the monthly, yearly, and project budget services.
+This module provides the base ``BudgetService`` — rule reads and edits
+(delegated to :class:`~backend.services.budget.rules.BudgetRuleStore`), the
+period-copy engine, the claim ledger read, and budget-style expense filtering
+shared by the monthly, yearly, and project budget services.
 """
 
 import threading
@@ -14,24 +15,16 @@ import pandas as pd
 from sqlalchemy.orm import Session
 
 from backend.constants.budget import (
-    ALL_TAGS,
     AMOUNT,
     CATEGORY,
-    ID,
-    MONTH,
     NAME,
-    PERIOD_MONTHLY,
-    PERIOD_PROJECT,
-    PERIOD_TYPE,
-    PERIOD_YEARLY,
     TAGS,
     TOTAL_BUDGET,
-    YEAR,
 )
 from backend.constants.tables import TransactionsTableFields
-from backend.errors import EntityNotFoundException, ValidationException
 from backend.repositories.budget_repository import BudgetRepository
 from backend.services.budget.ledger import assign_claims, is_all_tags
+from backend.services.budget.rules import BudgetRuleStore
 from backend.services.budget_month_override_service import BudgetMonthOverrideService
 from backend.services.pending_refunds_service import (
     GROSS_AMOUNT_COLUMN,
@@ -77,6 +70,7 @@ class BudgetService:
         """
         self.db = db
         self.budget_repository = BudgetRepository(db)
+        self.rules = BudgetRuleStore(db)
         self.categories_tags_service = CategoriesTagsService(db)
         self.transactions_service = TransactionsService(db)
         self.pending_refunds_service = PendingRefundsService(db)
@@ -89,140 +83,35 @@ class BudgetService:
         Returns
         -------
         pd.DataFrame
-            All budget rules. The ``tags`` column is a list of strings
-            instead of the raw semicolon-separated string stored in the DB.
+            All budget rules, of every kind. The ``tags`` column is a list of
+            strings instead of the raw semicolon-separated string stored in
+            the DB.
         """
-        rules = self.budget_repository.read_all()
-        if not rules.empty:
-            rules[TAGS] = rules[TAGS].apply(
-                lambda x: x.split(";") if isinstance(x, str) else []
-            )
-        return rules
-
-    def add_rule(
-        self,
-        name: str,
-        amount: float,
-        category: str,
-        tags: str | list[str],
-        month: int | None = None,
-        year: int | None = None,
-        period_type: str | None = None,
-    ) -> None:
-        """
-        Add a new budget rule, converting tags to semicolon-separated storage format.
-
-        ``period_type`` is forwarded to the repository, which derives it from
-        ``(year, month)`` when ``None``.
-
-        Parameters
-        ----------
-        name : str
-            Human-readable label for the rule.
-        amount : float
-            Budget limit amount (must be positive).
-        category : str
-            Category the rule applies to, or ``"Total Budget"`` for an overall cap.
-        tags : str or list[str]
-            One or more tags the rule covers. Lists are joined with ``;``.
-        month : int, optional
-            Calendar month (1–12). ``None`` for project budgets.
-        year : int, optional
-            Calendar year. ``None`` for project budgets.
-        period_type : str, optional
-            One of ``"monthly"``, ``"yearly"``, or ``"project"``. When
-            ``None``, the repository derives it from ``(year, month)``.
-        """
-        tags_str = ";".join(tags) if isinstance(tags, list) else tags
-        self.budget_repository.add(
-            name, amount, category, tags_str, month, year, period_type
-        )
-
-    @staticmethod
-    def _parse_tags(tags: str | list[str] | None) -> list[str]:
-        """Normalise a tags value (``"a;b"`` or ``["a", "b"]``) into a list."""
-        if tags is None:
-            return []
-        if isinstance(tags, str):
-            return tags.split(";")
-        return list(tags)
+        return self.rules.all()
 
     def update_rule(self, id_: int, **fields: Any) -> None:
         """
-        Update a budget rule with validation and tag list-to-string conversion.
-
-        The merged rule (stored row overlaid with ``fields``) must pass the
-        same :meth:`validate_rule_inputs` checks a new rule does — positive
-        amount, non-blank name, unique name, well-formed tags, and the Total
-        Budget cap. Yearly rows are validated by ``YearlyBudgetService`` and
-        are not re-checked here.
+        Edit a budget rule of any kind, validated by its own kind.
 
         Parameters
         ----------
         id_ : int
             ID of the budget rule to update.
         **fields
-            Keyword arguments for fields to update. Allowed keys are
-            ``name``, ``amount``, ``category``, and ``tags``.
-            If ``tags`` is a list, it is joined with ``;`` before saving.
+            ``name``, ``amount``, ``category`` and/or ``tags``.
 
         Raises
         ------
         ValidationException
-            If any key in ``fields`` is not one of the allowed field names.
+            If a key is not editable, or the edited rule fails validation.
         EntityNotFoundException
             If no rule with ``id_`` exists.
-        ValidationException
-            If the merged rule fails validation.
         """
-        valid_fields = {NAME, AMOUNT, CATEGORY, TAGS}
-        if not all(k in valid_fields for k in fields):
-            raise ValidationException(
-                f"Invalid fields for update. Valid fields: {valid_fields}"
-            )
-
-        all_rules = BudgetService.get_all_rules(self)
-        row = all_rules.loc[all_rules[ID] == id_] if not all_rules.empty else all_rules
-        if row.empty:
-            raise EntityNotFoundException(
-                f"No rule found with ID {id_}. Update failed."
-            )
-        row = row.iloc[0]
-
-        if NAME in fields:
-            fields[NAME] = str(fields[NAME]).strip()
-        name = fields.get(NAME, row[NAME])
-        amount = fields.get(AMOUNT, row[AMOUNT])
-        category = fields.get(CATEGORY, row[CATEGORY])
-        parsed_tags = self._parse_tags(fields.get(TAGS, row[TAGS]))
-
-        if row[PERIOD_TYPE] != PERIOD_YEARLY:
-            year = None if pd.isnull(row[YEAR]) else int(row[YEAR])
-            month = None if pd.isnull(row[MONTH]) else int(row[MONTH])
-            is_valid, msg = self.validate_rule_inputs(
-                all_rules, name, category, parsed_tags, amount, year, month, id_
-            )
-            if not is_valid:
-                raise ValidationException(msg)
-
-        if TAGS in fields and isinstance(fields[TAGS], list):
-            fields[TAGS] = ";".join(fields[TAGS])
-
-        self.budget_repository.update(id_, **fields)
+        self.rules.update(id_, **fields)
 
     def delete_rule(self, id_: int) -> None:
         """
-        Delete a budget rule by ID.
-
-        A month's ``Total Budget`` rule and a project's total (``all_tags``)
-        rule are the anchors their sibling rules are validated against, so
-        they can't be removed on their own (the views already report them
-        with ``allow_delete=False``) — delete the whole month or project.
-
-        Parameters
-        ----------
-        id_ : int
-            ID of the budget rule to delete.
+        Delete a budget rule by ID; see :meth:`BudgetRuleStore.delete`.
 
         Raises
         ------
@@ -231,205 +120,9 @@ class BudgetService:
         EntityNotFoundException
             If no rule with ``id_`` exists.
         """
-        rules = BudgetService.get_all_rules(self)
-        row = rules.loc[rules[ID] == id_] if not rules.empty else rules
-        if not row.empty:
-            row = row.iloc[0]
-            is_monthly_total = (
-                row[PERIOD_TYPE] != PERIOD_YEARLY and row[CATEGORY] == TOTAL_BUDGET
-            )
-            is_project_total = row[PERIOD_TYPE] == PERIOD_PROJECT and self._is_all_tags(
-                row[TAGS]
-            )
-            if is_monthly_total or is_project_total:
-                raise ValidationException(
-                    "The Total Budget rule can't be deleted on its own. "
-                    "Delete the whole month or project instead."
-                )
-        self.budget_repository.delete(id_)
-
-    def _rules_of_type_for(
-        self, category: str, year: int, period_type: str
-    ) -> pd.DataFrame:
-        """Return all rules of ``period_type`` for a category and year (tags as lists).
-
-        Reads through the base ``BudgetService.get_all_rules`` explicitly
-        (bypassing any subclass override) since ``period_type`` here is a
-        caller-supplied filter that may name a different period than the
-        calling service's own kind (e.g. a ``YearlyBudgetService`` checking
-        for monthly conflicts). A polymorphic ``self.get_all_rules()`` would
-        already be pre-filtered to the calling subclass's period type and
-        could never see rules of any other kind.
-        """
-        rules = BudgetService.get_all_rules(self)
-        if rules.empty:
-            return rules
-        return rules.loc[
-            (rules[PERIOD_TYPE] == period_type)
-            & (rules[YEAR] == year)
-            & (rules[CATEGORY] == category)
-        ]
+        self.rules.delete(id_)
 
     _is_all_tags = staticmethod(is_all_tags)
-
-    @staticmethod
-    def _tags_error(tags: list[str] | None) -> str | None:
-        """Return a validation message for a malformed tag list, else ``None``.
-
-        Tags are stored as a ``;``-joined string, so a tag containing ``;``
-        would silently split into two on the next read; blank tags match
-        nothing and only clutter the rule.
-        """
-        if not tags:
-            return "Please select at least one tag"
-        for tag in tags:
-            if not isinstance(tag, str) or not tag.strip():
-                return "Tags can't be empty"
-            if ";" in tag:
-                return "Tags can't contain ';'"
-        return None
-
-    def find_conflicting_tags(
-        self,
-        category: str,
-        tags: list[str],
-        year: int,
-        other_period_type: str,
-        *,
-        exclude_rule_id: int | None = None,
-    ) -> list[str]:
-        """Return incoming tags that collide with existing ``other_period_type`` rules.
-
-        Two rules conflict when they share ``category`` and ``year`` and at least
-        one tag. An ``all_tags`` sentinel on either side claims the whole category,
-        so every incoming (non-sentinel) tag conflicts.
-
-        Parameters
-        ----------
-        category : str
-            Category of the incoming rule.
-        tags : list[str]
-            Incoming tag list (may be the ``all_tags`` sentinel).
-        year : int
-            Calendar year the incoming rule applies to.
-        other_period_type : str
-            The budget kind to check against (e.g. ``"yearly"`` when validating a
-            monthly rule).
-        exclude_rule_id : int, optional
-            A rule id to ignore (the rule being edited).
-
-        Returns
-        -------
-        list[str]
-            Sorted conflicting tag names. Empty when there is no conflict. When
-            the incoming rule is itself ``all_tags`` and any other rule exists in
-            the category+year, returns ``["all_tags"]`` to signal a whole-category
-            conflict.
-        """
-        others = self._rules_of_type_for(category, year, other_period_type)
-        if exclude_rule_id is not None and not others.empty:
-            others = others.loc[others[ID] != exclude_rule_id]
-        if others.empty:
-            return []
-
-        if self._is_all_tags(tags):
-            # Incoming claims the whole category; any existing rule collides.
-            return [ALL_TAGS]
-
-        conflicts: set[str] = set()
-        for _, other in others.iterrows():
-            other_tags = other[TAGS]
-            if self._is_all_tags(other_tags):
-                conflicts.update(tags)
-            else:
-                conflicts.update(set(tags) & set(other_tags))
-        return sorted(conflicts)
-
-    def is_category_project_owned(self, category: str) -> bool:
-        """Return whether any project rule uses ``category``.
-
-        Reads through the unfiltered base ``get_all_rules`` so it works from any
-        subclass.
-        """
-        rules = BudgetService.get_all_rules(self)
-        if rules.empty:
-            return False
-        return not rules.loc[
-            (rules[PERIOD_TYPE] == PERIOD_PROJECT) & (rules[CATEGORY] == category)
-        ].empty
-
-    def category_used_by_monthly_or_yearly(self, category: str) -> bool:
-        """Return whether any monthly or yearly rule uses ``category``.
-
-        The ``Total Budget`` cap category is never counted — it is not a real
-        category.
-        """
-        if category == TOTAL_BUDGET:
-            return False
-        rules = BudgetService.get_all_rules(self)
-        if rules.empty:
-            return False
-        return not rules.loc[
-            (rules[PERIOD_TYPE].isin([PERIOD_MONTHLY, PERIOD_YEARLY]))
-            & (rules[CATEGORY] == category)
-            & (rules[CATEGORY] != TOTAL_BUDGET)
-        ].empty
-
-    def find_category_overlaps(self) -> list[dict[str, Any]]:
-        """Find categories that are BOTH project-owned and budget-used.
-
-        Returns
-        -------
-        list[dict[str, Any]]
-            One entry per overlapping category:
-            ``{"category": str, "kinds": [<"monthly"|"yearly">, ...]}`` — the
-            non-project kinds that collide, sorted. Empty when there is no
-            overlap.
-        """
-        rules = BudgetService.get_all_rules(self)
-        if rules.empty:
-            return []
-        project_cats = set(
-            rules.loc[rules[PERIOD_TYPE] == PERIOD_PROJECT, CATEGORY].dropna()
-        )
-        overlaps = []
-        for cat in sorted(project_cats):
-            kinds = sorted(
-                set(
-                    rules.loc[
-                        (rules[CATEGORY] == cat)
-                        & (rules[PERIOD_TYPE].isin([PERIOD_MONTHLY, PERIOD_YEARLY])),
-                        PERIOD_TYPE,
-                    ]
-                )
-            )
-            if kinds:
-                overlaps.append({"category": cat, "kinds": kinds})
-        return overlaps
-
-    def strip_conflicting_tags(
-        self,
-        category: str,
-        tags: list[str],
-        year: int,
-        other_period_type: str,
-    ) -> tuple[list[str], list[str]]:
-        """Split ``tags`` into (kept, skipped) for auto-fill/carry-forward.
-
-        Skipped tags are those that conflict with ``other_period_type`` rules for
-        the same category+year. If the incoming rule is ``all_tags`` and conflicts,
-        all-tags is treated as fully skipped (returns ``([], ["all_tags"])``).
-        """
-        conflicts = set(
-            self.find_conflicting_tags(category, tags, year, other_period_type)
-        )
-        if not conflicts:
-            return list(tags), []
-        if self._is_all_tags(tags):
-            return [], [ALL_TAGS]
-        kept = [t for t in tags if t not in conflicts]
-        skipped = [t for t in tags if t in conflicts]
-        return kept, skipped
 
     def _copy_rules(
         self,
@@ -438,7 +131,7 @@ class BudgetService:
         conflict_period_type: str,
         target_year: int,
         target_month: int | None = None,
-        period_type: str | None = None,
+        kind: str,
         total_budget_passthrough: bool = False,
     ) -> list[str]:
         """Copy ``source_rules`` into a target period, stripping conflicting tags.
@@ -461,9 +154,8 @@ class BudgetService:
             Year the copies are created in (also the conflict-check year).
         target_month : int, optional
             Month the copies are created in. ``None`` for yearly copies.
-        period_type : str, optional
-            Forwarded to ``add_rule`` (e.g. ``"yearly"``). When ``None``, the
-            repository derives it from ``(target_year, target_month)``.
+        kind : str
+            Kind of the copies (``"monthly"`` or ``"yearly"``).
         total_budget_passthrough : bool, optional
             Monthly-copy semantics: when ``True``, a ``Total Budget`` rule or a
             rule with no tags (e.g. a legacy rule with ``tags=None``) bypasses
@@ -486,7 +178,7 @@ class BudgetService:
             ):
                 kept, dropped = tags, []
             else:
-                kept, dropped = self.strip_conflicting_tags(
+                kept, dropped = self.rules.strip_conflicting_tags(
                     rule[CATEGORY], tags, target_year, conflict_period_type
                 )
             skipped.extend(dropped)
@@ -495,198 +187,16 @@ class BudgetService:
                     continue
             elif not kept:
                 continue
-            self.add_rule(
-                name=rule[NAME],
-                amount=rule[AMOUNT],
-                category=rule[CATEGORY],
-                tags=kept,
-                month=target_month,
-                year=target_year,
-                period_type=period_type,
+            self.rules.insert(
+                rule[NAME],
+                rule[AMOUNT],
+                rule[CATEGORY],
+                kept,
+                target_month,
+                target_year,
+                kind=kind,
             )
         return skipped
-
-    @staticmethod
-    def validate_rule_inputs(
-        budget_rules: pd.DataFrame,
-        name: str,
-        category: str,
-        tags: list[str],
-        amount: float,
-        year: int | None,
-        month: int | None,
-        id_: int | None,
-    ) -> tuple[bool, str]:
-        """
-        Validate budget rule inputs before creating or updating.
-
-        Checks include: non-empty (stripped) name, category and well-formed
-        tags, positive amount, name uniqueness, and that adding/changing the
-        rule does not exceed the total budget cap. For project rules
-        (month/year are ``None``), validates against the project total
-        instead of the monthly total, and name uniqueness is scoped to the
-        project — every project's cap rule is named ``Total Budget``.
-
-        Parameters
-        ----------
-        budget_rules : pd.DataFrame
-            All existing budget rules (from ``get_all_rules``).
-        name : str
-            Proposed rule name.
-        category : str
-            Category the rule applies to.
-        tags : list[str]
-            Tags the rule covers.
-        amount : float
-            Proposed budget amount.
-        year : int or None
-            Rule year; ``None`` for project rules.
-        month : int or None
-            Rule month; ``None`` for project rules.
-        id_ : int or None
-            Existing rule ID when updating, ``None`` when creating.
-
-        Returns
-        -------
-        tuple[bool, str]
-            ``(True, "")`` if valid, or ``(False, error_message)`` if not.
-        """
-        name = "" if name is None else str(name).strip()
-        if id_ is not None:
-            rule = budget_rules.loc[budget_rules[ID] == id_].T.squeeze()
-            if (
-                rule[NAME] == name
-                and rule[AMOUNT] == amount
-                and rule[CATEGORY] == category
-                and rule[TAGS] == tags
-            ):
-                return True, ""
-
-        if not name:
-            return False, "Please enter a name"
-        if category is None:
-            return False, "Please select a category"
-        tags_error = BudgetService._tags_error(tags)
-        if tags_error is not None:
-            return False, tags_error
-        if amount <= 0:
-            return False, "Amount must be a positive number"
-
-        if pd.isnull(year) and pd.isnull(month):
-            duplicate = budget_rules.loc[
-                (budget_rules[YEAR].isnull())
-                & (budget_rules[MONTH].isnull())
-                & (budget_rules[CATEGORY] == category)
-                & (budget_rules[NAME] == name)
-            ]
-            if id_ is not None:
-                duplicate = duplicate.loc[duplicate[ID] != id_]
-            if not duplicate.empty:
-                return False, f"A project rule with the name '{name}' already exists."
-        else:
-            duplicate = budget_rules.loc[
-                (budget_rules[YEAR] == year)
-                & (budget_rules[MONTH] == month)
-                & (budget_rules[NAME] == name)
-            ]
-            if id_ is not None:
-                duplicate = duplicate.loc[duplicate[ID] != id_]
-            if not duplicate.empty:
-                return (
-                    False,
-                    f"A rule with the name '{name}' already exists for this month.",
-                )
-
-        if pd.isnull(year) and pd.isnull(month):
-            # When editing an existing rule we look it up to know its current
-            # tags/amount; when creating (id_ is None) there is no existing row,
-            # so fall back to the incoming tags and a zero current amount.
-            if id_ is not None:
-                rule = budget_rules.loc[budget_rules[ID] == id_].T.squeeze()
-                rule_tags = rule[TAGS]
-                existing_amount = rule[AMOUNT]
-            else:
-                rule_tags = tags
-                existing_amount = 0
-            budget_rules = budget_rules.loc[
-                (budget_rules[YEAR].isnull())
-                & (budget_rules[MONTH].isnull())
-                & (budget_rules[CATEGORY] == category)
-            ]
-            is_total = budget_rules[TAGS].apply(BudgetService._is_all_tags)
-            total_rules_amount = budget_rules.loc[~is_total, AMOUNT].sum()
-            if BudgetService._is_all_tags(rule_tags):
-                if amount < total_rules_amount:
-                    return (
-                        False,
-                        "The total budget must be greater than the sum of all other rules",
-                    )
-            else:
-                total_budget_rows = budget_rules.loc[is_total, AMOUNT]
-                if total_budget_rows.empty:
-                    return (
-                        False,
-                        "Create the project's total budget rule before adding tag rules",
-                    )
-                total_budget = total_budget_rows.values[0]
-                new_total_rules_amount = total_rules_amount - existing_amount + amount
-                if new_total_rules_amount > total_budget:
-                    return False, "The total budget is exceeded"
-            return True, ""
-
-        budget_rules = budget_rules.loc[
-            (budget_rules[YEAR] == year) & (budget_rules[MONTH] == month)
-        ]
-        total_rules_amount = budget_rules.loc[budget_rules[CATEGORY] != TOTAL_BUDGET][
-            AMOUNT
-        ].sum()
-
-        if category == TOTAL_BUDGET:
-            if amount < total_rules_amount:
-                return (
-                    False,
-                    "The total budget must be greater than the sum of all other rules",
-                )
-            return True, ""
-
-        if id_ is not None:
-            total_rules_amount -= budget_rules.loc[budget_rules[ID] == id_][
-                AMOUNT
-            ].values[0]
-        total_budget_rows = budget_rules.loc[budget_rules[CATEGORY] == TOTAL_BUDGET][
-            AMOUNT
-        ]
-        if total_budget_rows.empty:
-            return (
-                False,
-                "Create a Total Budget rule for this month before adding category rules",
-            )
-        total_budget = total_budget_rows.values[0]
-        new_total_rules_amount = total_rules_amount + amount
-        if new_total_rules_amount > total_budget:
-            return False, "The total budget is exceeded"
-
-        # An all_tags rule cannot join existing specific-tag rules in the same
-        # category: it would budget the whole category on top of rules that
-        # already budget parts of it.
-        #
-        # The reverse is deliberately allowed. A specific-tag rule under an
-        # existing all_tags rule is how a sub-budget inside a broader category
-        # is expressed, and the shipped demo data is shaped that way (Food
-        # carries an all_tags rule alongside Groceries and Restaurants). The
-        # monthly view does not yet split spend between the two, which is a
-        # bug in the view rather than a reason to refuse the rule.
-        same_category = budget_rules[CATEGORY] == category
-        if id_ is not None:
-            same_category &= budget_rules[ID] != id_
-        siblings = budget_rules.loc[same_category]
-        if BudgetService._is_all_tags(tags) and not siblings.empty:
-            return (
-                False,
-                f"Cannot have {ALL_TAGS} for a category with existing specific tag rules",
-            )
-
-        return True, ""
 
     @staticmethod
     def _expense_rows(all_data: pd.DataFrame) -> pd.DataFrame:
@@ -738,7 +248,7 @@ class BudgetService:
             )
         return assign_claims(
             expenses,
-            BudgetService.get_all_rules(self),
+            self.rules.all(),
             self.month_override_service.get_override_map(),
         )
 

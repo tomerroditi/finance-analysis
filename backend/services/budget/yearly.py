@@ -5,7 +5,6 @@ from typing import Any
 import pandas as pd
 
 from backend.constants.budget import (
-    ALL_TAGS,
     AMOUNT,
     CATEGORY,
     ID,
@@ -18,7 +17,6 @@ from backend.constants.budget import (
     TAGS,
     YEAR,
 )
-from backend.errors import EntityNotFoundException, ValidationException
 from backend.services.budget import ledger
 from backend.services.budget.core import BudgetService, _auto_fill_lock, _today
 
@@ -99,78 +97,8 @@ class YearlyBudgetService(BudgetService):
         EntityNotFoundException
             If ``id_`` is not a yearly rule.
         """
-        self._yearly_row(id_)
+        self.rules.get(id_, PERIOD_YEARLY)
         self.budget_repository.set_closed_by_id(id_, closed, PERIOD_YEARLY)
-
-    def _validate(
-        self,
-        name: str,
-        category: str,
-        tags: list[str],
-        amount: float,
-        year: int,
-        id_: int | None,
-    ) -> None:
-        """Validate a yearly rule; raise ``ValidationException`` on failure.
-
-        Checks: non-blank name/category, well-formed tags, positive amount,
-        name uniqueness within the year, and mutual exclusion against monthly
-        rules for the year.
-        """
-        if not name or not str(name).strip():
-            raise ValidationException("Please enter a name")
-        if not category:
-            raise ValidationException("Please select a category")
-        tags_error = self._tags_error(tags)
-        if tags_error is not None:
-            raise ValidationException(tags_error)
-        if amount <= 0:
-            raise ValidationException("Amount must be a positive number")
-
-        existing = self.get_year_rules(year)
-        if not existing.empty:
-            dupes = existing.loc[existing[NAME] == name]
-            if id_ is not None:
-                dupes = dupes.loc[dupes[ID] != id_]
-            if not dupes.empty:
-                raise ValidationException(
-                    f"A yearly rule with the name '{name}' already exists for {year}."
-                )
-
-        conflicts = self.find_conflicting_tags(
-            category, tags, year, PERIOD_MONTHLY, exclude_rule_id=id_
-        )
-        if conflicts:
-            joined = ", ".join(conflicts)
-            raise ValidationException(
-                f"{joined} is already used by your monthly budget for {year}. "
-                f"A tag can't be in both for the same year."
-            )
-
-        # A (category, tag) may not be covered by two yearly rules in the same
-        # year. Unlike monthly rules (bounded by the Total Budget cap), yearly
-        # rules have no overall cap, so a shared tag would double-count in the
-        # roll-up's total_spent/remaining/health.
-        yearly_conflicts = self.find_conflicting_tags(
-            category, tags, year, PERIOD_YEARLY, exclude_rule_id=id_
-        )
-        if yearly_conflicts:
-            if yearly_conflicts == [ALL_TAGS]:
-                raise ValidationException(
-                    f"Another yearly rule already covers the '{category}' "
-                    f"category for {year}."
-                )
-            joined = ", ".join(yearly_conflicts)
-            raise ValidationException(
-                f"{joined} is already used by another yearly rule for {year}. "
-                f"A tag can't be in two yearly rules for the same year."
-            )
-
-        if self.is_category_project_owned(category):
-            raise ValidationException(
-                f"The '{category}' category belongs to a project budget. "
-                f"A yearly rule can't target a project category."
-            )
 
     def create_rule(
         self,
@@ -181,33 +109,7 @@ class YearlyBudgetService(BudgetService):
         year: int,
     ) -> None:
         """Create a yearly rule after validation. Raises ``ValidationException`` if invalid."""
-        name = str(name).strip()
-        parsed_tags = self._parse_tags(tags)
-        self._validate(name, category, parsed_tags, amount, year, None)
-        self.add_rule(
-            name,
-            amount,
-            category,
-            parsed_tags,
-            month=None,
-            year=year,
-            period_type=PERIOD_YEARLY,
-        )
-
-    def _yearly_row(self, id_: int) -> pd.Series:
-        """Return the yearly rule with ``id_``.
-
-        Raises
-        ------
-        EntityNotFoundException
-            If no rule has that id, or the rule is monthly/project — the
-            yearly endpoints must never reach across into another kind.
-        """
-        current = self.get_all_rules()
-        row = current.loc[current[ID] == id_] if not current.empty else current
-        if row.empty:
-            raise EntityNotFoundException(f"No yearly rule found with ID {id_}.")
-        return row.iloc[0]
+        self.rules.create(PERIOD_YEARLY, name, amount, category, tags, year)
 
     def update_rule(self, id_: int, **fields: Any) -> None:
         """Update a yearly rule with validation of any category/tags/name/amount change.
@@ -220,29 +122,11 @@ class YearlyBudgetService(BudgetService):
         EntityNotFoundException
             If ``id_`` is not a yearly rule.
         """
-        valid_fields = {NAME, AMOUNT, CATEGORY, TAGS}
-        if not all(k in valid_fields for k in fields):
-            raise ValidationException(
-                f"Invalid fields for update. Valid fields: {valid_fields}"
-            )
-        row = self._yearly_row(id_)
-        year = int(row[YEAR])
-        if NAME in fields:
-            fields[NAME] = str(fields[NAME]).strip()
-        name = fields.get(NAME, row[NAME])
-        amount = fields.get(AMOUNT, row[AMOUNT])
-        category = fields.get(CATEGORY, row[CATEGORY])
-        parsed_tags = self._parse_tags(fields.get(TAGS, row[TAGS]))
-        self._validate(name, category, parsed_tags, amount, year, id_)
-
-        if TAGS in fields and isinstance(fields[TAGS], list):
-            fields[TAGS] = ";".join(fields[TAGS])
-        self.budget_repository.update(id_, **fields)
+        self.rules.update(id_, PERIOD_YEARLY, **fields)
 
     def delete_rule(self, id_: int) -> None:
         """Delete a yearly rule; a monthly/project id is not found here."""
-        self._yearly_row(id_)
-        super().delete_rule(id_)
+        self.rules.delete(id_, PERIOD_YEARLY)
 
     def get_yearly_budget_view(
         self, year: int, include_split_parents: bool = False
@@ -411,7 +295,7 @@ class YearlyBudgetService(BudgetService):
                 source_rules,
                 conflict_period_type=PERIOD_MONTHLY,
                 target_year=year,
-                period_type=PERIOD_YEARLY,
+                kind=PERIOD_YEARLY,
             )
             return {"copied_from": source_year, "skipped": skipped}
 
@@ -452,7 +336,7 @@ class YearlyBudgetService(BudgetService):
                 source_rules,
                 conflict_period_type=PERIOD_MONTHLY,
                 target_year=year,
-                period_type=PERIOD_YEARLY,
+                kind=PERIOD_YEARLY,
             )
             return {"copied_from": source_year, "skipped": sorted(set(skipped))}
 

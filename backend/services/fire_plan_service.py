@@ -39,6 +39,7 @@ from backend.repositories.retirement_goal_repository import RetirementGoalReposi
 from backend.services.analysis import AnalysisService
 from backend.services.bank_balance_service import BankBalanceService
 from backend.services.cash_balance_service import CashBalanceService
+from backend.services.fire.reference_form import is_runnable
 from backend.services.insurance_account_service import InsuranceAccountService
 from backend.services.investments import InvestmentsService
 from backend.services.liabilities_service import LiabilitiesService
@@ -215,9 +216,9 @@ class FirePlanService:
         return self.get_plan()
 
     def runnable_fields(self) -> dict[str, str] | None:
-        """Return the plan's fields, or None while it lacks the date of birth it needs."""
+        """Return the plan's fields, or None while it lacks a date of birth it needs."""
         fields = self.get_plan()["fields"]
-        return fields if fields.get("dateOfBirth") else None
+        return fields if is_runnable(fields) else None
 
     # -- tracked data ---------------------------------------------------------
 
