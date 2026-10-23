@@ -136,6 +136,8 @@ def delete_tag(
     ------
     EntityNotFoundException
         404 if the category or tag does not exist.
+    ValidationException
+        400 if an investment or liability is tracked by the tag.
     """
     if not CategoriesTagsService(db).delete_tag(category, name):
         raise EntityNotFoundException(
@@ -159,7 +161,8 @@ def relocate_tag(
         404 if either category, or the tag under ``old_category``, does not
         exist.
     ValidationException
-        400 if both categories are the same.
+        400 if both categories are the same, or an investment or liability
+        is tracked by the tag.
     """
     CategoriesTagsService(db).reallocate_tag(
         data.old_category, data.new_category, data.tag
@@ -184,7 +187,10 @@ def rename_category(
 def rename_tag(
     category: str, name: str, data: TagRename, db: Session = Depends(get_database)
 ) -> dict[str, str]:
-    """Rename a tag and cascade the change across all tables."""
+    """Rename a tag and cascade the change across all tables.
+
+    Investments and liabilities tracked by the tag follow it to the new name.
+    """
     success = CategoriesTagsService(db).rename_tag(category, name, data.new_name)
     if not success:
         raise ValidationException(

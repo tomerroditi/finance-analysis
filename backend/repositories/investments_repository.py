@@ -331,6 +331,45 @@ class InvestmentsRepository:
                 f"No investment found with ID {investment_id}"
             )
 
+    def get_names_by_category_tag(self, category: str, tag: str) -> list[str]:
+        """Names of the investments tracked under a category and tag.
+
+        Parameters
+        ----------
+        category : str
+            Category name to filter by.
+        tag : str
+            Tag name to filter by.
+
+        Returns
+        -------
+        list[str]
+            Names of the matching investments, open or not.
+        """
+        stmt = select(Investment.name).where(
+            Investment.category == category, Investment.tag == tag
+        )
+        return list(self.db.execute(stmt).scalars())
+
+    def rename_tag(self, category: str, old_tag: str, new_tag: str) -> None:
+        """Point every investment tracked under ``old_tag`` at ``new_tag``.
+
+        Parameters
+        ----------
+        category : str
+            Category the tag belongs to.
+        old_tag : str
+            Current tag name.
+        new_tag : str
+            New tag name.
+        """
+        self.db.execute(
+            update(Investment)
+            .where(Investment.category == category, Investment.tag == old_tag)
+            .values(tag=new_tag)
+        )
+        self.db.commit()
+
     def delete_investment(self, investment_id: int) -> None:
         """Delete an investment by ID.
 

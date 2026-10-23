@@ -287,6 +287,45 @@ class LiabilitiesRepository:
         """Commit the current transaction."""
         self.db.commit()
 
+    def get_names_by_category_tag(self, category: str, tag: str) -> list[str]:
+        """Names of the liabilities tracked under a category and tag.
+
+        Parameters
+        ----------
+        category : str
+            Category name to filter by.
+        tag : str
+            Tag name to filter by.
+
+        Returns
+        -------
+        list[str]
+            Names of the matching liabilities, open or not.
+        """
+        stmt = select(Liability.name).where(
+            Liability.category == category, Liability.tag == tag
+        )
+        return list(self.db.execute(stmt).scalars())
+
+    def rename_tag(self, category: str, old_tag: str, new_tag: str) -> None:
+        """Point every liability tracked under ``old_tag`` at ``new_tag``.
+
+        Parameters
+        ----------
+        category : str
+            Category the tag belongs to.
+        old_tag : str
+            Current tag name.
+        new_tag : str
+            New tag name.
+        """
+        self.db.execute(
+            update(Liability)
+            .where(Liability.category == category, Liability.tag == old_tag)
+            .values(tag=new_tag)
+        )
+        self.db.commit()
+
     def delete_liability(self, liability_id: int) -> None:
         """Delete a liability by ID.
 

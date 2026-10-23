@@ -64,6 +64,7 @@ export function CategoryDetailPanel({
   const deleteTagMutation = useMutation({
     mutationFn: ({ tag }: { tag: string }) => taggingApi.deleteTag(category, tag),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: qkPrefix.categories }),
+    onError: () => notify.error(t("categories.tagChangeError")),
   });
 
   const relocateTagMutation = useMutation({
@@ -73,6 +74,7 @@ export function CategoryDetailPanel({
       queryClient.invalidateQueries({ queryKey: qkPrefix.categories });
       setIsRelocateOpen(null);
     },
+    onError: () => notify.error(t("categories.tagChangeError")),
   });
 
   const updateIconMutation = useMutation({

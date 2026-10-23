@@ -410,6 +410,40 @@ class TestTaggingRoutesRejections:
         assert response.status_code == 400
         assert "itself" in response.json()["detail"]
 
+    def test_delete_or_relocate_a_liability_tag_is_400(self, test_client, db_session):
+        """A tag a liability tracks can be neither deleted nor moved."""
+        from backend.repositories.liabilities_repository import (
+            LiabilitiesRepository,
+        )
+
+        test_client.post(
+            "/api/tagging/tags", json={"category": "Liabilities", "name": "Car Loan"}
+        )
+        LiabilitiesRepository(db_session).create_liability(
+            name="Car",
+            tag="Car Loan",
+            principal_amount=80_000,
+            interest_rate=5.0,
+            term_months=60,
+            start_date="2024-01-01",
+        )
+
+        deleted = test_client.delete("/api/tagging/tags/Liabilities/Car Loan")
+        moved = test_client.post(
+            "/api/tagging/tags/relocate",
+            json={
+                "old_category": "Liabilities",
+                "new_category": "Housing",
+                "tag": "Car Loan",
+            },
+        )
+
+        assert deleted.status_code == 400
+        assert moved.status_code == 400
+        assert "'Car'" in deleted.json()["detail"]
+        listing = test_client.get("/api/tagging/categories").json()
+        assert "Car Loan" in listing["Liabilities"]
+
 
 class TestRenameRoutes:
     """PUT /categories/{name} and PUT /tags/{category}/{name}."""
