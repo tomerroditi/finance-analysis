@@ -1,3 +1,9 @@
+## v2.1.1 (2026-10-23)
+
+### Refactor
+
+- **budget**: one rule store validates every budget-rule write by its kind (#413)
+
 ## v2.1.0 (2026-10-23)
 
 ### Feat
