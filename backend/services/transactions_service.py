@@ -38,6 +38,7 @@ from backend.repositories.transactions import (
     ManualTransactionDTO,
     TransactionsRepository,
 )
+from backend.services.transaction_write_effects import TransactionWriteEffects
 from backend.utils.session_cache import session_cache_get, session_cache_set
 
 # `split_id` holds the primary key of a `split_transactions` row, or nothing at
@@ -154,6 +155,7 @@ class TransactionsService:
         self.transactions_repository = TransactionsRepository(db)
         self.balance_repo = BankBalanceRepository(db)
         self.investments_repo = InvestmentsRepository(db)
+        self.write_effects = TransactionWriteEffects(db)
 
     def get_data_for_analysis(
         self, include_split_parents: bool = False
@@ -338,7 +340,8 @@ class TransactionsService:
         if repo is None:
             raise ValidationException(f"Invalid table name: {table_name}")
         uid = _coerce_unique_id(unique_id, ValidationException)
-        repo.update_tagging_by_unique_id(uid, category, tag)
+        with self.write_effects.track(table_name, [uid]):
+            repo.update_tagging_by_unique_id(uid, category, tag)
         return self._cascade_to_linked_refunds(table_name, [uid])
 
     def _cascade_to_linked_refunds(self, source: str, unique_ids: list[int]) -> int:
@@ -526,25 +529,10 @@ class TransactionsService:
             category=self._normalize_empty_string(data.get("category")),
             tag=self._normalize_empty_string(data.get("tag")),
         )
-        success = self.transactions_repository.add_transaction(tx, service)
-        if not success:
-            raise RuntimeError("Failed to create transaction")
-
-        if service == Services.CASH.value:
-            from backend.services.cash_balance_service import CashBalanceService
-
-            CashBalanceService(self.db).recalculate_current_balance(
-                data["account_name"]
-            )
-        elif service == Services.MANUAL_INVESTMENTS.value:
-            category = data.get("category")
-            tag = data.get("tag")
-            if category and tag:
-                from backend.services.investments import InvestmentsService
-
-                InvestmentsService(self.db).recalculate_prior_wealth_by_tag(
-                    category, tag
-                )
+        with self.write_effects.track(service) as touched:
+            touched.include(tx.account_name, tx.category, tx.tag)
+            if not self.transactions_repository.add_transaction(tx, service):
+                raise RuntimeError("Failed to create transaction")
 
     def _filter_updates_for_source(
         self, source: str, updates: dict[str, Any]
@@ -644,35 +632,21 @@ class TransactionsService:
         unique_id = _coerce_unique_id(unique_id, ValidationException)
         target_repo = self.transactions_repository.get_repo_by_source(source)
 
-        # The row must exist before anything is filtered: a missing row is a
-        # 404, not a silent "no_changes". Its account_name is also what the
-        # old cash account's balance is recalculated from when it changes.
-        tx_before = self.transactions_repository.get_record(source, unique_id)
-        if tx_before is None:
+        # A missing row is a 404, not a silent "no_changes".
+        if self.transactions_repository.get_record(source, unique_id) is None:
             raise EntityNotFoundException(
                 f"Transaction {unique_id} not found in {source}"
             )
-        old_account_name = getattr(tx_before, "account_name", None)
 
         filtered_updates = self._filter_updates_for_source(source, updates)
 
         if not filtered_updates:
             return {"updated": False, "refunds_retagged": 0}
 
-        result = target_repo.update_transaction_by_unique_id(
-            unique_id, filtered_updates
-        )
-
-        if result and source == Tables.CASH.value:
-            from backend.services.cash_balance_service import CashBalanceService
-
-            cash_balance_svc = CashBalanceService(self.db)
-
-            new_account_name = filtered_updates.get("account_name")
-            if old_account_name:
-                cash_balance_svc.recalculate_current_balance(old_account_name)
-            if new_account_name and new_account_name != old_account_name:
-                cash_balance_svc.recalculate_current_balance(new_account_name)
+        with self.write_effects.track(source, [unique_id]):
+            result = target_repo.update_transaction_by_unique_id(
+                unique_id, filtered_updates
+            )
 
         retagged = 0
         if result and ({"category", "tag"} & filtered_updates.keys()):
@@ -732,32 +706,13 @@ class TransactionsService:
                 f"Cannot manually delete system-generated {tag} transaction"
             )
 
-        inv_category = None
-        inv_tag = None
-        if source == Tables.MANUAL_INVESTMENT_TRANSACTIONS.value:
-            inv_category = getattr(tx_record, "category", None)
-            inv_tag = getattr(tx_record, "tag", None)
-
-        success = target_repo.delete_transaction_by_unique_id(unique_id)
-        if not success:
-            raise EntityNotFoundException("Transaction not found or deletion failed")
+        with self.write_effects.track(source, [unique_id]):
+            if not target_repo.delete_transaction_by_unique_id(unique_id):
+                raise EntityNotFoundException(
+                    "Transaction not found or deletion failed"
+                )
 
         self._purge_dependent_records([unique_id], source)
-
-        if source == Tables.CASH.value:
-            from backend.services.cash_balance_service import CashBalanceService
-
-            CashBalanceService(self.db).recalculate_current_balance(account_name)
-        elif (
-            source == Tables.MANUAL_INVESTMENT_TRANSACTIONS.value
-            and inv_category
-            and inv_tag
-        ):
-            from backend.services.investments import InvestmentsService
-
-            InvestmentsService(self.db).recalculate_prior_wealth_by_tag(
-                inv_category, inv_tag
-            )
 
     def _purge_dependent_records(self, unique_ids: list[int], source: str) -> None:
         """
@@ -1090,27 +1045,12 @@ class TransactionsService:
 
         ids = [int(uid) for uid in transaction_ids]
 
-        # Collect affected cash accounts BEFORE the update — the old account
-        # names matter when account_name itself is being changed.
-        affected_accounts: set[str] = set()
-        if source == Tables.CASH.value:
-            names = self.transactions_repository.get_account_names(source, ids)
-            affected_accounts.update(a for a in names if a)
-            if filtered_updates.get("account_name"):
-                affected_accounts.add(filtered_updates["account_name"])
-
-        # One commit for the whole batch instead of a commit (plus a
-        # cash-balance recalculation) per row.
-        self.transactions_repository.bulk_update_fields(source, ids, filtered_updates)
-        retagged = self._cascade_to_linked_refunds(source, ids)
-
-        if affected_accounts:
-            from backend.services.cash_balance_service import CashBalanceService
-
-            cash_balance_svc = CashBalanceService(self.db)
-            for account in sorted(affected_accounts):
-                cash_balance_svc.recalculate_current_balance(account)
-        return retagged
+        # One commit for the whole batch instead of a commit per row.
+        with self.write_effects.track(source, ids):
+            self.transactions_repository.bulk_update_fields(
+                source, ids, filtered_updates
+            )
+        return self._cascade_to_linked_refunds(source, ids)
 
     def get_latest_data_date(self) -> datetime | None:
         """

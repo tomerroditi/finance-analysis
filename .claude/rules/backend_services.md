@@ -33,6 +33,19 @@ New logic in those domains goes in the matching module, not back into a flat
 Return `pd.DataFrame` for tabular data, primitives for scalar calculations,
 `dict`/`list` for structured payloads.
 
+## Transaction writes carry their own after-effects
+
+A cash account's balance and an investment's prior wealth are stored sums
+over transaction rows. Any write to `cash_transactions` or
+`manual_investment_transactions` runs inside
+`TransactionWriteEffects.track(source, ids)`
+(`backend/services/transaction_write_effects.py`), which reads the rows'
+`(account_name, category, tag)` before and after and recomputes every holding
+either side names. Don't call `recalculate_current_balance` /
+`recalculate_prior_wealth_by_tag` after a write by hand — that is how three
+edit paths forgot the investment side. `tests/backend/unit/services/test_transaction_write_effects.py`
+checks every write against both identities; add a new write path there.
+
 ## Errors
 
 Raise the `AppException` subclasses from `backend/errors.py` —
