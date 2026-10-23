@@ -1,4 +1,4 @@
-"""Tests for InsightsService insight-card generation."""
+"""Tests for the insight rules and the InsightsService strip they feed."""
 
 import pandas as pd
 import pytest
@@ -12,7 +12,15 @@ from backend.constants.budget import (
 from backend.constants.tables import Tables
 from backend.models.budget import BudgetRule
 from backend.models.transaction import BankTransaction, CreditCardTransaction
-from backend.services.insights_service import InsightsService
+from backend.services.insights import (
+    InsightsService,
+    category_spike,
+    core,
+    large_transaction,
+    pace,
+    recurring,
+)
+from backend.services.insights.context import InsightContext
 from backend.services.recurring_service import RecurringService
 
 
@@ -165,14 +173,14 @@ class TestPlannedSpendIsNotNews:
         _project_rule(db_session, "Home Renovation")
         db_session.commit()
 
-        assert InsightsService(db_session)._category_spike_insights() == []
+        assert category_spike.insights(InsightContext(db_session)) == []
 
     def test_project_category_still_spikes_without_the_project_rule(self, db_session):
         """The suppression is the budget rule's doing, not the category's name."""
         self._seed_spike(db_session, "Home Renovation")
         db_session.commit()
 
-        result = InsightsService(db_session)._category_spike_insights()
+        result = category_spike.insights(InsightContext(db_session))
         assert [i["data"]["category"] for i in result] == ["Home Renovation"]
 
     def test_yearly_envelope_spike_is_suppressed(self, db_session):
@@ -181,7 +189,7 @@ class TestPlannedSpendIsNotNews:
         _yearly_rule(db_session, "Insurance")
         db_session.commit()
 
-        assert InsightsService(db_session)._category_spike_insights() == []
+        assert category_spike.insights(InsightContext(db_session)) == []
 
     def test_spend_inside_its_monthly_budget_is_not_a_spike(self, db_session):
         """Above trend but within plan is the budget page's business, not an alert."""
@@ -189,7 +197,7 @@ class TestPlannedSpendIsNotNews:
         _monthly_rule(db_session, "Food", 2000.0)
         db_session.commit()
 
-        assert InsightsService(db_session)._category_spike_insights() == []
+        assert category_spike.insights(InsightContext(db_session)) == []
 
     def test_spend_past_its_monthly_budget_still_spikes(self, db_session):
         """Once the plan is breached the spike is real news again."""
@@ -197,7 +205,7 @@ class TestPlannedSpendIsNotNews:
         _monthly_rule(db_session, "Food", 1000.0)
         db_session.commit()
 
-        result = InsightsService(db_session)._category_spike_insights()
+        result = category_spike.insights(InsightContext(db_session))
         assert [i["data"]["category"] for i in result] == ["Food"]
 
 
@@ -217,7 +225,7 @@ class TestCategorySpikeNeedsATrend:
         _add(db_session, "GIFT NOW", -2000.0, _months_ago(0), category="Gifts")
         db_session.commit()
 
-        result = InsightsService(db_session)._category_spike_insights()
+        result = category_spike.insights(InsightContext(db_session))
         assert [i["data"]["category"] for i in result] == []
 
     def test_baseline_is_the_median_so_one_odd_month_cannot_set_the_normal(self, db_session):
@@ -228,29 +236,29 @@ class TestCategorySpikeNeedsATrend:
         _add(db_session, "GROCER NOW", -1500.0, _months_ago(0), category="Food")
         db_session.commit()
 
-        result = InsightsService(db_session)._category_spike_insights()
+        result = category_spike.insights(InsightContext(db_session))
         # Median baseline is 300 (not the 2,200 mean), so 1,500 is a spike.
         assert [i["data"]["percent"] for i in result] == [400]
 
-    def test_floor_scales_with_the_household(self, db_session, monkeypatch):
+    def test_floor_scales_with_the_household(self, db_session):
         """A delta that matters at 3,000/month is rounding at 50,000/month."""
         self._seed_three_prior_months(db_session)
         _add(db_session, "GROCER NOW", -1500.0, _months_ago(0), category="Food")
         db_session.commit()
 
-        service = InsightsService(db_session)
-        monkeypatch.setattr(service, "_spending_baseline", lambda: 50_000.0)
-        assert service._category_spike_insights() == []
+        ctx = InsightContext(db_session)
+        ctx.spending_baseline = 50_000.0
+        assert category_spike.insights(ctx) == []
 
 
 class TestPaceInsight:
     """Branches of the month-pace insight, driven by a stubbed forecast."""
 
     @staticmethod
-    def _service_with_forecast(db_session, monkeypatch, **forecast):
-        service = InsightsService(db_session)
-        monkeypatch.setattr(service.analysis, "get_cash_flow_forecast", lambda: forecast)
-        return service
+    def _context_with_forecast(db_session, **forecast):
+        ctx = InsightContext(db_session)
+        ctx.forecast = forecast
+        return ctx
 
     @pytest.mark.parametrize(
         "income, expenses, net",
@@ -262,7 +270,7 @@ class TestPaceInsight:
         ],
         ids=["no-income-baseline", "gap-inside-error-bars", "barely-positive", "break-even"],
     )
-    def test_no_card_when_the_pace_is_not_news(self, db_session, monkeypatch, income, expenses, net):
+    def test_no_card_when_the_pace_is_not_news(self, db_session, income, expenses, net):
         """Pace cards need an income baseline and a gap worth reading.
 
         Without expected income there is no pace to judge; a gap under 5% of
@@ -270,17 +278,17 @@ class TestPaceInsight:
         small overspend or a 1% saving; and exact break-even is neither a
         warning nor a win.
         """
-        service = self._service_with_forecast(
-            db_session, monkeypatch, expected_income=income, expected_expenses=expenses, projected_net=net
+        ctx = self._context_with_forecast(
+            db_session, expected_income=income, expected_expenses=expenses, projected_net=net
         )
-        assert service._pace_insight() == []
+        assert pace.insights(ctx) == []
 
-    def test_overspend_pace_is_a_warning_with_the_gap(self, db_session, monkeypatch):
+    def test_overspend_pace_is_a_warning_with_the_gap(self, db_session):
         """Expenses above income produce an overspendPace warning sized to the gap."""
-        service = self._service_with_forecast(
-            db_session, monkeypatch, expected_income=10000.0, expected_expenses=12345.678, projected_net=-2345.678
+        ctx = self._context_with_forecast(
+            db_session, expected_income=10000.0, expected_expenses=12345.678, projected_net=-2345.678
         )
-        assert service._pace_insight() == [
+        assert pace.insights(ctx) == [
             {
                 "code": "overspendPace",
                 "key": f"overspendPace:{_this_month()}",
@@ -289,20 +297,20 @@ class TestPaceInsight:
             }
         ]
 
-    def test_gap_a_running_project_accounts_for_is_not_a_warning(self, db_session, monkeypatch):
+    def test_gap_a_running_project_accounts_for_is_not_a_warning(self, db_session):
         """Overspending because a planned project is drawing is the plan, not a surprise."""
-        service = self._service_with_forecast(
-            db_session, monkeypatch, expected_income=10000.0, expected_expenses=12345.678, projected_net=-2345.678
+        ctx = self._context_with_forecast(
+            db_session, expected_income=10000.0, expected_expenses=12345.678, projected_net=-2345.678
         )
-        monkeypatch.setattr(service, "_project_spend_this_month", lambda: 3000.0)
-        assert service._pace_insight() == []
+        ctx.project_spend_this_month = 3000.0
+        assert pace.insights(ctx) == []
 
-    def test_positive_projection_is_on_track(self, db_session, monkeypatch):
+    def test_positive_projection_is_on_track(self, db_session):
         """A positive projected net is a positive onTrack card."""
-        service = self._service_with_forecast(
-            db_session, monkeypatch, expected_income=10000.0, expected_expenses=8000.0, projected_net=2000.0
+        ctx = self._context_with_forecast(
+            db_session, expected_income=10000.0, expected_expenses=8000.0, projected_net=2000.0
         )
-        assert service._pace_insight() == [
+        assert pace.insights(ctx) == [
             {
                 "code": "onTrack",
                 "key": f"onTrack:{_this_month()}",
@@ -316,15 +324,14 @@ class TestRecurringInsights:
     """Recurring-item statuses map to newRecurring / priceIncrease / priceDecrease."""
 
     @staticmethod
-    def _service_with_items(db_session, monkeypatch, items, pending_count=0):
-        service = InsightsService(db_session)
-        summary = {
+    def _context_with_items(db_session, items, pending_count=0):
+        ctx = InsightContext(db_session)
+        ctx.recurring_summary = {
             "items": items,
             "pending_count": pending_count,
             "pending_monthly": 0.0,
         }
-        monkeypatch.setattr(service.recurring, "get_recurring", lambda: summary)
-        return service
+        return ctx
 
     @staticmethod
     def _item(status, price_change=0.0, label="Gym", confirmation="confirmed"):
@@ -338,15 +345,14 @@ class TestRecurringInsights:
             "confirmation": confirmation,
         }
 
-    def test_price_increase_is_a_warning_and_decrease_is_info(self, db_session, monkeypatch):
+    def test_price_increase_is_a_warning_and_decrease_is_info(self, db_session):
         """The sign of the change picks the code and severity; delta is absolute."""
-        service = self._service_with_items(
+        ctx = self._context_with_items(
             db_session,
-            monkeypatch,
             [self._item("price_changed", 40.0, "Gym"), self._item("price_changed", -25.0, "Netflix")],
         )
 
-        result = service._recurring_insights()
+        result = recurring.insights(ctx)
 
         assert result == [
             {
@@ -363,47 +369,45 @@ class TestRecurringInsights:
             },
         ]
 
-    def test_a_few_shekels_of_drift_is_not_a_price_change_worth_reading(self, db_session, monkeypatch):
+    def test_a_few_shekels_of_drift_is_not_a_price_change_worth_reading(self, db_session):
         """Detection reports any move past its tolerance; a card needs a real one."""
-        service = self._service_with_items(
-            db_session, monkeypatch, [self._item("price_changed", 8.0, "Gym")]
+        ctx = self._context_with_items(
+            db_session, [self._item("price_changed", 8.0, "Gym")]
         )
-        assert service._recurring_insights() == []
+        assert recurring.insights(ctx) == []
 
-    def test_active_and_ended_items_are_ignored(self, db_session, monkeypatch):
+    def test_active_and_ended_items_are_ignored(self, db_session):
         """Only new and price-changed subscriptions become cards."""
-        service = self._service_with_items(
-            db_session, monkeypatch, [self._item("active"), self._item("ended")]
+        ctx = self._context_with_items(
+            db_session, [self._item("active"), self._item("ended")]
         )
-        assert service._recurring_insights() == []
+        assert recurring.insights(ctx) == []
 
-    def test_at_most_three_recurring_cards(self, db_session, monkeypatch):
+    def test_at_most_three_recurring_cards(self, db_session):
         """A burst of new subscriptions is capped at three cards."""
-        service = self._service_with_items(
-            db_session, monkeypatch, [self._item("new", label=f"Sub {i}") for i in range(6)]
+        ctx = self._context_with_items(
+            db_session, [self._item("new", label=f"Sub {i}") for i in range(6)]
         )
-        result = service._recurring_insights()
+        result = recurring.insights(ctx)
         assert len(result) == 3
         assert all(r["code"] == "newRecurring" for r in result)
 
-    def test_unconfirmed_items_never_become_cards(self, db_session, monkeypatch):
+    def test_unconfirmed_items_never_become_cards(self, db_session):
         """A candidate nobody has ruled on is a question, not a finding."""
-        service = self._service_with_items(
+        ctx = self._context_with_items(
             db_session,
-            monkeypatch,
             [self._item("new", confirmation="pending")],
         )
-        assert service._recurring_insights() == []
+        assert recurring.insights(ctx) == []
 
-    def test_pending_candidates_get_one_review_card(self, db_session, monkeypatch):
+    def test_pending_candidates_get_one_review_card(self, db_session):
         """Waiting candidates produce a single nudge to review them."""
-        service = self._service_with_items(
+        ctx = self._context_with_items(
             db_session,
-            monkeypatch,
             [self._item("new", confirmation="pending") for _ in range(4)],
             pending_count=4,
         )
-        result = service._recurring_insights()
+        result = recurring.insights(ctx)
         assert [card["code"] for card in result] == ["recurringToReview"]
         assert result[0]["data"]["count"] == 4
 
@@ -423,7 +427,7 @@ class TestLargeTransactionInsight:
         )
         db_session.commit()
 
-        result = InsightsService(db_session)._large_transaction_insight()
+        result = large_transaction.insights(InsightContext(db_session))
 
         assert result == [
             {
@@ -444,7 +448,7 @@ class TestLargeTransactionInsight:
         _add(db_session, "Shoes", -600.0, _months_ago(0, day=3))
         db_session.commit()
 
-        assert InsightsService(db_session)._large_transaction_insight() == []
+        assert large_transaction.insights(InsightContext(db_session)) == []
 
     def test_outlier_in_a_previous_month_is_ignored(self, db_session):
         """Only the running month is inspected."""
@@ -452,7 +456,7 @@ class TestLargeTransactionInsight:
         _add(db_session, "Old Laptop", -4200.0, _months_ago(2, day=3))
         db_session.commit()
 
-        assert InsightsService(db_session)._large_transaction_insight() == []
+        assert large_transaction.insights(InsightContext(db_session)) == []
 
     def test_income_and_non_expense_categories_are_ignored(self, db_session):
         """Salary-sized inflows and investment transfers never count as large expenses."""
@@ -461,7 +465,7 @@ class TestLargeTransactionInsight:
         _add(db_session, "Broker transfer", -9000.0, _months_ago(0, day=2), category="Investments")
         db_session.commit()
 
-        assert InsightsService(db_session)._large_transaction_insight() == []
+        assert large_transaction.insights(InsightContext(db_session)) == []
 
     def test_a_charge_the_category_has_seen_before_is_not_unusual(self, db_session):
         """"Large" means large for this category, not large in the abstract."""
@@ -470,7 +474,7 @@ class TestLargeTransactionInsight:
         _add(db_session, "New Laptop", -4000.0, _months_ago(0, day=3), category="Electronics")
         db_session.commit()
 
-        assert InsightsService(db_session)._large_transaction_insight() == []
+        assert large_transaction.insights(InsightContext(db_session)) == []
 
     def test_project_charges_are_never_unusual(self, db_session):
         """The painter's invoice is what the renovation budget was opened for."""
@@ -479,7 +483,7 @@ class TestLargeTransactionInsight:
         _project_rule(db_session, "Home Renovation")
         db_session.commit()
 
-        assert InsightsService(db_session)._large_transaction_insight() == []
+        assert large_transaction.insights(InsightContext(db_session)) == []
 
     def test_a_yearly_envelope_explains_only_the_tags_it_covers(self, db_session):
         """An envelope on one tag leaves its category's other charges unexplained.
@@ -503,7 +507,7 @@ class TestLargeTransactionInsight:
         )
         db_session.commit()
 
-        result = InsightsService(db_session)._large_transaction_insight()
+        result = large_transaction.insights(InsightContext(db_session))
         assert [i["data"]["label"] for i in result] == ["PLUMBER"]
 
     def test_a_skipped_charge_does_not_hide_a_real_one_below_it(self, db_session):
@@ -514,7 +518,7 @@ class TestLargeTransactionInsight:
         _add(db_session, "New Laptop", -4200.0, _months_ago(0, day=4), category="Electronics")
         db_session.commit()
 
-        result = InsightsService(db_session)._large_transaction_insight()
+        result = large_transaction.insights(InsightContext(db_session))
         assert [i["data"]["label"] for i in result] == ["New Laptop"]
 
     def test_a_confirmed_recurring_bill_is_not_a_surprise(self, db_session):
@@ -525,8 +529,9 @@ class TestLargeTransactionInsight:
         _add(db_session, "MORTGAGE", -6000.0, _months_ago(0, day=2), category="Housing")
         db_session.commit()
 
-        service = InsightsService(db_session)
-        assert [i["data"]["label"] for i in service._large_transaction_insight()] == ["MORTGAGE"]
+        assert [i["data"]["label"] for i in large_transaction.insights(InsightContext(db_session))] == [
+            "MORTGAGE"
+        ]
 
         recurring = RecurringService(db_session)
         mortgage = next(
@@ -536,40 +541,27 @@ class TestLargeTransactionInsight:
             [{"normalized": mortgage["normalized"], "decision": "confirmed"}]
         )
 
-        assert InsightsService(db_session)._large_transaction_insight() == []
+        assert large_transaction.insights(InsightContext(db_session)) == []
 
 
 class TestInsightOrderingAndCap:
     """The combined list is severity-sorted, size-ranked and capped."""
 
-    def test_warnings_first_then_info_then_positive_capped(self, db_session, monkeypatch):
+    def test_warnings_first_then_info_then_positive_capped(self):
         """Cards are ordered warning → info → positive and truncated to the cap."""
-        service = InsightsService(db_session)
-        monkeypatch.setattr(
-            service, "_pace_insight", lambda: [{"code": "onTrack", "severity": "positive", "data": {"amount": 5.0}}]
-        )
-        monkeypatch.setattr(
-            service,
-            "_category_spike_insights",
-            lambda: [
+        result = core.assemble(
+            pace_cards=[{"code": "onTrack", "severity": "positive", "data": {"amount": 5.0}}],
+            spikes=[
                 {"code": "categorySpike", "severity": "warning", "data": {"category": f"c{i}", "amount": 100.0 * i}}
                 for i in range(2)
             ],
-        )
-        monkeypatch.setattr(
-            service,
-            "_recurring_insights",
-            lambda: [{"code": "newRecurring", "severity": "info", "data": {"amount": 10.0 * i}} for i in range(3)],
-        )
-        monkeypatch.setattr(
-            service,
-            "_large_transaction_insight",
-            lambda: [{"code": "largeTransaction", "severity": "info", "data": {"amount": 9000.0}}],
+            recurring_cards=[
+                {"code": "newRecurring", "severity": "info", "data": {"amount": 10.0 * i}} for i in range(3)
+            ],
+            large_charges=[{"code": "largeTransaction", "severity": "info", "data": {"amount": 9000.0}}],
         )
 
-        result = service.get_insights()
-
-        assert len(result) == service._MAX_INSIGHTS
+        assert len(result) == core.MAX_INSIGHTS
         severities = [r["severity"] for r in result]
         assert severities == sorted(severities, key={"warning": 0, "info": 1, "positive": 2}.get)
         assert severities[:2] == ["warning", "warning"]
@@ -577,6 +569,18 @@ class TestInsightOrderingAndCap:
         # Within a band the biggest sum of money leads.
         assert result[0]["data"]["amount"] == 100.0
         assert result[2]["code"] == "largeTransaction"
+
+    def test_a_large_charge_in_a_spiked_category_is_dropped(self):
+        """One event, one card: the spike already told the story of that charge."""
+        result = core.assemble(
+            pace_cards=[],
+            spikes=[{"code": "categorySpike", "severity": "warning", "data": {"category": "Food", "amount": 1.0}}],
+            recurring_cards=[],
+            large_charges=[
+                {"code": "largeTransaction", "severity": "info", "data": {"category": "Food", "amount": 5000.0}}
+            ],
+        )
+        assert [c["code"] for c in result] == ["categorySpike"]
 
 
 class TestDismissal:
@@ -594,19 +598,19 @@ class TestDismissal:
         self._seed_spike(db_session)
         db_session.commit()
 
-        key = InsightsService(db_session)._category_spike_insights()[0]["key"]
+        key = category_spike.insights(InsightContext(db_session))[0]["key"]
 
         InsightsService(db_session).dismiss(key)
-        assert InsightsService(db_session)._category_spike_insights() == []
+        assert category_spike.insights(InsightContext(db_session)) == []
 
         InsightsService(db_session).restore(key)
-        assert [i["key"] for i in InsightsService(db_session)._category_spike_insights()] == [key]
+        assert [i["key"] for i in category_spike.insights(InsightContext(db_session))] == [key]
 
     def test_dismissing_is_idempotent(self, db_session):
         """Two clicks on the same X are one dismissal, not a duplicate row."""
         self._seed_spike(db_session)
         db_session.commit()
-        key = InsightsService(db_session)._category_spike_insights()[0]["key"]
+        key = category_spike.insights(InsightContext(db_session))[0]["key"]
 
         InsightsService(db_session).dismiss(key)
         InsightsService(db_session).dismiss(key)
@@ -623,12 +627,12 @@ class TestDismissal:
         _add(db_session, "SHOPPING NOW", -1500.0, _months_ago(0), category="Shopping")
         db_session.commit()
 
-        before = [i["data"]["category"] for i in InsightsService(db_session)._category_spike_insights()]
+        before = [i["data"]["category"] for i in category_spike.insights(InsightContext(db_session))]
         assert before == ["Food", "Transportation"]
 
         InsightsService(db_session).dismiss(f"categorySpike:Food:{_this_month()}")
 
-        after = [i["data"]["category"] for i in InsightsService(db_session)._category_spike_insights()]
+        after = [i["data"]["category"] for i in category_spike.insights(InsightContext(db_session))]
         assert after == ["Transportation", "Shopping"]
 
     def test_a_dismissed_large_charge_lets_the_next_one_through(self, db_session):
@@ -639,43 +643,31 @@ class TestDismissal:
         _add(db_session, "New Sofa", -3000.0, _months_ago(0, day=4), category="Furniture")
         db_session.commit()
 
-        first = InsightsService(db_session)._large_transaction_insight()[0]
+        first = large_transaction.insights(InsightContext(db_session))[0]
         assert first["data"]["label"] == "New Laptop"
 
         InsightsService(db_session).dismiss(first["key"])
 
-        second = InsightsService(db_session)._large_transaction_insight()
+        second = large_transaction.insights(InsightContext(db_session))
         assert [i["data"]["label"] for i in second] == ["New Sofa"]
 
-    def test_dismissing_one_card_leaves_the_others(self, db_session, monkeypatch):
+    def test_dismissing_one_card_leaves_the_others(self, db_session):
         """Only the card whose key was dismissed goes away."""
-        service = InsightsService(db_session)
-        monkeypatch.setattr(
-            service.analysis,
-            "get_cash_flow_forecast",
-            lambda: {
-                "expected_income": 10000.0,
-                "expected_expenses": 8000.0,
-                "projected_net": 2000.0,
-                "avg_monthly_expenses": 8000.0,
-            },
-        )
-        assert [i["code"] for i in service._pace_insight()] == ["onTrack"]
+        forecast = {
+            "expected_income": 10000.0,
+            "expected_expenses": 8000.0,
+            "projected_net": 2000.0,
+            "avg_monthly_expenses": 8000.0,
+        }
+        ctx = InsightContext(db_session)
+        ctx.forecast = forecast
+        assert [i["code"] for i in pace.insights(ctx)] == ["onTrack"]
 
         InsightsService(db_session).dismiss(f"onTrack:{_this_month()}")
 
-        fresh = InsightsService(db_session)
-        monkeypatch.setattr(
-            fresh.analysis,
-            "get_cash_flow_forecast",
-            lambda: {
-                "expected_income": 10000.0,
-                "expected_expenses": 8000.0,
-                "projected_net": 2000.0,
-                "avg_monthly_expenses": 8000.0,
-            },
-        )
-        assert fresh._pace_insight() == []
+        fresh = InsightContext(db_session)
+        fresh.forecast = forecast
+        assert pace.insights(fresh) == []
 
 
 class TestLargeTransactionRefundNetting:
@@ -716,7 +708,7 @@ class TestLargeTransactionRefundNetting:
         db_session.commit()
         self._expect_refund(db_session, laptop, 4200.0, refund, 4200.0)
 
-        assert InsightsService(db_session)._large_transaction_insight() == []
+        assert large_transaction.insights(InsightContext(db_session)) == []
 
     def test_a_partly_refunded_charge_is_reported_at_what_it_cost(self, db_session):
         """1,200 back on a 4,200 laptop leaves a 3,000 charge to flag."""
@@ -730,7 +722,7 @@ class TestLargeTransactionRefundNetting:
         db_session.commit()
         self._expect_refund(db_session, laptop, 1200.0, refund, 1200.0)
 
-        result = InsightsService(db_session)._large_transaction_insight()
+        result = large_transaction.insights(InsightContext(db_session))
 
         assert [c["data"]["amount"] for c in result] == [3000.0]
 
@@ -775,7 +767,7 @@ class TestPaceInsightOverTheRealForecast:
         )
         db_session.commit()
 
-        cards = InsightsService(db_session)._pace_insight()
+        cards = pace.insights(InsightContext(db_session))
 
         assert [c["code"] for c in cards] == ["onTrack"]
         assert cards[0]["data"]["amount"] < 40000.0

@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 from backend.constants.refunds import RefundMode
 from backend.dependencies import get_database
 from backend.services.analysis import AnalysisService
-from backend.services.insights_service import InsightsService
+from backend.services.insights import InsightsService
 from backend.services.recurring_service import RecurringService
 
 router = APIRouter()

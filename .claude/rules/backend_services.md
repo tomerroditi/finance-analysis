@@ -26,7 +26,9 @@ The biggest domains are split into subpackages rather than one long
 module — `analysis/` (`core`, `cashflow`, `forecast`, `net_worth`),
 `budget/` (`core`, `rules`, `ledger`, `monthly`, `project`, `yearly`, `overview`), `investments/`
 (`core`, `timeline`, `snapshots`, `valuation`, `insurance_sync`), `savings_goals/`
-(`core`, `inputs`, `ledger`, `goals`, `read_models`, `yearly`, `common`).
+(`core`, `inputs`, `ledger`, `goals`, `read_models`, `yearly`, `common`), `insights/`
+(`context`, `core`, and one module per card rule: `pace`, `category_spike`,
+`recurring`, `large_transaction`).
 New logic in those domains goes in the matching module, not back into a flat
 `*_service.py`.
 
