@@ -436,6 +436,50 @@ export const handlers = [
   http.get("/api/budget/category-conflicts", () =>
     HttpResponse.json({ conflicts: [] }),
   ),
+  // The dashboard's recurring, budget-overview and savings cards — the same
+  // teardown race as above.
+  http.get("/api/analytics/recurring", () =>
+    HttpResponse.json({
+      items: [],
+      total_monthly: 0,
+      pending_monthly: 0,
+      pending_count: 0,
+      confirmed_count: 0,
+      dismissed_count: 0,
+    }),
+  ),
+  http.get("/api/savings-goals/yearly", () => {
+    const year = new Date().getFullYear();
+    return HttpResponse.json({
+      current_year: year,
+      years: [{ year, saved: 0, target: null, is_current: true, months: [] }],
+      pace: null,
+    });
+  }),
+  http.get("/api/budget/overview/:year/:month", ({ params }) =>
+    HttpResponse.json({
+      year: Number(params.year),
+      month: Number(params.month),
+      is_current_month: true,
+      days_in_month: 30,
+      days_elapsed: 1,
+      days_left: 29,
+      monthly_budget: 0,
+      monthly_spent: 0,
+      fixed_spent: 0,
+      fixed_charge_count: 0,
+      variable_spent: 0,
+      committed_remaining: 0,
+      free_to_spend: 0,
+      variable_per_day: 0,
+      projected: null,
+      charges_due: [],
+      projects_month_spent: 0,
+      yearly_month_spent: 0,
+      total_out: 0,
+      long_envelopes: [],
+    }),
+  ),
   http.get("/api/budget-month-overrides/", () => HttpResponse.json([])),
   http.get("/api/budget/projects", () => HttpResponse.json([])),
   http.get("/api/budget/projects/available", () =>
