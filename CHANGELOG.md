@@ -1,3 +1,9 @@
+## v2.1.4 (2026-10-23)
+
+### Fix
+
+- **categories**: keep savings-goal rules in step with category and tag changes (#416)
+
 ## v2.1.3 (2026-10-23)
 
 ### Fix
