@@ -1,3 +1,9 @@
+## v2.1.5 (2026-10-23)
+
+### Refactor
+
+- **transactions**: introduce TxRef transaction identity (#417)
+
 ## v2.1.4 (2026-10-23)
 
 ### Fix
