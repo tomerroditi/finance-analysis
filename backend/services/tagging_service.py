@@ -15,6 +15,8 @@ from backend.constants.categories import (
 )
 from backend.errors import EntityNotFoundException, ValidationException
 from backend.repositories.budget_repository import BudgetRepository
+from backend.repositories.investments_repository import InvestmentsRepository
+from backend.repositories.liabilities_repository import LiabilitiesRepository
 from backend.repositories.split_transactions_repository import (
     SplitTransactionsRepository,
 )
@@ -87,6 +89,8 @@ class CategoriesTagsService:
         self.tagging_rules_repo = TaggingRulesRepository(db)
         self.credit_card_repo = CreditCardRepository(db)
         self.budget_repo = BudgetRepository(db)
+        self.investments_repo = InvestmentsRepository(db)
+        self.liabilities_repo = LiabilitiesRepository(db)
         self.categories_and_tags = self.get_categories_and_tags()
 
     def get_categories_and_tags(self, copy: bool = False) -> dict[str, list[str]]:
@@ -341,6 +345,8 @@ class CategoriesTagsService:
         self.split_transactions_repo.rename_tag(category, old_tag, new_tag)
         self.tagging_rules_repo.rename_tag(category, old_tag, new_tag)
         self.budget_repo.rename_tag(category, old_tag, new_tag)
+        self.investments_repo.rename_tag(category, old_tag, new_tag)
+        self.liabilities_repo.rename_tag(category, old_tag, new_tag)
         self.tagging_repo.rename_tag(category, old_tag, new_tag)
         self._invalidate_cache()
         return True
@@ -366,8 +372,8 @@ class CategoriesTagsService:
             If either category does not exist, or the tag is not in
             ``old_category``.
         ValidationException
-            If both categories are the same. Nothing is touched when either
-            is raised.
+            If both categories are the same, or an investment or liability
+            is tracked by the tag. Nothing is touched when either is raised.
         """
         categories = self.categories_and_tags
         if old_category not in categories or new_category not in categories:
@@ -380,6 +386,7 @@ class CategoriesTagsService:
             raise ValidationException(
                 f"Cannot move tag '{tag}' from '{old_category}' to itself"
             )
+        self._ensure_no_holding(old_category, tag, "move")
 
         self.transactions_repo.update_category_for_tag(old_category, new_category, tag)
         self.split_transactions_repo.update_category_for_tag(
@@ -463,11 +470,18 @@ class CategoriesTagsService:
         bool
             ``True`` if the tag was deleted, ``False`` if the category or tag
             does not exist. Nothing is touched when ``False`` is returned.
+
+        Raises
+        ------
+        ValidationException
+            If an investment or liability is tracked by the tag. Nothing is
+            touched.
         """
         if category not in self.categories_and_tags:
             return False
         if tag not in self.categories_and_tags[category]:
             return False
+        self._ensure_no_holding(category, tag, "delete")
 
         self.transactions_repo.nullify_category_and_tag(category, tag)
         self.split_transactions_repo.nullify_category_and_tag(category, tag)
@@ -475,6 +489,37 @@ class CategoriesTagsService:
         self.tagging_repo.delete_tag(category, tag)
         self._invalidate_cache()
         return True
+
+    def _ensure_no_holding(self, category: str, tag: str, action: str) -> None:
+        """Refuse a tag change that would orphan an investment or liability.
+
+        Both are identified by the ``(category, tag)`` their transactions
+        carry, so deleting or moving the tag would leave the record pointing
+        at a pair no transaction uses any more.
+
+        Parameters
+        ----------
+        category : str
+            Category the tag belongs to.
+        tag : str
+            Tag about to be deleted or moved.
+        action : str
+            Verb for the error message (``"delete"`` or ``"move"``).
+
+        Raises
+        ------
+        ValidationException
+            If an investment or liability is tracked by the tag.
+        """
+        holdings = self.investments_repo.get_names_by_category_tag(
+            category, tag
+        ) + self.liabilities_repo.get_names_by_category_tag(category, tag)
+        if holdings:
+            names = ", ".join(f"'{name}'" for name in holdings)
+            raise ValidationException(
+                f"Cannot {action} tag '{tag}': it tracks {names}. "
+                "Delete that record first, or rename the tag instead."
+            )
 
     def add_new_credit_card_tags(self) -> bool:
         """Add new credit card account tags to the ``Credit Cards`` category.

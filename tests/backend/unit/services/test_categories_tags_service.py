@@ -12,6 +12,8 @@ import backend.services.tagging_service as ts
 from backend.constants.categories import PROTECTED_CATEGORIES
 from backend.errors import EntityNotFoundException, ValidationException
 from backend.models.transaction import BankTransaction, CreditCardTransaction
+from backend.repositories.investments_repository import InvestmentsRepository
+from backend.repositories.liabilities_repository import LiabilitiesRepository
 from backend.services.tagging_service import CategoriesTagsService
 
 
@@ -344,6 +346,82 @@ class TestCategoriesTagsServiceTags:
         # The tag format is "provider - account_name - last4digits"
         # add_tag normalizes to title case, so "isracard" becomes "Isracard"
         assert any("Isracard" in tag for tag in cc_tags)
+
+
+class TestTagOpsKeepHoldingsLinked:
+    """Investments and liabilities are keyed by (category, tag), so tag ops must not orphan them."""
+
+    @pytest.fixture
+    def holdings(self, db_session, categories_service):
+        """Track an investment under Investments/Stock Fund and a loan under Liabilities/Mortgage."""
+        InvestmentsRepository(db_session).create_investment(
+            category="Investments", tag="Stock Fund", type_="etf", name="S&P 500"
+        )
+        LiabilitiesRepository(db_session).create_liability(
+            name="Home Loan",
+            tag="Mortgage",
+            principal_amount=500_000,
+            interest_rate=4.0,
+            term_months=240,
+            start_date="2024-01-01",
+        )
+
+    def test_rename_moves_the_investment_with_its_tag(
+        self, categories_service, db_session, holdings
+    ):
+        """Renaming an investment's tag renames the investment's tag too."""
+        repo = InvestmentsRepository(db_session)
+
+        assert categories_service.rename_tag("Investments", "Stock Fund", "Index Fund")
+
+        assert repo.get_names_by_category_tag("Investments", "Index Fund") == [
+            "S&P 500"
+        ]
+        assert repo.get_names_by_category_tag("Investments", "Stock Fund") == []
+
+    def test_rename_moves_the_liability_with_its_tag(
+        self, categories_service, db_session, holdings
+    ):
+        """Renaming a liability's tag renames the liability's tag too."""
+        repo = LiabilitiesRepository(db_session)
+
+        assert categories_service.rename_tag("Liabilities", "Mortgage", "Home Loan")
+
+        assert repo.get_names_by_category_tag("Liabilities", "Home Loan") == [
+            "Home Loan"
+        ]
+        assert repo.get_names_by_category_tag("Liabilities", "Mortgage") == []
+
+    @pytest.mark.parametrize(
+        "category, tag", [("Investments", "Stock Fund"), ("Liabilities", "Mortgage")]
+    )
+    def test_delete_refused_while_a_holding_uses_the_tag(
+        self, categories_service, holdings, category, tag
+    ):
+        """Deleting a tag a holding tracks is refused and the tag stays."""
+        with pytest.raises(ValidationException, match="Cannot delete tag"):
+            categories_service.delete_tag(category, tag)
+
+        assert tag in categories_service.categories_and_tags[category]
+
+    @pytest.mark.parametrize(
+        "category, tag", [("Investments", "Stock Fund"), ("Liabilities", "Mortgage")]
+    )
+    def test_move_refused_while_a_holding_uses_the_tag(
+        self, categories_service, holdings, category, tag
+    ):
+        """Moving a tag a holding tracks to another category is refused and the tag stays."""
+        with pytest.raises(ValidationException, match="Cannot move tag"):
+            categories_service.reallocate_tag(category, "Home", tag)
+
+        assert tag in categories_service.categories_and_tags[category]
+        assert tag not in categories_service.categories_and_tags["Home"]
+
+    def test_untracked_sibling_tag_can_still_be_deleted(
+        self, categories_service, holdings
+    ):
+        """Only the tag a holding tracks is guarded; its siblings delete as before."""
+        assert categories_service.delete_tag("Investments", "Bond Fund") is True
 
 
 # ---------------------------------------------------------------------------

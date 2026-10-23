@@ -997,6 +997,7 @@
     "renameCategory": "Rename",
     "renameTag": "Click to rename",
     "renameError": "Cannot rename. The name may already exist or is protected.",
+    "tagChangeError": "Couldn't change this tag. If an investment or loan is tracked by it, rename the tag instead, or delete that record first.",
     "protectedCannotRename": "Protected items cannot be renamed",
     "protectedCannotDelete": "Protected categories cannot be deleted",
     "categoriesCount": "{{count}} categories",
