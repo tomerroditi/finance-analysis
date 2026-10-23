@@ -23,6 +23,7 @@ from backend.models.transaction import (
 from backend.repositories.split_transactions_repository import (
     SplitTransactionsRepository,
 )
+from backend.repositories.transactions import TxRef
 from backend.services.budget_month_override_service import (
     BudgetMonthOverrideService,
 )
@@ -414,7 +415,7 @@ class TestTransactionsServiceCRUD:
             ),
             (
                 lambda svc: svc.delete_transaction("abc", "cash_transactions"),
-                EntityNotFoundException,
+                ValidationException,
             ),
             (
                 lambda svc: svc.update_tagging_by_id("banks", "abc", "Food", "X"),
@@ -424,8 +425,8 @@ class TestTransactionsServiceCRUD:
         ids=["update", "delete", "tag"],
     )
     def test_non_integer_unique_id_rejected(self, db_session, call, error):
-        """A non-numeric unique_id raises the exception its endpoint answers with."""
-        with pytest.raises(error, match="invalid literal"):
+        """A non-numeric unique_id is a 400 on every endpoint."""
+        with pytest.raises(error, match="Invalid transaction id"):
             call(TransactionsService(db_session))
 
     def test_delete_transaction_protected_tag(self, db_session):
@@ -543,7 +544,7 @@ class TestTransactionsServiceTaggingById:
     def test_update_tagging_invalid_table_raises(self, db_session):
         """Verify ValidationException raised for an invalid table name."""
         service = TransactionsService(db_session)
-        with pytest.raises(ValidationException, match="Invalid table name"):
+        with pytest.raises(ValidationException, match="Invalid source"):
             service.update_tagging_by_id("nonexistent_table", 1, "Food", "Coffee")
 
 
@@ -877,7 +878,7 @@ class TestClearCategoryAndTag:
             uid, "bank_transactions", {"category": "", "tag": ""}
         )["updated"] is True
         refreshed = service.transactions_repository.get_transaction_by_id(
-            uid, "bank_transactions"
+            TxRef("bank_transactions", uid)
         )
         assert pd.isna(refreshed.category)
         assert pd.isna(refreshed.tag)
@@ -889,7 +890,7 @@ class TestClearCategoryAndTag:
 
         assert service.update_transaction(uid, "bank_transactions", {"tag": ""})["updated"] is True
         refreshed = service.transactions_repository.get_transaction_by_id(
-            uid, "bank_transactions"
+            TxRef("bank_transactions", uid)
         )
         assert refreshed.category == "Food"
         assert pd.isna(refreshed.tag)
@@ -912,8 +913,8 @@ class TestClearCategoryAndTag:
 
         for uid in ids:
             refreshed = service.transactions_repository.get_transaction_by_id(
-                uid, "bank_transactions"
-            )
+            TxRef("bank_transactions", uid)
+        )
             assert pd.isna(refreshed.category)
             assert pd.isna(refreshed.tag)
 
@@ -935,8 +936,8 @@ class TestClearCategoryAndTag:
 
         for uid in ids:
             refreshed = service.transactions_repository.get_transaction_by_id(
-                uid, "bank_transactions"
-            )
+            TxRef("bank_transactions", uid)
+        )
             assert refreshed.category == "Food"
 
 
@@ -1235,7 +1236,7 @@ class TestDeleteAccountData:
 
     def test_unknown_service_raises(self, db_session):
         """An unknown service name is rejected before anything is touched."""
-        with pytest.raises(ValidationException, match="Unknown service"):
+        with pytest.raises(ValidationException, match="Invalid source"):
             TransactionsService(db_session).delete_account_data(
                 "not_a_service", "hapoalim", "Checking"
             )
@@ -1250,3 +1251,70 @@ class TestDeleteAccountData:
 
         assert result == {"transactions_deleted": 0}
         assert db_session.query(BankTransaction).count() == 1
+
+
+class TestServiceNameSpellings:
+    """A transaction addressed by its service name behaves as by its table.
+
+    Clients send either ``"cash_transactions"`` or ``"cash"``; before
+    ``TxRef`` some writes compared the raw spelling against table names and
+    quietly did something else for the service one.
+    """
+
+    def test_update_by_service_name_edits_manual_fields(self, db_session):
+        """A cash edit sent as ``"cash"`` still writes its amount and description."""
+        uid = _add_cash(db_session)
+
+        TransactionsService(db_session).update_transaction(
+            uid, "cash", {"amount": -42.0, "description": "edited"}
+        )
+
+        db_session.expire_all()
+        row = db_session.get(CashTransaction, uid)
+        assert (row.amount, row.description) == (-42.0, "edited")
+
+    def test_delete_by_service_name_is_allowed(self, db_session):
+        """Deleting a cash row sent as ``"cash"`` is not refused as non-manual."""
+        uid = _add_cash(db_session)
+
+        TransactionsService(db_session).delete_transaction(uid, "cash")
+
+        db_session.expire_all()
+        assert db_session.get(CashTransaction, uid) is None
+
+    def test_split_by_service_name_stores_table_name(self, db_session):
+        """Splits are stored under the canonical table, whatever was sent."""
+        uid = _add_bank(db_session, "alias_split", -100.0)
+
+        TransactionsService(db_session).split_transaction(
+            uid,
+            "banks",
+            [
+                {"amount": -60.0, "category": "Food", "tag": "Groceries"},
+                {"amount": -40.0, "category": "Home", "tag": "Cleaning"},
+            ],
+        )
+
+        sources = {
+            s.source
+            for s in db_session.query(SplitTransaction).filter_by(transaction_id=uid)
+        }
+        assert sources == {"bank_transactions"}
+
+    def test_revert_clears_splits_stored_under_legacy_spelling(self, db_session):
+        """A split row written as ``"banks"`` before canonicalisation is reverted too."""
+        uid = _add_bank(db_session, "legacy_split", -100.0, type="split_parent")
+        for amount in (-70.0, -30.0):
+            db_session.add(
+                SplitTransaction(
+                    transaction_id=uid, source="banks", amount=amount,
+                    category="Food", tag="Groceries",
+                )
+            )
+        db_session.commit()
+
+        TransactionsService(db_session).revert_split(uid, "bank_transactions")
+
+        db_session.expire_all()
+        assert db_session.query(SplitTransaction).filter_by(transaction_id=uid).count() == 0
+        assert db_session.get(BankTransaction, uid).type == "normal"

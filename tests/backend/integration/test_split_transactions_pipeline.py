@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 from backend.repositories.split_transactions_repository import (
     SplitTransactionsRepository,
 )
-from backend.repositories.transactions import TransactionsRepository
+from backend.repositories.transactions import TransactionsRepository, TxRef
 from backend.services.transactions_service import TransactionsService
 
 
@@ -36,7 +36,7 @@ class TestSplitTransactionsPipeline:
             {"amount": -50.0, "category": "Home", "tag": "Cleaning"},
         ]
         success = repo.split_transaction(
-            parent_unique_id, "credit_card_transactions", splits
+            TxRef("credit_card_transactions", parent_unique_id), splits
         )
         assert success is True
 
@@ -70,7 +70,7 @@ class TestSplitTransactionsPipeline:
             {"amount": -60.0, "category": "Entertainment", "tag": "Cinema"},
         ]
         repo.split_transaction(
-            parent_unique_id, "credit_card_transactions", splits
+            TxRef("credit_card_transactions", parent_unique_id), splits
         )
 
         analysis_df = service.get_data_for_analysis(include_split_parents=False)
@@ -102,7 +102,7 @@ class TestSplitTransactionsPipeline:
             {"amount": -50.0, "category": "Home", "tag": "Cleaning"},
         ]
         repo.split_transaction(
-            parent_unique_id, "credit_card_transactions", splits
+            TxRef("credit_card_transactions", parent_unique_id), splits
         )
 
         # Default: include_split_parents=False
@@ -153,7 +153,7 @@ class TestSplitTransactionsPipeline:
             {"amount": -50.0, "category": "Home", "tag": "Cleaning"},
         ]
         repo.split_transaction(
-            parent_unique_id, "credit_card_transactions", splits
+            TxRef("credit_card_transactions", parent_unique_id), splits
         )
 
         # Confirm split exists
@@ -164,7 +164,7 @@ class TestSplitTransactionsPipeline:
 
         # Revert the split
         success = repo.revert_split(
-            parent_unique_id, "credit_card_transactions"
+            TxRef("credit_card_transactions", parent_unique_id)
         )
         assert success is True
 
@@ -197,7 +197,7 @@ class TestSplitTransactionsPipeline:
             {"amount": -500.0, "category": "Other", "tag": None},
         ]
         repo.split_transaction(
-            parent_unique_id, "bank_transactions", splits
+            TxRef("bank_transactions", parent_unique_id), splits
         )
 
         children = split_repo.get_splits_for_transaction(
@@ -244,7 +244,7 @@ class TestSplitTransactionsPipeline:
 
         with pytest.raises(ValidationException, match="Cannot split"):
             repo.split_transaction(
-                bogus_unique_id, "credit_card_transactions", splits
+                TxRef("credit_card_transactions", bogus_unique_id), splits
             )
 
         # No orphan rows must have been written.

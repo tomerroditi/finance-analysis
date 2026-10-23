@@ -19,7 +19,7 @@ from contextlib import contextmanager
 
 from sqlalchemy.orm import Session
 
-from backend.constants.tables import Tables
+from backend.constants.tables import Tables, canonical_table
 from backend.repositories.transactions import TransactionsRepository
 from backend.services.cash_balance_service import CashBalanceService
 from backend.services.investments import InvestmentsService
@@ -96,8 +96,7 @@ class TransactionWriteEffects:
         TouchedRows
             Lets the caller add rows the ids do not cover, such as a new one.
         """
-        repo = self.transactions_repository.get_repo_by_source(source)
-        table = repo.model.__tablename__ if repo is not None else source
+        table = canonical_table(source)
         touched = TouchedRows(table)
         if table not in _TRACKED_TABLES:
             yield touched

@@ -16,7 +16,7 @@ from sqlalchemy import exists, func, or_, select, update
 from sqlalchemy.orm import Session
 
 from backend.constants.providers import Services
-from backend.constants.tables import SERVICE_TO_TABLE, Tables, TransactionsTableFields
+from backend.constants.tables import Tables, TransactionsTableFields, canonical_table
 from backend.errors import EntityNotFoundException, ValidationException
 from backend.models.transaction import SplitTransaction, TransactionBase
 from backend.repositories._sql import chunked, orm_to_dict
@@ -24,6 +24,7 @@ from backend.repositories.split_transactions_repository import (
     SplitTransactionsRepository,
 )
 from backend.repositories.transactions.ingestion import IngestionMixin
+from backend.repositories.transactions.ref import TxRef, transaction_table
 from backend.repositories.transactions.service_repositories import (
     BankRepository,
     CashRepository,
@@ -70,12 +71,6 @@ class TransactionsRepository(IngestionMixin, SplitsMixin):
         ----------
         db : Session
             SQLAlchemy database session shared across all sub-repositories.
-
-        Notes
-        -----
-        Builds a ``repo_map`` keyed by both table name and service name variants
-        (e.g. ``"credit_card_transactions"`` and ``"credit_card"``) to support
-        flexible source-based dispatch.
         """
         self.db = db
         self.cc_repo = CreditCardRepository(db)
@@ -85,10 +80,8 @@ class TransactionsRepository(IngestionMixin, SplitsMixin):
         self.insurance_repo = InsuranceRepository(db)
         self.split_repo = SplitTransactionsRepository(db)
 
-        by_table = {repo.table: repo for repo in self._all_repos()}
-        self.repo_map: dict[str, ServiceRepository] = {
-            **by_table,
-            **{service: by_table[table] for service, table in SERVICE_TO_TABLE.items()},
+        self._by_table: dict[str, ServiceRepository] = {
+            repo.table: repo for repo in self._all_repos()
         }
 
     def _non_insurance_repos(self) -> list[ServiceRepository]:
@@ -237,15 +230,12 @@ class TransactionsRepository(IngestionMixin, SplitsMixin):
             If ``service`` does not match any registered source.
         """
         if service is not None:
-            repo = self.get_repo_by_source(service)
-            if repo is None:
-                raise ValidationException(f"Unknown service '{service}'")
-            return repo.get_table()
+            return self.repo_for(service).get_table()
 
         excluded_repos = {
             repo
             for s in (exclude_services or [])
-            if (repo := self.get_repo_by_source(s)) is not None
+            if (repo := self._known_repo(s)) is not None
         }
 
         dfs = [
@@ -282,77 +272,98 @@ class TransactionsRepository(IngestionMixin, SplitsMixin):
         )
         return df
 
-    def get_repo_by_source(self, source: str) -> ServiceRepository | None:
-        """Look up the sub-repository for a given source/service name.
+    def repo_for(self, source: str) -> ServiceRepository:
+        """Return the sub-repository behind a transaction table.
 
         Parameters
         ----------
         source : str
-            Table name or service name (e.g. ``"credit_card_transactions"`` or
-            ``"credit_card"``).
+            Any spelling of the table (``"credit_card_transactions"`` or
+            ``"credit_cards"``).
 
         Returns
         -------
-        ServiceRepository or None
-            The matching sub-repository instance, or ``None`` if ``source`` is
-            not a recognized key in the repo_map. Callers that require a valid
-            source must check for ``None`` (see ``get_table``); callers that
-            tolerate unknown entries (e.g. ``exclude_services`` filtering) rely
-            on the ``None`` return to skip them.
-        """
-        return self.repo_map.get(source)
+        ServiceRepository
+            The sub-repository for that table.
 
-    def get_record(self, source: str, unique_id: int) -> TransactionBase | None:
-        """Return one transaction's ORM row from its source table.
+        Raises
+        ------
+        ValidationException
+            If ``source`` names no transaction table.
+        """
+        return self._by_table[transaction_table(source)]
+
+    def _known_repo(self, source: str) -> ServiceRepository | None:
+        """Return the sub-repository for ``source``, or ``None`` when unknown.
+
+        For filters and stored rows, where an unrecognised spelling is
+        skipped rather than rejected.
+        """
+        return self._by_table.get(canonical_table(source))
+
+    def get_record(self, ref: TxRef) -> TransactionBase | None:
+        """Return one transaction's ORM row.
 
         Parameters
         ----------
-        source : str
-            Table or service name the transaction lives in.
-        unique_id : int
-            The transaction's per-table ``unique_id``.
+        ref : TxRef
+            The transaction.
 
         Returns
         -------
         TransactionBase or None
-            The row, or ``None`` when ``source`` is unknown or no row has
-            that ``unique_id`` in it.
+            The row, or ``None`` when no row has that id in its table.
         """
-        repo = self.get_repo_by_source(source)
-        if repo is None:
-            return None
+        model = self._by_table[ref.table].model
         return self.db.execute(
-            select(repo.model).where(repo.model.unique_id == unique_id)
+            select(model).where(model.unique_id == ref.unique_id)
         ).scalar_one_or_none()
 
-    def get_records(self, source: str, unique_ids: list[int]) -> list[TransactionBase]:
-        """Return the ORM rows of many transactions from one source table.
+    def get_records(self, table: str, unique_ids: list[int]) -> list[TransactionBase]:
+        """Return the ORM rows of many transactions from one table.
 
         Parameters
         ----------
-        source : str
-            Table or service name the transactions live in.
+        table : str
+            Any spelling of the table the transactions live in.
         unique_ids : list[int]
             Per-table ``unique_id`` values; queried in ``IN`` chunks.
 
         Returns
         -------
         list[TransactionBase]
-            The rows that exist; empty when ``source`` is unknown.
+            The rows that exist.
+
+        Raises
+        ------
+        ValidationException
+            If ``table`` names no transaction table.
         """
-        repo = self.get_repo_by_source(source)
-        if repo is None:
-            return []
+        model = self.repo_for(table).model
         rows: list[TransactionBase] = []
         for chunk in chunked(unique_ids):
             rows.extend(
-                self.db.execute(
-                    select(repo.model).where(repo.model.unique_id.in_(chunk))
-                )
+                self.db.execute(select(model).where(model.unique_id.in_(chunk)))
                 .scalars()
                 .all()
             )
         return rows
+
+    def update_tagging(self, ref: TxRef, category: str | None, tag: str | None) -> None:
+        """Set one transaction's category and tag.
+
+        Parameters
+        ----------
+        ref : TxRef
+            The transaction.
+        category : str or None
+            New category.
+        tag : str or None
+            New tag.
+        """
+        self._by_table[ref.table].update_tagging_by_unique_id(
+            ref.unique_id, category, tag
+        )
 
     def get_split_with_parent(
         self, split_id: int
@@ -374,7 +385,9 @@ class TransactionsRepository(IngestionMixin, SplitsMixin):
         split = self.split_repo.get_split(split_id)
         if split is None:
             return None
-        return split, self.get_record(split.source, split.transaction_id)
+        if self._known_repo(split.source) is None:
+            return split, None
+        return split, self.get_record(TxRef.parse(split.source, split.transaction_id))
 
     def get_holding_keys(
         self, source: str, unique_ids: list[int]
@@ -401,7 +414,7 @@ class TransactionsRepository(IngestionMixin, SplitsMixin):
         ValidationException
             If ``source`` is not a known table/service name.
         """
-        repo = self._require_repo(source)
+        repo = self.repo_for(source)
         model = repo.model
         keys: list[tuple[str | None, str | None, str | None]] = []
         for chunk in chunked(unique_ids):
@@ -435,7 +448,7 @@ class TransactionsRepository(IngestionMixin, SplitsMixin):
         ValidationException
             If ``source`` is not a known table/service name.
         """
-        repo = self._require_repo(source)
+        repo = self.repo_for(source)
         for chunk in chunked(unique_ids):
             self.db.execute(
                 update(repo.model)
@@ -443,13 +456,6 @@ class TransactionsRepository(IngestionMixin, SplitsMixin):
                 .values(**values)
             )
         self.db.commit()
-
-    def _require_repo(self, source: str) -> ServiceRepository:
-        """Return the sub-repository for ``source`` or raise ``ValidationException``."""
-        repo = self.get_repo_by_source(source)
-        if repo is None:
-            raise ValidationException(f"Invalid source: '{source}'")
-        return repo
 
     def get_latest_date_from_table(self, table_name: str) -> datetime | None:
         """Get the most recent transaction date in a given table.
@@ -465,7 +471,7 @@ class TransactionsRepository(IngestionMixin, SplitsMixin):
             Latest transaction date parsed from ``YYYY-MM-DD``, or None if
             the table is empty or the date cannot be parsed.
         """
-        repo = self.get_repo_by_source(table_name)
+        repo = self.repo_for(table_name)
         result = self.db.execute(
             select(repo.model.date).order_by(repo.model.date.desc()).limit(1)
         ).scalar()
@@ -665,20 +671,13 @@ class TransactionsRepository(IngestionMixin, SplitsMixin):
         for repo in self._all_repos():
             repo.rename_tag(category, old_tag, new_tag)
 
-    def get_transaction_by_id(self, transaction_id: int, source: str) -> pd.Series:
-        """Retrieve a single transaction row by its per-table unique_id.
-
-        ``unique_id`` is a per-table auto-increment, so the source table is
-        required — the same integer identifies unrelated transactions in
-        different tables (see backend_repositories.md → "unique_id Is
-        Per-Table").
+    def get_transaction_by_id(self, ref: TxRef) -> pd.Series:
+        """Retrieve a single transaction row.
 
         Parameters
         ----------
-        transaction_id : int
-            The unique_id to look up within ``source``.
-        source : str
-            Source table or service name (e.g. ``"bank_transactions"``).
+        ref : TxRef
+            The transaction.
 
         Returns
         -------
@@ -689,17 +688,13 @@ class TransactionsRepository(IngestionMixin, SplitsMixin):
         Raises
         ------
         EntityNotFoundException
-            If ``source`` is not a known table/service name, or no
-            transaction with that unique_id exists in it.
+            If no transaction with that id exists in its table.
         """
-        repo = self.repo_map.get(source)
-        if repo is None:
-            raise EntityNotFoundException(f"Invalid source: {source}")
-        record = self.db.get(repo.model, int(transaction_id))
+        record = self.get_record(ref)
         if record is None:
             raise EntityNotFoundException(
-                f"Transaction with ID {transaction_id} not found in {source}."
+                f"Transaction with ID {ref.unique_id} not found in {ref.table}."
             )
         row = orm_to_dict(record)
-        row["source"] = repo.model.__tablename__
+        row["source"] = ref.table
         return pd.Series(row)

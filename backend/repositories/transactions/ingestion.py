@@ -67,7 +67,7 @@ class IngestionMixin:
         if table_name not in self.tables:
             raise ValueError(f"table_name should be one of {self.tables}")
 
-        repo = self.get_repo_by_source(table_name)
+        repo = self.repo_for(table_name)
 
         carried_tags = self._reconcile_pending_rows(repo, df, scrape_start_date)
 

@@ -13,10 +13,15 @@ import pandas as pd
 from sqlalchemy import delete, select, update
 from sqlalchemy.exc import SQLAlchemyError
 
-from backend.constants.tables import SplitTransactionsTableFields
+from backend.constants.tables import (
+    SplitTransactionsTableFields,
+    canonical_table,
+    table_aliases,
+)
 from backend.errors import ValidationException
 from backend.models.transaction import SplitTransaction
 from backend.repositories._sql import chunked
+from backend.repositories.transactions.ref import TxRef, transaction_table
 from backend.repositories.transactions.service_repositories import T_service
 from backend.utils.log_sanitize import scrub
 
@@ -69,14 +74,16 @@ class SplitsMixin:
 
         src_col = SplitTransactionsTableFields.SOURCE.value
         tid_col = SplitTransactionsTableFields.TRANSACTION_ID.value
+        # Older slices may store the service spelling ("banks"); the merged
+        # view always names the table.
+        splits_df[src_col] = splits_df[src_col].map(canonical_table)
 
         # Batch: one SELECT ... WHERE unique_id IN (...) per source table
         # instead of one query per split row — this runs inside get_table(),
         # i.e. on essentially every analytics/budget/transactions request.
         parents_by_key: dict[tuple[str, int], dict[str, Any]] = {}
         for source, group in splits_df.groupby(src_col):
-            repo = self.get_repo_by_source(source)
-            if repo is None:
+            if self._known_repo(source) is None:
                 logger.warning(
                     "Splits reference unknown source %s — skipping", scrub(source)
                 )
@@ -124,25 +131,12 @@ class SplitsMixin:
         children_df = pd.DataFrame(children)
 
         if service:
-            target_repo = self.get_repo_by_source(service)
-            valid_sources = [
-                src
-                for src in children_df["source"].unique()
-                if self.get_repo_by_source(src) == target_repo
+            children_df = children_df[
+                children_df["source"] == transaction_table(service)
             ]
-            children_df = children_df[children_df["source"].isin(valid_sources)]
         elif exclude_services:
-            excluded_repos = {
-                repo
-                for s in exclude_services
-                if (repo := self.get_repo_by_source(s)) is not None
-            }
-            excluded_sources = [
-                src
-                for src in children_df["source"].unique()
-                if self.get_repo_by_source(src) in excluded_repos
-            ]
-            children_df = children_df[~children_df["source"].isin(excluded_sources)]
+            excluded = {canonical_table(s) for s in exclude_services}
+            children_df = children_df[~children_df["source"].isin(excluded)]
 
         return children_df
 
@@ -185,28 +179,28 @@ class SplitsMixin:
         unique_ids : list[int]
             unique_ids of the parent transactions.
         source : str
-            Table name the parents live in.
+            Any spelling of the table the parents live in.
 
         Returns
         -------
         list[int]
-            Primary keys of the matching ``split_transactions`` rows.
+            Primary keys of the matching ``split_transactions`` rows, whichever
+            spelling of the table they were stored under.
         """
         if not unique_ids:
             return []
         ids = [int(v) for v in unique_ids]
+        spellings = table_aliases(transaction_table(source))
         split_ids: list[int] = []
         for chunk in chunked(ids):
             stmt = select(SplitTransaction.id).where(
-                SplitTransaction.source == source,
+                SplitTransaction.source.in_(spellings),
                 SplitTransaction.transaction_id.in_(chunk),
             )
             split_ids.extend(int(row[0]) for row in self.db.execute(stmt).all())
         return split_ids
 
-    def split_transaction(
-        self, unique_id: int, source: str, splits: list[dict[str, Any]]
-    ) -> bool:
+    def split_transaction(self, ref: TxRef, splits: list[dict[str, Any]]) -> bool:
         """Split a transaction into multiple partial amounts across categories.
 
         The parent flip, the removal of any previous slices and the insert
@@ -216,10 +210,9 @@ class SplitsMixin:
 
         Parameters
         ----------
-        unique_id : int
-            unique_id of the transaction to split.
-        source : str
-            Table name of the source repository.
+        ref : TxRef
+            The transaction to split. Its slices are stored under the
+            canonical table name, replacing slices stored under any spelling.
         splits : list[dict[str, Any]]
             List of split dicts, each with keys: amount, category, tag.
 
@@ -231,7 +224,7 @@ class SplitsMixin:
         Raises
         ------
         ValidationException
-            If ``source`` is unknown or no row with ``unique_id`` exists in it.
+            If no row with that id exists in its table.
         SQLAlchemyError
             On database failure, after rolling back.
 
@@ -241,31 +234,29 @@ class SplitsMixin:
         one split_transaction record per element in ``splits``.  Any existing
         splits for this transaction are replaced.
         """
-        repo = self.get_repo_by_source(source)
-        if repo is None:
-            raise ValidationException(f"Unknown source '{source}'")
+        model = self._by_table[ref.table].model
         try:
             parent_updated = self.db.execute(
-                update(repo.model)
-                .where(repo.model.unique_id == int(unique_id))
+                update(model)
+                .where(model.unique_id == ref.unique_id)
                 .values(type="split_parent")
             )
             if parent_updated.rowcount == 0:
                 self.db.rollback()
                 raise ValidationException(
-                    f"Cannot split: no {source} row with unique_id={unique_id}"
+                    f"Cannot split: no {ref.table} row with unique_id={ref.unique_id}"
                 )
 
             self.db.execute(
                 delete(SplitTransaction).where(
-                    SplitTransaction.transaction_id == int(unique_id),
-                    SplitTransaction.source == source,
+                    SplitTransaction.transaction_id == ref.unique_id,
+                    SplitTransaction.source.in_(table_aliases(ref.table)),
                 )
             )
             self.db.add_all(
                 SplitTransaction(
-                    transaction_id=int(unique_id),
-                    source=source,
+                    transaction_id=ref.unique_id,
+                    source=ref.table,
                     amount=split["amount"],
                     category=split["category"],
                     tag=split["tag"],
@@ -276,20 +267,18 @@ class SplitsMixin:
             return True
         except SQLAlchemyError:
             logger.exception(
-                "Split failed for unique_id=%s in %s", scrub(unique_id), scrub(source)
+                "Split failed for unique_id=%s in %s", ref.unique_id, ref.table
             )
             self.db.rollback()
             raise
 
-    def revert_split(self, unique_id: int, source: str) -> bool:
+    def revert_split(self, ref: TxRef) -> bool:
         """Revert a split transaction back to a normal transaction.
 
         Parameters
         ----------
-        unique_id : int
-            unique_id of the split-parent transaction to revert.
-        source : str
-            Table name of the source repository.
+        ref : TxRef
+            The split-parent transaction to revert.
 
         Returns
         -------
@@ -299,7 +288,7 @@ class SplitsMixin:
         Raises
         ------
         ValidationException
-            If ``source`` is unknown or no row with ``unique_id`` exists in it.
+            If no row with that id exists in its table.
         SQLAlchemyError
             On database failure, after rolling back.
 
@@ -308,24 +297,23 @@ class SplitsMixin:
         Sets the transaction type back to ``"normal"`` and deletes all associated
         split_transaction records in one commit.
         """
-        repo = self.get_repo_by_source(source)
-        if repo is None:
-            raise ValidationException(f"Unknown source '{source}'")
+        model = self._by_table[ref.table].model
         try:
             parent_updated = self.db.execute(
-                update(repo.model)
-                .where(repo.model.unique_id == int(unique_id))
+                update(model)
+                .where(model.unique_id == ref.unique_id)
                 .values(type="normal")
             )
             if parent_updated.rowcount == 0:
                 self.db.rollback()
                 raise ValidationException(
-                    f"Cannot revert split: no {source} row with unique_id={unique_id}"
+                    f"Cannot revert split: no {ref.table} row "
+                    f"with unique_id={ref.unique_id}"
                 )
             self.db.execute(
                 delete(SplitTransaction).where(
-                    SplitTransaction.transaction_id == int(unique_id),
-                    SplitTransaction.source == source,
+                    SplitTransaction.transaction_id == ref.unique_id,
+                    SplitTransaction.source.in_(table_aliases(ref.table)),
                 )
             )
             self.db.commit()
@@ -333,8 +321,8 @@ class SplitsMixin:
         except SQLAlchemyError:
             logger.exception(
                 "Revert split failed for unique_id=%s in %s",
-                scrub(unique_id),
-                scrub(source),
+                ref.unique_id,
+                ref.table,
             )
             self.db.rollback()
             raise

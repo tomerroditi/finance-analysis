@@ -5,12 +5,13 @@ from typing import Any, Literal
 import pandas as pd
 from sqlalchemy.orm import Session
 
+from backend.constants.tables import canonical_table, table_aliases
 from backend.errors import EntityNotFoundException, ValidationException
 from backend.models.budget_month_override import BudgetMonthOverride
 from backend.repositories.budget_month_override_repository import (
     BudgetMonthOverrideRepository,
 )
-from backend.repositories.transactions import TransactionsRepository
+from backend.repositories.transactions import TransactionsRepository, TxRef
 
 
 class BudgetMonthOverrideService:
@@ -57,7 +58,9 @@ class BudgetMonthOverrideService:
             found = self.transactions_repo.get_split_with_parent(source_id)
             txn = found[1] if found else None
         else:
-            txn = self.transactions_repo.get_record(source_table, source_id)
+            txn = self.transactions_repo.get_record(
+                TxRef.parse(source_table, source_id)
+            )
         return pd.to_datetime(txn.date) if txn else None
 
     @staticmethod
@@ -108,6 +111,8 @@ class BudgetMonthOverrideService:
         """
         if not 1 <= override_month <= 12:
             raise ValidationException("override_month must be between 1 and 12")
+        if source_type == "transaction":
+            source_table = TxRef.parse(source_table, source_id).table
 
         source_date = self._get_source_date(source_type, source_id, source_table)
         if source_date is None:
@@ -124,6 +129,11 @@ class BudgetMonthOverrideService:
                 "its original month"
             )
 
+        # An override stored under the table's legacy service spelling would
+        # otherwise survive beside the one written now.
+        if source_type == "transaction":
+            legacy = [t for t in table_aliases(source_table) if t != source_table]
+            self.repo.delete_for_sources(source_type, [source_id], legacy)
         # Target is the real month — clear any override so it reverts naturally.
         if delta == 0:
             self.repo.delete_for_source(source_type, source_id, source_table)
@@ -197,7 +207,7 @@ class BudgetMonthOverrideService:
                 continue
             value = (int(row.override_year), int(row.override_month))
             if row.source_type == "transaction":
-                bucket[(row.source_table, row.source_id)] = value
+                bucket[(canonical_table(row.source_table), row.source_id)] = value
             else:
                 bucket[row.source_id] = value
         return result

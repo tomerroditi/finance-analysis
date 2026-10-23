@@ -351,10 +351,10 @@ class TestDeleteUnknownSource:
 
 
 class TestNonIntegerUniqueId:
-    """A ``unique_id`` path segment that is not an integer keeps its status codes.
+    """A ``unique_id`` path segment that is not an integer is always a 400.
 
-    These routes take ``unique_id`` as a string, so the parse happens in the
-    service; the answer (and its message) must not change with that move.
+    These routes take ``unique_id`` as a string; ``TxRef.parse`` turns it into
+    an int in the service, and fails the same way whichever route asked.
     """
 
     def test_update_with_non_integer_id_returns_400(self, test_client):
@@ -364,15 +364,15 @@ class TestNonIntegerUniqueId:
             json={"category": "Food", "source": "cash_transactions"},
         )
         assert response.status_code == 400
-        assert "invalid literal for int()" in response.json()["detail"]
+        assert "Invalid transaction id" in response.json()["detail"]
 
-    def test_delete_with_non_integer_id_returns_404(self, test_client):
-        """DELETE /api/transactions/{id} with a non-numeric id is a 404."""
+    def test_delete_with_non_integer_id_returns_400(self, test_client):
+        """DELETE /api/transactions/{id} with a non-numeric id is a 400, like update."""
         response = test_client.delete(
             "/api/transactions/abc", params={"source": "cash_transactions"}
         )
-        assert response.status_code == 404
-        assert "invalid literal for int()" in response.json()["detail"]
+        assert response.status_code == 400
+        assert "Invalid transaction id" in response.json()["detail"]
 
     def test_legacy_tag_with_non_integer_id_returns_400(self, test_client):
         """PUT /api/transactions/{id}/tag with a non-numeric id is a 400."""
@@ -381,7 +381,7 @@ class TestNonIntegerUniqueId:
             params={"category": "Food", "tag": "Groceries", "service": "banks"},
         )
         assert response.status_code == 400
-        assert "invalid literal for int()" in response.json()["detail"]
+        assert "Invalid transaction id" in response.json()["detail"]
 
     def test_unknown_source_wins_over_non_integer_id(self, test_client):
         """An unknown source is reported before the id is parsed."""

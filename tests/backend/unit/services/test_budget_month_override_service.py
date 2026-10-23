@@ -87,14 +87,14 @@ class TestSetOverride:
                 "transaction", 99999, "bank_transactions", 2024, 2
             )
 
-    def test_set_override_unknown_source_table_raises_not_found(
+    def test_set_override_unknown_source_table_raises_validation(
         self, db_session, seed_base_transactions
     ):
-        """A source table missing from the repo map resolves to not-found."""
+        """A source naming no transaction table is rejected as invalid input."""
         tx = _record_by_id(seed_base_transactions, "cc_jan_1")
         service = BudgetMonthOverrideService(db_session)
 
-        with pytest.raises(EntityNotFoundException):
+        with pytest.raises(ValidationException, match="Invalid source"):
             service.set_override(
                 "transaction", tx.unique_id, "nonexistent_table", 2024, 2
             )
@@ -340,3 +340,46 @@ class TestBudgetMonthOverrideRepository:
         repo = BudgetMonthOverrideRepository(db_session)
         repo.delete(12345)
         assert repo.get_all().empty
+
+
+class TestOverrideSourceSpellings:
+    """Overrides are stored and matched under the canonical table name."""
+
+    def test_override_set_by_service_name_is_stored_canonically(
+        self, db_session, seed_base_transactions
+    ):
+        """An override sent as ``"credit_cards"`` lands in the ledger's key."""
+        tx = _record_by_id(seed_base_transactions, "cc_jan_1")
+        service = BudgetMonthOverrideService(db_session)
+
+        result = service.set_override("transaction", tx.unique_id, "credit_cards", 2024, 2)
+
+        assert result["source_table"] == "credit_card_transactions"
+        assert service.get_override_map()["transaction"] == {
+            ("credit_card_transactions", tx.unique_id): (2024, 2)
+        }
+
+    def test_legacy_spelled_override_is_matched_and_replaced(
+        self, db_session, seed_base_transactions
+    ):
+        """A row stored as ``"credit_cards"`` is read canonically and replaced, not duplicated."""
+        tx = _record_by_id(seed_base_transactions, "cc_jan_1")
+        db_session.add(
+            BudgetMonthOverride(
+                source_type="transaction", source_id=tx.unique_id,
+                source_table="credit_cards", override_year=2024, override_month=2,
+            )
+        )
+        db_session.commit()
+        service = BudgetMonthOverrideService(db_session)
+
+        assert service.get_override_map()["transaction"] == {
+            ("credit_card_transactions", tx.unique_id): (2024, 2)
+        }
+
+        service.set_override(
+            "transaction", tx.unique_id, "credit_card_transactions", 2023, 12
+        )
+
+        rows = [(o["source_table"], o["override_month"]) for o in service.get_all()]
+        assert rows == [("credit_card_transactions", 12)]

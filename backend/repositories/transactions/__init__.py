@@ -7,11 +7,13 @@ Modules:
   per-table repositories + ``ManualTransactionDTO``.
 - ``ingestion`` — scraped-transaction insert + pending-row reconciliation.
 - ``splits`` — batched split-children builder + split/revert operations.
+- ``ref`` — ``TxRef``, a transaction's canonical (table, unique_id) identity.
 - ``core`` — the aggregating ``TransactionsRepository``.
 """
 
 from backend.repositories.transactions.core import TransactionsRepository
 from backend.repositories.transactions.ingestion import IngestionMixin
+from backend.repositories.transactions.ref import TxRef, transaction_table
 from backend.repositories.transactions.service_repositories import (
     DEPOSIT_TYPE,
     WITHDRAWAL_TYPE,
@@ -40,4 +42,6 @@ __all__ = [
     "SplitsMixin",
     "T_service",
     "TransactionsRepository",
+    "TxRef",
+    "transaction_table",
 ]
