@@ -21,7 +21,7 @@ from backend.repositories.tagging_rule_match_repository import (
     TaggingRuleMatchRepository,
 )
 from backend.repositories.tagging_rules_repository import TaggingRulesRepository
-from backend.repositories.transactions import TransactionsRepository
+from backend.repositories.transactions import TransactionsRepository, TxRef
 from backend.services.refund_tag_alignment import RefundTagAlignmentService
 from backend.services.tagging_service import CategoriesTagsService
 from backend.services.transactions_service import TransactionsService
@@ -871,9 +871,11 @@ class TaggingRulesService:
                     unique_id = bank_tag_month_data_amount.iloc[0][
                         TransactionsTableFields.UNIQUE_ID.value
                     ]
-                    self.transactions_repo.get_repo_by_source(
-                        Tables.BANK.value
-                    ).update_tagging_by_unique_id(unique_id, "Credit Cards", cc_tag)
+                    self.transactions_repo.update_tagging(
+                        TxRef.parse(Tables.BANK.value, unique_id),
+                        "Credit Cards",
+                        cc_tag,
+                    )
                     count += 1
 
         return count

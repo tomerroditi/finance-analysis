@@ -135,6 +135,14 @@ lookup map was keyed by bare `unique_id` over the merged analysis frame).
 - API payloads that point at a transaction must include both fields; the
   frontend sends `tx.source` as the table identifier (it holds the table
   name, e.g. `"bank_transactions"`).
+- Parse a client- or row-supplied pair once with
+  `TxRef.parse(source, unique_id)` (`backend/repositories/transactions/ref.py`)
+  and pass the `TxRef` down. It accepts either spelling (`"banks"` or
+  `"bank_transactions"`), always yields the canonical table and an `int`, and
+  fails only with a `ValidationException` (400). Store the canonical
+  `ref.table`; when matching rows written before that rule, match every
+  spelling with `table_aliases(table)`. `TransactionsRepository.repo_for(source)`
+  is the one strict source → sub-repository lookup.
 - Frontend React keys follow the same logic: `` `${tx.source}_${tx.unique_id}` ``
   (see `frontend_pitfalls.md` → "Key Generation in Lists").
 

@@ -26,7 +26,6 @@ from backend.constants.tables import (
     table_aliases,
 )
 from backend.errors import (
-    AppException,
     BadRequestException,
     EntityNotFoundException,
     ForbiddenException,
@@ -37,6 +36,8 @@ from backend.repositories.investments_repository import InvestmentsRepository
 from backend.repositories.transactions import (
     ManualTransactionDTO,
     TransactionsRepository,
+    TxRef,
+    transaction_table,
 )
 from backend.services.transaction_write_effects import TransactionWriteEffects
 from backend.utils.session_cache import session_cache_get, session_cache_set
@@ -58,62 +59,6 @@ SPLIT_SUM_TOLERANCE = 0.01
 def _empty_split_id(index: pd.Index) -> pd.Series:
     """Build an all-missing ``split_id`` column with the canonical dtype."""
     return pd.Series(index=index, dtype=SPLIT_ID_DTYPE)
-
-
-def validate_transaction_source(source: str) -> str:
-    """Reject a ``source`` the transactions repository cannot dispatch on.
-
-    An unrecognized value used to reach the repository lookup, which returns
-    ``None`` and was then dereferenced — a 500 for what is plainly a client
-    mistake.
-
-    Parameters
-    ----------
-    source : str
-        Table or service identifier supplied by the client.
-
-    Returns
-    -------
-    str
-        The unchanged ``source`` when it is recognized.
-
-    Raises
-    ------
-    ValidationException
-        If ``source`` is not a known table or service name.
-    """
-    if source not in TRANSACTION_SOURCES:
-        raise ValidationException(
-            f"Invalid source: '{source}'. Valid sources: "
-            + ", ".join(sorted(TRANSACTION_SOURCES))
-        )
-    return source
-
-
-def _coerce_unique_id(value: int | str, error: type[AppException]) -> int:
-    """Parse a client-supplied ``unique_id``, raising ``error`` when it is not an int.
-
-    Parameters
-    ----------
-    value : int or str
-        The id as it arrived (routes take it as a string path segment).
-    error : type[AppException]
-        Exception raised, with the parse error as its message, on failure.
-
-    Returns
-    -------
-    int
-        The parsed id.
-
-    Raises
-    ------
-    AppException
-        An instance of ``error`` if ``value`` is not an integer.
-    """
-    try:
-        return int(value)
-    except (TypeError, ValueError) as exc:
-        raise error(str(exc)) from None
 
 
 class TransactionsService:
@@ -334,15 +279,12 @@ class TransactionsService:
             If ``table_name`` does not match any known transaction table, or
             ``unique_id`` is not an integer.
         """
+        ref = TxRef.parse(table_name, unique_id)
         category = self._normalize_empty_string(category)
         tag = self._normalize_empty_string(tag)
-        repo = self.transactions_repository.get_repo_by_source(table_name)
-        if repo is None:
-            raise ValidationException(f"Invalid table name: {table_name}")
-        uid = _coerce_unique_id(unique_id, ValidationException)
-        with self.write_effects.track(table_name, [uid]):
-            repo.update_tagging_by_unique_id(uid, category, tag)
-        return self._cascade_to_linked_refunds(table_name, [uid])
+        with self.write_effects.track(ref.table, [ref.unique_id]):
+            self.transactions_repository.update_tagging(ref, category, tag)
+        return self._cascade_to_linked_refunds(ref.table, [ref.unique_id])
 
     def _cascade_to_linked_refunds(self, source: str, unique_ids: list[int]) -> int:
         """Move refund money linked to retagged purchases to their new tag.
@@ -449,11 +391,13 @@ class TransactionsService:
 
         Raises
         ------
+        ValidationException
+            If the source is unknown or the id is not an integer.
         EntityNotFoundException
-            If the source is unknown or no transaction matches.
+            If no transaction matches.
         """
         return self.transactions_repository.get_transaction_by_id(
-            transaction_id, source
+            TxRef.parse(source, transaction_id)
         )
 
     @staticmethod
@@ -547,7 +491,7 @@ class TransactionsService:
         Parameters
         ----------
         source : str
-            Source table name.
+            Canonical source table name.
         updates : dict
             Raw requested updates.
 
@@ -628,29 +572,27 @@ class TransactionsService:
         EntityNotFoundException
             If no transaction with ``unique_id`` exists in ``source``.
         """
-        validate_transaction_source(source)
-        unique_id = _coerce_unique_id(unique_id, ValidationException)
-        target_repo = self.transactions_repository.get_repo_by_source(source)
+        ref = TxRef.parse(source, unique_id)
 
         # A missing row is a 404, not a silent "no_changes".
-        if self.transactions_repository.get_record(source, unique_id) is None:
+        if self.transactions_repository.get_record(ref) is None:
             raise EntityNotFoundException(
-                f"Transaction {unique_id} not found in {source}"
+                f"Transaction {ref.unique_id} not found in {ref.table}"
             )
 
-        filtered_updates = self._filter_updates_for_source(source, updates)
+        filtered_updates = self._filter_updates_for_source(ref.table, updates)
 
         if not filtered_updates:
             return {"updated": False, "refunds_retagged": 0}
 
-        with self.write_effects.track(source, [unique_id]):
-            result = target_repo.update_transaction_by_unique_id(
-                unique_id, filtered_updates
-            )
+        with self.write_effects.track(ref.table, [ref.unique_id]):
+            result = self.transactions_repository.repo_for(
+                ref.table
+            ).update_transaction_by_unique_id(ref.unique_id, filtered_updates)
 
         retagged = 0
         if result and ({"category", "tag"} & filtered_updates.keys()):
-            retagged = self._cascade_to_linked_refunds(source, [unique_id])
+            retagged = self._cascade_to_linked_refunds(ref.table, [ref.unique_id])
         return {"updated": bool(result), "refunds_retagged": retagged}
 
     def delete_transaction(self, unique_id: int | str, source: str) -> None:
@@ -674,27 +616,26 @@ class TransactionsService:
         Raises
         ------
         ValidationException
-            If ``source`` is not a known table or service name. An
-            unrecognised source is a malformed request, not a permission
-            problem — without this check it read as "you may not delete this"
-            rather than "that table does not exist".
+            If ``source`` is not a known table or service name, or
+            ``unique_id`` is not an integer. A malformed request, not a
+            permission problem — without this check it read as "you may not
+            delete this" rather than "that table does not exist".
         ForbiddenException
             If the source does not allow deletion or the transaction is a
             protected system-generated record.
         EntityNotFoundException
-            If ``unique_id`` is not an integer, the transaction is not found,
-            or deletion fails.
+            If the transaction is not found or deletion fails.
         """
-        validate_transaction_source(source)
-        unique_id = _coerce_unique_id(unique_id, EntityNotFoundException)
-        if source not in [
+        ref = TxRef.parse(source, unique_id)
+        if ref.table not in [
             Tables.CASH.value,
             Tables.MANUAL_INVESTMENT_TRANSACTIONS.value,
         ]:
-            raise ForbiddenException(f"Deletion of {source} transactions is prohibited")
+            raise ForbiddenException(
+                f"Deletion of {ref.table} transactions is prohibited"
+            )
 
-        target_repo = self.transactions_repository.get_repo_by_source(source)
-        tx_record = self.transactions_repository.get_record(source, unique_id)
+        tx_record = self.transactions_repository.get_record(ref)
 
         if not tx_record:
             raise EntityNotFoundException("Transaction not found")
@@ -706,13 +647,15 @@ class TransactionsService:
                 f"Cannot manually delete system-generated {tag} transaction"
             )
 
-        with self.write_effects.track(source, [unique_id]):
-            if not target_repo.delete_transaction_by_unique_id(unique_id):
+        with self.write_effects.track(ref.table, [ref.unique_id]):
+            if not self.transactions_repository.repo_for(
+                ref.table
+            ).delete_transaction_by_unique_id(ref.unique_id):
                 raise EntityNotFoundException(
                     "Transaction not found or deletion failed"
                 )
 
-        self._purge_dependent_records([unique_id], source)
+        self._purge_dependent_records([ref.unique_id], ref.table)
 
     def _purge_dependent_records(self, unique_ids: list[int], source: str) -> None:
         """
@@ -841,11 +784,8 @@ class TransactionsService:
         ValidationException
             If ``service`` does not map to a known transaction table.
         """
-        repo = self.transactions_repository.get_repo_by_source(service)
-        if repo is None:
-            raise ValidationException(f"Unknown service '{service}'")
-
-        source = repo.model.__tablename__
+        repo = self.transactions_repository.repo_for(service)
+        source = repo.table
         unique_ids = repo.get_unique_ids_for_account(provider, account_name)
 
         # Purge dependents first: once the transactions are gone their ids can
@@ -855,33 +795,8 @@ class TransactionsService:
         deleted = repo.delete_transactions_for_account(provider, account_name)
         return {"transactions_deleted": deleted}
 
-    def _get_parent_for_split(self, unique_id: int, source: str) -> pd.Series:
-        """Resolve the transaction a split operation targets.
-
-        Parameters
-        ----------
-        unique_id : int
-            Per-table id of the transaction.
-        source : str
-            Source table or service name.
-
-        Returns
-        -------
-        pd.Series
-            The transaction row.
-
-        Raises
-        ------
-        ValidationException
-            If ``source`` is not a known table/service name.
-        EntityNotFoundException
-            If no transaction with ``unique_id`` exists in ``source``.
-        """
-        validate_transaction_source(source)
-        return self.transactions_repository.get_transaction_by_id(unique_id, source)
-
     def split_transaction(
-        self, unique_id: int, source: str, splits: list[dict[str, Any]]
+        self, unique_id: int | str, source: str, splits: list[dict[str, Any]]
     ) -> None:
         """Split a transaction into multiple partial amounts across categories.
 
@@ -893,10 +808,10 @@ class TransactionsService:
 
         Parameters
         ----------
-        unique_id : int
+        unique_id : int or str
             Unique ID of the transaction to split.
         source : str
-            Source table name (e.g. ``"bank_transactions"``).
+            Source table or service name (e.g. ``"bank_transactions"``).
         splits : list[dict]
             One entry per resulting split, each with ``amount``, ``category``,
             ``tag``.
@@ -904,19 +819,20 @@ class TransactionsService:
         Raises
         ------
         ValidationException
-            If the source is not recognized, ``splits`` is empty or its
-            amounts don't sum to the parent.
+            If the source is not recognized, ``unique_id`` is not an integer,
+            ``splits`` is empty or its amounts don't sum to the parent.
         BadRequestException
             If the split fails to commit.
         EntityNotFoundException
             If no transaction with ``unique_id`` exists in ``source``.
         """
+        ref = TxRef.parse(source, unique_id)
         if not splits:
             # A zero-slice split flipped the parent to ``split_parent`` with
             # no children, hiding the transaction from the merged view.
             raise ValidationException("A split needs at least one slice")
 
-        parent = self._get_parent_for_split(unique_id, source)
+        parent = self.transactions_repository.get_transaction_by_id(ref)
         parent_amount = float(parent["amount"])
         total = sum(float(split["amount"]) for split in splits)
         if abs(total - parent_amount) > SPLIT_SUM_TOLERANCE:
@@ -928,45 +844,44 @@ class TransactionsService:
         # A re-split replaces the slices; whatever pointed at the old ones
         # must not survive onto the new (possibly id-recycled) slices.
         old_split_ids = self.transactions_repository.get_split_ids_for_transactions(
-            [unique_id], source
+            [ref.unique_id], ref.table
         )
-        success = self.transactions_repository.split_transaction(
-            unique_id, source, splits
-        )
+        success = self.transactions_repository.split_transaction(ref, splits)
         if not success:
             raise BadRequestException("Failed to split transaction")
         self._purge_split_dependents(old_split_ids)
 
-    def revert_split(self, unique_id: int, source: str) -> None:
+    def revert_split(self, unique_id: int | str, source: str) -> None:
         """Revert a split transaction back to a normal transaction.
 
         Parameters
         ----------
-        unique_id : int
+        unique_id : int or str
             Unique ID of the split-parent transaction to revert.
         source : str
-            Source table name (e.g. ``"bank_transactions"``).
+            Source table or service name (e.g. ``"bank_transactions"``).
 
         Raises
         ------
         ValidationException
-            If the source is not recognized.
+            If the source is not recognized or ``unique_id`` is not an integer.
         BadRequestException
             If the revert fails to commit.
         EntityNotFoundException
             If no transaction with ``unique_id`` exists in ``source``, or the
             transaction is not a split parent.
         """
-        parent = self._get_parent_for_split(unique_id, source)
+        ref = TxRef.parse(source, unique_id)
+        parent = self.transactions_repository.get_transaction_by_id(ref)
         if parent.get("type") != "split_parent":
             raise EntityNotFoundException(
-                f"Transaction {unique_id} in {source} is not split"
+                f"Transaction {ref.unique_id} in {ref.table} is not split"
             )
 
         split_ids = self.transactions_repository.get_split_ids_for_transactions(
-            [unique_id], source
+            [ref.unique_id], ref.table
         )
-        success = self.transactions_repository.revert_split(unique_id, source)
+        success = self.transactions_repository.revert_split(ref)
         if not success:
             raise BadRequestException("Failed to revert split")
         self._purge_split_dependents(split_ids)
@@ -1036,21 +951,20 @@ class TransactionsService:
         if amount is not None:
             updates["amount"] = amount
 
-        if self.transactions_repository.get_repo_by_source(source) is None:
-            raise ValidationException(f"Invalid source: '{source}'")
+        table = transaction_table(source)
 
-        filtered_updates = self._filter_updates_for_source(source, updates)
+        filtered_updates = self._filter_updates_for_source(table, updates)
         if not filtered_updates or not transaction_ids:
             return 0
 
-        ids = [int(uid) for uid in transaction_ids]
+        ids = [TxRef.parse(table, uid).unique_id for uid in transaction_ids]
 
         # One commit for the whole batch instead of a commit per row.
-        with self.write_effects.track(source, ids):
+        with self.write_effects.track(table, ids):
             self.transactions_repository.bulk_update_fields(
-                source, ids, filtered_updates
+                table, ids, filtered_updates
             )
-        return self._cascade_to_linked_refunds(source, ids)
+        return self._cascade_to_linked_refunds(table, ids)
 
     def get_latest_data_date(self) -> datetime | None:
         """

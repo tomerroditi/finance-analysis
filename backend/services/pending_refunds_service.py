@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from backend.constants.tables import TransactionsTableFields, canonical_table
 from backend.errors import EntityNotFoundException, ValidationException
 from backend.repositories.pending_refunds_repository import PendingRefundsRepository
-from backend.repositories.transactions import TransactionsRepository
+from backend.repositories.transactions import TransactionsRepository, TxRef
 from backend.services.refund_tag_alignment import RefundTagAlignmentService, Tagging
 
 logger = logging.getLogger(__name__)
@@ -148,9 +148,7 @@ class PendingRefundsService:
                 raise ValidationException(f"Split {source_id} does not exist")
             return float(split.amount)
 
-        if self.transactions_repo.get_repo_by_source(source_table) is None:
-            raise ValidationException(f"Unknown source table '{source_table}'")
-        txn = self.transactions_repo.get_record(source_table, source_id)
+        txn = self.transactions_repo.get_record(TxRef.parse(source_table, source_id))
         if txn is None:
             raise ValidationException(
                 f"Transaction {source_id} does not exist in {source_table}"
@@ -258,8 +256,7 @@ class PendingRefundsService:
         if amount <= 0:
             raise ValidationException("Refund amount must be positive")
 
-        if self.transactions_repo.get_repo_by_source(refund_source) is None:
-            raise ValidationException(f"Unknown refund source '{refund_source}'")
+        refund_ref = TxRef.parse(refund_source, refund_transaction_id)
 
         # The same transaction may fund several pending refunds, but only
         # once per pending refund.
@@ -280,7 +277,7 @@ class PendingRefundsService:
 
         # Validate against the money still available on the transaction
         # (skipped when the transaction can't be resolved, e.g. manual data).
-        txn = self.transactions_repo.get_record(refund_source, refund_transaction_id)
+        txn = self.transactions_repo.get_record(refund_ref)
         current = None
         if txn is not None:
             allocated = self.get_allocated_for_transaction(

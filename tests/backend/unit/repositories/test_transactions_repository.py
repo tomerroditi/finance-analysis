@@ -20,6 +20,7 @@ from backend.repositories.transactions import (
     CashRepository,
     ManualTransactionDTO,
     TransactionsRepository,
+    TxRef,
 )
 
 
@@ -416,7 +417,7 @@ class TestGetTransactionById:
         db_session.refresh(tx)
 
         repo = TransactionsRepository(db_session)
-        result = repo.get_transaction_by_id(tx.unique_id, "cash_transactions")
+        result = repo.get_transaction_by_id(TxRef("cash_transactions", tx.unique_id))
         assert result["description"] == "Test"
         assert result["source"] == "cash_transactions"
 
@@ -424,7 +425,7 @@ class TestGetTransactionById:
         """Verify get_transaction_by_id raises ValueError when not found."""
         repo = TransactionsRepository(db_session)
         with pytest.raises(EntityNotFoundException, match="not found"):
-            repo.get_transaction_by_id(99999, "cash_transactions")
+            repo.get_transaction_by_id(TxRef("cash_transactions", 99999))
 
     def test_get_transaction_by_id_scoped_to_source_table(self, db_session):
         """Verify the same integer id resolves per-table, not across tables.
@@ -450,16 +451,25 @@ class TestGetTransactionById:
         assert cash_tx.unique_id == bank_tx.unique_id
 
         repo = TransactionsRepository(db_session)
-        cash_row = repo.get_transaction_by_id(cash_tx.unique_id, "cash_transactions")
-        bank_row = repo.get_transaction_by_id(bank_tx.unique_id, "bank_transactions")
+        cash_row = repo.get_transaction_by_id(TxRef("cash_transactions", cash_tx.unique_id))
+        bank_row = repo.get_transaction_by_id(TxRef("bank_transactions", bank_tx.unique_id))
         assert cash_row["description"] == "Cash row"
         assert bank_row["description"] == "Bank row"
 
-    def test_get_transaction_by_id_invalid_source_raises(self, db_session):
-        """Verify an unknown source name raises ValueError."""
+    def test_get_transaction_by_id_reports_canonical_source(self, db_session):
+        """A row looked up by its service spelling still reports its table."""
+        tx = CashTransaction(
+            id="1", date="2024-01-01", amount=-10.0,
+            description="Test", account_name="Cash",
+            provider="manual", source="cash_transactions",
+        )
+        db_session.add(tx)
+        db_session.commit()
+        db_session.refresh(tx)
+
         repo = TransactionsRepository(db_session)
-        with pytest.raises(EntityNotFoundException, match="Invalid source"):
-            repo.get_transaction_by_id(1, "bogus_table")
+        row = repo.get_transaction_by_id(TxRef.parse("cash", tx.unique_id))
+        assert row["source"] == "cash_transactions"
 
 
 class TestPendingReconciliation:
@@ -910,8 +920,7 @@ class TestCountUncategorized:
         parent_amount = parent.amount
         half = round(parent_amount / 2, 2)
         assert repo.split_transaction(
-            parent.unique_id,
-            "credit_card_transactions",
+            TxRef("credit_card_transactions", parent.unique_id),
             [
                 {"amount": half, "category": None, "tag": None},
                 {"amount": parent_amount - half, "category": "Food", "tag": "Groceries"},
@@ -1110,14 +1119,13 @@ class TestRecordLookups:
     """Source-aware row lookups and batched writes on TransactionsRepository."""
 
     def test_get_record_resolves_table_and_service_names(self, db_session):
-        """Both spellings of a source find the row; unknown ones return None."""
+        """Both spellings of a source find the row; another table's id does not."""
         row = _bank(db_session, "r1", -10.0)
         repo = TransactionsRepository(db_session)
 
-        assert repo.get_record("bank_transactions", row.unique_id) is row
-        assert repo.get_record("banks", row.unique_id) is row
-        assert repo.get_record("credit_card_transactions", row.unique_id) is None
-        assert repo.get_record("nonsense", row.unique_id) is None
+        assert repo.get_record(TxRef.parse("bank_transactions", row.unique_id)) is row
+        assert repo.get_record(TxRef.parse("banks", row.unique_id)) is row
+        assert repo.get_record(TxRef("credit_card_transactions", row.unique_id)) is None
 
     def test_get_records_chunks_long_id_lists(self, db_session):
         """More ids than one IN chunk still returns every existing row."""
@@ -1128,7 +1136,8 @@ class TestRecordLookups:
         found = repo.get_records("bank_transactions", ids)
 
         assert {r.unique_id for r in found} == {r.unique_id for r in rows}
-        assert repo.get_records("nonsense", ids) == []
+        with pytest.raises(ValidationException, match="Invalid source"):
+            repo.get_records("nonsense", ids)
 
     def test_get_split_with_parent(self, db_session):
         """A slice comes back with its parent; a missing slice is None."""

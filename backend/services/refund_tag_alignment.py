@@ -26,7 +26,7 @@ from sqlalchemy.orm import Session
 from backend.constants.tables import canonical_table
 from backend.models.pending_refund import PendingRefund, RefundLink
 from backend.repositories.pending_refunds_repository import PendingRefundsRepository
-from backend.repositories.transactions import TransactionsRepository
+from backend.repositories.transactions import TransactionsRepository, TxRef
 
 #: Amounts closer than this are the same amount.
 _EPS = 0.005
@@ -100,7 +100,7 @@ class RefundTagAlignmentService:
             split = self.split_repo.get_split(int(pending.source_id))
             return None if split is None else Tagging.of(split.category, split.tag)
         txn = self.transactions_repo.get_record(
-            canonical_table(pending.source_table), int(pending.source_id)
+            TxRef.parse(pending.source_table, pending.source_id)
         )
         return None if txn is None else Tagging.of(txn.category, txn.tag)
 
@@ -365,11 +365,8 @@ class RefundTagAlignmentService:
 
     def _refund_record(self, link: RefundLink) -> Any:
         """Return the refund transaction a link names, or ``None``."""
-        source = canonical_table(link.refund_source)
-        if self.transactions_repo.get_repo_by_source(source) is None:
-            return None
         return self.transactions_repo.get_record(
-            source, int(link.refund_transaction_id)
+            TxRef.parse(link.refund_source, link.refund_transaction_id)
         )
 
     def _allocated_by_split(
@@ -433,21 +430,16 @@ class RefundTagAlignmentService:
         """Align a link covering a whole transaction: retag it or carve it."""
         if Tagging.of(txn.category, txn.tag) == target:
             return False
-        source = canonical_table(link.refund_source)
+        ref = TxRef.parse(link.refund_source, txn.unique_id)
         amount = float(link.amount)
         others = self._other_links(link)
         if amount >= float(txn.amount) - _EPS:
             if not others.empty:
                 return False
-            self.transactions_repo.get_repo_by_source(
-                source
-            ).update_tagging_by_unique_id(
-                int(txn.unique_id), target.category, target.tag
-            )
+            self.transactions_repo.update_tagging(ref, target.category, target.tag)
             return True
         self.transactions_repo.split_transaction(
-            int(txn.unique_id),
-            source,
+            ref,
             [
                 {"amount": amount, "category": target.category, "tag": target.tag},
                 {
@@ -457,7 +449,7 @@ class RefundTagAlignmentService:
                 },
             ],
         )
-        parts = self.split_repo.get_splits_for_transaction(int(txn.unique_id), source)
+        parts = self.split_repo.get_splits_for_transaction(ref.unique_id, ref.table)
         carved, rest = (int(v) for v in parts.sort_values("id")["id"])
         self.repo.set_link_split(link.id, carved)
         for other_id in others["id"]:

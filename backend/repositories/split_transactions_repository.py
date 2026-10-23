@@ -4,8 +4,18 @@ import pandas as pd
 from sqlalchemy import delete, select, update
 from sqlalchemy.orm import Session
 
+from backend.constants.tables import canonical_table, table_aliases
 from backend.models.transaction import SplitTransaction
 from backend.repositories._sql import chunked
+
+
+def _spellings(source: str) -> list[str]:
+    """Return every stored spelling of ``source``'s table.
+
+    Older slices may name their parent's table by its service name
+    (``"banks"``); new ones always store the table name.
+    """
+    return table_aliases(canonical_table(source))
 
 
 class SplitTransactionsRepository:
@@ -67,7 +77,7 @@ class SplitTransactionsRepository:
         """
         stmt = select(SplitTransaction).where(
             SplitTransaction.transaction_id == transaction_id,
-            SplitTransaction.source == source,
+            SplitTransaction.source.in_(_spellings(source)),
         )
         return pd.read_sql(stmt, self.db.bind)
 
@@ -101,7 +111,7 @@ class SplitTransactionsRepository:
         """
         split = SplitTransaction(
             transaction_id=transaction_id,
-            source=source,
+            source=canonical_table(source),
             amount=amount,
             category=category,
             tag=tag,
@@ -160,7 +170,7 @@ class SplitTransactionsRepository:
         """
         stmt = delete(SplitTransaction).where(
             SplitTransaction.transaction_id == transaction_id,
-            SplitTransaction.source == source,
+            SplitTransaction.source.in_(_spellings(source)),
         )
         self.db.execute(stmt)
         self.db.commit()
@@ -181,7 +191,7 @@ class SplitTransactionsRepository:
             self.db.execute(
                 delete(SplitTransaction).where(
                     SplitTransaction.transaction_id.in_(chunk),
-                    SplitTransaction.source == source,
+                    SplitTransaction.source.in_(_spellings(source)),
                 )
             )
         self.db.commit()
