@@ -14,6 +14,7 @@ from backend.errors import EntityNotFoundException, ValidationException
 from backend.models.transaction import BankTransaction, CreditCardTransaction
 from backend.repositories.investments_repository import InvestmentsRepository
 from backend.repositories.liabilities_repository import LiabilitiesRepository
+from backend.repositories.savings_goal_repository import SavingsGoalRepository
 from backend.services.tagging_service import CategoriesTagsService
 
 
@@ -422,6 +423,122 @@ class TestTagOpsKeepHoldingsLinked:
     ):
         """Only the tag a holding tracks is guarded; its siblings delete as before."""
         assert categories_service.delete_tag("Investments", "Bond Fund") is True
+
+
+class TestTagOpsKeepGoalRulesInStep:
+    """Savings-goal rules name a category and tags, so tag and category ops must follow them."""
+
+    @pytest.fixture
+    def goals(self, db_session, categories_service):
+        """A wedding goal saving Other Income/Gifts and paying for Venue+Catering, and a home goal paying for Rent."""
+        categories_service.add_tag("Other Income", "Gifts")
+        repo = SavingsGoalRepository(db_session)
+        wedding = repo.add(
+            name="Wedding",
+            target_amount=50_000,
+            priority=0,
+            contribution_category="Other Income",
+            contribution_tags="Gifts",
+            utilization_category="Wedding",
+            utilization_tags="Venue;Catering",
+        )
+        home = repo.add(
+            name="Home",
+            target_amount=10_000,
+            priority=1,
+            utilization_category="Home",
+            utilization_tags="Rent",
+        )
+        return repo, wedding.id, home.id
+
+    @staticmethod
+    def _rule(repo, goal_id, kind="utilization"):
+        """Return a goal's ``(category, tags)`` rule of the given kind."""
+        goal = repo.get(goal_id)
+        repo.db.refresh(goal)
+        return getattr(goal, f"{kind}_category"), getattr(goal, f"{kind}_tags")
+
+    def test_rename_tag_renames_it_in_the_rule(self, categories_service, goals):
+        """A renamed tag is renamed inside a multi-tag rule, its siblings kept."""
+        repo, wedding, _ = goals
+
+        assert categories_service.rename_tag("Wedding", "Venue", "Hall")
+
+        assert self._rule(repo, wedding) == ("Wedding", "Hall;Catering")
+
+    def test_rename_tag_follows_a_contribution_rule(self, categories_service, goals):
+        """Contribution rules follow a rename the same way utilization rules do."""
+        repo, wedding, _ = goals
+
+        assert categories_service.rename_tag("Other Income", "Gifts", "Wedding Gifts")
+
+        assert self._rule(repo, wedding, "contribution") == (
+            "Other Income",
+            "Wedding Gifts",
+        )
+
+    def test_rename_category_renames_it_in_the_rule(self, categories_service, goals):
+        """A renamed category is renamed on every rule using it."""
+        repo, wedding, _ = goals
+
+        assert categories_service.rename_category("Wedding", "Big Day")
+
+        assert self._rule(repo, wedding) == ("Big Day", "Venue;Catering")
+
+    def test_moving_a_rule_s_only_tag_moves_the_rule(self, categories_service, goals):
+        """A rule on just the moved tag follows it to its new category."""
+        repo, _, home = goals
+
+        categories_service.reallocate_tag("Home", "Other", "Rent")
+
+        assert self._rule(repo, home) == ("Other", "Rent")
+
+    def test_moving_one_of_several_tags_drops_it(self, categories_service, goals):
+        """A rule on several tags keeps its category and drops the moved one."""
+        repo, wedding, _ = goals
+
+        categories_service.reallocate_tag("Wedding", "Home", "Venue")
+
+        assert self._rule(repo, wedding) == ("Wedding", "Catering")
+
+    def test_deleting_one_of_several_tags_drops_it(self, categories_service, goals):
+        """A deleted tag leaves a multi-tag rule, which keeps the rest."""
+        repo, wedding, _ = goals
+
+        assert categories_service.delete_tag("Wedding", "Venue") is True
+
+        assert self._rule(repo, wedding) == ("Wedding", "Catering")
+
+    def test_deleting_a_rule_s_only_tag_clears_the_rule(
+        self, categories_service, goals
+    ):
+        """A rule whose only tag is deleted is cleared, never widened to every tag."""
+        repo, _, home = goals
+
+        assert categories_service.delete_tag("Home", "Rent") is True
+
+        assert self._rule(repo, home) == (None, None)
+
+    def test_deleting_a_category_clears_its_rules(self, categories_service, goals):
+        """Deleting a category clears the rules on it and leaves the goal's other rule."""
+        repo, wedding, _ = goals
+
+        categories_service.delete_category("Wedding")
+
+        assert self._rule(repo, wedding) == (None, None)
+        assert self._rule(repo, wedding, "contribution") == (
+            "Other Income",
+            "Gifts",
+        )
+
+    def test_similar_tag_names_are_left_alone(self, categories_service, goals):
+        """Only whole tag names match: renaming ``Rent`` would not touch ``Rental``."""
+        repo, _, home = goals
+        repo.update(home, utilization_tags="Rental")
+
+        assert categories_service.rename_tag("Home", "Rent", "Lease")
+
+        assert self._rule(repo, home) == ("Home", "Rental")
 
 
 # ---------------------------------------------------------------------------

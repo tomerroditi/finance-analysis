@@ -17,6 +17,7 @@ from backend.errors import EntityNotFoundException, ValidationException
 from backend.repositories.budget_repository import BudgetRepository
 from backend.repositories.investments_repository import InvestmentsRepository
 from backend.repositories.liabilities_repository import LiabilitiesRepository
+from backend.repositories.savings_goal_repository import SavingsGoalRepository
 from backend.repositories.split_transactions_repository import (
     SplitTransactionsRepository,
 )
@@ -91,6 +92,7 @@ class CategoriesTagsService:
         self.budget_repo = BudgetRepository(db)
         self.investments_repo = InvestmentsRepository(db)
         self.liabilities_repo = LiabilitiesRepository(db)
+        self.savings_goal_repo = SavingsGoalRepository(db)
         self.categories_and_tags = self.get_categories_and_tags()
 
     def get_categories_and_tags(self, copy: bool = False) -> dict[str, list[str]]:
@@ -239,7 +241,7 @@ class CategoriesTagsService:
         Protected categories (``PROTECTED_CATEGORIES``) cannot be deleted.
         All transactions and split transactions referencing this category
         have their category set to ``NULL``. Associated tagging rules are
-        also deleted.
+        also deleted, and savings-goal rules on the category are cleared.
 
         Parameters
         ----------
@@ -264,6 +266,7 @@ class CategoriesTagsService:
         self.transactions_repo.nullify_category(category)
         self.split_transactions_repo.nullify_category(category)
         self.tagging_rules_repo.delete_rules_by_category(category)
+        self.savings_goal_repo.clear_category(category)
         self.tagging_repo.delete_category(category)
         self._invalidate_cache()
 
@@ -303,6 +306,7 @@ class CategoriesTagsService:
         self.split_transactions_repo.rename_category(old_name, new_name)
         self.tagging_rules_repo.rename_category(old_name, new_name)
         self.budget_repo.rename_category(old_name, new_name)
+        self.savings_goal_repo.rename_category(old_name, new_name)
         self.tagging_repo.rename_category(old_name, new_name)
         self._invalidate_cache()
         return True
@@ -347,6 +351,7 @@ class CategoriesTagsService:
         self.budget_repo.rename_tag(category, old_tag, new_tag)
         self.investments_repo.rename_tag(category, old_tag, new_tag)
         self.liabilities_repo.rename_tag(category, old_tag, new_tag)
+        self.savings_goal_repo.rename_tag(category, old_tag, new_tag)
         self.tagging_repo.rename_tag(category, old_tag, new_tag)
         self._invalidate_cache()
         return True
@@ -354,8 +359,9 @@ class CategoriesTagsService:
     def reallocate_tag(self, old_category: str, new_category: str, tag: str) -> None:
         """Move a tag from one category to another.
 
-        Updates transactions, split transactions, tagging rules and budget
-        rules to use the new category, then moves the tag itself.
+        Updates transactions, split transactions, tagging rules, budget rules
+        and savings-goal rules to use the new category, then moves the tag
+        itself.
 
         Parameters
         ----------
@@ -394,6 +400,7 @@ class CategoriesTagsService:
         )
         self.tagging_rules_repo.update_category_for_tag(old_category, new_category, tag)
         self.budget_repo.reallocate_tag(old_category, new_category, tag)
+        self.savings_goal_repo.reallocate_tag(old_category, new_category, tag)
 
         self.tagging_repo.relocate_tag(tag, old_category, new_category)
         self._invalidate_cache()
@@ -456,7 +463,8 @@ class CategoriesTagsService:
         """Delete a tag from a category and nullify it on related transactions and rules.
 
         Transactions and split transactions with the matching category/tag have
-        both fields set to ``NULL``. Associated tagging rules are deleted.
+        both fields set to ``NULL``. Associated tagging rules are deleted, and
+        savings-goal rules drop the tag (a rule left with none is cleared).
 
         Parameters
         ----------
@@ -486,6 +494,7 @@ class CategoriesTagsService:
         self.transactions_repo.nullify_category_and_tag(category, tag)
         self.split_transactions_repo.nullify_category_and_tag(category, tag)
         self.tagging_rules_repo.delete_rules_by_category_and_tag(category, tag)
+        self.savings_goal_repo.drop_tag(category, tag)
         self.tagging_repo.delete_tag(category, tag)
         self._invalidate_cache()
         return True
