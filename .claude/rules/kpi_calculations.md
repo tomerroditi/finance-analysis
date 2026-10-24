@@ -241,7 +241,10 @@ scrape the two cards hold back the same bills. A sighted charge has already
 rolled its next expected date forward, so any date in the window is unseen —
 including one before today on a stale sync. Every median baseline ("typical
 month") is `running_month.typical`: the median of the last `TREND_MONTHS` (6)
-complete months; the retirement plan reads 12 for spending.
+complete months; the retirement plan reads 12 for spending. That includes
+the forecast's `avg_monthly_expenses` (and so every insight floor scaled by
+it); it used to be a zero-filled 3-month mean, which one lumpy month moved by a third of its size.
+`get_monthly_expenses` still returns `avg_3/6/12_months` for its route.
 
 **Do not collapse this back to one household-wide window.** The intermediate
 version did, and corrected for the skew by subtracting what the fresher

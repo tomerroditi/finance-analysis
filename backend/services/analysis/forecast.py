@@ -91,8 +91,8 @@ class ForecastMixin:
             - ``safe_to_spend_daily`` – ``safe_to_spend`` spread over the
               remaining days.
             - ``avg_monthly_income`` / ``avg_monthly_expenses`` – the trend
-              baselines: a median of complete months for income, the rolling
-              mean for expenses.
+              baselines: each the median of the last six complete months
+              (``running_month.typical``).
             - ``committed_remaining`` – confirmed recurring charges whose next
               due date falls in the unobserved remainder of this month.
             - ``daily`` – per-day list of ``{date, actual_balance,
@@ -116,13 +116,7 @@ class ForecastMixin:
 
         # --- Expense trend baseline and month-to-date spend (one basis) ---
         monthly_exp = self.get_monthly_expenses(exclude_pending_refunds=True)
-        avg_monthly_expenses = monthly_exp.get("avg_3_months", 0.0) or 0.0
-        if avg_monthly_expenses <= 0:
-            avg_monthly_expenses = (
-                monthly_exp.get("avg_6_months", 0.0)
-                or monthly_exp.get("avg_12_months", 0.0)
-                or 0.0
-            )
+        avg_monthly_expenses = typical(monthly_exp["months"], "expenses", today)
         actual_expenses = next(
             (
                 float(m["expenses"])
