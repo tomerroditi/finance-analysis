@@ -12,13 +12,14 @@ Two packages, one name. Keep them straight:
 | Package | Role |
 |---------|------|
 | `scraper/` (repo root) | The framework: base classes, 20 providers, models, exceptions. No backend imports. |
-| `backend/scraper/` | Just `adapter.py` — bridges the async framework into the sync FastAPI pipeline. |
+| `backend/scraper/` | Just `adapter.py` — bridges the async framework into the sync FastAPI pipeline: scrape lifecycle, 2FA, timeout, history row. |
+| `backend/services/scrape_ingestion.py` | What happens to a successful result: rows → dedup keys → save → auto-tag → bank-balance rebalance. `InsuranceIngestion` adds the policy claim before the rows and the metadata / clearing-house / loan / KH-investment sync after. Pick one with `ingestion_for(service, ...)`. |
 
 ```
 ScrapingService -> ScraperAdapter (async->sync, OTP) -> BaseScraper subclass
                                                         |
                                        Playwright / httpx -> provider site
-                        AccountResult[] -> DataFrame -> TransactionsRepository -> SQLite
+          ScrapingResult -> ScrapeIngestion (DataFrame, tag, rebalance) -> TransactionsRepository -> SQLite
 ```
 
 **Building a new provider?** Use the `scraper-development` skill — it drives

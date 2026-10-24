@@ -3432,7 +3432,7 @@ def main():
 
         # 18. Link hishtalmut policies to Investment records. Done after
         # commit because the generator inserts InsuranceAccount rows directly
-        # (bypassing the scraper's _post_save_hook that normally triggers this).
+        # (bypassing InsuranceIngestion.after_save that normally triggers this).
         print("  Syncing hishtalmut investments...")
         from backend.services.investments import InvestmentsService
         synced = InvestmentsService(session).backfill_from_insurance_accounts()

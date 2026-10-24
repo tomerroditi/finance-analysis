@@ -134,6 +134,9 @@ class TestAdapterCapturesDemoMode:
             try:
                 with (
                     patch("backend.scraper.adapter.get_db_context", _fake_db),
+                    patch(
+                        "backend.services.scrape_ingestion.get_db_context", _fake_db
+                    ),
                     patch("backend.scraper.adapter.ScrapingHistoryRepository"),
                 ):
                     future = asyncio.run_coroutine_threadsafe(
