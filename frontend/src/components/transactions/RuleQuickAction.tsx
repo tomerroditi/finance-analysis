@@ -57,6 +57,7 @@ export function RuleQuickAction({
     const [grownRule, setGrownRule] = useState<{
         rule: TaggingRule;
         added: WeakSet<ConditionNode>;
+        gated: string[];
     } | null>(null);
 
     const closeEditor = () => {
@@ -103,8 +104,8 @@ export function RuleQuickAction({
             <button
                 type="button"
                 onClick={() => {
-                    const { conditions, added } = appendDescriptionConditions(owner.conditions, seeds);
-                    setGrownRule({ rule: { ...owner, conditions }, added: new WeakSet(added) });
+                    const { conditions, added, gated } = appendDescriptionConditions(owner.conditions, seeds);
+                    setGrownRule({ rule: { ...owner, conditions }, added: new WeakSet(added), gated });
                     setOpen(true);
                 }}
                 className={`${baseBtn} bg-[var(--primary)]/15 text-[var(--primary)] hover:bg-[var(--primary)]/25`}
@@ -180,6 +181,7 @@ export function RuleQuickAction({
                         editingRule={editingRule}
                         prefill={prefill}
                         highlightedConditions={grownRule?.added}
+                        gatedDescriptions={grownRule?.gated}
                     />,
                     document.body,
                 )}

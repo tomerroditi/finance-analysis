@@ -155,7 +155,44 @@ describe("appendDescriptionConditions", () => {
         { type: "AND", subconditions: [cond("contains", "PAZ")] },
       ],
     };
-    const { conditions: grown } = appendDescriptionConditions(nested, ["PAZ", "SONOL"]);
+    const { conditions: grown } = appendDescriptionConditions(nested, ["SONOL"]);
     expect(grown.subconditions?.map((s) => s.value)).toEqual(["SONOL", undefined]);
+  });
+
+  // A description the rule only tests alongside an amount range does not
+  // cover a transaction outside that range. Skipping it opened the rule
+  // unchanged, and saving left the transaction untagged with no word why.
+  it("adds a description the rule only tests behind other conditions, and reports it", () => {
+    const gatedRule: ConditionNode = {
+      type: "OR",
+      subconditions: [
+        {
+          type: "AND",
+          subconditions: [
+            cond("contains", "PAZ"),
+            { type: "CONDITION", field: "amount", operator: "lt", value: -100 },
+          ],
+        },
+      ],
+    };
+    const { conditions: grown, added, gated } = appendDescriptionConditions(gatedRule, [
+      "PAZ YELLOW",
+      "SONOL",
+    ]);
+    expect(added.map((n) => n.value)).toEqual(["PAZ YELLOW", "SONOL"]);
+    expect(grown.subconditions).toHaveLength(3);
+    expect(gated).toEqual(["PAZ YELLOW"]);
+  });
+
+  it("reports nothing gated when the rule never tests the description", () => {
+    expect(appendDescriptionConditions(orRoot, ["GOZ GOZ"]).gated).toEqual([]);
+  });
+
+  // Any standalone description branch that already matches makes the new
+  // one redundant, not just an identical `contains`.
+  it("skips a value a standalone branch already matches", () => {
+    const result = appendDescriptionConditions(orRoot, ["SHUFERSAL DEAL"]);
+    expect(result.added).toEqual([]);
+    expect(result.conditions).toBe(orRoot);
   });
 });

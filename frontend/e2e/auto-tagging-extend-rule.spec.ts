@@ -175,4 +175,78 @@ test.describe("Auto-tagging quick action — extend an existing rule", () => {
       }
     }
   });
+
+  // A rule can test a description and still leave a transaction with that
+  // description out — here an amount range no refund ever falls in. The
+  // action used to see the description already in the tree, add nothing, and
+  // open the rule unchanged: saving it left the refund untagged with no word
+  // of why. It now adds a standalone branch, and says why one was needed.
+  test("explains a description the rule only tests behind an amount range", async ({
+    page,
+  }) => {
+    const headers = { "X-FAD-Demo": "1" };
+    const rules = await (await page.request.get(`${API_BASE}/tagging-rules/rules`, { headers })).json();
+    const owner = rules.find(
+      (rule: { category: string; tag: string }) =>
+        rule.category === "Transportation" && rule.tag === "Taxi",
+    );
+    const gated = {
+      type: "AND",
+      subconditions: [
+        { type: "CONDITION", field: "description", operator: "contains", value: "RIDE REFUND" },
+        { type: "CONDITION", field: "amount", operator: "lt", value: -1000000 },
+      ],
+    };
+    const updated = await page.request.put(`${API_BASE}/tagging-rules/rules/${owner.id}`, {
+      headers,
+      data: {
+        conditions: {
+          type: "OR",
+          subconditions: [
+            gated,
+            { type: "CONDITION", field: "description", operator: "contains", value: "UBER" },
+            { type: "CONDITION", field: "description", operator: "contains", value: "GETT" },
+          ],
+        },
+      },
+    });
+    expect(updated.ok()).toBeTruthy();
+
+    await navigateTo(page, "/");
+    const card = page.locator('[data-card-id="recent"]');
+    const row = card
+      .getByTestId("recent-tx-row")
+      .filter({ hasText: RIDE_REFUND })
+      .first();
+    await expect(row).toBeVisible({ timeout: 45_000 });
+    await row.getByRole("button", { name: "More actions" }).click();
+    await card.getByRole("button", { name: "Add to Rule" }).click();
+
+    const modal = page.locator(".modal-overlay").last();
+    await expect(modal.getByRole("heading", { name: "Edit Rule" })).toBeVisible();
+    const notice = modal.getByTestId("gated-description-notice").filter({ visible: true });
+    await expect(notice).toBeVisible();
+    await expect(notice).toContainText(RIDE_REFUND);
+    await expect(notice).toContainText("amount range");
+
+    const marked = modal.locator("[data-new-condition]:visible");
+    await expect(marked).toHaveCount(1);
+    await expect(marked.locator('input[placeholder="Value"]')).toHaveValue(RIDE_REFUND);
+    // With the branch in, the preview finally lists the refund.
+    await expect(
+      modal.locator("tbody tr").filter({ hasText: RIDE_REFUND }).first(),
+    ).toBeVisible();
+
+    await modal.getByRole("button", { name: "Save Rule" }).click();
+    await expect(modal).toHaveCount(0, { timeout: 20_000 });
+
+    const after = await (await page.request.get(`${API_BASE}/tagging-rules/rules`, { headers })).json();
+    const grown = after.find((rule: { id: number }) => rule.id === owner.id);
+    expect(grown.conditions.subconditions[0]).toMatchObject({
+      field: "description",
+      operator: "contains",
+      value: RIDE_REFUND,
+    });
+    expect(grown.conditions.subconditions[1]).toEqual(gated);
+  });
 });

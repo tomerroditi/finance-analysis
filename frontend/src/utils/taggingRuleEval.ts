@@ -90,15 +90,23 @@ export function findMatchingRules(
   return rules.filter((r) => evalConditionTree(r.conditions, tx));
 }
 
-/** Collect every `description contains` value a condition tree already tests. */
-function collectDescriptionContains(node: ConditionNode, into: Set<string>): void {
-  if (node.type === "CONDITION") {
-    if (node.field === "description" && node.operator === "contains") {
-      into.add(String(node.value ?? "").toLowerCase());
-    }
-    return;
-  }
-  for (const sub of node.subconditions ?? []) collectDescriptionContains(sub, into);
+/** Every `description` leaf in a condition tree, however deeply nested. */
+function descriptionLeaves(node: ConditionNode): ConditionNode[] {
+  if (node.type === "CONDITION") return node.field === "description" ? [node] : [];
+  return (node.subconditions ?? []).flatMap(descriptionLeaves);
+}
+
+/**
+ * The `description` leaves that match on their own: the root itself, or a
+ * direct branch of an `OR` root. A leaf inside an `AND` only matches together
+ * with its siblings (an amount range, an account), so it does not count.
+ */
+function standaloneDescriptionLeaves(node: ConditionNode): ConditionNode[] {
+  if (node.type === "CONDITION") return node.field === "description" ? [node] : [];
+  if (node.type !== "OR") return [];
+  return (node.subconditions ?? []).filter(
+    (sub) => sub.type === "CONDITION" && sub.field === "description",
+  );
 }
 
 /**
@@ -113,23 +121,33 @@ function collectDescriptionContains(node: ConditionNode, into: Set<string>): voi
  * or a bare condition) is wrapped in an `OR` so the rule goes on matching
  * everything it matched before. The new branches lead the list (order inside
  * an `OR` changes nothing it matches) so the editor shows the change first.
- * Values the tree already tests for are skipped, and when nothing is left to
- * add the tree is returned untouched.
+ * A value is skipped only when a standalone description branch already
+ * matches it; when nothing is left to add the tree is returned untouched.
  *
- * @returns The grown tree, and the branch nodes that were added to it — the
- *   editor marks exactly those objects as the change.
+ * A value that a description condition *nested under other conditions*
+ * already matches (`description contains X AND amount < -100`) still gets its
+ * branch — without it the transaction stays outside the rule — and is
+ * reported in `gated`, so the editor can say why the rule needed one.
+ *
+ * @returns The grown tree, the branch nodes that were added to it (the editor
+ *   marks exactly those objects as the change), and the values whose
+ *   description the rule already tests behind other conditions.
  */
 export function appendDescriptionConditions(
   conditions: ConditionNode,
   values: string[],
-): { conditions: ConditionNode; added: ConditionNode[] } {
-  const seen = new Set<string>();
-  collectDescriptionContains(conditions, seen);
+): { conditions: ConditionNode; added: ConditionNode[]; gated: string[] } {
+  const standalone = standaloneDescriptionLeaves(conditions);
+  const nested = descriptionLeaves(conditions).filter((leaf) => !standalone.includes(leaf));
+  const matchedBy = (leaves: ConditionNode[], value: string) =>
+    leaves.some((leaf) => evalCondition(leaf, { description: value } as Transaction));
 
+  const seen = new Set<string>();
   const added: ConditionNode[] = [];
+  const gated: string[] = [];
   for (const value of values) {
     const key = value.toLowerCase();
-    if (!value || seen.has(key)) continue;
+    if (!value || seen.has(key) || matchedBy(standalone, value)) continue;
     seen.add(key);
     added.push({
       type: "CONDITION",
@@ -137,8 +155,9 @@ export function appendDescriptionConditions(
       operator: "contains",
       value,
     });
+    if (matchedBy(nested, value)) gated.push(value);
   }
-  if (added.length === 0) return { conditions, added };
+  if (added.length === 0) return { conditions, added, gated };
 
   if (conditions.type === "OR") {
     return {
@@ -147,7 +166,8 @@ export function appendDescriptionConditions(
         subconditions: [...added, ...(conditions.subconditions ?? [])],
       },
       added,
+      gated,
     };
   }
-  return { conditions: { type: "OR", subconditions: [...added, conditions] }, added };
+  return { conditions: { type: "OR", subconditions: [...added, conditions] }, added, gated };
 }
