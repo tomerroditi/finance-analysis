@@ -43,6 +43,7 @@ from backend.services.fire.reference_form import is_runnable
 from backend.services.insurance_account_service import InsuranceAccountService
 from backend.services.investments import InvestmentsService
 from backend.services.liabilities_service import LiabilitiesService
+from backend.services.running_month import typical
 
 KEREN_TYPE = "hishtalmut"
 PENSION_TYPE = "pension"
@@ -254,16 +255,15 @@ class FirePlanService:
 
         Complete months only, and the median rather than the mean on both
         sides — 6 months of income, 12 of expenses — so one windfall or one
-        wedding does not become the plan.
+        wedding does not become the plan (:func:`~backend.services.running_month.typical`, the
+        forecast's own baseline).
         """
         months = self.analysis.get_income_expenses_over_time()
-        if not months:
-            return 0.0, 0.0
-        running = pd.Timestamp.today().strftime("%Y-%m")
-        complete = [m for m in months if m["month"] < running] or months
-        income = float(pd.Series([m["income"] for m in complete[-6:]]).median())
-        expenses = float(pd.Series([m["expenses"] for m in complete[-12:]]).median())
-        return income, expenses
+        today = pd.Timestamp.today()
+        return (
+            typical(months, "income", today),
+            typical(months, "expenses", today, count=12),
+        )
 
     @staticmethod
     def _flow_rows(side: str, amount: float) -> list[TrackedRow]:

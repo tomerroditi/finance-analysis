@@ -42,6 +42,7 @@ from backend.services.recurring_detection import (
     detect_streams,
     normalize,
 )
+from backend.services.running_month import still_due
 from backend.services.transaction_views import TransactionViews
 from backend.utils import data_cache
 
@@ -300,7 +301,9 @@ class RecurringService:
         return {"items": streams, "total_monthly": round(total_monthly, 2)}
 
     def get_income_due_remaining(
-        self, today: date | pd.Timestamp | None = None
+        self,
+        today: date | pd.Timestamp | None = None,
+        observed_through: pd.Timestamp | None = None,
     ) -> dict[str, Any]:
         """Return the recurring income still expected before the end of ``today``'s month.
 
@@ -311,7 +314,9 @@ class RecurringService:
         of a 30-day period against a 31-day month, where the next expected date
         slides out of the month the payment will actually land in. Longer
         cadences have no such slack and are read straight off their next
-        expected date.
+        expected date, due when it falls between the day the data reaches and
+        month end (:func:`~backend.services.running_month.still_due`, the same
+        window committed charges use).
 
         A stream that has gone quiet past its cadence is ``ended`` and owes
         nothing. One merely late still counts: the common reason a live
@@ -322,6 +327,9 @@ class RecurringService:
         ----------
         today : date or pd.Timestamp, optional
             Reference day. Defaults to the current day.
+        observed_through : pd.Timestamp, optional
+            The day the accounts are synced through (weakest link). Defaults
+            to ``today``: nothing is behind.
 
         Returns
         -------
@@ -342,6 +350,7 @@ class RecurringService:
         ).normalize()
         month_start = today.replace(day=1)
         month_end = today + pd.offsets.MonthEnd(0)
+        edge = today if observed_through is None else observed_through
 
         streams = self.get_recurring_income(today=today)["items"]
         live = [s for s in streams if s["status"] != "ended"]
@@ -357,7 +366,7 @@ class RecurringService:
             if stream["period_days"] <= self._MONTHLY_PERIOD_MAX_DAYS:
                 due = expected - received.get(stream["normalized"], 0.0)
                 expected_date = min(max(next_expected, today), month_end)
-            elif today < next_expected <= month_end:
+            elif still_due(next_expected, edge, month_end):
                 due = expected
                 expected_date = next_expected
             else:

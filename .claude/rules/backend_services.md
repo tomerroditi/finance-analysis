@@ -30,7 +30,10 @@ module — `analysis/` (`core`, `cashflow`, `forecast`, `net_worth`),
 (`context`, `core`, and one module per card rule: `pace`, `category_spike`,
 `recurring`, `large_transaction`).
 New logic in those domains goes in the matching module, not back into a flat
-`*_service.py`.
+`*_service.py`. Questions about the month in progress — how far each account
+has synced, what is still due, what a typical month is — are answered once, in
+`running_month.py`; the forecast, the budget Overview, recurring income and the
+retirement plan all read it rather than computing their own window.
 
 Return `pd.DataFrame` for tabular data, primitives for scalar calculations,
 `dict`/`list` for structured payloads.

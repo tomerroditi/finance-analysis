@@ -53,6 +53,7 @@ from backend.services.budget.monthly import MonthlyBudgetService
 from backend.services.budget.project import ProjectBudgetService
 from backend.services.budget.yearly import YearlyBudgetService
 from backend.services.recurring_service import RecurringService
+from backend.services.running_month import RunningMonth
 
 
 class BudgetOverviewService(BudgetService):
@@ -134,13 +135,16 @@ class BudgetOverviewService(BudgetService):
 
         # Confirmed only: an unreviewed guess must never hold money back from
         # free-to-spend or move the projection.
-        recurring = RecurringService(self.db).get_confirmed_items()
+        recurring = RecurringService(self.db).get_confirmed_items(today)
 
         fixed_spent, variable_spent, fixed_charge_count = self._split_fixed_variable(
             pool.to_dict(orient="records"), recurring
         )
+        # The same window the forecast's committed charges use: from the day
+        # the data reaches, so a bill a stale sync has not shown yet is still
+        # held back rather than counted nowhere.
         charges_due = (
-            self._charges_due(recurring, year, month, today.isoformat())
+            RunningMonth.read(self.db, today).charges_due(recurring)
             if is_current
             else []
         )
@@ -241,38 +245,6 @@ class BudgetOverviewService(BudgetService):
             else:
                 variable += value
         return fixed, variable, fixed_count
-
-    @staticmethod
-    def _charges_due(
-        recurring: list[dict[str, Any]], year: int, month: int, today_iso: str
-    ) -> list[dict[str, Any]]:
-        """List recurring charges expected between today and the month's end.
-
-        ``next_expected_date`` is the detector's last sighting plus one period,
-        so a charge that already landed this month has rolled on to the next and
-        is correctly absent — it is already counted as fixed spend.
-
-        The date window is the only liveness test needed. A charge the detector
-        calls ``ended`` was last seen more than one and a half periods ago, which
-        puts its next expected date in the past by at least half a period, so it
-        can never fall inside this window.
-        """
-        last_day = monthrange(year, month)[1]
-        month_end = f"{year:04d}-{month:02d}-{last_day:02d}"
-        due = []
-        for item in recurring:
-            expected = item.get("next_expected_date")
-            if not expected or not (today_iso <= expected <= month_end):
-                continue
-            due.append(
-                {
-                    "label": item.get("label") or item.get("normalized") or "",
-                    "amount": round(float(item.get("amount") or 0.0), 2),
-                    "expected_date": expected,
-                }
-            )
-        due.sort(key=lambda charge: charge["expected_date"])
-        return due
 
     # ------------------------------------------------------------------ #
     # Yearly and project envelopes
