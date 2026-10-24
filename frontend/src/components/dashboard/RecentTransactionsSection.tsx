@@ -13,6 +13,12 @@ import {
   Trash2,
   Filter,
   Wand2,
+  CreditCard,
+  Landmark,
+  Wallet,
+  TrendingUp,
+  Shield,
+  Layers,
 } from "lucide-react";
 import { transactionsApi, pendingRefundsApi } from "../../services/api";
 import { SplitTransactionModal } from "../modals/SplitTransactionModal";
@@ -26,6 +32,7 @@ import { useCategoryTagCreate } from "../../hooks/useCategoryTagCreate";
 import { useCategories } from "../../hooks/useCategories";
 import { useTaggingRules } from "../../hooks/useTaggingRules";
 import { isWithoutRule as matchesNoRule } from "../../utils/taggingRuleEval";
+import { matchesSource, sourceOptions } from "../../utils/transactionSources";
 import { qkPrefix } from "../../services/queryKeys";
 import type { Transaction } from "../../types/transaction";
 import { Skeleton } from "../common/Skeleton";
@@ -56,6 +63,14 @@ const isManualSource = (tx: Transaction) =>
   !!tx.source &&
   (tx.source.includes("cash") || tx.source.includes("manual_investment"));
 
+const SOURCE_ICONS: Record<string, typeof CreditCard> = {
+  credit_card_transactions: CreditCard,
+  bank_transactions: Landmark,
+  cash_transactions: Wallet,
+  manual_investment_transactions: TrendingUp,
+  insurance_transactions: Shield,
+};
+
 const ACTION_BUTTON_CLASS =
   "flex items-center gap-1 px-1.5 py-1.5 rounded-md text-xs font-medium transition-colors whitespace-nowrap";
 
@@ -77,6 +92,7 @@ export function RecentTransactionsFeed({
   const sentinelRef = useRef<HTMLDivElement>(null);
   const [onlyUntagged, setOnlyUntagged] = useState(false);
   const [onlyWithoutRule, setOnlyWithoutRule] = useState(false);
+  const [sourceFilter, setSourceFilter] = useState("");
   const [editingTxKey, setEditingTxKey] = useState<string | null>(null);
   const [stagedCategory, setStagedCategory] = useState<string>("");
   const [stagedTag, setStagedTag] = useState<string>("");
@@ -261,19 +277,36 @@ export function RecentTransactionsFeed({
     [taggingRules],
   );
 
+  const sources = useMemo(
+    () =>
+      sourceOptions(sorted).map((option) => {
+        const Icon = option.source ? SOURCE_ICONS[option.source] ?? Layers : Layers;
+        return { ...option, icon: <Icon size={13} /> };
+      }),
+    [sorted],
+  );
+  // A selection whose last transaction left the feed falls back to every source.
+  const activeSource = sources.some((option) => option.value === sourceFilter)
+    ? sourceFilter
+    : "";
+  const fromSource = useMemo(
+    () => (activeSource ? sorted.filter((tx) => matchesSource(tx, activeSource)) : sorted),
+    [sorted, activeSource],
+  );
+
   const filtered = useMemo(
     () =>
-      sorted.filter(
+      fromSource.filter(
         (tx) =>
           (!onlyUntagged || isUntagged(tx)) &&
           (!onlyWithoutRule || !isWithoutRule || isWithoutRule(tx)),
       ),
-    [sorted, onlyUntagged, onlyWithoutRule, isWithoutRule],
+    [fromSource, onlyUntagged, onlyWithoutRule, isWithoutRule],
   );
-  const untaggedCount = useMemo(() => sorted.filter(isUntagged).length, [sorted]);
+  const untaggedCount = useMemo(() => fromSource.filter(isUntagged).length, [fromSource]);
   const withoutRuleCount = useMemo(
-    () => (isWithoutRule ? sorted.filter(isWithoutRule).length : undefined),
-    [sorted, isWithoutRule],
+    () => (isWithoutRule ? fromSource.filter(isWithoutRule).length : undefined),
+    [fromSource, isWithoutRule],
   );
 
   const visible = useMemo(() => filtered.slice(0, visibleCount), [filtered, visibleCount]);
@@ -337,8 +370,13 @@ export function RecentTransactionsFeed({
     resetFeedPosition();
   };
 
+  const changeSource = (next: string) => {
+    setSourceFilter(next);
+    resetFeedPosition();
+  };
+
   const emptyFilterMessage =
-    onlyUntagged && onlyWithoutRule
+    activeSource || (onlyUntagged && onlyWithoutRule)
       ? t("dashboard.noFilteredTransactions")
       : onlyWithoutRule
         ? t("dashboard.noTransactionsWithoutRule")
@@ -430,6 +468,19 @@ export function RecentTransactionsFeed({
               </span>
             )}
           </button>
+          {sources.length > 2 && (
+            <div data-testid="recent-tx-source" className="min-w-0 max-w-[14rem]">
+              <SelectDropdown
+                size="sm"
+                value={activeSource}
+                onChange={changeSource}
+                options={sources}
+                triggerClassName={`whitespace-nowrap !text-xs font-medium ${
+                  activeSource ? "!border-[var(--primary)] text-[var(--primary)]" : ""
+                }`}
+              />
+            </div>
+          )}
         </div>
       </div>
 
