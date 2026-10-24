@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useScrollLock } from "../../hooks/useScrollLock";
-import { X, Save, Loader2, AlertTriangle } from "lucide-react";
+import { X, Save, Loader2, AlertTriangle, Info } from "lucide-react";
 import { taggingApi } from "../../services/api";
 import type { TaggingRule, ConditionNode } from "../../services/api";
 import { useTranslation } from "react-i18next";
@@ -31,6 +31,12 @@ interface RuleEditorModalProps {
      * branches the "Add to Rule" quick action just added to that rule.
      */
     highlightedConditions?: WeakSet<ConditionNode>;
+    /**
+     * Descriptions the rule already tests, but only together with other
+     * conditions that leave the marked transaction out — the reason "Add to
+     * Rule" had to add a description-only branch for them.
+     */
+    gatedDescriptions?: string[];
 }
 
 const EMPTY_CONDITIONS: ConditionNode = {
@@ -40,7 +46,7 @@ const EMPTY_CONDITIONS: ConditionNode = {
     ]
 };
 
-export function RuleEditorModal({ isOpen, onClose, editingRule, onSaved, prefill, highlightedConditions }: RuleEditorModalProps) {
+export function RuleEditorModal({ isOpen, onClose, editingRule, onSaved, prefill, highlightedConditions, gatedDescriptions }: RuleEditorModalProps) {
     const { t, i18n } = useTranslation();
     const isRtl = i18n.language === "he";
     const queryClient = useQueryClient();
@@ -178,6 +184,7 @@ export function RuleEditorModal({ isOpen, onClose, editingRule, onSaved, prefill
             conditions={conditions}
             setConditions={setConditions}
             highlightedConditions={highlightedConditions}
+            gatedDescriptions={gatedDescriptions}
             availableCategories={availableCategories}
             availableTags={availableTags}
             onCreateCategory={async (name) => {
@@ -434,6 +441,7 @@ function RuleForm({
     tag, setTag,
     conditions, setConditions,
     highlightedConditions,
+    gatedDescriptions,
     availableCategories, availableTags,
     onCreateCategory, onCreateTag,
 }: {
@@ -442,6 +450,7 @@ function RuleForm({
     tag: string; setTag: (v: string) => void;
     conditions: ConditionNode; setConditions: (v: ConditionNode) => void;
     highlightedConditions?: WeakSet<ConditionNode>;
+    gatedDescriptions?: string[];
     availableCategories: string[];
     availableTags: string[];
     onCreateCategory: (name: string) => Promise<void>;
@@ -493,6 +502,17 @@ function RuleForm({
             {/* Conditions */}
             <div className="space-y-3">
                 <h4 className="text-xs text-[var(--text-muted)] uppercase font-bold tracking-wide">{t("transactions.autoTagging.conditions")}</h4>
+                {!!gatedDescriptions?.length && (
+                    <div data-testid="gated-description-notice" className="flex items-start gap-2 p-3 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-300 text-sm">
+                        <Info size={16} className="shrink-0 mt-0.5" />
+                        <span>
+                            {t("transactions.autoTagging.gatedDescriptionNotice", {
+                                count: gatedDescriptions.length,
+                                descriptions: gatedDescriptions.map((d) => `"${d}"`).join(", "),
+                            })}
+                        </span>
+                    </div>
+                )}
                 <div className="p-4 bg-[var(--surface)] rounded-xl border border-[var(--surface-light)]">
                     <RuleBuilder value={conditions} onChange={setConditions} highlighted={highlightedConditions} />
                 </div>

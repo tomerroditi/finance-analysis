@@ -561,6 +561,8 @@
       "ruleSaved": "Rule saved successfully",
       "createRuleFailed": "Failed to create rule",
       "updateRuleFailed": "Failed to update rule",
+      "gatedDescriptionNotice_one": "{{descriptions}} is already in this rule, but only together with its other conditions (such as an amount range), which this transaction doesn't meet. The highlighted branch below adds it on its own — it will also tag every other transaction with this description. To keep the existing limits, delete that branch and widen the other conditions instead.",
+      "gatedDescriptionNotice_other": "{{descriptions}} are already in this rule, but only together with its other conditions (such as an amount range), which these transactions don't meet. The highlighted branches below add them on their own — they will also tag every other transaction with these descriptions. To keep the existing limits, delete those branches and widen the other conditions instead.",
       "categoryTagRequired": "Category and tag are required",
       "applyRuleTitle": "Apply Rule",
       "collapsePanel": "Collapse panel",
