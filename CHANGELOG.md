@@ -1,3 +1,9 @@
+## v2.2.0 (2026-10-24)
+
+### Feat
+
+- **dashboard**: filter recent transactions by source (#423)
+
 ## v2.1.10 (2026-10-24)
 
 ### Fix
