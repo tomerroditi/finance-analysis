@@ -2011,6 +2011,33 @@ class TestForecastExpensesUseOneDefinition:
         ]
 
 
+class TestForecastExpenseBaseline:
+    """The expense trend is a typical month, not an average one."""
+
+    def test_one_lumpy_month_does_not_move_the_baseline(self, db_session):
+        """A month that bought a sofa is not the household's typical month."""
+        for n, amount in enumerate(
+            (-3000.0, -3000.0, -30000.0, -3000.0, -3000.0, -3000.0), start=1
+        ):
+            db_session.add(
+                CreditCardTransaction(
+                    id=f"base-{n}",
+                    date=_months_ago(n),
+                    provider="visa",
+                    account_name="card-1",
+                    description=f"SHOP {n}",
+                    amount=amount,
+                    category="Food",
+                    source=Tables.CREDIT_CARD.value,
+                )
+            )
+        db_session.commit()
+
+        result = AnalysisService(db_session).get_cash_flow_forecast()
+
+        assert result["avg_monthly_expenses"] == 3000.0
+
+
 class TestOpeningBalancesAreNotIncome:
     """A prior-wealth row is an opening balance, never a month's earnings."""
 

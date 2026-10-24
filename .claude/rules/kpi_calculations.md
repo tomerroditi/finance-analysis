@@ -205,10 +205,11 @@ left on the calendar. Accounts are scraped on their own schedule, so a card
 current to the 23rd beside a bank current to the 5th is **two different holes**
 in the month.
 
-`_account_sync_edges` reads `ScrapingHistoryService.get_last_scrape_dates()` and
+`RunningMonth.read` (`backend/services/running_month.py`) reads
+`ScrapingHistoryService.get_last_scrape_dates()` and
 keys it by `(provider, account_name)` — the pair the scraper writes into both
 the credential row and every transaction it produces, so the join is exact.
-`_project_per_account` then splits the household baseline by each account's
+`RunningMonth.project` then splits the household baseline by each account's
 share of the last 6 complete months and projects each slice over its own
 unsynced days. Shares sum to 1, so equal freshness collapses back exactly to
 `baseline / days_in_month * unobserved_days`.
@@ -230,6 +231,20 @@ Exclusions, matching the budget's freshness badge (`useBudgetFreshness`):
 `observed_through` in the response is the weakest link across all of them — it
 drives the card's "data through" caption and the cutoff for which committed
 charges are still due, not the projection itself.
+
+**One still-due window for every surface.** A confirmed charge or an income
+stream is still owed when `observed_through <= expected <= month_end`
+(`running_month.still_due`, both ends inclusive; `today` when nothing is
+scraped). The forecast's `committed_remaining`, the budget Overview's
+`charges_due` and `get_income_due_remaining` all read it, so on a week-old
+scrape the two cards hold back the same bills. A sighted charge has already
+rolled its next expected date forward, so any date in the window is unseen —
+including one before today on a stale sync. Every median baseline ("typical
+month") is `running_month.typical`: the median of the last `TREND_MONTHS` (6)
+complete months; the retirement plan reads 12 for spending. That includes
+the forecast's `avg_monthly_expenses` (and so every insight floor scaled by
+it); it used to be a zero-filled 3-month mean, which one lumpy month moved by a third of its size.
+`get_monthly_expenses` still returns `avg_3/6/12_months` for its route.
 
 **Do not collapse this back to one household-wide window.** The intermediate
 version did, and corrected for the skew by subtracting what the fresher

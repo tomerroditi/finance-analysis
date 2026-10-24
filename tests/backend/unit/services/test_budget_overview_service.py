@@ -211,6 +211,42 @@ class TestCommitments:
         assert [c["label"] for c in result["charges_due"]] == ["ELECTRIC CO"]
         assert result["free_to_spend"] == pytest.approx(20000.0 - 1000.0 - 780.0)
 
+    def test_a_bill_a_stale_sync_has_not_shown_is_still_committed(
+        self, db_session, frozen_today, monkeypatch
+    ):
+        """Due after the last sync but before today: unseen, so still owed."""
+        from backend.services import scraping_history_service
+
+        monkeypatch.setattr(
+            scraping_history_service.ScrapingHistoryService,
+            "get_last_scrape_dates",
+            lambda self: [
+                {
+                    "service": "banks",
+                    "provider": "p",
+                    "account_name": "a",
+                    "last_scrape_date": "2026-03-10",
+                }
+            ],
+        )
+        MonthlyBudgetService(db_session).create_rule(
+            "Total Budget", 20000.0, "Total Budget", ["all_tags"], 3, 2026
+        )
+        for seen in ("2025-12-15", "2026-01-15", "2026-02-15"):
+            _seed(
+                db_session,
+                seen,
+                "Household",
+                "Utilities",
+                -780.0,
+                description="ELECTRIC CO",
+            )
+        _confirm_recurring(db_session)
+
+        result = BudgetOverviewService(db_session).get_overview(2026, 3)
+        assert result["committed_remaining"] == 780.0
+        assert [c["label"] for c in result["charges_due"]] == ["ELECTRIC CO"]
+
     def test_unconfirmed_candidate_commits_nothing(self, db_session, frozen_today):
         """An unreviewed guess never holds money back from free-to-spend."""
         MonthlyBudgetService(db_session).create_rule(
