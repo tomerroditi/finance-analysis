@@ -5,8 +5,15 @@ import { ChevronDown, Check, Search, Plus, X } from "lucide-react";
 import { isTouchDevice } from "../../utils/chartStyle";
 import { useAnchoredPanel } from "../../hooks/useAnchoredPanel";
 
+interface SelectDropdownOption {
+  label: string;
+  value: string;
+  /** Shown before the label, in the list and on the trigger. */
+  icon?: React.ReactNode;
+}
+
 interface SelectDropdownProps {
-  options: { label: string; value: string }[];
+  options: SelectDropdownOption[];
   value: string;
   onChange: (value: string) => void;
   placeholder?: string;
@@ -177,7 +184,8 @@ export const SelectDropdown: React.FC<SelectDropdownProps> = ({
     setCreateValue("");
   };
 
-  const selectedLabel = options.find((o) => o.value === value)?.label;
+  const selectedOption = options.find((o) => o.value === value);
+  const selectedLabel = selectedOption?.label;
 
   const sizeClasses =
     size === "sm"
@@ -216,6 +224,9 @@ export const SelectDropdown: React.FC<SelectDropdownProps> = ({
           }`}
           title={selectedLabel || placeholder}
         >
+          {selectedOption?.icon && (
+            <span className="inline-flex align-[-2px] me-1.5">{selectedOption.icon}</span>
+          )}
           {selectedLabel || placeholder}
         </span>
         <ChevronDown
@@ -285,8 +296,13 @@ export const SelectDropdown: React.FC<SelectDropdownProps> = ({
                       : "hover:bg-[var(--surface-light)]"
                   }`}
                 >
-                  <span className="truncate text-[var(--text-default)]" title={opt.label}>
-                    {opt.label}
+                  <span className="flex items-center gap-2 min-w-0">
+                    {opt.icon && (
+                      <span className="shrink-0 text-[var(--text-muted)]">{opt.icon}</span>
+                    )}
+                    <span className="truncate text-[var(--text-default)]" title={opt.label}>
+                      {opt.label}
+                    </span>
                   </span>
                   {value === opt.value && (
                     <Check

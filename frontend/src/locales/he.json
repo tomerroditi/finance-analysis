@@ -476,7 +476,15 @@
     },
     "noUntaggedTransactions": "אין תנועות ללא תגית",
     "noTransactionsWithoutRule": "כל תנועות הבנק וכרטיסי האשראי כאן תואמות כלל",
-    "noFilteredTransactions": "אין תנועות התואמות את המסננים שנבחרו"
+    "noFilteredTransactions": "אין תנועות התואמות את המסננים שנבחרו",
+    "sourceFilter": {
+      "all": "כל המקורות",
+      "creditCards": "כל כרטיסי האשראי",
+      "banks": "כל חשבונות הבנק",
+      "cash": "מזומן",
+      "investments": "השקעות ידניות",
+      "insurance": "ביטוח"
+    }
   },
   "transactions": {
     "title": "תנועות",

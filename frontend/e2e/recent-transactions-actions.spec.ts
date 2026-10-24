@@ -315,6 +315,32 @@ test.describe("Dashboard recent transactions — row actions", () => {
     await withoutRuleFilter.click();
     await expect(withoutRuleFilter).toHaveAttribute("aria-pressed", "false");
 
+    // --- Source filter ----------------------------------------------------
+    // Picking a kind of source keeps only its rows: every row left reports
+    // that source in its details sheet.
+    const sourcePicker = card.getByTestId("recent-tx-source");
+    await expect(sourcePicker).toContainText("All sources");
+    for (const [option, service] of [
+      ["All credit cards", "Credit Card"],
+      ["All bank accounts", "Bank"],
+    ]) {
+      await sourcePicker.getByRole("button").click();
+      const choice = page.getByRole("listbox").getByRole("option", { name: option, exact: true });
+      // Each source is marked with its kind's icon.
+      await expect(choice.locator("svg").first()).toBeVisible();
+      await choice.click();
+      await expect(sourcePicker).toContainText(option);
+      await card.getByRole("button", { name: "More actions" }).first().click();
+      await card.getByRole("button", { name: "Details", exact: true }).first().click();
+      const details = card.locator("dl").first();
+      await expect(details.getByText("Source", { exact: true })).toBeVisible();
+      await expect(details.getByText(service, { exact: true })).toBeVisible();
+      await card.getByRole("button", { name: "More actions" }).first().click();
+    }
+    await sourcePicker.getByRole("button").click();
+    await page.getByRole("listbox").getByRole("option", { name: "All sources", exact: true }).click();
+    await expect(sourcePicker).toContainText("All sources");
+
     await expectHeaderLayout(card);
 
     // --- Phone width: the action bar spans the row, in at most two lines ---
