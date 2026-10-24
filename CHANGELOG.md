@@ -1,3 +1,9 @@
+## v2.1.9 (2026-10-24)
+
+### Refactor
+
+- scrape ingestion module out of the scraper adapter (#421)
+
 ## v2.1.8 (2026-10-24)
 
 ### Refactor

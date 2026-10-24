@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "finance-analysis"
-version = "2.1.8"
+version = "2.1.9"
 description = ""
 authors = ["Author Name <tomerroditi1@gmail.com>"]
 readme = "README.md"
