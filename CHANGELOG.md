@@ -1,3 +1,9 @@
+## v2.1.7 (2026-10-24)
+
+### Refactor
+
+- **savings-goals**: share claim rules and fix yearly savings for income-link goals (#419)
+
 ## v2.1.6 (2026-10-24)
 
 ### Refactor
