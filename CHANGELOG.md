@@ -1,3 +1,9 @@
+## v2.1.10 (2026-10-24)
+
+### Fix
+
+- **tagging**: add a description the rule only tests behind other conditions (#422)
+
 ## v2.1.9 (2026-10-24)
 
 ### Refactor
