@@ -1,3 +1,9 @@
+## v2.1.6 (2026-10-24)
+
+### Refactor
+
+- **insights**: split InsightsService into one module per rule (#418)
+
 ## v2.1.5 (2026-10-23)
 
 ### Refactor
