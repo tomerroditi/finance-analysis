@@ -1,3 +1,9 @@
+## v2.1.8 (2026-10-24)
+
+### Refactor
+
+- one running-month module behind forecast, budget and insights (#420)
+
 ## v2.1.7 (2026-10-24)
 
 ### Refactor
