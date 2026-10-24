@@ -77,7 +77,9 @@ Two rules decide what a goal pays:
   repayment.
 
 Rules and links claim transactions from the goal's `start_month` through its
-`closed_month` (inclusive) — `InputsMixin._claim_span`. Card purchases can be
+`closed_month` (inclusive) — `claims.claim_span`. When two goals' rules match one row the
+goal higher in the list takes it, a spending rule beats an income rule on the
+same row, and an explicit link beats both (`InputsMixin._goal_by_transaction`). Card purchases can be
 paid out of a goal like bank rows. Only **incoming** money can be a
 contribution link (`link_transaction` 400s on an outgoing one): setting money
 aside is an entry, never a link on a transfer.
@@ -183,11 +185,12 @@ on one dashboard ₪66k apart for the same year.
   Gains and losses on investments never appear.
 - Loans as the rest of the app counts them: a receipt is income, a repayment
   spending.
-- **A goal with a saved-into rule:** its income is the goal's money, not the
-  year's savings, and the bills it pays with that income are not the year's
+- **A goal with income of its own** (a saved-into rule or any income link —
+  the same `claims.goals_owning_income` fact the ledger uses): its income is
+  the goal's money, not the year's savings, and the bills it pays with that income are not the year's
   spending. Only the part of its bills beyond the income received so far
   (cumulative, per goal) is spending, counted in the month it crosses.
-- **A goal without one:** its utilizations are spending in the month they
+- **Any other goal:** its utilizations are spending in the month they
   happen — the money was saved before and is being spent now.
 
 Targets are one per calendar year (`yearly_savings_targets`, `year` primary

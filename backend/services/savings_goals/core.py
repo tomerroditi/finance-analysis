@@ -16,7 +16,9 @@ The service is split across mixins: ``inputs`` (goals and everything read off
 transactions), ``ledger`` (each goal's balance and free cash, month by month),
 ``goals`` (CRUD, money in and out, fund, cover, links), ``read_models`` (the
 goal list, free cash, timeline and month view) and ``yearly`` (how much each
-year saved against its target — measured from the same transactions).
+year saved against its target — measured from the same transactions). The
+claim rules they share live in ``claims``; dependencies run one way —
+``goals`` → ``read_models`` → ``ledger`` / ``yearly`` → ``inputs``.
 """
 
 from typing import Any

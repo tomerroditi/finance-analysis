@@ -27,6 +27,7 @@ from backend.models.savings_goal import (
 from backend.repositories.split_transactions_repository import (
     SplitTransactionsRepository,
 )
+from backend.services.savings_goals.claims import rules_overlap
 from backend.services.savings_goals.common import ROUNDING_EPSILON, month_key, month_str
 
 
@@ -306,39 +307,12 @@ class GoalCrudMixin:
             for goal in self._goals_in_order():
                 if wanted is not None and goal.id not in wanted:
                     continue
-                amount = min(self._suggestion(goal), max(0.0, free_cash))
+                amount = min(self._plan_for(goal).suggested, max(0.0, free_cash))
                 if amount <= ROUNDING_EPSILON:
                     continue
                 self.repo.add_entry(goal.id, today, round(amount, 2), ENTRY_MANUAL)
                 free_cash -= amount
         return self._after_write()
-
-    def cover_plan(self) -> list[dict[str, Any]]:
-        """Return what covering a free-cash shortfall would take from each goal.
-
-        Lowest in the list gives first, and no goal gives more than it holds.
-
-        Returns
-        -------
-        list[dict]
-            ``{"goal_id", "name", "amount"}`` per goal giving money back;
-            empty when free cash is not negative.
-        """
-        shortfall = -self._free_cash_now()
-        plan: list[dict[str, Any]] = []
-        for goal in reversed(self._goals_in_order()):
-            if shortfall <= ROUNDING_EPSILON:
-                break
-            if goal.status == GOAL_STATUS_CLOSED:
-                continue
-            take = min(shortfall, self._state_of(goal).available)
-            if take <= ROUNDING_EPSILON:
-                continue
-            plan.append(
-                {"goal_id": goal.id, "name": goal.name, "amount": round(take, 2)}
-            )
-            shortfall -= take
-        return plan
 
     def cover(self) -> list[dict[str, Any]]:
         """Apply :meth:`cover_plan`: take the shortfall back from the goals.
@@ -541,21 +515,10 @@ class GoalCrudMixin:
             if goal is not None and other.id == goal.id:
                 continue
             other_claim = (other.contribution_category, other.contribution_tags)
-            if self._claims_overlap(claim, other_claim):
+            if rules_overlap(claim, other_claim):
                 raise ValidationException(
                     f"That income already feeds the goal {other.name!r}"
                 )
-
-    def _claims_overlap(
-        self, one: tuple[str | None, str | None], other: tuple[str | None, str | None]
-    ) -> bool:
-        """Whether two category/tag rules can match the same transaction."""
-        if not one[0] or one[0] != other[0]:
-            return False
-        tags, other_tags = self._split_tags(one[1]), self._split_tags(other[1])
-        if not tags or not other_tags or ALL_TAGS in tags or ALL_TAGS in other_tags:
-            return True
-        return bool(set(tags) & set(other_tags))
 
     @staticmethod
     def _validate_month(value: object, field_name: str) -> None:
