@@ -5,7 +5,7 @@ the month-by-month timeline and one month's movements for the budget view.
 Mixed into ``SavingsGoalService`` (see ``core.py``).
 """
 
-from datetime import date
+from dataclasses import dataclass
 from typing import Any
 
 import pandas as pd
@@ -21,6 +21,37 @@ DAYS_PER_MONTH = 30.44
 def _money(value: float) -> float:
     """Round to agorot, without a negative zero."""
     return round(value, 2) + 0.0
+
+
+@dataclass
+class GoalPlan:
+    """Where one goal stands against its target.
+
+    Attributes
+    ----------
+    target : float
+        The target amount (``0`` without one).
+    remaining : float
+        What is still to be saved.
+    is_achieved : bool
+        Whether the goal has saved its target.
+    months_remaining : int or None
+        Calendar months to the target date, ``None`` without one.
+    monthly_needed : float or None
+        What each month needs to reach the target by its date.
+    is_past_due : bool
+        Past its target date and still short.
+    suggested : float
+        What the card suggests putting in this month.
+    """
+
+    target: float
+    remaining: float
+    is_achieved: bool
+    months_remaining: int | None = None
+    monthly_needed: float | None = None
+    is_past_due: bool = False
+    suggested: float = 0.0
 
 
 class ReadModelsMixin:
@@ -201,21 +232,42 @@ class ReadModelsMixin:
             return 0.0
         return ledger.monthly[max(earlier)][goal_id].available
 
-    def _suggestion(self, goal: SavingsGoal) -> float:
-        """Return how much the card suggests putting into a goal this month."""
-        return self._plan_for(goal)[2]
+    def cover_plan(self) -> list[dict[str, Any]]:
+        """Return what covering a free-cash shortfall would take from each goal.
 
-    def _plan_for(self, goal: SavingsGoal) -> tuple[int | None, float | None, float]:
-        """Return ``(months_remaining, monthly_needed, suggested_this_month)``."""
+        Lowest in the list gives first, and no goal gives more than it holds.
+
+        Returns
+        -------
+        list[dict]
+            ``{"goal_id", "name", "amount"}`` per goal giving money back;
+            empty when free cash is not negative.
+        """
+        shortfall = -self._free_cash_now()
+        plan: list[dict[str, Any]] = []
+        for goal in reversed(self._goals_in_order()):
+            if shortfall <= ROUNDING_EPSILON:
+                break
+            if goal.status == GOAL_STATUS_CLOSED:
+                continue
+            take = min(shortfall, self._state_of(goal).available)
+            if take <= ROUNDING_EPSILON:
+                continue
+            plan.append(
+                {"goal_id": goal.id, "name": goal.name, "amount": round(take, 2)}
+            )
+            shortfall -= take
+        return plan
+
+    def _plan_for(self, goal: SavingsGoal) -> "GoalPlan":
+        """Return where a goal stands against its target, and this month's ask."""
         state = self._state_of(goal)
         target = float(goal.target_amount or 0.0)
-        saved = state.added + state.income
-        remaining = max(0.0, target - saved)
-        achieved = target > 0 and saved >= target - ROUNDING_EPSILON
+        remaining = max(0.0, target - state.saved)
+        achieved = target > 0 and state.saved >= target - ROUNDING_EPSILON
         added_now = self._added_this_month(goal.id)
+        plan = GoalPlan(target=target, remaining=remaining, is_achieved=achieved)
 
-        months_remaining = None
-        monthly_needed = None
         runway = 0.0
         if goal.target_date and pd.notna(goal.target_date):
             today = pd.Timestamp.today().normalize()
@@ -223,16 +275,19 @@ class ReadModelsMixin:
             months = (target_ts.year - today.year) * 12 + (
                 target_ts.month - today.month
             )
-            months_remaining = max(0, int(months))
+            plan.months_remaining = max(0, int(months))
+            plan.is_past_due = not achieved and target_ts < today
             # Size it off the real runway in days: a calendar-month difference
             # treats a goal due on the 1st two months out as two full months
             # even when only ~39 days remain.
             runway = max(0, (target_ts - today).days) / DAYS_PER_MONTH
             if not achieved:
-                monthly_needed = _money(remaining / runway if runway > 0 else remaining)
+                plan.monthly_needed = _money(
+                    remaining / runway if runway > 0 else remaining
+                )
 
         if goal.status == GOAL_STATUS_CLOSED or achieved:
-            return months_remaining, monthly_needed, 0.0
+            return plan
         if goal.monthly_amount:
             base = float(goal.monthly_amount)
         elif runway > 0:
@@ -241,29 +296,19 @@ class ReadModelsMixin:
             base = (remaining + max(0.0, added_now)) / runway
         else:
             base = 0.0
-        suggested = min(max(0.0, base - added_now), remaining)
-        return months_remaining, monthly_needed, _money(suggested)
+        plan.suggested = _money(min(max(0.0, base - added_now), remaining))
+        return plan
 
     def _enrich(
         self, goal: SavingsGoal, entries: list[dict[str, Any]]
     ) -> dict[str, Any]:
         """Assemble one goal's payload."""
         state = self._state_of(goal)
-        target = float(goal.target_amount or 0.0)
-        saved = state.added + state.income
-        remaining = max(0.0, target - saved)
-        is_achieved = target > 0 and saved >= target - ROUNDING_EPSILON
-        months_remaining, monthly_needed, suggested = self._plan_for(goal)
-        today = date.today()
-        is_past_due = bool(
-            goal.target_date
-            and not is_achieved
-            and pd.Timestamp(goal.target_date) < pd.Timestamp(today)
-        )
+        plan = self._plan_for(goal)
         return {
             "id": goal.id,
             "name": goal.name,
-            "target_amount": _money(target),
+            "target_amount": _money(plan.target),
             "priority": goal.priority,
             "monthly_amount": goal.monthly_amount,
             "start_month": goal.start_month,
@@ -278,20 +323,23 @@ class ReadModelsMixin:
             "added": _money(state.added),
             "income": _money(state.income),
             "spent": _money(state.spent),
-            "saved": _money(saved),
+            "saved": _money(state.saved),
             "balance": _money(state.balance),
             "available": _money(state.available),
-            "owed": _money(max(0.0, -state.balance)),
-            "remaining": _money(remaining),
+            "owed": _money(state.owed),
+            "remaining": _money(plan.remaining),
             "progress_pct": round(
-                min(100.0, (saved / target * 100) if target > 0 else 0.0), 1
+                min(
+                    100.0, (state.saved / plan.target * 100) if plan.target > 0 else 0.0
+                ),
+                1,
             ),
-            "is_achieved": is_achieved,
+            "is_achieved": plan.is_achieved,
             "is_closed": goal.status == GOAL_STATUS_CLOSED,
-            "months_remaining": months_remaining,
-            "monthly_needed": monthly_needed,
-            "is_past_due": is_past_due,
+            "months_remaining": plan.months_remaining,
+            "monthly_needed": plan.monthly_needed,
+            "is_past_due": plan.is_past_due,
             "added_this_month": _money(self._added_this_month(goal.id)),
-            "suggested_this_month": suggested,
+            "suggested_this_month": plan.suggested,
             "entries": entries,
         }

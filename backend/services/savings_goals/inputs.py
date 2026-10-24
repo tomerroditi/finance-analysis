@@ -15,15 +15,18 @@ import pandas as pd
 from backend.constants.categories import PRIOR_WEALTH_TAG
 from backend.constants.tables import TransactionsTableFields
 from backend.models.savings_goal import (
-    GOAL_STATUS_CLOSED,
     LINK_CONTRIBUTION,
     LINK_UTILIZATION,
     SavingsGoal,
 )
 from backend.services.bank_balance_service import BankBalanceService
-from backend.services.budget.ledger import is_all_tags
 from backend.services.cash_balance_service import CashBalanceService
-from backend.services.savings_goals.common import month_key
+from backend.services.savings_goals.claims import (
+    claim_span,
+    goals_owning_income,
+    in_span,
+    rule_mask,
+)
 from backend.services.transaction_views import INVESTMENT, TransactionViews
 
 # Rows synthesised from prior-wealth balances are opening capital, not income.
@@ -92,6 +95,11 @@ class InputsMixin:
             return self._context_cache
         self._context_cache = self._compute_context()
         return self._context_cache
+
+    def _goals_owning_income(self) -> set[int]:
+        """Return the goals with income of their own (see ``claims``)."""
+        claimed = ((gid, kind) for _, gid, kind, _ in self._build_context()["events"])
+        return goals_owning_income(self._goals_in_order(), claimed)
 
     def _compute_context(self) -> dict[str, Any]:
         """Do the actual transaction scan behind :meth:`_build_context`."""
@@ -249,40 +257,38 @@ class InputsMixin:
             Row key -> ``(goal_id, link_type)`` for every linked row.
         """
         mapping: dict[_RowKey, _GoalLink] = {}
-
-        category_col = TransactionsTableFields.CATEGORY.value
-        tag_col = TransactionsTableFields.TAG.value
-
+        goals = self._goals_in_order()
+        spans = {g.id: claim_span(g) for g in goals}
         row_months = list(zip(df["_year"], df["_month"], strict=True))
-        for goal in self._goals_in_order():
-            if not goal.contribution_category:
-                continue
-            matches = df[category_col] == goal.contribution_category
-            tags = self._split_tags(goal.contribution_tags)
-            if tags and not is_all_tags(tags) and tag_col in df.columns:
-                matches &= df[tag_col].isin(tags)
-            span = self._claim_span(goal)
-            for key, matched, row_month in zip(keys, matches, row_months, strict=True):
-                if matched and self._in_span(row_month, span):
+
+        def claim(goal: SavingsGoal, category: str, tags: str | None) -> list[_RowKey]:
+            matches = rule_mask(df, category, tags)
+            return [
+                key
+                for key, matched, row_month in zip(
+                    keys, matches, row_months, strict=True
+                )
+                if matched and in_span(row_month, spans[goal.id])
+            ]
+
+        for goal in goals:
+            if goal.contribution_category:
+                for key in claim(
+                    goal, goal.contribution_category, goal.contribution_tags
+                ):
                     mapping.setdefault(key, (goal.id, LINK_CONTRIBUTION))
 
         # Walked bottom-up so the goal higher in the list writes last.
-        for goal in reversed(self._goals_in_order()):
-            if not goal.utilization_category:
-                continue
-            span = self._claim_span(goal)
-            matches = df[category_col] == goal.utilization_category
-            tags = self._split_tags(goal.utilization_tags)
-            if tags and not is_all_tags(tags) and tag_col in df.columns:
-                matches &= df[tag_col].isin(tags)
-            for key, matched, row_month in zip(keys, matches, row_months, strict=True):
-                if matched and self._in_span(row_month, span):
+        for goal in reversed(goals):
+            if goal.utilization_category:
+                for key in claim(
+                    goal, goal.utilization_category, goal.utilization_tags
+                ):
                     mapping[key] = (goal.id, LINK_UTILIZATION)
 
         links = self.repo.get_links()
         if not links.empty:
             month_of = dict(zip(keys, row_months, strict=True))
-            spans = {g.id: self._claim_span(g) for g in self._goals_in_order()}
             for _, link in links.iterrows():
                 goal_id = int(link["goal_id"])
                 span = spans.get(goal_id, (None, None))
@@ -297,32 +303,6 @@ class InputsMixin:
                         and str(c[1]) == str(link["source_id"])
                     ]
                 for candidate in matched:
-                    if self._in_span(month_of[candidate], span):
+                    if in_span(month_of[candidate], span):
                         mapping[candidate] = (goal_id, link["link_type"])
         return mapping
-
-    @staticmethod
-    def _claim_span(
-        goal: SavingsGoal,
-    ) -> tuple[tuple[int, int] | None, tuple[int, int] | None]:
-        """Return the first and last month a goal's rules and links claim rows in."""
-        last = (
-            month_key(goal.closed_month) if goal.status == GOAL_STATUS_CLOSED else None
-        )
-        return month_key(goal.start_month), last
-
-    @staticmethod
-    def _in_span(
-        month: tuple[int, int],
-        span: tuple[tuple[int, int] | None, tuple[int, int] | None],
-    ) -> bool:
-        """Whether ``month`` falls inside a goal's claim span."""
-        first, last = span
-        return (first is None or month >= first) and (last is None or month <= last)
-
-    @staticmethod
-    def _split_tags(tags: str | None) -> list[str]:
-        """Split the semicolon-separated tag string budgets also use."""
-        if not tags:
-            return []
-        return [t.strip() for t in str(tags).split(";") if t.strip()]

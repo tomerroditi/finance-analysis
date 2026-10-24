@@ -61,6 +61,16 @@ class GoalState:
         """What the goal holds now: the balance, never below zero."""
         return max(0.0, self.balance)
 
+    @property
+    def saved(self) -> float:
+        """Progress toward the target: everything that went in."""
+        return self.added + self.income
+
+    @property
+    def owed(self) -> float:
+        """What a goal that spent ahead of its income still owes free cash."""
+        return max(0.0, -self.balance)
+
 
 @dataclass
 class Ledger:
@@ -130,11 +140,9 @@ class LedgerMixin:
             )
             for row in self.repo.get_entries().itertuples()
         ]
-        has_income = {g.id for g in goals if g.contribution_category}
+        has_income = self._goals_owning_income()
         for event_date, goal_id, link_type, amount in context["events"]:
             kind = "income" if link_type == LINK_CONTRIBUTION else "spent"
-            if kind == "income":
-                has_income.add(goal_id)
             events.append((event_date, _ORDER[kind], goal_id, kind, amount))
         events.sort()
 

@@ -50,9 +50,7 @@ class TestWhatAYearSaved:
 
         assert _year(result, date.today().year)["saved"] == 3000
 
-    def test_investing_is_saving_and_a_withdrawal_is_neutral(
-        self, db_session, service
-    ):
+    def test_investing_is_saving_and_a_withdrawal_is_neutral(self, db_session, service):
         """Money moved into or out of an investment never changes the figure."""
         month = month_str(0)
         seed_surplus(db_session, month, income=10000, expenses=7000)
@@ -116,6 +114,32 @@ class TestWhatAYearSaved:
         result = service.get_yearly_savings()
 
         assert _year(result, date.today().year)["saved"] == 1000
+
+    def test_a_goal_fed_by_an_income_link_alone_keeps_that_income_out(
+        self, db_session, service
+    ):
+        """Income linked by hand is the goal's own, exactly like a rule's."""
+        month = month_str(0)
+        seed_surplus(db_session, month, income=10000, expenses=7000)
+        gift = add_txn(db_session, month, 20000, "Other Income", tag="Gift", day=4)
+        add_txn(db_session, month, -15000, "Wedding", tag="Venue", day=9)
+        goal = service.create(
+            name="Wedding",
+            target_amount=20000,
+            start_month=month,
+            utilization_category="Wedding",
+        )[0]
+        service.link_transaction(
+            goal["id"],
+            "transaction",
+            gift.unique_id,
+            "bank_transactions",
+            "contribution",
+        )
+
+        result = service.get_yearly_savings()
+
+        assert _year(result, date.today().year)["saved"] == 3000
 
     def test_spending_out_of_savings_is_spending(self, db_session, service):
         """A trip paid from a goal without income of its own is spent this year."""

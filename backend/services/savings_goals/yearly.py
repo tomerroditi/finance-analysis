@@ -19,8 +19,9 @@ purchase's month.
 - **Loans** count as the rest of the app counts them: a loan received is
   income, a repayment is spending.
 - **Money a goal's own income pays for is left out on both sides.** Income a
-  goal's "saved into" rule claims (wedding gifts) is that goal's money, not the
-  year's savings, and so are the bills the goal pays with it. Only bills
+  goal claims — by its "saved into" rule or a link (wedding gifts) — is that
+  goal's money, not the year's savings, and so are the bills the goal pays
+  with it. Only bills
   beyond that income — paid with the household's own money — count as
   spending.
 - **Bills paid out of a goal without an income of its own** (a trip paid for
@@ -109,7 +110,7 @@ class YearlySavingsMixin:
         ]
         if not months:
             return {}
-        own_income = {g.id for g in self._goals_in_order() if g.contribution_category}
+        own_income = self._goals_owning_income()
 
         saved: dict[tuple[int, int], float] = {}
         # Per goal with income of its own: what it has received and spent so
