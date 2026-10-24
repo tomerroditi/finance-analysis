@@ -21,8 +21,8 @@ from backend.models.investment import Investment
 from backend.models.investment_balance_snapshot import InvestmentBalanceSnapshot
 from backend.models.transaction import InsuranceTransaction
 from backend.repositories.transactions import TransactionsRepository
-from backend.scraper.adapter import InsuranceScraperAdapter
 from backend.services.investments import InvestmentsService
+from backend.services.scrape_ingestion import InsuranceIngestion
 from scraper.models.account import AccountResult
 from scraper.models.result import ScrapingResult
 from scraper.models.transaction import Transaction, TransactionStatus, TransactionType
@@ -69,22 +69,24 @@ def _meta(provider: str, policy_id: str, **overrides: object) -> dict:
 
 
 def _scrape(db_session, provider: str, account_name: str, result: ScrapingResult) -> None:
-    """Run the adapter's save pipeline (pre-save, rows, save, post-save)."""
-    adapter = InsuranceScraperAdapter(
-        "insurances", provider, account_name, {}, date(2026, 1, 1), 1
+    """Run the ingestion steps on ``result`` (claim, rows, save, after-save)."""
+    ingestion = InsuranceIngestion(
+        "insurances", provider, account_name, date(2026, 1, 1), "test"
     )
 
     @contextmanager
     def db_context():
         yield db_session
 
-    with patch("backend.scraper.adapter.get_db_context", side_effect=db_context):
-        adapter._pre_save_hook(result)
-        frame = adapter._result_to_dataframe(result, "insurances")
+    with patch(
+        "backend.services.scrape_ingestion.get_db_context", side_effect=db_context
+    ):
+        ingestion.before_rows(result)
+        frame = ingestion.to_frame(result)
         TransactionsRepository(db_session).add_scraped_transactions(
             frame, "insurance_transactions"
         )
-        adapter._post_save_hook(result)
+        ingestion.after_save(result)
 
 
 def _seed_haphoenix(db_session) -> None:

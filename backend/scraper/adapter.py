@@ -1,8 +1,9 @@
 """Adapter bridging the async Python scraper framework to the backend pipeline.
 
-Translates ``ScrapingResult`` objects from the ``scraper`` package into
-pandas DataFrames compatible with the transaction storage, auto-tagging, and
-bank-balance-recalculation pipeline.
+Owns one scrape's lifecycle: building the provider scraper (or its demo
+dummy), the 2FA dance, the 5-minute ceiling, user aborts and the
+``scraping_history`` row. A successful ``ScrapingResult`` is handed to
+``backend.services.scrape_ingestion``, which turns it into stored rows.
 
 Note: imports from the root ``scraper`` package use ``_import_scraper_module``
 to avoid the naming collision with ``backend.scraper``.
@@ -13,7 +14,6 @@ import concurrent.futures
 import contextlib
 import datetime
 import importlib
-import json
 import logging
 import os
 import sys
@@ -25,26 +25,17 @@ from typing import TYPE_CHECKING, Any
 import pandas as pd
 
 from backend.config import AppConfig
-from backend.constants.providers import CLEARING_HOUSE_REPORTS_EXTRA, Services
-from backend.constants.tables import SERVICE_TO_TABLE, TransactionsTableFields
+from backend.constants.providers import Services
 from backend.database import get_db_context
 from backend.errors import EntityNotFoundException
 from backend.repositories.credentials_repository import CredentialsRepository
 from backend.repositories.scraping_history_repository import ScrapingHistoryRepository
-from backend.repositories.transactions import TransactionsRepository
-from backend.services.bank_balance_service import BankBalanceService
 from backend.services.credentials_service import CredentialsService
-from backend.services.tagging_rules_service import TaggingRulesService
-from backend.services.tagging_service import CategoriesTagsService
+from backend.services.scrape_ingestion import ingestion_for
 from backend.utils.log_sanitize import scrub
 
 if TYPE_CHECKING:
-    from sqlalchemy.orm import Session
-
     from scraper.base.base_scraper import BaseScraper, ScraperOptions
-    from scraper.models.account import AccountResult
-    from scraper.models.result import ScrapingResult
-    from scraper.models.transaction import Transaction
 
 logger = logging.getLogger(__name__)
 
@@ -160,31 +151,6 @@ _describe_exception = _import_scraper_module(
 ).describe_exception
 
 
-def _format_key_amount(amount: float | str | None) -> str:
-    """Render an amount for a dedup key at fixed 2-decimal precision.
-
-    A raw float repr is not a stable key: ``0.1 + 0.2`` renders as
-    ``0.30000000000000004`` while ``0.3`` renders as ``0.3``, so two runs
-    that reach the same amount by different arithmetic produce different
-    keys for the same transaction.
-
-    Parameters
-    ----------
-    amount : float or str
-        The transaction's charged amount.
-
-    Returns
-    -------
-    str
-        The amount at 2 decimal places, or its ``str`` form if it is not
-        numeric at all.
-    """
-    try:
-        return f"{float(amount):.2f}"
-    except (TypeError, ValueError):
-        return str(amount)
-
-
 def create_adapter(
     service_name: str,
     provider_name: str,
@@ -194,7 +160,7 @@ def create_adapter(
     process_id: int,
     force_2fa: bool = False,
 ) -> "ScraperAdapter":
-    """Create the appropriate adapter for the given service type.
+    """Create the adapter for one scrape.
 
     Parameters
     ----------
@@ -209,14 +175,9 @@ def create_adapter(
     Returns
     -------
     ScraperAdapter
-        An ``InsuranceScraperAdapter`` for insurances, otherwise a base ``ScraperAdapter``.
+        The adapter, its ingestion pipeline chosen by ``service_name``.
     """
-    cls = (
-        InsuranceScraperAdapter
-        if service_name == Services.INSURANCE.value
-        else ScraperAdapter
-    )
-    return cls(
+    return ScraperAdapter(
         service_name,
         provider_name,
         account_name,
@@ -230,14 +191,13 @@ def create_adapter(
 class ScraperAdapter:
     """Bridges the scraper framework to the backend services pipeline.
 
-    Runs an async scraper from the ``scraper`` package, converts the
-    resulting ``ScrapingResult`` into a DataFrame, and feeds it through the
-    backend's save / tag / rebalance pipeline.
+    Runs an async scraper from the ``scraper`` package and hands a
+    successful ``ScrapingResult`` to its ``ScrapeIngestion``.
 
     Parameters
     ----------
     service_name : str
-        Service type (``"credit_cards"`` or ``"banks"``).
+        Service type (``"credit_cards"``, ``"banks"`` or ``"insurances"``).
     provider_name : str
         Provider identifier (e.g. ``"isracard"``, ``"hapoalim"``).
     account_name : str
@@ -313,7 +273,9 @@ class ScraperAdapter:
         # so the UI can render friendly translated copy without the technical
         # text having to double as a user-facing message.
         self._error_type: str = ""
-        self._table_name: str = SERVICE_TO_TABLE.get(service_name, "")
+        self._ingestion = ingestion_for(
+            service_name, provider_name, account_name, start_date, self._log_id
+        )
         # Number of accounts the scraper reported, or None when the scrape
         # never produced a result. Distinguishes "an account with no
         # activity this window" (a real success) from "we fetched nothing
@@ -392,31 +354,10 @@ class ScraperAdapter:
 
                 if result.success:
                     self._accounts_fetched = len(result.accounts)
-                    self._pre_save_hook(result)
-                    self._data = self._result_to_dataframe(result, self.service_name)
-                    if self._accounts_fetched > 0:
-                        # An empty window is still an authoritative scrape of
-                        # that window: pending rows must be reconciled, the
-                        # bank balance recomputed and the insurance metadata
-                        # (balances, snapshots) refreshed even when no new
-                        # transaction arrived. Only the row insert itself is
-                        # conditional on there being rows.
-                        #
-                        # These are blocking sync DB writes (save, auto-tag,
-                        # rebalance). They stall the scraper loop — and so any
-                        # concurrent scrape — but never the server, which runs
-                        # on its own loop. They are deliberately not moved to an
-                        # executor: thread-pool work is NOT cancellable by the
-                        # asyncio.wait_for timeout above, so the hop would let DB
-                        # writes outlive the 5-minute ceiling.
-                        if not self._data.empty:
-                            self._data = self._data.sort_values(by=["date"])
-                        self._save_scraped_transactions()
-                        self._apply_auto_tagging()
-                        self._recalculate_bank_balances(
-                            self._reported_bank_balance(result)
-                        )
-                        self._post_save_hook(result)
+                    # Blocking sync DB writes: they stall the scraper loop —
+                    # and so any concurrent scrape — but never the server,
+                    # which runs on its own loop (see ScrapeIngestion.ingest).
+                    self._data = self._ingestion.ingest(result)
                 else:
                     self._error_type = result.error_type or "GENERAL_ERROR"
                     self._error = (
@@ -725,246 +666,6 @@ class ScraperAdapter:
                 scrub(exc),
             )
 
-    def _iter_scraped_rows(
-        self, result: "ScrapingResult"
-    ) -> Iterator[tuple["AccountResult", "Transaction", str, str, str]]:
-        """Yield ``(account, txn, txn_date, row_id, unique_id)`` per scraped row.
-
-        Centralises dedup-key construction so the base frame and the
-        insurance memo map can never disagree about a row's ``id``.
-
-        ``id`` is the DB-visible key that
-        ``TransactionsRepository.add_scraped_transactions`` dedups on, via
-        the composite ``(id, provider, date, amount)``. Rows without a
-        provider ``identifier`` fell back to
-        ``"{account}_{date}_{amount}"``, so two genuinely distinct same-day,
-        same-amount transactions collapsed onto one key. Once the first was
-        stored, every overlapping re-scrape (the window reaches back 7 days)
-        matched both incoming rows against it and dropped the second
-        **permanently**.
-
-        The discriminator is deliberately minimal, because the key is
-        matched against rows **already in the user's database**:
-
-        * Rows that carry a provider identifier are untouched. A repeated
-          identifier means the provider itself considers the rows the same,
-          and re-keying them would re-insert historical rows as duplicates.
-        * The **first** identifier-less row of each
-          ``(account, date, amount)`` group keeps the exact legacy string,
-          including the raw float repr of the amount. Every such row already
-          in the DB therefore still matches and is still deduped.
-        * Only the 2nd, 3rd, … occurrence gains a ``#N`` suffix — those are
-          precisely the rows that are being lost today.
-
-        The float repr is left alone in ``id`` on purpose. Reformatting it
-        (e.g. to 2dp) would change the key of *every* identifier-less row
-        ever stored, re-inserting each as a duplicate on the next
-        overlapping scrape. ``unique_id`` is not persisted (``unique_id`` is
-        an autoincrement PK on the DB side and is excluded from the insert
-        via ``TransactionBase.BASE_COLUMN_NAMES``), so it is free to use the
-        deterministic 2-decimal form.
-
-        Parameters
-        ----------
-        result : ScrapingResult
-            The scraping result from the scraper framework.
-
-        Yields
-        ------
-        tuple
-            ``(account, txn, txn_date, row_id, unique_id)``.
-        """
-        # Occurrence counters, per scrape. Keyed on the exact tuple whose
-        # collisions we are disambiguating.
-        fallback_counts: dict[tuple[str, str, str], int] = {}
-        unique_counts: dict[tuple[str, str, str, str], int] = {}
-
-        for account in result.accounts:
-            for txn in account.transactions:
-                # Normalise date to YYYY-MM-DD
-                txn_date = txn.date
-                if "T" in txn_date:
-                    txn_date = txn_date.split("T")[0]
-
-                identifier = txn.identifier or ""
-                key_amount = _format_key_amount(txn.charged_amount)
-
-                unique_key = (
-                    str(account.account_number),
-                    txn_date,
-                    key_amount,
-                    identifier,
-                )
-                unique_n = unique_counts.get(unique_key, 0) + 1
-                unique_counts[unique_key] = unique_n
-                unique_id = (
-                    f"{self.provider_name}_{account.account_number}"
-                    f"_{txn_date}_{key_amount}_{identifier}"
-                )
-                if unique_n > 1:
-                    unique_id = f"{unique_id}#{unique_n}"
-
-                if txn.identifier:
-                    row_id = txn.identifier
-                else:
-                    # Legacy format preserved verbatim for the first
-                    # occurrence — see the note above on backward compat.
-                    row_id = f"{account.account_number}_{txn_date}_{txn.charged_amount}"
-                    fallback_key = (
-                        str(account.account_number),
-                        txn_date,
-                        str(txn.charged_amount),
-                    )
-                    fallback_n = fallback_counts.get(fallback_key, 0) + 1
-                    fallback_counts[fallback_key] = fallback_n
-                    if fallback_n > 1:
-                        row_id = f"{row_id}#{fallback_n}"
-
-                yield account, txn, txn_date, row_id, unique_id
-
-    def _result_to_dataframe(
-        self, result: "ScrapingResult", service_name: str
-    ) -> pd.DataFrame:
-        """Convert a ``ScrapingResult`` to a DataFrame matching the existing pipeline.
-
-        Parameters
-        ----------
-        result : ScrapingResult
-            The scraping result from the scraper framework.
-        service_name : str
-            Service type (``"credit_cards"`` or ``"banks"``).
-
-        Returns
-        -------
-        pd.DataFrame
-            DataFrame with columns matching ``TransactionsTableFields``.
-        """
-        source = SERVICE_TO_TABLE.get(service_name, "")
-        rows: list[dict[str, Any]] = []
-
-        for account, txn, txn_date, row_id, unique_id in self._iter_scraped_rows(
-            result
-        ):
-            row = {
-                TransactionsTableFields.ID.value: row_id,
-                TransactionsTableFields.DATE.value: txn_date,
-                TransactionsTableFields.AMOUNT.value: txn.charged_amount,
-                TransactionsTableFields.DESCRIPTION.value: txn.description,
-                TransactionsTableFields.ACCOUNT_NUMBER.value: account.account_number,
-                TransactionsTableFields.TYPE.value: txn.type.value,
-                TransactionsTableFields.STATUS.value: txn.status.value,
-                TransactionsTableFields.ACCOUNT_NAME.value: self.account_name,
-                TransactionsTableFields.PROVIDER.value: self.provider_name,
-                TransactionsTableFields.CATEGORY.value: None,
-                TransactionsTableFields.TAG.value: None,
-                TransactionsTableFields.SOURCE.value: source,
-                TransactionsTableFields.UNIQUE_ID.value: unique_id,
-                TransactionsTableFields.SPLIT_ID.value: None,
-            }
-            rows.append(row)
-
-        if not rows:
-            # Keep the canonical columns so an empty window can still be handed
-            # to the ingestion pipeline (see ``run``) without a KeyError on
-            # the dedup columns.
-            return pd.DataFrame(columns=[f.value for f in TransactionsTableFields])
-
-        return pd.DataFrame(rows)
-
-    def _save_scraped_transactions(self) -> None:
-        """Persist the scraped DataFrame to the database."""
-        with get_db_context() as db:
-            transactions_repo = TransactionsRepository(db)
-            transactions_repo.add_scraped_transactions(
-                self._data,
-                self._table_name,
-                scrape_start_date=self.start_date.strftime("%Y-%m-%d"),
-            )
-
-    def _apply_auto_tagging(self) -> None:
-        """Apply tagging rules to newly scraped transactions.
-
-        Only tags transactions that do not already have a category
-        (``overwrite=False``).
-        """
-        try:
-            with get_db_context() as db:
-                cat_and_tags_service = CategoriesTagsService(db)
-                cat_and_tags_service.add_new_credit_card_tags()
-                tagging_rules_service = TaggingRulesService(db)
-                count = tagging_rules_service.apply_rules(overwrite=False)
-                count += tagging_rules_service.auto_tag_credit_cards_bills()
-                if count > 0:
-                    logger.info(
-                        "%s: Auto-tagged %d transactions",
-                        scrub(self._log_id),
-                        count,
-                    )
-        except Exception as exc:
-            logger.error(
-                "%s: Error auto-tagging — %s",
-                scrub(self._log_id),
-                scrub(exc),
-            )
-
-    @staticmethod
-    def _reported_bank_balance(result: "ScrapingResult") -> float | None:
-        """Return what the bank says the credential's accounts hold.
-
-        Sums the checking accounts' reported balances. Savings deposits are
-        left out: money moved into one is tracked as an investment, not as
-        bank cash. ``None`` when any checking account came back without a
-        balance — a partial sum would read as money gone missing.
-        """
-        checking = [a for a in result.accounts if not a.savings_account]
-        if not checking or any(a.balance is None for a in checking):
-            return None
-        return float(sum(float(a.balance) for a in checking))
-
-    def _recalculate_bank_balances(self, reported: float | None = None) -> None:
-        """Update the bank balance after a successful bank scrape.
-
-        Parameters
-        ----------
-        reported : float or None
-            The balance the bank reported (see
-            :meth:`_reported_bank_balance`). When given it becomes the
-            account's balance; without it the stored prior wealth is kept
-            and the transactions are re-added to it.
-        """
-        if self.service_name != Services.BANK.value:
-            return
-        try:
-            with get_db_context() as db:
-                balance_service = BankBalanceService(db)
-                if reported is None:
-                    balance_service.recalculate_for_account(
-                        self.provider_name,
-                        self.account_name,
-                    )
-                    return
-                drift = balance_service.apply_scraped_balance(
-                    self.provider_name, self.account_name, reported
-                )
-                if drift:
-                    logger.warning(
-                        "%s: bank balance differs from tracked transactions by %.2f",
-                        scrub(self._log_id),
-                        drift,
-                    )
-        except Exception as exc:
-            logger.error(
-                "%s: Error recalculating bank balance — %s",
-                scrub(self._log_id),
-                scrub(exc),
-            )
-
-    def _pre_save_hook(self, result: "ScrapingResult") -> None:
-        """Run subclass-specific logic before the result becomes rows."""
-
-    def _post_save_hook(self, result: "ScrapingResult") -> None:
-        """Run subclass-specific logic after the transactions are saved."""
-
     def _record_scraping_attempt(self, id_: int) -> None:
         """Update the scraping history record with the final status.
 
@@ -1015,174 +716,3 @@ class ScraperAdapter:
                 )
                 return
             history_repo.record_scrape_end(id_, status, error_message, error_type)
-
-
-class InsuranceScraperAdapter(ScraperAdapter):
-    """Adapter for insurance scrapers with memo and metadata support."""
-
-    def _result_to_dataframe(
-        self, result: "ScrapingResult", service_name: str
-    ) -> pd.DataFrame:
-        """Extend base conversion to include the ``memo`` column."""
-        df = super()._result_to_dataframe(result, service_name)
-        if df.empty:
-            return df
-
-        # Reuse the base row-key generator so the memo map is keyed by the
-        # same (discriminated) ids the frame's `id` column holds — building
-        # the key a second time here is how the two drifted apart.
-        memo_map: dict[str, str] = {}
-        for _account, txn, _txn_date, row_id, _unique_id in self._iter_scraped_rows(
-            result
-        ):
-            if txn.memo:
-                memo_map[row_id] = txn.memo
-
-        if memo_map:
-            df["memo"] = df["id"].map(memo_map)
-
-        return df
-
-    def _pre_save_hook(self, result: "ScrapingResult") -> None:
-        """Re-key the scrape onto stored policy IDs and adopt predecessors' rows.
-
-        See ``InsuranceAccountService.claim_policies``. Runs before the rows
-        are built so every deposit carries the policy ID the other tables
-        join on, and before the save so re-reported deposits dedup against
-        the adopted ones.
-        """
-        from backend.services.insurance_account_service import (
-            InsuranceAccountService,
-        )
-
-        if not result.accounts:
-            return
-        try:
-            with get_db_context() as db:
-                stored = InsuranceAccountService(db).claim_policies(
-                    self.provider_name,
-                    self.account_name,
-                    [account.account_number for account in result.accounts],
-                )
-        except Exception as exc:
-            logger.error(
-                "%s: Error resolving stored insurance policies — %s",
-                scrub(self._log_id),
-                scrub(exc),
-            )
-            return
-        for account in result.accounts:
-            policy_id = stored.get(account.account_number)
-            if policy_id is None:
-                continue
-            account.account_number = policy_id
-            if account.metadata:
-                account.metadata["policy_id"] = policy_id
-
-    def _save_clearing_house_reports(self, result: "ScrapingResult") -> None:
-        """Store the household summaries a clearing-house scrape handed back."""
-        from backend.services.insurance_account_service import (
-            InsuranceAccountService,
-        )
-
-        reports = (getattr(result, "extras", None) or {}).get(
-            CLEARING_HOUSE_REPORTS_EXTRA
-        )
-        if not reports:
-            return
-        try:
-            with get_db_context() as db:
-                InsuranceAccountService(db).save_clearing_house_reports(
-                    self.provider_name, self.account_name, reports
-                )
-        except Exception as exc:
-            logger.error(
-                "%s: Error saving clearing-house reports — %s",
-                scrub(self._log_id),
-                scrub(exc),
-            )
-
-    def _sync_policy_loans(self, db: "Session", accounts: list) -> None:
-        """Mirror loans taken against the scraped policies as liabilities.
-
-        Parameters
-        ----------
-        db : Session
-            Open database session.
-        accounts : list[InsuranceAccount]
-            The accounts just upserted; their ``details`` carry any loans.
-        """
-        from backend.services.liabilities_service import LiabilitiesService
-
-        for account in accounts:
-            try:
-                details = json.loads(account.details or "{}")
-            except (TypeError, ValueError):
-                continue
-            if not details.get("loans"):
-                continue
-            try:
-                LiabilitiesService(db).sync_insurance_loans(
-                    account.policy_id,
-                    account.custom_name or account.account_name,
-                    details.get("manufacturer"),
-                    details["loans"],
-                )
-            except Exception:
-                logger.exception(
-                    "%s: Failed to sync loans for policy %s",
-                    scrub(self._log_id),
-                    scrub(account.policy_id),
-                )
-
-    def _post_save_hook(self, result: "ScrapingResult") -> None:
-        """Persist insurance account metadata from AccountResult.metadata."""
-        from backend.services.insurance_account_service import (
-            InsuranceAccountService,
-        )
-        from backend.services.investments import InvestmentsService
-
-        self._save_clearing_house_reports(result)
-        accounts_to_upsert = [
-            dict(account.metadata) for account in result.accounts if account.metadata
-        ]
-        if not accounts_to_upsert:
-            return
-
-        try:
-            with get_db_context() as db:
-                service = InsuranceAccountService(db)
-                saved = []
-                for meta in accounts_to_upsert:
-                    history = meta.pop("balance_history", None)
-                    saved.append((service.upsert(**meta), history))
-                logger.info(
-                    "%s: Saved metadata for %d insurance accounts",
-                    scrub(self._log_id),
-                    len(accounts_to_upsert),
-                )
-
-                self._sync_policy_loans(db, [account for account, _ in saved])
-                inv_service = InvestmentsService(db)
-                for account, history in saved:
-                    if account.policy_type != "hishtalmut":
-                        continue
-                    try:
-                        inv_service.sync_from_insurance_account(account, history)
-                        logger.info(
-                            "%s: Synced hishtalmut investment for policy %s",
-                            scrub(self._log_id),
-                            scrub(account.policy_id),
-                        )
-                    except Exception:
-                        logger.exception(
-                            "%s: Failed to sync hishtalmut investment for policy %s",
-                            scrub(self._log_id),
-                            scrub(account.policy_id),
-                        )
-        except Exception as exc:
-            logger.error(
-                "%s: Error saving insurance metadata — %s",
-                scrub(self._log_id),
-                scrub(exc),
-            )

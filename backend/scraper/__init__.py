@@ -1,7 +1,6 @@
 """Backend bridge to the root ``scraper`` package: adapters and 2FA lookup."""
 
 from backend.scraper.adapter import (
-    InsuranceScraperAdapter,
     ScraperAdapter,
     create_adapter,
 )
@@ -44,7 +43,6 @@ def is_2fa_required(service_name: str, provider_name: str) -> bool:
 
 
 __all__ = [
-    "InsuranceScraperAdapter",
     "ScraperAdapter",
     "create_adapter",
     "is_2fa_required",

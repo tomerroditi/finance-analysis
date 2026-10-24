@@ -10,6 +10,7 @@ from scraper.models.account import AccountResult
 from scraper.models.transaction import Transaction, TransactionStatus, TransactionType
 
 from backend.scraper import ScraperAdapter, is_2fa_required
+from backend.services.scrape_ingestion import ScrapeIngestion
 
 
 class _StubScraper(BaseScraper):
@@ -96,19 +97,18 @@ class TestScraperAdapterAttributes:
 
 
 class TestScraperAdapterDataConversion:
-    """Tests for ScraperAdapter result-to-DataFrame conversion."""
+    """Tests for ScrapeIngestion result-to-DataFrame conversion."""
 
-    def test_result_to_dataframe_empty(self):
+    def test_to_frame_empty(self):
         """Verify empty result produces empty DataFrame."""
-        adapter = ScraperAdapter(
-            "banks", "hapoalim", DUMMY_ACCOUNT,
-            DUMMY_CREDENTIALS, DUMMY_START_DATE, DUMMY_PROCESS_ID,
+        ingestion = ScrapeIngestion(
+            "banks", "hapoalim", DUMMY_ACCOUNT, DUMMY_START_DATE, "test"
         )
         result = ScrapingResult(success=True, accounts=[])
-        df = adapter._result_to_dataframe(result, "banks")
+        df = ingestion.to_frame(result)
         assert df.empty
 
-    def test_result_to_dataframe_with_transactions(self):
+    def test_to_frame_with_transactions(self):
         """Verify transactions are correctly mapped to DataFrame columns."""
         txn = Transaction(
             type=TransactionType.NORMAL,
@@ -128,11 +128,10 @@ class TestScraperAdapterDataConversion:
         )
         result = ScrapingResult(success=True, accounts=[account])
 
-        adapter = ScraperAdapter(
-            "banks", "hapoalim", DUMMY_ACCOUNT,
-            DUMMY_CREDENTIALS, DUMMY_START_DATE, DUMMY_PROCESS_ID,
+        ingestion = ScrapeIngestion(
+            "banks", "hapoalim", DUMMY_ACCOUNT, DUMMY_START_DATE, "test"
         )
-        df = adapter._result_to_dataframe(result, "banks")
+        df = ingestion.to_frame(result)
 
         assert len(df) == 1
         row = df.iloc[0]

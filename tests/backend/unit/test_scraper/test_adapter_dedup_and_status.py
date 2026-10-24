@@ -1,8 +1,8 @@
-"""Tests for the adapter's dedup-key construction and final-status decision.
+"""Tests for scrape dedup-key construction and the final-status decision.
 
 Two independent money-visible behaviours live here:
 
-* ``_result_to_dataframe`` builds the ``id`` column that
+* ``ScrapeIngestion.to_frame`` builds the ``id`` column that
   ``TransactionsRepository.add_scraped_transactions`` dedups on
   ``(id, provider, date, amount)``. Two distinct same-day/same-amount rows
   that share a key are permanently dropped on the next overlapping
@@ -21,18 +21,26 @@ from unittest.mock import MagicMock, patch
 from backend.repositories.scraping_history_repository import (
     ScrapingHistoryRepository,
 )
-from backend.scraper.adapter import InsuranceScraperAdapter, ScraperAdapter
+from backend.scraper.adapter import ScraperAdapter
+from backend.services.scrape_ingestion import InsuranceIngestion, ScrapeIngestion
 
 DUMMY_CREDENTIALS = {"username": "user", "password": "pass123"}
 DUMMY_START_DATE = date(2024, 3, 1)
 
 
-def _adapter(cls=ScraperAdapter, service: str = "credit_cards") -> ScraperAdapter:
+def _adapter() -> ScraperAdapter:
     """Build an adapter without running the scrape lifecycle."""
-    return cls(
-        service, "isracard", "Card1",
+    return ScraperAdapter(
+        "credit_cards", "isracard", "Card1",
         DUMMY_CREDENTIALS, DUMMY_START_DATE, 1,
     )
+
+
+def _ingestion(
+    cls: type[ScrapeIngestion] = ScrapeIngestion, service: str = "credit_cards"
+) -> ScrapeIngestion:
+    """Build the ingestion pipeline for one Isracard credential."""
+    return cls(service, "isracard", "Card1", DUMMY_START_DATE, "test")
 
 
 def _txn(**overrides) -> SimpleNamespace:
@@ -73,8 +81,8 @@ class TestDedupKeyCollision:
         the repo dedups on (id, provider, date, amount), so once the first
         was stored, any overlapping re-scrape dropped the second.
         """
-        adapter = _adapter()
-        df = adapter._result_to_dataframe(_result(_txn(), _txn()), "credit_cards")
+        ingestion = _ingestion()
+        df = ingestion.to_frame(_result(_txn(), _txn()))
         ids = list(df["id"])
         assert len(set(ids)) == 2
 
@@ -84,40 +92,35 @@ class TestDedupKeyCollision:
         Changing it would orphan every already-stored identifier-less row
         and re-insert it as a duplicate on the next overlapping scrape.
         """
-        adapter = _adapter()
-        df = adapter._result_to_dataframe(_result(_txn(), _txn()), "credit_cards")
+        ingestion = _ingestion()
+        df = ingestion.to_frame(_result(_txn(), _txn()))
         assert df["id"].iloc[0] == "1234_2024-03-15_-25.0"
 
     def test_three_identical_rows_get_three_distinct_ids(self):
         """The discriminator keeps counting past the second duplicate."""
-        adapter = _adapter()
-        df = adapter._result_to_dataframe(
-            _result(_txn(), _txn(), _txn()), "credit_cards"
-        )
+        ingestion = _ingestion()
+        df = ingestion.to_frame(_result(_txn(), _txn(), _txn()))
         assert len(set(df["id"])) == 3
 
     def test_provider_identifiers_are_left_untouched(self):
         """Rows carrying a provider identifier keep it verbatim."""
-        adapter = _adapter()
-        df = adapter._result_to_dataframe(
-            _result(_txn(identifier="ABC1"), _txn(identifier="ABC2")),
-            "credit_cards",
+        ingestion = _ingestion()
+        df = ingestion.to_frame(
+            _result(_txn(identifier="ABC1"), _txn(identifier="ABC2"))
         )
         assert list(df["id"]) == ["ABC1", "ABC2"]
 
     def test_different_amounts_are_not_discriminated(self):
         """Rows that already differ keep their plain keys."""
-        adapter = _adapter()
-        df = adapter._result_to_dataframe(
-            _result(_txn(), _txn(charged_amount=-30.0)), "credit_cards"
-        )
+        ingestion = _ingestion()
+        df = ingestion.to_frame(_result(_txn(), _txn(charged_amount=-30.0)))
         assert list(df["id"]) == [
             "1234_2024-03-15_-25.0", "1234_2024-03-15_-30.0"
         ]
 
     def test_same_key_across_accounts_is_not_discriminated(self):
         """Identical rows on different accounts are already distinct."""
-        adapter = _adapter()
+        ingestion = _ingestion()
         result = SimpleNamespace(
             accounts=[
                 SimpleNamespace(account_number="1111",
@@ -126,7 +129,7 @@ class TestDedupKeyCollision:
                                 transactions=[_txn()], metadata=None),
             ]
         )
-        df = adapter._result_to_dataframe(result, "credit_cards")
+        df = ingestion.to_frame(result)
         assert list(df["id"]) == [
             "1111_2024-03-15_-25.0", "2222_2024-03-15_-25.0"
         ]
@@ -137,27 +140,21 @@ class TestUniqueIdKeyStability:
 
     def test_float_repr_noise_is_normalized(self):
         """0.1 + 0.2 and 0.3 produce the same key, not two different ones."""
-        adapter = _adapter()
-        noisy = adapter._result_to_dataframe(
-            _result(_txn(charged_amount=0.1 + 0.2)), "credit_cards"
-        )
-        clean = adapter._result_to_dataframe(
-            _result(_txn(charged_amount=0.3)), "credit_cards"
-        )
+        ingestion = _ingestion()
+        noisy = ingestion.to_frame(_result(_txn(charged_amount=0.1 + 0.2)))
+        clean = ingestion.to_frame(_result(_txn(charged_amount=0.3)))
         assert noisy["unique_id"].iloc[0] == clean["unique_id"].iloc[0]
 
     def test_amount_is_formatted_to_two_decimals(self):
         """Amounts are rendered at fixed precision, not raw float repr."""
-        adapter = _adapter()
-        df = adapter._result_to_dataframe(
-            _result(_txn(charged_amount=-25.0)), "credit_cards"
-        )
+        ingestion = _ingestion()
+        df = ingestion.to_frame(_result(_txn(charged_amount=-25.0)))
         assert "-25.00" in df["unique_id"].iloc[0]
 
     def test_identical_rows_get_distinct_unique_ids(self):
         """Two identical rows never share a unique_id."""
-        adapter = _adapter()
-        df = adapter._result_to_dataframe(_result(_txn(), _txn()), "credit_cards")
+        ingestion = _ingestion()
+        df = ingestion.to_frame(_result(_txn(), _txn()))
         assert len(set(df["unique_id"])) == 2
 
 
@@ -166,13 +163,59 @@ class TestInsuranceMemoMapping:
 
     def test_memo_map_follows_the_discriminated_ids(self):
         """Two identical deposits keep their own memos."""
-        adapter = _adapter(InsuranceScraperAdapter, "insurance")
+        ingestion = _ingestion(InsuranceIngestion, "insurance")
         result = _result(
             _txn(memo="first"),
             _txn(memo="second"),
         )
-        df = adapter._result_to_dataframe(result, "insurance")
+        df = ingestion.to_frame(result)
         assert sorted(df["memo"]) == ["first", "second"]
+
+
+class TestIngestStoresOnlyRealResults:
+    """``ScrapeIngestion.ingest`` runs its write steps only for a real result."""
+
+    def _steps(self, ingestion: ScrapeIngestion) -> list:
+        """Replace every write step with a recorder and return the log."""
+        calls: list[str] = []
+        ingestion._save = lambda frame: calls.append(("save", list(frame["date"])))
+        ingestion._auto_tag = lambda: calls.append("tag")
+        ingestion._rebalance = lambda reported: calls.append("rebalance")
+        ingestion.after_save = lambda result: calls.append("after_save")
+        return calls
+
+    def test_ingest_no_accounts_stores_nothing(self):
+        """A result with no accounts returns an empty frame and writes nothing."""
+        ingestion = _ingestion()
+        calls = self._steps(ingestion)
+
+        frame = ingestion.ingest(SimpleNamespace(accounts=[]))
+
+        assert frame.empty
+        assert calls == []
+
+    def test_ingest_saves_sorted_then_tags_rebalances_and_finishes(self):
+        """Rows are saved in date order, then tagged, rebalanced and finished."""
+        ingestion = _ingestion()
+        calls = self._steps(ingestion)
+
+        result = _result(
+            _txn(date="2024-03-20", identifier="B"),
+            _txn(date="2024-03-02", identifier="A"),
+        )
+        result.accounts[0].savings_account = False
+        result.accounts[0].balance = None
+
+        frame = ingestion.ingest(result)
+
+        assert list(frame["date"]) == ["2024-03-02", "2024-03-20"]
+        assert calls == [
+            ("save", ["2024-03-02", "2024-03-20"]),
+            "tag",
+            "rebalance",
+            "after_save",
+        ]
+
 
 
 @contextmanager

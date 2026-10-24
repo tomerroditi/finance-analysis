@@ -82,16 +82,16 @@ class TestScrapeMirrorsLoans:
     """A clearing-house scrape carrying a loan puts it on the Liabilities page."""
 
     def test_post_save_syncs_loans_from_details(self, db_session):
-        """Verify the adapter hands each policy's loans to the liability sync."""
+        """Verify the ingestion hands each policy's loans to the liability sync."""
         from contextlib import contextmanager
         from datetime import date
         from types import SimpleNamespace
         from unittest.mock import patch
 
-        from backend.scraper.adapter import InsuranceScraperAdapter
+        from backend.services.scrape_ingestion import InsuranceIngestion
 
-        adapter = InsuranceScraperAdapter(
-            "insurances", "mislaka", "Clearing house", {}, date(2026, 1, 1), 1
+        ingestion = InsuranceIngestion(
+            "insurances", "mislaka", "Clearing house", date(2026, 1, 1), "test"
         )
         meta = {
             "provider": "mislaka",
@@ -107,8 +107,10 @@ class TestScrapeMirrorsLoans:
         def db_context():
             yield db_session
 
-        with patch("backend.scraper.adapter.get_db_context", side_effect=db_context):
-            adapter._post_save_hook(
+        with patch(
+            "backend.services.scrape_ingestion.get_db_context", side_effect=db_context
+        ):
+            ingestion.after_save(
                 SimpleNamespace(accounts=[SimpleNamespace(metadata=meta)], extras={})
             )
 
