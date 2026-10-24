@@ -123,7 +123,8 @@ def _portfolio(payload: dict, index: int) -> Portfolio:
         monthly_deposit_cap=_num(payload, f"portfolio_deposit{index}", None),
         goal=_req(payload, f"portfolio_goal{index}"),
         annual_return_pct=_req(payload, f"portfolioInterest{index}", 5.0),
-        annual_fee_pct=_req(payload, f"portfolioFee{index}", 0.1),
+        # A fee left blank is no fee on the reference; only a missing one is its 0.1% default.
+        annual_fee_pct=_num(payload, f"portfolioFee{index}", 0.1) or 0.0,
         profit_fraction_pct=_req(payload, f"portfolioProfitFraction{index}"),
         lot_method=_choice(
             LotMethod,
