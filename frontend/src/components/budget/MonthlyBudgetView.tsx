@@ -19,6 +19,10 @@ import { BudgetStatusBand, type BandStat } from "./BudgetStatusBand";
 import { BudgetNoticeLine } from "./BudgetNoticeLine";
 import { BudgetLedgerRow, LedgerRowAction } from "./BudgetLedgerRow";
 import { RuleSparkline } from "./RuleSparkline";
+import {
+  OtherExpensesBreakdown,
+  type OtherExpensesCategory,
+} from "./OtherExpensesBreakdown";
 import { DataFreshnessBadge } from "./DataFreshnessBadge";
 import { useBudgetFreshness } from "../../hooks/useBudgetFreshness";
 import { useIsAnyScraping } from "../../stores/scrapingStore";
@@ -41,6 +45,19 @@ const TREND_MONTHS = 12;
 /** Per-rule sparklines live in a 78px column; 12 bars there is a smear. */
 const ROW_TREND_MONTHS = 6;
 
+/** The catch-all row the backend appends for spend no rule claimed. */
+const OTHER_EXPENSES = "Other Expenses";
+
+const OTHER_BREAKDOWN_STORAGE_KEY = "budget.otherExpensesByCategory";
+
+const readOtherBreakdownPreference = () => {
+  try {
+    return localStorage.getItem(OTHER_BREAKDOWN_STORAGE_KEY) === "1";
+  } catch {
+    return false;
+  }
+};
+
 interface BudgetRule {
   id: number;
   name: string;
@@ -54,6 +71,8 @@ interface BudgetAnalysisItem {
   data: Transaction[];
   allow_edit: boolean;
   allow_delete: boolean;
+  /** Only on the "Other Expenses" catch-all: its spend per category. */
+  breakdown?: OtherExpensesCategory[];
 }
 
 interface MonthlyBudgetViewProps {
@@ -82,6 +101,9 @@ export const MonthlyBudgetView: React.FC<MonthlyBudgetViewProps> = ({
   const [showTotalTransactions, setShowTotalTransactions] = useState(false);
   const [includeSplitParents, setIncludeSplitParents] = useState(false);
   const [showDemoConfirm, setShowDemoConfirm] = useState(false);
+  const [showOtherBreakdown, setShowOtherBreakdown] = useState(
+    readOtherBreakdownPreference,
+  );
   const [dismissedCopyMonths, setDismissedCopyMonths] = useState<Set<string>>(
     new Set(),
   );
@@ -244,6 +266,16 @@ export const MonthlyBudgetView: React.FC<MonthlyBudgetViewProps> = ({
 
   const toggleExpand = (id: string) =>
     setExpandedRuleId((prev) => (prev === id ? null : id));
+
+  const toggleOtherBreakdown = () =>
+    setShowOtherBreakdown((prev) => {
+      try {
+        localStorage.setItem(OTHER_BREAKDOWN_STORAGE_KEY, prev ? "0" : "1");
+      } catch {
+        // Unavailable storage just means the choice isn't remembered.
+      }
+      return !prev;
+    });
 
   const locale = i18n.language === "he" ? "he-IL" : "en-US";
   const monthLabel = new Date(year, month - 1).toLocaleString(locale, {
@@ -442,18 +474,35 @@ export const MonthlyBudgetView: React.FC<MonthlyBudgetViewProps> = ({
   // fell out of line with its neighbours (see LedgerRowAction).
   const buildActions = (item: BudgetAnalysisItem) => (
     <>
-      <LedgerRowAction
-        kind="edit"
-        label={t("budget.editRule")}
-        onClick={
-          item.allow_edit
-            ? () => {
-                setEditingRule(item.rule);
-                setIsRuleModalOpen(true);
-              }
-            : undefined
-        }
-      />
+      {item.rule.name === OTHER_EXPENSES ? (
+        // The catch-all has nothing to edit, so its first slot toggles the
+        // per-category split instead — the slot count, and so the row's
+        // width, stays the same as every rule above it.
+        <LedgerRowAction
+          kind="breakdown"
+          label={
+            showOtherBreakdown
+              ? t("budget.otherBreakdown.hide")
+              : t("budget.otherBreakdown.show")
+          }
+          pressed={showOtherBreakdown}
+          testId="other-expenses-breakdown-toggle"
+          onClick={toggleOtherBreakdown}
+        />
+      ) : (
+        <LedgerRowAction
+          kind="edit"
+          label={t("budget.editRule")}
+          onClick={
+            item.allow_edit
+              ? () => {
+                  setEditingRule(item.rule);
+                  setIsRuleModalOpen(true);
+                }
+              : undefined
+          }
+        />
+      )}
       <LedgerRowAction
         kind="delete"
         label={t("budget.deleteRule")}
@@ -472,6 +521,23 @@ export const MonthlyBudgetView: React.FC<MonthlyBudgetViewProps> = ({
         }
       />
     </>
+  );
+
+  const renderTransactions = (transactions: Transaction[]) => (
+    <TransactionCollapsibleList
+      transactions={transactions}
+      isOpen
+      showActions
+      onTransactionUpdated={invalidateBudget}
+      pendingRefundsMap={pendingRefundsMap}
+      refundLinksMap={refundLinksMap}
+      budgetMonthOverridesMap={budgetMonthOverridesMap}
+      budgetViewYear={year}
+      budgetViewMonth={month}
+      showSplitParentsFilter
+      includeSplitParents={includeSplitParents}
+      onIncludeSplitParentsChange={setIncludeSplitParents}
+    />
   );
 
   const renderRow = (item: BudgetAnalysisItem) => (
@@ -494,21 +560,17 @@ export const MonthlyBudgetView: React.FC<MonthlyBudgetViewProps> = ({
           )}
         />
       }
+      details={
+        item.rule.name === OTHER_EXPENSES && showOtherBreakdown ? (
+          <OtherExpensesBreakdown
+            breakdown={item.breakdown ?? []}
+            transactions={item.data}
+            renderTransactions={renderTransactions}
+          />
+        ) : undefined
+      }
     >
-      <TransactionCollapsibleList
-        transactions={item.data}
-        isOpen={expandedRuleId === String(item.rule.id)}
-        showActions
-        onTransactionUpdated={invalidateBudget}
-        pendingRefundsMap={pendingRefundsMap}
-        refundLinksMap={refundLinksMap}
-        budgetMonthOverridesMap={budgetMonthOverridesMap}
-        budgetViewYear={year}
-        budgetViewMonth={month}
-        showSplitParentsFilter
-        includeSplitParents={includeSplitParents}
-        onIncludeSplitParentsChange={setIncludeSplitParents}
-      />
+      {renderTransactions(item.data)}
     </BudgetLedgerRow>
   );
 

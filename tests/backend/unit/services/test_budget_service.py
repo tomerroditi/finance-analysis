@@ -376,6 +376,23 @@ class TestMonthlyBudgetService:
         assert other_entry["current_amount"] == 3360.0
         # Headroom for Other = 10000 - 2000 = 8000
         assert other_entry["rule"][AMOUNT] == 8000.0
+        # The catch-all says where its spend went, largest category first,
+        # and the categories add back up to the row's total.
+        breakdown = other_entry["breakdown"]
+        assert [b["category"] for b in breakdown] == [
+            "Home",
+            "Other",
+            "Transport",
+            "Entertainment",
+        ]
+        assert {b["category"]: b["amount"] for b in breakdown} == {
+            "Home": 3000.0,
+            "Other": 250.0,
+            "Transport": 70.0,
+            "Entertainment": 40.0,
+        }
+        assert {b["category"]: b["count"] for b in breakdown}["Transport"] == 2
+        assert sum(b["amount"] for b in breakdown) == other_entry["current_amount"]
 
     def test_get_monthly_budget_view_other_expenses_over_allocated(
         self, db_session, seed_base_transactions

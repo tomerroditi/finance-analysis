@@ -258,6 +258,32 @@ def spent(rows: pd.DataFrame) -> float:
     return float(rows[TransactionsTableFields.AMOUNT.value].sum() * -1)
 
 
+def category_breakdown(rows: pd.DataFrame) -> list[dict[str, Any]]:
+    """Return what ``rows`` cost per category, largest first.
+
+    Each entry is ``{"category", "amount", "count"}``: ``amount`` is net of
+    refunds like :func:`spent`, so the entries sum to the pool's total, and an
+    uncategorized row is grouped under ``category = None``.
+    """
+    if rows is None or rows.empty:
+        return []
+    category = TransactionsTableFields.CATEGORY.value
+    amount = TransactionsTableFields.AMOUNT.value
+    names = rows[category].replace("", np.nan)
+    grouped = (
+        rows[amount].groupby(names, dropna=False, sort=False).agg(["sum", "count"])
+    )
+    breakdown = [
+        {
+            "category": None if pd.isna(name) else str(name),
+            "amount": float(-total),
+            "count": int(count),
+        }
+        for name, (total, count) in grouped.iterrows()
+    ]
+    return sorted(breakdown, key=lambda entry: entry["amount"], reverse=True)
+
+
 def transaction_records(rows: pd.DataFrame) -> list[dict[str, Any]]:
     """Return ``rows`` as the transaction dicts a view lists: gross amounts, no claim columns.
 

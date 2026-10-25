@@ -14,6 +14,7 @@ from backend.services.budget.ledger import (
     KIND_YEARLY,
     MONTHLY_POOL,
     assign_claims,
+    category_breakdown,
     in_budget_month,
     is_all_tags,
     of_kind,
@@ -268,3 +269,33 @@ class TestInvariants:
         assert {BUDGET_YEAR, BUDGET_MONTH, CLAIM_KIND, CLAIM_RULE_ID} <= set(
             claims.columns
         )
+
+
+class TestCategoryBreakdown:
+    """What a pool cost, per category."""
+
+    def test_nets_refunds_and_sorts_largest_first(self) -> None:
+        """A refund nets against its category and the biggest category leads."""
+        rows = _rows(
+            ("2026-03-02", "Food", "Groceries", -100.0),
+            ("2026-03-03", "Food", "Groceries", 30.0),
+            ("2026-03-04", "Home", "Rent", -500.0),
+        )
+        assert category_breakdown(rows) == [
+            {"category": "Home", "amount": 500.0, "count": 1},
+            {"category": "Food", "amount": 70.0, "count": 2},
+        ]
+
+    def test_groups_missing_and_blank_category_together(self) -> None:
+        """A null and an empty category are both one uncategorized entry."""
+        rows = _rows(
+            ("2026-03-02", None, None, -10.0),
+            ("2026-03-03", "", None, -5.0),
+        )
+        assert category_breakdown(rows) == [
+            {"category": None, "amount": 15.0, "count": 2}
+        ]
+
+    def test_empty_rows_have_no_breakdown(self) -> None:
+        """No rows, no entries."""
+        assert category_breakdown(_rows()) == []
