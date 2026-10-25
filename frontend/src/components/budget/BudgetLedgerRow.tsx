@@ -1,6 +1,6 @@
 import React from "react";
 import { useTranslation } from "react-i18next";
-import { Archive, ArchiveRestore, PenSquare, Trash2 } from "lucide-react";
+import { Archive, ArchiveRestore, PenSquare, PieChart, Trash2 } from "lucide-react";
 import { formatCurrency } from "../../utils/numberFormatting";
 
 const ACTION_ICON = {
@@ -8,6 +8,7 @@ const ACTION_ICON = {
   delete: Trash2,
   close: Archive,
   reopen: ArchiveRestore,
+  breakdown: PieChart,
 } as const;
 
 /**
@@ -21,13 +22,15 @@ const ACTION_ICON = {
  * control is unavailable, instead of leaving a mystery gap.
  */
 export const LedgerRowAction: React.FC<{
-  kind: "edit" | "delete" | "close" | "reopen";
+  kind: keyof typeof ACTION_ICON;
   label: string;
   /** Omit to render the slot disabled. */
   onClick?: () => void;
   /** Forwarded to the button so a spec can address one action directly. */
   testId?: string;
-}> = ({ kind, label, onClick, testId }) => {
+  /** Set for a toggle: highlights the slot while it is on. */
+  pressed?: boolean;
+}> = ({ kind, label, onClick, testId, pressed }) => {
   const Icon = ACTION_ICON[kind];
   // Destructive red is reserved for delete; retiring a rule is a
   // reversible bookkeeping act, so it gets the neutral hover the edit
@@ -40,6 +43,7 @@ export const LedgerRowAction: React.FC<{
     <button
       type="button"
       data-testid={testId}
+      aria-pressed={pressed}
       disabled={!onClick}
       onClick={
         onClick
@@ -51,7 +55,9 @@ export const LedgerRowAction: React.FC<{
       }
       className={`p-1.5 rounded-lg transition-all ${
         onClick
-          ? `text-[var(--text-muted)] ${enabled}`
+          ? pressed
+            ? "text-blue-500 bg-blue-500/10"
+            : `text-[var(--text-muted)] ${enabled}`
           : "text-[var(--text-muted)]/25 cursor-not-allowed"
       }`}
       title={label}
@@ -80,6 +86,8 @@ export interface BudgetLedgerRowProps {
    * history reads as background against the rules still being spent from.
    */
   dimmed?: boolean;
+  /** Shown under the row whether or not it is expanded. */
+  details?: React.ReactNode;
   children?: React.ReactNode;
 }
 
@@ -108,6 +116,7 @@ export const BudgetLedgerRow: React.FC<BudgetLedgerRowProps> = ({
   trend,
   badge,
   dimmed = false,
+  details,
   children,
 }) => {
   const { t } = useTranslation();
@@ -276,6 +285,8 @@ export const BudgetLedgerRow: React.FC<BudgetLedgerRowProps> = ({
       {actions && (
         <div className="md:hidden flex items-center gap-1 px-2 pb-1.5">{actions}</div>
       )}
+
+      {details}
 
       {isExpanded && children}
     </div>

@@ -951,6 +951,12 @@
       "fundsOther": "Now funds {{name}}",
       "unlink": "Remove link",
       "failed": "Failed to link the budget to the goal"
+    },
+    "otherBreakdown": {
+      "show": "Show by category",
+      "hide": "Hide category breakdown",
+      "count_one": "{{count}} txn",
+      "count_other": "{{count}} txns"
     }
   },
   "budgetAlerts": {

@@ -180,6 +180,29 @@ test.describe("Budget", () => {
     await ruleRow.click();
     await expect(ruleRow).toHaveAttribute("aria-expanded", "false");
 
+    // --- "Other Expenses" splits by category on demand ---
+    // The catch-all's first action slot toggles a per-category breakdown;
+    // each category row expands to just its own transactions. The row renders
+    // its actions twice (desktop inline, mobile row), so take the visible one.
+    const breakdownToggle = page
+      .getByTestId("other-expenses-breakdown-toggle")
+      .locator("visible=true");
+    await expect(breakdownToggle).toBeVisible();
+    await expect(breakdownToggle).toHaveAttribute("aria-pressed", "false");
+    await expect(page.getByTestId("other-expenses-breakdown")).toHaveCount(0);
+    await breakdownToggle.click();
+    await expect(breakdownToggle).toHaveAttribute("aria-pressed", "true");
+    const categoryRows = page.getByTestId("other-expenses-category");
+    await expect(categoryRows.first()).toBeVisible();
+    const firstCategory = categoryRows.first().locator("button[aria-expanded]");
+    await firstCategory.click();
+    await expect(firstCategory).toHaveAttribute("aria-expanded", "true");
+    await expect(categoryRows.first().locator("table")).toBeVisible();
+    await firstCategory.click();
+    await expect(categoryRows.first().locator("table")).toHaveCount(0);
+    await breakdownToggle.click();
+    await expect(page.getByTestId("other-expenses-breakdown")).toHaveCount(0);
+
     await page.getByRole("button", { name: /^Yearly$/i }).click();
     const yearlySpark = page.getByTestId("rule-sparkline").first();
     if (await yearlySpark.isVisible().catch(() => false)) {

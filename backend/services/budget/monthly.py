@@ -558,6 +558,9 @@ class MonthlyBudgetService(BudgetService):
             - ``data`` – list of transaction dicts matched to this rule.
             - ``allow_edit`` – whether the rule amount can be changed.
             - ``allow_delete`` – whether the rule can be deleted.
+
+            The ``"Other Expenses"`` entry also carries ``breakdown`` — its
+            spend per category (see :func:`ledger.category_breakdown`).
         """
         return self._month_view(self.get_claims(), self.get_all_rules(), year, month)
 
@@ -628,6 +631,7 @@ class MonthlyBudgetService(BudgetService):
                     },
                     "current_amount": ledger.spent(unclaimed),
                     "data": ledger.transaction_records(unclaimed),
+                    "breakdown": ledger.category_breakdown(unclaimed),
                     "allow_edit": False,
                     "allow_delete": False,
                 }

@@ -960,6 +960,13 @@
       "fundsOther": "מממן כעת את {{name}}",
       "unlink": "הסרת הקישור",
       "failed": "קישור התקציב ליעד נכשל"
+    },
+    "otherBreakdown": {
+      "show": "הצג לפי קטגוריה",
+      "hide": "הסתר פירוט לפי קטגוריה",
+      "count_one": "עסקה אחת",
+      "count_two": "שתי עסקאות",
+      "count_other": "{{count}} עסקאות"
     }
   },
   "budgetAlerts": {
