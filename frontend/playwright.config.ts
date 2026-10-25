@@ -89,6 +89,7 @@ const READ_ONLY_SPECS = [
   "**/route-prefetch.spec.ts",
   "**/rtl-chevrons.spec.ts",
   "**/rtl-logical-insets.spec.ts",
+  "**/loading-states.spec.ts",
 ];
 
 const chromiumUse = {

@@ -18,6 +18,7 @@ import { CommitmentBar } from "./overview/CommitmentBar";
 import { AcrossAllThree } from "./overview/AcrossAllThree";
 import { LongRules } from "./overview/LongRules";
 import { percentOf, rankRules } from "./overview/ruleMath";
+import { LoadingSpinner } from "../common/LoadingSpinner";
 
 /** Months in the budget-vs-actual figure. Closed months compare cleanly. */
 const TREND_MONTHS = 12;
@@ -516,7 +517,9 @@ export const OverviewBudgetView: React.FC<OverviewBudgetViewProps> = ({
       <div className="grid grid-cols-1 xl:grid-cols-12 gap-1.5">
         <div className="xl:col-span-7 bg-[var(--surface)] rounded-2xl border border-[var(--surface-light)] shadow-sm p-4 md:p-5 flex flex-col gap-3">
           <p className="font-bold text-sm md:text-base">{t("budget.trend.title")}</p>
-          {trend.hasData ? (
+          {trend.isLoading ? (
+            <LoadingSpinner size="inline" />
+          ) : trend.hasData ? (
             <RuleSparkline
               variant="bars"
               series={trend.data.map((point) => point.actual)}

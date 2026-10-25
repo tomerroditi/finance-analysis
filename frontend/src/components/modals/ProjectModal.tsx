@@ -26,7 +26,7 @@ export const ProjectModal: React.FC<ProjectModalProps> = ({
   const [category, setCategory] = useState("");
   const [totalBudget, setTotalBudget] = useState<number>(0);
 
-  const { data: availableCategories = [] } = useQuery({
+  const { data: availableCategories = [], isPending: isCategoriesLoading } = useQuery({
     queryKey: qk.budget.availableProjects(),
     queryFn: () => budgetApi.getAvailableProjects().then((res) => res.data),
     enabled: isOpen && !isEdit,
@@ -92,7 +92,7 @@ export const ProjectModal: React.FC<ProjectModalProps> = ({
                 required
               />
             )}
-            {!isEdit && availableCategories.length === 0 && (
+            {!isEdit && !isCategoriesLoading && availableCategories.length === 0 && (
               <p className="mt-1 text-xs text-amber-500">
                 {t("modals.project.noCategoriesAvailable")}
               </p>
