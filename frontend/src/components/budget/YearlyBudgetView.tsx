@@ -100,7 +100,7 @@ export const YearlyBudgetView: React.FC<YearlyBudgetViewProps> = ({
   // rule and into another one — and out of the Overview's long rules
   // — so the whole budget prefix refetches, not just this year's key.
   const invalidateBudget = () =>
-    queryClient.invalidateQueries({ queryKey: qkPrefix.budget });
+    queryClient.invalidateQueries({ queryKey: qkPrefix.budget }, { cancelRefetch: false });
 
   const deleteMutation = useMutation({
     mutationFn: (id: number) => budgetApi.deleteYearlyRule(id),

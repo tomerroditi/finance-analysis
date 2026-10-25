@@ -150,6 +150,72 @@ describe("the app-wide mutation cache", () => {
     expect(client.getQueryData(key)).toBe("optimistic");
   });
 
+  it("drops a read that started while the write was in flight", async () => {
+    // The budget's tag write: the row list refetched mid-write, the server
+    // answered from before the commit, and that answer outlived the write.
+    const client = makeClient();
+    let served = "old";
+    const key = ["thing"];
+    const queryFn = async () => {
+      const asOf = served;
+      await flush(SWEEP_MS * 4);
+      return asOf;
+    };
+    await client.fetchQuery({ queryKey: key, queryFn });
+
+    let midWrite: Promise<unknown> | undefined;
+    await client
+      .getMutationCache()
+      .build(client, {
+        mutationFn: async () => {
+          midWrite = client
+            .fetchQuery({ queryKey: key, queryFn, staleTime: 0 })
+            .catch(() => undefined);
+          await flush(SWEEP_MS);
+          served = "new";
+          return null;
+        },
+      })
+      .execute(undefined);
+
+    const observer = new QueryObserver(client, { queryKey: key, queryFn });
+    const unsubscribe = observer.subscribe(() => {});
+    await midWrite;
+    await vi.waitFor(() => expect(client.getQueryData(key)).toBe("new"), {
+      timeout: 2000,
+    });
+    unsubscribe();
+  });
+
+  it("joins the write's own refetch instead of restarting it", async () => {
+    // Restarting every refetch the write's `onSuccess` had just started sent
+    // each read three times, and the screen waited behind all of them.
+    const client = makeClient();
+    const key = ["thing"];
+    const queryFn = vi.fn(async () => {
+      await flush(SWEEP_MS * 4);
+      return "fresh";
+    });
+    await client.fetchQuery({ queryKey: key, queryFn });
+    const observer = new QueryObserver(client, { queryKey: key, queryFn });
+    const unsubscribe = observer.subscribe(() => {});
+    queryFn.mockClear();
+
+    await client
+      .getMutationCache()
+      .build(client, {
+        mutationFn: async () => null,
+        onSuccess: () => {
+          void client.invalidateQueries({ queryKey: key });
+        },
+      })
+      .execute(undefined);
+
+    await flush(SWEEP_MS * 8);
+    expect(queryFn).toHaveBeenCalledTimes(1);
+    unsubscribe();
+  });
+
   it("leaves a first load alone — it has nothing to overwrite", async () => {
     const client = makeClient();
     const key = ["first-load"];

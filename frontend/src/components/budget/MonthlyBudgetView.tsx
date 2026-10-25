@@ -184,8 +184,11 @@ export const MonthlyBudgetView: React.FC<MonthlyBudgetViewProps> = ({
     return map;
   }, [budgetMonthOverrides]);
 
+  // Joins a refetch already under way rather than restarting it: a row
+  // write's own `onSuccess` has usually just invalidated these keys, and a
+  // restart abandons each response mid-way and sends the request again.
   const invalidateBudget = () => {
-    queryClient.invalidateQueries({ queryKey: qkPrefix.budget });
+    queryClient.invalidateQueries({ queryKey: qkPrefix.budget }, { cancelRefetch: false });
   };
 
   const createMutation = useMutation({

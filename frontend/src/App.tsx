@@ -53,6 +53,22 @@ const Onboarding = lazy(() =>
   import("./pages/Onboarding").then((m) => ({ default: m.Onboarding })),
 );
 
+/**
+ * Treat everything restored from IndexedDB as stale once it is on screen.
+ *
+ * The snapshot is written through a throttle, so it can predate the last
+ * write — a reload moments after retagging a transaction restored the
+ * pre-write budget. Restored queries keep their original `dataUpdatedAt`, so
+ * anything younger than `staleTime` was trusted as fresh and never refetched,
+ * and the old numbers stuck even across reloads. The snapshot still paints
+ * instantly; this only makes the server confirm it.
+ */
+function revalidateRestoredCache() {
+  // Runs before the restore releases the app's observers, so this only marks
+  // the queries stale; each one refetches as its component mounts.
+  void queryClient.invalidateQueries();
+}
+
 function App() {
   return (
     <PersistQueryClientProvider
@@ -63,6 +79,7 @@ function App() {
         maxAge: 1000 * 60 * 60 * 24 * 7,
         dehydrateOptions: { shouldDehydrateQuery },
       }}
+      onSuccess={revalidateRestoredCache}
     >
       <ErrorBoundary>
         <DemoModeProvider>

@@ -37,7 +37,14 @@ export function createInvalidationSweep(
     if (timer !== undefined) clearTimeout(timer);
     timer = setTimeout(() => {
       timer = undefined;
-      client.invalidateQueries();
+      // Join a refetch already under way instead of restarting it. Every
+      // read still in flight here began after the write committed (the
+      // mutation cache drops older ones), and the mutation's own
+      // `onSuccess` usually invalidated its keys a moment ago. Restarting
+      // those — the default — abandoned each response mid-way while its
+      // request kept a connection busy, so a screen refreshed behind three
+      // rounds of the same reads.
+      client.invalidateQueries(undefined, { cancelRefetch: false });
     }, delayMs);
   };
 }
@@ -62,6 +69,11 @@ export function createMutationCache(
   let sweep: (() => void) | null = null;
   return new MutationCache({
     onMutate: () => dropReadsOlderThanTheWrite(getClient()),
+    // Again on success, before the mutation's own `onSuccess` runs: a read
+    // that started while the write was in flight may have been answered
+    // before the commit. Dropping it here is what lets every later refetch
+    // trust that whatever is in flight already reflects the write.
+    onSuccess: () => dropReadsOlderThanTheWrite(getClient()),
     // On settled rather than on success: a write that failed still cancelled
     // the reads above, and they have to be re-issued or the screen keeps
     // data nothing will refresh. A failed write sweeping costs one debounced
@@ -74,7 +86,7 @@ export function createMutationCache(
 }
 
 /**
- * Cancel every read that was already in flight when a write began.
+ * Cancel every read that was in flight when a write began or committed.
  *
  * Such a read was computed against the state *before* the write, so whatever
  * it returns is already wrong; if it lands after the write it overwrites it.

@@ -423,7 +423,7 @@ export const ProjectBudgetView: React.FC<ProjectBudgetViewProps> = ({
               setIsRuleModalOpen(true);
             }}
             onTransactionUpdated={() =>
-              queryClient.invalidateQueries({ queryKey: qkPrefix.budget })
+              queryClient.invalidateQueries({ queryKey: qkPrefix.budget }, { cancelRefetch: false })
             }
           />
         </>
