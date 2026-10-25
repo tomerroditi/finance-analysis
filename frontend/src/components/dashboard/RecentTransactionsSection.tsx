@@ -775,16 +775,25 @@ export function RecentTransactionsFeed({
                           <MoreHorizontal size={13} />
                         </button>
                       </div>
-                      {monthMove?.moved && (
+                      {/* Every row of a monthly-budget list keeps this slot,
+                          moved or not, so the badge never shifts one row's
+                          action and amount columns out of line. */}
+                      {monthMove && (
                         <span
-                          data-testid="recent-tx-month-moved"
-                          className="flex-shrink-0 text-amber-400"
-                          title={t("budget.monthMove.movedBadge", {
-                            from: monthIndexLabel(monthMove.origIdx),
-                            to: monthIndexLabel(monthMove.curIdx),
-                          })}
+                          data-testid="recent-tx-month-slot"
+                          className="flex-shrink-0 w-[14px] text-amber-400"
                         >
-                          <CalendarClock size={13} />
+                          {monthMove.moved && (
+                            <span
+                              data-testid="recent-tx-month-moved"
+                              title={t("budget.monthMove.movedBadge", {
+                                from: monthIndexLabel(monthMove.origIdx),
+                                to: monthIndexLabel(monthMove.curIdx),
+                              })}
+                            >
+                              <CalendarClock size={13} />
+                            </span>
+                          )}
                         </span>
                       )}
                       <div className="flex-shrink-0 w-[80px] text-end">

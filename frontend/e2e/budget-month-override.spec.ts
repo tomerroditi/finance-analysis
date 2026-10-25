@@ -114,6 +114,22 @@ test.describe("Budget month override", () => {
     const movedRow = rowFor(page, key);
     await expect(movedRow.getByTestId("recent-tx-month-moved")).toBeVisible();
 
+    // --- The badge does not shift its row's columns: every row in the list,
+    //     moved or not, lays its cells out at the same offsets and widths ---
+    const layouts = await feed(page).evaluate((el) => [
+      ...new Set(
+        [...el.querySelectorAll('[data-testid="recent-tx-row"]')].map((row) =>
+          [...row.children]
+            .map((cell) => {
+              const box = cell.getBoundingClientRect();
+              return `${Math.round(box.left)}:${Math.round(box.width)}`;
+            })
+            .join("|"),
+        ),
+      ),
+    ]);
+    expect(layouts).toHaveLength(1);
+
     // The "move to next month" button is now disabled (already +1 from origin).
     await openActions(page, key);
     await expect(
