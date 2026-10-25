@@ -457,13 +457,12 @@ taken in the first place.
 Enforced by `frontend/src/cappedScrollRegions.test.ts` (a source scan, runs in
 `npm test`), with the behavioural half in `e2e/savings-goals.spec.ts`.
 
-## TransactionsTable Consumer Updates
+## Transaction List Consumers
 
-When modifying `TransactionsTable.tsx` props or behavior, **always update all consumers**:
-1. `frontend/src/pages/Transactions.tsx`
-2. `frontend/src/components/budget/TransactionCollapsibleList.tsx`
-
-These components pass different prop configurations and may break silently.
+`TransactionsTable.tsx` serves the Transactions page only. `RecentTransactionsFeed`
+(`components/dashboard/RecentTransactionsSection.tsx`) serves both the dashboard
+card and, embedded, every budget pool (`budget/TransactionCollapsibleList.tsx`) —
+a change to it shows up in both places, so check both.
 
 ## Provider/Service Name Maps
 

@@ -127,7 +127,6 @@ export const ProjectBudgetList: React.FC<ProjectBudgetListProps> = ({
             <TransactionCollapsibleList
               transactions={item.data}
               isOpen={expandedRuleId === String(item.rule.id)}
-              showActions
               onTransactionUpdated={onTransactionUpdated}
               pendingRefundsMap={pendingRefundsMap}
               showSplitParentsFilter
@@ -164,7 +163,6 @@ export const ProjectBudgetList: React.FC<ProjectBudgetListProps> = ({
           <TransactionCollapsibleList
             transactions={otherTransactions}
             isOpen={expandedRuleId === "other_project_txs"}
-            showActions
             onTransactionUpdated={onTransactionUpdated}
             pendingRefundsMap={pendingRefundsMap}
             showSplitParentsFilter

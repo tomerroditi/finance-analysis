@@ -498,7 +498,6 @@ export const MonthlyBudgetView: React.FC<MonthlyBudgetViewProps> = ({
       <TransactionCollapsibleList
         transactions={item.data}
         isOpen={expandedRuleId === String(item.rule.id)}
-        showActions
         onTransactionUpdated={invalidateBudget}
         pendingRefundsMap={pendingRefundsMap}
         refundLinksMap={refundLinksMap}
@@ -545,7 +544,6 @@ export const MonthlyBudgetView: React.FC<MonthlyBudgetViewProps> = ({
             <TransactionCollapsibleList
               transactions={totalItem.data}
               isOpen
-              showActions
               onTransactionUpdated={invalidateBudget}
               pendingRefundsMap={pendingRefundsMap}
               refundLinksMap={refundLinksMap}

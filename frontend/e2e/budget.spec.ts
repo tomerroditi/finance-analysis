@@ -98,8 +98,8 @@ test.describe("Budget", () => {
     ).toHaveCount(0);
     await expect(band.getByText(/Total Budget/i).first()).toBeVisible();
 
-    // "View month transactions" rides on the band's heading line and reveals a
-    // transactions table under the card.
+    // "View month transactions" rides on the band's heading line and reveals
+    // the month's transactions under the card.
     const viewMonth = page.getByRole("button", {
       name: /View month transactions/i,
     });
@@ -113,6 +113,15 @@ test.describe("Budget", () => {
       await expect(
         page.getByRole("button", { name: /Hide Transactions/i }).first(),
       ).toBeVisible();
+
+      // --- The list is the dashboard's feed, not a paginated table: rows
+      //     grouped by date in a capped region that scrolls in place ---
+      const monthFeed = page.locator("[data-scroll-root]").filter({ visible: true }).first();
+      await expect(monthFeed.getByTestId("recent-tx-row").first()).toBeVisible();
+      await expect(monthFeed.getByTestId("recent-tx-date").first()).toBeVisible();
+      if ((await monthFeed.getByTestId("recent-tx-row").count()) >= 20) {
+        await expect(monthFeed).toHaveCSS("overflow-y", /^(auto|scroll)$/);
+      }
     }
 
     // --- Pending Refunds section collapses from its header ---
