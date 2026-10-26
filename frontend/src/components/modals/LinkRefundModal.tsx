@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { X, Link2, Search, Check } from "lucide-react";
 import {
   pendingRefundsApi,
@@ -13,7 +13,7 @@ import { formatCurrency } from "../../utils/numberFormatting";
 import { useScrollLock } from "../../hooks/useScrollLock";
 import type { Transaction } from "../../types/transaction";
 import { useQueryKeys } from "../../hooks/useQueryKeys";
-import { qkPrefix } from "../../services/queryKeys";
+import { REFUND_LINK_PLAN } from "../../writePlans";
 import { useDialog } from "../../context/DialogContext";
 
 interface RefundTransactionInfo {
@@ -59,6 +59,12 @@ interface LinkRefundModalProps {
 const txKey = (source: string | undefined, id: string | number | undefined) =>
   `${source ?? ""}_${id ?? ""}`;
 
+/** The pick list: every refund still expecting money, pending before partial. */
+const stillExpected = (refunds: PendingRefund[]) => [
+  ...refunds.filter((p) => p.status === "pending"),
+  ...refunds.filter((p) => p.status === "partial"),
+];
+
 export const LinkRefundModal: React.FC<LinkRefundModalProps> = ({
   isOpen,
   onClose,
@@ -67,7 +73,6 @@ export const LinkRefundModal: React.FC<LinkRefundModalProps> = ({
 }) => {
   const { t } = useTranslation();
   useScrollLock(isOpen);
-  const queryClient = useQueryClient();
   const { confirm } = useDialog();
   const qk = useQueryKeys();
   const [selectedPendingId, setSelectedPendingId] = useState<number | null>(
@@ -79,17 +84,13 @@ export const LinkRefundModal: React.FC<LinkRefundModalProps> = ({
 
   const isReverseMode = !!pendingRefund && !refundTransaction;
 
-  // Mode 1: Fetch pending refunds if we're linking FROM a refund transaction
+  // Mode 1: the pending refunds to link FROM a refund transaction. Read off
+  // the full list every host of this modal already holds, not fetched again.
   const { data: pendingRefunds, isLoading: isLoadingPending } = useQuery({
-    queryKey: qk.pendingRefunds.active(),
-    queryFn: async () => {
-      const [pending, partial] = await Promise.all([
-        pendingRefundsApi.getAll("pending").then((res) => res.data),
-        pendingRefundsApi.getAll("partial").then((res) => res.data),
-      ]);
-      return [...pending, ...partial];
-    },
+    queryKey: qk.pendingRefunds.all(),
+    queryFn: () => pendingRefundsApi.getAll().then((res) => res.data),
     enabled: isOpen && !!refundTransaction,
+    select: stillExpected,
   });
 
   // Mode 2: Fetch transactions if we're linking FROM a pending refund (reverse mode)
@@ -144,12 +145,8 @@ export const LinkRefundModal: React.FC<LinkRefundModalProps> = ({
         refund_split_id: params.refundSplitId ?? null,
         retag: params.retag ?? false,
       }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: qkPrefix.transactions });
-      queryClient.invalidateQueries({ queryKey: qkPrefix.budget });
-      queryClient.invalidateQueries({ queryKey: qkPrefix.pendingRefunds });
-      onClose();
-    },
+    onMutate: () => ({ refresh: REFUND_LINK_PLAN }),
+    onSuccess: () => onClose(),
   });
 
   if (!isOpen) return null;

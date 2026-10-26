@@ -223,7 +223,22 @@ describe("patchBudgetForRetag", () => {
     const { refresh } = patchBudgetForRetag(client, [edit(3, "Entertainment", "Cinema")]);
 
     expect(refresh.first).toEqual([["budget", "analysis", 2026, 10]]);
-    expect(refresh.skip).toEqual([...UNCHANGED_BY_RETAG, ["budget", "analysis", 2026, 9]]);
+    expect(refresh.skip).toEqual([
+      ...UNCHANGED_BY_RETAG,
+      ["budget", "analysis", 2026, 9],
+      ["cash-balances"],
+    ]);
+  });
+
+  it("refreshes the cash balances only when a cash row is retagged", () => {
+    const client = new QueryClient();
+    client.setQueryData(["budget", "analysis", 2026, 10, false, false], month());
+
+    const cash = patchBudgetForRetag(client, [
+      { source: "cash_transactions", unique_id: "9", category: "Food" },
+    ]);
+
+    expect(cash.refresh.skip).not.toContainEqual(["cash-balances"]);
   });
 
   it("refetches every month when a row was in none of the cached ones", () => {
@@ -234,7 +249,7 @@ describe("patchBudgetForRetag", () => {
     const { refresh } = patchBudgetForRetag(client, [edit(42, "Entertainment", "Cinema")]);
 
     expect(refresh.first).toEqual([["budget", "analysis"]]);
-    expect(refresh.skip).toEqual(UNCHANGED_BY_RETAG);
+    expect(refresh.skip).toEqual([...UNCHANGED_BY_RETAG, ["cash-balances"]]);
   });
 
   it("widens to every month once the reply says linked refunds moved too", () => {

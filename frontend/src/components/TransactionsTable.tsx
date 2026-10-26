@@ -55,7 +55,14 @@ import type { Transaction } from "../types/transaction";
 import { useConfirm, useNotify } from "../context/DialogContext";
 import { useQueryKeys } from "../hooks/useQueryKeys";
 import { qkPrefix } from "../services/queryKeys";
+import type { RefreshPlan } from "../queryInvalidation";
 import { patchBudgetForRetag, widenForCascade, type RetagEdit } from "./budget/budgetOptimistic";
+import {
+  REFUND_WRITE_PLAN,
+  UNCHANGED_BY_ROW_WRITE,
+  patchTransactionLists,
+  removeFromTransactionLists,
+} from "../writePlans";
 
 
 export interface TransactionsTableProps {
@@ -291,10 +298,33 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
   const { data: categories } = useCategories({ enabled: showBulkActions });
   const { data: cashBalances = [] } = useCashBalances({ enabled: showBulkActions });
 
-  const invalidateAnalytics = useCallback(() => {
-    queryClient.invalidateQueries({ queryKey: qkPrefix.analytics });
-    queryClient.invalidateQueries({ queryKey: qkPrefix.budget });
-  }, [queryClient]);
+  /**
+   * Show a category/tag write everywhere it is cached — the budget months and
+   * the transaction lists — before the request goes out.
+   */
+  const patchRetag = useCallback(
+    (edits: RetagEdit[]) => {
+      const budget = patchBudgetForRetag(queryClient, edits);
+      const restoreLists = patchTransactionLists(queryClient, edits);
+      return {
+        refresh: budget.refresh,
+        restore: () => {
+          budget.restore();
+          restoreLists();
+        },
+      };
+    },
+    [queryClient],
+  );
+
+  /** A delete takes its rows off every list now; the refresh brings back any that failed. */
+  const deletePlan = useCallback(
+    (rows: Transaction[]) => ({
+      restore: removeFromTransactionLists(queryClient, rows),
+      refresh: { skip: UNCHANGED_BY_ROW_WRITE } satisfies RefreshPlan,
+    }),
+    [queryClient],
+  );
 
   // Bulk tag mutation
   const bulkTagMutation = useMutation({
@@ -307,8 +337,7 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
     onMutate: (data) =>
       data.date || data.amount !== undefined
         ? undefined
-        : patchBudgetForRetag(
-            queryClient,
+        : patchRetag(
             data.transaction_ids.map((id) => ({
               source: data.source,
               unique_id: id,
@@ -347,47 +376,38 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
       }),
     onMutate: (tx) => {
       markingRefund.begin(getTransactionId(tx));
+      return { refresh: REFUND_WRITE_PLAN };
     },
     onSettled: (_data, _error, tx) => markingRefund.end(getTransactionId(tx)),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: qkPrefix.transactions });
-      queryClient.invalidateQueries({ queryKey: qkPrefix.pendingRefunds });
-      invalidateAnalytics();
-      onTransactionUpdated?.();
-    },
+    onSuccess: () => onTransactionUpdated?.(),
   });
 
   const cancelPendingMutation = useMutation({
     mutationFn: (pendingId: number) => pendingRefundsApi.cancel(pendingId),
     onMutate: (pendingId) => {
       cancellingRefund.begin(pendingId);
+      return { refresh: REFUND_WRITE_PLAN };
     },
     onSettled: (_data, _error, pendingId) => cancellingRefund.end(pendingId),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: qkPrefix.transactions });
-      queryClient.invalidateQueries({ queryKey: qkPrefix.pendingRefunds });
-      invalidateAnalytics();
-      onTransactionUpdated?.();
-    },
+    onSuccess: () => onTransactionUpdated?.(),
   });
 
   const unlinkRefundMutation = useMutation({
     mutationFn: (linkId: number) => pendingRefundsApi.unlinkRefund(linkId),
     onMutate: (linkId) => {
       unlinkingRefund.begin(linkId);
+      return { refresh: REFUND_WRITE_PLAN };
     },
     onSettled: (_data, _error, linkId) => unlinkingRefund.end(linkId),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: qkPrefix.transactions });
-      queryClient.invalidateQueries({ queryKey: qkPrefix.pendingRefunds });
-      invalidateAnalytics();
-      onTransactionUpdated?.();
-    },
+    onSuccess: () => onTransactionUpdated?.(),
   });
 
   // Monthly-budget month override mutation. Moves a transaction one month
   // prior/next for budget bucketing only (backend caps movement at +/-1 and
   // removes the override when the target equals the real month).
+  // It only re-months the row for the budget, so the refresh is the budget
+  // — the two months it moved between first — and the two analytics reads
+  // built on budget months; the badge moves at once.
   const monthOverrideMutation = useMutation({
     mutationFn: ({
       tx,
@@ -395,6 +415,8 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
       month,
     }: {
       tx: Transaction;
+      fromYear: number;
+      fromMonth: number;
       year: number;
       month: number;
     }) =>
@@ -405,10 +427,49 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
         override_year: year,
         override_month: month,
       }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: qkPrefix.budget });
-      onTransactionUpdated?.();
+    onMutate: ({ tx, fromYear, fromMonth, year, month }) => {
+      const key = qk.budget.monthOverrides();
+      const before = queryClient.getQueryData<BudgetMonthOverride[]>(key);
+      if (before) {
+        const date = new Date(tx.date);
+        const ownMonth = date.getFullYear() === year && date.getMonth() + 1 === month;
+        const source = tx.source || "unknown";
+        const others = before.filter(
+          (o) => !(o.source_table === source && String(o.source_id) === String(tx.unique_id)),
+        );
+        queryClient.setQueryData<BudgetMonthOverride[]>(
+          key,
+          ownMonth
+            ? others
+            : [
+                ...others,
+                {
+                  id: -1,
+                  source_type: "transaction",
+                  source_id: tx.unique_id || "",
+                  source_table: source,
+                  override_year: year,
+                  override_month: month,
+                },
+              ],
+        );
+      }
+      const refresh: RefreshPlan = {
+        first: [
+          [...qkPrefix.budgetAnalysis, fromYear, fromMonth],
+          [...qkPrefix.budgetAnalysis, year, month],
+          [...qkPrefix.budget, "month-overrides"],
+        ],
+        only: [
+          qkPrefix.budget,
+          [...qkPrefix.analytics, "insights"],
+          [...qkPrefix.analytics, "cash-flow-forecast"],
+        ],
+      };
+      return { refresh, restore: () => queryClient.setQueryData(key, before) };
     },
+    onError: (_error, _vars, context) => context?.restore(),
+    onSuccess: () => onTransactionUpdated?.(),
   });
 
   const clearCategoryTagMutation = useMutation({
@@ -416,9 +477,7 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
       transactionsApi.update(uniqueId, { source, category: "", tag: "" }),
     onMutate: ({ uniqueId, source }) => {
       clearingTagging.begin(`${source || "unknown"}_${uniqueId}`);
-      return patchBudgetForRetag(queryClient, [
-        { source, unique_id: uniqueId, category: "", tag: "" },
-      ]);
+      return patchRetag([{ source, unique_id: uniqueId, category: "", tag: "" }]);
     },
     onError: (_error, _vars, context) => context?.restore(),
     onSuccess: (res, _vars, context) =>
@@ -455,8 +514,7 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
       );
     },
     onMutate: (groupsBySource) =>
-      patchBudgetForRetag(
-        queryClient,
+      patchRetag(
         Object.entries(groupsBySource).flatMap(([source, ids]) =>
           ids.map((id): RetagEdit => ({ source, unique_id: id, category: "", tag: "" })),
         ),
@@ -470,7 +528,8 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
   const deleteMutation = useMutation({
     mutationFn: (tx: Transaction) =>
       transactionsApi.delete(tx.unique_id || "", tx.source || ""),
-    // No per-mutation onSuccess: global MutationCache.onSuccess handles invalidation.
+    onMutate: (tx) => deletePlan([tx]),
+    onError: (_error, _tx, context) => context?.restore(),
   });
 
   const bulkDeleteMutation = useMutation({
@@ -489,6 +548,9 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
         total: results.length,
       };
     },
+    // A row whose delete failed comes back with the refresh that follows.
+    onMutate: (txs) => deletePlan(txs),
+    onError: (_error, _txs, context) => context?.restore(),
   });
 
   // Reset page when transactions or filter changes
@@ -1308,6 +1370,8 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
                             const moveTo = (idx: number) =>
                               monthOverrideMutation.mutate({
                                 tx,
+                                fromYear: Math.floor(curIdx / 12),
+                                fromMonth: (curIdx % 12) + 1,
                                 year: Math.floor(idx / 12),
                                 month: (idx % 12) + 1,
                               });

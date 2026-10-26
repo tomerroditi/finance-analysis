@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { useQueryClient, useMutation } from "@tanstack/react-query";
+import { useMutation } from "@tanstack/react-query";
 import { RefreshCw, Link2, X, Lock, ChevronDown, ChevronUp } from "lucide-react";
 import { pendingRefundsApi, type PendingRefund } from "../../services/api";
 import { humanizeProvider, humanizeService } from "../../utils/textFormatting";
@@ -8,7 +8,7 @@ import { formatCurrency } from "../../utils/numberFormatting";
 import { formatDate } from "../../utils/dateFormatting";
 import { LinkRefundModal } from "../modals/LinkRefundModal";
 import { useConfirm, useNotify } from "../../context/DialogContext";
-import { qkPrefix } from "../../services/queryKeys";
+import { REFUND_WRITE_PLAN } from "../../writePlans";
 
 interface PendingRefundsSectionProps {
   pendingRefunds: {
@@ -21,7 +21,6 @@ export const PendingRefundsSection: React.FC<PendingRefundsSectionProps> = ({
   pendingRefunds,
 }) => {
   const { t } = useTranslation();
-  const queryClient = useQueryClient();
   const confirm = useConfirm();
   const notify = useNotify();
   const { items, total_expected } = pendingRefunds;
@@ -29,12 +28,15 @@ export const PendingRefundsSection: React.FC<PendingRefundsSectionProps> = ({
   const [mobileActionsId, setMobileActionsId] = useState<number | null>(null);
   const [collapsed, setCollapsed] = useState(true);
 
+  // The mutation cache refreshes after both, following the refund plan.
   const closeMutation = useMutation({
     mutationFn: (id: number) => pendingRefundsApi.close(id),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: qkPrefix.budget });
-      queryClient.invalidateQueries({ queryKey: qkPrefix.pendingRefunds });
-    },
+    onMutate: () => ({ refresh: REFUND_WRITE_PLAN }),
+  });
+  const cancelMutation = useMutation({
+    mutationFn: (id: number) => pendingRefundsApi.cancel(id),
+    onMutate: () => ({ refresh: REFUND_WRITE_PLAN }),
+    onError: () => notify.error(t("budget.failedCancelRefund")),
   });
 
   if (!items || items.length === 0) {
@@ -48,14 +50,7 @@ export const PendingRefundsSection: React.FC<PendingRefundsSectionProps> = ({
       confirmLabel: t("common.confirm"),
       isDestructive: true,
     });
-    if (!ok) return;
-    try {
-      await pendingRefundsApi.cancel(id);
-      queryClient.invalidateQueries({ queryKey: qkPrefix.budget });
-      queryClient.invalidateQueries({ queryKey: qkPrefix.pendingRefunds });
-    } catch {
-      notify.error(t("budget.failedCancelRefund"));
-    }
+    if (ok) cancelMutation.mutate(id);
   };
 
   const handleClose = async (id: number) => {

@@ -7,6 +7,7 @@ import { useQueryKeys } from "../../hooks/useQueryKeys";
 import { useDashboardLayout, type DashboardCardId } from "../../hooks/useDashboardLayout";
 import { formatCurrency } from "../../utils/numberFormatting";
 import { usePendingRows } from "../../hooks/usePendingRows";
+import type { RefreshPlan } from "../../queryInvalidation";
 
 const SEVERITY_STYLES: Record<Insight["severity"], { box: string; icon: typeof Info }> = {
   warning: { box: "bg-amber-500/10 border-amber-500/25 text-amber-300", icon: AlertTriangle },
@@ -101,16 +102,13 @@ export function InsightsStrip() {
       const res = await analyticsApi.getInsights();
       return res.data;
     },
-    // This is the one card whose contents the user edits, by dismissing. The
-    // persisted IndexedDB snapshot hydrates instantly on reload and would
-    // otherwise count as fresh for the global five minutes — long enough to
-    // show a card the user has already waved away, because the snapshot is
-    // throttled and can predate the dismissal. Revalidate on every mount.
-    staleTime: 0,
   });
 
-  const refresh = () =>
-    queryClient.invalidateQueries({ queryKey: qk.analytics.insights() });
+  // A dismissal (or its undo) changes which cards the strip holds and
+  // nothing else: the mutation cache refreshes the strip alone after it —
+  // the refetch still matters, since a freed slot goes to the runner-up the
+  // backend was holding back.
+  const refresh: RefreshPlan = { only: [qk.analytics.insights()] };
 
   // Per card: dismissing one must not disable the dismiss button on every
   // other card while the write is out. See `usePendingRows`.
@@ -131,7 +129,11 @@ export function InsightsStrip() {
       queryClient.setQueryData<Insight[]>(qk.analytics.insights(), (old) =>
         (old ?? []).filter((insight) => insight.key !== key),
       );
-      return { previous, dismissed: index >= 0 ? { insight: list[index], index } : null };
+      return {
+        refresh,
+        previous,
+        dismissed: index >= 0 ? { insight: list[index], index } : null,
+      };
     },
     onError: (_error, _key, context) => {
       if (context?.previous) {
@@ -144,10 +146,7 @@ export function InsightsStrip() {
       const dismissed = context?.dismissed;
       if (dismissed) setUndoStack((stack) => [...stack, dismissed]);
     },
-    onSettled: (_data, _error, key) => {
-      dismissing.end(key);
-      refresh();
-    },
+    onSettled: (_data, _error, key) => dismissing.end(key),
   });
 
   const restore = useMutation({
@@ -166,6 +165,7 @@ export function InsightsStrip() {
         next.splice(Math.min(entry.index, next.length), 0, entry.insight);
         return next;
       });
+      return { refresh };
     },
     onError: (_error, entry) => {
       queryClient.setQueryData<Insight[]>(qk.analytics.insights(), (old) =>
@@ -173,7 +173,6 @@ export function InsightsStrip() {
       );
       setUndoStack((stack) => [...stack, entry]);
     },
-    onSettled: () => refresh(),
   });
 
   const visible = (data ?? [])

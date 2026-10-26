@@ -1,6 +1,8 @@
 import React, { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { useMutation } from "@tanstack/react-query";
 import { transactionsApi } from "../../services/api";
+import { UNCHANGED_BY_ROW_WRITE } from "../../writePlans";
 import { SelectDropdown } from "../common/SelectDropdown";
 import { useCategoryTagCreate } from "../../hooks/useCategoryTagCreate";
 import { useCategories } from "../../hooks/useCategories";
@@ -18,7 +20,7 @@ interface TransactionFormModalProps {
     onClose: () => void;
     transaction?: Transaction | null; // If provided, we are in Edit mode
     service?: "cash" | "manual_investments"; // Required if creating new
-    onSuccess: () => void;
+    onSuccess?: () => void;
 }
 
 export function TransactionFormModal({
@@ -102,7 +104,27 @@ export function TransactionFormModal({
     const availableTags =
         formData.category && categories ? categories[formData.category] || [] : [];
 
-    const handleSubmit = async (e: React.FormEvent) => {
+    // A write, not a bare request: it goes through the app's mutation cache,
+    // so every figure the row feeds — budget, analytics, balances, goals,
+    // holdings — is refreshed after it instead of waiting out its staleTime.
+    // Only the rules, categories and accounts themselves cannot change.
+    const saveMutation = useMutation({
+        mutationFn: (payload: { uniqueId?: string; data: Record<string, unknown> }) =>
+            payload.uniqueId !== undefined
+                ? transactionsApi.update(payload.uniqueId, payload.data)
+                : transactionsApi.create(payload.data),
+        onMutate: () => ({ refresh: { skip: UNCHANGED_BY_ROW_WRITE } }),
+        onSuccess: () => {
+            onSuccess?.();
+            onClose();
+        },
+        onError: (err) => {
+            console.error(err);
+            notify.error(t("transactions.failedSave"));
+        },
+    });
+
+    const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
 
         const enteredAmount = Number(formData.amount);
@@ -116,30 +138,28 @@ export function TransactionFormModal({
             ? -Math.abs(enteredAmount)
             : Math.abs(enteredAmount);
 
-        try {
-            if (isEditMode && transaction) {
-                await transactionsApi.update(transaction.unique_id || "", {
+        if (isEditMode && transaction) {
+            saveMutation.mutate({
+                uniqueId: transaction.unique_id || "",
+                data: {
                     ...formData,
                     amount: isManual ? finalAmount : transaction.amount, // Only update amount if manual, else keep original
                     source: transaction.source, // Backend needs source for routing updates
-                });
-            } else {
-                if (!service) {
-                    notify.error(t("transactions.serviceRequiredForNew"));
-                    return;
-                }
-                await transactionsApi.create({
+                },
+            });
+        } else {
+            if (!service) {
+                notify.error(t("transactions.serviceRequiredForNew"));
+                return;
+            }
+            saveMutation.mutate({
+                data: {
                     ...formData,
                     amount: finalAmount,
                     service: service, // "cash" or "manual_investments"
                     provider: "MANUAL",
-                });
-            }
-            onSuccess();
-            onClose();
-        } catch (err) {
-            console.error(err);
-            notify.error(t("transactions.failedSave"));
+                },
+            });
         }
     };
 
@@ -327,7 +347,8 @@ export function TransactionFormModal({
                         </button>
                         <button
                             type="submit"
-                            className="flex-1 px-4 py-2.5 rounded-xl bg-[var(--primary)] hover:bg-[var(--primary-dark)] text-white text-sm font-semibold shadow-lg shadow-[var(--primary)]/20 transition-all"
+                            disabled={saveMutation.isPending}
+                            className="flex-1 px-4 py-2.5 rounded-xl bg-[var(--primary)] hover:bg-[var(--primary-dark)] text-white text-sm font-semibold shadow-lg shadow-[var(--primary)]/20 transition-all disabled:opacity-60"
                         >
                             {isEditMode ? t("modals.transactionForm.saveChanges") : t("modals.transactionForm.createTransaction")}
                         </button>

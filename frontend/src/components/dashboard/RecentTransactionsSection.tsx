@@ -33,7 +33,13 @@ import { useCategories } from "../../hooks/useCategories";
 import { useTaggingRules } from "../../hooks/useTaggingRules";
 import { isWithoutRule as matchesNoRule } from "../../utils/taggingRuleEval";
 import { matchesSource, sourceOptions } from "../../utils/transactionSources";
-import { qkPrefix } from "../../services/queryKeys";
+import { patchBudgetForRetag, widenForCascade } from "../budget/budgetOptimistic";
+import {
+  REFUND_WRITE_PLAN,
+  UNCHANGED_BY_ROW_WRITE,
+  patchTransactionLists,
+  removeFromTransactionLists,
+} from "../../writePlans";
 import type { Transaction } from "../../types/transaction";
 import { Skeleton } from "../common/Skeleton";
 import { useTranslation } from "react-i18next";
@@ -151,18 +157,27 @@ export function RecentTransactionsFeed({
   // Categories for inline tag editing
   const { data: categories } = useCategories({ enabled: !!editingTxKey });
 
-  const invalidateAnalytics = useCallback(() => {
-    queryClient.invalidateQueries({ queryKey: qkPrefix.analytics });
-    queryClient.invalidateQueries({ queryKey: qkPrefix.budget });
-  }, [queryClient]);
+  /**
+   * Show a category/tag write on the feed and in every cached budget month
+   * before the request goes out, and hand the mutation cache the retag's
+   * refresh plan — the touched months first, nothing a retag cannot change.
+   */
+  const patchRetag = useCallback(
+    (tx: Transaction, category: string, tag: string) => {
+      const edit = { source: tx.source || "", unique_id: tx.unique_id ?? tx.id ?? "", category, tag };
+      const budget = patchBudgetForRetag(queryClient, [edit]);
+      const restoreLists = patchTransactionLists(queryClient, [edit]);
+      return {
+        refresh: budget.refresh,
+        restore: () => {
+          budget.restore();
+          restoreLists();
+        },
+      };
+    },
+    [queryClient],
+  );
 
-  // Tag update mutation. We patch every cached transactions list synchronously
-  // so the inline editor reflects the new category/tag immediately. Refetches
-  // can be delayed or coalesced by React Query's debounced global invalidator
-  // when many queries are active, leaving the row visibly stale despite a
-  // successful API call. The patch is keyed by (source, unique_id ?? id) which
-  // matches the row's React key, so the SelectDropdown re-renders with the new
-  // value without waiting for the network round-trip.
   const tagMutation = useMutation({
     mutationFn: ({ tx, category, tag }: { tx: Transaction; category: string; tag: string }) =>
       transactionsApi.updateTag(
@@ -171,18 +186,9 @@ export function RecentTransactionsFeed({
         tag,
         tx.source || "",
       ),
-    onSuccess: (_data, { tx, category, tag }) => {
-      const sameRow = (t: Transaction) =>
-        t.source === tx.source &&
-        (t.unique_id ?? t.id) === (tx.unique_id ?? tx.id);
-      const patchList = (old: Transaction[] | undefined) =>
-        Array.isArray(old)
-          ? old.map((t) => (sameRow(t) ? { ...t, category, tag: tag || undefined } : t))
-          : old;
-      queryClient.setQueriesData<Transaction[]>({ queryKey: qkPrefix.transactionsList }, patchList);
-      queryClient.invalidateQueries({ queryKey: qkPrefix.categories });
-      invalidateAnalytics();
-    },
+    onMutate: ({ tx, category, tag }) => patchRetag(tx, category, tag),
+    onError: (_error, _vars, context) => context?.restore(),
+    onSuccess: (res, _vars, context) => widenForCascade(context?.refresh, res.data.refunds_retagged),
   });
 
   // Per row: marking one transaction must not disable the refund button on
@@ -197,36 +203,26 @@ export function RecentTransactionsFeed({
         category: "",
         tag: "",
       }),
-    onMutate: (tx) => clearingTagging.begin(txKeyOf(tx)),
-    onSettled: (_data, _error, tx) => clearingTagging.end(txKeyOf(tx)),
-    onSuccess: (_data, tx) => {
-      const sameRow = (candidate: Transaction) =>
-        candidate.source === tx.source &&
-        (candidate.unique_id ?? candidate.id) === (tx.unique_id ?? tx.id);
-      queryClient.setQueriesData<Transaction[]>(
-        { queryKey: qkPrefix.transactionsList },
-        (old) =>
-          Array.isArray(old)
-            ? old.map((candidate) =>
-                sameRow(candidate)
-                  ? { ...candidate, category: undefined, tag: undefined }
-                  : candidate,
-              )
-            : old,
-      );
-      queryClient.invalidateQueries({ queryKey: qkPrefix.categories });
-      invalidateAnalytics();
+    onMutate: (tx) => {
+      clearingTagging.begin(txKeyOf(tx));
+      return patchRetag(tx, "", "");
     },
+    onSettled: (_data, _error, tx) => clearingTagging.end(txKeyOf(tx)),
+    onError: (_error, _tx, context) => context?.restore(),
+    onSuccess: (res, _tx, context) => widenForCascade(context?.refresh, res.data.refunds_retagged),
   });
 
   const deleteMutation = useMutation({
     mutationFn: (tx: Transaction) =>
       transactionsApi.delete(String(tx.unique_id ?? tx.id), tx.source || ""),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: qkPrefix.transactions });
-      invalidateAnalytics();
+    onMutate: (tx) => ({
+      restore: removeFromTransactionLists(queryClient, [tx]),
+      refresh: { skip: UNCHANGED_BY_ROW_WRITE },
+    }),
+    onError: (_error, _tx, context) => {
+      context?.restore();
+      notify.error(t("transactions.failedDelete"));
     },
-    onError: () => notify.error(t("transactions.failedDelete")),
   });
 
   const requestDelete = async (tx: Transaction) => {
@@ -250,13 +246,9 @@ export function RecentTransactionsFeed({
       }),
     onMutate: (tx) => {
       markingRefund.begin(txKeyOf(tx));
+      return { refresh: REFUND_WRITE_PLAN };
     },
     onSettled: (_data, _error, tx) => markingRefund.end(txKeyOf(tx)),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: qkPrefix.transactions });
-      queryClient.invalidateQueries({ queryKey: qkPrefix.pendingRefunds });
-      invalidateAnalytics();
-    },
   });
 
   const sorted = useMemo(() => {
@@ -832,11 +824,7 @@ export function RecentTransactionsFeed({
         <SplitTransactionModal
           transaction={splittingTransaction}
           onClose={() => setSplittingTransaction(null)}
-          onSuccess={() => {
-            setSplittingTransaction(null);
-            queryClient.invalidateQueries({ queryKey: qkPrefix.transactions });
-            invalidateAnalytics();
-          }}
+          onSuccess={() => setSplittingTransaction(null)}
         />
       )}
 
@@ -848,11 +836,7 @@ export function RecentTransactionsFeed({
             unique_id: String(editingTransaction.unique_id ?? editingTransaction.id ?? ""),
           }}
           onClose={() => setEditingTransaction(null)}
-          onSuccess={() => {
-            setEditingTransaction(null);
-            queryClient.invalidateQueries({ queryKey: qkPrefix.transactions });
-            invalidateAnalytics();
-          }}
+          onSuccess={() => setEditingTransaction(null)}
         />
       )}
 
