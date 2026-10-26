@@ -31,8 +31,15 @@ import { DemoModeConfirmPopover } from "../components/common/DemoModeConfirmPopo
 import { useTranslation } from "react-i18next";
 import { formatCurrency, formatChange, formatPercentChange } from "../utils/numberFormatting";
 import { formatMonthCompact } from "../utils/dateFormatting";
-import { useDashboardLayout, cardSize, type DashboardCardId } from "../hooks/useDashboardLayout";
+import {
+  useDashboardLayout,
+  cardSize,
+  needsTransactionList,
+  type DashboardCardId,
+} from "../hooks/useDashboardLayout";
 import { useQueryKeys } from "../hooks/useQueryKeys";
+import { useOnboardingStatus } from "../hooks/useOnboardingStatus";
+import { useFirstLoadSettled } from "../hooks/useFirstLoadSettled";
 
 
 /* How many leading cards render eagerly on first paint. The rest defer until
@@ -126,24 +133,40 @@ function MonthlyChangeList({
 function FinancialHealthHeader({
   netWorthData,
   cashBalances,
-  bankBalances,
-  portfolioAllocation,
-  lastScrapes,
   isLoading,
 }: {
   netWorthData:
     | { month: string; bank_balance: number; investment_value: number; cash: number; net_worth: number }[]
     | undefined;
   cashBalances: { account_name: string; balance: number }[] | undefined;
-  bankBalances: BankBalance[] | undefined;
-  portfolioAllocation: { name: string; balance: number }[] | undefined;
-  lastScrapes:
-    | { service: string; provider: string; account_name: string; last_scrape_date: string | null }[]
-    | undefined;
   isLoading: boolean;
 }) {
   const { t } = useTranslation();
+  const qk = useQueryKeys();
   const [expanded, setExpanded] = useState(false);
+
+  // The per-account breakdowns only show once the header is expanded, so
+  // their reads wait for it rather than joining every dashboard load.
+  const { data: bankBalances } = useQuery<BankBalance[]>({
+    queryKey: qk.balances.bank(),
+    queryFn: () => bankBalancesApi.getAll().then((res) => res.data),
+    enabled: expanded,
+  });
+
+  const { data: lastScrapes } = useQuery<
+    { service: string; provider: string; account_name: string; last_scrape_date: string | null }[]
+  >({
+    queryKey: qk.scraping.lastScrapes(),
+    queryFn: () => scrapingApi.getLastScrapes().then((res) => res.data),
+    enabled: expanded,
+  });
+
+  const { data: portfolioData } = useQuery<{ allocation?: { name: string; balance: number }[] }>({
+    queryKey: qk.investments.portfolio(),
+    queryFn: () => investmentsApi.getPortfolioAnalysis().then((res) => res.data),
+    enabled: expanded,
+  });
+  const portfolioAllocation = portfolioData?.allocation;
   const [balanceModalAccount, setBalanceModalAccount] = useState<
     { provider: string; account_name: string; balance: number } | null
   >(null);
@@ -355,21 +378,6 @@ export function Dashboard() {
     queryFn: () => cashBalancesApi.getAll().then((res) => res.data),
   });
 
-  const { data: bankBalances } = useQuery({
-    queryKey: qk.balances.bank(),
-    queryFn: () => bankBalancesApi.getAll().then((res) => res.data),
-  });
-
-  const { data: lastScrapes } = useQuery({
-    queryKey: qk.scraping.lastScrapes(),
-    queryFn: () => scrapingApi.getLastScrapes().then((res) => res.data),
-  });
-
-  const { data: portfolioData } = useQuery({
-    queryKey: qk.investments.portfolio(),
-    queryFn: () => investmentsApi.getPortfolioAnalysis().then((res) => res.data),
-  });
-
   const { data: netWorthData, isLoading: netWorthLoading } = useQuery({
     queryKey: qk.analytics.netWorthOverTime(),
     queryFn: async () => {
@@ -378,13 +386,19 @@ export function Dashboard() {
     },
   });
 
+  // The whole history, for the two cards that read it — downloaded only when
+  // one of them is on the dashboard.
   const { data: allTransactions, isLoading: transactionsLoading } = useQuery({
     queryKey: qk.transactions.list(undefined, false),
     queryFn: async () => {
       const res = await transactionsApi.getAll(undefined, false);
       return res.data;
     },
+    enabled: needsTransactionList(layout),
   });
+
+  const { data: onboardingStatus } = useOnboardingStatus();
+  const firstLoadSettled = useFirstLoadSettled();
 
   const { data: categoryIcons } = useQuery({
     queryKey: qk.tagging.icons(),
@@ -396,8 +410,7 @@ export function Dashboard() {
 
   // ---- Render ----
 
-  const isDbEmpty =
-    !transactionsLoading && (allTransactions?.length ?? 0) === 0;
+  const isDbEmpty = onboardingStatus?.has_transactions === false;
 
   if (isDbEmpty) {
     return (
@@ -463,9 +476,6 @@ export function Dashboard() {
       <FinancialHealthHeader
         netWorthData={netWorthData}
         cashBalances={cashBalances}
-        bankBalances={bankBalances}
-        portfolioAllocation={portfolioData?.allocation}
-        lastScrapes={lastScrapes}
         isLoading={netWorthLoading}
       />
 
@@ -499,9 +509,13 @@ export function Dashboard() {
                 the rest wait until scrolled near, so their analytics requests
                 don't compete with the header + top cards on first paint. The
                 placeholder reserves the card's capped height so lower cards
-                stay below the fold and the layout doesn't jump on mount. */}
+                stay below the fold and the layout doesn't jump on mount, and
+                the watch starts only once the first reads are in — before
+                that the cards above are short skeletons, and everything
+                looked near. */}
             <DeferUntilVisible
               eager={index < EAGER_CARD_COUNT}
+              armed={firstLoadSettled}
               reserveClassName={cardSize(id) === "full" ? "min-h-[39rem]" : "min-h-[20rem]"}
             >
               {cardRenderers[id]()}

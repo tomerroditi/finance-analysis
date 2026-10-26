@@ -174,10 +174,6 @@ export const budgetApi = {
     api.delete(`/budget/projects/${encodeURIComponent(name)}`),
   setProjectClosed: (name: string, closed: boolean) =>
     api.put(`/budget/projects/${encodeURIComponent(name)}/closed`, { closed }),
-  getCurrentAlerts: (threshold?: number) =>
-    api.get("/budget/alerts", {
-      params: threshold !== undefined ? { threshold } : undefined,
-    }),
   getMonthAlerts: (year: number, month: number, threshold?: number) =>
     api.get(`/budget/alerts/${year}/${month}`, {
       params: threshold !== undefined ? { threshold } : undefined,
