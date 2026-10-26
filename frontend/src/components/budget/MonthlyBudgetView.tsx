@@ -29,7 +29,9 @@ import {
 } from "./ProjectsThisMonthSummary";
 import { useQueryKeys } from "../../hooks/useQueryKeys";
 import { qkPrefix } from "../../services/queryKeys";
-import { refreshInOrder } from "../../queryInvalidation";
+import { monthlyRulePlan } from "./budgetPlans";
+import { isTotalBudget, monthTransactions } from "./monthTransactions";
+import { prefetchNeighbourMonths } from "./prefetchNeighbourMonths";
 
 /**
  * Months in the summary band's budget-vs-actual figure. It spans the stats
@@ -112,49 +114,43 @@ export const MonthlyBudgetView: React.FC<MonthlyBudgetViewProps> = ({
   );
 
   // Prefetch adjacent months for instant navigation — once the month on
-  // screen has arrived, nearest first, one at a time. The server answers a
-  // month in ~0.15 s once its claim ledger is built, but requests that run
-  // together share its CPU: fired alongside the viewed month, four
-  // neighbours made it wait, and fired together they each took ~10× longer
-  // than in turn.
+  // screen has arrived, nearest first, one at a time, never past the current
+  // calendar month (see `prefetchNeighbourMonths`).
   const viewedMonthReady = !!analysis && !isPlaceholderData;
   useEffect(() => {
     if (!viewedMonthReady) return;
-    let cancelled = false;
-    (async () => {
-      for (const offset of [-1, 1, -2, 2]) {
-        if (cancelled) return;
-        const date = new Date(year, month - 1 + offset);
-        const prefetchYear = date.getFullYear();
-        const prefetchMonth = date.getMonth() + 1;
-        await queryClient.prefetchQuery({
-          queryKey: qk.budget.analysis(prefetchYear, prefetchMonth, includeSplitParents),
-          queryFn: () =>
-            budgetApi
-              .getAnalysis(prefetchYear, prefetchMonth, includeSplitParents)
-              .then((res) => res.data),
-        });
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
+    return prefetchNeighbourMonths(queryClient, year, month, (y, m) => ({
+      queryKey: qk.budget.analysis(y, m, includeSplitParents),
+      queryFn: () => budgetApi.getAnalysis(y, m, includeSplitParents).then((res) => res.data),
+    }));
   }, [viewedMonthReady, year, month, includeSplitParents, queryClient, qk]);
 
-  // When the active month's analysis reports an auto-fill, sibling months
-  // may have prefetched in parallel and cached an empty result before the
-  // fill committed. Refetch the others so navigation shows the rules
-  // without a hard refresh.
+  // An auto-fill is a write: other cached months may predate it (a later
+  // month filled before this one was). Mark them stale; only the ones on
+  // screen refetch now — the rest when next viewed — rather than every month
+  // ever cached refetching at once.
   useEffect(() => {
     if (!analysis?.copied_from) return;
-    queryClient.refetchQueries({
-      queryKey: qkPrefix.budgetAnalysis,
-      predicate: (query) => {
-        const [, , qYear, qMonth] = query.queryKey as [string, string, number, number, boolean, boolean];
-        return qYear !== year || qMonth !== month;
+    void queryClient.invalidateQueries(
+      {
+        queryKey: qkPrefix.budgetAnalysis,
+        refetchType: "active",
+        predicate: (query) => {
+          const [, , qYear, qMonth] = query.queryKey as [string, string, number, number, boolean, boolean];
+          return qYear !== year || qMonth !== month;
+        },
       },
-    });
+      { cancelRefetch: false },
+    );
   }, [analysis?.copied_from, year, month, queryClient]);
+
+  // Started with the month rather than once it renders: the notice line
+  // under the command bar shows the conflicts, and it mounts only after the
+  // month has arrived.
+  useQuery({
+    queryKey: qk.budget.categoryConflicts(),
+    queryFn: () => budgetApi.getCategoryConflicts().then((r) => r.data.conflicts),
+  });
 
   // Not rendered here: a retag patches this month on click
   // (`budgetOptimistic.ts`), and a project owns its category whatever the
@@ -165,10 +161,15 @@ export const MonthlyBudgetView: React.FC<MonthlyBudgetViewProps> = ({
     queryFn: () => budgetApi.getProjectsStatus().then((res) => res.data),
   });
 
+  // Pending refunds and month overrides only decorate the transaction
+  // lists, which stay collapsed until a rule (or the month's list) is opened.
+  const anyListOpen = expandedRuleId !== null || showTotalTransactions;
+
   // Pending refunds — for transaction badges/links across rule lists.
   const { data: pendingRefunds } = useQuery({
     queryKey: qk.pendingRefunds.all(),
     queryFn: () => pendingRefundsApi.getAll().then((res) => res.data),
+    enabled: anyListOpen,
   });
 
   const pendingRefundsMap = useMemo(() => {
@@ -199,6 +200,7 @@ export const MonthlyBudgetView: React.FC<MonthlyBudgetViewProps> = ({
   const { data: budgetMonthOverrides } = useQuery({
     queryKey: qk.budget.monthOverrides(),
     queryFn: () => budgetMonthOverridesApi.getAll().then((res) => res.data),
+    enabled: anyListOpen,
   });
 
   const budgetMonthOverridesMap = useMemo(() => {
@@ -209,30 +211,25 @@ export const MonthlyBudgetView: React.FC<MonthlyBudgetViewProps> = ({
     return map;
   }, [budgetMonthOverrides]);
 
-  // This month's analysis first, then the rest of the budget: fired
-  // together, the month queued behind the trend and every other budget read.
-  // Row writes in the transaction lists need none of this — they are
-  // mutations, refreshed after by the mutation cache along the patch's plan
-  // (`budgetOptimistic.ts`), and invalidating here as well would refetch the
-  // reads that plan skips.
-  const invalidateBudget = () => {
-    void refreshInOrder(queryClient, [qkPrefix.budgetAnalysis], { queryKey: qkPrefix.budget });
-  };
+  // Rule writes refresh along a plan the mutation cache follows: this
+  // month's analysis first, then only what a rule can reach. Row writes in
+  // the transaction lists are mutations too, planned by `budgetOptimistic.ts`.
+  const rulePlan = () => ({ refresh: monthlyRulePlan(year, month) });
 
   const createMutation = useMutation({
     mutationFn: budgetApi.createRule,
-    onSuccess: invalidateBudget,
+    onMutate: rulePlan,
   });
 
   const updateMutation = useMutation({
     mutationFn: ({ id, rule }: { id: number; rule: object }) =>
       budgetApi.updateRule(id, rule),
-    onSuccess: invalidateBudget,
+    onMutate: rulePlan,
   });
 
   const deleteMutation = useMutation({
     mutationFn: budgetApi.deleteRule,
-    onSuccess: invalidateBudget,
+    onMutate: rulePlan,
   });
 
   const handlePreviousMonth = () => {
@@ -355,8 +352,8 @@ export const MonthlyBudgetView: React.FC<MonthlyBudgetViewProps> = ({
   const { rules = [], project_spending } = analysis || {};
 
   // Summary calculations (exclude the Total Budget anchor row)
-  const budgetRules = rules.filter(
-    (item: BudgetAnalysisItem) => item.rule.name !== "Total Budget",
+  const budgetRules: BudgetAnalysisItem[] = rules.filter(
+    (item: BudgetAnalysisItem) => !isTotalBudget(item.rule),
   );
   // A rule's net can be negative when refunds exceed spend for the period.
   // Clamp to 0 (net spend) so a refund is never counted as overspend or
@@ -391,12 +388,8 @@ export const MonthlyBudgetView: React.FC<MonthlyBudgetViewProps> = ({
   const hasGoalMovement = (analysis?.savings_goals?.goals?.length ?? 0) > 0;
   const monthProjects = (project_spending?.projects ?? []) as ProjectSpendingItem[];
 
-  const totalItem = rules.find(
-    (i: BudgetAnalysisItem) => i.rule.name === "Total Budget",
-  );
-  const childItems = rules.filter(
-    (i: BudgetAnalysisItem) => i.rule.name !== "Total Budget",
-  );
+  const totalItem = rules.find((i: BudgetAnalysisItem) => isTotalBudget(i.rule));
+  const childItems = budgetRules;
 
   const stats: BandStat[] = [
     {
@@ -573,7 +566,7 @@ export const MonthlyBudgetView: React.FC<MonthlyBudgetViewProps> = ({
         >
           {showTotalTransactions && (
             <TransactionCollapsibleList
-              transactions={totalItem.data}
+              transactions={monthTransactions<Transaction>(rules)}
               isOpen
               showActions
               pendingRefundsMap={pendingRefundsMap}

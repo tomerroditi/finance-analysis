@@ -1,6 +1,6 @@
 import { useState, useCallback, useMemo } from "react";
 import { useTranslation } from "react-i18next";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import {
   ResponsiveContainer,
   LineChart,
@@ -35,6 +35,7 @@ import { useCategoryTagCreate } from "../hooks/useCategoryTagCreate";
 import { useConfirm } from "../context/DialogContext";
 import { useQueryKeys } from "../hooks/useQueryKeys";
 import { qkPrefix } from "../services/queryKeys";
+import { UNCHANGED_BY_RETAG } from "../components/budget/budgetOptimistic";
 import {
   LiabilityCreateModal,
   type TagDetection,
@@ -281,7 +282,6 @@ function LiabilityCard({
 
 export function Liabilities() {
   const { t } = useTranslation();
-  const queryClient = useQueryClient();
   const qk = useQueryKeys();
 
   const [isAddOpen, setIsAddOpen] = useState(false);
@@ -374,14 +374,29 @@ export function Liabilities() {
     enabled: !!analysisModalId,
   });
 
-  // Mutations
-  const invalidate = () =>
-    queryClient.invalidateQueries({ queryKey: qkPrefix.liabilities });
+  // Mutations. A liability record feeds the liabilities reads, the analytics
+  // (net worth, debt) and the retirement plan — never a transaction, the
+  // budget, an investment, a cash balance, a goal or the app's static reads.
+  // So each write refreshes along a plan: the list first, then what it feeds.
+  const liabilityPlan = () => ({
+    refresh: {
+      first: [["liabilities", "list"]],
+      skip: [
+        ...UNCHANGED_BY_RETAG,
+        qkPrefix.transactions,
+        qkPrefix.pendingRefunds,
+        qkPrefix.budget,
+        qkPrefix.investments,
+        qkPrefix.cashBalances,
+        qkPrefix.savingsGoals,
+      ],
+    },
+  });
 
   const createMutation = useMutation({
     mutationFn: (data: Record<string, unknown>) => liabilitiesApi.create(data),
+    onMutate: liabilityPlan,
     onSuccess: () => {
-      invalidate();
       setIsAddOpen(false);
       setNewLiability({
         name: "",
@@ -403,8 +418,8 @@ export function Liabilities() {
   const updateMutation = useMutation({
     mutationFn: ({ id, data }: { id: number; data: object }) =>
       liabilitiesApi.update(id, data),
+    onMutate: liabilityPlan,
     onSuccess: () => {
-      invalidate();
       setEditForm({
         id: null,
         name: "",
@@ -419,14 +434,14 @@ export function Liabilities() {
 
   const deleteMutation = useMutation({
     mutationFn: (id: number) => liabilitiesApi.delete(id),
-    onSuccess: invalidate,
+    onMutate: liabilityPlan,
   });
 
   const payOffMutation = useMutation({
     mutationFn: ({ id, date }: { id: number; date: string }) =>
       liabilitiesApi.payOff(id, date),
+    onMutate: liabilityPlan,
     onSuccess: () => {
-      invalidate();
       setPayOffForm({
         id: null,
         date: todayISO(),
@@ -436,15 +451,19 @@ export function Liabilities() {
 
   const reopenMutation = useMutation({
     mutationFn: (id: number) => liabilitiesApi.reopen(id),
-    onSuccess: invalidate,
+    onMutate: liabilityPlan,
   });
 
+  // Generating writes transactions, so it reaches everything they feed; only
+  // the static reads are left alone. The open analysis goes first.
   const generateMutation = useMutation({
     mutationFn: (id: number) => liabilitiesApi.generateTransactions(id),
-    onSuccess: () => {
-      invalidate();
-      queryClient.invalidateQueries({ queryKey: qk.liabilities.analysis(analysisModalId ?? 0) });
-    },
+    onMutate: (id: number) => ({
+      refresh: {
+        first: [["liabilities", "analysis", id], ["liabilities", "list"]],
+        skip: UNCHANGED_BY_RETAG,
+      },
+    }),
   });
 
   // Summary calculations
@@ -478,7 +497,6 @@ export function Liabilities() {
   const { data: debtOverTimeRaw } = useQuery<DebtOverTimeData>({
     queryKey: qk.liabilities.debtOverTime(),
     queryFn: () => liabilitiesApi.getDebtOverTime().then((r) => r.data),
-    enabled: activeLiabilities.length > 0,
   });
   const debtOverTimeData = debtOverTimeRaw?.series || [];
 

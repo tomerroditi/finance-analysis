@@ -1,6 +1,6 @@
 import { useState, useMemo } from "react";
 import { useTranslation } from "react-i18next";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { Plus, TrendingUp } from "lucide-react";
 import { useNavigate } from "react-router";
 import { investmentsApi, ratesApi, type Investment } from "../services/api";
@@ -16,7 +16,7 @@ import { useCategories } from "../hooks/useCategories";
 import { useCategoryTagCreate } from "../hooks/useCategoryTagCreate";
 import { todayISO } from "../utils/dateFormatting";
 import { useQueryKeys } from "../hooks/useQueryKeys";
-import { qkPrefix } from "../services/queryKeys";
+import { investmentPlan, PAGE_FIRST } from "../components/investments/investmentPlans";
 
 const RATE_TYPES = new Set(["bonds", "pension", "p2p_lending"]);
 const KH_TYPES = new Set(["hishtalmut"]);
@@ -156,7 +156,6 @@ export function seedEditForm(
 
 export function Investments() {
   const { t } = useTranslation();
-  const queryClient = useQueryClient();
   const qk = useQueryKeys();
   const navigate = useNavigate();
   const [showDemoConfirm, setShowDemoConfirm] = useState(false);
@@ -221,22 +220,27 @@ export function Investments() {
       investmentsApi.getPortfolioAnalysis().then((res) => res.data),
   });
 
+  // The balance chart's default series, started beside the portfolio rather
+  // than once PortfolioOverview mounts — which waits for the portfolio.
+  useQuery({
+    queryKey: qk.investments.balanceHistory(true),
+    queryFn: () => investmentsApi.getPortfolioBalanceHistory(true).then((res) => res.data),
+  });
+
 
   // Mutations
   const editMutation = useMutation({
     mutationFn: ({ id, data }: { id: number; data: object }) =>
       investmentsApi.update(id, data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: qkPrefix.investments });
-      queryClient.invalidateQueries({ queryKey: qkPrefix.insuranceAccounts });
-      setEditForm(EDIT_FORM_RESET);
-    },
+    // An edit can rename a synced fund, so the insurance accounts refresh too.
+    onMutate: () => investmentPlan(PAGE_FIRST, { insurance: true }),
+    onSuccess: () => setEditForm(EDIT_FORM_RESET),
   });
 
   const createMutation = useMutation({
     mutationFn: (data: Record<string, unknown>) => investmentsApi.create(data),
+    onMutate: () => investmentPlan(PAGE_FIRST, { onboarding: true }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: qkPrefix.investments });
       setIsAddOpen(false);
       setNewInvestment({
         name: "",
@@ -257,8 +261,8 @@ export function Investments() {
   const closeMutation = useMutation({
     mutationFn: ({ id, closedDate }: { id: number; closedDate: string }) =>
       investmentsApi.close(id, closedDate),
+    onMutate: () => investmentPlan(PAGE_FIRST),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: qkPrefix.investments });
       setCloseForm({ investmentId: null, date: todayISO(), mode: "close" });
     },
   });
@@ -266,24 +270,20 @@ export function Investments() {
   const updateCloseDateMutation = useMutation({
     mutationFn: ({ id, closedDate }: { id: number; closedDate: string }) =>
       investmentsApi.update(id, { closed_date: closedDate }),
+    onMutate: () => investmentPlan(PAGE_FIRST, { insurance: true }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: qkPrefix.investments });
       setCloseForm({ investmentId: null, date: todayISO(), mode: "close" });
     },
   });
 
   const reopenMutation = useMutation({
     mutationFn: (id: number) => investmentsApi.reopen(id),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: qkPrefix.investments });
-    },
+    onMutate: () => investmentPlan(PAGE_FIRST),
   });
 
   const deleteMutation = useMutation({
     mutationFn: (id: number) => investmentsApi.delete(id),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: qkPrefix.investments });
-    },
+    onMutate: () => investmentPlan(PAGE_FIRST, { onboarding: true }),
   });
 
   const balanceSnapshotMutation = useMutation({
@@ -292,8 +292,9 @@ export function Investments() {
         date: data.date,
         balance: data.balance,
       }),
+    onMutate: ({ investmentId }) =>
+      investmentPlan([...PAGE_FIRST, ["investments", "snapshots", investmentId]]),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: qkPrefix.investments });
       setBalanceForm({ investmentId: null, date: todayISO(), balance: "" });
     },
   });

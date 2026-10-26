@@ -5,6 +5,7 @@ import { Target } from "lucide-react";
 import { savingsGoalsApi, type SavingsGoal } from "../../services/api";
 import { useQueryKeys } from "../../hooks/useQueryKeys";
 import { qkPrefix } from "../../services/queryKeys";
+import { savingsGoalPlan } from "./budgetPlans";
 import { useNotify } from "../../context/DialogContext";
 import { Modal } from "../common/Modal";
 import { BAR_CONTROL } from "./BudgetCommandBar";
@@ -62,10 +63,14 @@ export function BudgetGoalLink({
       link
         ? savingsGoalsApi.setSpendingLink(goalId, category, tags ?? null)
         : savingsGoalsApi.setSpendingLink(goalId, null),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: qkPrefix.savingsGoals });
-      // The monthly budget view carries each goal's month of movement.
-      queryClient.invalidateQueries({ queryKey: qkPrefix.budget });
+    // The reply is the goal list, shown at once; the rest of the goals and
+    // the budget month (it carries each goal's month of movement) refresh
+    // after, along the plan.
+    onMutate: () => ({
+      refresh: savingsGoalPlan([qkPrefix.savingsGoals, qkPrefix.budgetAnalysis]),
+    }),
+    onSuccess: (res) => {
+      if (Array.isArray(res.data)) queryClient.setQueryData(qk.savingsGoals.all(), res.data);
       setIsOpen(false);
     },
     onError: () => notify.error(t("budget.goalLink.failed")),

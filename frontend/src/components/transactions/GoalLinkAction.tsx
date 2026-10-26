@@ -4,10 +4,12 @@ import { useTranslation } from "react-i18next";
 import { Target } from "lucide-react";
 import {
   savingsGoalsApi,
+  type SavingsGoalLink,
   type SavingsGoalLinkType,
 } from "../../services/api";
 import { useQueryKeys } from "../../hooks/useQueryKeys";
 import { qkPrefix } from "../../services/queryKeys";
+import { savingsGoalPlan } from "../budget/budgetPlans";
 import { Modal } from "../common/Modal";
 import type { Transaction } from "../../types/transaction";
 import { usePendingRows } from "../../hooks/usePendingRows";
@@ -24,6 +26,13 @@ import { usePendingRows } from "../../hooks/usePendingRows";
  *
  * The button hides itself when the user keeps no goals, so the actions column
  * stays uncluttered for everyone who does not use the feature.
+ *
+ * The goal list is the full computed savings-goals read, so a table of rows
+ * does not fetch it: each row reads it from the cache when something else
+ * (the dashboard card, an earlier popover) already holds it, and fetches it
+ * only once its popover opens. Until the list is known the button shows, and
+ * the popover says so when there turns out to be no goal. The links — which
+ * decide the icon's state — are a plain table read, shared by every row.
  */
 export function GoalLinkAction({
   transaction,
@@ -47,6 +56,7 @@ export function GoalLinkAction({
       const res = await savingsGoalsApi.getAll();
       return res.data;
     },
+    enabled: isOpen,
   });
 
   const { data: links } = useQuery({
@@ -67,9 +77,26 @@ export function GoalLinkAction({
       String(link.source_id) === String(sourceId),
   );
 
-  const invalidate = () => {
-    queryClient.invalidateQueries({ queryKey: qkPrefix.savingsGoals });
+  const linksKey = qk.savingsGoals.links();
+
+  /** Show the row's new link state now; hand back how to undo it. */
+  const patchLinks = async (next: SavingsGoalLink | null) => {
+    await queryClient.cancelQueries({ queryKey: linksKey });
+    const before = queryClient.getQueryData<SavingsGoalLink[]>(linksKey);
+    if (before) {
+      const others = before.filter(
+        (link) =>
+          !(link.source_table === sourceTable && String(link.source_id) === String(sourceId)),
+      );
+      queryClient.setQueryData<SavingsGoalLink[]>(linksKey, next ? [...others, next] : others);
+    }
+    return () => queryClient.setQueryData(linksKey, before);
   };
+
+  // The goals and the budget month (it carries each goal's month of
+  // movement) refetch first; nothing outside the goals can change.
+  const plan = () =>
+    savingsGoalPlan([qkPrefix.savingsGoals, qkPrefix.budgetAnalysis]);
 
   // Per goal: linking to one goal must not disable the buttons on the other
   // goals in the list while the write is out. Both buttons on a goal's row
@@ -92,28 +119,39 @@ export function GoalLinkAction({
         source_table: sourceTable,
         link_type: linkType,
       }),
-    onMutate: ({ goalId }) => {
+    onMutate: async ({ goalId, linkType }) => {
       linking.begin(goalId);
+      const restore = await patchLinks({
+        id: -1,
+        goal_id: goalId,
+        source_type: "transaction",
+        source_id: sourceId,
+        source_table: sourceTable,
+        link_type: linkType,
+      });
+      return { refresh: plan(), restore };
     },
     onSettled: (_data, _error, { goalId }) => linking.end(goalId),
-    onSuccess: () => {
-      invalidate();
+    onSuccess: (res) => {
+      if (Array.isArray(res.data)) queryClient.setQueryData(qk.savingsGoals.all(), res.data);
       setIsOpen(false);
     },
+    onError: (_error, _variables, context) => context?.restore(),
   });
 
   const unlinkMutation = useMutation({
     mutationFn: (linkId: number) => savingsGoalsApi.unlink(linkId),
-    onSuccess: () => {
-      invalidate();
-      setIsOpen(false);
-    },
+    onMutate: async () => ({ refresh: plan(), restore: await patchLinks(null) }),
+    onSuccess: () => setIsOpen(false),
+    onError: (_error, _variables, context) => context?.restore(),
   });
 
   const openGoals = (goals ?? []).filter((goal) => !goal.is_closed);
   // Without a goal to attach to, or without a resolvable transaction key, the
-  // action can't do anything useful.
-  if (openGoals.length === 0 || !sourceTable || Number.isNaN(sourceId)) return null;
+  // action can't do anything useful. An unknown goal list (not cached, not
+  // yet fetched) keeps the button: the popover fetches it.
+  if (!sourceTable || Number.isNaN(sourceId)) return null;
+  if (goals !== undefined && openGoals.length === 0 && !isOpen) return null;
 
   const linkedGoal = existing
     ? goals?.find((goal) => goal.id === existing.goal_id)
@@ -161,6 +199,14 @@ export function GoalLinkAction({
                 : t("transactions.goalLink.explainerSpending")}
             </p>
 
+            {goals === undefined && (
+              <p className="text-xs text-[var(--text-muted)]">{t("common.loading")}</p>
+            )}
+            {goals !== undefined && openGoals.length === 0 && (
+              <p className="text-sm text-[var(--text-muted)]" data-testid="goal-link-no-goals">
+                {t("transactions.goalLink.noGoals")}
+              </p>
+            )}
             {openGoals.map((goal) => (
               <div
                 key={goal.id}
@@ -204,7 +250,7 @@ export function GoalLinkAction({
               {existing ? (
                 <button
                   onClick={() => unlinkMutation.mutate(existing.id)}
-                  disabled={unlinkMutation.isPending}
+                  disabled={unlinkMutation.isPending || existing.id < 0}
                   className="px-3 py-2 rounded-lg text-sm font-medium text-rose-400 hover:bg-[var(--surface-light)] disabled:opacity-50 transition-colors"
                 >
                   {t("transactions.goalLink.unlink")}

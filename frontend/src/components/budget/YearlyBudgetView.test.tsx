@@ -298,6 +298,45 @@ describe("YearlyBudgetView", () => {
       expect(await screen.findByText(/el al tickets/i)).toBeTruthy();
       expect(screen.getAllByTestId("yearly-closed-notice")[0]).toBeTruthy();
     });
+
+    it("fetches refund badges only once a rule is expanded", async () => {
+      renderAnalysis(
+        analysis([entry(1, "Vacations", 5086.25, false, TRANSACTIONS)]),
+      );
+      await ledgerFigures();
+      expect(pendingRefundsApi.getAll).not.toHaveBeenCalled();
+
+      await expandFirstRow();
+
+      await waitFor(() => expect(pendingRefundsApi.getAll).toHaveBeenCalledTimes(1));
+    });
+  });
+
+  describe("answers on click", () => {
+    it("flips a reopened rule before the server answers", async () => {
+      vi.mocked(budgetApi.setYearlyRuleClosed).mockReturnValue(new Promise(() => {}));
+      renderAnalysis(
+        analysis([entry(7, "Car insurance", 5000, true)], { closed: 1 }),
+      );
+      expect((await screen.findAllByTestId("yearly-closed-badge")).length).toBeGreaterThan(0);
+
+      await userEvent.click((await screen.findAllByTestId("yearly-close-toggle-7"))[0]);
+
+      await waitFor(() => expect(screen.queryAllByTestId("yearly-closed-badge")).toHaveLength(0));
+    });
+
+    it("puts the row back when the write fails", async () => {
+      vi.mocked(budgetApi.setYearlyRuleClosed).mockRejectedValue(new Error("boom"));
+      renderAnalysis(
+        analysis([entry(7, "Car insurance", 5000, true)], { closed: 1 }),
+      );
+      await userEvent.click((await screen.findAllByTestId("yearly-close-toggle-7"))[0]);
+
+      await waitFor(() => expect(budgetApi.setYearlyRuleClosed).toHaveBeenCalled());
+      await waitFor(() =>
+        expect(screen.queryAllByTestId("yearly-closed-badge").length).toBeGreaterThan(0),
+      );
+    });
   });
 
   describe("genuine net refund", () => {

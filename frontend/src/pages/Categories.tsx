@@ -1,6 +1,6 @@
 import { useState, useMemo } from "react";
 import { useTranslation } from "react-i18next";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { Plus, Search } from "lucide-react";
 import { taggingApi } from "../services/api";
 import { Skeleton } from "../components/common/Skeleton";
@@ -11,12 +11,12 @@ import { RulesSection } from "../components/categories/RulesSection";
 import { CategoryCard } from "../components/categories/CategoryCard";
 import { UnusedCategoriesSection } from "../components/categories/UnusedCategoriesSection";
 import { useQueryKeys } from "../hooks/useQueryKeys";
-import { qkPrefix } from "../services/queryKeys";
+import { useCategoryTagCreate } from "../hooks/useCategoryTagCreate";
 
 export function Categories() {
   const { t } = useTranslation();
-  const queryClient = useQueryClient();
   const qk = useQueryKeys();
+  const { createCategory } = useCategoryTagCreate();
 
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
@@ -29,13 +29,14 @@ export function Categories() {
   });
   const { data: usage } = useCategoryUsage();
 
-  const createCategoryMutation = useMutation({
-    mutationFn: (name: string) => taggingApi.createCategory(name),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: qkPrefix.categories });
-      setIsAddCategoryOpen(false);
-    },
-  });
+  // The new category lands in the grid at once; only the categories map,
+  // its usage and the project picker refetch after.
+  const addCategory = (name: string) => {
+    createCategory(name).then(
+      () => setIsAddCategoryOpen(false),
+      () => undefined,
+    );
+  };
 
   const categoriesRecord = categories as Record<string, string[]> | undefined;
 
@@ -174,7 +175,7 @@ export function Categories() {
             className="w-full bg-[var(--surface-base)] border border-[var(--surface-light)] rounded-xl px-4 py-3 outline-none focus:border-[var(--primary)] mb-6 transition-all"
             onKeyDown={(e) => {
               const val = (e.target as HTMLInputElement).value.trim();
-              if (e.key === "Enter" && val) createCategoryMutation.mutate(val);
+              if (e.key === "Enter" && val) addCategory(val);
               if (e.key === "Escape") setIsAddCategoryOpen(false);
             }}
           />
@@ -190,7 +191,7 @@ export function Categories() {
                 const val = (
                   e.currentTarget.parentElement?.previousElementSibling as HTMLInputElement
                 ).value.trim();
-                if (val) createCategoryMutation.mutate(val);
+                if (val) addCategory(val);
               }}
               className="flex-1 py-2 bg-[var(--primary)] rounded-xl text-white font-bold hover:bg-[var(--primary-dark)] transition-all"
             >

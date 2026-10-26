@@ -12,6 +12,7 @@ import { BudgetRuleGrid } from "./BudgetRuleGrid";
 import { normalizeAnalysis } from "./normalizeAnalysis";
 import { budgetLink } from "../../../utils/budgetNavigation";
 import { ForwardArrow } from "../../common/ForwardArrow";
+import { prefetchNeighbourMonths } from "../../budget/prefetchNeighbourMonths";
 
 interface MonthlyBudgetTabProps {
   year: number;
@@ -58,29 +59,26 @@ export const MonthlyBudgetTab: React.FC<MonthlyBudgetTabProps> = ({
     }
   };
 
-  // Prefetch the surrounding 11 months so navigation is instant.
-  useEffect(() => {
-    for (let i = 1; i <= 11; i++) {
-      const d = new Date(currentYear, currentMonth - 1 - i);
-      const prefetchYear = d.getFullYear();
-      const prefetchMonth = d.getMonth() + 1;
-      queryClient.prefetchQuery({
-        queryKey: qk.budget.analysis(prefetchYear, prefetchMonth, false),
-        queryFn: async () => {
-          const res = await budgetApi.getAnalysis(prefetchYear, prefetchMonth, false);
-          return res.data;
-        },
-      });
-    }
-  }, [qk, currentYear, currentMonth, queryClient]);
-
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isPlaceholderData } = useQuery({
     queryKey: qk.budget.analysis(year, month, false),
     queryFn: async () => {
       const res = await budgetApi.getAnalysis(year, month, false);
       return res.data;
     },
   });
+
+  // The neighbours, once the month on screen has arrived — one at a time and
+  // never past the current month, as on the Budget page's Monthly tab.
+  // Prefetching eleven months at once on every mount put twelve heavy reads
+  // in front of the dashboard's own.
+  const viewedMonthReady = !!data && !isPlaceholderData;
+  useEffect(() => {
+    if (!viewedMonthReady) return;
+    return prefetchNeighbourMonths(queryClient, year, month, (y, m) => ({
+      queryKey: qk.budget.analysis(y, m, false),
+      queryFn: () => budgetApi.getAnalysis(y, m, false).then((res) => res.data),
+    }));
+  }, [viewedMonthReady, year, month, queryClient, qk]);
 
   const analysis = useMemo(
     () => (data?.rules ? normalizeAnalysis(data.rules) : undefined),

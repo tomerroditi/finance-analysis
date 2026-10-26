@@ -61,6 +61,39 @@ describe("EarlyRetirement", () => {
     expect(body!.linked).toEqual(["balance"]);
   });
 
+  it("calculates without going through the mutation cache — it writes nothing", async () => {
+    const { queryClient } = renderWithProviders(<EarlyRetirement />);
+    await screen.findByTestId("fire-row-portfolio-1");
+    const writes: unknown[] = [];
+    queryClient.getMutationCache().subscribe((event) => {
+      if (event.type === "added") writes.push(event.mutation.options.mutationFn);
+    });
+
+    fireEvent.click(screen.getByTestId("fire-calculate"));
+
+    expect(await screen.findByTestId("fire-preview-note")).toBeInTheDocument();
+    expect(writes).toEqual([]);
+  });
+
+  it("asks for the projection alongside the plan, not after it", async () => {
+    let planAnswered = false;
+    let projectionAskedBeforePlan = false;
+    server.use(
+      http.get("/api/fire/plan", async () => {
+        await new Promise((resolve) => setTimeout(resolve, 50));
+        planAnswered = true;
+        const { mockFirePlan } = await import("../mocks/handlers");
+        return HttpResponse.json(mockFirePlan);
+      }),
+      http.get("/api/fire/plan/projection", () => {
+        projectionAskedBeforePlan = !planAnswered;
+        return HttpResponse.json(mockFireProjection);
+      }),
+    );
+    await renderPage();
+    expect(projectionAskedBeforePlan).toBe(true);
+  });
+
   it("asks for setup while the plan has no date of birth", async () => {
     server.use(
       http.get("/api/fire/plan/projection", () =>

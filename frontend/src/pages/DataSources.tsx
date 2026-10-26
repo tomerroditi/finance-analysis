@@ -56,6 +56,27 @@ const SCRAPING_PERIODS = [
   { key: "months12", days: 365 },
 ] as const;
 
+/**
+ * Reads a disconnect that keeps the account's data cannot change: no
+ * transaction, category, rule, holding, cash balance or goal moves.
+ */
+const KEEP_DATA_DISCONNECT_SKIP = [
+  qkPrefix.transactions,
+  qkPrefix.pendingRefunds,
+  qkPrefix.categories,
+  qkPrefix.categoryIcons,
+  ["category-usage"],
+  qkPrefix.taggingRules,
+  qkPrefix.liabilities,
+  qkPrefix.cashBalances,
+  qkPrefix.savingsGoals,
+  qkPrefix.backups,
+  qkPrefix.providers,
+  ["rates"],
+  ["updateCheck"],
+  ["versionInfo"],
+];
+
 export function DataSources() {
   const { t, i18n: i18nInstance } = useTranslation();
   const isRtl = i18nInstance.language === "he";
@@ -99,18 +120,30 @@ export function DataSources() {
     queryFn: () => credentialsApi.getAccounts().then((res) => res.data),
   });
 
+  // Only the add-account wizard lists providers.
   const { data: providers } = useQuery({
     queryKey: qk.credentials.providers(),
     queryFn: () => credentialsApi.getProviders().then((res) => res.data),
+    enabled: isAddOpen,
   });
 
-  const fetchFieldsMutation = useMutation({
-    mutationFn: (provider: string) => credentialsApi.getFields(provider),
-    onSuccess: (res) => {
-      setFormFields(res.data.fields);
-      setStep(3);
-    },
-  });
+  // A provider's login fields — a read, so a cached query rather than a
+  // mutation (which swept the whole app on step 2 of adding an account).
+  // The "credentials" head keeps it out of the persisted cache.
+  const fetchFields = (provider: string) => {
+    queryClient
+      .fetchQuery({
+        queryKey: ["credentials-fields", provider],
+        queryFn: () => credentialsApi.getFields(provider).then((res) => res.data.fields),
+      })
+      .then(
+        (fieldNames) => {
+          setFormFields(fieldNames);
+          setStep(3);
+        },
+        (err) => console.error("Failed to fetch provider fields", err),
+      );
+  };
 
   const resetForm = () => {
     setIsAddOpen(false);
@@ -142,10 +175,16 @@ export function DataSources() {
         account_name: accountName,
         credentials: requiresIntlPhone ? { ...fields, phoneNumber: normalizedPhone } : fields,
       }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: qkPrefix.credentialsAccounts });
-      resetForm();
-    },
+    // A new account changes the account list, the onboarding check's
+    // `has_credentials` and the scrape list (which lists every account, so
+    // the budget's freshness badge sees a never-synced one) — nothing else
+    // until it is scraped.
+    onMutate: () => ({
+      refresh: {
+        only: [qkPrefix.credentialsAccounts, ["onboardingStatus"], qkPrefix.lastScrapes],
+      },
+    }),
+    onSuccess: () => resetForm(),
   });
 
   const deleteMutation = useMutation({
@@ -159,20 +198,15 @@ export function DataSources() {
       credentialsApi
         .delete(acc.service, acc.provider, acc.account_name, { deleteData })
         .then((res) => res.data),
-    onSuccess: (result, { deleteData }) => {
-      queryClient.invalidateQueries({ queryKey: qkPrefix.credentialsAccounts });
-      if (deleteData) {
-        // Wiping an account's data changes far more than the accounts list:
-        // its transactions (plus splits/refunds/notes/overrides), its bank
-        // balance (and the prior wealth derived from it) and its scrape
-        // history are all gone. Narrow prefixes only — no blanket sweep.
-        queryClient.invalidateQueries({ queryKey: qkPrefix.transactions });
-        queryClient.invalidateQueries({ queryKey: qkPrefix.pendingRefunds });
-        queryClient.invalidateQueries({ queryKey: qkPrefix.budget });
-        queryClient.invalidateQueries({ queryKey: qkPrefix.analytics });
-        queryClient.invalidateQueries({ queryKey: qkPrefix.bankBalances });
-        queryClient.invalidateQueries({ queryKey: qkPrefix.lastScrapes });
-      }
+    // Disconnecting while keeping the data leaves every transaction, balance
+    // and goal as it was — but the account leaves the scrape list, and with
+    // it the freshness each budget and forecast read judges the month by.
+    // Wiping the data as well reaches nearly everything (its transactions
+    // and all they feed, its balance, its scrape history), so it names no
+    // limit and the mutation cache refreshes the whole app.
+    onMutate: ({ deleteData }) =>
+      deleteData ? undefined : { refresh: { skip: KEEP_DATA_DISCONNECT_SKIP } },
+    onSuccess: (result) => {
       setDeleteTarget(null);
       const deleted = result?.transactions_deleted ?? 0;
       if (deleted > 0) {
@@ -650,7 +684,7 @@ export function DataSources() {
                         key={p}
                         onClick={() => {
                           setSelectedProvider(p);
-                          fetchFieldsMutation.mutate(p);
+                          fetchFields(p);
                         }}
                         className="p-3 rounded-xl bg-[var(--surface-base)] border border-[var(--surface-light)] hover:border-[var(--primary)]/50 hover:bg-[var(--primary)]/5 transition-all flex flex-col items-center gap-2"
                       >

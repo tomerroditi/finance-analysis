@@ -64,8 +64,9 @@ export function SettingsPopup({
 
   const createBackupMutation = useMutation({
     mutationFn: () => backupApi.create(),
-    onSuccess: () =>
-      queryClient.invalidateQueries({ queryKey: qkPrefix.backups }),
+    // A backup changes the backup list and nothing else. (Returning the
+    // invalidation from onSuccess made TanStack await the refetch.)
+    onMutate: () => ({ refresh: { only: [qkPrefix.backups] } }),
     onError: () => notify.error(t("settings.backupFailed")),
   });
 

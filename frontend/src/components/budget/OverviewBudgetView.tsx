@@ -17,7 +17,8 @@ import { RuleSparkline } from "./RuleSparkline";
 import { CommitmentBar } from "./overview/CommitmentBar";
 import { AcrossAllThree } from "./overview/AcrossAllThree";
 import { LongRules } from "./overview/LongRules";
-import { percentOf, rankRules } from "./overview/ruleMath";
+import { monthlyAlerts, percentOf, rankRules, type MonthlyAlert } from "./overview/ruleMath";
+import { isTotalBudget, uncategorizedSummary } from "./monthTransactions";
 
 /** Months in the budget-vs-actual figure. Closed months compare cleanly. */
 const TREND_MONTHS = 12;
@@ -32,14 +33,6 @@ interface AttentionItem {
   percent: number;
   /** Signed: positive is headroom left, negative is the overspend. */
   remaining: number;
-}
-
-interface MonthlyAlert {
-  rule_id: number;
-  name: string;
-  amount: number;
-  spent: number;
-  percentage: number;
 }
 
 function Kpi({
@@ -144,18 +137,12 @@ export const OverviewBudgetView: React.FC<OverviewBudgetViewProps> = ({
   });
 
   // Warm from the other tabs' prefetch in practice — the Overview only needs
-  // its leftovers (unbudgeted, uncategorized, refunds, goals), which ride along
-  // on the month analysis rather than being duplicated into a second endpoint.
+  // its leftovers (unbudgeted, uncategorized, refunds, goals) and the monthly
+  // rules' fill, which ride along on the month analysis rather than being
+  // asked of a second endpoint.
   const { data: analysis } = useQuery({
     queryKey: qk.budget.analysis(year, month, false),
     queryFn: () => budgetApi.getAnalysis(year, month, false).then((res) => res.data),
-    placeholderData: keepPreviousData,
-  });
-
-  const { data: alerts } = useQuery({
-    queryKey: qk.budget.alertsMonth(year, month, 0.9),
-    queryFn: () =>
-      budgetApi.getMonthAlerts(year, month, 0.9).then((res) => res.data),
     placeholderData: keepPreviousData,
   });
 
@@ -263,10 +250,10 @@ export const OverviewBudgetView: React.FC<OverviewBudgetViewProps> = ({
   const finalOrProjected = projected ?? spent;
   const delta = budget - finalOrProjected;
 
-  // Monthly alerts come from the server (they know each rule's tags); the long
-  // rules are already in the overview payload, so their trouble is derived
-  // here rather than fetched twice.
-  const monthlyAttention: AttentionItem[] = (alerts?.alerts ?? []).map(
+  // Monthly trouble is read off the month's analysis (what the server's
+  // `/budget/alerts` computes, from the same rule view); the long rules are
+  // already in the overview payload. Neither is fetched twice.
+  const monthlyAttention: AttentionItem[] = monthlyAlerts(analysis?.rules ?? [], HOT / 100).map(
     (alert: MonthlyAlert) => ({
       key: `monthly-${alert.rule_id}`,
       name: alert.name,
@@ -290,27 +277,19 @@ export const OverviewBudgetView: React.FC<OverviewBudgetViewProps> = ({
   const overCount = attention.filter((item) => item.percent > 100).length;
   const hotCount = attention.length - overCount;
 
-  const totalRow = (analysis?.rules ?? []).find(
-    (item: { rule: { name: string } }) => item.rule.name === "Total Budget",
-  );
   const otherRow = (analysis?.rules ?? []).find(
     (item: { rule: { name: string } }) => item.rule.name === "Other Expenses",
   );
-  const monthTransactions: { category?: string | null; amount?: number }[] =
-    totalRow?.data ?? [];
-  const uncategorized = monthTransactions.filter((txn) => !txn.category);
-  const uncategorizedAmount = uncategorized.reduce(
-    (sum, txn) => sum + Math.abs(txn.amount ?? 0),
-    0,
-  );
+  const { count: uncategorizedCount, amount: uncategorizedAmount } =
+    uncategorizedSummary(analysis);
   const refunds = analysis?.pending_refunds;
   const goals: SavingsGoalMonth | undefined = analysis?.savings_goals;
   const intoGoals = (goals?.goals ?? []).reduce((sum, row) => sum + row.added + row.income, 0);
 
   const ruleCount =
     (analysis?.rules ?? []).filter(
-      (item: { rule: { name: string } }) =>
-        item.rule.name !== "Total Budget" && item.rule.name !== "Other Expenses",
+      (item: { rule: { name: string; category: string } }) =>
+        !isTotalBudget(item.rule) && item.rule.name !== "Other Expenses",
     ).length + longRules.length;
 
   return (
@@ -429,9 +408,9 @@ export const OverviewBudgetView: React.FC<OverviewBudgetViewProps> = ({
               />
               <LooseEnd
                 icon={HelpCircle}
-                figure={String(uncategorized.length)}
+                figure={String(uncategorizedCount)}
                 caption={`${t("budget.overview.uncategorized")} · ${t("budget.overview.notCounted", { amount: formatCurrency(uncategorizedAmount) })}`}
-                tone={uncategorized.length > 0 ? "warn" : undefined}
+                tone={uncategorizedCount > 0 ? "warn" : undefined}
               />
               <LooseEnd
                 icon={Undo2}

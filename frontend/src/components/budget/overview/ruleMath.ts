@@ -40,3 +40,46 @@ export function rankRules(
 ): BudgetLongRule[] {
   return [...rules].sort((a, b) => percentOf(b) - percentOf(a));
 }
+
+/** A monthly rule at or past the attention threshold. */
+export interface MonthlyAlert {
+  rule_id: number | string;
+  name: string;
+  amount: number;
+  spent: number;
+  percentage: number;
+}
+
+interface MonthlyRuleEntry {
+  rule: { id: number | string; name: string; category: string; amount: number };
+  current_amount: number;
+}
+
+/**
+ * The month's monthly rules at or past `threshold` of their budget, fullest
+ * first — `MonthlyBudgetService.get_alerts`, read off the month's analysis
+ * the Overview already holds instead of asking the server a second time.
+ * Total Budget (a roll-up) and Other Expenses (no budget of its own) are
+ * left out, as is any rule with no positive budget.
+ */
+export function monthlyAlerts(
+  entries: readonly MonthlyRuleEntry[],
+  threshold: number,
+): MonthlyAlert[] {
+  return entries
+    .filter(
+      (entry) =>
+        entry.rule.category !== "Total Budget" &&
+        entry.rule.category !== "Other Expenses" &&
+        (entry.rule.amount ?? 0) > 0,
+    )
+    .map((entry) => ({
+      rule_id: entry.rule.id,
+      name: entry.rule.name,
+      amount: entry.rule.amount,
+      spent: entry.current_amount || 0,
+      percentage: (entry.current_amount || 0) / entry.rule.amount,
+    }))
+    .filter((alert) => alert.percentage >= threshold)
+    .sort((a, b) => b.percentage - a.percentage);
+}

@@ -105,9 +105,15 @@ test.describe("Closing a yearly budget rule", () => {
     const confirmDialog = page.getByRole("alertdialog");
     await expect(confirmDialog).toBeVisible();
     await expect(confirmDialog).toContainText(ruleName);
+    // The row flips on click; wait for the write itself before reading the
+    // server back.
+    const closed = page.waitForResponse(
+      (r) => r.request().method() === "PUT" && r.url().includes("/budget/yearly/rules/") && r.ok(),
+    );
     await confirmDialog
       .getByRole("button", { name: /^Close rule$/i })
       .click();
+    await closed;
 
     // The year's own tab keeps the rule, now marked, and the action
     // turns into a reopen.

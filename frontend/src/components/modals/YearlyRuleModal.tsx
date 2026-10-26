@@ -1,13 +1,13 @@
 import type React from "react";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation } from "@tanstack/react-query";
 import { Modal } from "../common/Modal";
 import { MultiSelect } from "../common/MultiSelect";
 import { SelectDropdown } from "../common/SelectDropdown";
 import { useCategories } from "../../hooks/useCategories";
 import { budgetApi, type YearlyAnalysis } from "../../services/api";
-import { useQueryKeys } from "../../hooks/useQueryKeys";
+import { yearlyRulePlan } from "../budget/budgetPlans";
 
 interface Props {
   isOpen: boolean;
@@ -25,9 +25,8 @@ interface Props {
  */
 export const YearlyRuleModal: React.FC<Props> = ({ isOpen, onClose, year, editRule }) => {
   const { t } = useTranslation();
-  const queryClient = useQueryClient();
-  const qk = useQueryKeys();
-  const { data: categoriesMap } = useCategories();
+  // Mounted closed beside every yearly view, so only fetched once opened.
+  const { data: categoriesMap } = useCategories({ enabled: isOpen });
 
   const [name, setName] = useState("");
   const [category, setCategory] = useState("");
@@ -79,10 +78,9 @@ export const YearlyRuleModal: React.FC<Props> = ({ isOpen, onClose, year, editRu
         });
       }
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: qk.budget.yearly(year) });
-      onClose();
-    },
+    // This year's tab and the Overview refetch first, along the plan.
+    onMutate: () => ({ refresh: yearlyRulePlan(year) }),
+    onSuccess: () => onClose(),
     onError: (err: unknown) => {
       const detail =
         (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail ??

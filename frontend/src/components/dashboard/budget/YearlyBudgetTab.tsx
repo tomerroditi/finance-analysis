@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router";
 import { ChevronLeft, ChevronRight, Plus } from "lucide-react";
 import { budgetApi, type YearlyAnalysis } from "../../../services/api";
@@ -9,7 +9,7 @@ import { Skeleton } from "../../common/Skeleton";
 import { YearlyRuleModal } from "../../modals/YearlyRuleModal";
 import { useConfirm, useNotify } from "../../../context/DialogContext";
 import { useQueryKeys } from "../../../hooks/useQueryKeys";
-import { qkPrefix } from "../../../services/queryKeys";
+import { useYearlyRuleMutations } from "../../budget/useYearlyRuleMutations";
 import { BudgetRuleGrid } from "./BudgetRuleGrid";
 import { RuleRowAction } from "./RuleRowAction";
 import type { BudgetRule } from "./types";
@@ -32,7 +32,6 @@ export const YearlyBudgetTab: React.FC<YearlyBudgetTabProps> = ({
   const confirm = useConfirm();
   const notify = useNotify();
   const qk = useQueryKeys();
-  const queryClient = useQueryClient();
   const [editRule, setEditRule] = useState<
     YearlyAnalysis["rules"][number]["rule"] | null
   >(null);
@@ -42,24 +41,11 @@ export const YearlyBudgetTab: React.FC<YearlyBudgetTabProps> = ({
     queryFn: () => budgetApi.getYearlyAnalysis(year).then((r) => r.data as YearlyAnalysis),
   });
 
-  // The whole budget prefix, not just this year's key: the card's own
-  // Overview tab builds its rule list from these rules and their closed
-  // flag, so it has to refetch too.
-  const invalidateBudget = () =>
-    queryClient.invalidateQueries({ queryKey: qkPrefix.budget });
-
-  const closedMutation = useMutation({
-    mutationFn: ({ id, closed }: { id: number; closed: boolean }) =>
-      budgetApi.setYearlyRuleClosed(id, closed),
-    onSuccess: invalidateBudget,
-    onError: () => notify.error(t("budget.yearly.closeFailed")),
-  });
-
-  const deleteMutation = useMutation({
-    mutationFn: (id: number) => budgetApi.deleteYearlyRule(id),
-    onSuccess: invalidateBudget,
-    onError: () => notify.error(t("budget.yearly.deleteFailed")),
-  });
+  // The row flips or goes on click; the card's own Overview tab, built from
+  // these rules and their closed flag, refetches first after the write.
+  const { closedMutation, deleteMutation } = useYearlyRuleMutations(year, (kind) =>
+    notify.error(t(kind === "closed" ? "budget.yearly.closeFailed" : "budget.yearly.deleteFailed")),
+  );
 
   // Reopening is a plain undo, so only closing asks first — same as the
   // Budget page's yearly tab.

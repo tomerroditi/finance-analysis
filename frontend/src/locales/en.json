@@ -712,7 +712,8 @@
       "asUtilization": "Paid from",
       "linkedTo": "Linked to {{name}}",
       "unlink": "Remove link",
-      "short": "Goal"
+      "short": "Goal",
+      "noGoals": "You have no open savings goals yet. Add one from the dashboard's Savings goals card."
     },
     "details": {
       "provider": "Provider",

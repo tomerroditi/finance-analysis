@@ -7,7 +7,7 @@ import {
   type SavingsGoal,
   type SavingsGoalInput,
 } from "../../services/api";
-import { qkPrefix } from "../../services/queryKeys";
+import { savingsGoalPlan } from "../budget/budgetPlans";
 import { useQueryKeys } from "../../hooks/useQueryKeys";
 import { Modal } from "../common/Modal";
 import { GoalAutoLinkField } from "./GoalAutoLinkField";
@@ -58,9 +58,11 @@ export function GoalEditorModal({
       goal
         ? await savingsGoalsApi.update(goal.id, payload)
         : await savingsGoalsApi.create(payload),
+    // The reply is the goal list; free cash, the month and the budget month
+    // its rules claim into refresh after, along the plan.
+    onMutate: () => ({ refresh: savingsGoalPlan() }),
     onSuccess: (res) => {
       queryClient.setQueryData(qk.savingsGoals.all(), res.data);
-      queryClient.invalidateQueries({ queryKey: qkPrefix.savingsGoals });
       onClose();
     },
   });

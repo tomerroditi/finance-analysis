@@ -1828,6 +1828,81 @@ class TestValidateMonthlyBudgetHierarchyAndCap:
         assert msg is None
 
 
+class TestMonthlyAnalysisTotalBudgetRows:
+    """The analysis response lists each pool row once, under its own rule."""
+
+    @staticmethod
+    def _rules(service: MonthlyBudgetService, *, with_food: bool = True) -> None:
+        """Insert a January 2024 Total Budget, and a Food rule unless told not to."""
+        service.rules.insert(
+            name=TOTAL_BUDGET, amount=10000.0, category=TOTAL_BUDGET,
+            tags=[ALL_TAGS], month=1, year=2024, kind="monthly",
+        )
+        if with_food:
+            service.rules.insert(
+                name="Food", amount=2000.0, category="Food",
+                tags=[ALL_TAGS], month=1, year=2024, kind="monthly",
+            )
+
+    def test_total_budget_data_is_empty_when_other_rules_list_the_pool(
+        self, db_session, seed_base_transactions, seed_untagged_transactions
+    ):
+        """Total Budget sends no rows; the other entries hold every pool row once."""
+        service = MonthlyBudgetService(db_session)
+        self._rules(service)
+        full = service.get_monthly_budget_view(2024, 1)
+        pool = {(r["source"], r["unique_id"]) for r in full[0]["data"]}
+
+        analysis = service.get_monthly_analysis(2024, 1)
+
+        total = next(e for e in analysis["rules"] if e["rule"][NAME] == TOTAL_BUDGET)
+        assert total["data"] == []
+        assert total["current_amount"] == full[0]["current_amount"]
+        listed = [
+            (r["source"], r["unique_id"])
+            for e in analysis["rules"]
+            if e is not total
+            for r in e["data"]
+        ]
+        assert len(listed) == len(set(listed))
+        assert set(listed) == pool
+
+    def test_total_only_month_keeps_its_rows(self, db_session, seed_untagged_transactions):
+        """With nothing else to list them, the Total Budget keeps the pool's rows."""
+        service = MonthlyBudgetService(db_session)
+        self._rules(service, with_food=False)
+
+        analysis = service.get_monthly_analysis(2024, 1)
+
+        assert len(analysis["rules"]) == 1
+        assert len(analysis["rules"][0]["data"]) == 3
+
+    def test_uncategorized_fields_count_the_pool_rows_without_a_category(
+        self, db_session, seed_base_transactions, seed_untagged_transactions
+    ):
+        """Count and gross absolute sum of the month's uncategorized pool rows."""
+        service = MonthlyBudgetService(db_session)
+        self._rules(service)
+        pool = service.get_monthly_budget_view(2024, 1)[0]["data"]
+        expected = [r for r in pool if pd.isna(r.get("category")) or not r.get("category")]
+
+        analysis = service.get_monthly_analysis(2024, 1)
+
+        assert analysis["uncategorized_count"] == len(expected) >= 3
+        assert analysis["uncategorized_amount"] == pytest.approx(
+            sum(abs(r["amount"]) for r in expected)
+        )
+
+    def test_uncategorized_fields_are_zero_without_a_total_budget(
+        self, db_session, seed_untagged_transactions
+    ):
+        """A month with no rules reports nothing uncategorized, as before."""
+        analysis = MonthlyBudgetService(db_session).get_monthly_analysis(2024, 1)
+
+        assert analysis["uncategorized_count"] == 0
+        assert analysis["uncategorized_amount"] == 0.0
+
+
 class TestGetMonthlyAnalysisAutoFill:
     """Tests for the auto-fill of empty months on get_monthly_analysis."""
 

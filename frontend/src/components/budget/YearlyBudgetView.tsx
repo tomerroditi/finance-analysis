@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { useTranslation } from "react-i18next";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { AlertTriangle, Archive, X, Plus } from "lucide-react";
 import {
   budgetApi,
@@ -13,7 +13,7 @@ import { YearlyRuleModal } from "../modals/YearlyRuleModal";
 import { TransactionCollapsibleList } from "./TransactionCollapsibleList";
 import { useConfirm, useNotify } from "../../context/DialogContext";
 import { useQueryKeys } from "../../hooks/useQueryKeys";
-import { qkPrefix } from "../../services/queryKeys";
+import { useYearlyRuleMutations } from "./useYearlyRuleMutations";
 import { BAR_CONTROL, BudgetCommandBar, PeriodNav } from "./BudgetCommandBar";
 import { BudgetStatusBand, type BandStat } from "./BudgetStatusBand";
 import { BudgetNoticeLine } from "./BudgetNoticeLine";
@@ -40,7 +40,6 @@ export const YearlyBudgetView: React.FC<YearlyBudgetViewProps> = ({
   const { t } = useTranslation();
   const confirm = useConfirm();
   const notify = useNotify();
-  const queryClient = useQueryClient();
   const qk = useQueryKeys();
   const currentYear = new Date().getFullYear();
   const [year, setYear] = useState(initialYear ?? currentYear);
@@ -64,12 +63,13 @@ export const YearlyBudgetView: React.FC<YearlyBudgetViewProps> = ({
     queryFn: () => budgetApi.getYearlyAnalysis(year).then((r) => r.data as YearlyAnalysis),
   });
 
-  // Refund badges for the transactions a rule expands to show. Shares
-  // its cache entry with the monthly and project views, so opening the tab
-  // after either of them costs no request.
+  // Refund badges for the transactions a rule expands to show — fetched
+  // once a rule is opened. Shares its cache entry with the monthly and
+  // project views, so opening the tab after either of them costs no request.
   const { data: pendingRefunds } = useQuery({
     queryKey: qk.pendingRefunds.all(),
     queryFn: () => pendingRefundsApi.getAll().then((res) => res.data),
+    enabled: expandedRuleId !== null,
   });
 
   const pendingRefundsMap = useMemo(() => {
@@ -96,21 +96,9 @@ export const YearlyBudgetView: React.FC<YearlyBudgetViewProps> = ({
     return map;
   }, [pendingRefunds]);
 
-  const deleteMutation = useMutation({
-    mutationFn: (id: number) => budgetApi.deleteYearlyRule(id),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: qk.budget.yearly(year) }),
-  });
-
-  const closedMutation = useMutation({
-    mutationFn: ({ id, closed }: { id: number; closed: boolean }) =>
-      budgetApi.setYearlyRuleClosed(id, closed),
-    onSuccess: () => {
-      // The whole budget prefix, not just this year's key: the Overview's
-      // rule list is built from this flag, so it has to refetch too.
-      queryClient.invalidateQueries({ queryKey: qkPrefix.budget });
-    },
-    onError: () => notify.error(t("budget.yearly.closeFailed")),
-  });
+  const { deleteMutation, closedMutation } = useYearlyRuleMutations(year, (kind) =>
+    notify.error(t(kind === "closed" ? "budget.yearly.closeFailed" : "budget.yearly.deleteFailed")),
+  );
 
   // Reopening is a plain undo, so only closing asks first.
   const toggleClosed = async (rule: { id: number; name: string }, closed: boolean) => {

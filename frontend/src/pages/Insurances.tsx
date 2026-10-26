@@ -213,12 +213,31 @@ function AccountCardFull({
   const renameMutation = useMutation({
     mutationFn: (customName: string | null) =>
       insuranceAccountsApi.rename(account.policy_id, customName),
+    // The name shows at once. Only what carries it refreshes after: the
+    // accounts, the synced investment (`insurance_sync.py` copies it) and the
+    // retirement plan, whose fund rows are labelled with it.
+    onMutate: async (customName) => {
+      await queryClient.cancelQueries({ queryKey: qkPrefix.insuranceAccounts });
+      const before = queryClient.getQueriesData<unknown>({ queryKey: qkPrefix.insuranceAccounts });
+      for (const [key, data] of before) {
+        if (!Array.isArray(data)) continue;
+        queryClient.setQueryData(
+          key,
+          data.map((row: { policy_id?: string }) =>
+            row.policy_id === account.policy_id ? { ...row, custom_name: customName } : row,
+          ),
+        );
+      }
+      return {
+        refresh: { only: [qkPrefix.insuranceAccounts, qkPrefix.investments, qkPrefix.fire] },
+        restore: () => before.forEach(([key, data]) => queryClient.setQueryData(key, data)),
+      };
+    },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: qkPrefix.insuranceAccounts });
-      queryClient.invalidateQueries({ queryKey: qkPrefix.investments });
       setIsEditingName(false);
       setDraftName("");
     },
+    onError: (_error, _variables, context) => context?.restore(),
   });
 
   const displayName = account.custom_name || account.account_name;
