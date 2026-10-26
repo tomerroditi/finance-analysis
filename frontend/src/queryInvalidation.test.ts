@@ -251,6 +251,69 @@ describe("the app-wide mutation cache", () => {
     stops.forEach((stop) => stop());
   });
 
+  it("refreshes only what a write says it can reach", async () => {
+    const client = makeClient();
+    const fetched: string[] = [];
+    const watch = (name: string) => {
+      const observer = new QueryObserver(client, {
+        queryKey: [name],
+        queryFn: async () => {
+          fetched.push(name);
+          return name;
+        },
+      });
+      return observer.subscribe(() => {});
+    };
+    const stops = [watch("insights"), watch("trend"), watch("budget")];
+    await vi.waitFor(() => expect(fetched).toHaveLength(3));
+    fetched.length = 0;
+
+    await client
+      .getMutationCache()
+      .build(client, {
+        mutationFn: async () => null,
+        onMutate: () => ({ refresh: { only: [["insights"]] } }),
+      })
+      .execute(undefined);
+
+    await vi.waitFor(() => expect(fetched).toEqual(["insights"]), { timeout: 2000 });
+    await flush(SWEEP_MS * 4);
+    expect(fetched).toEqual(["insights"]);
+    expect(client.getQueryState(["trend"])?.isInvalidated).toBe(false);
+
+    // A write with no limit in the same burst widens it back to everything.
+    fetched.length = 0;
+    const mutations = client.getMutationCache();
+    await Promise.all([
+      mutations
+        .build(client, { mutationFn: async () => null, onMutate: () => ({ refresh: { only: [] } }) })
+        .execute(undefined),
+      mutations.build(client, { mutationFn: async () => null }).execute(undefined),
+    ]);
+    await vi.waitFor(() => expect(new Set(fetched)).toEqual(new Set(["insights", "trend", "budget"])), {
+      timeout: 2000,
+    });
+    stops.forEach((stop) => stop());
+  });
+
+  it("refreshes nothing after a write whose plan reaches nothing", async () => {
+    const client = makeClient();
+    let fetches = 0;
+    const observer = new QueryObserver(client, { queryKey: ["any"], queryFn: async () => ++fetches });
+    const unsubscribe = observer.subscribe(() => {});
+    await vi.waitFor(() => expect(fetches).toBe(1));
+
+    await client
+      .getMutationCache()
+      .build(client, { mutationFn: async () => null, onMutate: () => ({ refresh: { only: [] } }) })
+      .execute(undefined);
+
+    await flush(SWEEP_MS * 6);
+    expect(fetches).toBe(1);
+    expect(client.getQueryState(["any"])?.isInvalidated).toBe(false);
+    unsubscribe();
+  });
+
   it("refreshes everything after a failed write, whatever it planned", async () => {
     const client = makeClient();
     let fetches = 0;

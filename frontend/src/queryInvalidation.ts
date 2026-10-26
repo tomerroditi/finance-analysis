@@ -44,6 +44,9 @@ export function createInvalidationSweep(
   // What every write in the burst agrees it cannot have changed: a read is
   // left alone only if no write in the batch could have touched it.
   let skip: QueryKey[] | null = null;
+  // The union of what the burst's writes say is all they reach; `null` once
+  // any write in it names no limit, which means everything.
+  let only: QueryKey[] | null | undefined;
 
   return function schedule(plan: RefreshPlan = {}) {
     first = [...first, ...(plan.first ?? [])];
@@ -52,13 +55,21 @@ export function createInvalidationSweep(
       skip === null
         ? [...planSkip]
         : skip.filter((key) => planSkip.some((other) => hashKey(other) === hashKey(key)));
+    only = plan.only === undefined || only === null ? null : [...(only ?? []), ...plan.only];
     if (timer !== undefined) clearTimeout(timer);
     timer = setTimeout(() => {
       timer = undefined;
-      const batch = { first, skip: skip ?? [] };
+      const batch = { first, skip: skip ?? [], only: only ?? null };
       first = [];
       skip = null;
-      void refreshInOrder(client, batch.first, {}, batch.skip);
+      only = undefined;
+      if (batch.only !== null && batch.only.length === 0 && batch.first.length === 0) return;
+      const limit = batch.only;
+      const rest: InvalidateQueryFilters =
+        limit === null
+          ? {}
+          : { predicate: (query) => limit.some((queryKey) => matchQuery({ queryKey }, query)) };
+      void refreshInOrder(client, batch.first, rest, batch.skip);
     }, delayMs);
   };
 }
@@ -116,13 +127,22 @@ export async function refreshInOrder(
  *
  * Without one, a write refreshes everything at once — the safe default. A
  * write that knows its reach names the reads its screen waits on (`first`,
- * fetched the moment it succeeds) and the reads it cannot have changed
- * (`skip`, left alone). A failed write ignores its plan and refreshes
- * everything: it may have half-landed.
+ * fetched the moment it succeeds), the reads it cannot have changed
+ * (`skip`, left alone) or, when shorter, the only reads it can change
+ * (`only`). A failed write ignores its plan and refreshes everything: it may
+ * have half-landed.
  */
 export interface RefreshPlan {
   first?: readonly QueryKey[];
   skip?: readonly QueryKey[];
+  /**
+   * Everything the write can reach, when that is a short list: only these
+   * (and `first`) are refreshed. `[]` refreshes nothing beyond `first` — for
+   * a write that changes no other read, or a call that writes nothing at all
+   * (better kept out of `useMutation` altogether). Omitted means anything
+   * not in `skip`.
+   */
+  only?: readonly QueryKey[];
 }
 
 const planOf = (onMutateResult: unknown): RefreshPlan => {
