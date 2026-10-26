@@ -1,3 +1,9 @@
+## v2.3.0 (2026-10-26)
+
+### Feat
+
+- **budget**: list budget transactions with the dashboard feed (#426)
+
 ## v2.2.1 (2026-10-26)
 
 ### Fix
