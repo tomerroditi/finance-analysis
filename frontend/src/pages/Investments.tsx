@@ -206,7 +206,7 @@ export function Investments() {
     queryFn: () => investmentsApi.getAll(true).then((res) => res.data),
   });
 
-  const { data: categories } = useCategories();
+  const { data: categories, isPending: isCategoriesLoading } = useCategories();
   const { createTag } = useCategoryTagCreate();
 
   const { data: currentRates } = useQuery({
@@ -333,7 +333,7 @@ export function Investments() {
 
   const getAllocationData = (invId: number) => allocationById.get(invId);
 
-  if (isLoading)
+  if (isLoading || isCategoriesLoading)
     return (
       <div className="space-y-1.5">
         <Skeleton variant="text" lines={2} className="w-48 md:w-64" />
