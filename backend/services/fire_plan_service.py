@@ -172,6 +172,7 @@ class FirePlanService:
         self.insurance = InsuranceAccountService(db)
         self.investments = InvestmentsService(db)
         self.liabilities = LiabilitiesService(db)
+        self._open: list[dict[str, Any]] | None = None
 
     # -- public API -----------------------------------------------------------
 
@@ -284,7 +285,10 @@ class FirePlanService:
         ]
 
     def _open_investments(self) -> list[dict[str, Any]]:
-        return self.investments.get_all_investments(include_closed=False)
+        """Return the open investments, read once per service (four sections walk them)."""
+        if self._open is None:
+            self._open = self.investments.get_all_investments(include_closed=False)
+        return self._open
 
     def _portfolio_rows(self) -> list[TrackedRow]:
         """One row per open investment that is not a fund the plan models apart."""

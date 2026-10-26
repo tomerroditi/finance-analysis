@@ -178,6 +178,25 @@ def _lookup(
     return False, None
 
 
+def is_cacheable(db: Session) -> bool:
+    """Whether :func:`cached` would serve and store values for this session.
+
+    Parameters
+    ----------
+    db : Session
+        The session to check.
+
+    Returns
+    -------
+    bool
+        False for an in-memory database or a session with pending changes —
+        there :func:`cached` just calls ``compute()``. A caller that would
+        build something broad to answer something narrow (every holding's
+        inputs to value one) can check this and take the narrow path instead.
+    """
+    return bool(_db_path(db)) and not _has_pending_state(db)
+
+
 def cached[T](db: Session, key: tuple[Hashable, ...], compute: Callable[[], T]) -> T:
     """Return ``compute()``'s result, reusing it across requests when valid.
 

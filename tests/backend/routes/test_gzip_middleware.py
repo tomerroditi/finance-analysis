@@ -38,3 +38,12 @@ class TestGZipMiddleware:
 
         assert response.status_code == 200
         assert "content-encoding" not in response.headers
+
+    def test_compresses_at_level_six(self):
+        """Level 9 cost ~3x the time of 6 on the transactions body for ~8% less."""
+        from starlette.middleware.gzip import GZipMiddleware
+
+        from backend.main import app
+
+        gzip = next(m for m in app.user_middleware if m.cls is GZipMiddleware)
+        assert gzip.kwargs["compresslevel"] == 6

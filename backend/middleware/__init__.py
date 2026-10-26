@@ -37,8 +37,10 @@ def register_middleware(app: FastAPI) -> None:
     # 1233 KB -> 111 KB). Registered first, so it is the innermost layer and
     # compresses what the routes and static files return; the outer layers
     # only add headers or short-circuit with tiny error bodies. 500 bytes is
-    # the usual floor below which framing costs more than it saves.
-    app.add_middleware(GZipMiddleware, minimum_size=500)
+    # the usual floor below which framing costs more than it saves. Level 6,
+    # not the default 9: on the 8.5 MB transactions body 9 took ~206 ms
+    # against ~75 ms for 6, for output only ~8% smaller.
+    app.add_middleware(GZipMiddleware, minimum_size=500, compresslevel=6)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=security.CORS_ORIGINS,
