@@ -54,7 +54,8 @@ class SavingsGoalService(
         self.repo = SavingsGoalRepository(db)
         self.transactions_service = TransactionsService(db)
         # Building the context scans every transaction, and a single request
-        # reads it more than once. The service is constructed per request, so
-        # these caches are request-scoped; every write drops them.
+        # reads it more than once. These hold this instance's copies (the
+        # context itself is shared across requests through ``data_cache``);
+        # every write drops them.
         self._context_cache: dict[str, Any] | None = None
         self._ledger_cache: Ledger | None = None

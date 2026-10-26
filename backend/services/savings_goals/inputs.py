@@ -28,6 +28,7 @@ from backend.services.savings_goals.claims import (
     rule_mask,
 )
 from backend.services.transaction_views import INVESTMENT, TransactionViews
+from backend.utils import data_cache
 
 # Rows synthesised from prior-wealth balances are opening capital, not income.
 # Counting them would hand one month an enormous phantom surplus.
@@ -52,11 +53,7 @@ class InputsMixin:
 
     def _goals_in_order(self) -> list[SavingsGoal]:
         """Return every goal (active and closed) in list order."""
-        df = self.repo.get_all()
-        if df.empty:
-            return []
-        ids = df.sort_values(["priority", "id"])["id"].tolist()
-        return [self.repo.get(int(i)) for i in ids]
+        return self.repo.get_all_ordered()
 
     def _opening_liquid(self) -> float:
         """Return the bank and cash money that predates every tracked transaction.
@@ -90,10 +87,20 @@ class InputsMixin:
             the dated rows behind ``direct`` and ``utilized``; and ``liquid``
             — ``{(year, month): float}``, the net of every bank and cash
             transaction that month.
+
+        Notes
+        -----
+        The context is a pure function of the stored rows (it reads no clock),
+        so it is shared across requests through ``data_cache`` and rebuilt
+        only after a write: the goal list, the yearly figure and every
+        ``/budget/analysis`` month all read it. The value is shared — callers
+        must treat it as read-only. It sits above the transaction reads in
+        the cache's lock order (it calls them; they never call it).
         """
-        if self._context_cache is not None:
-            return self._context_cache
-        self._context_cache = self._compute_context()
+        if self._context_cache is None:
+            self._context_cache = data_cache.cached(
+                self.db, ("savings_goals.context",), self._compute_context
+            )
         return self._context_cache
 
     def _goals_owning_income(self) -> set[int]:

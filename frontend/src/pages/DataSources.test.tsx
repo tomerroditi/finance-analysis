@@ -224,4 +224,37 @@ describe("DataSources", () => {
       }
     });
   });
+
+  describe("adding an account", () => {
+    it("lists providers only once the wizard opens, and reads fields without a write", async () => {
+      const requested: string[] = [];
+      server.use(
+        http.get("/api/credentials/providers", () => {
+          requested.push("providers");
+          return HttpResponse.json({ banks: ["hapoalim"], credit_cards: [], insurances: [] });
+        }),
+        http.get("/api/credentials/fields/:provider", () =>
+          HttpResponse.json({ fields: ["username", "password"] }),
+        ),
+      );
+      const user = userEvent.setup();
+      const { queryClient } = renderWithProviders(<DataSources />);
+      await screen.findByText(/Main Account/i);
+      expect(requested).toEqual([]);
+      const writes: unknown[] = [];
+      queryClient.getMutationCache().subscribe((event) => {
+        if (event.type === "added") writes.push(event.mutation);
+      });
+
+      await user.click(screen.getAllByRole("button", { name: /connect account/i })[0]);
+      await user.click(screen.getByRole("button", { name: /^Bank Account/ }));
+      await screen.findByText("Select Provider");
+      const providerButtons = await screen.findAllByRole("button", { name: /Hapoalim/ });
+      await user.click(providerButtons[providerButtons.length - 1]);
+
+      expect((await screen.findAllByText(/username/i)).length).toBeGreaterThan(0);
+      expect(requested).toEqual(["providers"]);
+      expect(writes).toEqual([]);
+    });
+  });
 });

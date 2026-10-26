@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from "react";
+import { useMutation } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { Plus, Trash2, AlertCircle } from "lucide-react";
 import { transactionsApi } from "../../services/api";
@@ -73,7 +74,26 @@ export function SplitTransactionModal({
     setSplits(newSplits);
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  // A write, not a bare request: it goes through the app's mutation cache,
+  // which drops reads that predate it and refreshes everything after it.
+  const splitMutation = useMutation({
+    mutationFn: (uniqueId: string | number) =>
+      transactionsApi.split(uniqueId, {
+        source: transaction.source || "",
+        splits: splits.map((s) => ({
+          amount: s.amount,
+          category: s.category,
+          tag: s.tag,
+        })),
+      }),
+    onSuccess: () => {
+      onSuccess();
+      onClose();
+    },
+    onError: () => notify.error(t("transactions.failedSplit")),
+  });
+
+  const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!isValid) return;
 
@@ -87,20 +107,7 @@ export function SplitTransactionModal({
       return;
     }
 
-    try {
-      await transactionsApi.split(uniqueId, {
-        source: transaction.source || "",
-        splits: splits.map((s) => ({
-          amount: s.amount,
-          category: s.category,
-          tag: s.tag,
-        })),
-      });
-      onSuccess();
-      onClose();
-    } catch {
-      notify.error(t("transactions.failedSplit"));
-    }
+    splitMutation.mutate(uniqueId);
   };
 
   return (

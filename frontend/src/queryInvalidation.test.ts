@@ -150,6 +150,223 @@ describe("the app-wide mutation cache", () => {
     expect(client.getQueryData(key)).toBe("optimistic");
   });
 
+  it("drops a read that started while the write was in flight", async () => {
+    // The budget's tag write: the row list refetched mid-write, the server
+    // answered from before the commit, and that answer outlived the write.
+    const client = makeClient();
+    let served = "old";
+    const key = ["thing"];
+    const queryFn = async () => {
+      const asOf = served;
+      await flush(SWEEP_MS * 4);
+      return asOf;
+    };
+    await client.fetchQuery({ queryKey: key, queryFn });
+
+    let midWrite: Promise<unknown> | undefined;
+    await client
+      .getMutationCache()
+      .build(client, {
+        mutationFn: async () => {
+          midWrite = client
+            .fetchQuery({ queryKey: key, queryFn, staleTime: 0 })
+            .catch(() => undefined);
+          await flush(SWEEP_MS);
+          served = "new";
+          return null;
+        },
+      })
+      .execute(undefined);
+
+    const observer = new QueryObserver(client, { queryKey: key, queryFn });
+    const unsubscribe = observer.subscribe(() => {});
+    await midWrite;
+    await vi.waitFor(() => expect(client.getQueryData(key)).toBe("new"), {
+      timeout: 2000,
+    });
+    unsubscribe();
+  });
+
+  it("joins the write's own refetch instead of restarting it", async () => {
+    // Restarting every refetch the write's `onSuccess` had just started sent
+    // each read three times, and the screen waited behind all of them.
+    const client = makeClient();
+    const key = ["thing"];
+    const queryFn = vi.fn(async () => {
+      await flush(SWEEP_MS * 4);
+      return "fresh";
+    });
+    await client.fetchQuery({ queryKey: key, queryFn });
+    const observer = new QueryObserver(client, { queryKey: key, queryFn });
+    const unsubscribe = observer.subscribe(() => {});
+    queryFn.mockClear();
+
+    await client
+      .getMutationCache()
+      .build(client, {
+        mutationFn: async () => null,
+        onSuccess: () => {
+          void client.invalidateQueries({ queryKey: key });
+        },
+      })
+      .execute(undefined);
+
+    await flush(SWEEP_MS * 8);
+    expect(queryFn).toHaveBeenCalledTimes(1);
+    unsubscribe();
+  });
+
+  it("follows a write's plan: what it names first, and nothing it skips", async () => {
+    const client = makeClient();
+    const order: string[] = [];
+    const watch = (key: readonly unknown[], name: string) => {
+      const queryFn = async () => {
+        order.push(name);
+        await flush(SWEEP_MS);
+        return name;
+      };
+      const observer = new QueryObserver(client, { queryKey: key, queryFn });
+      return observer.subscribe(() => {});
+    };
+    const stops = [
+      watch(["trend"], "trend"),
+      watch(["month", 10], "month"),
+      watch(["icons"], "icons"),
+    ];
+    await vi.waitFor(() => expect(order).toHaveLength(3));
+    order.length = 0;
+
+    await client
+      .getMutationCache()
+      .build(client, {
+        mutationFn: async () => null,
+        onMutate: () => ({ refresh: { first: [["month"]], skip: [["icons"]] } }),
+      })
+      .execute(undefined);
+
+    await vi.waitFor(() => expect(order).toEqual(["month", "trend"]), { timeout: 2000 });
+    await flush(SWEEP_MS * 4);
+    expect(order).toEqual(["month", "trend"]);
+    expect(client.getQueryState(["icons"])?.isInvalidated).toBe(false);
+    stops.forEach((stop) => stop());
+  });
+
+  it("refreshes only what a write says it can reach", async () => {
+    const client = makeClient();
+    const fetched: string[] = [];
+    const watch = (name: string) => {
+      const observer = new QueryObserver(client, {
+        queryKey: [name],
+        queryFn: async () => {
+          fetched.push(name);
+          return name;
+        },
+      });
+      return observer.subscribe(() => {});
+    };
+    const stops = [watch("insights"), watch("trend"), watch("budget")];
+    await vi.waitFor(() => expect(fetched).toHaveLength(3));
+    fetched.length = 0;
+
+    await client
+      .getMutationCache()
+      .build(client, {
+        mutationFn: async () => null,
+        onMutate: () => ({ refresh: { only: [["insights"]] } }),
+      })
+      .execute(undefined);
+
+    await vi.waitFor(() => expect(fetched).toEqual(["insights"]), { timeout: 2000 });
+    await flush(SWEEP_MS * 4);
+    expect(fetched).toEqual(["insights"]);
+    expect(client.getQueryState(["trend"])?.isInvalidated).toBe(false);
+
+    // A write with no limit in the same burst widens it back to everything.
+    fetched.length = 0;
+    const mutations = client.getMutationCache();
+    await Promise.all([
+      mutations
+        .build(client, { mutationFn: async () => null, onMutate: () => ({ refresh: { only: [] } }) })
+        .execute(undefined),
+      mutations.build(client, { mutationFn: async () => null }).execute(undefined),
+    ]);
+    await vi.waitFor(() => expect(new Set(fetched)).toEqual(new Set(["insights", "trend", "budget"])), {
+      timeout: 2000,
+    });
+    stops.forEach((stop) => stop());
+  });
+
+  it("re-asks a read it cancelled even when its plan does not reach it", async () => {
+    const client = makeClient();
+    let served = "old";
+    const queryFn = async () => {
+      const asOf = served;
+      await flush(SWEEP_MS * 2);
+      return asOf;
+    };
+    const observer = new QueryObserver(client, { queryKey: ["trend"], queryFn });
+    const unsubscribe = observer.subscribe(() => {});
+    await vi.waitFor(() => expect(client.getQueryData(["trend"])).toBe("old"));
+
+    // A refetch is under way when a write that names only another read lands.
+    void observer.refetch();
+    served = "new";
+    await client
+      .getMutationCache()
+      .build(client, {
+        mutationFn: async () => null,
+        onMutate: () => ({ refresh: { only: [["insights"]] } }),
+      })
+      .execute(undefined);
+
+    // The cancelled refetch is issued again rather than left on the old data.
+    await vi.waitFor(() => expect(client.getQueryData(["trend"])).toBe("new"), { timeout: 2000 });
+    unsubscribe();
+  });
+
+  it("refreshes nothing after a write whose plan reaches nothing", async () => {
+    const client = makeClient();
+    let fetches = 0;
+    const observer = new QueryObserver(client, { queryKey: ["any"], queryFn: async () => ++fetches });
+    const unsubscribe = observer.subscribe(() => {});
+    await vi.waitFor(() => expect(fetches).toBe(1));
+
+    await client
+      .getMutationCache()
+      .build(client, { mutationFn: async () => null, onMutate: () => ({ refresh: { only: [] } }) })
+      .execute(undefined);
+
+    await flush(SWEEP_MS * 6);
+    expect(fetches).toBe(1);
+    expect(client.getQueryState(["any"])?.isInvalidated).toBe(false);
+    unsubscribe();
+  });
+
+  it("refreshes everything after a failed write, whatever it planned", async () => {
+    const client = makeClient();
+    let fetches = 0;
+    const observer = new QueryObserver(client, {
+      queryKey: ["icons"],
+      queryFn: async () => ++fetches,
+    });
+    const unsubscribe = observer.subscribe(() => {});
+    await vi.waitFor(() => expect(fetches).toBe(1));
+
+    await client
+      .getMutationCache()
+      .build(client, {
+        mutationFn: async () => {
+          throw new Error("half-landed");
+        },
+        onMutate: () => ({ refresh: { skip: [["icons"]] } }),
+      })
+      .execute(undefined)
+      .catch(() => undefined);
+
+    await vi.waitFor(() => expect(fetches).toBe(2), { timeout: 2000 });
+    unsubscribe();
+  });
+
   it("leaves a first load alone — it has nothing to overwrite", async () => {
     const client = makeClient();
     const key = ["first-load"];

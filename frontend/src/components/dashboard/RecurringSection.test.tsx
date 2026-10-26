@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClient, QueryClientProvider, QueryObserver } from "@tanstack/react-query";
 import { RecurringSection } from "./RecurringSection";
+import { createMutationCache } from "../../queryInvalidation";
 import {
   analyticsApi,
   testingApi,
@@ -83,6 +84,7 @@ type SetDecisions = typeof analyticsApi.setRecurringDecisions;
 async function renderCard(
   items: RecurringItem[],
   decide?: (decisions: RecurringDecisionInput[]) => Promise<unknown>,
+  client: QueryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } }),
 ) {
   let stored = items;
   vi.spyOn(analyticsApi, "getRecurring").mockImplementation(
@@ -109,9 +111,6 @@ async function renderCard(
     data: { demo_mode: false, forced: false },
   } as Awaited<ReturnType<typeof testingApi.getDemoModeStatus>>);
 
-  const client = new QueryClient({
-    defaultOptions: { queries: { retry: false } },
-  });
   return render(
     <QueryClientProvider client={client}>
       <DemoModeProvider>
@@ -237,6 +236,38 @@ describe("RecurringSection", () => {
       expect(vi.mocked(analyticsApi.getRecurring).mock.calls.length).toBe(
         readsBefore,
       );
+    });
+  });
+
+  describe("the refresh after a verdict", () => {
+    it("refetches the budget overview, never the rows or the month analyses", async () => {
+      const client: QueryClient = new QueryClient({
+        mutationCache: createMutationCache(() => client, 5),
+        defaultOptions: { queries: { retry: false, staleTime: 60_000 } },
+      });
+      const fetches: Record<string, number> = {};
+      const watch = (key: unknown[]) => {
+        const name = String(key[1]);
+        return new QueryObserver(client, {
+          queryKey: key,
+          queryFn: async () => (fetches[name] = (fetches[name] ?? 0) + 1),
+        }).subscribe(() => {});
+      };
+      const stops = [
+        watch(["budget", "overview", 2026, 10, false, false]),
+        watch(["budget", "analysis", 2026, 10, false, false]),
+        watch(["transactions", "list", "all", false, false]),
+      ];
+      await renderCard([makeItem()], undefined, client);
+      fireEvent.click(
+        await screen.findByRole("button", { name: /Confirm .* as recurring/i }),
+      );
+
+      await waitFor(() => expect(fetches.overview).toBe(2));
+      await new Promise((r) => setTimeout(r, 30));
+      expect(fetches.analysis).toBe(1);
+      expect(fetches.list).toBe(1);
+      stops.forEach((stop) => stop());
     });
   });
 

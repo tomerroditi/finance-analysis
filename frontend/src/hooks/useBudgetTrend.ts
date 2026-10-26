@@ -49,7 +49,6 @@ export function useBudgetTrend(
       budgetApi
         .getTrend(year, month, months, includeSplitParents)
         .then((res) => res.data),
-    staleTime: 60 * 1000,
   });
 
   // The viewed month, read from the analysis query the page already runs.
@@ -67,7 +66,6 @@ export function useBudgetTrend(
       budgetApi
         .getAnalysis(year, month, includeSplitParents)
         .then((res) => res.data),
-    staleTime: 60 * 1000,
   });
 
   const isLoading = trendQuery.isLoading || viewedMonthQuery.isLoading;

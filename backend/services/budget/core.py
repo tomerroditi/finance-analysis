@@ -34,6 +34,7 @@ from backend.services.pending_refunds_service import (
 from backend.services.tagging_service import CategoriesTagsService
 from backend.services.transaction_views import NON_EXPENSE_CATEGORIES
 from backend.services.transactions_service import TransactionsService
+from backend.utils import data_cache
 
 # Serializes the auto-fill of a month's budget rules across concurrent
 # requests. FastAPI runs the (synchronous) budget-analysis handlers in its
@@ -230,12 +231,25 @@ class BudgetService:
         :data:`GROSS_AMOUNT_COLUMN` for the transaction lists, which show the
         real figures.
 
+        Every budget read aggregates from this ledger, and a Budget page opens
+        several at once — the month, its neighbours, the trend, the alerts,
+        the overview — each of which recomputed it over the whole history.
+        It is shared through ``data_cache`` instead, so the first read after a
+        write pays for it and the rest reuse it until the next commit.
+
         Returns
         -------
         pd.DataFrame
             Expense rows with ``budget_year``, ``budget_month``,
-            ``claim_kind`` and ``claim_rule_id`` added.
+            ``claim_kind`` and ``claim_rule_id`` added — a copy the caller may
+            change.
         """
+        return data_cache.cached(
+            self.db, ("budget.get_claims",), self._compute_claims
+        ).copy()
+
+    def _compute_claims(self) -> pd.DataFrame:
+        """Build the claim ledger behind :meth:`get_claims`'s cache."""
         expenses = self.transactions_service.get_data_for_analysis()
         if not expenses.empty:
             expenses = self._drop_split_parents(self._expense_rows(expenses))

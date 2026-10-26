@@ -7,14 +7,14 @@ Provides endpoints for transaction CRUD operations.
 from datetime import date
 from typing import Any
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Response
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from backend.constants.providers import Services
 from backend.dependencies import get_database
 from backend.routes.schemas import ApiRequestModel, StatusResponse, TagWriteResponse
 from backend.services.transactions_service import TransactionsService
+from backend.utils.json_response import records_response
 
 router = APIRouter()
 
@@ -88,7 +88,7 @@ class UncategorizedCountResponse(BaseModel):
     count: int
 
 
-@router.get("/")
+@router.get("/", response_model=None)
 def get_transactions(
     service: str | None = Query(
         None, description="Filter by service: credit_card, bank, cash"
@@ -97,14 +97,17 @@ def get_transactions(
         False, description="Whether to include split parents"
     ),
     db: Session = Depends(get_database),
-) -> list[dict[str, Any]]:
-    """Get all transactions, optionally filtered by service."""
-    df = TransactionsService(db).get_merged_transactions(
-        service=service,
-        include_split_parents=include_split_parents,
-        exclude_services=[Services.INSURANCE.value],
+) -> Response:
+    """Get all transactions, optionally filtered by service.
+
+    Encoded straight from the frame (:func:`records_response`): the app's
+    largest payload skips the response-model validation pass a
+    ``list[dict]`` annotation would add, and the per-value NaN walk.
+    """
+    df = TransactionsService(db).get_transactions_list(
+        service=service, include_split_parents=include_split_parents
     )
-    return df.to_dict(orient="records")
+    return records_response(df)
 
 
 @router.post("/", response_model=StatusResponse)

@@ -119,6 +119,26 @@ class InvestmentSnapshotsRepository:
         session_cache_set(self.db, cache_key, df)
         return df
 
+    def get_all_by_investment(self) -> dict[int, pd.DataFrame]:
+        """Get every investment's snapshots in one query.
+
+        Returns
+        -------
+        dict[int, pd.DataFrame]
+            Investment id to its snapshots, shaped and ordered exactly as
+            :meth:`get_snapshots_for_investment` returns them; investments
+            without snapshots are absent.
+        """
+        stmt = select(InvestmentBalanceSnapshot).order_by(
+            InvestmentBalanceSnapshot.investment_id.asc(),
+            InvestmentBalanceSnapshot.date.asc(),
+        )
+        df = pd.read_sql(stmt, self.db.bind)
+        return {
+            int(investment_id): rows.reset_index(drop=True)
+            for investment_id, rows in df.groupby("investment_id", sort=False)
+        }
+
     def get_latest_snapshot_dates(self, target_date: str) -> dict[int, str]:
         """Get the most recent snapshot date on or before a target date, per investment.
 

@@ -23,9 +23,12 @@ mode impossible rather than merely fixed in the places we remembered.
 
 import json
 import math
+from collections.abc import Callable
+from datetime import date, datetime
 from typing import Any
 
-from fastapi.responses import JSONResponse
+import pandas as pd
+from fastapi.responses import JSONResponse, Response
 
 
 def sanitize_non_finite(value: Any) -> Any:
@@ -41,8 +44,7 @@ def sanitize_non_finite(value: Any) -> Any:
     -------
     Any
         The same structure with every non-finite float replaced by ``None``.
-        Containers are only rebuilt when they actually contain one, so the
-        common all-finite payload costs a walk and no allocation.
+        Tuples come back as lists (JSON has only arrays).
     """
     if isinstance(value, float):
         return value if math.isfinite(value) else None
@@ -51,6 +53,79 @@ def sanitize_non_finite(value: Any) -> Any:
     if isinstance(value, (list, tuple)):
         return [sanitize_non_finite(v) for v in value]
     return value
+
+
+def _dumps(content: Any, default: Callable[[Any], Any] | None = None) -> bytes:
+    """Encode ``content`` as compact UTF-8 JSON, non-finite floats as ``null``.
+
+    The C encoder runs first with ``allow_nan=False``. It raises on the first
+    NaN or Infinity, and only then is the payload walked and rebuilt
+    (:func:`sanitize_non_finite`) — a walk that cost more than the encoding
+    itself on every list endpoint, to fix values that are almost never there.
+
+    Parameters
+    ----------
+    content : Any
+        The JSON-encodable payload.
+    default : callable, optional
+        ``json.dumps``'s hook for values it cannot encode natively.
+
+    Returns
+    -------
+    bytes
+        The encoded body.
+    """
+    options: dict[str, Any] = {
+        "ensure_ascii": False,
+        "allow_nan": False,
+        "indent": None,
+        "separators": (",", ":"),
+        "default": default,
+    }
+    try:
+        return json.dumps(content, **options).encode("utf-8")
+    except ValueError:
+        return json.dumps(sanitize_non_finite(content), **options).encode("utf-8")
+
+
+def _encode_temporal(value: Any) -> str:
+    """Encode a date or datetime as ISO 8601, as FastAPI's own encoder does.
+
+    Raises
+    ------
+    TypeError
+        For anything else, as ``json.dumps`` expects of a ``default`` hook.
+    """
+    if isinstance(value, (datetime, date)):
+        return value.isoformat()
+    raise TypeError(f"Object of type {type(value).__name__} is not JSON serializable")
+
+
+def records_response(df: pd.DataFrame) -> Response:
+    """Serialise a frame as a JSON array of row objects.
+
+    For the big list endpoints. Missing values become ``null`` once, at the
+    frame level, rather than through a per-value Python walk, and the route
+    returns this response directly so no response-model validation runs over
+    every row. The body is what ``df.to_dict(orient="records")`` through
+    :class:`SafeJSONResponse` produced: same keys, ``null`` for NaN/NaT,
+    numbers through the same encoder, dates and datetimes as ISO strings.
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        The rows to serve.
+
+    Returns
+    -------
+    Response
+        An ``application/json`` response.
+    """
+    records = df.astype(object).where(df.notna(), None).to_dict(orient="records")
+    return Response(
+        content=_dumps(records, default=_encode_temporal),
+        media_type="application/json",
+    )
 
 
 class SafeJSONResponse(JSONResponse):
@@ -62,10 +137,4 @@ class SafeJSONResponse(JSONResponse):
 
     def render(self, content: Any) -> bytes:
         """Serialise ``content`` to UTF-8 JSON with non-finite floats as ``null``."""
-        return json.dumps(
-            sanitize_non_finite(content),
-            ensure_ascii=False,
-            allow_nan=False,
-            indent=None,
-            separators=(",", ":"),
-        ).encode("utf-8")
+        return _dumps(content)

@@ -401,9 +401,10 @@ test.describe("dashboard budget card", () => {
       timeout: 15_000,
     });
     await expect(renamedRow).toContainText("12,000");
-    expect(
-      (await readAnalysis()).rules.find((r) => r.rule.id === ruleId)!.closed,
-    ).toBe(true);
+    // The row flips on click, before the write lands — poll the server.
+    await expect
+      .poll(async () => (await readAnalysis()).rules.find((r) => r.rule.id === ruleId)!.closed)
+      .toBe(true);
 
     // ---- Reopen: a plain undo, with no confirmation step. ----
     // Still the same open panel: closing a rule sinks its row to the
@@ -425,9 +426,10 @@ test.describe("dashboard budget card", () => {
     await expect(renamedRow).toHaveCount(0, { timeout: 15_000 });
     // And the panel goes with it, rather than stranding an id no row can close.
     await expect(panel).toHaveCount(0);
-    expect(
-      (await readAnalysis()).rules.find((r) => r.rule.id === ruleId),
-    ).toBeUndefined();
+    // The row goes on click, before the delete lands — poll the server.
+    await expect
+      .poll(async () => (await readAnalysis()).rules.find((r) => r.rule.id === ruleId))
+      .toBeUndefined();
 
     const siblingId = (await readAnalysis()).rules.find(
       (r) => r.rule.name === siblingName,

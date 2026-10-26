@@ -21,6 +21,22 @@ class TestTransactionsRoutes:
         assert isinstance(data, list)
         assert len(data) > 0
 
+    def test_get_transactions_list_shape(
+        self, test_client, seed_base_transactions, seed_split_transactions
+    ):
+        """The list carries no audit timestamps, nulls for missing values, plain dates."""
+        response = test_client.get("/api/transactions/")
+        assert response.status_code == 200
+        assert response.headers["content-type"].startswith("application/json")
+        data = response.json()
+        assert all("created_at" not in tx and "updated_at" not in tx for tx in data)
+        assert all(tx["source"] != "insurance_transactions" for tx in data)
+        assert all(len(tx["date"]) == 10 for tx in data)
+        parts = [tx for tx in data if tx["split_id"] is not None]
+        assert parts and all(tx["parent_unique_id"] is not None for tx in parts)
+        whole = [tx for tx in data if tx["split_id"] is None]
+        assert whole and all(tx["parent_amount"] is None for tx in whole)
+
     def test_get_transactions_filter_service(self, test_client, seed_base_transactions):
         """GET /api/transactions?service=credit_cards filters correctly."""
         response = test_client.get("/api/transactions/?service=credit_cards")
@@ -478,6 +494,6 @@ class TestTransactionsRoutesAdditional:
         ) as mock_cls:
             mock_svc = MagicMock()
             mock_cls.return_value = mock_svc
-            mock_svc.get_merged_transactions.side_effect = RuntimeError("Read failed")
+            mock_svc.get_transactions_list.side_effect = RuntimeError("Read failed")
             with pytest.raises(RuntimeError, match="Read failed"):
                 test_client.get("/api/transactions/")

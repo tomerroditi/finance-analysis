@@ -7,12 +7,15 @@ metrics, portfolio aggregations, and the shared transaction-fetch helpers.
 Mixed into ``InvestmentsService`` (see ``core.py``).
 """
 
+from dataclasses import dataclass
 from datetime import date, datetime
 from typing import Any
 
 import pandas as pd
 
+from backend.constants.tables import TransactionsTableFields
 from backend.services.investments.timeline import ValuationTimeline
+from backend.utils import data_cache
 
 HISHTALMUT_TYPE = "hishtalmut"
 """Investment ``type`` marking a Keren Hishtalmut account.
@@ -113,17 +116,121 @@ class ValuationMixin:
             Its transactions, stored snapshots and closed state.
         """
         investment_id = int(inv["id"])
+        closed_date = inv.get("closed_date")
+        closed = str(closed_date) if pd.notna(closed_date) else None
         if transactions_df is None:
+            inputs = self._cached_inputs(investment_id, inv["category"], inv["tag"])
+            if (
+                inputs is not None
+                and inputs.timeline.is_closed == bool(inv["is_closed"])
+                and inputs.closed_date == closed
+            ):
+                return inputs.timeline
             transactions_df = self._get_all_transactions_for_investment(
                 inv["category"], inv["tag"], investment_id=investment_id
             )
-        closed_date = inv.get("closed_date")
         return ValuationTimeline(
             transactions_df,
             self.snapshots_repo.get_snapshots_for_investment(investment_id),
             is_closed=bool(inv["is_closed"]),
-            closed_date=str(closed_date) if pd.notna(closed_date) else None,
+            closed_date=closed,
         )
+
+    def _valuation_inputs(self) -> dict[int, "ValuationInputs"]:
+        """Return every investment's transactions, snapshots and timeline.
+
+        Built in one pass — one analysis frame, one snapshot query, one
+        insurance query — and shared across requests through ``data_cache``
+        until the next write. Six endpoints (the investments list, the
+        portfolio, its balance history, net worth over time and both
+        retirement-plan reads) value every holding, and each used to rebuild
+        each holding's inputs about twice per request.
+
+        Lock order: this key sits above the transaction reads (it calls
+        ``get_data_for_analysis``); nothing under the transactions may value
+        an investment.
+
+        Returns
+        -------
+        dict[int, ValuationInputs]
+            Investment id to its inputs. Shared: callers copy the frames
+            (:meth:`_get_all_transactions_for_investment` does) and treat the
+            timeline as read-only.
+        """
+        return data_cache.cached(
+            self.db, ("investments.valuation_inputs",), self._build_valuation_inputs
+        )
+
+    def _build_valuation_inputs(self) -> dict[int, "ValuationInputs"]:
+        """Build :meth:`_valuation_inputs`'s map with bulk reads."""
+        investments = self.investments_repo.get_all_investments(include_closed=True)
+        if investments.empty:
+            return {}
+        analysis = self.transactions_service.get_data_for_analysis()
+        snapshots = self.snapshots_repo.get_all_by_investment()
+        policies = [
+            str(p) for p in investments["insurance_policy_id"] if p and pd.notna(p)
+        ]
+        insurance = self.transactions_repo.insurance_repo.get_for_policies(policies)
+        no_snapshots = self.snapshots_repo.get_snapshots_for_investment(-1)
+
+        inputs: dict[int, ValuationInputs] = {}
+        for _, inv in investments.iterrows():
+            investment_id = int(inv["id"])
+            policy_id = inv.get("insurance_policy_id")
+            linked = bool(policy_id) and pd.notna(policy_id)
+            own_snapshots = snapshots.get(investment_id, no_snapshots)
+            transactions = self._assemble_transactions(
+                _by_tag(analysis, inv["category"], inv["tag"]),
+                insurance.get(str(policy_id), pd.DataFrame()).copy()
+                if linked
+                else None,
+                own_snapshots,
+            )
+            closed_date = inv.get("closed_date")
+            closed = str(closed_date) if pd.notna(closed_date) else None
+            inputs[investment_id] = ValuationInputs(
+                category=inv["category"],
+                tag=inv["tag"],
+                transactions=transactions,
+                closed_date=closed,
+                timeline=ValuationTimeline(
+                    transactions,
+                    own_snapshots,
+                    is_closed=bool(inv["is_closed"]),
+                    closed_date=closed,
+                ),
+            )
+        return inputs
+
+    def _cached_inputs(
+        self, investment_id: int, category: str, tag: str
+    ) -> "ValuationInputs | None":
+        """Return one investment's shared inputs when they answer this question.
+
+        Parameters
+        ----------
+        investment_id : int
+            The investment.
+        category, tag : str
+            The category and tag the caller values it by. A caller asking
+            about a different pair than the stored one gets ``None`` and
+            fetches its own.
+
+        Returns
+        -------
+        ValuationInputs or None
+            The shared inputs, or ``None`` when the session would not be
+            served from the cache (an in-memory database or pending changes —
+            building every holding to answer for one would only cost) or the
+            pair differs.
+        """
+        if not data_cache.is_cacheable(self.db):
+            return None
+        inputs = self._valuation_inputs().get(int(investment_id))
+        if inputs is None or inputs.category != category or inputs.tag != tag:
+            return None
+        return inputs
 
     def calculate_balance_over_time(
         self, investment_id: int, start_date: str, end_date: str
@@ -533,10 +640,36 @@ class ValuationMixin:
         Returns
         -------
         pd.DataFrame
-            Matching transactions from the merged analysis table.
+            Matching transactions from the merged analysis table. The caller
+            owns it.
+        """
+        if investment_id is not None:
+            inputs = self._cached_inputs(investment_id, category, tag)
+            if inputs is not None:
+                return inputs.transactions.copy()
+        return self._fetch_transactions_for_investment(category, tag, investment_id)
+
+    def _fetch_transactions_for_investment(
+        self, category: str, tag: str, investment_id: int | None = None
+    ) -> pd.DataFrame:
+        """Read one investment's transactions without the shared map.
+
+        :meth:`_get_all_transactions_for_investment` for write paths, which
+        would otherwise rebuild every holding after each of their own commits.
+
+        Parameters
+        ----------
+        category, tag : str
+            The investment's category and tag.
+        investment_id : int, optional
+            Investment ID used to look up insurance linkage.
+
+        Returns
+        -------
+        pd.DataFrame
+            As :meth:`_get_all_transactions_for_investment`.
         """
         manual_txns = self.transactions_service.get_transactions_by_tag(category, tag)
-
         if investment_id is None:
             return manual_txns
 
@@ -545,7 +678,38 @@ class ValuationMixin:
         if not policy_id or pd.isna(policy_id):
             return manual_txns
 
-        ins_txns = self.transactions_repo.insurance_repo.get_for_policy(policy_id)
+        return self._assemble_transactions(
+            manual_txns,
+            self.transactions_repo.insurance_repo.get_for_policy(policy_id),
+            self.snapshots_repo.get_snapshots_for_investment(investment_id),
+        )
+
+    def _assemble_transactions(
+        self,
+        manual_txns: pd.DataFrame,
+        ins_txns: pd.DataFrame | None,
+        snapshots: pd.DataFrame,
+    ) -> pd.DataFrame:
+        """Combine an investment's manual and insurance rows, opening row included.
+
+        Parameters
+        ----------
+        manual_txns : pd.DataFrame
+            Its rows from the analysis frame.
+        ins_txns : pd.DataFrame or None
+            Its policy's insurance rows (owned — amounts are negated in
+            place), or ``None`` when it is not insurance-linked: its manual
+            rows are then the whole answer.
+        snapshots : pd.DataFrame
+            Its stored snapshots, for the opening-balance row.
+
+        Returns
+        -------
+        pd.DataFrame
+            The investment's transactions.
+        """
+        if ins_txns is None:
+            return manual_txns
 
         if ins_txns.empty:
             combined = manual_txns
@@ -564,10 +728,11 @@ class ValuationMixin:
                     ignore_index=True,
                 )
 
-        return self._with_opening_balance(investment_id, combined)
+        return self._with_opening_balance(snapshots, combined)
 
+    @staticmethod
     def _with_opening_balance(
-        self, investment_id: int, transactions_df: pd.DataFrame
+        snapshots: pd.DataFrame, transactions_df: pd.DataFrame
     ) -> pd.DataFrame:
         """Prepend the capital a provider's deposit window does not explain.
 
@@ -582,8 +747,8 @@ class ValuationMixin:
 
         Parameters
         ----------
-        investment_id : int
-            ID of an insurance-linked investment.
+        snapshots : pd.DataFrame
+            The stored snapshots of an insurance-linked investment.
         transactions_df : pd.DataFrame
             Its manual and insurance transactions (may be empty).
 
@@ -593,7 +758,6 @@ class ValuationMixin:
             ``transactions_df`` with an ``OPENING_BALANCE_COLUMN`` column, plus
             the opening row when the first snapshot exceeds the deposits.
         """
-        snapshots = self.snapshots_repo.get_snapshots_for_investment(investment_id)
         if snapshots.empty:
             return transactions_df
 
@@ -626,6 +790,43 @@ class ValuationMixin:
             return opening_row
         flagged = transactions_df.assign(**{OPENING_BALANCE_COLUMN: False})
         return pd.concat([opening_row, flagged], ignore_index=True)
+
+
+@dataclass(frozen=True)
+class ValuationInputs:
+    """One investment's valuation inputs, as ``ValuationMixin`` shares them.
+
+    Attributes
+    ----------
+    category, tag : str
+        The pair its transactions were selected by.
+    transactions : pd.DataFrame
+        Its transactions, opening-balance row included (shared — copy first).
+    closed_date : str or None
+        The closure date the timeline was built with.
+    timeline : ValuationTimeline
+        Its valuation timeline (read-only).
+    """
+
+    category: str
+    tag: str
+    transactions: pd.DataFrame
+    closed_date: str | None
+    timeline: ValuationTimeline
+
+
+def _by_tag(analysis: pd.DataFrame, category: str, tag: str | None) -> pd.DataFrame:
+    """Select one investment's rows from the analysis frame.
+
+    The selection ``TransactionsService.get_transactions_by_tag`` makes, over
+    a frame the caller already holds.
+    """
+    if analysis.empty:
+        return analysis
+    rows = analysis[analysis[TransactionsTableFields.CATEGORY.value] == category]
+    if tag:
+        rows = rows[rows[TransactionsTableFields.TAG.value] == tag]
+    return rows.reset_index(drop=True)
 
 
 def _today() -> str:

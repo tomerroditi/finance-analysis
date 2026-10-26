@@ -144,6 +144,13 @@ test.describe("Dashboard half-width blocks", () => {
       string,
       { x: number; y: number; width: number; height: number }
     > = {};
+    // The cards below the eager four mount as they scroll near; bring each
+    // one in so the geometry compared is the cards', not their placeholders'.
+    await expect(page.locator('[data-card-id="budget"] [data-testid="dashboard-budget-tabs"]')).toBeVisible({
+      timeout: 45_000,
+    });
+    for (const id of ids) await page.locator(`[data-card-id="${id}"]`).scrollIntoViewIfNeeded();
+    await page.evaluate(() => window.scrollTo(0, 0));
     await waitForSettledCards(page, ids);
     for (const id of ids) boxes[id] = await boxOf(page, id);
 

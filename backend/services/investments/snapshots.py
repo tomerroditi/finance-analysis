@@ -143,7 +143,7 @@ class SnapshotsMixin:
         if not is_fixed and not is_prime:
             return
 
-        transactions_df = self._get_all_transactions_for_investment(
+        transactions_df = self._fetch_transactions_for_investment(
             inv["category"], inv["tag"], investment_id=investment_id
         )
         if transactions_df.empty:

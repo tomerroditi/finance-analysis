@@ -42,7 +42,7 @@ interface ProjectBudgetListProps {
   includeSplitParents: boolean;
   onIncludeSplitParentsChange: (value: boolean) => void;
   onEditTagRule: (rule: ProjectBudgetRule) => void;
-  onTransactionUpdated: () => void;
+  onTransactionUpdated?: () => void;
 }
 
 /**

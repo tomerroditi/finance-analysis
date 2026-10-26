@@ -114,8 +114,21 @@ test.describe("Early retirement plan", () => {
 
     // --- the plan's own projection, then a fresh calculation --------------
     await expect(page.getByTestId("fire-verdict")).toBeVisible({ timeout: 60_000 });
+    // Calculate writes nothing, so it must not set off the refresh a write
+    // does: the only data read it makes is the calculation itself.
+    const afterCalculate: string[] = [];
+    const recordRead = (req: { url: () => string }) => {
+      const path = new URL(req.url()).pathname;
+      if (/\/api\/(fire|analytics|budget|transactions|investments|savings-goals)/.test(path)) {
+        afterCalculate.push(path);
+      }
+    };
+    page.on("request", recordRead);
     await page.getByTestId("fire-calculate").click();
     await expect(page.getByTestId("fire-preview-note")).toBeVisible({ timeout: 60_000 });
+    await page.waitForTimeout(600);
+    page.off("request", recordRead);
+    expect(afterCalculate).toEqual(["/api/fire/calculate"]);
     const results = page.getByTestId("fire-results");
     await expect(page.getByTestId("fire-goal-living_expenses")).toBeVisible();
     for (const id of ["net-worth", "assets", "income", "spending"]) {

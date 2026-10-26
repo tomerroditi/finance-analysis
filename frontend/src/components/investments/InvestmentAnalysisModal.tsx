@@ -31,7 +31,7 @@ import { formatCurrency } from "../../utils/numberFormatting";
 import { InfoTooltip } from "../common/InfoTooltip";
 import { Skeleton } from "../common/Skeleton";
 import { useQueryKeys } from "../../hooks/useQueryKeys";
-import { qkPrefix } from "../../services/queryKeys";
+import { investmentPlan } from "./investmentPlans";
 
 interface Investment {
   id: number;
@@ -163,37 +163,51 @@ export function InvestmentAnalysisModal({
         .then((res) => res.data),
   });
 
-  const invalidateAll = () => {
-    queryClient.invalidateQueries({ queryKey: qkPrefix.investments });
+  // Every snapshot write refreshes along the investments plan: this
+  // investment's snapshots and analysis first, then the portfolio, net worth
+  // and the retirement plan — nothing a snapshot cannot reach.
+  const snapshotsKey = qk.investments.snapshots(investmentId);
+  const plan = () =>
+    investmentPlan([
+      ["investments", "snapshots", investmentId],
+      ["investments", "analysis", investmentId],
+    ]);
+
+  /** Patch the cached snapshot list now; hand back how to undo it. */
+  const patchSnapshots = async (change: (list: Snapshot[]) => Snapshot[]) => {
+    await queryClient.cancelQueries({ queryKey: snapshotsKey });
+    const before = queryClient.getQueryData<Snapshot[]>(snapshotsKey);
+    if (before) queryClient.setQueryData<Snapshot[]>(snapshotsKey, change(before));
+    return () => queryClient.setQueryData(snapshotsKey, before);
   };
 
   const deleteSnapshotMutation = useMutation({
     mutationFn: ({ snapshotId }: { snapshotId: number }) =>
       investmentsApi.deleteBalanceSnapshot(investmentId, snapshotId),
-    onSuccess: (_, { snapshotId }) => {
-      // Synchronous patch so the row disappears immediately. The global
-      // MutationCache.onSuccess in queryClient.ts handles refreshing the
-      // heavier portfolio/analysis queries after a 200 ms debounce.
-      queryClient.setQueryData<Snapshot[]>(
-        qk.investments.snapshots(investmentId),
-        (old) => old?.filter((s) => s.id !== snapshotId),
-      );
-    },
+    onMutate: async ({ snapshotId }) => ({
+      ...plan(),
+      restore: await patchSnapshots((list) => list.filter((s) => s.id !== snapshotId)),
+    }),
+    onError: (_error, _variables, context) => context?.restore(),
   });
 
   const updateSnapshotMutation = useMutation({
     mutationFn: ({ snapshotId, date, balance }: { snapshotId: number; date: string; balance: number }) =>
       investmentsApi.updateBalanceSnapshot(investmentId, snapshotId, { date, balance }),
-    onSuccess: () => {
-      invalidateAll();
-      setEditingSnapshotId(null);
-    },
+    onMutate: async ({ snapshotId, date, balance }) => ({
+      ...plan(),
+      restore: await patchSnapshots((list) =>
+        list.map((s) => (s.id === snapshotId ? { ...s, date, balance } : s)),
+      ),
+    }),
+    onSuccess: () => setEditingSnapshotId(null),
+    onError: (_error, _variables, context) => context?.restore(),
   });
 
   const calculateMutation = useMutation({
     mutationFn: () =>
       investmentsApi.calculateFixedRateSnapshots(investmentId),
-    onSuccess: invalidateAll,
+    onMutate: plan,
   });
 
   const startEdit = (snap: Snapshot) => {

@@ -98,7 +98,9 @@ test.describe("Dashboard — forecast, recurring, goals", () => {
       await expect(page.getByTestId("forecast-income-due")).toBeVisible();
     }
 
-    // The subscriptions / recurring panel.
+    // The subscriptions / recurring panel. It sits below the four eager
+    // cards, so it mounts as it scrolls near.
+    await page.locator('[data-card-id="recurring"]').scrollIntoViewIfNeeded();
     await expect(
       page.getByText(/Subscriptions & Recurring/i).first(),
     ).toBeVisible({
@@ -109,7 +111,8 @@ test.describe("Dashboard — forecast, recurring, goals", () => {
     await expect(page.getByText(/Savings Goals/i).first()).toBeVisible({
       timeout: 45_000,
     });
-    await expect(page.getByText(/Spending Calendar/i).first()).toBeVisible();
+    await page.locator('[data-card-id="heatmap"]').scrollIntoViewIfNeeded();
+    await expect(page.getByText(/Spending Calendar/i).first()).toBeVisible({ timeout: 45_000 });
 
     // The add-goal editor modal opens.
     await page
@@ -128,6 +131,8 @@ test.describe("Dashboard — forecast, recurring, goals", () => {
     await page.goto("/");
     await page.waitForLoadState("domcontentloaded");
 
+    await expect(page.getByText("This Month").first()).toBeVisible({ timeout: 45_000 });
+    await page.locator('[data-card-id="recurring"]').scrollIntoViewIfNeeded();
     await expect(
       page.getByText(/Subscriptions & Recurring/i).first(),
     ).toBeVisible({ timeout: 45_000 });
@@ -155,6 +160,18 @@ test.describe("Dashboard — forecast, recurring, goals", () => {
     await expect(page.getByText(/BITUACH LEUMI/i)).toHaveCount(0);
 
     // Confirming the first one moves it into the list of real charges.
+    // --- The refresh after a verdict reaches only what reads verdicts ---
+    // The budget Overview is refetched; the transaction history, the
+    // savings goals and the balances are not.
+    await page.waitForLoadState("networkidle");
+    const afterVerdict: string[] = [];
+    const record = (req: { method(): string; url(): string }) => {
+      if (req.method() === "GET" && req.url().includes("/api/")) afterVerdict.push(req.url());
+    };
+    page.on("request", record);
+    const overviewRefetched = page.waitForRequest((req) =>
+      req.url().includes("/api/budget/overview/"),
+    );
     await pending
       .first()
       .getByRole("button", { name: /Confirm .* as recurring/i })
@@ -162,6 +179,12 @@ test.describe("Dashboard — forecast, recurring, goals", () => {
 
     await expect(page.getByTestId("recurring-confirmed-item")).toHaveCount(1);
     await expect(pending).toHaveCount(pendingBefore - 1);
+    await overviewRefetched;
+    await page.waitForTimeout(1500);
+    page.off("request", record);
+    for (const path of ["/api/transactions/", "/api/savings-goals/", "/api/cash-balances/"]) {
+      expect(afterVerdict.filter((url) => url.includes(path))).toEqual([]);
+    }
 
     // Dismissing another one hides it behind the "show dismissed" toggle.
     await pending

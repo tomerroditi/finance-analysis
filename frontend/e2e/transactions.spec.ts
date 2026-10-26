@@ -73,9 +73,24 @@ test.describe("Transactions", () => {
     );
     await expect(erasers).toHaveCount(rowCount);
 
+    // --- Service tabs narrow the one cached list, never download another ---
+    const listRequests: string[] = [];
+    const recordList = (req: { method(): string; url(): string }) => {
+      if (req.method() === "GET" && /\/api\/transactions\/(\?|$)/.test(req.url())) {
+        listRequests.push(req.url());
+      }
+    };
+    page.on("request", recordList);
+    await page.getByRole("button", { name: "Bank", exact: true }).click();
+    await expect(rows.first()).toContainText(/hapoalim|main account/i);
+    await page.getByRole("button", { name: "All", exact: true }).click();
+    await expect(rows.first()).toBeVisible();
+
     // --- Service tab + text search narrow the list together ---
     await page.getByRole("button", { name: /Credit Card/i }).click();
     await expect(rows.first()).toBeVisible({ timeout: 10_000 });
+    page.off("request", recordList);
+    expect(listRequests).toEqual([]);
 
     // Type a query that matches a known demo merchant.
     await page.getByPlaceholder(/search descriptions/i).fill("PAZ");
@@ -142,6 +157,42 @@ test.describe("Transactions", () => {
     await expect(
       updatedRow.locator('button[aria-label="Clear category and tag"]'),
     ).toBeDisabled();
+  });
+
+  test("a bulk retag shows on the row before the list is fetched again", async ({ page }) => {
+    await navigateTo(page, "/transactions");
+    const rows = page.locator("table tbody tr");
+    await expect(rows.first()).toBeVisible({ timeout: 10_000 });
+    const row = rows.filter({ hasNotText: "Entertainment" }).first();
+    const rowId = await row.getAttribute("data-testid");
+    const target = page.locator(`[data-testid="${rowId}"]`);
+
+    // Hold every refetch of the list: whatever the row shows now came from
+    // the write's own patch, not from the server.
+    let release: () => void = () => {};
+    const held = new Promise<void>((resolve) => (release = resolve));
+    await page.route(/\/api\/transactions\/\?/, async (route) => {
+      await held;
+      // A held refetch may have been cancelled by a later write, or the
+      // route removed below, by the time it is released — then there is
+      // nothing left to continue.
+      await route.continue().catch(() => undefined);
+    });
+
+    await target.locator('input[type="checkbox"]').check();
+    const bulkBar = page.locator("div.fixed", { hasText: "selected" });
+    await bulkBar.locator("button", { hasText: /^Category$/ }).click();
+    await page.getByRole("listbox").getByRole("option", { name: "Entertainment", exact: true }).click();
+    await bulkBar.locator("button", { hasText: /^Tag$/ }).click();
+    await page.getByRole("listbox").getByRole("option").first().click();
+    const written = page.waitForResponse((r) => r.url().includes("/transactions/bulk-tag") && r.ok());
+    await bulkBar.locator("button:has(svg.lucide-circle-check), button:has(svg.lucide-check-circle)").last().click();
+
+    await expect(target).toContainText("Entertainment", { timeout: 3_000 });
+    await written;
+    release();
+    await page.unroute(/\/api\/transactions\/\?/);
+    await expect(target).toContainText("Entertainment");
   });
 
   test("bulk eraser clears category and tag from selected transactions", async ({

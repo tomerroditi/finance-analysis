@@ -6,12 +6,14 @@ projection ("This Month" hero) and the monthly-expense trend helper it
 builds on. Mixed into ``AnalysisService`` (see ``core.py``).
 """
 
+import copy
 from typing import Any
 
 import pandas as pd
 
 from backend.constants.tables import TransactionsTableFields
 from backend.services.running_month import TREND_MONTHS, RunningMonth, typical
+from backend.utils import data_cache
 from backend.utils.dataframe_dates import to_month_series
 
 
@@ -98,6 +100,31 @@ class ForecastMixin:
             - ``daily`` – per-day list of ``{date, actual_balance,
               projected_balance}`` for the trajectory chart (one is null
               depending on whether the day is past or future).
+
+        Notes
+        -----
+        The forecast reads the clock only at day granularity (``RunningMonth``
+        normalizes today; the trend keys months), so it is shared across
+        requests through ``data_cache`` keyed by the day, and each caller gets
+        its own copy. The route and the insights strip used to compute it
+        twice per dashboard load. Lock order: forecast → recurring /
+        transactions; nothing below it may call it.
+        """
+        return copy.deepcopy(
+            data_cache.cached(
+                self.db,
+                ("analysis.forecast", _forecast_day()),
+                self._compute_cash_flow_forecast,
+            )
+        )
+
+    def _compute_cash_flow_forecast(self) -> dict[str, Any]:
+        """Compute :meth:`get_cash_flow_forecast`'s payload, uncached.
+
+        Returns
+        -------
+        dict
+            The forecast payload.
         """
         from backend.services.recurring_service import RecurringService
 
@@ -518,3 +545,8 @@ class ForecastMixin:
             "avg_6_months": avg_last_n_months(6),
             "avg_12_months": avg_last_n_months(12),
         }
+
+
+def _forecast_day() -> str:
+    """Return today as ``YYYY-MM-DD`` — the forecast cache's clock key."""
+    return pd.Timestamp.today().strftime("%Y-%m-%d")

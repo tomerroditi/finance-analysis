@@ -23,6 +23,7 @@ import { RefundTagMismatchNotice } from "./RefundTagMismatchNotice";
 import { useConfirm } from "../../context/DialogContext";
 import { useQueryKeys } from "../../hooks/useQueryKeys";
 import { qkPrefix } from "../../services/queryKeys";
+import { REFUND_WRITE_PLAN } from "../../writePlans";
 import { LoadingSpinner } from "../common/LoadingSpinner";
 
 type StatusFilter = "all" | "open" | "resolved" | "closed";
@@ -114,29 +115,35 @@ const RefundsView: React.FC = () => {
     queryFn: () => pendingRefundsApi.getRefundSources().then((res) => res.data),
   });
 
-  const invalidate = () => {
-    queryClient.invalidateQueries({ queryKey: qkPrefix.pendingRefunds });
-    queryClient.invalidateQueries({ queryKey: qkPrefix.budget });
-    queryClient.invalidateQueries({ queryKey: qkPrefix.transactions });
-  };
-
+  // The mutation cache refreshes after each of these, following its plan.
+  const refundWrite = () => ({ refresh: REFUND_WRITE_PLAN });
   const closeMutation = useMutation({
     mutationFn: (id: number) => pendingRefundsApi.close(id),
-    onSuccess: invalidate,
+    onMutate: refundWrite,
   });
   const cancelMutation = useMutation({
     mutationFn: (id: number) => pendingRefundsApi.cancel(id),
-    onSuccess: invalidate,
+    onMutate: refundWrite,
   });
   const unlinkMutation = useMutation({
     mutationFn: (linkId: number) => pendingRefundsApi.unlinkRefund(linkId),
-    onSuccess: invalidate,
+    onMutate: refundWrite,
   });
+
+  // A note is shown at once and reaches nothing but the refund lists.
+  const notesOnly = { only: [qkPrefix.pendingRefunds] };
   const notesMutation = useMutation({
     mutationFn: (params: { id: number; notes: string }) =>
       pendingRefundsApi.updateNotes(params.id, params.notes),
-    onSuccess: () =>
-      queryClient.invalidateQueries({ queryKey: qkPrefix.pendingRefunds }),
+    onMutate: ({ id, notes }) => {
+      const key = qk.pendingRefunds.all();
+      const before = queryClient.getQueryData<PendingRefund[]>(key);
+      queryClient.setQueryData<PendingRefund[]>(key, (old) =>
+        old?.map((r) => (r.id === id ? { ...r, notes: notes || undefined } : r)),
+      );
+      return { refresh: notesOnly, restore: () => queryClient.setQueryData(key, before) };
+    },
+    onError: (_error, _params, context) => context?.restore(),
   });
   const sourceNoteMutation = useMutation({
     mutationFn: (params: {
@@ -144,8 +151,19 @@ const RefundsView: React.FC = () => {
       refund_transaction_id: number;
       note: string;
     }) => pendingRefundsApi.setSourceNote(params),
-    onSuccess: () =>
-      queryClient.invalidateQueries({ queryKey: qkPrefix.pendingRefunds }),
+    onMutate: ({ refund_source, refund_transaction_id, note }) => {
+      const key = qk.pendingRefunds.sources();
+      const before = queryClient.getQueryData<RefundSource[]>(key);
+      queryClient.setQueryData<RefundSource[]>(key, (old) =>
+        old?.map((s) =>
+          s.refund_source === refund_source && s.refund_transaction_id === refund_transaction_id
+            ? { ...s, note: note || null }
+            : s,
+        ),
+      );
+      return { refresh: notesOnly, restore: () => queryClient.setQueryData(key, before) };
+    },
+    onError: (_error, _params, context) => context?.restore(),
   });
 
   const summary = useMemo(() => {

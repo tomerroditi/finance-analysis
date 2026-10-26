@@ -399,6 +399,27 @@ describe("GoalsSection", () => {
       );
     });
 
+    it("frees the row once the write lands, without waiting on a refetch", async () => {
+      vi.spyOn(savingsGoalsApi, "addEntry").mockResolvedValue(
+        listAnswer([makeGoal({ id: 3, name: "Trip", added: 3000 })]),
+      );
+      await renderGoals([makeGoal({ id: 3, name: "Trip" })]);
+      // Whatever refetches after the write never answers.
+      vi.mocked(savingsGoalsApi.getFreeCash).mockReturnValue(new Promise(() => {}));
+      vi.mocked(savingsGoalsApi.getYearly).mockReturnValue(new Promise(() => {}));
+
+      fireEvent.click(within(rowFor("Trip")).getByRole("button", { name: /add money/i }));
+      fireEvent.change(screen.getByLabelText("Amount to add to Trip"), {
+        target: { value: "500" },
+      });
+      fireEvent.click(within(rowFor("Trip")).getByRole("button", { name: /^save$/i }));
+
+      await waitFor(() =>
+        expect(within(rowFor("Trip")).getByRole("button", { name: /add money/i })).toBeEnabled(),
+      );
+      expect(savingsGoalsApi.getFreeCash).toHaveBeenCalledTimes(1);
+    });
+
     it("takes money out as a negative entry", async () => {
       const addEntry = vi.spyOn(savingsGoalsApi, "addEntry").mockResolvedValue(listAnswer());
       await renderGoals([makeGoal({ id: 3, name: "Trip", available: 2500 })]);

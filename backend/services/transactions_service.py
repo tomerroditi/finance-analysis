@@ -40,6 +40,7 @@ from backend.repositories.transactions import (
     transaction_table,
 )
 from backend.services.transaction_write_effects import TransactionWriteEffects
+from backend.utils import data_cache
 from backend.utils.session_cache import session_cache_get, session_cache_set
 
 # `split_id` holds the primary key of a `split_transactions` row, or nothing at
@@ -50,6 +51,9 @@ from backend.utils.session_cache import session_cache_get, session_cache_set
 # ignoring the all-NA side, but warns that it will stop doing so. Pinning every
 # synthesised column to the same dtype keeps the frames uniform.
 SPLIT_ID_DTYPE = "float64"
+
+#: Audit timestamps the transactions list leaves out (no client reads them).
+_UNLISTED_COLUMNS = ("created_at", "updated_at")
 
 # Splits are money slices of one transaction, so they must add up to it. Money
 # is stored as a float, so allow a cent of accumulated rounding drift.
@@ -122,9 +126,38 @@ class TransactionsService:
         -------
         pd.DataFrame
             Merged DataFrame with all transaction sources and prior-wealth rows.
-            Returns an empty DataFrame if no data exists.
+            Returns an empty DataFrame if no data exists. The caller owns it:
+            nearly every derived endpoint reads this frame, so it is shared
+            across requests through ``data_cache`` (rebuilt after any write)
+            and each caller gets its own copy.
         """
         cache_key = ("transactions.data_for_analysis", include_split_parents)
+        return data_cache.cached(
+            self.db,
+            cache_key,
+            lambda: self._build_data_for_analysis(cache_key, include_split_parents),
+        ).copy()
+
+    def _build_data_for_analysis(
+        self, cache_key: tuple[str, bool], include_split_parents: bool
+    ) -> pd.DataFrame:
+        """Assemble :meth:`get_data_for_analysis`'s frame, memoised per session.
+
+        The session memo only matters where ``data_cache`` does not cache (an
+        in-memory database, or a session with pending changes).
+
+        Parameters
+        ----------
+        cache_key : tuple
+            The session-cache key.
+        include_split_parents : bool
+            Whether split parents stay alongside their children.
+
+        Returns
+        -------
+        pd.DataFrame
+            The merged frame (shared — :meth:`get_data_for_analysis` copies).
+        """
         cached = session_cache_get(self.db, cache_key)
         if cached is not None:
             return cached
@@ -372,6 +405,35 @@ class TransactionsService:
             include_split_parents=include_split_parents,
             exclude_services=exclude_services,
         )
+
+    def get_transactions_list(
+        self, service: str | None = None, include_split_parents: bool = False
+    ) -> pd.DataFrame:
+        """Return the rows the transactions page lists.
+
+        The merged frame without insurance rows and without the
+        ``created_at`` / ``updated_at`` audit timestamps: no client reads them,
+        and at ~15% of every row they were the largest cost in the app's
+        biggest payload.
+
+        Parameters
+        ----------
+        service : str, optional
+            Restrict to one service/table; see :meth:`get_merged_transactions`.
+        include_split_parents : bool, optional
+            Keep split parents alongside their children. Default ``False``.
+
+        Returns
+        -------
+        pd.DataFrame
+            The listed transactions.
+        """
+        df = self.get_merged_transactions(
+            service=service,
+            include_split_parents=include_split_parents,
+            exclude_services=[Services.INSURANCE.value],
+        )
+        return df.drop(columns=list(_UNLISTED_COLUMNS), errors="ignore")
 
     def get_transaction(self, transaction_id: int, source: str) -> pd.Series:
         """

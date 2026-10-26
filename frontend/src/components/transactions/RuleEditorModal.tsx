@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { useScrollLock } from "../../hooks/useScrollLock";
 import { X, Save, Loader2, AlertTriangle, Info } from "lucide-react";
 import { taggingApi } from "../../services/api";
@@ -13,6 +13,20 @@ import { useCategories } from "../../hooks/useCategories";
 import { useTaggingRules } from "../../hooks/useTaggingRules";
 import { formatCurrency } from "../../utils/numberFormatting";
 import { qkPrefix } from "../../services/queryKeys";
+import { UNCHANGED_BY_RETAG } from "../budget/budgetOptimistic";
+import type { RefreshPlan } from "../../queryInvalidation";
+
+/**
+ * Saving a rule applies it at once, retagging rows in months nothing here
+ * knows — so every tag-fed read refreshes, the rule list first; only the
+ * reads a retag never changes (`UNCHANGED_BY_RETAG`) are left alone.
+ */
+const RULE_SAVE_PLAN: { refresh: RefreshPlan } = {
+  refresh: {
+    first: [qkPrefix.taggingRules],
+    skip: UNCHANGED_BY_RETAG.filter((key) => key[0] !== qkPrefix.taggingRules[0]),
+  },
+};
 import { useQueryKeys } from "../../hooks/useQueryKeys";
 
 interface RuleEditorModalProps {
@@ -49,7 +63,6 @@ const EMPTY_CONDITIONS: ConditionNode = {
 export function RuleEditorModal({ isOpen, onClose, editingRule, onSaved, prefill, highlightedConditions, gatedDescriptions }: RuleEditorModalProps) {
     const { t, i18n } = useTranslation();
     const isRtl = i18n.language === "he";
-    const queryClient = useQueryClient();
     const qk = useQueryKeys();
     useScrollLock(isOpen);
     const { createCategory, createTag } = useCategoryTagCreate();
@@ -127,9 +140,8 @@ export function RuleEditorModal({ isOpen, onClose, editingRule, onSaved, prefill
     // Mutations
     const createMutation = useMutation({
         mutationFn: (payload: Omit<TaggingRule, "id">) => taggingApi.createRule(payload),
+        onMutate: () => RULE_SAVE_PLAN,
         onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: qkPrefix.taggingRules });
-            queryClient.invalidateQueries({ queryKey: qkPrefix.transactions });
             onSaved?.();
             onClose();
         },
@@ -142,9 +154,8 @@ export function RuleEditorModal({ isOpen, onClose, editingRule, onSaved, prefill
     const updateMutation = useMutation({
         mutationFn: (payload: { id: number; data: Partial<TaggingRule> }) =>
             taggingApi.updateRule(payload.id, payload.data),
+        onMutate: () => RULE_SAVE_PLAN,
         onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: qkPrefix.taggingRules });
-            queryClient.invalidateQueries({ queryKey: qkPrefix.transactions });
             onSaved?.();
             onClose();
         },

@@ -280,7 +280,10 @@ class YearlyBudgetService(BudgetService):
             ``{"copied_from": <int year>, "skipped": [<tag>, ...]}`` when rules
             were copied, else ``None``.
         """
-        if year < _today().year:
+        # No prior year to copy from means nothing to do — return before the
+        # re-read's rollback(), which would discard the cross-request
+        # ``data_cache`` on every read of an empty year.
+        if year < _today().year or self._latest_prior_year_rules(year) is None:
             return None
         with _auto_fill_lock:
             self.db.rollback()

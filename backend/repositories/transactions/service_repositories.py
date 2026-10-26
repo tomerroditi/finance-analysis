@@ -594,6 +594,29 @@ class InsuranceRepository(ServiceRepository):
         stmt = select(self.model).where(self.model.account_number == policy_id)
         return pd.read_sql(stmt, self.db.bind)
 
+    def get_for_policies(self, policy_ids: list[str]) -> dict[str, pd.DataFrame]:
+        """Return every transaction of several policies, one frame per policy.
+
+        Parameters
+        ----------
+        policy_ids : list[str]
+            Policy identifiers, stored as the transactions' ``account_number``.
+
+        Returns
+        -------
+        dict[str, pd.DataFrame]
+            Policy id to its rows, in the order :meth:`get_for_policy` returns
+            them; policies without transactions are absent.
+        """
+        if not policy_ids:
+            return {}
+        stmt = select(self.model).where(self.model.account_number.in_(policy_ids))
+        df = pd.read_sql(stmt, self.db.bind)
+        return {
+            str(policy): rows.reset_index(drop=True)
+            for policy, rows in df.groupby("account_number", sort=False)
+        }
+
     def reassign_policy(
         self,
         policy_id: str,

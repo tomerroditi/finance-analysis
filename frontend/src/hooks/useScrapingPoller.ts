@@ -3,6 +3,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import type { QueryClient } from "@tanstack/react-query";
 import { scrapingApi } from "../services/api";
 import { qkPrefix } from "../services/queryKeys";
+import { ONBOARDING_STATUS_KEY } from "./useOnboardingStatus";
 import { useScrapingStore, isLive } from "../stores/scrapingStore";
 import { INITIAL_2FA_COOLDOWN_SECONDS } from "./useScraping";
 
@@ -20,10 +21,13 @@ export const POLL_INTERVAL_MS = 2000;
  * `staleTime`, i.e. freshly scraped transactions were invisible on the
  * Transactions / Dashboard / Budget pages for up to five minutes.
  *
- * Deliberately a narrow list rather than a bare `invalidateQueries()`:
+ * Deliberately a list rather than a bare `invalidateQueries()`:
  * `.claude/rules/frontend_components.md` → "Don't fan out invalidation in
- * mutation hot paths". Everything here is genuinely downstream of new
- * transaction rows.
+ * mutation hot paths". Everything here is downstream of what a scrape writes:
+ * new rows (and the auto-tagging that may mint categories), the balances and
+ * holdings computed from them (savings goals, investments, the liabilities a
+ * pension loan mirrors, cash, the retirement plan), and whether the database
+ * holds any transactions at all.
  */
 export const SCRAPE_COMPLETION_PREFIXES = [
   qkPrefix.transactions,
@@ -33,6 +37,13 @@ export const SCRAPE_COMPLETION_PREFIXES = [
   qkPrefix.insuranceAccounts,
   qkPrefix.bankBalances,
   qkPrefix.lastScrapes,
+  qkPrefix.savingsGoals,
+  qkPrefix.categories,
+  qkPrefix.investments,
+  qkPrefix.liabilities,
+  qkPrefix.cashBalances,
+  qkPrefix.fire,
+  ONBOARDING_STATUS_KEY,
 ] as const;
 
 /**
@@ -51,6 +62,7 @@ export async function pollOnce(queryClient: QueryClient): Promise<void> {
   const store = useScrapingStore.getState();
   const live = Object.values(store.runningScrapers).filter(isLive);
   if (live.length === 0) return;
+  let completed = false;
 
   // Concurrently, not serially: with several accounts scraping at once a
   // sequential loop made each tick as slow as the sum of its requests, so
@@ -74,9 +86,7 @@ export async function pollOnce(queryClient: QueryClient): Promise<void> {
           Date.now() - scraper.last_updated > 5000
         ) {
           if (newStatus === "success" && scraper.status !== "success") {
-            for (const queryKey of SCRAPE_COMPLETION_PREFIXES) {
-              queryClient.invalidateQueries({ queryKey });
-            }
+            completed = true;
           }
           store.updateStatus(scraper.process_id, {
             status: newStatus,
@@ -89,6 +99,15 @@ export async function pollOnce(queryClient: QueryClient): Promise<void> {
       }
     }),
   );
+
+  // Once per tick however many accounts finished in it, and joining any
+  // refetch already under way: one invalidation per account restarted every
+  // read N times when a "Scrape all" landed together.
+  if (completed) {
+    for (const queryKey of SCRAPE_COMPLETION_PREFIXES) {
+      void queryClient.invalidateQueries({ queryKey }, { cancelRefetch: false });
+    }
+  }
 }
 
 /**

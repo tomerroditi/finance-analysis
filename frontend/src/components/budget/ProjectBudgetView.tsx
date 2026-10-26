@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { useTranslation } from "react-i18next";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { Archive, ArchiveRestore, Plus, Trash2, PenSquare } from "lucide-react";
 import {
   budgetApi,
@@ -21,7 +21,7 @@ import { BudgetGoalLink } from "./BudgetGoalLink";
 import { SelectDropdown } from "../common/SelectDropdown";
 import { LoadingSpinner } from "../common/LoadingSpinner";
 import { useQueryKeys } from "../../hooks/useQueryKeys";
-import { qkPrefix } from "../../services/queryKeys";
+import { projectPlan } from "./budgetPlans";
 import { formatCurrency } from "../../utils/numberFormatting";
 import { formatMonthCompact } from "../../utils/dateFormatting";
 import {
@@ -68,7 +68,6 @@ export const ProjectBudgetView: React.FC<ProjectBudgetViewProps> = ({
   const [expandedRuleId, setExpandedRuleId] = useState<string | null>(null);
   const [includeSplitParents, setIncludeSplitParents] = useState(false);
 
-  const queryClient = useQueryClient();
   const qk = useQueryKeys();
 
   // One read answers both "which projects" and "which are finished" — the
@@ -85,9 +84,11 @@ export const ProjectBudgetView: React.FC<ProjectBudgetViewProps> = ({
     projectsStatus.find((p: ProjectStatus) => p.name === selectedProject)?.closed,
   );
 
+  // Refund badges for the rows a rule expands to show — only once one is open.
   const { data: pendingRefunds } = useQuery({
     queryKey: qk.pendingRefunds.all(),
     queryFn: () => pendingRefundsApi.getAll().then((res) => res.data),
+    enabled: expandedRuleId !== null,
   });
 
   const pendingRefundsMap = useMemo(() => {
@@ -117,10 +118,13 @@ export const ProjectBudgetView: React.FC<ProjectBudgetViewProps> = ({
     enabled: !!selectedProject,
   });
 
+  // Every write refreshes along `projectPlan`: the project list and the
+  // selected project's details first. Creating or deleting a project claims
+  // or frees a whole category, so it reaches analytics too; the rest do not.
   const createMutation = useMutation({
     mutationFn: budgetApi.createProject,
+    onMutate: (variables) => ({ refresh: projectPlan(variables.category, "structure") }),
     onSuccess: (_, variables) => {
-      queryClient.invalidateQueries({ queryKey: qkPrefix.budget });
       setSelectedProject(variables.category);
       setIsProjectModalOpen(false);
     },
@@ -137,37 +141,34 @@ export const ProjectBudgetView: React.FC<ProjectBudgetViewProps> = ({
   const updateMutation = useMutation({
     mutationFn: ({ name, data }: { name: string; data: { total_budget: number } }) =>
       budgetApi.updateProject(name, data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: qkPrefix.budget });
-      setIsProjectModalOpen(false);
-    },
+    onMutate: ({ name }) => ({ refresh: projectPlan(name, "edit") }),
+    onSuccess: () => setIsProjectModalOpen(false),
   });
 
   const deleteMutation = useMutation({
     mutationFn: budgetApi.deleteProject,
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: qkPrefix.budget });
-      setSelectedProject("");
-    },
+    onMutate: () => ({ refresh: projectPlan(undefined, "structure") }),
+    onSuccess: () => setSelectedProject(""),
   });
 
   const closedMutation = useMutation({
     mutationFn: ({ name, closed }: { name: string; closed: boolean }) =>
       budgetApi.setProjectClosed(name, closed),
-    onSuccess: () => {
-      // The whole budget prefix, not just the project keys: the Overview's
-      // rule list is built from this flag, so it has to refetch too.
-      queryClient.invalidateQueries({ queryKey: qkPrefix.budget });
-    },
+    // Not only the project keys: the Overview's envelope list is built from
+    // this flag, and the plan leaves the budget family unskipped.
+    onMutate: ({ name }) => ({ refresh: projectPlan(name, "edit") }),
     onError: () => notify.error(t("budget.failedCloseProject")),
   });
 
   const updateRuleMutation = useMutation({
     mutationFn: ({ id, rule }: { id: number; rule: object }) =>
       budgetApi.updateRule(id, rule),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: qkPrefix.budget });
-    },
+    onMutate: () => ({ refresh: projectPlan(selectedProject, "edit") }),
+  });
+
+  const createRuleMutation = useMutation({
+    mutationFn: (rule: object) => budgetApi.createRule(rule),
+    onMutate: () => ({ refresh: projectPlan(selectedProject, "edit") }),
   });
 
   const handleCreateProject = (data: { category: string; total_budget: number }) =>
@@ -207,8 +208,7 @@ export const ProjectBudgetView: React.FC<ProjectBudgetViewProps> = ({
     if (editingRule) {
       await updateRuleMutation.mutateAsync({ id: editingRule.id, rule });
     } else {
-      await budgetApi.createRule(rule);
-      queryClient.invalidateQueries({ queryKey: qkPrefix.budget });
+      await createRuleMutation.mutateAsync(rule);
     }
   };
 
@@ -427,9 +427,6 @@ export const ProjectBudgetView: React.FC<ProjectBudgetViewProps> = ({
               setEditingRule(rule);
               setIsRuleModalOpen(true);
             }}
-            onTransactionUpdated={() =>
-              queryClient.invalidateQueries({ queryKey: qkPrefix.budget })
-            }
           />
         </>
       )}

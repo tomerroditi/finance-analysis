@@ -143,8 +143,16 @@ class MonthlyBudgetService(BudgetService):
         source month and duplicate rules. The passed-in ``budget_rules`` is a
         snapshot taken before the lock, so we re-read it fresh inside the lock
         to observe rules a request that won the race already committed.
+
+        With no earlier month to copy from there is nothing to fill, so it
+        returns before taking the lock. The re-read starts with a
+        ``rollback()``, and every rollback discards the cross-request
+        ``data_cache`` — a household without monthly rules used to throw the
+        whole cache away on every visit to its current month.
         """
         self._auto_fill_skipped = []
+        if self._auto_fill_source(current_year, current_month, budget_rules) is None:
+            return None
         with _auto_fill_lock:
             # Drop this session's read snapshot and re-read committed state so a
             # request that lost the race sees the month already filled.
@@ -169,26 +177,10 @@ class MonthlyBudgetService(BudgetService):
         Must be called while holding ``_auto_fill_lock`` with a freshly-read
         ``budget_rules``. See :meth:`auto_fill_empty_months`.
         """
-        monthly_rules = budget_rules.dropna(subset=[YEAR, MONTH])
-        if monthly_rules.empty:
+        source = self._auto_fill_source(current_year, current_month, budget_rules)
+        if source is None:
             return None
-
-        before_current = monthly_rules[
-            (monthly_rules[YEAR] < current_year)
-            | (
-                (monthly_rules[YEAR] == current_year)
-                & (monthly_rules[MONTH] < current_month)
-            )
-        ]
-        if before_current.empty:
-            return None
-
-        before_current = before_current.copy()
-        before_current["_sort"] = before_current[YEAR] * 12 + before_current[MONTH]
-        max_sort = before_current["_sort"].max()
-        source_row = before_current[before_current["_sort"] == max_sort].iloc[0]
-        source_year = int(source_row[YEAR])
-        source_month = int(source_row[MONTH])
+        source_year, source_month = source
 
         source_rules = self.get_month_rules(source_year, source_month, budget_rules)
 
@@ -228,6 +220,37 @@ class MonthlyBudgetService(BudgetService):
         self._auto_fill_skipped = skipped
         source_month_name = calendar.month_name[source_month]
         return f"{source_month_name} {source_year}"
+
+    @staticmethod
+    def _auto_fill_source(
+        year: int, month: int, budget_rules: pd.DataFrame
+    ) -> tuple[int, int] | None:
+        """Return the latest month before ``year``/``month`` that has monthly rules.
+
+        Parameters
+        ----------
+        year, month : int
+            The month auto-fill would fill.
+        budget_rules : pd.DataFrame
+            Every budget rule.
+
+        Returns
+        -------
+        tuple[int, int] or None
+            ``(year, month)`` of the month auto-fill copies from, or ``None``
+            when no earlier month has rules.
+        """
+        if budget_rules.empty:
+            return None
+        monthly_rules = budget_rules.dropna(subset=[YEAR, MONTH])
+        before = monthly_rules[
+            (monthly_rules[YEAR] < year)
+            | ((monthly_rules[YEAR] == year) & (monthly_rules[MONTH] < month))
+        ]
+        if before.empty:
+            return None
+        latest = before.loc[(before[YEAR] * 12 + before[MONTH]).idxmax()]
+        return int(latest[YEAR]), int(latest[MONTH])
 
     def effective_total_budget(
         self, year: int, month: int, budget_rules: pd.DataFrame | None = None
@@ -356,10 +379,11 @@ class MonthlyBudgetService(BudgetService):
         which is long enough for the Overview to keep showing a closed project
         after it has been reopened.
 
-        Deliberately built on ``get_monthly_budget_view`` rather than
-        ``get_monthly_analysis``: the sparkline needs only rule totals, while
-        the analysis additionally assembles project spending, savings-goal
-        allocations and pending refunds (12 months: ~0.5 s vs ~1.7 s).
+        Deliberately built on rule totals (:meth:`_month_totals`) rather than
+        ``get_monthly_analysis`` or even the full rule view: the sparkline
+        needs only each rule's spend, while the view also lists every claimed
+        transaction and the analysis additionally assembles project spending,
+        savings-goal allocations and pending refunds.
 
         **Read-only, and therefore not a drop-in for the analysis endpoint.**
         ``get_monthly_analysis`` auto-fills an empty current/future month by
@@ -391,7 +415,7 @@ class MonthlyBudgetService(BudgetService):
             name to its spend and ``limits`` mapping each rule name to the
             cap it carried that month.
         """
-        claims = self.get_claims()
+        claims = ledger.of_kind(self.get_claims(), *ledger.MONTHLY_POOL)
         budget_rules = self.get_all_rules()
         series: list[dict[str, Any]] = []
         for offset in range(months - 1, -1, -1):
@@ -400,7 +424,9 @@ class MonthlyBudgetService(BudgetService):
             absolute = (year * 12 + month - 1) - offset
             point_year, point_month = divmod(absolute, 12)
             point_month += 1
-            view = self._month_view(claims, budget_rules, point_year, point_month) or []
+            view = (
+                self._month_totals(claims, budget_rules, point_year, point_month) or []
+            )
 
             # The "Total Budget" row is the source of truth for the headline
             # pair, exactly as the monthly gauge reads it. Summing the
@@ -477,6 +503,14 @@ class MonthlyBudgetService(BudgetService):
             - ``skipped_yearly_conflicts`` – tag names dropped from an
               auto-fill copy because they are claimed by a yearly rule for
               this year.
+            - ``uncategorized_count`` / ``uncategorized_amount`` – how many
+              rows of the month's monthly pool carry no category, and their
+              gross absolute total (``0`` without a Total Budget rule).
+
+            The Total Budget entry's ``data`` is empty whenever another entry
+            exists: every pool row is already listed under the rule that
+            claimed it or under Other Expenses, so the client builds the
+            month's list as their union rather than receiving it twice.
         """
         copied_from = None
         today = date.today()
@@ -491,6 +525,7 @@ class MonthlyBudgetService(BudgetService):
                 copied_from = self.auto_fill_empty_months(year, month, budget_rules)
 
         view = self.get_monthly_budget_view(year, month, include_split_parents)
+        uncategorized_count, uncategorized_amount = _strip_total_budget_rows(view)
         project_summary = self.get_monthly_project_spending_summary(
             year, month, include_split_parents
         )
@@ -520,6 +555,8 @@ class MonthlyBudgetService(BudgetService):
             "savings_goals": savings_goals,
             "copied_from": copied_from,
             "skipped_yearly_conflicts": skipped_yearly,
+            "uncategorized_count": uncategorized_count,
+            "uncategorized_amount": uncategorized_amount,
         }
 
     def get_monthly_budget_view(
@@ -634,6 +671,89 @@ class MonthlyBudgetService(BudgetService):
             )
 
         return view
+
+    @staticmethod
+    def _month_totals(
+        claims: pd.DataFrame, budget_rules: pd.DataFrame, year: int, month: int
+    ) -> list[dict[str, Any]] | None:
+        """Return :meth:`_month_view`'s entries without their transaction lists.
+
+        The trend and the alerts read only each rule's spend, and listing every
+        claimed row (``ledger.transaction_records``) was most of what building
+        the full view cost them. Every entry carries the same ``rule``,
+        ``current_amount``, ``allow_edit`` and ``allow_delete`` as the view's,
+        summed over the same rows in the same order, so the figures are
+        identical to the last bit.
+
+        Parameters
+        ----------
+        claims : pd.DataFrame
+            The claim ledger, or any slice of it that still holds every
+            monthly-pool row (the trend narrows it to the pool once).
+        budget_rules : pd.DataFrame
+            Every budget rule.
+        year, month : int
+            The budget month.
+
+        Returns
+        -------
+        list[dict] or None
+            ``None`` when the month has no rules, else one entry per rule,
+            Total Budget first and ``"Other Expenses"`` last when present.
+        """
+        if budget_rules.empty:
+            return None
+        rules = budget_rules[
+            (budget_rules[YEAR] == year) & (budget_rules[MONTH] == month)
+        ]
+        if rules.empty:
+            return None
+
+        pool = ledger.of_kind(
+            ledger.in_budget_month(claims, year, month), *ledger.MONTHLY_POOL
+        )
+        totals: list[dict[str, Any]] = []
+        total_rule = rules[rules[CATEGORY] == TOTAL_BUDGET]
+        if not total_rule.empty:
+            totals.append(
+                {
+                    "rule": total_rule.iloc[0].to_dict(),
+                    "current_amount": ledger.spent(pool),
+                    "allow_edit": True,
+                    "allow_delete": False,
+                }
+            )
+            rules = rules.loc[~rules.index.isin(total_rule.index)]
+
+        for _, rule in rules.iterrows():
+            totals.append(
+                {
+                    "rule": rule.to_dict(),
+                    "current_amount": ledger.spent(ledger.of_rule(pool, rule[ID])),
+                    "allow_edit": True,
+                    "allow_delete": True,
+                }
+            )
+
+        unclaimed = ledger.of_kind(pool, ledger.KIND_OTHER)
+        if not unclaimed.empty and not rules.empty and not total_rule.empty:
+            totals.append(
+                {
+                    "rule": {
+                        NAME: "Other Expenses",
+                        AMOUNT: max(
+                            total_rule.iloc[0][AMOUNT] - rules[AMOUNT].sum(), 0.0
+                        ),
+                        CATEGORY: "Other Expenses",
+                        TAGS: "Other Expenses",
+                        ID: f"{year}{month}_Other_Expenses",
+                    },
+                    "current_amount": ledger.spent(unclaimed),
+                    "allow_edit": False,
+                    "allow_delete": False,
+                }
+            )
+        return totals
 
     def get_monthly_project_transactions(
         self, year: int, month: int, include_split_parents: bool = False
@@ -764,7 +884,7 @@ class MonthlyBudgetService(BudgetService):
             ``severity`` (``"warning"`` or ``"critical"``). Empty list when
             no rules are tripped or no rules exist for the month.
         """
-        view = self.get_monthly_budget_view(year, month)
+        view = self._month_totals(self.get_claims(), self.get_all_rules(), year, month)
         if view is None:
             return []
 
@@ -800,3 +920,46 @@ class MonthlyBudgetService(BudgetService):
 
         alerts.sort(key=lambda a: a["percentage"], reverse=True)
         return alerts
+
+
+def _strip_total_budget_rows(view: list[dict[str, Any]] | None) -> tuple[int, float]:
+    """Empty the Total Budget entry's row list when the other entries list them.
+
+    The Total Budget entry carries the whole monthly pool, and every row of it
+    is also under the rule that claimed it or under Other Expenses — which the
+    view emits whenever a Total Budget and at least one other rule exist. Sent
+    twice, the pool was about half of every analysis response. A month with
+    only a Total Budget rule keeps its rows, since nothing else lists them.
+
+    Parameters
+    ----------
+    view : list[dict] or None
+        The month's rule view (:meth:`MonthlyBudgetService.get_monthly_budget_view`),
+        changed in place.
+
+    Returns
+    -------
+    tuple[int, float]
+        The pool's uncategorized row count and the sum of their absolute gross
+        amounts, read before the rows are dropped; ``(0, 0.0)`` when the month
+        has no Total Budget entry.
+    """
+    total = next(
+        (entry for entry in view or [] if entry["rule"].get(CATEGORY) == TOTAL_BUDGET),
+        None,
+    )
+    if total is None:
+        return 0, 0.0
+    amount_field = TransactionsTableFields.AMOUNT.value
+    uncategorized = [
+        row
+        for row in total["data"]
+        if not row.get(TransactionsTableFields.CATEGORY.value)
+        or pd.isna(row.get(TransactionsTableFields.CATEGORY.value))
+    ]
+    uncategorized_amount = float(
+        sum(abs(row.get(amount_field) or 0.0) for row in uncategorized)
+    )
+    if len(view or []) > 1:
+        total["data"] = []
+    return len(uncategorized), uncategorized_amount

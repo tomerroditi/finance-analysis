@@ -110,6 +110,11 @@ class SavingsGoalRepository:
         records = self.db.execute(select(SavingsGoal)).scalars().all()
         return orm_rows_to_frame(records, GOAL_COLUMNS)
 
+    def get_all_ordered(self) -> list[SavingsGoal]:
+        """Return every goal as ORM rows, ordered by ``(priority, id)``."""
+        stmt = select(SavingsGoal).order_by(SavingsGoal.priority, SavingsGoal.id)
+        return list(self.db.execute(stmt).scalars().all())
+
     def get(self, goal_id: int) -> SavingsGoal | None:
         """Return a single goal by id, or None."""
         return self.db.get(SavingsGoal, goal_id)

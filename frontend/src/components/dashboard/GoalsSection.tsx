@@ -32,6 +32,7 @@ import {
 import { useQueryKeys } from "../../hooks/useQueryKeys";
 import { useScrollCap } from "../../hooks/useScrollCap";
 import { usePendingRows } from "../../hooks/usePendingRows";
+import { savingsGoalPlan } from "../budget/budgetPlans";
 import { qkPrefix } from "../../services/queryKeys";
 import { useConfirm, useNotify } from "../../context/DialogContext";
 import { Skeleton } from "../common/Skeleton";
@@ -100,31 +101,37 @@ export function GoalsSection() {
     queryFn: async () => (await savingsGoalsApi.getFreeCash()).data,
   });
 
-  const invalidate = () =>
-    queryClient.invalidateQueries({ queryKey: qkPrefix.savingsGoals });
-
-  /** Every goal write answers with the whole list; show it, then refresh the rest. */
+  /**
+   * Every goal write answers with the whole list: show it now. The rest —
+   * free cash, the month, the timeline, the year, the budget month — the
+   * mutation cache refreshes after, along `savingsGoalPlan`. Nothing here
+   * returns a promise: TanStack awaits one, which held each row's pending
+   * state (and the sweep) until every savings-goals read had refetched.
+   */
   const applyGoals = (res: AxiosResponse<SavingsGoal[]>) => {
     if (Array.isArray(res.data)) {
       queryClient.setQueryData(qk.savingsGoals.all(), res.data);
     }
-    return invalidate();
   };
   const failed = () => notify.error(t("dashboard.goals.writeFailed"));
+  const plan = { refresh: savingsGoalPlan() };
 
   // One mutation serves every row, so each row is gated on its own write.
   const pending = usePendingRows<string>();
 
   const deleteMutation = useMutation({
     mutationFn: (id: number) => savingsGoalsApi.delete(id),
-    onSuccess: invalidate,
+    onMutate: () => plan,
     onError: failed,
   });
 
   const entryMutation = useMutation({
     mutationFn: ({ goalId, amount, note }: { goalId: number; amount: number; note: string | null }) =>
       savingsGoalsApi.addEntry(goalId, amount, note),
-    onMutate: ({ goalId }) => pending.begin(`goal:${goalId}`),
+    onMutate: ({ goalId }) => {
+      pending.begin(`goal:${goalId}`);
+      return plan;
+    },
     onSettled: (_data, _error, { goalId }) => pending.end(`goal:${goalId}`),
     onSuccess: applyGoals,
     onError: failed,
@@ -132,7 +139,10 @@ export function GoalsSection() {
 
   const undoMutation = useMutation({
     mutationFn: (entryId: number) => savingsGoalsApi.deleteEntry(entryId),
-    onMutate: (entryId) => pending.begin(`entry:${entryId}`),
+    onMutate: (entryId) => {
+      pending.begin(`entry:${entryId}`);
+      return plan;
+    },
     onSettled: (_data, _error, entryId) => pending.end(`entry:${entryId}`),
     onSuccess: applyGoals,
     onError: failed,
@@ -140,7 +150,10 @@ export function GoalsSection() {
 
   const fundOneMutation = useMutation({
     mutationFn: (goalId: number) => savingsGoalsApi.fund([goalId]),
-    onMutate: (goalId) => pending.begin(`goal:${goalId}`),
+    onMutate: (goalId) => {
+      pending.begin(`goal:${goalId}`);
+      return plan;
+    },
     onSettled: (_data, _error, goalId) => pending.end(`goal:${goalId}`),
     onSuccess: applyGoals,
     onError: failed,
@@ -148,6 +161,7 @@ export function GoalsSection() {
 
   const fundAllMutation = useMutation({
     mutationFn: () => savingsGoalsApi.fund(null),
+    onMutate: () => plan,
     onSuccess: applyGoals,
     onError: failed,
   });
@@ -155,7 +169,10 @@ export function GoalsSection() {
   const closeMutation = useMutation({
     mutationFn: ({ goalId, close }: { goalId: number; close: boolean }) =>
       close ? savingsGoalsApi.close(goalId) : savingsGoalsApi.reopen(goalId),
-    onMutate: ({ goalId }) => pending.begin(`goal:${goalId}`),
+    onMutate: ({ goalId }) => {
+      pending.begin(`goal:${goalId}`);
+      return plan;
+    },
     onSettled: (_data, _error, { goalId }) => pending.end(`goal:${goalId}`),
     onSuccess: applyGoals,
     onError: failed,
@@ -163,6 +180,7 @@ export function GoalsSection() {
 
   const coverMutation = useMutation({
     mutationFn: () => savingsGoalsApi.cover(),
+    onMutate: () => plan,
     onSuccess: applyGoals,
     onError: failed,
   });
@@ -187,7 +205,9 @@ export function GoalsSection() {
           }),
         );
       }
-      return { previous };
+      // Order decides which goal claims a row two goals' rules both match,
+      // so the budget month's goal movements can change too — nothing else.
+      return { previous, refresh: { only: [qkPrefix.savingsGoals, qkPrefix.budgetAnalysis] } };
     },
     // Only the last reorder in the queue may write: an earlier one's answer
     // is for an order the user has already moved past.
@@ -201,7 +221,6 @@ export function GoalsSection() {
         queryClient.setQueryData(qk.savingsGoals.all(), context.previous);
       }
     },
-    onSettled: () => invalidate(),
   });
 
   const goals = data ?? [];
