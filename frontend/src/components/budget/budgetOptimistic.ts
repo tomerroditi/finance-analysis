@@ -377,7 +377,8 @@ export function widenForCascade(plan: RefreshPlan | undefined, refundsRetagged: 
  * @returns `restore`, which puts every patched month back for a failed
  *   write, and `refresh`, the plan the mutation cache follows after it: the
  *   touched months first, and neither the months the write cannot have
- *   touched nor the reads in {@link UNCHANGED_BY_RETAG}.
+ *   touched nor the reads in {@link UNCHANGED_BY_RETAG} (nor the cash
+ *   balances, unless a cash row is among the edits).
  */
 export function patchBudgetForRetag(
   client: QueryClient,
@@ -426,7 +427,13 @@ export function patchBudgetForRetag(
     },
     refresh: {
       first: placed && touched.length > 0 ? touched : [qkPrefix.budgetAnalysis],
-      skip: [...UNCHANGED_BY_RETAG, ...untouched],
+      // A cash balance is a sum over its account's cash rows; only a write
+      // to one of those can move it.
+      skip: [
+        ...UNCHANGED_BY_RETAG,
+        ...untouched,
+        ...(edits.some((edit) => edit.source.includes("cash")) ? [] : [qkPrefix.cashBalances]),
+      ],
     },
   };
 }

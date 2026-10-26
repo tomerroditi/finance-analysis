@@ -33,6 +33,15 @@ test.describe("Route data prefetching", () => {
     await page.locator('a[href="/liabilities"]').first().hover();
     await liabilitiesRequest;
 
+    // --- The budget page is warmed too: its Overview tab's trend (the
+    // dashboard never reads it; its month overview is already cached) ---
+    const trendRequest = page.waitForRequest(
+      (req) => /\/api\/budget\/trend\//.test(req.url()),
+      { timeout: 15_000 },
+    );
+    await page.locator('a[href="/budget"]').first().hover();
+    await trendRequest;
+
     // Hovering must not navigate.
     await expect(page).toHaveURL(/\/$/);
   });

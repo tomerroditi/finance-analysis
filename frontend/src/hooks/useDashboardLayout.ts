@@ -198,6 +198,19 @@ function subscribe(cb: () => void): () => void {
   };
 }
 
+/** The stored layout, outside React — for the route prefetch. */
+export function readDashboardLayout(): DashboardLayout {
+  return read();
+}
+
+/**
+ * Whether a layout shows a card that reads the whole transaction history
+ * (the recent feed and the spending heatmap) — the dashboard's largest read.
+ */
+export function needsTransactionList(layout: DashboardLayout): boolean {
+  return layout.order.includes("recent") || layout.order.includes("heatmap");
+}
+
 /**
  * Returns the current dashboard layout plus mutators. `setOrder` replaces the
  * visible order; `toggleHidden` moves a card between the visible and hidden

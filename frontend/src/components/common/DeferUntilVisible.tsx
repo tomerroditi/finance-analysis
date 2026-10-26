@@ -15,6 +15,12 @@ interface DeferUntilVisibleProps {
    * stacks at the top and the observer mounts them all at once).
    */
   reserveClassName?: string;
+  /**
+   * Whether to start watching yet. Until it is, the placeholder only holds
+   * its place: measured against a page whose cards above are still loading
+   * skeletons, "near the viewport" would mount everything at once.
+   */
+  armed?: boolean;
 }
 
 /**
@@ -34,6 +40,7 @@ export function DeferUntilVisible({
   children,
   eager = false,
   reserveClassName = "min-h-[20rem]",
+  armed = true,
 }: DeferUntilVisibleProps) {
   // Environments without IntersectionObserver (jsdom, SSR) render eagerly —
   // decided at init so the effect never has to call setState synchronously.
@@ -43,7 +50,7 @@ export function DeferUntilVisible({
   const ref = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
-    if (visible) return;
+    if (visible || !armed) return;
     const el = ref.current;
     if (!el) return;
     const observer = new IntersectionObserver(
@@ -57,7 +64,7 @@ export function DeferUntilVisible({
     );
     observer.observe(el);
     return () => observer.disconnect();
-  }, [visible]);
+  }, [visible, armed]);
 
   if (visible) return <>{children}</>;
 

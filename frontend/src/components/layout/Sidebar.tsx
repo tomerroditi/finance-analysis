@@ -297,6 +297,7 @@ export function Sidebar() {
                   <NavLink
                     key={item.path}
                     to={item.path}
+                    onPointerDown={() => handlePrefetch(item.path)}
                     onClick={() => setMobileSidebarOpen(false)}
                     className={({ isActive }) =>
                       `relative flex flex-col items-center gap-1.5 px-2 py-3 rounded-xl transition-all text-center ${

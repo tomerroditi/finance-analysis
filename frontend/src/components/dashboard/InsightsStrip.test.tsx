@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClient, QueryClientProvider, QueryObserver } from "@tanstack/react-query";
 import { InsightsStrip } from "./InsightsStrip";
+import { createMutationCache } from "../../queryInvalidation";
 import { analyticsApi, testingApi, type Insight } from "../../services/api";
 import { DemoModeProvider } from "../../context/DemoModeContext";
 
@@ -163,6 +164,44 @@ describe("InsightsStrip", () => {
       await waitFor(() => {
         expect(restore).toHaveBeenCalledWith("categorySpike:Food:2026-09");
       });
+    });
+
+    it("refreshes the strip alone after a dismissal", async () => {
+      hiddenCards = ["forecast", "recurring"];
+      vi.spyOn(analyticsApi, "dismissInsight").mockResolvedValue({
+        data: { key: "categorySpike:Food:2026-09", dismissed: true },
+      } as Awaited<ReturnType<typeof analyticsApi.dismissInsight>>);
+      const getInsights = vi.spyOn(analyticsApi, "getInsights").mockResolvedValue({
+        data: [makeInsight()],
+      } as Awaited<ReturnType<typeof analyticsApi.getInsights>>);
+      vi.spyOn(testingApi, "getDemoModeStatus").mockResolvedValue({
+        data: { demo_mode: false, forced: false },
+      } as Awaited<ReturnType<typeof testingApi.getDemoModeStatus>>);
+
+      // Wired as the app wires it, with another dashboard read on screen.
+      const client: QueryClient = new QueryClient({
+        mutationCache: createMutationCache(() => client, 5),
+        defaultOptions: { queries: { retry: false, staleTime: 60_000 } },
+      });
+      let forecastFetches = 0;
+      const forecast = new QueryObserver(client, {
+        queryKey: ["analytics", "cash-flow-forecast", false],
+        queryFn: async () => ++forecastFetches,
+      });
+      const stop = forecast.subscribe(() => {});
+      render(
+        <QueryClientProvider client={client}>
+          <DemoModeProvider>
+            <InsightsStrip />
+          </DemoModeProvider>
+        </QueryClientProvider>,
+      );
+
+      fireEvent.click(await screen.findByTestId("insight-dismiss"));
+      await waitFor(() => expect(getInsights).toHaveBeenCalledTimes(2));
+      await new Promise((r) => setTimeout(r, 30));
+      expect(forecastFetches).toBe(1);
+      stop();
     });
 
     it("puts the card back on undo without waiting for the refetch", async () => {

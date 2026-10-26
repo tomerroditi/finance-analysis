@@ -42,9 +42,11 @@ export function NetWorthCard() {
   const qk = useQueryKeys();
   const [netWorthView, setNetWorthView] = useState<NetWorthView>("all");
 
+  // Only the debt view reads these, so they wait until it is opened.
   const { data: debtPaymentsData, isPending: isDebtPaymentsLoading } = useQuery({
     queryKey: qk.analytics.debtPayments(),
     queryFn: async () => (await analyticsApi.getDebtPaymentsOverTime()).data,
+    enabled: netWorthView === "debt_payments",
   });
 
   const { data: debtOverTime } = useQuery<{ total: { date: string; balance: number }[] }>({

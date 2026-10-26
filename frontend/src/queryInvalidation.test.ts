@@ -296,6 +296,34 @@ describe("the app-wide mutation cache", () => {
     stops.forEach((stop) => stop());
   });
 
+  it("re-asks a read it cancelled even when its plan does not reach it", async () => {
+    const client = makeClient();
+    let served = "old";
+    const queryFn = async () => {
+      const asOf = served;
+      await flush(SWEEP_MS * 2);
+      return asOf;
+    };
+    const observer = new QueryObserver(client, { queryKey: ["trend"], queryFn });
+    const unsubscribe = observer.subscribe(() => {});
+    await vi.waitFor(() => expect(client.getQueryData(["trend"])).toBe("old"));
+
+    // A refetch is under way when a write that names only another read lands.
+    void observer.refetch();
+    served = "new";
+    await client
+      .getMutationCache()
+      .build(client, {
+        mutationFn: async () => null,
+        onMutate: () => ({ refresh: { only: [["insights"]] } }),
+      })
+      .execute(undefined);
+
+    // The cancelled refetch is issued again rather than left on the old data.
+    await vi.waitFor(() => expect(client.getQueryData(["trend"])).toBe("new"), { timeout: 2000 });
+    unsubscribe();
+  });
+
   it("refreshes nothing after a write whose plan reaches nothing", async () => {
     const client = makeClient();
     let fetches = 0;

@@ -97,8 +97,34 @@ export const queryPersister = createAsyncStoragePersister({
     removeItem: (key) => del(key, idbStore),
   },
   key: CACHE_KEY,
-  throttleTime: 1000,
+  // Every write re-serializes the whole snapshot (tens of MB with a long
+  // history), so writes are spaced out. A stale snapshot is safe: App.tsx
+  // revalidates whatever it restores.
+  throttleTime: 3000,
 });
+
+/**
+ * Large reads that are cheap to ask again and rarely the first thing on
+ * screen: kept in memory, left out of the snapshot so it stays small enough
+ * to re-serialize on every throttle tick.
+ *
+ * - Transaction lists other than the default merged one: the split-parents
+ *   variant and the insurance list each repeat most of the history.
+ * - Monthly budget analyses other than the current month: every month the
+ *   user stepped through was written, one full ledger each.
+ * - The retirement projection: a month-by-month series to age 81.
+ */
+function isBulkyQuery(key: readonly unknown[]): boolean {
+  const [head, kind] = key;
+  if (head === "transactions" && kind === "list") {
+    return key[2] !== "all" || key[3] !== false;
+  }
+  if (head === "budget" && kind === "analysis") {
+    const now = new Date();
+    return key[2] !== now.getFullYear() || key[3] !== now.getMonth() + 1;
+  }
+  return head === "fire" && kind === "plan-projection";
+}
 
 export function shouldDehydrateQuery(query: Query): boolean {
   if (query.state.status !== "success") return false;
@@ -106,6 +132,7 @@ export function shouldDehydrateQuery(query: Query): boolean {
   if (typeof head !== "string") return false;
   if (NON_PERSISTABLE_KEY_PREFIXES.has(head)) return false;
   if (isCredentialQuery(query.queryKey)) return false;
+  if (isBulkyQuery(query.queryKey)) return false;
   return true;
 }
 

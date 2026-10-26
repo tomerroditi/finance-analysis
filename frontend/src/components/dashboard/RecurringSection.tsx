@@ -25,6 +25,8 @@ import { useQueryKeys } from "../../hooks/useQueryKeys";
 import { useScrollCap } from "../../hooks/useScrollCap";
 import { applyDecisions } from "./recurringOptimistic";
 import { qkPrefix } from "../../services/queryKeys";
+import { UNCHANGED_BY_RETAG } from "../budget/budgetOptimistic";
+import type { RefreshPlan } from "../../queryInvalidation";
 import { Skeleton } from "../common/Skeleton";
 import { formatCurrency } from "../../utils/numberFormatting";
 import { formatDate } from "../../utils/dateFormatting";
@@ -83,6 +85,34 @@ function StatusBadge({ item }: { item: RecurringItem }) {
  * block at the top and only move into the list — and into the monthly total,
  * the budget Overview's committed spend and the forecast — once confirmed.
  */
+/**
+ * The refresh after a verdict: the two reads that act on confirmed charges —
+ * the budget Overview's committed spend and the forecast's safe-to-spend —
+ * first, then the rest of analytics; never the rows, refunds, holdings,
+ * balances, goals or the budget's other reads, none of which look at
+ * verdicts.
+ */
+const VERDICT_PLAN: RefreshPlan = {
+  first: [
+    [...qkPrefix.budget, "overview"],
+    [...qkPrefix.analytics, "cash-flow-forecast"],
+  ],
+  skip: [
+    ...UNCHANGED_BY_RETAG,
+    qkPrefix.transactions,
+    qkPrefix.pendingRefunds,
+    qkPrefix.investments,
+    qkPrefix.liabilities,
+    qkPrefix.cashBalances,
+    qkPrefix.savingsGoals,
+    qkPrefix.budgetAnalysis,
+    [...qkPrefix.budget, "trend"],
+    [...qkPrefix.budget, "alerts"],
+    [...qkPrefix.budget, "yearly"],
+    [...qkPrefix.budget, "project-details"],
+  ],
+};
+
 export function RecurringSection() {
   const { t } = useTranslation();
   const qk = useQueryKeys();
@@ -120,7 +150,7 @@ export function RecurringSection() {
           applyDecisions(summary, decisions, key[2] === true),
         );
       });
-      return { snapshot };
+      return { snapshot, refresh: VERDICT_PLAN };
     },
     onError: (_error, _decisions, context) => {
       context?.snapshot.forEach(([key, summary]) =>

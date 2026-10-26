@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router";
 import { useTranslation } from "react-i18next";
 import { transactionsApi, cashBalancesApi, type PendingRefund, type RefundLink } from "../services/api";
@@ -18,6 +18,19 @@ import { formatCurrency } from "../utils/numberFormatting";
 import { useConfirm } from "../context/DialogContext";
 import { useQueryKeys } from "../hooks/useQueryKeys";
 import { qkPrefix } from "../services/queryKeys";
+import { useDemoMode } from "../context/DemoModeContext";
+import { prefetchRoute } from "../services/routePrefetch";
+import { rowsOfService } from "../writePlans";
+import type { Transaction } from "../types/transaction";
+
+/**
+ * The databases (real, demo) whose cash history was already seeded into cash
+ * balances this session. The migration is idempotent — it skips every account
+ * that already has a balance — so once per session per database is enough,
+ * and it stays out of the mutation cache: as a mutation it cancelled every
+ * read in flight and refreshed the whole app each time "Cash" was selected.
+ */
+const cashMigrated = new Set<boolean>();
 
 function CashBalancesCard({ queryClient }: { queryClient: ReturnType<typeof useQueryClient> }) {
   const { t } = useTranslation();
@@ -29,19 +42,21 @@ function CashBalancesCard({ queryClient }: { queryClient: ReturnType<typeof useQ
   const [newBalance, setNewBalance] = useState("");
 
   const { data: balances = [], isLoading } = useCashBalances();
-
-  // Run migration on first load
-  const migrationMutation = useMutation({
-    mutationFn: () => cashBalancesApi.migrate().then((res) => res.data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: qkPrefix.cashBalances });
-    },
-  });
+  const { isDemoMode } = useDemoMode();
 
   useEffect(() => {
-    migrationMutation.mutate();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    if (cashMigrated.has(isDemoMode)) return;
+    cashMigrated.add(isDemoMode);
+    cashBalancesApi
+      .migrate()
+      .then((res) => {
+        // Seeding an account also drops its old "Prior Wealth" row.
+        if (res.data.length === 0) return;
+        void queryClient.invalidateQueries({ queryKey: qkPrefix.cashBalances });
+        void queryClient.invalidateQueries({ queryKey: qkPrefix.transactionsList });
+      })
+      .catch(() => cashMigrated.delete(isDemoMode));
+  }, [isDemoMode, queryClient]);
 
   // Set balance mutation
   const setBalanceMutation = useMutation({
@@ -249,28 +264,32 @@ export function Transactions() {
   const [filterOnlyUntagged, setFilterOnlyUntagged] = useState(false);
   const [showDemoConfirm, setShowDemoConfirm] = useState(false);
   const qk = useQueryKeys();
+  const { isDemoMode } = useDemoMode();
 
-  const {
-    data: transactions,
-    isLoading,
-    refetch,
-  } = useQuery({
-    queryKey: qk.transactions.list(
-      selectedService === "all" ? undefined : selectedService,
-      includeSplitParents,
-    ),
+  // What the table and its row actions read (categories, rules, icons, goals,
+  // cash envelopes) starts with the list instead of after it: the table only
+  // mounts once the list is in, so its own queries used to wait for it.
+  useEffect(() => {
+    prefetchRoute(queryClient, "/transactions", { isDemoMode });
+  }, [queryClient, isDemoMode]);
+
+  // Every service filter reads the one merged list — it holds every service
+  // the filters offer — and narrows it here, so switching filters never
+  // downloads the history again and a write's patch reaches every filter.
+  const selectService = useCallback(
+    (rows: Transaction[]) => rowsOfService(rows, selectedService),
+    [selectedService],
+  );
+  const { data: transactions, isLoading } = useQuery({
+    queryKey: qk.transactions.list(undefined, includeSplitParents),
     queryFn: () =>
-      transactionsApi
-        .getAll(
-          selectedService === "all" ? undefined : selectedService,
-          includeSplitParents,
-        )
-        .then((res) => res.data),
+      transactionsApi.getAll(undefined, includeSplitParents).then((res) => res.data as Transaction[]),
     enabled: selectedService !== "refunds",
+    select: selectService,
   });
 
   // Fetch pending refunds to know which transactions are already marked
-  const { data: pendingRefunds, refetch: refetchPending } = useQuery({
+  const { data: pendingRefunds } = useQuery({
     queryKey: qk.pendingRefunds.all(),
     queryFn: () => pendingRefundsApi.getAll().then((res) => res.data),
   });
@@ -308,14 +327,6 @@ export function Transactions() {
     });
     return map;
   }, [pendingRefunds]);
-
-  // Refetch both when actions happen
-  const refreshAll = () => {
-    refetch();
-    refetchPending();
-    // Invalidate cash balances when transactions change (they recalculate on backend)
-    queryClient.invalidateQueries({ queryKey: qkPrefix.cashBalances });
-  };
 
   const services = [
     { value: "all", label: t("common.all") },
@@ -421,7 +432,6 @@ export function Transactions() {
                 onIncludeSplitParentsChange={setIncludeSplitParents}
                 rowsPerPage={100}
                 rowsPerPageOptions={[10, 50, 100, 500, 1000]}
-                onTransactionUpdated={refreshAll}
                 pendingRefundsMap={pendingRefundsMap}
                 refundLinksMap={refundLinksMap}
                 onlyUntagged={filterOnlyUntagged}
@@ -444,7 +454,6 @@ export function Transactions() {
             ? (selectedService as "cash" | "manual_investments")
             : undefined
         }
-        onSuccess={refreshAll}
       />
     </div>
   );

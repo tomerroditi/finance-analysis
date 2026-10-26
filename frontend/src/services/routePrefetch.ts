@@ -3,28 +3,30 @@ import type { QueryClient } from "@tanstack/react-query";
 import {
   analyticsApi,
   bankBalancesApi,
+  budgetApi,
   cashBalancesApi,
   fireApi,
   insuranceAccountsApi,
   investmentsApi,
   liabilitiesApi,
   pendingRefundsApi,
+  savingsGoalsApi,
   taggingApi,
   transactionsApi,
 } from "./api";
 import { makeQueryKeys } from "./queryKeys";
 import { useAppStore } from "../stores/appStore";
+import { needsTransactionList, readDashboardLayout } from "../hooks/useDashboardLayout";
+import { loadRouteChunk } from "../routeChunks";
 
 /**
- * Warms the React Query cache for a route's primary data *before* the user
- * navigates to it, so the destination page paints instantly instead of showing
- * skeletons while it fetches.
+ * Warms a route *before* the user navigates to it — its lazy page chunk and
+ * the React Query cache for its primary data — so the destination page paints
+ * instantly instead of showing skeletons while it loads.
  *
- * Pages are already all in the loaded bundle (no per-page code chunk), so the
- * lag on first navigation is the page's initial data fetch — not code. This
- * module prefetches that data when the user shows intent to navigate (hovering,
- * focusing, or pressing a nav link), so the click lands on an already-fetched
- * page instead of a loading skeleton.
+ * Runs when the user shows intent to navigate (hovering, focusing, or pressing
+ * a nav link), and once at boot for the route the app opened on, in parallel
+ * with that page's chunk and the IndexedDB restore rather than after them.
  *
  * Each entry MUST mirror the exact `queryKey` + fetch call the page uses, or
  * the prefetched data won't be found in the cache when the page mounts. Factory
@@ -70,34 +72,56 @@ const ROUTE_PREFETCH: Record<string, RoutePrefetch> = {
     warm(qc, k.analytics.netWorthOverTime(), () =>
       analyticsApi.getNetWorthOverTime().then((r) => r.data),
     );
-    warm(qc, k.transactions.list(undefined, false), () =>
-      transactionsApi.getAll(undefined, false).then((r) => r.data),
-    );
+    // The whole history is the dashboard's largest read; only the recent
+    // feed and the heatmap use it, so it is warmed only when one is shown.
+    if (needsTransactionList(readDashboardLayout())) {
+      warm(qc, k.transactions.list(undefined, false), () =>
+        transactionsApi.getAll(undefined, false).then((r) => r.data),
+      );
+    }
     warm(qc, k.balances.cash(), () => cashBalancesApi.getAll().then((r) => r.data));
-    warm(qc, k.balances.bank(), () => bankBalancesApi.getAll().then((r) => r.data));
-    warm(qc, k.investments.portfolio(), () =>
-      investmentsApi.getPortfolioAnalysis().then((r) => r.data),
-    );
     warm(qc, k.tagging.icons(), () => taggingApi.getIcons().then((r) => r.data));
   },
   "/transactions": (qc, { isDemoMode }) => {
     const k = makeQueryKeys(isDemoMode);
-    const service = useAppStore.getState().selectedService;
-    if (service !== "refunds") {
-      warm(
-        qc,
-        k.transactions.list(service === "all" ? undefined : service, false),
-        () =>
-          transactionsApi
-            .getAll(service === "all" ? undefined : service, false)
-            .then((r) => r.data),
-      );
-    }
     warm(qc, k.pendingRefunds.all(), () =>
       pendingRefundsApi.getAll().then((r) => r.data),
     );
+    if (useAppStore.getState().selectedService === "refunds") {
+      warm(qc, k.pendingRefunds.sources(), () =>
+        pendingRefundsApi.getRefundSources().then((r) => r.data),
+      );
+      return;
+    }
+    // Every service filter reads the merged list (see Transactions.tsx).
+    warm(qc, k.transactions.list(undefined, false), () =>
+      transactionsApi.getAll(undefined, false).then((r) => r.data),
+    );
+    // What the table and its row actions read.
     warm(qc, k.tagging.categories(), () =>
       taggingApi.getCategories().then((r) => r.data),
+    );
+    warm(qc, k.tagging.icons(), () => taggingApi.getIcons().then((r) => r.data));
+    warm(qc, k.tagging.rules(), () => taggingApi.getRules().then((r) => r.data));
+    warm(qc, k.balances.cash(), () => cashBalancesApi.getAll().then((r) => r.data));
+    // The goal links drive each row's goal icon; the goals themselves load
+    // only when a row's goal picker opens.
+    warm(qc, k.savingsGoals.links(), () => savingsGoalsApi.getLinks().then((r) => r.data));
+  },
+  "/budget": (qc, { isDemoMode }) => {
+    // The Overview tab, which the page opens on, for the current month.
+    const k = makeQueryKeys(isDemoMode);
+    const today = new Date();
+    const year = today.getFullYear();
+    const month = today.getMonth() + 1;
+    warm(qc, k.budget.overview(year, month, false), () =>
+      budgetApi.getOverview(year, month).then((r) => r.data),
+    );
+    warm(qc, k.budget.analysis(year, month, false), () =>
+      budgetApi.getAnalysis(year, month, false).then((r) => r.data),
+    );
+    warm(qc, k.budget.trend(year, month, 12, false), () =>
+      budgetApi.getTrend(year, month, 12, false).then((r) => r.data),
     );
   },
   "/categories": (qc, { isDemoMode }) => {
@@ -109,6 +133,7 @@ const ROUTE_PREFETCH: Record<string, RoutePrefetch> = {
     warm(qc, k.tagging.categoryUsage(), () =>
       taggingApi.getCategoryUsage().then((r) => r.data),
     );
+    warm(qc, k.tagging.rules(), () => taggingApi.getRules().then((r) => r.data));
   },
   "/investments": (qc, { isDemoMode }) => {
     const k = makeQueryKeys(isDemoMode);
@@ -118,11 +143,17 @@ const ROUTE_PREFETCH: Record<string, RoutePrefetch> = {
     warm(qc, k.investments.portfolio(), () =>
       investmentsApi.getPortfolioAnalysis().then((r) => r.data),
     );
+    warm(qc, k.investments.balanceHistory(true), () =>
+      investmentsApi.getPortfolioBalanceHistory(true).then((r) => r.data),
+    );
   },
   "/liabilities": (qc, { isDemoMode }) => {
     const k = makeQueryKeys(isDemoMode);
     warm(qc, k.liabilities.list(true), () =>
       liabilitiesApi.getAll(true).then((r) => r.data),
+    );
+    warm(qc, k.liabilities.debtOverTime(), () =>
+      liabilitiesApi.getDebtOverTime().then((r) => r.data),
     );
   },
   "/insurances": (qc, { isDemoMode }) => {
@@ -153,11 +184,15 @@ const ROUTE_PREFETCH: Record<string, RoutePrefetch> = {
   },
 };
 
-/** Warm the cache for a single route (on nav-link hover / focus / pointerdown). */
+/**
+ * Warm a single route: its page chunk and its data (on nav-link hover /
+ * focus / pointerdown, and at boot for the route the app opened on).
+ */
 export function prefetchRoute(
   queryClient: QueryClient,
   path: string,
   ctx: PrefetchContext,
 ): void {
+  loadRouteChunk(path);
   ROUTE_PREFETCH[path]?.(queryClient, ctx);
 }

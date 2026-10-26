@@ -26,6 +26,10 @@ test.describe("Dashboard lazy card mounting", () => {
   }) => {
     // A short viewport keeps the trailing chart cards well below the fold.
     await page.setViewportSize({ width: 1280, height: 720 });
+    const requested: string[] = [];
+    page.on("request", (req) => {
+      if (req.url().includes("/api/")) requested.push(req.url());
+    });
     await page.goto("/");
 
     // The pinned KPI header is always eager.
@@ -45,6 +49,22 @@ test.describe("Dashboard lazy card mounting", () => {
     const netWorthCard = page.locator('[data-card-id="net_worth"]');
     await expect(netWorthCard).toBeVisible();
     await expect(netWorthCard.locator(".recharts-wrapper")).toHaveCount(0);
+
+    // --- The deferred cards wait for the first load, not just the fold ---
+    // While the cards above were loading skeletons, the Income & Expenses
+    // placeholder sat inside the observer's margin and fired its two heavy
+    // requests with the first paint. Once the page has settled it is still
+    // unrequested, because measured against the real layout it is far away.
+    // Zero is the expected count here, so wait for the page to go quiet.
+    await page.waitForLoadState("networkidle");
+    await page.waitForTimeout(1000);
+    expect(requested.filter((url) => url.includes("expenses-by-category-over-time"))).toEqual([]);
+
+    // --- The KPI header's breakdowns load when it is expanded ---
+    expect(requested.filter((url) => url.includes("/api/bank-balances/"))).toEqual([]);
+    const bankBalances = page.waitForRequest((req) => req.url().includes("/api/bank-balances/"));
+    await page.getByTestId("health-kpis").click();
+    await bankBalances;
 
     // Scroll it into view — now it mounts and renders its chart.
     await netWorthCard.scrollIntoViewIfNeeded();

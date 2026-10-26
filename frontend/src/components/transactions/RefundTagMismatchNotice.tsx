@@ -1,12 +1,12 @@
 import React, { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { Tags, X } from "lucide-react";
 import { pendingRefundsApi, type PendingRefund } from "../../services/api";
 import { Modal } from "../common/Modal";
 import { useDialog } from "../../context/DialogContext";
 import { useQueryKeys } from "../../hooks/useQueryKeys";
-import { qkPrefix } from "../../services/queryKeys";
+import { REFUND_LINK_PLAN } from "../../writePlans";
 import { formatCurrency } from "../../utils/numberFormatting";
 
 const DISMISS_KEY = "fad_refund_tag_mismatch_dismissed";
@@ -34,7 +34,6 @@ export const RefundTagMismatchNotice: React.FC<{ refunds: PendingRefund[] | unde
 }) => {
   const { t } = useTranslation();
   const qk = useQueryKeys();
-  const queryClient = useQueryClient();
   const { notifySuccess } = useDialog();
   const [previewOpen, setPreviewOpen] = useState(false);
   const [dismissed, setDismissed] = useState<string | null>(readDismissed);
@@ -42,9 +41,6 @@ export const RefundTagMismatchNotice: React.FC<{ refunds: PendingRefund[] | unde
   const { data: mismatches } = useQuery({
     queryKey: qk.pendingRefunds.tagMismatches(),
     queryFn: () => pendingRefundsApi.getTagMismatches().then((res) => res.data),
-    // Any tag write on a linked refund can open a mismatch, and those writes
-    // invalidate the transactions cache, not this one — re-ask on every visit.
-    staleTime: 0,
   });
 
   const signature = useMemo(
@@ -60,10 +56,8 @@ export const RefundTagMismatchNotice: React.FC<{ refunds: PendingRefund[] | unde
 
   const fixMutation = useMutation({
     mutationFn: () => pendingRefundsApi.fixTagMismatches().then((res) => res.data),
+    onMutate: () => ({ refresh: REFUND_LINK_PLAN }),
     onSuccess: ({ fixed }) => {
-      queryClient.invalidateQueries({ queryKey: qkPrefix.pendingRefunds });
-      queryClient.invalidateQueries({ queryKey: qkPrefix.transactions });
-      queryClient.invalidateQueries({ queryKey: qkPrefix.budget });
       setPreviewOpen(false);
       notifySuccess(t("transactions.refunds.tagMismatch.fixed", { count: fixed }));
     },

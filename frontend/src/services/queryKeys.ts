@@ -63,11 +63,9 @@ export function makeQueryKeys(demo: boolean) {
       uncategorizedCount: () => ["transactions", "uncategorized-count", demo] as const,
     },
     pendingRefunds: {
+      // Every status. The link modal's pick list (pending + partial) is a
+      // `select` over this entry, never a second fetch under its own key.
       all: () => ["pending-refunds", demo] as const,
-      // Only pending+partial items (the link modal's pick list) — must NOT
-      // share a cache entry with `all`, or opening the modal would overwrite
-      // the full list and drop resolved/closed items from the refunds view.
-      active: () => ["pending-refunds", "active", demo] as const,
       sources: () => ["pending-refunds", "sources", demo] as const,
       tagMismatches: () => ["pending-refunds", "tag-mismatches", demo] as const,
     },
