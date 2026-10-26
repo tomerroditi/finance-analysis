@@ -24,6 +24,7 @@ import {
 } from "../../utils/chartStyle";
 import { ChartTooltip } from "../charts/ChartTooltip";
 import { ChartLegend } from "../charts/ChartLegend";
+import { LoadingSpinner } from "../common/LoadingSpinner";
 import { formatMonthCompact, formatMonthYear } from "../../utils/dateFormatting";
 
 type NetWorthView = "all" | "bank_balance" | "investments" | "net_worth" | "debt_payments";
@@ -42,7 +43,7 @@ export function NetWorthCard() {
   const [netWorthView, setNetWorthView] = useState<NetWorthView>("all");
 
   // Only the debt view reads these, so they wait until it is opened.
-  const { data: debtPaymentsData, isLoading: debtPaymentsLoading } = useQuery({
+  const { data: debtPaymentsData, isPending: isDebtPaymentsLoading } = useQuery({
     queryKey: qk.analytics.debtPayments(),
     queryFn: async () => (await analyticsApi.getDebtPaymentsOverTime()).data,
     enabled: netWorthView === "debt_payments",
@@ -54,7 +55,7 @@ export function NetWorthCard() {
     enabled: netWorthView === "debt_payments",
   });
 
-  const { data: netWorthData } = useQuery({
+  const { data: netWorthData, isPending: isNetWorthLoading } = useQuery({
     queryKey: qk.analytics.netWorthOverTime(),
     queryFn: async () => (await analyticsApi.getNetWorthOverTime()).data,
   });
@@ -128,7 +129,7 @@ export function NetWorthCard() {
   const renderChart = () => {
     if (netWorthView === "debt_payments") {
       if (!debtSeries) {
-        if (debtPaymentsLoading) return null;
+        if (isDebtPaymentsLoading) return <LoadingSpinner />;
         return <p className="text-[var(--text-muted)]">{t("common.noData")}</p>;
       }
       const lastTag = debtSeries.allTags[debtSeries.allTags.length - 1];
@@ -307,7 +308,9 @@ export function NetWorthCard() {
       </div>
       <div className="px-3 md:px-6 pb-4 md:pb-6 pt-4 min-h-[400px] md:h-[600px] overflow-y-auto flex flex-col">
         <div className="flex flex-col flex-1 min-h-0">
-          {netWorthData && netWorthData.length > 0 ? (
+          {isNetWorthLoading ? (
+            <LoadingSpinner />
+          ) : netWorthData && netWorthData.length > 0 ? (
             <>
               <div className="flex flex-wrap items-center gap-2 md:gap-3 mb-3">
                 <div

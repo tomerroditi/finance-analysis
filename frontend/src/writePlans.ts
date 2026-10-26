@@ -1,5 +1,6 @@
 import type { QueryClient, QueryKey } from "@tanstack/react-query";
 import type { Transaction } from "./types/transaction";
+import type { BudgetMonthOverride } from "./services/api";
 import { qkPrefix } from "./services/queryKeys";
 import { UNCHANGED_BY_RETAG } from "./components/budget/budgetOptimistic";
 import type { RefreshPlan } from "./queryInvalidation";
@@ -111,6 +112,75 @@ export function removeFromTransactionLists(
     return next.length === old.length ? old : next;
   });
   return restore;
+}
+
+/** A row moved to another budget month: from where it is counted now, to where. */
+export interface MonthMove {
+  tx: Transaction;
+  fromYear: number;
+  fromMonth: number;
+  year: number;
+  month: number;
+}
+
+/**
+ * Show a budget month override at once and plan the refresh after it.
+ *
+ * An override only re-months a row for the budget, so the refresh is the
+ * budget — the two months it moved between and the override list first —
+ * plus the two analytics reads built on budget months.
+ *
+ * @param client - The app's query client.
+ * @param overridesKey - The cached override list's key
+ *   (`qk.budget.monthOverrides()`), patched so the row's badge moves now.
+ * @param move - The move being sent.
+ * @returns `restore` for a failed write, and the refresh plan.
+ */
+export function planMonthMove(
+  client: QueryClient,
+  overridesKey: QueryKey,
+  { tx, fromYear, fromMonth, year, month }: MonthMove,
+): { restore: () => void; refresh: RefreshPlan } {
+  const before = client.getQueryData<BudgetMonthOverride[]>(overridesKey);
+  if (before) {
+    const date = new Date(tx.date);
+    const ownMonth = date.getFullYear() === year && date.getMonth() + 1 === month;
+    const source = tx.source || "unknown";
+    const others = before.filter(
+      (o) => !(o.source_table === source && String(o.source_id) === String(tx.unique_id)),
+    );
+    client.setQueryData<BudgetMonthOverride[]>(
+      overridesKey,
+      ownMonth
+        ? others
+        : [
+            ...others,
+            {
+              id: -1,
+              source_type: "transaction",
+              source_id: tx.unique_id || "",
+              source_table: source,
+              override_year: year,
+              override_month: month,
+            },
+          ],
+    );
+  }
+  return {
+    restore: () => client.setQueryData(overridesKey, before),
+    refresh: {
+      first: [
+        [...qkPrefix.budgetAnalysis, fromYear, fromMonth],
+        [...qkPrefix.budgetAnalysis, year, month],
+        [...qkPrefix.budget, "month-overrides"],
+      ],
+      only: [
+        qkPrefix.budget,
+        [...qkPrefix.analytics, "insights"],
+        [...qkPrefix.analytics, "cash-flow-forecast"],
+      ],
+    },
+  };
 }
 
 /**

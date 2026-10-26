@@ -1,5 +1,5 @@
 import { test, expect, request, type Page, type Route } from "@playwright/test";
-import { API_BASE, enableDemoMode, navigateTo, resetDemoData } from "./helpers";
+import { API_BASE, enableDemoMode, navigateTo, resetDemoData, scrollFeedUntil } from "./helpers";
 
 /**
  * Retagging a transaction from a monthly-budget rule's list moves it to its
@@ -58,21 +58,27 @@ const ruleFigures = (page: Page, name: string) =>
     .filter({ visible: true })
     .first();
 
-/** Select a row in the expanded list and bulk-tag it into the target rule, up to the Apply click. */
+const rowKey = (tx: LedgerTx) => `${tx.source}_${tx.unique_id}`;
+
+/**
+ * Find the row in the expanded pool's list and stage a retag into the target
+ * rule in its inline editor, up to the Done click. The pool lists through the
+ * transaction feed, which mounts rows in batches as it scrolls.
+ */
 async function stageRetag(page: Page, tx: LedgerTx) {
-  const row = page.getByTestId(`transaction-row-${tx.source}_${tx.unique_id}`);
-  await row.locator('input[type="checkbox"]').check();
-  await page.locator("button", { hasText: /^Category$/ }).last().click();
-  await page.getByRole("option", { name: TARGET_CATEGORY, exact: true }).click();
-  await page.locator("button", { hasText: /^Tag$/ }).last().click();
-  await page.getByRole("option").first().click();
+  const list = page.getByTestId("budget-tx-list").filter({ visible: true }).first();
+  const row = page.locator(`[data-tx-key="${rowKey(tx)}"]`).filter({ visible: true });
+  expect(await scrollFeedUntil(list.locator("[data-scroll-root]"), row)).toBe(true);
+  await row.getByRole("button", { name: "Edit category / tag" }).first().click();
+  const editor = row.getByTestId("recent-tx-editor");
+  await editor.getByRole("button").nth(0).click();
+  await page.getByRole("listbox").getByRole("option", { name: TARGET_CATEGORY, exact: true }).click();
+  await editor.getByRole("button").nth(1).click();
+  await page.getByRole("listbox").getByRole("option").first().click();
 }
 
 const applyButton = (page: Page) =>
-  page
-    .locator("div", { hasText: "selected" })
-    .locator("button:has(svg.lucide-circle-check), button:has(svg.lucide-check-circle)")
-    .first();
+  page.getByTestId("recent-tx-editor").getByRole("button", { name: "Done" });
 
 async function openMonthly(page: Page) {
   await page.getByRole("button", { name: /^Monthly Budget$/i }).click();
@@ -103,7 +109,7 @@ test.describe("Monthly budget retag", () => {
     await page.waitForTimeout(1500);
 
     const written = page.waitForResponse(
-      (r) => r.url().includes("/transactions/bulk-tag") && r.ok(),
+      (r) => r.url().includes(`/transactions/${tx.unique_id}/tag`) && r.ok(),
     );
     await applyButton(page).click();
     await written;
@@ -113,8 +119,8 @@ test.describe("Monthly budget retag", () => {
     await expect(ruleFigures(page, TARGET_RULE)).not.toHaveText(before, { timeout: 15_000 });
 
     await page.getByText("Other Expenses", { exact: true }).first().click();
-    await expect(page.locator("tr[data-testid^='transaction-row-']").first()).toBeVisible();
-    await expect(page.getByTestId(`transaction-row-${tx.source}_${tx.unique_id}`)).toHaveCount(0);
+    await expect(page.getByTestId("budget-tx-list").getByTestId("recent-tx-row").first()).toBeVisible();
+    await expect(page.locator(`[data-tx-key="${rowKey(tx)}"]`)).toHaveCount(0);
   });
 
   test("the row moves on click, before the server has answered", async ({ page }) => {
@@ -142,7 +148,7 @@ test.describe("Monthly budget retag", () => {
     await applyButton(page).click();
 
     await expect(ruleFigures(page, TARGET_RULE)).not.toHaveText(before);
-    await expect(page.getByTestId(`transaction-row-${tx.source}_${tx.unique_id}`)).toHaveCount(0);
+    await expect(page.locator(`[data-tx-key="${rowKey(tx)}"]`)).toHaveCount(0);
     const patched = (await ruleFigures(page, TARGET_RULE).textContent()) ?? "";
 
     // The server's answer lands and agrees with what the click showed.

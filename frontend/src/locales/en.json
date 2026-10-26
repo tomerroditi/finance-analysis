@@ -734,6 +734,8 @@
     "title": "Budget",
     "subtitle": "Track your spending against your budget",
     "monthMove": {
+      "prevShort": "Prev month",
+      "nextShort": "Next month",
       "toPrevMonth": "Count in previous month's budget",
       "toNextMonth": "Count in next month's budget",
       "movedBadge": "Counted in {{to}} (moved from {{from}})"

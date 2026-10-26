@@ -98,8 +98,8 @@ test.describe("Budget", () => {
     ).toHaveCount(0);
     await expect(band.getByText(/Total Budget/i).first()).toBeVisible();
 
-    // "View month transactions" rides on the band's heading line and reveals a
-    // transactions table under the card.
+    // "View month transactions" rides on the band's heading line and reveals
+    // the month's transactions under the card.
     const viewMonth = page.getByRole("button", {
       name: /View month transactions/i,
     });
@@ -113,6 +113,15 @@ test.describe("Budget", () => {
       await expect(
         page.getByRole("button", { name: /Hide Transactions/i }).first(),
       ).toBeVisible();
+
+      // --- The list is the dashboard's feed, not a paginated table: rows
+      //     grouped by date in a capped region that scrolls in place ---
+      const monthFeed = page.locator("[data-scroll-root]").filter({ visible: true }).first();
+      await expect(monthFeed.getByTestId("recent-tx-row").first()).toBeVisible();
+      await expect(monthFeed.getByTestId("recent-tx-date").first()).toBeVisible();
+      if ((await monthFeed.getByTestId("recent-tx-row").count()) >= 20) {
+        await expect(monthFeed).toHaveCSS("overflow-y", /^(auto|scroll)$/);
+      }
     }
 
     // --- Pending Refunds section collapses from its header ---
@@ -291,6 +300,24 @@ test.describe("Budget", () => {
       clientWidth: document.documentElement.clientWidth,
     }));
     expect(scrollWidth).toBeLessThanOrEqual(clientWidth + 1);
+
+    // --- An expanded rule's transactions sit inset from the card's start
+    // edge (the dates side), while the amounts keep the rows' own padding
+    // at the end ---
+    await page.getByRole("button", { name: /^Monthly Budget$/i }).click();
+    const mobileRule = page
+      .locator("button[aria-expanded]")
+      .filter({ has: page.getByTestId("ledger-figures") })
+      .first();
+    await mobileRule.click();
+    await expect(mobileRule).toHaveAttribute("aria-expanded", "true");
+    const ruleCard = mobileRule.locator("xpath=../..");
+    const txList = ruleCard.getByTestId("budget-tx-list");
+    await expect(txList).toBeVisible();
+    const cardBox = (await ruleCard.boundingBox())!;
+    const listBox = (await txList.boundingBox())!;
+    expect(listBox.x - cardBox.x).toBeGreaterThanOrEqual(8);
+    expect(cardBox.x + cardBox.width - (listBox.x + listBox.width)).toBeLessThan(4);
 
     // --- The tab bar scrolls at this width, so the tab you switch to is not
     // necessarily inside it: Projects is the last of four and starts out of

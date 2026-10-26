@@ -1,4 +1,5 @@
 import { Fragment, useState, useMemo, useRef, useCallback, useEffect } from "react";
+import type { ReactNode } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router";
 import {
@@ -19,8 +20,19 @@ import {
   TrendingUp,
   Shield,
   Layers,
+  CheckCircle2,
+  CalendarMinus,
+  CalendarPlus,
+  CalendarClock,
 } from "lucide-react";
-import { transactionsApi, pendingRefundsApi } from "../../services/api";
+import {
+  transactionsApi,
+  pendingRefundsApi,
+  budgetMonthOverridesApi,
+  type PendingRefund,
+  type RefundLink,
+  type BudgetMonthOverride,
+} from "../../services/api";
 import { SplitTransactionModal } from "../modals/SplitTransactionModal";
 import { LinkRefundModal } from "../modals/LinkRefundModal";
 import { TransactionEditorModal } from "../modals/TransactionEditorModal";
@@ -33,12 +45,15 @@ import { useCategories } from "../../hooks/useCategories";
 import { useTaggingRules } from "../../hooks/useTaggingRules";
 import { isWithoutRule as matchesNoRule } from "../../utils/taggingRuleEval";
 import { matchesSource, sourceOptions } from "../../utils/transactionSources";
+import { useQueryKeys } from "../../hooks/useQueryKeys";
 import { patchBudgetForRetag, widenForCascade } from "../budget/budgetOptimistic";
 import {
   REFUND_WRITE_PLAN,
   UNCHANGED_BY_ROW_WRITE,
   patchTransactionLists,
+  planMonthMove,
   removeFromTransactionLists,
+  type MonthMove,
 } from "../../writePlans";
 import type { Transaction } from "../../types/transaction";
 import { Skeleton } from "../common/Skeleton";
@@ -77,20 +92,51 @@ const SOURCE_ICONS: Record<string, typeof CreditCard> = {
   insurance_transactions: Shield,
 };
 
+/** Key the refund and month-override maps are built with. */
+const mapKeyOf = (tx: Transaction) => `${tx.source || "unknown"}_${tx.unique_id || tx.id || ""}`;
+
+const monthIndexLabel = (idx: number) =>
+  new Date(Math.floor(idx / 12), idx % 12).toLocaleString(
+    i18n.language === "he" ? "he-IL" : "en-US",
+    { month: "long", year: "numeric" },
+  );
+
 const ACTION_BUTTON_CLASS =
   "flex items-center gap-1 px-1.5 py-1.5 rounded-md text-xs font-medium transition-colors whitespace-nowrap";
+
+interface RecentTransactionsFeedProps {
+  transactions: Transaction[] | undefined;
+  categoryIcons: Record<string, string> | undefined;
+  isLoading: boolean;
+  /**
+   * Render only the filters and the list, without the dashboard card around
+   * them — for lists that live inside another card (the budget rules).
+   */
+  embedded?: boolean;
+  onTransactionUpdated?: () => void;
+  /** Refund state per row; without it a row only knows `pending_refund_id`. */
+  pendingRefundsMap?: Map<string, PendingRefund>;
+  refundLinksMap?: Map<string, RefundLink[]>;
+  /** Set on the monthly budget — enables the per-row month move. */
+  budgetMonth?: { overrides?: Map<string, BudgetMonthOverride> };
+  /** Extra controls for the filters row. */
+  filterExtras?: ReactNode;
+}
 
 export function RecentTransactionsFeed({
   transactions,
   categoryIcons,
   isLoading,
-}: {
-  transactions: Transaction[] | undefined;
-  categoryIcons: Record<string, string> | undefined;
-  isLoading: boolean;
-}) {
+  embedded = false,
+  onTransactionUpdated,
+  pendingRefundsMap,
+  refundLinksMap,
+  budgetMonth,
+  filterExtras,
+}: RecentTransactionsFeedProps) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
+  const qk = useQueryKeys();
   const confirm = useConfirm();
   const notify = useNotify();
   const { createCategory, createTag } = useCategoryTagCreate();
@@ -157,10 +203,16 @@ export function RecentTransactionsFeed({
   // Categories for inline tag editing
   const { data: categories } = useCategories({ enabled: !!editingTxKey });
 
+  // Every write below goes through the app's mutation cache, which refreshes
+  // after it following the plan its `onMutate` returns — none of them
+  // invalidates anything itself, and the host's `onTransactionUpdated` is a
+  // notification, not a refetch.
+
   /**
-   * Show a category/tag write on the feed and in every cached budget month
-   * before the request goes out, and hand the mutation cache the retag's
-   * refresh plan — the touched months first, nothing a retag cannot change.
+   * Show a category/tag write on the row and in every cached budget month
+   * before the request goes out: this feed is the budget pools' tagging path
+   * as well as the dashboard's. The retag plan refreshes the touched months
+   * first and nothing a retag cannot change.
    */
   const patchRetag = useCallback(
     (tx: Transaction, category: string, tag: string) => {
@@ -188,7 +240,10 @@ export function RecentTransactionsFeed({
       ),
     onMutate: ({ tx, category, tag }) => patchRetag(tx, category, tag),
     onError: (_error, _vars, context) => context?.restore(),
-    onSuccess: (res, _vars, context) => widenForCascade(context?.refresh, res.data.refunds_retagged),
+    onSuccess: (res, _vars, context) => {
+      widenForCascade(context?.refresh, res.data.refunds_retagged);
+      onTransactionUpdated?.();
+    },
   });
 
   // Per row: marking one transaction must not disable the refund button on
@@ -209,7 +264,10 @@ export function RecentTransactionsFeed({
     },
     onSettled: (_data, _error, tx) => clearingTagging.end(txKeyOf(tx)),
     onError: (_error, _tx, context) => context?.restore(),
-    onSuccess: (res, _tx, context) => widenForCascade(context?.refresh, res.data.refunds_retagged),
+    onSuccess: (res, _tx, context) => {
+      widenForCascade(context?.refresh, res.data.refunds_retagged);
+      onTransactionUpdated?.();
+    },
   });
 
   const deleteMutation = useMutation({
@@ -223,6 +281,7 @@ export function RecentTransactionsFeed({
       context?.restore();
       notify.error(t("transactions.failedDelete"));
     },
+    onSuccess: () => onTransactionUpdated?.(),
   });
 
   const requestDelete = async (tx: Transaction) => {
@@ -249,7 +308,72 @@ export function RecentTransactionsFeed({
       return { refresh: REFUND_WRITE_PLAN };
     },
     onSettled: (_data, _error, tx) => markingRefund.end(txKeyOf(tx)),
+    onSuccess: () => onTransactionUpdated?.(),
   });
+
+  const cancellingRefund = usePendingRows<number>();
+  const unlinkingRefund = usePendingRows<number>();
+
+  const cancelPendingMutation = useMutation({
+    mutationFn: (pendingId: number) => pendingRefundsApi.cancel(pendingId),
+    onMutate: (pendingId) => {
+      cancellingRefund.begin(pendingId);
+      return { refresh: REFUND_WRITE_PLAN };
+    },
+    onSettled: (_data, _error, pendingId) => cancellingRefund.end(pendingId),
+    onSuccess: () => onTransactionUpdated?.(),
+  });
+
+  const unlinkRefundMutation = useMutation({
+    mutationFn: (linkId: number) => pendingRefundsApi.unlinkRefund(linkId),
+    onMutate: (linkId) => {
+      unlinkingRefund.begin(linkId);
+      return { refresh: REFUND_WRITE_PLAN };
+    },
+    onSettled: (_data, _error, linkId) => unlinkingRefund.end(linkId),
+    onSuccess: () => onTransactionUpdated?.(),
+  });
+
+  // Moves a row one month prior/next for monthly-budget bucketing only (the
+  // backend caps the move at ±1 and drops the override at the real month).
+  // The badge moves at once; see `planMonthMove` for what is refreshed.
+  const monthOverrideMutation = useMutation({
+    mutationFn: ({ tx, year, month }: MonthMove) =>
+      budgetMonthOverridesApi.set({
+        source_type: "transaction",
+        source_id: tx.unique_id || "",
+        source_table: tx.source || "unknown",
+        override_year: year,
+        override_month: month,
+      }),
+    onMutate: (move) => planMonthMove(queryClient, qk.budget.monthOverrides(), move),
+    onError: (_error, _move, context) => context?.restore(),
+    onSuccess: () => onTransactionUpdated?.(),
+  });
+
+  const requestCancelRefund = async (pending: PendingRefund) => {
+    const prompt =
+      pending.status === "resolved"
+        ? { title: t("tooltips.refundResolved"), message: t("transactions.confirmRemoveResolvedRefund") }
+        : pending.status === "partial"
+          ? { title: t("transactions.refunds.partiallyRefunded"), message: t("transactions.confirmRemovePartialRefund") }
+          : { title: t("tooltips.cancelPendingRefund"), message: t("transactions.confirmRemoveRefundRequest") };
+    const ok = await confirm({ ...prompt, confirmLabel: t("common.remove"), isDestructive: true });
+    if (ok) cancelPendingMutation.mutate(pending.id);
+  };
+
+  const requestUnlink = async (links: RefundLink[]) => {
+    const ok = await confirm({
+      title: t("transactions.refunds.unlink"),
+      message:
+        links.length > 1
+          ? t("transactions.confirmUnlinkRefundMulti", { count: links.length })
+          : t("transactions.confirmUnlinkRefund"),
+      confirmLabel: t("transactions.refunds.unlink"),
+      isDestructive: true,
+    });
+    if (ok) links.forEach((link) => unlinkRefundMutation.mutate(link.id));
+  };
 
   const sorted = useMemo(() => {
     if (!transactions) return [];
@@ -399,22 +523,30 @@ export function RecentTransactionsFeed({
 
   if (isLoading) {
     return (
-      <div className="bg-[var(--surface)] rounded-2xl p-6 border border-[var(--surface-light)]">
+      <div className={embedded ? "" : "bg-[var(--surface)] rounded-2xl p-6 border border-[var(--surface-light)]"}>
         <Skeleton variant="text" lines={1} className="mb-4" />
         <Skeleton variant="text" lines={5} />
       </div>
     );
   }
 
-  if (sorted.length === 0) return null;
+  if (sorted.length === 0) {
+    if (!embedded) return null;
+    return (
+      <p className="py-4 text-center text-sm text-[var(--text-muted)]">
+        {t("transactions.noTransactionsFound")}
+      </p>
+    );
+  }
 
   return (
-    <div className="bg-[var(--surface)] rounded-2xl p-4 md:p-6 border border-[var(--surface-light)]">
+    <div className={embedded ? "" : "bg-[var(--surface)] rounded-2xl p-4 md:p-6 border border-[var(--surface-light)]"}>
       {/* Title and "View All" share the top row; the filters get a row of
           their own beneath, starting from the reading edge. The card's width
           follows the dashboard grid, not the viewport, so a desktop column is
           too narrow for all three controls beside the title. */}
-      <div className="mb-4 space-y-2">
+      <div className={embedded ? "mb-3" : "mb-4 space-y-2"}>
+        {!embedded && (
         <div className="flex items-center justify-between gap-2">
           <p className="text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
             {t("dashboard.recentTransactions")}
@@ -426,6 +558,7 @@ export function RecentTransactionsFeed({
             {t("dashboard.viewAll")} <ForwardArrow />
           </Link>
         </div>
+        )}
         {/* -ms-2 cancels the chips' px-2, so an inactive chip's icon lines up
             with the title above it. */}
         <div data-testid="recent-tx-filters" className="flex flex-wrap items-center gap-2 -ms-2">
@@ -473,6 +606,7 @@ export function RecentTransactionsFeed({
               />
             </div>
           )}
+          {filterExtras}
         </div>
       </div>
 
@@ -531,9 +665,32 @@ export function RecentTransactionsFeed({
                 const detailsOpen = detailsTxKey === txKey;
                 const hasTagging = !!(tx.category || tx.tag);
                 const manual = isManualSource(tx);
+                const mapKey = mapKeyOf(tx);
+                const pending = pendingRefundsMap?.get(mapKey);
+                const isRefundPending = !!pending || !!tx.pending_refund_id;
+                const links = refundLinksMap?.get(mapKey) ?? [];
+                const unlinkedAmount = tx.amount - links.reduce((sum, link) => sum + link.amount, 0);
+                let monthMove: { origIdx: number; curIdx: number; moved: boolean } | null = null;
+                if (budgetMonth) {
+                  const d = new Date(tx.date);
+                  const origIdx = d.getFullYear() * 12 + d.getMonth();
+                  const override = budgetMonth.overrides?.get(mapKey);
+                  const curIdx = override
+                    ? override.override_year * 12 + (override.override_month - 1)
+                    : origIdx;
+                  monthMove = { origIdx, curIdx, moved: !!override };
+                }
+                const moveTo = (idx: number) =>
+                  monthOverrideMutation.mutate({
+                    tx,
+                    fromYear: Math.floor((monthMove?.curIdx ?? idx) / 12),
+                    fromMonth: ((monthMove?.curIdx ?? idx) % 12) + 1,
+                    year: Math.floor(idx / 12),
+                    month: (idx % 12) + 1,
+                  });
 
                 return (
-                  <div key={txKey}>
+                  <div key={txKey} data-tx-key={mapKey}>
                     <div
                       data-testid="recent-tx-row"
                       className={`flex items-center gap-2 py-1 px-2 rounded-lg hover:bg-[var(--surface-light)]/40 transition-colors sm:cursor-default cursor-pointer ${actionsOpen ? "bg-[var(--surface-light)]/30" : ""}`}
@@ -589,7 +746,7 @@ export function RecentTransactionsFeed({
                           <Split size={13} />
                         </button>
                         {tx.amount < 0 ? (
-                          tx.pending_refund_id ? (
+                          isRefundPending ? (
                             <span className="w-[32px] h-[32px] flex items-center justify-center text-amber-400" title={t("tooltips.pendingRefund")}>
                               <RefreshCw size={13} className="animate-pulse" />
                             </span>
@@ -603,6 +760,15 @@ export function RecentTransactionsFeed({
                               <RefreshCw size={13} />
                             </button>
                           )
+                        ) : links.length > 0 ? (
+                          <button
+                            className="w-[32px] h-[32px] flex items-center justify-center rounded-md text-purple-400 hover:bg-purple-500/20 transition-colors"
+                            title={`${t("tooltips.linkedToPending")} (${formatCurrency(tx.amount - unlinkedAmount)})`}
+                            disabled={links.some((link) => unlinkingRefund.isPending(link.id))}
+                            onClick={(e) => { e.stopPropagation(); void requestUnlink(links); }}
+                          >
+                            <Link2 size={13} />
+                          </button>
                         ) : (
                           <button
                             className="w-[32px] h-[32px] flex items-center justify-center rounded-md text-emerald-400/40 hover:text-emerald-400 hover:bg-emerald-500/20 transition-colors"
@@ -622,15 +788,53 @@ export function RecentTransactionsFeed({
                           <MoreHorizontal size={13} />
                         </button>
                       </div>
-                      <span
-                        className={`text-sm font-semibold flex-shrink-0 tabular-nums text-end w-[80px] ${
-                          isPositive ? "text-emerald-400" : "text-rose-400"
-                        }`}
-                        dir="ltr"
-                      >
-                        {isPositive ? "+" : ""}
-                        {formatCurrency(tx.amount)}
-                      </span>
+                      {/* Every row of a monthly-budget list keeps this slot,
+                          moved or not, so the badge never shifts one row's
+                          action and amount columns out of line. */}
+                      {monthMove && (
+                        <span
+                          data-testid="recent-tx-month-slot"
+                          className="flex-shrink-0 w-[14px] text-amber-400"
+                        >
+                          {monthMove.moved && (
+                            <span
+                              data-testid="recent-tx-month-moved"
+                              title={t("budget.monthMove.movedBadge", {
+                                from: monthIndexLabel(monthMove.origIdx),
+                                to: monthIndexLabel(monthMove.curIdx),
+                              })}
+                            >
+                              <CalendarClock size={13} />
+                            </span>
+                          )}
+                        </span>
+                      )}
+                      <div className="flex-shrink-0 w-[80px] text-end">
+                        <span
+                          className={`block text-sm font-semibold tabular-nums ${
+                            isPositive ? "text-emerald-400" : "text-rose-400"
+                          }`}
+                          dir="ltr"
+                        >
+                          {isPositive ? "+" : ""}
+                          {formatCurrency(tx.amount)}
+                        </span>
+                        {/* A pool counts a refunded purchase net of its
+                            refund but lists it gross; say what it counts for. */}
+                        {tx.net_amount != null && (
+                          <span
+                            data-testid="tx-net-amount"
+                            className="block text-[10px] leading-tight text-[var(--text-muted)]"
+                            dir="auto"
+                          >
+                            {tx.amount > 0
+                              ? t("transactions.table.refundNetted")
+                              : t("transactions.table.afterRefunds", {
+                                  amount: formatCurrency(tx.net_amount),
+                                })}
+                          </span>
+                        )}
+                      </div>
                     </div>
 
                     {/* Full action bar — the same set the transactions table
@@ -673,7 +877,33 @@ export function RecentTransactionsFeed({
                         </button>
                         <GoalLinkAction transaction={tx} variant="compact" />
                         {tx.amount < 0 ? (
-                          tx.pending_refund_id ? (
+                          pending ? (
+                            <button
+                              className={`${ACTION_BUTTON_CLASS} ${
+                                pending.status === "resolved"
+                                  ? "bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30"
+                                  : pending.status === "partial"
+                                    ? "bg-blue-500/20 text-blue-400 hover:bg-blue-500/30"
+                                    : "bg-amber-500/20 text-amber-400 hover:bg-amber-500/30"
+                              }`}
+                              title={
+                                pending.status === "resolved"
+                                  ? t("tooltips.refundResolved")
+                                  : pending.status === "partial"
+                                    ? `${t("transactions.refunds.partiallyRefunded")} (${formatCurrency(pending.total_refunded || 0)} / ${formatCurrency(pending.expected_amount)}) - ${t("transactions.refunds.clickToCancel")}`
+                                    : t("tooltips.cancelPendingRefund")
+                              }
+                              disabled={cancellingRefund.isPending(pending.id)}
+                              onClick={(e) => { e.stopPropagation(); void requestCancelRefund(pending); }}
+                            >
+                              {pending.status === "resolved" ? (
+                                <CheckCircle2 size={13} className="shrink-0" />
+                              ) : (
+                                <RefreshCw size={13} className={`shrink-0 ${pending.status === "partial" ? "" : "animate-pulse"}`} />
+                              )}
+                              {t(`transactions.refunds.status.${pending.status === "resolved" || pending.status === "partial" ? pending.status : "pending"}`)}
+                            </button>
+                          ) : tx.pending_refund_id ? (
                             <span className={`${ACTION_BUTTON_CLASS} text-amber-400`}>
                               <RefreshCw size={13} className="shrink-0 animate-pulse" />
                               {t("common.pending")}
@@ -689,13 +919,55 @@ export function RecentTransactionsFeed({
                             </button>
                           )
                         ) : (
-                          <button
-                            className={`${ACTION_BUTTON_CLASS} text-emerald-400/70 hover:text-emerald-400 hover:bg-emerald-500/20`}
-                            onClick={(e) => { e.stopPropagation(); setLinkingTransaction(tx); }}
-                          >
-                            <Link2 size={13} className="shrink-0" />
-                            {t("common.link")}
-                          </button>
+                          <>
+                            {links.length > 0 && (
+                              <button
+                                className={`${ACTION_BUTTON_CLASS} bg-purple-500/20 text-purple-400 hover:bg-purple-500/30`}
+                                title={`${t("tooltips.linkedToPending")} (${formatCurrency(tx.amount - unlinkedAmount)})`}
+                                disabled={links.some((link) => unlinkingRefund.isPending(link.id))}
+                                onClick={(e) => { e.stopPropagation(); void requestUnlink(links); }}
+                              >
+                                <Link2 size={13} className="shrink-0" />
+                                {t("transactions.refunds.unlink")}
+                              </button>
+                            )}
+                            {(links.length === 0 || unlinkedAmount > 0.005) && (
+                              <button
+                                className={`${ACTION_BUTTON_CLASS} text-emerald-400/70 hover:text-emerald-400 hover:bg-emerald-500/20`}
+                                title={
+                                  links.length > 0
+                                    ? `${t("tooltips.linkAsRefund")} (${formatCurrency(unlinkedAmount)})`
+                                    : undefined
+                                }
+                                onClick={(e) => { e.stopPropagation(); setLinkingTransaction(tx); }}
+                              >
+                                <Link2 size={13} className="shrink-0" />
+                                {t("common.link")}
+                              </button>
+                            )}
+                          </>
+                        )}
+                        {monthMove && (
+                          <>
+                            <button
+                              className={`${ACTION_BUTTON_CLASS} text-[var(--text-muted)] hover:text-white hover:bg-[var(--surface-light)] disabled:opacity-40 disabled:cursor-not-allowed`}
+                              title={t("budget.monthMove.toPrevMonth")}
+                              disabled={monthMove.curIdx < monthMove.origIdx || monthOverrideMutation.isPending}
+                              onClick={(e) => { e.stopPropagation(); moveTo(monthMove.curIdx - 1); }}
+                            >
+                              <CalendarMinus size={13} className="shrink-0" />
+                              {t("budget.monthMove.prevShort")}
+                            </button>
+                            <button
+                              className={`${ACTION_BUTTON_CLASS} text-[var(--text-muted)] hover:text-white hover:bg-[var(--surface-light)] disabled:opacity-40 disabled:cursor-not-allowed`}
+                              title={t("budget.monthMove.toNextMonth")}
+                              disabled={monthMove.curIdx > monthMove.origIdx || monthOverrideMutation.isPending}
+                              onClick={(e) => { e.stopPropagation(); moveTo(monthMove.curIdx + 1); }}
+                            >
+                              <CalendarPlus size={13} className="shrink-0" />
+                              {t("budget.monthMove.nextShort")}
+                            </button>
+                          </>
                         )}
                         <button
                           className={`${ACTION_BUTTON_CLASS} ${detailsOpen ? "bg-[var(--primary)]/20 text-[var(--primary)]" : "text-[var(--text-muted)] hover:text-white hover:bg-[var(--surface-light)]"}`}
@@ -824,7 +1096,10 @@ export function RecentTransactionsFeed({
         <SplitTransactionModal
           transaction={splittingTransaction}
           onClose={() => setSplittingTransaction(null)}
-          onSuccess={() => setSplittingTransaction(null)}
+          onSuccess={() => {
+            setSplittingTransaction(null);
+            onTransactionUpdated?.();
+          }}
         />
       )}
 
@@ -836,7 +1111,10 @@ export function RecentTransactionsFeed({
             unique_id: String(editingTransaction.unique_id ?? editingTransaction.id ?? ""),
           }}
           onClose={() => setEditingTransaction(null)}
-          onSuccess={() => setEditingTransaction(null)}
+          onSuccess={() => {
+            setEditingTransaction(null);
+            onTransactionUpdated?.();
+          }}
         />
       )}
 

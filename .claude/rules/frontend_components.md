@@ -223,10 +223,10 @@ Use as: `bg-[var(--surface)]`, `text-[var(--text-muted)]`, `border-[var(--surfac
 
 ## System-Specific Rules
 
-### TransactionsTable Updates
-When modifying `TransactionsTable.tsx` (especially props), **YOU MUST** update all consumers:
-- `frontend/src/pages/Transactions.tsx`
-- `frontend/src/components/budget/TransactionCollapsibleList.tsx`
+### Transaction Lists
+Two components render transaction rows:
+- `TransactionsTable.tsx` — the Transactions page only (sortable, paginated, bulk selection).
+- `dashboard/RecentTransactionsSection.tsx` → `RecentTransactionsFeed` — the dashboard card, and (with `embedded`) every budget pool's list via `budget/TransactionCollapsibleList.tsx`. Date-grouped rows that mount in batches as the list scrolls, so a long pool never renders all its rows up front. The budget-only actions (refund status/cancel, unlink, month move, the "after refunds" note) are driven by its optional props, so the dashboard card is unaffected when they are omitted.
 - Ensure data fetching (e.g., pending refunds) is consistent across `MonthlyBudgetView` and `ProjectBudgetView`
 
 ### SQLite Boolean Fields in JSX

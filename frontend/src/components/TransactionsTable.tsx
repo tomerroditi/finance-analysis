@@ -54,12 +54,13 @@ import { formatCurrency } from "../utils/numberFormatting";
 import type { Transaction } from "../types/transaction";
 import { useConfirm, useNotify } from "../context/DialogContext";
 import { useQueryKeys } from "../hooks/useQueryKeys";
-import { qkPrefix } from "../services/queryKeys";
 import type { RefreshPlan } from "../queryInvalidation";
 import { patchBudgetForRetag, widenForCascade, type RetagEdit } from "./budget/budgetOptimistic";
 import {
   REFUND_WRITE_PLAN,
   UNCHANGED_BY_ROW_WRITE,
+  planMonthMove,
+  type MonthMove,
   patchTransactionLists,
   removeFromTransactionLists,
 } from "../writePlans";
@@ -405,21 +406,9 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
   // Monthly-budget month override mutation. Moves a transaction one month
   // prior/next for budget bucketing only (backend caps movement at +/-1 and
   // removes the override when the target equals the real month).
-  // It only re-months the row for the budget, so the refresh is the budget
-  // — the two months it moved between first — and the two analytics reads
-  // built on budget months; the badge moves at once.
+  // The badge moves at once; see `planMonthMove` for what is refreshed.
   const monthOverrideMutation = useMutation({
-    mutationFn: ({
-      tx,
-      year,
-      month,
-    }: {
-      tx: Transaction;
-      fromYear: number;
-      fromMonth: number;
-      year: number;
-      month: number;
-    }) =>
+    mutationFn: ({ tx, year, month }: MonthMove) =>
       budgetMonthOverridesApi.set({
         source_type: "transaction",
         source_id: tx.unique_id || "",
@@ -427,47 +416,7 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
         override_year: year,
         override_month: month,
       }),
-    onMutate: ({ tx, fromYear, fromMonth, year, month }) => {
-      const key = qk.budget.monthOverrides();
-      const before = queryClient.getQueryData<BudgetMonthOverride[]>(key);
-      if (before) {
-        const date = new Date(tx.date);
-        const ownMonth = date.getFullYear() === year && date.getMonth() + 1 === month;
-        const source = tx.source || "unknown";
-        const others = before.filter(
-          (o) => !(o.source_table === source && String(o.source_id) === String(tx.unique_id)),
-        );
-        queryClient.setQueryData<BudgetMonthOverride[]>(
-          key,
-          ownMonth
-            ? others
-            : [
-                ...others,
-                {
-                  id: -1,
-                  source_type: "transaction",
-                  source_id: tx.unique_id || "",
-                  source_table: source,
-                  override_year: year,
-                  override_month: month,
-                },
-              ],
-        );
-      }
-      const refresh: RefreshPlan = {
-        first: [
-          [...qkPrefix.budgetAnalysis, fromYear, fromMonth],
-          [...qkPrefix.budgetAnalysis, year, month],
-          [...qkPrefix.budget, "month-overrides"],
-        ],
-        only: [
-          qkPrefix.budget,
-          [...qkPrefix.analytics, "insights"],
-          [...qkPrefix.analytics, "cash-flow-forecast"],
-        ],
-      };
-      return { refresh, restore: () => queryClient.setQueryData(key, before) };
-    },
+    onMutate: (move) => planMonthMove(queryClient, qk.budget.monthOverrides(), move),
     onError: (_error, _vars, context) => context?.restore(),
     onSuccess: () => onTransactionUpdated?.(),
   });

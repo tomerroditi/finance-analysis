@@ -30,6 +30,7 @@ import {
 } from "./incomeExpensesScope";
 import { IncomeExpensesDonut } from "./IncomeExpensesDonut";
 import { IncomeExpensesFocus } from "./IncomeExpensesFocus";
+import { LoadingSpinner } from "../common/LoadingSpinner";
 import {
   byOriginalTag,
   hasOrigins,
@@ -245,7 +246,7 @@ export function IncomeExpensesCard() {
   // different all-time totals on one screen, and left the projects chip
   // filtering a series whose credit-card rows have no category to filter on.
   // See `.claude/rules/kpi_calculations.md` → "The Income & Expenses card".
-  const { data: expensesByCategoryOverTime } = useQuery({
+  const { data: expensesByCategoryOverTime, isPending: isExpensesLoading } = useQuery({
     queryKey: qk.analytics.expensesByCategoryOverTime(
       refundMode,
       excludeProjects,
@@ -266,7 +267,7 @@ export function IncomeExpensesCard() {
     // dropped — the reader loses their place for the length of a refetch.
     placeholderData: keepPreviousData,
   });
-  const { data: incomeBySourceData } = useQuery({
+  const { data: incomeBySourceData, isPending: isIncomeLoading } = useQuery({
     queryKey: qk.analytics.incomeBySourceOverTime(refundMode, excludeLoans),
     queryFn: async () =>
       (await analyticsApi.getIncomeBySourceOverTime(refundMode, excludeLoans)).data,
@@ -569,6 +570,14 @@ export function IncomeExpensesCard() {
           )}
 
           <div ref={viewportRef} className="flex-1 min-h-0 overflow-y-auto">
+            {(incomeView === "by_source"
+              ? isIncomeLoading
+              : incomeView === "by_category"
+                ? isExpensesLoading
+                : isIncomeLoading || isExpensesLoading) ? (
+              <LoadingSpinner />
+            ) : (
+              <>
             {incomeView === "overview" && (
               <LedgerView rows={ledgerRows} scope={scope} limit={visiblePeriods} />
             )}
@@ -592,6 +601,8 @@ export function IncomeExpensesCard() {
                 t("dashboard.breakdownCategory"),
                 t("common.noData"),
               )}
+              </>
+            )}
             <PeriodPager
               total={activeRows.length}
               visible={Math.min(activeRows.length, visiblePeriods)}

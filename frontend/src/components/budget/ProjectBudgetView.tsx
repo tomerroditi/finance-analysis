@@ -19,6 +19,7 @@ import { BudgetNoticeLine } from "./BudgetNoticeLine";
 import { RuleSparkline } from "./RuleSparkline";
 import { BudgetGoalLink } from "./BudgetGoalLink";
 import { SelectDropdown } from "../common/SelectDropdown";
+import { LoadingSpinner } from "../common/LoadingSpinner";
 import { useQueryKeys } from "../../hooks/useQueryKeys";
 import { qkPrefix } from "../../services/queryKeys";
 import { formatCurrency } from "../../utils/numberFormatting";
@@ -72,7 +73,7 @@ export const ProjectBudgetView: React.FC<ProjectBudgetViewProps> = ({
 
   // One read answers both "which projects" and "which are finished" — the
   // picker has to label the closed ones, so a plain name list is not enough.
-  const { data: projectsStatus = [] } = useQuery({
+  const { data: projectsStatus = [], isPending: isProjectsLoading } = useQuery({
     queryKey: qk.budget.projectsStatus(),
     queryFn: () => budgetApi.getProjectsStatus().then((res) => res.data),
   });
@@ -109,7 +110,7 @@ export const ProjectBudgetView: React.FC<ProjectBudgetViewProps> = ({
     setSelectedProject((firstOpen ?? projectsStatus[0]).name);
   }, [projectsStatus, selectedProject]);
 
-  const { data: projectDetails } = useQuery({
+  const { data: projectDetails, isPending: isDetailsLoading } = useQuery({
     queryKey: qk.budget.projectDetails(selectedProject, includeSplitParents),
     queryFn: () =>
       budgetApi.getProjectDetails(selectedProject, includeSplitParents).then((res) => res.data),
@@ -359,7 +360,11 @@ export const ProjectBudgetView: React.FC<ProjectBudgetViewProps> = ({
               value={selectedProject}
               onChange={setSelectedProject}
               placeholder={
-                projects.length === 0 ? t("budget.noProjects") : t("budget.selectProject")
+                isProjectsLoading
+                  ? t("common.loading")
+                  : projects.length === 0
+                    ? t("budget.noProjects")
+                    : t("budget.selectProject")
               }
               disabled={projects.length === 0}
               size="sm"
@@ -426,7 +431,11 @@ export const ProjectBudgetView: React.FC<ProjectBudgetViewProps> = ({
         </>
       )}
 
-      {!selectedProject && projects.length === 0 && (
+      {(isProjectsLoading || (selectedProject && isDetailsLoading)) && (
+        <LoadingSpinner />
+      )}
+
+      {!isProjectsLoading && !selectedProject && projects.length === 0 && (
         <div className="text-center text-[var(--text-muted)] py-8 md:py-12 bg-[var(--surface)] rounded-xl border border-dashed border-[var(--surface-light)]">
           <h3 className="text-lg font-medium mb-2">{t("budget.noProjectsFound")}</h3>
           <p className="mb-4">{t("budget.createProjectToStart")}</p>

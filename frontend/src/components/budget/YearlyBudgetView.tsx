@@ -423,7 +423,6 @@ export const YearlyBudgetView: React.FC<YearlyBudgetViewProps> = ({
                     <TransactionCollapsibleList
                       transactions={entry.data}
                       isOpen
-                      showActions
                       pendingRefundsMap={pendingRefundsMap}
                       refundLinksMap={refundLinksMap}
                     />
