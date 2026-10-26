@@ -1,9 +1,10 @@
-import { test, expect, request, type Page } from "@playwright/test";
+import { test, expect, request, type Page, type Route } from "@playwright/test";
 import { API_BASE, enableDemoMode, navigateTo, resetDemoData } from "./helpers";
 
 /**
  * Retagging a transaction from a monthly-budget rule's list moves it to its
- * new rule — and a reload straight after the write must show it there.
+ * new rule on click, before the server has answered — and a reload straight
+ * after the write must still show it there.
  *
  * The reload is the regression: the query cache is restored from IndexedDB,
  * whose snapshot is written through a throttle and so can predate the write.
@@ -57,6 +58,22 @@ const ruleFigures = (page: Page, name: string) =>
     .filter({ visible: true })
     .first();
 
+/** Select a row in the expanded list and bulk-tag it into the target rule, up to the Apply click. */
+async function stageRetag(page: Page, tx: LedgerTx) {
+  const row = page.getByTestId(`transaction-row-${tx.source}_${tx.unique_id}`);
+  await row.locator('input[type="checkbox"]').check();
+  await page.locator("button", { hasText: /^Category$/ }).last().click();
+  await page.getByRole("option", { name: TARGET_CATEGORY, exact: true }).click();
+  await page.locator("button", { hasText: /^Tag$/ }).last().click();
+  await page.getByRole("option").first().click();
+}
+
+const applyButton = (page: Page) =>
+  page
+    .locator("div", { hasText: "selected" })
+    .locator("button:has(svg.lucide-circle-check), button:has(svg.lucide-check-circle)")
+    .first();
+
 async function openMonthly(page: Page) {
   await page.getByRole("button", { name: /^Monthly Budget$/i }).click();
   await expect(page.getByTestId("budget-status-band")).toBeVisible({ timeout: 30_000 });
@@ -79,13 +96,7 @@ test.describe("Monthly budget retag", () => {
     const before = (await ruleFigures(page, TARGET_RULE).textContent()) ?? "";
 
     await page.getByText("Other Expenses", { exact: true }).first().click();
-    const row = page.getByTestId(`transaction-row-${tx.source}_${tx.unique_id}`);
-    await row.locator('input[type="checkbox"]').check();
-
-    await page.locator("button", { hasText: /^Category$/ }).last().click();
-    await page.getByRole("option", { name: TARGET_CATEGORY, exact: true }).click();
-    await page.locator("button", { hasText: /^Tag$/ }).last().click();
-    await page.getByRole("option").first().click();
+    await stageRetag(page, tx);
 
     // Give the persister time to write the pre-write snapshot, as it would
     // for anyone who looked at the page for a moment before tagging.
@@ -94,11 +105,7 @@ test.describe("Monthly budget retag", () => {
     const written = page.waitForResponse(
       (r) => r.url().includes("/transactions/bulk-tag") && r.ok(),
     );
-    await page
-      .locator("div", { hasText: "selected" })
-      .locator("button:has(svg.lucide-circle-check), button:has(svg.lucide-check-circle)")
-      .first()
-      .click();
+    await applyButton(page).click();
     await written;
 
     await page.reload();
@@ -108,5 +115,36 @@ test.describe("Monthly budget retag", () => {
     await page.getByText("Other Expenses", { exact: true }).first().click();
     await expect(page.locator("tr[data-testid^='transaction-row-']").first()).toBeVisible();
     await expect(page.getByTestId(`transaction-row-${tx.source}_${tx.unique_id}`)).toHaveCount(0);
+  });
+
+  test("the row moves on click, before the server has answered", async ({ page }) => {
+    const tx = await pickUntaggedExpense();
+
+    // Hold every month's analysis once the write is sent, so nothing the
+    // server says can be what moves the row.
+    let holding = false;
+    const held: Route[] = [];
+    await page.route("**/api/budget/analysis/**", (route) =>
+      holding ? held.push(route) : route.continue(),
+    );
+
+    await navigateTo(page, "/budget");
+    await openMonthly(page);
+    const before = (await ruleFigures(page, TARGET_RULE).textContent()) ?? "";
+    await page.getByText("Other Expenses", { exact: true }).first().click();
+    await stageRetag(page, tx);
+
+    holding = true;
+    await applyButton(page).click();
+
+    await expect(ruleFigures(page, TARGET_RULE)).not.toHaveText(before);
+    await expect(page.getByTestId(`transaction-row-${tx.source}_${tx.unique_id}`)).toHaveCount(0);
+    const patched = (await ruleFigures(page, TARGET_RULE).textContent()) ?? "";
+
+    // The server's answer lands and agrees with what the click showed.
+    holding = false;
+    await Promise.all(held.map((route) => route.continue()));
+    await page.waitForLoadState("networkidle");
+    await expect(ruleFigures(page, TARGET_RULE)).toHaveText(patched);
   });
 });

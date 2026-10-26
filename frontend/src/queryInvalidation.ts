@@ -1,4 +1,11 @@
-import { MutationCache, type QueryClient } from "@tanstack/react-query";
+import {
+  MutationCache,
+  matchQuery,
+  type InvalidateQueryFilters,
+  type Mutation,
+  type QueryClient,
+  type QueryKey,
+} from "@tanstack/react-query";
 
 /** Trailing-edge debounce before the sweep runs. */
 export const INVALIDATE_DEBOUNCE_MS = 200;
@@ -30,24 +37,71 @@ export const INVALIDATE_DEBOUNCE_MS = 200;
 export function createInvalidationSweep(
   client: QueryClient,
   delayMs: number = INVALIDATE_DEBOUNCE_MS,
-): () => void {
+): (first?: readonly QueryKey[]) => void {
   let timer: ReturnType<typeof setTimeout> | undefined;
+  let first: QueryKey[] = [];
 
-  return function schedule() {
+  return function schedule(keys: readonly QueryKey[] = []) {
+    first = [...first, ...keys];
     if (timer !== undefined) clearTimeout(timer);
     timer = setTimeout(() => {
       timer = undefined;
-      // Join a refetch already under way instead of restarting it. Every
-      // read still in flight here began after the write committed (the
-      // mutation cache drops older ones), and the mutation's own
-      // `onSuccess` usually invalidated its keys a moment ago. Restarting
-      // those — the default — abandoned each response mid-way while its
-      // request kept a connection busy, so a screen refreshed behind three
-      // rounds of the same reads.
-      client.invalidateQueries(undefined, { cancelRefetch: false });
+      const batch = first;
+      first = [];
+      void refreshInOrder(client, batch);
     }, delayMs);
   };
 }
+
+/**
+ * Refetch what is on screen under `first`, and only then everything else.
+ *
+ * A write invalidates the whole cache, and the browser runs six requests at
+ * a time: with ~25 refetches fired together, the one read the user is waiting
+ * for — the month they just retagged in — queued behind the trend, the
+ * alerts and every dashboard card, and arrived seconds after the backend
+ * could have answered it. Ordering the refetch puts that read first.
+ *
+ * Every refetch joins one already under way rather than restarting it. Every
+ * read still in flight here began after the write committed (the mutation
+ * cache drops older ones); restarting it abandons the response mid-way while
+ * its request keeps a connection busy.
+ *
+ * @param client - The query client to refresh.
+ * @param first - Keys whose mounted queries refetch before anything else.
+ * @param rest - Filters for the second pass; everything when omitted.
+ */
+export async function refreshInOrder(
+  client: QueryClient,
+  first: readonly QueryKey[],
+  rest: InvalidateQueryFilters = {},
+): Promise<void> {
+  await Promise.allSettled(
+    first.map((queryKey) =>
+      client.refetchQueries({ queryKey, type: "active" }, { cancelRefetch: false }),
+    ),
+  );
+  // What the first pass just fetched is current; refetching it again would
+  // only re-send the request the user already waited for.
+  const refreshed = (query: Parameters<NonNullable<InvalidateQueryFilters["predicate"]>>[0]) =>
+    query.isActive() && first.some((queryKey) => matchQuery({ queryKey }, query));
+  await client.invalidateQueries(
+    {
+      ...rest,
+      predicate: (query) => !refreshed(query) && (rest.predicate?.(query) ?? true),
+    },
+    { cancelRefetch: false },
+  );
+}
+
+/**
+ * The keys a write names in `meta.refreshFirst` — the reads its screen is
+ * waiting on, which the post-write refresh fetches before anything else.
+ */
+const refreshFirstOf = (mutation: Mutation<unknown, unknown, unknown>): QueryKey[] => {
+  const keys = mutation.meta?.refreshFirst;
+  return Array.isArray(keys) ? (keys as QueryKey[]) : [];
+};
 
 /**
  * Build the app-wide mutation cache: what happens to the query cache around
@@ -66,21 +120,32 @@ export function createMutationCache(
   getClient: () => QueryClient,
   delayMs: number = INVALIDATE_DEBOUNCE_MS,
 ): MutationCache {
-  let sweep: (() => void) | null = null;
+  let sweep: ((first?: readonly QueryKey[]) => void) | null = null;
   return new MutationCache({
     onMutate: () => dropReadsOlderThanTheWrite(getClient()),
     // Again on success, before the mutation's own `onSuccess` runs: a read
     // that started while the write was in flight may have been answered
     // before the commit. Dropping it here is what lets every later refetch
     // trust that whatever is in flight already reflects the write.
-    onSuccess: () => dropReadsOlderThanTheWrite(getClient()),
+    //
+    // The reads the write's screen waits on (`meta.refreshFirst`) start here
+    // too, ahead of the mutation's own `onSuccess` and the sweep, so they
+    // take a connection before anything else can. Not returned: the cache
+    // awaits this callback, and the write's own `onSuccess` must not wait.
+    onSuccess: (_data, _variables, _context, mutation) => {
+      const client = getClient();
+      dropReadsOlderThanTheWrite(client);
+      for (const queryKey of refreshFirstOf(mutation)) {
+        void client.refetchQueries({ queryKey, type: "active" }, { cancelRefetch: false });
+      }
+    },
     // On settled rather than on success: a write that failed still cancelled
     // the reads above, and they have to be re-issued or the screen keeps
     // data nothing will refresh. A failed write sweeping costs one debounced
     // refresh and re-confirms what the server actually holds.
-    onSettled: () => {
+    onSettled: (_data, _error, _variables, _context, mutation) => {
       sweep ??= createInvalidationSweep(getClient(), delayMs);
-      sweep();
+      sweep(refreshFirstOf(mutation));
     },
   });
 }

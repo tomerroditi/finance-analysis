@@ -29,6 +29,7 @@ import {
 } from "./ProjectsThisMonthSummary";
 import { useQueryKeys } from "../../hooks/useQueryKeys";
 import { qkPrefix } from "../../services/queryKeys";
+import { refreshInOrder } from "../../queryInvalidation";
 
 /**
  * Months in the summary band's budget-vs-actual figure. It spans the stats
@@ -140,6 +141,15 @@ export const MonthlyBudgetView: React.FC<MonthlyBudgetViewProps> = ({
     });
   }, [analysis?.copied_from, year, month, queryClient]);
 
+  // Not rendered here: a retag patches this month on click
+  // (`budgetOptimistic.ts`), and a project owns its category whatever the
+  // tag, so the patch has to know every project — not only the ones with
+  // spend this month.
+  useQuery({
+    queryKey: qk.budget.projectsStatus(),
+    queryFn: () => budgetApi.getProjectsStatus().then((res) => res.data),
+  });
+
   // Pending refunds — for transaction badges/links across rule lists.
   const { data: pendingRefunds } = useQuery({
     queryKey: qk.pendingRefunds.all(),
@@ -184,11 +194,10 @@ export const MonthlyBudgetView: React.FC<MonthlyBudgetViewProps> = ({
     return map;
   }, [budgetMonthOverrides]);
 
-  // Joins a refetch already under way rather than restarting it: a row
-  // write's own `onSuccess` has usually just invalidated these keys, and a
-  // restart abandons each response mid-way and sends the request again.
+  // This month's analysis first, then the rest of the budget: fired
+  // together, the month queued behind the trend and every other budget read.
   const invalidateBudget = () => {
-    queryClient.invalidateQueries({ queryKey: qkPrefix.budget }, { cancelRefetch: false });
+    void refreshInOrder(queryClient, [qkPrefix.budgetAnalysis], { queryKey: qkPrefix.budget });
   };
 
   const createMutation = useMutation({

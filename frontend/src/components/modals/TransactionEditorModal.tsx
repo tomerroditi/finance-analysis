@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { transactionsApi } from "../../services/api";
 import { SelectDropdown } from "../common/SelectDropdown";
@@ -9,6 +10,8 @@ import { Modal } from "../common/Modal";
 import { useNotify } from "../../context/DialogContext";
 import { RuleQuickAction } from "../transactions/RuleQuickAction";
 import { parseAmountInput } from "../../utils/numberFormatting";
+import { patchBudgetForRetag } from "../budget/budgetOptimistic";
+import { qkPrefix } from "../../services/queryKeys";
 
 interface TransactionEditorModalProps {
   transaction: { unique_id: string; source?: string; description?: string; desc?: string; amount: number; date: string; category?: string; tag?: string; account_name?: string; provider?: string };
@@ -23,6 +26,7 @@ export function TransactionEditorModal({
 }: TransactionEditorModalProps) {
   const { t } = useTranslation();
   const notify = useNotify();
+  const queryClient = useQueryClient();
   const isManual =
     transaction.source?.includes("cash") ||
     transaction.source?.includes("manual_investment");
@@ -56,24 +60,50 @@ export function TransactionEditorModal({
   const availableTags =
     formData.category && categories ? categories[formData.category] || [] : [];
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  // A write, not a bare request: it goes through the app's mutation cache, so
+  // stale reads are dropped and everything refreshes after it — the budget
+  // month on screen first.
+  const updateMutation = useMutation({
+    meta: { refreshFirst: [qkPrefix.budgetAnalysis] },
+    mutationFn: (amount: number) =>
+      transactionsApi.update(transaction.unique_id, {
+        ...formData,
+        amount,
+        source: transaction.source,
+      }),
+    // A new date or amount changes the row's month or cost, which only the
+    // server can place; a plain retag moves it in the budget right away.
+    onMutate: (amount) =>
+      formData.date === transaction.date && amount === transaction.amount
+        ? {
+            restore: patchBudgetForRetag(queryClient, [
+              {
+                source: transaction.source ?? "",
+                unique_id: transaction.unique_id,
+                category: formData.category,
+                tag: formData.tag,
+              },
+            ]),
+          }
+        : undefined,
+    onError: (_error, _amount, context) => {
+      context?.restore();
+      notify.error(t("transactions.failedUpdate"));
+    },
+    onSuccess: () => {
+      onSuccess();
+      onClose();
+    },
+  });
+
+  const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const amount = Number(formData.amount);
     if (formData.amount === "" || Number.isNaN(amount)) {
       notify.error(t("transactions.invalidAmount"));
       return;
     }
-    try {
-      await transactionsApi.update(transaction.unique_id, {
-        ...formData,
-        amount,
-        source: transaction.source,
-      });
-      onSuccess();
-      onClose();
-    } catch {
-      notify.error(t("transactions.failedUpdate"));
-    }
+    updateMutation.mutate(amount);
   };
 
   return (
