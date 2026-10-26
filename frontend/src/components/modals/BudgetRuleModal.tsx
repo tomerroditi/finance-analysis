@@ -31,7 +31,8 @@ export function BudgetRuleModal({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const { data: categoriesMap } = useCategories();
+  // Mounted closed beside every budget view, so only fetched once opened.
+  const { data: categoriesMap } = useCategories({ enabled: isOpen });
 
   const categories = categoriesMap ? Object.keys(categoriesMap) : [];
   const availableTags =

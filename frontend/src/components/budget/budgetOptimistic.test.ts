@@ -55,7 +55,8 @@ function month(): MonthlyAnalysis {
   const untagged = row(3, -40, null, null);
   return {
     rules: [
-      item(1, "Total Budget", 1000, "Total Budget", ["all_tags"], [grocery, dinner, untagged]),
+      // The Total lists no rows of its own; the month's list is the others' union.
+      { ...item(1, "Total Budget", 1000, "Total Budget", ["all_tags"], []), current_amount: 200 },
       item(2, "Food Budget", 300, "Food", ["all_tags"], [dinner]),
       item(3, "Groceries", 200, "Food", ["Groceries"], [grocery]),
       item(4, "Fun", 100, "Entertainment", ["all_tags"], []),
@@ -69,6 +70,13 @@ const byName = (analysis: MonthlyAnalysis, name: string) =>
   analysis.rules!.find((i) => i.rule.name === name);
 const ids = (analysis: MonthlyAnalysis, name: string) =>
   byName(analysis, name)?.data.map((r) => Number(r.unique_id));
+
+/** Every row the month lists — the union the Total's transaction list shows. */
+const listed = (analysis: MonthlyAnalysis) =>
+  analysis
+    .rules!.filter((i) => i.rule.name !== "Total Budget")
+    .flatMap((i) => i.data.map((r) => Number(r.unique_id)))
+    .sort();
 
 const edit = (uniqueId: number, category?: string, tag?: string) => ({
   source: "credit_card_transactions",
@@ -87,7 +95,8 @@ describe("applyRetag", () => {
     expect(byName(next, "Other Expenses")).toBeUndefined();
     // Still in the monthly pool: the Total keeps its figure and shows the new tag.
     expect(byName(next, "Total Budget")!.current_amount).toBe(200);
-    expect(byName(next, "Total Budget")!.data.find((r) => r.unique_id === "3")!.category).toBe("Entertainment");
+    expect(byName(next, "Total Budget")!.data).toEqual([]);
+    expect(listed(next)).toEqual([1, 2, 3]);
   });
 
   it("gives the row to the most specific rule, not the all-tags one", () => {
@@ -108,7 +117,6 @@ describe("applyRetag", () => {
   it("creates Other Expenses when a cleared row has nowhere else to go", () => {
     const start = month();
     start.rules = start.rules!.filter((i) => i.rule.name !== "Other Expenses");
-    start.rules[0].data = start.rules[0].data.filter((r) => r.unique_id !== "3");
 
     const next = applyRetag(start, [edit(1, "", "")], NONE);
 
@@ -125,7 +133,7 @@ describe("applyRetag", () => {
 
     expect(ids(next, "Groceries")).toEqual([]);
     expect(byName(next, "Total Budget")!.current_amount).toBe(100);
-    expect(ids(next, "Total Budget")).toEqual([2, 3]);
+    expect(listed(next)).toEqual([2, 3]);
     expect(next.project_spending!.projects).toEqual([
       expect.objectContaining({ category: "Renovation", spent: 100 }),
     ]);
@@ -155,7 +163,7 @@ describe("applyRetag", () => {
     const next = applyRetag(month(), [edit(3, "Insurance", "Car")], ctx);
 
     expect(byName(next, "Other Expenses")).toBeUndefined();
-    expect(ids(next, "Total Budget")).toEqual([1, 2]);
+    expect(listed(next)).toEqual([1, 2]);
     expect(byName(next, "Total Budget")!.current_amount).toBe(160);
   });
 
@@ -163,14 +171,13 @@ describe("applyRetag", () => {
     const next = applyRetag(month(), [edit(2, "Ignore", "Transfer")], NONE);
 
     expect(ids(next, "Food Budget")).toEqual([]);
-    expect(ids(next, "Total Budget")).toEqual([1, 3]);
+    expect(listed(next)).toEqual([1, 3]);
     expect(byName(next, "Total Budget")!.current_amount).toBe(140);
   });
 
   it("moves what a row counts for, net of its refund, not its gross amount", () => {
     const start = month();
     const refunded = { ...row(5, -300, null, null), net_amount: -120 };
-    start.rules![0].data.push(refunded);
     start.rules![4].data.push(refunded);
 
     const next = applyRetag(start, [edit(5, "Entertainment", "Cinema")], NONE);

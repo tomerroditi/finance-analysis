@@ -265,20 +265,14 @@ export function applyRetag(
       projectsTotal += cost;
     }
 
-    // The Total Budget lists the whole monthly pool, so it only gains or
-    // loses a row when the retag crosses the pool's edge.
+    // The Total Budget totals the whole monthly pool, so its amount only
+    // moves when the retag crosses the pool's edge. It lists no rows of its
+    // own — the month's list is the union of the other rules' rows.
     if (total) {
       const wasIn = inPool(from);
       const nowIn = inPool(to);
-      if (wasIn && nowIn) {
-        total.data = total.data.map((r) => (sameRow(row)(r) ? moved : r));
-      } else if (wasIn) {
-        total.data = total.data.filter((r) => !sameRow(row)(r));
-        total.current_amount -= cost;
-      } else if (nowIn) {
-        total.data.push(moved);
-        total.current_amount += cost;
-      }
+      if (wasIn && !nowIn) total.current_amount -= cost;
+      else if (!wasIn && nowIn) total.current_amount += cost;
     }
   }
 

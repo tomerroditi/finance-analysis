@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link } from "react-router";
 import { Archive, ArchiveRestore, Plus } from "lucide-react";
 import { budgetApi, type ProjectStatus } from "../../../services/api";
@@ -10,7 +10,7 @@ import { Skeleton } from "../../common/Skeleton";
 import { ProjectModal } from "../../modals/ProjectModal";
 import { useConfirm, useNotify } from "../../../context/DialogContext";
 import { useQueryKeys } from "../../../hooks/useQueryKeys";
-import { qkPrefix } from "../../../services/queryKeys";
+import { projectPlan } from "../../budget/budgetPlans";
 import { budgetLink } from "../../../utils/budgetNavigation";
 import { BudgetRuleGrid } from "./BudgetRuleGrid";
 import { normalizeAnalysis } from "./normalizeAnalysis";
@@ -31,7 +31,6 @@ export const ProjectBudgetTab: React.FC<ProjectBudgetTabProps> = ({
   const confirm = useConfirm();
   const notify = useNotify();
   const qk = useQueryKeys();
-  const queryClient = useQueryClient();
   const [isModalOpen, setIsModalOpen] = useState(false);
 
   // The status read, not the plain name list: finishing a project from here
@@ -54,8 +53,8 @@ export const ProjectBudgetTab: React.FC<ProjectBudgetTabProps> = ({
 
   const createProject = useMutation({
     mutationFn: budgetApi.createProject,
+    onMutate: (variables) => ({ refresh: projectPlan(variables.category, "structure") }),
     onSuccess: (_, variables) => {
-      queryClient.invalidateQueries({ queryKey: qkPrefix.budget });
       onSelectProject(variables.category);
       setIsModalOpen(false);
     },
@@ -64,11 +63,9 @@ export const ProjectBudgetTab: React.FC<ProjectBudgetTabProps> = ({
   const closedMutation = useMutation({
     mutationFn: ({ name, closed }: { name: string; closed: boolean }) =>
       budgetApi.setProjectClosed(name, closed),
-    onSuccess: () => {
-      // The whole budget prefix: this card's own Overview tab builds its
-      // rule list from the flag, so it has to refetch too.
-      queryClient.invalidateQueries({ queryKey: qkPrefix.budget });
-    },
+    // Not only the project keys: this card's own Overview tab builds its
+    // envelope list from the flag, and the plan leaves the budget unskipped.
+    onMutate: ({ name }) => ({ refresh: projectPlan(name, "edit") }),
     onError: () => notify.error(t("budget.failedCloseProject")),
   });
 

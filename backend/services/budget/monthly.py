@@ -477,6 +477,14 @@ class MonthlyBudgetService(BudgetService):
             - ``skipped_yearly_conflicts`` – tag names dropped from an
               auto-fill copy because they are claimed by a yearly rule for
               this year.
+            - ``uncategorized_count`` / ``uncategorized_amount`` – how many
+              rows of the month's monthly pool carry no category, and their
+              gross absolute total (``0`` without a Total Budget rule).
+
+            The Total Budget entry's ``data`` is empty whenever another entry
+            exists: every pool row is already listed under the rule that
+            claimed it or under Other Expenses, so the client builds the
+            month's list as their union rather than receiving it twice.
         """
         copied_from = None
         today = date.today()
@@ -491,6 +499,7 @@ class MonthlyBudgetService(BudgetService):
                 copied_from = self.auto_fill_empty_months(year, month, budget_rules)
 
         view = self.get_monthly_budget_view(year, month, include_split_parents)
+        uncategorized_count, uncategorized_amount = _strip_total_budget_rows(view)
         project_summary = self.get_monthly_project_spending_summary(
             year, month, include_split_parents
         )
@@ -520,6 +529,8 @@ class MonthlyBudgetService(BudgetService):
             "savings_goals": savings_goals,
             "copied_from": copied_from,
             "skipped_yearly_conflicts": skipped_yearly,
+            "uncategorized_count": uncategorized_count,
+            "uncategorized_amount": uncategorized_amount,
         }
 
     def get_monthly_budget_view(
@@ -800,3 +811,46 @@ class MonthlyBudgetService(BudgetService):
 
         alerts.sort(key=lambda a: a["percentage"], reverse=True)
         return alerts
+
+
+def _strip_total_budget_rows(view: list[dict[str, Any]] | None) -> tuple[int, float]:
+    """Empty the Total Budget entry's row list when the other entries list them.
+
+    The Total Budget entry carries the whole monthly pool, and every row of it
+    is also under the rule that claimed it or under Other Expenses — which the
+    view emits whenever a Total Budget and at least one other rule exist. Sent
+    twice, the pool was about half of every analysis response. A month with
+    only a Total Budget rule keeps its rows, since nothing else lists them.
+
+    Parameters
+    ----------
+    view : list[dict] or None
+        The month's rule view (:meth:`MonthlyBudgetService.get_monthly_budget_view`),
+        changed in place.
+
+    Returns
+    -------
+    tuple[int, float]
+        The pool's uncategorized row count and the sum of their absolute gross
+        amounts, read before the rows are dropped; ``(0, 0.0)`` when the month
+        has no Total Budget entry.
+    """
+    total = next(
+        (entry for entry in view or [] if entry["rule"].get(CATEGORY) == TOTAL_BUDGET),
+        None,
+    )
+    if total is None:
+        return 0, 0.0
+    amount_field = TransactionsTableFields.AMOUNT.value
+    uncategorized = [
+        row
+        for row in total["data"]
+        if not row.get(TransactionsTableFields.CATEGORY.value)
+        or pd.isna(row.get(TransactionsTableFields.CATEGORY.value))
+    ]
+    uncategorized_amount = float(
+        sum(abs(row.get(amount_field) or 0.0) for row in uncategorized)
+    )
+    if len(view or []) > 1:
+        total["data"] = []
+    return len(uncategorized), uncategorized_amount
