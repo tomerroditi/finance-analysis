@@ -17,7 +17,18 @@ describe("shouldDehydrateQuery", () => {
     expect(shouldDehydrateQuery(query(qk.transactions.list("all", false)))).toBe(
       true,
     );
-    expect(shouldDehydrateQuery(query(qk.fire.planProjection()))).toBe(true);
+    expect(shouldDehydrateQuery(query(qk.fire.planProjectionSummary()))).toBe(true);
+  });
+
+  it("keeps the bulky reads out of the snapshot, all but the ones a page opens on", () => {
+    const now = new Date();
+    const [year, month] = [now.getFullYear(), now.getMonth() + 1];
+    expect(shouldDehydrateQuery(query(qk.transactions.list(undefined, false)))).toBe(true);
+    expect(shouldDehydrateQuery(query(qk.transactions.list(undefined, true)))).toBe(false);
+    expect(shouldDehydrateQuery(query(qk.transactions.list("insurances", false)))).toBe(false);
+    expect(shouldDehydrateQuery(query(qk.budget.analysis(year, month, false)))).toBe(true);
+    expect(shouldDehydrateQuery(query(qk.budget.analysis(year - 1, month, false)))).toBe(false);
+    expect(shouldDehydrateQuery(query(qk.fire.planProjection()))).toBe(false);
   });
 
   it("never persists a query that has not settled successfully", () => {

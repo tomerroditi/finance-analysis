@@ -16,42 +16,59 @@ import {
   queryPersister,
   shouldDehydrateQuery,
 } from "./queryClient";
+import { ROUTE_CHUNKS } from "./routeChunks";
+import { prefetchRoute } from "./services/routePrefetch";
+import { readStoredDemoMode } from "./services/demoMode";
 
 const Dashboard = lazy(() =>
-  import("./pages/Dashboard").then((m) => ({ default: m.Dashboard })),
+  ROUTE_CHUNKS["/"]().then((m) => ({ default: m.Dashboard })),
 );
 const Transactions = lazy(() =>
-  import("./pages/Transactions").then((m) => ({ default: m.Transactions })),
+  ROUTE_CHUNKS["/transactions"]().then((m) => ({ default: m.Transactions })),
 );
 const Budget = lazy(() =>
-  import("./pages/Budget").then((m) => ({ default: m.Budget })),
+  ROUTE_CHUNKS["/budget"]().then((m) => ({ default: m.Budget })),
 );
 const Categories = lazy(() =>
-  import("./pages/Categories").then((m) => ({ default: m.Categories })),
+  ROUTE_CHUNKS["/categories"]().then((m) => ({ default: m.Categories })),
 );
 const Investments = lazy(() =>
-  import("./pages/Investments").then((m) => ({ default: m.Investments })),
+  ROUTE_CHUNKS["/investments"]().then((m) => ({ default: m.Investments })),
 );
 const Liabilities = lazy(() =>
-  import("./pages/Liabilities").then((m) => ({ default: m.Liabilities })),
+  ROUTE_CHUNKS["/liabilities"]().then((m) => ({ default: m.Liabilities })),
 );
 const Insurances = lazy(() =>
-  import("./pages/Insurances").then((m) => ({ default: m.Insurances })),
+  ROUTE_CHUNKS["/insurances"]().then((m) => ({ default: m.Insurances })),
 );
 const DataSources = lazy(() =>
-  import("./pages/DataSources").then((m) => ({ default: m.DataSources })),
+  ROUTE_CHUNKS["/data-sources"]().then((m) => ({ default: m.DataSources })),
 );
 const EarlyRetirement = lazy(() =>
-  import("./pages/EarlyRetirement").then((m) => ({
+  ROUTE_CHUNKS["/early-retirement"]().then((m) => ({
     default: m.EarlyRetirement,
   })),
 );
 const DataFlow = lazy(() =>
-  import("./pages/DataFlow").then((m) => ({ default: m.DataFlow })),
+  ROUTE_CHUNKS["/data-flow"]().then((m) => ({ default: m.DataFlow })),
 );
 const Onboarding = lazy(() =>
-  import("./pages/Onboarding").then((m) => ({ default: m.Onboarding })),
+  ROUTE_CHUNKS["/onboarding"]().then((m) => ({ default: m.Onboarding })),
 );
+
+/**
+ * When this tab started. Anything fetched since is not from the restored
+ * snapshot and needs no revalidating.
+ */
+const BOOTED_AT = Date.now();
+
+// Start the opening route's chunk and reads now, alongside the IndexedDB
+// restore, rather than after the restore has settled and the lazy page has
+// suspended and revealed — each of which used to sit in front of the first
+// request.
+prefetchRoute(queryClient, window.location.pathname, {
+  isDemoMode: readStoredDemoMode(),
+});
 
 /**
  * Treat everything restored from IndexedDB as stale once it is on screen.
@@ -65,8 +82,13 @@ const Onboarding = lazy(() =>
  */
 function revalidateRestoredCache() {
   // Runs before the restore releases the app's observers, so this only marks
-  // the queries stale; each one refetches as its component mounts.
-  void queryClient.invalidateQueries();
+  // the queries stale; each one refetches as its component mounts. What the
+  // boot prefetch already fetched (or is fetching) is newer than the
+  // snapshot and is left alone, or the page would ask for it twice.
+  void queryClient.invalidateQueries({
+    predicate: (query) =>
+      query.state.fetchStatus !== "fetching" && query.state.dataUpdatedAt < BOOTED_AT,
+  });
 }
 
 function App() {
