@@ -12,6 +12,7 @@ import { qkPrefix } from "../../services/queryKeys";
 import { AboutPanel } from "../settings/AboutPanel";
 import { UninstallSection } from "../settings/UninstallSection";
 import { DashboardLayoutManager } from "../settings/DashboardLayoutManager";
+import { LoadingSpinner } from "../common/LoadingSpinner";
 
 interface SettingsPopupProps {
   isOpen: boolean;
@@ -56,7 +57,7 @@ export function SettingsPopup({
     return () => document.removeEventListener("keydown", handleKeyDown);
   }, [isOpen, onClose]);
 
-  const { data: backups = [] } = useQuery({
+  const { data: backups = [], isPending: isBackupsLoading } = useQuery({
     queryKey: qk.backups.list(),
     queryFn: () => backupApi.list().then((res) => res.data),
     enabled: isOpen,
@@ -312,7 +313,9 @@ export function SettingsPopup({
             </button>
           </div>
 
-          {backups.length === 0 ? (
+          {isBackupsLoading ? (
+            <LoadingSpinner size="inline" />
+          ) : backups.length === 0 ? (
             <p className="text-xs text-[var(--text-muted)] text-center py-3">
               {t("settings.noBackups")}
             </p>

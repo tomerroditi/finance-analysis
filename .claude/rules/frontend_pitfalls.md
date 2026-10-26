@@ -457,13 +457,61 @@ taken in the first place.
 Enforced by `frontend/src/cappedScrollRegions.test.ts` (a source scan, runs in
 `npm test`), with the behavioural half in `e2e/savings-goals.spec.ts`.
 
-## TransactionsTable Consumer Updates
+## Loading Is Not Empty
 
-When modifying `TransactionsTable.tsx` props or behavior, **always update all consumers**:
-1. `frontend/src/pages/Transactions.tsx`
-2. `frontend/src/components/budget/TransactionCollapsibleList.tsx`
+A query that has not answered yet has no data, and code that reads "no data"
+as "nothing exists" tells the user they have no projects, no backups, no net
+worth — for as long as the request takes. The usual culprit is a defaulted
+destructure feeding an empty-state branch:
 
-These components pass different prop configurations and may break silently.
+```tsx
+// WRONG — `[]` while loading, so "No projects found" flashes on every load
+const { data: projects = [] } = useQuery({ ... });
+{projects.length === 0 && <EmptyState title={t("budget.noProjectsFound")} />}
+
+// CORRECT — three states: loading, empty, data
+const { data: projects = [], isPending } = useQuery({ ... });
+{isPending ? (
+  <LoadingSpinner />
+) : projects.length === 0 ? (
+  <EmptyState title={t("budget.noProjectsFound")} />
+) : (
+  <ProjectList projects={projects} />
+)}
+```
+
+- **Every empty state is gated on the query that feeds it** being settled.
+  Not on a sibling query — a page-level `isLoading` covering one request does
+  not cover a card's own request running beside it (the budget trend, the
+  refund sources rail and the portfolio balance chart all shipped that way).
+- **Show `<LoadingSpinner />`** (`components/common/LoadingSpinner.tsx`;
+  `size="inline"` for a row or a card section) in the region the empty state
+  would occupy. A page that already renders a `Skeleton` layout while loading
+  keeps it — include every query its empty state depends on in that gate.
+  A short inline warning (e.g. "no categories available" under a picker) may
+  simply be hidden while loading instead.
+- **`isPending`, not `isFetching`.** `isPending` is "no data yet"; `isFetching`
+  is also true on every background refetch, which would replace content the
+  user is reading with a spinner.
+- **Keys that change with a filter** (a toggle, a chip) start a new query with
+  no data. Use `placeholderData: keepPreviousData` there so the old content
+  stays up — `isPending` is then true only on the very first load.
+- **A disabled query is `isPending` forever.** Pair the check with the same
+  condition that enables it (`selectedProject && isDetailsLoading`), or the
+  spinner never goes away.
+- **Placeholders and labels too:** a picker's "No projects" placeholder is an
+  empty state; show `t("common.loading")` while its options load.
+
+Behavioural guard: `e2e/loading-states.spec.ts` holds the API response with
+`page.route` and asserts the spinner is up and the empty message is not. A new
+view whose empty state could flash should add a case there.
+
+## Transaction List Consumers
+
+`TransactionsTable.tsx` serves the Transactions page only. `RecentTransactionsFeed`
+(`components/dashboard/RecentTransactionsSection.tsx`) serves both the dashboard
+card and, embedded, every budget pool (`budget/TransactionCollapsibleList.tsx`) —
+a change to it shows up in both places, so check both.
 
 ## Provider/Service Name Maps
 
