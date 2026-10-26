@@ -80,7 +80,7 @@ test.describe("budget requests", () => {
 
     await page.getByRole("button", { name: "View month transactions" }).click();
     await expect(
-      page.getByTestId("budget-status-band").locator("tr[data-testid^='transaction-row-']").first(),
+      page.getByTestId("budget-status-band").getByTestId("recent-tx-row").first(),
     ).toBeVisible();
   });
 
