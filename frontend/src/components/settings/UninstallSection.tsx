@@ -25,6 +25,8 @@ export function UninstallSection() {
   const uninstallMutation = useMutation({
     mutationFn: (wipe: boolean) =>
       uninstallApi.uninstall(wipe).then((res) => res.data),
+    // The backend is about to exit: refetching anything would only fail.
+    onMutate: () => ({ refresh: { only: [] } }),
     onSuccess: () => {
       notify.success(t("uninstall.running"));
       // Backend will exit shortly; close the popup window after a moment.

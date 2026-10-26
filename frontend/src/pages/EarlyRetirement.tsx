@@ -39,20 +39,21 @@ export function EarlyRetirement() {
   const [preview, setPreview] = useState<FireProjection | null>(null);
   const [confirmReset, setConfirmReset] = useState(false);
 
-  // Always refetched on mount: the plan follows live balances, and the
-  // persisted cache is written on a throttle — a reload right after Save
-  // would otherwise paint (and keep) the plan from before it.
+  // Default staleness: a write to anything the plan follows refreshes the
+  // `fire` family, and a restored snapshot is revalidated on boot (App.tsx),
+  // so neither a reload after Save nor a balance change shows a stale plan —
+  // and the sidebar's hover prefetch is not thrown away on the click.
   const planQuery = useQuery({
     queryKey: qk.fire.plan(),
     queryFn: () => fireApi.getPlan().then((r) => r.data),
-    staleTime: 0,
   });
   const plan = planQuery.data;
 
+  // Takes nothing from the plan (the server runs the saved one, or derives
+  // one; a plan it cannot run answers `needs_setup`), so it starts with it.
   const savedProjection = useQuery({
     queryKey: qk.fire.planProjection(),
     queryFn: () => fireApi.getPlanProjection().then((r) => r.data),
-    enabled: !!plan,
   });
 
   const current: Draft = useMemo(
@@ -81,24 +82,42 @@ export function EarlyRetirement() {
   const adopt = useCallback(
     (next: FirePlan) => {
       queryClient.setQueryData(qk.fire.plan(), next);
-      void queryClient.invalidateQueries({ queryKey: qk.fire.planProjection() });
-      void queryClient.invalidateQueries({ queryKey: qk.fire.planProjectionSummary() });
       setDraft(null);
       setPreview(null);
     },
     [queryClient, qk],
   );
 
-  const calculate = useMutation({
-    mutationFn: () => fireApi.calculate(current.fields).then((r) => r.data),
-    onSuccess: setPreview,
-  });
+  // Calculating writes nothing (`POST /fire/calculate` is stateless), so it
+  // is a plain call: as a mutation every Calculate swept the whole app.
+  const [calculating, setCalculating] = useState(false);
+  const [calculateFailed, setCalculateFailed] = useState(false);
+  const runCalculate = async () => {
+    setCalculating(true);
+    setCalculateFailed(false);
+    try {
+      setPreview((await fireApi.calculate(current.fields)).data);
+    } catch {
+      setCalculateFailed(true);
+    } finally {
+      setCalculating(false);
+    }
+  };
+
+  // Saving or resetting the plan changes only what runs it: the reply is the
+  // plan itself, and its two projections (this page's and the dashboard
+  // card's) refresh after.
+  const FIRE_WRITE = {
+    refresh: { only: [["fire", "plan-projection"], ["fire", "plan-projection-summary"]] },
+  };
   const save = useMutation({
     mutationFn: () => fireApi.savePlan(current.fields, current.linked).then((r) => r.data),
+    onMutate: () => FIRE_WRITE,
     onSuccess: adopt,
   });
   const reset = useMutation({
     mutationFn: () => fireApi.resetPlan().then((r) => r.data),
+    onMutate: () => FIRE_WRITE,
     onSuccess: adopt,
   });
 
@@ -166,7 +185,7 @@ export function EarlyRetirement() {
   );
 
   const shown = preview ?? savedProjection.data ?? null;
-  const busy = calculate.isPending || save.isPending || reset.isPending;
+  const busy = calculating || save.isPending || reset.isPending;
 
   return (
     <div className="space-y-4 md:space-y-6">
@@ -204,11 +223,11 @@ export function EarlyRetirement() {
             type="button"
             className={secondaryButton}
             disabled={!plan || busy}
-            onClick={() => calculate.mutate()}
+            onClick={() => void runCalculate()}
             data-testid="fire-calculate"
           >
             <Calculator className="w-4 h-4" />
-            {calculate.isPending ? t("fire.calculating") : t("fire.calculate")}
+            {calculating ? t("fire.calculating") : t("fire.calculate")}
           </button>
           <button
             type="button"
@@ -223,7 +242,7 @@ export function EarlyRetirement() {
         </div>
       </div>
 
-      {(calculate.isError || save.isError || planQuery.isError) && (
+      {(calculateFailed || save.isError || planQuery.isError) && (
         <div className="p-4 rounded-xl bg-[var(--surface)] border border-red-500/40">
           <p className="text-sm text-red-400">{t("fire.result.error")}</p>
         </div>

@@ -1,11 +1,10 @@
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { useState } from "react";
 import { ExternalLink, RefreshCw } from "lucide-react";
 import { useUpdateCheck } from "../../hooks/useUpdateCheck";
 import { useVersionInfo } from "../../hooks/useVersionInfo";
 import { updatesApi, type UpdateInfo } from "../../services/api";
-import { queryClient } from "../../queryClient";
 
 function formatRelative(iso: string | null | undefined, lang: string): string {
   if (!iso) return "";
@@ -29,9 +28,13 @@ export function AboutPanel() {
   const { data: version } = useVersionInfo();
   const { data: update } = useUpdateCheck();
   const [pending, setPending] = useState<UpdateInfo | null>(null);
+  const queryClient = useQueryClient();
 
   const refreshMutation = useMutation({
     mutationFn: () => updatesApi.refresh().then((res) => res.data),
+    // Re-checking for an update changes no app data; its answer is written
+    // into the cache below, so nothing else needs refreshing.
+    onMutate: () => ({ refresh: { only: [] } }),
     onSuccess: (data) => {
       setPending(data);
       queryClient.setQueryData(["updateCheck"], data);
