@@ -4,7 +4,12 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { createElement } from "react";
 import { useScraping } from "./useScraping";
-import { useScrapingPoller, POLL_INTERVAL_MS } from "./useScrapingPoller";
+import {
+  useScrapingPoller,
+  pollOnce,
+  POLL_INTERVAL_MS,
+  SCRAPE_COMPLETION_PREFIXES,
+} from "./useScrapingPoller";
 import { useScrapingStore } from "../stores/scrapingStore";
 import { scrapingApi } from "../services/api";
 
@@ -187,5 +192,47 @@ describe("useScrapingPoller — Demo Mode", () => {
     await waitFor(() => expect(useScrapingStore.getState().demo).toBe(false));
     expect(useScrapingStore.getState().runningScrapers[52]).toBeDefined();
     unmount();
+  });
+});
+
+describe("pollOnce — what a finished scrape refreshes", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    useScrapingStore.setState({ runningScrapers: {} });
+  });
+
+  it("invalidates each family once per tick, however many accounts finished in it", async () => {
+    seedRunning(31, acc);
+    seedRunning(32, other);
+    vi.mocked(scrapingApi.getStatus).mockResolvedValue({
+      data: { status: "success" },
+    } as Awaited<ReturnType<typeof scrapingApi.getStatus>>);
+    const qc = new QueryClient();
+    const invalidate = vi.spyOn(qc, "invalidateQueries");
+
+    await pollOnce(qc);
+
+    expect(invalidate).toHaveBeenCalledTimes(SCRAPE_COMPLETION_PREFIXES.length);
+    for (const queryKey of SCRAPE_COMPLETION_PREFIXES) {
+      expect(invalidate).toHaveBeenCalledWith({ queryKey }, { cancelRefetch: false });
+    }
+    vi.mocked(scrapingApi.getStatus).mockResolvedValue({
+      data: { status: "in_progress" },
+    } as Awaited<ReturnType<typeof scrapingApi.getStatus>>);
+  });
+
+  it("covers what a scrape's new rows feed beyond the transactions themselves", () => {
+    const heads = SCRAPE_COMPLETION_PREFIXES.map((key) => key[0]);
+    for (const head of [
+      "savings-goals",
+      "categories",
+      "investments",
+      "liabilities",
+      "cash-balances",
+      "fire",
+      "onboardingStatus",
+    ]) {
+      expect(heads).toContain(head);
+    }
   });
 });

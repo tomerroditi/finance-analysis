@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
-import { useMutation } from "@tanstack/react-query";
+import { useQueryClient } from "@tanstack/react-query";
 import { scrapingApi } from "../services/api";
+import { qkPrefix } from "../services/queryKeys";
 import { useScrapingStore, isLive } from "../stores/scrapingStore";
 import type { Account, ResendError, ScraperState } from "../stores/scrapingStore";
 
@@ -41,6 +42,7 @@ export function useScraping() {
   const setResendCooldown = useScrapingStore((s) => s.setResendCooldown);
   const setResendError = useScrapingStore((s) => s.setResendError);
   const clearResendError = useScrapingStore((s) => s.clearResendError);
+  const queryClient = useQueryClient();
 
   // Forces re-render every second while any cooldown is active so
   // `resendCooldownRemaining` recomputes and the countdown ticks down in
@@ -129,33 +131,26 @@ export function useScraping() {
     [startScraper],
   );
 
-  // 2FA mutation
-  const tfaMutation = useMutation({
-    mutationFn: ({
-      service,
-      provider,
-      account,
-      code,
-    }: {
-      service: string;
-      provider: string;
-      account: string;
-      code: string;
-    }) => scrapingApi.submit2fa(service, provider, account, code),
-  });
-
-  // Submit 2FA with optimistic update
+  // Submit 2FA with optimistic update. A plain call, not a mutation: the
+  // code only unblocks the scraper, it writes nothing a read shows — as a
+  // mutation it cancelled every read in flight and refreshed the whole app.
+  // What the scrape writes is refreshed when the poller sees it finish.
+  const [tfaIsPending, setTfaIsPending] = useState(false);
   const submitTfa = useCallback(
     (scraper: ScraperState, code: string) => {
       updateStatus(scraper.process_id, { status: "in_progress" });
-      tfaMutation.mutate({
-        service: scraper.account.service,
-        provider: scraper.account.provider,
-        account: scraper.account.account_name,
-        code,
-      });
+      setTfaIsPending(true);
+      scrapingApi
+        .submit2fa(
+          scraper.account.service,
+          scraper.account.provider,
+          scraper.account.account_name,
+          code,
+        )
+        .catch((e) => console.error("Failed to submit 2FA code:", e))
+        .finally(() => setTfaIsPending(false));
     },
-    [tfaMutation, updateStatus],
+    [updateStatus],
   );
 
   // Resend 2FA in place: ask the backend to re-issue the OTP without
@@ -245,11 +240,13 @@ export function useScraping() {
           error_message: undefined,
           error_type: undefined,
         });
+        // The abort is recorded in the scrape history the cards read.
+        void queryClient.invalidateQueries({ queryKey: qkPrefix.lastScrapes });
       } catch (e) {
         console.error("Failed to abort:", e);
       }
     },
-    [updateStatus],
+    [updateStatus, queryClient],
   );
 
   // Get scraper state for a specific account
@@ -278,7 +275,7 @@ export function useScraping() {
     abortScraper,
     getScraperForAccount,
     isAnyScraping,
-    tfaIsPending: tfaMutation.isPending,
+    tfaIsPending,
     resendCooldownRemaining,
     resendErrors,
   };

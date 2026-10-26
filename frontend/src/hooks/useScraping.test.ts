@@ -715,4 +715,21 @@ describe("useScraping.abortScraper", () => {
     expect(aborted?.error_message).toBeUndefined();
     expect(result.current.isAnyScraping).toBe(false);
   });
+
+  it("refreshes the scrape history the abort was recorded in", async () => {
+    const qc = new QueryClient();
+    const invalidate = vi.spyOn(qc, "invalidateQueries");
+    const { result } = renderScraping(({ children }: { children: ReactNode }) =>
+      createElement(QueryClientProvider, { client: qc }, children),
+    );
+    await act(async () => {
+      await result.current.startScraper(acc, null);
+    });
+
+    await act(async () => {
+      await result.current.abortScraper(result.current.getScraperForAccount(acc)!);
+    });
+
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ["last-scrapes"] });
+  });
 });
