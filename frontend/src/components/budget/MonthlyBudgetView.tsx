@@ -92,7 +92,7 @@ export const MonthlyBudgetView: React.FC<MonthlyBudgetViewProps> = ({
   const freshness = useBudgetFreshness();
   const isAnyScraping = useIsAnyScraping();
 
-  const { data: analysis, isLoading } = useQuery({
+  const { data: analysis, isLoading, isPlaceholderData } = useQuery({
     queryKey: qk.budget.analysis(year, month, includeSplitParents),
     queryFn: () =>
       budgetApi.getAnalysis(year, month, includeSplitParents).then((res) => res.data),
@@ -111,20 +111,35 @@ export const MonthlyBudgetView: React.FC<MonthlyBudgetViewProps> = ({
     [trendLabels],
   );
 
-  // Prefetch adjacent months (prev 2 + next 2) for instant navigation
+  // Prefetch adjacent months for instant navigation — once the month on
+  // screen has arrived, nearest first, one at a time. The server answers a
+  // month in ~0.15 s once its claim ledger is built, but requests that run
+  // together share its CPU: fired alongside the viewed month, four
+  // neighbours made it wait, and fired together they each took ~10× longer
+  // than in turn.
+  const viewedMonthReady = !!analysis && !isPlaceholderData;
   useEffect(() => {
-    const offsets = [-2, -1, 1, 2];
-    for (const offset of offsets) {
-      const date = new Date(year, month - 1 + offset);
-      const prefetchYear = date.getFullYear();
-      const prefetchMonth = date.getMonth() + 1;
-      queryClient.prefetchQuery({
-        queryKey: qk.budget.analysis(prefetchYear, prefetchMonth, includeSplitParents),
-        queryFn: () =>
-          budgetApi.getAnalysis(prefetchYear, prefetchMonth, includeSplitParents).then((res) => res.data),
-      });
-    }
-  }, [year, month, includeSplitParents, queryClient, qk]);
+    if (!viewedMonthReady) return;
+    let cancelled = false;
+    (async () => {
+      for (const offset of [-1, 1, -2, 2]) {
+        if (cancelled) return;
+        const date = new Date(year, month - 1 + offset);
+        const prefetchYear = date.getFullYear();
+        const prefetchMonth = date.getMonth() + 1;
+        await queryClient.prefetchQuery({
+          queryKey: qk.budget.analysis(prefetchYear, prefetchMonth, includeSplitParents),
+          queryFn: () =>
+            budgetApi
+              .getAnalysis(prefetchYear, prefetchMonth, includeSplitParents)
+              .then((res) => res.data),
+        });
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [viewedMonthReady, year, month, includeSplitParents, queryClient, qk]);
 
   // When the active month's analysis reports an auto-fill, sibling months
   // may have prefetched in parallel and cached an empty result before the
@@ -196,6 +211,10 @@ export const MonthlyBudgetView: React.FC<MonthlyBudgetViewProps> = ({
 
   // This month's analysis first, then the rest of the budget: fired
   // together, the month queued behind the trend and every other budget read.
+  // Row writes in the transaction lists need none of this — they are
+  // mutations, refreshed after by the mutation cache along the patch's plan
+  // (`budgetOptimistic.ts`), and invalidating here as well would refetch the
+  // reads that plan skips.
   const invalidateBudget = () => {
     void refreshInOrder(queryClient, [qkPrefix.budgetAnalysis], { queryKey: qkPrefix.budget });
   };
@@ -511,7 +530,6 @@ export const MonthlyBudgetView: React.FC<MonthlyBudgetViewProps> = ({
         transactions={item.data}
         isOpen={expandedRuleId === String(item.rule.id)}
         showActions
-        onTransactionUpdated={invalidateBudget}
         pendingRefundsMap={pendingRefundsMap}
         refundLinksMap={refundLinksMap}
         budgetMonthOverridesMap={budgetMonthOverridesMap}
@@ -558,7 +576,6 @@ export const MonthlyBudgetView: React.FC<MonthlyBudgetViewProps> = ({
               transactions={totalItem.data}
               isOpen
               showActions
-              onTransactionUpdated={invalidateBudget}
               pendingRefundsMap={pendingRefundsMap}
               refundLinksMap={refundLinksMap}
               budgetMonthOverridesMap={budgetMonthOverridesMap}
@@ -611,7 +628,6 @@ export const MonthlyBudgetView: React.FC<MonthlyBudgetViewProps> = ({
               <ProjectsThisMonthSummary
                 projects={monthProjects}
                 onViewAll={onViewProjects}
-                onTransactionUpdated={invalidateBudget}
               />
             </div>
           )}

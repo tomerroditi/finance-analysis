@@ -1,7 +1,8 @@
-import type { QueryClient } from "@tanstack/react-query";
+import type { QueryClient, QueryKey } from "@tanstack/react-query";
 import type { Transaction } from "../../types/transaction";
 import type { ProjectStatus } from "../../services/api";
 import { qkPrefix } from "../../services/queryKeys";
+import type { RefreshPlan } from "../../queryInvalidation";
 
 /**
  * A category/tag write, in the shape `transactionsApi.bulkTag` sends it.
@@ -325,6 +326,52 @@ function claimContext(client: QueryClient): ClaimContext {
 }
 
 /**
+ * Reads a category/tag write cannot change, which the refresh after it
+ * leaves alone: the rules, categories and accounts themselves, and the
+ * app's own status. A retag only moves money between pools, so refetching
+ * these after every one was pure queueing in front of the month the user is
+ * looking at.
+ */
+export const UNCHANGED_BY_RETAG: readonly QueryKey[] = [
+  ["budget", "projects"],
+  ["budget", "projects-status"],
+  ["budget", "available-projects"],
+  ["budget", "month-overrides"],
+  ["budget", "category-conflicts"],
+  qkPrefix.categories,
+  qkPrefix.categoryIcons,
+  qkPrefix.taggingRules,
+  qkPrefix.bankBalances,
+  qkPrefix.insuranceAccounts,
+  qkPrefix.lastScrapes,
+  qkPrefix.credentialsAccounts,
+  qkPrefix.providers,
+  qkPrefix.backups,
+  ["rates"],
+  ["onboardingStatus"],
+  ["updateCheck"],
+  ["versionInfo"],
+];
+
+/**
+ * Drop a retag plan's month scoping once the reply shows the write reached
+ * further than the rows it named.
+ *
+ * Retagging a purchase moves its linked refunds with it (`refunds_retagged`
+ * in the reply), and a refund can sit in a month the patch never saw. Every
+ * month's analysis is then fair game; the rest of the plan still holds.
+ *
+ * @param plan - The plan `patchBudgetForRetag` returned, changed in place so
+ *   the mutation cache — which reads it after the write's `onSuccess` — sees
+ *   the wider one.
+ * @param refundsRetagged - The reply's `refunds_retagged`.
+ */
+export function widenForCascade(plan: RefreshPlan | undefined, refundsRetagged: number | undefined) {
+  if (!plan || !refundsRetagged) return;
+  (plan as { skip?: readonly QueryKey[] }).skip = UNCHANGED_BY_RETAG;
+}
+
+/**
  * Move retagged rows to their new rule in every cached monthly analysis, now.
  *
  * Reads still in flight are cancelled first — they were computed before the
@@ -333,9 +380,15 @@ function claimContext(client: QueryClient): ClaimContext {
  *
  * @param client - The app's query client.
  * @param edits - The writes being sent.
- * @returns A function that restores every patched month, for a failed write.
+ * @returns `restore`, which puts every patched month back for a failed
+ *   write, and `refresh`, the plan the mutation cache follows after it: the
+ *   touched months first, and neither the months the write cannot have
+ *   touched nor the reads in {@link UNCHANGED_BY_RETAG}.
  */
-export function patchBudgetForRetag(client: QueryClient, edits: RetagEdit[]): () => void {
+export function patchBudgetForRetag(
+  client: QueryClient,
+  edits: RetagEdit[],
+): { restore: () => void; refresh: RefreshPlan } {
   const cache = client.getQueryCache();
   for (const query of cache.findAll({ queryKey: qkPrefix.budgetAnalysis, fetchStatus: "fetching" })) {
     if (query.state.data !== undefined) void query.cancel({ revert: true });
@@ -343,12 +396,51 @@ export function patchBudgetForRetag(client: QueryClient, edits: RetagEdit[]): ()
 
   const ctx = claimContext(client);
   const before = client.getQueriesData<MonthlyAnalysis>({ queryKey: qkPrefix.budgetAnalysis });
+  const wanted = new Set(edits.map((edit) => rowKey(edit.source, edit.unique_id)));
+  const found = new Set<string>();
+  const months = new Set<string>();
   for (const [key, data] of before) {
     if (!data) continue;
     const next = applyRetag(data, edits, ctx);
-    if (next !== data) client.setQueryData(key, next);
+    if (next === data) continue;
+    client.setQueryData(key, next);
+    months.add(`${key[2]}-${key[3]}`);
+    for (const row of listedRows(data)) {
+      const id = rowKey(row.source, row.unique_id);
+      if (wanted.has(id)) found.add(id);
+    }
   }
-  return () => {
-    for (const [key, data] of before) client.setQueryData(key, data);
+
+  // Each analysis holds one budget month, so a month whose cached analysis
+  // listed none of these rows is one the write did not touch — unless a row
+  // was nowhere in the cache, and so could be in any month.
+  const placed = found.size === wanted.size;
+  const touched = [...months].map((month) => {
+    const [year, number] = month.split("-").map(Number);
+    return [...qkPrefix.budgetAnalysis, year, number] as const;
+  });
+  const untouched = placed
+    ? before
+        .map(([key]) => key)
+        .filter((key) => !months.has(`${key[2]}-${key[3]}`))
+        .map((key) => key.slice(0, 4))
+    : [];
+
+  return {
+    restore: () => {
+      for (const [key, data] of before) client.setQueryData(key, data);
+    },
+    refresh: {
+      first: placed && touched.length > 0 ? touched : [qkPrefix.budgetAnalysis],
+      skip: [...UNCHANGED_BY_RETAG, ...untouched],
+    },
   };
+}
+
+/** Every row a month's analysis lists, rules and projects alike. */
+function listedRows(analysis: MonthlyAnalysis): AnalysisRow[] {
+  return [
+    ...(analysis.rules ?? []).flatMap((item) => item.data),
+    ...(analysis.project_spending?.projects ?? []).flatMap((p) => p.transactions ?? []),
+  ].filter((row) => row.split_id == null);
 }

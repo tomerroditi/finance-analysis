@@ -55,7 +55,7 @@ import type { Transaction } from "../types/transaction";
 import { useConfirm, useNotify } from "../context/DialogContext";
 import { useQueryKeys } from "../hooks/useQueryKeys";
 import { qkPrefix } from "../services/queryKeys";
-import { patchBudgetForRetag, type RetagEdit } from "./budget/budgetOptimistic";
+import { patchBudgetForRetag, widenForCascade, type RetagEdit } from "./budget/budgetOptimistic";
 
 
 export interface TransactionsTableProps {
@@ -296,35 +296,32 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
     queryClient.invalidateQueries({ queryKey: qkPrefix.budget });
   }, [queryClient]);
 
-  // The month the user is looking at refetches before anything else the
-  // write made stale (`refreshInOrder` in queryInvalidation.ts).
-  const retagMeta = { refreshFirst: [qkPrefix.budgetAnalysis] };
-
   // Bulk tag mutation
   const bulkTagMutation = useMutation({
-    meta: retagMeta,
     mutationFn: (data: Parameters<typeof transactionsApi.bulkTag>[0]) => transactionsApi.bulkTag(data),
-    // A manual row's date or amount moves it between months and changes its
-    // cost, which only the server can place; a plain retag moves it now.
+    // A plain retag moves the row now and returns the refresh plan the
+    // mutation cache follows: the touched months first, nothing the write
+    // cannot change. A manual row's new date or amount moves it between
+    // months or changes its cost, which only the server can place — no
+    // patch and no plan, so everything refreshes.
     onMutate: (data) =>
       data.date || data.amount !== undefined
         ? undefined
-        : {
-            restore: patchBudgetForRetag(
-              queryClient,
-              data.transaction_ids.map((id) => ({
-                source: data.source,
-                unique_id: id,
-                category: data.category,
-                tag: data.tag,
-              })),
-            ),
-          },
+        : patchBudgetForRetag(
+            queryClient,
+            data.transaction_ids.map((id) => ({
+              source: data.source,
+              unique_id: id,
+              category: data.category,
+              tag: data.tag,
+            })),
+          ),
     onError: (_error, _data, context) => context?.restore(),
-    // No invalidation here: the mutation cache refreshes everything after the
-    // write, this month first. Firing it again from here would start every
-    // read at once and put the month back in the queue.
-    onSuccess: () => {
+    // No invalidation here: the mutation cache refreshes after the write.
+    // Firing it again from here would start every read at once and put the
+    // month back in the queue.
+    onSuccess: (res, _data, context) => {
+      widenForCascade(context?.refresh, res.data.refunds_retagged);
       setSelectedIds(new Set());
       setBulkEditData({ date: "", description: "", amount: "", account_name: "", category: "", tag: "" });
       onTransactionUpdated?.();
@@ -415,18 +412,17 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
   });
 
   const clearCategoryTagMutation = useMutation({
-    meta: retagMeta,
     mutationFn: ({ uniqueId, source }: { uniqueId: string; source: string }) =>
       transactionsApi.update(uniqueId, { source, category: "", tag: "" }),
     onMutate: ({ uniqueId, source }) => {
       clearingTagging.begin(`${source || "unknown"}_${uniqueId}`);
-      return {
-        restore: patchBudgetForRetag(queryClient, [
-          { source, unique_id: uniqueId, category: "", tag: "" },
-        ]),
-      };
+      return patchBudgetForRetag(queryClient, [
+        { source, unique_id: uniqueId, category: "", tag: "" },
+      ]);
     },
     onError: (_error, _vars, context) => context?.restore(),
+    onSuccess: (res, _vars, context) =>
+      widenForCascade(context?.refresh, res.data.refunds_retagged),
     onSettled: (_data, _error, { uniqueId, source }) =>
       clearingTagging.end(`${source || "unknown"}_${uniqueId}`),
     // No per-mutation onSuccess: the global MutationCache.onSuccess in
@@ -436,7 +432,6 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
   });
 
   const bulkClearMutation = useMutation({
-    meta: retagMeta,
     mutationFn: async (groupsBySource: Record<string, (string | number)[]>) => {
       // Fire one bulkTag request per source group; let all settle so a
       // single failing source doesn't abort the others.
@@ -454,18 +449,22 @@ export const TransactionsTable: React.FC<TransactionsTableProps> = ({
       if (failed.length > 0) {
         throw new Error(`${failed.length} of ${results.length} clear requests failed`);
       }
+      return results.reduce(
+        (sum, r) => sum + (r.status === "fulfilled" ? (r.value.data.refunds_retagged ?? 0) : 0),
+        0,
+      );
     },
-    onMutate: (groupsBySource) => ({
-      restore: patchBudgetForRetag(
+    onMutate: (groupsBySource) =>
+      patchBudgetForRetag(
         queryClient,
         Object.entries(groupsBySource).flatMap(([source, ids]) =>
           ids.map((id): RetagEdit => ({ source, unique_id: id, category: "", tag: "" })),
         ),
       ),
-    }),
     // Some sources may have landed; the sweep that follows re-reads the truth.
     onError: (_error, _groups, context) => context?.restore(),
-    // No per-mutation onSuccess: global MutationCache.onSuccess handles invalidation.
+    onSuccess: (refundsRetagged, _groups, context) =>
+      widenForCascade(context?.refresh, refundsRetagged),
   });
 
   const deleteMutation = useMutation({

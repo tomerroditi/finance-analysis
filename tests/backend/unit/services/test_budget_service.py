@@ -3136,3 +3136,75 @@ class TestBudgetRuleStoreKinds:
         with pytest.raises(ValidationException, match="positive"):
             service.create_project("Wedding", 0)
         assert service.rules.of_kind(PERIOD_PROJECT).empty
+
+
+class TestClaimsCache:
+    """The claim ledger is built once per write, not once per budget read.
+
+    A Budget page opens the month, its neighbours, the trend, the alerts and
+    the overview together, and each used to rebuild the ledger over the whole
+    history. A file-backed database is required: in-memory ones are never
+    cached (they have no file identity to version against).
+    """
+
+    @pytest.fixture
+    def file_session(self, tmp_path):
+        """A session on an empty, fully migrated database file."""
+        from sqlalchemy import create_engine
+        from sqlalchemy.orm import sessionmaker
+
+        from backend.models import Base
+        from backend.utils import data_cache
+
+        engine = create_engine(f"sqlite:///{tmp_path / 'claims.db'}")
+        Base.metadata.create_all(engine)
+        session = sessionmaker(bind=engine)()
+        data_cache.clear()
+        try:
+            yield session
+        finally:
+            session.close()
+            engine.dispose()
+            data_cache.clear()
+
+    @staticmethod
+    def _counting(session, monkeypatch):
+        """Count ledger builds across every service on ``session``."""
+        calls: list[int] = []
+        original = BudgetService._compute_claims
+
+        def spy(self):
+            calls.append(1)
+            return original(self)
+
+        monkeypatch.setattr(BudgetService, "_compute_claims", spy)
+        return calls
+
+    def test_reads_share_one_build(self, file_session, monkeypatch):
+        """Separate services — separate requests — reuse the first build."""
+        calls = self._counting(file_session, monkeypatch)
+
+        BudgetService(file_session).get_claims()
+        MonthlyBudgetService(file_session).get_claims()
+
+        assert len(calls) == 1
+
+    def test_a_commit_rebuilds_it(self, file_session, monkeypatch):
+        """Any write may move a row between pools, so it discards the ledger."""
+        from sqlalchemy import text
+
+        calls = self._counting(file_session, monkeypatch)
+        BudgetService(file_session).get_claims()
+
+        file_session.execute(text("CREATE TABLE touched (id INTEGER)"))
+        file_session.commit()
+        BudgetService(file_session).get_claims()
+
+        assert len(calls) == 2
+
+    def test_callers_get_their_own_copy(self, file_session):
+        """A caller changing its frame must not change what the next one reads."""
+        first = BudgetService(file_session).get_claims()
+        first["scribble"] = 1
+
+        assert "scribble" not in BudgetService(file_session).get_claims().columns

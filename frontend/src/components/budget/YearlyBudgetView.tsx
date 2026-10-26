@@ -14,7 +14,6 @@ import { TransactionCollapsibleList } from "./TransactionCollapsibleList";
 import { useConfirm, useNotify } from "../../context/DialogContext";
 import { useQueryKeys } from "../../hooks/useQueryKeys";
 import { qkPrefix } from "../../services/queryKeys";
-import { refreshInOrder } from "../../queryInvalidation";
 import { BAR_CONTROL, BudgetCommandBar, PeriodNav } from "./BudgetCommandBar";
 import { BudgetStatusBand, type BandStat } from "./BudgetStatusBand";
 import { BudgetNoticeLine } from "./BudgetNoticeLine";
@@ -96,12 +95,6 @@ export const YearlyBudgetView: React.FC<YearlyBudgetViewProps> = ({
     });
     return map;
   }, [pendingRefunds]);
-
-  // Retagging a transaction from the expanded list can move it out of this
-  // rule and into another one — and out of the Overview's long rules
-  // — so the whole budget prefix refetches, not just this year's key.
-  const invalidateBudget = () =>
-    void refreshInOrder(queryClient, [qk.budget.yearly(year)], { queryKey: qkPrefix.budget });
 
   const deleteMutation = useMutation({
     mutationFn: (id: number) => budgetApi.deleteYearlyRule(id),
@@ -431,7 +424,6 @@ export const YearlyBudgetView: React.FC<YearlyBudgetViewProps> = ({
                       transactions={entry.data}
                       isOpen
                       showActions
-                      onTransactionUpdated={invalidateBudget}
                       pendingRefundsMap={pendingRefundsMap}
                       refundLinksMap={refundLinksMap}
                     />

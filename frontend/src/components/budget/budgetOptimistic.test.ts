@@ -1,6 +1,13 @@
 import { describe, it, expect } from "vitest";
 import { QueryClient } from "@tanstack/react-query";
-import { applyRetag, patchBudgetForRetag, type ClaimContext, type MonthlyAnalysis } from "./budgetOptimistic";
+import {
+  applyRetag,
+  patchBudgetForRetag,
+  widenForCascade,
+  UNCHANGED_BY_RETAG,
+  type ClaimContext,
+  type MonthlyAnalysis,
+} from "./budgetOptimistic";
 
 /**
  * A retag moves a row in the Monthly tab on click, by running the backend's
@@ -187,7 +194,7 @@ describe("patchBudgetForRetag", () => {
     const original = month();
     client.setQueryData(key, original);
 
-    const restore = patchBudgetForRetag(client, [edit(3, "Entertainment", "Cinema")]);
+    const { restore } = patchBudgetForRetag(client, [edit(3, "Entertainment", "Cinema")]);
     expect(ids(client.getQueryData<MonthlyAnalysis>(key)!, "Fun")).toEqual([3]);
 
     restore();
@@ -204,5 +211,42 @@ describe("patchBudgetForRetag", () => {
 
     const next = client.getQueryData<MonthlyAnalysis>(key)!;
     expect(next.project_spending!.projects!.map((p) => p.category)).toEqual(["Renovation"]);
+  });
+
+  it("plans to refetch the touched month first and to leave the other months alone", () => {
+    const client = new QueryClient();
+    const october = ["budget", "analysis", 2026, 10, false, false];
+    const september = ["budget", "analysis", 2026, 9, false, false];
+    client.setQueryData(october, month());
+    client.setQueryData(september, { rules: [], project_spending: { projects: [] } });
+
+    const { refresh } = patchBudgetForRetag(client, [edit(3, "Entertainment", "Cinema")]);
+
+    expect(refresh.first).toEqual([["budget", "analysis", 2026, 10]]);
+    expect(refresh.skip).toEqual([...UNCHANGED_BY_RETAG, ["budget", "analysis", 2026, 9]]);
+  });
+
+  it("refetches every month when a row was in none of the cached ones", () => {
+    const client = new QueryClient();
+    client.setQueryData(["budget", "analysis", 2026, 10, false, false], month());
+
+    // Tagged from the Transactions page: the row could be in any month.
+    const { refresh } = patchBudgetForRetag(client, [edit(42, "Entertainment", "Cinema")]);
+
+    expect(refresh.first).toEqual([["budget", "analysis"]]);
+    expect(refresh.skip).toEqual(UNCHANGED_BY_RETAG);
+  });
+
+  it("widens to every month once the reply says linked refunds moved too", () => {
+    const client = new QueryClient();
+    client.setQueryData(["budget", "analysis", 2026, 10, false, false], month());
+    client.setQueryData(["budget", "analysis", 2026, 9, false, false], { rules: [] });
+    const { refresh } = patchBudgetForRetag(client, [edit(3, "Entertainment", "Cinema")]);
+
+    widenForCascade(refresh, 0);
+    expect(refresh.skip).toContainEqual(["budget", "analysis", 2026, 9]);
+
+    widenForCascade(refresh, 2);
+    expect(refresh.skip).toEqual(UNCHANGED_BY_RETAG);
   });
 });

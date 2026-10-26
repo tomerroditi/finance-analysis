@@ -21,7 +21,6 @@ import { BudgetGoalLink } from "./BudgetGoalLink";
 import { SelectDropdown } from "../common/SelectDropdown";
 import { useQueryKeys } from "../../hooks/useQueryKeys";
 import { qkPrefix } from "../../services/queryKeys";
-import { refreshInOrder } from "../../queryInvalidation";
 import { formatCurrency } from "../../utils/numberFormatting";
 import { formatMonthCompact } from "../../utils/dateFormatting";
 import {
@@ -423,13 +422,6 @@ export const ProjectBudgetView: React.FC<ProjectBudgetViewProps> = ({
               setEditingRule(rule);
               setIsRuleModalOpen(true);
             }}
-            onTransactionUpdated={() =>
-              void refreshInOrder(
-                queryClient,
-                [qk.budget.projectDetails(selectedProject, includeSplitParents)],
-                { queryKey: qkPrefix.budget },
-              )
-            }
           />
         </>
       )}

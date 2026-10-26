@@ -216,6 +216,66 @@ describe("the app-wide mutation cache", () => {
     unsubscribe();
   });
 
+  it("follows a write's plan: what it names first, and nothing it skips", async () => {
+    const client = makeClient();
+    const order: string[] = [];
+    const watch = (key: readonly unknown[], name: string) => {
+      const queryFn = async () => {
+        order.push(name);
+        await flush(SWEEP_MS);
+        return name;
+      };
+      const observer = new QueryObserver(client, { queryKey: key, queryFn });
+      return observer.subscribe(() => {});
+    };
+    const stops = [
+      watch(["trend"], "trend"),
+      watch(["month", 10], "month"),
+      watch(["icons"], "icons"),
+    ];
+    await vi.waitFor(() => expect(order).toHaveLength(3));
+    order.length = 0;
+
+    await client
+      .getMutationCache()
+      .build(client, {
+        mutationFn: async () => null,
+        onMutate: () => ({ refresh: { first: [["month"]], skip: [["icons"]] } }),
+      })
+      .execute(undefined);
+
+    await vi.waitFor(() => expect(order).toEqual(["month", "trend"]), { timeout: 2000 });
+    await flush(SWEEP_MS * 4);
+    expect(order).toEqual(["month", "trend"]);
+    expect(client.getQueryState(["icons"])?.isInvalidated).toBe(false);
+    stops.forEach((stop) => stop());
+  });
+
+  it("refreshes everything after a failed write, whatever it planned", async () => {
+    const client = makeClient();
+    let fetches = 0;
+    const observer = new QueryObserver(client, {
+      queryKey: ["icons"],
+      queryFn: async () => ++fetches,
+    });
+    const unsubscribe = observer.subscribe(() => {});
+    await vi.waitFor(() => expect(fetches).toBe(1));
+
+    await client
+      .getMutationCache()
+      .build(client, {
+        mutationFn: async () => {
+          throw new Error("half-landed");
+        },
+        onMutate: () => ({ refresh: { skip: [["icons"]] } }),
+      })
+      .execute(undefined)
+      .catch(() => undefined);
+
+    await vi.waitFor(() => expect(fetches).toBe(2), { timeout: 2000 });
+    unsubscribe();
+  });
+
   it("leaves a first load alone — it has nothing to overwrite", async () => {
     const client = makeClient();
     const key = ["first-load"];

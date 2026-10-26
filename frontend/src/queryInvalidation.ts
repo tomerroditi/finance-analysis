@@ -1,8 +1,9 @@
 import {
   MutationCache,
+  hashKey,
   matchQuery,
   type InvalidateQueryFilters,
-  type Mutation,
+  type Query,
   type QueryClient,
   type QueryKey,
 } from "@tanstack/react-query";
@@ -37,18 +38,27 @@ export const INVALIDATE_DEBOUNCE_MS = 200;
 export function createInvalidationSweep(
   client: QueryClient,
   delayMs: number = INVALIDATE_DEBOUNCE_MS,
-): (first?: readonly QueryKey[]) => void {
+): (plan?: RefreshPlan) => void {
   let timer: ReturnType<typeof setTimeout> | undefined;
   let first: QueryKey[] = [];
+  // What every write in the burst agrees it cannot have changed: a read is
+  // left alone only if no write in the batch could have touched it.
+  let skip: QueryKey[] | null = null;
 
-  return function schedule(keys: readonly QueryKey[] = []) {
-    first = [...first, ...keys];
+  return function schedule(plan: RefreshPlan = {}) {
+    first = [...first, ...(plan.first ?? [])];
+    const planSkip = plan.skip ?? [];
+    skip =
+      skip === null
+        ? [...planSkip]
+        : skip.filter((key) => planSkip.some((other) => hashKey(other) === hashKey(key)));
     if (timer !== undefined) clearTimeout(timer);
     timer = setTimeout(() => {
       timer = undefined;
-      const batch = first;
+      const batch = { first, skip: skip ?? [] };
       first = [];
-      void refreshInOrder(client, batch);
+      skip = null;
+      void refreshInOrder(client, batch.first, {}, batch.skip);
     }, delayMs);
   };
 }
@@ -70,37 +80,54 @@ export function createInvalidationSweep(
  * @param client - The query client to refresh.
  * @param first - Keys whose mounted queries refetch before anything else.
  * @param rest - Filters for the second pass; everything when omitted.
+ * @param skip - Keys the second pass leaves alone — reads the write cannot
+ *   have changed, which are neither refetched nor marked stale.
  */
 export async function refreshInOrder(
   client: QueryClient,
   first: readonly QueryKey[],
   rest: InvalidateQueryFilters = {},
+  skip: readonly QueryKey[] = [],
 ): Promise<void> {
   await Promise.allSettled(
     first.map((queryKey) =>
       client.refetchQueries({ queryKey, type: "active" }, { cancelRefetch: false }),
     ),
   );
-  // What the first pass just fetched is current; refetching it again would
-  // only re-send the request the user already waited for.
-  const refreshed = (query: Parameters<NonNullable<InvalidateQueryFilters["predicate"]>>[0]) =>
-    query.isActive() && first.some((queryKey) => matchQuery({ queryKey }, query));
+  const under = (keys: readonly QueryKey[], query: Query) =>
+    keys.some((queryKey) => matchQuery({ queryKey }, query));
   await client.invalidateQueries(
     {
       ...rest,
-      predicate: (query) => !refreshed(query) && (rest.predicate?.(query) ?? true),
+      predicate: (query) =>
+        // What the first pass just fetched is current; refetching it again
+        // would only re-send the request the user already waited for.
+        !(query.isActive() && under(first, query)) &&
+        !under(skip, query) &&
+        (rest.predicate?.(query) ?? true),
     },
     { cancelRefetch: false },
   );
 }
 
 /**
- * The keys a write names in `meta.refreshFirst` — the reads its screen is
- * waiting on, which the post-write refresh fetches before anything else.
+ * How a write wants the cache refreshed after it, returned from its
+ * `onMutate` as `{ refresh: RefreshPlan }`.
+ *
+ * Without one, a write refreshes everything at once — the safe default. A
+ * write that knows its reach names the reads its screen waits on (`first`,
+ * fetched the moment it succeeds) and the reads it cannot have changed
+ * (`skip`, left alone). A failed write ignores its plan and refreshes
+ * everything: it may have half-landed.
  */
-const refreshFirstOf = (mutation: Mutation<unknown, unknown, unknown>): QueryKey[] => {
-  const keys = mutation.meta?.refreshFirst;
-  return Array.isArray(keys) ? (keys as QueryKey[]) : [];
+export interface RefreshPlan {
+  first?: readonly QueryKey[];
+  skip?: readonly QueryKey[];
+}
+
+const planOf = (onMutateResult: unknown): RefreshPlan => {
+  if (typeof onMutateResult !== "object" || onMutateResult === null) return {};
+  return (onMutateResult as { refresh?: RefreshPlan }).refresh ?? {};
 };
 
 /**
@@ -120,7 +147,7 @@ export function createMutationCache(
   getClient: () => QueryClient,
   delayMs: number = INVALIDATE_DEBOUNCE_MS,
 ): MutationCache {
-  let sweep: ((first?: readonly QueryKey[]) => void) | null = null;
+  let sweep: ((plan?: RefreshPlan) => void) | null = null;
   return new MutationCache({
     onMutate: () => dropReadsOlderThanTheWrite(getClient()),
     // Again on success, before the mutation's own `onSuccess` runs: a read
@@ -128,24 +155,26 @@ export function createMutationCache(
     // before the commit. Dropping it here is what lets every later refetch
     // trust that whatever is in flight already reflects the write.
     //
-    // The reads the write's screen waits on (`meta.refreshFirst`) start here
+    // The reads the write's screen waits on (its plan's `first`) start here
     // too, ahead of the mutation's own `onSuccess` and the sweep, so they
     // take a connection before anything else can. Not returned: the cache
     // awaits this callback, and the write's own `onSuccess` must not wait.
-    onSuccess: (_data, _variables, _context, mutation) => {
+    onSuccess: (_data, _variables, onMutateResult) => {
       const client = getClient();
       dropReadsOlderThanTheWrite(client);
-      for (const queryKey of refreshFirstOf(mutation)) {
+      for (const queryKey of planOf(onMutateResult).first ?? []) {
         void client.refetchQueries({ queryKey, type: "active" }, { cancelRefetch: false });
       }
     },
     // On settled rather than on success: a write that failed still cancelled
     // the reads above, and they have to be re-issued or the screen keeps
     // data nothing will refresh. A failed write sweeping costs one debounced
-    // refresh and re-confirms what the server actually holds.
-    onSettled: (_data, _error, _variables, _context, mutation) => {
+    // refresh and re-confirms what the server actually holds. Read after the
+    // write's own `onSuccess`, which may widen the plan once the reply shows
+    // the write reached further than expected.
+    onSettled: (_data, error, _variables, onMutateResult) => {
       sweep ??= createInvalidationSweep(getClient(), delayMs);
-      sweep(refreshFirstOf(mutation));
+      sweep(error ? {} : planOf(onMutateResult));
     },
   });
 }

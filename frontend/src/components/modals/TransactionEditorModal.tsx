@@ -10,8 +10,7 @@ import { Modal } from "../common/Modal";
 import { useNotify } from "../../context/DialogContext";
 import { RuleQuickAction } from "../transactions/RuleQuickAction";
 import { parseAmountInput } from "../../utils/numberFormatting";
-import { patchBudgetForRetag } from "../budget/budgetOptimistic";
-import { qkPrefix } from "../../services/queryKeys";
+import { patchBudgetForRetag, widenForCascade } from "../budget/budgetOptimistic";
 
 interface TransactionEditorModalProps {
   transaction: { unique_id: string; source?: string; description?: string; desc?: string; amount: number; date: string; category?: string; tag?: string; account_name?: string; provider?: string };
@@ -61,10 +60,9 @@ export function TransactionEditorModal({
     formData.category && categories ? categories[formData.category] || [] : [];
 
   // A write, not a bare request: it goes through the app's mutation cache, so
-  // stale reads are dropped and everything refreshes after it — the budget
-  // month on screen first.
+  // stale reads are dropped and the refresh after it follows the patch's
+  // plan — the touched budget month first.
   const updateMutation = useMutation({
-    meta: { refreshFirst: [qkPrefix.budgetAnalysis] },
     mutationFn: (amount: number) =>
       transactionsApi.update(transaction.unique_id, {
         ...formData,
@@ -75,22 +73,21 @@ export function TransactionEditorModal({
     // server can place; a plain retag moves it in the budget right away.
     onMutate: (amount) =>
       formData.date === transaction.date && amount === transaction.amount
-        ? {
-            restore: patchBudgetForRetag(queryClient, [
-              {
-                source: transaction.source ?? "",
-                unique_id: transaction.unique_id,
-                category: formData.category,
-                tag: formData.tag,
-              },
-            ]),
-          }
+        ? patchBudgetForRetag(queryClient, [
+            {
+              source: transaction.source ?? "",
+              unique_id: transaction.unique_id,
+              category: formData.category,
+              tag: formData.tag,
+            },
+          ])
         : undefined,
     onError: (_error, _amount, context) => {
       context?.restore();
       notify.error(t("transactions.failedUpdate"));
     },
-    onSuccess: () => {
+    onSuccess: (res, _amount, context) => {
+      widenForCascade(context?.refresh, res.data.refunds_retagged);
       onSuccess();
       onClose();
     },

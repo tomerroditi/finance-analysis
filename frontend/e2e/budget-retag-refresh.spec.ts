@@ -134,6 +134,10 @@ test.describe("Monthly budget retag", () => {
     await page.getByText("Other Expenses", { exact: true }).first().click();
     await stageRetag(page, tx);
 
+    const requested: string[] = [];
+    page.on("request", (req) => {
+      if (holding || held.length > 0) requested.push(new URL(req.url()).pathname);
+    });
     holding = true;
     await applyButton(page).click();
 
@@ -146,5 +150,17 @@ test.describe("Monthly budget retag", () => {
     await Promise.all(held.map((route) => route.continue()));
     await page.waitForLoadState("networkidle");
     await expect(ruleFigures(page, TARGET_RULE)).toHaveText(patched);
+
+    // Only what the retag could change is fetched again: its own month, not
+    // the neighbours already cached, and none of the reads a tag cannot move.
+    const now = new Date();
+    const analyses = requested.filter((path) => path.includes("/budget/analysis/"));
+    expect(analyses.length).toBeGreaterThan(0);
+    expect(new Set(analyses)).toEqual(
+      new Set([`/api/budget/analysis/${now.getFullYear()}/${now.getMonth() + 1}`]),
+    );
+    for (const unchanged of ["/budget/projects/status", "/budget/category-conflicts", "/onboarding/status"]) {
+      expect(requested.filter((path) => path.endsWith(unchanged))).toEqual([]);
+    }
   });
 });
