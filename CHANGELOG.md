@@ -1,3 +1,9 @@
+## v2.3.1 (2026-10-26)
+
+### Perf
+
+- instant retags, viewed-month-first loading, and app-wide request optimizations (#427)
+
 ## v2.3.0 (2026-10-26)
 
 ### Feat
