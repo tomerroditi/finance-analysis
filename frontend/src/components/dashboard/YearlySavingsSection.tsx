@@ -4,7 +4,6 @@ import { useTranslation } from "react-i18next";
 import { Check, Pencil, X } from "lucide-react";
 import { savingsGoalsApi } from "../../services/api";
 import { useQueryKeys } from "../../hooks/useQueryKeys";
-import { qkPrefix } from "../../services/queryKeys";
 import { formatCurrency } from "../../utils/numberFormatting";
 import { Skeleton } from "../common/Skeleton";
 
@@ -35,9 +34,11 @@ export function YearlySavingsSection() {
   const save = useMutation({
     mutationFn: ({ year, target }: { year: number; target: number | null }) =>
       savingsGoalsApi.setYearlyTarget(year, target),
+    // The reply is the whole yearly read, and a target feeds nothing else:
+    // nothing is left to refresh.
+    onMutate: () => ({ refresh: { only: [] } }),
     onSuccess: (res) => {
       queryClient.setQueryData(qk.savingsGoals.yearly(), res.data);
-      queryClient.invalidateQueries({ queryKey: qkPrefix.savingsGoals });
       setEditing(false);
     },
   });
