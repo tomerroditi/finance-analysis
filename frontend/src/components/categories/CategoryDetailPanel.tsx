@@ -9,6 +9,36 @@ import { useScrollLock } from "../../hooks/useScrollLock";
 import { useConfirm, useNotify } from "../../context/DialogContext";
 import { PROTECTED_CATEGORIES, PROTECTED_TAGS } from "./constants";
 import { qkPrefix } from "../../services/queryKeys";
+import { useCategoryTagCreate } from "../../hooks/useCategoryTagCreate";
+import type { RefreshPlan } from "../../queryInvalidation";
+
+/**
+ * What a category/tag delete, move or rename cannot reach: the app's
+ * configuration and account balances. It rewrites transactions, rules,
+ * budgets and goals by name (`services/tagging_service.py`) — and a tag
+ * rename investments and liabilities too — so everything else refreshes.
+ * Cash balances are stored sums the tagging writes never recompute.
+ */
+const CATEGORY_EDIT_SKIP = [
+  qkPrefix.credentialsAccounts,
+  qkPrefix.providers,
+  qkPrefix.backups,
+  qkPrefix.lastScrapes,
+  ["rates"],
+  ["updateCheck"],
+  ["versionInfo"],
+  qkPrefix.bankBalances,
+  qkPrefix.insuranceAccounts,
+  qkPrefix.cashBalances,
+];
+
+/** The categories map first (and the icons, for a rename), then the rest. */
+const editPlan = (withIcons = false): { refresh: RefreshPlan } => ({
+  refresh: {
+    first: withIcons ? [qkPrefix.categories, qkPrefix.categoryIcons] : [qkPrefix.categories],
+    skip: CATEGORY_EDIT_SKIP,
+  },
+});
 
 interface CategoryDetailPanelProps {
   category: string;
@@ -31,6 +61,7 @@ export function CategoryDetailPanel({
 }: CategoryDetailPanelProps) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
+  const { createTag } = useCategoryTagCreate();
   const confirm = useConfirm();
   const notify = useNotify();
   const isProtected = PROTECTED_CATEGORIES.includes(category);
@@ -45,52 +76,62 @@ export function CategoryDetailPanel({
   const [editingTag, setEditingTag] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
 
+  // Each write refreshes along a plan the mutation cache follows (none of
+  // them invalidates on its own, and none returns a promise for TanStack to
+  // await).
   const deleteCategoryMutation = useMutation({
     mutationFn: (name: string) => taggingApi.deleteCategory(name),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: qkPrefix.categories });
-      onClose();
-    },
+    onMutate: () => editPlan(),
+    onSuccess: () => onClose(),
   });
 
-  const createTagMutation = useMutation({
-    mutationFn: ({ tag }: { tag: string }) => taggingApi.createTag(category, tag),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: qkPrefix.categories });
-      setIsAddTagOpen(false);
-    },
-  });
+  // A new tag lands in the map at once; only the map and its usage refetch.
+  const addTag = (tag: string) => {
+    createTag(category, tag).then(
+      () => setIsAddTagOpen(false),
+      () => notify.error(t("categories.tagChangeError")),
+    );
+  };
 
   const deleteTagMutation = useMutation({
     mutationFn: ({ tag }: { tag: string }) => taggingApi.deleteTag(category, tag),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: qkPrefix.categories }),
+    onMutate: () => editPlan(),
     onError: () => notify.error(t("categories.tagChangeError")),
   });
 
   const relocateTagMutation = useMutation({
     mutationFn: ({ tag, newCategory }: { tag: string; newCategory: string }) =>
       taggingApi.relocateTag(category, newCategory, tag),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: qkPrefix.categories });
-      setIsRelocateOpen(null);
-    },
+    onMutate: () => editPlan(),
+    onSuccess: () => setIsRelocateOpen(null),
     onError: () => notify.error(t("categories.tagChangeError")),
   });
 
+  // An icon is read only by the icon map: patch it now, refetch nothing else.
   const updateIconMutation = useMutation({
     mutationFn: ({ icon: newIcon }: { icon: string }) => taggingApi.updateIcon(category, newIcon),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: qkPrefix.categoryIcons });
-      setIsIconPickerOpen(false);
+    onMutate: async ({ icon: newIcon }) => {
+      await queryClient.cancelQueries({ queryKey: qkPrefix.categoryIcons });
+      const before = queryClient.getQueriesData<Record<string, string>>({
+        queryKey: qkPrefix.categoryIcons,
+      });
+      for (const [key, icons] of before) {
+        if (icons) queryClient.setQueryData(key, { ...icons, [category]: newIcon });
+      }
+      return {
+        refresh: { only: [qkPrefix.categoryIcons] },
+        restore: () => before.forEach(([key, icons]) => queryClient.setQueryData(key, icons)),
+      };
     },
+    onSuccess: () => setIsIconPickerOpen(false),
+    onError: (_error, _variables, context) => context?.restore(),
   });
 
   const renameCategoryMutation = useMutation({
     mutationFn: ({ newName }: { newName: string }) =>
       taggingApi.renameCategory(category, newName),
+    onMutate: () => editPlan(true),
     onSuccess: (_, { newName }) => {
-      queryClient.invalidateQueries({ queryKey: qkPrefix.categories });
-      queryClient.invalidateQueries({ queryKey: qkPrefix.categoryIcons });
       setEditingCategory(false);
       onRenameCategory(newName);
     },
@@ -100,10 +141,8 @@ export function CategoryDetailPanel({
   const renameTagMutation = useMutation({
     mutationFn: ({ oldTag, newTag }: { oldTag: string; newTag: string }) =>
       taggingApi.renameTag(category, oldTag, newTag),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: qkPrefix.categories });
-      setEditingTag(null);
-    },
+    onMutate: () => editPlan(),
+    onSuccess: () => setEditingTag(null),
     onError: () => notify.error(t("categories.renameError")),
   });
 
@@ -341,7 +380,7 @@ export function CategoryDetailPanel({
             className="w-full bg-[var(--surface-base)] border border-[var(--surface-light)] rounded-xl px-4 py-3 outline-none focus:border-[var(--primary)] mb-6 transition-all"
             onKeyDown={(e) => {
               const val = (e.target as HTMLInputElement).value.trim();
-              if (e.key === "Enter" && val) createTagMutation.mutate({ tag: val });
+              if (e.key === "Enter" && val) addTag(val);
               if (e.key === "Escape") setIsAddTagOpen(false);
             }}
           />
@@ -357,7 +396,7 @@ export function CategoryDetailPanel({
                 const val = (
                   e.currentTarget.parentElement?.previousElementSibling as HTMLInputElement
                 ).value.trim();
-                if (val) createTagMutation.mutate({ tag: val });
+                if (val) addTag(val);
               }}
               className="flex-1 py-2 bg-[var(--primary)] rounded-xl text-white font-bold hover:bg-[var(--primary-dark)] transition-all"
             >

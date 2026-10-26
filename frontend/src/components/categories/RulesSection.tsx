@@ -20,6 +20,7 @@ import { useTaggingRules } from "../../hooks/useTaggingRules";
 import { useConfirm } from "../../context/DialogContext";
 import { useScrollLock } from "../../hooks/useScrollLock";
 import { qkPrefix } from "../../services/queryKeys";
+import { UNCHANGED_BY_RETAG } from "../budget/budgetOptimistic";
 
 /**
  * Categories-page entry point for auto-tagging rules: a launcher card that opens
@@ -85,9 +86,22 @@ function RulesManagerModal({ isOpen, onClose }: { isOpen: boolean; onClose: () =
         setTimeout(() => setSuccess(null), 3000);
     };
 
+    // Deleting a rule untags nothing (`tagging_rules_service.delete_rule`), so
+    // the rule list is all it changes: drop the row now and refetch only it.
     const deleteMutation = useMutation({
         mutationFn: (id: number) => taggingApi.deleteRule(id),
-        onSuccess: () => queryClient.invalidateQueries({ queryKey: qkPrefix.taggingRules }),
+        onMutate: async (id: number) => {
+            await queryClient.cancelQueries({ queryKey: qkPrefix.taggingRules });
+            const before = queryClient.getQueriesData<TaggingRule[]>({ queryKey: qkPrefix.taggingRules });
+            for (const [key, list] of before) {
+                if (list) queryClient.setQueryData(key, list.filter((rule) => rule.id !== id));
+            }
+            return {
+                refresh: { only: [qkPrefix.taggingRules] },
+                restore: () => before.forEach(([key, list]) => queryClient.setQueryData(key, list)),
+            };
+        },
+        onError: (_error, _id, context) => context?.restore(),
     });
 
     const askDeleteRule = async (rule: TaggingRule) => {
@@ -104,8 +118,10 @@ function RulesManagerModal({ isOpen, onClose }: { isOpen: boolean; onClose: () =
 
     const applyMutation = useMutation({
         mutationFn: () => taggingApi.applyRules(),
+        // Applying retags rows in months nothing here knows: everything a tag
+        // feeds refreshes, but not the rules, categories and accounts.
+        onMutate: () => ({ refresh: { skip: UNCHANGED_BY_RETAG } }),
         onSuccess: (res) => {
-            queryClient.invalidateQueries({ queryKey: qkPrefix.transactions });
             flash(t("transactions.autoTagging.appliedRules", { count: res.data.tagged_count }));
         },
         onError: (err: unknown) => {
@@ -116,8 +132,8 @@ function RulesManagerModal({ isOpen, onClose }: { isOpen: boolean; onClose: () =
 
     const applySingleMutation = useMutation({
         mutationFn: ({ id, overwrite }: { id: number; overwrite: boolean }) => taggingApi.applyRule(id, overwrite),
+        onMutate: () => ({ refresh: { skip: UNCHANGED_BY_RETAG } }),
         onSuccess: (res) => {
-            queryClient.invalidateQueries({ queryKey: qkPrefix.transactions });
             flash(t("transactions.autoTagging.appliedRule", { count: res.data.tagged_count }));
         },
         onError: (err: unknown) => {
