@@ -140,11 +140,22 @@ test.describe("Monthly budget retag", () => {
     await page.getByText("Other Expenses", { exact: true }).first().click();
     await stageRetag(page, tx);
 
+    // Everything requested from the click on: the write, the refetch its
+    // plan starts first, and the sweep after it.
+    const now = new Date();
     const requested: string[] = [];
+    let recording = false;
     page.on("request", (req) => {
-      if (holding || held.length > 0) requested.push(new URL(req.url()).pathname);
+      if (recording) requested.push(new URL(req.url()).pathname);
     });
+    const written = page.waitForResponse(
+      (r) => r.url().includes(`/transactions/${tx.unique_id}/tag`) && r.ok(),
+    );
+    const monthRefetched = page.waitForRequest((req) =>
+      req.url().includes(`/api/budget/analysis/${now.getFullYear()}/${now.getMonth() + 1}`),
+    );
     holding = true;
+    recording = true;
     await applyButton(page).click();
 
     await expect(ruleFigures(page, TARGET_RULE)).not.toHaveText(before);
@@ -152,6 +163,8 @@ test.describe("Monthly budget retag", () => {
     const patched = (await ruleFigures(page, TARGET_RULE).textContent()) ?? "";
 
     // The server's answer lands and agrees with what the click showed.
+    await written;
+    await monthRefetched;
     holding = false;
     await Promise.all(held.map((route) => route.continue()));
     await page.waitForLoadState("networkidle");
@@ -159,7 +172,6 @@ test.describe("Monthly budget retag", () => {
 
     // Only what the retag could change is fetched again: its own month, not
     // the neighbours already cached, and none of the reads a tag cannot move.
-    const now = new Date();
     const analyses = requested.filter((path) => path.includes("/budget/analysis/"));
     expect(analyses.length).toBeGreaterThan(0);
     expect(new Set(analyses)).toEqual(
