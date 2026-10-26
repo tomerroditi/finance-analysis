@@ -19,6 +19,7 @@ import { DonutChart } from "../charts/DonutChart";
 import { formatDate, formatShortDate } from "../../utils/dateFormatting";
 import { formatCurrency } from "../../utils/numberFormatting";
 import { useQueryKeys } from "../../hooks/useQueryKeys";
+import { LoadingSpinner } from "../common/LoadingSpinner";
 
 interface AllocationItem {
   id: number;
@@ -87,7 +88,7 @@ export function PortfolioOverview({ portfolioAnalysis }: PortfolioOverviewProps)
   const qk = useQueryKeys();
   const [chartIncludeClosed, setChartIncludeClosed] = useState(true);
 
-  const { data: balanceHistory } = useQuery({
+  const { data: balanceHistory, isPending: isHistoryLoading } = useQuery({
     queryKey: qk.investments.balanceHistory(chartIncludeClosed),
     queryFn: () =>
       investmentsApi.getPortfolioBalanceHistory(chartIncludeClosed).then((res) => res.data),
@@ -181,7 +182,9 @@ export function PortfolioOverview({ portfolioAnalysis }: PortfolioOverviewProps)
             </button>
           </div>
           <div className="h-[300px]">
-            {series.length > 0 ? (
+            {isHistoryLoading ? (
+              <LoadingSpinner className="h-full" />
+            ) : series.length > 0 ? (
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={balanceRows} margin={{ top: 8, bottom: 4, left: 0, right: 8 }}>
                   <XAxis

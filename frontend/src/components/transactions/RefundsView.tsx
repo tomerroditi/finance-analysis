@@ -23,6 +23,7 @@ import { RefundTagMismatchNotice } from "./RefundTagMismatchNotice";
 import { useConfirm } from "../../context/DialogContext";
 import { useQueryKeys } from "../../hooks/useQueryKeys";
 import { qkPrefix } from "../../services/queryKeys";
+import { LoadingSpinner } from "../common/LoadingSpinner";
 
 type StatusFilter = "all" | "open" | "resolved" | "closed";
 
@@ -108,7 +109,7 @@ const RefundsView: React.FC = () => {
     queryFn: () => pendingRefundsApi.getAll().then((res) => res.data),
   });
 
-  const { data: refundSources } = useQuery({
+  const { data: refundSources, isPending: isSourcesLoading } = useQuery({
     queryKey: qk.pendingRefunds.sources(),
     queryFn: () => pendingRefundsApi.getRefundSources().then((res) => res.data),
   });
@@ -743,7 +744,9 @@ const RefundsView: React.FC = () => {
               {t("transactions.refunds.sourcesCount", { count: filteredSources.length })}
             </span>
           </div>
-          {filteredSources.length > 0 ? (
+          {isSourcesLoading ? (
+            <LoadingSpinner size="inline" />
+          ) : filteredSources.length > 0 ? (
             <>
               {filteredSources.map(renderSource)}
               <div className="px-3 py-2 text-[10.5px] text-[var(--text-muted)] border-t border-[var(--surface-light)] hidden lg:block">

@@ -1,3 +1,9 @@
+## v2.2.1 (2026-10-26)
+
+### Fix
+
+- **frontend**: show a loading spinner instead of empty states while data loads (#424)
+
 ## v2.2.0 (2026-10-24)
 
 ### Feat
