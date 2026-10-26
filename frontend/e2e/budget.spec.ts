@@ -301,6 +301,23 @@ test.describe("Budget", () => {
     }));
     expect(scrollWidth).toBeLessThanOrEqual(clientWidth + 1);
 
+    // --- An expanded rule's transactions sit inset from its card's edges,
+    // not flush against the border ---
+    await page.getByRole("button", { name: /^Monthly Budget$/i }).click();
+    const mobileRule = page
+      .locator("button[aria-expanded]")
+      .filter({ has: page.getByTestId("ledger-figures") })
+      .first();
+    await mobileRule.click();
+    await expect(mobileRule).toHaveAttribute("aria-expanded", "true");
+    const ruleCard = mobileRule.locator("xpath=../..");
+    const txList = ruleCard.getByTestId("budget-tx-list");
+    await expect(txList).toBeVisible();
+    const cardBox = (await ruleCard.boundingBox())!;
+    const listBox = (await txList.boundingBox())!;
+    expect(listBox.x - cardBox.x).toBeGreaterThanOrEqual(8);
+    expect(cardBox.x + cardBox.width - (listBox.x + listBox.width)).toBeGreaterThanOrEqual(8);
+
     // --- The tab bar scrolls at this width, so the tab you switch to is not
     // necessarily inside it: Projects is the last of four and starts out of
     // view, which left the page looking like it had opened on no tab at all.

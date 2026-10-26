@@ -59,7 +59,7 @@ export const TransactionCollapsibleList: React.FC<
     if (!isOpen) return null;
 
     return (
-      <div className="mt-4 border-t border-[var(--surface-light)] pt-4 animate-in slide-in-from-top-2 fade-in duration-200">
+      <div data-testid="budget-tx-list" className="mt-4 border-t border-[var(--surface-light)] pt-4 animate-in slide-in-from-top-2 fade-in duration-200">
         <RecentTransactionsFeed
           embedded
           transactions={transactions}

@@ -124,15 +124,17 @@ export const ProjectBudgetList: React.FC<ProjectBudgetListProps> = ({
               />
             }
           >
-            <TransactionCollapsibleList
-              transactions={item.data}
-              isOpen={expandedRuleId === String(item.rule.id)}
-              onTransactionUpdated={onTransactionUpdated}
-              pendingRefundsMap={pendingRefundsMap}
-              showSplitParentsFilter
-              includeSplitParents={includeSplitParents}
-              onIncludeSplitParentsChange={onIncludeSplitParentsChange}
-            />
+            <div className="px-3 pb-3">
+              <TransactionCollapsibleList
+                transactions={item.data}
+                isOpen={expandedRuleId === String(item.rule.id)}
+                onTransactionUpdated={onTransactionUpdated}
+                pendingRefundsMap={pendingRefundsMap}
+                showSplitParentsFilter
+                includeSplitParents={includeSplitParents}
+                onIncludeSplitParentsChange={onIncludeSplitParentsChange}
+              />
+            </div>
           </BudgetLedgerRow>
         );
       })}
@@ -160,15 +162,17 @@ export const ProjectBudgetList: React.FC<ProjectBudgetListProps> = ({
             />
           }
         >
-          <TransactionCollapsibleList
-            transactions={otherTransactions}
-            isOpen={expandedRuleId === "other_project_txs"}
-            onTransactionUpdated={onTransactionUpdated}
-            pendingRefundsMap={pendingRefundsMap}
-            showSplitParentsFilter
-            includeSplitParents={includeSplitParents}
-            onIncludeSplitParentsChange={onIncludeSplitParentsChange}
-          />
+          <div className="px-3 pb-3">
+            <TransactionCollapsibleList
+              transactions={otherTransactions}
+              isOpen={expandedRuleId === "other_project_txs"}
+              onTransactionUpdated={onTransactionUpdated}
+              pendingRefundsMap={pendingRefundsMap}
+              showSplitParentsFilter
+              includeSplitParents={includeSplitParents}
+              onIncludeSplitParentsChange={onIncludeSplitParentsChange}
+            />
+          </div>
         </BudgetLedgerRow>
       )}
 
