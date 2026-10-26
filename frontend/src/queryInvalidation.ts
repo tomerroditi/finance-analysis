@@ -38,7 +38,7 @@ export const INVALIDATE_DEBOUNCE_MS = 200;
 export function createInvalidationSweep(
   client: QueryClient,
   delayMs: number = INVALIDATE_DEBOUNCE_MS,
-): (plan?: RefreshPlan) => void {
+): (plan?: RefreshPlan, revive?: Iterable<Query>) => void {
   let timer: ReturnType<typeof setTimeout> | undefined;
   let first: QueryKey[] = [];
   // What every write in the burst agrees it cannot have changed: a read is
@@ -47,8 +47,13 @@ export function createInvalidationSweep(
   // The union of what the burst's writes say is all they reach; `null` once
   // any write in it names no limit, which means everything.
   let only: QueryKey[] | null | undefined;
+  // Reads a write cancelled mid-flight. Whatever the plan says, each has to
+  // be asked again: the cancel put back the data it was replacing, and a
+  // read outside the plan would otherwise keep it until its next mount.
+  let revived = new Set<Query>();
 
-  return function schedule(plan: RefreshPlan = {}) {
+  return function schedule(plan: RefreshPlan = {}, revive: Iterable<Query> = []) {
+    for (const query of revive) revived.add(query);
     first = [...first, ...(plan.first ?? [])];
     const planSkip = plan.skip ?? [];
     skip =
@@ -59,17 +64,25 @@ export function createInvalidationSweep(
     if (timer !== undefined) clearTimeout(timer);
     timer = setTimeout(() => {
       timer = undefined;
-      const batch = { first, skip: skip ?? [], only: only ?? null };
+      const batch = { first, skip: skip ?? [], only: only ?? null, revived };
       first = [];
       skip = null;
       only = undefined;
-      if (batch.only !== null && batch.only.length === 0 && batch.first.length === 0) return;
+      revived = new Set();
+      if (
+        batch.only !== null &&
+        batch.only.length === 0 &&
+        batch.first.length === 0 &&
+        batch.revived.size === 0
+      ) {
+        return;
+      }
       const limit = batch.only;
       const rest: InvalidateQueryFilters =
         limit === null
           ? {}
           : { predicate: (query) => limit.some((queryKey) => matchQuery({ queryKey }, query)) };
-      void refreshInOrder(client, batch.first, rest, batch.skip);
+      void refreshInOrder(client, batch.first, rest, batch.skip, batch.revived);
     }, delayMs);
   };
 }
@@ -93,12 +106,15 @@ export function createInvalidationSweep(
  * @param rest - Filters for the second pass; everything when omitted.
  * @param skip - Keys the second pass leaves alone — reads the write cannot
  *   have changed, which are neither refetched nor marked stale.
+ * @param revived - Reads a write cancelled in flight; the second pass takes
+ *   them whatever `rest` and `skip` say.
  */
 export async function refreshInOrder(
   client: QueryClient,
   first: readonly QueryKey[],
   rest: InvalidateQueryFilters = {},
   skip: readonly QueryKey[] = [],
+  revived: ReadonlySet<Query> = new Set(),
 ): Promise<void> {
   await Promise.allSettled(
     first.map((queryKey) =>
@@ -114,8 +130,7 @@ export async function refreshInOrder(
         // What the first pass just fetched is current; refetching it again
         // would only re-send the request the user already waited for.
         !(query.isActive() && under(first, query)) &&
-        !under(skip, query) &&
-        (rest.predicate?.(query) ?? true),
+        (revived.has(query) || (!under(skip, query) && (rest.predicate?.(query) ?? true))),
     },
     { cancelRefetch: false },
   );
@@ -167,9 +182,12 @@ export function createMutationCache(
   getClient: () => QueryClient,
   delayMs: number = INVALIDATE_DEBOUNCE_MS,
 ): MutationCache {
-  let sweep: ((plan?: RefreshPlan) => void) | null = null;
+  let sweep: ReturnType<typeof createInvalidationSweep> | null = null;
+  // Reads dropped since the last sweep was scheduled, handed to it so a plan
+  // that would not otherwise reach them still asks them again.
+  let dropped = new Set<Query>();
   return new MutationCache({
-    onMutate: () => dropReadsOlderThanTheWrite(getClient()),
+    onMutate: () => dropReadsOlderThanTheWrite(getClient(), dropped),
     // Again on success, before the mutation's own `onSuccess` runs: a read
     // that started while the write was in flight may have been answered
     // before the commit. Dropping it here is what lets every later refetch
@@ -181,7 +199,7 @@ export function createMutationCache(
     // awaits this callback, and the write's own `onSuccess` must not wait.
     onSuccess: (_data, _variables, onMutateResult) => {
       const client = getClient();
-      dropReadsOlderThanTheWrite(client);
+      dropReadsOlderThanTheWrite(client, dropped);
       for (const queryKey of planOf(onMutateResult).first ?? []) {
         void client.refetchQueries({ queryKey, type: "active" }, { cancelRefetch: false });
       }
@@ -194,7 +212,9 @@ export function createMutationCache(
     // the write reached further than expected.
     onSettled: (_data, error, _variables, onMutateResult) => {
       sweep ??= createInvalidationSweep(getClient(), delayMs);
-      sweep(error ? {} : planOf(onMutateResult));
+      const revive = dropped;
+      dropped = new Set();
+      sweep(error ? {} : planOf(onMutateResult), revive);
     },
   });
 }
@@ -219,10 +239,12 @@ export function createMutationCache(
  * to click while it was still coming in.
  *
  * @param client - The client whose in-flight reads to drop.
+ * @param dropped - Collects what was dropped, for the sweep to re-issue.
  */
-function dropReadsOlderThanTheWrite(client: QueryClient): void {
+function dropReadsOlderThanTheWrite(client: QueryClient, dropped: Set<Query>): void {
   for (const query of client.getQueryCache().findAll({ fetchStatus: "fetching" })) {
     if (query.state.data === undefined) continue;
+    dropped.add(query);
     void query.cancel({ revert: true });
   }
 }
