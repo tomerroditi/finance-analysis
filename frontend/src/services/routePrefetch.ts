@@ -104,7 +104,8 @@ const ROUTE_PREFETCH: Record<string, RoutePrefetch> = {
     warm(qc, k.tagging.icons(), () => taggingApi.getIcons().then((r) => r.data));
     warm(qc, k.tagging.rules(), () => taggingApi.getRules().then((r) => r.data));
     warm(qc, k.balances.cash(), () => cashBalancesApi.getAll().then((r) => r.data));
-    warm(qc, k.savingsGoals.all(), () => savingsGoalsApi.getAll().then((r) => r.data));
+    // The goal links drive each row's goal icon; the goals themselves load
+    // only when a row's goal picker opens.
     warm(qc, k.savingsGoals.links(), () => savingsGoalsApi.getLinks().then((r) => r.data));
   },
   "/budget": (qc, { isDemoMode }) => {

@@ -84,6 +84,8 @@ export function makeQueryKeys(demo: boolean) {
       projectDetails: (name: string, includeSplitParents: boolean) =>
         ["budget", "project-details", name, includeSplitParents, demo] as const,
       availableProjects: () => ["budget", "available-projects", demo] as const,
+      alertsCurrent: (threshold: number) =>
+        ["budget", "alerts", "current", threshold, demo] as const,
       alertsMonth: (year: number, month: number, threshold: number) =>
         ["budget", "alerts", year, month, threshold, demo] as const,
       monthOverrides: () => ["budget", "month-overrides", demo] as const,

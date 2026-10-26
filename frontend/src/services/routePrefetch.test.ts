@@ -103,11 +103,11 @@ describe("prefetchRoute — what each route warms", () => {
       k.tagging.icons(),
       k.tagging.rules(),
       k.balances.cash(),
-      k.savingsGoals.all(),
       k.savingsGoals.links(),
     ]) {
       expect(keys).toContain(JSON.stringify(key));
     }
+    expect(keys).not.toContain(JSON.stringify(k.savingsGoals.all()));
   });
 
   it("warms the budget Overview for the current month", async () => {
