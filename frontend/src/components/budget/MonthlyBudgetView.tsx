@@ -495,7 +495,7 @@ export const MonthlyBudgetView: React.FC<MonthlyBudgetViewProps> = ({
         />
       }
     >
-      <div className="px-3 pb-3">
+      <div className="ps-3 pb-3">
         <TransactionCollapsibleList
           transactions={item.data}
           isOpen={expandedRuleId === String(item.rule.id)}

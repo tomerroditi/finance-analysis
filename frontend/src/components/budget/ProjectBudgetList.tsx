@@ -124,7 +124,7 @@ export const ProjectBudgetList: React.FC<ProjectBudgetListProps> = ({
               />
             }
           >
-            <div className="px-3 pb-3">
+            <div className="ps-3 pb-3">
               <TransactionCollapsibleList
                 transactions={item.data}
                 isOpen={expandedRuleId === String(item.rule.id)}
@@ -162,7 +162,7 @@ export const ProjectBudgetList: React.FC<ProjectBudgetListProps> = ({
             />
           }
         >
-          <div className="px-3 pb-3">
+          <div className="ps-3 pb-3">
             <TransactionCollapsibleList
               transactions={otherTransactions}
               isOpen={expandedRuleId === "other_project_txs"}

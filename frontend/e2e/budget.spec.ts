@@ -301,8 +301,9 @@ test.describe("Budget", () => {
     }));
     expect(scrollWidth).toBeLessThanOrEqual(clientWidth + 1);
 
-    // --- An expanded rule's transactions sit inset from its card's edges,
-    // not flush against the border ---
+    // --- An expanded rule's transactions sit inset from the card's start
+    // edge (the dates side), while the amounts keep the rows' own padding
+    // at the end ---
     await page.getByRole("button", { name: /^Monthly Budget$/i }).click();
     const mobileRule = page
       .locator("button[aria-expanded]")
@@ -316,7 +317,7 @@ test.describe("Budget", () => {
     const cardBox = (await ruleCard.boundingBox())!;
     const listBox = (await txList.boundingBox())!;
     expect(listBox.x - cardBox.x).toBeGreaterThanOrEqual(8);
-    expect(cardBox.x + cardBox.width - (listBox.x + listBox.width)).toBeGreaterThanOrEqual(8);
+    expect(cardBox.x + cardBox.width - (listBox.x + listBox.width)).toBeLessThan(4);
 
     // --- The tab bar scrolls at this width, so the tab you switch to is not
     // necessarily inside it: Projects is the last of four and starts out of
