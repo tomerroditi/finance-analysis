@@ -495,20 +495,21 @@ export const MonthlyBudgetView: React.FC<MonthlyBudgetViewProps> = ({
         />
       }
     >
-      <TransactionCollapsibleList
-        transactions={item.data}
-        isOpen={expandedRuleId === String(item.rule.id)}
-        showActions
-        onTransactionUpdated={invalidateBudget}
-        pendingRefundsMap={pendingRefundsMap}
-        refundLinksMap={refundLinksMap}
-        budgetMonthOverridesMap={budgetMonthOverridesMap}
-        budgetViewYear={year}
-        budgetViewMonth={month}
-        showSplitParentsFilter
-        includeSplitParents={includeSplitParents}
-        onIncludeSplitParentsChange={setIncludeSplitParents}
-      />
+      <div className="ps-3 pb-3">
+        <TransactionCollapsibleList
+          transactions={item.data}
+          isOpen={expandedRuleId === String(item.rule.id)}
+          onTransactionUpdated={invalidateBudget}
+          pendingRefundsMap={pendingRefundsMap}
+          refundLinksMap={refundLinksMap}
+          budgetMonthOverridesMap={budgetMonthOverridesMap}
+          budgetViewYear={year}
+          budgetViewMonth={month}
+          showSplitParentsFilter
+          includeSplitParents={includeSplitParents}
+          onIncludeSplitParentsChange={setIncludeSplitParents}
+        />
+      </div>
     </BudgetLedgerRow>
   );
 
@@ -545,7 +546,6 @@ export const MonthlyBudgetView: React.FC<MonthlyBudgetViewProps> = ({
             <TransactionCollapsibleList
               transactions={totalItem.data}
               isOpen
-              showActions
               onTransactionUpdated={invalidateBudget}
               pendingRefundsMap={pendingRefundsMap}
               refundLinksMap={refundLinksMap}

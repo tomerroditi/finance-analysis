@@ -506,13 +506,12 @@ Behavioural guard: `e2e/loading-states.spec.ts` holds the API response with
 `page.route` and asserts the spinner is up and the empty message is not. A new
 view whose empty state could flash should add a case there.
 
-## TransactionsTable Consumer Updates
+## Transaction List Consumers
 
-When modifying `TransactionsTable.tsx` props or behavior, **always update all consumers**:
-1. `frontend/src/pages/Transactions.tsx`
-2. `frontend/src/components/budget/TransactionCollapsibleList.tsx`
-
-These components pass different prop configurations and may break silently.
+`TransactionsTable.tsx` serves the Transactions page only. `RecentTransactionsFeed`
+(`components/dashboard/RecentTransactionsSection.tsx`) serves both the dashboard
+card and, embedded, every budget pool (`budget/TransactionCollapsibleList.tsx`) —
+a change to it shows up in both places, so check both.
 
 ## Provider/Service Name Maps
 

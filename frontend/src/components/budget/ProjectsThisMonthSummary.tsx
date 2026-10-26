@@ -94,7 +94,6 @@ export const ProjectsThisMonthSummary: React.FC<ProjectsThisMonthSummaryProps> =
                   <TransactionCollapsibleList
                     transactions={transactions}
                     isOpen
-                    showActions
                     onTransactionUpdated={onTransactionUpdated}
                   />
                 </div>

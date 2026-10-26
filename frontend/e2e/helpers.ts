@@ -1,5 +1,6 @@
 import {
   type Page,
+  type Locator,
   type APIRequestContext,
   expect,
   request,
@@ -153,5 +154,25 @@ export async function expectPageTitle(page: Page, title: string | RegExp) {
   const link = page.getByRole("link", { name: title }).first();
   if (await link.isVisible().catch(() => false)) {
     await expect(link).toBeVisible();
+  }
+}
+
+/**
+ * Scroll a transaction feed (the dashboard's recent list, or a budget pool's
+ * list) until `row` has mounted. The feed renders its rows in batches as it
+ * scrolls, so a row past the first batch is not in the DOM yet. Resolves
+ * whether it was found once the feed stopped growing.
+ */
+export async function scrollFeedUntil(feed: Locator, row: Locator): Promise<boolean> {
+  const rows = feed.getByTestId("recent-tx-row");
+  await expect(rows.first()).toBeVisible();
+  let rendered = -1;
+  for (;;) {
+    if ((await row.count()) > 0) return true;
+    const count = await rows.count();
+    if (count === rendered) return false;
+    rendered = count;
+    await feed.evaluate((el) => el.scrollTo({ top: el.scrollHeight }));
+    await rows.nth(count).waitFor({ timeout: 2_000 }).catch(() => {});
   }
 }

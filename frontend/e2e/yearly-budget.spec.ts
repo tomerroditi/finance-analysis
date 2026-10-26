@@ -283,7 +283,7 @@ test.describe("Yearly budget", () => {
     const disclosure = createdRow.locator("button[aria-expanded]").first();
     await expect(disclosure).toHaveAttribute("aria-expanded", "false");
 
-    const txRows = createdRow.locator('[data-testid^="transaction-row-"]');
+    const txRows = createdRow.getByTestId("recent-tx-row");
     // A negative assertion against a collapsed row: nothing here auto-waits,
     // so anchor on the disclosure state above before trusting the zero.
     await expect(txRows).toHaveCount(0);
@@ -292,11 +292,13 @@ test.describe("Yearly budget", () => {
     await expect(disclosure).toHaveAttribute("aria-expanded", "true");
     await expect(txRows.first()).toBeVisible({ timeout: 10_000 });
 
-    // The table paginates at 10 rows, so a busy rule shows its first page.
-    const TX_PAGE_SIZE = 10;
-    await expect(txRows).toHaveCount(
-      Math.min(createdEntry!.data.length, TX_PAGE_SIZE),
-    );
+    // The feed mounts rows in batches of 20 as it scrolls, so a busy rule
+    // shows at least its first batch and never more rows than it has.
+    const TX_BATCH_SIZE = 20;
+    await expect
+      .poll(() => txRows.count())
+      .toBeGreaterThanOrEqual(Math.min(createdEntry!.data.length, TX_BATCH_SIZE));
+    expect(await txRows.count()).toBeLessThanOrEqual(createdEntry!.data.length);
 
     // Collapsing takes them away again — the row is a disclosure, not a
     // one-way reveal.

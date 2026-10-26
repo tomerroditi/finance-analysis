@@ -743,6 +743,8 @@
     "title": "תקציב",
     "subtitle": "עקוב אחר ההוצאות שלך מול התקציב",
     "monthMove": {
+      "prevShort": "לחודש הקודם",
+      "nextShort": "לחודש הבא",
       "toPrevMonth": "שייך לתקציב החודש הקודם",
       "toNextMonth": "שייך לתקציב החודש הבא",
       "movedBadge": "נספר ב-{{to}} (הועבר מ-{{from}})"
