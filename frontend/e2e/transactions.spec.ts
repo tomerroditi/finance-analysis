@@ -173,7 +173,10 @@ test.describe("Transactions", () => {
     const held = new Promise<void>((resolve) => (release = resolve));
     await page.route(/\/api\/transactions\/\?/, async (route) => {
       await held;
-      await route.continue();
+      // A held refetch may have been cancelled by a later write, or the
+      // route removed below, by the time it is released — then there is
+      // nothing left to continue.
+      await route.continue().catch(() => undefined);
     });
 
     await target.locator('input[type="checkbox"]').check();
