@@ -431,7 +431,9 @@
     },
     "heatmap": {
       "title": "Spending Calendar",
-      "monthTotal": "This month"
+      "monthTotal": "This month",
+      "charges_one": "{{count}} charge",
+      "charges_other": "{{count}} charges"
     },
     "cards": {
       "forecast": "This Month (forecast)",
