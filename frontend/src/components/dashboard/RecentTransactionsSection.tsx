@@ -38,6 +38,7 @@ import { LinkRefundModal } from "../modals/LinkRefundModal";
 import { TransactionEditorModal } from "../modals/TransactionEditorModal";
 import { SelectDropdown } from "../common/SelectDropdown";
 import { RuleQuickAction } from "../transactions/RuleQuickAction";
+import { compareFeedRows } from "./feedOrder";
 import { GoalLinkAction } from "../transactions/GoalLinkAction";
 import { RecentTransactionDetails } from "./RecentTransactionDetails";
 import { useCategoryTagCreate } from "../../hooks/useCategoryTagCreate";
@@ -380,9 +381,7 @@ export function RecentTransactionsFeed({
 
   const sorted = useMemo(() => {
     if (!transactions) return [];
-    return [...transactions].sort(
-      (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime(),
-    );
+    return [...transactions].sort(compareFeedRows);
   }, [transactions]);
 
   // Undefined until the rules load: treating an empty list as "no rules"
