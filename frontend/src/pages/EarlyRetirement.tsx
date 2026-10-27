@@ -15,6 +15,7 @@ import {
   type Draft,
 } from "../components/fire/tracked";
 import { ConfirmationModal } from "../components/modals/ConfirmationModal";
+import { PendingButton } from "../components/common/PendingButton";
 
 const secondaryButton =
   "flex items-center gap-2 px-4 py-2.5 text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)] " +
@@ -111,6 +112,7 @@ export function EarlyRetirement() {
     refresh: { only: [["fire", "plan-projection"], ["fire", "plan-projection-summary"]] },
   };
   const save = useMutation({
+    meta: { reportsOwnError: true },
     mutationFn: () => fireApi.savePlan(current.fields, current.linked).then((r) => r.data),
     onMutate: () => FIRE_WRITE,
     onSuccess: adopt,
@@ -210,35 +212,38 @@ export function EarlyRetirement() {
             <RefreshCw className="w-4 h-4" />
             {t("fire.plan.sync")}
           </button>
-          <button
-            type="button"
+          <PendingButton
+            pending={reset.isPending}
             className={secondaryButton}
             disabled={!plan || busy}
             onClick={() => setConfirmReset(true)}
+            icon={<RotateCcw className="w-4 h-4" />}
+            spinnerSize={16}
           >
-            <RotateCcw className="w-4 h-4" />
             {t("common.reset")}
-          </button>
-          <button
-            type="button"
+          </PendingButton>
+          <PendingButton
+            pending={calculating}
             className={secondaryButton}
             disabled={!plan || busy}
             onClick={() => void runCalculate()}
             data-testid="fire-calculate"
+            icon={<Calculator className="w-4 h-4" />}
+            spinnerSize={16}
           >
-            <Calculator className="w-4 h-4" />
             {calculating ? t("fire.calculating") : t("fire.calculate")}
-          </button>
-          <button
-            type="button"
+          </PendingButton>
+          <PendingButton
+            pending={save.isPending}
             className="flex items-center gap-2 px-6 py-2.5 bg-[var(--primary)] hover:bg-blue-600 text-white rounded-lg font-medium transition-colors disabled:opacity-50"
             disabled={!plan || busy}
             onClick={() => save.mutate()}
             data-testid="fire-plan-save"
+            icon={<Save className="w-4 h-4" />}
+            spinnerSize={16}
           >
-            <Save className="w-4 h-4" />
             {save.isPending ? t("fire.plan.saving") : t("fire.plan.save")}
-          </button>
+          </PendingButton>
         </div>
       </div>
 

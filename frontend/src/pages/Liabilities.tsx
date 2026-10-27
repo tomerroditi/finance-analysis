@@ -46,6 +46,7 @@ import {
   LiabilityAnalysisModal,
   type AnalysisData,
 } from "../components/liabilities/LiabilityAnalysisModal";
+import { PendingButton } from "../components/common/PendingButton";
 
 interface DebtPoint {
   date: string;
@@ -64,6 +65,7 @@ function LiabilityCard({
   onPayOff,
   onReopen,
   onDelete,
+  writing = null,
 }: {
   liability: Liability;
   onAnalysis: (id: number) => void;
@@ -71,6 +73,8 @@ function LiabilityCard({
   onPayOff: (id: number) => void;
   onReopen: (id: number) => void;
   onDelete: (id: number) => void;
+  /** This card's reopen or delete is waiting for the server. */
+  writing?: "reopen" | "delete" | null;
 }) {
   const { t } = useTranslation();
   const confirm = useConfirm();
@@ -216,15 +220,19 @@ function LiabilityCard({
               <PowerOff size={16} />
             </button>
           ) : (
-            <button
+            <PendingButton
+              pending={writing === "reopen"}
+              disabled={writing !== null}
               onClick={() => onReopen(liability.id)}
-              className="p-2 rounded-lg bg-rose-500/10 text-rose-400 hover:bg-rose-500/20 transition-all"
+              className="p-2 rounded-lg bg-rose-500/10 text-rose-400 hover:bg-rose-500/20 transition-all disabled:opacity-60"
               title={t("liabilities.reopen")}
-            >
-              <Power size={16} />
-            </button>
+              icon={<Power size={16} />}
+              spinnerSize={16}
+            />
           )}
-          <button
+          <PendingButton
+            pending={writing === "delete"}
+            disabled={writing !== null}
             onClick={async () => {
               const ok = await confirm({
                 title: t("common.deleteTitle"),
@@ -234,11 +242,11 @@ function LiabilityCard({
               });
               if (ok) onDelete(liability.id);
             }}
-            className="p-2 rounded-lg bg-[var(--surface-light)] text-[var(--text-muted)] hover:text-red-400 transition-all"
+            className="p-2 rounded-lg bg-[var(--surface-light)] text-[var(--text-muted)] hover:text-red-400 transition-all disabled:opacity-60"
             title={t("common.delete")}
-          >
-            <Trash2 size={16} />
-          </button>
+            icon={<Trash2 size={16} />}
+            spinnerSize={16}
+          />
           {liability.notes && (
             <div className="relative">
               <button
@@ -453,6 +461,14 @@ export function Liabilities() {
     mutationFn: (id: number) => liabilitiesApi.reopen(id),
     onMutate: liabilityPlan,
   });
+
+  /** The card write waiting on the server for one liability, if any. */
+  const cardWrite = (id: number) =>
+    reopenMutation.isPending && reopenMutation.variables === id
+      ? "reopen"
+      : deleteMutation.isPending && deleteMutation.variables === id
+        ? "delete"
+        : null;
 
   // Generating writes transactions, so it reaches everything they feed; only
   // the static reads are left alone. The open analysis goes first.
@@ -696,6 +712,7 @@ export function Liabilities() {
                   onPayOff={handlePayOff}
                   onReopen={reopenMutation.mutate}
                   onDelete={deleteMutation.mutate}
+                  writing={cardWrite(l.id)}
                 />
               ))}
             </div>
@@ -740,6 +757,7 @@ export function Liabilities() {
                 onPayOff={handlePayOff}
                 onReopen={reopenMutation.mutate}
                 onDelete={deleteMutation.mutate}
+                writing={cardWrite(l.id)}
               />
             ))}
           </div>

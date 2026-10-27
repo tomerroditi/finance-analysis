@@ -8,6 +8,7 @@ import { useDialog } from "../../context/DialogContext";
 import { useQueryKeys } from "../../hooks/useQueryKeys";
 import { REFUND_LINK_PLAN } from "../../writePlans";
 import { formatCurrency } from "../../utils/numberFormatting";
+import { PendingButton } from "../common/PendingButton";
 
 const DISMISS_KEY = "fad_refund_tag_mismatch_dismissed";
 
@@ -55,6 +56,7 @@ export const RefundTagMismatchNotice: React.FC<{ refunds: PendingRefund[] | unde
   }, [refunds]);
 
   const fixMutation = useMutation({
+    meta: { reportsOwnError: true },
     mutationFn: () => pendingRefundsApi.fixTagMismatches().then((res) => res.data),
     onMutate: () => ({ refresh: REFUND_LINK_PLAN }),
     onSuccess: ({ fixed }) => {
@@ -138,13 +140,13 @@ export const RefundTagMismatchNotice: React.FC<{ refunds: PendingRefund[] | unde
           >
             {t("common.cancel")}
           </button>
-          <button
+          <PendingButton
+            pending={fixMutation.isPending}
             onClick={() => fixMutation.mutate()}
-            disabled={fixMutation.isPending}
             className="px-4 py-2 rounded-lg text-sm font-medium bg-emerald-500 hover:bg-emerald-600 disabled:opacity-50 transition-colors"
           >
             {t("transactions.refunds.tagMismatch.fixAll", { count: mismatches.length })}
-          </button>
+          </PendingButton>
         </div>
       </Modal>
     </>

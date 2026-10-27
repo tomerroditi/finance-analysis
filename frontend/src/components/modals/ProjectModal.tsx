@@ -5,6 +5,7 @@ import { budgetApi } from "../../services/api";
 import { SelectDropdown } from "../common/SelectDropdown";
 import { Modal } from "../common/Modal";
 import { useQueryKeys } from "../../hooks/useQueryKeys";
+import { PendingButton } from "../common/PendingButton";
 
 interface ProjectModalProps {
   isOpen: boolean;
@@ -12,6 +13,8 @@ interface ProjectModalProps {
   onSubmit: (data: { category: string; total_budget: number }) => void;
   initialData?: { category: string; total_budget: number } | null;
   isEdit?: boolean;
+  /** The submitted write is out: the dialog stays open, its button busy, until the host closes it on success. */
+  isSaving?: boolean;
 }
 
 export const ProjectModal: React.FC<ProjectModalProps> = ({
@@ -20,6 +23,7 @@ export const ProjectModal: React.FC<ProjectModalProps> = ({
   onSubmit,
   initialData,
   isEdit = false,
+  isSaving = false,
 }) => {
   const { t } = useTranslation();
   const qk = useQueryKeys();
@@ -60,7 +64,6 @@ export const ProjectModal: React.FC<ProjectModalProps> = ({
     e.preventDefault();
     if (!category) return;
     onSubmit({ category, total_budget: Number(totalBudget) });
-    onClose();
   };
 
   return (
@@ -119,12 +122,13 @@ export const ProjectModal: React.FC<ProjectModalProps> = ({
             >
               {t("common.cancel")}
             </button>
-            <button
+            <PendingButton
+              pending={isSaving}
               type="submit"
-              className="flex-1 py-3 bg-[var(--primary)] text-white font-bold rounded-xl hover:bg-[var(--primary-dark)] transition-all shadow-lg shadow-[var(--primary)]/20"
+              className="flex-1 py-3 bg-[var(--primary)] text-white font-bold rounded-xl hover:bg-[var(--primary-dark)] transition-all shadow-lg shadow-[var(--primary)]/20 disabled:opacity-50"
             >
               {isEdit ? t("modals.project.update") : t("modals.project.create")}
-            </button>
+            </PendingButton>
           </div>
         </form>
     </Modal>

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { QueryClient, QueryObserver } from "@tanstack/react-query";
-import { WRITE_REVERTED_EVENT, createMutationCache } from "./queryInvalidation";
+import { WRITE_FAILED_EVENT, createMutationCache } from "./queryInvalidation";
 
 /**
  * A write must not be undone by a read that predates it.
@@ -393,12 +393,21 @@ describe("the app-wide mutation cache", () => {
   });
 });
 
-describe("a refused write that had changed the screen", () => {
-  /** Run one failing write through the app's cache; count the notices it raises. */
-  async function failWith(onMutateResult: unknown, meta?: Record<string, unknown>) {
+describe("a failed write", () => {
+  /**
+   * Run one failing write through the app's cache; return what each
+   * `write-failed` notice said about it.
+   */
+  async function failWith(options: {
+    onMutateResult?: unknown;
+    meta?: Record<string, unknown>;
+    onError?: () => void;
+  }) {
     const client = makeClient();
-    const heard = vi.fn();
-    window.addEventListener(WRITE_REVERTED_EVENT, heard);
+    const heard: boolean[] = [];
+    const listener = (event: Event) =>
+      heard.push((event as CustomEvent<{ reverted: boolean }>).detail.reverted);
+    window.addEventListener(WRITE_FAILED_EVENT, listener);
     try {
       await client
         .getMutationCache()
@@ -406,27 +415,37 @@ describe("a refused write that had changed the screen", () => {
           mutationFn: async () => {
             throw new Error("refused");
           },
-          onMutate: () => onMutateResult,
-          meta,
+          onMutate: () => options.onMutateResult,
+          onError: options.onError,
+          meta: options.meta,
         })
         .execute(undefined)
         .catch(() => undefined);
     } finally {
-      window.removeEventListener(WRITE_REVERTED_EVENT, heard);
+      window.removeEventListener(WRITE_FAILED_EVENT, listener);
     }
-    return heard.mock.calls.length;
+    return heard;
   }
 
-  it("is announced, so the change undoing itself is never silent", async () => {
-    expect(await failWith({ restore: () => {} })).toBe(1);
+  it("says the change was undone when it had changed the screen", async () => {
+    expect(await failWith({ onMutateResult: { restore: () => {} }, onError: () => {} })).toEqual([
+      true,
+    ]);
+  });
+
+  it("says it could not save when it waited and has no error handling of its own", async () => {
+    expect(await failWith({ onMutateResult: { refresh: {} } })).toEqual([false]);
+    expect(await failWith({})).toEqual([false]);
+  });
+
+  it("leaves a waiting write that handles its own error alone", async () => {
+    expect(await failWith({ onError: () => {} })).toEqual([]);
   });
 
   it("is not announced twice for a write that reports its own failure", async () => {
-    expect(await failWith({ restore: () => {} }, { reportsOwnError: true })).toBe(0);
-  });
-
-  it("is not announced for a write that showed nothing ahead of the server", async () => {
-    expect(await failWith({ refresh: {} })).toBe(0);
-    expect(await failWith(undefined)).toBe(0);
+    expect(
+      await failWith({ onMutateResult: { restore: () => {} }, meta: { reportsOwnError: true } }),
+    ).toEqual([]);
+    expect(await failWith({ meta: { reportsOwnError: true } })).toEqual([]);
   });
 });

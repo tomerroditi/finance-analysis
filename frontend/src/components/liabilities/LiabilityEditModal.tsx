@@ -1,6 +1,7 @@
 import { useTranslation } from "react-i18next";
 import { Modal } from "../common/Modal";
 import { isPrimeBased } from "./loanTypes";
+import { PendingButton } from "../common/PendingButton";
 
 export interface EditLiabilityForm {
   id: number | null;
@@ -108,13 +109,14 @@ export function LiabilityEditModal({
           >
             {t("common.cancel")}
           </button>
-          <button
-            disabled={!form.name || isPending}
+          <PendingButton
+            pending={isPending}
+            disabled={!form.name}
             onClick={onSubmit}
             className="flex-1 py-3 text-sm font-bold bg-[var(--primary)] text-white rounded-xl hover:bg-[var(--primary-dark)] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {isPending ? "..." : t("common.save")}
-          </button>
+            {t("common.save")}
+          </PendingButton>
         </div>
       </div>
     </Modal>

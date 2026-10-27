@@ -8,6 +8,7 @@ import { useNotify } from "../../context/DialogContext";
 import { humanizeProvider } from "../../utils/textFormatting";
 import { formatCurrency } from "../../utils/numberFormatting";
 import { qkPrefix } from "../../services/queryKeys";
+import { PendingButton } from "../common/PendingButton";
 
 interface UpdateBankBalanceModalProps {
   isOpen: boolean;
@@ -119,13 +120,14 @@ export function UpdateBankBalanceModal({
           >
             {t("common.cancel")}
           </button>
-          <button
+          <PendingButton
+            pending={mutation.isPending}
             onClick={submit}
             disabled={!canSave}
             className="px-4 py-2 rounded-lg text-sm font-medium bg-amber-500/90 text-black hover:bg-amber-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
             {t("common.save")}
-          </button>
+          </PendingButton>
         </div>
       </div>
     </Modal>

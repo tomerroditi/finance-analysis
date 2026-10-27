@@ -41,6 +41,7 @@ import {
   toInternationalMobile,
   toSubscriberDigits,
 } from "../utils/phoneNumbers";
+import { PendingButton } from "../components/common/PendingButton";
 
 // Sentinel the backend returns in place of stored secrets; sending it back
 // on save keeps the stored value (see backend CredentialsService.MASK_SENTINEL).
@@ -859,13 +860,13 @@ export function DataSources() {
                       {t("common.back")}
                     </button>
                   )}
-                  <button
+                  <PendingButton
+                    pending={createMutation.isPending}
                     onClick={
                       isViewOnly ? resetForm : () => createMutation.mutate()
                     }
                     disabled={
-                      (!isViewOnly && (!accountName || !phoneIsValid)) ||
-                      createMutation.isPending
+                      (!isViewOnly && (!accountName || !phoneIsValid))
                     }
                     className="flex-[2] py-4 bg-[var(--primary)] rounded-2xl text-white font-black hover:bg-[var(--primary-dark)] transition-all shadow-xl shadow-[var(--primary)]/20 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
@@ -876,7 +877,7 @@ export function DataSources() {
                         : editingAccount
                           ? t("dataSources.saveChanges")
                           : t("dataSources.finishSetup")}
-                  </button>
+                  </PendingButton>
                 </div>
               </div>
             )}

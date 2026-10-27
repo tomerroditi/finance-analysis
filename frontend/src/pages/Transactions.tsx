@@ -22,6 +22,7 @@ import { useDemoMode } from "../context/DemoModeContext";
 import { prefetchRoute } from "../services/routePrefetch";
 import { rowsOfService } from "../writePlans";
 import type { Transaction } from "../types/transaction";
+import { PendingButton } from "../components/common/PendingButton";
 
 /**
  * The databases (real, demo) whose cash history was already seeded into cash
@@ -93,15 +94,20 @@ function CashBalancesCard({ queryClient }: { queryClient: ReturnType<typeof useQ
   };
 
   const handleAddAccount = () => {
+    if (setBalanceMutation.isPending) return;
     const balanceNum = parseFloat(newBalance);
     if (newAccountName.trim() && !isNaN(balanceNum) && balanceNum >= 0) {
-      setBalanceMutation.mutate({
-        account_name: newAccountName.trim(),
-        balance: balanceNum,
-      });
-      setNewAccountName("");
-      setNewBalance("");
-      setShowAddForm(false);
+      // The form stays up, its button busy, until the envelope exists.
+      setBalanceMutation.mutate(
+        { account_name: newAccountName.trim(), balance: balanceNum },
+        {
+          onSuccess: () => {
+            setNewAccountName("");
+            setNewBalance("");
+            setShowAddForm(false);
+          },
+        },
+      );
     }
   };
 
@@ -151,12 +157,16 @@ function CashBalancesCard({ queryClient }: { queryClient: ReturnType<typeof useQ
                       min="0"
                       autoFocus
                     />
-                    <button
+                    <PendingButton
+                      pending={
+                        setBalanceMutation.isPending &&
+                        setBalanceMutation.variables?.account_name === balance.account_name
+                      }
                       onClick={() => handleSaveBalance(balance.account_name)}
-                      className="px-2 py-1 bg-green-600 hover:bg-green-700 text-white rounded text-sm transition-colors"
+                      className="px-2 py-1 bg-green-600 hover:bg-green-700 text-white rounded text-sm transition-colors disabled:opacity-60"
                     >
                       {t("common.save")}
-                    </button>
+                    </PendingButton>
                     <button
                       onClick={() => setEditingId(null)}
                       className="px-2 py-1 bg-[var(--surface)] hover:bg-[var(--surface-light)] text-[var(--text)] rounded text-sm transition-colors"
@@ -178,7 +188,8 @@ function CashBalancesCard({ queryClient }: { queryClient: ReturnType<typeof useQ
                     >
                       <DollarSign size={16} className="text-amber-500" />
                     </button>
-                    <button
+                    <PendingButton
+                      pending={deleteMutation.isPending && deleteMutation.variables === balance.account_name}
                       onClick={async () => {
                         const ok = await confirm({
                           title: t("tooltips.deleteEnvelope"),
@@ -188,11 +199,11 @@ function CashBalancesCard({ queryClient }: { queryClient: ReturnType<typeof useQ
                         });
                         if (ok) deleteMutation.mutate(balance.account_name);
                       }}
-                      className="p-1.5 hover:bg-[var(--surface)] rounded transition-colors"
+                      className="p-1.5 hover:bg-[var(--surface)] rounded transition-colors text-red-500"
                       title={t("tooltips.deleteEnvelope")}
-                    >
-                      <Trash2 size={16} className="text-red-500" />
-                    </button>
+                      icon={<Trash2 size={16} className="text-red-500" />}
+                      spinnerSize={16}
+                    />
                   </>
                 )}
               </div>
@@ -235,12 +246,13 @@ function CashBalancesCard({ queryClient }: { queryClient: ReturnType<typeof useQ
             />
           </div>
           <div className="flex gap-2">
-            <button
+            <PendingButton
+              pending={setBalanceMutation.isPending}
               onClick={handleAddAccount}
-              className="flex-1 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded font-medium transition-colors"
+              className="flex-1 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded font-medium transition-colors disabled:opacity-60"
             >
               {t("transactions.addEnvelope")}
-            </button>
+            </PendingButton>
             <button
               onClick={() => setShowAddForm(false)}
               className="px-4 py-2 bg-[var(--surface)] hover:bg-[var(--surface-light)] text-[var(--text)] rounded transition-colors"

@@ -2,6 +2,7 @@ import React from "react";
 import { useTranslation } from "react-i18next";
 import { Archive, ArchiveRestore, PenSquare, Trash2 } from "lucide-react";
 import { formatCurrency } from "../../utils/numberFormatting";
+import { PendingButton } from "../common/PendingButton";
 
 const ACTION_ICON = {
   edit: PenSquare,
@@ -27,7 +28,9 @@ export const LedgerRowAction: React.FC<{
   onClick?: () => void;
   /** Forwarded to the button so a spec can address one action directly. */
   testId?: string;
-}> = ({ kind, label, onClick, testId }) => {
+  /** The write this action fired waits for the server: the icon spins until it settles. */
+  pending?: boolean;
+}> = ({ kind, label, onClick, testId, pending = false }) => {
   const Icon = ACTION_ICON[kind];
   // Destructive red is reserved for delete; retiring a rule is a
   // reversible bookkeeping act, so it gets the neutral hover the edit
@@ -37,8 +40,8 @@ export const LedgerRowAction: React.FC<{
       ? "hover:text-red-500 hover:bg-red-500/10"
       : "hover:text-blue-500 hover:bg-blue-500/10";
   return (
-    <button
-      type="button"
+    <PendingButton
+      pending={pending}
       data-testid={testId}
       disabled={!onClick}
       onClick={
@@ -56,9 +59,9 @@ export const LedgerRowAction: React.FC<{
       }`}
       title={label}
       aria-label={label}
-    >
-      <Icon size={16} />
-    </button>
+      icon={<Icon size={16} />}
+      spinnerSize={16}
+    />
   );
 };
 

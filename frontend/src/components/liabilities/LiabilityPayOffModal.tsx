@@ -1,5 +1,6 @@
 import { useTranslation } from "react-i18next";
 import { Modal } from "../common/Modal";
+import { PendingButton } from "../common/PendingButton";
 
 export interface PayOffForm {
   id: number | null;
@@ -50,13 +51,14 @@ export function LiabilityPayOffModal({
           >
             {t("common.cancel")}
           </button>
-          <button
-            disabled={!form.date || isPending}
+          <PendingButton
+            pending={isPending}
+            disabled={!form.date}
             onClick={onSubmit}
             className="flex-1 py-3 text-sm font-bold bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {isPending ? "..." : t("liabilities.payOff")}
-          </button>
+            {t("liabilities.payOff")}
+          </PendingButton>
         </div>
       </div>
     </Modal>

@@ -164,6 +164,32 @@ test.describe("Monthly budget row actions answer on click", () => {
     await expect(ruleFigures(page, rule)).toHaveText(before);
   });
 
+  test("a write that waits for the server spins its button until it lands", async ({ page }) => {
+    await navigateTo(page, "/budget");
+    await page.getByRole("button", { name: /^Monthly Budget$/i }).click();
+    await expect(page.getByTestId("budget-status-band")).toBeVisible({ timeout: 30_000 });
+
+    const write = await hold(page, "**/api/budget/rules/*", "DELETE");
+    const remove = page.getByRole("button", { name: "Delete Rule" }).filter({ visible: true }).and(
+      page.locator(":enabled"),
+    );
+    const target = remove.first();
+    const rules = await remove.count();
+    await target.click();
+    await page.getByRole("alertdialog").getByRole("button", { name: "Delete", exact: true }).click();
+
+    // The rule cannot be removed until the server says which month it left, so
+    // the button says it is working instead of only greying out.
+    await expect.poll(() => write.sent()).toBe(true);
+    const busy = page.locator('button[aria-busy="true"][aria-label="Delete Rule"]').filter({ visible: true });
+    await expect(busy).toHaveCount(1);
+    await expect(busy.locator("svg.animate-spin")).toBeVisible();
+
+    await write.release();
+    await expect(busy).toHaveCount(0);
+    await expect(remove).toHaveCount(rules - 1);
+  });
+
   test("moving a row to the previous month takes it and its cost out of this month", async ({ page }) => {
     const { tx, rule } = await pickRuleExpense();
     const row = await openRow(page, rule, tx);

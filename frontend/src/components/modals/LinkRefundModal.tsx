@@ -15,6 +15,7 @@ import type { Transaction } from "../../types/transaction";
 import { useQueryKeys } from "../../hooks/useQueryKeys";
 import { REFUND_LINK_PLAN, patchRefundLink } from "../../writePlans";
 import { useDialog } from "../../context/DialogContext";
+import { PendingButton } from "../common/PendingButton";
 
 interface RefundTransactionInfo {
   id: string | number;
@@ -614,18 +615,18 @@ export const LinkRefundModal: React.FC<LinkRefundModalProps> = ({
           >
             {t("common.cancel")}
           </button>
-          <button
+          <PendingButton
+            pending={linkMutation.isPending}
             onClick={handleLink}
             disabled={
               (isReverseMode ? !selectedTransaction : !selectedPendingId) ||
               linkAmount <= 0 ||
-              linkAmount > maxLinkAmount + 0.005 ||
-              linkMutation.isPending
+              linkAmount > maxLinkAmount + 0.005
             }
             className="px-4 py-2 rounded-lg text-sm font-medium bg-emerald-500 hover:bg-emerald-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
             {linkMutation.isPending ? t("modals.linkRefund.linking") : t("modals.linkRefund.title")}
-          </button>
+          </PendingButton>
         </div>
       </div>
     </div>

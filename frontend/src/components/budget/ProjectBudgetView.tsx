@@ -30,6 +30,7 @@ import {
   type TrendTransaction,
 } from "../../utils/budgetTrends";
 import type { Transaction } from "../../types/transaction";
+import { PendingButton } from "../common/PendingButton";
 
 interface ProjectBudgetRule {
   id: number;
@@ -129,10 +130,10 @@ export const ProjectBudgetView: React.FC<ProjectBudgetViewProps> = ({
       setIsProjectModalOpen(false);
     },
     onError: (error: unknown) => {
-      // ProjectModal closes itself on submit regardless of outcome (see
-      // handleSubmit there), so a 400 from the backend — e.g. the category
-      // picker being bypassed/racing another tab into claiming a category
-      // already used by a monthly/yearly budget — must be surfaced here.
+      // ProjectModal stays open until this succeeds, so a 400 from the
+      // backend — e.g. the category picker being bypassed/racing another tab
+      // into claiming a category already used by a monthly/yearly budget —
+      // is said here and the user can pick again.
       const axiosErr = error as { response?: { data?: { detail?: string } } };
       notify.error(axiosErr.response?.data?.detail || t("budget.failedCreateProject"));
     },
@@ -161,12 +162,14 @@ export const ProjectBudgetView: React.FC<ProjectBudgetViewProps> = ({
   });
 
   const updateRuleMutation = useMutation({
+    meta: { reportsOwnError: true },
     mutationFn: ({ id, rule }: { id: number; rule: object }) =>
       budgetApi.updateRule(id, rule),
     onMutate: () => ({ refresh: projectPlan(selectedProject, "edit") }),
   });
 
   const createRuleMutation = useMutation({
+    meta: { reportsOwnError: true },
     mutationFn: (rule: object) => budgetApi.createRule(rule),
     onMutate: () => ({ refresh: projectPlan(selectedProject, "edit") }),
   });
@@ -307,29 +310,34 @@ export const ProjectBudgetView: React.FC<ProjectBudgetViewProps> = ({
             {selectedProject && (
               <>
                 <BudgetGoalLink category={selectedProject} name={selectedProject} />
-                <button
+                <PendingButton
+                  pending={closedMutation.isPending}
                   onClick={handleToggleClosed}
-                  disabled={closedMutation.isPending}
                   data-testid="project-closed-toggle"
                   className={`inline-flex items-center gap-2 px-3 md:px-4 text-xs md:text-sm bg-[var(--surface-light)] border border-[var(--surface-light)] rounded-lg hover:bg-[var(--surface)] transition-colors shadow-sm font-medium whitespace-nowrap disabled:opacity-60 ${BAR_CONTROL}`}
+                  icon={
+                    isSelectedClosed ? (
+                      <ArchiveRestore size={18} className="shrink-0" />
+                    ) : (
+                      <Archive size={18} className="shrink-0" />
+                    )
+                  }
+                  spinnerSize={18}
                 >
-                  {isSelectedClosed ? (
-                    <ArchiveRestore size={18} className="shrink-0" />
-                  ) : (
-                    <Archive size={18} className="shrink-0" />
-                  )}
                   {isSelectedClosed
                     ? t("budget.reopenProject")
                     : t("budget.closeProject")}
-                </button>
-                <button
+                </PendingButton>
+                <PendingButton
+                  pending={deleteMutation.isPending}
                   onClick={handleDeleteProject}
                   data-testid="project-delete"
-                  className={`inline-flex items-center gap-2 px-3 md:px-4 text-xs md:text-sm bg-red-500/10 border border-red-500/20 text-red-500 rounded-lg hover:bg-red-500/20 transition-colors shadow-sm font-medium whitespace-nowrap ${BAR_CONTROL}`}
+                  className={`inline-flex items-center gap-2 px-3 md:px-4 text-xs md:text-sm bg-red-500/10 border border-red-500/20 text-red-500 rounded-lg hover:bg-red-500/20 transition-colors shadow-sm font-medium whitespace-nowrap disabled:opacity-60 ${BAR_CONTROL}`}
+                  icon={<Trash2 size={18} className="shrink-0" />}
+                  spinnerSize={18}
                 >
-                  <Trash2 size={18} className="shrink-0" />
                   {t("common.delete")}
-                </button>
+                </PendingButton>
               </>
             )}
           </>
@@ -448,6 +456,7 @@ export const ProjectBudgetView: React.FC<ProjectBudgetViewProps> = ({
         onSubmit={isEditMode ? handleUpdateProject : handleCreateProject}
         initialData={initialModalData}
         isEdit={isEditMode}
+        isSaving={createMutation.isPending || updateMutation.isPending}
       />
 
       <BudgetRuleModal

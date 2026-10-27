@@ -4,6 +4,7 @@ import { Modal } from "../common/Modal";
 import { Skeleton } from "../common/Skeleton";
 import { formatCurrency } from "../../utils/numberFormatting";
 import { formatDate } from "../../utils/dateFormatting";
+import { PendingButton } from "../common/PendingButton";
 
 export interface AnalysisData {
   schedule: Array<{
@@ -149,13 +150,13 @@ export function LiabilityAnalysisModal({
                   {t("liabilities.actualVsExpected")}
                 </button>
               </div>
-              <button
+              <PendingButton
+                pending={isGenerating}
                 onClick={onGenerate}
-                disabled={isGenerating}
                 className="px-4 py-2 rounded-lg text-sm font-bold bg-amber-600 text-white hover:bg-amber-700 transition-all disabled:opacity-50"
               >
-                {isGenerating ? "..." : t("liabilities.generateMissing")}
-              </button>
+                {t("liabilities.generateMissing")}
+              </PendingButton>
             </div>
 
             {/* Amortization Schedule Table */}

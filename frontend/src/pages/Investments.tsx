@@ -17,6 +17,7 @@ import { useCategoryTagCreate } from "../hooks/useCategoryTagCreate";
 import { todayISO } from "../utils/dateFormatting";
 import { useQueryKeys } from "../hooks/useQueryKeys";
 import { investmentPlan, PAGE_FIRST } from "../components/investments/investmentPlans";
+import { PendingButton } from "../components/common/PendingButton";
 
 const RATE_TYPES = new Set(["bonds", "pension", "p2p_lending"]);
 const KH_TYPES = new Set(["hishtalmut"]);
@@ -238,6 +239,7 @@ export function Investments() {
   });
 
   const createMutation = useMutation({
+    meta: { reportsOwnError: true },
     mutationFn: (data: Record<string, unknown>) => investmentsApi.create(data),
     onMutate: () => investmentPlan(PAGE_FIRST, { onboarding: true }),
     onSuccess: () => {
@@ -285,6 +287,14 @@ export function Investments() {
     mutationFn: (id: number) => investmentsApi.delete(id),
     onMutate: () => investmentPlan(PAGE_FIRST, { onboarding: true }),
   });
+
+  /** The card write waiting on the server for one investment, if any. */
+  const cardWrite = (id: number) =>
+    reopenMutation.isPending && reopenMutation.variables === id
+      ? "reopen"
+      : deleteMutation.isPending && deleteMutation.variables === id
+        ? "delete"
+        : null;
 
   const balanceSnapshotMutation = useMutation({
     mutationFn: (data: { investmentId: number; date: string; balance: number }) =>
@@ -399,6 +409,7 @@ export function Investments() {
                   }
                   onReopen={reopenMutation.mutate}
                   onDelete={deleteMutation.mutate}
+                  writing={cardWrite(inv.id)}
                   onUpdateBalance={(id: number) =>
                     setBalanceForm({
                       investmentId: id,
@@ -473,6 +484,7 @@ export function Investments() {
                 }
                 onReopen={reopenMutation.mutate}
                 onDelete={deleteMutation.mutate}
+                writing={cardWrite(inv.id)}
                 onUpdateBalance={(id: number) =>
                   setBalanceForm({
                     investmentId: id,
@@ -553,8 +565,9 @@ export function Investments() {
               >
                 {t("common.cancel")}
               </button>
-              <button
-                disabled={!balanceForm.balance || balanceSnapshotMutation.isPending}
+              <PendingButton
+                pending={balanceSnapshotMutation.isPending}
+                disabled={!balanceForm.balance}
                 onClick={() =>
                   balanceSnapshotMutation.mutate({
                     investmentId: balanceForm.investmentId!,
@@ -565,7 +578,7 @@ export function Investments() {
                 className="flex-[2] py-3 bg-blue-500 rounded-xl text-white font-bold hover:bg-blue-600 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {balanceSnapshotMutation.isPending ? t("investments.saving") : t("common.save")}
-              </button>
+              </PendingButton>
             </div>
         </div>
       </Modal>
@@ -606,8 +619,9 @@ export function Investments() {
               >
                 {t("common.cancel")}
               </button>
-              <button
-                disabled={!closeForm.date || closeMutation.isPending || updateCloseDateMutation.isPending}
+              <PendingButton
+                pending={closeMutation.isPending || updateCloseDateMutation.isPending}
+                disabled={!closeForm.date}
                 onClick={() => {
                   if (closeForm.mode === "close") {
                     closeMutation.mutate({ id: closeForm.investmentId!, closedDate: closeForm.date });
@@ -622,7 +636,7 @@ export function Investments() {
                   : closeForm.mode === "close"
                     ? t("investments.closeInvestment")
                     : t("investments.updateDate")}
-              </button>
+              </PendingButton>
             </div>
         </div>
       </Modal>
@@ -801,8 +815,9 @@ export function Investments() {
               >
                 {t("common.cancel")}
               </button>
-              <button
-                disabled={!editForm.name || editMutation.isPending}
+              <PendingButton
+                pending={editMutation.isPending}
+                disabled={!editForm.name}
                 onClick={() =>
                   editMutation.mutate({
                     id: editForm.investmentId!,
@@ -812,7 +827,7 @@ export function Investments() {
                 className="flex-[2] py-3 bg-[var(--primary)] rounded-xl text-white font-bold hover:opacity-90 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {editMutation.isPending ? t("investments.saving") : t("common.save")}
-              </button>
+              </PendingButton>
             </div>
         </div>
       </Modal>
@@ -1050,18 +1065,18 @@ export function Investments() {
               >
                 {t("common.cancel")}
               </button>
-              <button
+              <PendingButton
+                pending={createMutation.isPending}
                 disabled={
                   !newInvestment.name ||
                   !newInvestment.category ||
-                  !newInvestment.tag ||
-                  createMutation.isPending
+                  !newInvestment.tag
                 }
                 onClick={() => createMutation.mutate(buildInvestmentPayload(newInvestment))}
                 className="flex-[2] py-4 bg-[var(--primary)] rounded-2xl text-white font-black hover:bg-[var(--primary-dark)] transition-all shadow-xl shadow-[var(--primary)]/20 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {createMutation.isPending ? t("investments.creating") : t("investments.createInvestment")}
-              </button>
+              </PendingButton>
             </div>
         </div>
       </Modal>

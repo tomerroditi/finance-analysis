@@ -11,6 +11,7 @@ import { PROTECTED_CATEGORIES, PROTECTED_TAGS } from "./constants";
 import { qkPrefix } from "../../services/queryKeys";
 import { useCategoryTagCreate } from "../../hooks/useCategoryTagCreate";
 import type { RefreshPlan } from "../../queryInvalidation";
+import { PendingButton, SavingSpinner } from "../common/PendingButton";
 
 /**
  * What a category/tag delete, move or rename cannot reach: the app's
@@ -172,20 +173,27 @@ export function CategoryDetailPanel({
             </button>
             <div className="flex-1 min-w-0">
               {editingCategory ? (
-                <input
-                  autoFocus
-                  type="text"
-                  value={editName}
-                  onChange={(e) => setEditName(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" && editName.trim()) {
-                      renameCategoryMutation.mutate({ newName: editName.trim() });
-                    }
-                    if (e.key === "Escape") setEditingCategory(false);
-                  }}
-                  onBlur={() => setEditingCategory(false)}
-                  className="font-bold text-xl bg-transparent border-b border-[var(--primary)] outline-none w-full"
-                />
+                <div className="flex items-center gap-2">
+                  <input
+                    autoFocus
+                    type="text"
+                    value={editName}
+                    readOnly={renameCategoryMutation.isPending}
+                    aria-busy={renameCategoryMutation.isPending || undefined}
+                    onChange={(e) => setEditName(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && editName.trim() && !renameCategoryMutation.isPending) {
+                        renameCategoryMutation.mutate({ newName: editName.trim() });
+                      }
+                      if (e.key === "Escape") setEditingCategory(false);
+                    }}
+                    onBlur={() => {
+                      if (!renameCategoryMutation.isPending) setEditingCategory(false);
+                    }}
+                    className="font-bold text-xl bg-transparent border-b border-[var(--primary)] outline-none w-full"
+                  />
+                  {renameCategoryMutation.isPending && <SavingSpinner size={18} />}
+                </div>
               ) : (
                 <h2
                   className={`font-bold text-xl truncate ${!isProtected ? "cursor-pointer hover:text-[var(--primary)] transition-colors" : ""}`}
@@ -240,23 +248,30 @@ export function CategoryDetailPanel({
                         className="group/tag flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[var(--surface-light)] bg-[var(--surface-base)] hover:border-[var(--primary)]/50 transition-all"
                       >
                         {editingTag === tagName ? (
-                          <input
-                            autoFocus
-                            type="text"
-                            value={editName}
-                            onChange={(e) => setEditName(e.target.value)}
-                            onKeyDown={(e) => {
-                              if (e.key === "Enter" && editName.trim()) {
-                                renameTagMutation.mutate({
-                                  oldTag: tagName,
-                                  newTag: editName.trim(),
-                                });
-                              }
-                              if (e.key === "Escape") setEditingTag(null);
-                            }}
-                            onBlur={() => setEditingTag(null)}
-                            className="text-sm font-medium bg-transparent border-b border-[var(--primary)] outline-none w-20"
-                          />
+                          <>
+                            <input
+                              autoFocus
+                              type="text"
+                              value={editName}
+                              readOnly={renameTagMutation.isPending}
+                              aria-busy={renameTagMutation.isPending || undefined}
+                              onChange={(e) => setEditName(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter" && editName.trim() && !renameTagMutation.isPending) {
+                                  renameTagMutation.mutate({
+                                    oldTag: tagName,
+                                    newTag: editName.trim(),
+                                  });
+                                }
+                                if (e.key === "Escape") setEditingTag(null);
+                              }}
+                              onBlur={() => {
+                                if (!renameTagMutation.isPending) setEditingTag(null);
+                              }}
+                              className="text-sm font-medium bg-transparent border-b border-[var(--primary)] outline-none w-20"
+                            />
+                            {renameTagMutation.isPending && <SavingSpinner size={12} />}
+                          </>
                         ) : (
                           <span
                             className={`text-sm font-medium ${
@@ -288,7 +303,8 @@ export function CategoryDetailPanel({
                           >
                             <MoveRight size={12} className="rtl:-scale-x-100" />
                           </button>
-                          <button
+                          <PendingButton
+                            pending={deleteTagMutation.isPending && deleteTagMutation.variables?.tag === tagName}
                             onClick={async () => {
                               const ok = await confirm({
                                 title: t("categories.deleteTag"),
@@ -308,9 +324,9 @@ export function CategoryDetailPanel({
                                 : "hover:bg-red-500/10 text-red-400"
                             }`}
                             title={t("categories.deleteTag")}
-                          >
-                            <Trash2 size={12} />
-                          </button>
+                            icon={<Trash2 size={12} />}
+                            spinnerSize={12}
+                          />
                         </div>
                       </div>
                     );
@@ -326,7 +342,8 @@ export function CategoryDetailPanel({
             {/* Category danger zone */}
             <div className="pt-4 border-t border-[var(--surface-light)]">
               <div className="group relative">
-                <button
+                <PendingButton
+                  pending={deleteCategoryMutation.isPending}
                   onClick={async () => {
                     const ok = await confirm({
                       title: t("categories.deleteCategory"),
@@ -343,10 +360,11 @@ export function CategoryDetailPanel({
                       ? "text-[var(--text-muted)] opacity-50 cursor-not-allowed"
                       : "text-red-400 hover:bg-red-500/10 hover:border-red-500/20"
                   }`}
+                  icon={<Trash2 size={16} />}
+                  spinnerSize={16}
                 >
-                  <Trash2 size={16} />
                   {t("categories.deleteCategory")}
-                </button>
+                </PendingButton>
                 {isProtected && (
                   <div className="pointer-events-none absolute bottom-full inset-x-0 mb-2 flex justify-center opacity-0 group-hover:opacity-100 transition-opacity">
                     <span
@@ -419,8 +437,11 @@ export function CategoryDetailPanel({
           </p>
           <div className="space-y-2 max-h-[200px] overflow-y-auto mb-4 pe-2">
             {otherCategories.map((cat) => (
-              <button
+              <PendingButton
                 key={cat}
+                pending={relocateTagMutation.isPending && relocateTagMutation.variables?.newCategory === cat}
+                ownSpinner
+                disabled={relocateTagMutation.isPending}
                 onClick={() =>
                   isRelocateOpen &&
                   relocateTagMutation.mutate({ tag: isRelocateOpen, newCategory: cat })
@@ -432,12 +453,16 @@ export function CategoryDetailPanel({
                     <span className="text-lg">{allIcons[cat] || "📁"}</span>
                     <span>{cat}</span>
                   </div>
-                  <MoveRight
-                    size={16}
-                    className="opacity-100 md:opacity-0 group-hover:opacity-100 transition-all rtl:-scale-x-100"
-                  />
+                  {relocateTagMutation.isPending && relocateTagMutation.variables?.newCategory === cat ? (
+                    <SavingSpinner size={16} />
+                  ) : (
+                    <MoveRight
+                      size={16}
+                      className="opacity-100 md:opacity-0 group-hover:opacity-100 transition-all rtl:-scale-x-100"
+                    />
+                  )}
                 </div>
-              </button>
+              </PendingButton>
             ))}
           </div>
           <button

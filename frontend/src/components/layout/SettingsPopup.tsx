@@ -13,6 +13,7 @@ import { AboutPanel } from "../settings/AboutPanel";
 import { UninstallSection } from "../settings/UninstallSection";
 import { DashboardLayoutManager } from "../settings/DashboardLayoutManager";
 import { LoadingSpinner } from "../common/LoadingSpinner";
+import { PendingButton } from "../common/PendingButton";
 
 interface SettingsPopupProps {
   isOpen: boolean;
@@ -229,16 +230,16 @@ export function SettingsPopup({
             </div>
           </div>
           {isDemoMode && (
-            <button
+            <PendingButton
+              pending={resetDemoDataMutation.isPending}
               type="button"
               onClick={() => void handleResetDemoData()}
-              disabled={resetDemoDataMutation.isPending}
               className="mt-2 text-xs font-medium px-3 py-1.5 rounded-lg bg-[var(--surface-light)] text-[var(--text)] hover:bg-[var(--surface-light)]/80 transition-colors disabled:opacity-50"
             >
               {resetDemoDataMutation.isPending
                 ? t("settings.resettingDemoData")
                 : t("settings.resetDemoData")}
-            </button>
+            </PendingButton>
           )}
         </div>
 
@@ -302,15 +303,15 @@ export function SettingsPopup({
             <label className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wider">
               {t("settings.backup")}
             </label>
-            <button
+            <PendingButton
+              pending={createBackupMutation.isPending}
               onClick={() => createBackupMutation.mutate()}
-              disabled={createBackupMutation.isPending}
               className="text-xs font-medium px-3 py-1.5 rounded-lg bg-[var(--primary)] text-white hover:opacity-90 transition-opacity disabled:opacity-50"
             >
               {createBackupMutation.isPending
                 ? t("settings.creatingBackup")
                 : t("settings.createBackup")}
-            </button>
+            </PendingButton>
           </div>
 
           {isBackupsLoading ? (

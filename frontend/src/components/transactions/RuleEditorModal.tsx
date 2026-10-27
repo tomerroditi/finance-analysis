@@ -28,6 +28,7 @@ const RULE_SAVE_PLAN: { refresh: RefreshPlan } = {
   },
 };
 import { useQueryKeys } from "../../hooks/useQueryKeys";
+import { PendingButton } from "../common/PendingButton";
 
 interface RuleEditorModalProps {
     isOpen: boolean;
@@ -307,16 +308,18 @@ export function RuleEditorModal({ isOpen, onClose, editingRule, onSaved, prefill
                         >
                             {t("common.cancel")}
                         </button>
-                        <button
+                        <PendingButton
+                            pending={isSaving}
                             onClick={handleSave}
-                            disabled={!category || !tag || isSaving}
+                            disabled={!category || !tag}
                             className={`flex-1 sm:flex-initial px-6 py-2.5 text-white rounded-xl font-bold transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:pointer-events-none ${
                                 error ? "bg-red-500 hover:bg-red-600 animate-[shake_0.3s_ease-in-out]" : "bg-[var(--primary)] hover:bg-[var(--primary-dark)]"
                             }`}
+                            icon={<Save size={18} />}
+                            spinnerSize={18}
                         >
-                            {isSaving ? <Loader2 size={18} className="animate-spin" /> : <Save size={18} />}
                             {t("transactions.autoTagging.saveRule")}
-                        </button>
+                        </PendingButton>
                     </div>
                 </div>
             </div>

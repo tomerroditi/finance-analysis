@@ -8,6 +8,7 @@ import { SelectDropdown } from "../common/SelectDropdown";
 import { useCategories } from "../../hooks/useCategories";
 import { budgetApi, type YearlyAnalysis } from "../../services/api";
 import { yearlyRulePlan } from "../budget/budgetPlans";
+import { PendingButton } from "../common/PendingButton";
 
 interface Props {
   isOpen: boolean;
@@ -176,17 +177,18 @@ export const YearlyRuleModal: React.FC<Props> = ({ isOpen, onClose, year, editRu
           >
             {t("common.cancel")}
           </button>
-          <button
+          <PendingButton
+            pending={mutation.isPending}
             type="button"
             onClick={() => {
               setError(null);
               mutation.mutate();
             }}
-            disabled={mutation.isPending || !canSave}
+            disabled={!canSave}
             className="flex-1 py-3 bg-[var(--primary)] text-white font-bold rounded-xl hover:bg-[var(--primary-dark)] transition-all shadow-lg shadow-[var(--primary)]/20 disabled:opacity-50"
           >
             {t("common.save")}
-          </button>
+          </PendingButton>
         </div>
       </div>
     </Modal>

@@ -5,6 +5,7 @@ import { ExternalLink, RefreshCw } from "lucide-react";
 import { useUpdateCheck } from "../../hooks/useUpdateCheck";
 import { useVersionInfo } from "../../hooks/useVersionInfo";
 import { updatesApi, type UpdateInfo } from "../../services/api";
+import { PendingButton } from "../common/PendingButton";
 
 function formatRelative(iso: string | null | undefined, lang: string): string {
   if (!iso) return "";
@@ -86,15 +87,16 @@ export function AboutPanel() {
           </div>
         )}
         <div className="flex flex-wrap items-center gap-2 pt-1">
-          <button
+          <PendingButton
+            pending={refreshMutation.isPending}
             type="button"
             onClick={() => refreshMutation.mutate()}
-            disabled={refreshMutation.isPending}
             className="inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg bg-[var(--surface-light)] text-[var(--text)] hover:bg-[var(--surface-light)]/70 transition-colors disabled:opacity-50"
+            icon={<RefreshCw size={12} />}
+            spinnerSize={12}
           >
-            <RefreshCw size={12} className={refreshMutation.isPending ? "animate-spin" : ""} />
             {refreshMutation.isPending ? t("updates.checking") : t("updates.checkNow")}
-          </button>
+          </PendingButton>
           {isOutdated && downloadHref && (
             <a
               href={downloadHref}

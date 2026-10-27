@@ -32,6 +32,7 @@ import { InfoTooltip } from "../common/InfoTooltip";
 import { Skeleton } from "../common/Skeleton";
 import { useQueryKeys } from "../../hooks/useQueryKeys";
 import { investmentPlan } from "./investmentPlans";
+import { PendingButton } from "../common/PendingButton";
 
 interface Investment {
   id: number;
@@ -395,9 +396,9 @@ export function InvestmentAnalysisModal({
                 (investment?.interest_rate_type === "prime_linked" &&
                   investment?.rate_spread != null)) && (
                 <div className="flex justify-end">
-                  <button
+                  <PendingButton
+                    pending={calculateMutation.isPending}
                     onClick={() => calculateMutation.mutate()}
-                    disabled={calculateMutation.isPending}
                     className="px-4 py-2 bg-purple-500/10 text-purple-400 hover:bg-purple-500/20 rounded-xl text-sm font-bold transition-all disabled:opacity-50"
                   >
                     {calculateMutation.isPending
@@ -405,7 +406,7 @@ export function InvestmentAnalysisModal({
                       : investment?.interest_rate_type === "prime_linked"
                         ? t("investments.calculatePrimeLinked")
                         : t("investments.calculateFixedRate")}
-                  </button>
+                  </PendingButton>
                 </div>
               )}
 

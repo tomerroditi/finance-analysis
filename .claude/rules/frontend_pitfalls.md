@@ -234,15 +234,11 @@ Use the same `queryKey` array for the same data everywhere. The shared hooks enf
 - `["cashBalances"]` → `useCashBalances()`
 - `["taggingRules"]` → `useTaggingRules()`
 
-### Always Invalidate on Mutation Success
-Every `useMutation` that changes server data MUST have an `onSuccess` that invalidates related queries:
-```tsx
-const mutation = useMutation({
-  mutationFn: (data) => api.update(data),
-  onSuccess: () => queryClient.invalidateQueries({ queryKey: ["relatedData"] }),
-});
-```
-Missing `onSuccess` invalidation = UI doesn't refresh after the mutation.
+### Writes refresh through their plan, not `onSuccess`
+A `useMutation` does not invalidate on its own: the app-wide mutation cache
+sweeps after every write along the `RefreshPlan` its `onMutate` returns
+(CLAUDE.md → PWA / Offline Cache). Feedback on click, spinners for writes
+that wait, and failure toasts: `frontend_writes.md`.
 
 ### But don't fan out — narrow keys + setQueryData patches
 The flip side: `queryClient.invalidateQueries()` with no args

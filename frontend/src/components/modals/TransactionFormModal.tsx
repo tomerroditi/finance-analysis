@@ -12,6 +12,7 @@ import type { Transaction } from "../../types/transaction";
 import { useNotify } from "../../context/DialogContext";
 import { parseAmountInput } from "../../utils/numberFormatting";
 import { todayISO } from "../../utils/dateFormatting";
+import { PendingButton } from "../common/PendingButton";
 
 export type { Transaction };
 
@@ -345,13 +346,13 @@ export function TransactionFormModal({
                         >
                             {t("common.cancel")}
                         </button>
-                        <button
+                        <PendingButton
+                            pending={saveMutation.isPending}
                             type="submit"
-                            disabled={saveMutation.isPending}
                             className="flex-1 px-4 py-2.5 rounded-xl bg-[var(--primary)] hover:bg-[var(--primary-dark)] text-white text-sm font-semibold shadow-lg shadow-[var(--primary)]/20 transition-all disabled:opacity-60"
                         >
                             {isEditMode ? t("modals.transactionForm.saveChanges") : t("modals.transactionForm.createTransaction")}
-                        </button>
+                        </PendingButton>
                     </div>
                 </form>
         </Modal>

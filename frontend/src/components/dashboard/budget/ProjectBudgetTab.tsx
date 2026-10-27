@@ -15,6 +15,7 @@ import { budgetLink } from "../../../utils/budgetNavigation";
 import { BudgetRuleGrid } from "./BudgetRuleGrid";
 import { normalizeAnalysis } from "./normalizeAnalysis";
 import { ForwardArrow } from "../../common/ForwardArrow";
+import { PendingButton } from "../../common/PendingButton";
 
 interface ProjectBudgetTabProps {
   selectedProject: string | null;
@@ -57,6 +58,10 @@ export const ProjectBudgetTab: React.FC<ProjectBudgetTabProps> = ({
     onSuccess: (_, variables) => {
       onSelectProject(variables.category);
       setIsModalOpen(false);
+    },
+    onError: (error: unknown) => {
+      const axiosErr = error as { response?: { data?: { detail?: string } } };
+      notify.error(axiosErr.response?.data?.detail || t("budget.failedCreateProject"));
     },
   });
 
@@ -112,6 +117,7 @@ export const ProjectBudgetTab: React.FC<ProjectBudgetTabProps> = ({
       isOpen={isModalOpen}
       onClose={() => setIsModalOpen(false)}
       onSubmit={(payload) => createProject.mutate(payload)}
+      isSaving={createProject.isPending}
     />
   );
 
@@ -158,18 +164,18 @@ export const ProjectBudgetTab: React.FC<ProjectBudgetTabProps> = ({
         />
       </div>
       {!!selectedProject && (
-        <button
+        <PendingButton
+          pending={closedMutation.isPending}
           onClick={handleToggleClosed}
-          disabled={closedMutation.isPending}
           data-testid="card-project-closed-toggle"
           aria-label={
             isSelectedClosed ? t("budget.reopenProject") : t("budget.closeProject")
           }
           title={isSelectedClosed ? t("budget.reopenProject") : t("budget.closeProject")}
           className="p-1.5 rounded-lg hover:bg-[var(--surface-light)] text-[var(--text-muted)] hover:text-[var(--text)] transition-colors shrink-0 disabled:opacity-60"
-        >
-          {isSelectedClosed ? <ArchiveRestore size={16} /> : <Archive size={16} />}
-        </button>
+          icon={isSelectedClosed ? <ArchiveRestore size={16} /> : <Archive size={16} />}
+          spinnerSize={16}
+        />
       )}
       <button
         onClick={() => setIsModalOpen(true)}

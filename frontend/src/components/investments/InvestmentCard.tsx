@@ -19,6 +19,7 @@ import {
   formatChange,
   formatPercentChange,
 } from "../../utils/numberFormatting";
+import { PendingButton } from "../common/PendingButton";
 
 export interface AllocationItem {
   id: number;
@@ -51,6 +52,7 @@ export function InvestmentCard({
   onClose,
   onReopen,
   onDelete,
+  writing = null,
   onUpdateBalance,
   onEditCloseDate,
   onEdit,
@@ -60,6 +62,8 @@ export function InvestmentCard({
   onViewAnalysis: (id: number) => void;
   onClose: (id: number) => void;
   onReopen: (id: number) => void;
+  /** This card's reopen or delete is waiting for the server. */
+  writing?: "reopen" | "delete" | null;
   onDelete: (id: number) => void;
   onUpdateBalance: (id: number) => void;
   onEditCloseDate: (id: number, closedDate?: string) => void;
@@ -247,15 +251,19 @@ export function InvestmentCard({
               <PowerOff size={16} />
             </button>
           ) : (
-            <button
+            <PendingButton
+              pending={writing === "reopen"}
+              disabled={writing !== null}
               onClick={() => onReopen(inv.id)}
-              className="p-2 rounded-lg bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 transition-all"
+              className="p-2 rounded-lg bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 transition-all disabled:opacity-60"
               title={t("investments.reopen")}
-            >
-              <Power size={16} />
-            </button>
+              icon={<Power size={16} />}
+              spinnerSize={16}
+            />
           )}
-          <button
+          <PendingButton
+            pending={writing === "delete"}
+            disabled={writing !== null}
             onClick={async () => {
               const ok = await confirm({
                 title: t("common.deleteTitle"),
@@ -265,11 +273,11 @@ export function InvestmentCard({
               });
               if (ok) onDelete(inv.id);
             }}
-            className="p-2 rounded-lg bg-[var(--surface-light)] text-[var(--text-muted)] hover:text-red-400 transition-all"
+            className="p-2 rounded-lg bg-[var(--surface-light)] text-[var(--text-muted)] hover:text-red-400 transition-all disabled:opacity-60"
             title={t("common.delete")}
-          >
-            <Trash2 size={16} />
-          </button>
+            icon={<Trash2 size={16} />}
+            spinnerSize={16}
+          />
           {inv.notes && (
             <div className="p-2 rounded-lg bg-[var(--surface-light)] flex items-center">
               <InfoTooltip text={inv.notes} iconSize={16} width={192} />

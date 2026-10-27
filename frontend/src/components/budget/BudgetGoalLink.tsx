@@ -10,6 +10,7 @@ import { useNotify } from "../../context/DialogContext";
 import { Modal } from "../common/Modal";
 import { BAR_CONTROL } from "./BudgetCommandBar";
 import { joinRuleTags } from "../../utils/goalRuleTags";
+import { PendingButton, SavingSpinner } from "../common/PendingButton";
 
 /** Whether `goal` pays for exactly the spending `(category, tags)` names. */
 function goalCovers(goal: SavingsGoal, category: string, tags: string | null): boolean {
@@ -139,8 +140,10 @@ export function BudgetGoalLink({
             {openGoals.map((goal) => {
               const isFunding = goal.id === fundingGoal?.id;
               return (
-                <button
+                <PendingButton
                   key={goal.id}
+                  pending={mutation.isPending && mutation.variables?.goalId === goal.id}
+                  ownSpinner
                   onClick={() => mutation.mutate({ goalId: goal.id, link: true })}
                   disabled={mutation.isPending || isFunding}
                   aria-pressed={isFunding}
@@ -153,7 +156,9 @@ export function BudgetGoalLink({
                   <span className="text-sm truncate" dir="auto" title={goal.name}>
                     {goal.name}
                   </span>
-                  {isFunding ? (
+                  {mutation.isPending && mutation.variables?.goalId === goal.id ? (
+                    <SavingSpinner />
+                  ) : isFunding ? (
                     <span className="text-xs font-medium text-[var(--primary)] shrink-0">
                       {t("budget.goalLink.linked")}
                     </span>
@@ -172,19 +177,19 @@ export function BudgetGoalLink({
                       </span>
                     )
                   )}
-                </button>
+                </PendingButton>
               );
             })}
 
             <div className="flex justify-between items-center gap-2 pt-2">
               {fundingGoal ? (
-                <button
+                <PendingButton
+                  pending={mutation.isPending}
                   onClick={() => mutation.mutate({ goalId: fundingGoal.id, link: false })}
-                  disabled={mutation.isPending}
                   className="px-3 py-2 rounded-lg text-sm font-medium text-rose-400 hover:bg-[var(--surface-light)] disabled:opacity-50 transition-colors"
                 >
                   {t("budget.goalLink.unlink")}
-                </button>
+                </PendingButton>
               ) : (
                 <span />
               )}

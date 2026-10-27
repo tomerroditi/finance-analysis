@@ -3,6 +3,7 @@ import { SelectDropdown } from "../common/SelectDropdown";
 import { useTranslation } from "react-i18next";
 import type { Transaction } from "../../types/transaction";
 import { RuleQuickAction } from "./RuleQuickAction";
+import { PendingButton } from "../common/PendingButton";
 
 export interface BulkEditData {
   date: string;
@@ -169,14 +170,14 @@ export function BulkActionsBar({
           variant="bar"
         />
         {/* Actions */}
-        <button
+        <PendingButton
+          pending={isApplying}
           className="p-1.5 rounded-lg bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30 disabled:opacity-50"
           onClick={onApply}
-          disabled={isApplying}
           title={t("tooltips.applyChanges")}
-        >
-          <CheckCircle2 size={20} />
-        </button>
+          icon={<CheckCircle2 size={20} />}
+          spinnerSize={20}
+        />
         <button
           className="p-1.5 rounded-lg bg-[var(--surface-light)]/40 hover:bg-[var(--surface-light)] text-[var(--text-muted)] hover:text-white transition-all"
           onClick={onClearCategoryTag}
