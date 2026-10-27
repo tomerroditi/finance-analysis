@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { CalendarDays } from "lucide-react";
 import type { Transaction } from "../../types/transaction";
@@ -11,7 +11,13 @@ const NON_EXPENSE = new Set([
   "Ignore", "Salary", "Other Income", "Investments", "Liabilities", "Credit Cards",
 ]);
 
-type Cell = { day: number; spend: number } | null;
+type Cell = { day: number; spend: number; count: number } | null;
+
+interface SelectedDay {
+  year: number;
+  month: number;
+  day: number;
+}
 
 interface MonthData {
   year: number;
@@ -26,6 +32,7 @@ function buildMonth(transactions: Transaction[] | undefined, year: number, month
   const firstWeekday = new Date(year, month, 1).getDay(); // 0 = Sunday
 
   const perDay: Record<number, number> = {};
+  const countPerDay: Record<number, number> = {};
   for (const tx of transactions ?? []) {
     const amount = tx.amount ?? 0;
     if (amount >= 0) continue;
@@ -33,11 +40,12 @@ function buildMonth(transactions: Transaction[] | undefined, year: number, month
     const d = new Date(tx.date ?? "");
     if (d.getFullYear() !== year || d.getMonth() !== month) continue;
     perDay[d.getDate()] = (perDay[d.getDate()] ?? 0) + Math.abs(amount);
+    countPerDay[d.getDate()] = (countPerDay[d.getDate()] ?? 0) + 1;
   }
 
   const cells: Cell[] = [];
   for (let i = 0; i < firstWeekday; i++) cells.push(null);
-  for (let day = 1; day <= daysInMonth; day++) cells.push({ day, spend: perDay[day] ?? 0 });
+  for (let day = 1; day <= daysInMonth; day++) cells.push({ day, spend: perDay[day] ?? 0, count: countPerDay[day] ?? 0 });
   while (cells.length % 7 !== 0) cells.push(null);
 
   const weeks: Cell[][] = [];
@@ -60,6 +68,9 @@ function buildMonth(transactions: Transaction[] | undefined, year: number, month
  * current month stacked vertically (shared colour scale so the shading is comparable).
  * A full-width card, or any narrow (mobile) render, shows the current month only.
  *
+ * Pressing a day shows its spend (and how many charges made it up) in the
+ * header, in place of the month total; pressing it again clears it.
+ *
  * Cells use a fixed h-8 height (not aspect-square) so both one and two month views
  * stay within the dashboard card's 39rem height cap.
  */
@@ -75,6 +86,7 @@ export function SpendingHeatmap({
   // or the single-column mobile layout shows one month.
   const isWide = useMediaQuery("(min-width: 1024px)");
   const twoMonths = size === "half" && isWide;
+  const [selected, setSelected] = useState<SelectedDay | null>(null);
 
   const months = useMemo(() => {
     const now = new Date();
@@ -109,6 +121,21 @@ export function SpendingHeatmap({
 
   const current = months[months.length - 1];
 
+  const selectedCell = useMemo(() => {
+    if (!selected) return null;
+    const mo = months.find((m) => m.year === selected.year && m.month === selected.month);
+    for (const week of mo?.weeks ?? [])
+      for (const cell of week) if (cell?.day === selected.day) return cell;
+    return null;
+  }, [months, selected]);
+
+  const toggleDay = (mo: MonthData, day: number) =>
+    setSelected((prev) =>
+      prev && prev.year === mo.year && prev.month === mo.month && prev.day === day
+        ? null
+        : { year: mo.year, month: mo.month, day },
+    );
+
   return (
     <div className={`bg-[var(--surface)] rounded-2xl border border-[var(--surface-light)] ${twoMonths ? "p-3 md:p-4" : "p-4 md:p-6"}`}>
       <div className={`flex items-center justify-between gap-2 ${twoMonths ? "mb-2" : "mb-4"}`}>
@@ -118,7 +145,19 @@ export function SpendingHeatmap({
           </div>
           <p className="text-sm md:text-base font-bold">{t("dashboard.heatmap.title")}</p>
         </div>
-        {!twoMonths && (
+        {selected && selectedCell ? (
+          <div className="text-end" data-testid="heatmap-day-detail">
+            <p className="text-[10px] md:text-xs text-[var(--text-muted)]" dir="auto">
+              {new Date(selected.year, selected.month, selected.day).toLocaleDateString(
+                i18n.language === "he" ? "he-IL" : "en-US",
+                { weekday: "short", day: "numeric", month: "short" },
+              )}
+              {" · "}
+              {t("dashboard.heatmap.charges", { count: selectedCell.count })}
+            </p>
+            <p dir="ltr" className="text-sm md:text-base font-bold text-start">{formatCurrency(selectedCell.spend)}</p>
+          </div>
+        ) : !twoMonths && (
           <div className="text-end">
             <p className="text-[10px] md:text-xs text-[var(--text-muted)]">{t("dashboard.heatmap.monthTotal")}</p>
             <p dir="ltr" className="text-sm md:text-base font-bold text-start">{formatCurrency(current.total)}</p>
@@ -134,6 +173,10 @@ export function SpendingHeatmap({
             maxSpend={maxSpend}
             weekdayLabels={weekdayLabels}
             label={twoMonths ? monthLabel(mo) : undefined}
+            selectedDay={
+              selected && selected.year === mo.year && selected.month === mo.month ? selected.day : null
+            }
+            onSelectDay={(day) => toggleDay(mo, day)}
           />
         ))}
       </div>
@@ -146,12 +189,16 @@ function MonthCalendar({
   maxSpend,
   weekdayLabels,
   label,
+  selectedDay,
+  onSelectDay,
 }: {
   data: MonthData;
   maxSpend: number;
   weekdayLabels: string[];
   /** When set, render a per-month header (name + total) above the grid. */
   label?: string;
+  selectedDay: number | null;
+  onSelectDay: (day: number) => void;
 }) {
   const cellColor = (spend: number): string => {
     if (spend <= 0) return "bg-[var(--surface-light)]";
@@ -182,13 +229,19 @@ function MonthCalendar({
               cell === null ? (
                 <div key={ci} className="h-8" />
               ) : (
-                <div
+                <button
                   key={ci}
+                  type="button"
                   title={`${cell.day}: ${formatCurrency(cell.spend)}`}
-                  className={`h-8 rounded-md flex items-center justify-center ${cellColor(cell.spend)}`}
+                  aria-label={`${cell.day}: ${formatCurrency(cell.spend)}`}
+                  aria-pressed={selectedDay === cell.day}
+                  onClick={() => onSelectDay(cell.day)}
+                  className={`h-8 w-full rounded-md flex items-center justify-center cursor-pointer transition-shadow ${cellColor(cell.spend)} ${
+                    selectedDay === cell.day ? "ring-2 ring-[var(--primary)]" : "hover:ring-1 hover:ring-[var(--text-muted)]"
+                  }`}
                 >
                   <span className="text-[8px] md:text-[10px] text-[var(--text-primary)]/70">{cell.day}</span>
-                </div>
+                </button>
               ),
             )}
           </div>
