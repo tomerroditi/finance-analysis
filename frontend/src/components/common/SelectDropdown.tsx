@@ -23,6 +23,14 @@ interface SelectDropdownProps {
   /** Extra classes for the trigger button — e.g. to match a control row's height. */
   triggerClassName?: string;
   onCreateNew?: (value: string) => Promise<void> | void;
+  /**
+   * Open the panel across this element (e.g. the card the trigger sits in),
+   * capped at `panelMaxWidth`, with labels shown whole and the list scrolling
+   * sideways when one is still longer — instead of a trigger-wide panel that
+   * truncates them.
+   */
+  panelAlignTo?: React.RefObject<HTMLElement | null>;
+  panelMaxWidth?: number;
 }
 
 export const SelectDropdown: React.FC<SelectDropdownProps> = ({
@@ -35,6 +43,8 @@ export const SelectDropdown: React.FC<SelectDropdownProps> = ({
   size = "default",
   triggerClassName = "",
   onCreateNew,
+  panelAlignTo,
+  panelMaxWidth,
 }) => {
   const { t } = useTranslation();
   const [isOpen, setIsOpen] = useState(false);
@@ -64,7 +74,10 @@ export const SelectDropdown: React.FC<SelectDropdownProps> = ({
     maxHeight: 256,
     // On mobile, ensure a usable width; the hook clamps it to the screen.
     minWidth: onCreateNew ? 260 : 180,
+    maxWidth: panelMaxWidth,
+    alignTo: panelAlignTo,
   });
+  const fullLabels = !!panelAlignTo;
 
    
   useEffect(() => {
@@ -278,7 +291,15 @@ export const SelectDropdown: React.FC<SelectDropdownProps> = ({
                 </div>
               </div>
             )}
-            <div ref={listRef} role="listbox" className="overflow-y-auto overscroll-contain flex-1 min-h-0">
+            <div
+              ref={listRef}
+              role="listbox"
+              className={`overscroll-contain flex-1 min-h-0 ${
+                fullLabels
+                  ? "overflow-auto grid content-start grid-cols-[minmax(100%,max-content)]"
+                  : "overflow-y-auto"
+              }`}
+            >
               {filteredOptions.map((opt, idx) => (
                 <button
                   key={opt.value}
@@ -300,7 +321,10 @@ export const SelectDropdown: React.FC<SelectDropdownProps> = ({
                     {opt.icon && (
                       <span className="shrink-0 text-[var(--text-muted)]">{opt.icon}</span>
                     )}
-                    <span className="truncate text-[var(--text-default)]" title={opt.label}>
+                    <span
+                      className={`text-[var(--text-default)] ${fullLabels ? "whitespace-nowrap" : "truncate"}`}
+                      title={opt.label}
+                    >
                       {opt.label}
                     </span>
                   </span>

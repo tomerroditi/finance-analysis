@@ -320,6 +320,30 @@ test.describe("Dashboard recent transactions — row actions", () => {
     // that source in its details sheet.
     const sourcePicker = card.getByTestId("recent-tx-source");
     await expect(sourcePicker).toContainText("All sources");
+
+    // The open list spans the card from its start edge (capped in width) and
+    // shows every label whole, scrolling sideways rather than truncating.
+    await sourcePicker.getByRole("button").click();
+    const sourceList = page.getByRole("listbox");
+    await expect(sourceList.getByRole("option").first()).toBeVisible();
+    const panelFit = await sourceList.evaluate((list) => {
+      const panel = list.parentElement!.getBoundingClientRect();
+      const header = document
+        .querySelector('[data-testid="recent-tx-filters"]')!
+        .parentElement!.getBoundingClientRect();
+      const labels = [...list.querySelectorAll('[role="option"] span[title]')];
+      return {
+        startOffset: Math.abs(panel.left - Math.max(8, header.left)),
+        width: panel.width,
+        headerWidth: header.width,
+        clipped: labels.filter((el) => el.scrollWidth > el.clientWidth + 1).length,
+      };
+    });
+    expect(panelFit.startOffset).toBeLessThanOrEqual(1);
+    expect(panelFit.width).toBeLessThanOrEqual(448);
+    expect(panelFit.width).toBeGreaterThanOrEqual(Math.min(panelFit.headerWidth, 448) - 1);
+    expect(panelFit.clipped).toBe(0);
+    await page.keyboard.press("Escape");
     for (const [option, service] of [
       ["All credit cards", "Credit Card"],
       ["All bank accounts", "Bank"],

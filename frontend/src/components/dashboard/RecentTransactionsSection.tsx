@@ -75,6 +75,8 @@ function formatTransactionDate(dateStr: string): string {
 }
 
 const TRANSACTIONS_PAGE_SIZE = 20;
+/** The source picker opens across the card, but no wider than this (px). */
+const SOURCE_PANEL_MAX_WIDTH = 448;
 
 /** Same predicate the transactions page's "Only Untagged" filter uses. */
 const isUntagged = (tx: Transaction) => !tx.tag || tx.tag === "-";
@@ -145,6 +147,7 @@ export function RecentTransactionsFeed({
   const [onlyUntagged, setOnlyUntagged] = useState(false);
   const [onlyWithoutRule, setOnlyWithoutRule] = useState(false);
   const [sourceFilter, setSourceFilter] = useState("");
+  const headerRef = useRef<HTMLDivElement>(null);
   const [editingTxKey, setEditingTxKey] = useState<string | null>(null);
   const [stagedCategory, setStagedCategory] = useState<string>("");
   const [stagedTag, setStagedTag] = useState<string>("");
@@ -545,7 +548,7 @@ export function RecentTransactionsFeed({
           their own beneath, starting from the reading edge. The card's width
           follows the dashboard grid, not the viewport, so a desktop column is
           too narrow for all three controls beside the title. */}
-      <div className={embedded ? "mb-3" : "mb-4 space-y-2"}>
+      <div ref={headerRef} className={embedded ? "mb-3" : "mb-4 space-y-2"}>
         {!embedded && (
         <div className="flex items-center justify-between gap-2">
           <p className="text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
@@ -600,6 +603,8 @@ export function RecentTransactionsFeed({
                 value={activeSource}
                 onChange={changeSource}
                 options={sources}
+                panelAlignTo={headerRef}
+                panelMaxWidth={SOURCE_PANEL_MAX_WIDTH}
                 triggerClassName={`whitespace-nowrap !text-xs font-medium ${
                   activeSource ? "!border-[var(--primary)] text-[var(--primary)]" : ""
                 }`}
